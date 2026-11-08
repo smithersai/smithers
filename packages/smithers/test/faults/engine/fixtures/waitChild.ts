@@ -155,12 +155,14 @@ class Unprovided extends Context.Service<Unprovided, { readonly value: string }>
  * directives are the whole assertion.
  */
 const unprovidedServiceProbe = () => {
-  // @ts-expect-error the notifier host does not provide Unprovided
-  notify(Effect.map(Unprovided, (service) => service.value), notifier)
-  // @ts-expect-error the approval host does not provide Unprovided
-  run(Effect.void, Effect.map(Unprovided, (service) => service.value), host(approvalRegistration, options))
+  const missing = Effect.map(Unprovided, (service) => service.value)
+  const notification = notify<Layer.Success<typeof notifier>, Layer.Error<typeof notifier>>
+  const approvalHost = host(approvalRegistration, options)
+  const approval = run<Layer.Success<typeof approvalHost>, Layer.Error<typeof approvalHost>, string, never>
+  const _requiresNotificationService: typeof missing extends Parameters<typeof notification>[0] ? false : true = true
+  const _requiresApprovalService: typeof missing extends Parameters<typeof approval>[1] ? false : true = true
   notify(Effect.void, notifier)
-  run(Effect.void, Effect.succeed(1), host(approvalRegistration, options))
+  run(Effect.void, Effect.succeed(1), approvalHost)
 }
 void unprovidedServiceProbe
 

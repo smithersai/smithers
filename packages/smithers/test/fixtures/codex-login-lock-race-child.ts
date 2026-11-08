@@ -26,7 +26,7 @@ process.on("message", (message) => {
       let active = false
       const refresh = Effect.gen(function*() {
         active = true
-        yield* Effect.never
+        return yield* Effect.never
       })
       const fiber = yield* Effect.forkChild(CodexLogin.make({ file, refresh }).auth.sign({}), {
         startImmediately: true

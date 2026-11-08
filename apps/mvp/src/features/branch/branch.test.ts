@@ -6,6 +6,7 @@
 // short, a stalled answer, 400 and 413 (test.faults-by-injection).
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Deferred, Effect, Fiber, FiberHandle, Layer, Logger, Metric, Ref } from "effect"
+import { ConversationOwners } from "../conversations/owners"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
@@ -40,6 +41,9 @@ import { CONVERSATION_NAMESPACE } from "./contract"
 import { BranchTrackRefused, BranchTrackUnavailable } from "./flows"
 import { opens, reopens, tracks } from "./metrics"
 import { requestTrack, stampOpen } from "./steps"
+
+/** The home conversation's branch: the deployment repository's `main`, locked, which 0014_branch_workspace records. */
+const HOME = { name: "main", mode: "locked" }
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => {
@@ -77,7 +81,7 @@ const open = async (options: TabOptions = {}, chatApi: ChatApiOptions = {}) => {
     current: () => branch.queries.current.toArray[0],
     /** The conversation this tab shows and asks in: a branch's id, or `null` for the home one. */
     place: () => chat.queries.place.toArray[0]?.conversationId,
-    /** The branch's rows Postgres holds for `octo/hello`. */
+    /** The branch's rows Postgres holds for `octo/hello`, the deployment's own repository, its home `main` (`HOME`) included. */
     rows: () =>
       runtime.runPromise(api.branches.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
         sql<{ readonly name: string; readonly mode: string }>`
@@ -120,7 +124,7 @@ describe("opening a branch", () => {
     })
     expect(tab.place()).toBe(conversationId)
     expect(tab.opened("ready")).toBe(1)
-    expect(await tab.rows()).toEqual([{ name: "feature/one", mode: "open" }])
+    expect(await tab.rows()).toEqual([{ name: "feature/one", mode: "open" }, HOME])
 
     // The repository's default branch is locked: changes reach it only by merge.
     await tab.actions.open("octo", "hello", "main")
@@ -139,6 +143,22 @@ describe("opening a branch", () => {
     expect(tab.api.branches.github.seen).toHaveLength(reads)
     expect(await tab.rows()).toEqual([{ name: "feature/one", mode: "open" }, { name: "main", mode: "locked" }])
     expect(tab.dispatched()).toBe(3)
+  }, WITHIN)
+
+  // The coordinator's ruling 5 on the data gate: a fresh branch's conversation shows nothing until its my-conversations
+  // row syncs (fail closed). This measures that wait from the open's start.
+  test("a fresh branch's conversation shows once its my-conversations row syncs, within seconds", async () => {
+    const tab = await open()
+    const owners = await tab.runtime.runPromise(Effect.service(ConversationOwners))
+    owners.shown.tanstack.startSyncImmediate()
+    const started = performance.now()
+    const branchId = await tab.actions.open("octo", "hello", "feature/one")
+    const conversationId = await conversationOf(branchId!)
+    await vi.waitFor(() => expect(owners.shown.tanstack.toArray.map((row) => row.conversationId)).toContain(conversationId),
+      { timeout: 10_000, interval: 10 })
+    const ms = Math.round(performance.now() - started)
+    console.log("MINE_DELAY_MS", ms)
+    expect(ms).toBeLessThan(10_000)
   }, WITHIN)
 
   test("another page of the branch the tab shows keeps it ready: nothing unmounts, and ChatApi isn't asked again", async () => {
@@ -223,7 +243,7 @@ describe("opening a branch", () => {
     expect(tab.api.branches.github.seen.map(({ method, prefixes }) => [method, prefixes])).toEqual([
       ["POST", ["refs/heads/nope"]],
     ])
-    expect(await tab.rows()).toEqual([])
+    expect(await tab.rows()).toEqual([HOME])
     expect(tab.place()).toBeNull()
     expect(await tab.actions.open("octo", "hello", "unseen")).toBeUndefined()
     expect(tab.cache.tanstack.has("octo/hello/unseen")).toBe(false)
@@ -239,7 +259,7 @@ describe("opening a branch", () => {
     expect(branchId).toEqual(expect.any(String))
     expect(tab.current()).toMatchObject({ status: "ready", branchId })
     expect(tab.api.branches.github.seen.map(({ method }) => method)).toEqual(["POST", "POST", "GET"])
-    expect(await tab.rows()).toEqual([{ name: "feature/one", mode: "open" }])
+    expect(await tab.rows()).toEqual([{ name: "feature/one", mode: "open" }, HOME])
   }, WITHIN)
 
   test.each<[string, Actor | null, string]>([
@@ -256,7 +276,7 @@ describe("opening a branch", () => {
     expect(tab.opened(status)).toBe(1)
     expect(tab.cache.tanstack.has("octo/hello/feature/one")).toBe(false)
     expect(tab.api.branches.github.seen).toEqual([])
-    expect(await tab.rows()).toEqual([])
+    expect(await tab.rows()).toEqual([HOME])
   }, WITHIN)
 
   test("signed out, as sign-in's row says, the page says sign in without running branch/track", async () => {
@@ -278,7 +298,7 @@ describe("opening a branch", () => {
         Metric.value(Metric.withAttributes(dispatches, { flow: "branch/track", door: "view", outcome })),
       ).count).toBe(0)
     }
-    expect(await tab.rows()).toEqual([])
+    expect(await tab.rows()).toEqual([HOME])
   }, WITHIN)
 
   test("a visitor opening a file before the first session answer never tracks its branch", async () => {
@@ -319,7 +339,7 @@ describe("opening a branch", () => {
     expect(tab.current()).toMatchObject({ status: "sign_in", branchId: null, conversationId: null })
     expect(tab.cache.tanstack.has("octo/hello/feature/one")).toBe(false)
     expect(tab.opened("sign_in")).toBe(1)
-    expect(await tab.rows()).toEqual([])
+    expect(await tab.rows()).toEqual([HOME])
   }, WITHIN)
 
   test("offline, the page shows at once without waiting for an answer, and opens the branch again once the browser is back online", async () => {

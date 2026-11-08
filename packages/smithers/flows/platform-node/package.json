@@ -203,10 +203,10 @@
     "@types/ws": "8.18.2",
     "esbuild": "0.28.2",
     "redis": "6.2.1",
-    "undici": "8.12.3",
+    "undici": "8.12.4",
     "ws": "8.22.0",
-    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz",
-    "vibelang-unplugin": "file:../../../../.vibelang-toolchain/vibelang-unplugin-0.0.11-45a3600458c6.tgz"
+    "vibelang-runtime": "0.0.12",
+    "vibelang-unplugin": "0.0.12"
   },
   "peerDependencies": {
     "effect": "4.1.1"
@@ -231,8 +231,8 @@
     "microsandbox": "0.6.16",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
-    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz",
+    "vibelang": "0.0.12",
+    "vibelang-vite": "0.0.12",
     "vitest": "5.0.0"
   }
 }

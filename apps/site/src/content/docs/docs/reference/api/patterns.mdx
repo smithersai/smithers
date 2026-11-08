@@ -8,7 +8,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/patterns/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/patterns/docs)
 
-> **Related APIs:** [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/plan`](/docs/reference/api/plan/)
+> **Related APIs:** [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/plan`](/docs/reference/api/plan/)
 
 This page is the API reference for the higher-order flow patterns: decorators
 that wrap one flow, and containers that compose several. The package composes
@@ -542,3 +542,7 @@ modules with their specifiers.
 [Flows, actions, and plans](/docs/concepts/flows-actions-plans/) for what a built
 graph means, and [`@smthrs/plan`](/docs/reference/api/plan/) for the persisted form a graph
 compiles into.
+
+The runtime’s optional `recordNode(record, { flush: true })` commits a progress
+record before returning. Burndown uses it for per-item landing and release so
+a slow neighboring item cannot keep completed progress buffered.

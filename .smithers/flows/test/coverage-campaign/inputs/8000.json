@@ -1,0 +1,4002 @@
+[
+  {
+    "path": "packages/rpc/test/cards/FileCard.test.ts",
+    "sha256": "53e7894502c261bac6b257023c3865ca5171a06fcb0a9ffee6ae77d9c8b5bd9f"
+  },
+  {
+    "path": "packages/rpc/test/cards/FlowCard.test.ts",
+    "sha256": "f3ebd9929de206bbc1638d7153fb86b60f090d897e5ee8dc863f35b6f86cad58"
+  },
+  {
+    "path": "packages/rpc/test/cards/HomeCard.test.ts",
+    "sha256": "75fb846d837f5ea8e7b725b98e673624504846ff68e567f6fda11c37a75cf271"
+  },
+  {
+    "path": "packages/rpc/test/cards/MembersCard.test.ts",
+    "sha256": "2541737559fed9918644a3c818bccaa0f4905ae250a7c95d0060d7482df89c20"
+  },
+  {
+    "path": "packages/rpc/test/cards/MonitorCard.test.ts",
+    "sha256": "ee03d9350d2d7b288e10cb26c4236cd436bc04a9dbf5c6a3c9a1cc3eb50ea9b4"
+  },
+  {
+    "path": "packages/rpc/test/cards/ProposalCard.test.ts",
+    "sha256": "c2f50ea45c0edf2436526cc9e77cea583d2805917d9470c878ededb3a51647a0"
+  },
+  {
+    "path": "packages/rpc/test/cards/SecretsCard.test.ts",
+    "sha256": "38472d98afe2d2e84271101213e5f75a4b7f9c9ddf466bc54ac27802868324e2"
+  },
+  {
+    "path": "packages/rpc/test/cards/SettingsCard.test.ts",
+    "sha256": "63284937cddff0f55a5daa202a51b5dd62e91af409b89b9af2bba389e201fbc9"
+  },
+  {
+    "path": "packages/rpc/test/cards/SetupCard.test.ts",
+    "sha256": "4b56d4f015198639243872c68c43dea3fd74635d0146bfbe57c02ad3b81ba643"
+  },
+  {
+    "path": "packages/rpc/test/cards/TimelineCard.test.ts",
+    "sha256": "ab4e309c4a19b6cf5bde02ab7557a761e4c2ccc00dfea3f470c2e4c5bef42c08"
+  },
+  {
+    "path": "packages/rpc/test/cards/ToastCard.test.ts",
+    "sha256": "104d7b243987a715f24421dc3598ae5068981cee6c941bed5b3172d19ddf7ae3"
+  },
+  {
+    "path": "packages/rpc/test/cards/TodoCard.test.ts",
+    "sha256": "fa626ac81fe7b9bbbb64486cd77e55fe9782abfacb0827bfd0efb5f23fac4335"
+  },
+  {
+    "path": "packages/rpc/test/CatalogCuts.test.ts",
+    "sha256": "7258012be1dceb6c4018b125a60b9ce7a5cfe7882bb146e14fb8c8790125b95c"
+  },
+  {
+    "path": "packages/rpc/test/Changes.test.ts",
+    "sha256": "52148918040adc3f43f63ec732d94d79a12bb95be243134c06f009d5fbadeaf6"
+  },
+  {
+    "path": "packages/rpc/test/CloudTunnel.test.ts",
+    "sha256": "c27d43a4b5147f9cbdb89af07a41cfcdce84d83c1a9df8bbb2e82485d9455e4c"
+  },
+  {
+    "path": "packages/rpc/test/ConfiguredModel.test.ts",
+    "sha256": "89cb8a102dcc7cb87ab2ea265b7fb2e9574da8baeccf5e2b71cca309b61ecf26"
+  },
+  {
+    "path": "packages/rpc/test/ContextPreflight.test.ts",
+    "sha256": "4144f344757b7abc1c11c1a744729088918df64992b2ecb60fb7230597923f34"
+  },
+  {
+    "path": "packages/rpc/test/DecodingRegressions.test.ts",
+    "sha256": "6ff979a65d50e4bdca06b41a069d5529c0c9f9eab5fb74718ce1178a896c22d2"
+  },
+  {
+    "path": "packages/rpc/test/DocsPages.test.ts",
+    "sha256": "d38089ec81d9743404ad71a0f8a91befc4852df710f9affc33d9b544abb140c7"
+  },
+  {
+    "path": "packages/rpc/test/FactoryProjection.test.ts",
+    "sha256": "cde828f0f44888e077db72e6ad9c8c92e90351a4be42f879d75187683f551eac"
+  },
+  {
+    "path": "packages/rpc/test/FileList.test.ts",
+    "sha256": "9f54bc1e905519cefe0be6b9691fd3584caf98f3a3d456f662f434d7b38092d9"
+  },
+  {
+    "path": "packages/rpc/test/FilePage.test.ts",
+    "sha256": "08ef63af853ddf278d9d0ed2abf8425b13009cec15ddb32e4e71c008cbf39c3c"
+  },
+  {
+    "path": "packages/rpc/test/FilePageRejected.test.ts",
+    "sha256": "c70e61ab5a0693147e9d6f739046428dd437224957d3b3d4087515a118db1853"
+  },
+  {
+    "path": "packages/rpc/test/FileRead.test.ts",
+    "sha256": "97092ecf1f4dbb0c03dd49e60064bb04b523e62cdbf5d79c1ae71d97ede47b1e"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/_shared.ts",
+    "sha256": "9f5c5f9b636c4c6ecd3edc9e25d0c5716e45283c5a96deb27deb76263580d67c"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/_story.ts",
+    "sha256": "dad71a1c1bd01d8f070b2ae4fee3678fbb3315f399675e7858d463f9b5d8a490"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/ActorChip.ts",
+    "sha256": "b48eef99c413ed9f449ae5b7e48ecaacdf5ffde484ac720b6937dd87afffde7c"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/Agent.ts",
+    "sha256": "e99fa3544a3304a3f98d7708cd0332dfe5bb54ec86df81099a53210a10c9b67d"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/Branch.ts",
+    "sha256": "2b3c2fcc7a4dd12051db9477daa8f964fbde67034fa1b1378c270a9321176999"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/BranchTreeNode.ts",
+    "sha256": "722e62840d31153e6498cb9036960a101e6f559f7400a07f281467efc62f1ef0"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/Commands.ts",
+    "sha256": "748a649252b4626392f92a01ac30fa8ad1864009406eb6e9efc1a8b89ad7eac6"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/Confirm.ts",
+    "sha256": "2eb47d8687d933b7a9fe691d92c15f7816580e5748c08ea10399f3f954ee317f"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/ContextLine.ts",
+    "sha256": "0ceec807bb0c61780e6d82ff7b32e43ffc5fbd31004ae888603eef6ad50870bb"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/Diff.ts",
+    "sha256": "c8cebfd204ca9b388e88a9afce1f69b287576fc97dc63a82a2d2e1f894db3a75"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/Draft.ts",
+    "sha256": "11731ace936767fc93127ca6616859ad6115a6f9c23e07e2c7b29b22374b0fd4"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/EntryRow.ts",
+    "sha256": "51337417ed30afaf70f93f4e38d0d6f5f6202d153047bca67e4efe226da94ac4"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/File.ts",
+    "sha256": "b3b72944476c17b29595b568b00dba888196c3235bf3b06dfa497e125166f32a"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/Flow.ts",
+    "sha256": "ad1e93ee00b00f8a4c514d8129b137066d264091b2e78d1cd1d3ae342864b4cc"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/FrontDoor.ts",
+    "sha256": "315c33fe5587d62367231e40fc039fbc16360fa106b21913b59b6b9d93b37130"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/Home.ts",
+    "sha256": "5cd07efc4543317c054fd46d4dc4584a95ec1bf7dbe6b42827c32bc4fa860bc1"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/LegacyCards.ts",
+    "sha256": "e38fb939783605df06e7fba381ab846a94276a2edccc4a9acd7ad0ab53b5e544"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/Live.ts",
+    "sha256": "cd60a58176773831e88c33f9e1d1a1b4dfb8105115e81b4e25cf48154b1f1265"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/Members.ts",
+    "sha256": "e360f1a75deb8b3246ea204d9726ff0d9a5f38f624b72d9461f398ce35210459"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/Monitor.ts",
+    "sha256": "8b37c1c6e8ad90d74cbb0daa2e4d103bcc13688ed47ea3c752705269d4c53d1f"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/Proposal.ts",
+    "sha256": "b7e3beaf49b3026113f03f7f4c0b6752a719c2ee0ace83e85206946b4c4301fd"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/Secrets.ts",
+    "sha256": "131acd855e7a7a1dda824e57f10485bbf18e51b9e4ba4d0b8fe9fbf9be76f830"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/Settings.ts",
+    "sha256": "9e82425993baa7c0fd587febe951ba07bb70f26e4a441c45a3a28dc682b1d4d2"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/Setup.ts",
+    "sha256": "d99b2c8d7f8ecf108176c19059c3265c95ad4316974bef83cc2dc08ecc97762c"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/Terminal.ts",
+    "sha256": "7358f29d1f9b4362621c562059196e0f6b96104205232d36cdbad4aa64e8d64e"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/Timeline.ts",
+    "sha256": "e3007d1173f9c88fff6175b5f40f5376d335625d7fbcbc0a1f730a0e69fef8a9"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/Toast.ts",
+    "sha256": "f05a9f17c80f30981dcaffab21ce9106eb6389bbd8f76cbc23db4ef8404fcf3a"
+  },
+  {
+    "path": "packages/rpc/test/fixtures/Todo.ts",
+    "sha256": "2e5a7195b9ae790ffe1d2ccd56d71165df3838da1dba0bf48dc4cc6b6f65d3e4"
+  },
+  {
+    "path": "packages/rpc/test/FlowAuthoring.test.ts",
+    "sha256": "e64144720fefc97c9325fce11b06bca833b44be2fb34d948b58ae2c608155401"
+  },
+  {
+    "path": "packages/rpc/test/FlowEdit.test.ts",
+    "sha256": "d7b9eb58ad064c57c5b2e87d3dc64d6f3671d9901871ae888070c46f693f6173"
+  },
+  {
+    "path": "packages/rpc/test/FrontDoor.test.ts",
+    "sha256": "c3f66c9d9d2129efefe4a7314576f09ed1c39c96232ca3dae307e08696da640d"
+  },
+  {
+    "path": "packages/rpc/test/Health.test.ts",
+    "sha256": "43b6e77ead40e5f5129e7618176770a5e0f712d4c3ecbe9917320c4f387e589c"
+  },
+  {
+    "path": "packages/rpc/test/HostCapabilities.test.ts",
+    "sha256": "9599899b945acbda404a9653bfeb97136ff2c7199b14eb92f45f82def4840200"
+  },
+  {
+    "path": "packages/rpc/test/IndexAccess.types.ts",
+    "sha256": "7827448f2993f12d9f1bf42100e1528e4b6d04d7c21c59686c86d9e98b3dc44f"
+  },
+  {
+    "path": "packages/rpc/test/Live.test.ts",
+    "sha256": "937b03124fb082dec7f6d63d5dade76fdb4fc7430837a215a764a31afeef8ca7"
+  },
+  {
+    "path": "packages/rpc/test/LiveDoc.test.ts",
+    "sha256": "3371db2a839ad5d58befcfd504f40f984d30e07ac0104d6c0189d6391ceafc20"
+  },
+  {
+    "path": "packages/rpc/test/LocalApp.test.ts",
+    "sha256": "4234cc8679a3bedf5097583b50f8edcb56c315bef7e200515a7a5db1745c5727"
+  },
+  {
+    "path": "packages/rpc/test/LocalLsp.test.ts",
+    "sha256": "030daf7ef6db86b81ec15c9d6c699c22ec4cfa417cdcc3f8bf6d59fdc9f620b1"
+  },
+  {
+    "path": "packages/rpc/test/LocalSession.test.ts",
+    "sha256": "ae8c415e5de9e2197f98ef5abafd713533d43a5fb590548378cbaa4c63326e70"
+  },
+  {
+    "path": "packages/rpc/test/LspWire.test.ts",
+    "sha256": "7d18c77cf60a1ce7438f376cc637281e43d1618c4d656d3d7b254b873b2a4045"
+  },
+  {
+    "path": "packages/rpc/test/MachineJson.test.ts",
+    "sha256": "85ba1e9ba92d9c5e5c754a9cb5b4ce8625e1f817ff7485d6722036b509df0782"
+  },
+  {
+    "path": "packages/rpc/test/Mythical.test.ts",
+    "sha256": "35b24a2db9b2bbe2f38ccac85972f46a3120cbcdf3af201dc96d6041ee2979e6"
+  },
+  {
+    "path": "packages/rpc/test/NativeAgent.test.ts",
+    "sha256": "84dc8d33d8ba55a3b8a604d76729bf39c974e48ca091f57deeb826dd09230fc8"
+  },
+  {
+    "path": "packages/rpc/test/NativeFailureCodes.test.ts",
+    "sha256": "def1fb3946145d758abf261ff5f33e584b3acd899443bc95e06289e9515a2cbf"
+  },
+  {
+    "path": "packages/rpc/test/PackageDescription.test.ts",
+    "sha256": "0ecfbef93ca196becf123c82336ab1643d16778ba94a68ec3427fce4f3bb5aa4"
+  },
+  {
+    "path": "packages/rpc/test/PlanLimits.test.ts",
+    "sha256": "d015a758b0d06f29e463916706eaecc1d2ad3a15805064a7177474e207260b9a"
+  },
+  {
+    "path": "packages/rpc/test/PromptQueue.test.ts",
+    "sha256": "8d4b55a429e5dc2bd2479901d82097df2661e71e7357b655538148d264f473b7"
+  },
+  {
+    "path": "packages/rpc/test/PublicRepositoryMetadata.test.ts",
+    "sha256": "b142901fefb8761643f0534ec82a663d439d04022fdabe393aa287e760d9a65a"
+  },
+  {
+    "path": "packages/rpc/test/RawErrorSites.test.ts",
+    "sha256": "68d4137b5653b89b7f7b41d4aa9750e5bc095a6bfe4e9ad8dfd93f945fc34628"
+  },
+  {
+    "path": "packages/rpc/test/refresh-failure-codes.test.ts",
+    "sha256": "e70a0808cbb071d60a6be488d295c6bbcb3d3c53e1bb3a042d5d45d0c86beff1"
+  },
+  {
+    "path": "packages/rpc/test/Refusal.test.ts",
+    "sha256": "a21a790c87d86f6db6c3f6847970629d696ad0f683a29edd4bbc6e52bb32cb76"
+  },
+  {
+    "path": "packages/rpc/test/RefusalCopy.test.ts",
+    "sha256": "4871c5b4f5aebb8989e07277bc4c292ebadbb82ce30bd0f0e1b0b96f3baa80d0"
+  },
+  {
+    "path": "packages/rpc/test/refusalFixtures.ts",
+    "sha256": "d79978970c11d17a694b8b09ac59b031de1ab37171be12de100e9a9656f9d68a"
+  },
+  {
+    "path": "packages/rpc/test/RepositoryHome.test.ts",
+    "sha256": "84654de8e4e72b9c8bf343a0ca6ce30375269216834730beeeabab3f1cad7b9c"
+  },
+  {
+    "path": "packages/rpc/test/RepositoryReads.test.ts",
+    "sha256": "389f5ad3b86092d90fc210f513a9723b2afd345f46ccf4566196c8f5e44be9ad"
+  },
+  {
+    "path": "packages/rpc/test/RepositorySetup.test.ts",
+    "sha256": "71332c9140e475e3aff773c81102f7b38ddff0eacfe985e610a7d906513f8295"
+  },
+  {
+    "path": "packages/rpc/test/RepositorySetupBackend.test.ts",
+    "sha256": "5aadb13311ee577b680ab30873c20c9cb994b56b20a253718d8c7ba0df311247"
+  },
+  {
+    "path": "packages/rpc/test/RepositorySubjectPath.test.ts",
+    "sha256": "86a00dc0cb1c2aa12572b3c16476b8a161f04eff68d0532c066c07de2f07c67c"
+  },
+  {
+    "path": "packages/rpc/test/Root.test.ts",
+    "sha256": "229637d5f9945414de77e57dc8975ec403ca664c5b8facc00426bddb69361e32"
+  },
+  {
+    "path": "packages/rpc/test/RouteOwnership.test.ts",
+    "sha256": "ba564cac89d3f8b1e6488ec2b35d1d8b72b58722a637893165ec6f9d3c834711"
+  },
+  {
+    "path": "packages/rpc/test/RunCard.test.ts",
+    "sha256": "4f687b89a6c055e1646470dc59b825ce8f21d011cfaa05bed38bf220f9608263"
+  },
+  {
+    "path": "packages/rpc/test/Sha256.test.ts",
+    "sha256": "cd6dd54b5fd23fe917b76f065f5e2cec57fee7b3ee53e11ea5562b36b146bab0"
+  },
+  {
+    "path": "packages/rpc/test/SinceTags.test.ts",
+    "sha256": "c45959c52ec5453283e0e4d4d89f464e5d4a0b233380d073bda4bf978f3f3ce8"
+  },
+  {
+    "path": "packages/rpc/test/SourceComments.test.ts",
+    "sha256": "c7d3c445862d1df077263104c6c46c1120d316a2b4e58518ed45c8bfc81ba8bd"
+  },
+  {
+    "path": "packages/rpc/test/StackIssues.test.ts",
+    "sha256": "5e524ef9efe0f6aa8c5f08d8e2016de4fcd490fa1dcc6f7358f86ee516994953"
+  },
+  {
+    "path": "packages/rpc/test/StackView.test.ts",
+    "sha256": "41860986f29bfab74cb2b738c7a722bb1a9b2065d932689805ba4ef87d3d84f7"
+  },
+  {
+    "path": "packages/rpc/test/SubagentCard.test.ts",
+    "sha256": "d56f1ffba8e8a39ab840af6b26015b7e1b42cbd1a9e414ce617b3bb27b216941"
+  },
+  {
+    "path": "packages/rpc/test/TargetGraph.test.ts",
+    "sha256": "2e473fb97946b985b533aef8a07cc78d9cf5d359f6cfe1b4bff95f6ed7c451d5"
+  },
+  {
+    "path": "packages/rpc/test/TargetGraphCli.test.ts",
+    "sha256": "5da224e8599cdb9f1f9424cf57b13c487b0f030a24ab959cfcde5c832c0a5bb9"
+  },
+  {
+    "path": "packages/rpc/test/TodoCommands.test.ts",
+    "sha256": "93d8bbf14e87dd546eaaa57b28d4f870b31a44a21e06f4858ef58f1c5c798f5c"
+  },
+  {
+    "path": "packages/rpc/test/TodoSafeInteger.test.ts",
+    "sha256": "b511c56be0933061b3e4209d92e45741e08175797456a5eed65962174fba4f9d"
+  },
+  {
+    "path": "packages/rpc/test/UiInstruction.test.ts",
+    "sha256": "39b87e58d3c99d283c83ac77f272dde07f39c96833e8c935eff7ee48c2181b1c"
+  },
+  {
+    "path": "packages/rpc/test/UpstreamProse.test.ts",
+    "sha256": "e0d4950f24fecdaec9b155eed5b930b0ff33beda2be587923db343aa6e1d9b22"
+  },
+  {
+    "path": "packages/rpc/test/UserFailure.test.ts",
+    "sha256": "14f7d1cda8d2ccb88bf11fe9a501b1e2559e6c5706c5d4b572cd1453301a7cf6"
+  },
+  {
+    "path": "packages/rpc/test/WebUrl.test.ts",
+    "sha256": "63e3b512e401a5fb88ce99b9d16e8525d2a9ed872c9e13c7b645bb938f1464c1"
+  },
+  {
+    "path": "packages/rpc/test/WikiCardScope.test.ts",
+    "sha256": "599c2d2cdcdbeb3158a98dd8d6b4e952494b66f0e4167c23c5e54c2004233d95"
+  },
+  {
+    "path": "packages/rpc/test/WorkerControls.test.ts",
+    "sha256": "957f021017f942670549f425c708da2cf8127818ed1b042108bbba1ca55d4eb1"
+  },
+  {
+    "path": "packages/rpc/test/WorkerFailureCodes.test.ts",
+    "sha256": "c52c42af349cbf8d8c95ba9cdea22eb9fcd79b62a53472a8b017830c509cc2ef"
+  },
+  {
+    "path": "packages/rpc/testdata/live-doc/doc-awareness-input.bin",
+    "sha256": "03ede945a45d4ccff29b334fbccd919fa14b177c632966d3e36cb774da62caf9"
+  },
+  {
+    "path": "packages/rpc/testdata/live-doc/doc-awareness.bin",
+    "sha256": "83874c521680bbc988f827522685ca6cd3a9be497e2f68c1a827f1239d8fae41"
+  },
+  {
+    "path": "packages/rpc/testdata/live-doc/doc-browser.json",
+    "sha256": "77339b3d271cf2d8f32aefbe4ab8105fcc6e29df8549aaac7e2daf279333c69d"
+  },
+  {
+    "path": "packages/rpc/testdata/live-doc/doc-daemon.json",
+    "sha256": "b2487dbd62dab13036615f312ae91c7ae453ecba8630a422c75a804692838763"
+  },
+  {
+    "path": "packages/rpc/testdata/live-doc/doc-epoch.bin",
+    "sha256": "ff53bf4f65b375bd84f5133445e285c3b44abdc918f38c0c1d929a2b7d0818eb"
+  },
+  {
+    "path": "packages/rpc/testdata/live-doc/doc-gone.bin",
+    "sha256": "3b482f3836f62b1db1f5aaf399b6d2c40352f9f0df62198a47f0da9cc3c80efb"
+  },
+  {
+    "path": "packages/rpc/testdata/live-doc/doc-input.bin",
+    "sha256": "5f77d71984822a3b0a9a688b0c9b4eb86f083c3b1b575a273ac945c34550077b"
+  },
+  {
+    "path": "packages/rpc/testdata/live-doc/doc-renamed.bin",
+    "sha256": "4d7cb8b7e4c58e5b9d1c40c62913b0fe6d74083e2d04b22ae594597b48964586"
+  },
+  {
+    "path": "packages/rpc/testdata/live-doc/doc-saved.bin",
+    "sha256": "d71060adc413dc4375131147d56d295089149358b788ee5c4543f370507ba28c"
+  },
+  {
+    "path": "packages/rpc/testdata/live-doc/doc-spoof.bin",
+    "sha256": "97dc3b3006a33b24980f200a016cbaa1bf6576f70e9765c82e7bd9834c5af46e"
+  },
+  {
+    "path": "packages/rpc/testdata/live-doc/doc-sync.bin",
+    "sha256": "3e693bcfd4c83c585384ff2f87a1aa13da21c2cf1199ed26341fe8e658168645"
+  },
+  {
+    "path": "packages/rpc/testdata/live-doc/doc-unsupported-detail.bin",
+    "sha256": "88771414720c2ca72c8f6ebd3e7971bf14f61023fc37be9fab989dac399753ff"
+  },
+  {
+    "path": "packages/rpc/testdata/live-doc/doc-unsupported.bin",
+    "sha256": "c299ecf6116bd83cb43b9bd74f66f346b2b40e184c67b0d223ccc6b088a4a9c1"
+  },
+  {
+    "path": "packages/rpc/testdata/live-doc/MANIFEST.json",
+    "sha256": "405f98ff06feb921a610367b6b38c9f3a4a04007b1be7812fe8a190d1e083ac3"
+  },
+  {
+    "path": "packages/rpc/testdata/repository-setup-backend.json",
+    "sha256": "08546c0b4729ba2cec0c6b7d6796c1253724ca0b4f80058bc9012d4095873493"
+  },
+  {
+    "path": "packages/rpc/tsconfig.json",
+    "sha256": "5c9ef98f4aaac133b6846cdcf3a8da76db677b75c1799d15b34b014b3d156866"
+  },
+  {
+    "path": "packages/rpc/tsconfig.test.json",
+    "sha256": "14deb91445193d4c9f32ff8a2e07cb6e7839a3d8efa409d97b9a15998692e31d"
+  },
+  {
+    "path": "packages/rpc/vitest.config.ts",
+    "sha256": "ccf1a136c1a46e0ac6fa997c4fdfde8ac79f9dfe41c98303da9136e082c0a3b6"
+  },
+  {
+    "path": "packages/smithers-ffi/Cargo.toml",
+    "sha256": "066a3e2d226dff9d07f8ba21ad543cf4b829429ab923550dd1309b605d787a6e"
+  },
+  {
+    "path": "packages/smithers-ffi/examples/live_document_interop.rs",
+    "sha256": "d13a6a53661cd049c9a292916cf46a1e0e39e33bef88c0b259dfc13d96c6cfc5"
+  },
+  {
+    "path": "packages/smithers-ffi/live_document.h",
+    "sha256": "777a7a292e8367a6224b52f5aac6324c1b0666debfdeca4b05c91349e16c9375"
+  },
+  {
+    "path": "packages/smithers-ffi/native-targets.ts",
+    "sha256": "f310e20daaa0c3f3d5e3214c44abc3157b52b3c438a2426110af8e2952f374b4"
+  },
+  {
+    "path": "packages/smithers-ffi/src/append_prepare.rs",
+    "sha256": "95d36a8506d16162bdf90a77a7a9f4effd70f520e5eadb4738f8907c267fe43a"
+  },
+  {
+    "path": "packages/smithers-ffi/src/atomic_fs.rs",
+    "sha256": "a28fb047229288af1ba93d84af0c30e148840964a265a846ae0d4ad2de6b79c7"
+  },
+  {
+    "path": "packages/smithers-ffi/src/atomic_glob.rs",
+    "sha256": "85441e3b448852ce69b34c94d486bfe93829506d74d75fce011c7e6751a68c46"
+  },
+  {
+    "path": "packages/smithers-ffi/src/atomic_protocol.rs",
+    "sha256": "42b34b56588144a4b78beb5f9603664d80425245c5762e2433103b5f1c477d83"
+  },
+  {
+    "path": "packages/smithers-ffi/src/atomic_windows_fs.rs",
+    "sha256": "5bebe050968e3866f0fc694190d3e2ab440ddd92f42834ae8df25f51f1f3ef6f"
+  },
+  {
+    "path": "packages/smithers-ffi/src/atomic_windows_handle.rs",
+    "sha256": "ac97e85a69d2d6e1a1fbfe45d73efdefdfd956481bfc9b82cd000635d5ab77db"
+  },
+  {
+    "path": "packages/smithers-ffi/src/document_core.rs",
+    "sha256": "d1d33053859a0c0550924d4307cf76977177fab7d8bf42e58d275b28660f78a2"
+  },
+  {
+    "path": "packages/smithers-ffi/src/file_eligibility.rs",
+    "sha256": "539b7f346e7de4021448fc9eb7770f7ffdeae461df619ca56e63b6d2c0e6ae66"
+  },
+  {
+    "path": "packages/smithers-ffi/src/jj_core.rs",
+    "sha256": "e0ae04a3804705489595ba3952e035fa0e229851d6bae760dd0414cbc6efac50"
+  },
+  {
+    "path": "packages/smithers-ffi/src/lib.rs",
+    "sha256": "55d45aa912b585fb0aff497f37845af1454f2ebb86d239c2be1a12af01780ceb"
+  },
+  {
+    "path": "packages/smithers-ffi/src/live_document_decode.rs",
+    "sha256": "918d78359b75249ef1c418048d14f3f710ad6184f667cac63942588ec6848e33"
+  },
+  {
+    "path": "packages/smithers-ffi/src/live_document.rs",
+    "sha256": "79f321e2e7ea2cf09df9311ba6988f3bb028b35eb5fc0d15170324d023105794"
+  },
+  {
+    "path": "packages/smithers-ffi/src/smithers_fixture.rs",
+    "sha256": "14f24c2536cb9e468b25e0c1a37f734b4a2bfb75e35bb4a6191725a12bca2181"
+  },
+  {
+    "path": "packages/smithers-ffi/src/smithers_jj_export.rs",
+    "sha256": "183b864c804e1152956bf7394fc07f225823f3fba5dcd66690de2f789b4f5634"
+  },
+  {
+    "path": "packages/smithers-ffi/src/source_create.rs",
+    "sha256": "8bcd053448cb0eb78b4d7f54bad6135c426fdf3a6c5d3070196f7ea9af0514a7"
+  },
+  {
+    "path": "packages/smithers-ffi/src/source_import.rs",
+    "sha256": "e26b91cac1ddf3f2e1c073fa0060522a0b45e81b78e5f9cdcbaaacc486e09f4d"
+  },
+  {
+    "path": "packages/smithers-ffi/src/source_publish.rs",
+    "sha256": "b4e86ef82d5cfac89837fbba1d8d0d5e1fc66edf4a7e27b640af1b7b4c28fa8f"
+  },
+  {
+    "path": "packages/smithers-ffi/src/tree_export.rs",
+    "sha256": "94e4c1807abb2e872650a2a5c2fdd5e533a567c75b26991b332517d6701fb2a7"
+  },
+  {
+    "path": "packages/smithers-ffi/src/wiki_document.rs",
+    "sha256": "637dc07d899fbcc1d057ee68f05b0c0463c120788e80740d139d9948696f632b"
+  },
+  {
+    "path": "packages/smithers-ffi/src/wiki_projection.rs",
+    "sha256": "d2f42f4e8e4b6b0a487a3c21499f284c92cca99f65c6abdb7c55e5123edd9272"
+  },
+  {
+    "path": "packages/smithers-ffi/src/workspace_engine.rs",
+    "sha256": "8d3be2e3c525078b1313af17cff6fe6de929d594dac0af729d6c6746ddaf2e21"
+  },
+  {
+    "path": "packages/smithers-ffi/src/workspace_files.rs",
+    "sha256": "8206e6e999e3c2fe36dd3b992645cf23c6abc06678cc86e6b3a35bf91fbe3ae5"
+  },
+  {
+    "path": "packages/smithers-ffi/src/workspace_local.rs",
+    "sha256": "c759706d75839d4d5cc33208eda997eaec109cc8bced04492d46636bcf2f295a"
+  },
+  {
+    "path": "packages/smithers-ffi/src/workspace_projections.rs",
+    "sha256": "a5b2e512e118cc6dcab1129a5e0ced8e9f00c827d549ce4d24f6402e7bc5a930"
+  },
+  {
+    "path": "packages/smithers-ffi/src/workspace_source.rs",
+    "sha256": "f0cc0c3d78749b42c1a29cc0b0cc751506f971f0747f9a0356bf511ea231a0e7"
+  },
+  {
+    "path": "packages/smithers-ffi/tests/atomic_fs_cli.rs",
+    "sha256": "1c4b6626068f43521f90ef3b63e24c1eefc19e84cbfb14cae035f71d93310275"
+  },
+  {
+    "path": "packages/smithers-ffi/tests/live-document-asan.sh",
+    "sha256": "7c33ecb9838512cab05bb6f87619aa7f1ab5bb3449abb092408a5faa3a72d11f"
+  },
+  {
+    "path": "packages/smithers-ffi/tests/source_import_cli.rs",
+    "sha256": "3e4fb1f6621e03140228f07d4262faf6da7ecf64f45c5a5a8bdb74648e4a122f"
+  },
+  {
+    "path": "packages/smithers-ffi/tests/wiki_document_ffi.rs",
+    "sha256": "1092de576c1931df2ef21a099dbe84a8b552d590779673f057d008c035357c93"
+  },
+  {
+    "path": "packages/smithers-ffi/tests/wiki-yjs-interop.ts",
+    "sha256": "0df570b72572d8c882ec6d3ea952af4d93b94f282bad51d69696d16898637778"
+  },
+  {
+    "path": "packages/smithers-ffi/tests/yjs-interop.ts",
+    "sha256": "2c15b9335c5d300a2058c3c9c4388e32180e979fa09933deb3dea81abff313b7"
+  },
+  {
+    "path": "packages/smithers/agent/AGENTS.md",
+    "sha256": "ba0df809ca713897c985991bd281f3ee02c8637d9ffab3f50a5b6d8cfda433ad"
+  },
+  {
+    "path": "packages/smithers/agent/chain/AGENTS.md",
+    "sha256": "e3c28cd616b3164a94a77f03cc7aad888a34f4b7fde9cb7e9540f63b4947dce9"
+  },
+  {
+    "path": "packages/smithers/agent/chain/CHANGELOG.md",
+    "sha256": "50df97af59ae24aa8a3c0add703bee6223a4fac975e38c716cac7876c328c441"
+  },
+  {
+    "path": "packages/smithers/agent/chain/docs/api.md",
+    "sha256": "28bd5392d5a901884ee5105723d8671533124e15963957a19c59b1f619bdaae3"
+  },
+  {
+    "path": "packages/smithers/agent/chain/docs/concepts/flow-scripts.md",
+    "sha256": "da2ba13eec05723c0ea3d8c7ea510df5252a650707032f8d04b5f9dd3db99027"
+  },
+  {
+    "path": "packages/smithers/agent/chain/docs/concepts/journal.md",
+    "sha256": "4b6704c025a31fe8bfb94ebec93447ee0d7eb6fc40f32b4256e256ac35ab468c"
+  },
+  {
+    "path": "packages/smithers/agent/chain/docs/concepts/keyed-replay.md",
+    "sha256": "f334cdc8c53927a03b6ca68aff4f4ef5a2c7e19d05e0a56324cc6bfe2a833408"
+  },
+  {
+    "path": "packages/smithers/agent/chain/docs/concepts/trampoline.md",
+    "sha256": "cbd02e98c1e6cbf7b14cf8b2f4c4281d9f818a7393ff08386e4bd0c1449e07ce"
+  },
+  {
+    "path": "packages/smithers/agent/chain/docs/contract.md",
+    "sha256": "30972a82151da70384846ec0aa6e2404b85547d186b820253ac34596ea4eb676"
+  },
+  {
+    "path": "packages/smithers/agent/chain/docs/guides/authorization.md",
+    "sha256": "c346c0216c67943db817ab202d0c30c7c521316bc1163ad9cc100150dbac2832"
+  },
+  {
+    "path": "packages/smithers/agent/chain/docs/guides/catalog-entries.md",
+    "sha256": "1a593b9f36f99fd3eb315b501e60745a23ed01325c8f3a10a85d899c04f528dd"
+  },
+  {
+    "path": "packages/smithers/agent/chain/docs/guides/registry-and-memory.md",
+    "sha256": "576f3e7b3e12fc6e8f3b9a08aeb7898983d950652dd4e1bea336f5e66bab4f0a"
+  },
+  {
+    "path": "packages/smithers/agent/chain/docs/guides/resume-and-replay.md",
+    "sha256": "b5bf43bc442872f270fb46b9ed904843072c891242dcb819916c43e7c039474d"
+  },
+  {
+    "path": "packages/smithers/agent/chain/docs/guides/steering.md",
+    "sha256": "127a5f802893d73dde668d7aa1ba736a4a844672277cd2c12dbebd9660f806dd"
+  },
+  {
+    "path": "packages/smithers/agent/chain/docs/guides/sub-chains.md",
+    "sha256": "cd9a15d660bf3ce23643d4706c1af8541f0a4b2f4db16a89cbc9821899a1ebd3"
+  },
+  {
+    "path": "packages/smithers/agent/chain/docs/guides/testing.md",
+    "sha256": "44e788fefe67856ea4302c83e80e9dac7385c2ae954b553670f288c5e1dbbb19"
+  },
+  {
+    "path": "packages/smithers/agent/chain/docs/installation.md",
+    "sha256": "5c9175f3eb1a5bf1680efe96b099962e6aa90f868e0a15551d812a759749e0b7"
+  },
+  {
+    "path": "packages/smithers/agent/chain/docs/quickstart.md",
+    "sha256": "f61fc55865fdc3498fb6034e7a90363c1073117cd01d98e2dbe026b941633472"
+  },
+  {
+    "path": "packages/smithers/agent/chain/docs/README.md",
+    "sha256": "5f2a79e751ccad79d26b1be7307aa7003ed5d69d5ee154f2f8fab43101a8ff9c"
+  },
+  {
+    "path": "packages/smithers/agent/chain/docs/troubleshooting.md",
+    "sha256": "23d533c8767bb27b4ec965a0938041f0a9b25ad17d1978e4150d9ec7b1d97fbf"
+  },
+  {
+    "path": "packages/smithers/agent/chain/dprint.json",
+    "sha256": "5398037d436a06d239e17f14f9d9cb62aeda687c8f7350e80e36525790db8f13"
+  },
+  {
+    "path": "packages/smithers/agent/chain/eslint.config.js",
+    "sha256": "5f17529c382de78de65913d3ad7ea009a2192c5c4033be13d59de5aad0015738"
+  },
+  {
+    "path": "packages/smithers/agent/chain/examples/run-a-chain.ts",
+    "sha256": "56301edde0294c1d52e030e26de80766b0d26d40c0e1985cbdc05242a329e5e7"
+  },
+  {
+    "path": "packages/smithers/agent/chain/LICENSE",
+    "sha256": "a3aaca5d88b4805fdc839fc70dca35fb5c9d2465d2bd986729e218076f66adc5"
+  },
+  {
+    "path": "packages/smithers/agent/chain/package.json",
+    "sha256": "c0812d4adab646d1f54032a898cb43068331bd24f1676e4906216e4b70bd5961"
+  },
+  {
+    "path": "packages/smithers/agent/chain/PACKAGE.ts",
+    "sha256": "73b81119b38b09af720036bb5ef41eeef711ec0db599afb5594b5a827674bf37"
+  },
+  {
+    "path": "packages/smithers/agent/chain/prompts/base.mdx",
+    "sha256": "2aa77bb69254ad6a208f687cbc580fa27f61ecaddec4a3fecde10bc73359ce42"
+  },
+  {
+    "path": "packages/smithers/agent/chain/prompts/concierge.mdx",
+    "sha256": "4ceb1dbbd4b57766e51859717ca58c4a994d6cd78e22b41d3587a13cba855f4d"
+  },
+  {
+    "path": "packages/smithers/agent/chain/prompts/contract.mdx",
+    "sha256": "35d83b749d0a5f24b2c923a75b53f70d0840dd68c55b67b219eb7df1e13a2571"
+  },
+  {
+    "path": "packages/smithers/agent/chain/prompts/rules.mdx",
+    "sha256": "dec9fb27197efd8c57d813092a29a295e948c8e820f87d252599b19bf3a8324e"
+  },
+  {
+    "path": "packages/smithers/agent/chain/README.md",
+    "sha256": "b90d70b932e125078572d36fbd6ed376f59cfd2274beb18c617f4ebab5e74c05"
+  },
+  {
+    "path": "packages/smithers/agent/chain/scripts/build.mjs",
+    "sha256": "d7580eb74ee80418322b8fee99a4158dea624782ecfc1b8e6306fdef7dc9e613"
+  },
+  {
+    "path": "packages/smithers/agent/chain/scripts/prompts.mjs",
+    "sha256": "9eac17b2264f249e582512c015737a3c5a8908917c7d0ec23de07ea4be4ede51"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/Author.ts",
+    "sha256": "e70b91a41f5ac418a70f7561206def7aa8ae056be4a2486c5cbdde9ad17064a4"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/AuthorDeclaration.ts",
+    "sha256": "1e2b61cc92c0305b41c622168adae1bfa78b9072ce4c1f63f3f041281ece252b"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/Authorize.ts",
+    "sha256": "48625680fc1763e589ca371eb15bd51d7c80919ff5a866b306813aee9795990c"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/CallKey.ts",
+    "sha256": "c413b84c30642c47c55e4f75db6ab9a0300a40f0f20e98cee4b1b5a2ace44b14"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/Catalog.ts",
+    "sha256": "4a0df9d0ba60170f8398bce8d9922bed7c76c6fc48db52e49a20b2a0f1333e86"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/Chain.ts",
+    "sha256": "8dfdd4728f96141d2f2f2122a1d90a451fad74d1e6f1e224219e2e1cc1d7d6f3"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/Event.ts",
+    "sha256": "4e3050dff4972fd17fa22db918ade4a6940f2551a390a46eee370a3e2efdf45f"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/index.ts",
+    "sha256": "c88a0206be53e2e7d0e34eee87a43874edcdbd25051cb014eac0715a4a52bc17"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/internal/childRun.ts",
+    "sha256": "734ba10eb1556d7618ac86c17b768ab6e3fd3595e82cebe19fe28228cdd33c74"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/internal/ChildRunError.ts",
+    "sha256": "daae0589b3caed32c9eb903fd17c191c4aae24f89f17be122db6dc26730d29b3"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/internal/failureCode.ts",
+    "sha256": "95929463f10cd2e682f2cb14d90c23e60791bca09f23bc24c7667498ded198a4"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/internal/prompts.ts",
+    "sha256": "f09043376ce9fe26d84868b424be2f963f5c2097b5f1537297d098d214157d7e"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/internal/QuickJsJobs.ts",
+    "sha256": "e17f0963a3d3fb525c8a1f05978c7909e0c0813f78785536ca30993e7566e319"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/Journal.ts",
+    "sha256": "6bd5d263f1a9434a00f34d6d3dfc882b39aab55bea8dc5727a556fd84c2c0db9"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/JsonBoundary.ts",
+    "sha256": "f9b67db0745ff3e3926e210c6ffbe68772c48fdb6c6b7fbbdef5fabbbd356cf6"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/MemoryEntries.ts",
+    "sha256": "a833cea104b3aafbc7c8b045f72f51e6f5a0e451e87601e682b689b866ed207d"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/ModelAuthor.ts",
+    "sha256": "2fac1927bc72b98629b063f0fa4c9dfec0181ab7299eaa32c5231a706c1995d3"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/Observation.ts",
+    "sha256": "6a92093bf5aa7cbd9696297311c75895d9c05471a2cdf042ab59249386223482"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/Outcome.ts",
+    "sha256": "49d678a8c6758e89bbbb801007ff5aa5347090888dd075d3acf11ebe6ef13fae"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/Prompt.ts",
+    "sha256": "2796299eb7ebb3cf3d60d0cdaf7b55012cf178483cd2c7fa66cbbac79f521f0e"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/QuickJsRunner.ts",
+    "sha256": "8f23efd38d97c36743fa8ef2331db6c7d4f4969d1c3f6e012b7e7973d3287cd2"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/RegistryCatalog.ts",
+    "sha256": "3e9c11fa909ff4cbf9c49fc6fea27f1d05555d8c59280e2cbee895ba6a3c2056"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/Script.ts",
+    "sha256": "b0e7242b3541751ec072e678651ce13bae399e7fccbb12481d459e3aec600950"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/ScriptRunner.ts",
+    "sha256": "85ee276e7d20d71d356590bfdec68bc30d52ee50184b80620dbd71ce089a3871"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/Steering.ts",
+    "sha256": "19adfdba72921e9e21d1ac63e3e2fe15f5cf90983db53893d9d507c44a47262f"
+  },
+  {
+    "path": "packages/smithers/agent/chain/src/SubChains.ts",
+    "sha256": "417ccab7e393db23b4a39abf856384e6a234685c1af4be248b4bc75865951c80"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/Author.test.ts",
+    "sha256": "498a8d6774c0b38c41608dbc7bd08bf594a1b63fa8493a0e588d12a97a2de9fa"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/Authorize.test.ts",
+    "sha256": "ca7a75f812ffe12f17a533cdb7a616b4573c47306101410b0ab25f16f62f74a7"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/CallKey.test.ts",
+    "sha256": "85dd236a9dfca6c56c56dd665ce43e42e880a4d3a99600b1554451068ae38444"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/Catalog.test.ts",
+    "sha256": "250c0805c8a5e98e93005983dccf16574b7d8182c2920a9f62b52611c66bc2de"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/Chain.test.ts",
+    "sha256": "42791d5dcac2b3b95e0f6d820d988b1844ece9c448c4b09c2e4a9fc7ab65f7cb"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/Docs.test.ts",
+    "sha256": "a5ccc0049f964035eb9313b61f4b99740047d428215943f462c2a10d8ae553cf"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/Event.test.ts",
+    "sha256": "8aa512c1cecdc9e840a851e0d674b44ac95bef596e896103e88afa9d3015f250"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/examples.test.ts",
+    "sha256": "ee3fd93740e7548de1454de0277719184014041b399bfea326cb38c628fe9872"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/failureCode.test.ts",
+    "sha256": "eedd28a94c2677a81d37f2e7546a418e3bb8d0bcc8f054ee69ab4e2420f055e6"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/GoldenDigests.test.ts",
+    "sha256": "41063b2827b91e1da53ca74d7db51657eb23dc8364774af210f5287f1a577bcb"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/harness.ts",
+    "sha256": "32f0eee12bf6dec2dd4a367291c6b7ff9a03d4964cc3656130ffda528c48f6a0"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/index.test.ts",
+    "sha256": "b8bfce75fa9322bdc055576021d46fed796d1ebd4e67c1f1a120205d7621d91a"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/Journal.test.ts",
+    "sha256": "46853b419f380e941a64ffdcec74f056b4f74143091b1d9f6989a217ecaa79d9"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/JsonBoundary.test.ts",
+    "sha256": "d53dfa7b842fe56cf607f31a9f4a1a4d9a9d8bd8f2474213a2a1204e31839e7d"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/MemoryEntries.test.ts",
+    "sha256": "1641d3f7ec6f0a54512d22425ba86ecc26e72efccdf7a9fd52b94389c0c67287"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/ModelAuthor.test.ts",
+    "sha256": "3ddf3a969b535c00cd221c7d3bdab98c973ea9c0c342ce52ab86df29f222ae24"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/Observation.test.ts",
+    "sha256": "22862f2bac24770735ce308deb61f347d99b0659f7c55e41a914b46ce6862047"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/Outcome.test.ts",
+    "sha256": "9e7836c3decfb871c51d5332431a1ddf50dca6a27f9d49dc5fefe7bc370d5eaf"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/Prompt.test.ts",
+    "sha256": "67074dcec5fcde4d047bb4d7b05dbac40c1d6a385d1d88c8521f289e749b2ba4"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/QuickJsRunner.test.ts",
+    "sha256": "58430a5b8f9f8924c011f1b2a927528a6550946006a5a8f4e821ef7af60b5652"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/RegistryCatalog.test.ts",
+    "sha256": "a0dff55497b00026224e8f32a83d4a4d70e4bd26ae0f6cb4b49ed49737a9af7e"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/RunnerConformance.test.ts",
+    "sha256": "cbf0f620b8921307e85304205b90e6395cd5dff39560cf2a4456a23a75b01558"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/Script.test.ts",
+    "sha256": "317af96bbfaefcbf7d8e862863a5a2faaa12c362318e9a3d9959533b79af5f9e"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/ScriptRunner.test.ts",
+    "sha256": "47aefc82a00cccd1393b4093ebdcc2ac64dce3c21c7863683a79d8f89c13cdb3"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/Steering.test.ts",
+    "sha256": "2f6c411ed7745877267b162f5d069ae522482b980c088755b05cb8dc1c496262"
+  },
+  {
+    "path": "packages/smithers/agent/chain/test/SubChains.test.ts",
+    "sha256": "cd95475b2ce1226b5b97190146b1933d4d891f5586a7a1d07db877d49d26bc24"
+  },
+  {
+    "path": "packages/smithers/agent/chain/tsconfig.json",
+    "sha256": "0064dce36d22143039105eb068be99456971e6caf6e7cebac24633514a2009b8"
+  },
+  {
+    "path": "packages/smithers/agent/chain/tsconfig.test.json",
+    "sha256": "6dc35c4d36caa43a16fa411ccbff39a750eb7a1a32dc327c5f98bec835fee39c"
+  },
+  {
+    "path": "packages/smithers/agent/chain/vitest.config.ts",
+    "sha256": "fd672df0ad7b70066e5da0001096701f63c803c1635095869a7ccd6e0c066a4c"
+  },
+  {
+    "path": "packages/smithers/agent/CHANGELOG.md",
+    "sha256": "0e77d477b7cc66a6ef3732196e1b25005070b77a8cb42a2a29922c2c37ca3164"
+  },
+  {
+    "path": "packages/smithers/agent/docs/api.md",
+    "sha256": "2f4fe0bca9e2e4181fd302a874a72d6134a044c6fa9e9e17b7bfe3f623c89192"
+  },
+  {
+    "path": "packages/smithers/agent/docs/concepts/agent-loop.md",
+    "sha256": "90318d9f06deb6ffc3ffb7ae959cb9de9eebc3121e728b229e8db26307dd159e"
+  },
+  {
+    "path": "packages/smithers/agent/docs/concepts/engine-port.md",
+    "sha256": "111faa271b4cef7a8dcf7489928fdb3ea0d393bc99d848f0fd54d56e5d0e989a"
+  },
+  {
+    "path": "packages/smithers/agent/docs/concepts/policies.md",
+    "sha256": "e6327b4bc55e9d62c2507076b72c921bae267abf192dbc4088e44913da466401"
+  },
+  {
+    "path": "packages/smithers/agent/docs/concepts/seats.md",
+    "sha256": "e2cfb7d3b81fe7c6c247111e73a51e843517f2790c5fad596b0c93c0790c1ef5"
+  },
+  {
+    "path": "packages/smithers/agent/docs/guides/capabilities.md",
+    "sha256": "bd5ef1e00e2d01dd4dad85cd21aed041bf92fddef24e411dc3b57a7027fe34e8"
+  },
+  {
+    "path": "packages/smithers/agent/docs/guides/control-plane-runs.md",
+    "sha256": "03880768e0435b7fb6a66f0b854be6997be4013e5b0ad8cff9e69de2458ee535"
+  },
+  {
+    "path": "packages/smithers/agent/docs/guides/durable-model-call.md",
+    "sha256": "f5fd943874d271692451bce22edca1396f7da18a081bd20ed9a9d47c297eaf89"
+  },
+  {
+    "path": "packages/smithers/agent/docs/guides/external-agents.md",
+    "sha256": "351061b29a6c11037f2b455396490e7352fe6970db83c03a8bbb590160deec9c"
+  },
+  {
+    "path": "packages/smithers/agent/docs/guides/memory.md",
+    "sha256": "ad78e9425c539741b8671d877205315af54f50803679697b638a3e8a86e074cd"
+  },
+  {
+    "path": "packages/smithers/agent/docs/guides/model-backed-steps.md",
+    "sha256": "f1c1e402680f6819b96c66bb79fa39e3f89d0317858e0ebfd81876c5ca449e67"
+  },
+  {
+    "path": "packages/smithers/agent/docs/guides/promote-flows.md",
+    "sha256": "2a8968549d54a67f06b76753549a7bbc1ce9bbcc55c4ccf625a8e136187ff355"
+  },
+  {
+    "path": "packages/smithers/agent/docs/guides/quota-and-budgets.md",
+    "sha256": "b5a87009b1980a1618a64306dd0fd55782f4439d853e5ae0e03851ae3c9eb4ac"
+  },
+  {
+    "path": "packages/smithers/agent/docs/guides/seat-resolvers.md",
+    "sha256": "737ebf8226442b90820f30d98183d98856fbcb4939d125318bb981df8fd8ff64"
+  },
+  {
+    "path": "packages/smithers/agent/docs/guides/structured-output.md",
+    "sha256": "aa99070d0dea5b1fd86d365d5fa792cbb47cb019bd72962289d03b01abdefc65"
+  },
+  {
+    "path": "packages/smithers/agent/docs/guides/subagents.md",
+    "sha256": "5e45bccec4eea61739dcb215dcdbcd41e7dd10251d1d92b2065f45bd04e0fe57"
+  },
+  {
+    "path": "packages/smithers/agent/docs/guides/testing.md",
+    "sha256": "c90a85fe561d80445ba27b9887c36bf35e45b400f62cdabc892c94f7446d4386"
+  },
+  {
+    "path": "packages/smithers/agent/docs/guides/workspace.md",
+    "sha256": "87c81bd154e43e38bdd7acc17f37d0443bcdcab8f22c0caacd9463d5047c43cb"
+  },
+  {
+    "path": "packages/smithers/agent/docs/installation.md",
+    "sha256": "a6b1611c3badfb620db6ed45148400867cbd9c6d6689e35482e880a0d51106f3"
+  },
+  {
+    "path": "packages/smithers/agent/docs/quickstart.md",
+    "sha256": "f79c685727a4e1109be6b19de8c30624aaebfe84ac31d5b2d50d4ebc840399cd"
+  },
+  {
+    "path": "packages/smithers/agent/docs/README.md",
+    "sha256": "b98d7a968e0806a35cf081b3db55c60e8e4ac7cec1058a367cd78809b13b5938"
+  },
+  {
+    "path": "packages/smithers/agent/docs/troubleshooting.md",
+    "sha256": "d66cb9b1a34ebbca7a3a6c5d32b6f89baeccf88d517baa42b3e83297ae018120"
+  },
+  {
+    "path": "packages/smithers/agent/dprint.json",
+    "sha256": "e096cd5bc0f75edec437d204a8d0861e2035881f1fd34a7e7d31ef61574e944c"
+  },
+  {
+    "path": "packages/smithers/agent/eslint.config.js",
+    "sha256": "0085aa705cfc29728fe2430e583deba24f2db501a9101afd08cc1ec16ff0e28b"
+  },
+  {
+    "path": "packages/smithers/agent/evals/CHANGELOG.md",
+    "sha256": "084d954e7dd2210fabc5ee8de9994e7eff8cb4c1797256c3d290d9b974bc7303"
+  },
+  {
+    "path": "packages/smithers/agent/evals/docs/api.md",
+    "sha256": "9a2cfcc93c87b5ef739a2aa8d625b9c40f9bea45be0c79aab5c6769de42e74f3"
+  },
+  {
+    "path": "packages/smithers/agent/evals/docs/concepts/determinism.md",
+    "sha256": "73d4ce49afcfdd3927b5e5e6a787f0ad3a079c395459a7ed595ec35e238f7fef"
+  },
+  {
+    "path": "packages/smithers/agent/evals/docs/concepts/fixed-suites.md",
+    "sha256": "0a3b876606381e14d7756760697173770825fb5392f5e76cf3ee2f546d2b7552"
+  },
+  {
+    "path": "packages/smithers/agent/evals/docs/concepts/step-keys.md",
+    "sha256": "554611819b2e0824e5863f6a7958642115bab77c86dc819b40a70b24ddf4cb73"
+  },
+  {
+    "path": "packages/smithers/agent/evals/docs/guides/author-a-suite.md",
+    "sha256": "5364fa27f7ecb3ece92d9ff12bbca33cd6590073775a6c7510d6205a8961ee92"
+  },
+  {
+    "path": "packages/smithers/agent/evals/docs/guides/gate-a-run-in-ci.md",
+    "sha256": "48b9cda556939c4ab33ba0ee083c3cc5d141db0d494a9b6e264cb6520e35df5b"
+  },
+  {
+    "path": "packages/smithers/agent/evals/docs/guides/maintain-a-baseline.md",
+    "sha256": "45f96ff042d0464b1eec3da4cf4d573610de831563c9a69ff6d3fd010be6e036"
+  },
+  {
+    "path": "packages/smithers/agent/evals/docs/guides/run-a-suite.md",
+    "sha256": "40bc797e093586b2c6bea6b4dfc7a003751fee07c4e50a196c74f1f14f31c783"
+  },
+  {
+    "path": "packages/smithers/agent/evals/docs/installation.md",
+    "sha256": "0fd8f2171145699d12341230a64351b65d545236506ee3d62e44e158a6acef0f"
+  },
+  {
+    "path": "packages/smithers/agent/evals/docs/quickstart.md",
+    "sha256": "1d12a928fd952a3d902f600843dd8a0fe0862bd7b23aaf1189cb264af699512b"
+  },
+  {
+    "path": "packages/smithers/agent/evals/docs/README.md",
+    "sha256": "ab84cf7e868640254372b27329d58602844f57fb53ad7b0d958cf5b4e1136d45"
+  },
+  {
+    "path": "packages/smithers/agent/evals/docs/troubleshooting.md",
+    "sha256": "eeb53f487813aff46cfd0c8bcef75fa734b5ad9865fd389907e38db410563d66"
+  },
+  {
+    "path": "packages/smithers/agent/evals/dprint.json",
+    "sha256": "5398037d436a06d239e17f14f9d9cb62aeda687c8f7350e80e36525790db8f13"
+  },
+  {
+    "path": "packages/smithers/agent/evals/eslint.config.js",
+    "sha256": "5f17529c382de78de65913d3ad7ea009a2192c5c4033be13d59de5aad0015738"
+  },
+  {
+    "path": "packages/smithers/agent/evals/examples/gate-a-run.ts",
+    "sha256": "01d8d65aa7874ec2df0c566e1ea888b18cc79b9839e09d0e34dd166bd3a6cc20"
+  },
+  {
+    "path": "packages/smithers/agent/evals/LICENSE",
+    "sha256": "a3aaca5d88b4805fdc839fc70dca35fb5c9d2465d2bd986729e218076f66adc5"
+  },
+  {
+    "path": "packages/smithers/agent/evals/package.json",
+    "sha256": "292986d547c61dc82abb30d0d241fa81ad7b6e332aeb17f89055a2f2826f52a9"
+  },
+  {
+    "path": "packages/smithers/agent/evals/PACKAGE.ts",
+    "sha256": "37eb22b152fab494e73973838534a5f8cd9388df6aa61719fdb8c7766587cfc1"
+  },
+  {
+    "path": "packages/smithers/agent/evals/README.md",
+    "sha256": "0729430bd00d493786ab43187bd96a35043fba3d61670ebbf185bdbcc0ca8c73"
+  },
+  {
+    "path": "packages/smithers/agent/evals/scripts/build.mjs",
+    "sha256": "d7580eb74ee80418322b8fee99a4158dea624782ecfc1b8e6306fdef7dc9e613"
+  },
+  {
+    "path": "packages/smithers/agent/evals/src/Baseline.ts",
+    "sha256": "13ec3b429586c9391ec494f511cd2b3ee3f9a2a8e5e8d28dc32688422ebaf61a"
+  },
+  {
+    "path": "packages/smithers/agent/evals/src/CaseExecutor.ts",
+    "sha256": "ccec64188b3200c1fbe68fadcbc3e8423bfa7921f110e6dd261f39f4c536e7eb"
+  },
+  {
+    "path": "packages/smithers/agent/evals/src/EvalError.ts",
+    "sha256": "ac0a474755f09c3409657d086ea7d69077bbc227d407eee5cd857df019b5b0b8"
+  },
+  {
+    "path": "packages/smithers/agent/evals/src/Gate.ts",
+    "sha256": "e570c174e52629d565562951fd6d5b27077f054c76c6f94fe70d5d6071390dad"
+  },
+  {
+    "path": "packages/smithers/agent/evals/src/index.ts",
+    "sha256": "b5fd10776c05428e6dc40f6584bf4a8594dfe9f6c8a0f05d87117a6a631be413"
+  },
+  {
+    "path": "packages/smithers/agent/evals/src/internal/CanonicalJson.ts",
+    "sha256": "9cf06a3f067799f9561198e8c34c46107846301918e22c60524241ff4328b3ca"
+  },
+  {
+    "path": "packages/smithers/agent/evals/src/internal/controlCharacters.ts",
+    "sha256": "3a2b50b0a673bc9f3257102b0a911eb4fea39c3b285ff9107424624cd68df690"
+  },
+  {
+    "path": "packages/smithers/agent/evals/src/internal/scorerLabel.ts",
+    "sha256": "74e1656a057e78ffb1446eafc4f260db30c8469554466fd4e494a37e71e96a8b"
+  },
+  {
+    "path": "packages/smithers/agent/evals/src/internal/tupleKey.ts",
+    "sha256": "dce924f108bdefe331197e07129b7b901936506b605f1d3b15ccee4f50af2e3c"
+  },
+  {
+    "path": "packages/smithers/agent/evals/src/Regression.ts",
+    "sha256": "5a47f2e69635c6291286e442fa86ac20469ce8bc3e8d65d8d49db701080a3ac1"
+  },
+  {
+    "path": "packages/smithers/agent/evals/src/Report.ts",
+    "sha256": "aa7aeea675c76a44d1188371763612d2de5b021368731065244b902171c25b29"
+  },
+  {
+    "path": "packages/smithers/agent/evals/src/Runner.ts",
+    "sha256": "78c0488f60e60ade62717cdea9dae41a8242d3fed3a373acab3d80c1fda4a36c"
+  },
+  {
+    "path": "packages/smithers/agent/evals/src/Suite.ts",
+    "sha256": "de8676f875aba3467fe2db5347328adeaadcec2770a2bdab415222bb598a8444"
+  },
+  {
+    "path": "packages/smithers/agent/evals/src/Trials.ts",
+    "sha256": "7b427ef6923697723215784d2e5843dfb20e1c3e4eaa6d455c9470b6ab6c6ecc"
+  },
+  {
+    "path": "packages/smithers/agent/evals/test/Baseline.test.ts",
+    "sha256": "0020f70820993e60053b6823cabd748d259826c32a658dbbd9393a71396ecaa4"
+  },
+  {
+    "path": "packages/smithers/agent/evals/test/CanonicalJson.test.ts",
+    "sha256": "8ef9d2d3d03368fef8bb952f3f8056df55e66af7f879cc21954a0d57def5697f"
+  },
+  {
+    "path": "packages/smithers/agent/evals/test/CaseExecutor.test.ts",
+    "sha256": "994008fd5ea6800667bb46cbbafe64ea69ffb8cb2415e0a1d6ff5fe1e2490fdd"
+  },
+  {
+    "path": "packages/smithers/agent/evals/test/docs.test.ts",
+    "sha256": "f400095f62ea5a056aadd4ea1e2b7b0c1946bc4cbcee27685018abb029539aa1"
+  },
+  {
+    "path": "packages/smithers/agent/evals/test/examples.test.ts",
+    "sha256": "fca7cc1c5557587e280fa8d59a6546d9c7a02ca4edef479e70ba995f6578a855"
+  },
+  {
+    "path": "packages/smithers/agent/evals/test/fixtures/baseline.json",
+    "sha256": "65ef95bbd11ca3d4eb6e9218be0d6cdaa4a87ed33e8739d8abf7364917b451bc"
+  },
+  {
+    "path": "packages/smithers/agent/evals/test/fixtures/suite.jsonl",
+    "sha256": "3837bf56c006d14ff8e72692964bf4ceeecf92c53f3a2f51a08cad32e5a4dcd2"
+  },
+  {
+    "path": "packages/smithers/agent/evals/test/Gate.test.ts",
+    "sha256": "c3b7df414abc22394ba9aaf5e5f3d5a18df3532b681f7c3da4aeb898d76dd0dd"
+  },
+  {
+    "path": "packages/smithers/agent/evals/test/GateContract.test.ts",
+    "sha256": "24476961aae313e037237f287606487b3e00a8b581457c0e6012173ddbc70d54"
+  },
+  {
+    "path": "packages/smithers/agent/evals/test/Regression.test.ts",
+    "sha256": "782286067f5993d53b972370c9f8ac6ca735bd1fc0b95745937e99552c8f03aa"
+  },
+  {
+    "path": "packages/smithers/agent/evals/test/Report.test.ts",
+    "sha256": "3b98b88bd367e80002d87e857f0524c9cef3c2b9b65a14dc49d3ac71342e827c"
+  },
+  {
+    "path": "packages/smithers/agent/evals/test/Runner.test.ts",
+    "sha256": "665410355c4a71f916757f087411caa97d0a0aadf95d335f1c3bfa4387ada09d"
+  },
+  {
+    "path": "packages/smithers/agent/evals/test/scorerLabel.test.ts",
+    "sha256": "ff0892958a7144c2f53f3bdec604c1539ae3bbbbd43358d591a3feb98e1ddd6f"
+  },
+  {
+    "path": "packages/smithers/agent/evals/test/Suite.test.ts",
+    "sha256": "aaf23330ad6cb4dacb10cefdbabe5e01e46f4333ad6286f548e78068975d82e5"
+  },
+  {
+    "path": "packages/smithers/agent/evals/test/SuiteData.test.ts",
+    "sha256": "a00c3868b07cd0917932980e9bbcfef91e912b55bfb8ecb2d8648aa3e7358b6f"
+  },
+  {
+    "path": "packages/smithers/agent/evals/test/Trials.test.ts",
+    "sha256": "3c5f619aec132a1b99b16ab5361063cfff9b145bdaec7c4d20b7544dab2b7213"
+  },
+  {
+    "path": "packages/smithers/agent/evals/test/tupleKey.test.ts",
+    "sha256": "67dec8227b0c390a5a1b9528e552b31357a9ef23b55914d0835a2958505bcf85"
+  },
+  {
+    "path": "packages/smithers/agent/evals/tsconfig.json",
+    "sha256": "0064dce36d22143039105eb068be99456971e6caf6e7cebac24633514a2009b8"
+  },
+  {
+    "path": "packages/smithers/agent/evals/tsconfig.test.json",
+    "sha256": "6dc35c4d36caa43a16fa411ccbff39a750eb7a1a32dc327c5f98bec835fee39c"
+  },
+  {
+    "path": "packages/smithers/agent/evals/vitest.config.ts",
+    "sha256": "ceb266886eb860e68f567f3b266f13d9e293378acfb2000d9a8566773cf82d17"
+  },
+  {
+    "path": "packages/smithers/agent/examples/11-agent-step.ts",
+    "sha256": "95198f827df5c056e1fc1625e57075ccbbe5e268b0c77062b5033a586cf37a6f"
+  },
+  {
+    "path": "packages/smithers/agent/examples/12-agent-live-smoke.ts",
+    "sha256": "297e735693b4d5463671c7db1b374ccdca91428e9e7a5f29706b055e192626e7"
+  },
+  {
+    "path": "packages/smithers/agent/examples/13-agent-live-smoke-local.ts",
+    "sha256": "40b3386b03b2660670e8bc4b21e275373314f118bfe9dfcdd55cff2a9bb3172f"
+  },
+  {
+    "path": "packages/smithers/agent/examples/14-agent-live-smoke-gemini.ts",
+    "sha256": "57110e1e50f743470bb7e3f256bad9d5b607ccb10bb5493d4541a22cac6a5039"
+  },
+  {
+    "path": "packages/smithers/agent/examples/20-child-flows.ts",
+    "sha256": "5870347babeb80d9a86ec478e5e83f2e5630abe0585fad9883ca9b34fcb1d0fa"
+  },
+  {
+    "path": "packages/smithers/agent/examples/25-agent-tools-in-sandbox.ts",
+    "sha256": "8e0bce0d721646b1d99c4f6dfecaf8a955f08e868f259159be69d080630a799e"
+  },
+  {
+    "path": "packages/smithers/agent/examples/26-memory-recall.ts",
+    "sha256": "83eabf79b58910d25d2f4646adef2c8d4133e07efab5ca9c23da3e8988f45bdc"
+  },
+  {
+    "path": "packages/smithers/agent/examples/36-detached-children.ts",
+    "sha256": "ab75b65481103871e0db09397072ee52fdbb05a584cb98d62fb1a0171a39cb87"
+  },
+  {
+    "path": "packages/smithers/agent/examples/39-agent-policies.ts",
+    "sha256": "06d17087fb7436e671615da862877961f07dc99e271f075c82818fee6ac2efc7"
+  },
+  {
+    "path": "packages/smithers/agent/examples/README.md",
+    "sha256": "5cc0a0c91cd7c3dcc4c1d08a4fa2b969ead5b5ff642004ff1e39c98f88417546"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/adaptive-rag-citation-loop.ts",
+    "sha256": "9ede446cd669cd55eee0b22721cb1528207abf8980def917811c5dba47ad0530"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/alert-suppressor.ts",
+    "sha256": "0138d319cf327121305275c3382f9ccf79249bcaf0f259c10bd4857771e8549e"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/benchmark-sheriff.ts",
+    "sha256": "40ead58883756ba4cd0254d85e3144f0d6bc0181624aff7a9e99440ef1c797db"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/bisect-guide.ts",
+    "sha256": "805a43e7fe399eecfa402468642d062f7c3ce18ec6f4e998d94258a4b11b57ec"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/blog-analyzer-pipeline.ts",
+    "sha256": "9ab9897de71070c3493d1b4221cdaf6166fee0e17433ba44ccae267278680793"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/branch-doctor.ts",
+    "sha256": "b7c04b1ac9b26a168ebbeceaec7782bbd0891c92faee8af3cd175b6078a09fb6"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/bun-port-smithers.ts",
+    "sha256": "b2852f3388f5c98ad8d9fd716dbbcbd73712f4b950d36740d8cb4faab729f42b"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/calendar-negotiator-with-approval.ts",
+    "sha256": "75e9a65d6a01329af02fb0ef8b2b902919ba36121a62f7af565d87b69dfda265"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/canary-judge.ts",
+    "sha256": "2d4149acff43729a7dff8e2752496c664721b1346aeb8fc512813dcbb83d1202"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/classifier-switchboard.ts",
+    "sha256": "1c2d1789a9b163db01b5cbb612f1bb18150b8fc4612a5eddc9b5bbf894ea362b"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/code-review-loop.ts",
+    "sha256": "082e7e01d284a9cc446afe1cd3d770e6bbda7f5d1cd504f1a37920ba36b37697"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/collector-probe.ts",
+    "sha256": "40bab1de09b07b4c756b8b58570c44295f36f70327e3135b9f43a2cb9ab42b40"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/command-watchdog.ts",
+    "sha256": "d7ba0d6df9105f7162eed836c0f05a86f842f405149f8ea64eae0c0438c9558d"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/compliance-evidence-collector.ts",
+    "sha256": "393b6f0d9f9043b5daae2e5d8eb72ca46188136ee9af5bb887fee92a8bec22e1"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/config-diff-explainer.ts",
+    "sha256": "dad7b10fc3813dc6c1e6e8c9e76be28026360a324066911e3c89cee32cdab52e"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/contract-drift-sentinel.ts",
+    "sha256": "d7f80cd3bb4c932f7d0cc5eee9929af4e072b0adacda8d036f567220875dee04"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/defending-code.ts",
+    "sha256": "8b306fe37483f2bad965efad8ad75dcbf5d6eeb1cfaf907b2698e2331ede19e7"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/dependency-update.ts",
+    "sha256": "6c5582e2f6767fd8c79203f11e03faa939bf18ff14bdd75796cf3baf8c317750"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/doc-sync.ts",
+    "sha256": "d44f4f57afec1bbca7ea20dd29f3ace3a8407f240f56dedbca41220f515b117c"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/docs-fixup-bot.ts",
+    "sha256": "538da2e93fc744487732aba935e1f9009ffa8e84e44dd7ae182fd65e1cdf64c0"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/docs-patcher.ts",
+    "sha256": "421a86901e43ab05a928cf211b86d42812c04d736c6bdb4c290caf0988f54706"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/document-exception-queue.ts",
+    "sha256": "0c8ef08b226896be9a67b5e548a226bd9f84a027765264e673b1536b95333b32"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/dstack.ts",
+    "sha256": "0d2375aa7f6ea755e25bc04f67b307173f66498d81b194c91cbd5e42f4ba49e1"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/dynamic-schema-enricher.ts",
+    "sha256": "224b573b6ed7479c7bc84bb531f613cb4a962408ef5edbe63f60b85d07ecdbd4"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/error-clusterer.ts",
+    "sha256": "46ccfe487158e58135cd6542d851ff4be53ad63f1d554ea5ea6248781946cc58"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/etl.ts",
+    "sha256": "9e868579bfec9484d342323c9ce04fea2498f27e87353eb8bae3475ac21874fe"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/extract-anything-workbench.ts",
+    "sha256": "2f882c4853921e8a4e451865a672bbb0f8cb4c2f9b680cc36e8d7935798b0132"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/extract-prompt.ts",
+    "sha256": "5c8fe8205dc1b84d9b96b9d8c7e2afdccd6b0498a8884e4867eb143fa38c8e09"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/fail-only-report.ts",
+    "sha256": "303f5f5bc9a96785b5a3b206bad8921991f239910f921acc89bc3d124df6c204"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/failing-test-author.ts",
+    "sha256": "7d1504a86a16f64db5def2ca901781e48c97ce17d9c241fe39a79cd5aabdfe0c"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/feedback-pulse.ts",
+    "sha256": "05154801e3303cd07407ee8ad7e15dd77fe4951e9454b62338e07bdede437f53"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/financial-inbox-guard.ts",
+    "sha256": "69f8df604b50274467b862229d2adf52ccd50e471a3f2830fcab81d865251e99"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/flake-hunter.ts",
+    "sha256": "ace9e9ecf968908f4e9efa79ce5a279fe064f64450249ab6cb67575da29aadc8"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/form-filler-assistant.ts",
+    "sha256": "8bc3e7d16883890e0391387bbb2ac222b6449cd6771b6ab96813162a5a8905fb"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/friday-bot.ts",
+    "sha256": "6216fca9448fc56f9ff5493b5f0f06f90ffaebd23cf922c292e43d2db88f1461"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/gastown.ts",
+    "sha256": "23a41ff8b07f30691bfd5d3efa12305840aae774760bab81e3e81cdbb978caa4"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/github-issues.ts",
+    "sha256": "d5857c1af7790e0fd9fafaf8cbff40fd29005ce7f227714834e07dd3c60aa5a7"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/incident-runbook-memory.ts",
+    "sha256": "9f522d836cd6abb9e3e3ed1e97d873d020869ca649268f4930f053de08f60993"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/invoice-approval-watch.ts",
+    "sha256": "ec8def5cae18774cd1126e795227fcaeb1c92d4587916ddb68b321e396c738b3"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/kit.ts",
+    "sha256": "68591c55c88a13e37f68c5cff4ce1bed59ba956ef419af04ad2c825ba53735bf"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/lead-enricher.ts",
+    "sha256": "625f62ce0821958f13fe9cd1a65e6fdf07c81b8132364bb473a6163d9c519675"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/lead-router-with-approval.ts",
+    "sha256": "38cfc593258c9335b58871ca25c94e7dcbd80923dd43a20b7fcf5944ffd3a792"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/log-digest.ts",
+    "sha256": "8bc755ca3b59f1b1b7f6b5386fc9474d9ce0904743579e20b7dbc3bad68094a0"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/mcp-health-probe.ts",
+    "sha256": "8401d4d0b28cfb558beb5b57540d606c110e772ce6c06ca1612f5f6dca0bce1f"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/meeting-briefer.ts",
+    "sha256": "7cfc508a8d8e55d02c92f756ee06f14127481d5c97701bf44c00fb13a1ca625b"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/memory-support-agent.ts",
+    "sha256": "69d4914a96b7821b987c050840e4a32559c1fe3fc6c1265bcd23184dded41922"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/milestone.ts",
+    "sha256": "f0c554e91b9d23cafc8b673b5d58b87b4b95173baf21a4f48f03308d4932946e"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/monitor-workflow.ts",
+    "sha256": "d4bd87c6461b2715a2d2ca1492503351f158de74deb0f9ac30d18b5c8d78a19f"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/openapi-contract-agent.ts",
+    "sha256": "27d39b261f5cf4ab648ce39df5daa2f440d3b3be2c6a68ddc0d9e93e105ac9fc"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/playwright-test-agent.ts",
+    "sha256": "1825bb1f68e15d3a20abb008014afbaeed7703f6095e21264d039197e65b98ab"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/ransomware-isolation-coordinator.ts",
+    "sha256": "6a478c70268d73d572f82bf7418d4401399195baba7680e6c451673ffcae06eb"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/receipt-stream-watcher.ts",
+    "sha256": "1440ab9b5809bc34f025de023d57c0508b225b856dea5987ff2ebe71d1c0749a"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/refactor.ts",
+    "sha256": "9eaee54d797590bbbbfeecb34422d66b4ad2d788d43947e82f8157cd0ae3e115"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/repo-janitor.ts",
+    "sha256": "ec481ea0f828656dedea2afed94bb359d5440053482887b017eb6c66b2bd58bb"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/retry-budget-manager.ts",
+    "sha256": "f96cb47a5ea60afaecbd62142c71edf5115d80a03d5d2f82a03c3b8317721b87"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/revenue-scout.ts",
+    "sha256": "83e317738944afc95e5235f4e8e2b8f38b902967dec82909b61deec5087bbbae"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/rfp-response-room.ts",
+    "sha256": "a414f3334962f3205edf54bb06ed5d72bb72a189b925866c2c27197c5a356cf1"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/rollback-advisor.ts",
+    "sha256": "2bbb9512506199e2d739755f8c23fd8a39a61d88499d2a50f4831010d8df6d95"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/service-desk-dispatcher.ts",
+    "sha256": "241358c6686a45737139cea10e9410b667d78724a17d3b32eac837456ee1da20"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/slo-breach-explainer.ts",
+    "sha256": "af4b8fc98bddc9290a317e5954cf95068ab07898bfadc709f18bbab7496f5f02"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/smoketest.ts",
+    "sha256": "6dbca41ff365da823a5875f31d4ff1d1dbe229c1df523036e40c878caac80154"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/social-inbox-router.ts",
+    "sha256": "f9227b0ce0d964eb90039ecc49a58e2ae555201cf9d93508a621de1dfe8a2ce7"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/sql-analyst-dashboard.ts",
+    "sha256": "d0db264fd2cb950e3b523c422e4c8f1f371a6d433dc0d953c728284cbdbd2882"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/support-deflector.ts",
+    "sha256": "3b8a97e0e44d5c553d7e3ee599453ea1aadb196d41b9cb226622976c76e607af"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/survey-answerer-agent.ts",
+    "sha256": "0671de53d28b0c6184bf6df3f88cc8eb57a0052f026950285b5fe3622449c07d"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/swe-evo.ts",
+    "sha256": "ce460031b45f1db61e91225f83823d8eb13fb99c633e37eb2a0cb63a53fd38b2"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/test-sharder-judge.ts",
+    "sha256": "f9461e168f36af3b26b930e8920df37a7e132483d382b150c7b7354df64fed82"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/threat-intel-enricher.ts",
+    "sha256": "a3617790615e04673ca96209887ac2032850f353cc3ec41a08e5e87caf28f721"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/trace-explainer.ts",
+    "sha256": "60f071364da8a1a64094bce03ac987882fd1c67c1d236529a6d3483419ded6ed"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/triage.ts",
+    "sha256": "e9e53c31ecf2edd632a55e3513dec3e2d148ebd34fe9726e6aa1ebc163fb6300"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/trust-safety-moderator.ts",
+    "sha256": "c543ac13bd52a9d0c51334c2b17404b8e103f33024cd1c8317d50cd885aa4be5"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/tweet-thread.ts",
+    "sha256": "bfd74de3458c76f9299e20d92b26c08954dba68bbb3f3d2edc2de17bdcfd261e"
+  },
+  {
+    "path": "packages/smithers/agent/examples/use-cases/visual-diff-explainer.ts",
+    "sha256": "cb856a620476e7f747fe5ab29570f723ced3362f074c7b7878d63ee1dfb198cc"
+  },
+  {
+    "path": "packages/smithers/agent/fs/CHANGELOG.md",
+    "sha256": "abe8adf01be5d35c9119c05a72b5828405ea31bbe6f3d3a9299cf59ed30f7b7c"
+  },
+  {
+    "path": "packages/smithers/agent/fs/docs/api.md",
+    "sha256": "120085865c4ec042bf2522b2b9c5aa1823c5f99ab7e28569daa02781a99acf78"
+  },
+  {
+    "path": "packages/smithers/agent/fs/docs/concepts/command-projections.md",
+    "sha256": "27ecb650acd35130e6ac27304ae4d0fd01f56e22d699930c3260a05eb86f5d8e"
+  },
+  {
+    "path": "packages/smithers/agent/fs/docs/concepts/metadata-routing.md",
+    "sha256": "1e57bbad7b2b52ab835a0bea4fc129cd84727fe5d2607436a4ad46cda58a2c15"
+  },
+  {
+    "path": "packages/smithers/agent/fs/docs/contract.md",
+    "sha256": "870fc0401f6b6bcdb0adf858fa686badb2bc2105147c486bdc78f45095bd7fa7"
+  },
+  {
+    "path": "packages/smithers/agent/fs/docs/exports.md",
+    "sha256": "7e3f91450358640b65f4bf36035f408a2ef71cbe7c19a99b1febfc549ef4400d"
+  },
+  {
+    "path": "packages/smithers/agent/fs/docs/guides/expose-flows-to-an-agent.md",
+    "sha256": "45d69727ea6b0989fc8ceb46a6a2b9ead13e84c93067a80d6f531a310e89fb45"
+  },
+  {
+    "path": "packages/smithers/agent/fs/docs/guides/serve-over-cli-http-and-mcp.md",
+    "sha256": "0b0b0c6f64a3cdcf5488e6d1b7853a70c4cf19da59505115b59dc7e1159cf8d8"
+  },
+  {
+    "path": "packages/smithers/agent/fs/docs/guides/test-flow-invocation.md",
+    "sha256": "23a102fc5f1e507c89c7252bc2e40861b9d9978a19ad77b1684ed596633c07dc"
+  },
+  {
+    "path": "packages/smithers/agent/fs/docs/quickstart.md",
+    "sha256": "3d1d815afd5f4bb77e73673e711a8217ce8b71628aceb54340b09a1bdb82b6f4"
+  },
+  {
+    "path": "packages/smithers/agent/fs/docs/README.md",
+    "sha256": "149e27365c1d23e8884048636ec99a00f008520ebbc303c62a0464ad9707d254"
+  },
+  {
+    "path": "packages/smithers/agent/fs/docs/troubleshooting.md",
+    "sha256": "1056a5c24684bc71ea3b7e0bd3799837ec4e1bbd734bb335875a3294e18a3fcc"
+  },
+  {
+    "path": "packages/smithers/agent/fs/dprint.json",
+    "sha256": "5398037d436a06d239e17f14f9d9cb62aeda687c8f7350e80e36525790db8f13"
+  },
+  {
+    "path": "packages/smithers/agent/fs/eslint.config.js",
+    "sha256": "7ac78996336e506ef200bb7ec6e00f6fe6971460f985e24496fa80d9ee4aa6cf"
+  },
+  {
+    "path": "packages/smithers/agent/fs/examples/agent-command.vibe",
+    "sha256": "7ab2a4b4027e6ea0bb7054e5a92db6128b35b5fb9da365509bfd685c5f1e7ace"
+  },
+  {
+    "path": "packages/smithers/agent/fs/examples/flows/review/flow.ts",
+    "sha256": "e78a3ea0ada4ed149c3926ee0c96dc5d1765c7fe4eae9d172cc0524612a0f804"
+  },
+  {
+    "path": "packages/smithers/agent/fs/LICENSE",
+    "sha256": "a3aaca5d88b4805fdc839fc70dca35fb5c9d2465d2bd986729e218076f66adc5"
+  },
+  {
+    "path": "packages/smithers/agent/fs/package.json",
+    "sha256": "d62ada1d2d76f2d55661934faa95eecd5c7b9c00b6ebfdc1dc756abc7827d97a"
+  },
+  {
+    "path": "packages/smithers/agent/fs/PACKAGE.ts",
+    "sha256": "85c22cf4ec1d640d4ad5458cf0ecf8dfed6ee59d4b1d0560c4594630845235cd"
+  },
+  {
+    "path": "packages/smithers/agent/fs/README.md",
+    "sha256": "a17f1179221622ecf8a5e80a802c4f7f6d09a1105dc8604ac4f95eea610f11a1"
+  },
+  {
+    "path": "packages/smithers/agent/fs/scripts/build.mjs",
+    "sha256": "d7580eb74ee80418322b8fee99a4158dea624782ecfc1b8e6306fdef7dc9e613"
+  },
+  {
+    "path": "packages/smithers/agent/fs/src/Command.vibe",
+    "sha256": "636d7b61ae6d9ee6cfa8ec7eab9fe3deccf80e3f90a93b8eb662cba08f16d551"
+  },
+  {
+    "path": "packages/smithers/agent/fs/src/CommandTree.vibe",
+    "sha256": "c0a5c085535d811dafacc1892691f04d0960866bfff67dd88687397b4212a612"
+  },
+  {
+    "path": "packages/smithers/agent/fs/src/Directive.ts",
+    "sha256": "bbada738c9ea3d463feb74d1739424caa19dfa211244c66a9c7aac099943d681"
+  },
+  {
+    "path": "packages/smithers/agent/fs/src/FileRouter.vibe",
+    "sha256": "e7238a49b9ae21aaca45b93af63d9d57d35b4abdbddbde2bd94bfc2dc2e035c7"
+  },
+  {
+    "path": "packages/smithers/agent/fs/src/FlowInvoker.vibe",
+    "sha256": "ef27623091ab91bdaca65e3e027e7ccffd0f0e77cb533676852f0eef419fca50"
+  },
+  {
+    "path": "packages/smithers/agent/fs/src/FsError.vibe",
+    "sha256": "1b58ce676e6e18d357ddaee0e05db18b7c5c90c181eab2ad3f87b80b1e6a5f06"
+  },
+  {
+    "path": "packages/smithers/agent/fs/src/Incur.vibe",
+    "sha256": "21fe9b1752b5de69472161b9bbaccba9ab85661fa68f833dcf2c42a7ed72d2df"
+  },
+  {
+    "path": "packages/smithers/agent/fs/src/index.ts",
+    "sha256": "7dde998bf3a3eab1cfc1c8bc9bc739d91e215ed27cc805c01329642e760ab5ba"
+  },
+  {
+    "path": "packages/smithers/agent/fs/src/internal/Boundary.ts",
+    "sha256": "0451a8f0209623d8f4affab4e578ac2ace4c98183f90c359e78dbcad261be2f7"
+  },
+  {
+    "path": "packages/smithers/agent/fs/src/internal/CommandLine.vibe",
+    "sha256": "57f0f18c57a34f589e8a9a5e55ccf1b5b96cc5c78f8aebd842492bc4c0d74d2c"
+  },
+  {
+    "path": "packages/smithers/agent/fs/src/internal/IncurHost.ts",
+    "sha256": "7b3d6d7849fd142ee1b3bc02b25ded187e5540d3173421ec858bdab7f8b93351"
+  },
+  {
+    "path": "packages/smithers/agent/fs/src/internal/SchemaBridge.vibe",
+    "sha256": "81c808fc29f3ecc1bd90d3c67b6fb6d9472aa2bcf2c06db9877b2f9f433876b1"
+  },
+  {
+    "path": "packages/smithers/agent/fs/src/Route.vibe",
+    "sha256": "068c0718a7ef8ff65c5f000833f676dd46cd998a9944ecf4756fc8a1e79b01ca"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/Artifacts.test.ts",
+    "sha256": "7c98119830f733f20ae5c1dec4047e6f6d726f47f460c9f4ad4e5bb3999192e5"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/Boundary.test.ts",
+    "sha256": "9af05b1079dab70b5d57069fb2387e198b2f4c3e879d0aa2a90262fe4d2a841f"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/Command.test.vibe",
+    "sha256": "ab756eefa0e7067d504e64ee7d0a1f9c2392f991d3f3e2c0c304416ad637c585"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/CommandSurface.test.vibe",
+    "sha256": "17ef0364cc00b62fc06c136bc88d21abb2e20cda5f93fc92b69dff658fedc974"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/CommandTree.test.vibe",
+    "sha256": "57cffa40587bdad226ed27260c97eeb5b52f539e7f7e7e12a727774464120dbc"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/Directive.test.ts",
+    "sha256": "389ce313b1198c079479e5803c222be6348ea773aa5373b503db50f04464c213"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/examples.test.vibe",
+    "sha256": "bb16ee66577f1d346d211730789c3c97f4da520b95e4d3f1f9bee974362d72cd"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/FileRouter.test.vibe",
+    "sha256": "723c9b3424bc2e949526f163c54a0629b88246262a4f588f6ff60d1064d67285"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/FileRouterFailures.test.vibe",
+    "sha256": "82a2b6e0725da763bd6e7703649a5835e9bd93cff7710b2a05c93ca37defb7c1"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtureRoots.ts",
+    "sha256": "e8e7d2a6c28eecc357734c546ac42f57561898c56dfe867fe4cfbed6c6787f6c"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtures/artifact-cjs.cjs",
+    "sha256": "3bcc317dbda296fe65112b6db51ef7198b3ca786cf44218088bc53c6a7850770"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtures/artifact-esm.mjs",
+    "sha256": "32515e484e65dc4f8baee2a7225d178d0dca7dbbf21fe4211c11f4f16b87a51b"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtures/command/invalid.ts",
+    "sha256": "e8e16384c56552a01463e7b1d02c4357720ea516a70afb474c97dbfa60a96cf2"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtures/command/recorded.ts",
+    "sha256": "46f6c60fdd50249eeb48dd8603a233032989858ee88de918499ef54deaca1a68"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtures/command/refined.ts",
+    "sha256": "916e255643057cc0b18f7f130be654021eff0a23b76cbd2ed62576171bddacad"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtures/command/special#flow.ts",
+    "sha256": "31ddb527d43910e73f211f602e503fa2ef702635e67a81800cd9f71862e2dab5"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtures/command/visible.ts",
+    "sha256": "291a752f4b2beb55bfe805f3c1815360c6a17ee4b3fbd1ba61a90ab0428ca76d"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtures/hidden-runtime/flows/hidden/flow.ts",
+    "sha256": "79df662822ccff5464b224f709148fe5cfec02f809bbf08f1ede5738df758814"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtures/router/flows/directives/panel/flow.ts",
+    "sha256": "a914f59dd1c6a5560e392885fb417a4c3a23e241551fb181dd80d4b3347e5010"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtures/router/flows/directives/sandboxed/flow.ts",
+    "sha256": "cea56e77ddd29e854df14de58628dd624a8f69b33a3da0743feb27fd796dc925"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtures/router/flows/domains/flow.mdx",
+    "sha256": "3e47f1c17774e234f825fb5576c976f63e578cd44f2c4e107a6134b65df585f3"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtures/router/flows/domains/list/flow.ts",
+    "sha256": "53851ec758cd17504ab9017bd632655dd21e0b0cebaa95c0ecedc695774d48cf"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtures/router/flows/flow.ts",
+    "sha256": "6e0ebf51015057196edc948bf3db5065fb2ec23d45a54305170701cb64b44b60"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtures/router/flows/mixed/flow.mdx",
+    "sha256": "e4097c933caf8cedfb4bdede55a098f3a9978d27b0a2e1ad4be05484a4098cc1"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtures/router/flows/mixed/flow.ts",
+    "sha256": "b35c665446d2c3703244d45951f106fd26a89c7178a73689bb77910f638f82d0"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtures/router/flows/review/flow.test.ts",
+    "sha256": "a8270afba859b05e83f9e7a2dbf98eefc03621e59b9e8cba85f1290aad86c184"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtures/router/flows/review/flow.ts",
+    "sha256": "0542af96d8a2a4744a715746e963ac3ca3be410392dfd08b0d6be9197d7095e0"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtures/router/flows/review/ui.tsx",
+    "sha256": "3ad175c1806c7fddcff975e4d045d66349147d37d3903e35bc239023dc19322c"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtures/router/flows/skills/demo/SKILL.md",
+    "sha256": "c782f9999f8a0112af4d9540f65ec159e3e1023861ec92d47bff614e39fce715"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/fixtures/three-projections/flows/review/flow.ts",
+    "sha256": "8d887dea46a7bbfa87ca187ad963140aaadd90d7bc5ba22b1632ec084da58220"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/FlowInvoker.test.vibe",
+    "sha256": "91327cb82b4c82fea855f3babbb1a968383f4d151c121d64504cb861292c26f4"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/helpers.vibe",
+    "sha256": "ec7ad537958aa4a940011f016ebd5d24584673dcf4759ae1c9e422259950e8bc"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/Incur.test.vibe",
+    "sha256": "061bf114ab06d8be079d5fe998eaac8d1d33f2d85579b6edb8a01a7c201ee8b3"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/InvalidCommandText.test.vibe",
+    "sha256": "522c48572708580850a2a9e606adce82badc7dcdba30852cee919f10edc32c2e"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/Manifest.test.ts",
+    "sha256": "2d7c52187859ac530ee412569bdde845e7359c31476cc46e9cb706d4dea20ee6"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/modules.ts",
+    "sha256": "89305743091f807205f45789371701442cfd01ab71d3058881be263019f1b623"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/PackageTargets.test.ts",
+    "sha256": "105e84eb0146072f1b481f7c93a96a0ff9fb7a9bc8a28b7934721e7c96a5d2a1"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/RouteBoundary.test.vibe",
+    "sha256": "5e11879f37e2a0d20a21aae344e47285c47522da76e9f6671e4559dc22c61198"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/RuntimeVisibility.test.vibe",
+    "sha256": "e87f2f8931ee957692c0fd2cc2f62256270d46a2959b9c4b1b61c35653e5e1df"
+  },
+  {
+    "path": "packages/smithers/agent/fs/test/SchemaBridge.test.vibe",
+    "sha256": "20a0e3f9e2a49cec6992aa5ef92826ef1d0e5b14d8d2a1d75807042c443762ed"
+  },
+  {
+    "path": "packages/smithers/agent/fs/tsconfig.json",
+    "sha256": "e8f1acc50a00243871fdb236b6a43527b7399eeef8ae8442eff89a5152849e8d"
+  },
+  {
+    "path": "packages/smithers/agent/fs/tsconfig.test.json",
+    "sha256": "6dc35c4d36caa43a16fa411ccbff39a750eb7a1a32dc327c5f98bec835fee39c"
+  },
+  {
+    "path": "packages/smithers/agent/fs/tsconfig.types.json",
+    "sha256": "69d3f4b0b2a86bcaec9d5c4533b1edb745229c21060758dafa7392b85c770159"
+  },
+  {
+    "path": "packages/smithers/agent/fs/type-tests/Manifest.ts",
+    "sha256": "acf85050e59613e917b2f3a74aeb5046ceea888a56d994f7131f702fbc9cbf06"
+  },
+  {
+    "path": "packages/smithers/agent/fs/vitest.config.ts",
+    "sha256": "a538bb20209d6bffd26b9ded269e0c8c3324b9fd81911dc0ef1b57b668d03c0d"
+  },
+  {
+    "path": "packages/smithers/agent/harness-detect/AGENTS.md",
+    "sha256": "da45091c16a1459c4d3bcdb1d0704745e4248cb6b9b09d31e20e92378bc411fa"
+  },
+  {
+    "path": "packages/smithers/agent/harness-detect/CHANGELOG.md",
+    "sha256": "54277f8e976955dfec4972c17a60b99289e179837a0e940b2a9fceb88302554f"
+  },
+  {
+    "path": "packages/smithers/agent/harness-detect/dprint.json",
+    "sha256": "5398037d436a06d239e17f14f9d9cb62aeda687c8f7350e80e36525790db8f13"
+  },
+  {
+    "path": "packages/smithers/agent/harness-detect/eslint.config.js",
+    "sha256": "b9056e86c56d923ffe686cca4890f4d89ef90e1f101122fab92d296092eb6ee2"
+  },
+  {
+    "path": "packages/smithers/agent/harness-detect/LICENSE",
+    "sha256": "a3aaca5d88b4805fdc839fc70dca35fb5c9d2465d2bd986729e218076f66adc5"
+  },
+  {
+    "path": "packages/smithers/agent/harness-detect/package.json",
+    "sha256": "b1b84a743a8558d80d7ffe7cd4cd4e5e61164c0e1dc25e5b08c7eb6cc16af286"
+  },
+  {
+    "path": "packages/smithers/agent/harness-detect/PACKAGE.ts",
+    "sha256": "b93fae0227ea4da86f910e8ef508e49d75679219056c18a7a4fac17bc00ed247"
+  },
+  {
+    "path": "packages/smithers/agent/harness-detect/README.md",
+    "sha256": "2161b4913b4abe2582638cd39d52f4357644fd2bd959ee4bfd424dfd0e99c4ec"
+  },
+  {
+    "path": "packages/smithers/agent/harness-detect/scripts/build.mjs",
+    "sha256": "d7580eb74ee80418322b8fee99a4158dea624782ecfc1b8e6306fdef7dc9e613"
+  },
+  {
+    "path": "packages/smithers/agent/harness-detect/src/Detect.ts",
+    "sha256": "072f4a3fb51ef48aaf304f3e2ae00baad3c1513d4ceda619ff70118c7461a38f"
+  },
+  {
+    "path": "packages/smithers/agent/harness-detect/src/Detectors.ts",
+    "sha256": "caf9719b105faec02bc269519da4e799a23b34912b0fb3c30ee950d58f777993"
+  },
+  {
+    "path": "packages/smithers/agent/harness-detect/src/HarnessHost.ts",
+    "sha256": "ee9edec9bf78b8fe9280e603ba007579fb1e792405aba21e8f12927fa3a49202"
+  },
+  {
+    "path": "packages/smithers/agent/harness-detect/src/index.ts",
+    "sha256": "e4e1453964ac1992ebc3fd5467ca7dfc76ce2bf7413389c2e63c0f1588e212bc"
+  },
+  {
+    "path": "packages/smithers/agent/harness-detect/src/internal/Read.ts",
+    "sha256": "df59d55fd178a79f00657f6d824a49536d5637bca6fd30439f234898fd739bdc"
+  },
+  {
+    "path": "packages/smithers/agent/harness-detect/src/Probe.ts",
+    "sha256": "f96aa9c3772919d07d96b8f662ac334519b63e47ee6ab183ca7523504acf342c"
+  },
+  {
+    "path": "packages/smithers/agent/harness-detect/test/Detect.test.ts",
+    "sha256": "064547489741cb03753c8673b2087d0b730d4db914f31057bb61987a25386efd"
+  },
+  {
+    "path": "packages/smithers/agent/harness-detect/tsconfig.json",
+    "sha256": "41d813f1d88dd5913182a30ed1b2b36cc74489d029cbc186987ce36fd5134a0d"
+  },
+  {
+    "path": "packages/smithers/agent/harness-detect/tsconfig.test.json",
+    "sha256": "5966332d67ea7145738840e922d08b3c431d049d5d2903d3aa65574b46c8debd"
+  },
+  {
+    "path": "packages/smithers/agent/harness-detect/vitest.config.ts",
+    "sha256": "61b6605c7aeec695f44df7a59eb0b1e5825d66e06fc45a01717e279dda006c04"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/ale/config.py",
+    "sha256": "eda1bca9343d99d3b01fa8a7d97c3e22fc6ff789310891833ebf396ae1befecf"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/ale/deployer.py",
+    "sha256": "b81bb329ac42fb10a584d6a11eeeb8f66def5400b5b38bd2065841445055fd76"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/ale/docker_support.txt",
+    "sha256": "f1bf3f38b9941c464fb61edc01d7163e0ab53eb730d7f1db6bf6694bc0451ff0"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/ale/docs/README.md",
+    "sha256": "1fa845bbf49d8db8fad0cead3ea9c0ab6cd563ab09096047cbb2695cce11be0e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/ale/fixtures/check_cli.py",
+    "sha256": "fe6489fdc267650d1797f32d94aa4070c95308b47810bdfdbf3275f6705385a4"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/ale/fixtures/check_deployer.py",
+    "sha256": "c9af3074938f376cd92d831831884172d664d6da8e9592c983a7ac5dbff2737b"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/ale/fixtures/check_gate.py",
+    "sha256": "61a084a224c967959fa01d15a413aac11e7ad423f439426db784ad6ada24c9a0"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/ale/fixtures/cli_trace.ts",
+    "sha256": "3c104ca329641d886bc7d3a7fd15561840560e891119bab9632cdea6e98c4b41"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/ale/gate.py",
+    "sha256": "14d0fbd5951981db806b58f5461b04375d96b66dfebf7e0fb11880f1fac79870"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/ale/PACKAGE.ts",
+    "sha256": "9f05cf6b8bfa0fba93cc3d5dce8931ce71de76ba31ddc9e67529bae505f39d69"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/ale/README.md",
+    "sha256": "25b8ef4538d5883ceb7e55412a13a4b4ec5f61be249898bd50e6abf7ca9139c4"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/ale/requirements.json",
+    "sha256": "52112a20786cb0b19168c69fb0610ea8fa7c9dda7108aab7b843ea71858b6051"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/ale/runtime.mjs",
+    "sha256": "ed8652e1f7d2a586b9b5e177b80210c1ded4d2b0be74b4734682e3aa67eba4cd"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/ale/smithers.yaml",
+    "sha256": "c7c03815e28f5f248eb29b72f9c7989a84a7e2d818ec12806ac87f382ed92406"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/ale/tsconfig.json",
+    "sha256": "29f870662ad9f2e89509cdc5e2666f4871a728ad7a01559591c6065e11eb5f54"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/ale/verify.sh",
+    "sha256": "fff33b0a462fa9a50eda34ee8d7cf052837019af4ee52445cbadc7e82f6dfc3f"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/.gitignore",
+    "sha256": "2d8a86f5c25e72b95b3f6497c3406abac23231edb410c3896b5eb4838cc84371"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/accounts.py",
+    "sha256": "cd11723efdab952aa1900d162e1f7dbed9016b347dc876f9432c24a2dad250af"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/audit_host_calls.py",
+    "sha256": "2dd96e33c48280ed097d951019b0cf3b4bb2b481d4f478bd020667576fbd10e5"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/calls.py",
+    "sha256": "02c6afac3afd043568aa74053500e79029f61a1f7730a9e367b8b9d98a42883b"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/codex_pool.py",
+    "sha256": "b09f8673be4f4c173aef36884371aa43e3738e6903713bad7874068aa586ef9e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/docs/cleanup.md",
+    "sha256": "3b8cf812a9fe152e11cbc446bc076469217bee35d57fc6e0d5109a4830de967e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/docs/health.md",
+    "sha256": "cc490493161f124d5226220e63cf535de4f4cb7fb0dd3d38e5fb8f4ec15cc701"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/docs/publication.md",
+    "sha256": "eeaed6ed567b82c104aad803f019eb21eef3e2109b725c03dd027753ba98a02d"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/fixtures/check_agent.py",
+    "sha256": "13e830e0c961e45ee42308472bed7cc8846914c2241ca618502c7d0217d29592"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/fixtures/check_budget.py",
+    "sha256": "9b99986ccb3cd3ddf5e409274aa013872be7bb8cae4114163aeff9068b23acbd"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/fixtures/check_calls.py",
+    "sha256": "63b75bdf5866f361751e5842c5ce6ecb14c5f0066a3abdbcee7a8aca8b929b8b"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/fixtures/check_health.py",
+    "sha256": "9f98b847394aec41112e068aa53630ea6e46b025e10debd71ec67695ddc71880"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/fixtures/check_infra.py",
+    "sha256": "0da31cee580580c737f2bb653e717b84dc7c815050c8c9c0dd377dae95fa6ec9"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/fixtures/check_ownership.py",
+    "sha256": "7770f813db1a4bd1db51053083f93505bff9176c2dd3558ee1f84c761748d4ea"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/fixtures/check_report.py",
+    "sha256": "3295fc6ba35a026ae89af540e9c53aeeeb511dd862b10ea17e63493d9cca4317"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/fixtures/check_seal.py",
+    "sha256": "959ae5f86e168f4a7a4c0017116fd0c912101cb038079c1dab0318db9c2f1d80"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/fixtures/check_tb4_resources.py",
+    "sha256": "2836f5b5cc2f5cefa903c93cb36a2dc70c74ef283bddf213476ce448f7906b94"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/health.py",
+    "sha256": "8fc1a51de78493066aa3bee997a42b2add944b6685d15b185a521f5db27c3b28"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/image_config.py",
+    "sha256": "8db4920ecaa90794c5bdc8be67a18c5f2695222871483af63fbc9f0b257db75a"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/outcome.py",
+    "sha256": "e6a5f8d34f7f646d3afdd107c4e2f3148b4dbafbf860d5e15a70e6bcbd3b008b"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/PACKAGE.ts",
+    "sha256": "513e82182f70e328b364320a32e5edc78481d2d4ae0ec24c90275c64226976ec"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/plue_docker.py",
+    "sha256": "3233ed21dc754920f72b2aa51c12c2fdb3a0cecc761d0bacf2fc2d3f298e9183"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/plue_env.py",
+    "sha256": "0b3eedccd4841c159837e3393d8164704eb7561a60e0e582ef2eb2db39ff6a41"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/prompt.md",
+    "sha256": "67b53446aa3081c1c954b853bfafcaa6188eed83431bd20b8345dabe83acfa3e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/README.md",
+    "sha256": "a3c34c629c048a99804f4f33c26b3ef5fd6882f787ccfccb9ac221338115b3e0"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/report.py",
+    "sha256": "0b9b4c678814d96a1d69b43633a5d8dd225a0475909168cff6bdc6cd2a1883ff"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/requeue.py",
+    "sha256": "32b274a9810d3710661cbe57171a8620c5da4b75ee94b1125c5f38389af26a22"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/seal.py",
+    "sha256": "71ac81215510f392dadd245ced181c174cd5f59b28f918ebd87f21f52fd871e1"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/smithers_agent.py",
+    "sha256": "5144b2d1b514a00cc85b15b99c32966951b8506dfcacebe552e0a79165f79f74"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/verify.sh",
+    "sha256": "36f86fd8fe5cecf61ace72eec3e31823b8ca89ee9af7fa7d283014367037f4c0"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/harbor/workspace_ownership.py",
+    "sha256": "492b57a46be4242e9545c8f152cd3ae1e97bda63f558f87fca616b6d81718bc4"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/.gitignore",
+    "sha256": "03220ff3d1ca73cefbcd0c2b043bcfb1c44f1e0562b3772e2c03983f71a7e8ef"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/archive/wave11-leftovers/astropy__astropy-8707-r1.patch",
+    "sha256": "bb1993d2c9bdeca0fd74ba0a414833547eed0b33481bfa2831e41a52da2d8d4b"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/archive/wave11-leftovers/django__django-16612-r1.patch",
+    "sha256": "755cb112421cb3c435c0d1eaa0b1a28bc96a07c3f13b43479582d8d5da118ca5"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/archive/wave11-leftovers/pydata__xarray-7393-r1.patch",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/archive/wave11-leftovers/pytest-dev__pytest-6197-r1.patch",
+    "sha256": "42e320c2efef59cc542f48618c168c481bdc192f6552b3323912302f925bb102"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/archive/wave11-leftovers/selected/astropy__astropy-8707.patch",
+    "sha256": "bb1993d2c9bdeca0fd74ba0a414833547eed0b33481bfa2831e41a52da2d8d4b"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/archive/wave11-leftovers/selected/astropy__astropy-8707.rationale.json",
+    "sha256": "7be980056ba82736630cd9b93818ac136ee8531382372ff1d05a7a8b5f3f9502"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/archive/wave11-leftovers/selected/django__django-16612.patch",
+    "sha256": "755cb112421cb3c435c0d1eaa0b1a28bc96a07c3f13b43479582d8d5da118ca5"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/archive/wave11-leftovers/selected/django__django-16612.rationale.json",
+    "sha256": "fbae4970169e7087d5e95d2783bd48f5b0419a45cab08e3b38472c202f32f148"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/archive/wave11-leftovers/selected/pydata__xarray-7393.patch",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/archive/wave11-leftovers/selected/pydata__xarray-7393.rationale.json",
+    "sha256": "b4f91690eb56fcf2ed00c08a0e43fed003572462768936e3fb35a55af0245eb0"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/archive/wave11-leftovers/selected/pytest-dev__pytest-6197.patch",
+    "sha256": "42e320c2efef59cc542f48618c168c481bdc192f6552b3323912302f925bb102"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/archive/wave11-leftovers/selected/pytest-dev__pytest-6197.rationale.json",
+    "sha256": "9f1121c3683b8730f11fd7fb958a6577bb24209ae7775c77d554087f50d768ac"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/archive/wave11-leftovers/selected/sphinx-doc__sphinx-11445.patch",
+    "sha256": "ebd09933a263ffe921a5dbdf5b63e59810d36c9924626d1e4d02c522c40b84c2"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/archive/wave11-leftovers/selected/sphinx-doc__sphinx-11445.rationale.json",
+    "sha256": "a01ef09527f75950b4781379a44d1c8619c4a5dd9d8c13dafdd6d9cb26680d3c"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/archive/wave11-leftovers/sphinx-doc__sphinx-11445-r1.patch",
+    "sha256": "ebd09933a263ffe921a5dbdf5b63e59810d36c9924626d1e4d02c522c40b84c2"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/baseline/codex-comparison.json",
+    "sha256": "496bb2fcc3e39df56a7ef89b98e6059945a73ea267e0706f5789c2a62566ce3d"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/baseline/evidence/codex-cli.wave4-codex-sphinx-clean.json",
+    "sha256": "0c67ff887ba77a27f6b2208468edc3852221463b8e25c0fa70675b5a7bfd7196"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/baseline/evidence/sphinx-doc__sphinx-11445.raw-capture.patch",
+    "sha256": "c9ee4fed4e9ea675e3faf2e8621a4b7797ad26eb46967c556db17423d453c801"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/baseline/evidence/sphinx-doc__sphinx-11445.report.json",
+    "sha256": "dacc4ac7491f1c0e4351cb9c0d8c980807f31572c49af543a501a2be0eac5b58"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/baseline/patches-codex/astropy__astropy-8707.patch",
+    "sha256": "df2a3cffbdcad5b416f34bdd41579cde41dbf16ca5e44ea5659e24fd677c0828"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/baseline/patches-codex/django__django-16612.patch",
+    "sha256": "bfc9590cfd500d3dc9d0ded69dda30ec9a86426c82ac725cd8fc7f2d81d243ef"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/baseline/patches-codex/pydata__xarray-7393.patch",
+    "sha256": "7b39b9624f4896bae2d84d1fa32375777d826ebe1d57682af93a7c22718e6246"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/baseline/patches-codex/pytest-dev__pytest-6197.patch",
+    "sha256": "5011f4068dc180649dae3aa7fda3b78f8f587ff381f7f87dd8cfc6b58085315b"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/baseline/patches-codex/sphinx-doc__sphinx-11445.patch",
+    "sha256": "8d816a78f7b7585a116c412e213d9880271e7addd5e3705cce0a2a034e049f8e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/bootstrap.sh",
+    "sha256": "ce5a1a9de43de98e4465a90443968a05b9b9f4aff858acc2563750936c055217"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/breach-scan.mjs",
+    "sha256": "037e8971307502a144363918718d1f36deceec57c06ddc52a45d61cc0ab6ed9e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/codex-backfill-dryrun.sh",
+    "sha256": "7ac916d5fea770fdc0233dc4dec2d0dcaf8bc335dfade0cdba736da2f4e72638"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/codex-backfill.sh",
+    "sha256": "7be52e39b28f31fbb21ffb30f3034ffe72516a7483a79d0aeaf60377005041be"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/compare-arms.mjs",
+    "sha256": "b11788bb56c9d83ba99a337cc7d915f9ad4a9ace3606c8ca8f03edb4eb03c74d"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/compare-codex-lanes.mjs",
+    "sha256": "cda1e6c7df4282691df9ba43170e26f6561c3e7c159efffcdaa00742279cbb9d"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/compare-runs.mjs",
+    "sha256": "0d77c42310e21dc2c06cb5ca5948c6afddd9a8fa356425fd7a47beb348db32e6"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/docs/budget.md",
+    "sha256": "8bdaa9a15623526661a43aedd32006f8de375d8513ef8a622c966b680a589b6a"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/docs/seal-evidence.md",
+    "sha256": "610db549ca5510ab31c12529246e931a0d262836ca5bdcfeb2e12677c9df4f89"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/dprint.json",
+    "sha256": "cedbd73f524152f053d611548450e54d9d802cac0ee992338f9abcb2878dd508"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/eslint.config.js",
+    "sha256": "c851d5d5cb4325c19ee1b3f4bf73216aacca40731d63d39a08325f67e0c26848"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/evaluate.sh",
+    "sha256": "a6bbcad5defff659dc5bc9127b1c5a20e283685092b36341c440d574dcae5df5"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-agreement.mjs",
+    "sha256": "567ac4cb2d657bf16e091bb9e7de9e3fca1e1d8bf2cfa4534f148345619ba1be"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-backfill-row.mjs",
+    "sha256": "970f63413c1a8883418b238e8fb82625f943429fdbbc6b9a58a14edc9fafaec2"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-breach-scan.mjs",
+    "sha256": "88014bbe4c0c75997e9094bb2ddf8cd9b71363a26ceeba28d055ce176aedec51"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-capture.mjs",
+    "sha256": "d5d993323fb0113aea98f60f893c9086fe0854709213971b1933bec88860a142"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-cli-path.mjs",
+    "sha256": "5a82b44ffbf03ef97edf53b2f8451361aee82a4a71f669d4bf03d61cfce7784f"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-codex-auth.sh",
+    "sha256": "3dfc06f0b007c1aea97142d575c3a48792a3557c6c5807fdf15b2a750b430f41"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-codex-backfill.mjs",
+    "sha256": "b41b859b46be7f5f8dd5b416259b7040838ebfe7d90e51470da1290495ab4b8f"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-codex-lanes.mjs",
+    "sha256": "8a1aad9a94a3ba067df1b549bae01515be2f5a7a6456f9131fe7ac035bc7b8a9"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-compare-arms.mjs",
+    "sha256": "dfb52d1031bd61c77bdc77012a2063e1bbe4434a3175cd6486679487a05b00bd"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-compare-codex-lanes.mjs",
+    "sha256": "98656d125d856854390ff29086f8e93623a78e8d9a001ad8be2ea8ff47f6c2d3"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-compare-runs.mjs",
+    "sha256": "f4f271dcbe613c8f966272354b2eb1b6f2134c07fadddb7d6db85710e2b96a16"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-dryrun-ownership.mjs",
+    "sha256": "e8d836c78b4e176e29b5aef4f0603584dc84090ad88fd807b5117ccff6d1e92a"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-dryrun.mjs",
+    "sha256": "06ac3d04286e5aa6f2333632465491e21eadd9fe0e75a0c54045d4d058ea997b"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-env-names.mjs",
+    "sha256": "ee9aebae4951d70fc3585307fd271f689a8b248508ab0d61b35fbdc88cc3cf36"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-eval-exports.py",
+    "sha256": "5ea0dddee5acff9f3a8bf85030cbdbf9bdf3bf2da2d62537d68b71609f561725"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-excluded.mjs",
+    "sha256": "6b5662b8a329bd6f955e9233171ff621aca6b3452e844c55f20603984e0a4b33"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-fullbench-budget.mjs",
+    "sha256": "8d4a97e1bf4633b966d883d98b1eb3a17f60d1df709a1921e136da0586f711b0"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-fullbench-drain.mjs",
+    "sha256": "d14d37edc6769de941eef9caee7731b12a8051178cc3dc12b1463adb1c875cb1"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-fullbench-status.mjs",
+    "sha256": "17e5e6498e2c6f5a23cb401391f8ac87b65a7df29bfe03849b62e44d27447f1f"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-fullbench.mjs",
+    "sha256": "37c25ed184436da0d132aee5b02c6810c2f8ad37821f5e85fe2de75131381025"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-hidden-vcs.sh",
+    "sha256": "ad36ecfc39715a4a033419baa51e7bee92c0bf6028f5c4dfac7a353e37df80db"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-jev-replay.mjs",
+    "sha256": "1e624708b3ed0238bf2f91260dc526cdbf548d96404895e7d2ab9520241ca777"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-liveness-report.mjs",
+    "sha256": "8ff027dcdab5fd2c22d48446ee655dc520cb0ba07bd056d846f032362c56d23c"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-lock.sh",
+    "sha256": "686320cc2c61c0ae67c9d24d9c1b533cf8a302900ba1d5b2258dae0a8e4b0382"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-make-preds.mjs",
+    "sha256": "47c61622a0a9bd05dc4e1247251a18ccf747ff9a919e4fe599323d51d6f141f8"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-matrix-report.mjs",
+    "sha256": "b5bab62437857832da844034b2798ca36dfff2ac652e8403f5de5b963d865a27"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-matrix.mjs",
+    "sha256": "1882af16abd785e89fa62164fe93aef281fac1fc772b73add1c9d42cc2291f2e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-n-way.mjs",
+    "sha256": "ce0434a3c7caae0e3e2255a615c1cd5e015b93cb8be6a025c29f80732a4614cc"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-offline-target.mjs",
+    "sha256": "463d500502ff152a4061e88be1a4a11837437139b45fb4efa81124a19589f1ae"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-plue-transport.py",
+    "sha256": "4a11d3c5c8c5b35ef68174d16b3eebfbb5287cabee137d96e720a11585101836"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-program-evidence.mjs",
+    "sha256": "372aac8bef1c96bc36d03037f9db6eae2c575f7cc89815f3e3f4a709f6cfcd76"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-prompt-bytes.mjs",
+    "sha256": "507d6beddc2b19bdaf60000760416522a1054af35109d0319396f2456b7de4de"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-prompts.mjs",
+    "sha256": "2dc52c6fd99c87af2b3561777e4d5fda2a15afa8c1fca725b4e33287ce19a85a"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-repl-evidence.mjs",
+    "sha256": "32d5f04523ca0f3e1eda519820eaf00d044267412ba522c8a4b8c74c452f7bd2"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-rig.mjs",
+    "sha256": "88083eae744c0799a5275adda2486397ab1758d7b6f56ad74a2b97b8424d73a0"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-round3-evidence.mjs",
+    "sha256": "81193ef09abecc9c138f1fed88cfb3f34fc8a0cdb360b1391263698c83c5e04a"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-run-45.mjs",
+    "sha256": "586a4afcda88ded75d0d591769a5adf5097b5b2d0780141bd5fec02039b7836e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-run-paths.mjs",
+    "sha256": "3fcc60d6b677716c6305716c7ab767ea969950b38797d760a10af48c546954c6"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-selector.mjs",
+    "sha256": "f165a93e2b61e410d4b76c7db988370a296119f494d976641728947ab8efbdef"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-split-journal.mjs",
+    "sha256": "395d6cb9ea395ab32079b1286c1c3e2d5e7759c4e12663f0e3752f6e3a69a5f8"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-subject.mjs",
+    "sha256": "0d5ead2bd94eef6a12b89e45e542b0e27c1091817ab6bb01a2b18feccff1dc7c"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-surgery-evidence.mjs",
+    "sha256": "a0a550b2cfd625d5f45085579cd6283fb62a758abddda837c065bb3ceaa1e578"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-testbed-network.mjs",
+    "sha256": "d69b2da2d2e0c6f123a8583add75d4525d947c39840f016ec9675bf2e7edbc59"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-three-way.mjs",
+    "sha256": "5f11cd672250d8a7b69ca75503d3d1783741d5a860961e34e6d2b59c8f4efd24"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-trace-bundle.mjs",
+    "sha256": "9ab988c8c399a7f749583e6fd0db3eb2a87031a7106aa81999fa4d4b704568d2"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check.mjs",
+    "sha256": "57419dfc719df680e79aa224bb0a7e9b71cdd3aeb8a4220c00a24a6d5e8ce6fb"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/jev-callers-journal.json",
+    "sha256": "498a242278ddfb1aee0f121f670c95ebb7fed2ed105315f7b10e8c2b13696e8d"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/jev-gates-journal.json",
+    "sha256": "aa7c1f7d28f9a2fd2f42524445af077a2dd0a7b895b0946a9c81e8ebb47427ce"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/make-fixture.mjs",
+    "sha256": "23105eab399e452bf4b35e5f7914ef1217f3733d473cd1a7dac47214a2c023b3"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/matrix-reports.json",
+    "sha256": "e81165eca79e188d6eb3e0abe82b18331e2626744416a1b89412d8865be35585"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/mirror-results.json",
+    "sha256": "d6ab056eb575808d280214deb849f14bf6f8d636706961751d00ce7e940130dc"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/rehydrate-journals.mjs",
+    "sha256": "267c567e50e163d97afb82e3dc55a6e3fa380c8b6f2249b157b327aca6c1bc43"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/subject.json",
+    "sha256": "4e75178d993a027a4fcc6f831e49c752cc1ef1ff29e9827f043373c597efdf54"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/test-test-command.py",
+    "sha256": "a9daf1825481fa65a3f65209bea24f1b0937feff38a664da0ffc0efa9b6d8b86"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/wave11-journals.json",
+    "sha256": "fd70ad7f9c31242caaa59a8010fbd5c67ec32aad0d58405350520ae2d17ce550"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/flows.sh",
+    "sha256": "54be3d915e9a6b3581e16272e873ca5d10907827e6833e9e10aa6c3c093e09d6"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fullbench-dryrun.sh",
+    "sha256": "73f8ea9c5373b9f6f7901e0b4829154031b4b0527eea904ddbf9fd7bbdad9095"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fullbench-report.mjs",
+    "sha256": "ba096097b7b900196f207ad53cd137f23f0a5613d672859203315dfdd4fd15e2"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fullbench-status.sh",
+    "sha256": "56186c5ed4cba4fcc53f1f7cba4fd31cfc86974890f100761aa9aea61a130960"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fullbench.sh",
+    "sha256": "a1eabf15de2f2ba763caad442f2a32175aea524271dbc9eb7827fc6bd2a6ea59"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fullbench/codex-none/cost-derivation.md",
+    "sha256": "429592f50bfd0fe5af51b8c845214c8a323acb93294f566ae86eb696231274f1"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fullbench/reports/airtight-scoreboard.md",
+    "sha256": "632e16666cb953fc8ec0a5af7a97ed51ba335b768bb8bc9d43ae93944ed928d0"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fullbench/reports/repl-ab-three-way.md",
+    "sha256": "cc0e6524717b05011d48a49d678315707b302056bf49669f06e7698f4645262b"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fullbench/reports/repl-ab.md",
+    "sha256": "b9a932a9d6b0239dc5e9968a998b5b6106d97c7a5481811390a9ab9757f9c568"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fullbench/reports/repl-draw-2.md",
+    "sha256": "ca22ec54e6387b34634b66feff9786e7576dff6522c1c437deecd2bd1f415339"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fullbench/reports/rerun-r91.md",
+    "sha256": "20a4880a437478a0e3470952d331146b752ff0e8367e2b3f2b70f756b4344e37"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fullbench/reports/rerun-r92.md",
+    "sha256": "23fddf18ec9843f32d19b3586441878547aac11c5a647ce0df9ac33429ed4537"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fullbench/reports/rerun-r93.md",
+    "sha256": "2f01540c8f6d9667fcda02a6a0cd9d54f9db71369c8325f2d425717250956a85"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fullbench/reports/rerun-r94.md",
+    "sha256": "d48e3d23ba2c902d02eeb7efc7c9d147fe658f38efa2a8097a455435ac1c655f"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/fullbench/reports/rerun-r97.md",
+    "sha256": "d9e6da08fb06f32faa74dc01d8fc3ec5aff73e216a20bdbcc86f984c09312a49"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/golf/par-trajectories.md",
+    "sha256": "05aa3f92f289843a594749242d00ac276157047e5865f1d7fe476294ac4bee4a"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/grade-matrix.sh",
+    "sha256": "54b4778ca0f14d31f4dd388d441eae942ef23dd2ac511e54596e758bb07100a5"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/jev-usage.ts",
+    "sha256": "6013e928707c0621f49c82871a1b5c79ec8af4f67348aaffa626f862a91cb0fb"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/capture-git.sh",
+    "sha256": "879ba7a5592d01c0a381b46691de77176acba8322f88aea15c03d2e955ab3a9a"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/capture-patch.sh",
+    "sha256": "5c7240e134297a6003d030443308d1016d92132fa63dbf220144ba59765cc806"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/check-liveness.mjs",
+    "sha256": "0cacd738146b28b1095e1d81a7bd200b418a39761d7148df356f04d54f1d5974"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/codex-auth.sh",
+    "sha256": "50f9af55850a2cdc51d348558268ce02e9960590b8dd584fa3fe7e3f5a6a3add"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/codex-backfill-queue.mjs",
+    "sha256": "78149b1aeeb5d6a45e5b027c3a7f6b5b14a688dd38713d4b7697657a969f6fd9"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/codex-network.sh",
+    "sha256": "b8a5c2e67eda676b9d1e33a8b0167c3482d9a32e0960e9bce2bc3ea21cef0448"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/codex-tokens.mjs",
+    "sha256": "e32e691513f7b3c960cf6f92a913f110f686f0045a648e0a8c45a48e60675d68"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/disk-free.sh",
+    "sha256": "bc4fa1b52a8e7173fecac1cc8db94e0a478afee13e12b7f4ca482e9abf03bb76"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/excluded.mjs",
+    "sha256": "32a02015e333134fb02365a33b3facb40baf52cffb6ae4623fc9e242374a096d"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/format-money.mjs",
+    "sha256": "da2a8a1274929608c29126c6279ba5889076e667edd2b2a0cef7bea30961dcbf"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/fullbench-instance.sh",
+    "sha256": "7527f8308e50b43f1db4739b842720b1c92d967e334e2b07c743f06ed6c5e1a3"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/fullbench-manifest.mjs",
+    "sha256": "5235f5df5d0cb202b5208f3f7b4b6617e2ca3a7974b376b826e679b9ff85ffee"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/fullbench-queue.mjs",
+    "sha256": "04e7c6611fb06e9cfc4293a29936da027503184438b0c489ed89df708bf951d9"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/fullbench-row.mjs",
+    "sha256": "d4c66a156073ac93dd3f3bd6ca427ef00ed89a6c6841753b97b2ae526a83637c"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/fullbench-state.mjs",
+    "sha256": "d36f1d248465cb0e453d1bed44826b450625d80128256b67d71b47bf789c3ea3"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/fullbench-status.mjs",
+    "sha256": "7734dc0ec5b0c98e9e3d23bc10ae249a4d20a5ac26fe42904bc4aa80328e586b"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/grade.py",
+    "sha256": "5f408665073f9e92b7e1a0c2865faa737b92cc8ac981a2c5490f8d0e6e618ce8"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/httpbin.sh",
+    "sha256": "726fec9e0b008cf3b8be668deac4a088fa711a92f92d3860e4c254743a911df1"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/interpreter.sh",
+    "sha256": "af788569e0aba2222a5337c3c0f53ad0408c94b6a3a0e1b49d27dd383183ad9b"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/jev-replay.mjs",
+    "sha256": "0011caecd57d3a85e761cb6b4f0b9f284b190f702717e85b812546baa95d9bcc"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/journal-facts.mjs",
+    "sha256": "3db8936ab5d737024087ce9b91cdfd4db8b835212234584b4288b65acbaa55f4"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/journal-rows.mjs",
+    "sha256": "6016d4c821b05dd915c9269371c8db09c81ebd04c315c3676e404be763df047d"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/liveness-flow.mjs",
+    "sha256": "bf8a968a37b718224b6754c49ef4d67b78969fa0cea48d8c2a61f54e0369ee9e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/lock.sh",
+    "sha256": "1d215781aaccf4e32603ba3a73c98ee802fdd36834c051e554553c4a2b494257"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/make-preds.mjs",
+    "sha256": "74896f2e3222589dc0cf8945d6d8045d6852abf563e042e227194608796d3654"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/manifest-append.mjs",
+    "sha256": "d2344f48d1b507c44ea78d697dbc89706f7cee71b3780b48189ab142dde42ada"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/narrowing-journals.mjs",
+    "sha256": "95897525e20cc276821abf65486a5752fae60438e88e17d7b26fa0bdf936c8fd"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/owned-processes.sh",
+    "sha256": "82f569f70d2e0c2f82ffc5ec7346f422dba1df766a2328df183fdbcfa2d1201c"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/plue.py",
+    "sha256": "146d8b22be101e20321eee9cdaca9f6be02ce79b68f0f9c40024726676bdf741"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/program-evidence.mjs",
+    "sha256": "87adfe690c2d0dcedfc3f23702978ad9faf224fae701e2e83c664fe539c3a759"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/prompt-bytes.sh",
+    "sha256": "851811987109f02d33283a32b252213b9f1e636c8b5543b4bb12f8b2905fedd3"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/r97-narrow-only-journals.mjs",
+    "sha256": "be0d11fd456bbdc42fb258f225f3e601a4bfa0b4d72cf115a1572d94bfb2cb54"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/repl-evidence.mjs",
+    "sha256": "d1878ecbc673402493d2a1a3ed1e0753f04f8b6abee235a6b9dcf04211cd0dfb"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/rerun-queue.mjs",
+    "sha256": "f80c884320f09559ec94526996e27e182785c38ea484dd3b9dc1c3d67626e6a3"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/round3-evidence.mjs",
+    "sha256": "e811d979877c36dfefafe9558d85998b07ab28338109a43d10350aef0ac56fff"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/run-cost.mjs",
+    "sha256": "7b83417e49a8d4361e13f5e0b333492afead36fbd66caf81d8df3f3521665f8c"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/run-paths.sh",
+    "sha256": "083d0b1bdf5ead6a205e324c2a34d615ceceb2c841ad1103b8d65eda87726f96"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/run-with-timeout.py",
+    "sha256": "8136ba0cc5f500d03901e6b6fc753ac606c2cb2f9b0ebf0c4455c7c9070c4480"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/sample.mjs",
+    "sha256": "802527bf1b3071e00f9ebeda623de15be08e8d4addbcc8a982645c0393686780"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/snapshot-base.sh",
+    "sha256": "e9eefad44aeacb4326265eec80bf3dd7e0ca50ec63d5b852446076e84743a83f"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/strip-modes.mjs",
+    "sha256": "f95b0fa38df78dba0fca16809618d2f4612faf3aaef43e060b9f8bccc5ba3de7"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/subject.mjs",
+    "sha256": "73c2f709abe55d697a728e00dfd26344e1851cf9fd464da44c1e667d484910b2"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/surgery-evidence.mjs",
+    "sha256": "87d1307a242a00b711574e2c27442ce02fc579283be87ec9a7a337fa88edfbd8"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/test-command.py",
+    "sha256": "dda9504a50a4ffa601d563e4dcc623e5ec5ab78cad19833a4d0ab3db81e85a2b"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/testbed-network.sh",
+    "sha256": "4b544afe13d901964cd94e6c5ccaa8654c8c67cd14119200fbd5fd1d2be63516"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/trace-bundle.mjs",
+    "sha256": "0acb06ba609b99c54982402f86cf27456e7dbd3a1a284c0a10d195861bd131d3"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/transport.sh",
+    "sha256": "96ee3b6341dd99ad90fe529f655093f6322bf64a097d09a6ec57a7c6ef639d02"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/validate-instance.mjs",
+    "sha256": "6567cbb3c6f9669cd75cd10297aad1b713aaec69ca412878911234c2b12cb977"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/write-flow.mjs",
+    "sha256": "52b3168a22e9ee8a4c25b9ff79802fee9ceac1b5cfb8f330a64abf536b3b4921"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/lib/write-prompt-codex.mjs",
+    "sha256": "25faa574cddf3743dae83376e6c1b1667e98c5252803d17ce6f6c25d322837a0"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/matrix-report.mjs",
+    "sha256": "74e88faab1d68361ada1ac0d472d5f7a6d844eaa03692192f20ded3c25dc1828"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/n-way.mjs",
+    "sha256": "7662562aca90772de7227cdc5aa968b00ba9a7ff7bca351f646791229d90cf42"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/network-dryrun.sh",
+    "sha256": "9125fb18b2c32b617c124048e55e9f7a42bed26c691d27fb2091fc45a41f844d"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/package.json",
+    "sha256": "2b820ac7b2c36fa9111441cd2987e318e286b90c69b158d4a8ea8139a75f53f1"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/PACKAGE.ts",
+    "sha256": "5c767bcf051d09a1d7c7f128dab5b2e8c5845195c55f70aa4a275a18f7626741"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/preflight-network-2026-08-25.json",
+    "sha256": "eaa1df1fb6f2b6e6ee50521ef01f7a3d27b87a635ea00e09542a793bc14433e5"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/preflight-network.sh",
+    "sha256": "8eab346ef255263425277110ee89b89b6699956a7309668497e74ceea621da8c"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/preflight.sh",
+    "sha256": "df8b3912318d4467f4b551f4bc36c45bc2ad8068d5c0a3d87e0cff3f0ae9c963"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/prices.ts",
+    "sha256": "5dcf3027baea6d3247352b812853fe7936821ccea870a5ac9e3667a1ffc92d7c"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/README.md",
+    "sha256": "73ce8783440977bc7bf0bc5c5e00b708030715b33d933bd494cfc4e598fc7e46"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/readonly-liveness.sh",
+    "sha256": "d56b536295df67f886886571388a282004b68fb21e0630bba459178987fb269c"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/regen-patch.sh",
+    "sha256": "fd9857fcaeb333cc0b9253bbc8980e70bad083ce67ff3f49812cad820424890f"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/regrade.sh",
+    "sha256": "570a49b68aa1e5b08939b4a68966ae197c7e657f7c0bf267c264358fcf5c1814"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/reports/evidence/capture-fix-sphinx.flows-cell-harness.json",
+    "sha256": "0c67ff887ba77a27f6b2208468edc3852221463b8e25c0fa70675b5a7bfd7196"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/reports/evidence/capture-fix-sphinx.patch",
+    "sha256": "ebd09933a263ffe921a5dbdf5b63e59810d36c9924626d1e4d02c522c40b84c2"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/reports/evidence/capture-fix-sphinx.report.json",
+    "sha256": "dacc4ac7491f1c0e4351cb9c0d8c980807f31572c49af543a501a2be0eac5b58"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/reports/wave-10-2026-08-20.md",
+    "sha256": "25b24eb674c9cfbbe710b8440e36656352a8cd83e0cf481986e3f609d079d94d"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/reports/wave-11-2026-08-21.md",
+    "sha256": "428325927fbbdc08c6430fcbb4f360921bde8d14ca8ea2d47440bda8d17dc7b8"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/reports/wave-12-2026-08-21.md",
+    "sha256": "42c41ec53253faede3298018a2aaef436165b8bc1f8ebbe3e79d487a1b8c0040"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/reports/wave-2-2026-08-19.md",
+    "sha256": "8dd10a257eb2bc6146b70ff7306f8d1759cb21bb6be044aebbe9a73a0627146a"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/reports/wave-2026-08-19.md",
+    "sha256": "82fa42c6fb73260ff9a4407b0d97378f65dee2358f66f8371ff5e07d1ef4dc75"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/reports/wave-4-2026-08-20.md",
+    "sha256": "4570cbcc5fe57d9f9a302f2c05c8250e70a76097d27c9efbf35c234a5d4f63ca"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/reports/wave-5-2026-08-20.md",
+    "sha256": "7d2aff3b7d89c4f18e5b91a20af01a375c1e3858221d90e0080a5f77c0076fb5"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/reports/wave-6-2026-08-20.md",
+    "sha256": "a3175593d8acd1c23f22402759bb60187ae8ebea6d82c4052f82379660f9795a"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/reports/wave-7-2026-08-20.md",
+    "sha256": "274e39566296d365a427ed07bab7cb9e0d8cefaa3946272bca157a5b38f3b303"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/reports/wave-8-2026-08-20.md",
+    "sha256": "08a5f29308c05a2afe7a9d318d1f115096e504c6e3bf4142bd27dcbf4952859f"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/reports/wave-9-2026-08-20.md",
+    "sha256": "52504df48c994964720131112d137b57f98a6d88729b09ce673de41a94692f33"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/run-45.sh",
+    "sha256": "a6b77e4ab9af29796d9a7c4f818165b72256a74b6fa1392df0f1c2623dc7067e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/run-instance-codex.sh",
+    "sha256": "e6a779323d1e2f4c5648e5698061cefb1be4058605157b85a626612775b7a738"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/run-instance.sh",
+    "sha256": "fec226821ba9ceb20e5f9f9ccd2dbd8f1e59f4f73ad421ef6974b9cc6494b995"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/run-matrix.sh",
+    "sha256": "111e947bbf114f8586755821eb965f7ecdaa635b9516034dd5b7886f1fc424b6"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/run-sample.sh",
+    "sha256": "651237152cdfbc3b89c87efb6e49f5b98cb4beabbdf3852fecfbef89c00dcd8e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/scorecard.json",
+    "sha256": "23f97cf64df267a9dfa17c10bb194ccd70ba8052c188ab86fbf1e6fab5f55262"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/scorecard.md",
+    "sha256": "3b581346bfa4971f356ac291e1a689ee678f833ab5e70651915881a9988d90c9"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/scorecard.ts",
+    "sha256": "114e44816b67b7464aa2d3dce8a3e94492336b23247f7a958cf34e45f385c6b0"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/select-candidate.mjs",
+    "sha256": "b2594c80dff7f51482d639227b1e6ce43e5344907334e05d12ac996b493c933e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/three-way.mjs",
+    "sha256": "a5351b2e8569d5b0334a787ae9571ad2bad39c604fae318df6c4ddc0b74ed8ca"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/tsconfig.json",
+    "sha256": "5bd76526920f5a2fae5ff50169c6cbd7ade8843fdbdb892b45c1dfcb3421b7b1"
+  },
+  {
+    "path": "packages/smithers/agent/harness/benchmarks/swebench/verify.sh",
+    "sha256": "40022a6c6b73fcda8fd7684df9477c4ea4882319949329b689fbf1ad2f1986de"
+  },
+  {
+    "path": "packages/smithers/agent/harness/CHANGELOG.md",
+    "sha256": "92cc9cadbfc81f42167a972b40805fe4b4af1c7effb3c409c8270d370e0eede4"
+  },
+  {
+    "path": "packages/smithers/agent/harness/docs/api.md",
+    "sha256": "65dbf550dd66bc5ac05f8d5ce3d504840a6f2c5573176a133552384d20efde06"
+  },
+  {
+    "path": "packages/smithers/agent/harness/docs/concepts.md",
+    "sha256": "44e6ef3a1ed7e6503cd1a07f3a7345102ea729ef085923b77c3f41e06f8ad7bb"
+  },
+  {
+    "path": "packages/smithers/agent/harness/docs/external-transcripts.md",
+    "sha256": "1d758499a9a6ebd8058ea0c85a411b593d8e7b3e0124dae058065704b45df21a"
+  },
+  {
+    "path": "packages/smithers/agent/harness/docs/guides/bind-flows.md",
+    "sha256": "b4953b8cde9904f86f379a1c7a3a8ae67391c693b5cd8809711f0e9ebf5120d8"
+  },
+  {
+    "path": "packages/smithers/agent/harness/docs/guides/drive-the-loop.md",
+    "sha256": "5b6d1aa1a0f4500dc3184305312e32e12cb8f24de8995012ffbf97245688c868"
+  },
+  {
+    "path": "packages/smithers/agent/harness/docs/guides/run-cells.md",
+    "sha256": "a2f9a45d89da82fd839a04b0eae193116d2edc341fbd3002007998bd0c10e0ab"
+  },
+  {
+    "path": "packages/smithers/agent/harness/docs/guides/workerd.md",
+    "sha256": "2a529bfd3aabc89524bef418f32093cd5670c23f20cbaa5655dfdd9a82cab976"
+  },
+  {
+    "path": "packages/smithers/agent/harness/docs/installation.md",
+    "sha256": "d60ab5e152bd2a17233433395f1a01ee73bc9ce9bb6a365ea07dd77f08be0a37"
+  },
+  {
+    "path": "packages/smithers/agent/harness/docs/quickstart.md",
+    "sha256": "c34bac4ad4f84977d10f19c021e7f78bc67eead1e152cec58891fc30d8aee820"
+  },
+  {
+    "path": "packages/smithers/agent/harness/docs/README.md",
+    "sha256": "f857c1ab0090ac9031d0f4d20bc79445e9211d251363facd57d01463ee0247fd"
+  },
+  {
+    "path": "packages/smithers/agent/harness/docs/realm-flows.md",
+    "sha256": "9e57ddf9c5bec6cc1c1e185e91ee917448b723689a769515b2604c4e91dab516"
+  },
+  {
+    "path": "packages/smithers/agent/harness/docs/reference.md",
+    "sha256": "a82f782a0f12d42ffaa18553123a47714c93aeb99bce87e2bb101de7db58cdb9"
+  },
+  {
+    "path": "packages/smithers/agent/harness/docs/troubleshooting.md",
+    "sha256": "36939f0b0c77ba6f2407d94f7635fcaa1daac7178363e404f1036ff4a01a20d0"
+  },
+  {
+    "path": "packages/smithers/agent/harness/dprint.json",
+    "sha256": "e843e229d783b7d2533aa2826327c906339430e420a85f3bf56535ba93f6c7d3"
+  },
+  {
+    "path": "packages/smithers/agent/harness/eslint.config.js",
+    "sha256": "5f17529c382de78de65913d3ad7ea009a2192c5c4033be13d59de5aad0015738"
+  },
+  {
+    "path": "packages/smithers/agent/harness/examples/instruction-chunks.ts",
+    "sha256": "483c300531ae148a022de2e13835e397842b9af33a3a55e843d20789652b0c33"
+  },
+  {
+    "path": "packages/smithers/agent/harness/examples/steer-at-turn-boundary.ts",
+    "sha256": "7c9c03039ddc4e39d7ead9efc8d983f142356fa227c949670ddbdd3be341ef89"
+  },
+  {
+    "path": "packages/smithers/agent/harness/HISTORY.md",
+    "sha256": "733e3be3b959d0722030540fdf5e8f09bc7e8fc774bdb8f5c806569f2ce51788"
+  },
+  {
+    "path": "packages/smithers/agent/harness/LICENSE",
+    "sha256": "a3aaca5d88b4805fdc839fc70dca35fb5c9d2465d2bd986729e218076f66adc5"
+  },
+  {
+    "path": "packages/smithers/agent/harness/package.json",
+    "sha256": "3c12428ed7469a92ea317e1260296c619e9ada405cc54426630e0c806c261036"
+  },
+  {
+    "path": "packages/smithers/agent/harness/PACKAGE.ts",
+    "sha256": "123e946c287e1581bab62e3ad83ecfb4b052ae63c107107c063b363f96ca43b1"
+  },
+  {
+    "path": "packages/smithers/agent/harness/README.md",
+    "sha256": "30d6814bced77c2afeafcd3a716511a69d68a71bca04b21ed7fa89b2c4893121"
+  },
+  {
+    "path": "packages/smithers/agent/harness/realm/build.mjs",
+    "sha256": "21359684362c2e5f51ff4ad262e5b75d1ef44dfdd132eabbee4f3879c3401297"
+  },
+  {
+    "path": "packages/smithers/agent/harness/realm/entry.ts",
+    "sha256": "bda09c7a209217d8412cef1d97bdecdf1136ee321b6e1040f309f5b859f4543b"
+  },
+  {
+    "path": "packages/smithers/agent/harness/scripts/build.mjs",
+    "sha256": "d7580eb74ee80418322b8fee99a4158dea624782ecfc1b8e6306fdef7dc9e613"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/AgentEvent.ts",
+    "sha256": "8e3ed75b4a41dfbdbf294df0ee1997937f7ef1f30026b21e71fc969e312704dc"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/CallLedger.ts",
+    "sha256": "7fc32635cc2e6ff9b29ef45c6ae39cd1728f7da325992e4a1e33fcab1cf0c764"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/Cell.ts",
+    "sha256": "6c01352ef9f700918f4038858c44d9b054491b85a47f6462533e71ecbcccb7cf"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/CellCalls.ts",
+    "sha256": "d04dc5ec9df22776c505284c53b31c9a887e231fe09ec207e7bd43fbaca67c3c"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/CellHistory.ts",
+    "sha256": "80de8d480d1cd538f3d4bff21bd326dbfe3b1c21cc903ac905a42632c9de65ad"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/CellTurn.ts",
+    "sha256": "9d496f80044005e3fd2527635c71955e2bd979c520e6a9e0fc27c06005856ddd"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/CellValidation.ts",
+    "sha256": "27b52b87ec6bfd71ee80f27b6405d1420ef786d44f996b19b1cdb717bb0af95d"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/Compaction.ts",
+    "sha256": "5f7d015bd0dc0607d58b24b4d3117f16307385cdb8500cd14769f8197b750bb3"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/CompletionClaim.ts",
+    "sha256": "263b74ed5db6461a03509507077890b6fdf5778a0bc99f738ad2b8b43e96bd2d"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/ContextWindow.ts",
+    "sha256": "5410afb46fcb6960dcf0976f1597a905c7063d0daa4b29967268fd3ce1955f97"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/DoneText.ts",
+    "sha256": "e19f3c92a641aabb12b61542c681264a106f3eb8757eaa39b3b430ae010a3007"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/EngineLike.ts",
+    "sha256": "91794bc2dc3d136caf2911a1e69d8575ae3fd1a02a91792da53d28e7091784de"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/ExternalTranscript.ts",
+    "sha256": "246b27f1e00dd5d8586ae4388e43f305e85aad9d8ffa26ab930d52ad77d8853a"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/FailedCall.ts",
+    "sha256": "b600a536f7d59a1456b8b5d7f1546ae7db622ce120e1c7d55477bcfe9119e911"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/FlowBinding.ts",
+    "sha256": "1d9b04b27c7dde3088c5ba720dee8a7a55b66b1334cfb68a9ed22f8117099ea6"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/HarnessError.ts",
+    "sha256": "c4ee3dc8d5c4886e5c96b2923ca68820c48d499339b630d99c18fd74c2f190a2"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/index.ts",
+    "sha256": "eb5e63442a760fd12318682e3c35af3f7da1bd5e859cfcd2a93e8b6162ce5cc7"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/internal/bytes.ts",
+    "sha256": "1b6598203c5bf0e3dc766f6608e4a912b7b255698b8a2f2cecc75c913ee6d6b1"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/internal/cellPrompt.ts",
+    "sha256": "df21ce30c951cdebf206c5ae3ed460d1351c36ecd8f86d3dba5c0931b21a310f"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/internal/compactable.ts",
+    "sha256": "a6e659d95e9a9e2fb04985ed5cfb6bc28207ae09228bef150f42bc2518cac3d4"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/internal/compactionMarks.ts",
+    "sha256": "739a5815498f467153fd3fc7e68e40a23e5d00036a8b55e8861952137557c60c"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/internal/decidedBy.ts",
+    "sha256": "30f429249baaa5a15f7089d61a7380eb6e2ff7ae5287bef37be786898817e454"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/internal/demandText.ts",
+    "sha256": "b1b5aaeacd9cc1fca5648092af7bd59d48bfa64447a95d2773958547c163adac"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/internal/elide.ts",
+    "sha256": "6e86b11ecd9386ccb8fa18387ebcb987e15fb8438fbd09f153eebceeca69a9dc"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/internal/fence.ts",
+    "sha256": "fdfcfde5a40e8e906a21319fe879fdf1649acb95de127cd287c473d212f0bc9b"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/internal/frame.ts",
+    "sha256": "b2f68755ad8238cbf4dcac7d229af9f6ce7e54f93c086059f2374e7870374604"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/internal/nonNegativeSafeInt.ts",
+    "sha256": "7afec746215da701b4d59e69d863583f8bcd5b20ff538e4fdc59c728ea7d3ec9"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/internal/paidUsage.ts",
+    "sha256": "355ca223a435d8188140ce94fa422de991d426c36cc2ff0b6b40d9c3b046d0d7"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/internal/printChannel.ts",
+    "sha256": "83d9ae2ab406e4199f1bd1b8fb26f8f450b7646445c907746b024a06ac2b0beb"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/internal/printsObservation.ts",
+    "sha256": "1a72cb768ac43d6ec79bd34d797f9cd67ac4572d354db67fa998c0885710e5a2"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/internal/RealmFlowBundle.ts",
+    "sha256": "2870e87d514982e1d88e976f9b91479201bdd0687c32825238838c92062a7180"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/internal/refusal.ts",
+    "sha256": "6330026aba8854a643be0b099afdef74010f72a360923ea37490350df910f0ac"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/internal/supervision.ts",
+    "sha256": "f27a12c99b391b1a08553ca913701fcd8749b609a9de5968ebb4ee417cade84a"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/internal/unfinishedWork.ts",
+    "sha256": "b677c04ec582ad97b23f84155215b895cdac28fa3611775b94f9619a19d09270"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/internal/unobservedCall.ts",
+    "sha256": "f13b2b41af6fd5ea629908ce6e0fc83cdf44746105eb7fda7ad2f1e05b2156da"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/internal/untrustedData.ts",
+    "sha256": "eb29399ce2ed7697693cf2c9f486f4d37d1e44d045f8e8db5d1dcf24c902fdf5"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/Judgement.ts",
+    "sha256": "3a646ecf1c52d5f79d96f679dc7186faf5e86ab805ef57fc6bce8475a2d0d160"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/Monitor.ts",
+    "sha256": "a46fdb76f9080fbe1e450d2d196bb665bf419da90614276f99b3fee9c2285bb2"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/NarrowedCheck.ts",
+    "sha256": "581bc3f05eded27e2b9d6f2d7dddac34553fe2ad752830b7545438078413e82c"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/Notifications.ts",
+    "sha256": "311b5df8d8393ec7c0f6b17293b90bc3205aa274215b2fbaf2c25ff2561ea18f"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/Plan.ts",
+    "sha256": "e2153aa3982a112bd35d3767e515955e46b5933dab8a804a4db44674b6a02f36"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/QuickJSLifecycle.ts",
+    "sha256": "cadddb9c93c35fc24974f8ab9af9fe6ece8525fbd5f7c693039cc4e1cc4fdd9a"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/QuickJSSandbox.ts",
+    "sha256": "596dc35003db796ffd83b52381700dd23743cd57a82f5a61346466b209d0dcb0"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/QuickJSVariant.ts",
+    "sha256": "1a22112953f2d6fe3abc18831423d20873dd3e14fb48b07b035e58b72e4294d5"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/RealmFlow.ts",
+    "sha256": "aad52228bb69dc6836a4e8585ce3dad02d047d1c3d9723e985f70494cf6fbb44"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/Relevance.ts",
+    "sha256": "b26cb3d8ce649f000e2e6b440b5788e83d5658140b8dee09ca49d68d6d31c7e5"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/Sandbox.ts",
+    "sha256": "17506eb8852d86683357a68db84e9c4d5e4d2da131b9ed9150ab53738185ce5e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/Steering.ts",
+    "sha256": "5bcfd99c18ee650824b0b15aa9c9c808bb926947517dc77c86c30034b6b2f7ee"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/StructuredOutput.ts",
+    "sha256": "07ba62ac2bc132bb75593ab3daf043ff93128cc76802aa02d5de1da2b3bc2945"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/Sufficiency.ts",
+    "sha256": "998a08dc8940ca7c6d0d75be66bb494c898a6b6e945cc3326767626ffb5ff279"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/Supervisor.ts",
+    "sha256": "2ca65f91b625b2f2ccaa19927b87f0e571e51eb67cdb55b81f6516c3d4bdd1bd"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/Tokens.ts",
+    "sha256": "227182ff81e5c9e279462ec40d2670d97a892da008667d92c4953acc3b1bf84a"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/Transcript.ts",
+    "sha256": "2674efcd179c3aacfe9d503707aaaedbaa86ae2f669d7ae92a6c163ef863c4c0"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/TruncatedOutput.ts",
+    "sha256": "d92e2553348ee8d94c7f5d3512b77ac7ce3f435613953048498c7be64f83110f"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/UnmovedTree.ts",
+    "sha256": "fd3e34cf5e7f456cfa8e1350bc56159872be9fce4671011a5c875f9b2cbf0110"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/UnresolvedFailure.ts",
+    "sha256": "f0f0b0714bc95782fa99bed197b849a5a65704ef29667b545e36caddec5f31b9"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/VacuousVerification.ts",
+    "sha256": "d0e2f966d45d4d045441b7018ea87b8e5675d2e302b139d3c4e8a5113036f6c0"
+  },
+  {
+    "path": "packages/smithers/agent/harness/src/VariablesPanel.ts",
+    "sha256": "ad2204110df481bdf7a25e2075dc6bf531ac0a63ef2438bdaac1b8a97cedfebe"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/AddressableContext.test.ts",
+    "sha256": "9d3a9f5108734375b02bf3a9f8581fc73cd8de52d9b6da1f3a70c16470d42a87"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/AllGatesReplay.test.ts",
+    "sha256": "bd932508da6c3c459e55c61fd6ed6141e5297fd51ccdacadf43d54fa598fa64a"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/ApiExample.test.ts",
+    "sha256": "3b8110ab1982b2d0daf7de8ecd4c11780aa851c0a60c46f009688f1d2186a5de"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/BoundaryUsage.test.ts",
+    "sha256": "32e6717ec6d13a8b43a65a2078e42a18f25e3e16f29a0f68d2f1b1a7320868d9"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/bytes.test.ts",
+    "sha256": "58ca7b6ec998bcb05444cd8794b294e075bfce4857ee483bc83ed8b8b8a926e2"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/calibration/completionClaim.ts",
+    "sha256": "59f063fce5bf02ee6aae18bd2a9c7d188b525331d5711f3534376e457f348dae"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/calibration/completionClaimCorpus.json",
+    "sha256": "4418c6f1e4999aefea6f0e973c886f687d4d3de9e5b6a32e3b515c3f34ed43a0"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/calibration/completionClaimReport.json",
+    "sha256": "e0a1587d4bc295c0c34eb756a3fed95fdde37897319dbd16c1ccbc349ecae436"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/calibration/sourceIdentity.ts",
+    "sha256": "e1c299731f7a91b2e33acb0905fc8c6309e9a3ce4851ced27965ba57259e24c0"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/CallLedger.test.ts",
+    "sha256": "38e6a85a6f9390d64840825d98b85e8c6eac4b4c4bb6fa02e75616e20e2db2f0"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/Cell.test.ts",
+    "sha256": "81711518f5f046798ce810b840f6ee8d330adafde20e3e071e5f9febc8bb73d6"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/CellCalls.test.ts",
+    "sha256": "33b57be44d9152de92df5117228266a93a8e4e6d2502607ea17c2106e1152bd8"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/CellCompilerFailure.test.ts",
+    "sha256": "e7724641c95f0862fc6c9ff64535a3d604d07c05302d0db483e141f4b9c82f92"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/CellContracts.test.ts",
+    "sha256": "fd44b80daec18cfa683bb764faa453aa413323bc333cdc6296918d7a7b644001"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/CellHistory.test.ts",
+    "sha256": "f652cb32dd0025a8dfbe428f4123de9f6ffd3f814a41d10c9af92d7e41f5150e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/CellPrompt.test.ts",
+    "sha256": "887e77f3aa134bfe1f4bd976ec91b1b6d677aa7911e39cf1f0a5a7c105cc9930"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/CellPromptExample.test.ts",
+    "sha256": "07f6764924edec87439b68bbceaaa15939ca02216270c9abab14e8a5818bf8db"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/CellTurn.test.ts",
+    "sha256": "29e948aef1c6b308c6ea2d1802937e7458469736e14e8efb5e6ae835ab803a7e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/CellTurnBoundaries.test.ts",
+    "sha256": "8d77b7c4b2d8f60a050fe9c7d566f16b0364c44405bcbbb9d99c8c7cc02da6cf"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/CellValidation.test.ts",
+    "sha256": "8c2f8c456dfeb05ac3fc11daedcfc16115b38aa4036b0b2dfc0336f38631dc49"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/Checkpoints.test.ts",
+    "sha256": "b65240af89e766242663796f973064d18ee61a941262469facbae7ee0140546c"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/Compaction.test.ts",
+    "sha256": "44fe742ea2f4bcc8f2e2ec09a9c1094ff8fcab914c8689f2d9f3efb87c313f22"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/CompactionMarks.test.ts",
+    "sha256": "7371bd80149044fd659d5bafe4a0d89f2d695334c9c54a95103b96e4050fed99"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/CompletionClaim.test.ts",
+    "sha256": "89536360746799826d2421ab7d945106306af0a80963c7385658519dbfcdc3c5"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/CompletionClaimCalibration.test.ts",
+    "sha256": "43107ea36fc65287fb360b4a0f10b415f5eab3013a603a3752726a71163d07b3"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/CompletionDemands.test.ts",
+    "sha256": "cb32f9295e7e3438d23229f389c417b90afc05469e2705b80284bb57bd805b2b"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/ContextWindow.test.ts",
+    "sha256": "4c063f25b20b1e1ecb555a53a1bdffb1f06a64f03c73926093e0eb0461023ad7"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/Contracts.test.ts",
+    "sha256": "13eea1276e7429298a354119c801c1f0e2a488358ee92cdd9685493423a15ded"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/ConversationalTeaching.test.ts",
+    "sha256": "315a7254130c4a8442d1da16d37ec6efc988a3f95113cde982cc078a910f22b5"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/CoverageReportsDirectory.test.ts",
+    "sha256": "ccb94c22c83900ab47f3cc9e85836d1bcbdd999627d3be01a8810580634fe23e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/DoneText.test.ts",
+    "sha256": "95c6d2da1bd74862038ba412580f7761f071cb8c258a8b928608e97d51d54723"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/Examples.test.ts",
+    "sha256": "9d5d68b10a652d1e9c1b22f1ec65b2ece7e03f83f7e09c47a8c941a49d849f7e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/ExternalTranscript.claude.test.ts",
+    "sha256": "ef79a737d98c472895e8ffa2ca321d9786747d700cb1fa2fa6c21cf789c9b85d"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/ExternalTranscript.fixtures.test.ts",
+    "sha256": "ec993b226521da78064fc1e03b77c462a28b354944db3d4fa8f230a55825b0bc"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/ExternalTranscript.live.test.ts",
+    "sha256": "0bbda68ec3a3525eba5818ea0290631af2d53205a1f15c971ecdbb1db69b2b83"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/ExternalTranscript.test.ts",
+    "sha256": "212c8b290de4a624dc83b8ede05f7eb0e702f4fe41126093a7933c619155e17e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/FailedCall.test.ts",
+    "sha256": "842bf2492943508d34955e7328504c523a23478754abfce3adbf96676f340843"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/batched-replies/astropy-8707-seq77.md",
+    "sha256": "8c12fd90ac8b71fac49220172797d7e917c7cd5e8ac12642744762075d25e0e1"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/batched-replies/django-16612-seq12.md",
+    "sha256": "f4fdf568f51156a6d1b346a5a9586e71a0a916696856deda1880036ed195c13d"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/batchedReplies.ts",
+    "sha256": "90ce76c3cb4c528a6a7466c70542132eb51c469b78008429b38ff032699c8d45"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/cellTurn.ts",
+    "sha256": "a072eaf912db3aeab56943e8008f1a575caba9271cfdc10c654321e6b88829fa"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/completionJournals.json",
+    "sha256": "868afcf0769e3e3bce3ca1e433dfaaa46309b8eddf552212e716aa65892ecbcd"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/external/claude-code-2.1/expected.json",
+    "sha256": "ba2c47111bdf9ade71bcabeb27f1186dc0401d15533ca45586685e35d647feb7"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/external/claude-code-2.1/MANIFEST.md",
+    "sha256": "b983e195d1ba23dbc3caff374133dd13ca610e94139a2c87324ff221411cc803"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/external/claude-code-2.1/session.jsonl",
+    "sha256": "4648728d1b70db7cd6746e3ff66fe148ed1889de836ef297f9ad1114a5bd47a6"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/external/claude-code-signed-out-2.1/expected.json",
+    "sha256": "b734180e7106dd6d611fac486e91da1179ee439b40e1ee3e323b1368afb18e26"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/external/claude-code-signed-out-2.1/MANIFEST.md",
+    "sha256": "c38eee127ae192553f9a7823af6e49613dc8cf725143fb9aacce900e256744c9"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/external/claude-code-signed-out-2.1/session.jsonl",
+    "sha256": "689fda64a3f57435075f253c524c41cf28eba7dd74b4e26e5ab61172d30ee979"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/external/codex-0.160/expected.json",
+    "sha256": "21903957902c7a02a1572593b12f2c1420502ef9cb234dda01230c10a5c36ac0"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/external/codex-0.160/MANIFEST.md",
+    "sha256": "b7ae8f3448670657eaa27741bd2caba627d56d78c9a65fa22b622ba35c5a3191"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/external/codex-0.160/rollout.jsonl",
+    "sha256": "eba814d41b86059f57179b79c79c33438388cecb9d8faaec62e48106b0e8257f"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/external/codex-machine-0.160/expected.json",
+    "sha256": "6a8af39a329fba2bdc3280be4fb35436426a6ed3e8849d6c9b4adc3722330163"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/external/codex-machine-0.160/MANIFEST.md",
+    "sha256": "f9727a9c0234e533f99dfe981cdab78d5f8ea12a6db72d4a8502b84c286d1dad"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/external/codex-machine-0.160/rollout.jsonl",
+    "sha256": "429ebead36d010baef837c0f0cad53a5cbb452a287e6f369bc619d10a330a1a1"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/external/codex-signed-out-0.160/expected.json",
+    "sha256": "b3cad05acefc7bbdca3b5d47680653f088ed407bdc66bdc838af3d3fd616fa16"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/external/codex-signed-out-0.160/MANIFEST.md",
+    "sha256": "da86e296332bc60c1b4052a9a1e3392112caac7dd9b14bec46429d40eaf2ac18"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/external/codex-signed-out-0.160/rollout.jsonl",
+    "sha256": "07620767870b7e6772758edcfb2945d0e84b43bd1f080d489792dcbee32e3353"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/external/manifest.json",
+    "sha256": "c0fe198a6c918589a8d2b000e1898402fa444b480a3b322903bfcf5142f53495"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/journal.ts",
+    "sha256": "d427b73ae7902d57e7a9eb2e7c36133f895138650b86b6f9a0b68c6f7ade7ecd"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/narrowingJournals.json",
+    "sha256": "53f1be9f2a5074930aba353e5ea76ff1f8bb3f77dd33c79007c650854a13e609"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/r97Journals.json",
+    "sha256": "58e18e2fbf750f51d62711dad6fd3dfa994d3281227b51be43983f6a41659f45"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/rejected-cells/astropy-8707-seq82.md",
+    "sha256": "579b437cfe6e4b87e1e52f26771b133dabd7920b16c1cc82296b034f8650b342"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/rejected-cells/django-16612-seq218.md",
+    "sha256": "ce329cea29e03ae205dbaf8bdc6a1333a32016dbaa40bb07f0afc427e5cbf9c7"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/rejected-cells/django-16612-seq299.md",
+    "sha256": "c634737f0220c745303470d41dbcc8f03655255d9fc12c08493d4c99ffac9dd5"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/rejected-cells/django-16612-seq493.md",
+    "sha256": "39543a1925add33850c1101d1027135534afb667b59f09ca0bcfa85d7e770e45"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/rejected-cells/sphinx-11445-seq12.md",
+    "sha256": "873607e8b07762a428bf0c4d68e55fc5bef23dd4ae61ac883cfafd64f5fa6e7b"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/rejectedCells.ts",
+    "sha256": "f74a25a0ba4f840d66faf24ae38c0148f3bbab4e6fde4b45288ee2952ecc3796"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/scriptedEngine.ts",
+    "sha256": "a7702461c9ea200e43ca351fe5e7056b9c17cee9dc033020b94c2736f5517f18"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/scriptedModel.ts",
+    "sha256": "9f4d28177c3eaf64f5e7daac89e1fc23020e2f90ec7d34e08ed2882c1b446524"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/vacuousJournals.json",
+    "sha256": "02f9781dd1a8139ce7f4b1a5c58032c9cb657c7052e5da882216f86b89fd345b"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/fixtures/wave10Journals.json",
+    "sha256": "5729e524223e55d052e1d50579dcc9d200b86f1a0aff739a35089d393ee8175e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/FlowBinding.test.ts",
+    "sha256": "6b733bcacbe818aca488a17bbeb5943e6d90308c24dfbafee38862c6ae7d6fe9"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/Frame.test.ts",
+    "sha256": "8ca129379b9373ee2dbfbc90d78853769b40a75358af442f36641e5b80230aad"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/HarnessErrorCause.test.ts",
+    "sha256": "a27ba60a2c626c1a887fcc055d90310f8f4ff01109cc4c714d98950b082ed970"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/Judgement.test.ts",
+    "sha256": "f096f3d1fc2be61ce921bd203ddeae74eea7bdd4d9e5c35f4a621948cb434799"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/LiveTreeEpoch.test.ts",
+    "sha256": "15f8baeb5196e4a428bae35dbabd8504b958017d862594a2929529f222210e71"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/Monitor.test.ts",
+    "sha256": "00063df0275d36940400ffeb40a8f6064c95d16bbbe1253e66b02936eb1b6ce5"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/NarrowedCheck.test.ts",
+    "sha256": "6ba6a22f47d24c853ada75103419e5dd435239f59fa82f19517d1e4a39716354"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/Notifications.test.ts",
+    "sha256": "d353e598d1979cd4139479889b6621513a79060e2acb0ed43f16eb27c3462f08"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/OutputCheck.test.ts",
+    "sha256": "e6a2f13cc3a205baf5dd871d7ed576b79abd64c01b9431624dde690637d04802"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/OutsideChangesBoundary.test.ts",
+    "sha256": "74f82714e3f94fec38773b47e362ab35d071af5c3fd9b9ac0a70ce15f1f603cc"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/PackageConventions.test.ts",
+    "sha256": "169de78afa00c596865abc27a4256fe779fa2f278401d81dbba514cbc2ab806d"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/PrintChannel.test.ts",
+    "sha256": "a6e27a3e4a9978ad5b2596336df6e173d3d11fdee754316c14bf18af65c6ea37"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/PublicCellDocs.test.ts",
+    "sha256": "cb9739f665ed83fbaa6e32b03088232e30f903e1bf872a43db0b822c3c409cdc"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/QuickJSLifecycle.test.ts",
+    "sha256": "bd80ea54e18f3d4828428438de44e2fbc9761a86b1d31ed8d1e1fabd9a529c53"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/QuickJSMemoryAdmission.test.ts",
+    "sha256": "6fecaa6a9fa052eaca15dfe4e1f799fa8b9ad5fa4de7f5ddfdc77dc14afb4c65"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/QuickJSSandbox.test.ts",
+    "sha256": "b8309941384be6bbd757470d39a263904d5edc3ec33f990fb24021566ef857e9"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/QuickJSVariant.test.ts",
+    "sha256": "e9056bac493c81b43410a92cf16c3179265b16563314fb49df483166e6a96e3e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/RealmFlow.test.ts",
+    "sha256": "703cae1497658ecfe8f847e45594d4152a2887641896452d360bd4c57b95a468"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/Relevance.test.ts",
+    "sha256": "20560eed8fe3919190431a5efbd719cec14b7fc201dacf3ed1ef7598810081c3"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/RelevanceTurn.test.ts",
+    "sha256": "f4675f653e9cf1e0e29b997ee0b79757618bb951e9dea3665396e06047677e1c"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/ReplRealm.test.ts",
+    "sha256": "b308e5dcc765a3eaf56b6c89ab347599f260cf9f05db6c4da349a1610138ded7"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/ReplTurn.test.ts",
+    "sha256": "80682e8c335686062cfa82a7659bce51f9b7e9661e7d975988a956dbdf36172e"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/Sandbox.test.ts",
+    "sha256": "2fa01cb40b444d20aab9f0d08d85c9c9a439f05e6c4bac1049806a002d4b93c9"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/Steering.test.ts",
+    "sha256": "8b1dc1b80313e742220ae13c418041867fe5b81a657a6ba99ee1c28c403e546f"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/StepRecords.test.ts",
+    "sha256": "51a98e8795ca91680c98cfe993c9e65c079d818adf503c51088801a57941a727"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/StructuredOutput.test.ts",
+    "sha256": "995434067799ea3202f5c590d42eea15aa7ed4fc730a031a6220cb345416cd61"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/Sufficiency.test.ts",
+    "sha256": "bb6f0e29ec6ff806ef1f78708d6fd7d20bffd8b389f411de310556accc377a03"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/Supervisor.test.ts",
+    "sha256": "51a15dec8415e8fbd03d4be37cc198af2974fa59c7bd4a842643581fcca4cf5c"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/Tokens.test.ts",
+    "sha256": "b82d93e200e4020e77ffef14c428a2d60370f8220c8394adc831b378a41335e7"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/Transcript.test.ts",
+    "sha256": "2bf34bc3cf872760bc99a85ad57da73754abad72aea6fed51dfb71e206eb1575"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/TruncatedOutput.test.ts",
+    "sha256": "8c5a22115f12b6114a12b9a02b8b263de33f667564957145591c1c27472e4def"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/TypedCompletion.test.ts",
+    "sha256": "3f55925f958ae1ea09431428aee942509cfe4c2bec4e0495eda5f19520f8a4f0"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/UnfinishedWork.test.ts",
+    "sha256": "84dbd9cda129327555185315ff35b7edd2a7716eb253882e9c9a4a921f312124"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/UnmovedTree.test.ts",
+    "sha256": "1166b593a5eb517e8a0563785cf8dd922aef6ee09c55b57dbb19a3f226d65339"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/UnobservedCall.test.ts",
+    "sha256": "9b14fab284ce9ffb75adbfaa848b246b57ca3371ec714bba7894eecee8a0843d"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/UnresolvedFailure.test.ts",
+    "sha256": "a0e10a694f2369d98c22c1442e1a05c939d48ff014d506fff2b1284e7741569f"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/VacuousVerification.test.ts",
+    "sha256": "1c4eab89e86073ff753c21de6f8cc2983bcf9c17c65f00027555ed96c6d42f1b"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/VariablesPanel.test.ts",
+    "sha256": "19ee660d1413e8c01c65057c6ebae831241f5e62253b518d670032d78804a6cc"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/workerd/package-lock.json",
+    "sha256": "4082104c22cb24a9aee073d2502d9147c6c80390b4e4cc2539ccc1ca910d32c5"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/workerd/package.json",
+    "sha256": "42d036a5ec217712b30f91d8dcf3c4ea72356d337adbe04f3b1d6d98597f6fbc"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/workerd/smoke.mjs",
+    "sha256": "3a84bfc2acd4c683f55441f206541199fa26a1e804371933f2ccd7f7f1393eac"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/workerd/tsconfig.json",
+    "sha256": "566a166fc5472e8269370d1d3dbce98acfbda07235bf49c9b35ed3fb6c2c4fa5"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/workerd/wasm.d.ts",
+    "sha256": "b33519f4cab83c3d1c019dbac1ac3dfa5a20a0aa9cfa8a7228adf9a6d6bfd43d"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/workerd/worker.ts",
+    "sha256": "b17acd66f831adee1be324ccd50855175b225b115f20e6cc9eb8b174d9ee121a"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/workerd/wrangler.jsonc",
+    "sha256": "aa678f43029eac879d445518677ca92acecfe768f478731694f115139a41c656"
+  },
+  {
+    "path": "packages/smithers/agent/harness/test/WorkerdSmoke.test.ts",
+    "sha256": "f188c7f766e183aa47fb5017f3ef7bf3f5fadd92e0a9689e95fb3679cfd215fb"
+  },
+  {
+    "path": "packages/smithers/agent/harness/tsconfig.json",
+    "sha256": "0064dce36d22143039105eb068be99456971e6caf6e7cebac24633514a2009b8"
+  },
+  {
+    "path": "packages/smithers/agent/harness/tsconfig.test.json",
+    "sha256": "8bb696048d714d9b1572fb96d0ee5ecc50da5a73a1e8da2f90d6a01b8692ebcd"
+  },
+  {
+    "path": "packages/smithers/agent/harness/vitest.config.ts",
+    "sha256": "ade09d1fc493c8f5690a69ec0884971f6a3e799a593f418574ff01bdc769bf4d"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/AGENTS.md",
+    "sha256": "e6ad96f35515f4f8efb6f52c88344302daf70c30acc2d00e27306da22629f548"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/CHANGELOG.md",
+    "sha256": "f5ea934dbbed6fe805b223853ca74041f19a21aaf3b85231a3b869447b397ed3"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/docs/api.md",
+    "sha256": "9291742be055e880421de2f05ac20ff901bd9d9c710a4ed70302d65edcd3200e"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/docs/concepts/control-plane.md",
+    "sha256": "9d74fe39ffd12cad04a5a90c31404b4488a94ca8121f2780bffe8f949f112194"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/docs/concepts/durable-actions.md",
+    "sha256": "ff12a28360e206351bca1f98495da4243b86a81b60f84eae202a24521cac17c0"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/docs/concepts/events-and-signals.md",
+    "sha256": "93dcce9ef3fa25b89e05e5c0818e4718c84e2e0c9407408462f9ca7d5cc10487"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/docs/guides/github.md",
+    "sha256": "6a7c3dc97d44e576314a799de98e35161d4c03d1986980b82113e26a7164a37d"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/docs/guides/webhook-ingress.md",
+    "sha256": "e6cc81146866f750be51c0a184c51f144381d6dc28cecd99fc576dd02a00c58c"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/docs/quickstart.md",
+    "sha256": "689b92a711fd54e36f5c90269bf1a8d775b8d1fbe37f5573ef009658732693d4"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/docs/README.md",
+    "sha256": "41dd109d1bac31fa46e1bb9f1dd6fb390ad31829f1a20e490a15a50dbcdd7916"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/docs/testing.md",
+    "sha256": "887657b239b30e66f37622d8d6bbaf80102e887e6108eb05013f0f13ab8e06d4"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/docs/troubleshooting.md",
+    "sha256": "9dda721e22e663453090e3b7d86943504a8fc11e528f3a87f843a9bce99cdd79"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/dprint.json",
+    "sha256": "5398037d436a06d239e17f14f9d9cb62aeda687c8f7350e80e36525790db8f13"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/eslint.config.js",
+    "sha256": "01dfbd03af6f1eedaae60a32c28f42331676433951cdf21be6982d342fc4a209"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/examples/github-webhook.ts",
+    "sha256": "389e4569eced44c4787ac3358b695092a6037e7c46190e285febbb26bae93d97"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/examples/list-open-issues.ts",
+    "sha256": "b9761e84635fa3b3dcc6b23c2df7cb8f388b6b0e9d51d542883c0672b8912ab3"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/LICENSE",
+    "sha256": "a3aaca5d88b4805fdc839fc70dca35fb5c9d2465d2bd986729e218076f66adc5"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/package.json",
+    "sha256": "ccfd1c752483dfb5f058f36bf890a53d7b741b5a2405bf1f5da03ff75054ea44"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/PACKAGE.ts",
+    "sha256": "deaf8b37f22c812c4f197ec37d1224dea7cbaee37a56b9eaff4d1d34d8380eef"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/README.md",
+    "sha256": "954f188cf0c880af923ef7f42408ad71b35923e0a7b800e600cd123bffa0aea9"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/scripts/build.mjs",
+    "sha256": "d7580eb74ee80418322b8fee99a4158dea624782ecfc1b8e6306fdef7dc9e613"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core.ts",
+    "sha256": "adcf0dddedc574c3d358e0a1fe6218f87aa7c8ed6430d231d0e87b768984c2b6"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/AccessToken.ts",
+    "sha256": "1f30aef6150e77e991295d7c5f05879627565dd5e5a57bd6c08ea248b47b5817"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/ActionFailure.ts",
+    "sha256": "c3e35fdbf19cbd721a5e2e5af88cb8e2355223fb118b6781e6fe1df4c0756489"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/AuthorizationUrl.ts",
+    "sha256": "0102021afa3959b2c5289053a357e7bea8ca9da01005e957a07eac7fcecb4282"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/Channel.ts",
+    "sha256": "9de44725d86f29292c3a68e6a8601f3c885ca4f55cc38ca4ccc406667bc8214e"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/Connection.ts",
+    "sha256": "fc07eb833e64cabf13b005d50ad9eb4cf1f178fd461e8c8a06f0908e81ddfea7"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/CredentialHttp.ts",
+    "sha256": "c37c952e57fcb47ca122196acae4d98e43e499b5dd088593e1f5b1e26825af0c"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/CursorStore.ts",
+    "sha256": "fb2f19a5705a66ca4eb3d85fe6560dd35200e107087c0c1d17d8ad1910481cb4"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/ExternalEvent.ts",
+    "sha256": "3a578bad40fd9cc26bb68e0fe612e46edcfe080836803736444e2ddeada2c2de"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/IntegrationCursorMigration.ts",
+    "sha256": "aea6ba127fb243900619d0299473eff0c97b91a3cd4cb00de2936e0a948ee666"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/IntegrationError.ts",
+    "sha256": "0e9aaf226f5a911c29ccfe20e0a658167c71f4123fcd482eafe2b86ef02e2c10"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/IntegrationRecordsMigration.ts",
+    "sha256": "ca6389970e21e29059f1f1c47464935af9e5569afd26bfae3348ecccc8c344a3"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/IssueSync.ts",
+    "sha256": "3e0b7570339baab94e6ebb06e23a01360fd7a59845b7e84516e3a10962e430b8"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/JsonPath.ts",
+    "sha256": "d74cbafc5c645ebae1380473fad8e744562da5572583f099fc8320e43be8363d"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/Migrations.ts",
+    "sha256": "7cc0116a39d4a88894b3daef865a0621c3f385f40eba92b3309fc09f063f5424"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/OAuthToken.ts",
+    "sha256": "aa512ccea6092881ab4fe1fe1d740017f3359efd36a437a78d36b2378a909afe"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/Pkce.ts",
+    "sha256": "a7abbcc81fd5573e7a958995f7f56deef190d4489e11ffd5361752a1286af4d8"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/Redact.ts",
+    "sha256": "b659334c366bbeea483572bb14d15e1f66d57fad1638dadb57ae2fb0194d92dd"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/RedactedError.ts",
+    "sha256": "e143bcb05f8e728e674f68b40565817a5236b22d4f0bcc27b79231b9639fcecb"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/SignalName.ts",
+    "sha256": "6a4200e46ebe72cdcc6aac6734899da1380724a33694a12758ac6f011ffc386e"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/Signature.ts",
+    "sha256": "699c71eb6e95a2cc069c66c4f9bb52dc303d2ddd8fc73099cd3a6cf42567a32d"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/Source.ts",
+    "sha256": "c705a4b322f0e2338b3a1836bfabfe13acf5ad0545ff309d2f228599b69f6f6f"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/SourceRecord.ts",
+    "sha256": "01f1a94ab5cad0dd95f4bfd9d1d3eccecb256684bf66da2e3b5b053f496910b8"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/SourceStore.ts",
+    "sha256": "26949730d046e784336c74e1b589d8d1c243684c6c2b11fbdfcf4cd50b967282"
+  },
+  {
+    "path": "packages/smithers/agent/integrations/src/core/Sync.ts",
+    "sha256": "29b35e5a57f4685b1d796e378e5b3a676399646768194ed84911e8c3ca44014f"
+  }
+]

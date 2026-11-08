@@ -88,6 +88,29 @@ export default Flow.make("echo", {
     progress.push({ command: verb, elapsedMs: Date.now() - origin, state: "settled", lifetime: lifetime(project) })
     return { ...result, json: result.stdout.trim() === "" ? undefined : JSON.parse(result.stdout) }
   }
+  it("starts only the requested body, leaving an unrelated module unevaluated", async () => {
+    const unrelated = join(root, ".smithers", "flows", "aaa-unrelated")
+    await mkdir(unrelated, { recursive: true })
+    await writeFile(
+      join(unrelated, "flow.ts"),
+      `
+import { Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { Schema } from "effect"
+import { writeFileSync } from "node:fs"
+writeFileSync(${JSON.stringify(join(root, "unrelated-evaluated.txt"))}, "loaded")
+export default Flow.make("aaa-unrelated", {
+  description: "Unrelated module", capabilities: [], payload: {}, success: Schema.String,
+  body: () => Node.succeed("unrelated")
+})
+`
+    )
+    const result = await command(["flow", "start", "echo", "--data", "{\"value\":\"selected\"}", "--wait"])
+    expect(result.code, result.stdout + result.stderr).toBe(0)
+    expect(await readFile(join(root, "executed.txt"), "utf8")).toBe("selected")
+    await expect(access(join(root, "unrelated-evaluated.txt"))).rejects.toThrow()
+  }, 90_000)
+
   it("lists the input schema without evaluating the module", async () => {
     // Local authoring uses the project catalog; install flow commands use the backend.
     const catalogListed = await command(["ls"])

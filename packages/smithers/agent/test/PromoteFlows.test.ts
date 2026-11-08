@@ -12,7 +12,6 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as Capability from "@smthrs/capability/Capability"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
@@ -187,7 +186,7 @@ const promoteAndCall = async (capabilityEnvelope: ReadonlyArray<Capability.Capab
           implementations: new Map([["weekly-digest", () =>
             Effect.sync(() => {
               calls += 1
-              return new Cell.CallResult({ outcome: "success", value: "digest ready" })
+              return Cell.CallResult.new({ outcome: "success", value: "digest ready" })
             })]])
         }).pipe(Stream.runForEach((event) =>
           Effect.sync(() => {
@@ -201,7 +200,7 @@ const promoteAndCall = async (capabilityEnvelope: ReadonlyArray<Capability.Capab
         Agent.layerDefaults,
         scriptedCompletionJudge,
         FlowEngine.layerMemory,
-        Crypto.layerFromDigest(NodeCrypto.layerDigest)
+        NodeCrypto.layer
       )
         .pipe(
           Layer.provideMerge(Safety.layer)
@@ -258,7 +257,7 @@ describe("flows/show-script", () => {
           Layer.mergeAll(Interpreter.layer(executable.flow), executable.layer).pipe(
             Layer.provideMerge(Action.layerImplementations),
             Layer.provideMerge(FlowEngine.layerMemory),
-            Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+            Layer.provideMerge(NodeCrypto.layer)
           )
         ))
         expect(result).toBe("ready")

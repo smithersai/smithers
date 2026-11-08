@@ -1,5 +1,4 @@
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
 import * as Dialect from "@smthrs/database/Dialect"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
@@ -44,7 +43,7 @@ const withEngineStore = async (root: string) => {
   await Effect.runPromise(Effect.void.pipe(
     Effect.provide(NodeRuntime.storage(engineDatabase(root), root)),
     Effect.provide(NodeServices.layer),
-    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Effect.provide(NodeCrypto.layer)
   ))
 }
 
@@ -123,7 +122,7 @@ describe("evaluation scoring over the project's engine store", () => {
     )
     const storage = NodeRuntime.storage(engineDatabase(root), root).pipe(
       Layer.provideMerge(NodeHost.layerAt(root)),
-      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+      Layer.provideMerge(NodeCrypto.layer)
     )
     const faultyStorage = Layer.effect(
       AttemptStore.AttemptStore,
@@ -248,7 +247,7 @@ describe("evaluation scoring over the project's engine store", () => {
           score: (input: Parameters<typeof binding.scorer.score>[0]) =>
             Effect.gen(function*() {
               yield* Deferred.succeed(started, undefined)
-              if (interrupted) yield* Effect.never
+              if (interrupted) return yield* Effect.never
               const result = yield* binding.scorer.score(input)
               completed += 1
               return result
@@ -345,7 +344,7 @@ describe("evaluation scoring over the project's engine store", () => {
         }).pipe(
           Effect.provide(NodeRuntime.storage(engineDatabase(root), root)),
           Effect.provide(NodeServices.layer),
-          Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+          Effect.provide(NodeCrypto.layer)
         )
       )
     } finally {

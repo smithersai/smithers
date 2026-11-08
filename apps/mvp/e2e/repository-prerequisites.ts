@@ -1,24 +1,70 @@
 import { expect, request as requests, test, type APIRequestContext } from "@playwright/test"
 import { DEVICE_PERSON_HEADER } from "../src/features/auth/contract"
-import { baseURL, guard, sessionFiles, target } from "./target"
+import { baseURL, guard, me, requires, sessionFiles, target } from "./target"
+import { serverErrorAnnotation } from "./problems"
 
 // Real prerequisite receipts, never a browser route replacement. A Member's read primes the shared About cache
 // using the deployment read token before a visitor asks; an exhausted anonymous IP quota cannot establish absence.
 export const repositoryAbout = async (kind: "absentRepository" | "unsyncedRepository") => {
   guard(kind)
-  const repository = process.env[kind === "absentRepository" ? "E2E_ABSENT_REPOSITORY" : "E2E_UNSYNCED_REPOSITORY"]!
+  const repository = kind === "absentRepository"
+    ? process.env.E2E_ABSENT_REPOSITORY || `${target === "deployment" ? me().login : "octocat"}/smithers-e2e-absent-${crypto.randomUUID()}`
+    : process.env.E2E_UNSYNCED_REPOSITORY!
   const authenticated = await requests.newContext({ baseURL, ignoreHTTPSErrors: test.info().project.use.ignoreHTTPSErrors,
     ...(target === "deployment" ? { storageState: sessionFiles(baseURL).session } : {}) })
   try {
     const session = await authenticated.get("/api/auth/session")
     expect(session.status()).toBe(200)
     expect(await session.json()).toMatchObject({ signedIn: true })
+    if (kind === "absentRepository") {
+      // A cached About refusal alone cannot prove a name is still absent. Check GitHub afresh,
+      // even for an explicitly retained name. A quota refusal or outage fails, never means absent.
+      const github = await authenticated.get(`https://api.github.com/repos/${repository}`, {
+        headers: { accept: "application/vnd.github+json" },
+      })
+      expect(github.status(), "GitHub must verify this repository is absent now").toBe(404)
+      expect(await github.json()).toMatchObject({ message: "Not Found" })
+      await test.info().attach("absent-repository", {
+        body: JSON.stringify({ repository, githubStatus: github.status(), checkedAt: new Date().toISOString() }),
+        contentType: "application/json",
+      })
+    }
     const response = await authenticated.get(`/api/repos/${repository}/about`)
     expect(response.status(), `${kind} requires an authoritative About receipt, never a quota refusal`).toBe(kind === "absentRepository" ? 404 : 200)
-    if (kind === "absentRepository") expect(await response.json()).toMatchObject({ code: "not_found" })
+    if (kind === "absentRepository") {
+      expect(await response.json()).toMatchObject({ code: "not_found" })
+      // Both preview and mirror boundaries may answer this verified absence. Declare only its exact 404s.
+      test.info().annotations.push(
+        serverErrorAnnotation(404, `/api/repos/${repository}/about`),
+        serverErrorAnnotation(404, `/api/repos/${repository}/refs`),
+      )
+    }
     else expect(await response.json()).toMatchObject({ name: repository })
     return repository
   } finally { await authenticated.dispose() }
+}
+
+/** A real repository on which this account may clone, which no run has imported yet. */
+export const cloneHeaderRepository = async (request: APIRequestContext) => {
+  requires("member")
+  if (target === "local") return "octocat/linguist"
+  requires("githubScratch")
+  const candidates = [...new Set([
+    process.env.E2E_ISSUES_REPOSITORY, process.env.E2E_FACTORY_REPOSITORY,
+    process.env.E2E_TRACKING_REPOSITORY, process.env.E2E_VIBELANG_REPOSITORY,
+  ].filter((name): name is string => Boolean(name)))].filter(name => name.split("/")[0]!.toLowerCase() === me().login.toLowerCase())
+  for (const repository of candidates) {
+    const role = await request.get(`/api/repos/${repository}/role`)
+    expect(role.status(), "the clone layout fixture needs a real repository authority receipt").toBe(200)
+    const answer = await role.json() as { role: string | null }
+    if (!["member", "maintainer", "admin"].includes(answer.role ?? "")) continue
+    const refs = await request.get(`/api/repos/${repository}/refs`)
+    expect([200, 204], "the fixture's mirror state must be known").toContain(refs.status())
+    if (refs.status() !== 204) continue
+    await test.info().attach("clone-header-repository", { body: JSON.stringify({ repository, role: answer.role, refsStatus: refs.status() }), contentType: "application/json" })
+    return repository
+  }
+  throw new Error("Clone layout needs an unimported scratch repository where the test account is a Member or above. The account has no clone authority on octocat/linguist.")
 }
 
 /** Complete a real clone before testing tree-to-file redirects, including the signed-out variant. */

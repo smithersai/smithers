@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-factory/
+test-results*/
+playwright-report/
+.alchemy/
+# VibeLang writes declaration sidecars beside each .vibe file when it emits; they are build output.
+*.d.vibe.ts
+# The proof toolchain and its run output (verify/README.md).
+verify/.tools/
+verify/.checks/
+verify/run-*.config.json
+verify/__pycache__/
+.verify-run-*.config.json

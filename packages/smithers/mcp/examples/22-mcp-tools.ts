@@ -19,7 +19,6 @@ import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as Capability from "@smthrs/capability/Capability"
-import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as McpClient from "@smthrs/mcp/McpClient"
@@ -290,7 +289,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
       ungranted: ungranted.slug
     } satisfies Summary
   }).pipe(
-    Effect.provide(Layer.mergeAll(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))),
+    Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Effect.scoped,
     Effect.orDie
   )

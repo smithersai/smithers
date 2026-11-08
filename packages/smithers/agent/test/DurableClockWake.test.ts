@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * A durable clock completion delivered while the waiting cell is arming it.
  *
@@ -11,7 +12,6 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as Capability from "@smthrs/capability/Capability"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow as EngineFlow, FlowRuntime } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
@@ -21,6 +21,7 @@ import type * as Route from "@smthrs/model/Route"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
 import { Cause, Context, Deferred, Effect, Exit, Layer, Option, Schema, Scope, Stream } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
@@ -81,7 +82,11 @@ const driveFlow = EngineFlow.make("agent/test/durable-clock-wake", {
 })
 
 const drive = <A, E>(
-  body: Effect.Effect<A, E, Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
+  body: Effect.Effect<
+    A,
+    E,
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+  >
 ): Promise<Outcome<A>> =>
   Effect.gen(function*() {
     const engine = yield* FlowRuntime.FlowRuntime
@@ -93,18 +98,16 @@ const drive = <A, E>(
       )
     yield* engine.execute(driveFlow, { executionId: "exec-1", payload: {}, discard: true })
     return yield* Deferred.await(settled)
-  }).pipe(
-    Effect.provide(Layer.merge(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest))),
-    Effect.scoped,
-    Effect.runPromise
-  )
+  }).pipe(Effect.provide(Layer.merge(FlowEngine.layerMemory, NodeCrypto.layer)), Effect.scoped, Effect.runPromise)
 
 describe("a durable wait nested inside a cell action", () => {
   it("returns the wait result when the clock completes during arming", async () => {
     const outcome = await drive(
       Effect.gen(function*() {
         const engine = yield* FlowRuntime.FlowRuntime
-        const services = yield* Effect.context<Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>()
+        const services = yield* Effect.context<
+          (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+        >()
         const scripted = FlowRuntime.FlowRuntime.of({
           ...engine,
           scheduleClock: (flow, opts) =>

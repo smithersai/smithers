@@ -7,12 +7,13 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Audience from "@smthrs/build-cli/Audience"
 import type { RuntimeConfig } from "@smthrs/build-cli/Cli"
-import { ApprovalAuthority, type Control } from "@smthrs/control"
+import { ApprovalAuthority, Control, ControlRuntime, SqlControlRuntime } from "@smthrs/control"
+import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as RedactedLogger from "@smthrs/journal/RedactedLogger"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import type * as Otlp from "@smthrs/observability/Otlp"
 import type * as Registry from "@smthrs/registry/Registry"
-import { Cause, Console, Context, Effect, Exit, Layer, Logger, References, Stream } from "effect"
+import { Cause, Clock, Console, Context, Effect, Exit, Layer, Logger, References, Stream } from "effect"
 import { Command } from "effect/cli"
 import { z } from "incur"
 import { randomBytes } from "node:crypto"
@@ -24,6 +25,7 @@ import * as GatewayHistory from "../history/GatewayHistory.ts"
 import * as HistoryWorkspace from "../history/History.ts"
 import * as CommandStatus from "../internal/CommandStatus.ts"
 import * as DatabaseLocation from "../internal/DatabaseLocation.ts"
+import * as NativeExecutionRead from "../internal/NativeExecutionRead.ts"
 import * as Telemetry from "../internal/Telemetry.ts"
 import * as NodeControl from "../NodeControl.ts"
 import { layerTriggerScheduler } from "../operator/Triggers.ts"
@@ -355,13 +357,14 @@ export const query = async <A, E>(
 export const launch = async <A, E>(
   operation: Effect.Effect<A, E, Control.Control | Ui.Ui>,
   options: ConnectionOptions,
-  runtime: Runtime = {}
+  runtime: Runtime = {},
+  initialFlows?: ReadonlyArray<string>
 ): Promise<A> =>
   settle(
     provideServices(
       operation.pipe(
         Effect.provideService(CommandStatus.CommandStatus, (code) => runtime.exit?.(code)),
-        Effect.provide(NodeControl.layer({ ...configuration(options, runtime), startsRuns: true }))
+        Effect.provide(NodeControl.layer({ ...configuration(options, runtime), startsRuns: true, initialFlows }))
       ),
       options,
       runtime
@@ -392,6 +395,74 @@ export const read = async <A, E>(
     ),
     runtime
   )
+
+/** Resolve a native execution only through this host's persisted parent links.
+ * Visibility is checked for the resulting control root before it is returned.
+ * Remote hosts retain their own identifier and authorization semantics.
+ * @category queries
+ * @since 1.0.0
+ */
+export const resolveRunId = (id: string, options: ConnectionOptions, runtime: Runtime = {}) =>
+  Effect.gen(function*() {
+    const control = yield* Control.Control
+    const visible = (runId: string) =>
+      control.list({ _tag: "runs", filters: { runId }, limit: 1 }).pipe(
+        Effect.map((page) => page._tag === "runs" && page.items.some((run) => run.runId === runId))
+      )
+    if (yield* visible(id)) return id
+    const config = configuration(options, runtime)
+    if (config.remote !== undefined) return id
+    const filename = config.databases?.engine ?? NodeControl.executionDatabasePath(config.stateRoot ?? config.root)
+    if (!DatabaseLocation.exists(filename)) return id
+    return (yield* NativeExecutionRead.controlRunId(id, visible).pipe(
+      Effect.provide(NodeDatabase.layer({ filename, readOnly: true }))
+    )) ?? id
+  })
+
+/** Inspect the local durable receipt ledger after the control visibility check.
+ * Remote transports must expose the same query before they can offer this verb.
+ * @category queries
+ * @since 1.0.0
+ */
+export const signalReceipts = (
+  request: ControlRuntime.SignalQuery,
+  options: ConnectionOptions,
+  runtime: Runtime = {},
+  wait?: { readonly receiptId: string; readonly timeout?: number | undefined }
+): Promise<ControlRuntime.SignalPage> => {
+  const config = configuration(options, runtime)
+  if (config.remote !== undefined) {
+    throw new CliError.UnsupportedError({
+      message: "Signal receipts require the run's local --root; remote receipt queries are unavailable"
+    })
+  }
+  return read(
+    Effect.gen(function*() {
+      const control = yield* Control.Control
+      const visible = yield* control.list({ _tag: "runs", filters: { runId: request.runId }, limit: 1 })
+      if (visible._tag !== "runs" || !visible.items.some((row) => row.runId === request.runId)) {
+        return yield* new CliError.UsageError({ message: `Unknown run ${request.runId}` })
+      }
+      const lookup = wait === undefined ? request : {
+        ...request,
+        commandId: ControlRuntime.signalCommandId(wait.receiptId, config.principal ?? { id: "local", kind: "operator" })
+      }
+      const query = SqlControlRuntime.querySignalReceipts(lookup).pipe(Effect.provide(NodeDatabase.layer({
+        filename: config.databases?.control ?? NodeControl.databasePath(config.stateRoot ?? config.root),
+        readOnly: true
+      })))
+      const started = yield* Clock.currentTimeMillis
+      while (true) {
+        const page = yield* query
+        if (wait === undefined || page.items[0]?.state !== "pending") return page
+        if (wait.timeout !== undefined && (yield* Clock.currentTimeMillis) - started >= wait.timeout) return page
+        yield* Effect.sleep(200)
+      }
+    }),
+    options,
+    runtime
+  )
+}
 
 /**
  * Runs a typed verb on the project alone, without opening the control host or

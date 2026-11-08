@@ -1,7 +1,6 @@
 import { NodeCrypto, NodeHttpClient } from "@effect/platform-node"
 import { RunNotFound } from "@smthrs/control/ControlError"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { DurableEngineState } from "@smthrs/engine-store"
 import * as RunCatalogRead from "@smthrs/engine-store/RunCatalogRead"
@@ -890,7 +889,7 @@ const deliver = async (
     Layer.provide(options.publisher === false ? services : Layer.merge(services, receipts.pipe(Layer.orDie))),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Layer.provideMerge(NodeCrypto.layer)
   ))
   t.after(() => runtime.dispose())
   const payload = {

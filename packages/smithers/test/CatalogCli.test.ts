@@ -314,6 +314,19 @@ describe("C-CAT-02 installed parser and descriptor dispatcher", () => {
     expect(paths).toEqual([...fixtureCases.commands.map((row) => row.path), ...fixtureCases.b6].sort())
     expect(() => installCommandPaths({})).toThrow("CLI install discovery is unavailable")
   })
+  it("publishes the same literal install paths in the full agent manifest", async () => {
+    let output = ""
+    await makeCli({ environment: {} }).serve(["--llms-full", "--format", "json"], {
+      env: {},
+      stdout: (text) => {
+        output += text
+      },
+      exit: (code) => expect(code).toBe(0)
+    })
+    const manifest = JSON.parse(output) as { commands: Array<{ name: string }> }
+    expect(manifest.commands.map((command) => command.name).sort())
+      .toEqual([...fixtureCases.commands.map((row) => row.path), ...fixtureCases.b6].sort())
+  })
   it("B.6 host doors resolve through the installed parser without executing maintenance", async () => {
     const f = await fixture()
     try {

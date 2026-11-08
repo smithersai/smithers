@@ -1,7 +1,13 @@
-import { expectConsoleError } from "./watch"
+import { expectConsoleError, expectServerError } from "./watch"
 import { expect, test } from "./fixtures"
-import { requires } from "./target"
+import { baseURL as targetURL, onThisMachine, requires } from "./target"
 import { routeTemplate } from "../src/apiRoutes"
+import { offlineTransport, type OfflineTransport } from "./offlineTransport"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { build } from "vite"
+import { serveBuilds } from "./builds"
 
 requires("member")
 
@@ -79,20 +85,83 @@ privateTest("private WebKit keeps the editor usable for this session", async ({ 
   await expect(page.getByLabel("What it should do", { exact: true })).toHaveValue("Keep editing in this session")
 })
 
-test("the device precaches a valid engine binary before offline reopening", async ({ page }) => {
+// WebKit's setOffline blocks even service-worker navigations. Cut real sockets instead;
+// both browsers must reopen the editor and its engine from the device's own caches.
+const OFFLINE_HOST = "smithers.test"
+const offlineTest = test.extend<{ builtURL: string; transport: OfflineTransport | undefined }>({
+  builtURL: [async ({}, use) => {
+    if (!onThisMachine(targetURL)) return use(targetURL)
+    // Reuse the release-test host: real built assets, with /api on the real ChatApi.
+    const directory = await mkdtemp(join(tmpdir(), "pwa-engine-"))
+    try {
+      await build({ root: join(import.meta.dirname, ".."), logLevel: "error", build: { outDir: directory, emptyOutDir: true } })
+      const front = await serveBuilds({ old: directory })
+      try { await use(front.url.href) } finally { await front.close() }
+    } finally { await rm(directory, { recursive: true, force: true }) }
+  }, { timeout: 300_000 }],
+  baseURL: async ({ builtURL, browserName }, use) => {
+    // macOS CFNetwork bypasses proxies for localhost (Playwright #20328).
+    // A reserved hostname reaches the same real server through the relay.
+    if (browserName !== "webkit" || !onThisMachine(builtURL)) return use(builtURL)
+    const url = new URL(builtURL)
+    url.hostname = OFFLINE_HOST
+    await use(url.href)
+  },
+  transport: async ({ baseURL, browserName }, use) => {
+    if (browserName !== "webkit") return use(undefined)
+    const original = new URL(targetURL)
+    const selected = new URL(baseURL ?? targetURL)
+    const transport = await offlineTransport({ hosts: selected.hostname === OFFLINE_HOST ? { [OFFLINE_HOST]: original.hostname } : {} })
+    try { await use(transport) } finally { await transport.close() }
+  },
+  contextOptions: async ({ contextOptions, transport }, use) => use(transport === undefined ? contextOptions : { ...contextOptions, proxy: transport.proxy }),
+})
+
+offlineTest("the device caches a valid engine binary and reopens offline", async ({ page, context, browserLog, transport }) => {
   await page.goto("/app/flows/new")
   await page.getByLabel("Name", { exact: true }).waitFor()
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined))
-  const valid = await page.evaluate(async () => {
+  await page.waitForFunction(() => navigator.serviceWorker.controller !== null)
+  await page.getByLabel("Name", { exact: true }).fill("offline-engine-draft")
+  await expect.poll(() => browserLog.some(line => line.includes("flows.editor.storage") && line.includes("flow-form") && line.includes("restored")), {
+    message: "the editor restored its persistent form", timeout: 30_000,
+  }).toBe(true)
+  const validEngine = () => page.evaluate(async () => {
     for (const name of await caches.keys()) {
+      if (!name.startsWith("workbox-precache")) continue
       const cache = await caches.open(name)
       for (const request of await cache.keys()) {
         if (!/\/wa-sqlite-[^/]+\.wasm$/.test(new URL(request.url).pathname)) continue
         const response = await cache.match(request)
-        if (response !== undefined && WebAssembly.validate(await response.arrayBuffer())) return true
+        if (response?.ok && WebAssembly.validate(await response.arrayBuffer())) return true
       }
     }
     return false
   })
-  expect(valid).toBe(true)
+  await expect.poll(validEngine, { message: "a completed valid WASM cache receipt", timeout: 30_000 }).toBe(true)
+  expectConsoleError("WebSocket connection to")
+  const offlineFrom = browserLog.length
+  if (transport === undefined) await context.setOffline(true)
+  else {
+    expectServerError("failed", "/api/*")
+    expectConsoleError("kCFErrorDomainCFNetwork error 310.")
+    expect(transport.forwarded(), "the device uses the real transport relay").toBeGreaterThan(0)
+    transport.disconnect()
+  }
+  try {
+    expect(await page.evaluate(() => fetch("/api/auth/session", { cache: "no-store" }).then(() => false, () => true)),
+      "the origin is unreachable through the cut relay").toBe(true)
+    await page.reload()
+    await expect(page.getByLabel("Name", { exact: true })).toHaveValue("offline-engine-draft")
+    await expect(page.getByText("Not kept on this device", { exact: true })).toHaveCount(0)
+    await page.getByLabel("What it should do", { exact: true }).fill("Edit after an offline reopen")
+    await expect(page.getByRole("button", { name: "Draft", exact: true })).toBeEnabled()
+    await expect.poll(() => browserLog.slice(offlineFrom).some(line => line.includes("flows.editor.storage") && line.includes("flow-form") && line.includes("restored")), {
+      message: "the editor restored its persistent form offline", timeout: 30_000,
+    }).toBe(true)
+    expect(await validEngine()).toBe(true)
+  } finally {
+    if (transport === undefined) await context.setOffline(false)
+    else transport.reconnect()
+  }
 })

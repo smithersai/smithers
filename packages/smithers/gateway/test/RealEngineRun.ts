@@ -42,7 +42,6 @@ import * as ControlLive from "@smthrs/control/ControlLive"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import type { DurableFlow } from "@smthrs/control/SqlControlRuntime"
 import * as SqlControlRuntime from "@smthrs/control/SqlControlRuntime"
-import { Crypto } from "@smthrs/crypto"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Journal from "@smthrs/journal/Journal"
@@ -135,7 +134,7 @@ const engineLayer = (filename: string, implementation: (path: string) => Effect.
       Write.toLayer(({ path }: { readonly path: string }) => implementation(path)),
       Interpreter.layer(RealRun)
     ).pipe(Layer.provideMerge(Action.layerImplementations))
-  ).pipe(Layer.provide([stubJj, Crypto.layerFromDigest(NodeCrypto.layerDigest), AtomicFileSystem.layer]))
+  ).pipe(Layer.provide([stubJj, NodeCrypto.layer, AtomicFileSystem.layer]))
 
 const layerEngineRun = (filename: string, implementation: (path: string) => Effect.Effect<string>) =>
   Layer.effect(EngineRun)(
@@ -294,11 +293,11 @@ export const stack = (implementation: (path: string) => Effect.Effect<string>) =
                 NotificationQueue.layer,
                 Registry.layerNoop(),
                 Drives.layer
-              ).pipe(Layer.provideMerge(Layer.merge(storage(filename), Crypto.layerFromDigest(NodeCrypto.layerDigest))))
+              ).pipe(Layer.provideMerge(Layer.merge(storage(filename), NodeCrypto.layer)))
             )
           )
         ),
         Layer.provideMerge(layerEngineRun(join(dirname(filename), "engine.db"), implementation)),
-        Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+        Layer.provideMerge(NodeCrypto.layer)
       ))
   )

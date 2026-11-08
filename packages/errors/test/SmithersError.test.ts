@@ -12,7 +12,7 @@ import {
   type SmithersErrorDefinition,
   smithersErrorDefinitions
 } from "../src/ErrorCode.ts"
-import { hasSmithersErrorShape, isSmithersError, SmithersError } from "../src/SmithersError.ts"
+import { hasSmithersErrorShape, isSmithersError, SmithersError } from "../src/SmithersError.vibe"
 
 describe("SmithersError", () => {
   it("keeps its public fields readonly", () => {

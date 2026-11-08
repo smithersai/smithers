@@ -170,7 +170,12 @@ test("the person's durable pin follows two devices, stays outside the window, an
   await until(() => expect(b.pin()).toEqual([]))
   expect(c.pin()).toEqual([])
   const Conversations = await import("../../../worker/branch/Conversations")
-  const { branch } = await root.runPromise(api.branches.run(Conversations.track("github/octocat/spoon-knife", "pin-branch", "open", "a".repeat(40))))
+  const People = await import("../../../worker/branch/ConversationPeople")
+  // Opened by the person, as `POST /api/branches` records it: a branch conversation shows only from their list (the data gate).
+  const { branch } = await root.runPromise(api.branches.run(Effect.tap(
+    Conversations.track("github/octo/hello", "pin-branch", "open", "a".repeat(40)),
+    (tracked) => People.opened(tracked.branch.conversationId, member.subject.id, "octo", "hello", "pin-branch"),
+  )))
   await reload.actions.show(branch.conversationId)
   const messageId = crypto.randomUUID()
   await root.runPromise(api.branches.run(Effect.flatMap(SqlClient.SqlClient, sql => sql`INSERT INTO messages (id, role, text, status, conversation_id)

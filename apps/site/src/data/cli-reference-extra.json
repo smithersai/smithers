@@ -1,5 +1,148 @@
 [
   {
+    "name": "run",
+    "description": "Execute run targets selected by a pattern",
+    "schema": {
+      "args": {
+        "type": "object",
+        "properties": {
+          "patterns": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Bazel labels or recursive patterns; the verb runs their union"
+          }
+        },
+        "required": [
+          "patterns"
+        ],
+        "additionalProperties": false
+      },
+      "options": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "default": "<cwd>",
+            "description": "Directory inside a workspace containing WORKSPACE.ts",
+            "type": "string"
+          },
+          "cacheDir": {
+            "description": "Workspace-relative cache directory; overrides the WORKSPACE.ts declaration",
+            "type": "string"
+          },
+          "verbose": {
+            "default": false,
+            "description": "Show plain progress for agent and pipe consumers",
+            "type": "boolean"
+          },
+          "plan": {
+            "default": false,
+            "description": "Print the inert plan instead of executing",
+            "type": "boolean"
+          },
+          "jobs": {
+            "description": "Maximum concurrent targets; defaults to host parallelism. Exclusive targets run alone after ready ordinary work",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "includeExclusive": {
+            "default": false,
+            "description": "Include exclusive targets in wildcard ci/test selections; explicit labels already include them",
+            "type": "boolean"
+          },
+          "cache": {
+            "default": true,
+            "description": "Consult the result cache before running; --no-cache bypasses reads",
+            "type": "boolean"
+          },
+          "knownRed": {
+            "description": "JSON list of targets already red, with owner and expiry; their failures are reported but fail only when newly red",
+            "type": "string"
+          },
+          "failFast": {
+            "default": false,
+            "description": "Stop at the first failure that fails the run: start nothing new, cancel running targets, report, exit 1",
+            "type": "boolean"
+          },
+          "resultsFile": {
+            "description": "Also write the run's summary, one status per label, as JSON to this new file; human output is unchanged",
+            "type": "string"
+          },
+          "name": {
+            "description": "Package name supplied to scaffold targets",
+            "type": "string"
+          },
+          "message": {
+            "description": "Commit message for a Git.Commit target; wins over the declared message",
+            "type": "string"
+          },
+          "sweep": {
+            "default": false,
+            "description": "Let a Git.Commit target with no declared path scope commit the whole working tree",
+            "type": "boolean"
+          },
+          "input": {
+            "description": "Payload input for agent targets as name=value; repeatable",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "workspace",
+          "verbose",
+          "plan",
+          "includeExclusive",
+          "cache",
+          "failFast",
+          "sweep"
+        ],
+        "additionalProperties": false
+      },
+      "globals": {
+        "type": "object",
+        "properties": {
+          "audience": {
+            "default": "auto",
+            "description": "Presentation audience; auto detects agent harnesses, CI, and terminals",
+            "type": "string",
+            "enum": [
+              "auto",
+              "human",
+              "agent"
+            ]
+          },
+          "silent": {
+            "default": false,
+            "description": "Suppress progress; retain the result and actionable failures",
+            "type": "boolean"
+          },
+          "ui": {
+            "default": "auto",
+            "description": "Terminal renderer: tty draws in place, stream colours without cursor motion, plain prints bare lines; auto shows live human progress; agent, --silent, pipe and dumb-terminal policies take precedence",
+            "type": "string",
+            "enum": [
+              "auto",
+              "tty",
+              "stream",
+              "plain"
+            ]
+          }
+        },
+        "required": [
+          "audience",
+          "silent",
+          "ui"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  {
     "name": "change list",
     "description": "List changes",
     "schema": {

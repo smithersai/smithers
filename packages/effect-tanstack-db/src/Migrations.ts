@@ -1080,14 +1080,16 @@ export type Snapshot = Omit<Lock, "epoch">
  */
 export const snapshot = (lock: Snapshot): Snapshot => {
   const ordered = (entries: Readonly<Record<string, LockEntry>>) =>
-    Object.fromEntries(Object.keys(entries).sort().map((id) => {
-      const entry = entries[id]!
-      return [id, {
-        kind: entry.kind,
-        ...(entry.retired === true ? { retired: true as const } : {}),
-        versions: Object.fromEntries(Object.entries(entry.versions).sort(([a], [b]) => Number(a) - Number(b)))
-      }]
-    }))
+    Object.fromEntries(
+      Object.keys(entries).sort().map((id) => {
+        const entry = entries[id]!
+        return [id, {
+          kind: entry.kind,
+          ...(entry.retired === true ? { retired: true as const } : {}),
+          versions: Object.fromEntries(Object.entries(entry.versions).sort(([a], [b]) => Number(a) - Number(b)))
+        }]
+      })
+    )
   return {
     stores: ordered(lock.stores),
     payloads: ordered(lock.payloads),

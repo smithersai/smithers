@@ -130,3 +130,29 @@ test("making an unchanged legacy shared prompt private retains its source genera
   expect(store.drafts.tanstack.get("branch-draft")?.generation).toBeUndefined()
   expect(tab.composer()!.generation).toBeUndefined()
 })
+
+
+test("the outbox initializes before repository restoration and drafts save offline", async () => {
+  const device = nodeDevice()
+  let outboxStarted = false
+  const beforeRepository: boolean[] = []
+  const host: NodeDevice = {
+    ...device,
+    outbox: { ...device.outbox, start: (options) => {
+      outboxStarted = true
+      return device.outbox.start(options)
+    } },
+    persistence: { ...device.persistence, make: (database, coordinator) => {
+      const persistence = device.persistence.make(database, coordinator)
+      return { ...persistence, resolvePersistenceForCollection: (options) => {
+        if (options.collectionId === "repo-refusals") beforeRepository.push(outboxStarted)
+        return persistence.resolvePersistenceForCollection!(options)
+      } }
+    } },
+  }
+  const tab = await open(host)
+  expect(beforeRepository).toEqual([true])
+  tab.chat.actions.setDraft("Ready before the gate")
+  await vi.waitFor(() => expect(tab.composer()).toMatchObject({ draft: "Ready before the gate", saved: true }))
+  expect(host.stored("chat-drafts")).toBe(1)
+})

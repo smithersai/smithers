@@ -377,8 +377,10 @@ factory stay in the worker bundle; worker fetch need not inherit the document's
 service-worker interception.
 
 The shell precache includes WASM. `e2e/flow-editor-storage.spec.ts` checks that
-SQLite's valid binary is cached before offline reopening; the SDK's real-browser
+SQLite's binary validates in the built precache. A local run builds the PWA with the release-test host, whose API routes reach the real ChatApi. After a completed cache receipt it cuts the network, reloads the editor, verifies the saved draft and restore receipt, and validates the binary again. The SDK's real-browser
 asset test reads it through a dedicated worker with transport disabled.
 
 
 Repeated draft names show their request in the list and Delete name; repeated requests add a stable ordinal ordered by creation time and id.
+
+The editor route keeps its navigation frame while device storage opens, without a busy marker or skeleton, as required by decision 0002 §7. Offline reopen checks retain the shared no-loading-state observer.

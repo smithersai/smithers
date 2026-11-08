@@ -53,7 +53,6 @@ a runnable composition, and each answers one of the requirements
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -71,7 +70,7 @@ const BuildLayer = Layer.mergeAll(
 ).pipe(
   Layer.provideMerge(Action.layerImplementations),
   Layer.provideMerge(FlowEngine.layerMemory),
-  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+  Layer.provideMerge(NodeCrypto.layer)
 )
 ```
 

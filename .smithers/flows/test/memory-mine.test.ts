@@ -1,6 +1,5 @@
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
 import * as MemoryMine from "@smthrs/agent/MemoryMine"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Interpreter } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -293,7 +292,7 @@ test("the file flow runs through its layer on a real engine, writing only under 
     ).pipe(
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
+      Layer.provideMerge(NodeCrypto.layer),
       Layer.provideMerge(TestMemory.layer),
       Layer.provideMerge(judge({ [build]: 0.9 }, asked)),
       Layer.provideMerge(NodeServices.layer)

@@ -74,7 +74,7 @@ export const touch = Touch.toLayer(({ name }) =>
         const refusal = fromPlatformError(error)
         return Option.isSome(refusal) && refusal.value._tag === "@smthrs/capability/PermissionDenied"
           ? Effect.fail(
-            new PermissionDenied({ capability: new Capability(refusal.value.capability), reason: refusal.value.reason })
+            PermissionDenied.new({ capability: new Capability(refusal.value.capability), reason: refusal.value.reason })
           )
           : Effect.die(error)
       })

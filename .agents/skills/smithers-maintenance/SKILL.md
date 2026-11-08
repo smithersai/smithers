@@ -66,15 +66,30 @@ Use `node .smithers/flows/land/workspace.mjs` from the invoking workspace:
   serialize with the same `~/smithers-builders/main-push.lock` legacy lanes use,
   sync, regenerate/check the target index on the mini (cfbox on capacity timeout), run explicit commands,
   reject conflicts, advance main by ancestry, push, verify, and print
-  `LANDED <full id>`. Remote preparation and tests do not hold the push lock;
-  publication re-fetches main and refuses a changed validation base or source.
+  `LANDED <full id>`. The full affected run and its receipt precede FIFO admission.
+  A FIFO lease spans sync, preparation, receipt checking, bounded validation and push;
+  queued landers hold no farm slot. Publication re-fetches main and refuses a
+  changed validation base or source, and an expired or reclaimed ticket cannot push.
+  Before bounded validation, a newer main keeps the receipt unless intervening
+  affected sets overlap; the refusal names the overlapping commit and targets.
   `--validated "<existing receipt>"` records previously run
   checks when rerunning is unavailable; it does not claim fresh execution.
 - `land --require path[=content] ...`: require a file/content predicate on
   fetched main. This fails promptly rather than waiting on a rewritten commit id.
 - A land touching `apps/mvp` runs all four `pnpm typecheck` projects on the farm,
-  before the lock and even with `--validated`. A type error or a farm with no
+  under its FIFO lease and even with `--validated`. A type error or a farm with no
   answer refuses it.
+- Every land first runs the tests its change affects on the farm, before any
+  FIFO ticket: the index's test targets the change reaches, the tests of every
+  workspace package depending on it and, when it reaches apps/mvp, apps/mvp's
+  whole Vitest suite in six shards, each in its own cfbox `pg` box. `--validated` doesn't skip it. A run
+  with fewer suites than the affected set is incomplete and permits landing with
+  the stage recorded in the land log and proxy inbox;
+  a failure that passes on main refuses it. Docs and generated-index edits only
+  select their explicit readers. Unchanged zero-test files are compared on the
+  parent and reported. App gates queue separately with at most seven pg jobs,
+  a 30-minute whole-gate wall budget starting before metadata inspection and
+  including metadata, admission and cleanup, and no mini fallback. See docs/devx/parallel-agents.md, "The land's affected tests".
 - `land --no-review-needed "<reason>"`: land a commit the review gate refuses,
   recording who and why in the land log and the proxy inbox. It refuses where
   that inbox can't be written. See "Review receipts" below.
@@ -86,8 +101,16 @@ Use `node .smithers/flows/land/workspace.mjs` from the invoking workspace:
 `SMITHERS_CO_AUTHOR` supplies your own co-author trailer when the tool describes
 a change; it never assigns a different agent as author.
 
-`SMITHERS_LOCK_TIMEOUT_MS` bounds admission (default five minutes). The tool
-never steals a live, stale or ownerless landing lock. `SMITHERS_LAND_LOCK` is an
+`SMITHERS_LOCK_TIMEOUT_MS` bounds admission (default one hour).
+`SMITHERS_LOCK_MAX_HOLD_MS` bounds a holder (default fifteen minutes).
+`SMITHERS_LOCK_STALE_MS` bounds a missing heartbeat (default one minute), with
+`SMITHERS_LOCK_HEARTBEAT_MS` refreshing every five seconds. Waiters reclaim
+expired or dead tickets, logging why; unknown legacy mkdir owners remain untouched.
+Atomic legacy acquisition also requires Python 3 (standard library only): its
+exclusive rename publishes the prepared owner directory without replacing an
+existing empty mkdir lock. Remote publication requires a stop receipt before
+reclamation; a remote deadline alone never proves termination.
+`SMITHERS_LAND_LOCK` is an
 explicit override for independent repositories/tests; all lanes of this repo
 keep the shared default. `SMITHERS_MINI_RUN` selects the farm client (default
 `~/.smithers-lead/scratchpad-mirror/mini-run`). No test command or install is

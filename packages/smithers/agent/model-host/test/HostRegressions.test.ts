@@ -1,16 +1,21 @@
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Model } from "@smthrs/model"
+import { Node } from "@smthrs/plan"
 import { AgentTurnJournal, type NativeAgent } from "@smthrs/rpc"
-import { Effect, Stream } from "effect"
+import { Effect, Exit, Layer, Option, Schedule, Schema, Stream } from "effect"
 import { HttpEffect } from "effect/http"
 import { createHash } from "node:crypto"
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
 import { expect, test } from "vitest"
-import { runContextPreflight } from "../src/ContextPreflight.ts"
-import { DurableChatProducer, runDurableChatTurn } from "../src/DurableChatProducer.ts"
+import { runDurableChatTurn as durableTurn } from "../src/DurableChatProducer.ts"
 import { environmentModelResolver } from "../src/EnvironmentResolver.ts"
-import { createModelTurnHandler, MODEL_HOST_STREAM_PATH } from "../src/HostServer.ts"
-import { runModelTurn } from "../src/ModelTurnHost.vibe"
+import { runContextPreflight } from "./fixtures/durable.ts"
+import { DurableChatProducer, runDurableChatTurn } from "./fixtures/durable.ts"
+import { createModelTurnHandler, MODEL_HOST_STREAM_PATH } from "./fixtures/durable.ts"
+import { runModelTurn } from "./fixtures/durable.ts"
 
 const cursor = { version: 1 as const, runId: "run", legId: "leg", batch: 0, position: 0, hash: "a".repeat(64) }
 const grant = {
@@ -228,9 +233,7 @@ test.each([
   expect(resolutions).toBe(0)
 })
 
-// Known broken: the legacy callback host has no persistent flow runtime or replay read port.
-// Keep the failing contract until that host migration records the complete selection answer.
-test.fails("known broken: a completed selection replays after the answer fails", async () => {
+test("a completed selection replays after the answer fails", async () => {
   let committed = cursor
   let selections = 0
   const frames: NativeAgent.AgentTurnFrame[] = []
@@ -266,19 +269,49 @@ test.fails("known broken: a completed selection replays after the answer fails",
       preflightBinding: { ...binding, modelId: "selector" },
       env: { SMITHERS_MODEL_KEY_PROVIDER: "provider-key", SMITHERS_MODEL_KEY_PROVIDER_ORIGIN: server.origin }
     })
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const resumed = { ...grant, cursor: committed, producerBaseUrl: server.origin }
-      const resolved = await Effect.runPromise(resolver(resumed, selection))
-      const exit = await Effect.runPromiseExit(runDurableChatTurn(
-        resolved.model,
-        resumed,
-        resolved.options,
-        server.origin,
-        undefined,
-        resolved.preflight
-      ))
-      expect(exit._tag).toBe("Failure")
-    }
+    const flow = Flow.make("model-host/selection-recovery", {
+      payload: {},
+      success: Schema.Void,
+      error: Schema.Unknown,
+      body: () => Node.succeed(undefined)
+    })
+    let passes = 0
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const engine = yield* FlowRuntime.FlowRuntime
+        yield* engine.register(flow, () =>
+          Effect.gen(function*() {
+            passes++
+            const resumed = { ...grant, cursor: committed, producerBaseUrl: server.origin }
+            const resolved = yield* resolver(resumed, selection)
+            const exit = yield* Effect.exit(durableTurn(
+              resolved.model,
+              resumed,
+              resolved.options,
+              server.origin,
+              undefined,
+              resolved.preflight
+            ))
+            expect(exit._tag).toBe("Failure")
+            if (passes === 1) return yield* Flow.suspend(yield* FlowRuntime.FlowInstance)
+          }))
+        yield* engine.execute(flow, { executionId: "selection-recovery", payload: {}, discard: true })
+        const parked = yield* engine.poll(flow, "selection-recovery").pipe(Effect.repeat({
+          schedule: Schedule.spaced("1 milli"),
+          until: Option.isSome
+        }))
+        expect(Option.isSome(parked) && parked.value._tag).toBe("Suspended")
+        yield* engine.resume(flow, "selection-recovery")
+        const result = yield* engine.poll(flow, "selection-recovery").pipe(Effect.repeat({
+          schedule: Schedule.spaced("1 milli"),
+          until: (value) => Option.isSome(value) && value.value._tag === "Complete"
+        }))
+        expect(Option.isSome(result) && result.value._tag === "Complete" && result.value.exit).toEqual(
+          Exit.succeed(undefined)
+        )
+      }).pipe(Effect.provide(Layer.merge(FlowEngine.layerMemory, WebCrypto.layer)), Effect.scoped)
+    )
+    expect(passes).toBe(2)
     expect(frames.some((frame) => frame.type === "context.preflight" && frame.phase === "completed")).toBe(true)
     expect(selections).toBe(1)
   } finally {

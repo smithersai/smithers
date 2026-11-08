@@ -134,7 +134,6 @@ import * as Agent from "@smthrs/agent/Agent"
 import * as Budget from "@smthrs/agent/Budget"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Interpreter } from "@smthrs/flow"
 import * as Registry from "@smthrs/registry/Registry"
@@ -169,7 +168,7 @@ const layer = Layer.mergeAll(
   // Ordinary flow composition: action implementations, a durable engine, crypto.
   Layer.provideMerge(Action.layerImplementations),
   Layer.provideMerge(FlowEngine.layerMemory),
-  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+  Layer.provideMerge(NodeCrypto.layer)
 )
 ```
 

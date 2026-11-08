@@ -87,6 +87,7 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
+    "@effect/sql-sqlite-do": "4.1.1",
     "@smthrs/artifacts": "1.0.0-rc.16",
     "@smthrs/canonical": "1.0.0-rc.16",
     "@smthrs/crypto": "1.0.0-rc.16",
@@ -98,9 +99,10 @@
     "@smthrs/journal": "1.0.0-rc.16",
     "@smthrs/run-store": "1.0.0-rc.16",
     "@smthrs/sandbox": "1.0.0-rc.16",
-    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
+    "vibelang-runtime": "0.0.12"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "5.20261019.1",
     "@effect/language-service": "0.87.2",
     "@effect/sql-pg": "4.1.1",
     "@effect/vitest": "4.1.1",
@@ -121,8 +123,8 @@
     "miniflare": "5.20261019.0-beta",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
-    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz",
+    "vibelang": "0.0.12",
+    "vibelang-vite": "0.0.12",
     "vitest": "5.0.0"
   },
   "peerDependencies": {

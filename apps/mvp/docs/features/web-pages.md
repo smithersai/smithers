@@ -29,7 +29,7 @@ conversation: view row ─ webpage (embed, framing allowed): WebPageView (origin
 | `embed` (the default) | When the page allows framing: the page in a sandboxed frame inside the chat, with its origin above it, a **Full screen** link to `/app/views/<id>`, and an always-visible **Open in new tab** link. Until the frame loads, the page's preview covers it (fading in after 600 ms), so a page that never loads still says what it is. When the page refuses framing, or couldn't be checked: the `tab` card instead, never a blank frame. |
 | `tab` | A card with the page's icon, title, short description and domain, and an **Open in new tab** button with its key (`↵`: Enter on the focused button). Browsers open a tab only from a person's click or key, and flows run in the engine worker, so the flow never opens one: the person's click or Enter does, through a real link with `rel="noopener noreferrer"`. |
 
-A person's own `/web <url> tab` is different: it runs synchronously in their Enter (the slash command's `submit`), and when the browser still allows it (`navigator.userActivation.isActive`), opens the tab right there, with `noopener,noreferrer`, and runs no flow. `window.open` takes the keypress's activation when it opens a tab, so an activation still there afterwards means the browser refused; then, or when the browser can't say, the flow runs and adds the card instead. The app never claims a tab it didn't open.
+A person's own `/web <url> tab` is different: it runs synchronously in their Enter (the slash command's `submit`), and when the browser still allows it (`navigator.userActivation.isActive`), opens a controlled blank tab, clears its opener and follows a `noreferrer` link there, and runs no flow. The actual tab handle is the success receipt; WebKit keeps activation active even when it opens a tab. If the browser blocks the tab, the flow adds the card instead. The app never claims a tab it didn't open.
 
 ## Well-known docs
 
@@ -169,8 +169,35 @@ One count and one log line per opening, written where its door is known: the age
 | `worker/Views.test.ts` | every status of `POST /api/views`, the server's own check, `WEB_PAGES_LOCAL_HTTP` (production refuses `http://localhost`), and no page in any record |
 | `db/Database.test.ts` "0010_views" | positions from the messages' sequence, after the messages before them, and the table's checks |
 | `src/pwa.test.ts` | the service worker keeps no frame and no other origin; the page headers and the frame policy |
-| `e2e/web-page.spec.ts` | the real app, against the test's own HTTPS pages on `127.0.0.1` (never an outside site): a page that allows framing shows in the chat, rendered, on a second device and at full size; one that sends `X-Frame-Options: DENY` is a card with its title, description, domain and icon, whose **Open in new tab** opens on Enter; with the real model, the agent asked to embed the refusing page adds the card, and its tab card opens a local page; a person's `/web … tab` opens straight from Enter; `javascript:` and the app's own origin are refused in the composer; the app's pages refuse framing |
+| `e2e/web-page.spec.ts`, `e2e/web-page-agent.spec.ts` | the real app, against local HTTPS fixtures or verified public HTTPS pages in a deployment: a page that allows framing shows in the chat, rendered, on a second device and at full size; one whose framing headers refuse the app is a card with its title, description, domain and icon, whose **Open in new tab** opens on Enter; with the real model, the agent asked to embed the refusing page adds the card, and its tab card opens the real page; a person's `/web … tab` opens straight from Enter; `javascript:` and the app's own origin are refused in the composer; the app's pages refuse framing |
 
-Run them with the compose Postgres and Electric up (`pnpm db:up`): `pnpm exec vitest run src/features/web src/features/views worker/Views.test.ts worker/WebPreview.test.ts src/pwa.test.ts`, and `pnpm exec playwright test e2e/web-page.spec.ts` against `pnpm dev` on `:1337`. The spec's HTTPS pages use the dev certificate, which the dev Worker trusts when it is self-signed ([infrastructure](../infrastructure.md#https-and-http2)); the agent's two cases need the real model.
+Run them with the compose Postgres and Electric up (`pnpm db:up`): `pnpm exec vitest run src/features/web src/features/views worker/Views.test.ts worker/WebPreview.test.ts src/pwa.test.ts`, and `pnpm exec playwright test e2e/web-page.spec.ts e2e/web-page-agent.spec.ts` against `pnpm dev` on `:1337`. The spec's HTTPS pages use the dev certificate, which the dev Worker trusts when it is self-signed ([infrastructure](../infrastructure.md#https-and-http2)); the agent's two cases need the real model.
 
 View writes hold the branch row lock shared with share changes, then read edit access and insert in the same transaction. A pending revocation completes before the waiting writer checks access.
+
+Deployment runs use `https://rust-lang.org/` for a rendered frame and
+`https://developer.mozilla.org/en-US/` for a framing refusal with preview metadata. Before
+using either, a fresh unauthenticated client verifies its HTTP status, HTML
+content type and framing headers against the app's origin. Each test attaches
+a `web-page-fixtures` JSON receipt. The browser then proves the frame's actual
+heading, cross-device sync and full screen, the refusal card's metadata and
+keyboard link, and the real agent's card and tab actions. View writes and agent
+questions stay in the test account's own conversation.
+
+Run `E2E_PROD_URL=<deployment HTTPS URL> pnpm e2e:prod web-page.spec.ts web-page-agent.spec.ts --project=deployment` with the test account's personal model configured.
+`E2E_WEB_ALLOWS_URL`, `E2E_WEB_REFUSES_URL` and `E2E_WEB_TAB_URL` override the
+public fixture URLs. The allowing page needs a plain-text `h1`; the refusing
+page needs title, description and an HTTPS icon. The public tab page must
+allow framing and have a title, so an accidental agent embed cannot pass as a
+tab card. Tabs default to `https://rust-lang.org/learn/`. The deployed preview
+service is also checked: a runner-only success cannot bless an upstream
+refusal to the Worker. Preview titles and document titles are asserted
+separately.
+Local runs retain their own servers. See [decision 0163](../decisions/0163-production-web-page-fixtures.md).
+
+The person-driven journeys are in `web-page.spec.ts`; they declare no model
+resource. The two real-agent journeys are in `web-page-agent.spec.ts`, with
+a model read lease. Both use `web-page-fixtures.ts`. This keeps the runner's
+isolated setup and resource checks intact while allowing person-only proof
+without a funded model connection. Run just `web-page.spec.ts` for that proof;
+run both files for the full feature.

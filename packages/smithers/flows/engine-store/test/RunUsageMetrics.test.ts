@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
 /**
  * Usage metrics through the full durable composition (`@smthrs/flow`
@@ -10,11 +11,11 @@ import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
  * attribute or a log line.
  */
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, DurableDeferred, Flow, FlowRuntime, RetryPolicy, RunMetrics } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { RunStore } from "@smthrs/run-store"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
@@ -68,7 +69,7 @@ type Services =
   | StepBoundary.Service
   | DurableEngineState.DurableEngineState
   | Jj.Jj
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | Scope.Scope
 
 type Line = ReturnType<typeof Logger.formatStructured.log>

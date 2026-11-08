@@ -382,7 +382,7 @@ describe("Transcript", () => {
         eventType: "flows.harness.cell-call-settled.v1",
         flowName: call.flowName,
         identity: call.identity,
-        result: new Cell.CallResult({ outcome: "success", value: ["alpha"] })
+        result: Cell.CallResult.new({ outcome: "success", value: ["alpha"] })
       }),
       new AgentEvent.CellSettled({
         eventType: "flows.harness.cell-settled.v1",

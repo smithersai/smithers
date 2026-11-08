@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The system human-task action: what it puts in a plan, how it parks for an
  * answer, what it does with an answer it cannot accept, and how it settles when
@@ -13,10 +14,10 @@
  * timeout does is asserted rather than waited out.
  */
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableDeferred, Flow, FlowRuntime, Graph, HumanTask, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Exit, Layer, Option, Schema } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { TestClock } from "effect/testing"
 import { Buffer } from "node:buffer"
 import * as BoundedJson from "../src/internal/BoundedJson.ts"
@@ -28,8 +29,10 @@ import { layerWired, makeInstance, makeMemoryState, type MemoryState } from "./M
  * A case whose waits are steps it takes on the `TestClock`, so a deadline is
  * asserted rather than waited out.
  */
-const timed = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body().pipe(Effect.provide(TestClock.layer()))))
+const timed = (
+  name: string,
+  body: () => Effect.Effect<void, unknown, (EffectDigest.Digest | SecureRandom.SecureRandom)>
+) => it.effect(name, () => withCrypto(body().pipe(Effect.provide(TestClock.layer()))))
 
 /**
  * The result an execution reaches once its forked fiber has got there, WITHOUT
@@ -49,13 +52,19 @@ const reaches = <A, E, R>(
 const wiredOver = (
   state: MemoryState,
   registration: Layer.Layer<never, never, FlowRuntime.FlowRuntime | Action.Implementations> = Layer.empty
-): Layer.Layer<FlowRuntime.FlowRuntime | Action.Implementations, never, Crypto.Crypto> =>
-  layerWired(Layer.mergeAll(HumanTask.layer, registration), state)
+): Layer.Layer<
+  FlowRuntime.FlowRuntime | Action.Implementations,
+  never,
+  (EffectDigest.Digest | SecureRandom.SecureRandom)
+> => layerWired(Layer.mergeAll(HumanTask.layer, registration), state)
 
 const wired = (
   registration: Layer.Layer<never, never, FlowRuntime.FlowRuntime | Action.Implementations> = Layer.empty
-): Layer.Layer<FlowRuntime.FlowRuntime | Action.Implementations, never, Crypto.Crypto> =>
-  wiredOver(makeMemoryState(), registration)
+): Layer.Layer<
+  FlowRuntime.FlowRuntime | Action.Implementations,
+  never,
+  (EffectDigest.Digest | SecureRandom.SecureRandom)
+> => wiredOver(makeMemoryState(), registration)
 
 /**
  * The refusals a runtime RECORDED, in the order it recorded them: what a reader
@@ -98,7 +107,10 @@ const drive = <A, E>(
   body: Effect.Effect<
     A,
     E,
-    Crypto.Crypto | FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime | Action.Implementations
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
+    | FlowRuntime.FlowInstance
+    | FlowRuntime.FlowRuntime
+    | Action.Implementations
   >,
   instance: FlowRuntime.FlowInstance["Service"]
 ) =>

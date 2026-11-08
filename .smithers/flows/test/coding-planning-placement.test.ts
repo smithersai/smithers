@@ -1,7 +1,6 @@
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
 import * as Budget from "@smthrs/agent/Budget"
 import * as RunawayGuard from "@smthrs/agent/RunawayGuard"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, FlowRuntime, HumanTask, Interpreter } from "@smthrs/flow"
 import { Effect, Exit, Layer, ManagedRuntime, Option, Schema } from "effect"
@@ -211,7 +210,7 @@ const host = (decline: string | undefined) => {
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Layer.provideMerge(NodeCrypto.layer)
   )
   return { runtime: ManagedRuntime.make(layer), counts }
 }
@@ -277,7 +276,7 @@ test(
       Layer.provideMerge(parking),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+      Layer.provideMerge(NodeCrypto.layer)
     )
     const runtime = ManagedRuntime.make(layer)
     t.after(() => runtime.dispose())

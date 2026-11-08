@@ -47,6 +47,8 @@ export interface Opened {
   readonly name: string
   /** Its body; `undefined` until the collector pushed it, `null` when the host refused it. */
   readonly body: unknown
+  /** The repository it belongs to, `owner/name`: it shows only beside a view of that repository. */
+  readonly repository: string
 }
 
 /** What the factory's components read and do. */
@@ -185,7 +187,7 @@ export const make = (host: Host.PluginHost, feeds: Feeds) =>
       close()
       const own = Scope.makeUnsafe()
       reading = own
-      const shown: Opened = { kind, title, name, body: undefined }
+      const shown: Opened = { kind, title, name, body: undefined, repository: `${repository.owner}/${repository.name}`.toLowerCase() }
       opened.set(shown)
       const set = (body: unknown) => {
         if (reading === own) opened.set({ ...shown, body })

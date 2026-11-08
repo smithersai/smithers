@@ -3,7 +3,7 @@
  * @since 0.1.0
  */
 
-import { WebSocket as NodeWebSocketClient } from "@effect/platform-node/NodeWS"
+import { WebSocket as NodeWebSocket } from "@effect/platform-node/NodeWS"
 import { randomUUID } from "node:crypto"
 import { setTimeout as delay } from "node:timers/promises"
 import { Refused, UsageError } from "../../CliError.ts"
@@ -302,9 +302,7 @@ workspaces["workspace shell"] = async (c, a, o) => {
   if (!session.id) throw protocol("Terminal response omitted id")
   const auth = await c.session.require(),
     url = auth.api_url.replace(/^http/, "ws") + `${path}/${esc(session.id)}/terminal`
-  const socket = new NodeWebSocketClient(url, {
-    headers: { Authorization: `token ${auth.token}`, Origin: auth.api_url }
-  })
+  const socket = new NodeWebSocket(url, { headers: { Authorization: `token ${auth.token}`, Origin: auth.api_url } })
   const raw = process.stdin.isRaw
   const input = (chunk: Buffer) => socket.send(chunk, { binary: true })
   const resize = () =>

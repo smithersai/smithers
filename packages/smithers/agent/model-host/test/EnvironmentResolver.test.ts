@@ -1,8 +1,8 @@
 import { Effect } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
-import type { DurableChatGrant } from "../src/DurableChatProducer.ts"
 import { environmentModelResolver } from "../src/EnvironmentResolver.ts"
-import { runModelTurn } from "../src/ModelTurnHost.vibe"
+import type { DurableChatGrant } from "./fixtures/durable.ts"
+import { runModelTurn } from "./fixtures/durable.ts"
 
 const binding = {
   protocol: "openai-chat",
@@ -73,7 +73,11 @@ test.each([false, true])("resolves shared context from the authenticated host ca
   expect(init?.signal).toBeInstanceOf(AbortSignal)
   expect(resolved.preflight?.input).toEqual(contextInput)
   expect(resolved.preflight?.model).toBe(resolved.model)
-  expect(resolved.preflight?.options).toEqual({ modelId: "fixture", credential: "fixture-key" })
+  expect(resolved.preflight?.options).toEqual({
+    route: { prepare: expect.any(Function) },
+    modelId: "fixture",
+    credential: "fixture-key"
+  })
 })
 
 test.each([
@@ -146,6 +150,7 @@ test.each([false, true])(
       })(chosenGrant)
     )
     expect(resolved.options).toEqual({
+      route: { prepare: expect.any(Function) },
       modelId: override ? "override" : "fixture",
       credential: "fixture-key",
       ...(override ? { maxTokens: 123 } : {})
@@ -307,8 +312,16 @@ test("the owner fast role uses its own credential and origin independently of th
   const resolved = await Effect.runPromise(
     environmentModelResolver({ binding, preflightBinding: fastBinding, env: fastEnv, fetchImpl })(sharedGrant)
   )
-  expect(resolved.options).toEqual({ modelId: "fixture", credential: "fixture-key" })
-  expect(resolved.preflight?.options).toEqual({ modelId: "owner-fast", credential: "fast-key" })
+  expect(resolved.options).toEqual({
+    route: { prepare: expect.any(Function) },
+    modelId: "fixture",
+    credential: "fixture-key"
+  })
+  expect(resolved.preflight?.options).toEqual({
+    route: { prepare: expect.any(Function) },
+    modelId: "owner-fast",
+    credential: "fast-key"
+  })
   expect(resolved.preflight?.input).toEqual(contextInput)
   const frames: unknown[] = []
   await Effect.runPromise(

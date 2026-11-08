@@ -1,3 +1,4 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
 import { NodeServices } from "@effect/platform-node"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
@@ -5,6 +6,7 @@ import { Action, FlowRuntime } from "@smthrs/flow"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import { Effect, Layer, Redacted, Schema } from "effect"
 import { FetchHttpClient } from "effect/http"
+import * as EffectLayer from "effect/Layer"
 import * as SqlClient from "effect/sql/SqlClient"
 import assert from "node:assert/strict"
 import { createServer } from "node:http"
@@ -282,7 +284,11 @@ const drive = (remote: Parameters<typeof RepositoryRemote.of>[0], action: string
     const handler = handlers.get(action)
     if (!handler) return yield* Effect.die(`${action} has no implementation`)
     return yield* handler(payload).execute.pipe(Effect.provide(services), Effect.result)
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.runPromise)
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
+    Effect.runPromise
+  )
 
 const pressTest = (remote: Parameters<typeof RepositoryRemote.of>[0], input: SetupInput) =>
   drive(

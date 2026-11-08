@@ -5,9 +5,10 @@
 // are also driven over a test `SandboxClient` and an injected `fetch`, for the answers a valid request never gets
 // (test.faults-by-injection). A person's slash command, pinned to the conversation the tab shows, is in
 // src/features/commands/commands.test.ts.
-import { type Crypto, Uuid, WebCrypto } from "@smthrs/crypto"
+import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import { Context, Effect, Exit, Layer, Logger, Metric, Schema, Scope } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
@@ -28,7 +29,6 @@ import {
   RESULT_RETRY,
   Run,
   runTool,
-  START_RETRY,
   SandboxCallFailed,
   SandboxCallRefused,
   SandboxCallRunning,
@@ -36,6 +36,7 @@ import {
   SandboxDiff,
   SandboxRead,
   SandboxRun,
+  START_RETRY
 } from "./flows"
 import { calls } from "./metrics"
 import type { Standing } from "./schema"
@@ -55,11 +56,19 @@ const SENTINEL = "sentinel-77b2c0"
 /** A test's budget: flows on a fresh engine, each with its first start, on a loaded machine. */
 const WITHIN = 90_000
 
-const callIdOf = (executionId: string) => Effect.runPromise(Uuid.v5(CALL_ID_NAMESPACE, executionId).pipe(Effect.provide(WebCrypto.layer)))
+const callIdOf = (executionId: string) =>
+  Effect.runPromise(Uuid.v5(CALL_ID_NAMESPACE, executionId).pipe(Effect.provide(WebCrypto.layer)))
 
 /** The tools' flows on the Node host's engine, calling ChatApi's real routes as a Member: a run, the harness and records. */
-const openEngine = async (commandMaxSeconds = COMMAND_LIMIT_SECONDS, options: Parameters<typeof branchHarness>[1] = {}) => {
-  const h = await branchHarness(runtime, { actor: member, config: { SANDBOX_COMMAND_MAX_SECONDS: String(commandMaxSeconds) }, ...options })
+const openEngine = async (
+  commandMaxSeconds = COMMAND_LIMIT_SECONDS,
+  options: Parameters<typeof branchHarness>[1] = {}
+) => {
+  const h = await branchHarness(runtime, {
+    actor: member,
+    config: { SANDBOX_COMMAND_MAX_SECONDS: String(commandMaxSeconds) },
+    ...options
+  })
   const fetch: typeof globalThis.fetch = (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input))
     return h.fetch(`${url.pathname}${url.search}`, input instanceof Request ? input : init)
@@ -68,8 +77,11 @@ const openEngine = async (commandMaxSeconds = COMMAND_LIMIT_SECONDS, options: Pa
   const registry: Metric.MetricRegistry = new Map()
   const observed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
-      Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((o) => void logs.push(Logger.formatStructured.log(o)))])),
-      Effect.provideService(Metric.MetricRegistry, registry),
+      Effect.provideService(
+        Logger.CurrentLoggers,
+        new Set([Logger.make((o) => void logs.push(Logger.formatStructured.log(o)))])
+      ),
+      Effect.provideService(Metric.MetricRegistry, registry)
     )
   const scope = Effect.runSync(Scope.make())
   scopes.push(scope)
@@ -80,11 +92,11 @@ const openEngine = async (commandMaxSeconds = COMMAND_LIMIT_SECONDS, options: Pa
           registrationAt("http://chat.test").pipe(
             Layer.provideMerge(Action.layerImplementations),
             Layer.provide(FetchHttpClient.layer),
-            Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
-          ),
-        ),
-      ),
-    ),
+            Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch))
+          )
+        )
+      )
+    )
   )
   const flows = Context.get(context, FlowRuntime.FlowRuntime)
   return {
@@ -92,21 +104,28 @@ const openEngine = async (commandMaxSeconds = COMMAND_LIMIT_SECONDS, options: Pa
     execute: <F extends typeof SandboxRun | typeof SandboxRead | typeof SandboxDiff>(
       flow: F,
       executionId: string,
-      payload: F["payloadSchema"]["Type"],
-    ) => Effect.runPromise(observed(Effect.exit(flows.execute(flow as typeof SandboxRun, { executionId, payload: payload as never })))),
+      payload: F["payloadSchema"]["Type"]
+    ) =>
+      Effect.runPromise(
+        observed(Effect.exit(flows.execute(flow as typeof SandboxRun, { executionId, payload: payload as never })))
+      ),
     count: (attributes: Record<string, string>) =>
       Effect.runSync(
-        Metric.value(Metric.withAttributes(calls, attributes)).pipe(Effect.provideService(Metric.MetricRegistry, registry)),
+        Metric.value(Metric.withAttributes(calls, attributes)).pipe(
+          Effect.provideService(Metric.MetricRegistry, registry)
+        )
       ).count,
-    lines: () => logs.filter((log) => log.message === "sandbox.call"),
+    lines: () => logs.filter((log) => log.message === "sandbox.call")
   }
 }
 
 /** Every call Postgres holds: its id, answer and status. */
 const rows = () =>
-  runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-    sql<{ readonly id: string; readonly answerId: string | null; readonly tool: string; readonly status: string }>`
-      SELECT id, answer_id AS "answerId", tool, status FROM sandbox_calls ORDER BY created_at`))
+  runtime.runPromise(
+    Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ readonly id: string; readonly answerId: string | null; readonly tool: string; readonly status: string }>`
+      SELECT id, answer_id AS "answerId", tool, status FROM sandbox_calls ORDER BY created_at`)
+  )
 
 const ran = {
   tool: "run",
@@ -116,19 +135,22 @@ const ran = {
   stderr: "",
   stdoutBytes: SENTINEL.length + 1,
   stderrBytes: 0,
-  truncated: false,
+  truncated: false
 } as const
 
 describe("the flows", () => {
   test("a repository Member's machine refusal settles each durable tool after exactly one request", async () => {
     const engine = await openEngine(COMMAND_LIMIT_SECONDS, {
       actor: { ...member, role: null },
-      branchRoles: Layer.succeed(BranchRoles, { roleOn: () => Effect.succeed("member"), uninstalled: () => "member" }),
+      branchRoles: Layer.succeed(BranchRoles, { roleOn: () => Effect.succeed("member"), uninstalled: () => "member" })
     })
     const branch = await tracked(runtime, REPO, "feature/stranger")
     const failure = new SandboxCallRefused({ reason: "members_only" })
-    expect(await engine.execute(SandboxRun, "stranger-run", { command: "pwd", conversationId: branch.conversationId })).toEqual(Exit.fail(failure))
-    expect(await engine.execute(SandboxRead, "stranger-read", { path: "README.md", conversationId: branch.conversationId })).toEqual(Exit.fail(failure))
+    expect(await engine.execute(SandboxRun, "stranger-run", { command: "pwd", conversationId: branch.conversationId }))
+      .toEqual(Exit.fail(failure))
+    expect(
+      await engine.execute(SandboxRead, "stranger-read", { path: "README.md", conversationId: branch.conversationId })
+    ).toEqual(Exit.fail(failure))
     expect(engine.h.line("sandbox.call")).toHaveLength(2)
     expect(engine.h.starts).toEqual([])
     expect(await rows()).toEqual([])
@@ -136,75 +158,102 @@ describe("the flows", () => {
     expect(engine.count({ tool: "read", outcome: "members_only" })).toBe(1)
   }, WITHIN)
 
-  test("a lowered limit reaches the browser's flow once, without starting a command; a shorter new call runs", async () => {
-    const engine = await openEngine(900)
-    const branch = await tracked(runtime, REPO, `feature/${crypto.randomUUID()}`)
-    const input = { command: `echo ${SENTINEL}`, conversationId: branch.conversationId }
-    const failure = await Effect.runPromise(Effect.flip(await engine.execute(SandboxRun, "too-long", { ...input, timeoutSeconds: 901 })))
-    expect(failure).toMatchObject({ _tag: "@smthrs/mvp/sandbox/SandboxCommandTooLong", maxSeconds: 900 })
-    expect(engine.h.starts).toEqual([])
-    expect(await rows()).toEqual([])
-    expect(engine.h.line("sandbox.call")).toHaveLength(1)
-    expect(engine.count({ tool: "run", outcome: "too_long" })).toBe(1)
-    expect(engine.lines()).toMatchObject([{ level: "WARN", annotations: { tool: "run", outcome: "too_long" } }])
-    expect(JSON.stringify(engine.lines())).not.toContain(SENTINEL)
+  test(
+    "a lowered limit reaches the browser's flow once, without starting a command; a shorter new call runs",
+    async () => {
+      const engine = await openEngine(900)
+      const branch = await tracked(runtime, REPO, `feature/${crypto.randomUUID()}`)
+      const input = { command: `echo ${SENTINEL}`, conversationId: branch.conversationId }
+      const failure = await Effect.runPromise(
+        Effect.flip(await engine.execute(SandboxRun, "too-long", { ...input, timeoutSeconds: 901 }))
+      )
+      expect(failure).toMatchObject({ _tag: "@smthrs/mvp/sandbox/SandboxCommandTooLong", maxSeconds: 900 })
+      expect(engine.h.starts).toEqual([])
+      expect(await rows()).toEqual([])
+      expect(engine.h.line("sandbox.call")).toHaveLength(1)
+      expect(engine.count({ tool: "run", outcome: "too_long" })).toBe(1)
+      expect(engine.lines()).toMatchObject([{ level: "WARN", annotations: { tool: "run", outcome: "too_long" } }])
+      expect(JSON.stringify(engine.lines())).not.toContain(SENTINEL)
 
-    const shorter = engine.execute(SandboxRun, "shorter", { ...input, timeoutSeconds: 900 })
-    await vi.waitFor(() => expect(engine.h.starts).toHaveLength(1), { timeout: 30_000, interval: 20 })
-    expect(engine.h.starts[0]).toMatchObject({ payload: { call: { timeoutSeconds: 900 } } })
-    await runtime.runPromise(settle(await callIdOf("shorter"), { status: "done", result: ran }))
-    expect(await shorter).toEqual(Exit.succeed(ran))
-  }, WITHIN)
+      const shorter = engine.execute(SandboxRun, "shorter", { ...input, timeoutSeconds: 900 })
+      await vi.waitFor(() => expect(engine.h.starts).toHaveLength(1), { timeout: 30_000, interval: 20 })
+      expect(engine.h.starts[0]).toMatchObject({ payload: { call: { timeoutSeconds: 900 } } })
+      await runtime.runPromise(settle(await callIdOf("shorter"), { status: "done", result: ran }))
+      expect(await shorter).toEqual(Exit.succeed(ran))
+    },
+    WITHIN
+  )
 
-  test("a person's run calls ChatApi with the pinned conversation, waits while it runs, and answers its result", async () => {
-    const engine = await openEngine()
-    const branch = await tracked(runtime, REPO, `feature/${crypto.randomUUID()}`)
-    const callId = await callIdOf("run-1")
+  test(
+    "a person's run calls ChatApi with the pinned conversation, waits while it runs, and answers its result",
+    async () => {
+      const engine = await openEngine()
+      const branch = await tracked(runtime, REPO, `feature/${crypto.randomUUID()}`)
+      const callId = await callIdOf("run-1")
 
-    const running = engine.execute(SandboxRun, "run-1", {
-      command: `echo ${SENTINEL}`,
-      conversationId: branch.conversationId.toUpperCase(),
-    })
-    // The machine runs it in the remote sandbox/Call: here, settled as that flow settles it.
-    await vi.waitFor(() => expect(engine.h.starts).toHaveLength(1), { timeout: 30_000, interval: 20 })
-    expect(engine.h.starts[0]).toMatchObject({
-      flow: "sandbox/Call",
-      payload: { callId, call: { tool: "run", command: `echo ${SENTINEL}` }, branch: { branchId: branch.branchId } },
-    })
-    await runtime.runPromise(settle(callId, { status: "done", result: ran, generation: 1 }))
+      const running = engine.execute(SandboxRun, "run-1", {
+        command: `echo ${SENTINEL}`,
+        conversationId: branch.conversationId.toUpperCase()
+      })
+      // The machine runs it in the remote sandbox/Call: here, settled as that flow settles it.
+      await vi.waitFor(() => expect(engine.h.starts).toHaveLength(1), { timeout: 30_000, interval: 20 })
+      expect(engine.h.starts[0]).toMatchObject({
+        flow: "sandbox/Call",
+        payload: { callId, call: { tool: "run", command: `echo ${SENTINEL}` }, branch: { branchId: branch.branchId } }
+      })
+      await runtime.runPromise(settle(callId, { status: "done", result: ran, generation: 1 }))
 
-    expect(await running).toEqual(Exit.succeed(ran))
-    expect(await rows()).toEqual([{ id: callId, answerId: null, tool: "run", status: "done" }])
-    expect(engine.count({ tool: "run", outcome: "done" })).toBe(1)
-    expect(engine.lines()).toMatchObject([{ level: "INFO", annotations: { tool: "run", outcome: "done", callId, feature: "sandbox" } }])
-    expect(JSON.stringify(engine.lines())).not.toContain(SENTINEL)
-  }, WITHIN)
+      expect(await running).toEqual(Exit.succeed(ran))
+      expect(await rows()).toEqual([{ id: callId, answerId: null, tool: "run", status: "done" }])
+      expect(engine.count({ tool: "run", outcome: "done" })).toBe(1)
+      expect(engine.lines()).toMatchObject([{
+        level: "INFO",
+        annotations: { tool: "run", outcome: "done", callId, feature: "sandbox" }
+      }])
+      expect(JSON.stringify(engine.lines())).not.toContain(SENTINEL)
+    },
+    WITHIN
+  )
 
-  test("the agent's call works in its answer's conversation; the same run again reads the one call, never a second", async () => {
-    const engine = await openEngine()
-    const branch = await tracked(runtime, REPO, `feature/${crypto.randomUUID()}`)
-    const ids = { id: crypto.randomUUID(), answerId: crypto.randomUUID() }
-    await runtime.runPromise(
-      Messages.ask({ ...ids, conversationId: branch.conversationId, text: "Show the diff", askedBy: member.subject.id }),
-    )
-    const executionId = `${ids.answerId.toUpperCase()}/chat/Respond@abc:1/call/1.0`
-    const callId = await callIdOf(executionId)
-    const diffed = { tool: "diff", diff: "+hi\n", bytes: 4, truncated: false } as const
-    await runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-      sql`INSERT INTO sandbox_calls (id, branch_id, person_id, answer_id, tool)
-        VALUES (${callId}, ${branch.branchId}, ${member.subject.id}, ${ids.answerId}, 'diff')`))
-    await runtime.runPromise(settle(callId, { status: "done", result: diffed, generation: 2 }))
+  test(
+    "the agent's call works in its answer's conversation; the same run again reads the one call, never a second",
+    async () => {
+      const engine = await openEngine()
+      const branch = await tracked(runtime, REPO, `feature/${crypto.randomUUID()}`)
+      const ids = { id: crypto.randomUUID(), answerId: crypto.randomUUID() }
+      await runtime.runPromise(
+        Messages.ask({
+          ...ids,
+          conversationId: branch.conversationId,
+          text: "Show the diff",
+          askedBy: member.subject.id
+        })
+      )
+      const executionId = `${ids.answerId.toUpperCase()}/chat/Respond@abc:1/call/1.0`
+      const callId = await callIdOf(executionId)
+      const diffed = { tool: "diff", diff: "+hi\n", bytes: 4, truncated: false } as const
+      await runtime.runPromise(
+        Effect.flatMap(
+          SqlClient.SqlClient,
+          (sql) =>
+            sql`INSERT INTO sandbox_calls (id, branch_id, person_id, answer_id, tool)
+        VALUES (${callId}, ${branch.branchId}, ${member.subject.id}, ${ids.answerId}, 'diff')`
+        )
+      )
+      await runtime.runPromise(settle(callId, { status: "done", result: diffed, generation: 2 }))
 
-    // As a run resumed after its tab closed: the call is the one already settled.
-    expect(await engine.execute(SandboxDiff, executionId, {})).toEqual(Exit.succeed(diffed))
-    expect(await rows()).toEqual([{ id: callId, answerId: ids.answerId, tool: "diff", status: "done" }])
-    expect(engine.h.starts).toEqual([])
-    // Who called is the request's to say: this engine sends no run credentials (the browser's does,
-    // src/flows/credentials.ts), so ChatApi records the person, who may name their own answer.
-    expect(engine.h.line("sandbox.call").map((line) => [line.annotations.door, line.annotations.outcome])).toEqual([
-      ["person", "existing"],
-    ])
-  }, WITHIN)
+      // As a run resumed after its tab closed: the call is the one already settled.
+      expect(await engine.execute(SandboxDiff, executionId, {})).toEqual(Exit.succeed(diffed))
+      expect(await rows()).toEqual([{ id: callId, answerId: ids.answerId, tool: "diff", status: "done" }])
+      expect(engine.h.starts).toEqual([])
+      // Who called is the request's to say: this engine sends no run credentials (the browser's does,
+      // src/flows/credentials.ts), so ChatApi records the person, who may name their own answer.
+      expect(engine.h.line("sandbox.call").map((line) => [line.annotations.door, line.annotations.outcome])).toEqual([
+        ["person", "existing"]
+      ])
+    },
+    WITHIN
+  )
 
   test("a call the machine settles failed fails the flow with why, counted", async () => {
     const engine = await openEngine()
@@ -261,44 +310,52 @@ const scripted = (answers: {
           started.push(request)
           return answers.start ?? Effect.die("no start scripted")
         }),
-      result: () => Effect.suspend(() => answers.result![Math.min(read++, answers.result!.length - 1)]!),
-    }),
+      result: () => Effect.suspend(() => answers.result![Math.min(read++, answers.result!.length - 1)]!)
+    })
   )
   return { started, layer }
 }
 
 /** Runs a step in the run `executionId`, counting into a registry of its own: how it ended, and what it counted. */
 const step = async <A, E>(
-  effect: Effect.Effect<A, E, FlowRuntime.FlowInstance | SandboxClient | Crypto.Crypto>,
+  effect: Effect.Effect<A, E, FlowRuntime.FlowInstance | SandboxClient | EffectDigest.Digest>,
   client: Layer.Layer<SandboxClient>,
-  executionId = "run-7",
+  executionId = "run-7"
 ) => {
   const registry: Metric.MetricRegistry = new Map()
   const exit = await Effect.runPromise(
     effect.pipe(
       // How it ended: its success, or its declared failure, without the span the step ran in.
-      Effect.match({ onSuccess: (value) => Exit.succeed(value) as Exit.Exit<A, E>, onFailure: (error) => Exit.fail(error) }),
+      Effect.match({
+        onSuccess: (value) => Exit.succeed(value) as Exit.Exit<A, E>,
+        onFailure: (error) => Exit.fail(error)
+      }),
       Effect.provideService(FlowRuntime.FlowInstance, { executionId } as FlowRuntime.FlowInstance["Service"]),
       Effect.provide(client),
       Effect.provide(WebCrypto.layer),
-      Effect.provideService(Metric.MetricRegistry, registry),
-    ),
+      Effect.provideService(Metric.MetricRegistry, registry)
+    )
   )
   const count = (tool: string, outcome: string) =>
     Effect.runSync(
-      Metric.value(Metric.withAttributes(calls, { tool, outcome })).pipe(Effect.provideService(Metric.MetricRegistry, registry)),
+      Metric.value(Metric.withAttributes(calls, { tool, outcome })).pipe(
+        Effect.provideService(Metric.MetricRegistry, registry)
+      )
     ).count
   return { exit, count }
 }
 
 describe("the steps", () => {
-  test.each([60, 900, 1800, COMMAND_LIMIT_SECONDS])("a too_long refusal carries the %s second limit without retrying", (maxSeconds) => {
-    const failure = refusalOf(new CallRefused({ status: 400, code: "too_long", maxSeconds }))
-    expect(failure).toMatchObject({ _tag: "@smthrs/mvp/sandbox/SandboxCommandTooLong", maxSeconds })
-    expect(Schema.is(Failure)(failure)).toBe(true)
-    expect(START_RETRY.nonRetryable).toContain(failure._tag)
-    expect(RESULT_RETRY.nonRetryable).toContain(failure._tag)
-  })
+  test.each([60, 900, 1800, COMMAND_LIMIT_SECONDS])(
+    "a too_long refusal carries the %s second limit without retrying",
+    (maxSeconds) => {
+      const failure = refusalOf(new CallRefused({ status: 400, code: "too_long", maxSeconds }))
+      expect(failure).toMatchObject({ _tag: "@smthrs/mvp/sandbox/SandboxCommandTooLong", maxSeconds })
+      expect(Schema.is(Failure)(failure)).toBe(true)
+      expect(START_RETRY.nonRetryable).toContain(failure._tag)
+      expect(RESULT_RETRY.nonRetryable).toContain(failure._tag)
+    }
+  )
 
   test("too_long needs a 400 and the limit; other refusals keep their meaning", () => {
     expect(refusalOf(new CallRefused({ status: 400, code: "too_long" })))
@@ -315,7 +372,7 @@ describe("the steps", () => {
     const refused = new CallRefused({ status: 400, code: "too_long", maxSeconds: 900 })
     const starting = await step(
       start("run")({ command: "pnpm install", timeoutSeconds: 901, conversationId: "c" }),
-      scripted({ start: Effect.fail(refused) }).layer,
+      scripted({ start: Effect.fail(refused) }).layer
     )
     expect(starting.exit).toEqual(Exit.fail(refusalOf(refused)))
     expect(starting.count("run", "too_long")).toBe(1)
@@ -342,9 +399,13 @@ describe("the steps", () => {
     [413, "invalid", new SandboxCallRefused({ reason: "invalid" })],
     [409, "id_taken", new SandboxCallRefused({ reason: "invalid" })],
     [503, "unavailable", new SandboxCallUnavailable()],
-    [undefined, undefined, new SandboxCallUnavailable()],
+    [undefined, undefined, new SandboxCallUnavailable()]
   ])("ChatApi's %s (%s) means %o", (status, code, failure) => {
-    expect(refusalOf(new CallRefused({ ...(status === undefined ? {} : { status }), ...(code === undefined ? {} : { code }) })))
+    expect(
+      refusalOf(
+        new CallRefused({ ...(status === undefined ? {} : { status }), ...(code === undefined ? {} : { code }) })
+      )
+    )
       .toEqual(failure)
   })
 
@@ -355,7 +416,7 @@ describe("the steps", () => {
     expect(person.started).toEqual([{
       callId: await callIdOf("run-7"),
       call: { command: "ls", cwd: undefined, tool: "run" },
-      conversationId: "abc",
+      conversationId: "abc"
     }])
 
     const agent = scripted({ start: Effect.succeed({ callId: "x", status: "running" }) })
@@ -379,31 +440,37 @@ describe("the steps", () => {
 
     const locked = await step(
       start("write")({ path: "a", content: "b", conversationId: "c" }),
-      scripted({ start: Effect.fail(new CallRefused({ status: 409, code: "locked" })) }).layer,
+      scripted({ start: Effect.fail(new CallRefused({ status: 409, code: "locked" })) }).layer
     )
     expect(locked.exit).toEqual(Exit.fail(new SandboxCallRefused({ reason: "locked" })))
     expect(locked.count("write", "locked")).toBe(1)
 
-    const offline = await step(start("write")({ path: "a", content: "b", conversationId: "c" }), scripted({ start: Effect.fail(new CallRefused({})) }).layer)
+    const offline = await step(
+      start("write")({ path: "a", content: "b", conversationId: "c" }),
+      scripted({ start: Effect.fail(new CallRefused({})) }).layer
+    )
     expect(offline.exit).toEqual(Exit.fail(new SandboxCallUnavailable()))
     expect(offline.count("write", "unavailable")).toBe(1)
 
     const failed = await step(
       start("run")({ command: "x", conversationId: "c" }),
-      scripted({ start: Effect.succeed({ callId: "x", status: "failed", failure: "lost" }) }).layer,
+      scripted({ start: Effect.succeed({ callId: "x", status: "failed", failure: "lost" }) }).layer
     )
     expect(failed.exit).toEqual(Exit.fail(new SandboxCallFailed({ failure: "lost" })))
     expect(failed.count("run", "lost")).toBe(1)
   })
 
   test("result fails SandboxCallRunning while the machine runs, uncounted, and answers the result once done", async () => {
-    const running = await step(result("run")({ callId: "c" }), scripted({ result: [Effect.succeed({ callId: "c", status: "running" })] }).layer)
+    const running = await step(
+      result("run")({ callId: "c" }),
+      scripted({ result: [Effect.succeed({ callId: "c", status: "running" })] }).layer
+    )
     expect(running.exit).toEqual(Exit.fail(new SandboxCallRunning()))
     expect(running.count("run", "unavailable")).toBe(0)
 
     const done = await step(
       result("run")({ callId: "c" }),
-      scripted({ result: [Effect.succeed({ callId: "c", status: "done", result: ran })] }).layer,
+      scripted({ result: [Effect.succeed({ callId: "c", status: "done", result: ran })] }).layer
     )
     expect(done.exit).toEqual(Exit.succeed(ran))
     expect(done.count("run", "done")).toBe(1)
@@ -412,16 +479,22 @@ describe("the steps", () => {
   test("result: a failed call and a refusal are settled and counted; ChatApi out of reach is asked again, uncounted", async () => {
     const failed = await step(
       result("read")({ callId: "c" }),
-      scripted({ result: [Effect.succeed({ callId: "c", status: "failed", failure: "path" })] }).layer,
+      scripted({ result: [Effect.succeed({ callId: "c", status: "failed", failure: "path" })] }).layer
     )
     expect(failed.exit).toEqual(Exit.fail(new SandboxCallFailed({ failure: "path" })))
     expect(failed.count("read", "path")).toBe(1)
 
-    const gone = await step(result("read")({ callId: "c" }), scripted({ result: [Effect.fail(new CallRefused({ status: 404 }))] }).layer)
+    const gone = await step(
+      result("read")({ callId: "c" }),
+      scripted({ result: [Effect.fail(new CallRefused({ status: 404 }))] }).layer
+    )
     expect(gone.exit).toEqual(Exit.fail(new SandboxCallRefused({ reason: "not_found" })))
     expect(gone.count("read", "not_found")).toBe(1)
 
-    const offline = await step(result("read")({ callId: "c" }), scripted({ result: [Effect.fail(new CallRefused({}))] }).layer)
+    const offline = await step(
+      result("read")({ callId: "c" }),
+      scripted({ result: [Effect.fail(new CallRefused({}))] }).layer
+    )
     expect(offline.exit).toEqual(Exit.fail(new SandboxCallUnavailable()))
     expect(offline.count("read", "unavailable")).toBe(0)
   })
@@ -432,12 +505,16 @@ describe("the client", () => {
   const client = async (
     call: (client: SandboxClient["Service"]) => Effect.Effect<Standing, CallRefused>,
     answer: typeof globalThis.fetch,
-    within: `${number} millis` = "1000 millis",
+    within: `${number} millis` = "1000 millis"
   ) => {
     const requests: Array<{ readonly method: string; readonly url: string; readonly body: unknown }> = []
     const fetch: typeof globalThis.fetch = async (input, init) => {
       const request = new Request(input, init)
-      requests.push({ method: request.method, url: request.url, body: request.method === "POST" ? await request.json() : null })
+      requests.push({
+        method: request.method,
+        url: request.url,
+        body: request.method === "POST" ? await request.json() : null
+      })
       return answer(input, init)
     }
     const ended = await Effect.runPromise(
@@ -446,59 +523,75 @@ describe("the client", () => {
         Effect.provide(
           SandboxClient.layer({ origin: "http://chat.test", within }).pipe(
             Layer.provide(FetchHttpClient.layer),
-            Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
-          ),
-        ),
-      ),
+            Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch))
+          )
+        )
+      )
     )
     return { ended, requests }
   }
   const startRun = (c: SandboxClient["Service"]) =>
     c.start({ callId: "c-1", call: { tool: "status" }, conversationId: "v-1" })
 
-  test.each([1, 900, 1800, COMMAND_LIMIT_SECONDS])("a refused call keeps the deployment's %s second limit", async (maxSeconds) => {
-    expect((await client(startRun, async () => Response.json({ code: "too_long", maxSeconds }, { status: 400 }))).ended)
-      .toMatchObject({ status: 400, code: "too_long", maxSeconds })
-  })
+  test.each([1, 900, 1800, COMMAND_LIMIT_SECONDS])(
+    "a refused call keeps the deployment's %s second limit",
+    async (maxSeconds) => {
+      expect(
+        (await client(startRun, async () => Response.json({ code: "too_long", maxSeconds }, { status: 400 }))).ended
+      )
+        .toMatchObject({ status: 400, code: "too_long", maxSeconds })
+    }
+  )
 
-  test.each([0, -1, 1.5, "900", null])("a refusal with an invalid maxSeconds (%s) isn't decoded", async (maxSeconds) => {
-    expect((await client(startRun, async () => Response.json({ code: "too_long", maxSeconds }, { status: 400 }))).ended)
-      .toEqual(new CallRefused({ status: 400 }))
-  })
+  test.each([0, -1, 1.5, "900", null])(
+    "a refusal with an invalid maxSeconds (%s) isn't decoded",
+    async (maxSeconds) => {
+      expect(
+        (await client(startRun, async () => Response.json({ code: "too_long", maxSeconds }, { status: 400 }))).ended
+      )
+        .toEqual(new CallRefused({ status: 400 }))
+    }
+  )
 
   test("posts a call and gets one, answering how it stands on 200 or 202", async () => {
-    const posted = await client(startRun, async () => Response.json({ callId: "c-1", status: "running" }, { status: 202 }))
+    const posted = await client(
+      startRun,
+      async () => Response.json({ callId: "c-1", status: "running" }, { status: 202 })
+    )
     expect(posted).toEqual({
       ended: { callId: "c-1", status: "running" },
       requests: [{
         method: "POST",
         url: "http://chat.test/api/sandbox/calls",
-        body: { callId: "c-1", call: { tool: "status" }, conversationId: "v-1" },
-      }],
+        body: { callId: "c-1", call: { tool: "status" }, conversationId: "v-1" }
+      }]
     })
     const read = await client(
       (c) => c.result("c-1"),
-      async () => Response.json({ callId: "c-1", status: "done", result: { tool: "status", branch: "main", entries: [] } }),
+      async () =>
+        Response.json({ callId: "c-1", status: "done", result: { tool: "status", branch: "main", entries: [] } })
     )
     expect(read).toEqual({
       ended: { callId: "c-1", status: "done", result: { tool: "status", branch: "main", entries: [] } },
-      requests: [{ method: "GET", url: "http://chat.test/api/sandbox/calls/c-1", body: null }],
+      requests: [{ method: "GET", url: "http://chat.test/api/sandbox/calls/c-1", body: null }]
     })
   })
 
   test("anything else is a CallRefused: by status and code, with no answer at all, in time or readable", async () => {
     expect((await client(startRun, async () => Response.json({ code: "locked" }, { status: 409 }))).ended).toEqual(
-      new CallRefused({ status: 409, code: "locked" }),
+      new CallRefused({ status: 409, code: "locked" })
     )
     expect((await client(startRun, async () => new Response("busy", { status: 503 }))).ended).toEqual(
-      new CallRefused({ status: 503 }),
+      new CallRefused({ status: 503 })
     )
     const cut = new ReadableStream({ start: (controller) => controller.error(new TypeError("cut")) })
-    expect((await client(startRun, async () => new Response(cut, { status: 502 }))).ended).toEqual(new CallRefused({ status: 502 }))
+    expect((await client(startRun, async () => new Response(cut, { status: 502 }))).ended).toEqual(
+      new CallRefused({ status: 502 })
+    )
     expect((await client(startRun, () => Promise.reject(new TypeError("offline")))).ended).toEqual(new CallRefused({}))
     expect((await client(startRun, () => new Promise(() => {}), "50 millis")).ended).toEqual(new CallRefused({}))
     expect((await client(startRun, async () => Response.json({ status: "maybe" }, { status: 200 }))).ended).toEqual(
-      new CallRefused({ status: 200 }),
+      new CallRefused({ status: 200 })
     )
   })
 })
@@ -507,7 +600,7 @@ describe("pinConversation", () => {
   test("keeps a payload that names its conversation, and one with no tab to read", async () => {
     expect(await Effect.runPromise(pinConversation({ path: "a", conversationId: "c-1" }))).toEqual({
       path: "a",
-      conversationId: "c-1",
+      conversationId: "c-1"
     })
     expect(await Effect.runPromise(pinConversation({ path: "a" }))).toEqual({ path: "a" })
   })

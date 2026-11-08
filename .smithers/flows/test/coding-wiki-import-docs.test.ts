@@ -1,3 +1,5 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
+import * as EffectLayer from "effect/Layer"
 /**
  * `coding/Wiki` imports the workspace's declared dependency docs after it
  * admits the stack base and before it refreshes the pages, through the
@@ -6,7 +8,6 @@
  */
 import { NodeServices } from "@effect/platform-node"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { AttemptStore } from "@smthrs/run-store/AttemptStore"
@@ -118,7 +119,7 @@ const refresh = async (root: string) => {
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(Layer.mergeAll(Crypto.layerFromDigest(NodeCrypto.layerDigest), NodeServices.layer)),
+    Layer.provideMerge(Layer.mergeAll(NodeCrypto.layer, EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))),
     // The published read wants the review stores only after it verifies the
     // receipt, which the stub refresh never lets it do: any use dies here.
     Layer.provide(Layer.mergeAll(Layer.mock(Journal, {}), Layer.mock(RunStore, {}), Layer.mock(AttemptStore, {})))

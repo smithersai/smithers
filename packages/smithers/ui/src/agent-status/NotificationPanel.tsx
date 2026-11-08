@@ -10,7 +10,7 @@ import {
   useRef,
 } from "react";
 import { Button } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { isNoticeHotkey, isTypingTarget, NOTICE_GLYPHS, NOTICE_KEYS, NOTICE_WORDS, noticeKeyAction, type NoticeState } from "./notices";
 import { moveFocus } from "./roving";
@@ -67,8 +67,19 @@ export function NotificationPanel({
       event.preventDefault();
       change.current(!shown.current);
     };
+    // A completed answer can remove the focused field, leaving focus on body.
+    // Let a nested control consume Escape first, then close the open panel.
+    const onEscape = (event: globalThis.KeyboardEvent) => {
+      if (!shown.current || event.defaultPrevented || noticeKeyAction(event) !== "close") return;
+      event.preventDefault();
+      change.current(false);
+    };
     document.addEventListener("keydown", onHotkey, true);
-    return () => document.removeEventListener("keydown", onHotkey, true);
+    document.addEventListener("keydown", onEscape);
+    return () => {
+      document.removeEventListener("keydown", onHotkey, true);
+      document.removeEventListener("keydown", onEscape);
+    };
   }, []);
 
   useEffect(() => {

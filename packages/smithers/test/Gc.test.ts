@@ -12,7 +12,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
-import { Crypto } from "@smthrs/crypto"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Discovery from "@smthrs/registry/Discovery"
 import * as Executable from "@smthrs/registry/Executable"
@@ -362,11 +361,7 @@ describe("the sweep", () => {
       })
     `
       )
-      const platform = Layer.mergeAll(
-        NodeFileSystem.layer,
-        NodePath.layer,
-        Crypto.layerFromDigest(NodeCrypto.layerDigest)
-      )
+      const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)
       const pinned = await Effect.runPromise(
         Effect.gen(function*() {
           const discovery = yield* Discovery.Discovery

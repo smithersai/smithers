@@ -263,6 +263,10 @@ const binNameOf = async (
   return { name: basename }
 }
 
+// This is invocation metadata, not cache identity: equivalent kind views can
+// share a key, but a refresh must retain the view selected by each CI pass.
+type PlannedKindNode = PackageNode & { readonly planningKind: Target.Kind | undefined }
+
 interface PlanContext {
   readonly root: string
   readonly cacheDirectory: string
@@ -277,6 +281,9 @@ interface PlanContext {
    * node whose rule names them; see {@link WorkspaceToolchain}.
    */
   readonly workspaceToolchain: WorkspaceToolchain.WorkspaceToolchain
+  readonly planningKinds: ReadonlyMap<string, Target.Kind | undefined>
+  readonly completedInstallations: ReadonlySet<string>
+  readonly deferNodeModules?: boolean
   readonly tools: Map<string, ToolOutcome>
   /** One plan's byte reads only; every invocation allocates a fresh map. */
   readonly toolBytes: Map<string, Promise<string>>
@@ -314,6 +321,8 @@ interface PlanContext {
   storeWarned: boolean
   /** The remote cache the plan-time store reads through, when one is declared. */
   readonly remoteCache: Workspace.RemoteCacheAccess | undefined
+  /** Package and declared tree input → its digested rows (plan-time, memoized). */
+  readonly treeInputs: Map<string, Promise<Pick<Workspace.ExpandedInput, "files" | "digest">>>
   /** ImportClosure label → canonical result digest (plan-time, memoized). */
   /** Expanded crate sets, memoized per `S.Cargo.AppSet` label. */
   readonly crateSets: Map<string, ReadonlyArray<CrateRow>>
@@ -505,20 +514,21 @@ const probeOnce = async (
   path: string,
   args: ReadonlyArray<string> = ["--version"]
 ): Promise<PackageTree.Probe> => {
-  // A selected interpreter can probe both itself and a script launcher. Their
-  // distinct argument vectors must never share a cached version observation.
-  const key = JSON.stringify([path, args])
-  const known = context.probes.get(key)
-  if (known !== undefined) return known
   // A declared executable's version probe needs lookup capabilities, never
   // the CLI's credentials. Configuration lookup starts at the workspace just
-  // as native target execution does. Target env overrides have separate maps.
+  // as native target execution does.
   const names = new Set<string>(RuntimeService.lookupEnvironmentNames)
   const environment = Object.fromEntries(
     Object.entries(context.environment).filter(([name, value]) =>
       typeof value === "string" && names.has(context.ambient.platform === "win32" ? name.toUpperCase() : name)
     )
   )
+  // A selected interpreter can probe both itself and a script launcher.
+  // Share observations only for identical argv and effective lookup env;
+  // unrelated target variables never reach the probe or affect its identity.
+  const key = JSON.stringify([path, args, Object.entries(environment).sort(([a], [b]) => a.localeCompare(b))])
+  const known = context.probes.get(key)
+  if (known !== undefined) return known
   const probe = await PackageTree.probeVersion(path, { cwd: context.root, args, environment })
   context.probes.set(key, probe)
   return probe
@@ -831,6 +841,14 @@ const resolveTool = async (context: PlanContext, reference: Record<string, unkno
   if (known !== undefined) return known
   const tag = reference["_tag"]
   let outcome: ToolOutcome
+  if (tag === "NodeModuleBin" && context.deferNodeModules === true) {
+    // The install may change both the bin name and its bytes. Keep the
+    // declaration inert until its dependency has a successful receipt.
+    return {
+      _tag: "resolved",
+      tool: { path: Shell.toolToken(reference as never), identity: { ...reference, deferred: true } }
+    }
+  }
   if (tag === "NodeModuleBin") {
     const packageName = String(reference["package"])
     const resolvedBin = await binNameOf(
@@ -1015,7 +1033,10 @@ const resolveTool = async (context: PlanContext, reference: Record<string, unkno
             const selected = await PackageTree.probeVersion(rustup, {
               cwd: context.root,
               args: ["which", ...(channel === undefined ? [] : ["--toolchain", channel]), name],
-              environment: context.environment
+              // `rustup which` can install a missing channel. Planning must
+              // only inspect it: an install changes the identity between
+              // probes and can leave the first cached result under a stale key.
+              environment: { ...context.environment, RUSTUP_AUTO_INSTALL: "0" }
             })
             const selectedPath = selected.output.trim()
             if (selected.exitCode === 0 && NodePath.isAbsolute(selectedPath) && NodeFs.existsSync(selectedPath)) {
@@ -1190,7 +1211,45 @@ const labelOf = (context: PlanContext, target: Target.AnyTarget): string => {
   return label
 }
 
-/** Expands and digests one target's declared inputs against its package. */
+/** The tree inputs a plan reads once: everything declared but a git diff. */
+type TreeInput = Exclude<Input.Declared, Input.GitDiff>
+
+/** The file rows one declared tree input names, resolved against its package. */
+const treeInputFiles = async (
+  context: PlanContext,
+  packagePath: string,
+  declaration: TreeInput
+): Promise<ReadonlyArray<Input.FileDigest>> => {
+  if (declaration._tag === "File") {
+    const path = Input.resolvePath(packagePath, declaration.path)
+    const digest = await Input.digestFile(NodePath.join(context.root, path), {
+      workspaceRoot: context.root,
+      signal: context.signal
+    })
+    return [{ path, digest }]
+  }
+  const matches = declaration._tag === "Glob"
+    ? await Input.expandGlob(context.root, packagePath, declaration, {
+      cacheDirectory: context.cacheDirectory,
+      repositoryBoundaries: Object.values(context.index.workspace.repos ?? {}).map((repo) => repo.path),
+      signal: context.signal
+    })
+    : await Input.expandPnpmWorkspace(context.root, packagePath, declaration, {
+      cacheDirectory: context.cacheDirectory,
+      signal: context.signal
+    })
+  return Input.digestFiles(context.root, matches, { signal: context.signal })
+}
+
+/**
+ * Expands and digests one target's declared inputs against its package.
+ *
+ * One plan reads each distinct tree input once, whichever targets declare it.
+ * A walk's cost follows the glob's static prefix, not what it matches: 3,200
+ * targets declaring `cases/*.mjs` walked all 3,200 case directories each, for
+ * 56 minutes of a one-minute plan. Planning finishes before any target runs,
+ * so every target of a plan also keys the same bytes for a shared input.
+ */
 const expandInputs = async (
   context: PlanContext,
   packagePath: string,
@@ -1198,36 +1257,20 @@ const expandInputs = async (
 ): Promise<ReadonlyArray<Workspace.ExpandedInput>> => {
   const expanded: Array<Workspace.ExpandedInput> = []
   for (const declaration of declarations) {
-    if (declaration._tag === "File") {
-      const path = Input.resolvePath(packagePath, declaration.path)
-      const digest = await Input.digestFile(NodePath.join(context.root, path), {
-        workspaceRoot: context.root,
-        signal: context.signal
-      })
-      const files = [{ path, digest }]
-      expanded.push({ declaration, files, digest: Input.digestText(JSON.stringify(files)) })
+    if (declaration._tag === "GitDiff") {
+      expanded.push(await expandGitDiff(context, declaration))
       continue
     }
-    if (declaration._tag === "Glob") {
-      const matches = await Input.expandGlob(context.root, packagePath, declaration, {
-        cacheDirectory: context.cacheDirectory,
-        repositoryBoundaries: Object.values(context.index.workspace.repos ?? {}).map((repo) => repo.path),
-        signal: context.signal
-      })
-      const files = await Input.digestFiles(context.root, matches, { signal: context.signal })
-      expanded.push({ declaration, files, digest: Input.digestText(JSON.stringify(files)) })
-      continue
+    const key = JSON.stringify([packagePath, declaration])
+    let rows = context.treeInputs.get(key)
+    if (rows === undefined) {
+      rows = treeInputFiles(context, packagePath, declaration).then((files) => ({
+        files,
+        digest: Input.digestText(JSON.stringify(files))
+      }))
+      context.treeInputs.set(key, rows)
     }
-    if (declaration._tag === "PnpmWorkspace") {
-      const matches = await Input.expandPnpmWorkspace(context.root, packagePath, declaration, {
-        cacheDirectory: context.cacheDirectory,
-        signal: context.signal
-      })
-      const files = await Input.digestFiles(context.root, matches, { signal: context.signal })
-      expanded.push({ declaration, files, digest: Input.digestText(JSON.stringify(files)) })
-      continue
-    }
-    expanded.push(await expandGitDiff(context, declaration))
+    expanded.push({ declaration, ...(await rows) })
   }
   return expanded
 }
@@ -1327,6 +1370,29 @@ export const staticPrefixOf = (pattern: string): string => {
   return kept.join("/")
 }
 
+/** Install producers in the execution closure of these dependencies.
+ * @category internal
+ * @since 1.0.0
+ */
+export const installationDependencies = (
+  dependencies: ReadonlyArray<string>,
+  nodes: ReadonlyMap<string, PackageNode>
+): ReadonlyArray<string> => {
+  const seen = new Set<string>()
+  const installs: Array<string> = []
+  const pending = [...dependencies]
+  while (pending.length > 0) {
+    const label = pending.pop()!
+    if (seen.has(label)) continue
+    seen.add(label)
+    const node = nodes.get(label)
+    if (node === undefined) continue
+    if (node.rule === "Install") installs.push(label)
+    pending.push(...node.dependencies)
+  }
+  return installs.sort()
+}
+
 interface VisitOptions {
   readonly mode: Mode
 }
@@ -1344,11 +1410,12 @@ const visit = async (
   const metadata = Target.metadata(target)
   const rule = metadata.target
   const packagePath = packagePathOf(context, target)
-  if (context.kind !== undefined && metadata.verbGate !== undefined && !metadata.verbGate.includes(context.kind)) {
+  const kind = context.planningKinds.has(label) ? context.planningKinds.get(label) : context.kind
+  if (kind !== undefined && metadata.verbGate !== undefined && !metadata.verbGate.includes(kind)) {
     const allowed = metadata.verbGate.length === 0 ? "no verbs" : metadata.verbGate.join(", ")
-    throw new Error(`target ${label} is gated to ${allowed} and cannot be included in the ${context.kind} verb`)
+    throw new Error(`target ${label} is gated to ${allowed} and cannot be included in the ${kind} verb`)
   }
-  const view: Target.KindView = context.kind === undefined
+  const view: Target.KindView = kind === undefined
     ? {
       attrs: metadata.attrs,
       dependencies: metadata.dependencies,
@@ -1357,7 +1424,7 @@ const visit = async (
       cacheable: metadata.cacheable,
       outputs: metadata.outputs
     }
-    : metadata.forKind(context.kind)
+    : metadata.forKind(kind)
   // The workspace declares its package manager and its runtime once; a rule
   // that names them in `workspaceAttrs` gets them here rather than from a
   // PACKAGE.ts restating them. Filled before the key material is built, so the
@@ -1449,14 +1516,16 @@ const visit = async (
   // A target can select another SDK or shebang interpreter through env.
   // Keep those resolutions separate while sharing this plan's byte memo.
   const declaredToolEnvironment = attrMember(attrs, "env")
-  const toolContext = typeof declaredToolEnvironment === "object" && declaredToolEnvironment !== null
-    ? {
-      ...context,
-      environment: { ...context.environment, ...declaredToolEnvironment as Record<string, string> },
-      tools: new Map<string, ToolOutcome>(),
-      probes: new Map<string, PackageTree.Probe>()
-    }
-    : context
+  const pendingInstallations = installationDependencies([...depLabels.values()], context.nodes)
+    .filter((dependency) => !context.completedInstallations.has(dependency))
+  const toolContext = {
+    ...context,
+    deferNodeModules: pendingInstallations.length > 0,
+    environment: typeof declaredToolEnvironment === "object" && declaredToolEnvironment !== null
+      ? { ...context.environment, ...declaredToolEnvironment as Record<string, string> }
+      : context.environment,
+    tools: new Map<string, ToolOutcome>()
+  }
   const toolchain: Array<unknown> = []
   const targetExecutablePaths: Array<string> = []
   let refusal: string | undefined
@@ -2704,13 +2773,19 @@ const visit = async (
   if (context.managerBinary !== undefined && argv !== undefined) {
     readSet.push(...managerFilesOf(context.index.workspace))
     if (packagePath !== "") readSet.push(`${packagePath}/package.json`)
+    if (context.managerBinary === "pnpm") {
+      // Reuse Install's store, including in nested pnpm commands. Otherwise
+      // pnpm probes the read-only workspace to choose a store before exec.
+      env["pnpm_config_store_dir"] = `${PackageManager.storeRoot}/pnpm`
+      env["pnpm_config_verify_deps_before_run"] = "false"
+      absoluteEnv.push("pnpm_config_store_dir")
+    }
     // pnpm 11 verifies the dependency tree before `run` and `exec` and installs
     // when it disagrees. A keyed, confined check would then reach the registry
     // and rewrite `node_modules` as a side effect of running `tsc`. Installing
     // is the `Npm.NodeModules` resource's business; a consumer of it never
-    // installs. The setting lives only in `pnpm-workspace.yaml`, so `--config.`
-    // is the one spelling that reaches pnpm from here. Only pnpm's own argv
-    // takes it: `vitest run` from `node_modules/.bin` is not `pnpm run`.
+    // installs. Pin pnpm's own run/exec setting in argv as well as the inherited
+    // environment. Direct node_modules binaries do not accept pnpm's flags.
     if (
       context.managerBinary === "pnpm" &&
       NodePath.basename(argv[0]!).replace(/\.(?:cmd|exe)$/i, "") === context.managerBinary &&
@@ -2929,7 +3004,7 @@ const visit = async (
   // file alone. A planned write is therefore never cacheable.
   const plannedWrite = mode === "write" && plannedModeRules.has(rule)
   const cacheable = attrMember(attrs, "cache") !== false &&
-    refusal === undefined && !movingService && !plannedWrite &&
+    refusal === undefined && pendingInstallations.length === 0 && !movingService && !plannedWrite &&
     (view.cacheable || RulePolicy.cacheable(rule, mode, repositoryState?.dirty))
 
   const spawnEnvironment = Exec.toolEnvironment(
@@ -3099,7 +3174,8 @@ const visit = async (
     lane: undefined,
     refusal: refusal!
   }
-  const node: PackageNode = {
+  const node: PlannedKindNode = {
+    planningKind: kind,
     label,
     target: rule,
     kinds: await RepoResolution.effectiveKinds(
@@ -3610,7 +3686,12 @@ export const attended = (target: Target.AnyTarget): boolean =>
  * @category planning
  * @since 0.1.0
  */
-const planWithServices = async (options: RunOptions, services: PlanningServices): Promise<PackagePlan> => {
+const planWithServices = async (
+  options: RunOptions,
+  services: PlanningServices,
+  completedInstallations: ReadonlySet<string> = new Set(),
+  refresh?: { readonly node: PackageNode; readonly nodes: ReadonlyMap<string, PackageNode> }
+): Promise<PackagePlan> => {
   const index = options.index
   const reporter = Reporter.of(options)
   const log = reporter.note
@@ -3626,7 +3707,7 @@ const planWithServices = async (options: RunOptions, services: PlanningServices)
   const wildcardRoots = new Set<string>()
   const rootLabels = options.rootLabels === undefined ? undefined : new Set(options.rootLabels)
   const platform = options.platform ?? process.platform
-  for (const pattern of options.patterns) {
+  for (const pattern of refresh === undefined ? options.patterns : []) {
     const parsedPattern = Label.parse(pattern, index.currentPackage ?? "")
     const wildcard = Label.isWildcard(parsedPattern)
     const omitExclusive = (verb === "test" || options.unattended === true) && wildcard &&
@@ -3676,13 +3757,17 @@ const planWithServices = async (options: RunOptions, services: PlanningServices)
       if (omitExclusive) wildcardRoots.add(row.label)
     }
   }
-  const selected = [...selectedByLabel.values()]
+  const selected = refresh === undefined
+    ? [...selectedByLabel.values()]
+    : [{ label: refresh.node.label, target: refresh.node.declaration }]
   // The mode each selected root is planned under. Computed before the walk so a
   // target reached first as a dependency still adopts its root mode. A label
   // appears at most once in `selected`, so this maps each root to one mode.
-  const rootModes = new Map<string, Mode>()
+  const rootModes = new Map<string, Mode>(
+    refresh === undefined ? [] : [...refresh.nodes.values()].map((node) => [node.label, node.mode])
+  )
   for (const row of selected) {
-    rootModes.set(row.label, rootMode(Target.metadata(row.target).target, options))
+    if (!rootModes.has(row.label)) rootModes.set(row.label, rootMode(Target.metadata(row.target).target, options))
   }
   const workspace = index.workspace
   const workspaceToolchain = await WorkspaceToolchain.resolve(workspace, { root: index.root, signal: options.signal })
@@ -3723,13 +3808,22 @@ const planWithServices = async (options: RunOptions, services: PlanningServices)
     flags: workspace.flags === undefined ? {} : workspace.flags.flags,
     managerBinary: managerBinaryOf(workspace),
     workspaceToolchain,
+    completedInstallations,
+    planningKinds: new Map(
+      refresh === undefined ? [] : [...refresh.nodes.values()].map((node) => [
+        node.label,
+        (node as PlannedKindNode).planningKind
+      ])
+    ),
     tools: new Map(),
     toolBytes: new Map(),
     probes: new Map(),
     hostProbes: HostProbes.make(),
     nodes: new Map(),
-    privateLabels: new WeakMap(),
-    privateCounter: 0,
+    privateLabels: new WeakMap(
+      refresh === undefined ? [] : [...refresh.nodes.values()].map((node) => [node.declaration, node.label])
+    ),
+    privateCounter: refresh?.nodes.size ?? 0,
     visiting: new Set(),
     rootModes,
     inputs: options.inputs ?? {},
@@ -3750,6 +3844,7 @@ const planWithServices = async (options: RunOptions, services: PlanningServices)
     store: undefined,
     storeWarned: false,
     remoteCache: options.remoteCache,
+    treeInputs: new Map(),
     crateSets: new Map(),
     closureDigests: new Map(),
     closureResults: new Map(),
@@ -3822,3 +3917,14 @@ export const planEffect = (options: RunOptions): Effect.Effect<PackagePlan, unkn
  * @since 1.0.0
  */
 export const plan = (options: RunOptions): Promise<PackagePlan> => planWithServices(options, planningServicesLive)
+
+/** Resolves installed tools only after the runner has checked install receipts.
+ * @category internal
+ * @since 1.0.0
+ */
+export const planAfterInstall = (
+  options: RunOptions,
+  completedInstallations: ReadonlySet<string>,
+  node: PackageNode,
+  nodes: ReadonlyMap<string, PackageNode>
+): Promise<PackagePlan> => planWithServices(options, planningServicesLive, completedInstallations, { node, nodes })

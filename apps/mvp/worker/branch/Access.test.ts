@@ -265,9 +265,14 @@ describe("roles per repository (decision 0079)", () => {
     expect(await run(branchAccessIn(maya("member"), branch.branchId), roles)).toMatchObject({ access: "none", role: null })
     await sql(runtime, `UPDATE github_repositories SET installation_id = NULL WHERE repo_id = '${WIDGETS}'`)
     github.installed = false
-    expect(await run(branchAccessIn(maya("member"), branch.branchId), roles)).toMatchObject({ access: "none", role: null })
+    // GitHub's 404 to an anonymous metadata read proves nothing about privacy: a retryable unavailable, never access.
+    const unavailable = async () => {
+      const refused = await runtime.runPromiseExit(branchAccessIn(maya("member"), branch.branchId).pipe(Effect.provide(roles)))
+      expect(Exit.isFailure(refused) && JSON.stringify(refused.cause)).toContain(`"code":"unavailable"`)
+    }
+    await unavailable()
     await sql(runtime, `UPDATE branches SET created_by = NULL WHERE id = '${branch.branchId}'`)
-    expect(await run(branchAccessIn(maya("member"), branch.branchId), roles)).toMatchObject({ access: "none", role: null })
+    await unavailable()
   })
 
   test("a repository Smithers hasn't recorded the App on keeps the session's role, asking GitHub nothing", async () => {

@@ -2,7 +2,7 @@
 import { type ComponentProps, type KeyboardEvent, type ReactNode, useId } from "react";
 import { Badge } from "../badge";
 import { Button } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { Textarea } from "../input";
 import { ITEM_STATE_VARIANTS, ItemStateIcon, type ItemStateKind, type ItemStatus } from "../issues-view/ItemStateIcon";
 import { issueNumberText, PENDING_WORDS, STATE_STATUS, type IssuesViewPending } from "../issues-view/IssuesView";

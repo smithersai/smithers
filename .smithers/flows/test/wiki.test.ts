@@ -1,6 +1,7 @@
-import { NodeCrypto, NodeServices } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
-import { Effect, FileSystem, Layer, Schema } from "effect"
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
+import { NodeServices } from "@effect/platform-node"
+import { Effect, FileSystem, Schema } from "effect"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
 import { createHmac } from "node:crypto"
@@ -15,9 +16,6 @@ import { CITATION_CONTEXT_LINES, MAX_CLAIM_BYTES, MAX_STATE_BYTES } from "../wik
 import { operations } from "../wiki/operations.ts"
 import { PageSpec, type Review, type ReviewedPage } from "../wiki/schema.ts"
 import { makeHostJudge } from "./fixtures/scripted-judge.ts"
-
-// Effect 4.1 removed effect/Crypto, and NodeServices.layer no longer provides it.
-const nodeServices = Layer.merge(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 
 const fixture = async (t: TestContext) => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-wiki-")))
@@ -41,9 +39,12 @@ const run = <A, E>(
   effect: Effect.Effect<
     A,
     E,
-    import("effect/FileSystem").FileSystem | import("effect/Path").Path | import("@smthrs/crypto").Crypto.Crypto
+    | import("effect/FileSystem").FileSystem
+    | import("effect/Path").Path
+    | import("effect/crypto/Digest").Digest
+    | import("effect/crypto/SecureRandom").SecureRandom
   >
-) => Effect.runPromise(effect.pipe(Effect.provide(nodeServices)))
+) => Effect.runPromise(effect.pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))))
 const supported = (evidence: ReviewedPage["evidence"]): Review => ({
   sections: evidence.sections.map((section) => ({
     id: section.id,
@@ -509,7 +510,7 @@ test("real AgentAction review and flow replay use the existing engine", { timeou
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(nodeServices),
+    Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
     Layer.provideMerge(sink)
   )
   await Effect.runPromise(Effect.scoped(
@@ -575,7 +576,7 @@ test("independent page reviews finish before exact citation assessment can fail"
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(nodeServices)
+    Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
   )
   await assert.rejects(
     Effect.runPromise(
@@ -640,7 +641,7 @@ test("one citation repair receives every bad citation and the same evidence, the
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(nodeServices)
+    Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
   )
   await Effect.runPromise(Effect.scoped(
     Effect.gen(function*() {

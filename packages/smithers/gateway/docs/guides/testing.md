@@ -35,7 +35,6 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import * as ControlLive from "@smthrs/control/ControlLive"
 import * as SqlControlRuntime from "@smthrs/control/SqlControlRuntime"
-import { Crypto } from "@smthrs/crypto"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as Projections from "@smthrs/gateway/Projections"
@@ -76,7 +75,7 @@ export const stack = (filename: string) =>
         Registry.layerNoop()
       )
     ),
-    Layer.provideMerge(Layer.merge(storage(filename), Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+    Layer.provideMerge(Layer.merge(storage(filename), NodeCrypto.layer))
   )
 ```
 

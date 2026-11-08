@@ -8,10 +8,11 @@
  * @since 0.1.0
  */
 
-import type { Crypto } from "@smthrs/crypto"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
 import { DerivedKey } from "@smthrs/keys"
 import * as Cause from "effect/Cause"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import type * as FileSystem from "effect/FileSystem"
@@ -60,7 +61,7 @@ export const defaultMaxRebases = 3
 
 const bundleIdentity = (
   entries: ReadonlyArray<readonly [string, string | undefined, string | undefined]>
-): Effect.Effect<string, never, Crypto.Crypto> =>
+): Effect.Effect<string, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Schema.decodeUnknownEffect(DerivedKey)({
     kind: "bundle-identity",
     // Canonicalization substitutes undefined array slots with null. Name and
@@ -105,9 +106,11 @@ export const execute = (options: {
    */
   readonly workflow: Effect.Effect<unknown, unknown, WorkspaceSandbox.Workspace | FileSystem.FileSystem>
   readonly maxRebases?: number | undefined
-}): Effect.Effect<Settlement, unknown, Crypto.Crypto> => {
+}): Effect.Effect<Settlement, unknown, (EffectDigest.Digest | SecureRandom.SecureRandom)> => {
   const maxRebases = options.maxRebases ?? defaultMaxRebases
-  const attempt = (rebases: number): Effect.Effect<Settlement, unknown, Crypto.Crypto> =>
+  const attempt = (
+    rebases: number
+  ): Effect.Effect<Settlement, unknown, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
     Effect.gen(function*() {
       const executed = yield* options.sandbox.execute({
         descriptor: options.descriptor,

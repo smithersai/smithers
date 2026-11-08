@@ -91,7 +91,10 @@ export const Holder = Flow.make("cloudflare-test/Holder", {
   payload: { label: Schema.String },
   success: Schema.String,
   body: Node.capture({}, () => Flow.park({ reason: "approval", token: "holder" }))
-}).annotate(Flow.OnCancel, { flow: Cleanup, executionId: ({ label }: { readonly label: string }) => `cleanup:${label}` })
+}).annotate(Flow.OnCancel, {
+  flow: Cleanup,
+  executionId: ({ label }: { readonly label: string }) => `cleanup:${label}`
+})
 
 /** Runs {@link Holder} as its own execution and waits on it. */
 export const Keeper = Flow.make("cloudflare-test/Keeper", {

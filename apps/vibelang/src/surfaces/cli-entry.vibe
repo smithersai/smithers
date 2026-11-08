@@ -1,0 +1,27 @@
+#!/usr/bin/env node
+// The Factory CLI's process: its arguments, `VIBELANG_FACTORY` and its exit status (wiki/decisions/0009-surfaces.md).
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { cli } from "./cli.vibe"
+
+/** The command failed and has already said why, so the runtime only sets exit status 1. */
+error CommandFailed {
+  get [Runtime.errorReported]() { return false }
+}
+
+export effect function main() {
+  const args = try (try Stdio.Stdio).args
+  const environment = try Config.option(Config.String("VIBELANG_FACTORY"))
+  if ((try cli(args, Option.getOrUndefined(environment))) !== 0) throw new CommandFailed()
+}
+
+/**
+ * Warnings and errors go to stderr: stdout carries the command's answer, `--json` included. A step's routine lines (`vibelang.post`, the engine's) are
+ * for a server's operators, not a person at a terminal.
+ */
+const logs = Layer.mergeAll(
+  Logger.layer([Logger.withConsoleError(Logger.formatLogFmt)]),
+  Layer.succeed(References.MinimumLogLevel, "Warn"),
+)
+
+NodeRuntime.runMain(Effect.provide(main(), Layer.mergeAll(NodeServices.layer, logs)))

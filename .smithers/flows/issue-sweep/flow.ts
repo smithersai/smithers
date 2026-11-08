@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * `issue-sweep`: works every open GitHub issue that no other machine holds,
  * as a `Burndown` from `@smthrs/patterns`. Each round asks the Codex and
@@ -10,12 +11,12 @@
  * until an operator resets accounts and signals
  * `issue-sweep/accounts-reset`.
  */
-import type { Crypto } from "@smthrs/crypto"
 import { Action, Fault, Flow, type FlowRuntime, Interpreter, Sleep, WaitFor } from "@smthrs/flow"
 import { Unreachable } from "@smthrs/kernel"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Burndown, PatternError } from "@smthrs/patterns"
 import { Cause, Clock, Effect, Layer, Schedule, Schema, Semaphore } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { randomUUID } from "node:crypto"
 import { appendFile, readdir } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
@@ -444,7 +445,7 @@ type Failure =
 type Engine =
   | FlowRuntime.FlowRuntime
   | FlowRuntime.FlowInstance
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | Action.Requirement<"issue-sweep/ensure-disk">
 const repoOf = (args: { readonly input: unknown }) => (args.input as typeof Input.Type).repo
 const ref = (args: Args) => `${repoOf(args)}#${args.item.number}`

@@ -276,7 +276,7 @@ describe("ContainedSpawner", () => {
                 settled = true
               })
             )
-            if (phase === "prepare") yield* pause
+            if (phase === "prepare") return yield* pause
             return { handle, activate: pause, settled: Effect.sync(() => settled) }
           })
         yield* Effect.gen(function*() {

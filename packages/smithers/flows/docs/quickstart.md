@@ -33,7 +33,7 @@ The project is `"type": "module"` because the program ends in a top-level
 platform code. `@smthrs/platform-node` is the Node host: it installs the SQLite
 driver. The published `1.0.0-rc.16` runtime is imported from
 `@smthrs/flows/NodeRuntime`, as the example below shows. `effect` is on the line because
-the program imports it directly. These pins reproduce the published API used below.
+the program imports it directly. These pins reproduce the published API used below. The published rc.16 adapters require Effect 4.0.5; use that cohort together.
 
 With pnpm 11, replace the `npm install` line with
 `pnpm add @smthrs/platform-node@1.0.0-rc.16 @smthrs/flows@1.0.0-rc.16 effect@4.0.5`, then run

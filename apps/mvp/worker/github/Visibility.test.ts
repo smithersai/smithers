@@ -10,8 +10,8 @@ const repository = { id: "acme/widgets", owner: "acme", name: "widgets" }
 test.each([
   [200, { private: false }, {}, "public", false, "unknown"],
   [200, { private: true }, { "x-ratelimit-remaining": "500" }, "private", false, "100+"],
-  [404, {}, {}, "private", false, "unknown"],
-  [410, {}, {}, "private", false, "unknown"],
+  [404, {}, {}, "not_found", false, "unknown"],
+  [410, {}, {}, "unavailable", false, "unknown"],
   [403, {}, {}, "unavailable", false, "unknown"],
   [403, {}, { "x-ratelimit-remaining": "0" }, "unavailable", true, "0"],
   [429, {}, { "retry-after": "1" }, "unavailable", true, "unknown"],
@@ -30,7 +30,8 @@ test.each([
   expect(result).toEqual(outcome === "unavailable" ? Option.none() : Option.some(outcome === "public"))
   const attributes = { outcome, statusClass: `${Math.floor(status / 100)}xx`, rateLimited: String(limited), remaining,
     errorCode: status === 200 ? outcome === "unavailable" ? "decode-failed" : "none" : "delivery-failed" }
-  expect(logs[0]!.annotations).toMatchObject({ repoId: repository.id, ...attributes })
+  expect(logs[0]!.annotations).toMatchObject({ repoId: repository.id, stage: "metadata", ...attributes })
+  if (status !== 200) expect(logs[0]!.annotations.upstreamStatus).toBe(status)
   expect(JSON.stringify(logs)).not.toContain("fixture-token")
   expect(Effect.runSync(Metric.value(Metric.withAttributes(Metrics.visibilityReads, attributes)).pipe(
     Effect.provideService(Metric.MetricRegistry, registry)))).toMatchObject({ count: 1 })
@@ -44,7 +45,7 @@ test("transport failures record a code without provider text or credentials", as
   expect(await Effect.runPromise(Visibility.read(repository, "https://github.test", Effect.succeed(Option.none()), http).pipe(
     Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((options) => void logs.push(Logger.formatStructured.log(options)))])),
   ))).toEqual(Option.none())
-  expect(logs[0]!.annotations).toMatchObject({ statusClass: "none", errorCode: "delivery-failed", rateLimited: "false" })
+  expect(logs[0]!.annotations).toMatchObject({ stage: "metadata", upstreamStatus: null, statusClass: "none", errorCode: "delivery-failed", rateLimited: "false" })
   expect(JSON.stringify(logs)).not.toContain("secret-provider-text")
 })
 
@@ -103,16 +104,22 @@ test("unavailable answers are never cached, including after a public answer expi
   }).pipe(Effect.provide(TestClock.layer())))
 })
 
-test.each([404, 410])("a gone answer (%s) is cached as private", async (status) => {
+test("missing or inaccessible metadata is a bounded denial, reused until it expires", async () => {
   let calls = 0
   const http = HttpClient.make((request) => Effect.sync(() => {
     calls++
-    return HttpClientResponse.fromWeb(request, new Response("{}", { status }))
+    return HttpClientResponse.fromWeb(request, new Response("{}", { status: 404 }))
   }))
-  const visibility = Visibility.make("https://github.test", Effect.succeed(Option.none()), http)
-  expect(await Effect.runPromise(visibility(repository))).toEqual(Option.some(false))
-  expect(await Effect.runPromise(visibility(repository))).toEqual(Option.some(false))
-  expect(calls).toBe(1)
+  await Effect.runPromise(Effect.gen(function* () {
+    const visibility = Visibility.make("https://github.test", Effect.succeed(Option.none()), http)
+    expect(yield* visibility(repository)).toEqual(Option.some(false))
+    yield* TestClock.adjust("59999 millis")
+    expect(yield* visibility(repository)).toEqual(Option.some(false))
+    expect(calls).toBe(1)
+    yield* TestClock.adjust("1 millis")
+    expect(yield* visibility(repository)).toEqual(Option.some(false))
+    expect(calls).toBe(2)
+  }).pipe(Effect.provide(TestClock.layer())))
 })
 
 test("concurrent misses each read GitHub without sharing in-flight work", async () => {

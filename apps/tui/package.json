@@ -43,7 +43,7 @@
     "string-width": "7.2.0",
     "@smthrs/ui": "workspace:*",
     "@smthrs/crypto": "workspace:*",
-    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
+    "vibelang-runtime": "0.0.12"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
@@ -58,7 +58,8 @@
     "eslint-plugin-unicorn": "65.0.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz"
+    "vibelang": "0.0.12",
+    "@smthrs/testing": "workspace:*"
   },
   "imports": {
     "#vibelang/emitted/src/activity": {

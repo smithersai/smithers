@@ -1,5 +1,5 @@
-import { TestSchemas } from "@smthrs/database"
 import { FetchError } from "@electric-sql/client"
+import { TestSchemas } from "@smthrs/database"
 import { Collection, LiveQuery, Persistence } from "@smthrs/effect-tanstack-db"
 import {
   Context,
@@ -1189,6 +1189,34 @@ describe.skipIf(!electricUp)("persisted", () => {
       }
     }))
     expect(result).toEqual({ first: [], second: { restored: [], synced: ["a", "b"], offset: "-1" } })
+  })
+
+  // Astra on 66193380's lineage: a tab learns of a refusal while another tab owns the device's rows. A watcher's own
+  // truncate is dropped (internal/oneWriter.ts), so the wipe goes through the program that writes.
+  test.each([false, true])("a watcher's evict wipes through the writer, before its first read: %s", async (unread) => {
+    await run(Effect.gen(function*() {
+      const { table, write } = yield* scratchTable
+      yield* write({ id: "a", text: "one", n: 1 })
+      const path = databaseFile()
+      const device = `device-${crypto.randomUUID()}`
+      const id = `notes-${crypto.randomUUID()}`
+      const writerPersistence = yield* Layer.build(persistenceOn(path, device))
+      const writer = yield* faulty(persisted(table, id)).pipe(Effect.provide(writerPersistence))
+      yield* writer.collection.preload
+      yield* eventually(() => storedRows(path, id) === 1)
+      const watcherPersistence = yield* Layer.build(persistenceOn(path, device))
+      const watcher = yield* faulty(persisted(table, id)).pipe(Effect.provide(watcherPersistence))
+      if (!unread) {
+        yield* watcher.collection.preload
+        yield* eventually(() => watcher.collection.tanstack.has("a"))
+      }
+      // The server now refuses everyone, so the wipe's own new session brings nothing back.
+      yield* writer.faults.refuse(403)
+      yield* watcher.faults.refuse(403)
+      yield* watcher.collection.evict
+      yield* eventually(() => storedRows(path, id) === 0)
+      yield* eventually(() => !watcher.collection.tanstack.has("a") && !writer.collection.tanstack.has("a"))
+    }))
   })
 
   test("evict aborts a request in flight: a batch held on the way lands neither in memory nor on the device", async () => {

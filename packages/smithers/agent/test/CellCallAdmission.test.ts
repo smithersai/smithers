@@ -1,5 +1,4 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import * as Cell from "@smthrs/harness/Cell"
@@ -19,7 +18,7 @@ const flow = Flow.make("agent/test/cell-call-admission", {
 })
 
 it("rejects a mutated host result through the typed failure channel with its cause", async () => {
-  const malformed = Object.assign(new Cell.CallResult({ outcome: "success", value: null }), { code: "timeout" })
+  const malformed = Object.assign(Cell.CallResult.new({ outcome: "success", value: null }), { code: "timeout" })
   const outcome = await Effect.gen(function*() {
     const engine = yield* FlowRuntime.FlowRuntime
     const scope = yield* Effect.scope
@@ -54,9 +53,7 @@ it("rejects a mutated host result through the typed failure channel with its cau
     yield* engine.execute(flow, { executionId: "admission-run", payload: {}, discard: true })
     return yield* Deferred.await(settled)
   }).pipe(
-    Effect.provide(
-      Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest), Safety.layer)
-    ),
+    Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
     Effect.scoped,
     Effect.runPromise
   )

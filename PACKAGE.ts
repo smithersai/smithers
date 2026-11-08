@@ -298,7 +298,9 @@ const ripgrep = Smithers.CiToolchain.Ripgrep({ release: "14.1.1" })
 // Confined targets run under bubblewrap on Linux, which the hosted runner
 // image does not ship. The step is a no-op on the macOS and Windows rows.
 const bubblewrap = Smithers.CiToolchain.Apt({ packages: ["bubblewrap"] })
-const packageSystemTools = Smithers.CiToolchain.Apt({ packages: ["bubblewrap", "openssh-server"] })
+// TerminalRecording renders GIFs and inspects their timing through ffmpeg/ffprobe.
+const graphSystemTools = Smithers.CiToolchain.Apt({ packages: ["bubblewrap", "ffmpeg"] })
+const packageSystemTools = Smithers.CiToolchain.Apt({ packages: ["bubblewrap", "ffmpeg", "openssh-server"] })
 // `//packages/smithers/build/build-cli:test` drives a real `forge` and a real Go toolchain:
 // it builds and tests a Foundry package and asserts `forge fmt --check` drift,
 // and it builds a Go package tree. Without them six cases fail on the REQUIRED
@@ -439,7 +441,7 @@ const ci = Smithers.GithubCiGen({
         runtimes: [node, bun],
         jj,
         ripgrep,
-        apt: bubblewrap,
+        apt: graphSystemTools,
         playwright: Smithers.CiToolchain.Playwright({ cwd: "packages/smithers/ui", browsers: ["chromium", "webkit"] }),
         go,
         foundry,

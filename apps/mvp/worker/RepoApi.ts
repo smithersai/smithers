@@ -361,7 +361,13 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
                 const actor = yield* (yield* Sessions).resolve
                 return yield* RefReads.visible(repoId(target.owner, target.name), actor).pipe(Effect.provide(database))
               }).pipe(Effect.mapError((error) => {
-                if (error instanceof RepoRoles.RoleRefused) Object.assign(fields, RepoRoles.refusalFields(error))
+                if (error instanceof RepoRoles.RoleRefused) {
+                  Object.assign(fields, RepoRoles.refusalFields(error))
+                  return new RepoReads.ReadRefused({
+                    code: error.code === "not_found" ? "not_found" : error.code === "rate_limited" ? "rate_limited" : "unavailable",
+                    ...(error.retryAfterSeconds === undefined ? {} : { retryAfterMillis: error.retryAfterSeconds * 1000 }),
+                  })
+                }
                 return new RepoReads.ReadRefused({ code: "unavailable" })
               }))
               const refs = yield* reads.value.refs(target.owner, target.name, names)
@@ -405,7 +411,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               }),
             )
           return yield* answered.pipe(
-            Effect.catchTag("ReadRefused", (refused) => {
+            Effect.catchTag("ReadRefused", (refused): Effect.Effect<HttpServerResponse.HttpServerResponse, never, FlowStarter | R | HttpClient.HttpClient | Sessions | HttpServerRequest.HttpServerRequest> => {
               fields.errorCode = refused.code
               switch (refused.code) {
                 case "not_synced":
@@ -414,10 +420,27 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
                     Effect.catch(() => Effect.succeed(refuse(503, "not_synced", {}, { "retry-after": "2" }))),
                   )
                 case "not_imported":
-                  return Effect.succeed(HttpServerResponse.empty({
-                    status: 204,
-                    headers: { "cache-control": "private, no-store", "x-repo-state": "not_imported" },
-                  }))
+                  return Effect.gen(function* () {
+                    // No local copy proves neither existence nor absence. Use the same shared, bounded metadata
+                    // answer as About before offering an import; private and absent are indistinguishable.
+                    const sessions = yield* Effect.context<Sessions | HttpServerRequest.HttpServerRequest>()
+                    const member = Effect.gen(function* () {
+                      const actor = yield* (yield* Sessions).resolve
+                      return Option.isSome(actor) && canClone(actor.value)
+                    }).pipe(Effect.orElseSucceed(() => false), Effect.provideContext(sessions))
+                    const outcome = yield* aboutSource.answer(target.owner, target.name, member)
+                    Object.assign(fields, RepoAbout.fieldsOf(outcome))
+                    if (outcome._tag === "Refused") {
+                      fields.errorCode = outcome.code
+                      return refuse(outcome.code === "not_found" ? 404 : 503, outcome.code, {},
+                        outcome.code === "not_found" || outcome.retryAfterMillis === undefined ? {}
+                          : { "retry-after": String(Math.max(1, Math.ceil(outcome.retryAfterMillis / 1000))) })
+                    }
+                    return HttpServerResponse.empty({
+                      status: 204,
+                      headers: { "cache-control": "private, no-store", "x-repo-state": "not_imported" },
+                    })
+                  })
                 case "not_found":
                   return Effect.succeed(refuse(404, "not_found"))
                 case "too_large":
@@ -428,11 +451,12 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
                     : refuse(413, "too_large", refused.size === undefined ? {} : { size: refused.size }))
                 case "capacity":
                   return Effect.succeed(refuse(503, "capacity"))
+                case "rate_limited":
                 case "unavailable":
                   return Effect.succeed(
                     refuse(
                       503,
-                      "unavailable",
+                      refused.code,
                       {},
                       refused.retryAfterMillis === undefined
                         ? {}

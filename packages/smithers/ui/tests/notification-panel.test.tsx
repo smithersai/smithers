@@ -420,6 +420,32 @@ describe("NotificationPanel", () => {
     expect(changes).toEqual([false, false]);
   });
 
+  test("Escape still closes after a completed answer removes the focused field", async () => {
+    const changes: Change = [];
+    await render(<NotificationPanel open onOpenChange={(open) => changes.push(open)}>{entry("a", { expanded: true, children: <input aria-label="Your answer" /> })}</NotificationPanel>);
+    $("input")!.focus();
+    expect(document.activeElement).toBe($("input"));
+    await render(<NotificationPanel open onOpenChange={(open) => changes.push(open)}>{entry("a", { children: <span>Done</span> })}</NotificationPanel>);
+    expect(document.activeElement).toBe(document.body);
+    await press(document.body, "Escape");
+    expect(changes).toEqual([false]);
+    await render(<NotificationPanel open={false} onOpenChange={(open) => changes.push(open)} />);
+    await press(document.body, "Escape");
+    expect(changes).toEqual([false]);
+  });
+
+  test("an outside control can consume Escape before the panel's global close", async () => {
+    const changes: Change = [];
+    await render(<NotificationPanel open onOpenChange={(open) => changes.push(open)}>{entry("a")}</NotificationPanel>);
+    const control = elsewhere();
+    control.addEventListener("keydown", (event) => event.preventDefault());
+    control.focus();
+    await press(control, "Escape");
+    expect(changes).toEqual([]);
+    await press(document.body, "Escape");
+    expect(changes).toEqual([false]);
+  });
+
   test("a click outside closes it; a click inside it or on a trigger doesn't", async () => {
     const changes: Change = [];
     const trigger = elsewhere();

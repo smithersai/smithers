@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Dialect from "@smthrs/database/Dialect"
-import { Array as Arr, Cause, Effect, Exit, Layer, Option } from "effect"
+import { Cause, Effect, Exit, Layer, Option } from "effect"
+import * as Arr from "effect/Array"
 import { SqlClient } from "effect/sql/SqlClient"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as TestStores from "../src/test/TestStores.ts"

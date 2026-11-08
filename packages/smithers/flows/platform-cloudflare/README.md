@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.1.0` peer dependency. Install one
+This package declares `effect` as an exact `4.1.1` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -38,7 +38,7 @@ import * as Pg from "@effect/sql-pg"
 import { PostgresDatabase } from "@smthrs/database"
 import { CloudflareRuntime, ExecutionObject } from "@smthrs/platform-cloudflare"
 import type { RuntimeContext } from "alchemy"
-import * as Cloudflare from "@alchemy.run/cloudflare"
+import * as Cloudflare from "alchemy/Cloudflare"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
@@ -151,7 +151,7 @@ each guarantee and what proves it.
 
 | Module              | What it provides                                                                                                                                                                          |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CloudflareHost`    | `layer`: the closed Host surface on Cloudflare, with `@smthrs/crypto`'s `WebCrypto.layer` as `effect/Crypto`.                                                                             |
+| `CloudflareHost`    | `layer`: the closed Host surface on Cloudflare, with `@smthrs/crypto`'s `WebCrypto.layer` as Effect's `Digest` and `SecureRandom`.                                                        |
 | `CloudflareRuntime` | `layer({ hostId, executionId }, registerFlows)`: the durable engine for one execution over an injected `SqlClient`.                                                                       |
 | `ExecutionObject`   | `start`, `wake`, `alarm` and `intent`: the per-execution Durable Object, as functions over a structural slice of Durable Object storage.                                                  |
 | `EdgeCache`         | `layer({ name?, maxEntryBytes? })`: `@smthrs/artifacts`' `ImmutableCache` over the Workers Cache API, `caches.default` or a named cache.                                                  |

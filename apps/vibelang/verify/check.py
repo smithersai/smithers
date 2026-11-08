@@ -1,0 +1,125 @@
+#!/usr/bin/env python3
+"""Fresh lsc generation + Dafny verification. Never trusts saved .dfy files."""
+import atexit, concurrent.futures, hashlib, json, os, pathlib, re, shutil, subprocess, sys, tempfile, time
+ROOT=pathlib.Path(__file__).resolve().parent
+source=pathlib.Path(sys.argv[1]).resolve()
+if not source.exists(): raise SystemExit(f'Not found: {source}')
+APP=ROOT.parent
+if not source.is_relative_to(APP): raise SystemExit(f'Source must be inside {APP}')
+started=time.monotonic()
+# A run owns its artifacts and cannot use a previously successful proof.
+(ROOT/'.checks').mkdir(exist_ok=True); run=pathlib.Path(tempfile.mkdtemp(prefix='run-',dir=ROOT/'.checks'))
+# LemmaScript reads TypeScript. A `.vibe` module written in its verifiable subset is TypeScript syntax, so the run
+# proves an exact `.ts` copy of its text, staged with this run's artifacts; reports name the `.vibe` file and line.
+shown={}
+if source.is_file() and source.suffix=='.vibe':
+ staged=run/'source'/source.relative_to(APP).with_suffix('.ts')
+ staged.parent.mkdir(parents=True); staged.write_bytes(source.read_bytes())
+ shown[staged]=source; files=[staged]
+else:
+ files=sorted(p for p in ([source] if source.is_file() else source.rglob('*.ts')) if not any(x in {'.tools','node_modules','.checks'} for x in p.relative_to(source).parts))
+if not files: raise SystemExit(f'No TypeScript files under {source}')
+config=APP/('.verify-'+run.name+'.config.json')
+config.write_text(json.dumps({'string-semantics':'javascript-utf16','dafny-library':'local','proof-dir':str(run.relative_to(APP)),'run-log':False}))
+atexit.register(lambda: config.unlink(missing_ok=True))
+
+commands=[]
+def command(args, cwd):
+ t=time.monotonic()
+ try:
+  p=subprocess.run(args,cwd=cwd,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=180)
+  commands.append({'argv':args,'cwd':str(cwd),'exit':p.returncode,'seconds':round(time.monotonic()-t,3),'last_lines':p.stdout.splitlines()[-8:]})
+  return p.returncode,p.stdout
+ except subprocess.TimeoutExpired as e:
+  out=e.stdout or b''
+  return 124,(out.decode(errors='replace') if isinstance(out,bytes) else out)+'\nERROR: wall timeout 180s\n'
+ except OSError as e: return 127,str(e)+'\n'
+
+def verify(item):
+ idx,ts=item; t=time.monotonic(); original=ts.read_bytes(); lines=original.decode().splitlines(); origin=shown.get(ts,ts)
+ # Report function declarations and contract lines even for extraction failures.
+ funcs=[(n+1,re.search(r'\bfunction\s+(\w+)',s).group(1)) for n,s in enumerate(lines) if re.search(r'\bfunction\s+(\w+)',s)]
+ loc=', '.join(f'{origin}:{n} function {name}' for n,name in funcs) or str(origin)
+ work=run/ts.relative_to(APP).parent; work.mkdir(parents=True,exist_ok=True)
+ dfy=work/ts.with_suffix('.dfy').name
+ # Preseed a fresh generated-only destination, never reuse neighboring proof files.
+ dfy.write_text('')
+ code,out=command([str(ROOT/'.tools/bin/lsc'),'gen','--backend=dafny',f'--config={config}',str(ts)],ROOT)
+ if code==0 and dfy.with_suffix('.dfy.gen').exists():
+  shutil.copyfile(dfy.with_suffix('.dfy.gen'),dfy)
+ if code==0:
+  text=dfy.read_text() if dfy.exists() else ''
+  marked=[]
+  before=''
+  for n,line in enumerate(lines):
+   m=re.search(r'\bfunction\s+(\w+)',line)
+   if m:
+    if '//@ verify' in before: marked.append(m.group(1))
+    before=''
+   elif line.lstrip().startswith('//') or not line.strip(): before+='\n'+line
+   else: before=''
+  for name in marked:
+   if not re.search(r'\b(?:function|method)\s+'+re.escape(name)+r'\(',text):
+    code=2;out+=f'ERROR: marked function {name} was not emitted\n'
+  if code: dfy.write_text(text);text='' 
+  if not re.search(r'\b(?:ensures|assert)\b',text):
+   code=2;out+='ERROR: no proof obligations emitted (selective mode / missing annotations)\n'
+  else:
+   flags=['--unicode-char:false','--allow-deprecation'] if 'string-semantics=javascript-utf16' in text else ['--unicode-char:true']
+   if 'Std.' in text: flags.append('--standard-libraries')
+   mutations=os.environ.get('VERIFY_MUTATION_MANIFEST')
+   if mutations:
+    mutations=pathlib.Path(mutations).resolve()
+    if ts.parent != mutations.parent: raise SystemExit('Mutation symbol filter only applies to generated mutants')
+    target=json.loads(mutations.read_text())[ts.stem]['function']
+    flags.extend(['--filter-symbol',target])
+   c,o=command([str(ROOT/'.tools/bin/dafny'),'verify','--cores','1','--verification-time-limit','30','--error-limit','0','--log-format',f'csv;LogFileName={work / (ts.stem + chr(46) + chr(99) + chr(115) + chr(118))}',*flags,str(dfy)],work)
+   code=c;out+=o
+ if hashlib.sha256(original).hexdigest() != initial_hashes[ts]:
+  code=2;out+='ERROR: source changed after strict typechecking started\n'
+ if ts.read_bytes() != original or origin.read_bytes() != original:
+  code=2;out+='ERROR: source changed during verification\n'
+ elapsed=time.monotonic()-t
+ # Dafny emits generated locations. Identify enclosing generated symbol, then
+ # print its original TS declaration; retain exact generated diagnostic too.
+ mapped=[]
+ if dfy.exists():
+  dl=dfy.read_text().splitlines()
+  for m in re.finditer(r'[^\n]*\.dfy\((\d+),\d+\): (?:Error|Related location):[^\n]*',out):
+   line=int(m.group(1)); sym=None
+   for s in dl[:line][::-1]:
+    sm=re.match(r'(?:ghost )?(?:function|method|lemma)\s+(\w+)',s)
+    if sm: sym=sm.group(1);break
+   if sym:
+    name=re.sub(r'_ensures$', '', sym)
+    for n,fn in funcs:
+     if name==fn: mapped.append(f'{origin}:{n}: function {fn} [{sym}; generated line {line}]')
+ log=work/(ts.stem+'.output.log');log.write_text(out)
+ return {'sha256':hashlib.sha256(original).hexdigest(),'file':str(origin),'exit':code,'seconds':round(elapsed,3),'locations':loc,'mapped':list(dict.fromkeys(mapped)),'output':out,'log':str(log),'dfy':str(dfy)}
+
+initial_hashes={p:hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
+
+tc_code,tc_output=command(['node',str(ROOT/'typecheck.cjs'),str(files[0] if shown else source)],ROOT)
+print(tc_output,end='')
+if tc_code:
+ (run/'typecheck.log').write_text(tc_output)
+ raise SystemExit(tc_code)
+
+jobs=int(os.environ.get('CHECK_JOBS','1'))
+if not 1<=jobs<=8: raise SystemExit('CHECK_JOBS must be 1..8')
+results=[]
+with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+ for r in pool.map(verify,enumerate(files)):
+  results.append(r)
+  print(f"{'PASS' if r['exit']==0 else 'FAIL'} {r['locations']} ({r['seconds']:.3f}s)")
+  if r['exit']:
+   for m in r['mapped']: print(m)
+   print(r['output'],end='')
+  else:
+   for line in r['output'].splitlines():
+    if 'finished with' in line: print('  '+line)
+  sys.stdout.flush()
+summary={'directory':str(source),'seconds':round(time.monotonic()-started,3),'passed':sum(r['exit']==0 for r in results),'total':len(results),'jobs':jobs,'results':results,'commands':commands}
+(run/'summary.json').write_text(json.dumps(summary,indent=2))
+print(f"{summary['passed']}/{len(results)} files verified in {summary['seconds']:.3f}s; results: {run/'summary.json'}")
+raise SystemExit(0 if summary['passed']==len(results) else 1)

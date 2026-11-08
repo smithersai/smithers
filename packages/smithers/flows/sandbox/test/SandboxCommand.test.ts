@@ -1,10 +1,23 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, ExternalJob, Fault, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Cause, Clock, Duration, Effect, Exit, Fiber, FileSystem, Layer, Schema, Stream, Tracer } from "effect"
+import {
+  Cause,
+  Clock,
+  Context,
+  Duration,
+  Effect,
+  Exit,
+  Fiber,
+  FileSystem,
+  Layer,
+  Option,
+  Schema,
+  Stream,
+  Tracer
+} from "effect"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { TestClock } from "effect/testing"
 import { execFileSync, spawn } from "node:child_process"
@@ -624,7 +637,7 @@ const jobOf = (
   const layer = Layer.mergeAll(Job.toLayer(SandboxCommand.operations(reach)), Interpreter.layer(Run)).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Layer.provideMerge(NodeCrypto.layer)
   )
   return { Job, Run, layer }
 }
@@ -653,7 +666,7 @@ const onBox = (
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Layer.provideMerge(NodeCrypto.layer)
   )
   return { Job, Run, layer }
 }
@@ -840,8 +853,13 @@ describe("SandboxCommand.make", () => {
     expect(Declared.flows.map((flow) => flow._tag)).toEqual([
       "test/declared",
       "test/declared/launch",
-      "test/declared/observe"
+      "test/declared/observe",
+      "test/declared/stop"
     ])
+    // A parked command's observation must register the durable stop alongside its other flows.
+    const cancellation = Option.getOrThrow(Context.getOption(Declared.flows[2]!.annotations, Flow.OnCancel))
+    expect(cancellation.flow).toBe(Declared.flows[3])
+    expect(cancellation.executionId({ origin: "command-run", generation: 2 })).toBe("cancel:command-run#g2")
     const is = Schema.is(Declared.errorSchema)
     expect(is(new Unreachable())).toBe(true)
     expect(is(new SandboxTools.ToolLost())).toBe(true)

@@ -1,10 +1,14 @@
 /** @jsxImportSource react */
-import { type ComponentProps, type FormEvent, useId, useMemo, useState } from "react";
+import { type ComponentProps, type FormEvent, useId, useMemo, useRef, useState } from "react";
 import { Button } from "../button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "../card";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import {
   declaredInput,
+  humanTaskForm,
+  type HumanTaskWait,
+  type HumanTaskAnswer,
+  type ArrayEncoding,
   draftFrom,
   type FieldValue,
   type FormDraft,
@@ -26,7 +30,7 @@ export type FlowFormSubmission = {
   readonly writeOnly: ReadonlyArray<string>;
 };
 
-export type FlowFormViewProps = Omit<ComponentProps<"section">, "title" | "onSubmit"> & {
+type SchemaFormProps = Omit<ComponentProps<"section">, "title" | "onSubmit"> & {
   title: string;
   /** The JSON Schema the agent passed: an object schema, or a `{ schema, definitions }` document. */
   schema: unknown;
@@ -85,7 +89,7 @@ const primitive = (value: unknown): string | number | boolean =>
  * cannot be sent again. Write-only fields stay in their inputs until submit,
  * never in React state, and never show again.
  */
-export function FlowFormView({
+function SchemaFormView({
   title,
   schema,
   submitLabel,
@@ -94,12 +98,22 @@ export function FlowFormView({
   size = "inline",
   onSubmit,
   className,
+  locked = false,
+  arrays = "words",
+  onPayload,
+  hostProblem,
   ...props
-}: FlowFormViewProps) {
+}: Omit<SchemaFormProps, "onSubmit"> & {
+  onSubmit?: SchemaFormProps["onSubmit"];
+  locked?: boolean;
+  arrays?: ArrayEncoding;
+  onPayload?: (payload: Readonly<Record<string, unknown>>) => string | undefined;
+  hostProblem?: string | undefined;
+}) {
   const id = useId();
   const form = useMemo(() => formOf(schema), [schema]);
   const fields = form?.fields ?? [];
-  const shown = useMemo(() => draftFrom(fields, publicFormPayload(fields, values)), [fields, values]);
+  const shown = useMemo(() => draftFrom(fields, publicFormPayload(fields, values), arrays), [fields, values, arrays]);
   const [draft, setDraft] = useState<FormDraft>(shown);
   const [problem, setProblem] = useState<string | undefined>(undefined);
   const current = submitted ? shown : draft;
@@ -116,7 +130,7 @@ export function FlowFormView({
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (submitted || form === undefined) return;
+    if (submitted || locked || form === undefined) return;
     const secrets = fields.filter((field) => field.kind === "write-only");
     const secretValues: Record<string, string> = {};
     for (const field of secrets) {
@@ -127,25 +141,30 @@ export function FlowFormView({
       ...missingLabels(fields.filter((field) => field.kind !== "write-only"), draft),
       ...secrets.filter((field) => field.required && secretValues[field.name] === undefined).map((field) => field.label),
     ];
-    if (missing.length > 0) {
+    if (missing.length > 0 && onPayload === undefined) {
       setProblem(`Needs: ${missing.join(", ")}`);
       return;
     }
-    const submission = submissionPayload(form.input, fields, {}, draft);
+    const submission = submissionPayload(form.input, fields, {}, draft, arrays);
     if ("error" in submission) {
       setProblem(submission.error);
+      return;
+    }
+    if (onPayload !== undefined) {
+      const error = secrets.length > 0 ? "Use secret names to answer." : onPayload(submission.payload);
+      setProblem(error);
       return;
     }
     for (const field of secrets) (event.currentTarget.elements.namedItem(field.name) as HTMLInputElement).value = "";
     const data: Record<string, string | number | boolean> = {};
     for (const [name, value] of Object.entries(submission.payload)) data[name] = primitive(value);
-    onSubmit({ text: submitLabel, data: { ...data, ...secretValues }, writeOnly: Object.keys(secretValues) });
+    onSubmit?.({ text: submitLabel, data: { ...data, ...secretValues }, writeOnly: Object.keys(secretValues) });
   };
 
   const control = (field: FormField) => {
     const controlId = `${id}-${field.name}`;
     const value = current[field.name];
-    const common = { id: controlId, name: field.name, disabled: submitted, required: field.required };
+    const common = { id: controlId, name: field.name, disabled: submitted || locked, required: field.required };
     switch (field.kind) {
       case "boolean":
         return (
@@ -167,7 +186,7 @@ export function FlowFormView({
           >
             <option value="" />
             {field.options!.map((option) => (
-              <option key={option.value} value={option.value}>
+              <option key={option.value} value={option.value} disabled={option.disabled}>
                 {option.label}
               </option>
             ))}
@@ -181,7 +200,7 @@ export function FlowFormView({
             {...common}
             type={field.kind === "number" ? "number" : "text"}
             value={value === undefined ? "" : String(value)}
-            onChange={(event) => set(field.name, event.currentTarget.value === "" ? undefined : event.currentTarget.value)}
+            onChange={(event) => set(field.name, event.currentTarget.value === "" && onPayload === undefined ? undefined : event.currentTarget.value)}
           />
         );
     }
@@ -217,14 +236,14 @@ export function FlowFormView({
               </Field>
             ))}
           </CardContent>
-          {problem === undefined ? null : (
+          {(problem ?? hostProblem) === undefined ? null : (
             <p role="alert" className="sui-flow-form-problem">
-              {problem}
+              {problem ?? hostProblem}
             </p>
           )}
           {submitted ? null : (
             <CardFooter>
-              <Button type="submit" variant="solid">
+              <Button type="submit" variant="solid" disabled={locked}>
                 {submitLabel}
               </Button>
             </CardFooter>
@@ -233,4 +252,51 @@ export function FlowFormView({
       )}
     </Card>
   );
+}
+
+
+export type FlowFormViewProps = SchemaFormProps | (
+  Omit<SchemaFormProps, "schema" | "submitLabel" | "onSubmit" | "submitted" | "values"> & {
+    readonly wait: HumanTaskWait;
+    readonly submitLabel?: string;
+    readonly onAnswer: (answer: HumanTaskAnswer) => void;
+  }
+);
+
+/** The host owns authorization, submission effects, and persisted settlement. */
+export function FlowFormView(props: FlowFormViewProps) {
+  if ("wait" in props) return <HumanTaskFormView key={props.wait.token} {...props} />;
+  return <SchemaFormView {...props} />;
+}
+
+function HumanTaskFormView({ wait, onAnswer, submitLabel = "Answer", ...props }: Extract<FlowFormViewProps, { wait: HumanTaskWait }>) {
+  const form = humanTaskForm(wait);
+  const [sent, setSent] = useState(false);
+  const dispatch = useRef({ state: wait.state, revision: wait.revision, sent: false });
+  if (dispatch.current.state !== wait.state || !Object.is(dispatch.current.revision, wait.revision)) {
+    dispatch.current = { state: wait.state, revision: wait.revision, sent: false };
+    if (sent) setSent(false);
+  }
+  const open = wait.state === "requested" || wait.state === "failed-submission";
+  const pending = open && sent;
+  return <SchemaFormView
+    {...props}
+    schema={form.schema}
+    submitLabel={submitLabel}
+    submitted={!open && wait.state !== "submitting"}
+    locked={!open || pending || !wait.canAnswer || wait.token === ""}
+    values={form.values}
+    arrays="json"
+    hostProblem={wait.error}
+    data-state={pending ? "submitting" : wait.state}
+    onPayload={payload => {
+      if (!open || !wait.canAnswer || wait.token === "" || dispatch.current.sent) return undefined;
+      const answer = form.answer(payload);
+      if ("error" in answer) return answer.error;
+      dispatch.current.sent = true;
+      setSent(true);
+      onAnswer({ token: wait.token, value: answer.value });
+      return undefined;
+    }}
+  />;
 }

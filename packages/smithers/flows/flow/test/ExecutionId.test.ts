@@ -1,9 +1,10 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 // Deep reviewed and polished by a human on 2026-08-10.
 
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Cause, Effect, Exit, Layer, Schema } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { effect } from "./Harness.ts"
 import { layerWired } from "./MemoryFlowRuntime.ts"
 
@@ -199,8 +200,10 @@ describe("Flow execution identities", () => {
 })
 
 describe("the explicit payload-derived execution-id source", () => {
-  const derivedEffect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-    effect(name, () => body().pipe(Effect.provide(Flow.layerExecutionIds(Flow.derived))))
+  const derivedEffect = (
+    name: string,
+    body: () => Effect.Effect<void, unknown, (EffectDigest.Digest | SecureRandom.SecureRandom)>
+  ) => effect(name, () => body().pipe(Effect.provide(Flow.layerExecutionIds(Flow.derived))))
   derivedEffect("runs a flow that named no identity at all, and answers with its value", () =>
     Effect.gen(function*() {
       // The whole point: this is `yield* F.execute(payload)`, with no

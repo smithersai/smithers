@@ -2,7 +2,7 @@
 import { type ComponentProps, type KeyboardEvent, type MouseEvent, type ReactNode, useState } from "react";
 import { Badge } from "./badge";
 import { Button } from "./button";
-import { cn } from "./cn";
+import { cn } from "@smthrs/ui-css";
 import { Input } from "./input";
 import { isPlainNavigationClick } from "./internal/navigationClick";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";

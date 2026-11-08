@@ -7,7 +7,6 @@
  * real durable engine; only the model and Jev are scripted.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
@@ -501,7 +500,7 @@ const agentRun = (input: {
     yield* engine.resume(runFlow, "exec-1")
     return { outcome: yield* Deferred.await(settled), events, model: model.count }
   }).pipe(
-    Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest))),
+    Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer)),
     Effect.provideService(Metric.MetricRegistry, new Map()),
     Effect.scoped,
     Effect.runPromise

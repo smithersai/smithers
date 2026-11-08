@@ -64,10 +64,10 @@ const resourceLimit = (description: string): FsError =>
  * @private
  * @since 0.1.0
  */
-export effect function lex(commandString: string): Effect<ReadonlyArray<string>, FsError, infer R> {
+export effect function lex(commandString: string): ReadonlyArray<string>!FsError {
   if (
-    typeof commandString !== "string" || !Boundary.isWellFormedText(commandString)
-    || encoder.encode(commandString).byteLength > maximumCommandBytes
+    typeof commandString !== "string" || !(try sync(() => Boundary.isWellFormedText(commandString))) ||
+    (try sync(() => encoder.encode(commandString))).byteLength > maximumCommandBytes
   ) {
     throw resourceLimit(`A command may contain at most ${maximumCommandBytes} UTF-8 bytes`)
   }
@@ -137,11 +137,7 @@ export effect function lex(commandString: string): Effect<ReadonlyArray<string>,
 
 const validFlagName = (name: string): boolean => flagName.test(name) && !reservedNames.has(name)
 
-const append = effect (
-  options: Record<string, unknown>,
-  name: string,
-  value: unknown
-): Effect<void, FsError, infer R> => {
+const append = effect (options: Record<string, unknown>, name: string, value: unknown): void!FsError => {
   if (!validFlagName(name)) throw parseError("The command contains an invalid option name", `$.options.${name}`)
   const current = Object.hasOwn(options, name) ? options[name] : undefined
   options[name] = current === undefined ? value : Array.isArray(current) ? [...current, value] : [current, value]
@@ -153,12 +149,12 @@ const append = effect (
  * @private
  * @since 0.1.0
  */
-export effect function parseFlags(input: ReadonlyArray<string>): Effect<ParsedFlags, FsError, infer R> {
-  const captured = Boundary.stringArray(input, {
+export effect function parseFlags(input: ReadonlyArray<string>): ParsedFlags!FsError {
+  const captured = try sync(() => Boundary.stringArray(input, {
     maxItems: maximumCommandTokens,
     maxLength: maximumTokenLength,
     allowEmpty: true
-  })
+  }))
   if (!captured.ok) {
     if (captured.kind === "invalid_text") {
       throw parseError("The command arguments must be well-formed text without NUL", captured.path)
@@ -211,3 +207,4 @@ export effect function parseFlags(input: ReadonlyArray<string>): Effect<ParsedFl
     options: Object.freeze(options)
   })
 }
+

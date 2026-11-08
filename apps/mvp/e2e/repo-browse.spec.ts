@@ -2,18 +2,17 @@ import { REPOSITORIES_SHAPE_ROUTE } from "../src/features/repo/contract"
 import { shapeRows } from "./shape"
 import { expect, test, visibleText } from "./fixtures"
 import { requires } from "./target"
-import { repositoryAbout } from "./repository-prerequisites"
+import { cloneHeaderRepository, repositoryAbout } from "./repository-prerequisites"
 import { expectConsoleError, expectServerError } from "./watch"
-import { showChat } from "./chat-composer"
 
 // Browsing a repository as Will reviewed it (docs/features/repo.md#the-page), against the real app, Worker, Postgres,
 // Electric, GitHub and Code Storage:
 // - the first visit uses the page: GitHub's folder, README and about panel before anyone clones the repository;
-// - a clone is a workflow in the person's feed: a toast says how far it came, then why it stopped, with Try again;
+// - verified absence offers recovery without a clone action or a fabricated import;
 // - a cloned copy without the Smithers app says it may be reclaimed, with Install;
 // - a Markdown file opens as a document, its source one press away;
 // - an HTML file shows as CodePen does, its page in a sandboxed frame that reaches neither the app nor the network.
-// The first two run anywhere: they read only GitHub. The rest need Code Storage, which a local run has only when the
+// The first visit reads GitHub; the header layout verifies real clone authority. The remaining copy tests need Code Storage, which a local run has only when the
 // dev server's environment holds the organization, and a deployment holds; each asks for a clone, a Member's request
 // (worker/RepoApi.ts `canClone`), and waits on the `repo/clone` remote flow (worker/RepoApi.ts `start`,
 // worker/flows/RepoClone.ts), which decides both ready and Not found.
@@ -83,8 +82,8 @@ test(
       expect(apart(await clone.boundingBox(), await bell.boundingBox())).toBe(true)
       return { clone: await clone.boundingBox(), bell: await bell.boundingBox() }
     }
-    // octocat/linguist, which no test clones: its header offers Clone.
-    await page.goto("/octocat/linguist")
+    // Clone uses this repository's role, so a deployment needs the account's own unimported scratch fixture.
+    await page.goto(`/${await cloneHeaderRepository(page.request)}`)
     const wide = await check(page)
     // At 1280 px it is the row's last slot, right of Clone.
     expect(wide.bell!.x).toBeGreaterThanOrEqual(wide.clone!.x + wide.clone!.width)
@@ -99,57 +98,22 @@ test.describe("cloned repositories", () => {
   requires("codeStorage", "member")
 
   test(
-    "the clone in the feed: a toast says how far it came, then why it stopped, with Try again",
-    { annotation: { type: "summary", description: "A clone reports in the toasts, and a failed one offers Try again." } },
+    "absent repository: verified GitHub absence offers recovery and never claims an import",
+    { annotation: { type: "summary", description: "A verified missing repository has no Clone action or import receipt." } },
     async ({ page, request }) => {
       requires("absentRepository")
-      test.setTimeout(180_000)
       const repository = await repositoryAbout("absentRepository")
       const [owner, name] = repository.split("/")
       expectServerError(404, `/api/repos/${repository}/about`)
       await page.goto(`/${repository}`)
       const header = page.locator('header[aria-label="Repository"]')
       await expect(header).toContainText(`${owner} / ${name}`, { timeout: 30_000 })
-      // W12 missing-repository recovery deliberately removes Clone once absence is known (repo.md).
       await expect(page.getByText("Repository not found", { exact: true })).toBeVisible({ timeout: 30_000 })
       await expect(header.getByRole("button", { name: "Clone", exact: true })).toHaveCount(0)
-      // Retain the real absent-repository fixture and exercise the person's /clone command.
-      await page.goto("/app")
-      const composer = await showChat(page)
-      await expect(composer).toBeEnabled({ timeout: 30_000 })
-      await composer.fill(`/clone ${repository}`)
-      const launched = page.waitForResponse(response => response.request().method() === "POST" &&
-        new URL(response.url()).pathname === "/api/repos/launch" && response.request().postDataJSON()?.name === name)
-      await composer.press("Enter")
-      expect([200, 202]).toContain((await launched).status())
-      await page.goto(`/${repository}`)
-      const subject = `clone:github/${repository.toLowerCase()}`
-      const toast = page.locator(`[data-slot="toast"][data-subject="${subject}"]`)
-      await page.getByRole("button", { name: /^Notifications/ }).click()
-      const entry = page.locator(`li[data-entry="${subject}"]`)
-      await expect(entry).toContainText(`Clone · ${repository} · Not found`, { timeout: 60_000 })
-      const shown = await toast.textContent({ timeout: 100 }).catch(() => null)
-      if (shown !== null) expect(shown).toContain(`Clone · ${repository}`)
-      await entry.getByRole("button", { name: new RegExp(`Clone · ${repository.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`) }).click()
-      type CloneRow = { id: string; attempt: string | number; status: string; failure: string | null }
-      const current = async () => {
-        const row = (await shapeRows<CloneRow>(request, REPOSITORIES_SHAPE_ROUTE)).find(row => row.id === `github/${repository.toLowerCase()}`)
-        return row === undefined ? undefined : { ...row, attempt: Number(row.attempt) }
-      }
-      // Notifications and repositories are independent Electric shapes. The
-      // failed entry can arrive before this snapshot includes its repository.
-      let before: Awaited<ReturnType<typeof current>> = undefined
-      await expect.poll(async () => { before = await current(); return before }, { timeout: 30_000 })
-        .toMatchObject({ status: "failed", failure: "not_found" })
-      await entry.getByRole("button", { name: "Retry" }).click()
-      // The first failure's text can survive the click. Require the new attempt's actual terminal receipt.
-      await expect.poll(current, { timeout: 120_000 }).toMatchObject({
-        attempt: before!.attempt + 1, status: "failed", failure: "not_found",
-      })
-      // Try again's new attempt raises the entry again, and stops for the same reason.
-      await expect(entry).toContainText(`Clone · ${repository} · Not found`, { timeout: 120_000 })
-      await expect(entry.getByRole("button", { name: "Retry", exact: true })).toBeVisible()
-      await expect(page.locator(`[data-slot="toast"][data-subject="${subject}"]`).filter({ hasText: "Requested" })).toHaveCount(0)
+      await expect(header.getByRole("button", { name: "Try again", exact: true })).toHaveCount(0)
+      await expect(page.getByRole("link", { name: "Back to chat", exact: true }).last()).toHaveAttribute("href", "/app")
+      const rows = await shapeRows<{ id: string }>(request, REPOSITORIES_SHAPE_ROUTE)
+      expect(rows.some(row => row.id === `github/${repository.toLowerCase()}`), "About must not fabricate an import for an absent repository").toBe(false)
     },
   )
 

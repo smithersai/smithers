@@ -37,6 +37,21 @@ export const NoticeKind = Schema.Literals(["run", "clone", "main", "release", "s
 export type NoticeKind = typeof NoticeKind.Type
 
 /**
+ * The kinds of notice that show naming neither a repository nor a conversation, by why; `null` for a kind that never does
+ * (decision 0110, the data gate). Every other notice with no repository is unattributed, and hidden.
+ */
+export const UNATTRIBUTED_NOTICE_KINDS: Readonly<Record<NoticeKind, string | null>> = {
+  spend: "the deployment's spending alert: no repository's",
+  bug: "a bug report the person may see: the server decides who sees it",
+  run: "a run in the person's home conversation, which names neither",
+  clone: null,
+  main: null,
+  release: null,
+  write: null,
+  fleet: null,
+}
+
+/**
  * One row of Postgres `notifications` as Electric delivers it to its recipient: columns in camelCase. `mine` is the
  * person's own run; `quiet` someone else's run on a branch they watch, a toast while it lives and never an entry.
  * `href` is where Open goes.
@@ -109,6 +124,8 @@ export const Entry = Schema.Struct({
   runId: Schema.NullOr(Schema.String),
   /** The conversation a run works in. */
   conversationId: Schema.NullOr(Schema.String),
+  /** The repository it is about, `github/owner/name`: none shows while that repository may not (`repoVisibility`). */
+  repoId: Schema.optional(Schema.NullOr(Schema.String)),
   /** Who started the run, pushed to `main` or published the release, when the row says. */
   actor: Schema.NullOr(Schema.String),
   /** When it last happened, in epoch ms: the panel's order, newest first, and its time. */

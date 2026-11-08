@@ -53,6 +53,27 @@ export interface FirstPaint {
   readonly list?: ReadonlyArray<FirstPaintIssue>
 }
 
+/** The segment after `issues` in `GET /api/repos/<owner>/<name>/issues/tree-scope`: the repositories a tree reaches. */
+export const TREE_SCOPE_SEGMENT = "tree-scope"
+
+/** `GET /api/repos/<owner>/<name>/issues/tree-scope`. */
+export const treeScopeRoute = (owner: string, name: string): string =>
+  `${issuesRoute(owner, name)}/${TREE_SCOPE_SEGMENT}`
+
+/** The most repositories a tree's scope loads, the repository itself included; the rest are `omitted`. */
+export const TREE_SCOPE_MAX_REPOSITORIES = 20
+
+/**
+ * A tree's scope: the repositories whose rows the device opens, in order of distance from the tree's repository, with
+ * whether each one's relations are current; and the readable repositories past the cap. Only repositories the reader may
+ * read are ever named.
+ */
+export interface TreeScope {
+  readonly repos: ReadonlyArray<{ readonly repo: string; readonly synced: boolean }>
+  readonly truncated: boolean
+  readonly omitted: ReadonlyArray<string>
+}
+
 /** The issues list's page size when the request names none, and the most it sends in one page. */
 export const ISSUE_PAGE_DEFAULT = 30
 export const ISSUE_PAGE_MAX = 100
@@ -63,12 +84,14 @@ export const ITEMS_SHAPE_ROUTE = "/api/shapes/items"
 export const COMMENTS_SHAPE_ROUTE = "/api/shapes/comments"
 export const WRITES_SHAPE_ROUTE = "/api/shapes/github-writes"
 export const SYNC_SHAPE_ROUTE = "/api/shapes/github-sync"
+export const ISSUE_EDGES_SHAPE_ROUTE = "/api/shapes/issue-edges"
 
 /** The Postgres tables (migration `0016_github_issues`). */
 export const ITEMS_TABLE = "items"
 export const COMMENTS_TABLE = "comments"
 export const WRITES_TABLE = "github_writes"
 export const SYNC_TABLE = "github_sync"
+export const ISSUE_RELATIONS_TABLE = "issue_relations"
 
 /**
  * The `items` columns a device syncs: all but `source_updated_at` and `fetched_at`, the server's ordering guard. Listed,
@@ -99,6 +122,9 @@ export const ITEM_COLUMNS = [
 /** List and home columns: every visible fact, without detail text. */
 export const ITEM_SUMMARY_COLUMNS = ITEM_COLUMNS.filter((column) =>
   !["body", "github_id", "state_reason", "closed_at", "triage_pinned"].includes(column))
+
+/** The `issue_relations` columns a reader receives: which issue is whose child, and nothing else. */
+export const ISSUE_EDGE_COLUMNS = ["child_id", "parent_id"] as const
 
 /** The `comments` columns a device syncs. */
 export const COMMENT_COLUMNS = [
@@ -133,6 +159,9 @@ export const SYNC_COLUMNS = ["repo_id", "stream", "synced_at", "complete", "fail
 
 /** The one sync stream of G0: a repository's issues and their comments, walked by change time (`GitHub.Sync`). */
 export const ISSUES_STREAM = "issues"
+
+/** `github_sync`'s stream for `github/Relations`, which lists every issue of a repository for its parent. */
+export const RELATIONS_STREAM = "relations"
 
 /**
  * A row's id: `<repoId>#<number>` for an issue, `<repoId>/comment/<GitHub's comment id>` for a comment. Derived, so the
@@ -263,6 +292,13 @@ export type WriteRefusal = (typeof WRITE_REFUSALS)[number]
 /** How long a repository's sync may get before a read of its issues starts `github/Reconcile` (decision 0012 §2). */
 export const SYNC_STALE_MS = 5 * 60 * 1000
 
+/** How long a complete relations walk counts as current: an older one starts another, and shows Syncing until it ends. */
+export const RELATIONS_STALE_MS = 30 * 60 * 1000
+
+/** The relations walk a tree read starts: one per repository and 5-minute bucket, so an unfinished walk soon continues. */
+export const relationsExecutionId = (repoId: string, nowMs: number): string =>
+  `github-relations:${repoId}:${Math.floor(nowMs / SYNC_STALE_MS)}`
+
 /** The reconcile run a stale read starts: one per repository and 5-minute bucket, so every read in it starts the same one. */
 export const reconcileExecutionId = (repoId: string, nowMs: number): string =>
   `github-reconcile:${repoId}:${Math.floor(nowMs / SYNC_STALE_MS)}`
@@ -381,6 +417,8 @@ export const NOT_FOUND = "Not found"
 /** What the issues feature records (docs/observability.md), by name, and the attributes they carry: never text. */
 export const ISSUES_TELEMETRY = {
   records: [
+    "issues.search.early", "issues.search.paint",
+    "issues_early_search_reads", "issues_early_search_paints",
     "issues.write.admission",
     "smithers_issue_write_admissions",
     "smithers_issue_submission_failures",

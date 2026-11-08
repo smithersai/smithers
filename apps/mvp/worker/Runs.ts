@@ -53,7 +53,10 @@ export const shapes = Metric.counter("smithers_run_shape_requests", {
   incremental: true,
 })
 
-/** The `runs` columns a device syncs: all of them but `launched_by`, which the shape filters on. */
+/**
+ * The `runs` columns a device syncs: `launched_by`, which the shape filters on, never. `conversation_id` is where the
+ * run works: a device shows its wait only while that conversation's repository may show (decision 0110, the data gate).
+ */
 export const SYNCED_RUN_COLUMNS = [
   "id",
   "flow",
@@ -65,6 +68,7 @@ export const SYNCED_RUN_COLUMNS = [
   "answered_at",
   "created_at",
   "updated_at",
+  "conversation_id",
 ]
 
 /** The flow of every run that reports in this slice: an agent's answer. */

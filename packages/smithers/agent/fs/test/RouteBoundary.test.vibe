@@ -1,3 +1,4 @@
+import { throwingProxy } from "./modules.ts"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { describe, expect, it, vi } from "@effect/vitest"
 import * as Route from "../src/Route.vibe"
@@ -9,7 +10,7 @@ describe("Route boundary", () => {
     const loaded = try Route.load(makeRoute("review", modulePath))
     expect(loaded.name).toBe("review")
     expect(loaded.description).toBeUndefined()
-    const canonical = try sync(async () => (await import("./fixtures/three-projections/flows/review/flow.ts")).default)
+    const canonical = try promise(async () => (await import("./fixtures/three-projections/flows/review/flow.ts")).default)
     expect(loaded.input).toBe(canonical.payloadSchema)
     expect(loaded.output).toBe(canonical.successSchema)
     expect(try Schema.decodeUnknownEffect(canonical.payloadSchema)({ number: 7 })).toEqual({ number: 7 })
@@ -95,15 +96,12 @@ describe("Route boundary", () => {
     expect((try failureOf(Route.snapshot(accessor))).code).toBe("invalid_route")
     expect(getter).not.toHaveBeenCalled()
 
-    const hostileOption = try sync((target) =>
-      new Proxy(target, {
-        has: () => {
-          throw new Error("trap")
-        }
-      }), {})
-    expect((try failureOf(Route.snapshot({ ...base, description: hostileOption as never }))).code).toBe(
-      "invalid_route"
-    )
+    const hostileOption = sync((target) => new Proxy(target, {
+      has: () => {
+        $raise(new Error("trap"))
+      }
+    }), {})
+    expect((try failureOf(Route.snapshot({ ...base, description: hostileOption as never }))).code).toBe("invalid_route")
     expect((try failureOf(Route.snapshot({ ...base, placement: hostileOption as never }))).code).toBe("invalid_route")
   })
 
@@ -138,12 +136,11 @@ describe("Route boundary", () => {
     })
     expect((try failureOf(Route.snapshot({ ...base, input: accessorPath as never }))).code).toBe("invalid_route")
     expect(pathGetter).not.toHaveBeenCalled()
-    const hostileRef = try sync((target) =>
-      new Proxy(target, {
-        getPrototypeOf: () => {
-          throw new Error("trap")
-        }
-      }), { _tag: "None" })
+    const hostileRef = sync((target) => new Proxy(target, {
+      getPrototypeOf: () => {
+        $raise(new Error("trap"))
+      }
+    }), { _tag: "None" })
     expect((try failureOf(Route.snapshot({ ...base, input: hostileRef as never }))).code).toBe("invalid_route")
 
     for (
@@ -184,4 +181,17 @@ describe("Route boundary", () => {
       description: "The selected flow module could not be imported"
     })
   })
+})
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts
+
+
+it.effect("sanitizes a schema locator whose reflective operations throw", effect () => {
+  const input = try sync(() => throwingProxy(new Descriptor.SchemaRefNone({})))
+  const refusal = try failureOf(Route.snapshot(makeRoute("hostile", visibleModule, { input })))
+  expect(refusal.code).toBe("invalid_route")
+  expect(JSON.stringify(refusal)).not.toContain("trap")
 })

@@ -20,7 +20,7 @@ const HEAD = "a".repeat(40)
 
 const publication = (fields: Partial<PublicationRow> = {}): PublicationRow => ({
   branchId: BRANCH,
-  repoId: "repo",
+  repoId: "github/acme/repo",
   githubRef: "try-1-0123456789ab",
   baseRef: "main",
   baseSha: BASE,
@@ -319,9 +319,10 @@ describe("latestOf", () => {
 })
 
 describe("Compare", () => {
-  const key = `${BASE}...${HEAD}`
+  const key = `github/acme/repo@${BASE}...${HEAD}`
   const row = (fields: Partial<FilesRow>): FilesRow => ({
     id: key,
+    repoId: "github/acme/repo",
     status: "ready",
     files: [],
     truncated: false,

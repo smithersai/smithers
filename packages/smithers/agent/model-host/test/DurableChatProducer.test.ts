@@ -3,7 +3,7 @@ import { AgentTurnJournal, type NativeAgent } from "@smthrs/rpc"
 import { Effect, Stream } from "effect"
 import { createHash } from "node:crypto"
 import { describe, expect, test } from "vitest"
-import { DurableChatProducer, runDurableChatTurn } from "../src/DurableChatProducer.ts"
+import { DurableChatProducer, runDurableChatTurn } from "./fixtures/durable.ts"
 
 const request: NativeAgent.StartAgentTurnRequest = {
   runId: "run",

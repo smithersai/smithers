@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Flows are the only capability primitive a cell ever sees.
  *
@@ -17,7 +18,6 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow as EngineFlow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
@@ -61,6 +61,7 @@ import {
   Stream
 } from "effect"
 import * as ByteSize from "effect/ByteSize"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
 import { readFile, writeFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
@@ -198,7 +199,11 @@ const snapshotBoundary = Layer.succeed(FlowEngine.SnapshotBoundary)(
 
 /** Runs one body as the whole of one real durable flow execution. */
 const drive = <A, E>(
-  body: Effect.Effect<A, E, Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>,
+  body: Effect.Effect<
+    A,
+    E,
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+  >,
   options: { readonly resume?: boolean } = {}
 ): Promise<Outcome> =>
   Effect.gen(function*() {
@@ -220,9 +225,7 @@ const drive = <A, E>(
     yield* engine.resume(flow, "exec-1")
     return yield* Deferred.await(settled)
   }).pipe(
-    Effect.provide(
-      Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest), snapshotBoundary)
-    ),
+    Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, snapshotBoundary)),
     Effect.scoped,
     Effect.runPromise
   )
@@ -1002,7 +1005,7 @@ ctx.done(caught)`
                 code: "engine_failed",
                 message: "permission required",
                 cause: Schema.encodeUnknownSync(Permission.PermissionRequired)(
-                  new Permission.PermissionRequired({
+                  Permission.PermissionRequired.new({
                     requestId: "remember-approval",
                     capability: Capability.make("fs:write", "**"),
                     tier: "irreversible",
@@ -1034,7 +1037,9 @@ ctx.done(kept.key)`
   it("waits through the engine's durable clock as an ordinary flow", async () => {
     const outcome = await drive(
       Effect.gen(function*() {
-        const services = yield* Effect.context<Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>()
+        const services = yield* Effect.context<
+          (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+        >()
         return yield* collect({
           flows: [StandardFlows.clock(services)],
           cells: [
@@ -1056,7 +1061,9 @@ ctx.done(String(waited.waitedSeconds))`
     const outcome = await drive(
       Effect.gen(function*() {
         const engine = yield* FlowRuntime.FlowRuntime
-        const services = yield* Effect.context<Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>()
+        const services = yield* Effect.context<
+          (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+        >()
         const immediateClock = FlowRuntime.FlowRuntime.of({
           ...engine,
           scheduleClock: (flow, options) =>
@@ -1096,7 +1103,7 @@ ctx.done(refused.length + ":" + exact.waitedSeconds)`
 
     const source = StandardFlows.clock(
       Context.empty() as Context.Context<
-        Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+        (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
       >,
       { maxSeconds: 61 }
     )
@@ -1144,7 +1151,7 @@ ctx.done(refused.length + ":" + exact.waitedSeconds)`
       Effect.gen(function*() {
         const source = StandardFlows.clock(
           Context.empty() as Context.Context<
-            Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+            (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
           >,
           { maxSeconds }
         )
@@ -1194,7 +1201,9 @@ ctx.done(refused.length + ":" + exact.waitedSeconds)`
     const outcome = await drive(
       Effect.gen(function*() {
         const engine = yield* FlowRuntime.FlowRuntime
-        const services = yield* Effect.context<Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>()
+        const services = yield* Effect.context<
+          (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+        >()
         const immediateClock = FlowRuntime.FlowRuntime.of({
           ...engine,
           scheduleClock: (flow, options) =>
@@ -1555,7 +1564,7 @@ ctx.done(caught.join("|"))`
                 code: "engine_failed",
                 message: "permission required",
                 cause: Schema.encodeUnknownSync(Permission.PermissionRequired)(
-                  new Permission.PermissionRequired({
+                  Permission.PermissionRequired.new({
                     requestId: "child-approval",
                     capability: Capability.make("fs:write", "**"),
                     tier: "irreversible",

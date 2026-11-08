@@ -15,10 +15,12 @@ import type * as Chain from "../Chain.ts"
  * @since 0.1.0
  */
 export class ChildRunError extends Catalog.CallError {
-  readonly error: Effect.Error<ReturnType<typeof Chain.run>>
+  declare readonly error: Effect.Error<ReturnType<typeof Chain.run>>
 
-  constructor(error: Effect.Error<ReturnType<typeof Chain.run>>) {
-    super({ cause: error.code, message: `${error._tag}: ${error.message}`, name: "agent" })
-    this.error = error
+  static new(error: Effect.Error<ReturnType<typeof Chain.run>>): ChildRunError {
+    return Object.assign(
+      new ChildRunError({ cause: error.code, message: `${error._tag}: ${error.message}`, name: "agent" }),
+      { error }
+    )
   }
 }

@@ -10,9 +10,7 @@ const references = (file: string, text: string): ReadonlyArray<string> =>
 /** Every name and member of one source: `<line> <specifier> <name>[ via <binding>][ type]`. */
 const names = (file: string, text: string): ReadonlyArray<string> =>
   analyze(file, text).references.flatMap((reference) => [
-    ...reference.names.map((name) =>
-      `${name.line} ${reference.specifier} ${name.name}${name.typeOnly ? " type" : ""}`
-    ),
+    ...reference.names.map((name) => `${name.line} ${reference.specifier} ${name.name}${name.typeOnly ? " type" : ""}`),
     ...reference.members.map((name) =>
       `${name.line} ${reference.specifier} ${name.name} via ${name.binding}${name.typeOnly ? " type" : ""}`
     )
@@ -24,17 +22,17 @@ const calls = (file: string, text: string): ReadonlyArray<string> =>
 describe("analyze: module references", () => {
   it("reads every declaration form, with its line and whether it is type-only", () => {
     const text = [
-      'import React, { useState as useLocal, type FC } from "react"',
-      'import type { Schema } from "effect"',
-      'import * as Effect from "effect/Effect"',
-      'import "./styles.css"',
-      'export { Button, type ButtonProps } from "@smthrs/ui"',
-      'export type { Model } from "@smthrs/model"',
-      'export * from "./all.ts"',
-      'export * as Flow from "@smthrs/flow"',
+      "import React, { useState as useLocal, type FC } from \"react\"",
+      "import type { Schema } from \"effect\"",
+      "import * as Effect from \"effect/Effect\"",
+      "import \"./styles.css\"",
+      "export { Button, type ButtonProps } from \"@smthrs/ui\"",
+      "export type { Model } from \"@smthrs/model\"",
+      "export * from \"./all.ts\"",
+      "export * as Flow from \"@smthrs/flow\"",
       "export { local }",
-      'import fs = require("node:fs")',
-      'import type Types = require("./types")',
+      "import fs = require(\"node:fs\")",
+      "import type Types = require(\"./types\")",
       "const local = 1"
     ].join("\n")
     expect(references("a.ts", text)).toEqual([
@@ -62,16 +60,16 @@ describe("analyze: module references", () => {
 
   it("reads import(), require() and import() types, and only with one string argument", () => {
     const text = [
-      'const a = await import("inngest")',
+      "const a = await import(\"inngest\")",
       "const b = await import(`ai`)",
       "const c = await import(name)",
-      'const d = require("@temporalio/client")',
+      "const d = require(\"@temporalio/client\")",
       "const e = require(name)",
-      'const f = require("x", "y")',
-      'const g = load("not-a-require")',
-      'const h = registry.require("not-a-require")',
-      'type I = typeof import("@langchain/langgraph")',
-      'type J = import("alchemy/Cloudflare").Workflows.Workflow',
+      "const f = require(\"x\", \"y\")",
+      "const g = load(\"not-a-require\")",
+      "const h = registry.require(\"not-a-require\")",
+      "type I = typeof import(\"@langchain/langgraph\")",
+      "type J = import(\"@alchemy.run/cloudflare\").Workflows.Workflow",
       "type K = import(42)",
       "type L = import(Name)"
     ].join("\n")
@@ -80,18 +78,18 @@ describe("analyze: module references", () => {
       "2 dynamic-import ai",
       "4 require @temporalio/client",
       "9 import-type @langchain/langgraph type",
-      "10 import-type alchemy/Cloudflare type"
+      "10 import-type @alchemy.run/cloudflare type"
     ])
-    expect(names("b.ts", text)).toEqual(["10 alchemy/Cloudflare Workflows type"])
+    expect(names("b.ts", text)).toEqual(["10 @alchemy.run/cloudflare Workflows type"])
   })
 
   it("lists references in source order, and reads imports nested in an ambient module", () => {
     const text = [
-      'const early = import("early")',
-      'import late from "late"',
-      'declare module "ambient" {',
-      '  import inner from "inner"',
-      '  import other = require("other")',
+      "const early = import(\"early\")",
+      "import late from \"late\"",
+      "declare module \"ambient\" {",
+      "  import inner from \"inner\"",
+      "  import other = require(\"other\")",
       "}"
     ].join("\n")
     expect(references("c.ts", text)).toEqual([
@@ -103,16 +101,16 @@ describe("analyze: module references", () => {
   })
 
   it("skips a declaration whose module is not a string", () => {
-    expect(references("d.ts", ['import x from 42', "export * from 42", "import y = require(42)"].join("\n")))
+    expect(references("d.ts", ["import x from 42", "export * from 42", "import y = require(42)"].join("\n")))
       .toEqual([])
   })
 
   it("does not read a string or comment that mentions an import", () => {
     const text = [
-      'const needle = "import { generateText } from \\"ai\\""',
-      'const quoted = `await import("inngest")`',
-      '// await import("@temporalio/client")',
-      '/** Unlike `require("langchain")`. */',
+      "const needle = \"import { generateText } from \\\"ai\\\"\"",
+      "const quoted = `await import(\"inngest\")`",
+      "// await import(\"@temporalio/client\")",
+      "/** Unlike `require(\"langchain\")`. */",
       "export const ok = 1"
     ].join("\n")
     expect(analyze("e.ts", text).references).toEqual([])
@@ -123,9 +121,9 @@ describe("analyze: members through a binding", () => {
   it("reads names off namespace, default and require bindings, types included, wherever they appear", () => {
     const text = [
       "function early() { return Workers.WorkflowEntrypoint }",
-      'import * as Workers from "cloudflare:workers"',
-      'import React from "react"',
-      'import Lib = require("lib")',
+      "import * as Workers from \"cloudflare:workers\"",
+      "import React from \"react\"",
+      "import Lib = require(\"lib\")",
       "const [state] = React.useState(0)",
       "let node: React.ReactNode",
       "const x = Lib.make?.()",
@@ -159,8 +157,8 @@ describe("analyze: calls", () => {
       "    make()()",
       "    table[key]()",
       "    connect().send()",
-      '    require("lib")',
-      '    import("lazy")',
+      "    require(\"lib\")",
+      "    import(\"lazy\")",
       "    new Thing()",
       "  }",
       "}"
@@ -185,9 +183,9 @@ describe("analyze: calls", () => {
       "async function run() {",
       "  page.context().route(handler)",
       "  make()().send()",
-      '  page["route"](handler)',
+      "  page[\"route\"](handler)",
       "  page?.[`route`](handler)",
-      '  headers["content-type"]()',
+      "  headers[\"content-type\"]()",
       "  ;(await open()).route(handler)",
       "  table[key].route(handler)",
       "  rows[0].send()",
@@ -206,7 +204,7 @@ describe("analyze: calls", () => {
       "3 make",
       "4 page.route",
       "5 page.route",
-      '6 headers["content-type"]',
+      "6 headers[\"content-type\"]",
       "7 (…).route",
       "7 open",
       "8 (…).route",
@@ -223,25 +221,25 @@ describe("analyze: calls", () => {
 
 describe("analyze: script kinds", () => {
   it("parses .tsx and .jsx with JSX, .ts, .mts and .cts as TypeScript, and the rest as JavaScript", () => {
-    const jsx = 'import { Button } from "@smthrs/ui"\nexport const View = () => <Button onClick={() => save()} />'
+    const jsx = "import { Button } from \"@smthrs/ui\"\nexport const View = () => <Button onClick={() => save()} />"
     expect(references("h.tsx", jsx)).toEqual(["1 import @smthrs/ui"])
     expect(calls("h.tsx", jsx)).toEqual(["2 save"])
     expect(references("h.jsx", jsx)).toEqual(["1 import @smthrs/ui"])
     // A generic arrow function is TypeScript, and JSX in a .tsx file.
-    const generic = 'import { pipe } from "effect"\nconst id = <T,>(value: T): T => pipe(value)'
+    const generic = "import { pipe } from \"effect\"\nconst id = <T,>(value: T): T => pipe(value)"
     for (const file of ["i.ts", "i.mts", "i.cts"]) expect(calls(file, generic)).toEqual(["2 pipe"])
-    expect(references("i.js", 'const fs = require("node:fs")\nfs.readFileSync("x")')).toEqual(["1 require node:fs"])
+    expect(references("i.js", "const fs = require(\"node:fs\")\nfs.readFileSync(\"x\")")).toEqual(["1 require node:fs"])
   })
 
   it("parses .vibe as TypeScript, whose import syntax VibeLang shares, past VibeLang's own declarations", () => {
     const vibe = [
-      'import type { Flow } from "@smthrs/core/Flow"',
-      'import * as Route from "./Route.vibe"',
-      'import { record } from "./internal/Boundary.ts"',
+      "import type { Flow } from \"@smthrs/core/Flow\"",
+      "import * as Route from \"./Route.vibe\"",
+      "import { record } from \"./internal/Boundary.ts\"",
       "",
       "error NotFound { path: string }",
       "",
-      'type SchemaModule = typeof import("effect/Schema")',
+      "type SchemaModule = typeof import(\"effect/Schema\")",
       "",
       "export function resolve(path: string): Route.Route!NotFound {",
       "  const route = Route.lookup<Flow>(path) catch (e) => match (e) {",
@@ -264,6 +262,6 @@ describe("analyze: script kinds", () => {
 
 describe("specifiers", () => {
   it("lists each module once, sorted", () => {
-    expect(specifiers(analyze("j.ts", 'import "b"\nimport "a"\nconst lazy = import("b")'))).toEqual(["a", "b"])
+    expect(specifiers(analyze("j.ts", "import \"b\"\nimport \"a\"\nconst lazy = import(\"b\")"))).toEqual(["a", "b"])
   })
 })

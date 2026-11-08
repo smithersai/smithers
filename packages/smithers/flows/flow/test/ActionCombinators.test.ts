@@ -1,9 +1,9 @@
 // Deep reviewed and polished by a human on 2026-08-10.
 
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Context, Effect, Layer, Schema, Tracer } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { effect } from "./Harness.ts"
 import { layerWired } from "./MemoryFlowRuntime.ts"
 

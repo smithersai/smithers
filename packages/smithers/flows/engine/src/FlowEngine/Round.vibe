@@ -23,8 +23,10 @@
  * @since 0.1.0
  */
 
-import { type Crypto, Sha256 } from "@smthrs/crypto"
+import { Sha256 } from "@smthrs/crypto"
 import { Flow } from "@smthrs/flow"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { isWellFormedUtf16 } from "../internal/Utf16.ts"
@@ -116,7 +118,9 @@ export const initial = <Id extends string>(executionId: Id extends JournalLineag
  * @since 0.1.0
  * @category constructors
  */
-export const executionId = (round: Round): string!InvalidRound!Crypto.Crypto =>
+export const executionId = (
+  round: Round
+): string!InvalidRound!(EffectDigest.Digest | SecureRandom.SecureRandom) =>
   Effect.suspend(() => {
     const refusal = validate(round)
     if (refusal !== undefined) return Effect.fail(refusal)
@@ -163,7 +167,7 @@ const budgetRefusal = (maxRounds: number | undefined): InvalidRound | undefined 
 export const next = effect (round: Round, options: {
   readonly flowName: string
   readonly maxRounds: number | undefined
-}): { readonly round: Round; readonly executionId: string }!(Flow.MaxRoundsExceeded | InvalidRound)!Crypto.Crypto => {
+}): { readonly round: Round; readonly executionId: string }!(Flow.MaxRoundsExceeded | InvalidRound)!(EffectDigest.Digest | SecureRandom.SecureRandom) => {
   const budget = options.maxRounds
   const refusal = validate(round) ?? budgetRefusal(budget)
   if (refusal !== undefined) throw refusal

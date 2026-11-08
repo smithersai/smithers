@@ -22,3 +22,106 @@ A queued agent issue write retains its original signed proof and renews it at de
 Libraries used: `@smthrs/platform-browser` for host activation and the shared SQLite service; `@smthrs/effect-tanstack-db` for collections, outbox delivery and versioned schema/payload migration; the existing Effect run-credential services and durable engine. No second worker loop or retry mechanism is added. Observability records activation outcome, credential renewal/refusal and device-principal refusal without identities, credentials or message content.
 
 Tests cover both deployed builds' upgrade with every row kept, a confirmed id or login matching and not, retained owner across expiry and the wipe, offline recovery, visitors, cross-account requests, exact attenuation, original-session revocation and replay. The browser regressions cover the deploy itself, expiry, draft recovery, account change across tabs, pending person writes kept for their owner and an evicted device reopening under its owner. Execution receipts are recorded in the work note; tests listed here do not imply a passing unexecuted suite.
+
+
+## Pending sign-out and held delivery (2026-11-02)
+
+Round-3 recovery keeps legacy ordering migration and admission serialization in
+`@smthrs/effect-tanstack-db`, using its library catalog entry. Migration journals
+only keys and sequences, never another owner's payload. On an ambiguous legacy
+timestamp, held writes precede peers before deterministic key ordering. A
+non-stealable admission lock drains a predecessor's persistence before the next
+leader recovers its sequence. A failed wipe mark seals and stops its page while
+releasing the sign-out guard, with an explicit wipe retry still available.
+
+The current client stack protects an explicit sign-out with a browser-owned exclusive lock before the server call, retained through its wipe. Reopen senders acquire compatible shared guards with `ifAvailable`; receivers wait for the exclusive guard to release before honoring retained broadcasts. A crashed page cannot leave a permanent marker.
+
+Held writes stay in the existing outbox row. Optional metadata records the hold and dependency keys; it does not change a feature payload schema. Dependency keys are text id, repository and issue number (or create id/settings), repository stack, run id, and chat conversation. Stack operations share one key because numbering depends on stack order. Missing keys are a conservative global dependency. The SDK retains the original executor, backoff and ownership checks, with an opt-in scheduler extension for independent held-write bypass. A shared invalidation causes every tab to reread owned persisted rows for its sign-in prompt. No extra storage, job or application retry loop is introduced.
+
+
+## Round-4 recovery (2026-11-03)
+
+Admission allocates from the stored rows' maximum under the admission lock through
+row persistence. A queued callback after leadership reacquisition cannot reuse a
+leader-local counter. Missing or duplicate sequences use the existing durable
+migration plan, with held members before ambiguous peers. This round was superseded by the stored-counter recovery below. Unpublished local held membership survives invalidation, and repair validates
+the affected rows before publishing the index.
+
+Once the server ends a session, local session or confirmation failures still reach
+wipe marking or safe sealing. The whole sign-out action releases the browser guard
+in its finalizer. A wipe helper alone cannot own that cleanup because failures can
+precede it. These changes retain owner filtering, send-time ownership checks, and
+the server's device-person binding. No write gains another person's authority.
+
+### Stale-credential continuation (2026-11-03)
+
+Every same-origin `/api/` request from the bound transport, including internal
+session rereads, advertises `x-smithers-accepts: credential-stale` so the server
+can reserve its stale response for a client that handles it. Other origins and
+paths receive no added capability header. This advertises support, not authority.
+
+The bound transport consumes the server's `503` plus
+`x-smithers-credential: stale` before a feature can classify its status.
+It retains a reversible transport gate and raises `credential_stale`; durable
+outbox retries drive continuation. A retry sends no write until `Retry-After`
+has elapsed and a session reread names its bound person. The reread carries the
+optional tag stored with the verified owner in the bootstrap record's additive
+`session_tag` column. The tag is diagnostic, never authority; owner filtering,
+send-time checks and server device-person binding still decide who may send.
+AuthClient preserves `credential_stale` as a distinct failure code, so the data
+gate hides private rows until a session is confirmed again. A later network
+failure cannot clear that hiding. A failed credential-state write keeps its
+deadline in the transport immediately. Reporting the observed refusal never
+waits for storage or its lock, so a stalled publication cannot become a generic
+session timeout that leaves private rows visible. Subsequent writes remain blocked until
+the pending state is published, its delay expires and the owner is verified.
+Inconclusive rereads retain queued data. Existing sign-out and different-person
+paths remain in force. The dependency patch remains unchanged; the SDK admission counter is described below.
+
+### Round-5 client recovery (2026-11-03)
+
+Use the library catalog's `@smthrs/effect-tanstack-db` outbox. Recovery reconstructs
+`outbox:admission-counter` under the existing shared admission lock. Each admission
+reads this one row and commits its increment with the write through the host's
+atomic `storage.setMany`. The browser boundary uses one IndexedDB transaction;
+a failed batch admits neither row. Counter metadata survives an empty queue and
+is never offered to the executor. Followers never allocate or repair sequences.
+
+Held-status refresh revalidates both indexed keys and cached membership against
+the actual stored rows, including followers that discovered an unpublished hold
+at startup. Missing index membership stays dirty for repair on leadership or
+existing retry steps. Ownership still comes from each row, never the index.
+
+Chat questions opt into the same session confirmation and durable hold as other
+queued session writes. A held question remains queued and offers sign-in across
+reloads rather than being removed to Not sent.
+
+Only accepted reopens update the tab's throttle mark. Suppressed requests retain
+a timer at the existing eligibility boundary; repeated failures cannot move that
+deadline. Sign-out guards still protect the request through its wipe, and a
+suppressed request remains eligible once the guard releases.
+
+The bound transport persists an owner-keyed stale-credential deadline and revision
+in the same device outbox store, deleted by sign-out's wipe. Pages and workers
+serialize publication and write-gate reads with one Web Lock, so a successor
+cannot read an old record while another context is publishing. Every sending context reads it before
+writing and verifies the owner after the deadline before its first send for that
+revision. A newer revision invalidates a context's earlier verification. The
+record remains for successor verification until wipe; it contains no credential
+or user payload. A context verifies again after reload or leadership transfer.
+
+A rejected publication retains that lock while the observing context lives;
+successor transports cannot bypass the unpublished deadline by reading an old
+record. Each ordinary request in the observing transport can attempt publication
+again within its held lock. Reads and explicit sign-out do not await it, so auth
+refresh can recover storage even when another context owns the waiting write.
+No timer or resend loop is added. Publication releases the fence only after all
+observed deadlines are stored; durable outbox attempts still own write retries.
+An ordinary request recovers every publication this transport holds, including
+one from before visitor adoption changed its principal. Each stays under its
+original owner key. A write fails as held if any of those attempts fails or
+leaves a newer observation unpublished; it never waits for its own failed fence.
+Memory-only pages use memory state and retain their first verified transient person;
+a later reread must match that person, and the resulting transient send carries their binding. This never opens,
+adopts or releases a retained owner's data. A different person cannot verify a
+retained owner's gate. Session tags remain diagnostic only.

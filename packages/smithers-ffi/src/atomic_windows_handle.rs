@@ -344,9 +344,8 @@ impl Info {
             "atime": millis(self.basic.LastAccessTime),
             "birthtime": millis(self.basic.CreationTime),
             "dev": self.file.dwVolumeSerialNumber,
-            // Effect's optional numeric inode cannot represent every NTFS ID.
-            // Root identity remains an exact decimal string via identity().
-            "ino": (inode <= 9_007_199_254_740_991).then_some(inode),
+            // JSON numbers cannot carry every NTFS file ID to JavaScript.
+            "ino": inode.to_string(),
             "mode": mode,
             "nlink": self.standard.NumberOfLinks,
             "uid": 0, "gid": 0, "rdev": 0,
@@ -471,6 +470,31 @@ fn reparse_target(bytes: &[u8]) -> io::Result<OsString> {
 pub(super) struct Directory(File);
 
 impl Directory {
+    /// Flush publication metadata through a writable handle to this pinned
+    /// directory. A refused flush is an error, never best-effort durability.
+    pub(super) fn sync(&self) -> io::Result<()> {
+        use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+        use windows_sys::Win32::Storage::FileSystem::{
+            ReOpenFile, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+        };
+        // SAFETY: reopen the live pinned object, without resolving a pathname.
+        let handle = unsafe {
+            ReOpenFile(
+                self.0.as_raw_handle(),
+                FILE_GENERIC_WRITE | FILE_READ_ATTRIBUTES,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+            )
+        };
+        if handle == INVALID_HANDLE_VALUE {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: ReOpenFile transfers a new owned handle on success.
+        let file = unsafe { File::from_raw_handle(handle) };
+        no_reparse(&file)?;
+        file.sync_all()
+    }
+
     /// Recovery directories may be reused only with the exact private ACL we
     /// create. A pre-existing broadly accessible directory is not a private slot.
     pub(super) fn private_child(&self, name: &OsStr) -> io::Result<Self> {
@@ -486,6 +510,27 @@ impl Directory {
                 )?;
                 no_reparse(&file)?;
                 verify_private(&file)?;
+                Ok(Self(file))
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Tighten an owner-held recovery directory through its pinned handle.
+    /// Reparse points and directories owned by another identity are refused.
+    pub(super) fn prepare_private_child(&self, name: &OsStr) -> io::Result<Self> {
+        match self.create_private_directory(name) {
+            Ok(directory) => Ok(directory),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                let file = open(
+                    Some(&self.0),
+                    name_units(name)?,
+                    FILE_LIST_DIRECTORY | FILE_TRAVERSE | 0x0002_0000 | 0x0004_0000,
+                    true,
+                    false,
+                )?;
+                no_reparse(&file)?;
+                protect_private(&file)?;
                 Ok(Self(file))
             }
             Err(error) => Err(error),
@@ -630,6 +675,22 @@ impl Directory {
             Some(&self.0),
             name_units(name)?,
             FILE_GENERIC_READ | FILE_GENERIC_WRITE,
+            false,
+            FILE_SHARE_READ,
+            Some(&security),
+        )?;
+        regular_file(&file)?;
+        Ok(file)
+    }
+
+    /// Retain DELETE access on the exact temporary inode used by publication;
+    /// rename never closes and reopens the temporary by pathname.
+    pub(super) fn create_publication_file(&self, name: &OsStr) -> io::Result<File> {
+        let security = private_security()?;
+        let file = open_with(
+            Some(&self.0),
+            name_units(name)?,
+            FILE_GENERIC_READ | FILE_GENERIC_WRITE | DELETE,
             false,
             FILE_SHARE_READ,
             Some(&security),
@@ -818,7 +879,11 @@ impl Directory {
     pub(super) fn rename(&self, name: &OsStr, destination: &Self, to: &OsStr) -> io::Result<()> {
         let file = open(Some(&self.0), name_units(name)?, DELETE, false, true)?;
         no_reparse(&file)?;
-        match destination.metadata(to) {
+        destination.publish_file(&file, to)
+    }
+
+    pub(super) fn publish_file(&self, file: &File, to: &OsStr) -> io::Result<()> {
+        match self.metadata(to) {
             Ok(info) if info.file.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 => {
                 return Err(denied(BoundaryError::ReparsePoint));
             }
@@ -834,7 +899,7 @@ impl Directory {
         unsafe {
             let value = &mut *buffer.as_mut_ptr().cast::<FILE_RENAME_INFORMATION>();
             value.Anonymous.ReplaceIfExists = true;
-            value.RootDirectory = destination.0.as_raw_handle();
+            value.RootDirectory = self.0.as_raw_handle();
             value.FileNameLength = (name.len() * 2) as u32;
             ptr::copy_nonoverlapping(
                 name.as_ptr(),
@@ -857,7 +922,65 @@ impl Directory {
     }
 }
 
-fn verify_private(file: &File) -> io::Result<()> {
+fn protect_private(file: &File) -> io::Result<()> {
+    use windows_sys::Win32::Security::Authorization::{
+        GetSecurityInfo, SetSecurityInfo, SE_FILE_OBJECT,
+    };
+    use windows_sys::Win32::Security::{
+        GetSecurityDescriptorDacl, DACL_SECURITY_INFORMATION, OWNER_SECURITY_INFORMATION,
+        PROTECTED_DACL_SECURITY_INFORMATION,
+    };
+    let mut owner = ptr::null_mut();
+    let mut descriptor = ptr::null_mut();
+    let status = unsafe {
+        GetSecurityInfo(
+            file.as_raw_handle(),
+            SE_FILE_OBJECT,
+            OWNER_SECURITY_INFORMATION,
+            &mut owner,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+            &mut descriptor,
+        )
+    };
+    if status != 0 {
+        return Err(io::Error::from_raw_os_error(status as i32));
+    }
+    let _allocation = LocalAllocation(descriptor);
+    if owner.is_null() || sid_string(owner)? != current_user_sid()? {
+        return Err(io::ErrorKind::PermissionDenied.into());
+    }
+    let security = private_security()?;
+    let mut present = 0;
+    let mut defaulted = 0;
+    let mut dacl = ptr::null_mut();
+    if unsafe { GetSecurityDescriptorDacl(security.0, &mut present, &mut dacl, &mut defaulted) }
+        == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    if present == 0 || dacl.is_null() {
+        return Err(io::ErrorKind::InvalidData.into());
+    }
+    let status = unsafe {
+        SetSecurityInfo(
+            file.as_raw_handle(),
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            dacl,
+            ptr::null_mut(),
+        )
+    };
+    if status != 0 {
+        return Err(io::Error::from_raw_os_error(status as i32));
+    }
+    verify_private(file)
+}
+
+pub(super) fn verify_private(file: &File) -> io::Result<()> {
     use windows_sys::Win32::Security::Authorization::{GetSecurityInfo, SE_FILE_OBJECT};
     use windows_sys::Win32::Security::{
         GetAce, GetSecurityDescriptorControl, ACCESS_ALLOWED_ACE, DACL_SECURITY_INFORMATION,
@@ -933,6 +1056,94 @@ mod tests {
     use std::fs;
     use std::io::{Read, Write};
     use std::os::windows::fs::{symlink_dir, symlink_file};
+
+    #[test]
+    fn private_file_denies_reads_under_an_anonymous_identity() {
+        use windows_sys::Win32::Security::{ImpersonateAnonymousToken, RevertToSelf};
+        use windows_sys::Win32::System::Threading::GetCurrentThread;
+        struct Revert;
+        impl Drop for Revert {
+            fn drop(&mut self) {
+                assert_ne!(unsafe { RevertToSelf() }, 0);
+            }
+        }
+        for publication in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let root = Directory::root(temp.path()).unwrap();
+            let mut private = if publication {
+                root.create_publication_file(OsStr::new("temporary"))
+                    .unwrap()
+            } else {
+                root.create_private_file(OsStr::new("private")).unwrap()
+            };
+            private.write_all(b"private bytes").unwrap();
+            private.sync_all().unwrap();
+            if publication {
+                root.publish_file(&private, OsStr::new("private")).unwrap();
+                root.sync().unwrap();
+            }
+            drop(private);
+            // Positive control grants the anonymous identity read access, proving
+            // the read below reaches the leaf DACL rather than failing at a parent.
+            let user = current_user_sid().unwrap();
+            let sddl: Vec<_> = format!("O:{user}D:P(A;;FA;;;{user})(A;;FR;;;AN)")
+                .encode_utf16()
+                .chain(Some(0))
+                .collect();
+            let mut descriptor = ptr::null_mut();
+            assert_ne!(
+                unsafe {
+                    ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                        sddl.as_ptr(),
+                        SDDL_REVISION_1,
+                        &mut descriptor,
+                        ptr::null_mut(),
+                    )
+                },
+                0
+            );
+            let security = LocalAllocation(descriptor);
+            let mut control = open_with(
+                Some(&root.0),
+                name_units(OsStr::new("control")).unwrap(),
+                FILE_GENERIC_READ | FILE_GENERIC_WRITE,
+                false,
+                FILE_SHARE_READ,
+                Some(&security),
+            )
+            .unwrap();
+            control.write_all(b"public control").unwrap();
+            drop(control);
+            // A real read attempt under a different security identity, relative to
+            // the pinned parent so ancestor traversal cannot explain the denial.
+            assert_ne!(unsafe { ImpersonateAnonymousToken(GetCurrentThread()) }, 0);
+            let revert = Revert;
+            let mut control = open(
+                Some(&root.0),
+                name_units(OsStr::new("control")).unwrap(),
+                FILE_READ_DATA,
+                false,
+                true,
+            )
+            .unwrap();
+            let mut bytes = Vec::new();
+            control.read_to_end(&mut bytes).unwrap();
+            assert_eq!(bytes, b"public control");
+            let result = open(
+                Some(&root.0),
+                name_units(OsStr::new("private")).unwrap(),
+                FILE_READ_DATA,
+                false,
+                true,
+            );
+            assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+            drop(revert);
+            assert_eq!(
+                fs::read(temp.path().join("private")).unwrap(),
+                b"private bytes"
+            );
+        }
+    }
 
     #[test]
     fn rejects_aliases_streams_and_traversal_components() {
@@ -1295,19 +1506,19 @@ mod tests {
     }
 
     #[test]
-    fn optional_numeric_inodes_never_round_an_exact_root_identity() {
+    fn decimal_inodes_retain_the_exact_root_identity() {
         let temporary = tempfile::tempfile().unwrap();
         let mut metadata = info(&temporary).unwrap();
         metadata.file.dwVolumeSerialNumber = 7;
         metadata.file.nFileIndexHigh = 0x20_0000;
         metadata.file.nFileIndexLow = 1;
         assert_eq!(metadata.identity(), "7:9007199254740993");
-        assert!(metadata.stat_json().unwrap()["ino"].is_null());
+        assert_eq!(metadata.stat_json().unwrap()["ino"], "9007199254740993");
         metadata.file.nFileIndexHigh = 0x1f_ffff;
         metadata.file.nFileIndexLow = u32::MAX;
         assert_eq!(
-            metadata.stat_json().unwrap()["ino"].as_u64(),
-            Some(9_007_199_254_740_991)
+            metadata.stat_json().unwrap()["ino"].as_str(),
+            Some("9007199254740991")
         );
     }
 
@@ -1331,7 +1542,7 @@ mod tests {
                 .stat_json()
                 .unwrap();
             let output = std::process::Command::new("node").arg("-e").arg(
-                "const s=require('node:fs').lstatSync(process.argv[1]);console.log(JSON.stringify({type:s.isDirectory()?'Directory':'File',mtime:s.mtimeMs,atime:s.atimeMs,birthtime:s.birthtimeMs,dev:s.dev,ino:Number.isSafeInteger(s.ino)?s.ino:null,mode:s.mode,nlink:s.nlink,uid:s.uid,gid:s.gid,rdev:s.rdev,size:String(s.size),blksize:String(s.blksize),blocks:s.blocks}))"
+                "const s=require('node:fs').lstatSync(process.argv[1],{bigint:true});console.log(JSON.stringify({type:s.isDirectory()?'Directory':'File',mtime:Number(s.mtimeNs)/1e6,atime:Number(s.atimeNs)/1e6,birthtime:Number(s.birthtimeNs)/1e6,dev:Number(s.dev),ino:String(s.ino),mode:Number(s.mode),nlink:Number(s.nlink),uid:Number(s.uid),gid:Number(s.gid),rdev:Number(s.rdev),size:String(s.size),blksize:String(s.blksize),blocks:Number(s.blocks)}))"
             ).arg(temp.path().join(name)).output().unwrap();
             assert!(
                 output.status.success(),

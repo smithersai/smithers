@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import type { ComponentProps } from "react";
 import { Badge } from "../badge";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { RUN_WORD_GLYPHS, RUN_WORD_TONES, type RunState, type RunWord, runWord } from "./runPage";
 

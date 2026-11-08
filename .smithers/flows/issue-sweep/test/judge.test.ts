@@ -6,7 +6,6 @@
  * runs for real.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter, Sleep, WaitFor } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
@@ -145,7 +144,7 @@ const sweep = (
         ).pipe(
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(FlowEngine.layerMemory),
-          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+          Layer.provideMerge(NodeCrypto.layer)
         ) as Layer.Layer<any>
       ),
       Effect.scoped
@@ -385,7 +384,7 @@ test("the sweep's own judge answers triage, not the Evaluator the host provides"
           Layer.mergeAll(Interpreter.layer(Asking), implementation).pipe(
             Layer.provideMerge(Action.layerImplementations),
             Layer.provideMerge(FlowEngine.layerMemory),
-            Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+            Layer.provideMerge(NodeCrypto.layer)
           ) as Layer.Layer<any>
         ),
         Effect.provide(hostJudge),

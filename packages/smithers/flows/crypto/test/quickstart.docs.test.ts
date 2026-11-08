@@ -1,8 +1,9 @@
 import { Effect } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
+import * as Hex from "effect/encoding/Hex"
 import { transformSync } from "esbuild"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import * as Crypto from "../src/Crypto.ts"
 import { type Digest, digest, digestSync, type Sha256Error, syncCrypto } from "../src/index.ts"
 
 // Execute the published put fence so the regression follows the example itself.
@@ -14,7 +15,7 @@ const { code } = transformSync(fence.replace(/^import .*\n/gm, "").replace("expo
 })
 const makeStore = () =>
   new Function("digest", "Effect", `${code}\nreturn { put, blobs }`)(digest, Effect) as {
-    put: (bytes: Uint8Array) => Effect.Effect<Digest, Sha256Error, Crypto.Crypto>
+    put: (bytes: Uint8Array) => Effect.Effect<Digest, Sha256Error, EffectDigest.Digest>
     blobs: Map<string, Uint8Array>
   }
 
@@ -22,7 +23,7 @@ describe("docs/quickstart.md content-addressed put", () => {
   it("preserves stored bytes when the caller reuses its buffer after put", () => {
     const { put, blobs } = makeStore()
     const input = new TextEncoder().encode("abc")
-    const address = Effect.runSync(put(input).pipe(Effect.provideService(Crypto.Crypto, syncCrypto)))
+    const address = Effect.runSync(put(input).pipe(Effect.provideService(EffectDigest.Digest, syncCrypto)))
     input.fill(0)
 
     const stored = blobs.get(address)!
@@ -34,8 +35,7 @@ describe("docs/quickstart.md content-addressed put", () => {
   it("owns its bytes before an asynchronous host yields and publishes only after hashing", async () => {
     const { put, blobs } = makeStore()
     const input = new TextEncoder().encode("abc")
-    const crypto = Crypto.make({
-      randomBytes: (size) => new Uint8Array(size),
+    const crypto = EffectDigest.Digest.of({
       digest: (algorithm, snapshot) =>
         Effect.gen(function*() {
           yield* Effect.promise(async () => {
@@ -44,9 +44,12 @@ describe("docs/quickstart.md content-addressed put", () => {
             input.fill(0)
           })
           return yield* syncCrypto.digest(algorithm, snapshot)
-        })
+        }),
+      digestHex(algorithm, data) {
+        return Effect.map(this.digest(algorithm, data), Hex.encode)
+      }
     })
-    const address = await Effect.runPromise(put(input).pipe(Effect.provideService(Crypto.Crypto, crypto)))
+    const address = await Effect.runPromise(put(input).pipe(Effect.provideService(EffectDigest.Digest, crypto)))
 
     const stored = blobs.get(address)!
     expect(address).toBe(digestSync("abc"))

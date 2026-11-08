@@ -1,5 +1,6 @@
 import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
+import { CONFIRM_401_HEADER, sessionCheckOf } from "../auth/contract"
 import { stackRoute, TODO_STATUS_NOT_FOUND, todoStatusRoute } from "./contract"
 import { TodoStatusUnavailable, type TodoStatusResult } from "./flows"
 import { Refusal, Taken, TodoStatusRead } from "./schema"
@@ -10,11 +11,12 @@ import { Refusal, Taken, TodoStatusRead } from "./schema"
 /**
  * ChatApi didn't take the change: no whole answer within the deadline, or no network (`status` absent), or any status
  * but 200 and 202 (`status`, and the refusal's `code` when its body names one), or a 200 or 202 whose body isn't the
- * contract's.
+ * contract's. A `401` the page's transport checked against the session carries what it found (`sessionCheck`).
  */
 export class ChangeNotTaken extends Data.TaggedError("ChangeNotTaken")<{
   readonly status?: number
   readonly code?: string
+  readonly sessionCheck?: "same_person"
 }> {}
 
 /** A change as the route takes it. It names no door: who acts is the session's to say. */
@@ -74,6 +76,8 @@ export const postChange = (
       .execute(
         HttpClientRequest.post(`${origin}${stackRoute(repository.owner, repository.name)}`).pipe(
           HttpClientRequest.bodyJsonUnsafe(change),
+          // A 401 is checked against the session first: a change is queued, so it can be held (writes.ts).
+          HttpClientRequest.setHeader(CONFIRM_401_HEADER, "1"),
         ),
       )
       .pipe(Effect.mapError(() => new ChangeNotTaken({})))
@@ -83,6 +87,7 @@ export const postChange = (
       return yield* new ChangeNotTaken({
         status: response.status,
         ...(Option.isSome(refused) ? { code: refused.value.code } : {}),
+        ...sessionCheckOf(response.headers),
       })
     }
     return yield* response.json.pipe(

@@ -1,10 +1,11 @@
-import { NodeCrypto, NodeServices } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
+import { NodeServices } from "@effect/platform-node"
 import { Action, Flow } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Discovery from "@smthrs/registry/Discovery"
 import * as Executable from "@smthrs/registry/Executable"
 import { Effect, Layer, Schema } from "effect"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -31,11 +32,8 @@ import { CodingError } from "../coding/schema.ts"
 import { operations as wikiOperations } from "../wiki/operations.ts"
 import type { PageSpec } from "../wiki/schema.ts"
 
-// Effect 4.1 removed effect/Crypto, and NodeServices.layer no longer provides it.
-const nodeServices = Layer.merge(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
-
 const run = <A>(effect: Effect.Effect<A, never, import("effect/FileSystem").FileSystem | import("effect/Path").Path>) =>
-  Effect.runPromise(effect.pipe(Effect.provide(nodeServices)))
+  Effect.runPromise(effect.pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))))
 
 test("request paths are extracted from prose without swallowing URLs or abbreviations", () => {
   assert.deepEqual(
@@ -207,7 +205,7 @@ const gathering = async (root: string, snapshotFailure?: Jj.JjError) => {
         kind: "current" as const,
         body: `${page.title} notes.`,
         inputDigest: collected.inputDigest
-      }))).pipe(Effect.provide(nodeServices))
+      }))).pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
   )
   const executables = await Effect.runPromise(
     Effect.gen(function*() {
@@ -217,7 +215,11 @@ const gathering = async (root: string, snapshotFailure?: Jj.JjError) => {
         found.entries,
         (descriptor) => Executable.fromDescriptor(descriptor, { delegates: [Delegate] })
       )
-    }).pipe(Effect.provide(Discovery.layer.pipe(Layer.provideMerge(nodeServices))))
+    }).pipe(
+      Effect.provide(
+        Discovery.layer.pipe(Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
+      )
+    )
   )
   const revision = {
     kind: "resolved" as const,
@@ -248,7 +250,7 @@ const gathering = async (root: string, snapshotFailure?: Jj.JjError) => {
           : Effect.fail(snapshotFailure)
     }),
     Layer.succeed(Executable.Catalog, { executables, refused: [] }),
-    nodeServices
+    EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)
   )
   const options = {
     repositoryPath: root,

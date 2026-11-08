@@ -1,6 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeServices from "@effect/platform-node/NodeServices"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, ExternalJob, Fault, Flow, Interpreter } from "@smthrs/flow"
 import { RemoteChildProcessSpawner, Sandbox } from "@smthrs/sandbox"
@@ -210,7 +209,7 @@ test("RemoteFix engine restarts a lost generation and returns only the replaceme
   const layer = Layer.mergeAll(implementations, Interpreter.layer(Caller)).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
+    Layer.provideMerge(NodeCrypto.layer),
     Layer.provideMerge(NodeServices.layer),
     Layer.provideMerge(KeyValueStore.layerMemory),
     Layer.provideMerge(TestClock.layer())
@@ -279,7 +278,7 @@ test("RemoteFix engine timeout cancels its retained worker", async () => {
   const layer = Layer.mergeAll(RemoteFix.toLayer(f.job), Interpreter.layer(Caller)).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
+    Layer.provideMerge(NodeCrypto.layer),
     Layer.provideMerge(NodeServices.layer),
     Layer.provideMerge(KeyValueStore.layerMemory),
     Layer.provideMerge(TestClock.layer())

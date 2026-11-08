@@ -106,7 +106,9 @@ describe("a write an older build stored", () => {
   test("is upgraded before the outbox loads it, then sent once, as this build's row, under its key", async () => {
     const storage = memoryStorage()
     await oldBuild(storage, [note("a", 1)])
-    const [stored] = [...storage.entries.values()]
+    const [stored] = [...storage.entries].filter(([key]) => key !== "outbox:admission-counter").map(([, value]) =>
+      value
+    )
     expect(JSON.parse(stored!).metadata.versions).toBeUndefined()
     const seen = await nextBuild(storage, ({ sent }) =>
       Effect.gen(function*() {
@@ -120,20 +122,25 @@ describe("a write an older build stored", () => {
       }))
     expect(seen.sent).toEqual([{ rows: [{ id: "a", text: "a", n: 1, tags: [] }], idempotencyKey: "a" }])
     expect(seen.upgraded).toBe(1)
-    await until(() => expect([...storage.entries.keys()]).toEqual([]))
+    await until(() =>
+      expect([...storage.entries.keys()].filter((key) => key !== "outbox:admission-counter")).toEqual([])
+    )
   })
 
   test("already at this build's versions is left as stored, and sent", async () => {
     const storage = memoryStorage()
     await oldBuild(storage, [note("a", 1)])
     for (const [key, value] of storage.entries) {
+      if (!key.startsWith("tx:")) continue
       const upgraded = upgrade.write(value)
       storage.entries.set(key, (upgraded as { readonly value: string }).value)
     }
-    const before = [...storage.entries.values()]
+    const before = [...storage.entries].filter(([key]) => key !== "outbox:admission-counter").map(([, value]) => value)
     const seen = await nextBuild(storage, ({ sent }) =>
       Effect.gen(function*() {
-        const stored = [...storage.entries.values()]
+        const stored = [...storage.entries].filter(([key]) => key !== "outbox:admission-counter").map(([, value]) =>
+          value
+        )
         yield* Effect.promise(() => until(() => expect(sent).toHaveLength(1)))
         return {
           stored,
@@ -176,7 +183,7 @@ describe("a write an older build stored", () => {
         return { sent, parked: yield* outbox.parked }
       }))
     expect(after).toEqual({ sent: [], parked: [] })
-    expect([...storage.entries.keys()]).toEqual([])
+    expect([...storage.entries.keys()].filter((key) => key !== "outbox:admission-counter")).toEqual([])
   })
 
   test("parked goes to its feature as the outbox starts: one it takes leaves the outbox, one it leaves stays", async () => {
@@ -223,7 +230,9 @@ describe("a new write", () => {
           Effect.asVoid(notes.insert({ id: "a", text: "a", n: 1, tags: [] }))
         )
         yield* write.admitted
-        const [stored] = [...storage.entries.values()]
+        const [stored] = [...storage.entries].filter(([key]) => key !== "outbox:admission-counter").map(([, value]) =>
+          value
+        )
         expect(JSON.parse(stored!).metadata.versions).toEqual({ notes: 2 })
         yield* write.settled
       }))

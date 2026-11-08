@@ -54,16 +54,17 @@
 
 import { Permission } from "@smthrs/capability"
 import { Digest, type KeyMaterial } from "@smthrs/core"
-import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Cell, EngineLike, HarnessError, type Plan } from "@smthrs/harness"
 import { CallFact } from "@smthrs/journal"
 import { CanonicalJson, Evaluator, type Model, ModelError, ModelEvent, type ModelRequest, Route } from "@smthrs/model"
 import { StepKey } from "@smthrs/plan"
 import { Checkpoints } from "@smthrs/std"
-import type * as Cause from "effect/Cause"
+import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
+import * as EffectDigest from "effect/crypto/Digest"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -343,63 +344,71 @@ export const sandboxed = (
   sandbox: WorkspaceSandbox.Service,
   runner: WorkspaceCallRunner,
   options: { readonly layers?: ReadonlyArray<string> | undefined } = {}
-): Effect.Effect<CallRunner, never, Crypto.Crypto> =>
-  Effect.map(Crypto.Crypto, (crypto): CallRunner => ({
-    ...(runner.authorize === undefined ? {} : { authorize: runner.authorize }),
-    run: (call) =>
-      Effect.gen(function*() {
-        const environment = yield* Action.CurrentCacheEnvironment
-        const instance = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
-        const cacheEnvironment = environment ?? (Option.isSome(instance)
-          ? { run: `${instance.value.flow._tag}/${instance.value.executionId}` }
-          : undefined)
-        const material = callMaterial(call, [...(options.layers ?? []), ...(environment?.layers ?? [])])
-        const cacheKey = call.effects.tier === "sealed" && cacheEnvironment !== undefined
-          ? yield* StepKey.fromKeyMaterial({
-            ...material,
-            body: {
-              call: material.body,
-              // A sandbox memo hit bypasses the workflow entirely. Its key
-              // needs the same effective authority as the durable activity;
-              // unknown authority confines reuse to this execution.
-              environment: cacheEnvironment
-            }
-          }, {}).pipe(
-            Effect.provideService(Crypto.Crypto, crypto),
-            Effect.mapError((cause) => engineFailed(`Cell call ${call.flowName} could not be keyed`, cause))
+): Effect.Effect<CallRunner, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
+  Effect.gen(function*() {
+    const crypto = yield* EffectDigest.Digest
+    const random = yield* SecureRandom.SecureRandom
+    return {
+      ...(runner.authorize === undefined ? {} : { authorize: runner.authorize }),
+      run: (call) =>
+        Effect.gen(function*() {
+          const environment = yield* Action.CurrentCacheEnvironment
+          const instance = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
+          const cacheEnvironment = environment ?? (Option.isSome(instance)
+            ? { run: `${instance.value.flow._tag}/${instance.value.executionId}` }
+            : undefined)
+          const material = callMaterial(call, [...(options.layers ?? []), ...(environment?.layers ?? [])])
+          const cacheKey = call.effects.tier === "sealed" && cacheEnvironment !== undefined
+            ? yield* StepKey.fromKeyMaterial({
+              ...material,
+              body: {
+                call: material.body,
+                // A sandbox memo hit bypasses the workflow entirely. Its key
+                // needs the same effective authority as the durable activity;
+                // unknown authority confines reuse to this execution.
+                environment: cacheEnvironment
+              }
+            }, {}).pipe(
+              Effect.provideService(EffectDigest.Digest, crypto),
+              Effect.provideService(SecureRandom.SecureRandom, random),
+              Effect.mapError((cause) => engineFailed(`Cell call ${call.flowName} could not be keyed`, cause))
+            )
+            : undefined
+          const outcome = yield* sandbox.execute({
+            descriptor: callBoundary(call),
+            ...(cacheKey === undefined ? {} : { cacheKey }),
+            workflow: runner.run(call)
+          }).pipe(
+            Effect.provideService(EffectDigest.Digest, crypto),
+            Effect.provideService(SecureRandom.SecureRandom, random),
+            Effect.mapError((cause) =>
+              cause instanceof HarnessError.HarnessError
+                ? cause
+                : engineFailed(`Cell call ${call.flowName} could not run in its workspace sandbox`, cause)
+            )
           )
-          : undefined
-        const outcome = yield* sandbox.execute({
-          descriptor: callBoundary(call),
-          ...(cacheKey === undefined ? {} : { cacheKey }),
-          workflow: runner.run(call)
-        }).pipe(
-          Effect.provideService(Crypto.Crypto, crypto),
-          Effect.mapError((cause) =>
-            cause instanceof HarnessError.HarnessError
-              ? cause
-              : engineFailed(`Cell call ${call.flowName} could not run in its workspace sandbox`, cause)
+          if (outcome._tag === "Invalidated") {
+            const violated = outcome.violations
+              .map((violation) => `${violation.kind} ${violation.resource.id}`)
+              .join(", ")
+            return Cell.CallResult.new({
+              outcome: "failure",
+              value: null,
+              message:
+                `Flow ${call.flowName} touched what it did not declare (${violated}); its changes were discarded.`
+            })
+          }
+          yield* sandbox.materialize(outcome).pipe(
+            Effect.provideService(EffectDigest.Digest, crypto),
+            Effect.provideService(SecureRandom.SecureRandom, random),
+            Effect.mapError((cause) =>
+              engineFailed(`Cell call ${call.flowName} could not materialize its workspace changes`, cause)
+            )
           )
-        )
-        if (outcome._tag === "Invalidated") {
-          const violated = outcome.violations
-            .map((violation) => `${violation.kind} ${violation.resource.id}`)
-            .join(", ")
-          return new Cell.CallResult({
-            outcome: "failure",
-            value: null,
-            message: `Flow ${call.flowName} touched what it did not declare (${violated}); its changes were discarded.`
-          })
-        }
-        yield* sandbox.materialize(outcome).pipe(
-          Effect.provideService(Crypto.Crypto, crypto),
-          Effect.mapError((cause) =>
-            engineFailed(`Cell call ${call.flowName} could not materialize its workspace changes`, cause)
-          )
-        )
-        return outcome.result.output
-      })
-  }))
+          return outcome.result.output
+        })
+    }
+  })
 
 /**
  * The collaborators a durable harness engine needs.
@@ -554,7 +563,8 @@ const accountingFailed = (cause: Budget.AccountingUnavailable): HarnessError.Har
  * free of a `Crypto` requirement it would otherwise have to thread through
  * every stream and activity signature.
  */
-const keyed = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>): Effect.Effect<A, E> => Digest.provideSync(effect)
+const keyed = <A, E>(effect: Effect.Effect<A, E, EffectDigest.Digest>): Effect.Effect<A, E> =>
+  Digest.provideSync(effect)
 
 /**
  * The composition and run scope every durable key in this port folds in.
@@ -698,7 +708,11 @@ export const make = (
 ): Effect.Effect<
   EngineLike.EngineLike,
   never,
-  Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Budget.Budget | QuotaPolicy.QuotaClassifier
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
+  | FlowRuntime.FlowRuntime
+  | FlowRuntime.FlowInstance
+  | Budget.Budget
+  | QuotaPolicy.QuotaClassifier
 > =>
   Effect.gen(function*() {
     const modelRetryPolicy = options.modelRetryPolicy ?? ModelStep.defaultModelRetryPolicy
@@ -708,9 +722,11 @@ export const make = (
       )
     }
     const instance = yield* FlowRuntime.FlowInstance
-    const services: Context.Context<Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance> = yield* Effect
+    const services: Context.Context<
+      (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+    > = yield* Effect
       .context<
-        Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+        (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
       >()
     // The run scope is read from the execution the port is built inside, not
     // declared by a caller, so it cannot be forgotten or spoofed by one.
@@ -852,8 +868,10 @@ export const make = (
             // and stays fixed through accounting's transaction retries. The
             // write runs uninterruptibly before releasing the reservation; a
             // failed write remains pending and blocks fresh admission.
-            unsealedUsage: crypto.randomUUIDv4().pipe(
-              Effect.mapError((cause) => engineFailed("Could not allocate a model usage receipt", cause)),
+            unsealedUsage: random.uuidV4().pipe(
+              Effect.catchCause((cause) =>
+                Effect.fail(engineFailed("Could not allocate a model usage receipt", Cause.squash(cause)))
+              ),
               Effect.map((receipt) => (usage: ModelEvent.Usage) =>
                 budget.record(`unsealed-model/${key}/${receipt}`, usage, step.request.modelId).pipe(
                   Effect.mapError(accountingFailed)
@@ -949,7 +967,7 @@ export const make = (
           (error) => error.cause instanceof Permission.PermissionDenied,
           (error) =>
             Effect.succeed(
-              new Cell.CallResult({
+              Cell.CallResult.new({
                 outcome: "failure",
                 value: null,
                 code: "capability_refused",
@@ -1004,8 +1022,10 @@ export const make = (
               // What this execution's evaluator readings paid is charged under
               // a receipt of its own, as an unsealed model invocation is: an
               // execution that re-runs after a crash paid again (#3010).
-              const receipt = yield* crypto.randomUUIDv4().pipe(
-                Effect.mapError((cause) => engineFailed("Could not allocate a call reading receipt", cause))
+              const receipt = yield* random.uuidV4().pipe(
+                Effect.catchCause((cause) =>
+                  Effect.fail(engineFailed("Could not allocate a call reading receipt", Cause.squash(cause)))
+                )
               )
               const readings = CallReadings.of({
                 admit: budget.admitReading(`${callReadingPrefix}${key}/${receipt}`).pipe(
@@ -1144,7 +1164,7 @@ export const make = (
         Effect.mapError(accountingFailed)
       )
     )
-    const crypto = yield* Crypto.Crypto
+    const random = yield* SecureRandom.SecureRandom
     const observe = Option.match(observer, {
       onNone: (): Effect.Effect<Option.Option<EngineLike.Observation>, HarnessError.HarnessError> =>
         Effect.succeed(Option.none()),
@@ -1276,7 +1296,7 @@ export const layer = (
   never,
   | FlowRuntime.FlowRuntime
   | FlowRuntime.FlowInstance
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   // Carried, not defaulted. The port reads both services outright, so a
   // composition that provides neither cannot build this layer at all: the
   // spending ceiling and the quota policy are decisions a host makes, and the

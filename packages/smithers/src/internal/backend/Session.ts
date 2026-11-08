@@ -3,6 +3,7 @@
  * @since 0.1.0
  */
 
+import { Context, Effect } from "effect"
 import { createHash } from "node:crypto"
 import {
   chmodSync,
@@ -13,16 +14,29 @@ import {
   openSync,
   readFileSync,
   readSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
   writeFileSync
 } from "node:fs"
-import { homedir } from "node:os"
-import { dirname, join, resolve as resolvePath } from "node:path"
+import { homedir, userInfo } from "node:os"
+import { basename, dirname, join, resolve as resolvePath } from "node:path"
 import { parse, stringify } from "yaml"
 import { Refused, UsageError } from "../../CliError.ts"
 import { NotFound, type Result, run } from "./Process.ts"
+
+/** Native command boundary, injectable for storage failures and cancellation tests.
+ * @private
+ * @since 1.0.0
+ */
+export class CredentialProcess extends Context.Service<CredentialProcess, {
+  readonly run: (...args: Parameters<typeof run>) => Effect.Effect<Result, unknown>
+}>()("smithers/cli/CredentialProcess") {
+  static readonly live = CredentialProcess.of({
+    run: (...args) => Effect.tryPromise({ try: () => run(...args), catch: (error) => error })
+  })
+}
 
 type RecordValue = Record<string, unknown>
 const text = (value: unknown) => typeof value === "string" ? value : ""
@@ -86,10 +100,23 @@ const storageFailed = (action: string) =>
   })
 
 // Shared mutation fences contain no credentials. File authority is path-bound;
-// native authority is the OS store's host key, even across different homes.
+// native authority is the canonical credential store and exact API origin.
 type CredentialEpoch = { revision: number; pending: number }
 const credentialEpochs = new Map<string, WeakRef<CredentialEpoch>>()
 const identity = (value: unknown): string => createHash("sha256").update(JSON.stringify(value)).digest("hex")
+// Resolve existing ancestors too: a first login and a later login must name
+// the same store, including when HOME or the auth directory is a symlink.
+const canonicalPath = (path: string): string => {
+  const absolute = resolvePath(path)
+  try {
+    return realpathSync(absolute)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw storageFailed("identity")
+    const parent = dirname(absolute)
+    if (parent === absolute) throw storageFailed("identity")
+    return join(canonicalPath(parent), basename(absolute))
+  }
+}
 const epochFor = (key: string): CredentialEpoch => {
   for (const [name, reference] of credentialEpochs) if (reference.deref() === undefined) credentialEpochs.delete(name)
   const existing = credentialEpochs.get(key)?.deref()
@@ -137,7 +164,12 @@ export class Session {
   private readonly terminalIssuer: string | undefined
   private readonly fileEpochs = new Map<string, CredentialEpoch>()
   private readonly nativeEpochs = new Map<string, CredentialEpoch>()
-  constructor(env: Readonly<Record<string, string | undefined>>) {
+  private readonly commands: typeof CredentialProcess.Service
+  constructor(
+    env: Readonly<Record<string, string | undefined>>,
+    commands: typeof CredentialProcess.Service = CredentialProcess.live
+  ) {
+    this.commands = commands
     this.env = env
     this.tokenFile = env.SMITHERS_TOKEN_FILE ? resolvePath(env.SMITHERS_TOKEN_FILE) : undefined
     this.terminalSession = env.SMITHERS_TERMINAL_SESSION
@@ -153,16 +185,19 @@ export class Session {
       "smithers",
       "config.toon"
     )
-    this.authPath = env.SMITHERS_AUTH_FILE || join(this.home, ".config", "smithers", "auth.json")
+    this.authPath = canonicalPath(env.SMITHERS_AUTH_FILE || join(this.home, ".config", "smithers", "auth.json"))
   }
   private fileEpoch(path: string): CredentialEpoch {
-    const absolute = resolvePath(path)
+    const absolute = canonicalPath(path)
     const epoch = this.fileEpochs.get(absolute) ?? epochFor(identity(["file", absolute]))
     this.fileEpochs.set(absolute, epoch)
     return epoch
   }
-  private nativeEpoch(host: string): CredentialEpoch {
-    const key = identity(["native", process.platform, host])
+  private nativeAccount(origin: string): string {
+    return `v2:${identity([this.authPath, this.target(origin).api_url])}`
+  }
+  private nativeEpoch(origin: string): CredentialEpoch {
+    const key = identity(["native", process.platform, this.nativeAccount(origin)])
     const epoch = this.nativeEpochs.get(key) ?? epochFor(key)
     this.nativeEpochs.set(key, epoch)
     return epoch
@@ -183,7 +218,7 @@ export class Session {
       ])
     }
     const files = [...new Set([this.fileEpoch(this.configPath), this.fileEpoch(this.authPath)])]
-    const native = this.env.SMITHERS_DISABLE_SYSTEM_KEYRING === "1" ? undefined : this.nativeEpoch(target.host)
+    const native = this.env.SMITHERS_DISABLE_SYSTEM_KEYRING === "1" ? undefined : this.nativeEpoch(target.api_url)
     if (files.some((epoch) => epoch.pending) || native?.pending) {
       throw new Refused({
         fault: "wait",
@@ -196,6 +231,7 @@ export class Session {
     // a backend 401 invalidates the Client's matching resolution instead.
     return identity([
       target.api_url,
+      this.authPath,
       this.env.SMITHERS_DISABLE_SYSTEM_KEYRING,
       files.map((epoch) => epoch.revision),
       native?.revision,
@@ -392,6 +428,14 @@ export class Session {
     token?: string,
     signal?: AbortSignal
   ): Promise<string | undefined> {
+    return this.nativeKeyring(action, this.nativeAccount(host), token, signal)
+  }
+  private async nativeKeyring(
+    action: "get" | "set" | "delete",
+    host: string,
+    token?: string,
+    signal?: AbortSignal
+  ): Promise<string | undefined> {
     checkLookup(signal)
     if (this.env.SMITHERS_DISABLE_SYSTEM_KEYRING === "1") return
     let command: string, args: Array<string>, input: string | undefined
@@ -437,15 +481,21 @@ export class Session {
       timeoutMs: 10_000,
       signal
     }
-    const finish = action === "get" ? () => {} : mutate(this.nativeEpoch(host))
+    const finish = action === "get" ? () => {} : mutate(epochFor(identity(["native", process.platform, host])))
     try {
       let result: Result
       try {
-        result = await run(command, args, options).catch((error) =>
-          process.platform === "win32" && error instanceof NotFound
-            ? run("powershell", args, options)
-            : Promise.reject(error)
-        )
+        const outcome = await Effect.runPromise(Effect.result(
+          this.commands.run(command, args, options).pipe(
+            Effect.catch((error) =>
+              process.platform === "win32" && error instanceof NotFound
+                ? this.commands.run("powershell", args, options)
+                : Effect.fail(error)
+            )
+          )
+        ))
+        if (outcome._tag === "Failure") throw outcome.failure
+        result = outcome.success
       } catch (error) {
         if (error instanceof Refused && error.code === "cancelled") throw error
         checkLookup(signal)
@@ -469,14 +519,16 @@ export class Session {
     const env = this.managedTokenFile() ? undefined : this.env.SMITHERS_TOKEN?.trim()
     if (env) return { ...target, token: env, source: "env" }
     if (this.tokenFile) return { ...target, token: this.readTokenFile(), source: "token_file" }
-    // Go stored by hostname. A record binds that existing keychain item to its exact origin.
     const record = this.record(target.api_url)
+    // A file-backed login is authoritative for this record, even if a stale
+    // native entry exists from an earlier login on this machine.
+    if (record && text(record.token)) return { ...target, token: text(record.token), source: "smithers_auth_file" }
     const configOrigin = text(this.config(false).api_origin)
     const bound = record !== undefined || (configOrigin && normalizeOrigin(configOrigin) === target.api_url)
     let storageError: unknown
     if (bound) {
       try {
-        const token = await this.keyring("get", target.host, undefined, signal)
+        const token = await this.keyring("get", target.api_url, undefined, signal)
         checkLookup(signal)
         if (token) return { ...target, token, source: "keyring" }
       } catch (error) {
@@ -485,12 +537,26 @@ export class Session {
         storageError = error
       }
     }
-    if (record && text(record.token)) return { ...target, token: text(record.token), source: "smithers_auth_file" }
     if (configOrigin && normalizeOrigin(configOrigin) === target.api_url && text(this.config(false).token)) {
       return { ...target, token: text(this.config(false).token), source: "config" }
     }
+    // Old native entries have no store identity. Only the OS user's original
+    // default file, with an exact origin binding, can claim one. Custom files
+    // and alternate HOME directories must never inherit another login.
+    if (this.legacyRecord(target.api_url, record)) {
+      const token = await this.nativeKeyring("get", target.host, undefined, signal)
+      // Reading a legacy login must not write: an in-flight lookup could
+      // otherwise overwrite a newer login or resurrect a completed logout.
+      // The next explicit login writes a v2 record and stops legacy lookup.
+      if (token) return { ...target, token, source: "keyring" }
+    }
     if (storageError) throw storageError
     return undefined
+  }
+  private legacyRecord(origin: string, record: RecordValue | undefined): boolean {
+    return record !== undefined && record.credential_store === undefined &&
+      text(record.api_url) !== "" && normalizeOrigin(text(record.api_url)) === origin &&
+      this.authPath === canonicalPath(join(userInfo().homedir, ".config", "smithers", "auth.json"))
   }
   async require(origin?: string, signal?: AbortSignal) {
     const resolved = await this.resolve(origin, signal)
@@ -509,12 +575,13 @@ export class Session {
     const target = this.target(origin)
     const finish = this.fileMutation()
     try {
-      const stored = await this.keyring("set", target.host, token)
+      const stored = await this.keyring("set", target.api_url, token)
       this.write(
         this.authPath,
         JSON.stringify({
           ...metadata,
           ...target,
+          credential_store: "v2",
           ...(stored === undefined ? { token } : {}),
           updated_at: new Date().toISOString()
         }) + "\n"
@@ -531,7 +598,8 @@ export class Session {
     const finish = this.fileMutation()
     try {
       const bound = config.api_origin && normalizeOrigin(text(config.api_origin)) === target.api_url
-      if (record || bound) await this.keyring("delete", target.host)
+      if (record || bound) await this.keyring("delete", target.api_url)
+      if (this.legacyRecord(target.api_url, record)) await this.nativeKeyring("delete", target.host)
       if (record) rmSync(this.authPath, { force: true })
       if (config.token && text(config.api_origin) === target.api_url) this.saveConfig({})
       return {

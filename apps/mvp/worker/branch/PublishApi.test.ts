@@ -36,6 +36,9 @@ beforeEach(async () => {
 
 const post = (body: unknown) => ({ method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
 
+/** A person a branch is shared with to view: a person id, as sign-in records people. */
+const VIEWER = crypto.randomUUID()
+
 /** A Smithers-only branch of `repo` owned by `owner`, as `/new` makes it. */
 const ephemeral = (owner: string, repo: string = REPOSITORY.id, name = "try-1") =>
   runtime.runPromise(Effect.map(
@@ -163,9 +166,9 @@ describe("Publish and Update branch through the writes route", () => {
   test("Resync is refused to someone who may only view the branch, on another repository's, and without a session", async () => {
     const owner = crypto.randomUUID()
     const branchId = await ephemeral(owner)
-    await shared(runtime, branchId, "viewer", "view")
+    await shared(runtime, branchId, VIEWER, "view")
     const body = { writeId: crypto.randomUUID(), op: "branch/resync", branchId }
-    const viewer = await githubHarness(runtime, { actor: member("viewer") })
+    const viewer = await githubHarness(runtime, { actor: member(VIEWER) })
     expect((await viewer.fetch(writesRoute("acme", "widgets"), post(body))).status).toBe(403)
     const elsewhere = await ephemeral(owner, "github/acme/other")
     const ownerHarness = await githubHarness(runtime, { actor: member(owner) })
@@ -179,9 +182,9 @@ describe("Publish and Update branch through the writes route", () => {
   test.each<readonly [string, (owner: string) => Promise<string>, Actor.Actor | ((owner: string) => Actor.Actor), number, string]>([
     ["someone who may only view the branch", async (owner) => {
       const branchId = await ephemeral(owner)
-      await shared(runtime, branchId, "viewer", "view")
+      await shared(runtime, branchId, VIEWER, "view")
       return branchId
-    }, { ...member("viewer") }, 403, "forbidden"],
+    }, { ...member(VIEWER) }, 403, "forbidden"],
     ["a Member it isn't shared with", (owner) => ephemeral(owner), member(), 403, "forbidden"],
     ["a branch of another repository", (owner) => ephemeral(owner, "github/acme/other"), (owner) => member(owner), 404, "not_found"],
     ["a branch that doesn't exist", () => Promise.resolve(crypto.randomUUID()), (owner) => member(owner), 404, "not_found"],

@@ -1,0 +1,21 @@
+// @vitest-environment node
+// The agent's system context is VibeLang's own skill, generated into worker/agentContext.vibe (decision 0010). It must
+// match the installed `vibelang`, so a VibeLang upgrade can't leave the agent teaching an older language.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, it } from "@effect/vitest"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { AGENT_CONTEXT } from "../worker/agentContext.vibe"
+import { node, run } from "./support/processes.vibe"
+
+it.live("is generated from the installed VibeLang skill", () => effect {
+  provide NodeServices.layer, ExperimentalNodeServices.layer {
+    const script = try (try Path.Path).fromFileUrl(new URL("../scripts/agent-context.vibe", import.meta.url))
+    const check = try run(try node(), ["--import=vibelang/register", script, "--check"])
+    try Effect.try(() => {
+      expect(check.status, check.stderr).toBe(0)
+      expect(AGENT_CONTEXT).toContain("You are the VibeLang agent on vibelang.smithers.sh")
+      expect(AGENT_CONTEXT).toContain("`effect` goes exactly where `async` goes")
+      expect(AGENT_CONTEXT).not.toMatch(/^---/)
+    })
+  }
+}, 30_000)

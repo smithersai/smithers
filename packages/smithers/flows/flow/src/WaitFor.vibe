@@ -21,7 +21,8 @@
  * @since 0.1.0
  */
 
-import type { Crypto } from "@smthrs/crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as Action from "./Action/index.ts"
@@ -213,7 +214,7 @@ const target = (
  * @category layers
  * @since 0.1.0
  */
-export const layer: Layer.Layer<never, never, Crypto.Crypto | FlowRuntime> = action.toLayer(effect (payload) => {
+export const layer: Layer.Layer<never, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime> = action.toLayer(effect (payload) => {
   const instance = try FlowInstance
   const waitPoint = try target(payload, instance.flow._tag, instance.executionId)
   const token = DurableDeferred.tokenFromExecutionId(waitPoint, {

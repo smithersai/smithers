@@ -24,18 +24,19 @@ export class PermissionDenied extends Schema.TaggedError<PermissionDenied>()(
     reason: Schema.String
   }
 ) {
-  constructor(props: {
+  static new(props: {
     readonly code?: "permission_denied"
     readonly capability: Capability
     readonly reason: string
-  }) {
-    super({ ...props, code: "permission_denied" })
-    Object.defineProperty(this, "capability", {
+  }): PermissionDenied {
+    const error = new PermissionDenied({ ...props, code: "permission_denied" })
+    Object.defineProperty(error, "capability", {
       value: capabilitySnapshot(props.capability),
       enumerable: true,
       writable: false,
       configurable: false
     })
+    return error
   }
 }
 
@@ -47,7 +48,7 @@ export class PermissionDenied extends Schema.TaggedError<PermissionDenied>()(
  * @slop
  */
 export const permissionDenied = (capability: Capability, reason: string): PermissionDenied =>
-  new PermissionDenied({
+  PermissionDenied.new({
     code: "permission_denied",
     capability,
     reason

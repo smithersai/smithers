@@ -34,8 +34,8 @@
  * @since 0.1.0
  */
 
-import type { Crypto } from "@smthrs/crypto"
 import * as Context from "effect/Context"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
@@ -62,7 +62,7 @@ export interface Implementation {
   readonly implementationVersion?: string | undefined
   readonly action: (
     payload: unknown
-  ) => unknown!unknown!(Crypto.Crypto | FlowRuntime | FlowInstance)
+  ) => unknown!unknown!(EffectDigest.Digest | FlowRuntime | FlowInstance)
 }
 
 /**

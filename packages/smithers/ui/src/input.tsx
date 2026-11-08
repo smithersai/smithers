@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import type { ComponentProps } from "react";
-import { cn } from "./cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "./styles";
 
 /** Text input on the house control metrics (32px, 6px radius, brand focus ring). */

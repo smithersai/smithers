@@ -1,0 +1,4002 @@
+[
+  {
+    "path": "apps/mvp/docs/decisions/0126-retire-plue-main-mirror.md",
+    "sha256": "eaa85e1f88e70a3003f9ba3815e3ae0c6c2a452a120588a79c6a3647e78644bf"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0127-drift-runs-unprivileged.md",
+    "sha256": "275f8b6723bde45591ae60809708d4a77d0e50c08499667f166138dc48c7de6f"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0128-repository-feeds.md",
+    "sha256": "1cf419f6d6a4922751f769c1ed9212d66e77cdd70a8df919159f3cf0822d9eb2"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0129-review-on-request.md",
+    "sha256": "b1e73cf7463a8e377a102005a1058c64224a56d1e6759377f2498c51be7a3db5"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0130-sign-in-on-other-hosts.md",
+    "sha256": "ed207afabc83c7dbf918d03f9f107aee2390f1ef2b8ca4b85b09ed13eccaef1e"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0131-release-reload-when-hidden.md",
+    "sha256": "09afd9086b43470a6d3a4fb97de059bbe698a6ca3a95082521f8c89447380645"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0132-model-connections.md",
+    "sha256": "2cb1b2f2217080cd9177efaa84eb9de856b557466b161bfbab2a43d90f0c4d1b"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0133-refs-cache-identity.md",
+    "sha256": "241cf9969bb6599927ce553cc241ed12032c0543d22678a139d2c0f128026467"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0134-merge-flow.md",
+    "sha256": "e4858722fabb531a9794b2b5c3b5d9ba064063ad448c12d2e69eb561a2ad3df8"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0135-independent-lanes.md",
+    "sha256": "e49573679375ca605667d7e88cfd86a0af4ad3ae8dcdb8782c14a36dad0fee37"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0136-external-agents-on-runners.md",
+    "sha256": "ee5d252cf45e68ac4b32b49c9af9f5b412b7f776ad9bad5a537a52841ca62386"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0137-toasts-overlay-the-page.md",
+    "sha256": "e5cdfd0a13a63345acf4cb242d61d23cafe51f4db1f742335bdf12d6477db60a"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0138-timeline-phases.md",
+    "sha256": "8997919cebb3d25d8267cfb95eb4c7a5487b571c8abb51a941a9f9dd5c285e7e"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0139-router-location-ownership.md",
+    "sha256": "5dc33f7056dd2ef4a4ab8e8b55eef8886db1786a5d067b3d4ca5912e8950a033"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0140-timeline-covered-windows.md",
+    "sha256": "6249aa832da5f58d471461016dbb6c500fdbf5211f649f5149c59c2a8c9993db"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0141-agent-transcripts.md",
+    "sha256": "ab22ecef9710b7529b059d97d1b62a8f3fe63017c32b8655172ab295ffd9654e"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0142-stop-and-steer-external-agents.md",
+    "sha256": "e851a75961002d525c04da4b3e9800a5dce51657082d90a9f688f120d22764c0"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0143-fleet-and-alerts.md",
+    "sha256": "264648704992f2e977db38b0a761843de01ca352bb1ee9f88c26313fb10ff549"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0144-half-load-and-cloudflare-overflow.md",
+    "sha256": "543320ff328584b8cd9177bb1063d96f3fab910a11bc4369ef49b05616306055"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0145-gates-on-cloudflare-job-machines.md",
+    "sha256": "cc28f54e8f4f89110e624c9cfd68349ac1d0f7fc7dedd832df9d6cbfbfea2249"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0146-draft-save-receipts.md",
+    "sha256": "bca43c8f5aca1298ecb8f9ee21a60a540ad541c2cc266845ce63de0d6a1947b1"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0147-work-links.md",
+    "sha256": "aa1bd2c3a0c993d90d1510d4e1ba39e1045a2d27e84c84b3c1d3540ed166a529"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0148-runner-git-credential.md",
+    "sha256": "3740a93ac4da672bf5eba8ecbcb6f497b564d170823bba335d738814295d2685"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0149-shared-alert-channels-carry-no-private-content.md",
+    "sha256": "4906896061f0ffc21b1c87e21f38e11f307084924f6c2f90c8254ac0b0a95758"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0150-engine-database-pool.md",
+    "sha256": "edf54a5e517816307bf730b7170ca774b2ba972950f89a32cf538701e7cb3cb3"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0151-every-session-end-wipes-the-device.md",
+    "sha256": "4942b08a225ff49bb0ece67bc774c48ad84ec65b8743c45183750e8b6f615882"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0152-first-paint-before-boot.md",
+    "sha256": "4fa34b405e9dfc57c58dffd4fdb071861d166f378665a359e41b8ff030242ddf"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0153-issues-are-a-tree-todos-are-its-leaves.md",
+    "sha256": "40c107e8b79756444579cc2b1e6d39c0c33ff22708f4d9149f125a732adc40ab"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0154-ops-database-tls.md",
+    "sha256": "00472d944b34f5b4cfd708dc713d29e138358e7dd7e1f9576d5fcd6901d00b7e"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0155-feed-denial-response-fence.md",
+    "sha256": "820777225b3e0fc8c6b413b5f705c02a23516c7ef21759ddc3a9d08c9b1fff76"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0156-deployment-authority-without-installation-row.md",
+    "sha256": "88339445c23f766ca02c89f9d813c41dd1669b5f3fe683734adab82fd49a2751"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0157-machine-issue-labels.md",
+    "sha256": "73e10cd9e91c30732b907c0af06afba7c8f4470fd90b552abddcca44df23d8e0"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0158-notification-emission-projection.md",
+    "sha256": "03e3e25095758db56ae6cae22f336ec0a4a35d13bf708842bf535827d5212c2b"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0159-production-history-fixtures.md",
+    "sha256": "5dc16ed776819334097d2b252b28147aaddcbc40636d9cf905899f54616eea62"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0160-plugin-live-snapshots.md",
+    "sha256": "f3146712e73383c8e98bf8d2650eab376663d1c8552d34db36bda96d9061b120"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0161-production-sharing-identities.md",
+    "sha256": "1c1cf7d317fc3b856b9e79bda04ff0658b87dd861d1103968e6744f92a16c916"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0162-repository-refusal-classification.md",
+    "sha256": "8837a17f7f8a1c57a52f3a07a4c668f5b5ffc3b0e9447c7da5440a74bc905ef2"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0163-production-web-page-fixtures.md",
+    "sha256": "4804799be648df73f8b4d06ff85b3b310259a26a2a221a050223d8e8fd228d1f"
+  },
+  {
+    "path": "apps/mvp/docs/decisions/0164-production-e2e-resources.md",
+    "sha256": "d31c7156f999c479bf3580dac0402c399d90b9f1f5ed115dc2105697f3de5f01"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/agent-status.html",
+    "sha256": "321239ac53e5078712be8051ae2f25d07aef6b1cb137202523984a125973a929"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/answered-dark-desktop.png",
+    "sha256": "fd241891fb40100bf26ad8e49f8c9d14a47c5a6beaa72d73639eb737806f456d"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/answered-dark-phone.png",
+    "sha256": "4cbf5b51745d4375b0c515e4f62572fd246629f5ea4d87a1cd6e2ebe082a758b"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/answered-light-desktop.png",
+    "sha256": "167c07c6cdebb200481492dbd9b7701d25c526a372ed6a8cd8a668bcf009a47e"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/answered-light-phone.png",
+    "sha256": "72ce32c0e863ccda67647363ea9e769ad58f3d503dbb088d4a2f97237039b694"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/approval-dark-desktop.png",
+    "sha256": "21e3ec9c3cdc4ec209e2d4d00ed6c60870c4238074ba9c31c6b428d0e88a3620"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/approval-dark-phone.png",
+    "sha256": "a677cb7e13a4e0ab3edb5a554b6dd95b925f0e8d7a848cf728a98c7c9c8a6af6"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/approval-light-desktop.png",
+    "sha256": "1826a748adfaf98eed49f9e8429b52b9bae5ebc0f73b4115e6387d6f96bf6745"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/approval-light-phone.png",
+    "sha256": "7e615a565565ab5e5afd4ee392bb03556c0500f247b8fa3f6dc93252712fd376"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/failed-dark-desktop.png",
+    "sha256": "bd78d02a3f87ecc5ee0a8f8a5be33a11b916e76e087f59e07afa1df92db6c2ec"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/failed-dark-phone.png",
+    "sha256": "5869dd9715d3f09bb312df306c509d9dab346dd09ee9c878f4e962847b57bad6"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/failed-light-desktop.png",
+    "sha256": "4b7d510aac7d60211384b113bee67f7018f180df5ac2ff6668474bd926359bd3"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/failed-light-phone.png",
+    "sha256": "0aadca3188bfe61152124f6da48f6febcd425a924eacf891ce8a680720ff472f"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/needs_you-dark-desktop.png",
+    "sha256": "68fbb37fd506c0697720f87c9ff19a88e7a72c628b708bcefe3f0032fd103e03"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/needs_you-dark-phone.png",
+    "sha256": "3856004c27ca4ebcd0de34e6cd3697cfdba263304e903552d57a8b82721ab172"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/needs_you-light-desktop.png",
+    "sha256": "04235e5308f87249e3e34a81eece3994f0cce201f376f687821c6fb49567d706"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/needs_you-light-phone.png",
+    "sha256": "7851110ad4ccd1e9fff43308fa85b72d43408ef4d6fc9969bfc7f99a3181e27b"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/waiting-dark-desktop.png",
+    "sha256": "e7c244da452f1cbece7e4bead56bee5ed3684df66d04528466e1c3a4404a7668"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/waiting-dark-phone.png",
+    "sha256": "99089dcb41101c49619342a8b3da379d1112c91d7e15c13126634c771bd800fe"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/waiting-light-desktop.png",
+    "sha256": "5a233925808011d22229e6a23e95098ff738b32b7b601952ef3ab0f99973482e"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/waiting-light-phone.png",
+    "sha256": "69dff3a29133d17d9e8ebda5e85a09c293cdb7a702a64f41ca6a92153c375140"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/working-dark-desktop.png",
+    "sha256": "896123fb1c809a2192ba53de0668a157beb62512c67cd5b0509612cf6218589f"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/working-dark-phone.png",
+    "sha256": "2ae6fb34d7379e16ac6430deb523d373c2ee21e72062c5a3ab5ac447cfc010bf"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/working-light-desktop.png",
+    "sha256": "c10bd6e7d5c4654e76b578145ceda1cf1ece7545590ffce964d531593ba588f6"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/screenshots/working-light-phone.png",
+    "sha256": "38850413fb79da89e8cd3869f8346ff3fab87099f1adc444a44fceb0aa77264b"
+  },
+  {
+    "path": "apps/mvp/docs/design/agent-status/status-needs-you.gif",
+    "sha256": "247a0e67c33d718a49f92f1dfc7ffbb1d5d252af74b049bcad66cf3b13dba748"
+  },
+  {
+    "path": "apps/mvp/docs/design/code-intelligence/DESIGN.md",
+    "sha256": "9b081c8dbcfb6724211455af80bb2207c89899612ebe9ae5dc593d8b5bb43812"
+  },
+  {
+    "path": "apps/mvp/docs/design/code-intelligence/mock.html",
+    "sha256": "f96539328e4656ae8b264cdf3cbb5f04d5c3a9993a666023d97b8f41a7e2e97f"
+  },
+  {
+    "path": "apps/mvp/docs/design/device-privacy/design.md",
+    "sha256": "b975492a7341a5d3da280a7e81efaa75008dce01d448beb15d193182210bb44a"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/flows-ui.html",
+    "sha256": "db7bbe3f19f35d1b744e8c4fbc98009490f6868a184276c758fb6dd34ee2a527"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/PLAN.md",
+    "sha256": "cd7356db7a0dda6e8d61e44986dd614c241230d29e79beba8653224d25b27384"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/RESEARCH.md",
+    "sha256": "5d2512dbcee6876b4213b4f0ad10bd4b76dda777f38465d57556238ff10ae64e"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/editor-add-step-dark-desktop.png",
+    "sha256": "243997783f6dd3ba43723d5fc68bff9f02bde183e38748e5af7b97e17ac8e415"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/editor-add-step-dark-phone.png",
+    "sha256": "8ff9c17985f8f280de793838a925eae2ced866b0e34056cda435fa6ffbbb3287"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/editor-add-step-light-desktop.png",
+    "sha256": "762c63c9948ed90b0bd8ea5a28abfd30c82439abe4e3675e1833ac8c1f726412"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/editor-add-step-light-phone.png",
+    "sha256": "b907cfc965d7298bd29e9b3b2693170ebe2f5617241025ab65c48b2701030648"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/editor-code-broken-dark-desktop.png",
+    "sha256": "1e3dd48b8db6cf09283ac47121cd397aa9a688c3f42a9c591b827098b159387b"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/editor-code-broken-light-desktop.png",
+    "sha256": "ea5e61a7cc179f5041b849e83ed509e8332d91977dcdde5b2e472fbce8ba861f"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/editor-dark-desktop.png",
+    "sha256": "090ab0f53a49e2302eefcf214089e08722a5bba3666bb5049dd1dc1835e7ac9d"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/editor-dark-phone.png",
+    "sha256": "25a19879e2e2a11d7835c1b8b624720d6a7213984bb52471471121a6acd1e56d"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/editor-light-desktop.png",
+    "sha256": "98b745d5069f4ab843ec5d44f145ecc604ef57ef9f6599eba1f219aad4952144"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/editor-light-phone.png",
+    "sha256": "854afe337d9472ebae4fec12d8642fdbb0ea287d3f3523b576fa8a603faa6017"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/editor-try-dark-desktop.png",
+    "sha256": "920e023bd23f3086f3ba61e280286ade3a3acb0132edd27d9de1762799f0accf"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/editor-try-dark-phone.png",
+    "sha256": "4d078778563fbce5c30076f5536e706ee29be9a95d16f2da3ce8c954f495fe90"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/editor-try-light-desktop.png",
+    "sha256": "87fb5beaec84b58efd130f1a8f74bb4fe9475e3b0348378559d5775574412a77"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/editor-try-light-phone.png",
+    "sha256": "f1c6509fcde67e006bec6dea7dbf567242d88899873b5334b3d8fa84279c4d1e"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/flows-dark-desktop.png",
+    "sha256": "1353315f37662e01218a6c5e9df70a72b3226891cb136ece28cff072144490b4"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/flows-dark-phone.png",
+    "sha256": "9030d91bfa3a73584283e38bedf9b0cc1f128468d1adb3a1abbdb275ee9e73a2"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/flows-light-desktop.png",
+    "sha256": "d8abcecbeda3235432a91e8d80882af04cbf376a96c624da1965fb348bbf7a4c"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/flows-light-phone.png",
+    "sha256": "96b95b95e2779cbd945b4a3692026e9fd0d8791e8c48865059967b3797efb2a8"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/grid-dark-desktop.png",
+    "sha256": "811e701d1e3e9f910cfe88f389b801512ee7262eab2391d9c7f6c641d4f49a05"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/grid-dark-phone.png",
+    "sha256": "edf3f165db94fff42e3f2ad63d359f456f28757d65081d650e0577ce46bcd626"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/grid-light-desktop.png",
+    "sha256": "a57635d16d25e5373f99f3402f04c8a264b6cb8c410e3b39ff00b2c90550d214"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/grid-light-phone.png",
+    "sha256": "5fdfca770b4f842f215cd381258ced26cd6cb56298aaa983e913fcd780b3d1dc"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/new-dark-desktop.png",
+    "sha256": "338de765feed1e2c28315c706c18aec0b167a2442e6800b5750db883ad9c128f"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/new-dark-phone.png",
+    "sha256": "290cf1e746d004156572247af8274340228d27e3317f6cfa58d5339d2ccdd288"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/new-light-desktop.png",
+    "sha256": "eb86e42a7b9f4fb1ee1d1f00e82a5950d1fa13e8fc92ea287d2a335b75ed9e29"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/new-light-phone.png",
+    "sha256": "32db63ef91250ea88d590475a2ab73fe22e8996957cec0f61132c89dad43c093"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/over-dark-desktop.png",
+    "sha256": "133aa7741924abf92c47084ac5edee15954b108aa280e3a9277f9d744a1294a4"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/over-dark-phone.png",
+    "sha256": "cc88d319ea7f9eb7e621b4c7c32ee9c284f256495d7fb574c1c8d892a507342e"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/over-light-desktop.png",
+    "sha256": "1350c6166b9fc482711a534ca6433791e3f01436dc2bf352b5bbd5060c160031"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/over-light-phone.png",
+    "sha256": "389193da4c9b7d2e10ecb061dfe3c33db0d142f0729cda0f419fb97a90c66566"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/run-failed-dark-desktop.png",
+    "sha256": "a4c3c16fc1f73745aad85ff71b1c92a7fd8a46258b616ba5f25eb26d1dab3f14"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/run-failed-dark-phone.png",
+    "sha256": "6b20168c235fbf923a5c4a8cbe1cf5f3cdad8d5eff8e6fd2bb57e688eb738937"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/run-failed-light-desktop.png",
+    "sha256": "8fde1d1e35b6c583a4d5ec64b26d6ada3d2961c0da5972ecac7eb95e3673916a"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/run-failed-light-phone.png",
+    "sha256": "d1440e9402a4b891f13018041b0f106eb44e63665059155d4d0e74b7e31fc9dd"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/run-live-dark-desktop.png",
+    "sha256": "9e3e610c106fb48eb3ccad7d9a381e254bcd494f722187e5b1605f7503ba715b"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/run-live-dark-phone.png",
+    "sha256": "248790dca1e93320d8d9242a2b9d880d19887d2dafc77d2def46740b2c75a98a"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/run-live-light-desktop.png",
+    "sha256": "2982931e416b5e3e530b5d335a0bf88a0ec4252aa3f9459d5bae5454994a3345"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/run-live-light-phone.png",
+    "sha256": "3d9f76830fcb1c5299ac6fa27c7dec84dec34d5d2247877fc0df6e0a27e774cd"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/run-retry-dark-desktop.png",
+    "sha256": "6a0d3983ac70928b6886be19c29fb41c01340b267ddcaf4564f432302dac5b09"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/run-retry-dark-phone.png",
+    "sha256": "b1c9d33ec08f07c350dc66adb1c01ec219019a0d8c3b180ee0d74de2133251ab"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/run-retry-light-desktop.png",
+    "sha256": "95219d34a9d5fe6ca07524b90abea6423f45712dc5645ad90e81e2a88991ddf7"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/run-retry-light-phone.png",
+    "sha256": "45f1959b8a5eef8d0887557daf126ee2da22ac08ebe428f4c3d54b6a5e09db8a"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/run-scrub-dark-desktop.png",
+    "sha256": "7a6afbedda8739d1bf034f0d9d91b20224b6dcade5bb05d51bbcdc042a5e02ae"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/run-scrub-dark-phone.png",
+    "sha256": "9f000bd1ceeaaa91e00aae0a17c37583e0d7731415938fee56f0923bc7244766"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/run-scrub-light-desktop.png",
+    "sha256": "79bb34d346232f6406f721120b6e716e0781dcc5bea35bdb1cb41e20763f0a22"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/run-scrub-light-phone.png",
+    "sha256": "9973f0f86261f452425fe558c1599dae460ab4ab1f51feb95d09df03bce12bd4"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/sources-dark-desktop.png",
+    "sha256": "3999aff1eb9932a0e90fc3e6da7394be6a307aa6b35f6993086e03247418deb2"
+  },
+  {
+    "path": "apps/mvp/docs/design/flows/screenshots/sources-light-desktop.png",
+    "sha256": "34b4ee2dc74ad6a83195d69da29e07ca7c9b41370d2f65616993bbeb878e97b6"
+  },
+  {
+    "path": "apps/mvp/docs/design/plugins/plugins.html",
+    "sha256": "ad123d92ac8b116e672f49793f486cb91256cd65457a6ebf26b9c0e54d3bb6fa"
+  },
+  {
+    "path": "apps/mvp/docs/design/repo-home/repo-home.html",
+    "sha256": "96a6dfbdce8bcbf77b989b54d02275d17e0b1e081cd33be77bdda3c77d5c74d0"
+  },
+  {
+    "path": "apps/mvp/docs/design/repo-home/vibelang.home.json",
+    "sha256": "73a9d6344d0d5887096bf2366502a82c59e106856500b7955c8b0c0cf230f2ca"
+  },
+  {
+    "path": "apps/mvp/docs/design/review-queue/approval-later-dark-phone.png",
+    "sha256": "3cd2dc7db441f9fd82a5d5ab80f9c4b347dd4bd6c6e564192a102fc15680011e"
+  },
+  {
+    "path": "apps/mvp/docs/design/review-queue/approval-later-light-desktop.png",
+    "sha256": "d6d4bb677c1232d1cfeb4d4c3b980e7810f907e4a85184f0d0b197171171cdf0"
+  },
+  {
+    "path": "apps/mvp/docs/design/review-queue/code-light-desktop.png",
+    "sha256": "839047653772dc36ba9ccca85cc444529dd18cf10ba2466f212908211a7aadb1"
+  },
+  {
+    "path": "apps/mvp/docs/design/review-queue/code-light-phone.png",
+    "sha256": "9ea236024778201cf34acaedac5b726b07da8d89884d770669c52a1f0c193237"
+  },
+  {
+    "path": "apps/mvp/docs/design/review-queue/CURATOR-PROMPT.md",
+    "sha256": "83359771ad123e7f6294e1fb86c60e70a84168a11132169bcf951b34e7064f47"
+  },
+  {
+    "path": "apps/mvp/docs/design/review-queue/decision-dark-desktop.png",
+    "sha256": "037b53e94b9c5d02f1b5ad95e56bffc6558dc302f944f85a57b1718d4857e173"
+  },
+  {
+    "path": "apps/mvp/docs/design/review-queue/design-light-desktop.png",
+    "sha256": "a287b1383be33e1f99df33c3d9dd5782fda53f3871644d580e56d845362b5e76"
+  },
+  {
+    "path": "apps/mvp/docs/design/review-queue/failed-dark-desktop.png",
+    "sha256": "59f59f11acd151ab9c526c270541e5a4bc29dce702a2605e35fb6ba2ef0ffa9d"
+  },
+  {
+    "path": "apps/mvp/docs/design/review-queue/notification-light-desktop.png",
+    "sha256": "55b40868dd78e958197896e95b6d01233cb684545c645dfcc71bfe3dc4788169"
+  },
+  {
+    "path": "apps/mvp/docs/design/review-queue/recording-light-desktop.png",
+    "sha256": "d22cc438ce072cc86bf6a46ecdcdb12ec5a8864da3a45f8078fc98a2206a29ec"
+  },
+  {
+    "path": "apps/mvp/docs/design/review-queue/review-queue.html",
+    "sha256": "55b76dd1a11df8942c15108c1732d31005244f41e259fb2e733ee7b9f2f783fb"
+  },
+  {
+    "path": "apps/mvp/docs/design/review-queue/storyline-light-desktop.png",
+    "sha256": "bdbd0f7256de37e274708f94e4c32fae399fbc4a3dc296588c20e8686fc4e587"
+  },
+  {
+    "path": "apps/mvp/docs/design/timeline/DESIGN.md",
+    "sha256": "bf84d10ea7000dd528c83616beaece89bbf71b1b76b15638e2c4f380a586e7f1"
+  },
+  {
+    "path": "apps/mvp/docs/design/timeline/reference-2202/look-and-position-ui.png",
+    "sha256": "a02d8e3d97aa9bd7bb3471db82ec9bfcb0a76d721524cfc0b5d7c74325994764"
+  },
+  {
+    "path": "apps/mvp/docs/design/timeline/screenshots/dark-desktop-preview.png",
+    "sha256": "09aad8488e0f08fa447d30dcce5ffe2badc2853aa27aa843cee44fdfe3c615fc"
+  },
+  {
+    "path": "apps/mvp/docs/design/timeline/screenshots/dark-desktop.png",
+    "sha256": "8fc79a4e6b3dc8e1a6b58c04a078bbb393b18e59bdfadeab626c832862346b61"
+  },
+  {
+    "path": "apps/mvp/docs/design/timeline/screenshots/dark-phone-preview.png",
+    "sha256": "a122fa3b2b0a8267073e34cbc0e91cfe8097fbe87b9ed2e11f0df8ed2b371c1b"
+  },
+  {
+    "path": "apps/mvp/docs/design/timeline/screenshots/dark-phone.png",
+    "sha256": "906b862d89c8dce2c4706cf0fab3f93020ddbcdd407475f8ec2c17f865d89bf4"
+  },
+  {
+    "path": "apps/mvp/docs/design/timeline/screenshots/light-desktop-preview.png",
+    "sha256": "73e52a1036ed04e3dacd56de405645f7ee13004de2e3357a591b09d0981e84cc"
+  },
+  {
+    "path": "apps/mvp/docs/design/timeline/screenshots/light-desktop.png",
+    "sha256": "fab497eb14e18f9e492486e51148a240df3327eebf50f9327bdc6b85e2de4b0a"
+  },
+  {
+    "path": "apps/mvp/docs/design/timeline/screenshots/light-phone-preview.png",
+    "sha256": "f803d39ca7a3c60c7ff03a883c4ae169526eaf166a9fbebe98ec15ea5a6cc9fc"
+  },
+  {
+    "path": "apps/mvp/docs/design/timeline/screenshots/light-phone.png",
+    "sha256": "f7ebf6d9370991d34c8d7cb6a393882ce1166c23f4873b013ac0237c7ec41b27"
+  },
+  {
+    "path": "apps/mvp/docs/design/timeline/screenshots/scrubber-level-appears.png",
+    "sha256": "4377e03eb23f3ec2ed902249b4864eb71519fa28357a4930f8844bc216e33afd"
+  },
+  {
+    "path": "apps/mvp/docs/design/timeline/screenshots/scrubber-long-dark.png",
+    "sha256": "cd9435aa8aa338602b8e1a7e2cc45c43e11993386514f8f9be276f5b5632856f"
+  },
+  {
+    "path": "apps/mvp/docs/design/timeline/screenshots/scrubber-long-light.png",
+    "sha256": "e2fd526f7556dc2acc3e951b08cd68e6f0aaf0a175123450402f7391817e50fe"
+  },
+  {
+    "path": "apps/mvp/docs/design/timeline/screenshots/scrubber-long-phone.png",
+    "sha256": "329d9390236d809397728f17dbfeaebcd1ba5de8b6c4007daeda79f9489ae5db"
+  },
+  {
+    "path": "apps/mvp/docs/design/timeline/screenshots/scrubber-medium-dark.png",
+    "sha256": "89341430a69d129a01037abdab79ddf1aadd6999989c508e98246a524d4b9567"
+  },
+  {
+    "path": "apps/mvp/docs/design/timeline/screenshots/scrubber-medium-light.png",
+    "sha256": "1e4f0843c12bf801b0c408e4d2c44356cae85340a7ddf16369eb219a6a3c1f5f"
+  },
+  {
+    "path": "apps/mvp/docs/design/timeline/screenshots/scrubber-short-dark.png",
+    "sha256": "5e52f191a091128b1c3074f18a871f17ce2309ef4514d3cdfbdbb8819fd159ed"
+  },
+  {
+    "path": "apps/mvp/docs/design/timeline/screenshots/scrubber-short-light.png",
+    "sha256": "91cc9bbe6c5285380dea02584a444a5534da44c4a993a7e2fad8f7bd0d706da7"
+  },
+  {
+    "path": "apps/mvp/docs/design/timeline/timeline.html",
+    "sha256": "5206325eb91e7bdcf9f7cd1df554b84b8550b510415d48e62eab201c58187e70"
+  },
+  {
+    "path": "apps/mvp/docs/design/vibelang-readme/CONTRIBUTING.md",
+    "sha256": "35877985ace6c99d25b3476e5ed591613e64c52f14dfaeff06185d9a711b1099"
+  },
+  {
+    "path": "apps/mvp/docs/design/vibelang-readme/MAINTAINERS.md",
+    "sha256": "c368833fbc7780a305e5fa2dd7ac0e870697b3c756202483155d44683f7dc0e0"
+  },
+  {
+    "path": "apps/mvp/docs/design/vibelang-readme/NOTES.md",
+    "sha256": "2a5cfc73fbcd0cb390af8edc7540f954167259582d6d2b2e2a1311b9d8886e14"
+  },
+  {
+    "path": "apps/mvp/docs/design/vibelang-readme/README.md",
+    "sha256": "7b76e84c5af40393089897cc1a7f75a91a0b2999961a9f3523d5c980c0383ca4"
+  },
+  {
+    "path": "apps/mvp/docs/features/actions.md",
+    "sha256": "002652f3a71f579b2c06446430a606963dc2a5a167447a8056f717a9ac8d0872"
+  },
+  {
+    "path": "apps/mvp/docs/features/agent-evals.md",
+    "sha256": "046225639dcb41b4884c86b6e9f5e48e3547b0b61e8f2de00d5523626180ad48"
+  },
+  {
+    "path": "apps/mvp/docs/features/agent-runners.md",
+    "sha256": "5b57b322946aaac190d1d2eb597189a279ed8d62ff4fcdc521075f4db5a21cf8"
+  },
+  {
+    "path": "apps/mvp/docs/features/agent-status.md",
+    "sha256": "14db29fa72fa760b1a2f3f0eaea1a3d4597e2f8b6b42849e5c5850f192bc6806"
+  },
+  {
+    "path": "apps/mvp/docs/features/agent-transcripts.md",
+    "sha256": "a49cb36ac63e38a9809baab9a046a2fc6297b21e1a3b5021327b4051322d0d4e"
+  },
+  {
+    "path": "apps/mvp/docs/features/agent.md",
+    "sha256": "ccceb34a1ca2fa09b6d521b941bd126aec597f16a3eafb8b48a4ce80b37999ef"
+  },
+  {
+    "path": "apps/mvp/docs/features/branch-creation.md",
+    "sha256": "c3deca39ad40155400df8acb54687901784991e8aabbccb41d56520365d62afb"
+  },
+  {
+    "path": "apps/mvp/docs/features/branch-list.md",
+    "sha256": "f0b490e6322ad187de0b197777810b7961303695c70b80d2610ec110a455f93d"
+  },
+  {
+    "path": "apps/mvp/docs/features/branch-publish.md",
+    "sha256": "f009cb549f9b9135c4ea90eb879dc2d3b466504fa1e1089c694d8815a5dab66a"
+  },
+  {
+    "path": "apps/mvp/docs/features/branch-workspace.md",
+    "sha256": "dea62394e10af6cc37db965ba8ad7cc0379d71ce17c178d4a2269580163c1aec"
+  },
+  {
+    "path": "apps/mvp/docs/features/bugs.md",
+    "sha256": "011df5a8f8d11d825c7f79690810b52114a1ed39563693522ff6539a08d3a1a5"
+  },
+  {
+    "path": "apps/mvp/docs/features/chat.md",
+    "sha256": "1aa9f59ec50a02eda0cdbe7ca6beae16692c09dd90782c8763f2ba6a12442ed6"
+  },
+  {
+    "path": "apps/mvp/docs/features/ci.md",
+    "sha256": "b60212976331986278bd0564c3ec426284103f920f74b4ab4afb538226e548d3"
+  },
+  {
+    "path": "apps/mvp/docs/features/code-intelligence.md",
+    "sha256": "2393054d789fd54d3d48f556224498bac411fe2966e77092934ec510674a0524"
+  },
+  {
+    "path": "apps/mvp/docs/features/coedit.md",
+    "sha256": "cca94b9d28edde9dc05c7d6258180852bc1a754f631dc27307f41089cc955094"
+  },
+  {
+    "path": "apps/mvp/docs/features/conversations.md",
+    "sha256": "637a25f1466ab487edd6af2e852e7430724513162aed8f28d8acad84e2afb347"
+  },
+  {
+    "path": "apps/mvp/docs/features/database-alerts.md",
+    "sha256": "1e11b7f8f1854a9f785c6d00db804a7b91ebe316c84f1c19c98e269160221ebf"
+  },
+  {
+    "path": "apps/mvp/docs/features/docs.md",
+    "sha256": "69b5f0108d468f5e6c2d1c4b5c0efa6c3bee3822942b21064e60db62db9b6b09"
+  },
+  {
+    "path": "apps/mvp/docs/features/domains.md",
+    "sha256": "42119859e810ec47943c20bd4dc33ac8086112414454399fdc324d0a291e4426"
+  },
+  {
+    "path": "apps/mvp/docs/features/factory.md",
+    "sha256": "c44b0c85e4a3452e881ffd436e2c3b58750282ea81be169da5872d0160b96867"
+  },
+  {
+    "path": "apps/mvp/docs/features/feeds.md",
+    "sha256": "cd3496e3a4df6773a2f269aa0827b8428cbdb266e848ca2ab063239b0101ade5"
+  },
+  {
+    "path": "apps/mvp/docs/features/files.md",
+    "sha256": "15105cd0481d7bd94a25a596dfae879bb22fdbf7bf116f812597000758c0f897"
+  },
+  {
+    "path": "apps/mvp/docs/features/first-run.md",
+    "sha256": "405265aedca1d63960a2a5900199b2b536a5024cba39b1d95431d7bc6d201a4d"
+  },
+  {
+    "path": "apps/mvp/docs/features/fleet.md",
+    "sha256": "a5398292e963a35d8832b942bf0be52d389135c04c66450d4b219157c6d37ff2"
+  },
+  {
+    "path": "apps/mvp/docs/features/flows.md",
+    "sha256": "21d297f22b6dd06bf7f55614cee0ac13368d366a813799048c36ef28556a596a"
+  },
+  {
+    "path": "apps/mvp/docs/features/home.md",
+    "sha256": "73e7c6e6d9f749828da8fea707faa59ea2f0f6e245548671504b4d6d6b5cd807"
+  },
+  {
+    "path": "apps/mvp/docs/features/issues.md",
+    "sha256": "719f16d72717d80b5039bda04e4f2fbe855083aa8771bc0860bec88a7931176b"
+  },
+  {
+    "path": "apps/mvp/docs/features/jev.md",
+    "sha256": "56571ecadc73988eeb217a04121e8796c90d054e38da65e0a4d798fd544e2dff"
+  },
+  {
+    "path": "apps/mvp/docs/features/machine-tokens.md",
+    "sha256": "2e2f05fc5fa8295ec7371f466f56937a362afb23fe98f39c00622d7ffd4389c3"
+  },
+  {
+    "path": "apps/mvp/docs/features/memory.md",
+    "sha256": "6ed43887489b3f6fec3d54da215dd6991eff68451b06664dce70b541a798f8a1"
+  },
+  {
+    "path": "apps/mvp/docs/features/model-endpoint.md",
+    "sha256": "219cc4a19c40896b80b87569041df862da1cc567a49d35eca6c8cb53eda9e2e6"
+  },
+  {
+    "path": "apps/mvp/docs/features/navigation.md",
+    "sha256": "999bfbddb5ff8ceebc07a6a81fb4d42970bbf2bbda42b24cf8ccc808a1bdd5af"
+  },
+  {
+    "path": "apps/mvp/docs/features/notifications.md",
+    "sha256": "0670e0b3469f2f7377bd8755f5d7779ec197805271d0864f827a9022023083d1"
+  },
+  {
+    "path": "apps/mvp/docs/features/personal-model.md",
+    "sha256": "e39312c91031a49c10d2b39ee2fcf2f3fbdf54a88b33d4692a89ab9285056e8c"
+  },
+  {
+    "path": "apps/mvp/docs/features/plugins.md",
+    "sha256": "558328a59794b086212b00c1ee9c423a039d011e22e76050d1dc853fed359f48"
+  },
+  {
+    "path": "apps/mvp/docs/features/pulls.md",
+    "sha256": "b89bbb11ce9098839c1862b107831783eba5f4225e1cb4119cb088fd3b74eab5"
+  },
+  {
+    "path": "apps/mvp/docs/features/remote-flows.md",
+    "sha256": "86efacb928e5a13f65fef5bd048d04c2cde433944a664dc9b141f0ab42f5b2b0"
+  },
+  {
+    "path": "apps/mvp/docs/features/repo.md",
+    "sha256": "cd9c34054f082c4a07c5b827471a942e9f77267fab323f1e9915fa3afe570779"
+  },
+  {
+    "path": "apps/mvp/docs/features/runs.md",
+    "sha256": "cbf18c27f7baab10aacf4b6f7a30acda911dc3aee636cff9696e786234bf99cd"
+  },
+  {
+    "path": "apps/mvp/docs/features/sandbox-budgets.md",
+    "sha256": "c1be6f3055a4cacd84e439d5345ab384e58e1cd038ec6cf91b0892b0d42279c8"
+  },
+  {
+    "path": "apps/mvp/docs/features/sandbox-tools.md",
+    "sha256": "218e6e0e7960e6ee3b0ae85f2199a070c82c9f867b4512a79ff2184c37a8dd90"
+  },
+  {
+    "path": "apps/mvp/docs/features/secrets.md",
+    "sha256": "fb77fcf585e6e3a5a992b89349f93581e6db7c83390027e59b9c0c03121675e0"
+  },
+  {
+    "path": "apps/mvp/docs/features/sign-in.md",
+    "sha256": "5613cc2dda549bf7c0abc3869235fa4759e44f5070cb45fdb90cea08aa053d68"
+  },
+  {
+    "path": "apps/mvp/docs/features/slash-commands.md",
+    "sha256": "0f3d1f6c5374d58adc285ad51cff57e75d28c70d16bd957ad5648571969fde8c"
+  },
+  {
+    "path": "apps/mvp/docs/features/social-preview.md",
+    "sha256": "7ed37f986263825315a961ea0801ed263330152a37e1e31e6bc00d7a9ad0f945"
+  },
+  {
+    "path": "apps/mvp/docs/features/spend-alerts.md",
+    "sha256": "9ceb7c2294726bc6c7a1378d5050e2bcc726075581f9c345b7e927864e871cd4"
+  },
+  {
+    "path": "apps/mvp/docs/features/timeline.md",
+    "sha256": "e0719640331049983fdc57bc4eab53876c28a1ba2322a9a49028d09bcc3ff8b0"
+  },
+  {
+    "path": "apps/mvp/docs/features/todos.md",
+    "sha256": "42a54298bbafa24f6e9e422889847ef1c78bc1cabbf3f9587c969733fe109390"
+  },
+  {
+    "path": "apps/mvp/docs/features/views.md",
+    "sha256": "4a3cc3084bdf6322a7e3b487b012a60b4db1d33ffa0ab8719a81bb0262de44f1"
+  },
+  {
+    "path": "apps/mvp/docs/features/web-pages.md",
+    "sha256": "2b6bad0900b800cf15663ab4a295cf554d8a271e27f170a8b140ff59663e27de"
+  },
+  {
+    "path": "apps/mvp/docs/features/work-links.md",
+    "sha256": "0743037a7375d174747c1d825d02edc9dde85a5cf08191443c939a9af6398966"
+  },
+  {
+    "path": "apps/mvp/docs/infrastructure.md",
+    "sha256": "c82e5f7ee47ec102d45dea5ac0235323cdf7cf592ebd42fe51701d0199e1eef2"
+  },
+  {
+    "path": "apps/mvp/docs/observability.md",
+    "sha256": "41d5863f69788695f3f0d22e9da32a7fa11595cc20b4686b832253dc827e0110"
+  },
+  {
+    "path": "apps/mvp/docs/proposals/ci-cd-parity.md",
+    "sha256": "601fde70ff275f44da419ee0a5b812c6ea337c3a26c636f018001f9e5ea39ead"
+  },
+  {
+    "path": "apps/mvp/docs/proposals/durable-external-effects.md",
+    "sha256": "353d06c9dd97e89a7434f2a0de4f9b387d687592b4f8b33a58373d898928eb56"
+  },
+  {
+    "path": "apps/mvp/docs/proposals/early-features.md",
+    "sha256": "17427ae30e522f022628775d41777f0e78768f53c302e2eb87ebf49d26b02722"
+  },
+  {
+    "path": "apps/mvp/docs/proposals/flows-as-code-api.md",
+    "sha256": "9442d4e1857f29797cd9cfb1f3e9cafcb66b4ae816108ebde54ecb3bab526c15"
+  },
+  {
+    "path": "apps/mvp/docs/proposals/mvp-gaps.md",
+    "sha256": "0aa199b930cacbe65fdca8db3f6c1a78bd35dcb82f55b3434caf63fe95cba490"
+  },
+  {
+    "path": "apps/mvp/docs/proposals/native-app-by-injection.md",
+    "sha256": "7126b7c9ac711a468670c82768e09944c97f8cf62bd72bc2f36a898b48f25e8a"
+  },
+  {
+    "path": "apps/mvp/docs/proposals/new-branch-ref-location.md",
+    "sha256": "9270970f5940d4324cfd9bdd17a396019f95eca27aa86d1831202c6947a52036"
+  },
+  {
+    "path": "apps/mvp/docs/proposals/pierre-oss-survey.md",
+    "sha256": "3c5b372682d88ea742b2e894f3a996312dc92454f7670ca808a782c50c44f4bb"
+  },
+  {
+    "path": "apps/mvp/docs/rules.md",
+    "sha256": "9b7becf36513da8ae5a2f06e7e8fd47ce54bc4b2a519e3fb1452ed60f1ddc71b"
+  },
+  {
+    "path": "apps/mvp/docs/rulings.md",
+    "sha256": "cf20bd7c77712fec759d748c0c53b6743197c90bfc7776deaa2d18020fcd3550"
+  },
+  {
+    "path": "apps/mvp/docs/state.md",
+    "sha256": "3ae0d9936622d8d9e6980dcd503af178df34bfe78d190dbdaf3ac87584fd4da6"
+  },
+  {
+    "path": "apps/mvp/docs/todo.md",
+    "sha256": "8592674ff07746b358f3eface5704369c9b5d77dbab8fb3da578812d24752e1a"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-accounting-956161.md",
+    "sha256": "9f50a3fb78c7345ab7dbcbf508d426ac618b9b6f01711c78e6405b0a0c3921ed"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-answer-deadlines.md",
+    "sha256": "789300b6f7b0a3e70838306af616c1a119366bde81d91a16a16a428c89abc463"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-budget-child-failures.md",
+    "sha256": "506b5664fd16249b13d1b5459785258fd770bb6ddff8cd48dbf31bba7bb4f2f9"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-capacity-diagnostics-294040.md",
+    "sha256": "e561f226bbe6f88985356ffb51a97d5c7af91c86cc0c1be110e4b9230982e667"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-child-cache-publication-bugs.md",
+    "sha256": "204b394ceb308ee3eaccb4d0a8193771212ed7d137ae4e57d77669faab7326ef"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-eval-baseline-recovery.md",
+    "sha256": "a52f19fe770a36286dff9568125f53790e3330f296c641514c3f0bf993895086"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-eval-regressions.md",
+    "sha256": "5d2a250569f46b94639877c8fa9f10b556120288b8e18ed3f55847f67420144f"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-eval-token-limit.md",
+    "sha256": "9434c876d4ec95179577bf6441af4aad85ddcc01a2ed6b05883a3e977af79eed"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-evals.md",
+    "sha256": "8553a00096785466e910e881c48c3b3b7abb3c1aad34091a08b0bcbc26e38628"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-jev-memory.md",
+    "sha256": "382e81dc2b2b91e90e4aa836cd88de96ee44f8afa6386df6bbe682a31b505a75"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-jev.md",
+    "sha256": "95a9022fdd218f2140bab0a9b1b6235dd6f1db08aa4b6df1e1a1e95116e51b20"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-memory-read-safety.md",
+    "sha256": "bbba31396dfd6283bda0eb30a03a42f820566d337e0888302a017551bee8f2d8"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-quota-charge-validation.md",
+    "sha256": "907e0be747fd4ecda10a9db80667f0a1a367fb130dc150797f1d0225dfeb00df"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-repo-navigation.md",
+    "sha256": "19934d180c18ac11ac29556be22720f175eb7cd5e7daa17f9e5a2d091fcbbd3f"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-review-finding-repairs.md",
+    "sha256": "f1c6ed50f20c288a07b937c3562ed551ed8d9e90b7f4e2f5e781c0d9dc4d71dd"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-root-browser-safe.md",
+    "sha256": "316da3da456ee857789aa4daf8df24b5a1f13982bfd73210f1b28571f434c308"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-run-credentials.md",
+    "sha256": "d512e35cc0c03ed43c55c5593dfae9ef120a20794775ceae50703607dc453534"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-status.md",
+    "sha256": "8200152695dcf0821d4140d40399a5514978d9a3666a016cf82cc778fab3e821"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-step-key-replay-goldens.md",
+    "sha256": "d3fe5bc53f50c7a0ba7f45d02330d4f2ec4e54bec7c070d72ad06189e2728597"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-task-routing.md",
+    "sha256": "7a62db85eadc93c91b8f7fc0d263c69aff35f847eceb3e5cea4d157c0137ad0e"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-ui-evals-fix.md",
+    "sha256": "6cfef8f4649cddb7632da333a004685414bd6dc2ef3bede17a07a074e99a7f64"
+  },
+  {
+    "path": "apps/mvp/docs/work/agent-ui-rendering.md",
+    "sha256": "8336d0587af0d7aa41d6693b86a71fbc68da40a79efa830f928b57bdb5151cf8"
+  },
+  {
+    "path": "apps/mvp/docs/work/api-baseline-rerecord.md",
+    "sha256": "a832655fb156a734bf8d06a11888e3b47408cb69fe6e76428442bbb1b11d21bc"
+  },
+  {
+    "path": "apps/mvp/docs/work/api-route-split.md",
+    "sha256": "e34c8392b6a9ac4e020bd4e4e8d13b285b8f3e1e1a5c6db0cf33ea53273767ac"
+  },
+  {
+    "path": "apps/mvp/docs/work/app-at-domain.md",
+    "sha256": "8eae6c9a8bf66633d267db67aec26d47c78560524ef1a5df4806d1018c25fbf8"
+  },
+  {
+    "path": "apps/mvp/docs/work/app-coverage-gap.md",
+    "sha256": "53461e9dfe3c1e45f5ae6e8a9098cb5613c3989cd91db54f7558b0e6ea5baae7"
+  },
+  {
+    "path": "apps/mvp/docs/work/app-flakes.md",
+    "sha256": "a97565b8ecce428208bae912f4c8d9f3ec78922f77f6c8801f1d1dd5945802e8"
+  },
+  {
+    "path": "apps/mvp/docs/work/app-loading-feedback.md",
+    "sha256": "de5853a4b8ceccc8fd1c16a045fe4da5253f025f86097d53a5473e4a6a26021c"
+  },
+  {
+    "path": "apps/mvp/docs/work/app-suite-flakes.md",
+    "sha256": "e2421944be0a35ab8c5aec408a00e351e60439d26a9597272acbdc9b6741ac78"
+  },
+  {
+    "path": "apps/mvp/docs/work/app-timeouts.md",
+    "sha256": "945ab87c0dc8f02467d70d7f491473a76b1b89a871c56e0abbdc774b6a89876b"
+  },
+  {
+    "path": "apps/mvp/docs/work/app-wiring.md",
+    "sha256": "8283c85094fcdffe4037f4f0b1b276500c0d2ea942527bab13856415e55173e5"
+  },
+  {
+    "path": "apps/mvp/docs/work/artifacts-lease-safety.md",
+    "sha256": "65c7f7768edfc4d398a4b3918b5659f4bf2825872ac3b587c42da490e91b6ca9"
+  },
+  {
+    "path": "apps/mvp/docs/work/auth.md",
+    "sha256": "fff8e33cc8adc5bf4bd3f62a23b539efea85f306e83555a3a69d38a4d1f8ae83"
+  },
+  {
+    "path": "apps/mvp/docs/work/b1-follow-ups.md",
+    "sha256": "9658678ba433015dbbfb48f3957d4e71f5bc5b94f8d7099376b1f84d1af8df0d"
+  },
+  {
+    "path": "apps/mvp/docs/work/backend-process-revisions-951670.md",
+    "sha256": "cbc188c7260d01f76b5def20569d14ed31a2f41d72322bff470a9184b56d412e"
+  },
+  {
+    "path": "apps/mvp/docs/work/backend-safety-462605.md",
+    "sha256": "2fce8d795c22e8097c8b56f860ab837e779ac4d4b7752642d9d6cee1b1e2145d"
+  },
+  {
+    "path": "apps/mvp/docs/work/background-progress.md",
+    "sha256": "b157e46c94aaa7c910a818873752c2120f8fe3ae567369c57b4de4a117563d58"
+  },
+  {
+    "path": "apps/mvp/docs/work/base-closed-early.md",
+    "sha256": "bc51e8e1623211e4410eafaddf3d6f654d25ba57e6d4c989d6ac11e0de5be395"
+  },
+  {
+    "path": "apps/mvp/docs/work/bb-chat.md",
+    "sha256": "5441603d2d2f4c037825777b3c0f2245c743394f8d326d38fa8a75772efec8a4"
+  },
+  {
+    "path": "apps/mvp/docs/work/bb2-markdown.md",
+    "sha256": "767fada7df309acc556ef4ced5ab313787ad3f96708f2b168d17f9f0833b9b09"
+  },
+  {
+    "path": "apps/mvp/docs/work/bb2-notify.md",
+    "sha256": "4e79d82c0ffd87c6fb8ae78f502d772e58d7e21b5ec052106581be075f31afdb"
+  },
+  {
+    "path": "apps/mvp/docs/work/bb3-flows.md",
+    "sha256": "fbe4a0d948ba4263c28b93982eb65ee71d00cb025d19e113062c43fd9212c68d"
+  },
+  {
+    "path": "apps/mvp/docs/work/bench-correctness.md",
+    "sha256": "8bc7ea2b9b5251056a9fa591ebb68503b78e0290b26245cb66c7c73b235c2213"
+  },
+  {
+    "path": "apps/mvp/docs/work/benchmarks.md",
+    "sha256": "8cabd1d4ea2dc17bb4278c28f01b6bc17a6ef0c1912a4e8a145a21adee6860c1"
+  },
+  {
+    "path": "apps/mvp/docs/work/big-shapes.md",
+    "sha256": "103d9bbba8a49df2b104637a98bcb1413e255f4dec8c2920a89994a8d28ca288"
+  },
+  {
+    "path": "apps/mvp/docs/work/blind-reviewer-evaluation.md",
+    "sha256": "b0ba2d4ae25bc3546bddf15ce815f32565fb066ce4794faebba554af19ced272"
+  },
+  {
+    "path": "apps/mvp/docs/work/boot-rendered-layers.md",
+    "sha256": "c061473a36a69703d81b410d712910f8f9c3fdbfcc40247cece13f444a7541b3"
+  },
+  {
+    "path": "apps/mvp/docs/work/boot-wipe-telemetry-regressions.md",
+    "sha256": "84d10cc2cdaa428491f7100b46910a20d6f2aa6a1aae6db1fcef9518d6539078"
+  },
+  {
+    "path": "apps/mvp/docs/work/branch-coediting.md",
+    "sha256": "870ff4ccf1671ea860187a7f2e049e9a68bcb67090e03241671188bfa7d52827"
+  },
+  {
+    "path": "apps/mvp/docs/work/branch-page-offline-chrome.md",
+    "sha256": "056cd6d2e85dfc5955f31c3734560f3dc611de2c6a0f5190b295353d3b611891"
+  },
+  {
+    "path": "apps/mvp/docs/work/branch-page-regressions.md",
+    "sha256": "0a8238900787912220f306ee4d2a66c8ef2a70f932f19e1f3a495c849dfa454b"
+  },
+  {
+    "path": "apps/mvp/docs/work/branch-publish-eval-coverage.md",
+    "sha256": "d0832a806309d151b197bd875c27402b366f9116bd0e21a20beb9b09f3c288ec"
+  },
+  {
+    "path": "apps/mvp/docs/work/branch-recovery-bugs.md",
+    "sha256": "dd66e801893814e6ef66f1cbe078853e9b4e0ebb30575480d1019acd205f656b"
+  },
+  {
+    "path": "apps/mvp/docs/work/branch-sharing.md",
+    "sha256": "6a10f88f11554674b52b402c73381ba57abe7f3b4c9b47c799ecaa3b2e18e413"
+  },
+  {
+    "path": "apps/mvp/docs/work/branch-terminal.md",
+    "sha256": "ce64a340ce6ea87d29a24ff78ac087ea2431cfab485c363557511f151dfda4e6"
+  },
+  {
+    "path": "apps/mvp/docs/work/branch-workspace-clarity.md",
+    "sha256": "e3bc98da9c8e691055ffb80c7f75b97ae2130bc42d1c1a7fe0a19f0a59d0ebe7"
+  },
+  {
+    "path": "apps/mvp/docs/work/browser-engine-worker-load-hang.md",
+    "sha256": "c8d560068587d3e8b448d7137f4441812dfc5b1f4cc691fb1318faecd5a3b1f2"
+  },
+  {
+    "path": "apps/mvp/docs/work/browser-platform-failure-regressions.md",
+    "sha256": "590bda2e37f9248432c63a1ff5770fa36735fdbd49a090952347e58eb1edde27"
+  },
+  {
+    "path": "apps/mvp/docs/work/browser-process-error-redaction.md",
+    "sha256": "37c1bec395f107e6db8620ec3f69f27cab61309a38ce222dbc0ede6d4a3c30e1"
+  },
+  {
+    "path": "apps/mvp/docs/work/bug-report-and-diagnostics.md",
+    "sha256": "918db6e324c69b8ce47688b9e79a9196b74fbaa11743ad135ed025ae7d6d262d"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash-chrome.md",
+    "sha256": "e3746526a8bbffd57c5b24cacab0f270e02ede25baade24616145f887a239e24"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash-issues-1026.md",
+    "sha256": "87f945c89993986164ad3c8787e4080ece3d7f8abb7b6a50c0f9d27a26748a00"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash-notfound-1026.md",
+    "sha256": "906eff905c71859a5f9ba9efb84ecf453a9432593b29f4ec78538b156d2b79f0"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash-runs-1026.md",
+    "sha256": "a1f2958e0af1a62f8bd254f5ff73a97aa040893c4b7ac3f26485e44d6a621b76"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash-settings-w12.md",
+    "sha256": "7f6866cfb4c78f3ea632df720f1eec039e232a106b996f04f177ad4dcc3065e1"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash-shell-1026.md",
+    "sha256": "f0e188983acc599b0dd9831630bac22c6acdf3f3e606662ebb7fa6e0fc7e6a85"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash-w12-chat.md",
+    "sha256": "a13cf303ebf3a9d02590c82c5ad3115f4a575963ea6f8f1ae453f577cbdfdbee"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash2-accessibility.md",
+    "sha256": "9a74b64b4b72184bf73be92ace6307d1b0b67826f43bac5df6c4e30cb870adbd"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash2-docs.md",
+    "sha256": "98b20b3abeb202c3792f925e6ab570751af208ec1a125b9a97e51b0fc6656320"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash2-lists.md",
+    "sha256": "1ae2078c97503d6ff54625204c170ea15769460e6a946bd9fb96a9dd74ba2b8f"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash2-runs-1026.md",
+    "sha256": "5359d695cb11579840574c74e28eb1674a931b5ffefbfc0c487408ff1c9dd5e2"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash3-flows-storage.md",
+    "sha256": "4322dabc88f0dfb83a2241a091d908e27dfe634b16555cfbc36c252a7823fa20"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash3-flowsdata.md",
+    "sha256": "5b780d0cf7b394e0dca97f0750daca3d47d3cc76e64315b9cef4293a6118955c"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash4-app2.md",
+    "sha256": "21f488851ff193a175933706310416a8a8227f43888be53898f6db4ecfc8bc21"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash4-bb5-app.md",
+    "sha256": "9e3553b7b81f7c328a75f7bf1fe50c954b813b5bdffe866eb8bf254677449c4c"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash4-cli-docs.md",
+    "sha256": "0daea8a01a81007a546a688f95e9c63f05cc3706f4bddb246fa1a7669e7f3d1b"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash4-cli-types.md",
+    "sha256": "6d57ae99abf1c8b6e1c43513dcf16d043ce49ed3e985891ed95696bc1cd34882"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash4-docs.md",
+    "sha256": "751ceb67188d7b6386ed62d699f5e63e6b5c5abb20556a57dbfa458a131c148d"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash4-reference-docs.md",
+    "sha256": "79a3915e5af3469b1f6d7690993e8d14acfb4cc8d814465ad48aaec95ff97153"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash4-scaffold.md",
+    "sha256": "82be3d0de8a099498a4afc4d2c025d9df25e876f81e0565ef0485a3d8a0943c1"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash4-security.md",
+    "sha256": "c3924137f9a5f448bad797ea8afbac94afd0587d32b20800cef3be4b948f71da"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash4-views.md",
+    "sha256": "be4c901146e4952e101de3dcb10f6b897ec40a32f0518b2788cf9178a9378e80"
+  },
+  {
+    "path": "apps/mvp/docs/work/bugbash4-writes.md",
+    "sha256": "1d03ab7d4984315a09def187019bb93dea4548ed920f8f860b1785ed516aba99"
+  },
+  {
+    "path": "apps/mvp/docs/work/build-lint.md",
+    "sha256": "482a767f9831c6eff8f8d47fa3a7d143602995efd58bebc43ce68500003fa5a2"
+  },
+  {
+    "path": "apps/mvp/docs/work/cache-policy-history-decoding.md",
+    "sha256": "29f8cb2305a1d9231cba406ec1f63803e9d2d0c93915cd6cb3b6f8b7d55103f6"
+  },
+  {
+    "path": "apps/mvp/docs/work/cerebras-load.md",
+    "sha256": "90cfaa2d46e0e59cb7bfa097ab46f6d034a2bbd740ae43cd2794b24a39a76e88"
+  },
+  {
+    "path": "apps/mvp/docs/work/cerebras-rate-limits.md",
+    "sha256": "fecfa3fc5ffc6bfbc21d23efd85297b093325f4e15f1fefbd144f4067930f9a1"
+  },
+  {
+    "path": "apps/mvp/docs/work/cf-gates.md",
+    "sha256": "32a5bc845019d715967563ff004d86832e9a95131c98c82f30c1417f986e0cdf"
+  },
+  {
+    "path": "apps/mvp/docs/work/chaptered-review-videos.md",
+    "sha256": "5eca165da5c2aae080293ea4627dab7acd5c01d55408459ec497dddd590143f0"
+  },
+  {
+    "path": "apps/mvp/docs/work/chat-draft-persistence.md",
+    "sha256": "33c63241276c4e789701670500893476506fb770c4a55d9c83e7395cf09eed55"
+  },
+  {
+    "path": "apps/mvp/docs/work/chat-dup-view.md",
+    "sha256": "fdfc729e92cc66cd420cdef895f04d0181e5191c940a0cef0d7b6cc7b0b98d26"
+  },
+  {
+    "path": "apps/mvp/docs/work/chat-existing-response.md",
+    "sha256": "379326f12f6d5e5b871f29631c23f5db835cab144cfaeca503ce003439668ac9"
+  },
+  {
+    "path": "apps/mvp/docs/work/chat-message-controls.md",
+    "sha256": "fee5afe690abf8ef75dc82f26397e6ebb492066cf581f160cc70612834b16fcc"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-agent-reds.md",
+    "sha256": "c6e758f693249e28aede245c542a831211e020aadafdbfc125c6bcb82fe2f78a"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-cd-parity.md",
+    "sha256": "6d8da465efc23d85db00de67ba1089a491af0195e264d43e7c6ecfc3b8896fe2"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-drift-helper.md",
+    "sha256": "7aa9487e2038c42115ae17ac77f8fa3b88b400d35a1a33b03e374154fcaf043f"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-infra.md",
+    "sha256": "19c81b9ca44a575869fb4bccbdcdadeacf61be3e5e09c390a7b7b8517688210a"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-inventory-browser-test.md",
+    "sha256": "3120dacad9b04bd9c067829ce46128986dc178239333f931391f899dc773facb"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-advanced-runners.md",
+    "sha256": "65770567da3b2e70e5ba2a5f77bf290c16a5e8413cd973cd74eea8228d570d73"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-artifacts.md",
+    "sha256": "69f5125e3274930f7c0a6708203dd2a76484d59de70de0cdbfc7cf10edde7f84"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-cache.md",
+    "sha256": "004d340779f45406504de58186959ffa2ae1ecaf3be92140fee6a4eed1def996"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-commit-statuses.md",
+    "sha256": "1b22d86db73cce369b18bbdb5e4f603623ebee4079e37b12fb3922066a40f37b"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-concurrency.md",
+    "sha256": "37cbb42491b378f47ba4370ee843fa590fe07cd5c29cde214a174c091f410568"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-cron.md",
+    "sha256": "71e3f955480dcad3fdcbddb0a155ea979b11d6d1f5c4548b0ad37307fce1ad76"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-docker.md",
+    "sha256": "4df589db77c0b7361963575dc29e70bcc5b659d9b35f0471548bddacf3a6b80a"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-environments.md",
+    "sha256": "9b0288deed4b8d58662cba5800efd6d1ed941c52a02361bd923544b58aaf9616"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-flow-renderer.md",
+    "sha256": "c16eb667c27ad9a47d43172289a8542629204051229b4cb12d6277f4dacd681a"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-github-writes.md",
+    "sha256": "104c21897d653c2daee06bbf2071c15accee10927689294918190b78e99aaf22"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-job-sandbox.md",
+    "sha256": "4996b880d593feb13508be407045e7075ff5bbdcbad5609215e626a401937794"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-job-secrets.md",
+    "sha256": "b66e62244fe5d15012003b0c555516fd49d6ed777e7913c863f289ca99c4824f"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-long-commands.md",
+    "sha256": "49dc640d24eae1b9580cdf6b3a1d3e813c044063763d25aaeaa739cea2aef52d"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-machine-sizes.md",
+    "sha256": "71e6078fee6f9d710b2df9f468bed38b5f0e732d073fb58924a32e63e082e16c"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-manual-run.md",
+    "sha256": "8c48e5456e4452d68be0291ac9c7ea55ff0d588684085873454afabf56f80e20"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-oidc-provenance.md",
+    "sha256": "83b733a522ec5bf7a144796b1828537df4a03c0fec747522d2e4e483f6068d73"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-path-filters.md",
+    "sha256": "bbf8ba786120dbb800c18f3755a2f894b7609223ff6b1bdbd5561057739c3934"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-preview-packages.md",
+    "sha256": "978fb06f8f9646eee1f7f0a841c6d30b74beb1a1e8b35ec58f66b1bde405ad72"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-privileged-linux.md",
+    "sha256": "8a6812f7d40b1e12a080a97379a513d69aa3b761f1e6898492bff69f31e8d990"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-publish.md",
+    "sha256": "836f0b5a3bfb5c2d7804a6981581b9e8fb1ea61191d813a8b78941ed4b254755"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-repo-flows.md",
+    "sha256": "989cfeb0c149cd38af7787894321ba352f9f068fc8c1b893e46d40f00432b084"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-required-checks.md",
+    "sha256": "d7a4ceb0a8a748dade1ccca80e9ae345e9e27bbc07bf6d096c6ed97657caa887"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-rerun-failed.md",
+    "sha256": "82c312b07c3dbac6fc3fd2e5d3e0ef47429ffe80bb961743b4683716ba8565f4"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-retry-from-here.md",
+    "sha256": "08ae54cd629d7755006da07cd7e5528d5be1e933e6586b9027cbd7be79948e3e"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-run-view.md",
+    "sha256": "38a85b69a3dd34783c828def91df412e167a45c31a48329f926fd63359266c36"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-status-badges.md",
+    "sha256": "37fb3516264cdb22e233c51008e00d9693fe3c4340506be149ac5ea230816f2f"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-parity-triggers.md",
+    "sha256": "4479123d86344ded37bfe526f16fd58c7c4c62b6fbf46389c4d733c6c93c630d"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-red-build.md",
+    "sha256": "0bedd21508b7e600c85fc3847687314368148f78ee3d4e48fe31579017b84bf0"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-red-flows.md",
+    "sha256": "0ee4a906290e66344fed64f2e90222ee7312b55fb0dc01414a79f76a240c876e"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-red-ui-tui.md",
+    "sha256": "7f67fed013a100943fb1eed8bb8b7d60c42e84ddf2a35ccba7a69e2ace19c173"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-release.md",
+    "sha256": "af4222e91db9b3322e34b9142910a5a5dbbc3dd7539499bdcaec0a65e68304c7"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-repository-contracts.md",
+    "sha256": "9e8dfb989a536b97a48b457af301d1149ff9fbf4a4e28efdb86576a0840e0a0a"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-runpage-slow.md",
+    "sha256": "3f448bbd21e08bc5fd1364c27789da91593ae20eede7c62ffd053dede7edfba0"
+  },
+  {
+    "path": "apps/mvp/docs/work/ci-shard.md",
+    "sha256": "4855fe57567843f93b67292731316c37db2d77201ecc18f71ac59eae015d8988"
+  },
+  {
+    "path": "apps/mvp/docs/work/claude-credit-window.md",
+    "sha256": "4e58e10aa436c1fed1f0c0730d680db5cdc127731e0e2cd17284827874bc9d9b"
+  },
+  {
+    "path": "apps/mvp/docs/work/cli-backend-regressions-046457.md",
+    "sha256": "073cda91f1902b99fb1279d92efe9d1daec42e0935757470a4634fb48641ba12"
+  },
+  {
+    "path": "apps/mvp/docs/work/cli-backend-safety.md",
+    "sha256": "784aea9242fe7d82cbcafea0cb7452a3e34ba9e38950f8cabe7880a1cabf3685"
+  },
+  {
+    "path": "apps/mvp/docs/work/cli-cancellation-928301.md",
+    "sha256": "0685f5742d17bab8d98a2f72553ae0018c962bcf859d22a4931fa78568b9b2bc"
+  },
+  {
+    "path": "apps/mvp/docs/work/cli-checkout-origin.md",
+    "sha256": "cba149719c26b9132262dc1a20fada1215c6b4692c50977dba874400544269b1"
+  },
+  {
+    "path": "apps/mvp/docs/work/cli-command-regressions-903753.md",
+    "sha256": "e65249d4bbfdbc8887343682466e77691bc1c4d53d249e94cd273fdc196c2ee6"
+  },
+  {
+    "path": "apps/mvp/docs/work/cli-failure-diagnostics.md",
+    "sha256": "fc0c954f6393e17c99798aabbbc813c4f19f4e20cfcdc4efef06eab1a6722415"
+  },
+  {
+    "path": "apps/mvp/docs/work/cli-lazy-sdk.md",
+    "sha256": "660dc25979b5480343f08204433a20c07c3fc6f11dce03a9eccf4ecf2c8b7eff"
+  },
+  {
+    "path": "apps/mvp/docs/work/cli-reds.md",
+    "sha256": "67c5cee98e99097dfc4970bfe3ee37a275f38ff88c6138a191b2a981dc0a20e9"
+  },
+  {
+    "path": "apps/mvp/docs/work/clone-toast.md",
+    "sha256": "c1ae7da8f4cf9d643f58fce7dba859d7e26ff693e5e64370e3fdc74feed30fc3"
+  },
+  {
+    "path": "apps/mvp/docs/work/clone-token-scope-bug.md",
+    "sha256": "56d50dfe602cb4d0fc8b8690e5dc018f5c7ab993ba7fa35bda2ec63a68aaba97"
+  },
+  {
+    "path": "apps/mvp/docs/work/cloud-ci-coding-host-size.md",
+    "sha256": "f07a99b7c090eb3bade7a35bda6571fb70aeb8252f6fca679eec4c67b26232ac"
+  },
+  {
+    "path": "apps/mvp/docs/work/cloudflare-electric-service-binding.md",
+    "sha256": "483f5b969aef09747312e6c75337928e5929a1177a83e2b6ba9cf69209af800e"
+  },
+  {
+    "path": "apps/mvp/docs/work/cloudflare-flow-host.md",
+    "sha256": "8c25991971b4b5ace9dad7de44d90257cc11643ea6a2071875d38e77fe921bdf"
+  },
+  {
+    "path": "apps/mvp/docs/work/code-bugbash-1026.md",
+    "sha256": "f81921a91c75f4889c22d16595ad9d467af49b208bebb90b634f569af3ccfffa"
+  },
+  {
+    "path": "apps/mvp/docs/work/code-bugbash-w12.md",
+    "sha256": "b912fd47eb0f37d80286fef0fcc227166343b19feeedeb0f2eb7d5d06320d26b"
+  },
+  {
+    "path": "apps/mvp/docs/work/code-intel-race-fixes.md",
+    "sha256": "d4af9866d2d5876fd31260ff7fa509388df12f1282646cea27df809c399c11b1"
+  },
+  {
+    "path": "apps/mvp/docs/work/code-intelligence.md",
+    "sha256": "71df0daf196acc6d24ad4662576fc6f4eea08a1026fb1b740f392c0e4c30abc0"
+  },
+  {
+    "path": "apps/mvp/docs/work/code-readability-burn-down.md",
+    "sha256": "29439b5737ccd523b5f208981f0722e91901646da5115d9ad42b575bcc74ffcd"
+  },
+  {
+    "path": "apps/mvp/docs/work/code-review-guides.md",
+    "sha256": "71ade06ce7c32e4b9041639b17915c77c4cedc2994d37bcbd8b2480102e7915f"
+  },
+  {
+    "path": "apps/mvp/docs/work/code-reviews.md",
+    "sha256": "ac0bd9bfe19a32829c486836138707b87d5cb5362735c15d07f0809d1ebdfea8"
+  },
+  {
+    "path": "apps/mvp/docs/work/code-storage-key-rotation.md",
+    "sha256": "1ffc5fdf49f855a20c3d9bb3f2c62a3f8652ebe26fcf1161440b5014c4cb032f"
+  },
+  {
+    "path": "apps/mvp/docs/work/code-storage-spend-caps.md",
+    "sha256": "3e3c98a56164dcf086151d13f51d0199b581cb15e53631a1ed7ff15e02465509"
+  },
+  {
+    "path": "apps/mvp/docs/work/coding-model-role.md",
+    "sha256": "d6a8c591ad9ce8483e21d70e0131788b7909a11173544cbd3a645f4b52a0699b"
+  },
+  {
+    "path": "apps/mvp/docs/work/coedit-save-recovery.md",
+    "sha256": "42831c46011abf2954b4e02002951a8175329e743687012318aa30066a4775be"
+  },
+  {
+    "path": "apps/mvp/docs/work/cold-issue-first-render.md",
+    "sha256": "400f81720fd2e550f631514017b8254623f6a41a332ab015f00a6b4121ec1975"
+  },
+  {
+    "path": "apps/mvp/docs/work/cold-issue-held-stack-tests.md",
+    "sha256": "864d07b74b905df7f0a79f9a18804bb5e0f33045da12342e045221ef76e00e3f"
+  },
+  {
+    "path": "apps/mvp/docs/work/command-palette.md",
+    "sha256": "9e3b068aae03c93684f67c8c5c5c03a805089ea8b0f75ae9c9289cdf9cf6f966"
+  },
+  {
+    "path": "apps/mvp/docs/work/commit-authority.md",
+    "sha256": "4d09565b5f18ef85b905f79e5b9f1ba6b605e3145374eac3898bf6ec6a9fe6f3"
+  },
+  {
+    "path": "apps/mvp/docs/work/connect-agents-sandboxes-forge.md",
+    "sha256": "d261eb2445753918a0d5f52543ce5df8471ee278015c1946b8ea35bc65a20b27"
+  },
+  {
+    "path": "apps/mvp/docs/work/context-preflight.md",
+    "sha256": "a2c92c597df20f7dbf6610dc177e26fe2a068b721fdb8ac7c2787a07beba2a61"
+  },
+  {
+    "path": "apps/mvp/docs/work/control-boundary-regressions-049033.md",
+    "sha256": "f70337592948213f084cb12b3b0e9c838c3fcf4fb06062f755caa54bf5c34ede"
+  },
+  {
+    "path": "apps/mvp/docs/work/control-boundary-validation.md",
+    "sha256": "02a03b1f672b601e1cac58e8b2a8ded760faca946ef4042611f0ee041db152db"
+  },
+  {
+    "path": "apps/mvp/docs/work/control-projection-inventory-fixes.md",
+    "sha256": "8d8cd329861d88e2d6eec655ce9103ef4c704c162fb33543258757f53c737163"
+  },
+  {
+    "path": "apps/mvp/docs/work/control-quiet-watch-and-rejection-replay.md",
+    "sha256": "1eac3691ee8bacbe008f90e46e81f2d394569078c188b807d202d58a9e538d88"
+  },
+  {
+    "path": "apps/mvp/docs/work/control-runtime-regressions.md",
+    "sha256": "fd33949e5410743252fad15bb27ee50c6a8288f817570e5f80fd49c7f33dc29c"
+  },
+  {
+    "path": "apps/mvp/docs/work/conversations-and-history.md",
+    "sha256": "9aa1bfc99f673381e2a769ee0fcf3875a49ebdd599d5072fe77302269f929678"
+  },
+  {
+    "path": "apps/mvp/docs/work/coverage-main.md",
+    "sha256": "77ef42300a18e89c08a8bab8e89df48d61e10b2f9481af2e9d728ad01c1b98d6"
+  },
+  {
+    "path": "apps/mvp/docs/work/credential-diagnostic-guard.md",
+    "sha256": "fb077e8563a40aa4f08e8bfaa57aa7a77a04e95b762c3558bad201f88da4f0b1"
+  },
+  {
+    "path": "apps/mvp/docs/work/cs-delete-repo.md",
+    "sha256": "6abd7440b2ed1ba1166bc71e893787e8e3adf8292459a1df334571e50685fd72"
+  },
+  {
+    "path": "apps/mvp/docs/work/data-gate-startup.md",
+    "sha256": "30a28c6559d808bc814f75b014dfe2e4c5e37feb24975a9bf0b526da45c06a78"
+  },
+  {
+    "path": "apps/mvp/docs/work/decisions-for-will.md",
+    "sha256": "b938e35b67d1b9524602f629f16104e6409ef8d1279592c64c81d9a4fabe79f4"
+  },
+  {
+    "path": "apps/mvp/docs/work/declared-import-exceptions.md",
+    "sha256": "4a7f069f158c36f5d5aa59ac4bca219ff4969b49203f79d251db3b0da36db14c"
+  },
+  {
+    "path": "apps/mvp/docs/work/deep-import-migration.md",
+    "sha256": "b10cbe623e29a4c9744399ee85d4cf089f7fbdfc4eae92211004b17b2d5f9d04"
+  },
+  {
+    "path": "apps/mvp/docs/work/deploy-receipt-and-workspace-cleanup.md",
+    "sha256": "db8b4ec07eebe18ae6935dcabf3251b3c34f10db9562f7bad13e53a1afbf31c0"
+  },
+  {
+    "path": "apps/mvp/docs/work/design-questions.md",
+    "sha256": "a781380f9d1cac142b16ec63e55cb5f0e1ff083c94946a3803e5adb75c320ecf"
+  },
+  {
+    "path": "apps/mvp/docs/work/desktop-png-capture.md",
+    "sha256": "e692049635f428c82f12ac69be4701818dd1973cbb9396dbc18c8e4980e2c506"
+  },
+  {
+    "path": "apps/mvp/docs/work/dev-https-startup.md",
+    "sha256": "f95ade21b0164601d4d51bdc617ba46973e409e6f596ea5e0bf65f70a89cf1cf"
+  },
+  {
+    "path": "apps/mvp/docs/work/dev-stack-hygiene.md",
+    "sha256": "2f39bbc1ecd0b6ee4edc68c8c95887b95a4d2d5ebbc8c0b9c2c498979885d91e"
+  },
+  {
+    "path": "apps/mvp/docs/work/device-data-migrations.md",
+    "sha256": "ef30ea7400775ba240c45ed7059b638d6f5b0575e70dc1592f65da208a31ab8e"
+  },
+  {
+    "path": "apps/mvp/docs/work/device-data-recovery.md",
+    "sha256": "c1e8c1e976833f81283529815e54ac54787c2c00cbe53936d0cee39b5f5be247"
+  },
+  {
+    "path": "apps/mvp/docs/work/device-homes-schema.md",
+    "sha256": "a1954c6e0368565ea8c396dd52bbf955a5fda7208a6462c692160d2e877a13a2"
+  },
+  {
+    "path": "apps/mvp/docs/work/device-ownership-and-queued-authority.md",
+    "sha256": "0d4dcf2c9d3eef685270e29fc1d0443d88ad5ac5d63bda7c8e4a8e9cf7fd42ad"
+  },
+  {
+    "path": "apps/mvp/docs/work/disk-space.md",
+    "sha256": "7f5cefd4868128c51caa9c16a405233c7fc280ab3c75e0b79a5417ef12b4be44"
+  },
+  {
+    "path": "apps/mvp/docs/work/docs-check-flow-outcome.md",
+    "sha256": "4de4381917a14832eeb85103ff4ca731f61c44fcf7f58870bbd9f11cba9b129d"
+  },
+  {
+    "path": "apps/mvp/docs/work/docs-panes-and-search.md",
+    "sha256": "7283523317993971f48c5fc0dc901619192b3098ecd8189995aca15fc006d149"
+  },
+  {
+    "path": "apps/mvp/docs/work/docs-sync-agent-authorization.md",
+    "sha256": "b008f840f540ce82ea5d10c20ec7779b11e241662ded1501a09280be99173e7c"
+  },
+  {
+    "path": "apps/mvp/docs/work/docs-truth-pass.md",
+    "sha256": "918b5bb09cdb15c2fac44b4a7a28b305a653ed1c46f1e46c7bf6099c6f5a4291"
+  },
+  {
+    "path": "apps/mvp/docs/work/dogfood-loop.md",
+    "sha256": "17292ba5af734a6997095a994d145898d28c2199581f822f16bd52afb1d5034d"
+  },
+  {
+    "path": "apps/mvp/docs/work/durable-answering.md",
+    "sha256": "95275c8decdf88cc1484740bf68983f6b318f360f19cf747f14c8733f5f213f7"
+  },
+  {
+    "path": "apps/mvp/docs/work/durable-browser-engine.md",
+    "sha256": "0a52405afb91a870d1d4222eccf2d0df3595d3c51c3244dd3d47f6c0a127c0ee"
+  },
+  {
+    "path": "apps/mvp/docs/work/durable-external-effects.md",
+    "sha256": "d8fd7b9703b53d02e57b525312b12a82ea737326a62133260625fd633f893d82"
+  },
+  {
+    "path": "apps/mvp/docs/work/durable-queue-recovery.md",
+    "sha256": "3433c2ac968032fc2a58f65f1a2acf0d5994538f20e751fee479e2ad9fc85754"
+  },
+  {
+    "path": "apps/mvp/docs/work/durable-queue-validation.md",
+    "sha256": "dbc15eb5d2fccb7fbbafc65ca318a46b99d204dd77fad47d5329a27f821f4765"
+  },
+  {
+    "path": "apps/mvp/docs/work/e2e-byok.md",
+    "sha256": "024916d7f048ba1e66fb44ebd060973818e2937bbe9f1684622c71c93fd5ec1b"
+  },
+  {
+    "path": "apps/mvp/docs/work/e2e-hygiene.md",
+    "sha256": "f2b6190862df8993c00343ffaa65b5217fb830ca3535aeecc700db3e6427ccc9"
+  },
+  {
+    "path": "apps/mvp/docs/work/e2e-message-locators.md",
+    "sha256": "5f551bf624c7957179861521cea5d27b3f2783f9bca71762bc0232267e1e287d"
+  },
+  {
+    "path": "apps/mvp/docs/work/e2e-parallel.md",
+    "sha256": "f3ffa5afb4407dd6312375ffcfaa442a5da0cf376e7bffb7f1b5392a175b256a"
+  },
+  {
+    "path": "apps/mvp/docs/work/e2e-sharing.md",
+    "sha256": "80a3fc66000c34a77fe475aeb5b6d8d6801453512921b1588e367749934ffa04"
+  },
+  {
+    "path": "apps/mvp/docs/work/e2e-skeleton-detector.md",
+    "sha256": "e72eb35e8a8aecb9e7de5ce095e1b485726aae55664c6c8e61a26cd2864dca71"
+  },
+  {
+    "path": "apps/mvp/docs/work/e2e-strict-errors.md",
+    "sha256": "d4ce766d3c214b56627b4192efc75b2971dcad6e145d23f70818922e4dcbdbb6"
+  },
+  {
+    "path": "apps/mvp/docs/work/e2e-suite-and-gifs.md",
+    "sha256": "9466687cdd6557f38d210d53a8ca068bc3f94934ff6daaeda255bd996b3be79e"
+  },
+  {
+    "path": "apps/mvp/docs/work/effect-code-conversion.md",
+    "sha256": "59159905043b0a28cd1951eb81dcaa8c8704dae6a9cc63b6f7567131fa3b4a0d"
+  },
+  {
+    "path": "apps/mvp/docs/work/effect-home-read-states.md",
+    "sha256": "c4d1978c74d1883f126af37acd872e4d292c75b8c70cf6df469834bed35de230"
+  },
+  {
+    "path": "apps/mvp/docs/work/effect-key-fault-registration.md",
+    "sha256": "5574b707992cd4dc0e19f939dde817061e4ea057a865d77df83c3d11aa5089e9"
+  },
+  {
+    "path": "apps/mvp/docs/work/effect-repository-home.md",
+    "sha256": "639a6eb4e24d55d7ef50412379d93f5c5ffc65a0caf5100ff8432a1a905f62a1"
+  },
+  {
+    "path": "apps/mvp/docs/work/effect-tanstack-db-and-effect-electric.md",
+    "sha256": "74957795815ded2546a6539eeb70f153ad765825fec49c0d74fe44b3eacd91ed"
+  },
+  {
+    "path": "apps/mvp/docs/work/electric-client-bug-report.md",
+    "sha256": "1fec30b37660b45c1b665a67793e49f55e52bc818b0b1abec3c10cd84971e58a"
+  },
+  {
+    "path": "apps/mvp/docs/work/electric-gateway-cache.md",
+    "sha256": "a524fd6ebe903f029836663656d52ce344375539b18c98739f7b8bdbbb80f293"
+  },
+  {
+    "path": "apps/mvp/docs/work/electric-lock.md",
+    "sha256": "7be19cc6d23411ae326ebb8b43e2c1e55564a2acf4903fc6547a59ca6bb11690"
+  },
+  {
+    "path": "apps/mvp/docs/work/electric-s7.md",
+    "sha256": "70e8b50984c9b7f71b2584e299624987ac0a2b4831cd5e155ea0ca67bccb8b94"
+  },
+  {
+    "path": "apps/mvp/docs/work/embed-race.md",
+    "sha256": "0975cc8c8045696fa468ae65ed2417c3f722b22ad1cf3f096dbe6368892253ff"
+  },
+  {
+    "path": "apps/mvp/docs/work/engine-admission-942789.md",
+    "sha256": "6713aa7ac94fedccb63132321eda4bda2971e60cde5a49509b01ec1ec72832ee"
+  },
+  {
+    "path": "apps/mvp/docs/work/engine-core-readability.md",
+    "sha256": "105fc0534c0221160c6ec7a0b19ae6dddb4454cb684df5147490026e59770fae"
+  },
+  {
+    "path": "apps/mvp/docs/work/engine-flake.md",
+    "sha256": "0f88a00efc8780d34e67133575cf73cdf0e4d88149192c5ee3d139b706418f1c"
+  },
+  {
+    "path": "apps/mvp/docs/work/engine-lineage-cancellation-admission.md",
+    "sha256": "3a5a383ec69c176d9af0e6e7b44a483e399254881c9902ccc4f1832eef45cc20"
+  },
+  {
+    "path": "apps/mvp/docs/work/engine-store-coverage.md",
+    "sha256": "2a2aa870b85225db9e8f2cc66745219e06a4b4b02925406068a6edd68b9f2205"
+  },
+  {
+    "path": "apps/mvp/docs/work/engine-store-readability.md",
+    "sha256": "61d2fc460f4f950497d919bcd1694ce4c8567126cf236ff8ce81c36622db6c20"
+  },
+  {
+    "path": "apps/mvp/docs/work/engine-writer-lock.md",
+    "sha256": "b9132d7542bb4898691f08e25aedc8a096ac927b4019e1ae3a87cfe4105a9794"
+  },
+  {
+    "path": "apps/mvp/docs/work/eval-safety-regressions.md",
+    "sha256": "ac4d7370dbf7fa14f10abed7277822ddacb8b11c9c67e680eeabb9c53b3afbc4"
+  },
+  {
+    "path": "apps/mvp/docs/work/evals-input-boundaries.md",
+    "sha256": "5c3201337f804160234215fecb3919a8245eeb36e555ee95934915cb14128ede"
+  },
+  {
+    "path": "apps/mvp/docs/work/everything-is-a-durable-flow.md",
+    "sha256": "ecda18c6b0db317c553bdde8c0e8e1304d0b3a5443cbcb17ea5d9683ac1f0213"
+  },
+  {
+    "path": "apps/mvp/docs/work/everything-is-a-plugin.md",
+    "sha256": "b8ce89e668d560ecc276aaa09802914cbbdd6b5a127be421c8094ef68b80f745"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/ci-runpage-slow/after.json",
+    "sha256": "850c6092d1720a5e564ad5d061b76051441f27348f30131056cd770ad64345b5"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/ci-runpage-slow/before.json",
+    "sha256": "7cbc81596ad5c2cfefcdc56bed7b7516e0014377aae47987ce7e5c855b4135d2"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/ci-runpage-slow/method.md",
+    "sha256": "670159dc16b0ecba43ae27522de8968b8f5ff058b80477164f5dc3009efff1a2"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/account-rotation-reset-deadline.md",
+    "sha256": "ecba2215bbb98d1246d154f6786b7e9cb281c9a9d55c2490053ec2ca78ceb75b"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/alchemy-bug-report.md",
+    "sha256": "e9544c0fdc023c99b5bcbbad0bc290c4919b4fde877d25b035bf14756cdfeb59"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/archive-recording-flash.md",
+    "sha256": "bf861a08504c7f2a0d0702d6937ece1cc4c40aface91d90b9e3b00992bf74146"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/branch-creation-test-isolation.md",
+    "sha256": "2535753a198150c346688c92449356aeee0d9048cb6494124a268a352886fbd1"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/branch-machine-test-path-rewrite.md",
+    "sha256": "8b1675b388abe4f73bc05111c396385a4fa0d900157a5f1989bc1e2bbd035a7c"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/browser-engine-visible-run-priority.md",
+    "sha256": "168be5626a5fd44b9e5fb37ce42e7597e816144d98403884c3679ec30a31c113"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/bugbash-findings-watch.md",
+    "sha256": "d16817af3fd097a2a92b2a5c10d1fd1327dc7ba07ddd3bac8bad912eab44c81c"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/byok-and-subscription-research.md",
+    "sha256": "16be8fa6beffe0bd97b7d3d0dd3ee9da1ead9e04e4367519aecf4fad50ddf09b"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/cerebras-eval-quota-exhaustion.md",
+    "sha256": "3deb756a661cb8e4282a794443115be35b57a2dd6feb75acde2fd6ae7ef03f87"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/cloudflare-engine-drive-time-budget.md",
+    "sha256": "a6481018fedafee11e9250d331d560c530be61c96385ca1c6943463ed72c80c8"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/code-storage-diagnostic-repository-cleanup.md",
+    "sha256": "d5672daec7d2d9f1742d3bf89c383b89722c70dd8deb57d8e997b945a060b62c"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/code-storage-single-branch-reader.md",
+    "sha256": "6db640d6d03cfebf4be0353efcde740a27bffa4f3628be795a1955a8c8e7b912"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/docs-check-stale-api-detection.md",
+    "sha256": "9f8284d24e867e2649f669e15dca9ecc53c052882dc4f055450be50c76461033"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/durable-scoring-job-recovery.md",
+    "sha256": "09f3a81bf433c562789ce9353ba65052041ad264038932c9909e77251a25defd"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/electric-scheduled-keepalive.md",
+    "sha256": "99f1d8668d781b88d1b214fcd1ed211633a1421e064cf97871b6c3cb28f39eaf"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/file-tabs-and-focus.md",
+    "sha256": "57d01952ad2df87ec64d64aa9926d52c75adcb8b9da96db96924c702a4df26b9"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/github-webhook-gap-replay.md",
+    "sha256": "67ba1b02fc3e8bc358a9107c8d5d9afaff4ca48cbb01f2dbed02f6a215be5fb1"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/harness-overflow-search.md",
+    "sha256": "258e2d12890d50a62dd23085f1275f8c3e2827489c87e41b772168f6e3043f57"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/harness-test-flows.md",
+    "sha256": "2fe041ea92f7987f738eb112359f984ec51401fd18dd7844afd575da91cb647b"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/harness-test-types.md",
+    "sha256": "7e8b89cfdf8b856b9305701c74cc61e127fda854b50804dc9d74437969335dff"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/killed-run-recovery-timeout.md",
+    "sha256": "960e8c86fd2646365df0176b0667ba3fdab2f32f634f710f0c127d7eb4a13fd8"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/linux-cancellation-regression.md",
+    "sha256": "6dadedfe1c063b07739809a6596f43f40e4cf575f99772612b9e37e30c898bfd"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/linux-process-recovery-failures.md",
+    "sha256": "d448f775e10e2e75396c2ca644da1bb1d6849dcf01c8247d3cb02ef568cb5647"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/mac-mini-disk-cleanup.md",
+    "sha256": "fcfb05b7cce6bfbe7024536cb64b2c6bc84c8f9731f77286b70870055cd20bf8"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/mac-mini-farm-database-size.md",
+    "sha256": "1d30dcc5b83e460996501165fb978b216d80be70046c81e56c6783705b2a9670"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/mac-mini-retired-processes.md",
+    "sha256": "a49e6f73a9c9ac5781fad1418776af554f3c8c8a3ac6b354828842c179552720"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/markdown-flow-descriptor-policy.md",
+    "sha256": "ccd1b13f67cbab8d46d7e1615b7a3e75e7a22cf29a1bac1b34d254f0fb3bb39a"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/message-pinning.md",
+    "sha256": "eef425babc133143747b59fe1900dc5f1319e51aaaaefafe0dbd13c19a6f2f83"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/mobile-layout-regressions.md",
+    "sha256": "4483b32e9ef69a818130b49ef8fa954261f581718d5bc17a8520098f3077ae05"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/model-provider-refusal-alerts.md",
+    "sha256": "8a9fe85aecb62bda792e675733e4403c089d5c7aed8b3f2a3ff83feeb35329bf"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/model-timing-platform-boundary.md",
+    "sha256": "f2cd69eb626c06a68880bc39b48fc6dae1f00fa4002cd383f02d4b25b55f7bd4"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/multi-repository-issues-loading.md",
+    "sha256": "6f3dc678ec5c5473e853ff595ac9e2a6e60b7a36a14089fb240f12e9b94369b1"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/multi-repository-writes.md",
+    "sha256": "8a4f9fad24f3277251f7d0ca01424636206e6161ae048ac29a9c3866e2741770"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/offline-queued-message-count.md",
+    "sha256": "f7a406327ef3e33d864f63c571f63454c2e942f990b197b413ebcec8ab77d676"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/openai-provider-credit-recovery.md",
+    "sha256": "716123c4cb8876af45cdd6f95abe6db4b7e43b927b66ccd3972864e68060d033"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/parallel-verifier-completion-order.md",
+    "sha256": "0b84cd2756483c9fa663fa16303474076ac6a4f23462aafab87e472474dbdcc5"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/personal-flows-delete-race-coverage.md",
+    "sha256": "780d32ca9401c0ee1e00ba15051aa531a3b171c4872ec806932ddcf012774795"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/personal-model-key-test-followups.md",
+    "sha256": "0786d6f131f809a3775bb7cf4a5eb1f7f8f526c48dd05951f61e48d100875514"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/personal-model-keys.md",
+    "sha256": "df2658f04ede5a7518abc81bac2e4ac26027d50e91a3d91ed6fc592a1120654b"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/production-agent-jev-assertions.md",
+    "sha256": "6517adbaa3c8957fee7e9d43581f5cb5da0b144e08ba51577e500e697d5d925e"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/production-branch-page-performance.md",
+    "sha256": "93738e76989c5fca07dae9dbce0a15eea026c25ead34f734dd57e53842666307"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/production-database-pooler.md",
+    "sha256": "f598ee5aa38010459de964ee3e08e08a999814bf8e0b6a4b15332ba80e3c87da"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/production-empty-repository-lists.md",
+    "sha256": "765d0c32f777f6c690f79cf46dc14c36a7181a1db8274030889d22eac370a711"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/production-historical-observability.md",
+    "sha256": "70e96d40d698b2d19c870d7a6c8afe662a14cda3be3d564d815c791f1a435470"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/production-live-data-recovery.md",
+    "sha256": "de8d4d999b5a3ccacdf68eed39ce7faee6ac06abfd47577bff4c7fd7d773edc5"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/production-run-engine-placement.md",
+    "sha256": "31de0b698d6eb2d9ade9475f4db6fb518a1193fb6504a64a7dd6b610f390224f"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/production-run-page-latency.md",
+    "sha256": "95de57c839cdf8ba4fc848f17dd6a2f7eb2fa0d81f1f944b185abdb63b6d793d"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/production-shape-concurrency.md",
+    "sha256": "031eff074b12cede5112c66e4e7f86f2d56de5f79178d3d554e81d8aed037f84"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/production-toast-button-overlap.md",
+    "sha256": "7e3ee218ec3d7df750e133486999f1bc98825ec88a109687751b7000543d4db9"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/public-package-export-map.md",
+    "sha256": "b1cdd92c16cc6f8bdec7358e8486e7a85ea5c965d2b15437df98665254b6a9ca"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/README.md",
+    "sha256": "eeaf49cd0da12c6fc572f08a26027b98001244869064a1497788bef209b98ec1"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/run-event-telemetry-loss.md",
+    "sha256": "d7e82e0f9dc50145120edbf3c76010a5b7f38603dc153ed93e9a3416b1da64dd"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/sandbox-check-script-jobs.md",
+    "sha256": "9a01e4e1a9dbb0f73bff5d4782873a44afd35c5f45b6e57509545ba199b7ba03"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/sandbox-command-overhead.md",
+    "sha256": "7eb0c1a2479be1794f9e33880c1562f6d55aa32a07a40ad1566e3c8f95b9be9b"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/sandbox-lost-tool-retry-budget.md",
+    "sha256": "93c58bd9df3cb71ceb94efec350a6a0db5e3453dddf87ec2fe791d2042abd78c"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/sandbox-user-setup-stream-hang.md",
+    "sha256": "f8418a31968a3123aad6cfe2e61834cdfaa3cbf1cd568872402dc96ae76c8a6f"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/smithers-social-share-image.md",
+    "sha256": "69345a7613450dc9b51f8501ab68d8e69c8f2374ffc10de7a6fabb2c494c9802"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/target-index-error-diagnostics.md",
+    "sha256": "9a2a33827fa25889c2f2725af3cb73ef8aea22e6efb4bad53b67e47ab26e40ae"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/timeline-summary-model-billing.md",
+    "sha256": "9726d5626f00648da9ceea01d393031ebdb82ca58922684e0310415587244af9"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/todo-agent-efficiency.md",
+    "sha256": "b1c0413fdeb39e6927f80f4b6b53d481441ba23b9541df23a06e218e793a7670"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/todo-commit-resubmission.md",
+    "sha256": "c3d0020aea0586e4f22b740d58c99c3c368beebe540efb861fccf6a3099577ab"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/todo-drop-cancels-run.md",
+    "sha256": "28d87556e87d7b686ebd494d175546d5af167b7b28d67b1b0e7db984b70f2ae2"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/todo-drop-stops-followers.md",
+    "sha256": "1d875ad9360a378d203aca61bf2203fc4e9745912b064d0fb4114c955046db2c"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/todo-merge-event-wakeup.md",
+    "sha256": "d18a0cc42a6deab2b5f3db5a33f109d18bfb2d4c9c86ca9a37b94c46a2bb8cd3"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/todo-predecessor-failure-gate.md",
+    "sha256": "24dbc0b2b9fa583a14e04a071f8769d797a144a121d4d45b50cf410e19f7c634"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/todo-publish-agent-commits.md",
+    "sha256": "b07133595656056b6372e4b397724cc73d7350b3ce2a36f621f102a32ef842e8"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/todo-retry-in-place.md",
+    "sha256": "aa3f3adfdc6a8235ac0e0f8c4edbcfe2cf6e61ee0060635946e46ea1d92363be"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/vibelang-kernel-test-flake.md",
+    "sha256": "67cbcbb2083cd4cdd41e4bbf0574323d8ad3704261e4c65203ed2fee513c5f82"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/vibelang-latitude-deploy.md",
+    "sha256": "e813f4e0a3ea1b5e7ba98d9679184f2a224cbcdde97cea6c20455dd826896e29"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/vibelang-social-share-image.md",
+    "sha256": "dd6a49fbcdfd6779f5269f52a4252e484464e3373a65b5b7b3856fdf64985d44"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/curator-2026-10-25/vibelang-typescript-escape-examples.md",
+    "sha256": "92fbabad8e66391c95220547c00a48ab91604735fed9eaa2b700fa6b5a0796d2"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/sol-test-flakes/boundary-red.txt",
+    "sha256": "dfc4afaacb0bd35b68753208727ea0f5dd39c7bf8b455a11209e042d05e38712"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/sol-test-flakes/chat-green.txt",
+    "sha256": "783e18b61d0195d6d3d5983c6dbd4a29fdcd2d48406b465c307bc321d52f553d"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/sol-test-flakes/chat-red.txt",
+    "sha256": "5aa75955f78624bcd130d9503090b7df6985fd189bf7d69f8a76181f9c417697"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/sol-test-flakes/load.py",
+    "sha256": "deed0312883618ed76ec67dfba9e74676c650078abb389fcd43a24dfcad0d0bb"
+  },
+  {
+    "path": "apps/mvp/docs/work/evidence/sol-test-flakes/unreproduced.txt",
+    "sha256": "23936b1f54d6ba60ca305240446b2f9915ae01cd8200fd5f8548e9419444a9b6"
+  },
+  {
+    "path": "apps/mvp/docs/work/expanded-feed-failure-comparison.md",
+    "sha256": "2e160c45fb29bbfea80ace3466d2878afffa7faadefd98f2434ab76bc0702de3"
+  },
+  {
+    "path": "apps/mvp/docs/work/expanded-isolated-classification.md",
+    "sha256": "29f0cfd1aa4ba6d2b6d31c5fab214cd97db2f2f8d05429cd7808a60be50b21f4"
+  },
+  {
+    "path": "apps/mvp/docs/work/exposed-credentials-rotation.md",
+    "sha256": "943116ab3f417e0f90ee47e6969ea2fb40b5abd0205773a08f26fb45f68f2fab"
+  },
+  {
+    "path": "apps/mvp/docs/work/fable-review-2-fixes.md",
+    "sha256": "2874626c9f8fc0f83cab2d8277072bf913d3d335a45f3a362b6dd0f45f0acd52"
+  },
+  {
+    "path": "apps/mvp/docs/work/feed-emit.md",
+    "sha256": "0303dcd8ed4977ffe6994849aa1ed46fddfeee7d8e454fae1d1cc3dd49ed65ad"
+  },
+  {
+    "path": "apps/mvp/docs/work/feed-gate-rebase.md",
+    "sha256": "787bdc151b21b05a4c9667b0e8f729ccac523a1c0f7a45d23b1e8e52b95edc2c"
+  },
+  {
+    "path": "apps/mvp/docs/work/feed-round6.md",
+    "sha256": "a7f1b9a5b678a24403faf9d9bad138c7dc0094bcf15ddf1d22506f0b053a7566"
+  },
+  {
+    "path": "apps/mvp/docs/work/file-tree-accepted-write-reset.md",
+    "sha256": "3478058df335b833ed46056780fef0aaff4ef1845a635c1ec7ab949ac4db0bda"
+  },
+  {
+    "path": "apps/mvp/docs/work/file-tree-retry-causes.md",
+    "sha256": "b5e40ddd19a006ef0e480bc3ba159700df6d726f1bb360ab7a2b54a535a70d79"
+  },
+  {
+    "path": "apps/mvp/docs/work/first-run.md",
+    "sha256": "9606946799e8c5884b77a646152c2db499af42c2c0754e51c49d16ef672ba6b6"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-agent-catalog-outage.md",
+    "sha256": "0ed1e41f6b46454b30507153cb75bf36f592596941ef48f689f22e02dff5b6f7"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-agent-status-pill-props.md",
+    "sha256": "5b5148b0818f8f6ac1bb483d258c219b2187441723f46b82f5b3468126deeabe"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-apps-mvp-023236.md",
+    "sha256": "638c0910e6df33c784e9c21e29ac2a1b4672ae497abcec25b339bd042f806359"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-branch-navigation.md",
+    "sha256": "6cdb7e66fd3b4039eda1d99e802c7b2e1ff84a57ad81f5864670b252dfe69144"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-browser-filesystem-441211.md",
+    "sha256": "a4533178e0283505363885364cfeeaecffe8ddfda9ce96879ab0695d17579ed1"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-cerebras-load-239670.md",
+    "sha256": "255fb4009d72a75e1e58b6faf007ae7862bf830375b641ad70f99f35bd4d8957"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-channel-save-retries.md",
+    "sha256": "6494df2b568e180eb7354f1c7d979887d263852bb3606c1364ccdc821eb5c876"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-cli-run-projections.md",
+    "sha256": "454d5ce15f38a7bc81eefa9ce83fc1dd6f40893bd10dd400960a17b4084f57ec"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-code-storage-safety-442362.md",
+    "sha256": "f147150cf8a322bfa23f146530da179c51712c812fcc034f4f4e1a1e07f7546d"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-evaluation-run-identity.md",
+    "sha256": "e9b87949f4464ae3cffa087ed0ba228d2515bc3c4ce3dcaeeaf173ce4a81a0b7"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-flows-examples-946236.md",
+    "sha256": "e83ce56ad90b71d0c39e5d350613f9a4d678e15116f6b87b6c08a85d738c4bfa"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-harness-boundaries-440023.md",
+    "sha256": "c692f96091b987632f5689ca2a83ab24fcf96245501abfc0b338985da546135b"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-history-verification.md",
+    "sha256": "d46e0a5a58958c4ab376cc71854065e007405a72cbed6aed1aacdbfc707c42d0"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-home-read-lifecycle.md",
+    "sha256": "612e9b7fe80f7267d29d0cccd530bf75688a262c22fd073d93302763afb3c31a"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-issues-view-950391.md",
+    "sha256": "a99eaade7a9c27706faf7ce1c8fdd4301ca4c1f893455a8b114e347630acc79a"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-item-conversation-host-props.md",
+    "sha256": "3a34be9743b85352bd60471760cf2f6416c7a1beab73cfab11f5f830849986d1"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-jev-payload-302989.md",
+    "sha256": "ae700e825cfdc93aef2c3d31ef3e17bfdd71726a1dd5d51704b05026470b0ced"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-model-host-352044.md",
+    "sha256": "0c1a00a7d5bb229248fc4a84fa87c069dec0aac68d1b5f6c55cec11b4bf0adb0"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-packages-rpc-src-065327.md",
+    "sha256": "5618eb0a291d86f034aaa7101d5861ec5d13f0ad4a96e291e5d5d5ad6641ca6c"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-repo-clone-installation-status.md",
+    "sha256": "507728ee76a0093799870e217ca43e6279792c17d7fcce57f7f0a1c9238c9719"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-theme-085799.md",
+    "sha256": "edee3f73ee94ceed32962e47f2b9639ffa60ecc61654ce15eafeec794717bb23"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-timeline-087108.md",
+    "sha256": "8115c84839dc92ce8b4f9e5149a03ae4f160c13802495218962c43c3183d7587"
+  },
+  {
+    "path": "apps/mvp/docs/work/fix-worker-590838.md",
+    "sha256": "3dd73aefdde64f94771128d58818ed973d9727fdd950f45978c33bc49b976372"
+  },
+  {
+    "path": "apps/mvp/docs/work/fleet-spec-recovery.md",
+    "sha256": "a42e392900dd62d8368123a303e770427cf2a67dcff3e8bed17aff0a84c3f52b"
+  },
+  {
+    "path": "apps/mvp/docs/work/flow-authoring.md",
+    "sha256": "0bac1224bfa4494f3ca9ef625ddfc30e7ecfcc21f2841eb1cba56f6b561fc14d"
+  },
+  {
+    "path": "apps/mvp/docs/work/flow-debugging.md",
+    "sha256": "c0a9bc462d875082319e21dc6822a6d1de8bea491aecb14771efe73c3b1edb4a"
+  },
+  {
+    "path": "apps/mvp/docs/work/flow-diagnostics-worker-437749.md",
+    "sha256": "e635f804027f131e50af266b188653205f34cf1d1feb68e8949e489bdf80adca"
+  },
+  {
+    "path": "apps/mvp/docs/work/flow-engine-dispatch-readability.md",
+    "sha256": "16b29fe7a8e4c590c2186ad24bc7f0f9036b53a9d010ab8c355a4d43473db484"
+  },
+  {
+    "path": "apps/mvp/docs/work/flow-example-regressions-668332.md",
+    "sha256": "f9199869af334f298c61c5e208347044931b650a578d7ea791fdf70fe3ef1007"
+  },
+  {
+    "path": "apps/mvp/docs/work/flow-interpreter-graph-readability.md",
+    "sha256": "1c755a74b5fc9b355824a3047c26dc2c7bcd0af166b1f5874d226fd7bc0b5fae"
+  },
+  {
+    "path": "apps/mvp/docs/work/flow-loader-hardlink-diagnostics.md",
+    "sha256": "9050d49d96c92ad2a359667a9f912fdd11651bdaf9aaa5be9be6d1c11c108728"
+  },
+  {
+    "path": "apps/mvp/docs/work/flow-persistence-340682.md",
+    "sha256": "cf937cd313c634ce0be461afc7eddf737b3874c1a7335e42bfe4f39e204e3462"
+  },
+  {
+    "path": "apps/mvp/docs/work/flow-registry-effect-service.md",
+    "sha256": "5eb88f496eeac27bc64ac95ff3eb034a1853f7b2fe2810a9133fc11d4abfe304"
+  },
+  {
+    "path": "apps/mvp/docs/work/flow-round-bytes.md",
+    "sha256": "ccc18c92317c5b73d5576dcab97aae1feb7026c1bd8069dd378224085a63e461"
+  },
+  {
+    "path": "apps/mvp/docs/work/flow-round-performance.md",
+    "sha256": "4ad0097ce469c8fc80ceab69284a5e2efcee2ca0f4b2465dad8452dfb6bbc937"
+  },
+  {
+    "path": "apps/mvp/docs/work/flow-sibling-suspension-codec.md",
+    "sha256": "48a626a01756f6d68e14a226b0319d893be2f521b5c7020b366bbc1377e8bc1d"
+  },
+  {
+    "path": "apps/mvp/docs/work/flow-source-rework-0b9034bb.md",
+    "sha256": "a76a2ec0a2965f965580cf86932da77b59cde8db35a75be6fdf9418eb3553074"
+  },
+  {
+    "path": "apps/mvp/docs/work/flow-time-boundaries-545912.md",
+    "sha256": "d01da7a798b135ece7af26324673b7269aa07f49c2c9eef0759f41e97019852d"
+  },
+  {
+    "path": "apps/mvp/docs/work/flow-usage-metrics.md",
+    "sha256": "eb37e0a8a769101455d79ebe94659a5c4bbdd82bcec2bf42a28c392800176dc6"
+  },
+  {
+    "path": "apps/mvp/docs/work/flow-visual-ui.md",
+    "sha256": "d01d1a38bdf31bea3bb1ed4aef540e1ff1aaf5675eef72020726afbe5f1f93dd"
+  },
+  {
+    "path": "apps/mvp/docs/work/flows-and-agent.md",
+    "sha256": "d9e3a965595832770bea48728679a3fbcb2e0853c6b83099ccd2038a36835f99"
+  },
+  {
+    "path": "apps/mvp/docs/work/flows-as-code-api.md",
+    "sha256": "7973d9e478d03005bde30f3568e5dd9570202ae773da3b4990b2fe6257c432b2"
+  },
+  {
+    "path": "apps/mvp/docs/work/flows-reds.md",
+    "sha256": "372c75d6a8ab442cef5c74c5a2bbaa78805e921358e589a46dcb416f38f3584e"
+  },
+  {
+    "path": "apps/mvp/docs/work/flows-root-platform-neutral.md",
+    "sha256": "55e615b3ecd9ab6d8f8e4d89e0c248be04cb2d7e869f3eebf9c2566d0b9973b7"
+  },
+  {
+    "path": "apps/mvp/docs/work/flows-run-graph-slice1.md",
+    "sha256": "e77fd3fae4ff2c26972cf2264c8b37e541670876b95b2b81dca9f510d6d25643"
+  },
+  {
+    "path": "apps/mvp/docs/work/gcp-user-data-preservation.md",
+    "sha256": "07b010ac50c03a262a5a3f8c021ed458ec5399cd05de9a34ff078b4a10e84260"
+  },
+  {
+    "path": "apps/mvp/docs/work/generated-file-provenance.md",
+    "sha256": "84aa25e3213ebc6e004f37310393edd4b475a1bf02e5813865f503cd57810045"
+  },
+  {
+    "path": "apps/mvp/docs/work/github-client-regressions-991952.md",
+    "sha256": "651ab19ce4d8ed0bf8e6a5bb04021a3a784498ac2688e00b385508c2cf62ba83"
+  },
+  {
+    "path": "apps/mvp/docs/work/github-ordering-fixes.md",
+    "sha256": "24538e7604d632ff3432cfe7af445b65843ad6d8db792c3d2f080742060c7f55"
+  },
+  {
+    "path": "apps/mvp/docs/work/github-push-access-recovery.md",
+    "sha256": "dcaa22d3529e36386d6199d0dcc046bcdf6a4fcdc11f84a5bdd7ff3821f877e6"
+  },
+  {
+    "path": "apps/mvp/docs/work/github-source-of-truth.md",
+    "sha256": "23557520320645b2812cbd131315cee7515111103d38bf8fbdcfe289a7e9871b"
+  },
+  {
+    "path": "apps/mvp/docs/work/github-user-agent.md",
+    "sha256": "aa4bcc89fd832749d65bd1825df412a1636c48f610d8a4e4705ba2dc33123047"
+  },
+  {
+    "path": "apps/mvp/docs/work/github-visibility-cache.md",
+    "sha256": "b992238aeaed611fdcd5c457f8d70962b3c0007e0f85c4c3fc706e894135444f"
+  },
+  {
+    "path": "apps/mvp/docs/work/github-write-hardening.md",
+    "sha256": "67a7b8517d876e12704f796a17b248e1052d86b076f3d4e0ac9153d4bd9fe35b"
+  },
+  {
+    "path": "apps/mvp/docs/work/github-write-rework-06799a9d.md",
+    "sha256": "aa3d456141a8c315df572481716a2442992d8b5f4ec66bcbf0a921eeaee8b502"
+  },
+  {
+    "path": "apps/mvp/docs/work/github-writes-rebuild.md",
+    "sha256": "386c4b826652fdb770f2e60af7ef59904c7101533ce9352581a11160486f6263"
+  },
+  {
+    "path": "apps/mvp/docs/work/gitremote-unicode-branches.md",
+    "sha256": "2502ee29de05f8dd71578ae247ecd4071d9c2af3c8b0abe25176de9eb11bb322"
+  },
+  {
+    "path": "apps/mvp/docs/work/green-a-red-suite.md",
+    "sha256": "dfc9ef9ee3895c59f87d82e256eee4b68f403d406eb6980a26cd0a62a02337ac"
+  },
+  {
+    "path": "apps/mvp/docs/work/green-c-suite.md",
+    "sha256": "0575e2c913a2c3366ce70f4fe13f22c3a0803438714a30b0ec6e2b25b63cbb02"
+  },
+  {
+    "path": "apps/mvp/docs/work/h2-model-transport.md",
+    "sha256": "12d980c8e80463612ee88ffbc755111d0a20740603a2dd756379448e74b486f5"
+  },
+  {
+    "path": "apps/mvp/docs/work/harness-completion-calibration.md",
+    "sha256": "e556b90d4d6215969d17e7d9deb9a1ed3326363d8011bd6402f7596e9eed2a4d"
+  },
+  {
+    "path": "apps/mvp/docs/work/harness-internal-findings.md",
+    "sha256": "ddce837145adc4f882ed55ffe9026bc42c7bb324e183c132d8d0b1d5c34b10e1"
+  },
+  {
+    "path": "apps/mvp/docs/work/harness-memory-admission-063711.md",
+    "sha256": "f659528bb133836c2ba5472ef6a296f842b07c17550312c222332df40b0ead19"
+  },
+  {
+    "path": "apps/mvp/docs/work/harness-notification-evidence-and-abort.md",
+    "sha256": "8c762ff9122aad46f0acee7db101f736f2c994b97ec3fbc90f2ffe2924013f12"
+  },
+  {
+    "path": "apps/mvp/docs/work/harness-replay-boundaries.md",
+    "sha256": "a0dcde3e57a893cdf3322b42587280b49e3b91ecbfef4022d49aa1483c5d3697"
+  },
+  {
+    "path": "apps/mvp/docs/work/harness-tsc.md",
+    "sha256": "d8c7c27f322350042f33eb59c4487a8201bf130d91ca61a298ce203e2eba0004"
+  },
+  {
+    "path": "apps/mvp/docs/work/held-out-database-migrations.md",
+    "sha256": "5236728beabee8c0cd2ab7cd92c9ef2c87d6eb23077c82bd8a890eaf161b4cff"
+  },
+  {
+    "path": "apps/mvp/docs/work/home-action-navigation.md",
+    "sha256": "dfb8a4d73698c743b26a4e769e0248e49f6c38d0f5aee1489d3eee97dbbcbdbc"
+  },
+  {
+    "path": "apps/mvp/docs/work/home-json-404.md",
+    "sha256": "37e407adbac0e9e742b1d56e8985c0e219fd291af029b83c41065672e6490b25"
+  },
+  {
+    "path": "apps/mvp/docs/work/host-agnostic-flows.md",
+    "sha256": "91341d2472d365146af3609e5b5419e3d52913f82728c5bded092e7eaca86ca6"
+  },
+  {
+    "path": "apps/mvp/docs/work/hosted-model-backup-provider.md",
+    "sha256": "18cd0ccb904d7a7988a2d190587775e862db027b1094cacbfed1771678336228"
+  },
+  {
+    "path": "apps/mvp/docs/work/hosted-smithers-dogfood.md",
+    "sha256": "3acf1f98f885741027c5a1db0f32d6123e6011d6126da3c0f5c4e495eebfaa66"
+  },
+  {
+    "path": "apps/mvp/docs/work/import-draft-statuses.md",
+    "sha256": "03cd3ae51a468fbac551eedf82eae0c87279f41a7979f6dfe929d175c2b426fa"
+  },
+  {
+    "path": "apps/mvp/docs/work/import-public-repository-confirmation.md",
+    "sha256": "64bec398946b1adf84ea8a19fda86e3a22dcbff3715bcfc3c547ecf12074f679"
+  },
+  {
+    "path": "apps/mvp/docs/work/import-rules-and-jev-lint.md",
+    "sha256": "49b48790a806c6f5f78ee358743d1948c1febf668edc420fc88199d2a044f747"
+  },
+  {
+    "path": "apps/mvp/docs/work/importrules-reds.md",
+    "sha256": "c142e893fd7ea623118bfc9d4b2653b84a458b1bb5108e20e1082810622e712d"
+  },
+  {
+    "path": "apps/mvp/docs/work/importrules-vibelang-emit.md",
+    "sha256": "69386cc7f90db26e69b4b25012d4c8d026f098d13966790eeb0db4f6239d4fcf"
+  },
+  {
+    "path": "apps/mvp/docs/work/in-app-docs-and-help.md",
+    "sha256": "ed7d0c68e1bcd58237a15f170f634364a4786ecebd6a77fbcc94a9cab6373ecf"
+  },
+  {
+    "path": "apps/mvp/docs/work/independent-lanes.md",
+    "sha256": "e14af1ac7f3f22c70928b4889bbe00d4f60ddf552a130a2b43eb0f5592b3ae11"
+  },
+  {
+    "path": "apps/mvp/docs/work/infrastructure-as-code.md",
+    "sha256": "5cace81624a17372b2cdd0d47ea2a6805d467d0bc349c2a668ad1eab0772acd5"
+  },
+  {
+    "path": "apps/mvp/docs/work/integrations-browser-safe-root.md",
+    "sha256": "ba8f563a480a7eb15175cde3a5bf156ef09bf9d36616953cffb3be0e1f30fc7b"
+  },
+  {
+    "path": "apps/mvp/docs/work/integrations-core-bugfixes.md",
+    "sha256": "85e128a4f4b0167126f524a507b6eeb322b4998fc200e24a9336a16e87ee62bb"
+  },
+  {
+    "path": "apps/mvp/docs/work/integrations-durable-retries.md",
+    "sha256": "894387db6ba28f1257d2682997f3277ce18c95a2013b7a136b6344038a2d1f92"
+  },
+  {
+    "path": "apps/mvp/docs/work/integrations-effect-httpclient.md",
+    "sha256": "018041f82dd5c4d556382bd5bdb40a8db1090c9c47507800837da7570e64508e"
+  },
+  {
+    "path": "apps/mvp/docs/work/issue-credential-security.md",
+    "sha256": "0bb906a343be16cc0145885b2ceced5b6791d712841dec5cb7c4619e300ad6ee"
+  },
+  {
+    "path": "apps/mvp/docs/work/issue-lifecycle-and-poc.md",
+    "sha256": "018aab4e4ba2352b38a2dbe16ff0e983ba8b6cfaa4243a5ab655315ba2af6eab"
+  },
+  {
+    "path": "apps/mvp/docs/work/issue-lifecycle.md",
+    "sha256": "2c8e93c2de5e42aa73158a9273df41ed8e67252afa162b9c4271bb8bbc2d33ad"
+  },
+  {
+    "path": "apps/mvp/docs/work/issue-sync-ingest-retry-loop.md",
+    "sha256": "86386b899f07185282fda645a64cd82408ea85b5adb84e28a809dc6f2280b518"
+  },
+  {
+    "path": "apps/mvp/docs/work/issue-tree-step3.md",
+    "sha256": "17e619e0e960f3ba06eba5d9a2506a4b46c697d35a35366e0a7b50e564c22919"
+  },
+  {
+    "path": "apps/mvp/docs/work/issue-triage.md",
+    "sha256": "2877a90617c2fc25c9e2b3079a284650b2673b980c61b23cda79eb2267a32e9a"
+  },
+  {
+    "path": "apps/mvp/docs/work/issues-cold-paint-smoke.md",
+    "sha256": "30629322f2bc2b2ba84c0695db7242c98095b5f8fa74170e6f21e754fec69464"
+  },
+  {
+    "path": "apps/mvp/docs/work/issues-credential-regressions.md",
+    "sha256": "e81b124c1dfb431a9f8f17d747132a1779b439f75a81d363fafd6cb580c62742"
+  },
+  {
+    "path": "apps/mvp/docs/work/issues-file-tree-target-inputs.md",
+    "sha256": "d5652f49158154757adb38381a785b53a67de534d83c6217eaec0be342ab19a8"
+  },
+  {
+    "path": "apps/mvp/docs/work/issues-to-todos.md",
+    "sha256": "bb2f8561aea775ae5792a5e9b624033057c5619d6f36fbeec20d094205d934f1"
+  },
+  {
+    "path": "apps/mvp/docs/work/issues.md",
+    "sha256": "1380c7b1cbae761e3cc7a105511c1e00cb0b06cd29ecb5005d7f4d061e6e45a0"
+  },
+  {
+    "path": "apps/mvp/docs/work/jev-memory.md",
+    "sha256": "53bd617cda8813a79e2a76496fec620bc0934132242977cfbd09e5db84b11ea4"
+  },
+  {
+    "path": "apps/mvp/docs/work/jj-shared-mutation-lock.md",
+    "sha256": "e071b4112c21a8758cd1f39505159ceab2a080b8361d9b28b3b2af5879895ab0"
+  },
+  {
+    "path": "apps/mvp/docs/work/jj-stale-workspace-data-loss.md",
+    "sha256": "37d8363dfce8399d4c62caa9da0bf41dd28c30743e8676142b6b8488c0b90734"
+  },
+  {
+    "path": "apps/mvp/docs/work/job-deadline-coverage.md",
+    "sha256": "f9d538130b74a7b11e8de7a9c18473afe80f0d0621121bc9cb1a5b9716354121"
+  },
+  {
+    "path": "apps/mvp/docs/work/journal-deployment-lock-contention.md",
+    "sha256": "40079adf679610b410456249a07de6ba8fb339c824a0bb3c99b843c41a402457"
+  },
+  {
+    "path": "apps/mvp/docs/work/journal-latency.md",
+    "sha256": "6959b640a06bcf738a02296452e32f818dd602215c90d3ff2467ef2cc6ddefc3"
+  },
+  {
+    "path": "apps/mvp/docs/work/keyboard-navigation-and-vim.md",
+    "sha256": "7272e28bea697538c73f26954bff0092d65695fb98a915171807269b41179f24"
+  },
+  {
+    "path": "apps/mvp/docs/work/killed-run-recovery.md",
+    "sha256": "e4c6544f17fab54c2b2771dec97e9f44597324a26ba3d60dd628c6b61b9b68a5"
+  },
+  {
+    "path": "apps/mvp/docs/work/known-host-access-burn-down.md",
+    "sha256": "c59b5c7f0f86aaaa865c05475e49da7ba8713bcfc315815ae3ca2889c9b48ce8"
+  },
+  {
+    "path": "apps/mvp/docs/work/land-and-deploy-mvp.md",
+    "sha256": "296fa2ed777629c955383b4ecbcfb05f21219bab9b5cc17680df9d58ab91b20c"
+  },
+  {
+    "path": "apps/mvp/docs/work/land-capacity-fallback.md",
+    "sha256": "0f297a0b571dfa6093f535852b78d898621447fe3b8d177f36539a518144178e"
+  },
+  {
+    "path": "apps/mvp/docs/work/land-fifo-lock.md",
+    "sha256": "791c7552c1d5f7483320959bfa3f7448782c6885f5f3f468f73287ce7afac688"
+  },
+  {
+    "path": "apps/mvp/docs/work/land-to-main.md",
+    "sha256": "a0deb07152f7376a894bcaedc0719f82a8d54f2a9ab3747b152ac2620ef18e45"
+  },
+  {
+    "path": "apps/mvp/docs/work/landing-and-chat.md",
+    "sha256": "e8548128e6163a8865682957231c0c6f09311f0b5efe5c73ba86ccd50e1cdce2"
+  },
+  {
+    "path": "apps/mvp/docs/work/landing-lock-form.md",
+    "sha256": "848c5e4074f8eb1a37e322c4b187d196274eba2ef65afccdc59dd3692980fcf5"
+  },
+  {
+    "path": "apps/mvp/docs/work/latitude-test-runner.md",
+    "sha256": "6fb60eccc83cb45edb6c3b74252febb4d9409d6a7bcc4a116bdbcdcea31fbb3d"
+  },
+  {
+    "path": "apps/mvp/docs/work/legacy-cloud-vm-audit.md",
+    "sha256": "b2303ac9b76603e27b3ebc7bf5669ed194f34f275820a38ad64a0a8f676e35c8"
+  },
+  {
+    "path": "apps/mvp/docs/work/legacy-code-removal.md",
+    "sha256": "e127135c1caff2b64fd92956ac1561c2c6208e8f3c08fd34107cca8b88621941"
+  },
+  {
+    "path": "apps/mvp/docs/work/legacy-removal.md",
+    "sha256": "cf72842fcd6272244343ae419fa435cb5444ba173d2b9ca1b87e1c4530c54556"
+  },
+  {
+    "path": "apps/mvp/docs/work/legacy-smithers-sh.md",
+    "sha256": "088ac63f4aa819a39a84d9601b16baf93e90ed2773a32fc04646d89c476babfe"
+  },
+  {
+    "path": "apps/mvp/docs/work/library-catalog.md",
+    "sha256": "5b67d688c83e0266cbd6331baed7b88f7ac2877cc5be4d767d23c546f2f930d5"
+  },
+  {
+    "path": "apps/mvp/docs/work/live-attention.md",
+    "sha256": "1f3b8a67a59ab108ad84a1c62661f55c34c2a14c39a069c562b882051e18abf5"
+  },
+  {
+    "path": "apps/mvp/docs/work/live-docs-spec.md",
+    "sha256": "dbf57abbbed70ec412ab655058e7149be42130f0427eb50eab1237d170261948"
+  },
+  {
+    "path": "apps/mvp/docs/work/live-query-backpressure-and-construction.md",
+    "sha256": "b9ec2116eb3a8ef52700b3b275e682cb4753dadb225c2b250a578acd5ea71898"
+  },
+  {
+    "path": "apps/mvp/docs/work/loading-detector-fixture.md",
+    "sha256": "6d3fe11ebc883116be9c29354ddb30c6e8763431b4dfe8a88b5e9550f17a4d86"
+  },
+  {
+    "path": "apps/mvp/docs/work/local-dev-sync-connections.md",
+    "sha256": "211c87586a0c4662fd5f5628fd91acef8855252beb6ca3faa50e63b0dee0ceb3"
+  },
+  {
+    "path": "apps/mvp/docs/work/local-first-conflict-coverage.md",
+    "sha256": "9d4a3cd1102c50e8b512099cdad1d8a45553b0ec3ccd9469a1bb5e406a639ce9"
+  },
+  {
+    "path": "apps/mvp/docs/work/local-first-conflicts.md",
+    "sha256": "0d39a4e0df9e758c5ab949177ea877aeab67b0d266f939ecc079ab5c3158df69"
+  },
+  {
+    "path": "apps/mvp/docs/work/local-first-correctness.md",
+    "sha256": "c8d9485bf136fad70fd1c01602a0bfff6f28e56c5383cfbf84882f66402d67c5"
+  },
+  {
+    "path": "apps/mvp/docs/work/local-first-migrations.md",
+    "sha256": "0c3e5d3e8c5a573ae5313699b7d7434ca4ef7bbd469b70692cf979d5e0f4f5fb"
+  },
+  {
+    "path": "apps/mvp/docs/work/local-first.md",
+    "sha256": "017037f93859148cf7fef80073f51419d3b1c99e07965fdf11d8e8324bd952a8"
+  },
+  {
+    "path": "apps/mvp/docs/work/lru-size-limit.md",
+    "sha256": "c38a10daad2cd34e39664f8efb00f0c0d3cf2cb4834280055b09eceddc96b719"
+  },
+  {
+    "path": "apps/mvp/docs/work/mac-mini-subscription-routing.md",
+    "sha256": "702c782f78572fba6eedc0a70090e35f49bc2a421fba1a4837871e8430dde696"
+  },
+  {
+    "path": "apps/mvp/docs/work/mac-mini-test-farm.md",
+    "sha256": "369f4b442ee7c6ecb9ead5c58b88459c3228f683af9abb4a1355b573f38e4e40"
+  },
+  {
+    "path": "apps/mvp/docs/work/machine-fixture-home-paths.md",
+    "sha256": "19ba759f4e4f902015d522c61005c4f8b40044c3e6c0bbbcf34ff86eddc3c23d"
+  },
+  {
+    "path": "apps/mvp/docs/work/machine-issue-labels.md",
+    "sha256": "b35d49da67e7d2a02f54e093f2fa84f9a94593ac08a516effb0ad5cc3ec4b8dd"
+  },
+  {
+    "path": "apps/mvp/docs/work/machine-token-diagnostic-redaction.md",
+    "sha256": "20f6bc8a3f3f7948a1668daec5537a2cb227c97ce8ef70e75dc616a64edc2eb8"
+  },
+  {
+    "path": "apps/mvp/docs/work/machine-write-done-log.md",
+    "sha256": "9d0c2df63e1dd0681294f37ef3b6a8dc5cadb89a2fec841014dbca9a8a02d780"
+  },
+  {
+    "path": "apps/mvp/docs/work/machine-write-record-diagnostics.md",
+    "sha256": "0893905dfa7678a102e6c9d517b0421ca890f36111a15ca555d4b56ac4707373"
+  },
+  {
+    "path": "apps/mvp/docs/work/machine-write-refusal-diagnostics.md",
+    "sha256": "fc7314ce5efda079426278f5b0e23c91d15f22e622c19788cb4344f8081935b5"
+  },
+  {
+    "path": "apps/mvp/docs/work/main-reds-0024.md",
+    "sha256": "391a1d8d669d5a9e01e19c6011d1924041eea191ac0e9be877eb7386a56b5ac1"
+  },
+  {
+    "path": "apps/mvp/docs/work/main-reds-0024b.md",
+    "sha256": "c0091f4a567fac571688570d3ecdf897fdcd330822b8f73c8337620aae007194"
+  },
+  {
+    "path": "apps/mvp/docs/work/main-reds-0024c.md",
+    "sha256": "74ba4454afc14f7bd3cd4cb5feeede8686db973383000a54bbf7116a59824d41"
+  },
+  {
+    "path": "apps/mvp/docs/work/main-reds-0024d.md",
+    "sha256": "fd719706853689ba768144e5f2c4037f3f51a565b9040008e020e6afc35d5fb1"
+  },
+  {
+    "path": "apps/mvp/docs/work/main-reds-0024e.md",
+    "sha256": "99c3d92d79eba467b626a6fa094218c79f5aefe1b9b8e7224579cdd398366978"
+  },
+  {
+    "path": "apps/mvp/docs/work/main-reds-2-evaluation.md",
+    "sha256": "31256892d1d508086425736665b0fd591ef47569f63aa99ed73b4cc06ae6aa53"
+  },
+  {
+    "path": "apps/mvp/docs/work/main-reds-2-exports.md",
+    "sha256": "895c382f6bc4e62681239fb13bf57b98c751215582705a249e4fdf91aee4fdd0"
+  },
+  {
+    "path": "apps/mvp/docs/work/main-reds-2.md",
+    "sha256": "3e0f896f2c8d30ebdeb6dac6cce8c5a9cfa91714dca7919af4f3cadf0c5df5ec"
+  },
+  {
+    "path": "apps/mvp/docs/work/main-reds-burn-down.md",
+    "sha256": "670a63120aba731a792f34d7dd5835670a04894736ceed59216abe54e74373ca"
+  },
+  {
+    "path": "apps/mvp/docs/work/main-reds.md",
+    "sha256": "6221aaf1fdca956f99305f38369bcd49fde239c5b9d30cb7137991b20ef5f835"
+  },
+  {
+    "path": "apps/mvp/docs/work/maintainer-app-plugins.md",
+    "sha256": "669ad3ca9ca8060289c003f9e505d317d66df12178793f337fbcc1ef601f4fab"
+  },
+  {
+    "path": "apps/mvp/docs/work/maintainer-site.md",
+    "sha256": "6f35fe8a91e03187014420678a579a8ff6b756c0a15d0fd4e35ca483a5e67768"
+  },
+  {
+    "path": "apps/mvp/docs/work/major-feature-e2e-derisk.md",
+    "sha256": "cd7ceb0c003c8b4039997a45ce0fd5391c080ddcb8d3b5ecd25a1c289af836c4"
+  },
+  {
+    "path": "apps/mvp/docs/work/markdown-save-checkout.md",
+    "sha256": "1a0ec5fb5d602987c4937404913be66a2625fcd780ed81ad549a760c804be68e"
+  },
+  {
+    "path": "apps/mvp/docs/work/md-end-newline.md",
+    "sha256": "1ca5c0760f4670068fefab912a9169082593cfba3ea7a207e8b4de9263339944"
+  },
+  {
+    "path": "apps/mvp/docs/work/memory-judge-slow.md",
+    "sha256": "98b6334e85c240eebadce3b85c7db576328889feb5fb0d885390b0108ce1be3f"
+  },
+  {
+    "path": "apps/mvp/docs/work/merge-base-race.md",
+    "sha256": "267df828abc5137617f657c3914b20cf3cb74b4e6083d0488622593c2f09f05d"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-agent-memory-findings.md",
+    "sha256": "80ca680868eaa198326be1f6875cfaaea689e3370c1001038182d1f722f0411e"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-agent-src-bugs-073840.md",
+    "sha256": "e858c214e31af6bd4e02fdc31ce83b4127dfb55998945e5097b846ee411aee09"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-alert-settings-921774.md",
+    "sha256": "c247d1c454a4ebb0c602f61d3a3f80e3ac3e41e471f6c7e8afb823d86a6f9bb1"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-backend-rework-521409.md",
+    "sha256": "aafcc00f3010de06164e19bc865a80257a4b5fee1b78d35a2bde3ed2b471e206"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-cli-command-fixes.md",
+    "sha256": "b50419e3d45a0a3ecd5b95cd23f33c1cc50113f1bd37a945015b0a71c577a1a3"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-cli-configuration-races.md",
+    "sha256": "d4c70ba6e9e1440a4db866dd80301622429dd2880a7d57d23f8a25bed3325676"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-cli-internal-051271.md",
+    "sha256": "9549f88e843d9dbaaca2bd0c7109d6304a91e8ace6e2a99d3ea6b78b0b0f9281"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-cli-regressions.md",
+    "sha256": "fa89650d98f3a8f6a36e3140f4e40caf5a0bcf21ccd1c33f117caf8f587a90a6"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-e2e.md",
+    "sha256": "01da0be59a5da1241602d48a0c91ed19181bc9deed39045a81e8f101fbcc6913"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-effect-electric-validation.md",
+    "sha256": "19eb047c5bf8b25bbfb45fb84fe5769b7f12258260b39fd51cc76dd2741aa599"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-evals-protocol-snapshots.md",
+    "sha256": "a4196c047256ca608ce2ab5b569fa450a25fb4084dbad5196608133da6947177"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-fix-rework-467ba8d3-602078.md",
+    "sha256": "0e4543456398289dbcdfee3bcafc56a4738b5b6fbf0b5cf34dec2159fc82053b"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-flow-rework-d5ebb2c9.md",
+    "sha256": "5146d8b4ba98b6188d9ee80d5563fba28b8c52f02996445cc4f8b8bd3a6f4d69"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-github-reconciliation-fixes.md",
+    "sha256": "1db52e23d06aa3c905a4bae5d464ace569ab01fe0d16b2fffaf468ad4f39c4d8"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-harness-635390.md",
+    "sha256": "66b8d095be5fb142976bcf15704244e6e9e9a53f3dc3cc91fc23c0a0b0dea162"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-harness-719499.md",
+    "sha256": "eedbc99fd280cbbdaa4a85ffba58b1d0242dfdcd98e6c2e016bb0714d9c5a7ac"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-internal-444234.md",
+    "sha256": "9574b6677a2e8ff6dcbd2ca3f4119b074a5f28f4591feefea84bb9891d43757f"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-internal-control-fixes.md",
+    "sha256": "b3201416002567bf3eba8f76b0d32ce7f1dc433a4f8ededb45691a7ad7bee208"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-model-host-boundaries.md",
+    "sha256": "93c87de3a67b16f8c68ba14ccf60f81866cdf7fd07c66931c768db09f74c9acc"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-operator-regressions.md",
+    "sha256": "abf2c9fab4992f52d66f91e91b7e341b7f2d945d7b75d976ae119137877c6323"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-product-api-request-bodies.md",
+    "sha256": "7f3d6ecc7dd1baf16c3b076f5b9f79e2a10aebd07598ec8df1b9fdbf8e9bbab1"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-provider-session-regressions-918838.md",
+    "sha256": "4cc9e04b500db0744cb72f32f76a9864901588d7999a9d3ce0bc74d3e669b0da"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-registry-validation-451826.md",
+    "sha256": "9861a3a4c4156d2e21aef39b4f2b3eafd6366f0b26f79411e5ed76e714e4fa17"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-rpc-297245.md",
+    "sha256": "15b1e5e2778376f9991063976f1fb7bd32bb48ad5c2a16a01009680a950adb9e"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-ui-chat-regressions.md",
+    "sha256": "aa65bacc80e25abfdbcae9e398da14ec20f74a024be12d4f7826d440c0779407"
+  },
+  {
+    "path": "apps/mvp/docs/work/mini-ui-regressions-468582.md",
+    "sha256": "3b0ea80b1d73b3f6c0e834cb4f76041dad6f3e1b262d98792dc6e87ff846adf9"
+  },
+  {
+    "path": "apps/mvp/docs/work/mirror-freshness.md",
+    "sha256": "2b8551e1ab91fc42e8a119e4d49486b67c5afd92c886fa8e9ceff7bd29b3cb87"
+  },
+  {
+    "path": "apps/mvp/docs/work/mobile-responsiveness-sweep.md",
+    "sha256": "31c25c662e34172c2e41220e64d0552d31b38c5395ac8db71dcfad08ccf21afa"
+  },
+  {
+    "path": "apps/mvp/docs/work/mobile-taps-2.md",
+    "sha256": "87fe084d9640d06f7ccee7cfec3b5e82269b72626def4b062f63753128c2a2fe"
+  },
+  {
+    "path": "apps/mvp/docs/work/mobile-taps.md",
+    "sha256": "8603667ad998cd3f832d7024d5ca590fd38c83f91c5d55d002f85d15fe4460fa"
+  },
+  {
+    "path": "apps/mvp/docs/work/mobile-w8.md",
+    "sha256": "c94934b942ab212179583d527384e9e36629075d3e95e3a26b38b4d4f3a04e15"
+  },
+  {
+    "path": "apps/mvp/docs/work/model-budget-recovery.md",
+    "sha256": "9b8feb01e3f672a320173025878a4d73e157f007b479efb4e7858b252705937b"
+  },
+  {
+    "path": "apps/mvp/docs/work/model-calltiming-host.md",
+    "sha256": "fa7cc3d39d50f86dc0ba9b9d0475c4629fab6e7d0e5ffe72f87025b1953ddb57"
+  },
+  {
+    "path": "apps/mvp/docs/work/model-connections.md",
+    "sha256": "eb37b86f9027a73956e5407dd5ff5069f98641f107cd2b145a75a88c2352d805"
+  },
+  {
+    "path": "apps/mvp/docs/work/model-endpoint.md",
+    "sha256": "aca51a85db2963da915d467cd3e8e596790ba2e644b58cc5e0aa23b1eb3b0843"
+  },
+  {
+    "path": "apps/mvp/docs/work/model-evaluator-rework-349375.md",
+    "sha256": "098ea84d5962d1f23a3d4ba99dfdb7c7157e587ad9f459382504e622d8f7b67d"
+  },
+  {
+    "path": "apps/mvp/docs/work/model-host-effect-boundary.md",
+    "sha256": "d39efcea75056a38ae9fe51477157566975dff1c17c4e634a56120550635d8de"
+  },
+  {
+    "path": "apps/mvp/docs/work/model-proxy-wire-boundaries.md",
+    "sha256": "64bf3ceb7c621db226d909b57338abf91b77c300527e665b51647e7d3fd894df"
+  },
+  {
+    "path": "apps/mvp/docs/work/model-source-regressions-338822.md",
+    "sha256": "01d70d15f699a1e4da4309de33e086905a605f5161a919af3fa02da4fb86c163"
+  },
+  {
+    "path": "apps/mvp/docs/work/model-step.md",
+    "sha256": "28abf76564d86a0696b68b5b0fc286ce76b1251b4a19c6aaa357f086096f3700"
+  },
+  {
+    "path": "apps/mvp/docs/work/model-tiers.md",
+    "sha256": "3ea002814b64eac42ffe9a6670d8e0bc062f6a04ae3367d287c163bebf1c6cc4"
+  },
+  {
+    "path": "apps/mvp/docs/work/model-toast.md",
+    "sha256": "604c017a803c3f5b96cff56f3cbebfa035135e66de5e836250bb496c04f0f7d9"
+  },
+  {
+    "path": "apps/mvp/docs/work/move-effectscript-repos.md",
+    "sha256": "21ecee2ad2fa61795c591cbb13ab6d74f080e024102e4f5f42f8ba2a962fe846"
+  },
+  {
+    "path": "apps/mvp/docs/work/multi-repo-writes.md",
+    "sha256": "ff7e67e65cbb735576f585a7f3789f6492d8fcd0ee0a8628d3fe4824932a8ea8"
+  },
+  {
+    "path": "apps/mvp/docs/work/mvp-independent-code-review.md",
+    "sha256": "fa638eeb539f33dbd57184f68fbf133e85fd68227ac0ab266888e94846f83363"
+  },
+  {
+    "path": "apps/mvp/docs/work/mvp-review-four-fixes.md",
+    "sha256": "41457fd7b63abba4dd6793a09721d1967c704b718be6a2561ffe4bee63dcd4f0"
+  },
+  {
+    "path": "apps/mvp/docs/work/mvp-scope-cut.md",
+    "sha256": "3154b2bb92e65fc4ba7fe970f14e0280bc456f08a91188781a4732b54940b2bd"
+  },
+  {
+    "path": "apps/mvp/docs/work/native-app-di-plan.md",
+    "sha256": "9ea500772cbff3b07b5a77e66945e0bfd2038584c737c2015c1a967ebe2e1986"
+  },
+  {
+    "path": "apps/mvp/docs/work/navcount-snapshot.md",
+    "sha256": "f8cb0c647bc12d17c320217bebad1ddaa60ae173236d600df2eb37f121911a23"
+  },
+  {
+    "path": "apps/mvp/docs/work/navigate-flow.md",
+    "sha256": "7cc781d5b43f9a27b3fc0e3811e482504874d305ca74ae86e73ae6dd1c5ee938"
+  },
+  {
+    "path": "apps/mvp/docs/work/navigation-completion-and-bounds.md",
+    "sha256": "75cb662d85631872ad18b0f839c4c5d053e6ebef9bfdf941c17695c711425560"
+  },
+  {
+    "path": "apps/mvp/docs/work/no-github-actions.md",
+    "sha256": "6ae043e45a0c65a231f9bd798004f46d82658810f2279d665210589aa5f9b2ca"
+  },
+  {
+    "path": "apps/mvp/docs/work/noconsole.md",
+    "sha256": "4dd0a04b75c14a27762072d20f2ed7979f5ddede0c01c0068461f3fb798ec24a"
+  },
+  {
+    "path": "apps/mvp/docs/work/node-host-cancel-linux.md",
+    "sha256": "00e08bde25b4ce7f52b0424170ad8d352240a20b6652abb0e4a103ef5ee09d0a"
+  },
+  {
+    "path": "apps/mvp/docs/work/nodejj-stale.md",
+    "sha256": "016020d3e581f241f9bb6cdefe67295fcddbc0293cd0dc798f61131c21888d3b"
+  },
+  {
+    "path": "apps/mvp/docs/work/notification-access-ttl.md",
+    "sha256": "709b7adfca691301a1ba6a3e277c2ee0cfe61877e2f463608c785691fc0a28b3"
+  },
+  {
+    "path": "apps/mvp/docs/work/notification-backlog.md",
+    "sha256": "0f3d4dc38c3b0ddb97ec73c9d19ae0fde84dc864d2ce793ed705833b053c802d"
+  },
+  {
+    "path": "apps/mvp/docs/work/notifications-and-live-work.md",
+    "sha256": "0e8afe1cbfbe2f1240f1e9f1ace15b08bdd5e11dda4fad755ca19a02ef4ba4e3"
+  },
+  {
+    "path": "apps/mvp/docs/work/notifications-replay-drain.md",
+    "sha256": "f2fbd6d0da11d388b04930303c0308540c4614ac2954c82dba7fe57ffd0a4b27"
+  },
+  {
+    "path": "apps/mvp/docs/work/notifications-response-access-fixes.md",
+    "sha256": "1812d19d5b1d56878a57931b8082563efa9181b8d8ab010f75e7609879b7e03b"
+  },
+  {
+    "path": "apps/mvp/docs/work/observability.md",
+    "sha256": "57ff31691dce52d1df93099b10c8cc8ac2d413db65c5bd716cc17f4b3c39a3d5"
+  },
+  {
+    "path": "apps/mvp/docs/work/obsolete-issue-triage.md",
+    "sha256": "c8182a562cd5f37845ff321a8361f0729bb34ea915008648208397eee10a1bf8"
+  },
+  {
+    "path": "apps/mvp/docs/work/offline-red.md",
+    "sha256": "0d71dff53812c74f46ddff1acff938c78e6120d72a73e2094ddd7359396cee7a"
+  },
+  {
+    "path": "apps/mvp/docs/work/old-app-context-mvp-code-review.md",
+    "sha256": "af2ab1e4a06cc40d3f62617275c05afdbca5b366fe0bab9ec4b3e6e6e7d13263"
+  },
+  {
+    "path": "apps/mvp/docs/work/old-app-feature-gaps.md",
+    "sha256": "a3848bf0b7af8391ed2f45b263362419abcba817ce65702ee2b9f265066154ad"
+  },
+  {
+    "path": "apps/mvp/docs/work/one-sqlite-one-leader.md",
+    "sha256": "fa83256f52cb80312b3852c0f0d38d6d0b458ec995cfa62dee675f51d96044db"
+  },
+  {
+    "path": "apps/mvp/docs/work/operator-github-read-tokens.md",
+    "sha256": "cdb298fc8de3e94afa333f8280864a0a4831341cd55b09ae0f20c6a41f0222a0"
+  },
+  {
+    "path": "apps/mvp/docs/work/ops-database-tls.md",
+    "sha256": "70f09efd86da6c2034b4c9fc562f7d0068da859a495b6bb876b377852ed2cf91"
+  },
+  {
+    "path": "apps/mvp/docs/work/ops-vault-checkout-catch-up.md",
+    "sha256": "e6bf4941c5da8f228a22f235185bd70601d3305bc7646e9e7f8dbee7f134932f"
+  },
+  {
+    "path": "apps/mvp/docs/work/ops-vault-history-repair.md",
+    "sha256": "de11aa8b15ee106e637189fe10d042ad73b2fb268f2c06dab37db372ad4f2c00"
+  },
+  {
+    "path": "apps/mvp/docs/work/ops-vault-preserved-conflicts.md",
+    "sha256": "73f69bb11abf6aac6ab7e340ec42cbd8cf6731e6d1d276c45699729e72f5193c"
+  },
+  {
+    "path": "apps/mvp/docs/work/ops-vault-skill-audit.md",
+    "sha256": "9e5cdde8fbc64cea0048fb44ea526abe9e6aec601406c9c95df8b8829bd294f7"
+  },
+  {
+    "path": "apps/mvp/docs/work/outbox-owner-review.md",
+    "sha256": "72c79704f03db8ebb21fc69d72405ea81bc1373b552ed60d4bcca98d3a81555c"
+  },
+  {
+    "path": "apps/mvp/docs/work/overnight-morning-report.md",
+    "sha256": "387f06d8689e57634d7c525b4329b69784393a070cf44f7399ae5279e24b6f2c"
+  },
+  {
+    "path": "apps/mvp/docs/work/package-bugbash3-agent.md",
+    "sha256": "8ba3948e46b44818f583519ed1018f117a0e0c09a88a596b43450f50db38a495"
+  },
+  {
+    "path": "apps/mvp/docs/work/package-bugbash3-cli.md",
+    "sha256": "1798066bf5c4a58dc24ea23d60b05ae1da68cf5211a06b7beec2ba56dc645ca6"
+  },
+  {
+    "path": "apps/mvp/docs/work/package-bugbash3-ui.md",
+    "sha256": "f1306dc279f8b7c7c3cafbba7f7ef0148766b9a70abe4ca8c14f3977c7a1e886"
+  },
+  {
+    "path": "apps/mvp/docs/work/package-bugbash4-cli.md",
+    "sha256": "6e326488f2c36a1c150f08ce23ee8d843f512cf2edda95c871f1a11be6f7ef2b"
+  },
+  {
+    "path": "apps/mvp/docs/work/parallel-agent-devx.md",
+    "sha256": "4ac329a01597ec83e95a696c01192e73ed6dc1775439289140166e0869066ac4"
+  },
+  {
+    "path": "apps/mvp/docs/work/patterns-alchemy-migration.md",
+    "sha256": "23982d9637a5aa225dcedf86cb7908067c2681a7c3d836d298ac9983631b7f6b"
+  },
+  {
+    "path": "apps/mvp/docs/work/patterns-review-repairs.md",
+    "sha256": "0248f9b3862709b31daecae774a828a35f4267b12e777d7f9f9ae27fc541f51b"
+  },
+  {
+    "path": "apps/mvp/docs/work/personal-chat-draft-isolation.md",
+    "sha256": "f813474b2381d2d5fe8a9fed25d2f47e2fb61a9b559d9e8b282a9844dd1d6376"
+  },
+  {
+    "path": "apps/mvp/docs/work/personal-code-flow-sandbox.md",
+    "sha256": "a95cf41c3bcc9137611d1d42d52605ba5281714aa5cf8ba463d231e82273ed15"
+  },
+  {
+    "path": "apps/mvp/docs/work/personalflows-delete-race.md",
+    "sha256": "48abca088a8cd15de9e632448b50be8a99722f0a76d7e30ca7f409ea66dd5810"
+  },
+  {
+    "path": "apps/mvp/docs/work/pierre-diffs-upgrades.md",
+    "sha256": "c32b5fba2e7c1678fbbf692f15f2bf60132c690586ee4a561daf7d45a05a3e62"
+  },
+  {
+    "path": "apps/mvp/docs/work/pierre-oss-survey.md",
+    "sha256": "635a8c9d3122fbd4825a0e69b72e8c2e139601ab38df42ae36de3b0e7e2f4126"
+  },
+  {
+    "path": "apps/mvp/docs/work/pin-message.md",
+    "sha256": "ed133dfa14bb3295a35d400d6813380ea10a244c090990677b08281d2041d98c"
+  },
+  {
+    "path": "apps/mvp/docs/work/plain-function-actions-single-effect-boundary.md",
+    "sha256": "5f60a8ba129105be115b8ddee238ae02994b28263a391c194115426a32f58726"
+  },
+  {
+    "path": "apps/mvp/docs/work/plan-identity-across-deploys.md",
+    "sha256": "dbfdc265a51c954d65f8f96c7b7d8e86ae30b71b40d92da0c3ed4439be53beae"
+  },
+  {
+    "path": "apps/mvp/docs/work/plan-identity-minified-builds.md",
+    "sha256": "089116475fb9d92f1052b21174addfe885f9d2c9e855667000c92f7137bfd185"
+  },
+  {
+    "path": "apps/mvp/docs/work/plan-rework-c659b015.md",
+    "sha256": "6fd6e9870382ea0de9cfe772538da226c36809b98cb0c9b260047173862ebd42"
+  },
+  {
+    "path": "apps/mvp/docs/work/plan-validation-175685.md",
+    "sha256": "ce2d0e71ea055c2aac081bb93e3b83d0105896af44ddd2bd01c74d4b7d2ae448"
+  },
+  {
+    "path": "apps/mvp/docs/work/planner-core-replay-ordering.md",
+    "sha256": "d91b40f9c1d77673b2e904bd4d69ccdbda146dd9b53919452dd07c9eddcebf35"
+  },
+  {
+    "path": "apps/mvp/docs/work/platform-browser-internal-regressions.md",
+    "sha256": "2bba08d860d7599fd61c922f00d4a4947c90e575922e7059f5c7aa1d59f1e20a"
+  },
+  {
+    "path": "apps/mvp/docs/work/platform-cloudflare-edge-cache.md",
+    "sha256": "16126a4fcf1a6d742c477e3b9f6c6ee03a9be98c5a7c5700076931d0ed4ca2b0"
+  },
+  {
+    "path": "apps/mvp/docs/work/platform-node-host-authority-regressions.md",
+    "sha256": "ff297c56a099d9560d6e8d8502948507c43d3bf49c4e5cec76fb96dcd58f0402"
+  },
+  {
+    "path": "apps/mvp/docs/work/platform-node-linux-reds.md",
+    "sha256": "ae508e1a1a85728c781788389519bf6ee9660220880255cb0304247b76026c6c"
+  },
+  {
+    "path": "apps/mvp/docs/work/plugin-design-extra-review.md",
+    "sha256": "a16436363a8f5752ae71e528bb8d6138c8a12eea1172f3f02bded02b2d82dd55"
+  },
+  {
+    "path": "apps/mvp/docs/work/plugin-live-snapshots.md",
+    "sha256": "7823681ee55444c2ef5c15301cc4dbcc20d1ecb2d1137ac7335af38bf6cc79e0"
+  },
+  {
+    "path": "apps/mvp/docs/work/post-deploy-api-baseline.md",
+    "sha256": "fef93533a2bdf4d1500a7887f3f486ac20056ec6ea237b339cfdb0bdc9cb6c27"
+  },
+  {
+    "path": "apps/mvp/docs/work/post-deploy-small-fixes.md",
+    "sha256": "f4b96051d5c3fcda1003f3c85ac177af7c1e8b9fca5852e5ef57ad343d7c28dd"
+  },
+  {
+    "path": "apps/mvp/docs/work/pr-review-and-merge.md",
+    "sha256": "3dda8872e46025959f962a563bddcb6df8525deeb8b6266317812787a0f300a7"
+  },
+  {
+    "path": "apps/mvp/docs/work/prelaunch-custom-domains.md",
+    "sha256": "fcf23068e809b0a8b96e622510fd20f04d6f3d7bba909ca398d55597e44a7182"
+  },
+  {
+    "path": "apps/mvp/docs/work/prelaunch-vibelang-on-smithers.md",
+    "sha256": "d40fb8bb496804371556ce10023e195848479d8f7f1d7307281b66e69289f2a1"
+  },
+  {
+    "path": "apps/mvp/docs/work/private-hosted-infrastructure.md",
+    "sha256": "35d99fc1be6f9259662c20ce04231707d23dd31555e307b688b3b49285169ffe"
+  },
+  {
+    "path": "apps/mvp/docs/work/private-repository-staging.md",
+    "sha256": "bf52a190dea9c6fcaf3b887ee13caa2fa03259cf7cff1614f2dd5cfe1aea597b"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-branch-views.md",
+    "sha256": "c6f959641a80da5847520dcefe648e395f2064f0ad4ab91e1a9d14e5773d38a9"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-ci-runview.md",
+    "sha256": "b01ca1fda6c363bca00528c7f7eddd8e436bbb6e4c61e8839fc75a2eda455d53"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-ci.md",
+    "sha256": "576d509579ada20f4075bb65517ad0817e073c9de923b3d3029e5f157006bac0"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-conversations-list.md",
+    "sha256": "c7a8e81fa85d8aff416495e3e3e9ec1d586419df8696a7b543ae151ba6f583f2"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-conversations-new.md",
+    "sha256": "a817eb6903ae4d8b7ddd492baaca79b5d3897896f640b66636e737e4388d3571"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-e2e-gaps.md",
+    "sha256": "79b6ca9188b4a9340e56cbeac08418ae6e53c25a84b7ca887d9d3c5e0a4b8a9a"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-e2e.md",
+    "sha256": "135b7869795215b0459590139bda6fd3c2ab971037f9c663d556c851d93822d8"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-file-tabs-2.md",
+    "sha256": "e1e0de6cb493352928a4edbcbcb2aa379cc9f7b61f9afe51dc30ea85a31b725e"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-file-tabs-3.md",
+    "sha256": "d429bcc3165c74d780593728dcc5d884d7a20a334dba5f0c3f05f266d2cd6150"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-file-tabs.md",
+    "sha256": "a3e0dbe92c76cf3591e4e238fb69814614e5e7331caa848cb4c42dc97b7d7209"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-flows.md",
+    "sha256": "2a01f58cd59efc499865a22af9727ab9487f111ac77d698caa09d37e925b6860"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-forms-views.md",
+    "sha256": "2ebbc8d446bf8478423e2b2a530b7fda7bb343002f85e87caeae2fb06b890b66"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-mobile.md",
+    "sha256": "18723ee27620e72a57766a402020250420b394e6fd02f1b923c954cc082346f2"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-multirepo.md",
+    "sha256": "5111a2f0d8780623ec10d0dbccccccf289a2a1ebf2d1bd70a0fb69d5dcd16f8d"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-new-branch-config.md",
+    "sha256": "3ea99d5d438801bb051f9045acddd67f71871c28abda3972548b288645ed2b3b"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-new-branch-fixtures.md",
+    "sha256": "e4667f9fc51768ec22dbcb9c351e6694f00e460cc37101b68dded295ce092e34"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-new-branch.md",
+    "sha256": "9af95bc69dd2574fb292fd55e714525c698c39662ff19e65a1ae762ad78f85bc"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-offline-queue-count.md",
+    "sha256": "d5704f3a3a9acc8fed6b3423f8cc80827ca82937459d064582990bf815cedd0e"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-pin-message.md",
+    "sha256": "c9e7fb96586f23453421bbe9b7fdfae606bf602436218851f750aa182e2b5871"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-repo-refusals.md",
+    "sha256": "1b35aea57120b7dd468805fc292188676fec0f33ceae7ca1404e035088b5ea31"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-timeline.md",
+    "sha256": "0df85cbc4cc4054309b49e937c6302be42f876d4704f7459d26d1fc826caa828"
+  },
+  {
+    "path": "apps/mvp/docs/work/prod-web-pages.md",
+    "sha256": "f444fe75e2ea0921427a88f2b475bad0e70b4dc06c53a86ac6e1dbaed7fa5d3a"
+  },
+  {
+    "path": "apps/mvp/docs/work/product-api-wrapper-contracts.md",
+    "sha256": "6477a6c3b7da3cde9ae70510ea7f269fd1d216c5eaca86f8281d15456442b6d6"
+  },
+  {
+    "path": "apps/mvp/docs/work/product-review-queue.md",
+    "sha256": "d8e1c8c8f0d291d360abe35eddd6a4ac7f6377cf051bc4508c729a11cf881879"
+  },
+  {
+    "path": "apps/mvp/docs/work/production-bug-bash-2026-10-23.md",
+    "sha256": "b24eb33600681a0149a855b0de8e63ea8b457abad922056b22ac3daeb4896819"
+  },
+  {
+    "path": "apps/mvp/docs/work/production-database-capacity.md",
+    "sha256": "28211fb28589488e4102e902c4e24283b6344a280167c6070a3f39e8b5a94cd1"
+  },
+  {
+    "path": "apps/mvp/docs/work/production-deploy-config-parity.md",
+    "sha256": "aa775aaa7237bcf6167178f9f3a77ef39e51e6b75a18f7766566e092c7acc949"
+  },
+  {
+    "path": "apps/mvp/docs/work/production-e2e-fixtures.md",
+    "sha256": "c0cfcf6b333b8127c7712b2af595387c852f4406e868edd204364c5e1ec50c35"
+  },
+  {
+    "path": "apps/mvp/docs/work/production-e2e.md",
+    "sha256": "c1ad3a5184050b6f08fc858fcbb9caf837d2ad310ba7a4fbbfa6f9eb2ff3db38"
+  },
+  {
+    "path": "apps/mvp/docs/work/production-flows-device-store-version.md",
+    "sha256": "afafce4cf409b9213f5cc162cd1fd29cc3f0d3f68de21c1f81e8d2cd83caa072"
+  },
+  {
+    "path": "apps/mvp/docs/work/production-github-app-setup.md",
+    "sha256": "86246c02c7e2feaf89410280cedf4f0f21a5c52266fcef6511acd50976d364ea"
+  },
+  {
+    "path": "apps/mvp/docs/work/production-pull-review.md",
+    "sha256": "d1c6610046450071f99084722b487626763eba640575b72f15d3209909125362"
+  },
+  {
+    "path": "apps/mvp/docs/work/production-real-model-proof.md",
+    "sha256": "f1de41000cfed372d7cf238cc0cfafea3bd5c7669bca16a4e75e8f33f07f5696"
+  },
+  {
+    "path": "apps/mvp/docs/work/production-sweep-fixes.md",
+    "sha256": "1f96dbb51e369e9b56978bbabdecf0cff2b5b01a2674bf0e85d90ba6c40c4390"
+  },
+  {
+    "path": "apps/mvp/docs/work/production-test-conversation-isolation.md",
+    "sha256": "f400acb233a342c3cb6b3b16cc7e01eb7165d31cf9b4cb39b2fa5128dbe2021e"
+  },
+  {
+    "path": "apps/mvp/docs/work/prompt-flows-are-code-flows.md",
+    "sha256": "4f2594095e8daf46595dea0b69678f8f5c3379185b687215cfc85449702f701b"
+  },
+  {
+    "path": "apps/mvp/docs/work/prompt-input-lifetimes.md",
+    "sha256": "06aa24191af270ef41830d81fe5b0b659accecbd2f01e1b43d53ac7797cdd5e6"
+  },
+  {
+    "path": "apps/mvp/docs/work/protected-action-confirmation.md",
+    "sha256": "0fb02bb925341a3be61404550e42293cee2482a95d6875ade26c8277a5c4228c"
+  },
+  {
+    "path": "apps/mvp/docs/work/protected-shape-sse.md",
+    "sha256": "654c02256c881c055a4ac26cc5106a9ec0a207aafebc8cde0e1c67c63f9efb21"
+  },
+  {
+    "path": "apps/mvp/docs/work/public-export-maps.md",
+    "sha256": "3d6694d0d5ac4eee386d59fe69ec264da96f2de92157aca82f0330cf89b2d0c2"
+  },
+  {
+    "path": "apps/mvp/docs/work/public-support-promises.md",
+    "sha256": "dee79bdc84a40a7a8b64aa51aa540fb475918e63d773d7d7030e138a1579b980"
+  },
+  {
+    "path": "apps/mvp/docs/work/publish-as-person.md",
+    "sha256": "fa8d0ffdc75aa02df54e22113afdfe855e78695560a96d6b57fad82f8bab1016"
+  },
+  {
+    "path": "apps/mvp/docs/work/pull-request-list-and-tabs.md",
+    "sha256": "dd8a8907fddc2c3c89b71ceaa171ecba7c79048978be6fcc70906db7f5ca101f"
+  },
+  {
+    "path": "apps/mvp/docs/work/pull-snapshot-readiness.md",
+    "sha256": "db4c17e80a287acdf84c523645fcde1236956696f711a63615fe60a0a4e721b5"
+  },
+  {
+    "path": "apps/mvp/docs/work/pulls-cold-device.md",
+    "sha256": "d7256b49ebd6db0dbd0f903219de9bb02a0f280add692d04c9d08db4489c4d5a"
+  },
+  {
+    "path": "apps/mvp/docs/work/pwa.md",
+    "sha256": "ae6ced9ada49e2be9bc7b25a07cee4fc5885788463304b2459c52c44ea5a0e83"
+  },
+  {
+    "path": "apps/mvp/docs/work/question-403-deployment-role.md",
+    "sha256": "62aa0b71a439bdc36240650f814282791224a988bc477c2c0217505b2ee44345"
+  },
+  {
+    "path": "apps/mvp/docs/work/queue-before-after-review.md",
+    "sha256": "edb147cb551f86ff0645229a5a6eefbcef426d96bc8927aeeb54bcab5b93a1e9"
+  },
+  {
+    "path": "apps/mvp/docs/work/queue-code-view-controls.md",
+    "sha256": "975f19ca4d1cfe56f2dba82c2e1745f17a4f2ae66fec57f379fefdaec373f512"
+  },
+  {
+    "path": "apps/mvp/docs/work/queue-general-feedback.md",
+    "sha256": "a1306ef16ca1899f8e6f32b17f023130ef8f08ba79262fddb51219f455697c1d"
+  },
+  {
+    "path": "apps/mvp/docs/work/queue-markdown-review.md",
+    "sha256": "1149edcc9d18a25f086f398ecb4ad48192d28c3ad0ed055726a80777ce68fdff"
+  },
+  {
+    "path": "apps/mvp/docs/work/queue-recorded-revision-source.md",
+    "sha256": "49fca22f874c2e31030e5a655a2c0dcef6ac292871821106a4e5ec0878ec991b"
+  },
+  {
+    "path": "apps/mvp/docs/work/queue-recorded-revision.md",
+    "sha256": "155c9e2d5f8da9a6b244cec0400a25694df1a2f4444414931e977882aeb364aa"
+  },
+  {
+    "path": "apps/mvp/docs/work/queue-review-quality-gate.md",
+    "sha256": "e85cef17a96b951914d6ef05a6731f6cde1d85d2c6f4c331488dc0c98634878a"
+  },
+  {
+    "path": "apps/mvp/docs/work/quota-fail-fast.md",
+    "sha256": "df711532e0042601c37311be7eeda585819379f3c998a044b462070e32896cfa"
+  },
+  {
+    "path": "apps/mvp/docs/work/read-token-shared-permit.md",
+    "sha256": "a2dc9273d7dde7bdfef37ef252ef345562f24e548b6323cd55be763e6b29e2b3"
+  },
+  {
+    "path": "apps/mvp/docs/work/reconcile-admission.md",
+    "sha256": "6e3f23d39c6123e8be8c38856fa71877e3e300d08327f4994ea7b1317bfaaafc"
+  },
+  {
+    "path": "apps/mvp/docs/work/recovered-device-branch-navigation.md",
+    "sha256": "c2c2af82376fb276a29eb05946eecf8c4e4d80f8abe417236c41ddde84023dec"
+  },
+  {
+    "path": "apps/mvp/docs/work/refs-dedupe.md",
+    "sha256": "4539a63b595ebb11d2bafa4a863b28189ba4de46e560723639c838d28947ede0"
+  },
+  {
+    "path": "apps/mvp/docs/work/registry-discovery-safety.md",
+    "sha256": "6620076d454c2def22878332711d818460962582a0c0cb7fc154e3f9b65c3212"
+  },
+  {
+    "path": "apps/mvp/docs/work/registry-metadata-literals-938848.md",
+    "sha256": "e867b810c0953551bff25e7ca6b61474296351368af673e9c866c99f903da384"
+  },
+  {
+    "path": "apps/mvp/docs/work/release-burn-down.md",
+    "sha256": "6869e622cead19bb13469f5785e5f7ce931155e3c8382782e9967df974f6f4bb"
+  },
+  {
+    "path": "apps/mvp/docs/work/remote-agent-placement.md",
+    "sha256": "b81d6c073f9fe9889ec60481d73251149ff6b4d081889dde045f55ac9e79f4e7"
+  },
+  {
+    "path": "apps/mvp/docs/work/repo-about-freshness-review.md",
+    "sha256": "4bfb69a73e297d1da07f57aa1763ef7d989620c4169289a2e47b45175af8bb98"
+  },
+  {
+    "path": "apps/mvp/docs/work/repo-checks-green.md",
+    "sha256": "77ce277443ef519a111ea10fbb02829e1ecf814de2c4756afb3072505bf6d35b"
+  },
+  {
+    "path": "apps/mvp/docs/work/repo-clone-and-view.md",
+    "sha256": "c3da8f239e7a0913d2efe23f9efd44bdae90a68550144c8371ae09db7b55aeeb"
+  },
+  {
+    "path": "apps/mvp/docs/work/repo-clone-reclaim.md",
+    "sha256": "3933de9ab57c9e3eeae3e67ba4ab382bfa330f9b7d9e7803c3939ce8d5133533"
+  },
+  {
+    "path": "apps/mvp/docs/work/repo-follow-ups.md",
+    "sha256": "ee11f9c7322d13887ab9f9509a2881ca497521a0e021da69f4c912c96061fb4a"
+  },
+  {
+    "path": "apps/mvp/docs/work/repo-open-states.md",
+    "sha256": "29b77f9a203a55af77dc96525f999e9f691e3d05f3888298545f1ceff387b7e6"
+  },
+  {
+    "path": "apps/mvp/docs/work/repo-pages-header-and-locators.md",
+    "sha256": "1aa36138bc50177aeb27a9a01d73d99feb83077aaeca08b2aa05b37f5bac42b0"
+  },
+  {
+    "path": "apps/mvp/docs/work/repo-pages.md",
+    "sha256": "3b52a546d523a56909d2eff53d1c502adaffd6cd68aa656317e12ad3cbbd31db"
+  },
+  {
+    "path": "apps/mvp/docs/work/repo-refusals.md",
+    "sha256": "3a2b06a426d91c2b6ac51cf64d28b9a327992916bc724347fad35a27a84d9363"
+  },
+  {
+    "path": "apps/mvp/docs/work/repo-view-branches-raw-clone.md",
+    "sha256": "941c16a5ddf21478faf8af6870dacb9285172f8423de72d433d1b3753d731c4b"
+  },
+  {
+    "path": "apps/mvp/docs/work/repo-view-package-split.md",
+    "sha256": "1ac2dac79765aac315047000e185796ef4c5c66e9e7357d53521dc236fbde7eb"
+  },
+  {
+    "path": "apps/mvp/docs/work/repo-view-vibelang-grammar.md",
+    "sha256": "f78528c36143961a6670967200ec89487fed088073cccf0493604282618b8957"
+  },
+  {
+    "path": "apps/mvp/docs/work/repository-access-feed-reads.md",
+    "sha256": "d9d9b2afad7952dc7b844ebbedf64b59912439a394e3e8f4ee4dbc5388b37357"
+  },
+  {
+    "path": "apps/mvp/docs/work/repository-access-handoff.md",
+    "sha256": "52d8b61ca3280f971e7cbd290f131230cddb8a25065939a3885739f30ffd5405"
+  },
+  {
+    "path": "apps/mvp/docs/work/repository-access-installation.md",
+    "sha256": "79632b8d27c211386db382a60536221891f7e141bbdc3c01efe17118f6deee8a"
+  },
+  {
+    "path": "apps/mvp/docs/work/repository-access-notification-writes.md",
+    "sha256": "dbb9a89659b5f9d8eb4e77411bc9395baaed1aeeaed016ec456650edb1f53fab"
+  },
+  {
+    "path": "apps/mvp/docs/work/repository-access-stale-roles.md",
+    "sha256": "7f58f0033f88417ad6a26ff25c5b846b5fe5bf5ec197d3bdf8734df64e4cc31c"
+  },
+  {
+    "path": "apps/mvp/docs/work/repository-declared-home.md",
+    "sha256": "c1a6f6a87933bc1c7911b0f7cedff8bd0d7d6c491218e5e97c25281066ed3453"
+  },
+  {
+    "path": "apps/mvp/docs/work/repository-home-copy-navigation-fixes.md",
+    "sha256": "8d2f418c4068b4f7e50a3355a3d0d9de663eef0fcd617219629c169324335747"
+  },
+  {
+    "path": "apps/mvp/docs/work/repository-home-role-switching.md",
+    "sha256": "9f34441df3f1a251e7f12366dd2ad7e838640ee0dccb97f664617505e37ffdcf"
+  },
+  {
+    "path": "apps/mvp/docs/work/repository-role-isolation.md",
+    "sha256": "b53246a489daa777d33cff0fccb3f898044aea4fda763f47b95db54a9023ff22"
+  },
+  {
+    "path": "apps/mvp/docs/work/repostore-required.md",
+    "sha256": "35c4b99d12bf0cee75052928192e55d71cba5e34b57ae8a632797114e719d572"
+  },
+  {
+    "path": "apps/mvp/docs/work/review-requests-and-revisions.md",
+    "sha256": "1e73abc914933beb5678cd5fe58aa57ca10b23cd17b7f2ae0275cd51ad1c9a6f"
+  },
+  {
+    "path": "apps/mvp/docs/work/review-round-4-p3-cleanup.md",
+    "sha256": "9191896df0a783eb59c37e8a687d3654eb6b928e7e3802f65055733dbfc3de5e"
+  },
+  {
+    "path": "apps/mvp/docs/work/review-round-4.md",
+    "sha256": "9c786ad368809768d1a78bbc8786afb051178af5fa189a48f51412710fef7f7b"
+  },
+  {
+    "path": "apps/mvp/docs/work/reviewfeed-round4.md",
+    "sha256": "f4bff91ed883024bff04d1e7b1bd9e1d0c8235907e9db2e400048dce4980d0be"
+  },
+  {
+    "path": "apps/mvp/docs/work/reviewfeed-round5.md",
+    "sha256": "2a56ba6f92877d409ce559bd328afb1963662f12f48ec4b92239abb4d0637797"
+  },
+  {
+    "path": "apps/mvp/docs/work/reviewfeed-six-fixes.md",
+    "sha256": "7d9eed9c9cd523e8c42a782382c890945441cda2c8947b8680177ba5178153d6"
+  },
+  {
+    "path": "apps/mvp/docs/work/rework-0ea193cb.md",
+    "sha256": "b1627d8f559ad3b498c52fc35ed8c849c2e8036834a67395ff6f9aaa0470e0a6"
+  },
+  {
+    "path": "apps/mvp/docs/work/rework-be74787a.md",
+    "sha256": "f290525427f7db0110452ca3fabfc109455336df7ac95512b3c2541e19739b5b"
+  },
+  {
+    "path": "apps/mvp/docs/work/role-refusal-diagnostics.md",
+    "sha256": "394204a39ebc99cdbd76b94f76c2ff72d51735f0b8b8e664f9aaa11f9bafeeb2"
+  },
+  {
+    "path": "apps/mvp/docs/work/roles-and-labels.md",
+    "sha256": "4e31ad0d469332f7a1e267e29a3a794df2060ed54626cf91bdec0558acdbd9a3"
+  },
+  {
+    "path": "apps/mvp/docs/work/route-ban-any-receiver.md",
+    "sha256": "cbcf2ba14aff3cb28d45eaf4f93e3053005df91f5e9596b6925ed1a9d371c206"
+  },
+  {
+    "path": "apps/mvp/docs/work/rpc-decoding-regressions.md",
+    "sha256": "7b1382f7e47a14d47087dc0e113e25c02b6fd6706143b05cfdc06894bb6d6e93"
+  },
+  {
+    "path": "apps/mvp/docs/work/run-admission-access.md",
+    "sha256": "e3a1c27d10fdf30c9fdf34d5b3980a1ce995d226ff148c9debd1996732f88bef"
+  },
+  {
+    "path": "apps/mvp/docs/work/run-change-feed-progress.md",
+    "sha256": "e0cd2f69c239e0ed5bdda0276998703f685792bc34eadab37ef9237ef548a57e"
+  },
+  {
+    "path": "apps/mvp/docs/work/runs-navigation-hover-crash.md",
+    "sha256": "26a7fb3cd36751b62dd066c7de9e40a974b08aecc776df896af8bd155e922b79"
+  },
+  {
+    "path": "apps/mvp/docs/work/runs-show-limit.md",
+    "sha256": "5f38ee9639cf860468bbf0661522aa91e4fe134c0b72689269e6923dbc63a903"
+  },
+  {
+    "path": "apps/mvp/docs/work/runtime-phase-timing-regression.md",
+    "sha256": "ca9fcb139ce3c9aad2c4e1d7c3b8c495781eef2eed4f3786ea01a8fe00ce23e8"
+  },
+  {
+    "path": "apps/mvp/docs/work/sandbox-budgets.md",
+    "sha256": "582dd8441648c326029be7c513787b412e470f4ebb0b1cfba194f0f5a3365cdf"
+  },
+  {
+    "path": "apps/mvp/docs/work/sandboxes.md",
+    "sha256": "a3b9d1c2fa1d2dfdfc4dad83f06c45c165ebe99a799e349493fc66f5f7e7ad56"
+  },
+  {
+    "path": "apps/mvp/docs/work/scorers-durable.md",
+    "sha256": "951e109bf2031d1fe159513fc198198921e63c8e7ab9fc3924d6fff00a8f3b2d"
+  },
+  {
+    "path": "apps/mvp/docs/work/scratch-branches.md",
+    "sha256": "e20c4c3238d6b612b47f91a2adede9af7b75e8aef58db0992352ee91a46bab32"
+  },
+  {
+    "path": "apps/mvp/docs/work/sdk-cleanup.md",
+    "sha256": "0d943114ec8d695e2fabb3c12e12d43728295ba5207feb119d1db6cffa3fc532"
+  },
+  {
+    "path": "apps/mvp/docs/work/sdk-test-reds.md",
+    "sha256": "252c308a383e23d73d8ca3e39106ed988b782212243d15dad1dc2d8fee47861b"
+  },
+  {
+    "path": "apps/mvp/docs/work/search-cold-budget.md",
+    "sha256": "cb5a39c274c1d9e8f83ed91ed191df10a7618bbbc3868a55421d4f39ffcdbc1e"
+  },
+  {
+    "path": "apps/mvp/docs/work/second-build-machine.md",
+    "sha256": "ea1dc2308f7f0230fdc091be32a3e9a13bc47edc6016b856305e1041cf11ee6b"
+  },
+  {
+    "path": "apps/mvp/docs/work/secrets-proxy.md",
+    "sha256": "e8d293d26fa451c1e32e34e8ac1565a3c412e456ed8bf9310b39940842ad3d2a"
+  },
+  {
+    "path": "apps/mvp/docs/work/self-host-install.md",
+    "sha256": "83e50d7d1299029ad108ea035718e996d2271dde70d716b0c7f295676f6872a5"
+  },
+  {
+    "path": "apps/mvp/docs/work/self-hosted-grafana.md",
+    "sha256": "171625408d56c969cfc08bc0ac7d5dc0111724a86f996243e60391ea25202c65"
+  },
+  {
+    "path": "apps/mvp/docs/work/server-hardening.md",
+    "sha256": "591229db880fbd8564881790b88e573ee26a27f8476526f016ae4d6653ec4d9f"
+  },
+  {
+    "path": "apps/mvp/docs/work/settings-screen.md",
+    "sha256": "eb54d89e3d580f76b857cb4a76c0a5488b400b0a93ec94c722307d66e6fe0c7c"
+  },
+  {
+    "path": "apps/mvp/docs/work/shape-400.md",
+    "sha256": "af1fecc6ee8e627397790b9932f3fcbb0eb25b77842b13dbcd05297596a9ecc8"
+  },
+  {
+    "path": "apps/mvp/docs/work/shape-demand.md",
+    "sha256": "451497bce14082635abd5debe40bb6e78528f85380b3a2e4d1992e220e0cd55b"
+  },
+  {
+    "path": "apps/mvp/docs/work/shape-reason.md",
+    "sha256": "0c4e7be1319f0439b1528e8a89217f2ffce17bf186cad2459a6314eea8323515"
+  },
+  {
+    "path": "apps/mvp/docs/work/shape-recovery.md",
+    "sha256": "084ac8e5a0124199e55d1f8bcf1935e86b86ffe00dad0049d697db0f31aedc6a"
+  },
+  {
+    "path": "apps/mvp/docs/work/ship-acceptance.md",
+    "sha256": "f2230293041723dcfeaccfc373addcd6bd31418397b36b8c359b9293c1c881ec"
+  },
+  {
+    "path": "apps/mvp/docs/work/ship-stale-tests-2.md",
+    "sha256": "d99e71b597f1ac28a91367343414a7ec0a443d7138d2210ba47ebc58523149eb"
+  },
+  {
+    "path": "apps/mvp/docs/work/sign-in.md",
+    "sha256": "05f240afc75cef280d3b3c22c6777293884ec4db61baac508fc7d6d196f8eabb"
+  },
+  {
+    "path": "apps/mvp/docs/work/signed-out-shapes.md",
+    "sha256": "dbcfcec3bef0282f4bc03505347684bba67993fe8e46b34e18862fb5a55df100"
+  },
+  {
+    "path": "apps/mvp/docs/work/site-deployment-test.md",
+    "sha256": "274281928488983020e18b5d22aa313bb7ba44d66b8cacdb10237d0dccb7290a"
+  },
+  {
+    "path": "apps/mvp/docs/work/site-support-matrix.md",
+    "sha256": "51d7b413133bfd71eda0fae059a196de27081531e44e49cb0318125759952a4b"
+  },
+  {
+    "path": "apps/mvp/docs/work/slash-commands.md",
+    "sha256": "66fe64f32e97a4908a80f871cde7db5fa08b1c476e63dc856a49b8c34d848e54"
+  },
+  {
+    "path": "apps/mvp/docs/work/smithers-factory.md",
+    "sha256": "ec2611bda390cb7eae9831dddcdc122c594835eb5eca819d00b52fca6ae843c5"
+  },
+  {
+    "path": "apps/mvp/docs/work/smithers-playground.md",
+    "sha256": "bab8abe5f717d1328ae7cfc212d641b74c4a43eb31141f141c8a36294405f280"
+  },
+  {
+    "path": "apps/mvp/docs/work/smithers-sh-cutover.md",
+    "sha256": "8fc32c8a46b5bac6be0551868c2ec5fc25ac40219ccf3ae807ff15ae6d306f8b"
+  },
+  {
+    "path": "apps/mvp/docs/work/social-preview.md",
+    "sha256": "46eb5bfacda8d72507e62bb6c9029608e0afbf4d50a07998af346337839682d7"
+  },
+  {
+    "path": "apps/mvp/docs/work/sol-test-flakes.md",
+    "sha256": "632e4ece8d2843a32443b8d49e2fe46c1d87f050a389059ba5dfdf222d948bc2"
+  },
+  {
+    "path": "apps/mvp/docs/work/ssh-into-a-branch.md",
+    "sha256": "6375881bf25d8629d65b05c740e3dea0b8c0574d4bfe2dbe1c4930f226264bd8"
+  },
+  {
+    "path": "apps/mvp/docs/work/stack-switch-postgres-electric-tanstack-db.md",
+    "sha256": "b45891a8a63b6066c700a2f5dfef5b956937f547d7fa753cb44b914e5e1a0e74"
+  },
+  {
+    "path": "apps/mvp/docs/work/stale-production-specs.md",
+    "sha256": "73fb6e48098a34baeb16607d6daca7efb2c9e98998ad2b73e850916f49d584b0"
+  },
+  {
+    "path": "apps/mvp/docs/work/stranded-commits-smithers.md",
+    "sha256": "506a8766a426dda6825a2099382522ecb5adcf4c6f1bf983f590ee670826a083"
+  },
+  {
+    "path": "apps/mvp/docs/work/stranded-commits.md",
+    "sha256": "41aa5b55aca85f63dba9f080421d331db9f1a9437584df8dc0c92129ca6d393d"
+  },
+  {
+    "path": "apps/mvp/docs/work/suggest-confirmed-bugs-057045.md",
+    "sha256": "b79889f5c6c0c6871c314615ee518c3e099c17f9bb956d6396c47297d3515ef6"
+  },
+  {
+    "path": "apps/mvp/docs/work/sw-update.md",
+    "sha256": "f65fde7fdda5880e75234f2ed86a19386fcfe27bf5973279159550e7e3b8a701"
+  },
+  {
+    "path": "apps/mvp/docs/work/sync-service-di-test-seam.md",
+    "sha256": "dea6d4edfa6277334c8308bd78a19b927a0f5c4b9d829bd3f6b1d78b5dfc4bea"
+  },
+  {
+    "path": "apps/mvp/docs/work/telegram-lead-contact.md",
+    "sha256": "23caf77048d26cec36e356560f431ed83c1ce7bfa752e5e9cc568055a86ef858"
+  },
+  {
+    "path": "apps/mvp/docs/work/telemetry-gaps.md",
+    "sha256": "22df03dd0d3178cae2e68950c1c4e885555cbd7d39e5349c17b53e216e502ea4"
+  },
+  {
+    "path": "apps/mvp/docs/work/temporary-directory-leak.md",
+    "sha256": "ba69a4375e95d64121cb8a1cdd137d14c1824930111b44ed3c86a53bb8f2114e"
+  },
+  {
+    "path": "apps/mvp/docs/work/terminal-frame-decoder-bounds.md",
+    "sha256": "58609da169e01304bba3e09e064831e603ce25870ca4059053b72dda7bc6a2de"
+  },
+  {
+    "path": "apps/mvp/docs/work/terminal-input-frame-budget.md",
+    "sha256": "bed4915b06b9ffceda1ff4868b76021bff4222f1e6fb58bf6bbffcc2b8df3ef8"
+  },
+  {
+    "path": "apps/mvp/docs/work/test-budgets-validation.json",
+    "sha256": "04edb69c5deba8f7ca596849de7c951ae92c8bf33b5ff7a9f7308431e0cf83ac"
+  },
+  {
+    "path": "apps/mvp/docs/work/test-budgets.md",
+    "sha256": "eaf1fdb042d77c0b9ab99231170c56c6d72f0e3ccc89f886b743dec7f1917ca7"
+  },
+  {
+    "path": "apps/mvp/docs/work/test-runner-background-errors.md",
+    "sha256": "b1116fc5ef22d20841ab05252da90b760ad07ea52c4c028b20fcc17002735aa5"
+  },
+  {
+    "path": "apps/mvp/docs/work/test-schema-reap.md",
+    "sha256": "1a8c326f113c6c5080d8272cbfdad34459893ff4260cc96dc36c48a5a08a150b"
+  },
+  {
+    "path": "apps/mvp/docs/work/test-temp-leaks.md",
+    "sha256": "d215f58e3320aac04380857c101656ec8f89a0c71c1097349a180c01fcea8313"
+  },
+  {
+    "path": "apps/mvp/docs/work/tevm-ci-security.md",
+    "sha256": "34397309388a591c06495edb6592acd97606a2213b147dab0f4e8e08d24e6e24"
+  },
+  {
+    "path": "apps/mvp/docs/work/tevm-remove-nx.md",
+    "sha256": "5accb6eb2193d1453a4747f69ebb6b8be4e297d08d4eeb034d2f6d758cb553b6"
+  },
+  {
+    "path": "apps/mvp/docs/work/theme-button-regressions-465050.md",
+    "sha256": "59e9c32f1852e294cfd218e2f28174d4d95aacdfd4d563875d5465cd7106b07f"
+  },
+  {
+    "path": "apps/mvp/docs/work/time-travel-evidence-586651.md",
+    "sha256": "8492a2da63bc909e65ec3aee0df6c1fba1be6a2372176fbcd1be23a98bc1f96a"
+  },
+  {
+    "path": "apps/mvp/docs/work/time-travel-fork-intent-review.md",
+    "sha256": "9f94de108176979cf317e9f5f4457e30bef3df397fcede366b66524a8c101e0e"
+  },
+  {
+    "path": "apps/mvp/docs/work/time-travel-generation-evidence.md",
+    "sha256": "1c23bfd31af1bc40bccb475d9c7a8400bb8bb7c726dd692072298bcb7e73ff8d"
+  },
+  {
+    "path": "apps/mvp/docs/work/time-travel-review-repairs.md",
+    "sha256": "327c020d69ec2cd5e5445501c76dbbaf06ff952a97a6204a8fc694320c9bbf0a"
+  },
+  {
+    "path": "apps/mvp/docs/work/timeline-geometry.md",
+    "sha256": "1f4df6604676bf396ae6484e09157ed0a2589d434e80fe39a19dc61b390cec52"
+  },
+  {
+    "path": "apps/mvp/docs/work/timeline-info.md",
+    "sha256": "7a34fee080ae557f572b288d5cc9a719b2a99c5dccc1bc77bc3f9825ca769f05"
+  },
+  {
+    "path": "apps/mvp/docs/work/timeline-logic.md",
+    "sha256": "60038b409547af860b901dd96cb7f45930620a0cf371b8e788e31089a83999d6"
+  },
+  {
+    "path": "apps/mvp/docs/work/timeline-rail.md",
+    "sha256": "b9a214a42c4fa71716bd73cf7dfb583200ca1bf423c8e8685ca47961c0142d8b"
+  },
+  {
+    "path": "apps/mvp/docs/work/timeline-wheel-follow.md",
+    "sha256": "e76a4edde806afa51744a3b0f7cbff4cd7de3c0347f72f5b04eb3f4277fe0659"
+  },
+  {
+    "path": "apps/mvp/docs/work/timeline-wheel.md",
+    "sha256": "6870442b6c679856600dcae90e5bf8a9a3e335281ddd92c6e13fd65cb50f45bb"
+  },
+  {
+    "path": "apps/mvp/docs/work/toast-actions.md",
+    "sha256": "096546cde0fe73618f31cd8f0d4716cf7d25a814283544672db1da8d19aad9c6"
+  },
+  {
+    "path": "apps/mvp/docs/work/toast-overlap.md",
+    "sha256": "9513c6394f49c276c93d4a2272044b78e40a1c889b66d3626552d2e4a6ddd56a"
+  },
+  {
+    "path": "apps/mvp/docs/work/toast-place.md",
+    "sha256": "b97bc720aeb470c6dd0bd088a0b1d2c4aff334948f4b1a82b292d26b29f4538e"
+  },
+  {
+    "path": "apps/mvp/docs/work/todo-active-run-view.md",
+    "sha256": "54725a04579ba58037f1be6a37880b24dad4fbac47e774f478795c4d079eacf6"
+  },
+  {
+    "path": "apps/mvp/docs/work/todo-boundary-regressions.md",
+    "sha256": "5ab366ece3e492bf1bf1ad8043c1ab7709e0a6cd7b85fd71320ae92191f9e08c"
+  },
+  {
+    "path": "apps/mvp/docs/work/todo-production-start-latency.md",
+    "sha256": "01c98ceb0ad21e6e1657cbb81949129a5343eb8af3bf5cf3e08cfd73be7a2d4d"
+  },
+  {
+    "path": "apps/mvp/docs/work/todo-publish-commits.md",
+    "sha256": "7468c283d1880b9be51056504549dafc4ea224d475885ff7e2de4e2b77bc1b97"
+  },
+  {
+    "path": "apps/mvp/docs/work/todo-retry.md",
+    "sha256": "5cb86763c832d1c409c57cf637baac5d192d8b125976ec33403ace89d42893a6"
+  },
+  {
+    "path": "apps/mvp/docs/work/todo-run-start.md",
+    "sha256": "d5ee274fa7f030399d7e18cd2e8ef3b3c50173101d0561f5c27391aacbb4d9a4"
+  },
+  {
+    "path": "apps/mvp/docs/work/todo-stack-hold.md",
+    "sha256": "9aa071f810f45c108b8e00257312049543faa7e7f68a1f623e456ff5fba12bb0"
+  },
+  {
+    "path": "apps/mvp/docs/work/todos-and-stack.md",
+    "sha256": "b762a9e9343ec78a388a17e53617efa0945268db671a6edd2f56847487c640e5"
+  },
+  {
+    "path": "apps/mvp/docs/work/todos-draft-commit-drop.md",
+    "sha256": "34f79d05dc9fe49cf9abacdba0a4fafd63023ab7145444895981b09925ef3126"
+  },
+  {
+    "path": "apps/mvp/docs/work/token-spend-alerts.md",
+    "sha256": "0b3398681025474b5070837cd35d7bf1ca8066d926980e4a723431765f0eaa95"
+  },
+  {
+    "path": "apps/mvp/docs/work/trackc-fix.md",
+    "sha256": "2d565660aaedb1e0a37d6f2fe7033fc8679fb1dcbd833ef93529fbde656eb243"
+  },
+  {
+    "path": "apps/mvp/docs/work/triage-label-race.md",
+    "sha256": "9b8b6e3029424c78dfdb16a4e294c03f04f7fe14edd5a4612c1a03298d5ae652"
+  },
+  {
+    "path": "apps/mvp/docs/work/ui-input-regressions.md",
+    "sha256": "e82548787c59f72e0e1599dc1ab700006ae209e1074b2948e930cec2775afd10"
+  },
+  {
+    "path": "apps/mvp/docs/work/ui-polish.md",
+    "sha256": "1f722eb771d572bcbf27e4677dd251a1292be8d9e1ba90544863d4b6d15406b1"
+  },
+  {
+    "path": "apps/mvp/docs/work/vibelang-0-0-2-publish.md",
+    "sha256": "3029a7f8ce04c041d62f391db2ccd594d1ba60f7620247b5515ec039fb3b0e77"
+  },
+  {
+    "path": "apps/mvp/docs/work/vibelang-coding-factory.md",
+    "sha256": "cd51b02a03c028a626a63964148866abd51dfd251add0f120b3f9c81c5fffe4c"
+  },
+  {
+    "path": "apps/mvp/docs/work/vibelang-generated-docs.md",
+    "sha256": "24e9b9c1795a5318ce420774dd3f61dea2befedcf8d4fb3db84635555e0d2b2e"
+  },
+  {
+    "path": "apps/mvp/docs/work/vibelang-package-migration.md",
+    "sha256": "4c044668222a04f7156fe8b4373ec0cffb862ffd5acd7fa8e874ea75bc745750"
+  },
+  {
+    "path": "apps/mvp/docs/work/vibelang-release-docs.md",
+    "sha256": "e3eb0eae22f791e041ac34913dc8bf09f5d81e35c222b264672890cc72a679dc"
+  },
+  {
+    "path": "apps/mvp/docs/work/vibelang-website-continuity.md",
+    "sha256": "e7f17579f08c52583149f359f991e976ff4aae440803a0dfd58762edbc2ccf18"
+  },
+  {
+    "path": "apps/mvp/docs/work/views-checker-security.md",
+    "sha256": "95651b490e043b6199f53cf875065ca3f1ac58ca232155850c08b8b9ba8be93c"
+  },
+  {
+    "path": "apps/mvp/docs/work/views-concurrency-fix.md",
+    "sha256": "facfeddeb6ef256a4f913515bd734bdcb57b6b133e0ebfa964043417b975347b"
+  },
+  {
+    "path": "apps/mvp/docs/work/views-input-boundaries.md",
+    "sha256": "5ba5c7f77b318cfbbb2f62d89a0d3596d7ee06f073198ec1e11f487658401f68"
+  },
+  {
+    "path": "apps/mvp/docs/work/views-public-release.md",
+    "sha256": "3f580fa0c0876922380fe95ccfe88e46dab2eaa417d6948d157e3c27fb1b2f21"
+  },
+  {
+    "path": "apps/mvp/docs/work/visitor-about-quota.md",
+    "sha256": "cce8ab75ce4ddc109245b8437e41adf8bd770d4057809955c1051d2506766864"
+  },
+  {
+    "path": "apps/mvp/docs/work/visitor-blob-loading.md",
+    "sha256": "8c0fcfca411047f2768563cc29ff96846c794abbadb10e47c4f1cae0c987f27d"
+  },
+  {
+    "path": "apps/mvp/docs/work/visitor-credential.md",
+    "sha256": "5e14a9d0c708189ce6859a88a4242f33de3045294971525dec50dad1fbb12a87"
+  },
+  {
+    "path": "apps/mvp/docs/work/visitor-locator.md",
+    "sha256": "a05f28c2bfdc166ae034a2b655bb054d2b5a54de99d138b5738c759f0e448045"
+  },
+  {
+    "path": "apps/mvp/docs/work/visitor-mobile.md",
+    "sha256": "2e9fe7af9d09a06091635ece79b46405b4a43f1d44f5722f4154c0651b6146ab"
+  },
+  {
+    "path": "apps/mvp/docs/work/w12-followups.md",
+    "sha256": "843a9a1e6c39aaffba57ce33349364845c458e1130c723c93001e7c38cc34108"
+  },
+  {
+    "path": "apps/mvp/docs/work/w13-followups.md",
+    "sha256": "9674568907d7876bab9e10f8aeb17597b0190b9e912eb2d2b80ac20cfe60e42e"
+  },
+  {
+    "path": "apps/mvp/docs/work/w14-followups.md",
+    "sha256": "1fa4a54f491d01dbc0b3897b48c8fe86fc3326d879afb09de5526d043925026c"
+  },
+  {
+    "path": "apps/mvp/docs/work/w14-writes.md",
+    "sha256": "9a59089e7886fbdf537faf9da20727cb21f7e4ab474670fc8290be4b8ca82555"
+  },
+  {
+    "path": "apps/mvp/docs/work/w15-webkit.md",
+    "sha256": "4a53358dc5b3a2d42574e3e922b63978d02fe9852dcd4447e99ae88386db0516"
+  },
+  {
+    "path": "apps/mvp/docs/work/w17-private.md",
+    "sha256": "e3d67c1d4c84e3e3a494e5027a1ede33c9bb98c12c7a6b22d00e8767245e7f1e"
+  },
+  {
+    "path": "apps/mvp/docs/work/w17-ui.md",
+    "sha256": "4aa7ae2bcfbc41608b1e0ee9e4e03fb17ff1c7895cdd575f11af587ce34322c2"
+  },
+  {
+    "path": "apps/mvp/docs/work/w18-browser-engine-typecheck.md",
+    "sha256": "438a399792a49f58fdf75b9b33f73677ae5a3999fbbfae6cb64d304adf24d8ef"
+  },
+  {
+    "path": "apps/mvp/docs/work/w19-followups.md",
+    "sha256": "528c80a647e7d94500091caea2898e037da4b6bd68ea0aa6eb16f23223355f88"
+  },
+  {
+    "path": "apps/mvp/docs/work/w22-shape-503.md",
+    "sha256": "3cb1a3bf85a6efda05fd6e08e5468f3b4fb687f05af94a7a35d9eac9683d3d44"
+  },
+  {
+    "path": "apps/mvp/docs/work/w3-followups.md",
+    "sha256": "a4c8916acfc987fa71afa57b5249546fe52a399d64a0da3e6a6e095f040c19b3"
+  },
+  {
+    "path": "apps/mvp/docs/work/w9-followups.md",
+    "sha256": "120535159bdd31fc73e32b0b3d0218d59d9501d433aa8016413c93482135a858"
+  }
+]

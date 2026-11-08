@@ -271,3 +271,6 @@ export const PULLS_TELEMETRY = {
 
 /** The longest diff patch one file shows, in characters; GitHub leaves larger ones out. */
 export const MAX_PATCH_CHARS = 200_000
+
+/** A comparison belongs to one repository, including when a fork shares both commit SHAs. */
+export const comparisonKey = (repository: string, base: string, head: string): string => `${repository.toLowerCase()}@${base}...${head}`

@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Which dispatches heartbeat the run's fence. A dispatch a recorded attempt
  * answers alone runs nothing and writes nothing the fence guards, so it costs
@@ -8,13 +9,13 @@
  * `SMITHERS_TEST_PG_URL`.
  */
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { Journal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { AttemptStore, Ownership, RunStore } from "@smthrs/run-store"
 import type { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -51,7 +52,7 @@ type Services =
   | StepBoundary.Service
   | Jj.Jj
   | Scope.Scope
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
 
 const run = <A, E>(effect: Effect.Effect<A, E, Services>) =>
   withCrypto(

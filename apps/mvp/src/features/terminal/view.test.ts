@@ -69,6 +69,14 @@ describe("panelViewOf", () => {
     expect(panelViewOf(panel({ phase: "opening", terminalId: "t-1" }), [{ ...waiting, mine: false }], true)!.open).toBe("opening")
   })
 
+  test("an ended socket offers recovery while its own row still says open, without replacing another live terminal", () => {
+    const ended = panel({ phase: "ended", terminalId: "t-1" })
+    const stale = tab({ id: "t-1", mine: true })
+    expect(panelViewOf(ended, [stale], true)).toEqual({ badge: "Ended", open: "button", screen: { kind: "open" } })
+    expect(panelViewOf(ended, [stale], false)!.open).toBeUndefined()
+    expect(panelViewOf(ended, [stale, tab({ id: "t-2", mine: true })], true)!.open).toBeUndefined()
+  })
+
   // A run that died left the person's row `opening` for good: the panel gave up on it (`failed` after the deadline),
   // and its tab, still theirs, hid Open terminal, so the view showed neither a frame nor the button. ChatApi fails such
   // a row on the next open (worker/branch/Terminals.ts `admit`), so the button comes back.

@@ -1,0 +1,897 @@
+{
+  "id": "packages/smithers/flows/database",
+  "name": "@smthrs/database",
+  "owner": {
+    "declaration": "packages/smithers/flows/database/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "lint": "eslint src examples --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node ../../../repo-targets/scripts/build.mjs",
+    "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
+    "circular": "node ../../../repo-targets/scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "node scripts/test-matrix.mjs",
+    "test:matrix": "node scripts/test-matrix.mjs",
+    "bench": "vitest bench --run --coverage.enabled=false --reporter=verbose"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./DatabaseMetrics": "./src/DatabaseMetrics.ts",
+    "./DurableWriter": "./src/DurableWriter.ts",
+    "./Migrations": "./src/Migrations.ts",
+    "./UnsupportedBackend": "./src/UnsupportedBackend.ts",
+    "./index": "./src/index.ts",
+    "./node/NodeDatabase": "./src/node/NodeDatabase.ts",
+    "./test/TestDatabase": "./src/test/TestDatabase.ts",
+    "./test/SlowNetwork": "./src/test/SlowNetwork.ts",
+    "./bun/BunDatabase": "./src/bun/BunDatabase.ts",
+    "./Dialect": "./src/Dialect.ts",
+    "./postgres/PostgresDatabase": "./src/postgres/PostgresDatabase.ts"
+  },
+  "production": [
+    "eslint.config.js",
+    "examples/quickstart.ts",
+    "PACKAGE.ts",
+    "scripts/test-matrix.mjs",
+    "src/bun/BunDatabase.ts",
+    "src/DatabaseMetrics.ts",
+    "src/Dialect.ts",
+    "src/DurableWriter.ts",
+    "src/index.ts",
+    "src/internal/BunSqliteClient.ts",
+    "src/internal/CommitScope.ts",
+    "src/internal/PostgresSelection.ts",
+    "src/internal/ReadOnly.ts",
+    "src/internal/ReadTransaction.ts",
+    "src/internal/ReleasePolicy.ts",
+    "src/internal/SqliteOpen.ts",
+    "src/internal/UnsupportedDatabase.ts",
+    "src/internal/WriteLock.ts",
+    "src/internal/WriteRetry.ts",
+    "src/internal/WriteTally.ts",
+    "src/Migrations.ts",
+    "src/node/NodeDatabase.ts",
+    "src/postgres/PostgresDatabase.ts",
+    "src/postgres/QualifiedRead.ts",
+    "src/test/SlowNetwork.ts",
+    "src/test/TestDatabase.ts",
+    "src/TestSchemas.ts",
+    "src/UnsupportedBackend.ts",
+    "test/contract/DatabaseWriteContract.ts",
+    "test/faults/harness/freezeSqliteLock.ts",
+    "test/fixtures/artifact-cjs.cjs",
+    "test/fixtures/artifact-esm.mjs",
+    "test/fixtures/artifact-types.mjs",
+    "test/fixtures/bun-sqlite-client.ts",
+    "test/harness/connect.ts",
+    "test/harness/holdWriteLock.ts",
+    "test/harness/listening.ts",
+    "test/harness/tempDirectoryFixture.ts",
+    "test/WriterLock.bench.ts",
+    "vitest.config.ts",
+    "vitest.faults.config.ts"
+  ],
+  "tests": [
+    "packages/smithers/flows/database/src/test/SlowNetwork.ts",
+    "packages/smithers/flows/database/src/test/TestDatabase.ts",
+    "packages/smithers/flows/database/test/AfterCommit.test.ts",
+    "packages/smithers/flows/database/test/Artifacts.test.ts",
+    "packages/smithers/flows/database/test/BunDatabase.test.ts",
+    "packages/smithers/flows/database/test/BunSqliteClient.test.ts",
+    "packages/smithers/flows/database/test/contract/DatabaseWriteContract.ts",
+    "packages/smithers/flows/database/test/DatabaseMetrics.test.ts",
+    "packages/smithers/flows/database/test/DatabaseWriteContract.test.ts",
+    "packages/smithers/flows/database/test/DatabaseWriteContractIntegration.test.ts",
+    "packages/smithers/flows/database/test/Dialect.test.ts",
+    "packages/smithers/flows/database/test/DocsApiReference.test.ts",
+    "packages/smithers/flows/database/test/DurableWriter.test.ts",
+    "packages/smithers/flows/database/test/DurableWriterCommitFailure.test.ts",
+    "packages/smithers/flows/database/test/examples.test.ts",
+    "packages/smithers/flows/database/test/faults/harness/freezeSqliteLock.test.ts",
+    "packages/smithers/flows/database/test/faults/harness/freezeSqliteLock.ts",
+    "packages/smithers/flows/database/test/fixtures/artifact-cjs.cjs",
+    "packages/smithers/flows/database/test/fixtures/artifact-esm.mjs",
+    "packages/smithers/flows/database/test/fixtures/artifact-types.mjs",
+    "packages/smithers/flows/database/test/fixtures/bun-sqlite-client.ts",
+    "packages/smithers/flows/database/test/harness/connect.ts",
+    "packages/smithers/flows/database/test/harness/holdWriteLock.ts",
+    "packages/smithers/flows/database/test/harness/listening.ts",
+    "packages/smithers/flows/database/test/harness/tempDirectoryFixture.ts",
+    "packages/smithers/flows/database/test/MigrationBlockUpgrade.test.ts",
+    "packages/smithers/flows/database/test/MigrationPreviousNames.test.ts",
+    "packages/smithers/flows/database/test/Migrations.test.ts",
+    "packages/smithers/flows/database/test/MigrationsFileIntegration.test.ts",
+    "packages/smithers/flows/database/test/NativeBunSqliteClient.test.ts",
+    "packages/smithers/flows/database/test/NodeDatabaseConcurrentOpen.test.ts",
+    "packages/smithers/flows/database/test/NodeDatabaseGuard.test.ts",
+    "packages/smithers/flows/database/test/PostgresDatabase.test.ts",
+    "packages/smithers/flows/database/test/PostgresPartitions.test.ts",
+    "packages/smithers/flows/database/test/PostgresPooling.test.ts",
+    "packages/smithers/flows/database/test/PostgresSavepoints.test.ts",
+    "packages/smithers/flows/database/test/PostgresSelection.test.ts",
+    "packages/smithers/flows/database/test/QualifiedRead.test.ts",
+    "packages/smithers/flows/database/test/QuickstartOutput.test.ts",
+    "packages/smithers/flows/database/test/ReadOnlyDatabase.test.ts",
+    "packages/smithers/flows/database/test/ReadTransaction.test.ts",
+    "packages/smithers/flows/database/test/SlowNetwork.test.ts",
+    "packages/smithers/flows/database/test/SourceReferences.test.ts",
+    "packages/smithers/flows/database/test/TestSchemas.test.ts",
+    "packages/smithers/flows/database/test/UnsupportedBackend.test.ts",
+    "packages/smithers/flows/database/test/WriterLock.bench.ts",
+    "packages/smithers/flows/database/tsconfig.test.json"
+  ],
+  "benchmarks": [
+    "packages/smithers/flows/database/docs/benchmarks/acquisition-transport-2026-10-22.json",
+    "packages/smithers/flows/database/test/WriterLock.bench.ts"
+  ],
+  "platformPaths": [
+    "packages/smithers/flows/database/src/bun/BunDatabase.ts",
+    "packages/smithers/flows/database/src/internal/BunSqliteClient.ts",
+    "packages/smithers/flows/database/src/node/NodeDatabase.ts",
+    "packages/smithers/flows/database/test/BunDatabase.test.ts",
+    "packages/smithers/flows/database/test/BunSqliteClient.test.ts",
+    "packages/smithers/flows/database/test/fixtures/bun-sqlite-client.ts",
+    "packages/smithers/flows/database/test/NativeBunSqliteClient.test.ts",
+    "packages/smithers/flows/database/test/NodeDatabaseConcurrentOpen.test.ts",
+    "packages/smithers/flows/database/test/NodeDatabaseGuard.test.ts"
+  ],
+  "ignoredCases": [
+    {
+      "path": "packages/smithers/flows/database/test/Dialect.test.ts",
+      "line": 33,
+      "text": "describe.skipIf(process.env.SMITHERS_TEST_PG_URL === undefined)(\"deferred trigger flush\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/database/test/Migrations.test.ts",
+      "line": 605,
+      "text": "describe.skipIf(process.env.SMITHERS_TEST_PG_URL === undefined)(\"deferred triggers on PostgreSQL\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/database/test/NativeBunSqliteClient.test.ts",
+      "line": 13,
+      "text": "it.skipIf(!bunInstalled)("
+    },
+    {
+      "path": "packages/smithers/flows/database/test/NodeDatabaseConcurrentOpen.test.ts",
+      "line": 192,
+      "text": "it.live.skipIf(process.platform === \"win32\")("
+    },
+    {
+      "path": "packages/smithers/flows/database/test/PostgresDatabase.test.ts",
+      "line": 26,
+      "text": "describe.skipIf(!url)(\"PostgreSQL adapter (independent pools)\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/database/test/PostgresPartitions.test.ts",
+      "line": 38,
+      "text": "it.skip(`skipped: ${absent}`, () => {})"
+    },
+    {
+      "path": "packages/smithers/flows/database/test/PostgresPooling.test.ts",
+      "line": 44,
+      "text": "it.skip(`skipped: ${absent}`, () => {})"
+    },
+    {
+      "path": "packages/smithers/flows/database/test/PostgresSavepoints.test.ts",
+      "line": 30,
+      "text": "describe.skipIf(!url)(\"nested writes on PostgreSQL\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/database/test/QualifiedRead.test.ts",
+      "line": 62,
+      "text": "describe.skipIf(!url)(\"a lone read over PostgreSQL\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/database/test/ReadOnlyDatabase.test.ts",
+      "line": 146,
+      "text": "describe.skipIf(!url)(\"read-only PostgreSQL\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/database/test/ReadTransaction.test.ts",
+      "line": 116,
+      "text": "it.skip(`skipped: ${absent}`, () => {})"
+    },
+    {
+      "path": "packages/smithers/flows/database/test/SlowNetwork.test.ts",
+      "line": 24,
+      "text": "it.live.skipIf(url === undefined)("
+    },
+    {
+      "path": "packages/smithers/flows/database/test/WriterLock.bench.ts",
+      "line": 81,
+      "text": "describe.skipIf(!up)(`${endpoint.name} (${new URL(endpoint.url).host})`, () => {"
+    }
+  ],
+  "configurations": [
+    {
+      "path": "packages/smithers/flows/database/eslint.config.js",
+      "sha256": "dc1c2b7022d93fc55a350e552f46132bc0613b0acde1466914d0237a30293978",
+      "source": "import { packageConfig } from \"../../../../eslint.package.js\"\n\n// The shared config types and lints `src` only. `examples` get the same rules,\n// typed through tsconfig.test.json, which is the project that includes them.\nconst config = await packageConfig({ tsconfigRootDir: import.meta.dirname, bun: true })\n\nexport default config.flatMap((entry) =>\n  entry.files?.length === 1 && entry.files[0] === \"src/**/*.ts\"\n    ? [entry, {\n      ...entry,\n      files: [\"examples/**/*.ts\"],\n      languageOptions: {\n        ...entry.languageOptions,\n        parserOptions: { project: \"./tsconfig.test.json\", tsconfigRootDir: import.meta.dirname }\n      }\n    }]\n    : [entry]\n)\n",
+      "coverageDirectives": [
+        {
+          "line": 4,
+          "text": "// typed through tsconfig.test.json, which is the project that includes them."
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/database/package.json",
+      "sha256": "68ce0aa63df3668ed6bbabdbd859b38b5c44badb40fe88cf3c3242bdf5f91da8",
+      "source": "{\n  \"name\": \"@smthrs/database\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"engine\"\n  },\n  \"description\": \"A driver-neutral SQL contract with a bounded write-retry seam, plus the composed migration ladder\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/flows/database\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"effect\",\n    \"sql\",\n    \"sqlite\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"effect\",\n    \"sql\",\n    \"sqlite\"\n  ],\n  \"engines\": {\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [],\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./internal/*\": null,\n    \"./*/index\": null,\n    \"./DatabaseMetrics\": \"./src/DatabaseMetrics.ts\",\n    \"./DurableWriter\": \"./src/DurableWriter.ts\",\n    \"./Migrations\": \"./src/Migrations.ts\",\n    \"./UnsupportedBackend\": \"./src/UnsupportedBackend.ts\",\n    \"./index\": \"./src/index.ts\",\n    \"./node/NodeDatabase\": \"./src/node/NodeDatabase.ts\",\n    \"./test/TestDatabase\": \"./src/test/TestDatabase.ts\",\n    \"./test/SlowNetwork\": \"./src/test/SlowNetwork.ts\",\n    \"./bun/BunDatabase\": \"./src/bun/BunDatabase.ts\",\n    \"./Dialect\": \"./src/Dialect.ts\",\n    \"./postgres/PostgresDatabase\": \"./src/postgres/PostgresDatabase.ts\"\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"docs/\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./internal/*\": null,\n      \"./*/index\": null,\n      \"./DatabaseMetrics\": {\n        \"import\": {\n          \"types\": \"./dist/esm/DatabaseMetrics.d.ts\",\n          \"default\": \"./dist/esm/DatabaseMetrics.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/DatabaseMetrics.d.ts\",\n          \"default\": \"./dist/cjs/DatabaseMetrics.js\"\n        }\n      },\n      \"./DurableWriter\": {\n        \"import\": {\n          \"types\": \"./dist/esm/DurableWriter.d.ts\",\n          \"default\": \"./dist/esm/DurableWriter.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/DurableWriter.d.ts\",\n          \"default\": \"./dist/cjs/DurableWriter.js\"\n        }\n      },\n      \"./Migrations\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Migrations.d.ts\",\n          \"default\": \"./dist/esm/Migrations.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Migrations.d.ts\",\n          \"default\": \"./dist/cjs/Migrations.js\"\n        }\n      },\n      \"./UnsupportedBackend\": {\n        \"import\": {\n          \"types\": \"./dist/esm/UnsupportedBackend.d.ts\",\n          \"default\": \"./dist/esm/UnsupportedBackend.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/UnsupportedBackend.d.ts\",\n          \"default\": \"./dist/cjs/UnsupportedBackend.js\"\n        }\n      },\n      \"./index\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./node/NodeDatabase\": {\n        \"import\": {\n          \"types\": \"./dist/esm/node/NodeDatabase.d.ts\",\n          \"default\": \"./dist/esm/node/NodeDatabase.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/node/NodeDatabase.d.ts\",\n          \"default\": \"./dist/cjs/node/NodeDatabase.js\"\n        }\n      },\n      \"./test/TestDatabase\": {\n        \"import\": {\n          \"types\": \"./dist/esm/test/TestDatabase.d.ts\",\n          \"default\": \"./dist/esm/test/TestDatabase.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/test/TestDatabase.d.ts\",\n          \"default\": \"./dist/cjs/test/TestDatabase.js\"\n        }\n      },\n      \"./test/SlowNetwork\": {\n        \"import\": {\n          \"types\": \"./dist/esm/test/SlowNetwork.d.ts\",\n          \"default\": \"./dist/esm/test/SlowNetwork.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/test/SlowNetwork.d.ts\",\n          \"default\": \"./dist/cjs/test/SlowNetwork.js\"\n        }\n      },\n      \"./bun/BunDatabase\": {\n        \"import\": {\n          \"types\": \"./dist/esm/bun/BunDatabase.d.ts\",\n          \"default\": \"./dist/esm/bun/BunDatabase.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/bun/BunDatabase.d.ts\",\n          \"default\": \"./dist/cjs/bun/BunDatabase.js\"\n        }\n      },\n      \"./Dialect\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Dialect.d.ts\",\n          \"default\": \"./dist/esm/Dialect.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Dialect.d.ts\",\n          \"default\": \"./dist/cjs/Dialect.js\"\n        }\n      },\n      \"./postgres/PostgresDatabase\": {\n        \"import\": {\n          \"types\": \"./dist/esm/postgres/PostgresDatabase.d.ts\",\n          \"default\": \"./dist/esm/postgres/PostgresDatabase.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/postgres/PostgresDatabase.d.ts\",\n          \"default\": \"./dist/cjs/postgres/PostgresDatabase.js\"\n        }\n      }\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src examples --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node ../../../repo-targets/scripts/build.mjs\",\n    \"check\": \"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"node scripts/test-matrix.mjs\",\n    \"test:matrix\": \"node scripts/test-matrix.mjs\",\n    \"bench\": \"vitest bench --run --coverage.enabled=false --reporter=verbose\"\n  },\n  \"devDependencies\": {\n    \"@effect/language-service\": \"0.87.2\",\n    \"@effect/sql-sqlite-node\": \"4.0.5\",\n    \"@effect/vitest\": \"4.0.5\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"effect\": \"4.0.5\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\",\n    \"@effect/sql-sqlite-bun\": \"4.0.5\",\n    \"@types/bun\": \"1.4.4\",\n    \"@effect/sql-pg\": \"4.0.5\"\n  },\n  \"peerDependencies\": {\n    \"effect\": \"4.0.5\",\n    \"@effect/sql-sqlite-bun\": \"4.0.5\"\n  },\n  \"peerDependenciesMeta\": {\n    \"@effect/sql-sqlite-node\": {\n      \"optional\": true\n    },\n    \"@effect/sql-sqlite-bun\": {\n      \"optional\": true\n    },\n    \"@effect/sql-pg\": {\n      \"optional\": true\n    }\n  }\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 201,
+          "text": "\"coverage\": \"node scripts/test-matrix.mjs\","
+        },
+        {
+          "line": 203,
+          "text": "\"bench\": \"vitest bench --run --coverage.enabled=false --reporter=verbose\""
+        },
+        {
+          "line": 211,
+          "text": "\"@vitest/coverage-v8\": \"5.0.0\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/database/PACKAGE.ts",
+      "sha256": "cb949536ca3f7a1575dfcbc561b21299a5bd312c32135b20d44ec1de1a5eb4da",
+      "source": "import {\n  BuildAndCheckTypeScriptPackage,\n  ReviewDocsAgainstCode,\n  ReviewJsdocAgainstCode,\n  ReviewTagsMigrationsAndKeys\n} from \"@smthrs/repo-targets\"\n/**\n * Standard package targets.\n *\n * `cwd` anchors every emitted tool run in this package directory.\n */\nimport { Smithers } from \"@smthrs/targets\"\nimport * as Input from \"@smthrs/targets/Input\"\n\nconst { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({\n  testProgram: Smithers.file(\"//packages/smithers/flows/database/scripts/test-matrix.mjs\"),\n  deps: [],\n  sources: Input.glob(\"{src,examples}/**/*.ts\"),\n  cwd: \"packages/smithers/flows/database\",\n  tests: Smithers.glob(\"test/**/*.test.ts\", { exclude: [\"test/faults/**\"] }),\n  buildProgram: Smithers.file(\"//packages/repo-targets/scripts/build.mjs\"),\n  eslintConfigs: [\n    Smithers.file(\"eslint.config.js\"),\n    Smithers.file(\"//eslint.package.js\"),\n    Smithers.file(\"//eslint.jsdoc.js\"),\n    Smithers.file(\"//eslint.invariants.js\")\n  ]\n})\n\n/** Run the database matrix against a declared PostgreSQL service in CI. */\nconst adapterPostgresDatabase = Smithers.Docker.Service({\n  image: \"postgres@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94\",\n  env: { POSTGRES_PASSWORD: \"smithers-adapter-test\", POSTGRES_DB: \"smithers_adapter_test\" },\n  ports: { \"5432\": 55436 },\n  readiness: {\n    exec: [\"pg_isready\", \"-h\", \"127.0.0.1\", \"-U\", \"postgres\", \"-d\", \"smithers_adapter_test\"],\n    timeout: \"120s\"\n  },\n  stop: { signal: \"SIGTERM\", grace: \"10s\" }\n})\n\nconst test = Smithers.Shell.Test({\n  shell: \"cd packages/smithers/flows/database && node scripts/test-matrix.mjs\",\n  data: [\n    lib,\n    Smithers.file(\"scripts/test-matrix.mjs\"),\n    Smithers.glob(\"src/**/*.ts\"),\n    Smithers.glob(\"test/**/*.ts\"),\n    Smithers.glob(\"examples/**/*.ts\"),\n    Smithers.file(\"package.json\"),\n    Smithers.file(\"vitest.config.ts\"),\n    Smithers.file(\"//packages/repo-targets/test-utils/effect-property.mjs\"),\n    Smithers.file(\"//packages/repo-targets/test-utils/coverage-teardown.mjs\"),\n    Smithers.file(\"//packages/repo-targets/test-utils/test-process-environment.mjs\"),\n    Smithers.file(\"//packages/repo-targets/test-utils/test-schemas.ts\"),\n    Smithers.file(\"//packages/smithers/flows/database/src/TestSchemas.ts\"),\n    Smithers.file(\"//packages/repo-targets/test-utils/vitest-root-temp.mjs\"),\n    Smithers.file(\"//packages/repo-targets/test-utils/effect-property.d.mts\")\n  ],\n  timeout: \"20m\",\n  hosts: [\"linux\"],\n  env: { SMITHERS_TEST_PG_URL: \"postgres://postgres:smithers-adapter-test@127.0.0.1:55436/smithers_adapter_test\" },\n  services: [adapterPostgresDatabase],\n  sandbox: { network: \"loopback\" }\n})\n\n/**\n * The durable-identity review: identity strings, migrations, persisted\n * schemas, and durable keys, read out of this package's own changed sources.\n *\n * @since 0.1.0\n * @category lint\n */\nconst reviewTagsMigrationsAndKeys = ReviewTagsMigrationsAndKeys({ cwd: \"packages/smithers/flows/database\" })\n\n/**\n * Changed public APIs against the package README, every docs page (concepts\n * and guides included), and the site API reference page.\n *\n * @since 1.0.0\n * @category lint\n */\nconst reviewDocsAgainstCode = ReviewDocsAgainstCode({\n  cwd: \"packages/smithers/flows/database\",\n  context: [\n    Smithers.file(\"README.md\"),\n    Smithers.glob(\"docs/**/*.md\"),\n    Smithers.file(\"//apps/site/src/content/docs/docs/reference/api/database.mdx\")\n  ]\n})\n\n/**\n * Changed exports against their own JSDoc.\n *\n * @since 1.0.0\n * @category lint\n */\nconst reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: \"packages/smithers/flows/database\" })\n\n/**\n * The package's fault-injection cases.\n *\n * A package opts into the matrix by declaring this key, so\n * `//packages/...:faults` is the whole matrix and nothing central lists which\n * packages are in it. The tier is separate from `test` because its cases are\n * machine-global — they kill process groups, bind ephemeral ports, and read\n * the process table — so they run serially, without coverage, from\n * `vitest.faults.config.ts`.\n */\nconst faults = Smithers.FaultSuite({ cwd: \"packages/smithers/flows/database\" })\n\n/**\n * The security review: `security` reviews the diff against origin/main and\n * `securityAudit` audits every reviewed file.\n *\n * @since 1.0.0\n * @category lint\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd: \"packages/smithers/flows/database\",\n  include: [\"src/**\", \"scripts/**\"],\n  checks: [\n    {\n      id: \"sql-identifier-injection\",\n      title: \"Schema, table, trigger, and JSON-path text reaches SQL only escaped or from trusted constants\",\n      threat:\n        \"A caller or environment that controls a schema name, table name, trigger clause, or JSON path runs arbitrary SQL against every Smithers flow table in the database.\",\n      lookFor: [\n        \"A sql.unsafe or sql.literal call in Dialect.ts or TestDatabase.ts whose interpolated name, table, when, body, reject, or path is exported without a check that it is a constant or a safe identifier.\",\n        \"Dialect.query rewriting every '?' into $n, so a template containing a '?' in a string literal or a jsonb ?-operator binds values into the wrong position.\",\n        \"A search_path setting, CREATE SCHEMA, or DROP SCHEMA that puts the schema into SQL text by hand instead of through sql(identifier), quote_ident or a bound parameter, or omits doubling embedded quotes.\"\n      ],\n      paths: [\"src/Dialect.ts\", \"src/postgres/**\", \"src/test/TestDatabase.ts\", \"src/Migrations.ts\"]\n    },\n    {\n      id: \"postgres-schema-isolation\",\n      title: \"Environment-selected PostgreSQL gives each local store its own schema\",\n      threat:\n        \"A second Smithers workspace or user sharing SMITHERS_POSTGRES_URL reads or overwrites another store's runs because two filenames resolve to the same schema.\",\n      lookFor: [\n        \"The unprefixed schema derived from anything other than a digest of resolve(filename), or docs that stop warning that SMITHERS_POSTGRES_SCHEMA plus basename is path-independent by design and needs a distinct prefix per workspace.\",\n        \"A ?schema= query parameter or SMITHERS_POSTGRES_SCHEMA value accepted without restricting it to a safe identifier or rejecting system schemas such as public or pg_catalog.\",\n        \"DATABASE_URL or SMITHERS_POSTGRES_URL silently redirecting a :memory:, file: URI, or explicit SQLite path to a shared PostgreSQL server.\"\n      ],\n      paths: [\"src/internal/PostgresSelection.ts\", \"src/postgres/**\"]\n    },\n    {\n      id: \"connection-secret-leak\",\n      title: \"PostgreSQL connection URLs and passwords never reach errors, spans, or logs\",\n      threat:\n        \"Anyone who reads a Smithers error message, trace, or CI log learns the database password of the operator's PostgreSQL server.\",\n      lookFor: [\n        \"An Error, UnsupportedDatabase message, or span attribute that interpolates the url, parsed URL, or DATABASE_URL.\",\n        \"A connection URL passed to PgClient without Redacted.make, or a Redacted value unwrapped into a string.\",\n        \"A test-matrix child process or console line that prints SMITHERS_TEST_PG_URL with credentials.\"\n      ],\n      paths: [\"src/internal/PostgresSelection.ts\", \"src/postgres/**\", \"scripts/test-matrix.mjs\"]\n    },\n    {\n      id: \"sqlite-file-permissions\",\n      title: \"SQLite databases and their WAL and SHM sidecars are created owner-only on every driver\",\n      threat:\n        \"Another local user on a shared machine reads run transcripts, prompts, and stored secrets from a world-readable smithers database file.\",\n      lookFor: [\n        \"BunDatabase.layer handing a plain path straight to SqliteClient.layer without the exclusive 0o600 pre-create NodeDatabase.ts does in createDatabaseFile, so the file and its -wal and -shm sidecars get the umask default (0644).\",\n        \"createDatabaseFile following a symlink or a pre-planted file at the target path instead of creating it exclusively.\",\n        \"A mode option accepted from configuration that widens permissions beyond owner read and write without a warning.\"\n      ],\n      paths: [\"src/node/**\", \"src/bun/**\"]\n    },\n    {\n      id: \"open-guard-bypass\",\n      title: \"The 0.x database refusal cannot be bypassed by URI parameters or lock timing\",\n      threat:\n        \"A caller opening a 0.x smithers.db through a crafted file: URI or during a peer's lock silently mixes schemas and corrupts the operator's existing run history.\",\n      lookFor: [\n        \"A file: URI whose query (mode, immutable, vfs, repeated parameters) makes probeTarget or isMemoryModeUri inspect a different file than the client opens.\",\n        \"readTableNames returning undefined for an error other than not-found or not-a-database, which waves the open through.\",\n        \"A lock-text match on an error string that contains a caller-chosen path, so a refusal is misclassified as a transient lock.\"\n      ],\n      paths: [\"src/internal/SqliteOpen.ts\", \"src/node/**\", \"src/bun/**\"]\n    },\n    {\n      id: \"migration-ledger-integrity\",\n      title: \"The migration ledger never runs a migration twice, skips one, or lets one package claim another's block\",\n      threat:\n        \"A misdeclared or malicious package migration set rewrites or drops another storage package's tables in the shared database.\",\n      lookFor: [\n        \"A path in Migrations.ts finish or loaderFromPlan that applies a migration in a block whose recorded ledger names are not declared by the same namespace.\",\n        \"previousNames accepting a name from another namespace, so a renamed migration adopts a foreign ledger row.\",\n        \"A retry in run that re-applies a migration after a partial commit because the ledger insert and the migration are not in one transaction.\"\n      ],\n      paths: [\"src/Migrations.ts\", \"src/internal/WriteRetry.ts\"]\n    },\n    {\n      id: \"test-helper-production-reach\",\n      title: \"Constraint-disabling test helpers are unreachable from production code\",\n      threat:\n        \"A production store importing @smthrs/database/test/TestDatabase disables CHECK and foreign-key constraints or drops a schema in a user's real database.\",\n      lookFor: [\n        \"TestDatabase.layer selecting a PostgreSQL server from SMITHERS_TEST_PG_URL alone, so the variable set in a production environment points constraint-dropping helpers at a real server.\",\n        \"checks, foreignKeys, dropTrigger, or dropSchema reachable with a client that is not a disposable test_<uuid> schema, or dropSchema accepting a schema other than the one the layer created.\",\n        \"The test-matrix script starting PostgreSQL with -A trust on a TCP listener, which lets any local user on the machine connect as superuser while the suite runs, or leaving the cluster running after a failure.\"\n      ],\n      paths: [\"src/test/**\", \"scripts/test-matrix.mjs\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: {\n    check,\n    circular,\n    docs,\n    docsFiles,\n    reviewDocsAgainstCode,\n    reviewJsdocAgainstCode,\n    reviewTagsMigrationsAndKeys,\n    faults,\n    fmt,\n    lib,\n    lint,\n    test,\n    adapterPostgresDatabase,\n    ...securityReview\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 20,
+          "text": "tests: Smithers.glob(\"test/**/*.test.ts\", { exclude: [\"test/faults/**\"] }),"
+        },
+        {
+          "line": 53,
+          "text": "Smithers.file(\"//packages/repo-targets/test-utils/coverage-teardown.mjs\"),"
+        },
+        {
+          "line": 78,
+          "text": "* and guides included), and the site API reference page."
+        },
+        {
+          "line": 107,
+          "text": "* the process table — so they run serially, without coverage, from"
+        },
+        {
+          "line": 121,
+          "text": "include: [\"src/**\", \"scripts/**\"],"
+        },
+        {
+          "line": 185,
+          "text": "title: \"The migration ledger never runs a migration twice, skips one, or lets one package claim another's block\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/database/tsconfig.json",
+      "sha256": "ba305efb963602908b794afc358d5d34877be5b519234f129833f2c22f01a20c",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\n      \"ES2022\",\n      \"DOM\",\n      \"DOM.Iterable\"\n    ],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\n      \"node\",\n      \"bun\"\n    ],\n    \"plugins\": [\n      {\n        \"name\": \"@effect/language-service\",\n        \"namespaceImportPackages\": [\n          \"effect\",\n          \"@effect/*\"\n        ],\n        \"includeSuggestionsInTsc\": false,\n        \"ignoreEffectWarningsInTscExitCode\": true,\n        \"ignoreEffectErrorsInTscExitCode\": true,\n        \"diagnosticSeverity\": {\n          \"globalErrorInEffectFailure\": \"off\"\n        }\n      }\n    ]\n  },\n  \"include\": [\n    \"src/**/*\"\n  ]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 21,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 40,
+          "text": "\"includeSuggestionsInTsc\": false,"
+        },
+        {
+          "line": 41,
+          "text": "\"ignoreEffectWarningsInTscExitCode\": true,"
+        },
+        {
+          "line": 42,
+          "text": "\"ignoreEffectErrorsInTscExitCode\": true,"
+        },
+        {
+          "line": 49,
+          "text": "\"include\": ["
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/database/vitest.config.ts",
+      "sha256": "a74fc31310efc87c87e053f960bcce039e13c966496f47b451c0892e596f0dfc",
+      "source": "import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-schemas.ts\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    // The fault tier lives under `test/faults` and runs from\n    // `vitest.faults.config.ts` instead, serially and without coverage: its\n    // cases kill process groups and bind ports, which no unit suite sharing\n    // this machine can survive beside them.\n    include: [\"test/**/*.test.{ts,vibe}\"],\n    exclude: [...configDefaults.exclude, \"test/faults/**\"],\n    environment: \"node\",\n    // Vitest's 5 s default is a wall-clock budget, but no suite in this repo\n    // asserts on elapsed time — each is bounded by an explicit iteration,\n    // cycle, or completion count. The real gate runs those counts under v8\n    // coverage instrumentation across parallel workers, where cases that\n    // finish in well under a second in isolation have been measured 6-12x\n    // slower; that machine-load multiplier, not the workload, is what put\n    // correct suites over the default wall. Raise the budget instead of\n    // trimming the workload, and keep it FINITE so a genuine hang still\n    // fails the run rather than hanging the gate forever.\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      enabled: true,\n      provider: \"v8\",\n      // Scope the report directory — and the `.tmp` scratch dir the v8\n      // provider clears at run start and reads at run end — to this process.\n      // The default `./coverage` is shared, so two concurrent `vitest run`\n      // invocations destroy each other: one aborts with a removed-coverage-\n      // directory error and the other enforces 100% against a partial\n      // profile with every test passing (issues #115/#121).\n      reportsDirectory: join(tmpdir(), `flows-database-coverage-${process.pid}`),\n      include: [\"src/**\"],\n      thresholds: {\n        branches: 100,\n        functions: 100,\n        lines: 100,\n        statements: 100\n      }\n    }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 12,
+          "text": "fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"
+        },
+        {
+          "line": 16,
+          "text": "// `vitest.faults.config.ts` instead, serially and without coverage: its"
+        },
+        {
+          "line": 19,
+          "text": "include: [\"test/**/*.test.{ts,vibe}\"],"
+        },
+        {
+          "line": 20,
+          "text": "exclude: [...configDefaults.exclude, \"test/faults/**\"],"
+        },
+        {
+          "line": 24,
+          "text": "// cycle, or completion count. The real gate runs those counts under v8"
+        },
+        {
+          "line": 25,
+          "text": "// coverage instrumentation across parallel workers, where cases that"
+        },
+        {
+          "line": 33,
+          "text": "coverage: {"
+        },
+        {
+          "line": 35,
+          "text": "provider: \"v8\","
+        },
+        {
+          "line": 36,
+          "text": "// Scope the report directory — and the `.tmp` scratch dir the v8"
+        },
+        {
+          "line": 38,
+          "text": "// The default `./coverage` is shared, so two concurrent `vitest run`"
+        },
+        {
+          "line": 39,
+          "text": "// invocations destroy each other: one aborts with a removed-coverage-"
+        },
+        {
+          "line": 42,
+          "text": "reportsDirectory: join(tmpdir(), `flows-database-coverage-${process.pid}`),"
+        },
+        {
+          "line": 43,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 44,
+          "text": "thresholds: {"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/database/vitest.faults.config.ts",
+      "sha256": "7d2195cd0259092b3ceaf6b584549d293d883d2c20161930ad98bb37e4084737",
+      "source": "/**\n * The fault tier: the SQLite lock primitive.\n *\n * `freezeSqliteLock` holds a real write transaction open so another\n * connection meets a real `SQLITE_BUSY`. Two files doing that against one\n * temporary directory would contend with each other rather than with the\n * primitive, so the tier runs serially.\n *\n * Coverage is off. The work these cases do happens in child processes this one\n * never instruments, and `vitest.config.ts` beside this file stays the coverage\n * gate for `src`.\n */\nimport vibelang from \"vibelang-vite\"\nimport { defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    environment: \"node\",\n    include: [\"test/faults/**/*.test.{ts,vibe}\"],\n    // A fault case drives real processes, real SQLite files, and real sockets.\n    // The budget stays finite so a wedged case still fails instead of sitting\n    // until the CI job timeout.\n    testTimeout: 180_000,\n    hookTimeout: 180_000,\n    // A suite that spawns and kills processes cannot share a worker with\n    // another suite doing the same: pids, ports, and process groups are\n    // process-global.\n    fileParallelism: false,\n    coverage: { enabled: false }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 9,
+          "text": "* Coverage is off. The work these cases do happens in child processes this one"
+        },
+        {
+          "line": 10,
+          "text": "* never instruments, and `vitest.config.ts` beside this file stays the coverage"
+        },
+        {
+          "line": 20,
+          "text": "include: [\"test/faults/**/*.test.{ts,vibe}\"],"
+        },
+        {
+          "line": 30,
+          "text": "coverage: { enabled: false }"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/flows/database",
+      "label": "//packages/smithers/flows/database:adapterPostgresDatabase",
+      "rule": "Docker.Service",
+      "kinds": [
+        "run"
+      ],
+      "inputs": [],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/database",
+      "label": "//packages/smithers/flows/database:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/tsconfig.test.json"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows/database:lib"
+      ]
+    },
+    {
+      "package": "packages/smithers/flows/database",
+      "label": "//packages/smithers/flows/database:circular",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/circular.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/database",
+      "label": "//packages/smithers/flows/database:docs",
+      "rule": "DocsParity",
+      "kinds": [
+        "docs"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/database",
+      "label": "//packages/smithers/flows/database:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/database",
+      "label": "//packages/smithers/flows/database:faults",
+      "rule": "Vitest",
+      "kinds": [
+        "test"
+      ],
+      "exclusive": true,
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/test/faults/**/*.test.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/test/faults/**/*",
+          "exclude": [
+            "packages/smithers/flows/database/test/faults/**/*.test.{ts,vibe}"
+          ]
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/vitest.faults.config.ts"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/database",
+      "label": "//packages/smithers/flows/database:fmt",
+      "rule": "Dprint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/dprint.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/database",
+      "label": "//packages/smithers/flows/database:lib",
+      "rule": "TsBuild",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/build-library.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/scripts/compile-commonjs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-single-effect-version.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/index.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/build.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/database",
+      "label": "//packages/smithers/flows/database:lint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.package.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.jsdoc.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.invariants.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/database",
+      "label": "//packages/smithers/flows/database:reviewDocsAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/flows/database/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/README.md"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/content/docs/docs/reference/api/database.mdx"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/database",
+      "label": "//packages/smithers/flows/database:reviewJsdocAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/flows/database/src/**/*.{ts,vibe}"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/src/**/*.{ts,vibe}",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/database",
+      "label": "//packages/smithers/flows/database:reviewTagsMigrationsAndKeys",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/flows/database/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/database",
+      "label": "//packages/smithers/flows/database:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/flows/database/src/**",
+            "packages/smithers/flows/database/scripts/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/scripts/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/database",
+      "label": "//packages/smithers/flows/database:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/flows/database/src/**",
+            "packages/smithers/flows/database/scripts/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/scripts/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/database",
+      "label": "//packages/smithers/flows/database:test",
+      "rule": "Shell.Test",
+      "kinds": [
+        "test"
+      ],
+      "hosts": [
+        "linux"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/scripts/test-matrix.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/test/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/examples/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/vitest.config.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows/database:adapterPostgresDatabase",
+        "//packages/smithers/flows/database:lib"
+      ]
+    }
+  ],
+  "areas": [
+    "PACKAGE.ts",
+    "eslint.config.js",
+    "examples/quickstart.ts",
+    "scripts/test-matrix.mjs",
+    "src/DatabaseMetrics.ts",
+    "src/Dialect.ts",
+    "src/DurableWriter.ts",
+    "src/Migrations.ts",
+    "src/TestSchemas.ts",
+    "src/UnsupportedBackend.ts",
+    "src/bun",
+    "src/index.ts",
+    "src/internal",
+    "src/node",
+    "src/postgres",
+    "src/test",
+    "test/WriterLock.bench.ts",
+    "test/contract",
+    "test/faults",
+    "test/fixtures",
+    "test/harness",
+    "vitest.config.ts",
+    "vitest.faults.config.ts"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

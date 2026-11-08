@@ -67,7 +67,7 @@ export function StackScreen() {
         <PageBody width="wide">
           <Card><CardContent><EmptyState
             title="Can't check your role on this repository right now."
-            action={<Button variant="outline" size="sm" onClick={() => repository.actions.role(owner, repo)}>Try again</Button>}
+            action={<Button variant="outline" size="sm" onClick={() => { auth.actions.reload(); repository.actions.role(owner, repo) }}>Try again</Button>}
           /></CardContent></Card>
         </PageBody>
       </main>
@@ -95,7 +95,7 @@ export function StackScreen() {
           ordered
           numberPrefix="T"
           emptyTitle={NO_TODOS}
-          unknown={status === "unknown" && rows.length === 0}
+          unknown={(status === "unknown" || status === "syncing") && rows.length === 0}
           issues={withDrop(stackItemsOf(rows, todos, owner, repo), may, (number) => actions.drop(owner, repo, number))}
           filter={{
             state: stackFilterOf(search.state),

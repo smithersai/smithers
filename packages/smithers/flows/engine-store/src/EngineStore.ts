@@ -9,18 +9,20 @@
  */
 
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
-import { type Crypto, Sha256 } from "@smthrs/crypto"
+import { Sha256 } from "@smthrs/crypto"
 import type { DurableWriter } from "@smthrs/database/DurableWriter"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { FileBoundary } from "@smthrs/flow/FileBoundary"
 import { Consensus, Journal, type JournalEvent } from "@smthrs/journal"
-import { Jj } from "@smthrs/kernel"
+import { Jj, Workspace } from "@smthrs/kernel"
 import { AttemptStore, Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -265,7 +267,7 @@ export interface Options {
    * operator's home directory published into a run's history: the writer
    * strips this prefix, and omits the path entirely when it cannot.
    *
-   * Defaults to the process working directory where there is one. A host
+   * Defaults to the injected workspace root where there is one. A host
    * without a filesystem identity — a worker, a browser — passes nothing and
    * records no declaration paths at all, which is the honest answer.
    */
@@ -431,7 +433,7 @@ type PublicRequirements =
   // (lineage, ordinal) with the injected SHA-256, on the coordinator's own
   // fiber rather than a caller's, so hashing is a construction-time
   // requirement of the composition (`packages/smithers/flows/engine/docs/api.md`).
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | DurableEngineState.DurableEngineState
   | DurableWriter
   | Journal.Journal
@@ -542,6 +544,7 @@ const openStore = Effect.fnUntraced(function*(options: Options) {
   const cacheStore = yield* CacheStore.CacheStore
   const journal = yield* Journal.Journal
   const actionJj = yield* Jj.Jj
+  const workspace = yield* Effect.serviceOption(Workspace.Workspace)
   const engineJj = yield* EngineJj.EngineJj
   const runStore = yield* RunStore.RunStore
   const stepBoundary = yield* StepBoundary.StepBoundary
@@ -611,7 +614,7 @@ const openStore = Effect.fnUntraced(function*(options: Options) {
     attemptStore,
     cacheStore,
     journal,
-    declarationRoot: NodeJournal.hostRoot(options.declarationRoot),
+    declarationRoot: NodeJournal.hostRoot(options.declarationRoot, Option.getOrUndefined(workspace)),
     /*
      * Stated by the host or not at all; nothing here derives a revision. A
      * reader is asked where the record is written rather than here, because a
@@ -920,7 +923,10 @@ const actionExecute = Effect.fn("FlowEngine.actionExecute")(
     // action's own instance, exactly as the engine would run it itself.
     const snapshot = input.snapshot === undefined
       ? undefined
-      : Effect.provideContext(input.snapshot, yield* Effect.context<FlowRuntime.FlowInstance | Crypto.Crypto>())
+      : Effect.provideContext(
+        input.snapshot,
+        yield* Effect.context<FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)>()
+      )
     const result = yield* persistAction(store, input, parent, cacheAgeVerdict, seed, snapshot, logContext).pipe(
       Flow.intoResult,
       Effect.provideService(FlowRuntime.FlowInstance, instance),

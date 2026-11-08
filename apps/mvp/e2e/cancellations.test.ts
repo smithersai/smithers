@@ -42,7 +42,7 @@ describe("native diagnostic delivery", () => {
 })
 
 describe("document cancellation witnesses", () => {
-  test("requires an actual cancellation inside a bounded, uncommitted navigation", () => {
+  test.each(["cancelled", "Load request cancelled"])("requires an actual cancellation inside a bounded, uncommitted navigation: %s", (error) => {
     const history = make()
     history.start(2, url, 1)
     expect(history.progress()).toEqual({ navigationAt: undefined, cancelledOldDocument: false })
@@ -50,7 +50,7 @@ describe("document cancellation witnesses", () => {
     expect(classify(history, url, 2)).toBe(false)
     history.navigate(100, 10)
     expect(classify(history, url, 11)).toBe(false)
-    history.fail(2, "cancelled", 10)
+    history.fail(2, error, 10)
     expect(history.progress()).toEqual({ navigationAt: 10, cancelledOldDocument: true })
     expect(classify(history, url, 10)).toBe(true)
     expect(classify(history, url, 2010)).toBe(true)

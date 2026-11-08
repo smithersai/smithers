@@ -12,7 +12,6 @@ import { TestSchemas } from "@smthrs/database"
  */
 import { PgClient } from "@effect/sql-pg"
 import { ElectricCollection } from "@smthrs/effect-electric"
-import * as Arr from "effect/Array"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
@@ -54,9 +53,10 @@ export const program = (electricUrl: string, table: string) =>
       // Runs with the services of the fiber that made the collection: here, its SqlClient.
       onInsert: ({ rows, collection }) =>
         Effect.gen(function*() {
-          if (!Arr.isReadonlyArrayNonEmpty(rows)) return
+          const [first, ...rest] = rows
+          if (first === undefined) return
           const [written] = yield* sql<{ readonly txid: string }>`
-            insert into ${sql(table)} ${sql.insert(rows)}
+            insert into ${sql(table)} ${sql.insert([{ ...first }, ...rest.map((row) => ({ ...row }))])}
             returning pg_current_xact_id()::xid::text as txid`
           yield* collection.awaitTxId(Number(written!.txid), "10 seconds")
         })

@@ -40,9 +40,9 @@ export const toJsonSchemaDocument = (
         key === "annotations" || key === "payload" ? member : protect(member)
       ])
     )
-    if (value["_tag"] === "Union") {
+    if (value["_tag"] === "Union" || value["_tag"] === "Enum") {
       const schema = SchemaRepresentation.toJsonSchemaDocument({
-        representation: value as unknown as SchemaRepresentation.Union,
+        representation: value as unknown as SchemaRepresentation.Union | SchemaRepresentation.Enum,
         references: document.references
       }).schema
       if (Object.keys(schema).length === 1 && Array.isArray(schema.anyOf)) {
@@ -61,6 +61,12 @@ export const toJsonSchemaDocument = (
     )
   }
   return remove(SchemaRepresentation.toJsonSchemaDocument(
-    protect(document) as SchemaRepresentation.Document
+    {
+      ...document,
+      representation: protect(document.representation),
+      references: Object.fromEntries(
+        Object.entries(document.references).map(([identifier, representation]) => [identifier, protect(representation)])
+      )
+    } as SchemaRepresentation.Document
   )) as JsonSchema.Document<"draft-2020-12">
 }

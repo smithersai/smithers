@@ -3,17 +3,21 @@
 // and becomes the body's `key:` marker line, which `track.mjs open` matches to reuse an issue. Tested by
 // sources.test.ts with synthetic input only.
 import { createHash } from "node:crypto"
-import { MIGRATED_REPOS, nodeOfLane, nodeOfParentText } from "./tree.mjs"
+import { MIGRATED_REPOS, nodeOfParentText } from "./tree.mjs"
 
 const VIBELANG = "smithersai/vibelang"
 const MAX_TITLE = 200
 const MAX_BODY = 8000
-const PENDING_URL = "https://github.com/smithersai/vibelang/blob/main/typescript/tsc/internal/vibelangfuzz/testdata/pending"
+export const PENDING_URL = "https://github.com/smithersai/vibelang/blob/main/typescript/tsc/internal/vibelangfuzz/testdata/pending"
 
 const short = (text) => createHash("sha1").update(text).digest("hex").slice(0, 12)
 const clip = (text, limit) => (text.length <= limit ? text : `${text.slice(0, limit - 1)}…`)
 const oneLine = (text) => clip(String(text).replace(/\s+/g, " ").trim(), MAX_TITLE)
-const body = (lines) => clip(lines.filter((line) => line !== undefined).join("\n").trim(), MAX_BODY)
+const joinedBody = (lines) => lines.filter((line) => line !== undefined).join("\n").trim()
+const body = (lines) => clip(joinedBody(lines), MAX_BODY)
+const formatting = (unformatted) => unformatted ? { oneLine: String, body: joinedBody } : { oneLine, body }
+/** Format only after the importer has validated the complete per-finding fields. */
+export const formatRecord = (record) => ({ ...record, title: oneLine(record.title), body: body([record.body]) })
 
 /** `migrate:<repo>` when a name names an example repository. */
 export const migrateLabels = (...names) => {
@@ -28,39 +32,39 @@ export const FIXED = /\bFIXED\b|\b(?:fixed|landed|resolved) (?:in|on|as|by)\b|\b
 // ── Merge-queue entries ───────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * Open queue entries from the queue's rows (latest state per id): `queued` and `held`, and a `rejected` entry that is
- * its lane's latest, since nothing replaced it. Landed, withdrawn and superseded entries are closed: a superseded
- * entry's work moved to the entry that replaced it.
+ * What the open queue entries mean for the tree: a queue entry is work, not a problem, so it never files an issue.
+ * Open is `queued` and `held`, and a `rejected` entry that is its lane's latest, since nothing replaced it. An entry
+ * naming issues (`issues`, from "Fixes #N", "Refs #N" or `--issue N`) gives one `queue` work link per issue, posted
+ * once the issues exist. One naming none goes in `unlinked`, kept aside until TODO leaves can hold it.
  */
-export const queueRecords = (entries) => {
+export const queuePlan = (entries) => {
   const latest = new Map()
   for (const entry of entries) {
     const before = latest.get(entry.lane)
     if (before === undefined || String(entry.at) > String(before.at)) latest.set(entry.lane, entry)
   }
   const open = entries.filter((entry) => entry.state === "queued" || entry.state === "held" || (entry.state === "rejected" && latest.get(entry.lane) === entry))
-  return open.map((entry) => ({
-    key: `queue:${entry.id}`,
-    kind: "queue",
-    repo: VIBELANG,
-    title: oneLine(`Merge queue: ${entry.lane} ${entry.rev ?? ""} is ${entry.state}`),
-    body: body([
-      `Merge-queue entry \`${entry.id}\` of lane \`${entry.lane}\`.`,
-      "",
-      `- revision: \`${entry.rev ?? "?"}\`, ${entry.commits ?? "?"} commit(s)`,
-      `- queued: ${entry.at ?? "?"}`,
-      `- state: ${entry.state}${entry.state === "rejected" ? " (the lane's latest entry; nothing replaced it)" : ""}`,
-      entry.reason ? `- reason: ${clip(String(entry.reason), 3000)}` : undefined,
-      "",
-      `Fix status: open until the entry lands or is withdrawn.`,
-    ]),
-    labels: ["queue", ...migrateLabels(entry.lane)],
-    links: [
-      { kind: "queue", ref: entry.id, label: `${entry.id} (${entry.state})`, state: entry.state === "rejected" ? "failed" : "queued" },
-      { kind: "session", ref: `lane:${entry.lane}`, label: `lane ${entry.lane}` },
-    ],
-    parent: nodeOfLane(entry.lane),
-  }))
+  const named = (entry) => (Array.isArray(entry.issues) ? entry.issues.filter((number) => Number.isSafeInteger(number) && number > 0) : [])
+  return {
+    links: open.flatMap((entry) =>
+      named(entry).map((issue) => ({
+        key: `queue:${entry.id}:${issue}`,
+        kind: "queue-link",
+        repo: VIBELANG,
+        issue,
+        link: { kind: "queue", ref: entry.id, label: `${entry.id} (${entry.state})`, state: entry.state === "rejected" ? "failed" : "queued" },
+      })),
+    ),
+    unlinked: open.filter((entry) => named(entry).length === 0).map((entry) => ({
+      id: entry.id,
+      lane: entry.lane,
+      rev: entry.rev ?? null,
+      at: entry.at ?? null,
+      state: entry.state,
+      reason: entry.reason ?? null,
+      labels: migrateLabels(entry.lane),
+    })),
+  }
 }
 
 // ── Spec review rounds ────────────────────────────────────────────────────────────────────────────────────────────
@@ -95,7 +99,8 @@ const findingIds = (label, round) => {
  * reviewer's "Still open from earlier rounds" table, one record per finding (a row naming two reviewers' ids is one).
  * `files` is `[{ reviewer, round, text }]` of that round.
  */
-export const reviewRoundRecords = (files) => {
+export const reviewRoundRecords = (files, { unformatted = false } = {}) => {
+  const { oneLine, body } = formatting(unformatted)
   const records = new Map()
   const seen = new Map()
   const add = (ids, make) => {
@@ -164,7 +169,8 @@ const scopedParent = (scope) => (/doc/.test(scope) ? "tree:docs" : /preview|queu
  * Open findings of a scoped review (`### RC-1 [major] ...`, `### RD-001 ...`): those that no heading or line naming
  * them marks fixed.
  */
-export const scopedRecords = (scope, text) => {
+export const scopedRecords = (scope, text, { unformatted = false } = {}) => {
+  const { oneLine, body } = formatting(unformatted)
   const records = []
   const done = new Set()
   for (const { match, text: section } of sections(text, /^### ([A-Z]+-\d+)\b\s*(?:\[(\w+)\]|—\s*(\w+)\s*—)?\s*(.*)$/)) {
@@ -195,7 +201,7 @@ export const scopedRecords = (scope, text) => {
  * (an addendum, correction or count is part of its finding), and dated `## 2026-10-31: title` entries. A finding is
  * fixed when its own section, or another heading naming its id, says so.
  */
-export const migrationRecords = (repo, text) => {
+export const migrationRecords = (repo, text, options = {}) => {
   const records = []
   const seen = new Set()
   const headings = text.split("\n").filter((line) => /^#{2,4} /.test(line))
@@ -208,7 +214,7 @@ export const migrationRecords = (repo, text) => {
     const elsewhere = headings.filter((line) => new RegExp(`\\b${id}\\b(?![\\w-])`).test(line))
     if (FIXED.test(section) || elsewhere.some((line) => FIXED.test(line))) continue
     const title = rest.replace(/^\s*(\([^)]*\))?\s*:?\s*/, "")
-    records.push(migrationRecord(repo, id, title, section))
+    records.push(migrationRecord(repo, id, title, section, options))
   }
   const dated = /^## (?:drive-[\w-]+,\s*)?(20\d\d-\d\d-\d\d)(?:[ T]\d\d:\d\d(?::\d\d(?:\.\d+)?)?(?:Z|\+00:00)?)?:\s*(.+)$/
   for (const { match, text: section } of sections(text, dated)) {
@@ -217,12 +223,14 @@ export const migrationRecords = (repo, text) => {
     const id = `${match[1]}-${short(title)}`
     if (seen.has(id)) continue
     seen.add(id)
-    records.push(migrationRecord(repo, id, title, section))
+    records.push(migrationRecord(repo, id, title, section, options))
   }
   return records
 }
 
-const migrationRecord = (repo, id, title, section) => ({
+const migrationRecord = (repo, id, title, section, { unformatted = false } = {}) => {
+  const { oneLine, body } = formatting(unformatted)
+  return ({
   key: `migrate:${repo}:${id}`,
   kind: "migration",
   repo: VIBELANG,
@@ -231,7 +239,8 @@ const migrationRecord = (repo, id, title, section) => ({
   labels: ["migration-finding", `migrate:${repo}`],
   links: [{ kind: "review", ref: `migrate-${repo}:${id}`, label: `migration finding ${id}` }],
   parent: `tree:repos:${repo}`,
-})
+  })
+}
 
 // ── Fuzz findings: the pending gaps on main ───────────────────────────────────────────────────────────────────────
 
@@ -241,7 +250,8 @@ const migrationRecord = (repo, id, title, section) => ({
  * several keys. Corpus lines only mark reproductions. `files` is `[{ name, text }]`. Returns `{ records, areas }`,
  * `areas` the tree's area nodes.
  */
-export const fuzzRecords = (files) => {
+export const fuzzRecords = (files, { unformatted = false } = {}) => {
+  const { oneLine, body } = formatting(unformatted)
   const groups = new Map()
   for (const { name, text } of files) {
     const area = name.replace(/\.txt$/, "")
@@ -309,32 +319,45 @@ const draftLinks = (links) => {
  */
 const TRACKING = /^migrate\b.*\b(?:effect modules to vibelang\b|to vibelang \(tracking\))/i
 
+/** One vocabulary across drafters; unknown values are a refusal, never an implicit open or skipped draft. */
+const DRAFT_STATUSES = new Map([
+  ["open", "open"], ["fixed", "fixed"], ["nonbug", "nonbug"], ["duplicate", "duplicate"], ["closed", "closed"],
+  ["not_a_bug", "nonbug"], ["not-a-bug", "nonbug"], ["notabug", "nonbug"], ["wontfix", "nonbug"],
+  ["dup", "duplicate"], ["done", "fixed"], ["resolved", "fixed"],
+])
+
 /**
- * Issue drafts the agents prepared, `{ title, body, labels, parent, repo?, draft_id? | id? | key?, status? | state?,
- * links? }`, filed under the node their parent text names, else by their labels, else their source's node. A draft
- * marked closed is left out. A repository's tracking draft carries `asNode`: it becomes that node's issue instead of a
- * child of it.
+ * All issue drafts the agents prepared, normalized but unfiltered so the importer can count and audit every row.
+ * Legacy `state` supplies status when `status` is absent; absence of both means open. A repository's tracking draft carries
+ * `asNode`: it becomes that node's issue instead of a child of it.
  */
-export const draftRecords = (source, drafts) =>
-  drafts
-    .filter((draft) => draft.status !== "closed" && draft.state !== "closed")
-    .map((draft) => {
-      const labels = [...new Set([...(draft.labels ?? []), ...migrateLabels(source)])]
-      const repoNode = migrateLabels(source)[0] === undefined ? undefined : `tree:repos:${source}`
-      const parent = nodeOfParentText(draft.parent) ?? nodeOfLabels(labels) ?? repoNode ?? "tree:impl"
-      const tracking = TRACKING.test(String(draft.title)) || /this is the .*node/i.test(String(draft.parent ?? "")) || /\bnode\b/i.test(String(draft.role ?? ""))
-      const asNode = tracking ? (MIGRATED_REPOS.map((repo) => `tree:repos:${repo}`).find((key) => key === parent || key === repoNode) ?? undefined) : undefined
-      return {
-        key: `draft:${source}:${draft.draft_id ?? draft.id ?? draft.key ?? short(draft.title)}`,
-        kind: "draft",
-        source,
-        repo: draft.repo ?? VIBELANG,
-        title: oneLine(draft.title),
-        body: body([String(draft.body ?? "")]),
-        labels,
-        links: draftLinks(draft.links),
-        parent,
-        parentText: draft.parent ?? null,
-        ...(asNode === undefined ? {} : { asNode }),
-      }
-    })
+export const draftRecords = (source, drafts, { unformatted = false } = {}) => {
+  const { oneLine, body } = formatting(unformatted)
+  return drafts.map((draft) => {
+    const key = `draft:${source}:${draft.draft_id ?? draft.id ?? draft.key ?? short(draft.title)}`
+    const value = draft.status === undefined ? (draft.state === undefined ? "open" : draft.state) : draft.status
+    const status = typeof value === "string" ? DRAFT_STATUSES.get(value.toLowerCase()) : undefined
+    if (status === undefined) throw new Error(`${key} has unknown status ${JSON.stringify(value)}`)
+    const duplicateOf = draft.duplicate_of_draft ?? draft.duplicate_of_title ?? draft.duplicate_of
+    const labels = [...new Set([...(draft.labels ?? []), ...migrateLabels(source)])]
+    const repoNode = migrateLabels(source)[0] === undefined ? undefined : `tree:repos:${source}`
+    const parent = nodeOfParentText(draft.parent) ?? nodeOfLabels(labels) ?? repoNode ?? "tree:impl"
+    const tracking = TRACKING.test(String(draft.title)) || /this is the .*node/i.test(String(draft.parent ?? "")) || /\bnode\b/i.test(String(draft.role ?? ""))
+    const asNode = tracking ? (MIGRATED_REPOS.map((repo) => `tree:repos:${repo}`).find((key) => key === parent || key === repoNode) ?? undefined) : undefined
+    return {
+      key,
+      status,
+      ...(duplicateOf === undefined ? {} : { duplicate_of: duplicateOf }),
+      kind: "draft",
+      source,
+      repo: draft.repo ?? VIBELANG,
+      title: oneLine(draft.title),
+      body: body([String(draft.body ?? "")]),
+      labels,
+      links: draftLinks(draft.links),
+      parent,
+      parentText: draft.parent ?? null,
+      ...(asNode === undefined ? {} : { asNode }),
+    }
+  })
+}

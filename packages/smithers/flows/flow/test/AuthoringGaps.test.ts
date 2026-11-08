@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 // Deep reviewed and polished by a human on 2026-08-10.
 
 /**
@@ -7,9 +8,9 @@
  * flow scope helpers, and the waiting annotation a durable driver reads.
  */
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Cause, Context, Effect, Exit, Fiber, Latch, Layer, Option, Schedule, Schema, Scope } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { effect } from "./Harness.ts"
 import { layerMemory, layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
 
@@ -34,11 +35,15 @@ const Host = Flow.make("Gaps/Host", {
 
 /** The host flow, wired to run `execute` as its single declared step. */
 const hosted = (
-  execute: () => Effect.Effect<void, never, Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
+  execute: () => Effect.Effect<
+    void,
+    never,
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+  >
 ): Layer.Layer<
   Action.Requirement<"Gaps/Block"> | FlowRuntime.FlowRuntime | Action.Implementations,
   never,
-  Crypto.Crypto
+  (EffectDigest.Digest | SecureRandom.SecureRandom)
 > => layerWired(Layer.mergeAll(Block.toLayer(execute), Interpreter.layer(Host)))
 
 describe("Action.CacheEnvironment", () => {
@@ -105,8 +110,9 @@ describe("Action.idempotencyKey", () => {
       }
     }))
 
-  const withInstance = <A, E>(effect: Effect.Effect<A, E, FlowRuntime.FlowInstance | Crypto.Crypto>) =>
-    Effect.provideService(effect, FlowRuntime.FlowInstance, makeInstance(Host, "internal-keys"))
+  const withInstance = <A, E>(
+    effect: Effect.Effect<A, E, FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)>
+  ) => Effect.provideService(effect, FlowRuntime.FlowInstance, makeInstance(Host, "internal-keys"))
 
   effect(
     "scopes allocations by the declared parent, the attempt, or neither",

@@ -6,16 +6,18 @@ import * as RunCredentials from "../../../worker/RunCredentials"
 import * as SessionKeys from "../../../worker/SessionKeys"
 import { harness, RUN_CREDENTIAL_SECRET, signedIn, testFile } from "../../../worker/test/harness"
 import { githubHarness } from "../../../worker/github/test/harness"
-import { sql } from "../../../worker/github/test/fixtures"
+import { confirmedSession, sql } from "../../../worker/github/test/fixtures"
 import { outboxUpgrade } from "../../device/registry"
 import { OutboxWrites } from "../../outbox"
 import { IssuesClient } from "./api"
 import { ISSUE_WRITE, IssueWrites } from "./writes"
 
 const server = testFile("queued_run_authority")
-const alice = { subject: { kind: "person" as const, id: "queued-alice" }, role: "member" as const, session: crypto.randomUUID() }
+const alice = { subject: { kind: "person" as const, id: crypto.randomUUID() }, role: "member" as const, session: crypto.randomUUID() }
 
 test("an expired version-2 queued agent write migrates, renews, delivers as the original agent and replays once", async () => {
+  // Alice's session as sign-in confirms it: her role on the deployment's repository is that receipt.
+  await confirmedSession(server, alice)
   const chat = await harness(server, () => Stream.empty, { actor: alice })
   const github = await githubHarness(server, { sessions: signedIn(alice) })
   const keys = await Effect.runPromise(SessionKeys.make(Redacted.make(RUN_CREDENTIAL_SECRET)))

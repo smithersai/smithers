@@ -68,7 +68,14 @@ export type AuthView = Auth["Service"]
  */
 export const bindSessionConnectivity = (target: EventTarget) => Effect.gen(function* () {
   const listening = yield* Deferred.make<void>()
-  const source = Stream.callback<"startup" | "online">((queue) => Effect.gen(function* () {
+  const store = yield* AuthStore
+  const source = Stream.callback<"startup" | "online" | "retry">((queue) => Effect.gen(function* () {
+    // A burst of shapes answering 401 asks once.
+    yield* store.checksAsked.pipe(
+      Stream.debounce("100 millis"),
+      Stream.runForEach(() => Queue.offer(queue, "retry")),
+      Effect.forkScoped({ startImmediately: true }),
+    )
     const online = () => { Queue.offerUnsafe(queue, "online") }
     yield* Effect.acquireRelease(
       Effect.sync(() => target.addEventListener("online", online)),

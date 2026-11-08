@@ -3,13 +3,18 @@
 // run's `RunContent` does: JSON text frames, a replay, `live` with the run's digest, then each event as it is stored. A
 // plain GET of the same route answers as ChatApi's would (426 to a Member, or the refusal). The object's own store is
 // tested in worker/runners/RunContent.test.ts; this tests what the page does with what it sends.
-import * as NodeWS from "@effect/platform-node/NodeWS"
+import { NodeWS } from "@effect/platform-node"
+import { Collection } from "@smthrs/effect-tanstack-db"
 import { RetryPolicy } from "@smthrs/flow"
 import { Effect, Layer, ManagedRuntime, Metric } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { afterEach, describe, expect, test, vi } from "vitest"
+import { RepoRole, Session } from "../auth/schema"
+import { makeVisibility } from "../repo/gate"
+import { RunPage } from "../runs/schema"
+import { pageShowsAlone, RunsStore } from "../runs/store"
 import { socketUrl } from "./actions"
 import { GENESIS, transcribed, transcriptRoute } from "./contract"
 import { chain } from "./digest"
@@ -22,7 +27,8 @@ afterEach(async () => {
   for (const close of closers.splice(0).reverse()) await close()
 })
 
-const until = (assertion: () => void | Promise<void>, timeout = 15_000) => vi.waitFor(assertion, { timeout, interval: 20 })
+const until = (assertion: () => void | Promise<void>, timeout = 15_000) =>
+  vi.waitFor(assertion, { timeout, interval: 20 })
 
 const RUN = "todo:0b5d7d1c-6f1d-4a65-9d7e-2c1a9c2f4b11"
 
@@ -48,9 +54,10 @@ const transcriptHost = async () => {
   sockets.on("connection", (socket, request) => {
     peers.push({
       url: request.url ?? "",
-      send: (frame) => socket.send(typeof frame === "string" || frame instanceof Uint8Array ? frame : JSON.stringify(frame)),
+      send: (frame) =>
+        socket.send(typeof frame === "string" || frame instanceof Uint8Array ? frame : JSON.stringify(frame)),
       close: (code) => socket.close(code),
-      drop: () => socket.terminate(),
+      drop: () => socket.terminate()
     })
   })
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()))
@@ -69,28 +76,38 @@ const transcriptHost = async () => {
 /** The transcript layer of one tab on `origin`, with its own metrics and a quick redial. */
 const QUICK = RetryPolicy.make({ initialMs: 20, factor: 1, maxMs: 20, maxAttempts: 3 })
 
-/** The transcript layer of one tab on `origin`, with its own metrics; `redial` null is the panel's own policy. */
-const tab = async (origin: string, redial: RetryPolicy.RetryPolicy | null = QUICK) => {
+/**
+ * The transcript layer of one tab on `origin`, with its own metrics; `redial` null is the panel's own policy. `runs`, a
+ * runs' store, gives the run pages its items join.
+ */
+const tab = async (
+  origin: string,
+  redial: RetryPolicy.RetryPolicy | null = QUICK,
+  runs: Layer.Layer<RunsStore> = Layer.empty as never
+) => {
   const registry: Metric.MetricRegistry = new Map()
   const runtime = ManagedRuntime.make(
     Transcript.layer(redial === null ? { origin } : { origin, redial }).pipe(
       Layer.provideMerge(Layer.succeed(Metric.MetricRegistry, registry)),
       Layer.provideMerge(FetchHttpClient.layer),
-    ),
+      Layer.provide(runs)
+    )
   )
   closers.push(() => runtime.dispose())
   const transcript = await runtime.runPromise(Effect.service(Transcript))
   transcript.queries.panel.startSyncImmediate()
   transcript.queries.items.startSyncImmediate()
   const count = (metric: Metric.Metric<number, Metric.CounterState<number>>, attributes: Record<string, string>) =>
-    runtime.runSync(Metric.value(Metric.withAttributes(metric, attributes)).pipe(
-      Effect.provideService(Metric.MetricRegistry, registry),
-    )).count
+    runtime.runSync(
+      Metric.value(Metric.withAttributes(metric, attributes)).pipe(
+        Effect.provideService(Metric.MetricRegistry, registry)
+      )
+    ).count
   return {
     actions: transcript.actions,
     panel: () => transcript.queries.panel.toArray[0]!,
     items: () => transcript.queries.items.toArray.map((item) => [item.kind, item.text, item.status]),
-    count,
+    count
   }
 }
 
@@ -101,9 +118,10 @@ const row = (kind: string, update: Record<string, unknown>, seq = n): Row => ({
   seq,
   at: Date.now() - 50,
   kind,
-  update: { sessionUpdate: kind, ...update },
+  update: { sessionUpdate: kind, ...update }
 })
-const said = (text: string, messageId = "m1") => row("agent_message_chunk", { content: { type: "text", text }, messageId })
+const said = (text: string, messageId = "m1") =>
+  row("agent_message_chunk", { content: { type: "text", text }, messageId })
 const digestOf = (rows: ReadonlyArray<Row>) => rows.reduce(chain, GENESIS)
 
 describe("watching a run's transcript", () => {
@@ -127,7 +145,7 @@ describe("watching a run's transcript", () => {
       expect(page.items()).toEqual([
         ["prompt", "Add alpha", null],
         ["message", "Working on it.", null],
-        ["tool", "Edit", "in_progress"],
+        ["tool", "Edit", "in_progress"]
       ])
     )
     expect(page.panel().digest).toBe(digestOf([...replay, ...live]))
@@ -183,8 +201,85 @@ describe("watching a run's transcript", () => {
       await new Promise((resolve) => setTimeout(resolve, 100))
       expect(host.peers).toHaveLength(1)
       expect(page.count(dials, { outcome: closed })).toBe(1)
-    },
+    }
   )
+
+  // Astra on 0c7b9f01: a refused redial changed only the panel's status, and its items still rendered beside the refusal.
+  test("a refusal after events empties what the panel shows", async () => {
+    n = 0
+    const host = await transcriptHost()
+    host.plain.status = 403
+    const page = await tab(host.origin)
+    page.actions.watch(RUN)
+    await until(() => expect(host.peers).toHaveLength(1))
+    host.peers[0]!.send({ type: "events", events: [said("private plan")] })
+    await until(() => expect(page.items()).toHaveLength(1))
+    host.peers[0]!.drop()
+    await until(() => expect(page.panel()).toMatchObject({ phase: "closed", closed: "forbidden" }))
+    expect(page.items()).toEqual([])
+  })
+
+  // Astra on 0c7b9f01: the items showed whatever the run's repository. They join the run's page as the data gate shows
+  // it (`RunsStore.shownPages`), so a repository's refusal empties them in the same change.
+  test("a refusal of the run's repository empties the items in the same change", async () => {
+    n = 0
+    const host = await transcriptHost()
+    const REPO = "github/acme/widgets"
+    const held: { roles?: Collection.Collection<RepoRole, string>; pages?: Collection.Collection<RunPage, string> } = {}
+    const runs = Layer.effect(
+      RunsStore,
+      Effect.gen(function*() {
+        const roles = yield* Collection.local<RepoRole, string>({
+          id: `roles-${crypto.randomUUID()}`,
+          schema: RepoRole,
+          getKey: (row) => row.id
+        })
+        const session = yield* Collection.local<Session, string>({
+          id: `session-${crypto.randomUUID()}`,
+          schema: Session,
+          getKey: (row) => row.id,
+          initialData: [{
+            id: "session",
+            status: "signed_in",
+            login: "ann",
+            role: "member",
+            available: true,
+            signingOut: false,
+            restored: true
+          }]
+        })
+        const pages = yield* Collection.local<RunPage, string>({
+          id: `pages-${crypto.randomUUID()}`,
+          schema: RunPage,
+          getKey: (row) => row.id,
+          initialData: [{ id: RUN, state: "read", inspection: {}, more: [], hasMore: false, repoId: REPO }]
+        })
+        held.roles = roles
+        held.pages = pages
+        const visibility = yield* makeVisibility(roles, session)
+        // As the runs' store gates its pages: a page holding no read shows as it is.
+        return {
+          shownPages: yield* visibility.gate(pages, "repoId", pageShowsAlone)
+        } as unknown as RunsStore["Service"]
+      })
+    )
+    const page = await tab(host.origin, QUICK, runs)
+    page.actions.watch(RUN)
+    await until(() => expect(host.peers).toHaveLength(1))
+    host.peers[0]!.send({ type: "events", events: [said("private plan")] })
+    await until(() => expect(page.items()).toHaveLength(1))
+    const roles = held.roles!
+    await Effect.runPromise(Effect.orDie(roles.insert({ id: REPO, role: null, own: false, refused: "forbidden" })))
+    expect(page.items()).toEqual([])
+    // Astra on 19af7eb9: a read still on its way when the refusal came fails (a 403) and writes a page holding no read,
+    // which shows unattributed. It proves nothing of the run, so the items stay hidden.
+    await Effect.runPromise(Effect.orDie(held.pages!.update(RUN, (draft) => {
+      draft.state = "unavailable"
+      draft.inspection = null
+      delete draft.repoId
+    })))
+    expect(page.items()).toEqual([])
+  })
 
   test("a run that can't be reached for the redial's whole policy closes the panel; letting go empties it", async () => {
     n = 0

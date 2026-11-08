@@ -96,7 +96,15 @@ export const Issue = Schema.Struct({
   created_at: Schema.String,
   updated_at: Schema.String,
   closed_at: Schema.NullOr(Schema.String),
-  pull_request: Schema.optionalKey(Schema.Unknown)
+  pull_request: Schema.optionalKey(Schema.Unknown),
+  /** The parent's API URL. A listing leaves it out when there is none; one issue says `null`. */
+  parent_issue_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  /** GitHub's count of its children. `null` on a pull request, which states no relation. */
+  sub_issues_summary: Schema.optionalKey(
+    Schema.NullOr(Schema.Struct({ total: Schema.Number, completed: Schema.Number }))
+  ),
+  /** The issue's repository's API URL: a sub-issue listing can hold another repository's. */
+  repository_url: Schema.optionalKey(Schema.String)
 })
 
 /**
@@ -418,6 +426,53 @@ export const listComments = (
     const items = try decodeAll(IssueComment, page.items, path)
     return { items, truncated: page.truncated }
   }) |> withSpan(%, "GitHub.Issues.listComments", { attributes: spanAttributes(owner, repo, number) })
+
+/**
+ * One page of every issue and pull request of the repository, oldest first, as GitHub sent it:
+ * `GET /repos/{owner}/{repo}/issues?state=all&sort=created&direction=asc`. `next` is the query of GitHub's own next
+ * link, GitHub's cursor; pass it back as `cursor`, and `null` is the last page. A page number would skip issues when
+ * an earlier one is deleted between pages.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const listAllIssuesPage = (
+  owner: string,
+  repo: string,
+  options?: { readonly cursor?: string | null | undefined }
+): Effect.Effect<
+  { readonly items: ReadonlyArray<unknown>; readonly next: string | null },
+  IntegrationError,
+  GitHubClient
+> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
+    const query = options?.cursor ?? "state=all&sort=created&direction=asc"
+    const page = yield* client.paginate(`/repos/${repository}/issues?${query}`, { maxPages: 1, withNext: true })
+    const next = page.next ?? null
+    return { items: page.items, next: next === null ? null : new URL(next).search.slice(1) }
+  }).pipe(Effect.withSpan("GitHub.Issues.listAllIssuesPage"))
+
+/**
+ * Issue `number`'s sub-issues, as GitHub sent them: `GET /repos/{owner}/{repo}/issues/{number}/sub_issues`. GitHub allows
+ * at most 100 per parent, so one page of 100 is all of them.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const listSubIssues = (
+  owner: string,
+  repo: string,
+  number: number
+): Effect.Effect<ReadonlyArray<unknown>, IntegrationError, GitHubClient> =>
+  Effect.gen(function*() {
+    const client = yield* GitHubClient
+    const repository = yield* requireRepositoryPath(owner, repo)
+    const issue = yield* requireIssueNumber(number)
+    const page = yield* client.paginate(`/repos/${repository}/issues/${issue}/sub_issues`, { maxPages: 1 })
+    return page.items
+  }).pipe(Effect.withSpan("GitHub.Issues.listSubIssues", { attributes: spanAttributes(owner, repo, number) }))
 
 /**
  * Opens an issue: `POST /repos/{owner}/{repo}/issues`. Mark `body` with

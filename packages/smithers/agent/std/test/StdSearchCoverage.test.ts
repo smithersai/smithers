@@ -6,6 +6,7 @@ import { Context, Effect, PlatformError, Sink, Stream } from "effect"
 import * as FileSystem from "effect/FileSystem"
 import type * as ChildProcess from "effect/process/ChildProcess"
 import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
+import * as Redacted from "effect/Redacted"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -58,7 +59,7 @@ const native = (options: {
         Effect.sync(() => {
           const command = value as ChildProcess.StandardCommand
           options.commands?.push(command)
-          const json = command.args.includes("--json")
+          const json = command.args.map(plainWord).includes("--json")
           const stdout = Stream.make(new TextEncoder().encode(json ? options.json : options.binary ?? ""))
           const stderr = Stream.make(new TextEncoder().encode(json ? options.stderr ?? "" : options.binaryStderr ?? ""))
           return makeHandle({
@@ -249,11 +250,13 @@ describe("native search protocol boundaries", () => {
           }).pipe(Effect.provide(NodeServices.layer))
         )
         expect(commands).toHaveLength(expectedBatches)
-        const batches = commands.map((command) => command.args.slice(command.args.indexOf("--") + 1))
+        const batches = commands.map((command) =>
+          command.args.map(plainWord).slice(command.args.map(plainWord).indexOf("--") + 1)
+        )
         expect(batches.flat()).toEqual([...names, "a.txt"].sort())
         for (const batch of batches) {
           expect(batch.length).toBeLessThanOrEqual(256)
-          expect(batch.reduce((bytes, target) => bytes + new TextEncoder().encode(String(target)).length + 1, 0))
+          expect(batch.reduce((bytes, target) => bytes + new TextEncoder().encode(target).length + 1, 0))
             .toBeLessThanOrEqual(32_768)
         }
       })
@@ -590,3 +593,6 @@ describe("search wrapper boundaries", () => {
     expect(error.message).toBe("Permission denied: /search")
   })
 })
+
+const plainWord = (value: string | Redacted.Redacted<string>): string =>
+  Redacted.isRedacted(value) ? Redacted.value(value) : value

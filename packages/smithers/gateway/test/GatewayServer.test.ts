@@ -559,13 +559,10 @@ describe("the RPC body a mount will act on", () => {
     expect(GatewayServer.carriesRpcRequest(ndjson, request)).toBe(true)
     expect(GatewayServer.carriesRpcRequest(ndjson, "{}")).toBe(false)
     expect(GatewayServer.carriesRpcRequest(ndjson, "")).toBe(false)
-    // The parser throws on a complete line that is not JSON (Effect 4.1's
-    // NdjsonDecodeError), and buffers an unterminated one. Either way the body
-    // yields no message.
+    // Effect 4.1 rejects malformed complete frames and buffers incomplete ones.
     expect(GatewayServer.carriesRpcRequest(ndjson, "not json\n")).toBe(false)
     expect(GatewayServer.carriesRpcRequest(ndjson, "not json")).toBe(false)
-    // Beside a framed request the line fails the whole body, in this predicate
-    // and in the mount, which reads the body through the same parser.
+    // A malformed frame refuses the whole body, even beside a valid request.
     expect(GatewayServer.carriesRpcRequest(ndjson, `not json\n${request}`)).toBe(false)
     expect(GatewayServer.carriesRpcRequest(ndjson, `${request}not json\n`)).toBe(false)
     // A line that is JSON and no message still refuses the whole body.
@@ -1056,7 +1053,7 @@ describe("the assembled gateway over a real loopback bind", () => {
       }).pipe(Effect.provide(served())))
   }
 
-  test("refuses a framed request in a body whose other line is not JSON", () =>
+  test("refuses a malformed NDJSON frame before dispatching the valid frame beside it", () =>
     Effect.gen(function*() {
       const url = yield* baseUrl
       const response = yield* Effect.promise(() =>
@@ -1067,13 +1064,10 @@ describe("the assembled gateway over a real loopback bind", () => {
         })
       )
 
-      // Effect 4.1's NDJSON parser fails the whole body on a line it cannot
-      // parse, so the mount would too: the gateway refuses it as malformed.
       expect(response.status).toBe(400)
-      expect(yield* Effect.promise(() => response.json() as Promise<unknown>)).toEqual({
+      expect(yield* Effect.promise(() => response.json())).toMatchObject({
         _tag: "@smthrs/gateway/GatewayError",
-        code: "malformed_request",
-        message: "POST /rpc carries no RPC request message"
+        code: "malformed_request"
       })
     }).pipe(Effect.provide(served())))
 

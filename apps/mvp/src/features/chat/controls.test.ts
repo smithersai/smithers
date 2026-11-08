@@ -1,7 +1,10 @@
 import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
 import type { Outbox } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, Exit, Fiber, Layer, Logger, Metric, Option, Scope, Stream } from "effect"
+import * as Arr from "effect/Array"
+import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
+import { shaOf } from "../../../worker/test/branch"
 import { dispatches, FlowDispatch } from "../../flows/dispatch"
 import {
   type NodeDevice,
@@ -10,19 +13,25 @@ import {
   openTab,
   openTestApp,
   type TabOptions,
-  TestChatApi,
+  TestChatApi
 } from "../../test/chatApi"
 import { EngineFaults, QuestionFaults } from "../../test/faults"
+import { failRestore } from "../../test/restoreFailure"
+import { AuthStore, SESSION } from "../auth/store"
+import { Branch } from "../branch/branch"
+import { BranchStore } from "../branch/store"
+import { ConversationOwners } from "../conversations/owners"
+import { role as readRole } from "../repo/actions"
+import { replaceRole, RepoStore } from "../repo/store"
+import { ViewsStore } from "../views/store"
 import { ask, copyableText, retryAnswer, setDraft, show, takeBack } from "./actions"
 import { Chat } from "./chat"
-import { shaOf } from "../../../worker/test/branch"
-import { Branch } from "../branch/branch"
-import { ViewsStore } from "../views/store"
 import { firstAnswerText } from "./metrics"
 import { HOME_DRAFT, PLACE } from "./schema"
 import { SharedPrompt } from "./sharedPrompt"
-import { ChatStore, chatConfig, confirmDelivery, timeFirstText } from "./store"
+import { chatConfig, ChatStore, confirmDelivery, timeFirstText } from "./store"
 import { postgresTime, timeOf } from "./view"
+import { ChatWrites, keepUnsent } from "./writes"
 
 // Message controls on the app's own layer (docs/features/chat.md#message-controls), driven as React drives them: Copy
 // and Edit through their flows on a device whose engine leads, the saved draft across a reload, and each message's
@@ -37,7 +46,7 @@ afterEach(async () => {
 const quick: TabOptions = {
   unreachableAfter: "300 millis",
   confirmWithin: "1 second",
-  retry: SyncPolicy.backoff({ initial: "20 millis", max: "50 millis" }),
+  retry: SyncPolicy.backoff({ initial: "20 millis", max: "50 millis" })
 }
 
 const until = (assertion: () => void | Promise<void>, timeout = 15_000) =>
@@ -75,13 +84,13 @@ const openOn = async (api: TestChatApi["Service"], device: NodeDevice, faulty = 
     /** Dispatches `name` from this tab through `door`, and answers how it ended. */
     dispatch: (name: "chat/copy" | "chat/edit", payload: object, door: "slash" | "button") =>
       runtime.runPromise(
-        Effect.gen(function* () {
+        Effect.gen(function*() {
           return yield* Effect.result((yield* FlowDispatch).dispatch(name, payload as never, { door }))
-        }),
+        })
       ),
     count: (attributes: Record<string, string>) =>
       runtime.runSync(Metric.value(Metric.withAttributes(dispatches, attributes))).count,
-    close: () => runtime.dispose(),
+    close: () => runtime.dispose()
   }
 }
 
@@ -100,7 +109,7 @@ const openOffline = async () => {
     subscribe: (listener) => (listeners.add(listener), () => void listeners.delete(listener)),
     notifyOnline: () => listeners.forEach((listener) => listener()),
     isOnline: () => online,
-    dispose: () => listeners.clear(),
+    dispose: () => listeners.clear()
   }
   return {
     api,
@@ -110,14 +119,14 @@ const openOffline = async () => {
         online = true
         detector.notifyOnline()
       },
-      offline: () => void (online = false),
-    },
+      offline: () => void (online = false)
+    }
   }
 }
 
 /** Asks `text` and has the model answer `answer`, settled. */
 const answered = async (tab: Tab, api: TestChatApi["Service"], text: string, answer: string) => {
-  const result = (await tab.actions.ask(text))
+  const result = await tab.actions.ask(text)
   if (!result.asked) throw new Error(result.reason)
   const reply = await tab.run(api.answerTo(text))
   reply.say(answer)
@@ -127,28 +136,35 @@ const answered = async (tab: Tab, api: TestChatApi["Service"], text: string, ans
 }
 
 describe("Copy", () => {
-  test("Copy on a message puts its text on this tab's clipboard through chat/copy; /copy copies the latest answer", async () => {
-    const { api, device } = await openApi()
-    const tab = await openOn(api, device)
-    const first = await answered(tab, api, "hello", "Hi there")
-    await answered(tab, api, "and again", "Hi again")
+  test(
+    "Copy on a message puts its text on this tab's clipboard through chat/copy; /copy copies the latest answer",
+    async () => {
+      const { api, device } = await openApi()
+      const tab = await openOn(api, device)
+      const first = await answered(tab, api, "hello", "Hi there")
+      await answered(tab, api, "and again", "Hi again")
 
-    await tab.actions.copy(first.answerId)
-    await tab.actions.copy(first.questionId)
-    expect(device.copied).toEqual(["Hi there", "hello"])
-    expect(tab.count({ flow: "chat/copy", door: "button", outcome: "done" })).toBe(2)
+      await tab.actions.copy(first.answerId)
+      await tab.actions.copy(first.questionId)
+      expect(device.copied).toEqual(["Hi there", "hello"])
+      expect(tab.count({ flow: "chat/copy", door: "button", outcome: "done" })).toBe(2)
 
-    const slash = await tab.dispatch("chat/copy", {}, "slash")
-    expect(slash).toMatchObject({ _tag: "Success", success: { _tag: "Done", value: { copied: true } } })
-    expect(device.copied.at(-1)).toBe("Hi again")
-  }, 60_000)
+      const slash = await tab.dispatch("chat/copy", {}, "slash")
+      expect(slash).toMatchObject({ _tag: "Success", success: { _tag: "Done", value: { copied: true } } })
+      expect(device.copied.at(-1)).toBe("Hi again")
+    },
+    60_000
+  )
 
   test("a message this tab doesn't show is not copied: Copy rejects, and the flow fails MessageNotFound", async () => {
     const { api, device } = await openApi()
     const tab = await openOn(api, device)
     await expect(tab.actions.copy("no-such-message")).rejects.toMatchObject({ _tag: "NotCopied" })
     const latest = await tab.dispatch("chat/copy", {}, "slash")
-    expect(latest).toMatchObject({ _tag: "Success", success: { _tag: "Failed", error: { _tag: "@smthrs/mvp/chat/MessageNotFound" } } })
+    expect(latest).toMatchObject({
+      _tag: "Success",
+      success: { _tag: "Failed", error: { _tag: "@smthrs/mvp/chat/MessageNotFound" } }
+    })
     expect(device.copied).toEqual([])
   })
 
@@ -184,7 +200,7 @@ describe("Edit on a queued question", () => {
     const tab = await openOn(api, device, true)
     const faults = await tab.run(Effect.service(QuestionFaults))
     // Offline, the question waits in the outbox, queued, once this tab leads it.
-    const first = (await tab.actions.ask("frist question"))
+    const first = await tab.actions.ask("frist question")
     if (!first.asked) throw new Error(first.reason)
     await until(() => expect(tab.shown()).toEqual(["user queued frist question"]))
 
@@ -198,7 +214,7 @@ describe("Edit on a queued question", () => {
     // Online, the outbox sends only the edit: the question taken back never reaches Postgres.
     await tab.run(faults.failNext("invalid_response"))
     tab.actions.setDraft("first question")
-    const replacement = (await tab.actions.ask("first question"))
+    const replacement = await tab.actions.ask("first question")
     if (!replacement.asked) throw new Error(replacement.reason)
     tab.actions.setDraft("next")
     network.online()
@@ -225,7 +241,7 @@ describe("Edit on a queued question", () => {
     const tab = await openOn(api, device, true)
     const faults = await tab.run(Effect.service(QuestionFaults))
     await tab.run(faults.failNext("bad_request"))
-    ;(await tab.actions.ask("refused"))
+    await tab.actions.ask("refused")
     await until(() => expect(tab.shown()).toEqual(["user unsent refused"]))
     const slash = await tab.dispatch("chat/edit", {}, "slash")
     expect(slash).toMatchObject({ _tag: "Success", success: { _tag: "Done", value: { edited: true } } })
@@ -233,7 +249,7 @@ describe("Edit on a queued question", () => {
     await until(() => expect(tab.shown()).toEqual([]))
 
     network.offline()
-    const queued = (await tab.actions.ask("queued"))
+    const queued = await tab.actions.ask("queued")
     if (!queued.asked) throw new Error(queued.reason)
     await until(() => expect(tab.shown()).toEqual(["user queued queued"]))
     tab.actions.edit(queued.questionId)
@@ -248,7 +264,7 @@ describe("Edit on a queued question", () => {
     const engine = await tab.run(Effect.service(EngineFaults))
     // ChatApi takes the question, and the send waits for this device's engine to record the run that answers it.
     await tab.run(engine.holdStarts)
-    const asked = (await tab.actions.ask("on its way"))
+    const asked = await tab.actions.ask("on its way")
     if (!asked.asked) throw new Error(asked.reason)
     await until(async () => expect((await tab.run(api.rows)).map(({ text }) => text)).toContain("on its way"))
     tab.actions.setDraft("typing")
@@ -263,7 +279,7 @@ describe("Edit on a queued question", () => {
     // The outbox's storage refuses deletes, as a browser's IndexedDB can (test.faults-by-injection).
     const storage = { ...device.outbox.storage, delete: () => Promise.reject(new Error("storage refused the delete")) }
     const tab = await openOn(api, { ...device, outbox: { ...device.outbox, storage } } as NodeDevice)
-    const asked = (await tab.actions.ask("stuck"))
+    const asked = await tab.actions.ask("stuck")
     if (!asked.asked) throw new Error(asked.reason)
     await until(() => expect(tab.shown()).toEqual(["user queued stuck"]))
     tab.actions.setDraft("typing")
@@ -277,7 +293,7 @@ describe("Edit on a queued question", () => {
     const { api, device, network } = await openOffline()
     const leads = async (tab: Tab) => Option.getOrThrow(await tab.run(Stream.runHead(tab.store.outbox.status))).leader
     const first = await openOn(api, device)
-    const asked = (await first.actions.ask("asked here"))
+    const asked = await first.actions.ask("asked here")
     if (!asked.asked) throw new Error(asked.reason)
     await until(() => expect(first.shown()).toEqual(["user queued asked here"]))
     // Another tab on the device takes the lead, as the tab a person moves to does.
@@ -292,7 +308,7 @@ describe("Edit on a queued question", () => {
 
     // Online, only what is asked next is sent: the question taken back never reaches Postgres.
     network.online()
-    const next = (await first.actions.ask("next"))
+    const next = await first.actions.ask("next")
     if (!next.asked) throw new Error(next.reason)
     await until(async () =>
       expect((await first.run(api.rows)).map(({ text }) => text).filter((text) => text !== "")).toEqual(["next"])
@@ -331,10 +347,8 @@ describe("the saved draft", () => {
     expect(second.composer()).toMatchObject({ draft: "half a thought" })
     await second.run(show("branch-a"))
     expect(second.composer()).toMatchObject({ draft: "branch draft" })
-    await until(() => expect(device.stored("chat-drafts")).toBe(2))
-
-    // Asking sends the draft and forgets it; clearing the draft forgets it too.
-    ;(await second.actions.ask("branch draft"))
+    await until(() => expect(device.stored("chat-drafts")).toBe(2)) // Asking sends the draft and forgets it; clearing the draft forgets it too.
+    await second.actions.ask("branch draft")
     expect(second.store.drafts.tanstack.has("branch-a")).toBe(false)
     await second.run(show(null))
     second.actions.setDraft("")
@@ -362,7 +376,7 @@ describe("the saved draft", () => {
     first.actions.setDraft("typo")
     expect(first.composer()).toMatchObject({ draft: "typo", saved: false })
     first.actions.setDraft("fixed")
-    ;(await first.actions.ask("fixed"))
+    await first.actions.ask("fixed")
     first.actions.setDraft("half a thought")
     // Saved once the device stored the latest draft; an earlier draft's write never marks a later one saved.
     await until(() => expect(first.composer()).toMatchObject({ draft: "half a thought", saved: true }))
@@ -412,10 +426,125 @@ describe("times", () => {
 
 // A question, its draft, its delivery and its timing stay in their own conversation (docs/features/chat.md).
 describe("drafts and delivery stay in their own conversation", () => {
+  test("queued and unsent branch text waits for ownership and access, including cold refusal restoration", async () => {
+    const { api, device } = await openOffline()
+    api.branches.github.publish("octo", "hello", {
+      defaultBranch: "main",
+      branches: { main: shaOf("main"), feature: shaOf("feature") }
+    })
+    const tab = await openOn(api, device)
+    const branch = await tab.run(Effect.service(Branch))
+    await branch.actions.open("octo", "hello", "feature")
+    const conversationId = Option.getOrThrow(await tab.run(tab.store.place.get(PLACE))).conversationId!
+    const owners = await tab.run(Effect.service(ConversationOwners))
+    await until(() => expect(owners.mine.tanstack.has(conversationId)).toBe(true))
+    const queued = await tab.actions.ask("queued private text")
+    if (!queued.asked) throw new Error(queued.reason)
+    const unsentId = crypto.randomUUID()
+    await tab.run(Effect.flatten(keepUnsent(tab.store.unsent, {
+      v: 2,
+      id: unsentId,
+      answerId: crypto.randomUUID(),
+      text: "unsent private text",
+      queuedAt: Date.now(),
+      conversationId
+    }, "refused")))
+    const view = tab.queries.of(conversationId)
+    view.conversation.startSyncImmediate()
+    view.pinned.startSyncImmediate()
+    tab.queries.pinPending.startSyncImmediate()
+    const shown = () => view.conversation.toArray.map(({ role, status, text }) => `${role} ${status} ${text}`).sort()
+    const expected = ["user queued queued private text", "user unsent unsent private text"]
+    await until(() => expect(shown()).toEqual(expected))
+    tab.actions.pin(queued.questionId, true)
+    await until(() => expect(view.pinned.toArray.map((row) => row.text)).toEqual(["queued private text"]))
+    expect(tab.queries.pinPending.toArray.map((row) => row.text)).toEqual(["queued private text"])
+    const repos = await tab.run(Effect.service(RepoStore))
+    // The query closes in the same change as a denial, while delivery retains both raw rows.
+    const auth = await tab.run(Effect.service(AuthStore))
+    const denied = await tab.run(
+      Effect.andThen(
+        replaceRole(repos, { id: "github/octo/hello", role: null, own: false, refused: "forbidden" }),
+        Effect.sync(() => ({
+          conversation: shown(),
+          pinned: view.pinned.toArray,
+          pending: tab.queries.pinPending.toArray
+        }))
+      )
+    )
+    expect(
+      denied,
+      JSON.stringify({
+        visible: repos.visible.tanstack.get("github/octo/hello")?.show,
+        owner: owners.mine.tanstack.get(conversationId)?.owner,
+        repo: owners.mine.tanstack.get(conversationId)?.repo,
+        home: auth.session.tanstack.get(SESSION)?.homeConversationId === conversationId,
+        counts: [denied.conversation.length, denied.pinned.length, denied.pending.length],
+        stages: [
+          tab.store.opened(conversationId)!.conversation.tanstack.size,
+          tab.store.opened(conversationId)!.latest.tanstack.size
+        ],
+        sources: [tab.store.shownAsking.tanstack.size, tab.store.shownUnsent.tanstack.size]
+      })
+    ).toEqual({ conversation: [], pinned: [], pending: [] })
+    expect(tab.store.asking.tanstack.has(queued.questionId)).toBe(true)
+    expect(tab.store.unsent.tanstack.has(unsentId)).toBe(true)
+    await tab.run(readRole("octo", "hello"))
+    await until(() => expect(shown()).toEqual(expected))
+    expect(view.pinned.toArray.map((row) => row.text)).toEqual(["queued private text"])
+    // Remove both verified attribution sources. Neither local text source may bypass that missing relation.
+    const branchCache = (await tab.run(Effect.service(BranchStore))).conversations
+    const cachedRoutes = branchCache.tanstack.toArray.filter((row) => row.conversationId === conversationId).map(
+      (row) => row.id
+    )
+    if (cachedRoutes.length > 0) {
+      await tab.run(branchCache.delete(cachedRoutes).pipe(Effect.flatMap((write) => write.persisted)))
+    }
+    const saved = await tab.run(
+      api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql<
+          Record<string, unknown>
+        >`DELETE FROM conversation_people WHERE conversation_id = ${conversationId} RETURNING *`))
+    )
+    await until(() => expect(owners.mine.tanstack.has(conversationId)).toBe(false))
+    expect(shown()).toEqual([])
+    expect(view.pinned.toArray).toEqual([])
+    expect(tab.queries.pinPending.toArray).toEqual([])
+    await tab.run(
+      api.github.run(
+        Effect.flatMap(
+          SqlClient.SqlClient,
+          (sql) =>
+            Arr.isReadonlyArrayNonEmpty(saved) ? sql`INSERT INTO conversation_people ${sql.insert(saved)}` : Effect.void
+        )
+      )
+    )
+    await until(() => expect(shown()).toEqual(expected))
+    expect(view.pinned.toArray.map((row) => row.text)).toEqual(["queued private text"])
+    await tab.run(repos.refuse("github/octo/hello"))
+    expect(shown()).toEqual([])
+    await tab.close()
+    const cold = await openOn(api, failRestore(device, "repo-refusals"))
+    await cold.run(show(conversationId))
+    await until(() => expect(cold.store.asking.tanstack.has(queued.questionId)).toBe(true))
+    await until(() => expect(cold.store.unsent.tanstack.has(unsentId)).toBe(true))
+    const coldView = cold.queries.of(conversationId)
+    coldView.conversation.startSyncImmediate()
+    coldView.pinned.startSyncImmediate()
+    cold.queries.pinPending.startSyncImmediate()
+    await until(() => expect(cold.store.pinState.pending.tanstack.has(conversationId)).toBe(true))
+    expect(coldView.conversation.toArray).toEqual([])
+    expect(coldView.pinned.toArray).toEqual([])
+    expect(cold.queries.pinPending.toArray).toEqual([])
+  }, 90_000)
+
   /** A tab showing branch `feature` of `octo/hello`, whose conversation it asks in. */
   const onBranch = async (options: TabOptions = {}) => {
     const { api, device } = await openApi()
-    api.branches.github.publish("octo", "hello", { defaultBranch: "main", branches: { main: shaOf("main"), feature: shaOf("feature") } })
+    api.branches.github.publish("octo", "hello", {
+      defaultBranch: "main",
+      branches: { main: shaOf("main"), feature: shaOf("feature") }
+    })
     const tab = await openOn(api, device, false, options)
     const branch = await tab.run(Effect.service(Branch))
     await branch.actions.open("octo", "hello", "feature")
@@ -440,8 +569,12 @@ describe("drafts and delivery stay in their own conversation", () => {
     const { answerId, questionId } = await answered(tab, api, "original", "answer")
     tab.actions.setDraft("unrelated draft")
     // Electric has delivered the answer and not (yet) its question (test.faults-by-injection).
-    const messages = { ...tab.store.messages, get: (id: string) => id === questionId ? Effect.succeed(Option.none()) : tab.store.messages.get(id) }
-    await expect(tab.run(retryAnswer(answerId).pipe(Effect.provideService(ChatStore, { ...tab.store, messages })))).resolves.toBeUndefined()
+    const messages = {
+      ...tab.store.messages,
+      get: (id: string) => id === questionId ? Effect.succeed(Option.none()) : tab.store.messages.get(id)
+    }
+    await expect(tab.run(retryAnswer(answerId).pipe(Effect.provideService(ChatStore, { ...tab.store, messages }))))
+      .resolves.toBeUndefined()
     expect(tab.shown().filter((line) => line.endsWith(" original"))).toHaveLength(1)
     expect(tab.composer()).toMatchObject({ draft: "unrelated draft" })
   }, 60_000)
@@ -454,73 +587,106 @@ describe("drafts and delivery stay in their own conversation", () => {
     reply.say("answer")
     reply.done()
     const opened = tab.store.opened(conversationId)!
-    await until(async () => expect(Option.getOrThrow(await tab.run(opened.messages.get(asked.answerId))).status).toBe("done"), 25_000)
+    await until(
+      async () => expect(Option.getOrThrow(await tab.run(opened.messages.get(asked.answerId))).status).toBe("done"),
+      25_000
+    )
     await tab.run(show(conversationId, true))
     // Anything written to the shared prompt now fails the retry (test.faults-by-injection).
     const prompt = SharedPrompt.of({ set: () => Effect.die(new Error("the retry changed the shared prompt")) })
-    await tab.run(setDraft("shared draft").pipe(Effect.provideService(SharedPrompt, SharedPrompt.of({ set: () => Effect.void }))))
+    await tab.run(
+      setDraft("shared draft").pipe(Effect.provideService(SharedPrompt, SharedPrompt.of({ set: () => Effect.void })))
+    )
     await tab.run(retryAnswer(asked.answerId).pipe(Effect.provideService(SharedPrompt, prompt)))
     expect(tab.composer()).toMatchObject({ draft: "shared draft" })
   }, 60_000)
 
-  test.each([undefined, "take me back", "older draft"])("a question taken back after navigation restores its own draft over %s", async (kept) => {
-    const { api, device } = await openOffline()
-    let entered!: () => void
-    let release!: () => void
-    const deleting = new Promise<void>((resolve) => { entered = resolve })
-    const held = new Promise<void>((resolve) => { release = resolve })
-    // The outbox's storage holds the delete until the test lets it go (test.faults-by-injection).
-    const storage = { ...device.outbox.storage, delete: async (key: string) => {
-      entered()
-      await held
-      return device.outbox.storage.delete(key)
-    } }
-    const tab = await openOn(api, { ...device, outbox: { ...device.outbox, storage } } as NodeDevice)
-    const asked = await tab.actions.ask("take me back")
-    if (!asked.asked) throw new Error(asked.reason)
-    await until(() => expect(tab.shown()).toEqual(["user queued take me back"]))
-    const editing = tab.run(takeBack(asked.questionId))
-    try {
-      await deleting
-      await tab.run(show("another-conversation"))
-      await tab.actions.setDraft("another draft")
-      if (kept !== undefined) await tab.run(tab.store.drafts.insert({ id: HOME_DRAFT, text: kept, generation: "earlier" }))
-    } finally { release() }
-    expect(await editing).toBe("edited")
-    expect(tab.composer()).toMatchObject({ draft: "another draft" })
-    expect(Option.getOrThrow(await tab.run(tab.store.drafts.get("another-conversation"))).text).toBe("another draft")
-    const restored = Option.getOrThrow(await tab.run(tab.store.drafts.get(HOME_DRAFT)))
-    expect(restored.text).toBe("take me back")
-    // An identical saved draft keeps its generation; a replacement or new draft must not inherit stale identity.
-    expect(restored.generation).toBe(kept === "take me back" ? "earlier" : undefined)
-    await tab.run(show(null))
-    expect(tab.composer()).toMatchObject({ draft: "take me back" })
-  }, 60_000)
+  test.each([undefined, "take me back", "older draft"])(
+    "a question taken back after navigation restores its own draft over %s",
+    async (kept) => {
+      const { api, device } = await openOffline()
+      let entered!: () => void
+      let release!: () => void
+      const deleting = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      const held = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      // The outbox's storage holds the delete until the test lets it go (test.faults-by-injection).
+      const storage = {
+        ...device.outbox.storage,
+        delete: async (key: string) => {
+          entered()
+          await held
+          return device.outbox.storage.delete(key)
+        }
+      }
+      const tab = await openOn(api, { ...device, outbox: { ...device.outbox, storage } } as NodeDevice)
+      const asked = await tab.actions.ask("take me back")
+      if (!asked.asked) throw new Error(asked.reason)
+      await until(() => expect(tab.shown()).toEqual(["user queued take me back"]))
+      const editing = tab.run(takeBack(asked.questionId))
+      try {
+        await deleting
+        await tab.run(show("another-conversation"))
+        await tab.actions.setDraft("another draft")
+        if (kept !== undefined) {
+          await tab.run(
+            tab.store.drafts.insert({ id: HOME_DRAFT, text: kept, generation: "earlier" })
+          )
+        }
+      } finally {
+        release()
+      }
+      expect(await editing).toBe("edited")
+      expect(tab.composer()).toMatchObject({ draft: "another draft" })
+      expect(Option.getOrThrow(await tab.run(tab.store.drafts.get("another-conversation"))).text).toBe("another draft")
+      const restored = Option.getOrThrow(await tab.run(tab.store.drafts.get(HOME_DRAFT)))
+      expect(restored.text).toBe("take me back")
+      // An identical saved draft keeps its generation; a replacement or new draft must not inherit stale identity.
+      expect(restored.generation).toBe(kept === "take me back" ? "earlier" : undefined)
+      await tab.run(show(null))
+      expect(tab.composer()).toMatchObject({ draft: "take me back" })
+    },
+    60_000
+  )
 
-  test("a branch's refused shape shows Sync failed, which the home shape syncing doesn't clear; Retry does", async () => {
-    let refusing = true
-    // Electric's proxy refuses the branch conversations' message shapes, never the home one's (test.faults-by-injection).
-    const source = ShapeSource.ShapeSource.of({ request: (url, init) =>
-      refusing && new URL(url).searchParams.has("conversation")
-        ? Effect.succeed(new Response("forbidden", { status: 403 }))
-        : ShapeSource.fetchSource.request(url, init),
-    })
-    const { api, device } = await openApi()
-    const tab = await openOn(api, device, false, { replace: Layer.succeed(ShapeSource.ShapeSource, source) })
-    await until(() => expect(tab.queries.connection.toArray[0]).toMatchObject({ status: "up" }))
-    await tab.run(show("refused-branch"))
-    await until(() => expect(tab.queries.connection.toArray[0]).toMatchObject({ status: "failed", retry: true }))
-    const synced = await tab.run(Effect.forkIn(tab.store.messages.sync.pipe(
-      Stream.filter((event) => event._tag === "Succeeded"), Stream.take(1), Stream.runDrain,
-    ), tab.store.scope, { startImmediately: true }))
-    await tab.run(tab.store.messages.reconnect)
-    await tab.run(Fiber.join(synced).pipe(Effect.timeout("10 seconds")))
-    await tab.run(Effect.sleep("1200 millis"))
-    expect(tab.queries.connection.toArray[0]).toMatchObject({ status: "failed", retry: true })
-    refusing = false
-    await tab.run(tab.store.retryNow)
-    await until(() => expect(tab.queries.connection.toArray[0]).toMatchObject({ status: "up" }))
-  }, 60_000)
+  test(
+    "a branch's refused shape shows Sync failed, which the home shape syncing doesn't clear; Retry does",
+    async () => {
+      let refusing = true
+      // Electric's proxy refuses the branch conversations' message shapes, never the home one's (test.faults-by-injection).
+      const source = ShapeSource.ShapeSource.of({
+        request: (url, init) =>
+          refusing && new URL(url).searchParams.has("conversation")
+            ? Effect.succeed(new Response("forbidden", { status: 403 }))
+            : ShapeSource.fetchSource.request(url, init)
+      })
+      const { api, device } = await openApi()
+      const tab = await openOn(api, device, false, { replace: Layer.succeed(ShapeSource.ShapeSource, source) })
+      await until(() => expect(tab.queries.connection.toArray[0]).toMatchObject({ status: "up" }))
+      await tab.run(show("refused-branch"))
+      await until(() => expect(tab.queries.connection.toArray[0]).toMatchObject({ status: "failed", retry: true }))
+      const synced = await tab.run(Effect.forkIn(
+        tab.store.messages.sync.pipe(
+          Stream.filter((event) => event._tag === "Succeeded"),
+          Stream.take(1),
+          Stream.runDrain
+        ),
+        tab.store.scope,
+        { startImmediately: true }
+      ))
+      await tab.run(tab.store.messages.reconnect)
+      await tab.run(Fiber.join(synced).pipe(Effect.timeout("10 seconds")))
+      await tab.run(Effect.sleep("1200 millis"))
+      expect(tab.queries.connection.toArray[0]).toMatchObject({ status: "failed", retry: true })
+      refusing = false
+      await tab.run(tab.store.retryNow)
+      await until(() => expect(tab.queries.connection.toArray[0]).toMatchObject({ status: "up" }))
+    },
+    60_000
+  )
 
   test("a branch answer's first text is timed in the branch's conversation", async () => {
     const { api, tab } = await onBranch()
@@ -539,7 +705,9 @@ describe("drafts and delivery stay in their own conversation", () => {
     if (!asked.asked) throw new Error(asked.reason)
     const before = (await tab.run(Metric.value(firstAnswerText))).count
     const follower = await tab.run(Effect.forkIn(
-      timeFirstText(asked.answerId, Date.now(), conversationId), tab.store.scope, { startImmediately: true },
+      timeFirstText(asked.answerId, Date.now(), conversationId),
+      tab.store.scope,
+      { startImmediately: true }
     ))
     const reply = await tab.run(api.answerTo("branch empty answer"))
     reply.fail()
@@ -547,47 +715,96 @@ describe("drafts and delivery stay in their own conversation", () => {
     expect((await tab.run(Metric.value(firstAnswerText))).count).toBe(before)
   }, 60_000)
 
-  test("a branch conversation the device can't open while confirming a question keeps the question in the outbox", async () => {
-    const { api, tab, conversationId } = await onBranch()
-    const errors: string[] = []
-    const nextDevice = nodeDevice({ agent: api })
-    // The outbox's mutation errors, as TanStack DB's executor sees them: `OutboxRetry` is sent again, `OutboxDefect` never.
-    const host = { ...nextDevice, outbox: { ...nextDevice.outbox, start: (config: Parameters<typeof nextDevice.outbox.start>[0]) =>
-      nextDevice.outbox.start({ ...config, mutationFns: { ...config.mutationFns, ask: async (params) => {
-        try { return await config.mutationFns.ask!(params) } catch (error) { errors.push((error as Error).name); throw error }
-      } } }) } }
-    const views = await tab.run(Effect.service(ViewsStore))
-    let unavailable = true
-    // The device can't open the branch's views collection while the question is confirmed (test.faults-by-injection).
-    const context = await tab.run(Layer.build(ChatStore.layer(chatConfig(api.origin, quick as never), host)).pipe(
-      Effect.provideService(ViewsStore, { ...views, forConversation: (id) => unavailable
-        ? Effect.die(new Error("collection unavailable")) : views.forConversation(id) }),
-      Scope.provide(tab.store.scope),
-    ))
-    const store = Context.get(context, ChatStore)
-    await tab.run(store.place.update(PLACE, (place) => { place.conversationId = conversationId }))
-    const queued = await tab.run(ask("delivery opening fault").pipe(Effect.provideService(ChatStore, store)))
-    if (!queued.asked) throw new Error(queued.reason)
-    await until(() => expect(errors.length).toBeGreaterThan(0), 20_000)
-    expect(errors[0]).toBe("OutboxRetry")
-    unavailable = false
-    await tab.run(store.outbox.retryNow)
-    await until(() => expect(store.opened(conversationId)?.messages.tanstack.has(queued.questionId)).toBe(true), 20_000)
-    await until(() => expect(store.asking.tanstack.has(queued.questionId)).toBe(false), 20_000)
-  }, 60_000)
+  test(
+    "a branch conversation the device can't open while confirming a question keeps the question in the outbox",
+    async () => {
+      const { api, tab, conversationId } = await onBranch()
+      const errors: string[] = []
+      const nextDevice = nodeDevice({ agent: api })
+      // The outbox's mutation errors, as TanStack DB's executor sees them: `OutboxRetry` is sent again, `OutboxDefect` never.
+      const host = {
+        ...nextDevice,
+        outbox: {
+          ...nextDevice.outbox,
+          start: (config: Parameters<typeof nextDevice.outbox.start>[0]) =>
+            nextDevice.outbox.start({
+              ...config,
+              mutationFns: {
+                ...config.mutationFns,
+                ask: async (params) => {
+                  try {
+                    return await config.mutationFns.ask!(params)
+                  } catch (error) {
+                    errors.push((error as Error).name)
+                    throw error
+                  }
+                }
+              }
+            })
+        }
+      }
+      const views = await tab.run(Effect.service(ViewsStore))
+      let unavailable = true
+      // The device can't open the branch's views collection while the question is confirmed (test.faults-by-injection).
+      const context = await tab.run(
+        Layer.build(
+          ChatStore.layer(chatConfig(api.origin, quick as never), host).pipe(Layer.provide(ChatWrites.layer(host)))
+        ).pipe(
+          Effect.provideService(ViewsStore, {
+            ...views,
+            forConversation: (id) =>
+              unavailable
+                ? Effect.die(new Error("collection unavailable")) :
+                views.forConversation(id)
+          }),
+          Scope.provide(tab.store.scope)
+        )
+      )
+      const store = Context.get(context, ChatStore)
+      await tab.run(store.place.update(PLACE, (place) => {
+        place.conversationId = conversationId
+      }))
+      const queued = await tab.run(ask("delivery opening fault").pipe(Effect.provideService(ChatStore, store)))
+      if (!queued.asked) throw new Error(queued.reason)
+      await until(() => expect(errors.length).toBeGreaterThan(0), 20_000)
+      expect(errors[0]).toBe("OutboxRetry")
+      unavailable = false
+      await tab.run(store.outbox.retryNow)
+      await until(
+        () => expect(store.opened(conversationId)?.messages.tanstack.has(queued.questionId)).toBe(true),
+        20_000
+      )
+      await until(() => expect(store.asking.tanstack.has(queued.questionId)).toBe(false), 20_000)
+    },
+    60_000
+  )
 
   test("confirming a question in a branch: a defect opening it is Outbox.Retry, logged; interruption stays cancellation", async () => {
     const { api, device } = await openApi()
     const tab = await openOn(api, device)
-    const row = { id: "queued", answerId: "answer", text: "question", queuedAt: 1, v: 2 as const, conversationId: "branch" }
+    const row = {
+      id: "queued",
+      answerId: "answer",
+      text: "question",
+      queuedAt: 1,
+      v: 2 as const,
+      conversationId: "branch"
+    }
     const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
     const logger = Logger.make((options) => void logs.push(Logger.formatStructured.log(options)))
     const dying = { messages: tab.store.messages, open: () => Effect.die(new Error("branch collection unavailable")) }
-    await expect(tab.run(Effect.result(confirmDelivery(row, dying, "1 second")).pipe(
-      Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
-    ))).resolves.toMatchObject({ _tag: "Failure", failure: { _tag: "Retry" } })
-    expect(logs).toMatchObject([{ message: "chat branch delivery waiting", annotations: { feature: "chat", reason: "branch_open" } }])
-    const interrupted = await tab.run(Effect.exit(confirmDelivery(row, { ...dying, open: () => Effect.interrupt }, "1 second")))
+    await expect(tab.run(
+      Effect.result(confirmDelivery(row, dying, "1 second")).pipe(
+        Effect.provideService(Logger.CurrentLoggers, new Set([logger]))
+      )
+    )).resolves.toMatchObject({ _tag: "Failure", failure: { _tag: "Retry" } })
+    expect(logs).toMatchObject([{
+      message: "chat branch delivery waiting",
+      annotations: { feature: "chat", reason: "branch_open" }
+    }])
+    const interrupted = await tab.run(
+      Effect.exit(confirmDelivery(row, { ...dying, open: () => Effect.interrupt }, "1 second"))
+    )
     expect(Exit.hasInterrupts(interrupted)).toBe(true)
   })
 })

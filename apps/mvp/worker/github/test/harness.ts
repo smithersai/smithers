@@ -29,6 +29,7 @@ import { onTestFinished } from "vitest"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
 import {
   COMMENTS_TABLE,
+  ISSUE_RELATIONS_TABLE,
   ITEMS_TABLE,
   SYNC_TABLE,
   TRIAGE_SETTINGS_TABLE,
@@ -47,7 +48,7 @@ import type { GitHubApp, Repository } from "../Config.vibe"
 import * as RepoRoles from "../RepoRoles.ts"
 import * as Host from "../Host.ts"
 import type { Seat } from "../../ModelEndpoint.ts"
-import { REPOSITORY, services as flowServices } from "./fixtures.ts"
+import { confirmedSession, REPOSITORY, services as flowServices } from "./fixtures.ts"
 import { APP_ID, appKey, SCRIPTED_API, type ScriptedGitHub, scriptedGitHub } from "./scriptedGitHub.ts"
 
 type Runtime = ReturnType<typeof testFile>
@@ -114,10 +115,12 @@ export interface Options {
   /** The real `RepoRoles`, changed: a test that interleaves something between a role's read and its write. */
   readonly wrapRoles?: (roles: RepoRoles.RepoRoles<never>) => RepoRoles.RepoRoles<never>
   /** Options for the real `RepoRoles` the harness makes, such as a shorter refresh cooldown. */
-  readonly roleOptions?: Partial<Pick<RepoRoles.Options, "refreshCooldownSeconds" | "refreshDeadline">>
+  readonly roleOptions?: Partial<Pick<RepoRoles.Options, "refreshCooldownSeconds" | "refreshDeadline" | "local">>
   readonly repoFlows?: boolean
   /** Exercise the production fetch transport against a test HTTP server. */
   readonly metadata?: { readonly url: string; readonly token: string }
+  /** Local development's synced repository and issue (`Api.Options.localSynced`): none unless set. */
+  readonly localSynced?: Api.LocalSynced
 }
 
 let harnessKey: Promise<Redacted.Redacted<string>> | undefined
@@ -192,6 +195,9 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
   })
 
   const own = options.own ?? REPOSITORY
+  // Who is asking, once for every route; their session recorded as sign-in confirms it (`confirmedSession`).
+  const actor = options.actor === null ? null : options.actor ?? member()
+  if (options.sessions === undefined && actor !== null) await confirmedSession(runtime, actor)
   // A real key, made once per file: a role on another repository is read with the App (decision 0079 §3).
   const configured = options.app === null
     ? Option.none<GitHubApp>()
@@ -205,7 +211,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
   })))
   const roles = options.wrapRoles === undefined ? real : options.wrapRoles(real)
   const routes = await runtime.runPromise(
-    observed(Api.make(database, { repository: own, app: configured, roles, ...(options.metadata === undefined ? { http: github.http } : {}), repoFlows: options.repoFlows === true, allowed: Option.fromUndefinedOr(options.allowed) })),
+    observed(Api.make(database, { repository: own, app: configured, roles, ...(options.metadata === undefined ? { http: github.http } : {}), repoFlows: options.repoFlows === true, allowed: Option.fromUndefinedOr(options.allowed), ...(options.localSynced === undefined ? {} : { localSynced: options.localSynced }) })),
   )
   // Electric, as the routes call it: each table in this file's schema.
   const tables = new Set([
@@ -219,6 +225,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
     REVIEWS_TABLE,
     RUNS_TABLE,
     WORK_LINKS_TABLE,
+    ISSUE_RELATIONS_TABLE,
     TODO_LEAVES_TABLE,
   ])
   const electric: typeof globalThis.fetch = (input, init) => {
@@ -231,7 +238,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
     observed(
       afterBody(routes.fetch).pipe(
         Effect.provide(
-          options.sessions ?? (options.actor === null ? Actor.signedOut : signedInAs(options.actor ?? member())),
+          options.sessions ?? (actor === null ? Actor.signedOut : signedInAs(actor)),
         ),
         // Branch routes the GitHub routes reach (Publish, Compare) ask the person's role through BranchRoles.
         Effect.provide(BranchRoles.layer(roles)),
@@ -259,7 +266,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
     /** Whether the request may read a repository's content, as the role route's `readable` answers it. */
     mayRead: (target: Repository, headers: Record<string, string> = {}) =>
       runtime.runPromise(observed(routes.mayRead(target).pipe(
-        Effect.provide(options.sessions ?? (options.actor === null ? Actor.signedOut : signedInAs(options.actor ?? member()))),
+        Effect.provide(options.sessions ?? (actor === null ? Actor.signedOut : signedInAs(actor))),
         Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://github.test/", { headers }))),
       ))),
     github,

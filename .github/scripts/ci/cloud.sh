@@ -810,6 +810,10 @@ run_group() {
   printf 'GROUP-OK %s\n' "$*"
 }
 
+# Bootstrap helpers are also used by source-only land checks. Sourcing declares
+# them and their environment; executing this script still dispatches a CI gate.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
+
 if [ "${1:-}" = group ]; then
   shift
   run_group "$@"

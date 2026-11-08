@@ -1,3 +1,4 @@
+import { Request } from "./modules.ts"
 import { describe, expect, it } from "@effect/vitest"
 import { fetchCommand, flowsRoot, runAgentCommand } from "../examples/agent-command.vibe"
 import { failureOf } from "./helpers.vibe"
@@ -13,13 +14,11 @@ describe("examples/agent-command", () => {
   })
 
   it.effect("refuses a command string the flow schema rejects", effect () => {
-    expect(try failureOf(runAgentCommand(flowsRoot, "review --number forty-two"))).toMatchObject({
-      code: "decode_failed"
-    })
+    expect(try failureOf(runAgentCommand(flowsRoot, "review --number forty-two"))).toMatchObject({ code: "decode_failed" })
   })
 
   it.effect("serves the same route over HTTP", effect () => {
-    const body = try fetchCommand(flowsRoot, new Request("http://localhost/review?number=7"))
-    expect(body).toMatchObject({ ok: true, data: { accepted: true, number: 7 } })
+    const body = fetchCommand(flowsRoot, new Request("http://localhost/review?number=7"))
+    expect(try body).toMatchObject({ ok: true, data: { accepted: true, number: 7 } })
   })
 })

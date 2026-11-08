@@ -1,7 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
-import { Crypto } from "@smthrs/crypto"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
@@ -90,7 +89,7 @@ describe("batched boundary identities", () => {
             code: "unsupported_boundary",
             cause: expect.any(Error)
           })
-        }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+        }).pipe(Effect.provide(NodeCrypto.layer))
       )
     }
   )
@@ -111,7 +110,7 @@ describe("batched boundary identities", () => {
     const boundary = StepBoundary.makeFileSystem(fs, hostPath, ArtifactStore.makeMemory())
     const error = await Effect.runPromise(
       Effect.flip(boundary.prepare({ readSet: [{ path: "a", digest: "old" }], writeSet: [], boundaryMode: "hard" }))
-        .pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+        .pipe(Effect.provide(NodeCrypto.layer))
     )
     expect(error.cause).toBe(cause)
   })
@@ -195,7 +194,7 @@ describe("batched boundary identities", () => {
         expect(yield* FileEnumeration.filesUnder(fs, "out")).toEqual(
           [...output.keys()].filter((path) => path.startsWith("out/")).sort()
         )
-      }).pipe(Effect.provide(guarded(root)), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+      }).pipe(Effect.provide(guarded(root)), Effect.provide(NodeCrypto.layer))
     )
   })
 
@@ -215,10 +214,7 @@ describe("batched boundary identities", () => {
           ) => [path, digest])
         )
           .toEqual(paths.map((path) => [path, sha(Buffer.alloc(12_000, path.charCodeAt(0)))]))
-      }).pipe(
-        Effect.provide(guarded(root, { limits: { response: 24_000 } })),
-        Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
-      )
+      }).pipe(Effect.provide(guarded(root, { limits: { response: 24_000 } })), Effect.provide(NodeCrypto.layer))
     )
   })
 
@@ -243,7 +239,7 @@ describe("batched boundary identities", () => {
         })
         const failure = yield* Effect.flip(boundary.settle(prepared))
         expect(failure).toMatchObject({ code: "unsupported_boundary", cause: { reason: { _tag: "Busy" } } })
-      }).pipe(Effect.provide(guarded(root)), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+      }).pipe(Effect.provide(guarded(root)), Effect.provide(NodeCrypto.layer))
     )
   })
 })

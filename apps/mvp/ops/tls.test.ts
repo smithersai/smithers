@@ -34,7 +34,7 @@ test.each<[string, (fetch: typeof globalThis.fetch, io: { out: (line: string) =>
   expect(said.join()).not.toContain("hunter2")
 })
 
-test.each(["issues/track.mjs", "issues/file.mjs", "issue-tracking/seed.mjs", "work-links/link.mjs"])("%s, run as a script, stops with TLS checks off", async (script) => {
+test.each(["issues/track.mjs", "issue-tracking/seed.mjs", "work-links/link.mjs"])("%s, run as a script, stops with TLS checks off", async (script) => {
   const path = new URL(script, import.meta.url).pathname
   const failed = await promisify(execFile)(process.execPath, [path, "--origin", "https://localhost:1443"], { env: { PATH: process.env.PATH, ...off } }).catch((error: { code: number; stderr: string }) => error)
   expect(failed).toMatchObject({ code: 1, stderr: expect.stringContaining("TLS checks are turned off") })
@@ -44,7 +44,7 @@ afterEach(() => vi.unstubAllEnvs())
 
 test.each<[string, (fetch: typeof globalThis.fetch) => Promise<unknown>]>([
   ["post", (fetch) => post({ origin: "https://localhost:1443", repo: "o/n", issue: 1, token: "t", body: {}, fetch })],
-  ["the issue client", (fetch) => clientOf({ origin: "https://localhost:1443", identity: { sessionCookie: "c", personId: "p", githubToken: "t" }, dryRun: false, fetch }).send({ url: "/x" })],
+  ["the issue client", (fetch) => clientOf({ origin: "https://localhost:1443", dryRun: false, fetch, token: () => "t", lane: () => "a/l" }).send({ repo: "o/n", path: "/x" })],
 ])("%s, imported, sends nothing with TLS checks off", async (_name, send) => {
   vi.stubEnv("NODE_TLS_REJECT_UNAUTHORIZED", "0")
   let asked = 0

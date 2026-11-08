@@ -1,3 +1,4 @@
+import { withUserAgent } from "./github/Http.ts"
 import { Core, GitHub } from "@smthrs/integrations"
 import { Clock, Config, Context, Effect, Layer, Redacted, Schema } from "effect"
 import type { HttpClient } from "effect/http"
@@ -151,7 +152,8 @@ const make = (options: {
       provider: "GitHub",
     }
     // The services the `@smthrs/integrations` calls need: the caller's `HttpClient`.
-    const context = yield* Effect.context<HttpClient.HttpClient>()
+    const context = yield* Effect.context<HttpClient.HttpClient>().pipe(withUserAgent)
+    // Translate the typed transport failure into a fresh public failure; transport traces stay on the client span.
     const refused = (step: GitHubRefused["step"]) => (error: Core.IntegrationError.IntegrationError) =>
       new GitHubRefused({ step, reason: reasonOf(error) })
     const tokens = (grant: Core.OAuthToken.Grant) =>
@@ -181,13 +183,13 @@ const make = (options: {
         }),
       exchange: ({ code, codeVerifier, redirectUri }) =>
         Core.OAuthToken.exchangeCode({ ...endpoint, code, codeVerifier, redirectUri }).pipe(
-          Effect.mapError(refused("exchange")),
+          Effect.catch((error) => Effect.fail(refused("exchange")(error))),
           Effect.flatMap(tokens),
           Effect.provide(context),
         ),
       refresh: (refreshToken) =>
         Core.OAuthToken.exchangeRefreshToken({ ...endpoint, refreshToken }).pipe(
-          Effect.mapError(refused("refresh")),
+          Effect.catch((error) => Effect.fail(refused("refresh")(error))),
           Effect.flatMap(tokens),
           Effect.provide(context),
         ),
@@ -195,7 +197,7 @@ const make = (options: {
         asPerson(accessToken).pipe(
           Effect.flatMap((client) => client.request("GET", "/user", undefined, { schema: User })),
           Effect.map(({ id, login }) => ({ id, login })),
-          Effect.mapError(refused("user")),
+          Effect.catch((error) => Effect.fail(refused("user")(error))),
           Effect.provide(context),
         ),
       permission: (accessToken, repository) =>
@@ -223,7 +225,7 @@ const make = (options: {
             (error) => statusOf(error) === 404,
             () => Effect.succeed<Permission>("none"),
           ),
-          Effect.mapError(refused("permission")),
+          Effect.catch((error) => Effect.fail(refused("permission")(error))),
           Effect.provide(context),
         ),
       // `DELETE /applications/<client id>/token`: 204 when GitHub revoked it, 404 or 422 when it no longer has it.
@@ -241,11 +243,11 @@ const make = (options: {
             () => Effect.void,
           ),
           // As the App, a refusal is GitHub refusing the App's client credentials.
-          Effect.mapError((error) =>
-            new GitHubRefused({
+          Effect.catch((error) =>
+            Effect.fail(new GitHubRefused({
               step: "revoke",
               reason: reasonOf(error) === "rejected" ? "misconfigured" : reasonOf(error),
-            })
+            }))
           ),
           Effect.provide(context),
         ),

@@ -10,10 +10,11 @@ export const CREDENTIAL_SHAPES = [
   /\bsk-[A-Za-z0-9_-]{16,}/g,
   /\bAKIA[0-9A-Z]{16}\b/g,
   /\b(?:xox[abpr]-|glpat-)[A-Za-z0-9-]{10,}/g,
-  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
+  /(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
   /(authorization|bearer|token|secret|password|api[_-]?key)(\s*[:=]\s*|\s+)["']?[A-Za-z0-9_./+=-]{12,}/gi,
   // Long opaque strings that aren't hex (hex is commit ids and hashes we want to keep).
-  /\b(?=[A-Za-z0-9+/_-]*[g-zG-Z])(?=[A-Za-z0-9+/_-]*\d)[A-Za-z0-9+/_-]{40,}={0,2}/g,
+  // From where a run starts only, so a long run is read once, not from each boundary inside it.
+  /(?<![A-Za-z0-9+/_-])(?=[A-Za-z0-9+/_-]*[g-zG-Z])(?=[A-Za-z0-9+/_-]*\d)[A-Za-z0-9+/_-]{40,}={0,2}/g,
 ]
 
 /** `text` with anything credential-shaped replaced and home directories shortened to `~`. */

@@ -1,0 +1,84 @@
+{
+  "id": "packages/smithers/agent/harness/benchmarks/ale",
+  "name": "packages/smithers/agent/harness/benchmarks/ale",
+  "owner": {
+    "declaration": "packages/smithers/agent/harness/benchmarks/ale/PACKAGE.ts",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {},
+  "exports": null,
+  "production": [
+    "runtime.mjs"
+  ],
+  "tests": [
+    "packages/smithers/agent/harness/benchmarks/ale/fixtures/check_cli.py",
+    "packages/smithers/agent/harness/benchmarks/ale/fixtures/check_deployer.py",
+    "packages/smithers/agent/harness/benchmarks/ale/fixtures/check_gate.py",
+    "packages/smithers/agent/harness/benchmarks/ale/fixtures/cli_trace.ts"
+  ],
+  "benchmarks": [],
+  "platformPaths": [],
+  "ignoredCases": [],
+  "configurations": [
+    {
+      "path": "packages/smithers/agent/harness/benchmarks/ale/config.py",
+      "sha256": "eda1bca9343d99d3b01fa8a7d97c3e22fc6ff789310891833ebf396ae1befecf",
+      "source": "",
+      "coverageDirectives": []
+    },
+    {
+      "path": "packages/smithers/agent/harness/benchmarks/ale/PACKAGE.ts",
+      "sha256": "9f05cf6b8bfa0fba93cc3d5dce8931ce71de76ba31ddc9e67529bae505f39d69",
+      "source": "import { Smithers } from \"@smthrs/targets\"\n\nconst offline = Smithers.Shell.Test({\n  summary: \"Reject incomplete ALE oracle and paired evidence; check adapter syntax without a model or task data.\",\n  script: Smithers.file(\"verify.sh\"),\n  data: [\n    Smithers.glob(\"//packages/smithers/agent/harness/benchmarks/ale/**\"),\n    Smithers.file(\"//packages/smithers/src/internal/NativeEquipment.ts\")\n  ],\n  timeout: \"1m\"\n})\n\nexport const Package = Smithers.Package({ targets: { offline } })\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "packages/smithers/agent/harness/benchmarks/ale/tsconfig.json",
+      "sha256": "29f870662ad9f2e89509cdc5e2666f4871a728ad7a01559591c6065e11eb5f54",
+      "source": "{\n  \"extends\": \"../../../../../../tsconfig.base.json\",\n  \"compilerOptions\": {\n    \"noEmit\": true,\n    \"allowJs\": true,\n    \"checkJs\": true,\n    \"paths\": { \"@smthrs/agent/*\": [\"../../../src/*.ts\"] },\n    \"composite\": false,\n    \"declaration\": false,\n    \"declarationMap\": false,\n    \"inlineSources\": false,\n    \"sourceMap\": false\n  },\n  \"include\": [\"runtime.mjs\", \"fixtures/cli_trace.ts\"],\n  \"exclude\": [\"PACKAGE.ts\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 14,
+          "text": "\"include\": [\"runtime.mjs\", \"fixtures/cli_trace.ts\"],"
+        },
+        {
+          "line": 15,
+          "text": "\"exclude\": [\"PACKAGE.ts\"]"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/agent/harness/benchmarks/ale",
+      "label": "//packages/smithers/agent/harness/benchmarks/ale:offline",
+      "rule": "Shell.Test",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/benchmarks/ale/verify.sh"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/ale/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/src/internal/NativeEquipment.ts"
+        }
+      ],
+      "dependencies": []
+    }
+  ],
+  "areas": [
+    "runtime.mjs"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

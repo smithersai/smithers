@@ -88,7 +88,7 @@ test("a provision process that never exits answers false at the session deadline
     expect(yield* Clock.currentTimeMillis).toBe(60_000)
   }), lines)
   expect(sessionLine(lines, "WARN")).toEqual({
-    stage: "provision", outcome: "timeout", startMs: 0, errorCode: "TimeoutError", errorName: "TimeoutError",
+    stage: "provision", outcome: "timeout", startMs: 0, provisionMs: 60_000, errorCode: "TimeoutError", errorName: "TimeoutError",
   })
 }, 2_000)
 
@@ -120,7 +120,7 @@ test.each(["start", "provision", "session"] as const)("a failure in %s logs its 
   expect(await run(sessionOn({
     ...host, start: stage === "start" ? fault : Effect.void, touch: Effect.void, timeoutMs: 60_000,
   })(TERMINAL, "person-content-sentinel"), lines)).toBe(false)
-  expect(sessionLine(lines, "WARN")).toMatchObject({ stage, outcome: "failed", errorCode: "unknown", errorName: "TypeError" })
+  expect(sessionLine(lines, "WARN")).toMatchObject({ stage, outcome: "failed", [`${stage}Ms`]: 0, errorCode: "unknown", errorName: "TypeError" })
   expect(host.commands).toHaveLength(stage === "start" ? 0 : 1)
   expect(host.released()).toBe(host.commands.length)
 })
@@ -139,6 +139,7 @@ test.each(["start", "touch", "exec", "session"] as const)("the whole deadline al
   }), lines)
   expect(sessionLine(lines, "WARN")).toMatchObject({
     stage: stage === "exec" ? "provision" : stage === "touch" ? "start" : stage,
+    [`${stage === "exec" ? "provision" : stage === "touch" ? "start" : stage}Ms`]: 7000,
     outcome: "timeout", errorCode: "TimeoutError",
   })
   expect(host.released()).toBe(host.commands.length)
@@ -167,7 +168,7 @@ test("the deadline is shared by all stages and does not expire early", async () 
     expect(yield* Fiber.join(fiber)).toBe(false)
   }), lines)
   expect(sessionLine(lines, "WARN")).toEqual({
-    stage: "session", outcome: "timeout", startMs: 2000, provisionMs: 4000,
+    stage: "session", outcome: "timeout", startMs: 2000, provisionMs: 4000, sessionMs: 1000,
     errorCode: "TimeoutError", errorName: "TimeoutError",
   })
   expect(host.released()).toBe(1)
@@ -196,7 +197,7 @@ test("a defect is recorded and the next call has fresh stage times", async () =>
     touch: Effect.void, timeoutMs: 60_000,
   })
   expect(await run(session(TERMINAL, "p"), lines)).toBe(false)
-  expect(sessionLine(lines, "WARN")).toEqual({ stage: "start", outcome: "failed", errorCode: "unknown", errorName: "string" })
+  expect(sessionLine(lines, "WARN")).toEqual({ stage: "start", outcome: "failed", startMs: 0, errorCode: "unknown", errorName: "string" })
   lines.length = 0
   expect(await run(session(TERMINAL, "p"), lines)).toBe(true)
   expect(sessionLine(lines, "INFO")).toEqual({ outcome: "started", startMs: 0, provisionMs: 0, sessionMs: 0 })

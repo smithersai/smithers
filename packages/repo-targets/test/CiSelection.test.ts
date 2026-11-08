@@ -1,6 +1,6 @@
 import * as Target from "@smthrs/targets/Target"
 import * as Vitest from "@smthrs/targets/Vitest"
-import { execFileSync } from "node:child_process"
+import { spawnSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { expect, it } from "vitest"
@@ -52,12 +52,14 @@ it("CI runs the package pattern that holds the coverage-enabled test target and 
 // walk. Discovery prunes nested checkouts, CACHEDIR.TAG caches, and the
 // WORKSPACE.ts `discovery.prune` paths; an unpruned cache shows up here first.
 it("CI's package pattern discovers the repo-targets test target", () => {
-  const result = JSON.parse(execFileSync(process.execPath, [
+  const child = spawnSync(process.execPath, [
     resolve(root, "packages/smithers/src/bin.ts"),
     "targets",
     "//packages/...",
     "--json"
-  ], { cwd: root, encoding: "utf8", timeout: 60_000, stdio: ["ignore", "pipe", "pipe"] }))
+  ], { cwd: root, encoding: "utf8", timeout: 60_000, stdio: ["ignore", "pipe", "pipe"] })
+  expect(child.status, child.stderr || child.stdout || String(child.error)).toBe(0)
+  const result = JSON.parse(child.stdout)
   expect(result.query).toBe("//packages/...")
   expect(result.targets.filter((row: { readonly label: string }) => row.label === "//packages/repo-targets:test"))
     .toEqual([{ label: "//packages/repo-targets:test", target: "Vitest", kinds: ["test"] }])

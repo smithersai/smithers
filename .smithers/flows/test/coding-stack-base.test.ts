@@ -113,7 +113,7 @@ test(
   "coding/verify runs every check on the imported commit with its changed paths and fails on a failed required one",
   { timeout: 60_000 },
   async (t) => {
-    const { WebCrypto } = await import("@smthrs/crypto")
+    const { NodeCrypto } = await import("@effect/platform-node")
     const { FlowEngine } = await import("@smthrs/engine")
     const { Action, Interpreter } = await import("@smthrs/flow")
     const { ManagedRuntime } = await import("effect")
@@ -190,7 +190,7 @@ test(
     ).pipe(
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(WebCrypto.layer)
+      Layer.provideMerge(NodeCrypto.layer)
     )
     const host = ManagedRuntime.make(layer)
     t.after(() => host.dispose())
@@ -277,7 +277,7 @@ for (
   test(`base setup preserves edits only on executor re-entry: ${label}`, async (t) => {
     const { Action, Flow, Interpreter } = await import("@smthrs/flow")
     const { FlowEngine } = await import("@smthrs/engine")
-    const { WebCrypto } = await import("@smthrs/crypto")
+    const { NodeCrypto } = await import("@effect/platform-node")
     const { ManagedRuntime } = await import("effect")
     const { ModuleOwner } = await import("../../../packages/smithers/src/internal/ModuleOwner.ts")
     const { Revision } = await import("../coding/schema.ts")
@@ -296,7 +296,7 @@ for (
       Layer.mergeAll(Interpreter.layer(Probe), stackBaseLayer).pipe(
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(FlowEngine.layerMemory),
-        Layer.provideMerge(WebCrypto.layer),
+        Layer.provideMerge(NodeCrypto.layer),
         Layer.provide(native.layer),
         Layer.provide(owner === undefined ? Layer.empty : Layer.succeed(ModuleOwner, owner))
       )

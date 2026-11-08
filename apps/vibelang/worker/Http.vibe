@@ -1,0 +1,84 @@
+// The API Worker's HTTP surface (src/core/wire.vibe; wiki/decisions/0010-live-agent.md): health, posts, finite reads
+// and the event stream, each answered by the conversation's Durable Object. It logs, traces and counts every request
+// by route and status, never a body: posts are people's words.
+import * as Sse from "effect/encoding/Sse"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import type { Event } from "../src/core/conversation.vibe"
+import type { ReadSnapshot } from "../src/core/schemas.vibe"
+import { HEALTH_PATH, MAX_NAME, MAX_POST_BYTES, PostBody, routeOf, type Route } from "../src/core/wire.vibe"
+import type { Unreachable } from "./Unreachable.vibe"
+
+/** Each conversation's sequencer, as the API reaches its Durable Object. */
+export interface Conversations {
+  post(conversation: string, body: PostBody): (string | null)!Unreachable
+  read(conversation: string, after: number): ReadSnapshot!Unreachable
+  /** The object's event stream, answering the current request. */
+  events(conversation: string): HttpServerResponse.HttpServerResponse!Unreachable!HttpServerRequest.HttpServerRequest
+}
+
+/** How often an idle event stream sends a comment, so proxies keep it open (Cloudflare closes idle ones at 100 s). */
+export const KEEPALIVE = "20 seconds"
+
+export const requests = Metric.counter("vibelang_api_requests", {
+  description: "API requests, by route and status",
+  incremental: true,
+})
+
+const encoder = new TextEncoder()
+const decodePost = Schema.decodeUnknownEffect(Schema.fromJsonString(PostBody))
+
+/** `events` as Server-Sent Events: `id` is each event's seq and `data` the event as JSON, with keep-alive comments. */
+export function eventStream(events: Stream.Stream<Event>) {
+  const messages = events.pipe(Stream.map((event) =>
+    Sse.encoder.write({ _tag: "Event", event: "message", id: String(event.seq), data: JSON.stringify(event) })
+  ))
+  const body = Stream.merge(messages, Stream.map(Stream.tick(KEEPALIVE), () => ": keep-alive\n\n"))
+  return HttpServerResponse.stream(Stream.map(body, (text) => encoder.encode(text)), {
+    contentType: "text/event-stream",
+    headers: { "cache-control": "no-store", "x-accel-buffering": "no" },
+  })
+}
+
+/** The `after` cursor of `url`: zero when absent, `undefined` when it isn't a safe nonnegative integer. */
+export function afterOf(url: URL): number | undefined {
+  const raw = url.searchParams.get("after")
+  if (raw === null) return 0
+  const after = Number(raw)
+  return Number.isSafeInteger(after) && after >= 0 && String(after) === raw ? after : undefined
+}
+
+function json(body: unknown, status = 200) {
+  return HttpServerResponse.jsonUnsafe(body, { status, headers: { "cache-control": "no-store" } })
+}
+
+effect function answer(route: Route, url: URL, conversations: Conversations) {
+  const request = try HttpServerRequest.HttpServerRequest
+  if (route.kind === "post") {
+    const length = Number(request.headers["content-length"] ?? "0")
+    if (!(length > 0 && length <= MAX_POST_BYTES)) return json({ error: "body size" }, 413)
+    const text = request.text catch () => ""
+    const body = decodePost(text) catch () => undefined
+    if (body === undefined || body.name.length > MAX_NAME) return json({ error: "body" }, 400)
+    const refusal = try conversations.post(route.conversation, body)
+    return refusal === null ? json({}) : json({ refusal }, 409)
+  }
+  const after = afterOf(url)
+  if (after === undefined) return json({ error: "after" }, 400)
+  if (route.kind === "read") return json(try conversations.read(route.conversation, after))
+  return try conversations.events(route.conversation)
+}
+
+/** Answers the current request; every route but health reaches `conversations`. */
+export effect function handle(conversations: Conversations) {
+  const request = try HttpServerRequest.HttpServerRequest
+  const url = new URL(request.url, "http://api.invalid")
+  if (url.pathname === HEALTH_PATH) return json({ ok: true, agent: "live" })
+  const route = routeOf(request.method, url.pathname)
+  if (route === undefined) return json({ error: "not found" }, 404)
+  const answered = try withSpan(effect {
+    return answer(route, url, conversations) catch (error) => json({ error: error.what }, 503)
+  }, `vibelang.api.${route.kind}`)
+  try Metric.update(Metric.withAttributes(requests, { route: route.kind, status: String(answered.status) }), 1)
+  try Effect.logInfo("vibelang.api").pipe(Effect.annotateLogs({ route: route.kind, status: answered.status }))
+  return answered
+}

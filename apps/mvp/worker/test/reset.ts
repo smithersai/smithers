@@ -8,6 +8,9 @@ import { SqlClient } from "effect/sql"
  * DELETE only visits this small fixture. Keep child-first deletion and the shared position restart atomic.
  */
 export const reset = Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
+  // These receipts intentionally have no session foreign key, so session truncation cannot reset them.
+  yield* sql`DELETE FROM github_token_cleanups`
+  yield* sql`DELETE FROM session_end_receipts`
   yield* sql`DELETE FROM message_pins`
   yield* sql`DELETE FROM timeline_summaries`
   yield* sql`DELETE FROM timeline_phase_claims`

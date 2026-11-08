@@ -5,8 +5,8 @@ import { describe, expect, test } from "vitest"
 import { Unsent } from "../features/chat/schema"
 import { listed } from "../features/runs/contract"
 import { RepositoryV3 } from "./repo-history"
-import { RunV1 } from "./runs-history"
-import { UnsentV1 } from "./history"
+import { RunV1, RunV2 } from "./runs-history"
+import { FileTabRowV1, UnsentV1 } from "./history"
 import { ChatUnsentStore, deviceRegistry, IssueRequestedStore } from "./registry"
 
 // The check that fails a persisted schema changed without a new version (decision 0021 §5): every store and outbox
@@ -40,6 +40,14 @@ describe("the device's stores", () => {
 
   test("preserves the deployed runs v1 schema", () => {
     expect(Migrations.fingerprint(RunV1)).toBe(read()!.stores["runs"]!.versions["1"])
+  })
+
+  test("preserves the deployed file tabs v1 schema", () => {
+    expect(Migrations.fingerprint(FileTabRowV1)).toBe(read()!.stores["file-tabs"]!.versions["1"])
+  })
+
+  test("preserves the deployed runs v2 schema", () => {
+    expect(Migrations.fingerprint(RunV2)).toBe(read()!.stores["runs"]!.versions["2"])
   })
 
   test("match the lock: no persisted schema changed without a new version, and none disappeared", () => {

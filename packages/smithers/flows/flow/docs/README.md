@@ -50,7 +50,6 @@ the flow on the in-memory engine:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
@@ -80,7 +79,7 @@ const layer = Interpreter.layerWithImplementations(
   Summarize.toLayer(({ url }) => Effect.succeed(`A summary of ${url}.`))
 ).pipe(
   Layer.provideMerge(FlowEngine.layerMemory),
-  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+  Layer.provideMerge(NodeCrypto.layer)
 )
 
 const main = Digest.execute(

@@ -4,6 +4,7 @@ import { ElectricCollection } from "@smthrs/effect-electric"
 import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import { Effect, Stream } from "effect"
 import type { Message } from "../chat/schema"
+import type { Source } from "../repo/gate"
 import { PINS_SHAPE_ROUTE } from "./contract"
 import { Collapsed, Pending, Pin } from "./schema"
 
@@ -12,7 +13,7 @@ export interface PinMessage extends MessageText { readonly local: number }
 
 /** Reads from the full conversation, so Load earlier's window never evicts the pin. */
 export const pinnedQuery = <A extends MessageText, P extends string | number, M extends string | number>(
-  pins: Collection.Collection<Pin, P>, messages: Pick<Collection.Collection<A, M>, "tanstack">, pending?: Collection.Collection<Pending, string>, conversationId?: string,
+  pins: Collection.Collection<Pin, P>, messages: Pick<Collection.Collection<A, M>, "tanstack">, pending?: Source<Pending>, conversationId?: string,
 ) => LiveQuery.make(q => {
   const source = q.from({ pin: pins.tanstack }).innerJoin({ message: messages.tanstack }, ({ pin, message }) => Query.eq(pin.messageId, message.id))
   if (pending === undefined) return source.select(({ message }) => ({ id: message.id, role: message.role, text: message.text, status: message.status, local: 0 }))
@@ -29,6 +30,13 @@ export const pinnedQuery = <A extends MessageText, P extends string | number, M 
       .select(({ held }) => ({ id: Query.coalesce(held.messageId, ""), role: "user" as const, text: Query.coalesce(held.text, ""), status: "unsent" as const, local: 1 })),
   )
 })
+
+/** Personal home intents and branch intents whose conversation access is known. */
+export const pendingQuery = (pending: Source<Pending>, shown: Source<Pending>) => LiveQuery.make(q => q
+  .from({ row: pending.tanstack })
+  .leftJoin({ permitted: shown.tanstack }, ({ row, permitted }) => Query.eq(Query.coalesce(row.conversationId, ""), permitted.conversationId))
+  .where(({ row, permitted }) => Query.or(Query.eq(row.home, true), Query.not(Query.isUndefined(permitted?.conversationId))))
+  .select(({ row }) => row))
 
 /** One personal shape per tab, stored on the device with an explicit schema version. */
 export const makePins = <M extends string | number>(origin: string, homeMessages: Collection.Collection<Message, M>) => Effect.gen(function* () {
@@ -63,5 +71,5 @@ export const makePins = <M extends string | number>(origin: string, homeMessages
   ).pipe(Stream.runForEach(() => project), Effect.forkScoped)
   const collapsed = yield* Collection.local({ id: "pin-collapsed", schema: Collapsed, getKey: r => r.id })
   const collapseState = yield* LiveQuery.make(q => q.from({ row: collapsed.tanstack }))
-  return { pins, effective, pending, pendingState: yield* LiveQuery.make(q => q.from({ row: pending.tanstack })), collapsed, collapseState }
+  return { pins, effective, pending, collapsed, collapseState }
 })

@@ -60,12 +60,12 @@ declares.
   that needs jj runs `jj --version` and fails with `No jj on PATH` when there
   is none. On macOS, `brew install jj`; the linked page covers Linux and
   Windows.
-- [`effect`](https://effect.website) at exactly `4.1.0`, as a peer
+- [`effect`](https://effect.website) at exactly `4.1.1`, as a peer
   dependency. This is an Effect library throughout: a flow's payload and result
   are Effect schemas, an action's implementation is an `Effect`, and a host is
   a `Layer`. Install one `effect` in the consuming project, so the service
   tags and schemas this package exports are the same classes the project
-  constructs. A project already on Effect 4.1.0 or later keeps its version.
+  constructs. A project already on Effect 4.1.1 or later keeps its version.
 
 The package ships as ESM and CommonJS with TypeScript declarations.
 

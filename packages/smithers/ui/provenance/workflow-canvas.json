@@ -38,7 +38,7 @@
     ]
   },
   {
-    "file": "src/canvas/canvasCss.ts",
+    "file": "ui-css/src/canvas/canvasCss.ts",
     "exports": ["canvasCss", "WORKFLOW_CANVAS_CSS_ID"],
     "collection": "agentic/ai-elements",
     "registryItem": "https://elements.ai-sdk.dev/components/canvas",

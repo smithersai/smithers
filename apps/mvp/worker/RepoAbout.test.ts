@@ -475,6 +475,8 @@ describe("kept for every data center", () => {
     github.fail("", "rate_limited")
     github.publish("octocat", "Limited")
     expect(await one.answer("octocat", "Limited")).toMatchObject({ _tag: "Refused", code: "rate_limited" })
+    expect(github.calls).toContain("web")
+    for (const userAgent of github.userAgents) expect(userAgent).toBe("smithers-integrations")
     github.fail("web", 429)
     expect(await one.answer("zzz-nope", "throttled")).toMatchObject({ _tag: "Refused", code: "rate_limited" })
     github.fail("web", "network")

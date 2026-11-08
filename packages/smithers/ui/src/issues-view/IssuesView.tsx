@@ -2,7 +2,7 @@
 import type { ComponentProps, KeyboardEvent, MouseEvent, ReactNode } from "react";
 import { ActionMenu, type ActionMenuItem } from "../action-menu/ActionMenu";
 import { Badge } from "../badge";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { EmptyState } from "../empty-state";
 import { isPlainNavigationClick } from "../internal/navigationClick";
 import { safeHref } from "../internal/safeHref";

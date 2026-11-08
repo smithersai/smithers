@@ -665,7 +665,7 @@ describe("WorkspaceObservation.cached", () => {
     let finished = 0
     const measure = Effect.gen(function*() {
       started++
-      if (started > 1) yield* Effect.never
+      if (started > 1) return yield* Effect.never
       finished++
       return observation("a")
     })

@@ -333,7 +333,10 @@ test("required CI resolves package, app, script and evaluation suites to real ru
   ]) assert.ok(selected(label, job).length, `${label} must be a required root of ${job}`)
   const inventoryRunner = selected("//packages/repo-targets:ciInventory", "test")[0].runner
   assert.equal(basename(inventoryRunner[0]), "node")
-  assert.deepEqual(inventoryRunner.slice(1), ["--import=vibelang/register", "--test", "packages/repo-targets/contracts/ci-inventory.test.mjs"])
+  assert.deepEqual(inventoryRunner.slice(1), [
+    "--import=vibelang/register", "--test", "packages/repo-targets/contracts/ci-inventory.test.mjs",
+    "packages/repo-targets/contracts/ci-terminal-media.test.mjs"
+  ])
   const packageTests = inventory.rows.filter((row) => (row.job === "packages" || row.job.startsWith("packages-")) && row.required && row.selectedRoot)
   assert.ok(packageTests.length > 100, "the complete package test graph must resolve")
   for (const row of packageTests) assert.ok(selected(row.label, "test").length, `${row.label} must also be selected by ci //packages/...`)

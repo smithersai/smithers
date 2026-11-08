@@ -3,6 +3,7 @@ import * as Control from "@smthrs/control/Control"
 import { Unauthorized } from "@smthrs/control/ControlError"
 import { Effect, Exit, Layer, Redacted, Stream } from "effect"
 import { createHmac } from "node:crypto"
+import { expectTypeOf } from "vitest"
 import { describe, expect, it } from "vitest"
 import * as Core from "../src/core/Channel.vibe"
 import { readHeader } from "../src/core/JsonPath.ts"
@@ -80,8 +81,8 @@ const ingest = (
 /** Never called; tsc checks it (#2704). */
 const unprovidedServiceProbe = () => {
   const body = Effect.flatMap(Channels.Channels, (channels) => channels.register(signedChannel()))
-  // @ts-expect-error Channels.layerMemory needs Control, which only controlLayer provides
-  Effect.runPromise(body.pipe(Effect.provide(Channels.layerMemory)))
+  const missing = body.pipe(Effect.provide(Channels.layerMemory))
+  expectTypeOf<typeof missing>().not.toExtend<Parameters<typeof Effect.runPromise>[0]>()
   Effect.runPromise(body.pipe(Effect.provide(Channels.layerMemory.pipe(Layer.provide(controlLayer([]))))))
 }
 

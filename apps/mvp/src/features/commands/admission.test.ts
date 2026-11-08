@@ -20,9 +20,9 @@ const runtimes: Array<{ dispose: () => Promise<void> }> = []
 afterEach(async () => { for (const runtime of runtimes.splice(0).reverse()) await runtime.dispose() })
 const until = (assertion: () => void | Promise<void>) => vi.waitFor(assertion, { timeout: 30_000, interval: 25 })
 const open = async (refusing = false, engine = false) => {
-  const app = openTestApi({ actor: {
-    subject: { kind: "person", id: "person-member" }, role: "admin", session: crypto.randomUUID(),
-  } })
+  const actor = { subject: { kind: "person" as const, id: crypto.randomUUID() }, role: "admin" as const, session: crypto.randomUUID() }
+  // Its session confirmed as sign-in records it: the deployment repository's role is that receipt.
+  const app = openTestApi({ actor, confirmedSessions: [actor] })
   runtimes.push(app)
   const api = await app.runPromise(Effect.service(TestChatApi))
   const base = nodeDevice(engine ? { agent: api } : {})
@@ -30,7 +30,7 @@ const open = async (refusing = false, engine = false) => {
   const retained = new Map<string, string>()
   const writeSnapshot = PendingSnapshot.make({ getItem: key => retained.get(key) ?? null, setItem: (key, value) => { retained.set(key, value) }, removeItem: key => { retained.delete(key) } }, "writes")
   const host = { ...base, writeSnapshot, outbox: { ...base.outbox, online: { ...base.outbox.online, isOnline: () => engine }, storage: { ...base.outbox.storage,
-    set: async (key: string, value: string) => { await down.hold?.(); if (down.value) throw new Error("quota"); return base.outbox.storage.set(key, value) },
+    setMany: async (rows: ReadonlyArray<readonly [string, string]>) => { await down.hold?.(); if (down.value) throw new Error("quota"); return base.outbox.storage.setMany(rows) },
   } } }
   const tab = openTab(api, { host, answers: !engine ? false : undefined })
   runtimes.push(tab)

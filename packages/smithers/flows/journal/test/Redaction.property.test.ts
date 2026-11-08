@@ -22,6 +22,8 @@ const credentialFragment = FastCheck.constantFrom(
   "sk_live_",
   "ghp_",
   "github_pat_",
+  "smm_",
+  "smt1.e30.",
   "AKIA",
   "xoxb-",
   "AIza",

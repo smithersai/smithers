@@ -1,6 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { EngineStore, StepBoundary } from "@smthrs/engine-store"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
@@ -35,7 +34,7 @@ const runtime = Layer.effect(FlowRuntime.FlowRuntime)(EngineStore.make({
     StepBoundary.layerTest(),
     repository
   )),
-  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+  Layer.provideMerge(NodeCrypto.layer)
 )
 
 const makeFlow = (name: string) =>

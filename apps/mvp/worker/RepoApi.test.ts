@@ -785,8 +785,9 @@ describe("branches and tags", () => {
     expect((await listed(await all.fetch(refsRoute("octocat", "Many")))).branches).toHaveLength(151)
   })
 
-  test("a repository that isn't ready is 204; Code Storage busy is 503, never cached; bad input is refused", async () => {
+  test("a public repository that isn't ready is 204; Code Storage busy is 503, never cached; bad input is refused", async () => {
     const h = await repoHarness(runtime)
+    h.github.publish("octocat", "Spoon-Knife")
     const absent = await h.fetch(refsRoute("octocat", "Spoon-Knife"))
     expect(absent.status).toBe(204)
     expect(absent.headers.get("x-repo-state")).toBe("not_imported")
@@ -1281,16 +1282,18 @@ test("ephemeral ref listing failures stay private and never fall back to the ord
 })
 
 
-test("refs retains a role refusal's diagnostics and ray while keeping its unavailable answer", async () => {
+test("refs retains a role refusal's diagnostics, ray and retryable rate limit", async () => {
   const h = await repoHarness(runtime, { branchRoles: Layer.succeed(BranchRoles, BranchRoles.of({
     roleOn: () => Effect.fail(new RepoRoles.RoleRefused({ code: "rate_limited", stage: "permission", upstreamStatus: 429, retryAfterSeconds: 12 })),
   })) })
   await sql("INSERT INTO github_repositories (repo_id, installation_id) VALUES ('github/octocat/spoon-knife', 77)")
+  await runtime.runPromise(Conversations.track("github/octocat/spoon-knife", "private-ref", "open", "a".repeat(40), "octocat", undefined, "ephemeral"))
   const ray = "0123456789abcdef-SJC"
   const response = await h.fetch(refsRoute("octocat", "Spoon-Knife"), { headers: { "cf-ray": ray, cookie: "PRIVATE_COOKIE" } })
   expect(response.status).toBe(503)
   expect(response.headers.get("x-smithers-ray")).toBe(ray)
-  expect(await response.json()).toEqual({ code: "unavailable" })
+  expect(await response.json()).toEqual({ code: "rate_limited" })
+  expect(response.headers.get("retry-after")).toBe("12")
   expect(h.line("repo.refs").at(-1)?.annotations).toMatchObject({ code: "rate_limited", stage: "permission", upstreamStatus: 429,
     retryAfterSeconds: 12, failureSource: "fresh", ray, status: 503 })
   expect(JSON.stringify(h.logs)).not.toContain("PRIVATE_COOKIE")
@@ -1318,4 +1321,30 @@ test("About HTTP caches must revalidate even with max-age=0 and refuse an expire
     expect(expired.status).toBe(404)
     expect(expired.headers.get("cache-control")).toBe("no-store")
   } finally { await time.dispose() }
+})
+
+
+test.each([null, { subject: { kind: "person" as const, id: "missing-reader" }, role: "member" as const }].flatMap(actor =>
+  [false, true].map(privateRepo => ({ actor, privateRepo }))))(
+  "a missing repository returns the same not-found answer to refs, about and tree (%j)", async ({ actor, privateRepo }) => {
+    const h = await repoHarness(runtime, { actor, localCopies: false })
+    if (privateRepo) h.github.publish("octocat", "absent-refusal", { ...spoonKnife(), private: true })
+    for (const path of [refsRoute("octocat", "absent-refusal"), aboutRoute("octocat", "absent-refusal"),
+      treeRoute("octocat", "absent-refusal", "a".repeat(40))]) {
+      const response = await h.fetch(path)
+      expect(response.status, path).toBe(404)
+      expect(await response.json()).toEqual({ code: "not_found" })
+    }
+  },
+)
+
+
+test.each([502, "rate_limited", "network"] as const)("unimported refs preserve a metadata outage (%s)", async (fault) => {
+  const h = await repoHarness(runtime, { actor: null })
+  h.github.publish("octocat", "outage-refusal")
+  h.github.fail("", fault)
+  const response = await h.fetch(refsRoute("octocat", "outage-refusal"))
+  expect(response.status).toBe(503)
+  expect(await response.json()).toEqual({ code: fault === "rate_limited" ? "rate_limited" : "github_unavailable" })
+  if (fault === "rate_limited") expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0)
 })

@@ -1,4 +1,6 @@
-import { restorePersonalModel } from "../personal-model"
+import { ResourceLocks } from "../resource-locks"
+import { sessionDirOf } from "../settings"
+import { personalModelReady, restorePersonalModel } from "../personal-model"
 import { chromium, expect, request as requests, test as setup } from "@playwright/test"
 import { homedir } from "node:os"
 import { join } from "node:path"
@@ -14,6 +16,7 @@ import {
   scratchRepositoriesOf,
   sessionFiles,
   target,
+  describeNeed,
 } from "../target"
 import { redactError, redactRequestErrors } from "../redact"
 import { cleanScratch } from "../stackWrites"
@@ -113,41 +116,55 @@ const signIn = async (): Promise<StorageState> => {
 
 setup("sign in as the test account", async () => {
   expect(target, "the setup signs in to a deployment only (E2E_TARGET=deployment)").toBe("deployment")
-  const stored = await readJson<StorageState>(files.session)
-  const before = await readJson<IdentityRecord>(files.identity)
-  const checked = stored === undefined ? undefined : await askSession(stored)
-  const why = renewal({
-    state: stored,
-    person: checked?.person,
-    signedInAt: before?.signedInAt,
-    now: Date.now(),
-    fresh: process.env.E2E_FRESH_SIGN_IN === "1",
-  })
-  let kept = { state: stored!, person: checked?.person, signedInAt: before?.signedInAt ?? Date.now() }
-  if (why !== undefined) {
-    // The session it replaces stays as it is: another run may hold it, and it ends when it expires.
-    setup.info().annotations.push({ type: "sign-in", description: why })
-    const state = await signIn().catch((error: unknown) => Promise.reject(redactError(error)))
-    const fresh = await askSession(state)
-    if ("refused" in fresh.person) throw new Error(`The new session can't be used: ${fresh.person.refused}`)
-    await writePrivate(files.session, JSON.stringify(state, null, 2))
-    kept = { state, person: fresh.person, signedInAt: Date.now() }
-  }
-  const person = kept.person
-  if (person === undefined || "refused" in person) throw new Error("The stored session was kept without a usable person")
-  const record: IdentityRecord = { origin, ...person, signedInAt: kept.signedInAt, checkedAt: Date.now() }
-  await writePrivate(files.identity, JSON.stringify(record, null, 2))
-  setup.info().annotations.push({ type: "identity", description: `${person.login} (${person.role ?? "no role"})` })
+  const shared = sessionFiles(baseURL, { E2E_SESSION_DIR: process.env.E2E_SESSION_DIR })
+  const locks = new ResourceLocks(join(sessionDirOf(baseURL), "resource-locks"), { log: console.error })
+  const lease = await locks.acquire({ name: "session:refresh", mode: "write" })
+  try {
+    const stored = await readJson<StorageState>(shared.session)
+    const before = await readJson<IdentityRecord>(shared.identity)
+    const checked = stored === undefined ? undefined : await askSession(stored)
+    const why = renewal({
+      state: stored,
+      person: checked?.person,
+      signedInAt: before?.signedInAt,
+      now: Date.now(),
+      fresh: process.env.E2E_FRESH_SIGN_IN === "1",
+    })
+    let kept = { state: stored!, person: checked?.person, signedInAt: before?.signedInAt ?? Date.now() }
+    if (why !== undefined) {
+      // The session it replaces stays as it is: another run may hold it, and it ends when it expires.
+      setup.info().annotations.push({ type: "sign-in", description: why })
+      const state = await signIn().catch((error: unknown) => Promise.reject(redactError(error)))
+      const fresh = await askSession(state)
+      if ("refused" in fresh.person) throw new Error(`The new session can't be used: ${fresh.person.refused}`)
+      await writePrivate(shared.session, JSON.stringify(state, null, 2))
+      kept = { state, person: fresh.person, signedInAt: Date.now() }
+    }
+    const person = kept.person
+    if (person === undefined || "refused" in person) throw new Error("The stored session was kept without a usable person")
+    const record: IdentityRecord = { origin, ...person, signedInAt: kept.signedInAt, checkedAt: Date.now() }
+    await writePrivate(shared.identity, JSON.stringify(record, null, 2))
+    await writePrivate(files.session, JSON.stringify(kept.state, null, 2))
+    await writePrivate(files.identity, JSON.stringify(record, null, 2))
+    setup.info().annotations.push({ type: "identity", description: `${person.login} (${person.role ?? "no role"})` })
+  } finally { await lease.release() }
 })
 
 setup("personal model: save and Test when E2E_PERSONAL_MODEL_KEY is supplied", async () => {
-  if (!process.env.E2E_PERSONAL_MODEL_KEY) {
-    setup.info().annotations.push({ type: "personal model", description: "not configured: E2E_PERSONAL_MODEL_KEY is unset; model-dependent specs will skip" })
-    return
-  }
+  const access = process.env.E2E_MODEL_ACCESS
+  setup.skip(!process.env.E2E_PERSONAL_MODEL_KEY, describeNeed("personalModelKey"))
+  if (!access || access === "none") return
   const request = await api(files.session)
   try {
-    await restorePersonalModel(request)
+    if (access === "probe") {
+      await writePrivate(join(files.dir, "model-ready.json"), JSON.stringify(await personalModelReady(request)))
+    } else if (access === "bootstrap") {
+      if (!await personalModelReady(request)) await restorePersonalModel(request)
+    } else if (access === "write") {
+      await restorePersonalModel(request)
+    } else {
+      expect(await personalModelReady(request), "the configured personal model is ready after locked bootstrap").toBe(true)
+    }
   } finally {
     await request.dispose()
   }
@@ -203,9 +220,10 @@ setup("the scratch repositories start clean", async () => {
   const request = await api(files.session)
   try {
     const answers = readRepositories(files.repositories)
-    for (const repository of new Set([process.env.E2E_STACK_REPOSITORY, process.env.E2E_FACTORY_REPOSITORY])) {
+    for (const repository of new Set(JSON.parse(process.env.E2E_CLEAN_REPOSITORIES ?? "[]") as string[])) {
       const name = repository?.toLowerCase()
-      if (name === undefined || !scratchRepositoriesOf(process.env).includes(name) || answers[name]?.role !== "admin") continue
+      expect(name !== undefined && scratchRepositoriesOf(process.env).includes(name), "cleanup names a leased scratch repository").toBe(true)
+      expect(answers[name!]?.role, `${name}: cleanup requires a verified Admin role`).toBe("admin")
       const left = await cleanScratch({ request }, repository!)
       const found = [...left.runners, ...left.agents, ...left.todos]
       if (found.length > 0) console.error(`Cleaned ${repository}, which an earlier run left dirty:\n  ${found.join("\n  ")}`)
@@ -219,7 +237,7 @@ setup("the scratch repositories start clean", async () => {
 setup("the run's own conversation is tracked", async () => {
   // A deployment run asks only here (e2e/target.ts `home`). Tracking reads the branch from the deployment's forge,
   // which needs its repository cloned; until it can, no place is written and asking tests report blocked. A place
-  // written before stays: another run may be reading it, and tracking again is idempotent.
+  // written by this run is private to this run, as is the branch ref.
   const identity = readIdentity(files.identity)!
   const request = await api(files.session)
   try {

@@ -1,8 +1,9 @@
 import { describe, expect, expectTypeOf, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableDeferred, DurableQueue, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Context, Effect, Exit, Layer, Option, Schema, SchemaGetter } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { PersistedQueue } from "effect/persistence"
 import { withCrypto } from "./Crypto.ts"
 import { layerMemory, makeInstance } from "./MemoryFlowRuntime.ts"
@@ -386,7 +387,7 @@ describe("advertised requirements", () => {
       const race = Action.raceAll("DurableApi/race", [
         Action.make({ name: "DurableApi/race/encoded", success: encoded, execute: Effect.succeed("ok") })
       ])
-      expectTypeOf<Crypto.Crypto | Encoder>().toMatchTypeOf<Effect.Services<typeof race>>()
+      expectTypeOf<EffectDigest.Digest | Encoder>().toMatchTypeOf<Effect.Services<typeof race>>()
       const { state, service } = countingEncoder()
       const exit = yield* Effect.exit(withCrypto(race.pipe(
         Effect.provideService(Encoder, service),
@@ -409,7 +410,7 @@ describe("advertised requirements", () => {
     expectTypeOf<Effect.Services<typeof processed>>().toEqualTypeOf<
       | FlowRuntime.FlowRuntime
       | FlowRuntime.FlowInstance
-      | Crypto.Crypto
+      | (EffectDigest.Digest | SecureRandom.SecureRandom)
       | PersistedQueue.PersistedQueueFactory
     >()
     // The factory is inert, so the call suspends after keying and offering.

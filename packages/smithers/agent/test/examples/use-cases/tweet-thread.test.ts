@@ -56,7 +56,7 @@ const advanceTimers = (executionId: string, record: () => void) => {
     const virtual = yield* Clock.Clock
     let lastWakeAt: number | null | undefined
     let advances = 0
-    yield* Effect.gen(function*() {
+    return yield* Effect.gen(function*() {
       while (true) {
         const row = yield* state.waiting(executionId)
         progress.polls++

@@ -24,7 +24,6 @@ import type * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import type { RunStatus } from "@smthrs/control/ControlSchema"
 import * as Digest from "@smthrs/core/Digest"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { AttemptEvidenceQuarantined } from "@smthrs/engine-store/Errors"
@@ -433,7 +432,7 @@ const withExecutor = <A>(
           ...DurableEngineState.makeMemory(),
           ...options.engineState
         }),
-        Crypto.layerFromDigest(NodeCrypto.layerDigest)
+        NodeCrypto.layer
       )
     ),
     Effect.scoped,

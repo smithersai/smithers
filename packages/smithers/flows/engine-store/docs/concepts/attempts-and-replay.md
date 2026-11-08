@@ -47,19 +47,20 @@ carries this run's own result.
 
 ## Which columns are redacted
 
-Attempt and run rows share a database with the journal, so failure text meets
-the journal's redaction rules (`Redaction.defaultRules`) on write. Only text
-that replay never classifies on is rewritten:
+Schema-encoded failure values are executable data, including `message` and
+`stack`: a declared error can use literal or refined fields. Attempt persistence
+preserves those fields for failed-attempt replay after a crash. A secret that
+must never enter executable state belongs in a `Redacted` field of the action's
+own schema.
 
-| Column                        | Redacted                                                                                                 |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `flows_attempts.error_json`   | String `message` and `stack` members of each persisted reason. `_tag` and every other member stay exact. |
-| `flows_runs.state_json`       | The `message` and `stack` text of an unencodable-settlement projection.                                  |
-| `flows_attempts.outcome_json` | Never. It is the executable copy replay returns, byte for byte.                                          |
+| Column                        | Redacted                                                                                             |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `flows_attempts.error_json`   | Typed `Fail` values stay exact. Defect `message` and `stack` text is redacted.                       |
+| `flows_runs.state_json`       | The inert terminal `failure` diagnostic is redacted and bounded; executable typed errors stay exact. |
+| `flows_attempts.outcome_json` | Never. It is the executable copy replay returns, byte for byte.                                      |
 
-A redacted failure still replays as the same typed failure, because
-`RetryPolicy` matches on `_tag`. A value that must never reach `outcome_json`
-belongs in a `Redacted` field of the action's own success schema.
+Journal payloads and failure diagnostics use the journal's redaction rules.
+They are separate from the encoded errors replay returns.
 
 ## Admission is exclusive per key
 

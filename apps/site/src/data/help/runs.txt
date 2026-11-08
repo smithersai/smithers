@@ -3,9 +3,24 @@ smthrs runs — Inspect and control durable execution records
 Usage: smthrs runs <command>
 
 Commands:
-  list    Active and attention-needing runs
-  resume  Resume a parked durable run
-  show    Open a run's card
+  cancel      Cancel one durable run
+  cancel-all  Cancel every nonterminal run in this project
+  continue    Continue a run a budget or time limit parked, under the allowance it recorded
+  count       Count durable runs
+  devtools    Inspect a run's node tree: state, timings, inputs, outputs and journal frames
+  inspect     Inspect the state and event counts recorded at one historical frame
+  list        Active and attention-needing runs
+  logs        Read run events or follow new events as they commit
+  output      Read recorded outputs for one node or all nodes
+  replay      Replay committed history and sealed results without re-executing any actions
+  resume      Resume a parked durable run
+  show        Open a run's card
+  signal      Deliver a durable JSON signal
+  signals     Inspect durable signal delivery receipts
+  steer       Send an attributed operator message
+  stop        Stop a run a budget or time limit parked
+  verify      Report which recorded steps the current flow code would replay and which it would execute again
+  wait        Wait for a durable run to settle
 
 Custom Global Options:
   --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)

@@ -1,7 +1,8 @@
-import { type Crypto, Uuid } from "@smthrs/crypto"
+import { Uuid } from "@smthrs/crypto"
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import type { SandboxTools } from "@smthrs/sandbox"
 import { Effect, Layer, Metric } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import { requesterOf } from "../../flows/requests"
 import { type CallRefused, SandboxClient, type Target } from "./api"
 import { CALL_ID_NAMESPACE } from "./contract"
@@ -18,7 +19,7 @@ import {
   SandboxCommandTooLong,
   Status,
   type tools,
-  Write,
+  Write
 } from "./flows"
 import { calls } from "./metrics"
 
@@ -38,7 +39,9 @@ const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 const targetOf = (conversationId: string | undefined) =>
   Effect.map(FlowRuntime.FlowInstance, ({ executionId }): { readonly target?: Target; readonly door: string } => {
     const requester = requesterOf(executionId)
-    if (requester !== executionId && isUuid(requester)) return { target: { answerId: requester.toLowerCase() }, door: "agent" }
+    if (requester !== executionId && isUuid(requester)) {
+      return { target: { answerId: requester.toLowerCase() }, door: "agent" }
+    }
     return conversationId === undefined
       ? { door: "person" }
       : { target: { conversationId: conversationId.toLowerCase() }, door: "person" }
@@ -65,8 +68,8 @@ const settled = (tool: SandboxTools.Tool, callId: string, outcome: string) =>
   Effect.andThen(
     Metric.update(Metric.withAttributes(calls, { tool, outcome }), 1),
     Effect.logWithLevel(outcome === "done" ? "Info" : "Warn")("sandbox.call").pipe(
-      Effect.annotateLogs({ tool, outcome, callId, feature: "sandbox" }),
-    ),
+      Effect.annotateLogs({ tool, outcome, callId, feature: "sandbox" })
+    )
   )
 
 const outcomeOf = (failure: Failure): string =>
@@ -82,33 +85,33 @@ const outcomeOf = (failure: Failure): string =>
  * `sandbox/<tool>/start`: one `POST /api/sandbox/calls` for this run's call. A call the machine already settled failed
  * fails here; any other answer names the call for the result step.
  */
-export const start = (tool: SandboxTools.Tool) =>
-(input: { readonly conversationId?: string | undefined } & Record<string, unknown>) =>
-  Effect.gen(function* () {
-    const { executionId } = yield* FlowRuntime.FlowInstance
-    const callId = yield* Uuid.v5(CALL_ID_NAMESPACE, executionId).pipe(Effect.orDie)
-    const { door, target } = yield* targetOf(input.conversationId)
-    yield* Effect.annotateCurrentSpan({ "smithers.sandbox.tool": tool, door })
-    const fail = (failure: Failure) =>
-      Effect.andThen(settled(tool, callId, outcomeOf(failure)), Effect.fail(failure))
-    if (target === undefined) return yield* fail(new SandboxCallRefused({ reason: "invalid" }))
-    const { conversationId: _pinned, ...fields } = input
-    const call = { ...fields, tool } as SandboxTools.Call
-    const answer = yield* Effect.result((yield* SandboxClient).start({ callId, call, ...target }))
-    if (answer._tag === "Failure") return yield* fail(refusalOf(answer.failure))
-    if (answer.success.status === "failed") return yield* fail(new SandboxCallFailed({ failure: answer.success.failure }))
-    return { callId }
-  }).pipe(Effect.withSpan("sandbox.call.start"))
+export const start =
+  (tool: SandboxTools.Tool) => (input: { readonly conversationId?: string | undefined } & Record<string, unknown>) =>
+    Effect.gen(function*() {
+      const { executionId } = yield* FlowRuntime.FlowInstance
+      const callId = yield* Uuid.v5(CALL_ID_NAMESPACE, executionId).pipe(Effect.orDie)
+      const { door, target } = yield* targetOf(input.conversationId)
+      yield* Effect.annotateCurrentSpan({ "smithers.sandbox.tool": tool, door })
+      const fail = (failure: Failure) => Effect.andThen(settled(tool, callId, outcomeOf(failure)), Effect.fail(failure))
+      if (target === undefined) return yield* fail(new SandboxCallRefused({ reason: "invalid" }))
+      const { conversationId: _pinned, ...fields } = input
+      const call = { ...fields, tool } as SandboxTools.Call
+      const answer = yield* Effect.result((yield* SandboxClient).start({ callId, call, ...target }))
+      if (answer._tag === "Failure") return yield* fail(refusalOf(answer.failure))
+      if (answer.success.status === "failed") {
+        return yield* fail(new SandboxCallFailed({ failure: answer.success.failure }))
+      }
+      return { callId }
+    }).pipe(Effect.withSpan("sandbox.call.start"))
 
 /**
  * `sandbox/<tool>/result`: one `GET /api/sandbox/calls/<id>`. While the machine runs the call it fails
  * `SandboxCallRunning`, which the step's retry policy asks again; done, it answers the tool's result.
  */
 export const result = (tool: SandboxTools.Tool) => ({ callId }: { readonly callId: string }) =>
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const answer = yield* Effect.result((yield* SandboxClient).result(callId))
-    const fail = (failure: Failure) =>
-      Effect.andThen(settled(tool, callId, outcomeOf(failure)), Effect.fail(failure))
+    const fail = (failure: Failure) => Effect.andThen(settled(tool, callId, outcomeOf(failure)), Effect.fail(failure))
     if (answer._tag === "Failure") {
       const refusal = refusalOf(answer.failure)
       // Unreachable is not settled: the retry policy asks again.
@@ -122,10 +125,10 @@ export const result = (tool: SandboxTools.Tool) => ({ callId }: { readonly callI
   }).pipe(Effect.withSpan("sandbox.call.result", { attributes: { "smithers.sandbox.tool": tool } }))
 
 type StartStep = (
-  payload: typeof Run.Start.payloadSchema.Type,
-) => Effect.Effect<{ readonly callId: string }, Failure, FlowRuntime.FlowInstance | Crypto.Crypto | SandboxClient>
+  payload: typeof Run.Start.payloadSchema.Type
+) => Effect.Effect<{ readonly callId: string }, Failure, FlowRuntime.FlowInstance | EffectDigest.Digest | SandboxClient>
 type ResultStep = (
-  payload: typeof Run.Result.payloadSchema.Type,
+  payload: typeof Run.Result.payloadSchema.Type
 ) => Effect.Effect<typeof Run.Result.successSchema.Type, Failure, SandboxClient>
 
 /**
@@ -137,8 +140,8 @@ const register = (entry: (typeof tools)[number]) =>
     entry.flow as typeof Run.flow,
     Layer.merge(
       (entry.Start as typeof Run.Start).toLayer(start(entry.tool) as StartStep),
-      (entry.Result as typeof Run.Result).toLayer(result(entry.tool) as ResultStep),
-    ),
+      (entry.Result as typeof Run.Result).toLayer(result(entry.tool) as ResultStep)
+    )
   )
 
 /** Registers every tool's flow with its steps, asking through the host's `SandboxClient`. */
@@ -148,7 +151,7 @@ export const registration = Layer.mergeAll(
   register(Write),
   register(List),
   register(Status),
-  register(Diff),
+  register(Diff)
 )
 
 /** The tools' flows, asking ChatApi on `origin`. Needs the host's `HttpClient` and `Crypto`. */

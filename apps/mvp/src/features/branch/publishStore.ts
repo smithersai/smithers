@@ -4,6 +4,8 @@ import { Context, Effect, FiberHandle, Layer, Scope, Semaphore } from "effect"
 import type { WriteRow } from "../issues/schema"
 import { IssuesStore } from "../issues/store"
 import { FilesRow } from "../pulls/schema"
+import type { Source } from "../repo/gate"
+import { RepoStore } from "../repo/store"
 import { PUBLICATIONS_SHAPE_ROUTE } from "./contract"
 import { PublicationRow, PublishPress, PullTitle } from "./publishSchema"
 import type { Current } from "./schema"
@@ -23,7 +25,7 @@ type Branches = Collection.Collection<Current, string>
 type QueryOf<F extends (...args: never) => unknown> = Effect.Success<ReturnType<F>>
 
 /** The shown branch's publication, once it has one. */
-export const publicationQuery = (current: Branches, shown: Collection.Collection<PublicationRow, string>) =>
+export const publicationQuery = (current: Branches, shown: Source<PublicationRow>) =>
   LiveQuery.make((q) =>
     q
       .from({ current: current.tanstack })
@@ -46,7 +48,7 @@ export const publicationQuery = (current: Branches, shown: Collection.Collection
   )
 
 /** The title of the shown branch's pull request, once the device has its row. */
-export const pullTitleQuery = (current: Branches, titles: Collection.Collection<PullTitle, string>) =>
+export const pullTitleQuery = (current: Branches, titles: Source<PullTitle>) =>
   LiveQuery.make((q) =>
     q
       .from({ current: current.tanstack })
@@ -78,7 +80,7 @@ export const pressQuery = (current: Branches, presses: Collection.Collection<Pub
   )
 
 /** The person's own Publish, Update branch and Resync writes of the shown branch, whoever started them. */
-export const writesQuery = (current: Branches, writes: ElectricCollection.ElectricCollection<WriteRow>) =>
+export const writesQuery = (current: Branches, writes: Source<WriteRow>) =>
   LiveQuery.make((q) =>
     q
       .from({ current: current.tanstack })
@@ -95,8 +97,8 @@ export const writesQuery = (current: Branches, writes: ElectricCollection.Electr
       }))
   )
 
-/** Every comparison this tab's Compare read, by `<base>...<head>`. */
-export const comparisonsQuery = (comparisons: Collection.Collection<FilesRow, string>) =>
+/** Every comparison this tab's Compare read, by repository and both SHAs. */
+export const comparisonsQuery = (comparisons: Source<FilesRow>) =>
   LiveQuery.make((q) => q.from({ comparison: comparisons.tanstack }).select(({ comparison }) => comparison))
 
 /** Publish's and Update branch's state for one tab. */
@@ -128,7 +130,8 @@ export class PublishStore extends Context.Service<
       Effect.gen(function* () {
         const scope = yield* Effect.scope
         const { current } = yield* BranchStore
-        const { writes } = yield* IssuesStore
+        const { writeRows } = yield* IssuesStore
+        const repos = yield* RepoStore
         const shown = yield* Collection.local<PublicationRow, string>({
           id: "branch-publication",
           schema: PublicationRow,
@@ -149,6 +152,10 @@ export class PublishStore extends Context.Service<
           schema: FilesRow,
           getKey: (row) => row.id,
         })
+        yield* repos.registerCache(["branch-compare"], (repoId) => Effect.flatMap(comparisons.toArray, (rows) => {
+          const keys = rows.filter((row) => row.repoId === repoId).map((row) => row.id)
+          return keys.length === 0 ? Effect.void : Effect.asVoid(comparisons.delete(keys))
+        }))
         const opened = new Map<string, ElectricCollection.ElectricCollection<PublicationRow>>()
         const opening = yield* Semaphore.make(1)
         const open = (branchId: string) =>
@@ -179,11 +186,12 @@ export class PublishStore extends Context.Service<
           presses,
           titles,
           comparisons,
-          publication: yield* publicationQuery(current, shown),
-          pullTitle: yield* pullTitleQuery(current, titles),
+          // What shows of a branch's repository goes through the data gate (repo/gate.ts).
+          publication: yield* publicationQuery(current, yield* repos.gate(shown)),
+          pullTitle: yield* pullTitleQuery(current, yield* repos.gate(titles)),
           press: yield* pressQuery(current, presses),
-          writes: yield* writesQuery(current, writes),
-          comparisonList: yield* comparisonsQuery(comparisons),
+          writes: yield* writesQuery(current, writeRows),
+          comparisonList: yield* comparisonsQuery(yield* repos.gate(comparisons)),
           follower: yield* FiberHandle.make<void, never>(),
           scope,
         })

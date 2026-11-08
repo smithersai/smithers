@@ -10,9 +10,9 @@ import {
   type RefObject,
 } from "react";
 import { Button } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { type Collaborator, CollaboratorCarets, type FieldSelection, selectionOf, useSharedSelection } from "../collaborators";
-import type { DataAttributes } from "../data-attributes";
+import type { DataAttributes } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { type ChatComposerCompletions, clampHighlight, CompletionList, completionOptionId } from "./CompletionList";
 

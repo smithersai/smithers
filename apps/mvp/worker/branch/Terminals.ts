@@ -45,6 +45,12 @@ export const requests = Metric.counter("smithers_terminal_requests", {
   incremental: true,
 })
 
+/** A new open recovered an owned row whose shell has already ended. No terminal bytes are recorded. */
+export const recoveries = Metric.counter("smithers_terminal_recoveries", {
+  description: "Terminal opens that recovered a lost shell's stale row",
+  incremental: true,
+})
+
 /** `GET /api/shapes/terminals` requests, by `status` and `live`. */
 export const shapes = Metric.counter("smithers_terminal_shape_requests", {
   description: "GET /api/shapes/terminals requests, by status and live",
@@ -190,6 +196,17 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
           if (!canAsk(actor.value)) return refuse(fields, 403, "members_only")
           // No terminal on a locked branch, nor yet on a restricted one, whose writers come with 0007's modes.
           if (branch.mode !== "open") return refuse(fields, 409, "locked")
+          // A shell's exit reaches the browser socket immediately, but its row can still say open. A new open
+          // checks only this person's existing shell before admission; otherwise the unique live-row fence would
+          // keep returning the dead terminal forever. A resend of the same id retains its idempotency contract.
+          const live = yield* liveOf(branchId, actor.value.subject.id).pipe(Effect.provide(database))
+          if (live?.status === "open" && live.id !== terminalId &&
+            !(yield* (yield* TerminalSockets).alive(branchId, live.id, actor.value.subject.id))) {
+            yield* markLost(live.id).pipe(Effect.provide(database))
+            fields.recoveredTerminalId = live.id
+            yield* Metric.update(recoveries, 1)
+            yield* Effect.annotateCurrentSpan({ "smithers.terminal.recovered": true })
+          }
           // The terminal keeps the role on the branch's repository its host re-checks shares with (decision 0079).
           const admitted = yield* admit(terminalId, branchId, { ...actor.value, role: branch.role }).pipe(
             Effect.provide(database),

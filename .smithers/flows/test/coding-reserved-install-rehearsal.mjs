@@ -8,7 +8,6 @@ import { Layer, ManagedRuntime, Redacted, Schema } from "effect"
 import { NativeCodingError, nativeLayer, NativeTransport, StackCandidate, StackProposal } from "../coding/native.ts"
 import { CodingError } from "../coding/schema.ts"
 import { Candidate, Propose, stackBaseLayer } from "../coding/stack.ts"
-import { Crypto } from "@smthrs/crypto"
 
 const token = process.env.SMITHERS_NATIVE_REPOSITORY_TOKEN
 if (!token) throw new Error("Missing rehearsal credential")
@@ -30,7 +29,7 @@ const runtime = ManagedRuntime.make(
   Layer.mergeAll(Interpreter.layer(Publish), stackBaseLayer.pipe(Layer.provide(native))).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Layer.provideMerge(NodeCrypto.layer)
   )
 )
 try {

@@ -1,7 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
@@ -99,7 +98,7 @@ const run = async (
       ? execution
       : CapabilitySet.attenuate(outerCeiling)(execution)).pipe(
         Effect.provide(implementations),
-        Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+        Effect.provide(NodeCrypto.layer)
       ))
     return { wrote, fileExists: existsSync(join(root, name)) }
   } finally {
@@ -164,7 +163,7 @@ describe("declared capability ceilings at the guarded host boundary", () => {
         }).pipe(
           Effect.provide(FlowEngine.layerMemory),
           Effect.provide(host(root)),
-          Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+          Effect.provide(NodeCrypto.layer)
         )
       )
       expect(result._tag).toBe("Complete")
@@ -248,7 +247,7 @@ describe("declared capability ceilings at the guarded host boundary", () => {
               Effect.provide(jj),
               Effect.provide(StepBoundary.layerTest()),
               Effect.provide(TestStores.layerAt(join(root, "state.sqlite"))),
-              Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+              Effect.provide(NodeCrypto.layer)
             )
           expect(await Effect.runPromise(run(Base, "cache-allowed"))).toBe("secret")
           expect(calls).toEqual(["read"])
@@ -306,7 +305,7 @@ describe("declared capability ceilings at the guarded host boundary", () => {
       const result = await Effect.runPromise(
         Parent.execute({}, { executionId: "ceiling-siblings" }).pipe(
           Effect.provide(layer),
-          Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+          Effect.provide(NodeCrypto.layer)
         )
       )
       expect(result).toEqual({ blocked: false, allowed: true })
@@ -365,7 +364,7 @@ describe("declared capability ceilings at the guarded host boundary", () => {
           const token = DurableDeferred.tokenFromExecutionId(gate, { flow: Parent, executionId })
           yield* DurableDeferred.succeed(gate, { token, value: "ready" })
           return yield* Parent.execute({ name: "resumed.txt" }, { executionId })
-        }).pipe(Effect.provide(layer), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+        }).pipe(Effect.provide(layer), Effect.provide(NodeCrypto.layer))
       )
       expect(result).toBe(false)
       expect(existsSync(join(root, "resumed.txt"))).toBe(false)
@@ -468,7 +467,7 @@ describe("declared capability ceilings at the guarded host boundary", () => {
               Effect.provide(jj),
               Effect.provide(StepBoundary.layerTest()),
               Effect.provide(TestStores.layerAt(join(root, "state.sqlite"))),
-              Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+              Effect.provide(NodeCrypto.layer)
             )
           expect(await Effect.runPromise(phase("ceiling-before-restart", false))).toBe(false)
           expect(existsSync(join(root, "restarted.txt"))).toBe(false)
@@ -491,7 +490,7 @@ describe("declared capability ceilings at the guarded host boundary", () => {
               }).pipe(
                 Effect.scoped,
                 Effect.provide(TestStores.layerAt(join(root, "state.sqlite"))),
-                Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+                Effect.provide(NodeCrypto.layer)
               )
             )
           }
@@ -511,7 +510,7 @@ describe("declared capability ceilings at the guarded host boundary", () => {
                 Effect.map((row) => row.status),
                 Effect.scoped,
                 Effect.provide(TestStores.layerAt(join(root, "state.sqlite"))),
-                Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+                Effect.provide(NodeCrypto.layer)
               )
             )
             expect(status).toBe("failed")

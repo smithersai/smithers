@@ -1,8 +1,9 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
+import * as Hex from "effect/encoding/Hex"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
@@ -481,16 +482,19 @@ describe("StepKey.dispatchIdentity", () => {
     Effect.gen(function*() {
       let digestCalls = 0
       const countingCrypto = Layer.effect(
-        Crypto.Crypto,
-        Effect.map(Crypto.Crypto, (crypto) =>
-          Crypto.Crypto.of({
+        EffectDigest.Digest,
+        Effect.map(EffectDigest.Digest, (crypto) =>
+          EffectDigest.Digest.of({
             ...crypto,
             digest: (algorithm, data) =>
               Effect.sync(() => {
                 digestCalls = digestCalls + 1
-              }).pipe(Effect.andThen(crypto.digest(algorithm, data)))
+              }).pipe(Effect.andThen(crypto.digest(algorithm, data))),
+            digestHex(algorithm, data) {
+              return Effect.map(this.digest(algorithm, data), Hex.encode)
+            }
           }))
-      ).pipe(Layer.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+      ).pipe(Layer.provide(NodeCrypto.layer))
       const inputs = [{ _tag: "Ref", from: "upstream", path: ["value"] }] as const
       const options = {
         material: material({ inputs }),
@@ -534,7 +538,7 @@ describe("StepKey.dispatchIdentity", () => {
         Effect.succeed("key1_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" as StepKey.StepKey)
       )
       expect(recovered).toBe("key1_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
-    }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))))
+    }).pipe(Effect.provide(NodeCrypto.layer)))
 
   it.live("evicts a leader interrupted before its computation starts", () =>
     Effect.gen(function*() {
@@ -560,7 +564,7 @@ describe("StepKey.dispatchIdentity", () => {
         if (Option.isNone(retried)) stuck.push(budget)
       }
       expect(stuck).toEqual([])
-    }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))))
+    }).pipe(Effect.provide(NodeCrypto.layer)))
 
   it.effect("lets a parked waiter replace an interrupted digest leader", () =>
     Effect.gen(function*() {
@@ -591,7 +595,7 @@ describe("StepKey.dispatchIdentity", () => {
       yield* Fiber.interrupt(leader)
 
       expect(yield* Fiber.join(waiter)).toBe(waiterKey)
-    }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))))
+    }).pipe(Effect.provide(NodeCrypto.layer)))
 
   it.effect("propagates a leader's typed SchemaError to every parked waiter", () =>
     Effect.gen(function*() {
@@ -622,7 +626,7 @@ describe("StepKey.dispatchIdentity", () => {
 
       expect(yield* Effect.flip(Fiber.join(leader))).toBe(schemaError)
       expect(yield* Effect.flip(Fiber.join(waiter))).toBe(schemaError)
-    }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))))
+    }).pipe(Effect.provide(NodeCrypto.layer)))
 
   it.effect("separates memo entries by upstream id and projection path", () =>
     Effect.gen(function*() {
@@ -682,7 +686,7 @@ describe("StepKey.dispatchIdentity", () => {
       // A failure at one address leaves other addresses untouched.
       const otherKey = "key1_dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" as StepKey.StepKey
       expect(yield* memo.digest("upstream", ["other"], Effect.succeed(otherKey))).toBe(otherKey)
-    }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))))
+    }).pipe(Effect.provide(NodeCrypto.layer)))
 
   it.effect("folds an engine-resolved environment without moving the absent identity", () =>
     Effect.gen(function*() {

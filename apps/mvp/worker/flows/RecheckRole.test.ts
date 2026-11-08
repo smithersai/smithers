@@ -164,7 +164,7 @@ describe("auth/RecheckRole", () => {
     const after = await session(s.id)
     expect(after.role).toBe("admin")
     expect(after.age).toBeLessThan(60)
-    expect(await s.h.session(s.cookies)).toEqual({ signedIn: true, personId: s.personId, login: "octocat", role: "admin", hostedModel: false, install: INSTALL, expiresAt: expect.any(Number), serverNow: expect.any(Number) })
+    expect(await s.h.session(s.cookies)).toEqual({ signedIn: true, personId: s.personId, login: "octocat", role: "admin", hostedModel: false, install: INSTALL, expiresAt: expect.any(Number), deadline: expect.any(Number), session: expect.stringMatching(/^[a-f0-9]{32}$/), serverNow: expect.any(Number) })
   })
 
   test("a GitHub that fails once is retried by the step's retry policy", async () => {
@@ -338,6 +338,7 @@ describe("auth/RecheckRole", () => {
     await run(s.id)
     expect(logs.map((log) => log.annotations)).toEqual([
       expect.objectContaining({ sessionId: s.id, step: "redeem", outcome: "redeemed" }),
+      expect.objectContaining({ outcome: "stored" }),
       expect.objectContaining({ sessionId: s.id, step: "store", outcome: "stored" }),
       expect.objectContaining({ sessionId: s.id, step: "check", outcome: "checked", role: "member" }),
       expect.objectContaining({ sessionId: s.id, step: "redeem", outcome: "none" }),
@@ -349,6 +350,8 @@ describe("auth/RecheckRole", () => {
         errorCode: "@smthrs/mvp/auth/GitHubRefused",
       }),
     ])
+    expect(logs.filter(log => log.message === "auth.token_store")).toHaveLength(1)
+    expect(logs.find(log => log.message === "auth.token_store")!.annotations).not.toHaveProperty("sessionId")
     const text = JSON.stringify(logs)
     for (const issued of s.github.issued) {
       expect(text).not.toContain(Redacted.value(issued.accessToken))
@@ -411,7 +414,7 @@ describe("one check of a session at a time", () => {
       await Effect.runPromise(Deferred.await(redeemed))
       // The next request comes an hour later, in the next hour, while A still holds the replacement.
       h.advance(60 * 60 * 1000)
-      expect(await h.session(cookies)).toEqual({ signedIn: true, personId, login: "octocat", role: "member", hostedModel: false, install: INSTALL, expiresAt: expect.any(Number), serverNow: expect.any(Number) })
+      expect(await h.session(cookies)).toEqual({ signedIn: true, personId, login: "octocat", role: "member", hostedModel: false, install: INSTALL, expiresAt: expect.any(Number), deadline: expect.any(Number), session: expect.stringMatching(/^[a-f0-9]{32}$/), serverNow: expect.any(Number) })
       h.advance(-60 * 60 * 1000)
       // B runs before A goes on: a check of its own runs to its end first; the same check is A, still paused.
       if (started[1] !== started[0]) await runs[1]
@@ -430,7 +433,7 @@ describe("one check of a session at a time", () => {
         Exit.succeed({ outcome: "checked", role: "member" }),
         Exit.succeed({ outcome: "checked", role: "member" }),
       ])
-      expect(await h.session(cookies)).toEqual({ signedIn: true, personId, login: "octocat", role: "member", hostedModel: false, install: INSTALL, expiresAt: expect.any(Number), serverNow: expect.any(Number) })
+      expect(await h.session(cookies)).toEqual({ signedIn: true, personId, login: "octocat", role: "member", hostedModel: false, install: INSTALL, expiresAt: expect.any(Number), deadline: expect.any(Number), session: expect.stringMatching(/^[a-f0-9]{32}$/), serverNow: expect.any(Number) })
       // The check recorded the role, so the next stale request names a new check.
       await sql(`UPDATE sessions SET role_checked_at = role_checked_at - interval '2 hours'`)
       await h.session(cookies)
@@ -503,7 +506,7 @@ describe("one check of a session at a time", () => {
       const after = await session(s.id)
       expect(after.revokedReason).toBeNull()
       expect(after.refreshDigest).toBe(SessionKeys.digest(Redacted.value(s.github.issued[1]!.refreshToken!)))
-      expect(await s.h.session(s.cookies)).toEqual({ signedIn: true, personId: s.personId, login: "octocat", role: "member", hostedModel: false, install: INSTALL, expiresAt: expect.any(Number), serverNow: expect.any(Number) })
+      expect(await s.h.session(s.cookies)).toEqual({ signedIn: true, personId: s.personId, login: "octocat", role: "member", hostedModel: false, install: INSTALL, expiresAt: expect.any(Number), deadline: expect.any(Number), session: expect.stringMatching(/^[a-f0-9]{32}$/), serverNow: expect.any(Number) })
     } finally {
       await removeFault()
     }
@@ -592,9 +595,10 @@ const storeTokens = (
   Effect.gen(function* () {
     const context = (name: "github_access" | "github_refresh") => ({ id: s.id, name, version: 1 })
     yield* SessionStore.replaceTokens(s.id, SessionKeys.digest(Redacted.value(presented)), {
+      pairDigest: SessionKeys.digest(Redacted.value(next.accessToken)),
       access: yield* s.services.keys.seal(next.accessToken, context("github_access")),
       accessExpiresAt: next.expiresAt,
       refresh: next.refreshToken === null ? null : yield* s.services.keys.seal(next.refreshToken, context("github_refresh")),
       refreshDigest: next.refreshToken === null ? null : SessionKeys.digest(Redacted.value(next.refreshToken)),
-    }).pipe(Effect.provide(s.database), Effect.orDie)
+    }, 0).pipe(Effect.provide(s.database), Effect.orDie)
   })

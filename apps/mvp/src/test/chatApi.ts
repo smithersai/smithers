@@ -47,6 +47,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as Actor from "../../worker/Actor.vibe"
 import * as BranchApi from "../../worker/branch/BranchApi.ts"
+import * as Conversations from "../../worker/branch/Conversations.ts"
 import { Forge } from "../../worker/branch/Forge.ts"
 import { Directory } from "../../worker/branch/People.vibe"
 import { Rooms } from "../../worker/branch/Rooms.vibe"
@@ -195,6 +196,13 @@ export const member: Actor.Actor = { subject: { kind: "person", id: "person-memb
 /** The repository a test ChatApi's git loop syncs and writes to (`GITHUB_REPOSITORY`). */
 export const TEST_REPOSITORY = "octo/hello"
 
+/** One deployment repository for the migrated home, handlers and scripted GitHub, including server-only fixtures. */
+export const testChatDatabase = (prefix: string) => TestDatabase.layer(prefix).pipe(
+  Layer.provide(Layer.effect(ConfigProvider.ConfigProvider, Effect.map(TestDatabase.fixtureConfig,
+    (config) => ConfigProvider.fromUnknown({ ...config, GITHUB_REPOSITORY: TEST_REPOSITORY })))),
+  Layer.provideMerge(Layer.succeed(Conversations.homeRepositoryNames, repositoryOf(TEST_REPOSITORY))),
+)
+
 /**
  * How a test ChatApi is opened: who every request is signed in as, `member` unless set, or nobody (`null`); and the
  * origin it answers on, `CHATAPI_ORIGIN` unless set. A test whose tab must reach a real local server at the app's
@@ -228,6 +236,8 @@ export interface ChatApiOptions {
    * set; a function sees how many calls came before, and is read at each call.
    */
   readonly provider?: ProviderReply | ((index: number) => ProviderReply)
+  /** What the server holds before the browser app starts, so no request of the app's sees it otherwise. */
+  readonly prepare?: (api: TestChatApi["Service"]) => Promise<void>
 }
 
 /** The header a test device's requests name their person with (`ChatApiOptions.people`). */
@@ -406,6 +416,7 @@ export class TestChatApi extends Context.Service<
      * `probe/Pause` under that id until this ChatApi closes.
      */
     readonly remote: {
+      readonly systemRun: () => Effect.Effect<string>
       readonly todoRun: (title: string) => Effect.Effect<string>
       readonly startExternal: (runId: string) => Effect.Effect<void>
       /** A repository's run of `flow` recorded on `TEST_REPOSITORY`, as a trigger records one: its execution id. */
@@ -514,6 +525,7 @@ export class TestChatApi extends Context.Service<
         })
         const config = ConfigProvider.fromUnknown({
           ...(yield* TestDatabase.fixtureConfig),
+          GITHUB_REPOSITORY: TEST_REPOSITORY,
           // The deployment's own model answers here, as under `alchemy dev` (decision 0099), so the scripted model does.
           HOSTED_MODEL_ENABLED: "true",
           ALERT_APP_URL: "http://chat.test/app",
@@ -556,6 +568,9 @@ export class TestChatApi extends Context.Service<
         // recorded in `starts`, never run. A test writes their rows itself, through `github.run`. The routes' own reads
         // (a comparison's files) reach the scripted GitHub as the App.
         const repository = repositoryOf(TEST_REPOSITORY)
+        const homeRepository = yield* Conversations.configuredHomeRepositoryNames.pipe(
+          Effect.provideService(ConfigProvider.ConfigProvider, config), Effect.orDie,
+        )
         const scripted = scriptedGitHub(repository.owner, repository.name)
         const app = Option.some({
           appId: APP_ID,
@@ -884,6 +899,9 @@ export class TestChatApi extends Context.Service<
             })
           ),
           Effect.provide(sessions),
+          // The home conversation is the deployment repository's `main`, captured as ChatApi captures it
+          // (worker/ChatApiProgram.ts): the repository the migrations seeded and the scripted GitHub answers.
+          Effect.provideService(Conversations.homeRepositoryNames, homeRepository),
           // Who has which role on a branch's repository, as ChatApi provides it (decision 0079).
           Effect.provide(BranchRoles.layer(roles)),
           Effect.provide(FetchHttpClient.layer),
@@ -1083,6 +1101,13 @@ export class TestChatApi extends Context.Service<
             run: (effect) => effect.pipe(Effect.provide(database), Effect.orDie)
           },
           remote: {
+            systemRun: () => Effect.gen(function* () {
+              yield* remoteEngine
+              const runId = `ops-spend-${crypto.randomUUID()}`
+              yield* Effect.flatMap(SqlClient.SqlClient, (writer) => writer`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+                VALUES (${runId}, 'pending', ${Date.now()}, ${JSON.stringify({ version: 1, flowName: "ops/SpendAlert", payload: {} })})`).pipe(Effect.provide(remoteWriter))
+              return runId
+            }).pipe(Effect.orDie),
             ready: (runId) => Deferred.await(remoteGates.get(runId)!.ready),
             release: (runId) => Deferred.succeed(remoteGates.get(runId)!.release, undefined).pipe(Effect.asVoid),
             settled: (runId) => Fiber.join(remoteFibers.get(runId)!),
@@ -1380,17 +1405,24 @@ const leaderWorker = (api: TestChatApi["Service"], name: string, store: EngineSt
  * device runs its `agent`. A tab opened again on the same device is a reload: it restores what the last one stored.
  * Each device has its own locks, as each browser has its own Web Locks.
  */
+const outboxStorageLocks = new WeakMap<Map<string, string>, string>()
+
 export const nodeDevice = ({ agent, file, outboxEntries, ...overrides }: DeviceOptions = {}): NodeDevice => {
   if (typeof navigator.locks?.request !== "function") throw new Error("nodeDevice requires native Web Locks; use the workspace's Node toolchain")
   const path = file ?? join(tempDirectory("mvp-device-"), "device.sqlite")
   const entries = outboxEntries ?? new Map<string, string>()
+  const storageLock = outboxStorageLocks.get(entries) ?? `mvp-outbox-${crypto.randomUUID()}`
+  outboxStorageLocks.set(entries, storageLock)
   const storage = {
+    withLock: <A>(name: string, action: () => Promise<A>): Promise<A> => navigator.locks.request(`${storageLock}:${name}`, action),
     get: async (key: string) => entries.get(key) ?? null,
     set: async (key: string, value: string) => void entries.set(key, value),
+    setMany: async (rows: ReadonlyArray<readonly [string, string]>) => { for (const [key, value] of rows) entries.set(key, value) },
     delete: async (key: string) => void entries.delete(key),
     keys: async () => [...entries.keys()],
     clear: async () => entries.clear()
   }
+  const outboxListeners = new Set<() => void>()
   const device = `mvp-device-${crypto.randomUUID()}`
   const locks = navigator.locks
   const painted: Array<ThemeMode | undefined> = []
@@ -1413,6 +1445,10 @@ export const nodeDevice = ({ agent, file, outboxEntries, ...overrides }: DeviceO
     },
     outbox: {
       start: startOfflineExecutor,
+      changes: {
+        publish: () => { for (const listener of outboxListeners) listener() },
+        subscribe: (listener) => { outboxListeners.add(listener); return () => { outboxListeners.delete(listener) } },
+      },
       storage,
       get online() {
         return Outbox.Online.always()
@@ -1562,6 +1598,11 @@ export type TabOptions = Partial<Omit<AppOptions, "origin" | "reload" | "fetch">
   /** The default device's `reopenRoute`: what opening the tab's route again does; nothing unless set. */
   readonly reopenRoute?: () => void
   /**
+   * The page's transport around the harness's fetch, as main.tsx wraps the browser's in `boundFetch`: every request the
+   * tab makes goes through it (src/test/browserSession.ts).
+   */
+  readonly transport?: (fetch: typeof globalThis.fetch) => typeof globalThis.fetch
+  /**
    * A client in place of the real one, for an unhappy path: a faulty `IssuesClient`, `StackClient`, `TextsClient`,
    * `PullsClient`, `RepoClient`, `SecretsClient`, `PersonalModelClient` or a ShapeSource reference (test.faults-by-injection).
    */
@@ -1589,6 +1630,7 @@ const app = (
     answers,
     host,
     reopenRoute,
+    transport,
     replace: _replace,
     webSocket: _webSocket,
     sessionLifecycle: _sessionLifecycle,
@@ -1599,7 +1641,7 @@ const app = (
 ): AppOptions => ({
   ...options,
   origin: api.origin,
-  fetch: api.fetch,
+  fetch: transport === undefined ? api.fetch : transport(api.fetch),
   reload: api.reload,
   host: host ??
     nodeDevice({ ...(answers === false ? {} : { agent: api }), ...(reopenRoute === undefined ? {} : { reopenRoute }) })
@@ -1661,9 +1703,10 @@ const withTabClock = <A, E, R>(layer: Layer.Layer<A, E, R>, clock?: Clock.Clock)
   clock === undefined ? layer : layer.pipe(Layer.provideMerge(Layer.succeed(Clock.Clock, clock)))
 
 const withChatApi = <A, E>(tab: (api: TestChatApi["Service"]) => Layer.Layer<A, E>, chatApi: ChatApiOptions) =>
-  Layer.unwrap(Effect.map(TestChatApi, tab)).pipe(
+  Layer.unwrap(Effect.flatMap(TestChatApi, (api) =>
+    Effect.as(chatApi.prepare === undefined ? Effect.void : Effect.promise(() => chatApi.prepare!(api)), tab(api)))).pipe(
     Layer.provideMerge(TestChatApi.layerWith(chatApi)),
-    Layer.provideMerge(TestDatabase.layer("test_chat")),
+    Layer.provideMerge(testChatDatabase("test_chat")),
     Layer.provideMerge(ownMetrics())
   )
 

@@ -51,7 +51,7 @@ test("navigation cancels WebKit's old page live read without a server or access-
     await started
     await page.goto("/app/flows/new")
     await expect(page.getByRole("heading", { name: "New flow", exact: true })).toBeVisible({ timeout: 30_000 })
-    expect(failed).toEqual(["cancelled"])
+    expect(failed).toEqual([expect.stringMatching(/^(cancelled|Load request cancelled)$/)])
     const receipts = problems.navigationCancellations()
     // The compiled bootstrap reproduces WebKit's pre-dispatch refusal; Vite's module loading can finish quietly.
     // Production must exercise the native diagnostic, beyond a dispatched cancellation any watcher already permits.

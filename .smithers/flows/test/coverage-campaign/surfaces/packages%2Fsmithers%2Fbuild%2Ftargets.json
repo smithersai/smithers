@@ -1,0 +1,1411 @@
+{
+  "id": "packages/smithers/build/targets",
+  "name": "@smthrs/targets",
+  "owner": {
+    "declaration": "packages/smithers/build/targets/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
+    "circular": "node ../../../repo-targets/scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./index": null,
+    "./ReviewLint": null,
+    "./StandardPackage": null,
+    "./AgentTarget": "./src/AgentTarget.ts",
+    "./Anvil": "./src/Anvil.ts",
+    "./Attr": "./src/Attr.ts",
+    "./BiomeCheck": "./src/BiomeCheck.ts",
+    "./BunSuite": "./src/BunSuite.ts",
+    "./BundlerTarget": "./src/BundlerTarget.ts",
+    "./Cargo": "./src/Cargo.ts",
+    "./Changesets": "./src/Changesets.ts",
+    "./ChangesetsTarget": "./src/ChangesetsTarget.ts",
+    "./CiToolchain": "./src/CiToolchain.ts",
+    "./Compose": "./src/Compose.ts",
+    "./Config": "./src/Config.ts",
+    "./CronTarget": "./src/CronTarget.ts",
+    "./DependencyDocs": "./src/DependencyDocs.ts",
+    "./DepsLint": "./src/DepsLint.ts",
+    "./Dev": "./src/Dev.ts",
+    "./Docker": "./src/Docker.ts",
+    "./DocsCheck": "./src/DocsCheck.ts",
+    "./DocsPage": "./src/DocsPage.ts",
+    "./DocsParity": "./src/DocsParity.ts",
+    "./Dprint": "./src/Dprint.ts",
+    "./DtsBuild": "./src/DtsBuild.ts",
+    "./Environment": "./src/Environment.ts",
+    "./EsLint": "./src/EsLint.ts",
+    "./Exec": "./src/Exec.ts",
+    "./ExecSandbox": "./src/ExecSandbox.ts",
+    "./FaultSuite": "./src/FaultSuite.ts",
+    "./Factory": "./src/Factory.ts",
+    "./Fetch": "./src/Fetch.ts",
+    "./Filegroup": "./src/Filegroup.ts",
+    "./Flow": "./src/Flow.ts",
+    "./FlowCatalog": "./src/FlowCatalog.ts",
+    "./Foundry": "./src/Foundry.ts",
+    "./GeneratedFile": "./src/GeneratedFile.ts",
+    "./Home": "./src/Home.ts",
+    "./GitTarget": "./src/GitTarget.ts",
+    "./GithubCiGen": "./src/GithubCiGen.ts",
+    "./GithubTarget": "./src/GithubTarget.ts",
+    "./GithubWorkflow": "./src/GithubWorkflow.ts",
+    "./Go": "./src/Go.ts",
+    "./Input": "./src/Input.ts",
+    "./Install": "./src/Install.ts",
+    "./JevLint": "./src/JevLint.ts",
+    "./JsrPublish": "./src/JsrPublish.ts",
+    "./LlmLint": "./src/LlmLint.ts",
+    "./LocalRepository": "./src/LocalRepository.ts",
+    "./Lockfile": "./src/Lockfile.ts",
+    "./ManifestJson": "./src/ManifestJson.ts",
+    "./MemoryTarget": "./src/MemoryTarget.ts",
+    "./Mise": "./src/Mise.ts",
+    "./Mount": "./src/Mount.ts",
+    "./NewPackage": "./src/NewPackage.ts",
+    "./Nix": "./src/Nix.ts",
+    "./NodeArtifact": "./src/NodeArtifact.ts",
+    "./NodeBinary": "./src/NodeBinary.ts",
+    "./NodeTest": "./src/NodeTest.ts",
+    "./NpmPublish": "./src/NpmPublish.ts",
+    "./NpmTarget": "./src/NpmTarget.ts",
+    "./Outward": "./src/Outward.ts",
+    "./Owners": "./src/Owners.ts",
+    "./Package": "./src/Package.ts",
+    "./PackageDefaults": "./src/PackageDefaults.ts",
+    "./PackageJson": "./src/PackageJson.ts",
+    "./PackageJsonTemplate": "./src/PackageJsonTemplate.ts",
+    "./PackageLint": "./src/PackageLint.ts",
+    "./PackageManager": "./src/PackageManager.ts",
+    "./PnpmWorkspaceFile": "./src/PnpmWorkspaceFile.ts",
+    "./Reference": "./src/Reference.ts",
+    "./RemoteCache": "./src/RemoteCache.ts",
+    "./RepoTarget": "./src/RepoTarget.ts",
+    "./Runtime": "./src/Runtime.ts",
+    "./RustToolchain": "./src/RustToolchain.ts",
+    "./SafeFs": "./src/SafeFs.ts",
+    "./Secret": "./src/Secret.ts",
+    "./SecretProxy": "./src/SecretProxy.ts",
+    "./SecurityReview": "./src/SecurityReview.ts",
+    "./Shell": "./src/Shell.ts",
+    "./Smithers": "./src/Smithers.ts",
+    "./SortPackageJson": "./src/SortPackageJson.ts",
+    "./Stamp": "./src/Stamp.ts",
+    "./Target": "./src/Target.ts",
+    "./TargetIndex": "./src/TargetIndex.ts",
+    "./ToolBuild": "./src/ToolBuild.ts",
+    "./ToolRun": "./src/ToolRun.ts",
+    "./Toolchain": "./src/Toolchain.ts",
+    "./TsBuild": "./src/TsBuild.ts",
+    "./Tsconfig": "./src/Tsconfig.ts",
+    "./Typecheck": "./src/Typecheck.ts",
+    "./TypedocDocumentation": "./src/TypedocDocumentation.ts",
+    "./Verb": "./src/Verb.ts",
+    "./Vitest": "./src/Vitest.ts",
+    "./VitestCoverage": "./src/VitestCoverage.ts",
+    "./VitestWatch": "./src/VitestWatch.ts",
+    "./WorkspaceDeclaration": "./src/WorkspaceDeclaration.ts",
+    "./test-support/plan": "./test-support/plan.ts"
+  },
+  "production": [
+    "eslint.config.js",
+    "examples/declare-a-package.ts",
+    "examples/declare-issue-transitions.ts",
+    "PACKAGE.ts",
+    "scripts/build.mjs",
+    "src/AgentTarget.ts",
+    "src/Anvil.ts",
+    "src/Attr.ts",
+    "src/BiomeCheck.ts",
+    "src/BundlerTarget.ts",
+    "src/BunSuite.ts",
+    "src/Cargo.ts",
+    "src/Changesets.ts",
+    "src/ChangesetsTarget.ts",
+    "src/CiToolchain.ts",
+    "src/Compose.ts",
+    "src/Config.ts",
+    "src/CronTarget.ts",
+    "src/DependencyDocs.ts",
+    "src/DepsLint.ts",
+    "src/Dev.ts",
+    "src/Docker.ts",
+    "src/DocsCheck.ts",
+    "src/DocsPage.ts",
+    "src/DocsParity.ts",
+    "src/Dprint.ts",
+    "src/DtsBuild.ts",
+    "src/Environment.ts",
+    "src/EsLint.ts",
+    "src/Exec.ts",
+    "src/ExecSandbox.ts",
+    "src/Factory.ts",
+    "src/FaultSuite.ts",
+    "src/Fetch.ts",
+    "src/Filegroup.ts",
+    "src/Flow.ts",
+    "src/FlowCatalog.ts",
+    "src/Foundry.ts",
+    "src/GeneratedFile.ts",
+    "src/GithubCiGen.ts",
+    "src/GithubTarget.ts",
+    "src/GithubWorkflow.ts",
+    "src/GitTarget.ts",
+    "src/Go.ts",
+    "src/Home.ts",
+    "src/index.ts",
+    "src/Input.ts",
+    "src/Install.ts",
+    "src/internal/PrivateStore.ts",
+    "src/internal/Process.ts",
+    "src/internal/PublicationFileSystem.ts",
+    "src/internal/ReviewBatches.ts",
+    "src/internal/ReviewModel.ts",
+    "src/JevLint.ts",
+    "src/JsrPublish.ts",
+    "src/LlmLint.ts",
+    "src/LocalRepository.ts",
+    "src/Lockfile.ts",
+    "src/ManifestJson.ts",
+    "src/MemoryTarget.ts",
+    "src/Mise.ts",
+    "src/ModelEngine.ts",
+    "src/Mount.ts",
+    "src/NewPackage.ts",
+    "src/Nix.ts",
+    "src/NodeArtifact.ts",
+    "src/NodeBinary.ts",
+    "src/NodeTest.ts",
+    "src/NpmPublish.ts",
+    "src/NpmTarget.ts",
+    "src/Outward.ts",
+    "src/Owners.ts",
+    "src/Package.ts",
+    "src/PackageDefaults.ts",
+    "src/PackageJson.ts",
+    "src/PackageJsonTemplate.ts",
+    "src/PackageLint.ts",
+    "src/PackageManager.ts",
+    "src/PnpmWorkspaceFile.ts",
+    "src/Reference.ts",
+    "src/RemoteCache.ts",
+    "src/RepoTarget.ts",
+    "src/Runtime.ts",
+    "src/RustToolchain.ts",
+    "src/SafeFs.ts",
+    "src/Secret.ts",
+    "src/SecretProxy.ts",
+    "src/SecurityReview.ts",
+    "src/Shell.ts",
+    "src/Smithers.ts",
+    "src/SortPackageJson.ts",
+    "src/Stamp.ts",
+    "src/Target.ts",
+    "src/TargetIndex.ts",
+    "src/ToolBuild.ts",
+    "src/Toolchain.ts",
+    "src/ToolRun.ts",
+    "src/TsBuild.ts",
+    "src/Tsconfig.ts",
+    "src/Typecheck.ts",
+    "src/TypedocDocumentation.ts",
+    "src/Verb.ts",
+    "src/Vitest.ts",
+    "src/VitestCoverage.ts",
+    "src/VitestWatch.ts",
+    "src/WorkspaceDeclaration.ts",
+    "test-support/plan.ts",
+    "test/plan.ts",
+    "test/toolchain.ts",
+    "vitest.config.ts"
+  ],
+  "tests": [
+    "packages/smithers/build/targets/test/AgentTarget.test.ts",
+    "packages/smithers/build/targets/test/AlchemyRegister.test.ts",
+    "packages/smithers/build/targets/test/BiomeCheck.test.ts",
+    "packages/smithers/build/targets/test/BundlerTarget.test.ts",
+    "packages/smithers/build/targets/test/BunSuite.test.ts",
+    "packages/smithers/build/targets/test/CargoHardening.test.ts",
+    "packages/smithers/build/targets/test/CargoPackage.test.ts",
+    "packages/smithers/build/targets/test/CatalogShape.test.ts",
+    "packages/smithers/build/targets/test/ChainTargets.test.ts",
+    "packages/smithers/build/targets/test/CheatSheet.docs.test.ts",
+    "packages/smithers/build/targets/test/Compose.test.ts",
+    "packages/smithers/build/targets/test/ComposeRollback.test.ts",
+    "packages/smithers/build/targets/test/Config.test.ts",
+    "packages/smithers/build/targets/test/DeclarationVocabulary.test.ts",
+    "packages/smithers/build/targets/test/DeclaredInputBoundary.test.ts",
+    "packages/smithers/build/targets/test/DependencyDocs.test.ts",
+    "packages/smithers/build/targets/test/DepsLint.test.ts",
+    "packages/smithers/build/targets/test/Dev.test.ts",
+    "packages/smithers/build/targets/test/DocsCheck.test.ts",
+    "packages/smithers/build/targets/test/DocsPage.test.ts",
+    "packages/smithers/build/targets/test/DocsParity.test.ts",
+    "packages/smithers/build/targets/test/Dprint.test.ts",
+    "packages/smithers/build/targets/test/Environment.test.ts",
+    "packages/smithers/build/targets/test/EsLint.test.ts",
+    "packages/smithers/build/targets/test/examples.test.ts",
+    "packages/smithers/build/targets/test/Exec.test.ts",
+    "packages/smithers/build/targets/test/ExecBounds.test.ts",
+    "packages/smithers/build/targets/test/ExecContainment.test.ts",
+    "packages/smithers/build/targets/test/ExecSandbox.test.ts",
+    "packages/smithers/build/targets/test/ExecStreams.test.ts",
+    "packages/smithers/build/targets/test/Factory.test.ts",
+    "packages/smithers/build/targets/test/FailureCodes.test.ts",
+    "packages/smithers/build/targets/test/FaultSuite.test.ts",
+    "packages/smithers/build/targets/test/Fetch.test.ts",
+    "packages/smithers/build/targets/test/Filegroup.test.ts",
+    "packages/smithers/build/targets/test/FindingStore.test.ts",
+    "packages/smithers/build/targets/test/Flow.test.ts",
+    "packages/smithers/build/targets/test/GeneratedFile.test.ts",
+    "packages/smithers/build/targets/test/GeneratedFileSync.test.ts",
+    "packages/smithers/build/targets/test/GeneratedRootFiles.test.ts",
+    "packages/smithers/build/targets/test/GeneratedSymlink.test.ts",
+    "packages/smithers/build/targets/test/GithubCiGen.test.ts",
+    "packages/smithers/build/targets/test/GithubPr.test.ts",
+    "packages/smithers/build/targets/test/GithubTarget.test.ts",
+    "packages/smithers/build/targets/test/GithubWorkflow.test.ts",
+    "packages/smithers/build/targets/test/Go.test.ts",
+    "packages/smithers/build/targets/test/Home.test.ts",
+    "packages/smithers/build/targets/test/HonestBoundaries.test.ts",
+    "packages/smithers/build/targets/test/HonestDeclarations.test.ts",
+    "packages/smithers/build/targets/test/HonestDeclarationSite.test.ts",
+    "packages/smithers/build/targets/test/HonestGeneratorFailures.test.ts",
+    "packages/smithers/build/targets/test/HonestInputScans.test.ts",
+    "packages/smithers/build/targets/test/HonestLiveActions.test.ts",
+    "packages/smithers/build/targets/test/HonestManifestFailures.test.ts",
+    "packages/smithers/build/targets/test/HonestMetadataGuards.test.ts",
+    "packages/smithers/build/targets/test/HonestNamespaceErrors.test.ts",
+    "packages/smithers/build/targets/test/HonestOutputFailures.test.ts",
+    "packages/smithers/build/targets/test/HonestParserBoundaries.test.ts",
+    "packages/smithers/build/targets/test/HonestProcessFailures.test.ts",
+    "packages/smithers/build/targets/test/HonestProxyBoundaries.test.ts",
+    "packages/smithers/build/targets/test/HonestPublicationFailures.test.ts",
+    "packages/smithers/build/targets/test/HonestReviewFailures.test.ts",
+    "packages/smithers/build/targets/test/HonestReviewLimits.test.ts",
+    "packages/smithers/build/targets/test/HonestRuleBodies.test.ts",
+    "packages/smithers/build/targets/test/HonestSafeFsFailures.test.ts",
+    "packages/smithers/build/targets/test/HonestTargetDefaults.test.ts",
+    "packages/smithers/build/targets/test/HostPortDefaults.test.ts",
+    "packages/smithers/build/targets/test/Input.test.ts",
+    "packages/smithers/build/targets/test/InputOutput.test.ts",
+    "packages/smithers/build/targets/test/InputWalkerEdges.test.ts",
+    "packages/smithers/build/targets/test/JevLint.test.ts",
+    "packages/smithers/build/targets/test/LlmLint.test.ts",
+    "packages/smithers/build/targets/test/LlmLintCredentialDelivery.test.ts",
+    "packages/smithers/build/targets/test/LlmLintCredentials.test.ts",
+    "packages/smithers/build/targets/test/ManifestJson.test.ts",
+    "packages/smithers/build/targets/test/MemoryTarget.test.ts",
+    "packages/smithers/build/targets/test/Mount.test.ts",
+    "packages/smithers/build/targets/test/NewPackage.test.ts",
+    "packages/smithers/build/targets/test/NixEnvironment.test.ts",
+    "packages/smithers/build/targets/test/NodeApi.test.ts",
+    "packages/smithers/build/targets/test/NodeTest.test.ts",
+    "packages/smithers/build/targets/test/Outward.test.ts",
+    "packages/smithers/build/targets/test/Owners.test.ts",
+    "packages/smithers/build/targets/test/PackageApi.test.ts",
+    "packages/smithers/build/targets/test/PackageJson.test.ts",
+    "packages/smithers/build/targets/test/plan.ts",
+    "packages/smithers/build/targets/test/Platforms.test.ts",
+    "packages/smithers/build/targets/test/PublicSurface.test.ts",
+    "packages/smithers/build/targets/test/PublicSurfaceDocs.test.ts",
+    "packages/smithers/build/targets/test/RawErrorSites.test.ts",
+    "packages/smithers/build/targets/test/Reference.test.ts",
+    "packages/smithers/build/targets/test/RemoteCache.test.ts",
+    "packages/smithers/build/targets/test/RepositoryPatches.test.ts",
+    "packages/smithers/build/targets/test/RepoTarget.test.ts",
+    "packages/smithers/build/targets/test/RequiredReview.test.ts",
+    "packages/smithers/build/targets/test/ReviewBatches.test.ts",
+    "packages/smithers/build/targets/test/ReviewBatching.test.ts",
+    "packages/smithers/build/targets/test/ReviewContainment.test.ts",
+    "packages/smithers/build/targets/test/ReviewModel.test.ts",
+    "packages/smithers/build/targets/test/ReviewTransport.test.ts",
+    "packages/smithers/build/targets/test/RootRelative.test.ts",
+    "packages/smithers/build/targets/test/RuleArgv.test.ts",
+    "packages/smithers/build/targets/test/RuleBodies.test.ts",
+    "packages/smithers/build/targets/test/Runtime.test.ts",
+    "packages/smithers/build/targets/test/RustToolchainDeclaration.test.ts",
+    "packages/smithers/build/targets/test/SafeFs.syncDirectory.test.ts",
+    "packages/smithers/build/targets/test/SafeFs.test.ts",
+    "packages/smithers/build/targets/test/Secret.test.ts",
+    "packages/smithers/build/targets/test/SecretProxyRedaction.test.ts",
+    "packages/smithers/build/targets/test/SecurityBoundaryExecution.test.ts",
+    "packages/smithers/build/targets/test/SecurityCompletion.test.ts",
+    "packages/smithers/build/targets/test/SecurityFinding.test.ts",
+    "packages/smithers/build/targets/test/SecurityReview.test.ts",
+    "packages/smithers/build/targets/test/Smithers.test.ts",
+    "packages/smithers/build/targets/test/TaggedErrors.test.ts",
+    "packages/smithers/build/targets/test/Target.test.ts",
+    "packages/smithers/build/targets/test/TargetConstruction.test.ts",
+    "packages/smithers/build/targets/test/TargetIndex.test.ts",
+    "packages/smithers/build/targets/test/TargetLayering.test.ts",
+    "packages/smithers/build/targets/test/ToolBuild.test.ts",
+    "packages/smithers/build/targets/test/ToolBuildCapture.test.ts",
+    "packages/smithers/build/targets/test/Toolchain.test.ts",
+    "packages/smithers/build/targets/test/toolchain.ts",
+    "packages/smithers/build/targets/test/ToolRun.test.ts",
+    "packages/smithers/build/targets/test/TsBuild.test.ts",
+    "packages/smithers/build/targets/test/Tsconfig.test.ts",
+    "packages/smithers/build/targets/test/TypedFileAttrs.test.ts",
+    "packages/smithers/build/targets/test/UnknownAttr.test.ts",
+    "packages/smithers/build/targets/test/UnsupportedRules.test.ts",
+    "packages/smithers/build/targets/test/verification/issue-2851.txt",
+    "packages/smithers/build/targets/test/VitestCoverage.test.ts",
+    "packages/smithers/build/targets/test/WorkspaceAttrs.test.ts",
+    "packages/smithers/build/targets/test/WorkspaceDeclaration.test.ts",
+    "packages/smithers/build/targets/test/WorkspaceToolchains.test.ts",
+    "packages/smithers/build/targets/tsconfig.test.json"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    "packages/smithers/build/targets/src/BundlerTarget.ts",
+    "packages/smithers/build/targets/src/BunSuite.ts",
+    "packages/smithers/build/targets/src/internal/Process.ts",
+    "packages/smithers/build/targets/src/NodeArtifact.ts",
+    "packages/smithers/build/targets/src/NodeBinary.ts",
+    "packages/smithers/build/targets/src/NodeTest.ts",
+    "packages/smithers/build/targets/test/BundlerTarget.test.ts",
+    "packages/smithers/build/targets/test/BunSuite.test.ts",
+    "packages/smithers/build/targets/test/HonestProcessFailures.test.ts",
+    "packages/smithers/build/targets/test/NodeApi.test.ts",
+    "packages/smithers/build/targets/test/NodeTest.test.ts"
+  ],
+  "ignoredCases": [
+    {
+      "path": "packages/smithers/build/targets/src/Foundry.ts",
+      "line": 132,
+      "text": "implementation: (attrs) => Exec.runTool(Shell.execPayload({ bin: forge, args: [\"build\", ...(attrs.skip ?? [])] }))"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/Exec.test.ts",
+      "line": 81,
+      "text": "it.skipIf(!dockerImageAvailable).each(["
+    },
+    {
+      "path": "packages/smithers/build/targets/test/ExecContainment.test.ts",
+      "line": 71,
+      "text": "it.skipIf(process.platform === \"win32\")(\"reads a reaped child as an exited process\", () => {"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/ExecContainment.test.ts",
+      "line": 77,
+      "text": "it.skipIf(process.platform === \"win32\")(\"describes the running test process\", () => {"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/ExecContainment.test.ts",
+      "line": 86,
+      "text": "it.skipIf(process.platform === \"win32\")(\"refuses a pid that ps declines to inspect\", () => {"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/ExecContainment.test.ts",
+      "line": 91,
+      "text": "describe.skipIf(process.platform === \"win32\")(\"Exec natural process exit\", () => {"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/ExecStreams.test.ts",
+      "line": 457,
+      "text": "it.skipIf(process.platform === \"win32\")(\"kills a timed-out tool's descendants\", async () => {"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/GeneratedFile.test.ts",
+      "line": 144,
+      "text": "it.skipIf(process.platform === \"win32\")(\"refuses a parent symlink that leaves the workspace\", async () => {"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/GeneratedFile.test.ts",
+      "line": 152,
+      "text": "it.skipIf(process.platform === \"win32\")(\"refuses a parent symlink even when it points inside\", async () => {"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/GeneratedFile.test.ts",
+      "line": 160,
+      "text": "it.skipIf(process.platform === \"win32\")(\"refuses to replace a generated-file symlink\", async () => {"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/GeneratedFile.test.ts",
+      "line": 226,
+      "text": "it.skipIf(process.platform === \"win32\")(\"refuses a checked-in symlink\", async () => {"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/GeneratedFile.test.ts",
+      "line": 237,
+      "text": "it.skipIf(process.platform === \"win32\")(\"refuses a FIFO without waiting for a writer\", async () => {"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/GeneratedFileSync.test.ts",
+      "line": 15,
+      "text": "it.skipIf(process.platform === \"win32\").each([\"unsupported\", \"sync\", \"close\", \"both\"])("
+    },
+    {
+      "path": "packages/smithers/build/targets/test/GithubCiGen.test.ts",
+      "line": 194,
+      "text": "it.skipIf(process.platform === \"win32\").each([\"Linux\", \"Darwin\", \"MINGW64_NT-10.0\", \"MSYS_NT-10.0\"])("
+    },
+    {
+      "path": "packages/smithers/build/targets/test/InputOutput.test.ts",
+      "line": 86,
+      "text": "it.skipIf(process.platform === \"win32\")(\"admits contained file links and skips other link kinds\", async () => {"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/InputWalkerEdges.test.ts",
+      "line": 46,
+      "text": "it.skipIf(process.platform === \"win32\")("
+    },
+    {
+      "path": "packages/smithers/build/targets/test/InputWalkerEdges.test.ts",
+      "line": 68,
+      "text": "it.skipIf(process.platform === \"win32\")("
+    },
+    {
+      "path": "packages/smithers/build/targets/test/InputWalkerEdges.test.ts",
+      "line": 92,
+      "text": "it.skipIf(process.platform === \"win32\")(\"skips a real FIFO while retaining regular files\", async () => {"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/LlmLint.test.ts",
+      "line": 725,
+      "text": "it.skipIf(process.platform === \"win32\")(\"rejects a changed path that can inject prompt framing\", async () => {"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/LlmLint.test.ts",
+      "line": 1177,
+      "text": "it.skipIf(process.platform === \"win32\")(\"kills descendants when a model times out\", async () => {"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/LlmLint.test.ts",
+      "line": 1223,
+      "text": "it.skipIf(process.platform === \"win32\")(\"kills the model process group when its effect is interrupted\", async () => {"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/LlmLint.test.ts",
+      "line": 1548,
+      "text": "it.skipIf(process.platform === \"win32\")("
+    },
+    {
+      "path": "packages/smithers/build/targets/test/LlmLint.test.ts",
+      "line": 1660,
+      "text": "it.skipIf(process.platform === \"win32\")(\"reports the signal that terminated a model process\", async () => {"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/ReviewContainment.test.ts",
+      "line": 107,
+      "text": "it.skipIf(process.platform === \"win32\")("
+    },
+    {
+      "path": "packages/smithers/build/targets/test/SafeFs.syncDirectory.test.ts",
+      "line": 78,
+      "text": "it.skipIf(process.platform === \"win32\")(\"flushes a real directory\", async () => {"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/SafeFs.syncDirectory.test.ts",
+      "line": 88,
+      "text": "it.skipIf(process.platform === \"win32\")(\"reports a directory it cannot open\", async () => {"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/SafeFs.syncDirectory.test.ts",
+      "line": 92,
+      "text": "it.skipIf(process.platform === \"win32\").each([\"ENOTSUP\", \"EOPNOTSUPP\", \"EINVAL\", \"ENOSYS\"])("
+    },
+    {
+      "path": "packages/smithers/build/targets/test/SafeFs.syncDirectory.test.ts",
+      "line": 101,
+      "text": "it.skipIf(process.platform === \"win32\").each("
+    },
+    {
+      "path": "packages/smithers/build/targets/test/SafeFs.test.ts",
+      "line": 414,
+      "text": "it.skipIf(process.platform === \"win32\")(\"rejects a final symlink when the caller requires no-follow\", async () => {"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/SafeFs.test.ts",
+      "line": 425,
+      "text": "it.skipIf(process.platform === \"win32\")("
+    },
+    {
+      "path": "packages/smithers/build/targets/test/SafeFs.test.ts",
+      "line": 465,
+      "text": "it.skipIf(process.platform === \"win32\")(\"refuses a symlink whose in-workspace target is a directory\", async () => {"
+    },
+    {
+      "path": "packages/smithers/build/targets/test/SecurityCompletion.test.ts",
+      "line": 561,
+      "text": "it.skipIf(process.platform === \"win32\")(\"carries no source for a deleted symlink\", async () => {"
+    }
+  ],
+  "configurations": [
+    {
+      "path": "packages/smithers/build/targets/eslint.config.js",
+      "sha256": "589a3c7396059a418fc892385eb2b540f29265c69ac62886f39a9773ac335c27",
+      "source": "import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { invariants, swallowedCause, uninstalledSafety } from \"../../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  {\n    ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]\n  },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\", \"examples/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: {\n      parserOptions: {\n        projectService: true,\n        tsconfigRootDir: import.meta.dirname\n      }\n    },\n    settings: {\n      \"import/resolver\": {\n        typescript: {\n          project: [\"./tsconfig.json\"]\n        }\n      }\n    },\n    plugins: {\n      unicorn\n    },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-control-regex\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  {\n    // Examples import the package by name and sit outside the build\n    // tsconfig, so they parse against the test one.\n    files: [\"examples/**/*.ts\"],\n    languageOptions: {\n      parserOptions: {\n        projectService: false,\n        project: \"./tsconfig.test.json\"\n      }\n    },\n    settings: {\n      \"import/resolver\": {\n        // `@smthrs/targets/Package` would match PACKAGE.ts on a\n        // case-insensitive disk, so Node must not bypass package exports.\n        node: {\n          extensions: [\".js\", \".jsx\", \".mjs\", \".cjs\"]\n        },\n        typescript: {\n          project: [\"./tsconfig.test.json\"]\n        }\n      }\n    }\n  },\n  ...jsdocConvention,\n  // `ambientAuthority` is not wired yet: 5 sites in src/Exec.ts, src/LlmLint.ts and\n  // src/SecretProxy.ts, which build a child process environment from this one.\n  ...invariants(uninstalledSafety, swallowedCause)\n)\n",
+      "coverageDirectives": [
+        {
+          "line": 10,
+          "text": "ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]"
+        },
+        {
+          "line": 41,
+          "text": "\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/build/targets/package.json",
+      "sha256": "11f7ed3f12a359b3353bd0bfd113e012bc34cbce8e89501db4ff0403f65bb77d",
+      "source": "{\n  \"name\": \"@smthrs/targets\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"tooling\"\n  },\n  \"description\": \"Typed legacy declaration rules and macros for smithers build\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/build/targets\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"effect\",\n    \"build\",\n    \"targets\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"effect\",\n    \"build\",\n    \"targets\"\n  ],\n  \"engines\": {\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [],\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./internal/*\": null,\n    \"./index\": null,\n    \"./ReviewLint\": null,\n    \"./StandardPackage\": null,\n    \"./AgentTarget\": \"./src/AgentTarget.ts\",\n    \"./Anvil\": \"./src/Anvil.ts\",\n    \"./Attr\": \"./src/Attr.ts\",\n    \"./BiomeCheck\": \"./src/BiomeCheck.ts\",\n    \"./BunSuite\": \"./src/BunSuite.ts\",\n    \"./BundlerTarget\": \"./src/BundlerTarget.ts\",\n    \"./Cargo\": \"./src/Cargo.ts\",\n    \"./Changesets\": \"./src/Changesets.ts\",\n    \"./ChangesetsTarget\": \"./src/ChangesetsTarget.ts\",\n    \"./CiToolchain\": \"./src/CiToolchain.ts\",\n    \"./Compose\": \"./src/Compose.ts\",\n    \"./Config\": \"./src/Config.ts\",\n    \"./CronTarget\": \"./src/CronTarget.ts\",\n    \"./DependencyDocs\": \"./src/DependencyDocs.ts\",\n    \"./DepsLint\": \"./src/DepsLint.ts\",\n    \"./Dev\": \"./src/Dev.ts\",\n    \"./Docker\": \"./src/Docker.ts\",\n    \"./DocsCheck\": \"./src/DocsCheck.ts\",\n    \"./DocsPage\": \"./src/DocsPage.ts\",\n    \"./DocsParity\": \"./src/DocsParity.ts\",\n    \"./Dprint\": \"./src/Dprint.ts\",\n    \"./DtsBuild\": \"./src/DtsBuild.ts\",\n    \"./Environment\": \"./src/Environment.ts\",\n    \"./EsLint\": \"./src/EsLint.ts\",\n    \"./Exec\": \"./src/Exec.ts\",\n    \"./ExecSandbox\": \"./src/ExecSandbox.ts\",\n    \"./FaultSuite\": \"./src/FaultSuite.ts\",\n    \"./Factory\": \"./src/Factory.ts\",\n    \"./Fetch\": \"./src/Fetch.ts\",\n    \"./Filegroup\": \"./src/Filegroup.ts\",\n    \"./Flow\": \"./src/Flow.ts\",\n    \"./FlowCatalog\": \"./src/FlowCatalog.ts\",\n    \"./Foundry\": \"./src/Foundry.ts\",\n    \"./GeneratedFile\": \"./src/GeneratedFile.ts\",\n    \"./Home\": \"./src/Home.ts\",\n    \"./GitTarget\": \"./src/GitTarget.ts\",\n    \"./GithubCiGen\": \"./src/GithubCiGen.ts\",\n    \"./GithubTarget\": \"./src/GithubTarget.ts\",\n    \"./GithubWorkflow\": \"./src/GithubWorkflow.ts\",\n    \"./Go\": \"./src/Go.ts\",\n    \"./Input\": \"./src/Input.ts\",\n    \"./Install\": \"./src/Install.ts\",\n    \"./JevLint\": \"./src/JevLint.ts\",\n    \"./JsrPublish\": \"./src/JsrPublish.ts\",\n    \"./LlmLint\": \"./src/LlmLint.ts\",\n    \"./LocalRepository\": \"./src/LocalRepository.ts\",\n    \"./Lockfile\": \"./src/Lockfile.ts\",\n    \"./ManifestJson\": \"./src/ManifestJson.ts\",\n    \"./MemoryTarget\": \"./src/MemoryTarget.ts\",\n    \"./Mise\": \"./src/Mise.ts\",\n    \"./Mount\": \"./src/Mount.ts\",\n    \"./NewPackage\": \"./src/NewPackage.ts\",\n    \"./Nix\": \"./src/Nix.ts\",\n    \"./NodeArtifact\": \"./src/NodeArtifact.ts\",\n    \"./NodeBinary\": \"./src/NodeBinary.ts\",\n    \"./NodeTest\": \"./src/NodeTest.ts\",\n    \"./NpmPublish\": \"./src/NpmPublish.ts\",\n    \"./NpmTarget\": \"./src/NpmTarget.ts\",\n    \"./Outward\": \"./src/Outward.ts\",\n    \"./Owners\": \"./src/Owners.ts\",\n    \"./Package\": \"./src/Package.ts\",\n    \"./PackageDefaults\": \"./src/PackageDefaults.ts\",\n    \"./PackageJson\": \"./src/PackageJson.ts\",\n    \"./PackageJsonTemplate\": \"./src/PackageJsonTemplate.ts\",\n    \"./PackageLint\": \"./src/PackageLint.ts\",\n    \"./PackageManager\": \"./src/PackageManager.ts\",\n    \"./PnpmWorkspaceFile\": \"./src/PnpmWorkspaceFile.ts\",\n    \"./Reference\": \"./src/Reference.ts\",\n    \"./RemoteCache\": \"./src/RemoteCache.ts\",\n    \"./RepoTarget\": \"./src/RepoTarget.ts\",\n    \"./Runtime\": \"./src/Runtime.ts\",\n    \"./RustToolchain\": \"./src/RustToolchain.ts\",\n    \"./SafeFs\": \"./src/SafeFs.ts\",\n    \"./Secret\": \"./src/Secret.ts\",\n    \"./SecretProxy\": \"./src/SecretProxy.ts\",\n    \"./SecurityReview\": \"./src/SecurityReview.ts\",\n    \"./Shell\": \"./src/Shell.ts\",\n    \"./Smithers\": \"./src/Smithers.ts\",\n    \"./SortPackageJson\": \"./src/SortPackageJson.ts\",\n    \"./Stamp\": \"./src/Stamp.ts\",\n    \"./Target\": \"./src/Target.ts\",\n    \"./TargetIndex\": \"./src/TargetIndex.ts\",\n    \"./ToolBuild\": \"./src/ToolBuild.ts\",\n    \"./ToolRun\": \"./src/ToolRun.ts\",\n    \"./Toolchain\": \"./src/Toolchain.ts\",\n    \"./TsBuild\": \"./src/TsBuild.ts\",\n    \"./Tsconfig\": \"./src/Tsconfig.ts\",\n    \"./Typecheck\": \"./src/Typecheck.ts\",\n    \"./TypedocDocumentation\": \"./src/TypedocDocumentation.ts\",\n    \"./Verb\": \"./src/Verb.ts\",\n    \"./Vitest\": \"./src/Vitest.ts\",\n    \"./VitestCoverage\": \"./src/VitestCoverage.ts\",\n    \"./VitestWatch\": \"./src/VitestWatch.ts\",\n    \"./WorkspaceDeclaration\": \"./src/WorkspaceDeclaration.ts\",\n    \"./test-support/plan\": \"./test-support/plan.ts\"\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"docs/\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./internal/*\": null,\n      \"./index\": null,\n      \"./ReviewLint\": null,\n      \"./StandardPackage\": null,\n      \"./AgentTarget\": {\n        \"import\": {\n          \"types\": \"./dist/esm/AgentTarget.d.ts\",\n          \"default\": \"./dist/esm/AgentTarget.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/AgentTarget.d.ts\",\n          \"default\": \"./dist/cjs/AgentTarget.js\"\n        }\n      },\n      \"./Anvil\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Anvil.d.ts\",\n          \"default\": \"./dist/esm/Anvil.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Anvil.d.ts\",\n          \"default\": \"./dist/cjs/Anvil.js\"\n        }\n      },\n      \"./Attr\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Attr.d.ts\",\n          \"default\": \"./dist/esm/Attr.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Attr.d.ts\",\n          \"default\": \"./dist/cjs/Attr.js\"\n        }\n      },\n      \"./BiomeCheck\": {\n        \"import\": {\n          \"types\": \"./dist/esm/BiomeCheck.d.ts\",\n          \"default\": \"./dist/esm/BiomeCheck.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/BiomeCheck.d.ts\",\n          \"default\": \"./dist/cjs/BiomeCheck.js\"\n        }\n      },\n      \"./BunSuite\": {\n        \"import\": {\n          \"types\": \"./dist/esm/BunSuite.d.ts\",\n          \"default\": \"./dist/esm/BunSuite.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/BunSuite.d.ts\",\n          \"default\": \"./dist/cjs/BunSuite.js\"\n        }\n      },\n      \"./BundlerTarget\": {\n        \"import\": {\n          \"types\": \"./dist/esm/BundlerTarget.d.ts\",\n          \"default\": \"./dist/esm/BundlerTarget.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/BundlerTarget.d.ts\",\n          \"default\": \"./dist/cjs/BundlerTarget.js\"\n        }\n      },\n      \"./Cargo\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Cargo.d.ts\",\n          \"default\": \"./dist/esm/Cargo.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Cargo.d.ts\",\n          \"default\": \"./dist/cjs/Cargo.js\"\n        }\n      },\n      \"./Changesets\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Changesets.d.ts\",\n          \"default\": \"./dist/esm/Changesets.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Changesets.d.ts\",\n          \"default\": \"./dist/cjs/Changesets.js\"\n        }\n      },\n      \"./ChangesetsTarget\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ChangesetsTarget.d.ts\",\n          \"default\": \"./dist/esm/ChangesetsTarget.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ChangesetsTarget.d.ts\",\n          \"default\": \"./dist/cjs/ChangesetsTarget.js\"\n        }\n      },\n      \"./CiToolchain\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CiToolchain.d.ts\",\n          \"default\": \"./dist/esm/CiToolchain.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CiToolchain.d.ts\",\n          \"default\": \"./dist/cjs/CiToolchain.js\"\n        }\n      },\n      \"./Compose\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Compose.d.ts\",\n          \"default\": \"./dist/esm/Compose.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Compose.d.ts\",\n          \"default\": \"./dist/cjs/Compose.js\"\n        }\n      },\n      \"./Config\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Config.d.ts\",\n          \"default\": \"./dist/esm/Config.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Config.d.ts\",\n          \"default\": \"./dist/cjs/Config.js\"\n        }\n      },\n      \"./CronTarget\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CronTarget.d.ts\",\n          \"default\": \"./dist/esm/CronTarget.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CronTarget.d.ts\",\n          \"default\": \"./dist/cjs/CronTarget.js\"\n        }\n      },\n      \"./DependencyDocs\": {\n        \"import\": {\n          \"types\": \"./dist/esm/DependencyDocs.d.ts\",\n          \"default\": \"./dist/esm/DependencyDocs.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/DependencyDocs.d.ts\",\n          \"default\": \"./dist/cjs/DependencyDocs.js\"\n        }\n      },\n      \"./DepsLint\": {\n        \"import\": {\n          \"types\": \"./dist/esm/DepsLint.d.ts\",\n          \"default\": \"./dist/esm/DepsLint.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/DepsLint.d.ts\",\n          \"default\": \"./dist/cjs/DepsLint.js\"\n        }\n      },\n      \"./Dev\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Dev.d.ts\",\n          \"default\": \"./dist/esm/Dev.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Dev.d.ts\",\n          \"default\": \"./dist/cjs/Dev.js\"\n        }\n      },\n      \"./Docker\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Docker.d.ts\",\n          \"default\": \"./dist/esm/Docker.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Docker.d.ts\",\n          \"default\": \"./dist/cjs/Docker.js\"\n        }\n      },\n      \"./DocsCheck\": {\n        \"import\": {\n          \"types\": \"./dist/esm/DocsCheck.d.ts\",\n          \"default\": \"./dist/esm/DocsCheck.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/DocsCheck.d.ts\",\n          \"default\": \"./dist/cjs/DocsCheck.js\"\n        }\n      },\n      \"./DocsPage\": {\n        \"import\": {\n          \"types\": \"./dist/esm/DocsPage.d.ts\",\n          \"default\": \"./dist/esm/DocsPage.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/DocsPage.d.ts\",\n          \"default\": \"./dist/cjs/DocsPage.js\"\n        }\n      },\n      \"./DocsParity\": {\n        \"import\": {\n          \"types\": \"./dist/esm/DocsParity.d.ts\",\n          \"default\": \"./dist/esm/DocsParity.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/DocsParity.d.ts\",\n          \"default\": \"./dist/cjs/DocsParity.js\"\n        }\n      },\n      \"./Dprint\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Dprint.d.ts\",\n          \"default\": \"./dist/esm/Dprint.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Dprint.d.ts\",\n          \"default\": \"./dist/cjs/Dprint.js\"\n        }\n      },\n      \"./DtsBuild\": {\n        \"import\": {\n          \"types\": \"./dist/esm/DtsBuild.d.ts\",\n          \"default\": \"./dist/esm/DtsBuild.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/DtsBuild.d.ts\",\n          \"default\": \"./dist/cjs/DtsBuild.js\"\n        }\n      },\n      \"./Environment\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Environment.d.ts\",\n          \"default\": \"./dist/esm/Environment.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Environment.d.ts\",\n          \"default\": \"./dist/cjs/Environment.js\"\n        }\n      },\n      \"./EsLint\": {\n        \"import\": {\n          \"types\": \"./dist/esm/EsLint.d.ts\",\n          \"default\": \"./dist/esm/EsLint.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/EsLint.d.ts\",\n          \"default\": \"./dist/cjs/EsLint.js\"\n        }\n      },\n      \"./Exec\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Exec.d.ts\",\n          \"default\": \"./dist/esm/Exec.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Exec.d.ts\",\n          \"default\": \"./dist/cjs/Exec.js\"\n        }\n      },\n      \"./ExecSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ExecSandbox.d.ts\",\n          \"default\": \"./dist/esm/ExecSandbox.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ExecSandbox.d.ts\",\n          \"default\": \"./dist/cjs/ExecSandbox.js\"\n        }\n      },\n      \"./FaultSuite\": {\n        \"import\": {\n          \"types\": \"./dist/esm/FaultSuite.d.ts\",\n          \"default\": \"./dist/esm/FaultSuite.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/FaultSuite.d.ts\",\n          \"default\": \"./dist/cjs/FaultSuite.js\"\n        }\n      },\n      \"./Factory\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Factory.d.ts\",\n          \"default\": \"./dist/esm/Factory.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Factory.d.ts\",\n          \"default\": \"./dist/cjs/Factory.js\"\n        }\n      },\n      \"./Fetch\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Fetch.d.ts\",\n          \"default\": \"./dist/esm/Fetch.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Fetch.d.ts\",\n          \"default\": \"./dist/cjs/Fetch.js\"\n        }\n      },\n      \"./Filegroup\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Filegroup.d.ts\",\n          \"default\": \"./dist/esm/Filegroup.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Filegroup.d.ts\",\n          \"default\": \"./dist/cjs/Filegroup.js\"\n        }\n      },\n      \"./Flow\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Flow.d.ts\",\n          \"default\": \"./dist/esm/Flow.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Flow.d.ts\",\n          \"default\": \"./dist/cjs/Flow.js\"\n        }\n      },\n      \"./FlowCatalog\": {\n        \"import\": {\n          \"types\": \"./dist/esm/FlowCatalog.d.ts\",\n          \"default\": \"./dist/esm/FlowCatalog.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/FlowCatalog.d.ts\",\n          \"default\": \"./dist/cjs/FlowCatalog.js\"\n        }\n      },\n      \"./Foundry\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Foundry.d.ts\",\n          \"default\": \"./dist/esm/Foundry.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Foundry.d.ts\",\n          \"default\": \"./dist/cjs/Foundry.js\"\n        }\n      },\n      \"./GeneratedFile\": {\n        \"import\": {\n          \"types\": \"./dist/esm/GeneratedFile.d.ts\",\n          \"default\": \"./dist/esm/GeneratedFile.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/GeneratedFile.d.ts\",\n          \"default\": \"./dist/cjs/GeneratedFile.js\"\n        }\n      },\n      \"./Home\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Home.d.ts\",\n          \"default\": \"./dist/esm/Home.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Home.d.ts\",\n          \"default\": \"./dist/cjs/Home.js\"\n        }\n      },\n      \"./GitTarget\": {\n        \"import\": {\n          \"types\": \"./dist/esm/GitTarget.d.ts\",\n          \"default\": \"./dist/esm/GitTarget.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/GitTarget.d.ts\",\n          \"default\": \"./dist/cjs/GitTarget.js\"\n        }\n      },\n      \"./GithubCiGen\": {\n        \"import\": {\n          \"types\": \"./dist/esm/GithubCiGen.d.ts\",\n          \"default\": \"./dist/esm/GithubCiGen.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/GithubCiGen.d.ts\",\n          \"default\": \"./dist/cjs/GithubCiGen.js\"\n        }\n      },\n      \"./GithubTarget\": {\n        \"import\": {\n          \"types\": \"./dist/esm/GithubTarget.d.ts\",\n          \"default\": \"./dist/esm/GithubTarget.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/GithubTarget.d.ts\",\n          \"default\": \"./dist/cjs/GithubTarget.js\"\n        }\n      },\n      \"./GithubWorkflow\": {\n        \"import\": {\n          \"types\": \"./dist/esm/GithubWorkflow.d.ts\",\n          \"default\": \"./dist/esm/GithubWorkflow.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/GithubWorkflow.d.ts\",\n          \"default\": \"./dist/cjs/GithubWorkflow.js\"\n        }\n      },\n      \"./Go\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Go.d.ts\",\n          \"default\": \"./dist/esm/Go.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Go.d.ts\",\n          \"default\": \"./dist/cjs/Go.js\"\n        }\n      },\n      \"./Input\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Input.d.ts\",\n          \"default\": \"./dist/esm/Input.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Input.d.ts\",\n          \"default\": \"./dist/cjs/Input.js\"\n        }\n      },\n      \"./Install\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Install.d.ts\",\n          \"default\": \"./dist/esm/Install.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Install.d.ts\",\n          \"default\": \"./dist/cjs/Install.js\"\n        }\n      },\n      \"./JevLint\": {\n        \"import\": {\n          \"types\": \"./dist/esm/JevLint.d.ts\",\n          \"default\": \"./dist/esm/JevLint.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/JevLint.d.ts\",\n          \"default\": \"./dist/cjs/JevLint.js\"\n        }\n      },\n      \"./JsrPublish\": {\n        \"import\": {\n          \"types\": \"./dist/esm/JsrPublish.d.ts\",\n          \"default\": \"./dist/esm/JsrPublish.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/JsrPublish.d.ts\",\n          \"default\": \"./dist/cjs/JsrPublish.js\"\n        }\n      },\n      \"./LlmLint\": {\n        \"import\": {\n          \"types\": \"./dist/esm/LlmLint.d.ts\",\n          \"default\": \"./dist/esm/LlmLint.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/LlmLint.d.ts\",\n          \"default\": \"./dist/cjs/LlmLint.js\"\n        }\n      },\n      \"./LocalRepository\": {\n        \"import\": {\n          \"types\": \"./dist/esm/LocalRepository.d.ts\",\n          \"default\": \"./dist/esm/LocalRepository.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/LocalRepository.d.ts\",\n          \"default\": \"./dist/cjs/LocalRepository.js\"\n        }\n      },\n      \"./Lockfile\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Lockfile.d.ts\",\n          \"default\": \"./dist/esm/Lockfile.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Lockfile.d.ts\",\n          \"default\": \"./dist/cjs/Lockfile.js\"\n        }\n      },\n      \"./ManifestJson\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ManifestJson.d.ts\",\n          \"default\": \"./dist/esm/ManifestJson.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ManifestJson.d.ts\",\n          \"default\": \"./dist/cjs/ManifestJson.js\"\n        }\n      },\n      \"./MemoryTarget\": {\n        \"import\": {\n          \"types\": \"./dist/esm/MemoryTarget.d.ts\",\n          \"default\": \"./dist/esm/MemoryTarget.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/MemoryTarget.d.ts\",\n          \"default\": \"./dist/cjs/MemoryTarget.js\"\n        }\n      },\n      \"./Mise\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Mise.d.ts\",\n          \"default\": \"./dist/esm/Mise.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Mise.d.ts\",\n          \"default\": \"./dist/cjs/Mise.js\"\n        }\n      },\n      \"./Mount\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Mount.d.ts\",\n          \"default\": \"./dist/esm/Mount.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Mount.d.ts\",\n          \"default\": \"./dist/cjs/Mount.js\"\n        }\n      },\n      \"./NewPackage\": {\n        \"import\": {\n          \"types\": \"./dist/esm/NewPackage.d.ts\",\n          \"default\": \"./dist/esm/NewPackage.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/NewPackage.d.ts\",\n          \"default\": \"./dist/cjs/NewPackage.js\"\n        }\n      },\n      \"./Nix\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Nix.d.ts\",\n          \"default\": \"./dist/esm/Nix.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Nix.d.ts\",\n          \"default\": \"./dist/cjs/Nix.js\"\n        }\n      },\n      \"./NodeArtifact\": {\n        \"import\": {\n          \"types\": \"./dist/esm/NodeArtifact.d.ts\",\n          \"default\": \"./dist/esm/NodeArtifact.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/NodeArtifact.d.ts\",\n          \"default\": \"./dist/cjs/NodeArtifact.js\"\n        }\n      },\n      \"./NodeBinary\": {\n        \"import\": {\n          \"types\": \"./dist/esm/NodeBinary.d.ts\",\n          \"default\": \"./dist/esm/NodeBinary.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/NodeBinary.d.ts\",\n          \"default\": \"./dist/cjs/NodeBinary.js\"\n        }\n      },\n      \"./NodeTest\": {\n        \"import\": {\n          \"types\": \"./dist/esm/NodeTest.d.ts\",\n          \"default\": \"./dist/esm/NodeTest.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/NodeTest.d.ts\",\n          \"default\": \"./dist/cjs/NodeTest.js\"\n        }\n      },\n      \"./NpmPublish\": {\n        \"import\": {\n          \"types\": \"./dist/esm/NpmPublish.d.ts\",\n          \"default\": \"./dist/esm/NpmPublish.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/NpmPublish.d.ts\",\n          \"default\": \"./dist/cjs/NpmPublish.js\"\n        }\n      },\n      \"./NpmTarget\": {\n        \"import\": {\n          \"types\": \"./dist/esm/NpmTarget.d.ts\",\n          \"default\": \"./dist/esm/NpmTarget.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/NpmTarget.d.ts\",\n          \"default\": \"./dist/cjs/NpmTarget.js\"\n        }\n      },\n      \"./Outward\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Outward.d.ts\",\n          \"default\": \"./dist/esm/Outward.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Outward.d.ts\",\n          \"default\": \"./dist/cjs/Outward.js\"\n        }\n      },\n      \"./Owners\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Owners.d.ts\",\n          \"default\": \"./dist/esm/Owners.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Owners.d.ts\",\n          \"default\": \"./dist/cjs/Owners.js\"\n        }\n      },\n      \"./Package\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Package.d.ts\",\n          \"default\": \"./dist/esm/Package.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Package.d.ts\",\n          \"default\": \"./dist/cjs/Package.js\"\n        }\n      },\n      \"./PackageDefaults\": {\n        \"import\": {\n          \"types\": \"./dist/esm/PackageDefaults.d.ts\",\n          \"default\": \"./dist/esm/PackageDefaults.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/PackageDefaults.d.ts\",\n          \"default\": \"./dist/cjs/PackageDefaults.js\"\n        }\n      },\n      \"./PackageJson\": {\n        \"import\": {\n          \"types\": \"./dist/esm/PackageJson.d.ts\",\n          \"default\": \"./dist/esm/PackageJson.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/PackageJson.d.ts\",\n          \"default\": \"./dist/cjs/PackageJson.js\"\n        }\n      },\n      \"./PackageJsonTemplate\": {\n        \"import\": {\n          \"types\": \"./dist/esm/PackageJsonTemplate.d.ts\",\n          \"default\": \"./dist/esm/PackageJsonTemplate.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/PackageJsonTemplate.d.ts\",\n          \"default\": \"./dist/cjs/PackageJsonTemplate.js\"\n        }\n      },\n      \"./PackageLint\": {\n        \"import\": {\n          \"types\": \"./dist/esm/PackageLint.d.ts\",\n          \"default\": \"./dist/esm/PackageLint.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/PackageLint.d.ts\",\n          \"default\": \"./dist/cjs/PackageLint.js\"\n        }\n      },\n      \"./PackageManager\": {\n        \"import\": {\n          \"types\": \"./dist/esm/PackageManager.d.ts\",\n          \"default\": \"./dist/esm/PackageManager.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/PackageManager.d.ts\",\n          \"default\": \"./dist/cjs/PackageManager.js\"\n        }\n      },\n      \"./PnpmWorkspaceFile\": {\n        \"import\": {\n          \"types\": \"./dist/esm/PnpmWorkspaceFile.d.ts\",\n          \"default\": \"./dist/esm/PnpmWorkspaceFile.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/PnpmWorkspaceFile.d.ts\",\n          \"default\": \"./dist/cjs/PnpmWorkspaceFile.js\"\n        }\n      },\n      \"./Reference\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Reference.d.ts\",\n          \"default\": \"./dist/esm/Reference.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Reference.d.ts\",\n          \"default\": \"./dist/cjs/Reference.js\"\n        }\n      },\n      \"./RemoteCache\": {\n        \"import\": {\n          \"types\": \"./dist/esm/RemoteCache.d.ts\",\n          \"default\": \"./dist/esm/RemoteCache.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/RemoteCache.d.ts\",\n          \"default\": \"./dist/cjs/RemoteCache.js\"\n        }\n      },\n      \"./RepoTarget\": {\n        \"import\": {\n          \"types\": \"./dist/esm/RepoTarget.d.ts\",\n          \"default\": \"./dist/esm/RepoTarget.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/RepoTarget.d.ts\",\n          \"default\": \"./dist/cjs/RepoTarget.js\"\n        }\n      },\n      \"./Runtime\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Runtime.d.ts\",\n          \"default\": \"./dist/esm/Runtime.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Runtime.d.ts\",\n          \"default\": \"./dist/cjs/Runtime.js\"\n        }\n      },\n      \"./RustToolchain\": {\n        \"import\": {\n          \"types\": \"./dist/esm/RustToolchain.d.ts\",\n          \"default\": \"./dist/esm/RustToolchain.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/RustToolchain.d.ts\",\n          \"default\": \"./dist/cjs/RustToolchain.js\"\n        }\n      },\n      \"./SafeFs\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SafeFs.d.ts\",\n          \"default\": \"./dist/esm/SafeFs.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SafeFs.d.ts\",\n          \"default\": \"./dist/cjs/SafeFs.js\"\n        }\n      },\n      \"./Secret\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Secret.d.ts\",\n          \"default\": \"./dist/esm/Secret.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Secret.d.ts\",\n          \"default\": \"./dist/cjs/Secret.js\"\n        }\n      },\n      \"./SecretProxy\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SecretProxy.d.ts\",\n          \"default\": \"./dist/esm/SecretProxy.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SecretProxy.d.ts\",\n          \"default\": \"./dist/cjs/SecretProxy.js\"\n        }\n      },\n      \"./SecurityReview\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SecurityReview.d.ts\",\n          \"default\": \"./dist/esm/SecurityReview.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SecurityReview.d.ts\",\n          \"default\": \"./dist/cjs/SecurityReview.js\"\n        }\n      },\n      \"./Shell\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Shell.d.ts\",\n          \"default\": \"./dist/esm/Shell.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Shell.d.ts\",\n          \"default\": \"./dist/cjs/Shell.js\"\n        }\n      },\n      \"./Smithers\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Smithers.d.ts\",\n          \"default\": \"./dist/esm/Smithers.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Smithers.d.ts\",\n          \"default\": \"./dist/cjs/Smithers.js\"\n        }\n      },\n      \"./SortPackageJson\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SortPackageJson.d.ts\",\n          \"default\": \"./dist/esm/SortPackageJson.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SortPackageJson.d.ts\",\n          \"default\": \"./dist/cjs/SortPackageJson.js\"\n        }\n      },\n      \"./Stamp\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Stamp.d.ts\",\n          \"default\": \"./dist/esm/Stamp.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Stamp.d.ts\",\n          \"default\": \"./dist/cjs/Stamp.js\"\n        }\n      },\n      \"./Target\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Target.d.ts\",\n          \"default\": \"./dist/esm/Target.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Target.d.ts\",\n          \"default\": \"./dist/cjs/Target.js\"\n        }\n      },\n      \"./TargetIndex\": {\n        \"import\": {\n          \"types\": \"./dist/esm/TargetIndex.d.ts\",\n          \"default\": \"./dist/esm/TargetIndex.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/TargetIndex.d.ts\",\n          \"default\": \"./dist/cjs/TargetIndex.js\"\n        }\n      },\n      \"./ToolBuild\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ToolBuild.d.ts\",\n          \"default\": \"./dist/esm/ToolBuild.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ToolBuild.d.ts\",\n          \"default\": \"./dist/cjs/ToolBuild.js\"\n        }\n      },\n      \"./ToolRun\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ToolRun.d.ts\",\n          \"default\": \"./dist/esm/ToolRun.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ToolRun.d.ts\",\n          \"default\": \"./dist/cjs/ToolRun.js\"\n        }\n      },\n      \"./Toolchain\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Toolchain.d.ts\",\n          \"default\": \"./dist/esm/Toolchain.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Toolchain.d.ts\",\n          \"default\": \"./dist/cjs/Toolchain.js\"\n        }\n      },\n      \"./TsBuild\": {\n        \"import\": {\n          \"types\": \"./dist/esm/TsBuild.d.ts\",\n          \"default\": \"./dist/esm/TsBuild.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/TsBuild.d.ts\",\n          \"default\": \"./dist/cjs/TsBuild.js\"\n        }\n      },\n      \"./Tsconfig\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Tsconfig.d.ts\",\n          \"default\": \"./dist/esm/Tsconfig.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Tsconfig.d.ts\",\n          \"default\": \"./dist/cjs/Tsconfig.js\"\n        }\n      },\n      \"./Typecheck\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Typecheck.d.ts\",\n          \"default\": \"./dist/esm/Typecheck.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Typecheck.d.ts\",\n          \"default\": \"./dist/cjs/Typecheck.js\"\n        }\n      },\n      \"./TypedocDocumentation\": {\n        \"import\": {\n          \"types\": \"./dist/esm/TypedocDocumentation.d.ts\",\n          \"default\": \"./dist/esm/TypedocDocumentation.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/TypedocDocumentation.d.ts\",\n          \"default\": \"./dist/cjs/TypedocDocumentation.js\"\n        }\n      },\n      \"./Verb\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Verb.d.ts\",\n          \"default\": \"./dist/esm/Verb.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Verb.d.ts\",\n          \"default\": \"./dist/cjs/Verb.js\"\n        }\n      },\n      \"./Vitest\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Vitest.d.ts\",\n          \"default\": \"./dist/esm/Vitest.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Vitest.d.ts\",\n          \"default\": \"./dist/cjs/Vitest.js\"\n        }\n      },\n      \"./VitestCoverage\": {\n        \"import\": {\n          \"types\": \"./dist/esm/VitestCoverage.d.ts\",\n          \"default\": \"./dist/esm/VitestCoverage.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/VitestCoverage.d.ts\",\n          \"default\": \"./dist/cjs/VitestCoverage.js\"\n        }\n      },\n      \"./VitestWatch\": {\n        \"import\": {\n          \"types\": \"./dist/esm/VitestWatch.d.ts\",\n          \"default\": \"./dist/esm/VitestWatch.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/VitestWatch.d.ts\",\n          \"default\": \"./dist/cjs/VitestWatch.js\"\n        }\n      },\n      \"./WorkspaceDeclaration\": {\n        \"import\": {\n          \"types\": \"./dist/esm/WorkspaceDeclaration.d.ts\",\n          \"default\": \"./dist/esm/WorkspaceDeclaration.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/WorkspaceDeclaration.d.ts\",\n          \"default\": \"./dist/cjs/WorkspaceDeclaration.js\"\n        }\n      },\n      \"./test-support/plan\": null\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"check\": \"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"vitest --coverage\"\n  },\n  \"dependencies\": {\n    \"@smthrs/build\": \"1.0.0-rc.16\",\n    \"@smthrs/flow\": \"1.0.0-rc.16\",\n    \"@smthrs/model\": \"1.0.0-rc.16\",\n    \"@smthrs/plan\": \"1.0.0-rc.16\",\n    \"@smthrs/platform-node\": \"1.0.0-rc.16\",\n    \"@smthrs/views\": \"1.0.0-rc.16\",\n    \"ignore\": \"7.0.8\",\n    \"minimatch\": \"10.2.6\",\n    \"yaml\": \"2.9.0\"\n  },\n  \"peerDependencies\": {\n    \"effect\": \"4.0.5\"\n  },\n  \"devDependencies\": {\n    \"@effect/language-service\": \"0.87.2\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"effect\": \"4.0.5\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\"\n  }\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 133,
+          "text": "\"./VitestCoverage\": \"./src/VitestCoverage.ts\","
+        },
+        {
+          "line": 1080,
+          "text": "\"./VitestCoverage\": {"
+        },
+        {
+          "line": 1082,
+          "text": "\"types\": \"./dist/esm/VitestCoverage.d.ts\","
+        },
+        {
+          "line": 1083,
+          "text": "\"default\": \"./dist/esm/VitestCoverage.js\""
+        },
+        {
+          "line": 1086,
+          "text": "\"types\": \"./dist/cjs/VitestCoverage.d.ts\","
+        },
+        {
+          "line": 1087,
+          "text": "\"default\": \"./dist/cjs/VitestCoverage.js\""
+        },
+        {
+          "line": 1120,
+          "text": "\"coverage\": \"vitest --coverage\""
+        },
+        {
+          "line": 1129,
+          "text": "\"ignore\": \"7.0.8\","
+        },
+        {
+          "line": 1140,
+          "text": "\"@vitest/coverage-v8\": \"5.0.0\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/build/targets/PACKAGE.ts",
+      "sha256": "a0671c232c9d9d630d79266c8e62c3291d3547d4b2c0ec20b94bf87d2eba19f3",
+      "source": "/** Standard package targets for the published target authoring surface. */\nimport { CircularImports, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from \"@smthrs/repo-targets\"\nimport { Smithers } from \"@smthrs/targets\"\nimport { docsWriter, referenceStyle, rootInvariantsConfig, rootJSDocConfig } from \"../../../../PACKAGE.ts\"\n\nconst cwd = \"packages/smithers/build/targets\"\nconst sources = Smithers.glob(\"src/**/*.ts\")\nconst tests = Smithers.glob(\"test/**/*.test.ts\")\nconst testSupportSources = Smithers.glob(\"test-support/**/*.ts\")\nconst examples = Smithers.glob(\"examples/**/*.ts\")\nconst testSupport = Smithers.Filegroup({ srcs: [testSupportSources], cwd })\n\nconst lib = Smithers.TsBuild({\n  srcs: [sources],\n  entries: [Smithers.file(\"src/index.ts\")],\n  deps: [],\n  tsconfig: Smithers.file(\"tsconfig.json\"),\n  tool: { name: \"program\", entry: Smithers.file(\"scripts/build.mjs\") },\n  format: \"dual\",\n  outDir: \"dist\",\n  cwd\n})\n\nconst check = Smithers.Typecheck({\n  srcs: [sources, Smithers.glob(\"test/**/*.ts\"), testSupportSources, examples],\n  deps: [lib],\n  tsconfig: Smithers.file(\"tsconfig.test.json\"),\n  buildMode: false,\n  incremental: false,\n  cwd\n})\n\nconst test = Smithers.Vitest({\n  tests: [tests],\n  sources: [sources, examples],\n  deps: [lib, testSupport],\n  config: Smithers.file(\"vitest.config.ts\"),\n  environment: \"node\",\n  passWithNoTests: false,\n  cwd\n})\n\nconst lint = Smithers.EsLint({\n  sources: [sources, examples],\n  deps: [],\n  configs: [Smithers.file(\"eslint.config.js\"), rootJSDocConfig, rootInvariantsConfig],\n  maxWarnings: 0,\n  fix: false,\n  cwd\n})\n\nconst fmt = Smithers.Dprint({\n  sources: [sources, Smithers.glob(\"test/**/*.ts\"), testSupportSources, examples],\n  deps: [],\n  config: Smithers.file(\"dprint.json\"),\n  fix: false,\n  cwd\n})\n\nconst docs = Smithers.DocsParity({\n  readme: Smithers.file(\"README.md\"),\n  deps: [],\n  cwd\n})\n\n/**\n * The package's circular-dependency guard, run under the declared runtime.\n *\n * @since 0.1.0\n * @category test\n */\nconst circular = CircularImports({ sources: [sources], cwd })\n\n// --- reference docs pipeline ----------------------------------------------\n/** Everything the reference writer may read: sources, README, package docs, the rule table. */\nconst docsSources = Smithers.Filegroup({\n  srcs: [sources, Smithers.file(\"README.md\"), Smithers.glob(\"docs/*.md\")],\n  cwd\n})\n\n/**\n * The package's documentation as a file group (`docs/**`, the README, and\n * package.json), matching the filegroup BuildAndCheckTypeScriptPackage emits. The docs-site\n * one way an input reaches across a package boundary.\n */\nconst docsFiles = Smithers.Filegroup({\n  srcs: [Smithers.glob(\"docs/**/*.md\"), Smithers.file(\"README.md\"), Smithers.file(\"package.json\")],\n  cwd\n})\n\n/** The committed reference pages, as a set other packages depend on. */\nconst referencePages = Smithers.Filegroup({ srcs: [Smithers.glob(\"docs/reference/*.md\")], cwd })\n\n/** Every `ts` fence in the package page compiles under strict vibelang. */\nconst referenceCodeBlocks = Smithers.Markdown.CodeBlocks({\n  file: Smithers.file(\"docs/reference/targets.md\"),\n  lang: [\"ts\"]\n})\n\n/** Writes `docs/reference/targets.md`, the package page. */\nconst referenceDocs = Smithers.Agent.Diff({\n  agent: docsWriter,\n  prompt: Smithers.file(\"//apps/site/prompts/reference-package.md\"),\n  data: [docsSources, referenceStyle],\n  changes: [\"docs/reference/targets.md\"],\n  gates: [referenceCodeBlocks, check],\n  maxRounds: 3\n})\n\n/**\n * One rule page per catalog rule. The seed is the hand-maintained page under\n * packages/smithers/build/docs/reference/targets, named as a `//` file input\n * because globs never cross a package boundary.\n */\nconst rulePage = (slug: string, seed: string) => {\n  const page = `docs/reference/${slug}.md`\n  const codeBlocks = Smithers.Markdown.CodeBlocks({ file: Smithers.file(page), lang: [\"ts\"] })\n  const write = Smithers.Agent.Diff({\n    agent: docsWriter,\n    prompt: Smithers.file(\"//apps/site/prompts/reference-target-rule.md\"),\n    data: [\n      docsSources,\n      referenceStyle,\n      Smithers.file(`//packages/smithers/build/docs/reference/targets/${seed}`),\n      Smithers.file(\"//packages/smithers/build/targets/docs/rules.md\")\n    ],\n    changes: [page],\n    gates: [codeBlocks, check],\n    maxRounds: 3\n  })\n  return { codeBlocks, write }\n}\n\nconst filegroupRule = rulePage(\"filegroup\", \"filegroup.md\")\nconst agentDiffRule = rulePage(\"agent-diff\", \"README.md\")\nconst referenceFilegroupCodeBlocks = filegroupRule.codeBlocks\nconst referenceFilegroupDocs = filegroupRule.write\nconst referenceAgentDiffCodeBlocks = agentDiffRule.codeBlocks\nconst referenceAgentDiffDocs = agentDiffRule.write\n// --- end reference docs pipeline ------------------------------------------\n\n/**\n * Changed public APIs against the README, every docs page (guides and\n * reference included), and the site API reference page.\n *\n * @since 1.0.0\n * @category lint\n */\nconst reviewDocsAgainstCode = ReviewDocsAgainstCode({\n  cwd,\n  context: [\n    Smithers.file(\"README.md\"),\n    Smithers.glob(\"docs/**/*.md\"),\n    Smithers.file(\"//apps/site/src/content/docs/docs/reference/api/targets.mdx\")\n  ]\n})\n\n/**\n * Changed exports against their own JSDoc.\n *\n * @since 1.0.0\n * @category lint\n */\nconst reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })\n\n/**\n * The package's security review: `security` reviews changes against\n * origin/main, and the manual `securityAudit` reviews every source file.\n * These rules run tools, read the workspace, hold secrets, and render CI, so\n * each check below names one trust boundary they must keep.\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  checks: [\n    {\n      id: \"tool-argv-injection\",\n      title: \"Tool runs never reach a shell with attacker-shaped text\",\n      threat:\n        \"A contributor whose PACKAGE.ts or file names a maintainer builds runs arbitrary commands on that maintainer's machine or CI runner.\",\n      lookFor: [\n        \"A spawn or exec that passes shell: true, or builds one command string, from attrs, globs, file names, or git output.\",\n        \"A git, npm, docker, cargo, or go argv where a declared value can start with '-' and is not behind '--' or --end-of-options.\",\n        \"Environment passed to a child that keeps NODE_OPTIONS, GIT_*, or LD_PRELOAD-style injection hooks from the caller.\"\n      ],\n      paths: [\n        \"src/Exec.ts\",\n        \"src/ExecSandbox.ts\",\n        \"src/Shell.ts\",\n        \"src/ToolRun.ts\",\n        \"src/LlmLint.ts\",\n        \"src/Docker.ts\",\n        \"src/Cargo.ts\",\n        \"src/Go.ts\",\n        \"src/PackageManager.ts\",\n        \"src/Runtime.ts\"\n      ]\n    },\n    {\n      id: \"workspace-confinement\",\n      title: \"Reads and writes stay inside the workspace\",\n      threat:\n        \"A crafted glob, symlink, or output path makes a build read a maintainer's private files into a prompt or cache, or write outside the workspace.\",\n      lookFor: [\n        \"A declared path, glob, or output joined to the root without Input.resolvePath or SafeFs, or with '..' or an absolute path accepted.\",\n        \"A file read that follows symlinks or re-opens a path after checking it (a check-then-use race).\",\n        \"An archive, fetch, or generated-file write whose destination comes from content rather than the declaration.\",\n        \"A Compose generator spawn whose writes are not diffed against its declared changes and stdout write set.\"\n      ],\n      paths: [\n        \"src/SafeFs.ts\",\n        \"src/Input.ts\",\n        \"src/GeneratedFile.ts\",\n        \"src/Fetch.ts\",\n        \"src/Filegroup.ts\",\n        \"src/ToolBuild.ts\",\n        \"src/Compose.ts\"\n      ]\n    },\n    {\n      id: \"secret-handling\",\n      title: \"Declared secrets never leak\",\n      threat:\n        \"Anyone who can read build logs, cache entries, or model prompts learns a publish token or cache credential.\",\n      lookFor: [\n        \"A secret value, or an env var named by S.Secret, written to a log, an error message, a cache key, an output file, or a prompt.\",\n        \"A child process or model CLI inheriting SMITHERS_CACHE_TOKEN, NPM_TOKEN, or another declared secret it does not need.\",\n        \"A secret-proxy placeholder substituted into a request to a host the declaration did not allow.\"\n      ],\n      paths: [\n        \"src/Secret.ts\",\n        \"src/SecretProxy.ts\",\n        \"src/RemoteCache.ts\",\n        \"src/NpmPublish.ts\",\n        \"src/JsrPublish.ts\",\n        \"src/LlmLint.ts\"\n      ]\n    },\n    {\n      id: \"cache-poisoning\",\n      title: \"Cache keys cover everything a result depends on\",\n      threat:\n        \"A contributor or a shared remote cache serves a stale or tampered build result that a maintainer then ships.\",\n      lookFor: [\n        \"A cacheable target whose key omits an input the implementation reads: an env var, a tool version, a file outside the declared inputs.\",\n        \"A cached value decoded without the success schema, or a remote-cache response trusted without its digest.\",\n        \"A non-reproducible step, such as a network fetch without a pinned digest or a model call, marked cacheable.\"\n      ],\n      paths: [\"src/Target.ts\", \"src/RemoteCache.ts\", \"src/Fetch.ts\", \"src/ToolBuild.ts\"]\n    },\n    {\n      id: \"ci-workflow-injection\",\n      title: \"Generated CI workflows do not execute untrusted text\",\n      threat:\n        \"A pull-request author runs code with the repository's CI secrets or write token through a generated GitHub Actions workflow.\",\n      lookFor: [\n        \"A declared name, pattern, or step value interpolated into a run: script or a ${{ }} expression without quoting or validation.\",\n        \"A generated job on pull_request_target or with write permissions that checks out and runs pull-request code.\",\n        \"Third-party actions referenced by tag rather than a pinned commit SHA.\"\n      ],\n      paths: [\"src/GithubCiGen.ts\", \"src/GithubWorkflow.ts\", \"src/GithubTarget.ts\", \"src/CiToolchain.ts\"]\n    },\n    {\n      id: \"agent-prompt-injection\",\n      title: \"Reviewed file content cannot steer a model or agent run\",\n      threat:\n        \"A contributor plants instructions in a file so an agent or model review edits files outside its write set, exfiltrates data, or suppresses findings.\",\n      lookFor: [\n        \"A prompt that embeds file bodies without marking them as untrusted data.\",\n        \"An agent target whose declared write set, tools, or network are not enforced after the run.\",\n        \"Model output parsed loosely enough that a planted string changes a verdict, a path, or a command.\",\n        \"A claude or codex argv that drops --tools '', --safe-mode, --strict-mcp-config, or --sandbox read-only, or passes the prompt on argv.\",\n        \"A SecurityReview rubric or finding parser where planted text can drop a check, downgrade an error to a warning, or end the review early.\"\n      ],\n      paths: [\"src/LlmLint.ts\", \"src/AgentTarget.ts\", \"src/SecurityReview.ts\", \"src/ModelEngine.ts\"]\n    },\n    {\n      id: \"irreversible-effect-gating\",\n      title: \"Publishes and other outward effects run only once, with their declared secret and approval\",\n      threat:\n        \"A build, cache replay, or verification pass publishes a package, pushes a branch, or opens a release on a maintainer's registry or GitHub account without approval.\",\n      lookFor: [\n        \"An outward rule that reaches a spawn or transport without calling Outward.refuse, or that treats approval: \\\"required\\\" as satisfied by default.\",\n        \"A publish or push run through the retryable Exec action instead of ExecIrreversible, or marked cacheable so a replay re-runs it.\",\n        \"A publish argv that takes the registry, tag, or remote from package content rather than the declaration.\"\n      ],\n      paths: [\n        \"src/Outward.ts\",\n        \"src/Changesets.ts\",\n        \"src/ChangesetsTarget.ts\",\n        \"src/NpmPublish.ts\",\n        \"src/NpmTarget.ts\",\n        \"src/JsrPublish.ts\",\n        \"src/ToolRun.ts\",\n        \"src/GitTarget.ts\",\n        \"src/GithubTarget.ts\"\n      ]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: {\n    check,\n    circular,\n    docs,\n    docsFiles,\n    fmt,\n    lib,\n    lint,\n    test,\n    testSupport,\n    docsSources,\n    referenceAgentDiffCodeBlocks,\n    referenceAgentDiffDocs,\n    referenceCodeBlocks,\n    referenceDocs,\n    referenceFilegroupCodeBlocks,\n    referenceFilegroupDocs,\n    referencePages,\n    reviewDocsAgainstCode,\n    reviewJsdocAgainstCode,\n    ...securityReview\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 144,
+          "text": "* reference included), and the site API reference page."
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/build/targets/src/Tsconfig.ts",
+      "sha256": "fa402044bcd6f9f62c024710b5f2dda171995b53bc0bed4eaf22eff5348d7e92",
+      "source": "/**\n * Generated TypeScript configuration.\n *\n * A `tsconfig.json` decides what the compiler reads and what it emits, which\n * makes it part of the build definition. Leaving it hand-maintained next to a\n * PACKAGE.ts file that declares the same sources means two descriptions of one\n * thing, free to disagree. This target makes PACKAGE.ts the only description: the\n * file is rendered from attrs, and `check` mode fails when the checked-in copy\n * has drifted.\n *\n * Include and exclude take the file inputs a declaration already writes —\n * {@link Input.Glob} and {@link Input.File} — beside plain tsconfig patterns,\n * so one file set is spelled one way. Each entry renders to its pattern text:\n * a glob's pattern, a file's path, and a `//`-rooted path rewritten relative\n * to `cwd` the way `extends` is. When `path` places the file below `cwd`,\n * every entry and `extends` is then spelled from the file's own directory,\n * because that is where the compiler resolves them.\n *\n * The declarations stay out of the target's digested inputs, and the rule\n * resolves each one to its text before the target is constructed, which is\n * what keeps them out. A generator's output depends on the pattern text, not\n * on which files currently match it: keying this target on matched files would\n * make the config regenerate whenever any source file changed, while changing\n * nothing about the bytes it writes. A glob's own `exclude` list is dropped\n * for the same reason it is not key material — tsconfig has no per-pattern\n * exclusion, and the file's `exclude` section is the place to say it.\n *\n * A `Filegroup` target is not an include member. A group names files rather\n * than patterns: expanding one would put a build edge and a digested file set\n * on a target whose bytes are pattern text, and a group whose `srcs` name\n * another target would silently contribute nothing.\n *\n * @since 0.1.0\n */\n\nimport * as Effect from \"effect/Effect\"\nimport * as Schema from \"effect/Schema\"\nimport * as NodePath from \"node:path\"\nimport * as GeneratedFile from \"./GeneratedFile.ts\"\nimport * as Input from \"./Input.ts\"\nimport * as ManifestJson from \"./ManifestJson.ts\"\nimport * as Target from \"./Target.ts\"\n\n/** The directory a declaration's paths resolve against when it names none. */\nconst defaultCwd = \".\"\n\n/**\n * One `include` or `exclude` entry: a tsconfig pattern, a declared glob, or a\n * declared file.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Pattern = Schema.Union([Schema.NonEmptyString, Input.Glob, Input.File])\n\n/**\n * One `include` or `exclude` entry.\n *\n * @category models\n * @since 0.1.0\n */\nexport type Pattern = typeof Pattern.Type\n\n/**\n * Renders one entry as the pattern text tsconfig reads.\n *\n * A glob contributes its pattern and a file its path; both are then spelled\n * the way a config written into `cwd` needs, so a workspace-rooted `//`\n * declaration names the same file the planner would have resolved it to. The\n * `./` prefix `extends` carries is deliberately absent: the compiler resolves\n * a bare `extends` as a package name but reads an include pattern as a path,\n * and adding the prefix would rewrite every checked-in config.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const patternText = (cwd: string, pattern: Pattern): string =>\n  Input.rootRelative(\n    cwd,\n    typeof pattern === \"string\" ? pattern : pattern._tag === \"Glob\" ? pattern.pattern : pattern.path\n  )\n\n/**\n * Attributes for {@link Tsconfig}.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Attrs = Schema.Struct({\n  /**\n   * Where the file is written, relative to `cwd`. Rendered paths are spelled\n   * from this file's directory. @default \"tsconfig.json\"\n   */\n  path: Schema.NonEmptyString.pipe(\n    Schema.withConstructorDefault(Effect.succeed(\"tsconfig.json\"))\n  ),\n  /** The base configuration this one extends, or `null`. @default null */\n  extends: Schema.NullOr(Input.File).pipe(\n    Schema.withConstructorDefault(Effect.succeed(null))\n  ),\n  /** Compiler options, rendered verbatim. @default {} */\n  compilerOptions: Schema.Record(Schema.String, Schema.Unknown).pipe(\n    Schema.withConstructorDefault(Effect.succeed<Record<string, unknown>>({}))\n  ),\n  /** Include patterns, declared globs, or declared files. @default [] */\n  include: Schema.Array(Pattern).pipe(\n    Schema.withConstructorDefault(Effect.succeed<ReadonlyArray<Pattern>>([]))\n  ),\n  /** Exclude patterns, declared globs, or declared files. @default [] */\n  exclude: Schema.Array(Pattern).pipe(\n    Schema.withConstructorDefault(Effect.succeed<ReadonlyArray<Pattern>>([]))\n  ),\n  /** Project references. @default [] */\n  references: Schema.Array(Schema.NonEmptyString).pipe(\n    Schema.withConstructorDefault(Effect.succeed<ReadonlyArray<string>>([]))\n  ),\n  /** Whether to write the file or verify the checked-in copy. @default \"check\" */\n  mode: Schema.Literals([\"write\", \"check\"]).pipe(\n    Schema.withConstructorDefault(Effect.succeed(\"check\" as const))\n  ),\n  /** The directory the path resolves against. @default \".\" */\n  cwd: Schema.NonEmptyString.pipe(Schema.withConstructorDefault(Effect.succeed(defaultCwd)))\n})\n\n/**\n * Attributes for {@link Tsconfig}.\n *\n * @category models\n * @since 0.1.0\n */\nexport type Attrs = typeof Attrs.Type\n\n/**\n * Renders the file contents for one declaration.\n *\n * Key order is fixed rather than alphabetical, matching how the compiler's own\n * documentation orders the sections, so a generated file reads like a\n * hand-written one and a diff against the checked-in copy is legible. The\n * trailing newline is deliberate: a file without one is a diff every editor\n * offers to fix.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const render = (attrs: Attrs): string => {\n  const options = ManifestJson.cloneObject(attrs.compilerOptions, \"Tsconfig compilerOptions\")\n  const document: Record<string, ManifestJson.Value> = {}\n  const fromFile = fileRelative(attrs.cwd, attrs.path)\n  if (attrs.extends !== null) document[\"extends\"] = relative(fromFile(attrs.extends.path))\n  if (Object.keys(options).length > 0) document[\"compilerOptions\"] = options\n  if (attrs.include.length > 0) {\n    document[\"include\"] = attrs.include.map((entry) => fromFile(patternText(attrs.cwd, entry)))\n  }\n  if (attrs.exclude.length > 0) {\n    document[\"exclude\"] = attrs.exclude.map((entry) => fromFile(patternText(attrs.cwd, entry)))\n  }\n  if (attrs.references.length > 0) {\n    document[\"references\"] = attrs.references.map((path) => ({ path }))\n  }\n  return `${JSON.stringify(document, null, 2)}\\n`\n}\n\n/**\n * Rebases a path or pattern from the file's own directory.\n *\n * The compiler resolves `extends`, `include`, and `exclude` against the\n * directory the config file sits in, while a declaration spells them from\n * `cwd`. A workspace-rooted `//` path first becomes `cwd`-relative, so\n * `//tsconfig.base.json` written under `packages/foo` is\n * `../../tsconfig.base.json`; a file written to `test/tsconfig.json` below\n * `cwd` then walks one more level out. A file written directly into `cwd`\n * keeps the declared text unchanged.\n */\nconst fileRelative = (cwd: string, path: string) => {\n  const directory = NodePath.posix.dirname(path)\n  return (value: string): string => {\n    const text = Input.rootRelative(cwd, value)\n    if (directory === \".\") return text\n    // Anchoring both sides under one absolute base keeps the result\n    // independent of the process working directory.\n    const rebased = NodePath.posix.relative(\n      NodePath.posix.join(\"/\", cwd, directory),\n      NodePath.posix.join(\"/\", cwd, text)\n    )\n    return rebased === \"\" ? \".\" : rebased\n  }\n}\n\n/**\n * Spells a file-relative path the way a tsconfig `extends` needs it.\n *\n * The compiler resolves a bare specifier as a package name, so a sibling file\n * has to carry an explicit relative prefix.\n */\nconst relative = (path: string): string => path.startsWith(\"./\") || path.startsWith(\"../\") ? path : `./${path}`\n\nconst definition = Target.make(\"Tsconfig\", {\n  attrs: Attrs,\n  kinds: [\"build\", \"lint\"],\n  error: Schema.Union([GeneratedFile.WriteFileError, GeneratedFile.DriftError]),\n  cache: false,\n  outputs: (attrs) => attrs.mode === \"write\" ? { cwd: attrs.cwd, paths: [attrs.path] } : { cwd: attrs.cwd, paths: [] },\n  // The check verb reads the checked-in file and writes nothing, so it is safe\n  // in a lint graph; the write verb is what a build graph runs.\n  attrsForKind: (kind, attrs) => kind === \"lint\" ? { ...attrs, mode: \"check\" as const } : attrs,\n  implementation: (attrs) =>\n    GeneratedFile.generateFile(attrs.mode, {\n      path: attrs.cwd === \".\" ? attrs.path : `${attrs.cwd}/${attrs.path}`,\n      contents: render(attrs)\n    })\n})\n\n/**\n * Resolves every declared `include` and `exclude` entry to its pattern text.\n *\n * This runs before {@link Target.make}'s own attr walk, which is the whole\n * point: that walk records every declared input it finds anywhere in attrs, so\n * a glob left in place would be expanded and digested, and the config would\n * re-key whenever a matched file changed. Resolving first leaves the target\n * keyed on the text it writes, which is the only thing its bytes depend on.\n */\nconst resolveDeclarations = (\n  attrs: (typeof Attrs)[\"~type.make.in\"]\n): (typeof Attrs)[\"~type.make.in\"] => {\n  // Target.guard has already rejected proxies, accessors and custom\n  // prototypes and supplied a plain-data snapshot. Normalize that snapshot;\n  // do not maintain a second, unreachable declaration-validation path here.\n  const cwd = attrs.cwd ?? defaultCwd\n  const text = (entries: ReadonlyArray<(typeof Pattern)[\"~type.make.in\"]>): ReadonlyArray<string> =>\n    entries.map((entry) => patternText(cwd, Pattern.make(entry)))\n  return {\n    ...attrs,\n    ...(attrs.include === undefined ? {} : { include: text(attrs.include) }),\n    ...(attrs.exclude === undefined ? {} : { exclude: text(attrs.exclude) })\n  }\n}\n\n/**\n * Generates and drift-checks a `tsconfig.json`.\n *\n * @example\n * ```ts\n * import { Smithers } from \"@smthrs/targets\"\n *\n * export const tsconfig = Smithers.Tsconfig({\n *   extends: Smithers.file(\"tsconfig.base.json\"),\n *   compilerOptions: { noEmit: true, module: \"NodeNext\" },\n *   include: [Smithers.glob(\"packages/*\\/src/**\\/*\"), Smithers.file(\"PACKAGE.ts\")]\n * })\n * ```\n *\n * @category targets\n * @since 0.1.0\n */\nexport const Tsconfig = Target.guard(\n  Target.rule(\n    definition,\n    (attrs: (typeof Attrs)[\"~type.make.in\"] & Target.Presentation): ReturnType<typeof definition> =>\n      definition(resolveDeclarations(attrs))\n  ),\n  // The existing guard snapshots nested inputs before normalization reads\n  // their patterns. Normalization itself supplies no additional validation.\n  () => {}\n)\n",
+      "coverageDirectives": [
+        {
+          "line": 11,
+          "text": "* Include and exclude take the file inputs a declaration already writes —"
+        },
+        {
+          "line": 24,
+          "text": "* nothing about the bytes it writes. A glob's own `exclude` list is dropped"
+        },
+        {
+          "line": 26,
+          "text": "* exclusion, and the file's `exclude` section is the place to say it."
+        },
+        {
+          "line": 28,
+          "text": "* A `Filegroup` target is not an include member. A group names files rather"
+        },
+        {
+          "line": 48,
+          "text": "* One `include` or `exclude` entry: a tsconfig pattern, a declared glob, or a"
+        },
+        {
+          "line": 57,
+          "text": "* One `include` or `exclude` entry."
+        },
+        {
+          "line": 71,
+          "text": "* a bare `extends` as a package name but reads an include pattern as a path,"
+        },
+        {
+          "line": 105,
+          "text": "/** Include patterns, declared globs, or declared files. @default [] */"
+        },
+        {
+          "line": 106,
+          "text": "include: Schema.Array(Pattern).pipe("
+        },
+        {
+          "line": 109,
+          "text": "/** Exclude patterns, declared globs, or declared files. @default [] */"
+        },
+        {
+          "line": 110,
+          "text": "exclude: Schema.Array(Pattern).pipe("
+        },
+        {
+          "line": 151,
+          "text": "if (attrs.include.length > 0) {"
+        },
+        {
+          "line": 152,
+          "text": "document[\"include\"] = attrs.include.map((entry) => fromFile(patternText(attrs.cwd, entry)))"
+        },
+        {
+          "line": 154,
+          "text": "if (attrs.exclude.length > 0) {"
+        },
+        {
+          "line": 155,
+          "text": "document[\"exclude\"] = attrs.exclude.map((entry) => fromFile(patternText(attrs.cwd, entry)))"
+        },
+        {
+          "line": 166,
+          "text": "* The compiler resolves `extends`, `include`, and `exclude` against the"
+        },
+        {
+          "line": 214,
+          "text": "* Resolves every declared `include` and `exclude` entry to its pattern text."
+        },
+        {
+          "line": 233,
+          "text": "...(attrs.include === undefined ? {} : { include: text(attrs.include) }),"
+        },
+        {
+          "line": 234,
+          "text": "...(attrs.exclude === undefined ? {} : { exclude: text(attrs.exclude) })"
+        },
+        {
+          "line": 248,
+          "text": "*   include: [Smithers.glob(\"packages/*\\/src/**\\/*\"), Smithers.file(\"PACKAGE.ts\")]"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/build/targets/tsconfig.json",
+      "sha256": "834521e11fe5570a7204e625ddd835544bf7eaa4713414b15ad668fdd1fab0e9",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2024\",\n    \"lib\": [\"ES2024\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [\n      {\n        \"name\": \"@effect/language-service\",\n        \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n        \"includeSuggestionsInTsc\": false,\n        \"ignoreEffectWarningsInTscExitCode\": true,\n        \"ignoreEffectErrorsInTscExitCode\": true,\n        \"diagnosticSeverity\": {\n          \"globalErrorInEffectFailure\": \"off\"\n        }\n      }\n    ]\n  },\n  \"include\": [\"src/**/*\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 17,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 30,
+          "text": "\"includeSuggestionsInTsc\": false,"
+        },
+        {
+          "line": 31,
+          "text": "\"ignoreEffectWarningsInTscExitCode\": true,"
+        },
+        {
+          "line": 32,
+          "text": "\"ignoreEffectErrorsInTscExitCode\": true,"
+        },
+        {
+          "line": 39,
+          "text": "\"include\": [\"src/**/*\"]"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/build/targets/vitest.config.ts",
+      "sha256": "2da9dc11242f86251d61ca0bd882d388519f4847a041229dd2f3393bdd41a822",
+      "source": "import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    environment: \"node\",\n    include: [\"test/**/*.test.{ts,vibe}\"],\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      // Enabled so the thresholds below actually gate every run; without\n      // this flag they were declared and never computed. The floors are the\n      // measured coverage on 2026-09-01, rounded down to whole percentages.\n      enabled: true,\n      provider: \"v8\",\n      reportsDirectory: join(tmpdir(), `flows-targets-coverage-${process.pid}`),\n      include: [\"src/**\"],\n      thresholds: {\n        branches: 97,\n        functions: 99,\n        lines: 99,\n        statements: 99\n      }\n    }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 11,
+          "text": "fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"
+        },
+        {
+          "line": 15,
+          "text": "include: [\"test/**/*.test.{ts,vibe}\"],"
+        },
+        {
+          "line": 18,
+          "text": "coverage: {"
+        },
+        {
+          "line": 19,
+          "text": "// Enabled so the thresholds below actually gate every run; without"
+        },
+        {
+          "line": 21,
+          "text": "// measured coverage on 2026-09-01, rounded down to whole percentages."
+        },
+        {
+          "line": 23,
+          "text": "provider: \"v8\","
+        },
+        {
+          "line": 24,
+          "text": "reportsDirectory: join(tmpdir(), `flows-targets-coverage-${process.pid}`),"
+        },
+        {
+          "line": 25,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 26,
+          "text": "thresholds: {"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/test/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/test-support/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/examples/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/tsconfig.test.json"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/build/targets:lib"
+      ]
+    },
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:circular",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/circular.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:docs",
+      "rule": "DocsParity",
+      "kinds": [
+        "docs"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:docsSources",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/README.md"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/docs/*.md",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:fmt",
+      "rule": "Dprint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/test/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/test-support/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/examples/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/dprint.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:lib",
+      "rule": "TsBuild",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/src/index.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/scripts/build.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:lint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/examples/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.jsdoc.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.invariants.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:referenceAgentDiffCodeBlocks",
+      "rule": "Markdown.CodeBlocks",
+      "kinds": [
+        "build",
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/docs/reference/agent-diff.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:referenceAgentDiffDocs",
+      "rule": "Agent.Diff",
+      "kinds": [
+        "run"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/prompts/reference-target-rule.md"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/prompts/reference-style.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/docs/reference/targets/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/docs/rules.md"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/build/targets:check",
+        "//packages/smithers/build/targets:docsSources",
+        "//packages/smithers/build/targets:referenceAgentDiffCodeBlocks"
+      ]
+    },
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:referenceCodeBlocks",
+      "rule": "Markdown.CodeBlocks",
+      "kinds": [
+        "build",
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/docs/reference/targets.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:referenceDocs",
+      "rule": "Agent.Diff",
+      "kinds": [
+        "run"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/prompts/reference-package.md"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/prompts/reference-style.md"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/build/targets:check",
+        "//packages/smithers/build/targets:docsSources",
+        "//packages/smithers/build/targets:referenceCodeBlocks"
+      ]
+    },
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:referenceFilegroupCodeBlocks",
+      "rule": "Markdown.CodeBlocks",
+      "kinds": [
+        "build",
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/docs/reference/filegroup.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:referenceFilegroupDocs",
+      "rule": "Agent.Diff",
+      "kinds": [
+        "run"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/prompts/reference-target-rule.md"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/prompts/reference-style.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/docs/reference/targets/filegroup.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/docs/rules.md"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/build/targets:check",
+        "//packages/smithers/build/targets:docsSources",
+        "//packages/smithers/build/targets:referenceFilegroupCodeBlocks"
+      ]
+    },
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:referencePages",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/docs/reference/*.md",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:reviewDocsAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/build/targets/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/README.md"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/content/docs/docs/reference/api/targets.mdx"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:reviewJsdocAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/build/targets/src/**/*.{ts,vibe}"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/src/**/*.{ts,vibe}",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/build/targets/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/build/targets/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:test",
+      "rule": "Vitest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/test/**/*.test.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/examples/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/vitest.config.ts"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/build/targets:lib",
+        "//packages/smithers/build/targets:testSupport"
+      ]
+    },
+    {
+      "package": "packages/smithers/build/targets",
+      "label": "//packages/smithers/build/targets:testSupport",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/test-support/**/*.ts",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    }
+  ],
+  "areas": [
+    "PACKAGE.ts",
+    "eslint.config.js",
+    "examples/declare-a-package.ts",
+    "examples/declare-issue-transitions.ts",
+    "scripts/build.mjs",
+    "src/AgentTarget.ts",
+    "src/Anvil.ts",
+    "src/Attr.ts",
+    "src/BiomeCheck.ts",
+    "src/BunSuite.ts",
+    "src/BundlerTarget.ts",
+    "src/Cargo.ts",
+    "src/Changesets.ts",
+    "src/ChangesetsTarget.ts",
+    "src/CiToolchain.ts",
+    "src/Compose.ts",
+    "src/Config.ts",
+    "src/CronTarget.ts",
+    "src/DependencyDocs.ts",
+    "src/DepsLint.ts",
+    "src/Dev.ts",
+    "src/Docker.ts",
+    "src/DocsCheck.ts",
+    "src/DocsPage.ts",
+    "src/DocsParity.ts",
+    "src/Dprint.ts",
+    "src/DtsBuild.ts",
+    "src/Environment.ts",
+    "src/EsLint.ts",
+    "src/Exec.ts",
+    "src/ExecSandbox.ts",
+    "src/Factory.ts",
+    "src/FaultSuite.ts",
+    "src/Fetch.ts",
+    "src/Filegroup.ts",
+    "src/Flow.ts",
+    "src/FlowCatalog.ts",
+    "src/Foundry.ts",
+    "src/GeneratedFile.ts",
+    "src/GitTarget.ts",
+    "src/GithubCiGen.ts",
+    "src/GithubTarget.ts",
+    "src/GithubWorkflow.ts",
+    "src/Go.ts",
+    "src/Home.ts",
+    "src/Input.ts",
+    "src/Install.ts",
+    "src/JevLint.ts",
+    "src/JsrPublish.ts",
+    "src/LlmLint.ts",
+    "src/LocalRepository.ts",
+    "src/Lockfile.ts",
+    "src/ManifestJson.ts",
+    "src/MemoryTarget.ts",
+    "src/Mise.ts",
+    "src/ModelEngine.ts",
+    "src/Mount.ts",
+    "src/NewPackage.ts",
+    "src/Nix.ts",
+    "src/NodeArtifact.ts",
+    "src/NodeBinary.ts",
+    "src/NodeTest.ts",
+    "src/NpmPublish.ts",
+    "src/NpmTarget.ts",
+    "src/Outward.ts",
+    "src/Owners.ts",
+    "src/Package.ts",
+    "src/PackageDefaults.ts",
+    "src/PackageJson.ts",
+    "src/PackageJsonTemplate.ts",
+    "src/PackageLint.ts",
+    "src/PackageManager.ts",
+    "src/PnpmWorkspaceFile.ts",
+    "src/Reference.ts",
+    "src/RemoteCache.ts",
+    "src/RepoTarget.ts",
+    "src/Runtime.ts",
+    "src/RustToolchain.ts",
+    "src/SafeFs.ts",
+    "src/Secret.ts",
+    "src/SecretProxy.ts",
+    "src/SecurityReview.ts",
+    "src/Shell.ts",
+    "src/Smithers.ts",
+    "src/SortPackageJson.ts",
+    "src/Stamp.ts",
+    "src/Target.ts",
+    "src/TargetIndex.ts",
+    "src/ToolBuild.ts",
+    "src/ToolRun.ts",
+    "src/Toolchain.ts",
+    "src/TsBuild.ts",
+    "src/Tsconfig.ts",
+    "src/Typecheck.ts",
+    "src/TypedocDocumentation.ts",
+    "src/Verb.ts",
+    "src/Vitest.ts",
+    "src/VitestCoverage.ts",
+    "src/VitestWatch.ts",
+    "src/WorkspaceDeclaration.ts",
+    "src/index.ts",
+    "src/internal",
+    "test-support/plan.ts",
+    "test/plan.ts",
+    "test/toolchain.ts",
+    "vitest.config.ts"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

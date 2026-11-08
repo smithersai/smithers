@@ -1,4 +1,5 @@
 import { TestSchemas } from "@smthrs/database"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The composition every ModelStep case runs on: the Node host runtime over a
  * scratch schema of the compose Postgres, one probe flow, and a scripted model
@@ -7,7 +8,6 @@ import { TestSchemas } from "@smthrs/database"
  * The child-process fixture loads this module under native TypeScript, so it
  * imports nothing from Vitest.
  */
-import { Crypto } from "@smthrs/crypto"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
@@ -15,6 +15,7 @@ import { Model, ModelEvent, ModelRequest, Route } from "@smthrs/model"
 import { Node } from "@smthrs/plan"
 import { NodeHost, NodeRuntime } from "@smthrs/platform-node"
 import { Ownership } from "@smthrs/run-store"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
@@ -53,7 +54,11 @@ export const Probe = Flow.make("agent/test/model-step/Probe", {
 export type Handler = (
   payload: { readonly prompt: string },
   executionId: string
-) => Effect.Effect<Schema.Json, ModelStep.Failure, Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
+) => Effect.Effect<
+  Schema.Json,
+  ModelStep.Failure,
+  (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+>
 
 /** A Jujutsu service that records nothing: no case here takes a snapshot. */
 const stubJj = Layer.succeed(
@@ -91,9 +96,7 @@ export const runtime = (options: {
     Layer.effectDiscard(
       Effect.flatMap(FlowRuntime.FlowRuntime, (engine) => engine.register(Probe, options.handler))
     )
-  ).pipe(
-    Layer.provide([NodeHost.AtomicFileSystem.layer, Crypto.layerFromDigest(NodeHost.NodeCrypto.layerDigest), stubJj])
-  )
+  ).pipe(Layer.provide([NodeHost.AtomicFileSystem.layer, NodeHost.NodeCrypto.layer, stubJj]))
 
 /**
  * Drops a scratch schema through a connection of its own, taking the schema's
@@ -105,7 +108,7 @@ export const dropSchema = (schema: string, workspaceRoot: string) =>
     yield* sql.withTransaction(sql`DROP SCHEMA IF EXISTS ${sql(schema)} CASCADE`)
   }).pipe(
     Effect.provide(NodeRuntime.storage(`${postgres.url}?schema=${schema}`, workspaceRoot)),
-    Effect.provide([NodeHost.AtomicFileSystem.layer, Crypto.layerFromDigest(NodeHost.NodeCrypto.layerDigest)]),
+    Effect.provide([NodeHost.AtomicFileSystem.layer, NodeHost.NodeCrypto.layer]),
     Effect.scoped
   )
 

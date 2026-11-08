@@ -6,7 +6,7 @@ import { reloadAfter } from "../../test/reloadTiming"
 // would.
 import type { SandboxTools } from "@smthrs/sandbox"
 import { PresenceProtocol, SharedText } from "@smthrs/sync"
-import { Cause, Context, type Duration, Effect, Exit, Layer, Logger, ManagedRuntime, Metric } from "effect"
+import { type Duration, Effect, Exit, Layer, Logger, ManagedRuntime, Metric } from "effect"
 import { Base64 } from "effect/encoding"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -29,13 +29,20 @@ import {
 import { EngineFaults } from "../../test/faults"
 import { read as readTelemetry } from "../../test/otlp"
 import { dialing, roomHost } from "../../test/rooms"
+import { sessionPages } from "../../test/sessionPages"
+import { WIPE } from "../../wipe"
+import { boundFetch } from "../../device/identity"
+import { SESSION_ROUTE } from "../auth/contract"
+import { browserSession } from "../../test/browserSession"
+import { Auth } from "../auth/auth"
 import { AuthStore, SESSION } from "../auth/store"
 import { Branch } from "../branch/branch"
 import { Chat } from "../chat/chat"
+import { CONNECTION } from "../chat/schema"
 import { ChatStore } from "../chat/store"
 import { Commands } from "../commands/commands"
 import { postUpdate, TextsClient, UpdateNotTaken } from "./api"
-import { textRoomRoute } from "./contract"
+import { TEXTS_ROUTE, textRoute, textRoomRoute } from "./contract"
 import { sends } from "./metrics"
 import { CoeditStore, decodeCursor, encodeCursor, SAVED_MARK, savedMarkOf } from "./store"
 import { answerOf, fileOf, openAnswerOf, promptOf, saveLabelOf } from "./view"
@@ -56,7 +63,7 @@ const ben: Actor = { subject: { kind: "person", id: "person-ben" }, role: "membe
 
 /** One person's tab: their branch layer with its texts, their composer, and what they type with. */
 const tab = async (
-  runtime: ManagedRuntime.ManagedRuntime<Branch | Chat | ChatStore | Commands | AuthStore | TextWrites | CoeditStore, unknown>,
+  runtime: ManagedRuntime.ManagedRuntime<Auth | Branch | Chat | ChatStore | Commands | AuthStore | TextWrites | CoeditStore, unknown>,
   login: string,
 ) => {
   const close = async () => {
@@ -68,6 +75,7 @@ const tab = async (
   const branch = await runtime.runPromise(Effect.service(Branch))
   const chat = await runtime.runPromise(Effect.service(Chat))
   const commands = await runtime.runPromise(Effect.service(Commands))
+  const store = await runtime.runPromise(Effect.service(ChatStore))
   const { sending } = await runtime.runPromise(Effect.service(TextWrites))
   const { session } = await runtime.runPromise(Effect.service(AuthStore))
   await until(() => expect(session.tanstack.get(SESSION)?.status).not.toBe("loading"))
@@ -90,6 +98,14 @@ const tab = async (
     draft: () => chat.queries.composer.toArray[0]?.draft,
     saved: () => chat.queries.composer.toArray[0]?.saved,
     unsent: () => sending.tanstack.toArray.length,
+    /** The tab's sends, by outcome (`sends`). */
+    sends: (outcome: string) => runtime.runSync(Metric.value(Metric.withAttributes(sends, { outcome }))).count,
+    /** Whether the page asks its person to sign in to send what it holds. */
+    signIn: () => store.connection.tanstack.get(CONNECTION)?.signIn === true,
+    /** Sends every waiting write now, as Retry on the connection pill does. */
+    retryNow: () => runtime.runPromise(store.outbox.retryNow),
+    /** Sign out pressed. */
+    signOut: () => runtime.runPromise(Effect.map(Effect.service(Auth), (auth) => auth.actions.signOut())),
     /** Resolves once the tab has put back the draft its device kept, as a reload does. */
     restored: async () => {
       await runtime.runPromise(Effect.flatMap(Effect.service(ChatStore), (store) => Effect.ignore(store.drafts.restored)))
@@ -112,9 +128,16 @@ const open = async (options: Pick<TabOptions, "replace"> = {}) => {
   const owner = await tab(runtime, member.subject.id)
   const benTab = (access: "read" | "write" = "write") =>
     tab(openTab(asPerson(api, "ben"), { webSocket: as("person-ben", "ben", access) }), "ben")
-  /** Another tab of the member's, on `host` when given: a device's other tab. */
-  const ownTab = (host?: ReturnType<typeof nodeDevice>) =>
-    tab(openTab(api, { ...(host === undefined ? {} : { host }), webSocket: as(member.subject.id, "member") }), member.subject.id)
+  /** Another tab of the member's, on `host` when given: a device's other tab; through `transport`, the page's, when given. */
+  const ownTab = (host?: ReturnType<typeof nodeDevice>, transport?: TabOptions["transport"]) =>
+    tab(
+      openTab(api, {
+        ...(host === undefined ? {} : { host }),
+        ...(transport === undefined ? {} : { transport }),
+        webSocket: as(member.subject.id, "member"),
+      }),
+      member.subject.id,
+    )
   /** Another tab of the member's on the faulty services, whose engine a test can refuse flows on. */
   const faultyTab = async () => {
     const faulty = openFaultyTab(api, { webSocket: as(member.subject.id, "member") })
@@ -791,7 +814,7 @@ describe("sending", () => {
     const base = nodeDevice({ agent: opened.api })
     const full = {
       ...base,
-      outbox: { ...base.outbox, storage: { ...base.outbox.storage, set: () => Promise.reject(new Error("quota exceeded")) } },
+      outbox: { ...base.outbox, storage: { ...base.outbox.storage, setMany: () => Promise.reject(new Error("quota exceeded")) } },
     }
     const tab = await opened.ownTab(full)
     await openShared(opened, tab)
@@ -818,6 +841,264 @@ describe("sending", () => {
     expect(JSON.stringify(refused)).not.toMatch(/lost|quota/)
   }, WITHIN)
 
+  /** A browser of the member's whose texts writes ChatApi refuses 401 until they sign in again (`browserSession`). */
+  const textsBrowser = () =>
+    browserSession(member.subject.id, (request) =>
+      request.method === "POST" && new URL(request.url).pathname.startsWith(`${TEXTS_ROUTE}/`))
+
+  test("a queued update with a stale credential waits for Retry-After and a tagged session reread, then delivers once", async () => {
+    const opened = await open()
+    const device = nodeDevice({ agent: opened.api })
+    const tag = "0123456789abcdef0123456789abcdef"
+    let refusedAt = 0
+    let verified = false
+    let writes = 0
+    let delivered = 0
+    const reads: Array<Request> = []
+    const transport: NonNullable<TabOptions["transport"]> = (fetch) => {
+      const binding = { origin: CHATAPI_ORIGIN, principal: () => member.subject.id, sessionTag: () => tag, reauthorize: async () => true }
+      return boundFetch(async (input, init) => {
+        const request = new Request(input, init)
+        const path = new URL(request.url).pathname
+        if (refusedAt !== 0 && path === SESSION_ROUTE) {
+          reads.push(request)
+          if (!verified) return Response.json({ credential: "stale", prior: "live" })
+        }
+        if (request.method === "POST" && path.startsWith(`${TEXTS_ROUTE}/`)) {
+          writes++
+          if (writes === 1) {
+            refusedAt = Date.now()
+            return new Response(null, { status: 503, headers: { "x-smithers-credential": "stale", "Retry-After": "1" } })
+          }
+          expect(verified).toBe(true)
+          expect(Date.now() - refusedAt).toBeGreaterThanOrEqual(1000)
+          delivered++
+        }
+        return fetch(request)
+      }, binding)
+    }
+    const first = await opened.ownTab(device, transport)
+    await openShared(opened, first)
+    first.type("kept", { anchor: 4, head: 4 })
+    await until(() => expect(reads.length > 0 || writes > 1).toBe(true))
+    expect(reads.length).toBeGreaterThan(0)
+    expect(writes).toBe(1)
+    expect(first.unsent()).toBeGreaterThan(0)
+    expect(first.sends("refused")).toBe(0)
+    expect(reads.every((request) => request.headers.get("x-smithers-session-tag") === tag)).toBe(true)
+    verified = true
+    await until(() => expect(first.unsent()).toBe(0))
+    expect(delivered).toBe(1)
+    expect(first.sends("stored")).toBe(1)
+    expect(first.sends("refused")).toBe(0)
+    const rows = await opened.run(Effect.flatMap(SqlClient.SqlClient, sql =>
+      sql`SELECT id FROM text_updates WHERE text_id = ${first.prompt()!.id}`))
+    expect(rows).toHaveLength(1)
+  }, WITHIN)
+
+  test("an update refused 401 while its person is still signed in is held through a reload, with a sign-in prompt, and delivered once after sign-in", async () => {
+    const opened = await open()
+    const browser = textsBrowser()
+    const device = nodeDevice({ agent: opened.api })
+    const first = await opened.ownTab(device, browser.transport)
+    await openShared(opened, first)
+    first.type("kept", { anchor: 4, head: 4 })
+    // Held: sent again, never refused, and the page asks its person to sign in.
+    await until(() => expect(browser.state.refusals).toBeGreaterThan(1))
+    await until(() => expect(first.signIn()).toBe(true))
+    expect(first.sends("refused")).toBe(0)
+    expect(first.unsent()).toBeGreaterThan(0)
+    expect(browser.state.reopens).toBe(0)
+    // A reload keeps it held.
+    await first.close()
+    const second = await opened.ownTab(device, browser.transport)
+    await until(() => expect(second.unsent()).toBeGreaterThan(0))
+    const held = second.unsent()
+    await until(() => expect(second.signIn()).toBe(true))
+    expect(second.sends("refused")).toBe(0)
+    // Signing in again comes back to the page: each held update is delivered once, and the prompt goes.
+    await second.close()
+    browser.state.cookie = "read"
+    const third = await opened.ownTab(device, browser.transport)
+    await until(() => expect(third.sends("stored") + third.sends("existing")).toBeGreaterThan(0))
+    await until(() => expect(third.unsent()).toBe(0))
+    expect(browser.state.delivered).toBe(held)
+    expect(third.signIn()).toBe(false)
+    expect(third.sends("refused")).toBe(0)
+    const other = await opened.ownTab()
+    await other.branch.actions.open("octo", "hello", "feature/one")
+    await until(() => expect(other.draft()).toBe("kept"))
+  }, WITHIN)
+
+  test("an update refused 401 once the session has ended stays queued and reopens the page; a second end within the minute leaves the page's transport working", async () => {
+    const opened = await open()
+    const browser = textsBrowser()
+    browser.state.session = "signed_out"
+    const device = nodeDevice({ agent: opened.api })
+    const first = await opened.ownTab(device, browser.transport)
+    await openShared(opened, first)
+    first.type("held", { anchor: 4, head: 4 })
+    await until(() => expect(browser.state.reopens).toBe(1))
+    // Not refused, and no prompt: the write waits for the page's session-end decision, which seals or wipes it.
+    expect(first.sends("refused")).toBe(0)
+    expect(first.unsent()).toBeGreaterThan(0)
+    expect(first.signIn()).toBe(false)
+    // The page loads again within the minute and meets the same 401: main.tsx holds that reopen back.
+    await first.close()
+    const second = await opened.ownTab(device, browser.transport)
+    await until(() => expect(browser.state.suppressed).toBeGreaterThan(0))
+    expect(browser.state.reopens).toBe(1)
+    // The person signs in again in another tab: the page's transport still sends, so the update arrives.
+    browser.state.session = "chatapi"
+    browser.state.cookie = "read"
+    await until(async () => {
+      await second.retryNow()
+      expect(second.unsent()).toBe(0)
+    })
+    expect(browser.state.delivered).toBeGreaterThan(0)
+    expect(second.sends("refused")).toBe(0)
+  }, WITHIN)
+
+  test("an update refused 401 while the person signs out never reopens the page first: the sign-out's wipe deletes it", async () => {
+    const opened = await open()
+    const browser = textsBrowser()
+    browser.state.cookie = "read"
+    browser.state.holdSignOut = true
+    const device = nodeDevice({ agent: opened.api })
+    let wiped = 0
+    const host = { ...device, wipe: async () => {
+      wiped++
+      await device.wipe()
+    } }
+    const tab = await opened.ownTab(host, browser.transport)
+    await openShared(opened, tab)
+    // ChatApi ended the session; the sign-out's answer is still on its way.
+    await tab.signOut()
+    await until(() => expect(browser.state.signingOut).toBe(1))
+    browser.state.cookie = "unread"
+    tab.type("gone", { anchor: 4, head: 4 })
+    await until(() => expect(browser.state.refusals).toBeGreaterThan(0))
+    browser.releaseSignOut()
+    await until(() => expect(wiped).toBe(1))
+    expect(browser.state.reopens).toBe(0)
+    expect(await host.outbox.storage.keys()).toEqual([])
+  }, WITHIN)
+
+  test("a held text does not block another text, and its next update waits through reload and sends exactly once in order", async () => {
+    const opened = await open()
+    let heldText: string | undefined
+    const delivered: Array<string> = []
+    let loseAcknowledgment = true
+    const browser = browserSession(member.subject.id, (request) =>
+      request.method === "POST" && new URL(request.url).pathname === textRoute(heldText ?? "none"))
+    const device = nodeDevice({ agent: opened.api })
+    const transport: NonNullable<TabOptions["transport"]> = (fetch) => browser.transport(async (input, init) => {
+      const request = new Request(input, init)
+      const writing = request.method === "POST" && new URL(request.url).pathname === textRoute(heldText ?? "none")
+      if (request.method === "POST" && new URL(request.url).pathname === textRoute(heldText ?? "none")) {
+        delivered.push((await request.clone().json()).id)
+      }
+      const response = await fetch(request)
+      if (writing && response.ok && loseAcknowledgment) {
+        loseAcknowledgment = false
+        throw new TypeError("The server committed but its acknowledgment was lost")
+      }
+      return response
+    })
+    const first = await opened.ownTab(device, transport)
+    await openShared(opened, first)
+    await until(() => expect(first.unsent()).toBe(0))
+    heldText = first.prompt()!.id
+    first.type("one", { anchor: 3, head: 3 })
+    await until(() => expect(first.signIn()).toBe(true))
+    first.type("one two", { anchor: 7, head: 7 })
+    const heldIds = async () => {
+      const writes = await Promise.all((await device.outbox.storage.keys()).filter((key) => key.startsWith("tx:")).map(async (key) =>
+        JSON.parse((await device.outbox.storage.get(key))!)))
+      return writes.flatMap((write) => write.mutations.map((mutation: { modified: { id: string; textId?: string } }) => mutation.modified))
+        .filter((row) => row.textId === heldText).map((row) => row.id)
+    }
+    await until(async () => expect(await heldIds()).toHaveLength(2))
+    const queued = await heldIds()
+    await openShared(opened, first, "feature/two")
+    first.type("independent", { anchor: 11, head: 11 })
+    const otherText = first.prompt()!.id
+    await until(async () => {
+      const stored = await opened.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql`SELECT id FROM text_updates WHERE text_id = ${otherText}`))
+      expect(stored.length).toBeGreaterThan(0)
+      expect(first.unsent()).toBe(2)
+    })
+    expect(delivered).toEqual([])
+    await first.close()
+    const second = await opened.ownTab(device, transport)
+    expect(await heldIds()).toEqual(queued)
+    await second.retryNow()
+    expect(delivered).toEqual([])
+    browser.state.cookie = "read"
+    await until(async () => { await second.retryNow(); expect(second.unsent()).toBe(0) })
+    expect(delivered).toEqual([queued[0], ...queued])
+    expect(loseAcknowledgment).toBe(false)
+    const persisted = await opened.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql<{ id: string }>`SELECT id FROM text_updates WHERE text_id = ${heldText!}`))
+    for (const id of queued) expect(persisted.filter((row) => row.id === id)).toHaveLength(1)
+  }, WITHIN)
+
+  test("another tab's 401 cannot interrupt sign-out before the real page wipe marks and deletes the outbox", async () => {
+    const opened = await open()
+    const browser = textsBrowser()
+    browser.state.cookie = "read"
+    browser.state.holdSignOut = true
+    const device = nodeDevice({ agent: opened.api })
+    const lifecycle = sessionPages(device)
+    const a = lifecycle.page()
+    const b = lifecycle.page()
+    let boot: ReturnType<typeof lifecycle.page> | undefined
+    closers.push(async () => { a.close(); b.close(); boot?.close() })
+    await Promise.all([a.open(), b.open()])
+    const first = await opened.ownTab({ ...device, wipe: a.wipe }, (fetch) => browser.transport(fetch, a))
+    const second = await opened.ownTab({ ...device, wipe: b.wipe }, (fetch) => browser.transport(fetch, b))
+    a.started(async () => { await first.close(); a.close() })
+    b.started(async () => { await second.close(); b.close() })
+    await openShared(opened, second)
+    await first.signOut()
+    await until(() => expect(browser.state.signingOut).toBe(1))
+    browser.state.cookie = "unread"
+    second.type("erase", { anchor: 5, head: 5 })
+    await until(() => expect(browser.state.refusals).toBeGreaterThan(0))
+    // A direct reopen must respect the same device lock while the sign-out response is pending.
+    await second.retryNow()
+    expect(await b.reopen("identity_reopen")).toBe(false)
+    expect(lifecycle.reloads).toEqual([])
+    expect(lifecycle.marks.has(WIPE)).toBe(false)
+    browser.releaseSignOut()
+    await until(() => expect(lifecycle.marks.get(WIPE)).toBe("1"))
+    await until(() => expect(lifecycle.reloads).toEqual(["wipe", "wipe"]))
+    boot = lifecycle.page()
+    expect(await boot.open()).toBe(true)
+    expect(lifecycle.deleted()).toBe(1)
+    expect(await device.outbox.storage.keys()).toEqual([])
+  }, WITHIN)
+
+  test("a follower and an offline reload offer sign-in for a persisted held write before sending", async () => {
+    const opened = await open()
+    const browser = textsBrowser()
+    const device = nodeDevice({ agent: opened.api })
+    const leader = await opened.ownTab(device, browser.transport)
+    await openShared(opened, leader)
+    const follower = await opened.ownTab(device, browser.transport)
+    leader.type("retained", { anchor: 8, head: 8 })
+    await until(() => expect(leader.signIn()).toBe(true))
+    await until(() => expect(follower.signIn()).toBe(true))
+    await follower.close()
+    await leader.close()
+    const before = browser.state.refusals
+    const offline = { ...device.outbox.online, isOnline: () => false }
+    const reloaded = await opened.ownTab({ ...device, outbox: { ...device.outbox, online: offline } }, browser.transport)
+    expect(reloaded.signIn()).toBe(true)
+    expect(browser.state.refusals).toBe(before)
+  }, WITHIN)
+
   test("the route's answers a valid update never gets: no answer, a body that isn't the contract's, a bare refusal", async () => {
     const textId = crypto.randomUUID()
     const request = { scope: { conversation: "home" }, id: crypto.randomUUID(), update: "AAA=" }
@@ -826,13 +1107,8 @@ describe("sending", () => {
         Effect.provide(FetchHttpClient.layer),
         Effect.provideService(FetchHttpClient.Fetch, fetch),
       )))
-    // Effect 4.1 attaches the named Effect.fn frame to each typed failure.
-    const refused = (error: UpdateNotTaken) => Exit.failCause(Cause.annotate(
-      Cause.fail(error),
-      Context.make(Cause.StackTrace, { name: "POST", parent: undefined, stack: expect.any(Function) }),
-    ))
     const answer = (status: number, body: string) => () => Promise.resolve(new Response(body, { status }))
-    expect(await post(() => Promise.reject(new TypeError("fetch failed")))).toEqual(refused(new UpdateNotTaken({})))
+    expect(await post(() => Promise.reject(new TypeError("fetch failed")))).toEqual(Exit.fail(new UpdateNotTaken({})))
     expect(await post(answer(200, "not json"))).toEqual(Exit.fail(new UpdateNotTaken({ status: 200 })))
     expect(await post(answer(403, "denied"))).toEqual(Exit.fail(new UpdateNotTaken({ status: 403 })))
     expect(await post(answer(403, JSON.stringify({ code: "view_only" })))).toEqual(
@@ -840,13 +1116,8 @@ describe("sending", () => {
     )
     expect(await post(answer(200, JSON.stringify({ txid: 7 })))).toEqual(Exit.succeed({ txid: 7 }))
     // An answer that never comes is no answer.
-    const never = (input: RequestInfo | URL, init?: RequestInit) =>
-      new Promise<Response>((_resolve, reject) => {
-        const signal = input instanceof Request ? input.signal : init?.signal
-        const aborted = () => reject(new Error("aborted"))
-        if (signal?.aborted) aborted()
-        else signal?.addEventListener("abort", aborted, { once: true })
-      })
+    const never = (_input: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new Error("aborted"))))
     expect(await post(never, "50 millis")).toEqual(Exit.fail(new UpdateNotTaken({})))
   })
 })

@@ -10,7 +10,6 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { ControlRuntime } from "@smthrs/control"
-import { Crypto } from "@smthrs/crypto"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Deferred, Effect, Exit, Layer } from "effect"
@@ -75,10 +74,7 @@ describe("racing budget parks", () => {
         return { exits, requests }
       }).pipe(
         Effect.provide(
-          Layer.merge(
-            TestJournal.layer(),
-            ControlRuntime.layerMemory().pipe(Layer.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
-          )
+          Layer.merge(TestJournal.layer(), ControlRuntime.layerMemory().pipe(Layer.provide(NodeCrypto.layer)))
         ),
         Effect.scoped
       )

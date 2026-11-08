@@ -1,0 +1,4 @@
+// A step or a request could not reach another Durable Object: the conversation's or the budget's. It carries what
+// was being reached, never what was sent.
+
+export schema error Unreachable { readonly what: string }

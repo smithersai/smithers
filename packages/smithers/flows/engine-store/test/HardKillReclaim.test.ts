@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
 import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
 /**
@@ -15,13 +16,13 @@ import * as PersistentDatabase from "./fixtures/PersistentDatabase.ts"
  * `heartbeat_at_ms`) lives in `flows_runs` and its consensus lease.
  */
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { DurableWriter } from "@smthrs/database"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Journal, SqlJournal } from "@smthrs/journal"
 import { Node } from "@smthrs/plan"
 import { Ownership, RunStore } from "@smthrs/run-store"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -112,7 +113,11 @@ const insertHardKilledRun = (runId: string) =>
     )).pipe(Effect.orDie)
   })
 
-type Services = Layer.Success<typeof services> | TestClock.TestClock | Crypto.Crypto | Scope.Scope
+type Services =
+  | Layer.Success<typeof services>
+  | TestClock.TestClock
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
+  | Scope.Scope
 
 const run = <A, E>(effect: Effect.Effect<A, E, Services>) =>
   withCrypto(Effect.scoped(effect).pipe(Effect.provide(services), Effect.provide(TestClock.layer())))
@@ -176,7 +181,7 @@ describe("hard-killed running runs are reclaimed (issue #53)", () => {
       const deadOwner: Ownership.OwnerId = { hostId: "dead-host", pid: 424242, nonce: "dead-nonce" }
 
       const onFile = <A, E>(
-        body: Effect.Effect<A, E, Crypto.Crypto | Scope.Scope | TestStoresServices>
+        body: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom) | Scope.Scope | TestStoresServices>
       ) => withCrypto(Effect.scoped(body).pipe(Effect.provide(TestStores.layerAt(filename))))
 
       const result = yield* Effect.gen(function*() {

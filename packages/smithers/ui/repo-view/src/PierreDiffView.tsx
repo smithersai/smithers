@@ -1,15 +1,8 @@
 /** @jsxImportSource react */
 import { processPatch, type CodeViewItem, type DiffsThemeNames, type FileDiffMetadata } from "@pierre/diffs";
 import { CodeView } from "@pierre/diffs/react";
-import {
-  cn,
-  decodeGitPath,
-  DEFAULT_THEME_KEY,
-  type ResolvedPalette,
-  themeRegistry,
-  useResolvedPalette,
-  useResolvedTheme
-} from "@smthrs/ui";
+import { decodeGitPath, DEFAULT_THEME_KEY, type ResolvedPalette, themeRegistry, useResolvedPalette, useResolvedTheme } from "@smthrs/ui";
+import { cn } from "@smthrs/ui-css";
 import { useMemo, type ReactNode } from "react";
 import { useInjectRepoViewCss } from "./styles";
 import { registerVibe } from "./vibe";

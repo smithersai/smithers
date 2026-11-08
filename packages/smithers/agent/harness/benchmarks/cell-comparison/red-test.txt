@@ -1,0 +1,11 @@
+Selected failure evidence (full local transcript retained outside publication):
+  code: 'ERR_MODULE_NOT_FOUND',
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 53.792221
+✖ failing tests:

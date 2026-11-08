@@ -82,11 +82,11 @@ describe("SharedText", () => {
         (places, start) =>
           run(replicas(places.length, (texts) =>
             Effect.gen(function*() {
-              // A marker already in the seed is not a duplicate insertion.
-              // There are more candidate characters than seed characters.
-              const delimiter = Array.from({ length: start.length + 1 }, (_, index) => String.fromCharCode(index))
-                .find((candidate) => !start.includes(candidate))!
-              const inserted = places.map((_, index) => `${delimiter}${index}${delimiter}`)
+              // Both delimiters are absent from the seed. Distinct ends prevent
+              // a match across a marker's close, a seed digit and the next open.
+              const [open, close] = Array.from({ length: start.length + 2 }, (_, index) => String.fromCharCode(index))
+                .filter((candidate) => !start.includes(candidate))
+              const inserted = places.map((_, index) => `${open!}${index}${close!}`)
               const base = SharedText.seed(start)
               for (const text of texts) yield* text.apply(base)
               const updates = yield* Effect.forEach(texts, (text, index) => {
@@ -101,7 +101,7 @@ describe("SharedText", () => {
               }
             })))
       ),
-      { numRuns: 150, examples: [[[0, 0], "<0>"], [[0, 0], "\0"]] }
+      { numRuns: 150, examples: [[[0, 0], "<0>"], [[0, 0], "\0"], [[0.5, 0, 0], "0 "]] }
     )
   })
 

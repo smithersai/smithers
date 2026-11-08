@@ -1,4 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -14,7 +23,8 @@ import {
 
 const roots: Array<string> = []
 const scratch = () => {
-  const root = mkdtempSync(join(tmpdir(), "repo-targets-build-library-"))
+  // Node and source-map tools resolve macOS temporary-directory aliases.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "repo-targets-build-library-")))
   roots.push(root)
   return root
 }
@@ -238,7 +248,9 @@ const packageDirectory = (name: string) => {
     return dirname(require.resolve(`${name}/package.json`))
   } catch {
     let directory = dirname(require.resolve(name))
-    while (!existsSync(join(directory, "package.json")) || JSON.parse(read(join(directory, "package.json"))).name !== name) {
+    while (
+      !existsSync(join(directory, "package.json")) || JSON.parse(read(join(directory, "package.json"))).name !== name
+    ) {
       directory = dirname(directory)
     }
     return directory
@@ -274,7 +286,7 @@ const vibePackage = (root: string, name: string) => {
     [
       "export error Missing { key: string }",
       "",
-      "export function lookup(key: string): Effect<string, Missing> {",
+      "export effect function lookup(key: string): string!Missing {",
       "  if (key === \"\") throw new Missing({ key })",
       "  return key.toUpperCase()",
       "}",
@@ -299,7 +311,7 @@ it("builds a VibeLang package's ESM, declarations, maps and CommonJS with vibela
   expect(JSON.parse(read(join(root, "dist/esm/Lookup.js.map"))).sources).toEqual(["../../src/Lookup.vibe"])
   expect(JSON.parse(read(join(root, "dist/cjs/Lookup.js.map"))).sources).toEqual(["../../src/Lookup.vibe"])
   const cjs = read(join(root, "dist/cjs/Lookup.js"))
-  expect(cjs).toContain("require(\"vibelang-runtime\")")
+  expect(cjs).toContain("require(\"vibelang-runtime/internal\")")
   expect(cjs).not.toMatch(/\.vibe["']/)
   const { Effect } = await import("effect")
   const loaded = createRequire(join(root, "dist/cjs/index.js"))("./index.js")
@@ -339,17 +351,26 @@ it("keeps tsc for a package with no VibeLang in reach, and does not follow insta
   const installed = join(root, "node_modules/installed")
   write(join(installed, "package.json"), JSON.stringify({ name: "installed" }))
   write(join(installed, "src/Stray.vibe"), "export const stray = 1\n")
-  write(join(root, "package.json"), JSON.stringify({ name: "fixture", type: "module", dependencies: { installed: "1.0.0" } }))
+  write(
+    join(root, "package.json"),
+    JSON.stringify({ name: "fixture", type: "module", dependencies: { installed: "1.0.0" } })
+  )
   expect(vibeSourcePackages(root)).toEqual([])
   expect(packageCompiler(root).name).toBe("tsc")
   // A linked package's development dependencies are not followed.
   const dependency = vibePackage(join(workspace, "dev-only"), "dev-only")
   const middle = join(workspace, "middle")
-  write(join(middle, "package.json"), JSON.stringify({ name: "middle", devDependencies: { "dev-only": "workspace:*" } }))
+  write(
+    join(middle, "package.json"),
+    JSON.stringify({ name: "middle", devDependencies: { "dev-only": "workspace:*" } })
+  )
   mkdirSync(join(middle, "node_modules"), { recursive: true })
   symlinkSync(dependency, join(middle, "node_modules/dev-only"), "dir")
   symlinkSync(middle, join(root, "node_modules/middle"), "dir")
-  write(join(root, "package.json"), JSON.stringify({ name: "fixture", type: "module", dependencies: { middle: "workspace:*" } }))
+  write(
+    join(root, "package.json"),
+    JSON.stringify({ name: "fixture", type: "module", dependencies: { middle: "workspace:*" } })
+  )
   expect(vibeSourcePackages(root)).toEqual([])
   expect(vibeSourcePackages(middle).map((entry) => entry.name)).toEqual(["dev-only"])
 })

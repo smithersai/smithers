@@ -147,9 +147,40 @@ exported-but-blank variable is how a shell spells "not configured".
 `Environment.readInteger` requires the whole value to be digits, so `30s` and
 `30abc` are ignored rather than read as 30.
 
-Provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`,
-and `CEREBRAS_API_KEY`) are not in this set. The seat resolver reads them, not
-the CLI, and `smthrs doctor` reports which are present.
+Provider keys are resolved by the seat resolver; `smthrs doctor` reports
+availability without printing their values. Each variable also accepts a
+`_FILE` variant: `ANTHROPIC_API_KEY_FILE`, `OPENAI_API_KEY_FILE`,
+`OPENROUTER_API_KEY_FILE`, `MOONSHOT_API_KEY_FILE`, `GEMINI_API_KEY_FILE`,
+`GOOGLE_API_KEY_FILE`, `CEREBRAS_API_KEY_FILE`, and `AI_GATEWAY_API_KEY_FILE`.
+The Gateway key also configures the Jev evaluator.
+
+Non-empty direct variables take precedence over files. For Gemini, direct
+`GEMINI_API_KEY` precedes `GOOGLE_API_KEY`; only when both are empty or unset
+are `GEMINI_API_KEY_FILE` then `GOOGLE_API_KEY_FILE` considered. A selected
+file that cannot be read safely is refused; it never falls back to another
+credential. Files must be regular, owned by the current OS account, and mode
+0600 or 0400. Symlinks, empty files, multiple lines, whitespace and files over
+16 KiB are refused. One trailing LF or CRLF is allowed. Hosts without POSIX
+ownership checks refuse file credentials. Resolution rereads the file, so
+rotation takes effect on the next resolution. Contents are not exported into
+child environments, detection metadata or diagnostics.
+
+## Saved CLI logins
+
+`SMITHERS_AUTH_FILE` selects a credential store; its default is
+`$HOME/.config/smithers/auth.json`. Native keyring entries are scoped to the
+canonical file path and the complete API origin, including scheme and port.
+Two stores can log in simultaneously to the same API without replacing each
+other. Relative paths and symlinked parents that reach the same file share a
+store. Logout clears only that store's entry.
+
+An explicit token in the auth file takes precedence over a stale native
+entry. Legacy hostname-only keyring entries are read only for an unversioned
+record at the OS account's original default location, bound to the exact API
+origin. Changing `HOME` or selecting another file never claims that legacy
+login. Reading does not migrate or write credentials; the next explicit login
+writes the scoped v2 record. Logout of an eligible legacy record also clears
+its legacy entry. Custom stores never delete it.
 
 ## Planning failures
 

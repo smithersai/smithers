@@ -1,0 +1,311 @@
+// Property tests of the conversation machine with Effect's `Arbitrary` (wiki/decisions/0005-formal-verification.md):
+// random intents run through the real sequencer, then reach clients duplicated, reordered and with gaps.
+import { describe, expect, it } from "@effect/vitest"
+import {
+  apply,
+  type Client,
+  type Conversation,
+  decide,
+  empty,
+  type Event,
+  failPost,
+  type Intent,
+  MAX_TEXT,
+  newClient,
+  post,
+  receive,
+  resume,
+  retryPost,
+} from "../src/core/conversation.vibe"
+
+// Small domains, so ids, client ids and texts collide often.
+const Id = Schema.Literals(["", "r1", "r2", "m1", "m2"])
+const ClientId = Schema.Literals(["", "a", "b", "c"])
+const LONG = "x".repeat(MAX_TEXT + 1)
+const Text = Schema.Literals(["", "   ", "hi", " padded ", "a longer message", LONG])
+
+const IntentSchema = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("Post"), id: Id, clientId: ClientId, name: Schema.Literal("Ada"), text: Text }),
+  Schema.Struct({ type: Schema.Literal("StartReply"), id: Id, inReplyTo: Id }),
+  Schema.Struct({ type: Schema.Literal("AppendReply"), id: Id, text: Text }),
+  Schema.Struct({ type: Schema.Literal("RestartReply"), id: Id }),
+  Schema.Struct({ type: Schema.Literal("FinishReply"), id: Id }),
+  Schema.Struct({ type: Schema.Literal("FailReply"), id: Id, reason: Schema.Literals(["", "timeout"]) }),
+])
+
+const intents = Arbitrary.array(Arbitrary.schema(IntentSchema), { maxLength: 40 })
+
+/** The sequencer's run over `list`: every state it passed through and every event it numbered. */
+function run(list: ReadonlyArray<Intent>) {
+  const states: Array<Conversation> = [empty]
+  const log: Array<Event> = []
+  let state = empty
+  for (const intent of list) {
+    const decision = decide(state, intent)
+    if (!decision.ok) continue
+    log.push(decision.event)
+    state = apply(state, decision.event)
+    states.push(state)
+  }
+  return { state, states, log }
+}
+
+/** The invariants every reachable conversation keeps. */
+function invariant(state: Conversation): boolean {
+  const working = state.agent === "working"
+  if (working !== (state.replying !== "")) return false
+  const open = state.entries.filter((entry) => !entry.done)
+  if (working ? open.length !== 1 || open[0]!.id !== state.replying : open.length !== 0) return false
+  for (let i = 1; i < state.entries.length; i++) if (state.entries[i - 1]!.seq >= state.entries[i]!.seq) return false
+  const ids = state.entries.map((entry) => entry.id)
+  if (ids.some((id) => id === "") || new Set(ids).size !== ids.length) return false
+  const clientIds = state.entries.filter((entry) => entry.author === "person").map((entry) => entry.clientId)
+  if (clientIds.some((id) => id === "") || new Set(clientIds).size !== clientIds.length) return false
+  const replies = state.entries.filter(entry => entry.author === "agent")
+  if (new Set(replies.map(entry => entry.inReplyTo)).size !== replies.length) return false
+  if (!replies.every(reply => state.entries.some(post => post.author === "person" && post.id === reply.inReplyTo && post.seq < reply.seq))) return false
+  return state.entries.every((entry) => entry.seq <= state.seq)
+}
+
+/** Whether `after` is `before` with `event`'s whole effect: a new entry, a longer reply, or the agent's new phase. */
+function hasEffect(before: Conversation, event: Event, after: Conversation): boolean {
+  // An event can only change its own entry; all earlier, unrelated entries survive byte for byte.
+  for (let i = 0; i < before.entries.length; i++) {
+    const entry = before.entries[i]!
+    if (entry.id !== event.id && JSON.stringify(after.entries[i]) !== JSON.stringify(entry)) return false
+    if ((event.type === "Posted" || event.type === "ReplyStarted") && entry.id === event.id) return false
+  }
+  const grew = after.entries.length === before.entries.length + 1
+  const reply = after.entries.find((entry) => entry.id === event.id)
+  switch (event.type) {
+    case "Posted":
+      return grew && after.entries[after.entries.length - 1]!.clientId === event.clientId
+    case "ReplyStarted":
+      return grew && after.agent === "working" && after.replying === event.id && reply?.inReplyTo === event.inReplyTo
+    case "ReplyDelta":
+      return reply !== undefined && reply.text.endsWith(event.text) && after.agent === "working"
+    case "ReplyRestarted":
+      return reply !== undefined && reply.text === "" && !reply.done && after.agent === "working" && after.replying === event.id
+    case "ReplyFinished":
+      return reply !== undefined && reply.done && after.agent === "idle" && after.replying === ""
+    case "ReplyFailed":
+      return reply !== undefined && reply.done && reply.error !== "" && after.agent === "failed"
+  }
+}
+
+effect function holds<A>(arbitrary: Arbitrary.Arbitrary<A>, property: (value: A) => boolean) {
+  const result = try Arbitrary.checkEffect(arbitrary, property, { runs: 400 })
+  try Effect.try(() => expect(Arbitrary.formatCheckFailure(result)).toBeUndefined())
+}
+
+describe("the sequencer", () => {
+  it.effect("numbers its events 1, 2, 3, … with no gaps", () =>
+    holds(intents, (list) => run(list).log.every((event, index) => event.seq === index + 1)))
+
+  it.effect("keeps every invariant in every state it reaches", () =>
+    holds(intents, (list) => run(list).states.every(invariant)))
+
+  it.effect("records only what it decided: applying its event advances seq by exactly one", () =>
+    holds(intents, (list) => {
+      let state = empty
+      for (const intent of list) {
+        const decision = decide(state, intent)
+        if (!decision.ok) continue
+        const next = apply(state, decision.event)
+        if (next.seq !== state.seq + 1) return false
+        state = next
+      }
+      return true
+    }))
+
+  it.effect("gives every event it numbers the full effect its type names", () =>
+    holds(intents, (list) => {
+      let state = empty
+      for (const intent of list) {
+        const decision = decide(state, intent)
+        if (!decision.ok) continue
+        const event = decision.event
+        const next = apply(state, event)
+        if (!hasEffect(state, event, next)) return false
+        state = next
+      }
+      return true
+    }))
+
+  it.effect("refuses a second post with the same client id", () =>
+    holds(intents, (list) => {
+      const { state } = run(list)
+      return state.entries.filter((entry) => entry.author === "person").every((entry) =>
+        !decide(state, { type: "Post", id: "m9", clientId: entry.clientId, name: "Ada", text: "again" }).ok
+      )
+    }))
+
+  it("trims a post and refuses blank or overlong ones", () => {
+    expect(decide(empty, { type: "Post", id: "m1", clientId: "a", name: "Ada", text: "  hi  " })).toEqual({
+      ok: true,
+      event: { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "hi" },
+    })
+    expect(decide(empty, { type: "Post", id: "m1", clientId: "a", name: "Ada", text: "   " })).toEqual({ ok: false, refusal: "empty" })
+    expect(decide(empty, { type: "Post", id: "m1", clientId: "a", name: "Ada", text: LONG })).toEqual({ ok: false, refusal: "too-long" })
+    expect(decide(empty, { type: "Post", id: "m1", clientId: "", name: "Ada", text: "hi" })).toEqual({ ok: false, refusal: "duplicate" })
+  })
+
+  it("refuses empty and reused entry ids for posts and replies without overwriting history", () => {
+    const original: Intent = { type: "Post", id: "same", clientId: "a", name: "Ada", text: "original" }
+    const { state } = run([original])
+    for (const id of ["", "same"]) {
+      expect(decide(state, { type: "Post", id, clientId: "b", name: "Grace", text: "new" }).ok).toBe(false)
+      expect(decide(state, { type: "StartReply", id, inReplyTo: "same" }).ok).toBe(false)
+    }
+    const finished = run([original, { type: "StartReply", id: "reply", inReplyTo: "same" }, { type: "FinishReply", id: "reply" }]).state
+    expect(decide(finished, { type: "StartReply", id: "reply", inReplyTo: "same" }).ok).toBe(false)
+    expect(decide(finished, { type: "Post", id: "reply", clientId: "b", name: "Grace", text: "new" }).ok).toBe(false)
+    const attacked = run([original, { type: "StartReply", id: "same", inReplyTo: "m1" }, { type: "AppendReply", id: "same", text: " agent reply" }, { type: "FailReply", id: "same", reason: "oops" }])
+    expect(attacked.state.entries).toEqual(state.entries)
+  })
+
+  it("restarts only the reply that streams, which then streams again from nothing", () => {
+    const one = apply(empty, { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "hi" })
+    expect(decide(one, { type: "RestartReply", id: "r1" })).toEqual({ ok: false, refusal: "not-replying" })
+    const started = apply(one, { type: "ReplyStarted", seq: 2, id: "r1", inReplyTo: "m1" })
+    const partial = apply(started, { type: "ReplyDelta", seq: 3, id: "r1", text: "Hal" })
+    expect(decide(partial, { type: "RestartReply", id: "r2" })).toEqual({ ok: false, refusal: "not-replying" })
+    const restart = decide(partial, { type: "RestartReply", id: "r1" })
+    expect(restart).toEqual({ ok: true, event: { type: "ReplyRestarted", seq: 4, id: "r1" } })
+    const restarted = apply(partial, { type: "ReplyRestarted", seq: 4, id: "r1" })
+    expect(restarted.entries[1]).toMatchObject({ id: "r1", text: "", done: false })
+    expect(restarted.entries[0]).toBe(partial.entries[0])
+    const finished = apply(apply(restarted, { type: "ReplyDelta", seq: 5, id: "r1", text: "Hello" }), { type: "ReplyFinished", seq: 6, id: "r1" })
+    expect(finished.entries[1]).toMatchObject({ text: "Hello", done: true })
+    expect(decide(finished, { type: "RestartReply", id: "r1" })).toEqual({ ok: false, refusal: "not-replying" })
+    // A restart nobody is streaming only advances the cursor.
+    expect(apply(finished, { type: "ReplyRestarted", seq: 7, id: "r1" })).toEqual({ ...finished, seq: 7 })
+  })
+
+  it("takes one reply at a time", () => {
+    const one = apply(empty, { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "hi" })
+    const started = apply(one, { type: "ReplyStarted", seq: 2, id: "r1", inReplyTo: "m1" })
+    expect(decide(started, { type: "StartReply", id: "r2", inReplyTo: "m1" })).toEqual({ ok: false, refusal: "busy" })
+    expect(decide(started, { type: "AppendReply", id: "r2", text: "x" })).toEqual({ ok: false, refusal: "not-replying" })
+    const finished = apply(apply(started, { type: "ReplyDelta", seq: 3, id: "r1", text: "Hello" }), { type: "ReplyFinished", seq: 4, id: "r1" })
+    expect(finished.entries.slice(1)).toEqual([
+      { id: "r1", seq: 2, clientId: "", inReplyTo: "m1", author: "agent", name: "VibeLang agent", text: "Hello", done: true, error: "" },
+    ])
+    expect(finished.agent).toBe("idle")
+  })
+})
+
+describe("apply", () => {
+  it("ignores a creation the sequencer would refuse: an empty client id, an empty or reused entry id", () => {
+    const one = apply(empty, { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "hi" })
+    expect(apply(one, { type: "Posted", seq: 2, id: "m2", clientId: "", name: "Ada", text: "x" })).toEqual({ ...one, seq: 2 })
+    expect(apply(one, { type: "Posted", seq: 2, id: "m1", clientId: "b", name: "Ada", text: "x" })).toEqual({ ...one, seq: 2 })
+    expect(apply(one, { type: "ReplyStarted", seq: 2, id: "", inReplyTo: "m1" })).toEqual({ ...one, seq: 2 })
+    expect(apply(one, { type: "ReplyStarted", seq: 2, id: "m1", inReplyTo: "m1" })).toEqual({ ...one, seq: 2 })
+  })
+
+  it("ignores an event that isn't the next one", () => {
+    const one = apply(empty, { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "hi" })
+    expect(apply(one, { type: "Posted", seq: 1, id: "m2", clientId: "b", name: "Ada", text: "again" })).toBe(one)
+    expect(apply(one, { type: "Posted", seq: 3, id: "m2", clientId: "b", name: "Ada", text: "ahead" })).toBe(one)
+  })
+
+  it("advances past an event whose content doesn't fit, without changing anything else", () => {
+    const stray = apply(empty, { type: "ReplyDelta", seq: 1, id: "r9", text: "x" })
+    expect(stray).toEqual({ ...empty, seq: 1 })
+    const one = apply(empty, { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "hi" })
+    const failed = apply(apply(one, { type: "ReplyStarted", seq: 2, id: "r1", inReplyTo: "m1" }), { type: "ReplyFailed", seq: 3, id: "r1", reason: "" })
+    expect(failed.agent).toBe("failed")
+    expect(failed.entries[1]!.error).toBe("failed")
+  })
+})
+
+/** Delivery orders: each element is an index into the log; out-of-range and repeated indexes are allowed. */
+const deliveries = Arbitrary.all({
+  list: intents,
+  order: Arbitrary.array(Arbitrary.map(Arbitrary.schema(Schema.Int), (n) => Math.abs(n) % 61), { maxLength: 120 }),
+})
+
+/** A client fed `order` from `log`, replaying from its last seq whenever it notices a gap, with the final event eventually delivered. */
+function deliver(log: ReadonlyArray<Event>, order: ReadonlyArray<number>, suppressGap = false): Client {
+  let client = newClient
+  // Mutation control: suppress only the protocol's gap signal, retaining its other receive behavior.
+  const receiveEvent = (client: Client, event: Event): Client => {
+    const next = receive(client, event)
+    return suppressGap ? { ...next, gap: false } : next
+  }
+  const replay = () => {
+    client = resume(client)
+    for (const event of log) client = receiveEvent(client, event)
+  }
+  for (const index of order) {
+    const event = log[index]
+    if (event === undefined) continue
+    client = receiveEvent(client, event)
+    if (client.gap) replay()
+  }
+  const last = log[log.length - 1]
+  if (last !== undefined) {
+    client = receiveEvent(client, last)
+    if (client.gap) replay()
+  }
+  return client
+}
+
+describe("a client", () => {
+  it("detects the receive mutation that never requests replay", () => {
+    const { state, log } = run([
+      { type: "Post", id: "m1", clientId: "a", name: "Ada", text: "hi" },
+      { type: "StartReply", id: "r1", inReplyTo: "m1" },
+    ])
+    expect(deliver(log, [1], true).conversation).not.toEqual(state)
+  })
+
+  it("requests gap replay through receive when only the final event is delivered", () => {
+    const { state, log } = run([
+      { type: "Post", id: "m1", clientId: "a", name: "Ada", text: "hi" },
+      { type: "StartReply", id: "r1", inReplyTo: "m1" },
+    ])
+    expect(deliver(log, [1]).conversation).toEqual(state)
+  })
+
+  it.effect("converges on the sequencer's conversation whatever order, duplicates or gaps it sees", () =>
+    holds(deliveries, ({ list, order }) => {
+      const { state, log } = run(list)
+      return JSON.stringify(deliver(log, order).conversation) === JSON.stringify(state)
+    }))
+
+  it.effect("ignores an event it already has", () =>
+    holds(deliveries, ({ list, order }) => {
+      const { log } = run(list)
+      const client = deliver(log, order)
+      return log.every((event) => receive(client, event) === client)
+    }))
+
+  it("shows its own post as pending until the post's event arrives", () => {
+    const sent = post(newClient, "a", "  hi ")
+    expect(sent.pending).toEqual([{ clientId: "a", text: "hi", error: "" }])
+    expect(post(sent, "a", "hi")).toBe(sent)
+    expect(post(sent, "b", "   ")).toBe(sent)
+    const failed = failPost(sent, "a", "")
+    expect(failed.pending[0]!.error).toBe("failed")
+    const confirmed = receive(sent, { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "hi" })
+    expect(confirmed.pending).toEqual([])
+    expect(confirmed.conversation.entries[0]!.text).toBe("hi")
+  })
+
+  it("retries a failed pending post without changing its id, text or its neighbors", () => {
+    const client = failPost(post(post(newClient, "a", "one"), "b", "two"), "a", "offline")
+    const retry = retryPost(client, "a")
+    expect(retry).toEqual({ ...client, pending: [{ clientId: "a", text: "one", error: "" }, client.pending[1]] })
+    expect(retryPost(client, "missing")).toEqual(client)
+  })
+
+  it("marks a gap once and closes it on resume", () => {
+    const ahead = receive(newClient, { type: "ReplyStarted", seq: 2, id: "r1", inReplyTo: "m1" })
+    expect(ahead.gap).toBe(true)
+    expect(receive(ahead, { type: "ReplyStarted", seq: 3, id: "r1", inReplyTo: "m1" })).toBe(ahead)
+    expect(resume(ahead).gap).toBe(false)
+    expect(resume(newClient)).toBe(newClient)
+  })
+})

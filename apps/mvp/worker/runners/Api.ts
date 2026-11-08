@@ -1,12 +1,14 @@
 import { AgentRunner, Transcript } from "@smthrs/agent"
-import { Crypto, digestSync, WebCrypto } from "@smthrs/crypto"
+import { digestSync, WebCrypto } from "@smthrs/crypto"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Redacted, Schema } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
-import { SUMMARY_EVERY_SECONDS } from "../../src/features/transcript/contract.ts"
 import { base64Bytes, LEASE_SECONDS, MAX_RUNNER_BODY_BYTES } from "../../src/features/runners/contract.ts"
-import { readBounded } from "#vibelang/emitted/worker/Body"
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import { SUMMARY_EVERY_SECONDS } from "../../src/features/transcript/contract.ts"
+import { readBounded } from "../Body.ts"
+import { codeOf } from "../ErrorCode.ts"
 import { bearerOf } from "../RunCredentials.ts"
 import * as Fleet from "./Fleet.ts"
 import { SETTLE_GRACE_SECONDS } from "./Jobs.ts"
@@ -59,13 +61,13 @@ import { Transcripts } from "./RunContent.ts"
  */
 export const eventLag = Metric.histogram("smithers_agent_event_lag_ms", {
   description: "Milliseconds from a runner receiving an agent's event to its run's transcript storing it",
-  boundaries: [100, 250, 500, 1000, 2000, 3000, 5000, 10_000, 30_000, 60_000, 300_000],
+  boundaries: [100, 250, 500, 1000, 2000, 3000, 5000, 10_000, 30_000, 60_000, 300_000]
 })
 
 /** Runner route requests, by `route` (`claim`, `heartbeat`, `settle`, `events`) and `outcome`. */
 export const requests = Metric.counter("smithers_runner_requests", {
   description: "Requests to the runner routes, by route and outcome",
-  incremental: true,
+  incremental: true
 })
 
 type Route = keyof typeof AgentRunner.ROUTES
@@ -76,7 +78,7 @@ const ROUTE_OF: Readonly<Record<string, Route>> = {
   [AgentRunner.ROUTES.heartbeat]: "heartbeat",
   [AgentRunner.ROUTES.settle]: "settle",
   [AgentRunner.ROUTES.events]: "events",
-  [AgentRunner.ROUTES.gitCredential]: "gitCredential",
+  [AgentRunner.ROUTES.gitCredential]: "gitCredential"
 }
 
 /** The most often a runner's `seen_at` is written: the fleet reads Offline after 45 s unseen. */
@@ -126,9 +128,9 @@ const scrubShapes = Transcript.scrubber()
 const isUuid = Schema.is(Schema.String.check(Schema.isUUID()))
 
 /** A fresh claim id. */
-const newClaim = Effect.flatMap(Crypto.Crypto, (crypto) => crypto.randomUUIDv4()).pipe(
+const newClaim = SecureRandom.SecureRandom.use((random) => random.uuidV4()).pipe(
   Effect.provide(WebCrypto.layer),
-  Effect.orDie,
+  Effect.orDie
 )
 
 /**
@@ -137,7 +139,11 @@ const newClaim = Effect.flatMap(Crypto.Crypto, (crypto) => crypto.randomUUIDv4()
  */
 export interface Steering<R> {
   readonly pending: (task: AgentRunner.Task) => Effect.Effect<ReadonlyArray<AgentRunner.Steer>, unknown, R>
-  readonly delivered: (task: AgentRunner.Task, key: string, ids: ReadonlyArray<string>) => Effect.Effect<void, unknown, R>
+  readonly delivered: (
+    task: AgentRunner.Task,
+    key: string,
+    ids: ReadonlyArray<string>
+  ) => Effect.Effect<void, unknown, R>
 }
 
 /** A runner as its request authenticated it. */
@@ -183,13 +189,15 @@ export const fits = (changes: AgentRunner.Changes, limits: AgentRunner.Limits): 
 
 /** `request`'s body decoded by `decode`: the status to refuse with, else the value. */
 const bodyOf = <A>(request: HttpServerRequest.HttpServerRequest, decode: (text: string) => Effect.Effect<A, unknown>) =>
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const body = yield* readBounded(request, MAX_RUNNER_BODY_BYTES).pipe(Effect.result)
     if (body._tag === "Failure") {
       return { _tag: "Refused", status: body.failure.reason === "too_large" ? 413 : 400 } as const
     }
     const decoded = yield* decode(body.success).pipe(Effect.option)
-    return Option.isNone(decoded) ? ({ _tag: "Refused", status: 400 } as const) : ({ _tag: "Read", value: decoded.value } as const)
+    return Option.isNone(decoded)
+      ? ({ _tag: "Refused", status: 400 } as const)
+      : ({ _tag: "Read", value: decoded.value } as const)
   })
 
 /**
@@ -213,14 +221,17 @@ export const make = <E, R>(
      * (decision 0148); `none` where the App isn't configured or installed there. Absent: the route answers `404`.
      */
     readonly gitCredential?: GitCredentials<R>
-  },
+  }
 ) => {
   const leaseSeconds = options.leaseSeconds ?? LEASE_SECONDS
   const pollMillis = options.pollMillis ?? 1_000
 
   /** One request's records: a log line `runner.<route>`, its span's status, and a count. */
-  const recorded = <RR>(route: Route, run: (fields: Fields) => Effect.Effect<HttpServerResponse.HttpServerResponse, never, RR>) =>
-    Effect.gen(function* () {
+  const recorded = <RR>(
+    route: Route,
+    run: (fields: Fields) => Effect.Effect<HttpServerResponse.HttpServerResponse, never, RR>
+  ) =>
+    Effect.gen(function*() {
       const startedAt = yield* Clock.currentTimeMillis
       const fields: Fields = {}
       const response = yield* run(fields)
@@ -230,7 +241,7 @@ export const make = <E, R>(
       yield* Metric.update(Metric.withAttributes(requests, { route, outcome }), 1)
       yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
       yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
-        `runner.${route}`,
+        `runner.${route}`
       ).pipe(Effect.annotateLogs({ ...fields, outcome }))
       return response
     }).pipe(Effect.withSpan(`runner.${route}`, { kind: "server" }))
@@ -247,7 +258,7 @@ export const make = <E, R>(
 
   /** The registered, unremoved runner whose token `request` carries, seen now. */
   const runnerOf = (request: HttpServerRequest.HttpServerRequest) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const token = bearerOf(request)
       if (Option.isNone(token)) return Option.none<Runner>()
       const tokenSha256 = digestSync(token.value)
@@ -291,7 +302,7 @@ export const make = <E, R>(
   /** `lockCurrent`, saying what failed: the runner itself (rotated, retired, cleared) or its repository's installation. */
   const standing = (runner: Runner, lock: "share" | "write" = "share") =>
     Effect.flatMap(SqlClient.SqlClient, (sql) =>
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         // A transaction that goes on to update the row takes the write lock now: two that upgraded a shared one would
         // each wait on the other.
         const [held] = yield* sql`
@@ -312,7 +323,7 @@ export const make = <E, R>(
    */
   const expireOverdue = (runner: Runner) =>
     Effect.flatMap(SqlClient.SqlClient, (sql) =>
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         const expired = yield* sql<{ readonly key: string }>`
           UPDATE agent_jobs SET status = 'failed', outcome = ${JSON.stringify(TIMEOUT)}::jsonb,
             claim = NULL, lease_until = NULL, cancel_requested = true, settled_at = now(), updated_at = now()
@@ -332,7 +343,7 @@ export const make = <E, R>(
    */
   const reclaim = (runner: Runner, running: ReadonlyArray<string>) =>
     Effect.flatMap(SqlClient.SqlClient, (sql) =>
-      sql.withTransaction(Effect.gen(function* () {
+      sql.withTransaction(Effect.gen(function*() {
         if (!(yield* lockCurrent(runner))) return undefined
         yield* expireOverdue(runner)
         return yield* sql<Claimed>`
@@ -357,7 +368,7 @@ export const make = <E, R>(
    */
   const claimOnce = (runner: Runner, claim: string, profiles: ReadonlyArray<string>, minQueuedSeconds: number) =>
     Effect.flatMap(SqlClient.SqlClient, (sql) =>
-      sql.withTransaction(Effect.gen(function* () {
+      sql.withTransaction(Effect.gen(function*() {
         if (!(yield* lockCurrent(runner))) return undefined
         yield* expireOverdue(runner)
         return yield* sql<Claimed>`
@@ -383,13 +394,13 @@ export const make = <E, R>(
 
   /** `POST /api/runners/claim`. */
   const claim = (request: HttpServerRequest.HttpServerRequest, runner: Runner, fields: Fields) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const wants = yield* bodyOf(request, decodeClaim)
       if (wants._tag === "Refused") return refuse(fields, wants.status, "invalid")
       // No registration through the repository's Admin role authorized it: it needs registering again (decision 0148).
       if (!runner.authorized) return refuse(fields, 403, "not_authorized")
       const job = (row: Claimed, reclaimed: boolean) =>
-        Effect.gen(function* () {
+        Effect.gen(function*() {
           const task = yield* decodeTask(row.task).pipe(Effect.orDie)
           fields.key = row.key
           fields.generation = row.generation
@@ -397,7 +408,7 @@ export const make = <E, R>(
           // The run reads Working at once; a failure here leaves that to the job's next probe, never refuses the claim.
           yield* Fleet.claimed(row.key, runner.name).pipe(
             Effect.provide(database),
-            Effect.catchCause((cause) => Effect.sync(() => void (fields.fleet = codeOf(Cause.squash(cause))))),
+            Effect.catchCause((cause) => Effect.sync(() => void (fields.fleet = codeOf(Cause.squash(cause)))))
           )
           const job: AgentRunner.Job = {
             key: row.key,
@@ -406,7 +417,7 @@ export const make = <E, R>(
             task,
             deadline: Number(row.deadline),
             leaseSeconds,
-            reclaimed,
+            reclaimed
           }
           if (options.onClaimed !== undefined) {
             const failed = (error: unknown) =>
@@ -421,7 +432,7 @@ export const make = <E, R>(
       // A runner no longer current, its repository's installation forgotten included, hears why rather than an empty
       // answer, and records nothing: the check and its machine facts are one transaction, holding it current.
       const current = yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
-        sql.withTransaction(Effect.gen(function* () {
+        sql.withTransaction(Effect.gen(function*() {
           if (!(yield* lockCurrent(runner, machine === undefined ? "share" : "write"))) return false
           if (machine === undefined) return true
           // Rounded, so a claim that changes nothing a person reads doesn't rewrite the synced row.
@@ -434,14 +445,14 @@ export const make = <E, R>(
               AND (version, load1, disk_free_gb, held) IS DISTINCT FROM
                 (${machine.version ?? null}::text, ${load1}::float8, ${disk}::float8, ${machine.held ?? null}::text)`
           return true
-        }))
-      ).pipe(Effect.provide(database))
+        }))).pipe(Effect.provide(database))
       if (!current) return refuse(fields, 403, "not_authorized")
       const held = yield* reclaim(runner, wants.value.running).pipe(Effect.provide(database))
       if (held !== undefined) return yield* job(held, true)
       const deadline = (yield* Clock.currentTimeMillis) + wants.value.waitSeconds * 1000
       while (wants.value.free > 0) {
-        const row = yield* claimOnce(runner, yield* newClaim, wants.value.profiles, wants.value.minQueuedSeconds ?? 0).pipe(Effect.provide(database))
+        const row = yield* claimOnce(runner, yield* newClaim, wants.value.profiles, wants.value.minQueuedSeconds ?? 0)
+          .pipe(Effect.provide(database))
         if (row !== undefined) return yield* job(row, false)
         const left = deadline - (yield* Clock.currentTimeMillis)
         if (left <= 0) break
@@ -449,7 +460,7 @@ export const make = <E, R>(
       }
       // Its authorization may have ended while it waited: a claim that found nothing says so, never an empty answer.
       const still = yield* Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(lockCurrent(runner))).pipe(
-        Effect.provide(database),
+        Effect.provide(database)
       )
       if (!still) return refuse(fields, 403, "not_authorized")
       return answer(fields, "empty", { job: null })
@@ -457,13 +468,13 @@ export const make = <E, R>(
 
   /** `POST /api/runners/heartbeat`. */
   const heartbeat = (request: HttpServerRequest.HttpServerRequest, runner: Runner, fields: Fields) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const beat = yield* bodyOf(request, decodeHeartbeat)
       if (beat._tag === "Refused") return refuse(fields, beat.status, "invalid")
       fields.key = beat.value.key
       const sql = yield* SqlClient.SqlClient
       // One transaction, the runner held current through it (decision 0148): the lease, and the steers handed out.
-      return yield* sql.withTransaction(Effect.gen(function* () {
+      return yield* sql.withTransaction(Effect.gen(function*() {
         if (!(yield* lockCurrent(runner))) {
           // Not current: no lease and no steers. One thing only reaches the runner, for its own claim: a Stop. The host
           // ends that job cancelled itself and says `cancel`, so the runner stops it and frees its slot (decision 0148).
@@ -483,7 +494,10 @@ export const make = <E, R>(
           if (told === undefined) return refuse(fields, 403, "not_authorized")
           fields.code = "not_authorized"
           fields.outcome = "cancelled"
-          return HttpServerResponse.jsonUnsafe({ code: "not_authorized", cancel: true }, { status: 403, headers: noStore })
+          return HttpServerResponse.jsonUnsafe({ code: "not_authorized", cancel: true }, {
+            status: 403,
+            headers: noStore
+          })
         }
         // A lease that ran out still holds the job: the runner came back.
         const [row] = isUuid(beat.value.claim)
@@ -491,7 +505,9 @@ export const make = <E, R>(
             UPDATE agent_jobs SET lease_until = now() + ${leaseSeconds}::int * interval '1 second', updated_at = now(),
               account_label = coalesce(${beat.value.account ?? null}, account_label),
               cpu_seconds = coalesce(${beat.value.cpuSeconds ?? null}::float8, cpu_seconds),
-              usage = coalesce(${beat.value.usage === undefined ? null : JSON.stringify(beat.value.usage)}::jsonb, usage),
+              usage = coalesce(${
+            beat.value.usage === undefined ? null : JSON.stringify(beat.value.usage)
+          }::jsonb, usage),
               claimed_token_sha256 = coalesce(claimed_token_sha256, ${runner.tokenSha256})
             WHERE key = ${beat.value.key} AND claim = ${beat.value.claim}::uuid AND runner_id = ${runner.id}::uuid
               AND status = 'claimed'
@@ -506,7 +522,7 @@ export const make = <E, R>(
           held: true,
           cancel: row.cancel,
           leaseSeconds,
-          ...(steers.length === 0 ? {} : { steers }),
+          ...(steers.length === 0 ? {} : { steers })
         })
       }))
     }).pipe(Effect.provide(database))
@@ -520,9 +536,9 @@ export const make = <E, R>(
     stored: unknown,
     key: string,
     delivered: ReadonlyArray<string>,
-    fields: Fields,
+    fields: Fields
   ) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const task = yield* decodeTask(stored).pipe(Effect.orDie)
       if (delivered.length > 0) {
         yield* steering.delivered(task, key, delivered)
@@ -537,19 +553,19 @@ export const make = <E, R>(
           fields.steering = codeOf(Cause.squash(cause))
           return [] as ReadonlyArray<AgentRunner.Steer>
         })
-      ),
+      )
     )
 
   /** `POST /api/runners/settle`. */
   const settle = (request: HttpServerRequest.HttpServerRequest, runner: Runner, fields: Fields) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const settled = yield* bodyOf(request, decodeSettle)
       if (settled._tag === "Refused") return refuse(fields, settled.status, "invalid")
       const { key, claim } = settled.value
       fields.key = key
       if (!isUuid(claim)) return answer(fields, "not_held", { recorded: false })
       const sql = yield* SqlClient.SqlClient
-      return yield* sql.withTransaction(Effect.gen(function* () {
+      return yield* sql.withTransaction(Effect.gen(function*() {
         // Recorded only while the runner is current, as a claim requires, held so until it commits (decision 0148).
         if (!(yield* lockCurrent(runner))) return refuse(fields, 403, "not_authorized")
         const [row] = yield* sql<{ readonly task: unknown; readonly cancelRequested: boolean }>`
@@ -559,7 +575,9 @@ export const make = <E, R>(
         if (row === undefined) return answer(fields, "not_held", { recorded: false })
         const task = yield* decodeTask(row.task).pipe(Effect.orDie)
         let outcome = settled.value.outcome
-        if (outcome._tag === "Done" && !fits(outcome.changes, task.limits)) outcome = { _tag: "Failed", reason: "too_large" }
+        if (outcome._tag === "Done" && !fits(outcome.changes, task.limits)) {
+          outcome = { _tag: "Failed", reason: "too_large" }
+        }
         // A retryable end of a job the host asked to stop ends it cancelled.
         if (outcome._tag === "Retryable" && row.cancelRequested) outcome = { _tag: "Cancelled", processTreeGone: true }
         const status = outcome._tag === "Retryable" ? "retryable" : outcome._tag.toLowerCase()
@@ -574,7 +592,7 @@ export const make = <E, R>(
           // Recorded with the settlement's claim still checked; a failure is logged and never refuses the settlement.
           yield* options.steering.delivered(task, key, delivered).pipe(
             Effect.tap(() => Effect.sync(() => (fields.delivered = delivered.length))),
-            Effect.catchCause((cause) => Effect.sync(() => (fields.steering = codeOf(Cause.squash(cause))))),
+            Effect.catchCause((cause) => Effect.sync(() => (fields.steering = codeOf(Cause.squash(cause)))))
           )
         }
         return answer(fields, "recorded", { recorded: true })
@@ -583,7 +601,7 @@ export const make = <E, R>(
 
   /** `POST /api/runners/events`. */
   const events = (request: HttpServerRequest.HttpServerRequest, runner: Runner, fields: Fields) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const sent = yield* bodyOf(request, decodeEvents)
       if (sent._tag === "Refused") return refuse(fields, sent.status, "invalid")
       const { key } = sent.value
@@ -591,7 +609,7 @@ export const make = <E, R>(
       fields.events = sent.value.events.length
       const sql = yield* SqlClient.SqlClient
       // One transaction, the runner held current through it, the transcript's append included (decision 0148).
-      return yield* sql.withTransaction(Effect.gen(function* () {
+      return yield* sql.withTransaction(Effect.gen(function*() {
         if (!(yield* lockCurrent(runner))) return refuse(fields, 403, "not_authorized")
         // The runner that holds or held the job's claim: its settlement may come before its last events.
         const [row] = yield* sql<{ readonly task: unknown; readonly generation: number }>`
@@ -638,7 +656,7 @@ export const make = <E, R>(
    * Never logged: the record names the job and the outcome only.
    */
   const gitCredential = (request: HttpServerRequest.HttpServerRequest, runner: Runner, fields: Fields) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const asked = yield* bodyOf(request, decodeGitCredential)
       if (asked._tag === "Refused") return refuse(fields, asked.status, "invalid")
       fields.key = asked.value.key
@@ -656,7 +674,7 @@ export const make = <E, R>(
       }
       // One transaction on the job's row, the runner held current through it: the hold, and the reservation of its one
       // mint.
-      const reserved = yield* sql.withTransaction(Effect.gen(function* () {
+      const reserved = yield* sql.withTransaction(Effect.gen(function*() {
         const held = yield* standing(runner)
         // Rotated, retired or cleared since the request authenticated: refused as such, never `not_held`.
         if (held === "runner") return { _tag: "NotAuthorized" } as const
@@ -701,7 +719,9 @@ export const make = <E, R>(
         if (row.reservedSeconds !== null && row.reservedSeconds < RESERVATION_SECONDS) {
           return { _tag: "Busy", retryAfter: RESERVATION_SECONDS - row.reservedSeconds } as const
         }
-        if (row.retrySeconds !== null && row.retrySeconds > 0) return { _tag: "Busy", retryAfter: row.retrySeconds } as const
+        if (row.retrySeconds !== null && row.retrySeconds > 0) {
+          return { _tag: "Busy", retryAfter: row.retrySeconds } as const
+        }
         yield* sql`
           UPDATE agent_jobs SET git_credential_reservation = ${reservation}::uuid,
             git_credential_reserved_at = clock_timestamp(), git_credential_at = clock_timestamp()
@@ -729,7 +749,9 @@ export const make = <E, R>(
       // A request that dies here leaves its reservation, which goes stale after `RESERVATION_SECONDS`. A mint that
       // succeeds at GitHub after the timeout is never read, so it can't be revoked; GitHub ends it within the hour
       // (decision 0148).
-      const minted = yield* Effect.exit(credentials.mint(runner.repoId).pipe(Effect.timeout(MINT_TIMEOUT_SECONDS * 1000)))
+      const minted = yield* Effect.exit(
+        credentials.mint(runner.repoId).pipe(Effect.timeout(MINT_TIMEOUT_SECONDS * 1000))
+      )
       if (minted._tag === "Failure") {
         // GitHub's wait when it said one, never less than the gap: a failing GitHub is asked at most that often.
         const error = Cause.findErrorOption(minted.cause)
@@ -750,7 +772,7 @@ export const make = <E, R>(
       // Counted in the statement that checks the hold again, with the runner held current until it commits (decision
       // 0148): settled, retired, unauthorized, uninstalled or past its deadline while GitHub minted, or this
       // reservation taken over, and the credential is never delivered.
-      const finalized = yield* sql.withTransaction(Effect.gen(function* () {
+      const finalized = yield* sql.withTransaction(Effect.gen(function*() {
         if (!(yield* lockCurrent(runner))) return { current: false, issued: false }
         // The job's row too, then the time read now (`clock_timestamp()`, not the transaction's start): a lock waited on
         // across the deadline issues nothing.
@@ -784,7 +806,7 @@ export const make = <E, R>(
         yield* release(CREDENTIAL_GAP_SECONDS)
         // Which refusal, decided again under the runner's locks, since the revoke took time: no longer current is
         // `not_authorized`; still held is another request's reservation (this one waits its turn); else `not_held`.
-        const after = yield* sql.withTransaction(Effect.gen(function* () {
+        const after = yield* sql.withTransaction(Effect.gen(function*() {
           if (!(yield* lockCurrent(runner))) return "not_authorized" as const
           const [mine] = yield* sql`
             SELECT 1 FROM agent_jobs
@@ -799,7 +821,7 @@ export const make = <E, R>(
         remote: credential.remote,
         username: credential.username,
         password: Redacted.value(credential.password),
-        expiresAt: credential.expiresAt,
+        expiresAt: credential.expiresAt
       })
     }).pipe(Effect.provide(database))
 
@@ -810,7 +832,7 @@ export const make = <E, R>(
    * and frees its slot. Anything else is `401 authentication`: no lease, steers or other work (decision 0148).
    */
   const stopForPastToken = (request: HttpServerRequest.HttpServerRequest, fields: Fields) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const token = bearerOf(request)
       const beat = Option.isNone(token) ? undefined : yield* bodyOf(request, decodeHeartbeat)
       if (Option.isNone(token) || beat === undefined || beat._tag === "Refused" || !isUuid(beat.value.claim)) {
@@ -818,7 +840,7 @@ export const make = <E, R>(
       }
       const digest = digestSync(token.value)
       const sql = yield* SqlClient.SqlClient
-      const told = yield* sql.withTransaction(Effect.gen(function* () {
+      const told = yield* sql.withTransaction(Effect.gen(function*() {
         const [stopped] = yield* sql<{ readonly key: string }>`
           UPDATE agent_jobs SET status = 'cancelled', outcome = ${JSON.stringify(STOPPED)}::jsonb, claim = NULL,
             stopped_claim = claim, lease_until = NULL, settled_at = now(), updated_at = now()
@@ -842,11 +864,11 @@ export const make = <E, R>(
       return HttpServerResponse.jsonUnsafe({ code: "authentication", cancel: true }, { status: 401, headers: noStore })
     }).pipe(Effect.provide(database))
 
-  const fetch = Effect.gen(function* () {
+  const fetch = Effect.gen(function*() {
     const request = yield* HttpServerRequest.HttpServerRequest
     const route = ROUTE_OF[request.url.split("?")[0]!]!
     return yield* recorded(route, (fields) =>
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         if (request.method !== "POST") {
           fields.code = "method"
           return HttpServerResponse.empty({ status: 405, headers: { allow: "POST" } })
@@ -874,7 +896,7 @@ export const make = <E, R>(
             fields.errorCode = codeOf(error)
             return refuse(fields, 503, "unavailable")
           })
-        ),
+        )
       ))
   })
 

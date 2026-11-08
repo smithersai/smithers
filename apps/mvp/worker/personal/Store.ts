@@ -131,8 +131,9 @@ export const put = (write: Put): Effect.Effect<Change, unknown, SqlClient.SqlCli
       yield* sql`
         INSERT INTO personal_model_events (person_id, action, invocation_key)
         VALUES (${write.personId}, ${change}, ${write.invocationKey})`
+      yield* WriteAuthority.requireAtCommit(write.authority ?? undefined)
       return change
-    }))
+    })).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed("stale" as const)))
   })
 
 /** A Codex subscription a device link finished: added at the end of the person's list, or replacing the one they have. */
@@ -177,8 +178,9 @@ export const link = (write: Linked): Effect.Effect<"set" | "replace" | "repeat" 
       yield* sql`
         INSERT INTO personal_model_events (person_id, action, invocation_key)
         VALUES (${write.personId}, ${change}, ${write.invocationKey})`
+      yield* WriteAuthority.requireAtCommit(write.authority ?? undefined)
       return replaced.length === 0 ? "set" as const : "replace" as const
-    }))
+    })).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed("stale" as const)))
   })
 
 /** Holds `personId`'s Codex rows for the transaction it runs in, so one refresh runs at a time. */
@@ -223,8 +225,9 @@ export const remove = (write: {
       yield* sql`
         INSERT INTO personal_model_events (person_id, action, invocation_key)
         VALUES (${write.personId}, 'delete', ${write.invocationKey})`
+      yield* WriteAuthority.requireAtCommit(write.authority ?? undefined)
       return deleted.length > 0 ? "deleted" as const : "missing" as const
-    }))
+    })).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed("stale" as const)))
   })
 
 /** Whether a person saved a model of their own: a flow that runs on it, such as triage's judge, can answer them. */

@@ -7,7 +7,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import type { ApprovalAuthority, Control, ControlExecutor, ControlSchema, Health } from "@smthrs/control"
 import { ControlClient, ControlRuntime } from "@smthrs/control"
-import { Crypto } from "@smthrs/crypto"
 import type * as ReplayOnly from "@smthrs/engine-store/ReplayOnly"
 import type { Journal } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
@@ -69,6 +68,8 @@ export interface Config {
   readonly startsRuns?: boolean | undefined
   /** Compile and validate authored flow plans while keeping execution disabled. */
   readonly plansFlows?: boolean | undefined
+  /** Eagerly load these flow bodies; other measured entries load on first use. */
+  readonly initialFlows?: ReadonlyArray<string> | undefined
   /** A human can answer parked agent steps on this host. Unattended compositions default to false. */
   readonly approvalChannel?: boolean | undefined
   /** Trusted local observational checkers, keyed by flow id. Remote clients never execute these callbacks. */
@@ -229,7 +230,7 @@ export interface Engine {
 export const engineMemory: Engine = {
   // The runtime mints identifiers through `Crypto`, which is a host service
   // now rather than an ambient global.
-  runtime: ControlRuntime.layerMemory().pipe(Layer.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))),
+  runtime: ControlRuntime.layerMemory().pipe(Layer.provide(NodeCrypto.layer)),
   journal: TestJournal.layer().pipe(Layer.orDie)
 }
 

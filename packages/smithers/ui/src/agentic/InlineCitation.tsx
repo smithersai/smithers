@@ -9,7 +9,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../tooltip";
 import { safeHref } from "../internal/safeHref";

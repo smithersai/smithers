@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * A cell's flow call, executed through the outer workspace sandbox.
  *
@@ -8,7 +9,6 @@
  * that lands on the host is the one the cell's flow wrote.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { Action } from "@smthrs/flow"
 import * as Cell from "@smthrs/harness/Cell"
 import * as CellTurn from "@smthrs/harness/CellTurn"
@@ -22,6 +22,7 @@ import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Effect, Layer, Option, Stream } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { describe, expect, it } from "vitest"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as InMemoryWorkspaceSandbox from "../src/InMemoryWorkspaceSandbox.ts"
@@ -87,7 +88,7 @@ const writer: FlowEngineLike.WorkspaceCallRunner = {
           new HarnessError({ code: "engine_failed", message: "the workspace refused the write", cause })
         )
       )
-      return new Cell.CallResult({ outcome: "success", value: `wrote ${input.path}` })
+      return Cell.CallResult.new({ outcome: "success", value: `wrote ${input.path}` })
     })
 }
 
@@ -126,7 +127,11 @@ const cellEvents = Stream.fromIterable([
 const turn = (
   sandbox: WorkspaceSandbox.Service,
   flow: Descriptor.FlowDescriptor
-): Effect.Effect<ReadonlyArray<string>, HarnessError | Sandbox.SandboxError, Crypto.Crypto> =>
+): Effect.Effect<
+  ReadonlyArray<string>,
+  HarnessError | Sandbox.SandboxError,
+  (EffectDigest.Digest | SecureRandom.SecureRandom)
+> =>
   Effect.gen(function*() {
     const calls = yield* FlowEngineLike.sandboxed(sandbox, writer, { layers: ["layer-a"] })
     const port = EngineLike.makeNoop({
@@ -160,7 +165,7 @@ describe("a cell call through the workspace sandbox", () => {
         const sandbox = yield* InMemoryWorkspaceSandbox.make()
         let executions = 0
         const runner = yield* FlowEngineLike.sandboxed(sandbox.service, {
-          run: () => Effect.sync(() => new Cell.CallResult({ outcome: "success", value: ++executions }))
+          run: () => Effect.sync(() => Cell.CallResult.new({ outcome: "success", value: ++executions }))
         })
         const call = (session: string) =>
           new Cell.Call({
@@ -194,7 +199,7 @@ describe("a cell call through the workspace sandbox", () => {
         ))
         expect(a.value).toBe(1)
         expect(b.value).toBe(authority === "same" ? 1 : 2)
-      }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)), Effect.runPromise)
+      }).pipe(Effect.provide(NodeCrypto.layer), Effect.runPromise)
     }
   )
 
@@ -204,7 +209,7 @@ describe("a cell call through the workspace sandbox", () => {
         const sandbox = yield* InMemoryWorkspaceSandbox.make({ "notes/todo.md": "old" })
         const settled = yield* turn(sandbox.service, writeFlow)
         return { settled, files: yield* sandbox.files }
-      }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+      }).pipe(Effect.provide(NodeCrypto.layer))
     )
 
     expect(outcome.settled).toEqual(["fs/write:success"])
@@ -231,7 +236,7 @@ describe("a cell call through the workspace sandbox", () => {
         })
         yield* turn(observing, writeFlow)
         return outcomes
-      }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+      }).pipe(Effect.provide(NodeCrypto.layer))
     )
 
     expect(observed).toHaveLength(1)
@@ -247,7 +252,7 @@ describe("a cell call through the workspace sandbox", () => {
         const sandbox = yield* InMemoryWorkspaceSandbox.make({ "notes/todo.md": "old" })
         const settled = yield* turn(sandbox.service, misdeclaredFlow)
         return { settled, files: yield* sandbox.files }
-      }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+      }).pipe(Effect.provide(NodeCrypto.layer))
     )
 
     // The refusal is an ordinary call failure that RESOLVES, so the cell runs

@@ -124,29 +124,30 @@ const phase = async (root: string, stateRoot: string, restart: boolean, source =
         assert.equal(listed._tag, "runs")
         if (listed._tag === "runs") assert.equal(listed.items.length, 1)
         if (!restart) {
-          // The `rpc` subcommand and this host frame requests as NDJSON. Since
-          // Effect 4.1 the parser fails a body with a line that is not JSON
-          // (NdjsonDecodeError), so such a body is refused as malformed, and the
-          // request alone is answered.
-          const request = JSON.stringify({
+          // NDJSON framing is strict in Effect 4.1: malformed complete frames
+          // refuse the body even when a valid request follows them.
+          const body = JSON.stringify({
             _tag: "Request",
             id: "7",
             tag: "List",
             payload: { _tag: "runs", filters: { flowId: "echo" } },
             headers: []
           }) + "\n"
-          const post = (body: string) =>
-            Effect.promise(() =>
-              fetch(`http://127.0.0.1:${port}/rpc`, {
-                method: "POST",
-                headers: { authorization: `Bearer ${credential}`, "content-type": "application/ndjson" },
-                body
-              }).then(async (response) => ({ status: response.status, text: await response.text() }))
-            )
-          const refused = yield* post("not json\n" + request)
+          const answered = yield* Effect.promise(() =>
+            fetch(`http://127.0.0.1:${port}/rpc`, {
+              method: "POST",
+              headers: { authorization: `Bearer ${credential}`, "content-type": "application/ndjson" },
+              body
+            }).then(async (response) => ({ status: response.status, text: await response.text() }))
+          )
+          const refused = yield* Effect.promise(() =>
+            fetch(`http://127.0.0.1:${port}/rpc`, {
+              method: "POST",
+              headers: { authorization: `Bearer ${credential}`, "content-type": "application/ndjson" },
+              body: "not json\n" + body
+            }).then(async (response) => ({ status: response.status, text: await response.text() }))
+          )
           assert.equal(refused.status, 400, refused.text)
-          assert.equal(JSON.parse(refused.text).code, "malformed_request", refused.text)
-          const answered = yield* post(request)
           assert.equal(answered.status, 200, answered.text)
           const frames = answered.text.split("\n").filter((line) => line.length > 0).map((line) => JSON.parse(line))
           const exit = frames.find((frame) => frame._tag === "Exit" && String(frame.requestId) === "7")

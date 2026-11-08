@@ -14,7 +14,7 @@ export function RepoHomeScreen() {
       <RepoHeader />
       <PageBody width="wide">
         <HomeTabs active="home" />
-        <HomePage tree={<RepoPage />} />
+        <HomePage tree={<RepoPage />} showConnection={false} />
       </PageBody>
     </main>
   )

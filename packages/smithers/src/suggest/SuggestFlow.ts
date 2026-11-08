@@ -30,7 +30,6 @@ import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as SeatRouter from "@smthrs/agent/SeatRouter"
 import * as StandardFlows from "@smthrs/agent/StandardFlows"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
@@ -299,7 +298,7 @@ const composed = (
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(layerSnapshotBoundary),
-    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
+    Layer.provideMerge(NodeCrypto.layer),
     Layer.provideMerge(NodeServices.layer),
     Layer.provideMerge(evaluator)
   )

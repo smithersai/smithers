@@ -24,8 +24,9 @@
  * @since 0.1.0
  */
 
-import type { Crypto } from "@smthrs/crypto"
 import type { Action, DurableClock, DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import type * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"
 import type * as Option from "effect/Option"
@@ -55,7 +56,7 @@ export interface ActionExecuteOptions {
    * executing the action. Never evaluate it for a journal hit or a joined
    * dispatch. The engine diffs only attempts that evaluated this effect.
    */
-  readonly snapshot?: (unknown!never!(FlowRuntime.FlowInstance | Crypto.Crypto)) | undefined
+  readonly snapshot?: (unknown!never!(FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom))) | undefined
 }
 
 /**
@@ -209,12 +210,12 @@ export interface Encoded {
       derive: (
         executionId: string,
         runScoped: boolean
-      ) => string!Schema.SchemaError!Crypto.Crypto,
+      ) => string!Schema.SchemaError!(EffectDigest.Digest | SecureRandom.SecureRandom),
       legacy: (
         executionId: string,
         runScoped: boolean
-      ) => ReadonlyArray<string>!Schema.SchemaError!Crypto.Crypto
-    ) => string!Schema.SchemaError!(FlowRuntime.FlowInstance | Crypto.Crypto))
+      ) => ReadonlyArray<string>!Schema.SchemaError!(EffectDigest.Digest | SecureRandom.SecureRandom)
+    ) => string!Schema.SchemaError!(FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)))
     | undefined
   /**
    * Recognizes live or persisted engine failures and returns their JSON fields.
@@ -225,7 +226,7 @@ export interface Encoded {
   readonly encodeEngineError?: ((error: unknown) => Option.Option<unknown>) | undefined
   readonly actionExecute: (
     options: ActionExecuteOptions
-  ) => Flow.Result<unknown, unknown>!never!(FlowRuntime.FlowInstance | Crypto.Crypto)
+  ) => Flow.Result<unknown, unknown>!never!(FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom))
   /**
    * The durable wall-clock origin of an action's retry sequence: the
    * persisted start time of the first attempt for `key`, when one exists.
@@ -246,7 +247,7 @@ export interface Encoded {
   readonly actionRetryOrigin?:
     | ((options: {
       readonly key: string
-    }) => Option.Option<number>!never!(FlowRuntime.FlowInstance | Crypto.Crypto))
+    }) => Option.Option<number>!never!(FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)))
     | undefined
   /**
    * The highest persisted attempt number for `key`, when attempts survive.
@@ -260,7 +261,7 @@ export interface Encoded {
   readonly actionLatestAttempt?:
     | ((options: {
       readonly key: string
-    }) => Option.Option<number>!never!(FlowRuntime.FlowInstance | Crypto.Crypto))
+    }) => Option.Option<number>!never!(FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)))
     | undefined
   /**
    * The pre-attempt snapshot of the earliest recorded compensable attempt for
@@ -277,7 +278,7 @@ export interface Encoded {
   readonly actionSnapshot?:
     | ((options: {
       readonly key: string
-    }) => Option.Option<unknown>!never!(FlowRuntime.FlowInstance | Crypto.Crypto))
+    }) => Option.Option<unknown>!never!(FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)))
     | undefined
   readonly deferredResult: (
     deferred: DurableDeferred.Any

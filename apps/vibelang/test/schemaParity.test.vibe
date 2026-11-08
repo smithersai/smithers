@@ -1,0 +1,11 @@
+import { expect, it } from "@effect/vitest"
+import { EntrySchema } from "../src/core/Factory.vibe"
+import { Entry } from "../src/core/schemas.vibe"
+it("uses the same entry codec for client state and snapshots", () => {
+  expect(EntrySchema).toBe(Entry)
+  const entry = { id: "m1", seq: 1, clientId: "s-1", inReplyTo: "", author: "person", name: "Guest", text: "hi", done: true, error: "" }
+  for (const seq of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1, NaN, Infinity]) {
+    expect(Schema.is(Entry)({ ...entry, seq })).toBe(false)
+  }
+  expect(Schema.is(Entry)(entry)).toBe(true)
+})

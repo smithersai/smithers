@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Wordmark, WORDMARK } from "../src/wordmark/Wordmark";
-import { smithersUiCss } from "../src/uiCss";
+import { uiCss as smithersUiCss } from "@smthrs/ui-css";
 
 describe("Wordmark", () => {
   test("keeps every row the same width", () => {

@@ -1,4 +1,5 @@
 /** Real control admission, discovery, native children and durable host policy. */
+import { NodeCrypto } from "@effect/platform-node"
 import * as Budget from "@smthrs/agent/Budget"
 import * as EventSink from "@smthrs/agent/EventSink"
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
@@ -18,8 +19,6 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 
-import { NodeCrypto } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
 import { settledKind } from "../src/internal/EngineJournalSupervisor.ts"
 import { ModuleOwner } from "../src/internal/ModuleOwner.ts"
 import * as NodeControl from "../src/NodeControl.ts"
@@ -151,7 +150,7 @@ export default ({
             deployClass: false,
             envelope: { capabilities: ["fs:read:**"], flows: ["test/Module"], budget: { tokens: 6 } }
           }]
-        }).pipe(Layer.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+        }).pipe(Layer.provide(NodeCrypto.layer))
         const result = await Effect.runPromise(
           Effect.gen(function*() {
             const control = yield* Control.Control

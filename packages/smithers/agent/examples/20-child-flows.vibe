@@ -20,7 +20,6 @@ import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as Digest from "@smthrs/core/Digest"
 import * as Effects from "@smthrs/core/Effects"
-import { Crypto } from "@smthrs/crypto"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Action, Flow, type FlowRuntime, Interpreter } from "@smthrs/flow"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
@@ -34,6 +33,8 @@ import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Registry from "@smthrs/registry/Registry"
 import { RunStore } from "@smthrs/run-store"
 import type * as Context from "effect/Context"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 
@@ -116,7 +117,7 @@ export const CompileTool = {
  */
 export const compileSource = (
   services: Context.Context<
-    FlowRuntime.FlowRuntime | Crypto.Crypto | Action.Requirement<"examples/Bundle">
+    FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom) | Action.Requirement<"examples/Bundle">
   >
 ): FlowBinding.Source =>
   FlowBinding.source("release/tools", [
@@ -295,7 +296,9 @@ export const main = (filename: string): Summary!! =>
         // The context the tool handler runs the flow in: the engine, the
         // crypto, and the one action the flow's body calls.
         const services = try Effect.context<
-          FlowRuntime.FlowRuntime | Crypto.Crypto | Action.Requirement<"examples/Bundle">
+          | FlowRuntime.FlowRuntime
+          | (EffectDigest.Digest | SecureRandom.SecureRandom)
+          | Action.Requirement<"examples/Bundle">
         >()
         const built = try effect {
           provide Layer.mergeAll(Builder.layer, Interpreter.layer(Build)).pipe(
@@ -364,4 +367,4 @@ export const main = (filename: string): Summary!! =>
         } satisfies Summary
       }) |> Effect.provide(%, stack)
     )
-  }) |> Effect.provide(%, Crypto.layerFromDigest(NodeCrypto.layerDigest)) |> Effect.orDie(%)
+  }) |> Effect.provide(%, NodeCrypto.layer) |> Effect.orDie(%)

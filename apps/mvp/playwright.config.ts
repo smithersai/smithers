@@ -4,6 +4,10 @@ import { defineConfig, type PlaywrightTestConfig } from "@playwright/test"
 // below): this process registers it here, and every worker inherits it through NODE_OPTIONS.
 import "vibelang/register"
 import { baseURL, onThisMachine, sessionFiles, target } from "./e2e/target"
+import { assertShipPrerequisites, shipAcceptance } from "./e2e/ship"
+
+// Also protect direct Playwright invocations; prod.mjs checks earlier, before taking the test-account lock.
+assertShipPrerequisites(process.env, process.argv.slice(3))
 
 const VIBELANG_LOADER = "--import=vibelang/register"
 if (!(process.env.NODE_OPTIONS ?? "").includes(VIBELANG_LOADER)) {
@@ -37,7 +41,7 @@ const viewport = { width: 1280, height: 800 }
 const deployment = (): PlaywrightTestConfig => {
   // When the run began, for the spend guard (e2e/spend.ts): set once here, inherited by every worker.
   process.env.E2E_RUN_STARTED_AT ??= String(Date.now())
-  const outputDir = "test-results-deployment"
+  const outputDir = process.env.E2E_OUTPUT_DIR ?? "test-results-deployment"
   return {
     outputDir,
     workers: 1,
@@ -62,6 +66,7 @@ const TAKES_TURNS = [
 ].map((name) => `**/${name}.spec.ts`)
 
 export default defineConfig({
+  forbidOnly: shipAcceptance(process.env) || process.env.E2E_SHIP_COLLECT === "1",
   testDir: "e2e",
   // `.vibe` modules go to VibeLang's loader, not Playwright's TypeScript transform.
   build: { external: ["**/*.vibe"] },

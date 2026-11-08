@@ -9,7 +9,6 @@
  * learning the authoring API and for tests; it does not survive process exit.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
@@ -35,7 +34,7 @@ const GreetingLayer = Layer.mergeAll(
   // An action dispatch is recorded under a derived step identity, so the
   // engine needs a `Crypto` even in memory. A browser program supplies its own;
   // this one is Node.
-  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+  Layer.provideMerge(NodeCrypto.layer)
 )
 
 /**

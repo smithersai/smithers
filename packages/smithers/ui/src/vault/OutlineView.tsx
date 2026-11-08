@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { stepFence, type Fence } from "./fence";
 import type { VaultRowProps } from "./types";
 import { useVaultCss } from "./useVaultCss";

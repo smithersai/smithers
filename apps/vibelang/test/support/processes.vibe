@@ -1,0 +1,30 @@
+// Child processes for the process-boundary suites, through Effect's ChildProcessSpawner (NodeServices.layer), and
+// this Node.js executable, from VibeLang's Process service (ExperimentalNodeServices.layer).
+import { ChildProcess } from "effect/process"
+
+/** How a finished process exited and what it wrote. */
+export interface Finished {
+  readonly status: number
+  readonly stdout: string
+  readonly stderr: string
+}
+
+/** `output` decoded as UTF-8 text, whole. */
+function textOf(output: Stream.Stream<Uint8Array, PlatformError.PlatformError>) {
+  return Stream.mkString(Stream.decodeText(output))
+}
+
+/** Runs `command` with `args` to its exit, reading both outputs as it goes; `env` adds to this process's environment. */
+export effect function run(command: string, args: ReadonlyArray<string>, env: Readonly<Record<string, string>> = {}) {
+  return try scoped(effect {
+    const process = try ChildProcess.make(command, args, { env, extendEnv: true })
+    const [stdout, stderr, status] = try.all [textOf(process.stdout), textOf(process.stderr), process.exitCode]
+    const finished: Finished = { status: Number(status), stdout, stderr }
+    return finished
+  })
+}
+
+/** The Node.js executable running these tests, for the emitted surfaces and scripts. */
+export effect function node() {
+  return try (try Experimental.Process.Process).execPath
+}

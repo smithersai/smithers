@@ -14,7 +14,6 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as EffectNodePath from "@effect/platform-node/NodePath"
 import * as NodeStdio from "@effect/platform-node/NodeStdio"
 import { Install, PackageManager, Runtime } from "@smthrs/build"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Graph, Interpreter } from "@smthrs/flow"
 import * as Config from "@smthrs/targets/Config"
@@ -49,7 +48,7 @@ export const layerNonInteractiveNodeServices = Layer.provideMerge(
   NodeChildProcessSpawner.layer,
   Layer.mergeAll(
     NodeFileSystem.layer,
-    Crypto.layerFromDigest(NodeCrypto.layerDigest),
+    NodeCrypto.layer,
     EffectNodePath.layer,
     NodeStdio.layer
   )

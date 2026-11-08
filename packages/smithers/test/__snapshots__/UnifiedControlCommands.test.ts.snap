@@ -1,0 +1,43 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`unified control dispatch > keeps the small-run diagnosis golden unchanged 1`] = `
+{
+  "createdAt": 1,
+  "cta": {
+    "commands": [
+      {
+        "command": "smthrs runs logs run-1 --format jsonl",
+        "description": "Read detailed events only when needed",
+      },
+    ],
+    "description": "Suggested command:",
+  },
+  "diagnosis": {
+    "calls": 0,
+    "callsFailed": 0,
+    "cause": "synthetic failure",
+    "costUsd": 0,
+    "duplicateCalls": 0,
+    "editsAttempted": 0,
+    "editsSucceeded": 0,
+    "endedAt": 1,
+    "flows": [],
+    "inputTokens": 0,
+    "outputTokens": 0,
+    "refusals": [],
+    "startedAt": 1,
+    "status": "failed",
+    "turns": 0,
+  },
+  "executionSnapshots": [],
+  "executions": [],
+  "flowId": "demo/ship",
+  "health": {
+    "attention": "unhealthy",
+    "health": "failing",
+  },
+  "runId": "run-1",
+  "status": "failed",
+  "updatedAt": 2,
+}
+`;

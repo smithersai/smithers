@@ -29,7 +29,7 @@ const rules = [
   "",
   "error Refused { reason: string }",
   "",
-  "export function refuse(reason: string) {",
+  "export effect function refuse(reason: string): never ! Refused {",
   "  throw new Refused({ reason })",
   "}",
   "",

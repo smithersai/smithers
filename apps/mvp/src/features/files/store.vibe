@@ -2,7 +2,10 @@ import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, Layer } from "effect"
 import { RepoStore } from "../repo/store"
 import type { ViewRow } from "../repo/rows"
-import { FileTabRow, type Here } from "./schema"
+import { FileTabsStore } from "../../device/registry"
+import { repoId } from "../repo/contract"
+import type { Source } from "../repo/gate"
+import type { FileTabRow, Here } from "./schema"
 import { linesOf, tabKey } from "./view"
 
 // This device's open files (docs/features/files.md): the `file-tabs` collection, kept on the device, so every tab of
@@ -11,8 +14,8 @@ import { linesOf, tabKey } from "./view"
 // remembers the lines it last highlighted. Nothing here moves the page; `file/open` and `file/close` do
 // (./actions.ts).
 
-/** Every open file on this device, in the order they opened: what frontends read. */
-export const tabsQuery = (tabs: Collection.Collection<FileTabRow, string>) =>
+/** Every open file on this device whose repository may show, in the order they opened: what frontends read. */
+export const tabsQuery = (tabs: Source<FileTabRow>) =>
   LiveQuery.make((q) => q.from({ tab: tabs.tanstack }).orderBy(({ tab }) => tab.position))
 
 /** Whether `view` shows a file whose revision and commit resolved: a page to keep a tab for. */
@@ -21,13 +24,11 @@ const fileShown = (view: ViewRow): boolean =>
   && view.path !== ""
 
 const make = effect {
-  const tabs = try Collection.persisted({
-    id: "file-tabs",
-    schema: FileTabRow,
-    getKey: (row): string => row.key,
-    schemaVersion: 1,
-  })
-  const all = try tabsQuery(tabs)
+  const tabs = try Collection.persisted(FileTabsStore)
+  // Through the data gate (repo/gate.ts): a refused or unverified repository's tabs leave the strip, and stay on the
+  // device for when it shows again.
+  const repo = try RepoStore
+  const all = try tabsQuery(try repo.gate(tabs))
   // One write at a time, so the follower and an open of one file never both insert it.
   const writes = try Semaphore.make(1)
 
@@ -43,10 +44,12 @@ const make = effect {
       }
       const rows = try tabs.toArray
       const position = rows.reduce((last, row) => Math.max(last, row.position), 0) + 1
+      const repository = try Effect.orDie(Effect.try({ try: () => repoId(here.owner, here.name), catch: (e) => e }))
       try (try tabs.insert({
         key,
         owner: here.owner,
         name: here.name,
+        repoId: repository,
         revision: here.revision,
         path,
         lines,
@@ -68,23 +71,20 @@ const make = effect {
     } |> Semaphore.withPermits(writes, 1)(%) |> Effect.orDie(%)
 
   // Every file the routed repository view shows gets a tab, with the lines it highlights.
-  const repo = try Effect.serviceOption(RepoStore)
-  if (Option.isSome(repo)) {
-    try (repo.value.view.changes({ initial: true }).pipe(
-      Stream.runForEach((changes) =>
-        Effect.forEach(changes, (change) =>
-          // The view's one row is never deleted: each change says where it is now.
-          !fileShown(change.value)
-            ? Effect.void
-            : keep(
-              { owner: change.value.owner, name: change.value.name, revision: change.value.revision! },
-              change.value.path,
-              linesOf(change.value.line, change.value.lineEnd),
-            ).pipe(Effect.ignore), { discard: true })
-      ),
-      Effect.forkScoped,
-    ))
-  }
+  try (repo.view.changes({ initial: true }).pipe(
+    Stream.runForEach((changes) =>
+      Effect.forEach(changes, (change) =>
+        // The view's one row is never deleted: each change says where it is now.
+        !fileShown(change.value)
+          ? Effect.void
+          : keep(
+            { owner: change.value.owner, name: change.value.name, revision: change.value.revision! },
+            change.value.path,
+            linesOf(change.value.line, change.value.lineEnd),
+          ).pipe(Effect.ignore), { discard: true })
+    ),
+    Effect.forkScoped,
+  ))
 
   return { tabs, all, keep, drop }
 }
@@ -92,7 +92,7 @@ const make = effect {
 /**
  * File tabs' state for one tab:
  * - `tabs`: this device's open files, kept on the device.
- * - `all`: the live query of every one, in the order they opened.
+ * - `all`: the live query of every one whose repository may show (the data gate), in the order they opened.
  * - `keep` and `drop`: a tab kept with its lines, and a tab closed, one write at a time.
  */
 export class FilesStore extends Context.Service<FilesStore, Effect.Success<typeof make>>()(

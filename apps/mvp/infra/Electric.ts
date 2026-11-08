@@ -17,12 +17,12 @@ export class Endpoint extends Context.Service<Endpoint, {
  * (infra/ElectricUpstream.ts) finds the binding at runtime. Without an `Endpoint` it does nothing: under `alchemy dev`
  * the Worker keeps the compose Electric, and at runtime the bindings are already there.
  */
-export const bind = Effect.gen(function* () {
+export const bind = Effect.gen(function*() {
   const endpoint = yield* Effect.serviceOption(Endpoint)
   if (Option.isNone(endpoint)) return
   const self = yield* Cloudflare.Worker
   yield* self.bind`${GATEWAY_BINDING}`({
-    bindings: [{ type: "service", name: GATEWAY_BINDING, service: endpoint.value.service }],
+    bindings: [{ type: "service", name: GATEWAY_BINDING, service: endpoint.value.service }]
   })
   yield* Output.named(Output.literal(GATEWAY_URL), "ELECTRIC_URL")
 })

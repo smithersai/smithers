@@ -270,12 +270,15 @@ it.live("warns when unknown boundary persistence fails and preserves the provide
     expect(result.exit._tag).toBe("Failure")
     if (result.exit._tag === "Failure") expect(Cause.squash(result.exit.cause)).toBe(primary)
     expect(boundaries(result.entries).map((effect) => effect.status)).toEqual(["intended"])
-    expect(logs).toEqual([
+    // This run's logs only: past a second of wall time @effect/vitest adds its own
+    // warning that a test is not advancing the test clock.
+    const own = logs.filter((log) => (log.annotations as { readonly runId?: unknown }).runId === "boundary-warning")
+    expect(own).toEqual([
       expect.objectContaining({
         level: "Warn",
         message: ["engine-store: failed to persist unknown effect boundary"],
         annotations: expect.objectContaining({ runId: "boundary-warning", step: "boundary-warning-key" })
       })
     ])
-    expect(logs[0]?.cause).toContain("unknown boundary unavailable")
+    expect(own[0]?.cause).toContain("unknown boundary unavailable")
   }))

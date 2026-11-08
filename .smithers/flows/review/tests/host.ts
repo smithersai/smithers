@@ -8,7 +8,6 @@ import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Budget from "@smthrs/agent/Budget"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import type * as SeatResolver from "@smthrs/agent/SeatResolver"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Interpreter } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -38,7 +37,7 @@ export const host = (
     Agent.layerDefaults,
     FlowEngine.layerMemory,
     Action.layerImplementations,
-    Crypto.layerFromDigest(NodeCrypto.layerDigest),
+    NodeCrypto.layer,
     NodeFileSystem.layer,
     NodePath.layer,
     NodeChildProcessSpawner.layer.pipe(Layer.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer))),

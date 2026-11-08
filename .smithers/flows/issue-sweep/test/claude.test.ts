@@ -2,6 +2,7 @@ import { Sandbox } from "@smthrs/sandbox"
 import { Deferred, Effect, Exit, Fiber, FileSystem, Layer, Path, PlatformError, Sink, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import * as Spawner from "effect/process/ChildProcessSpawner"
+import * as Redacted from "effect/Redacted"
 import { TestClock } from "effect/testing"
 import assert from "node:assert/strict"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
@@ -451,8 +452,11 @@ test("concurrent guest agents use separate checkout and login paths and clean up
   assert.equal(results.length, 2)
   for (const [index, made] of [first, second].entries()) {
     const slot = index === 0 ? "one" : "two"
-    assert.match(made.commands[0]!.args[1]!, new RegExp(`/slots/${slot}/workspace`))
-    assert.match(made.commands[0]!.args[1]!, new RegExp(`/slots/${slot}/\\.claude-sweep`))
+    assert.match(made.commands[0]!.args.map(plainWord)[1]!, new RegExp(`/slots/${slot}/workspace`))
+    assert.match(made.commands[0]!.args.map(plainWord)[1]!, new RegExp(`/slots/${slot}/\\.claude-sweep`))
     assert.deepEqual(made.events, ["mkdir", "chmod", "write", "spawn", "process-close", "remove"])
   }
 })
+
+const plainWord = (value: string | Redacted.Redacted<string>): string =>
+  Redacted.isRedacted(value) ? Redacted.value(value) : value

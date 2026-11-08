@@ -183,7 +183,7 @@ it.each(Object.keys(scenarios))(
           journalSource: "plan-sites",
           isAlive: () => Effect.succeed(false),
           // A host that cannot place its sources under a root records no sites.
-          ...(!first && scenario.unrooted === true ? { declarationRoot: "/no/such/root" } : {})
+          declarationRoot: !first && scenario.unrooted === true ? "/no/such/root" : process.cwd()
         }).pipe(Effect.provideService(Journal.Journal, recording))
         const build = first ? scenario.first() : scenario.resumed()
         const flow = build.Answer

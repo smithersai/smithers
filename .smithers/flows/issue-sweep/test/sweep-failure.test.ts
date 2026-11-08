@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Fault, Flow, Interpreter, Sleep, WaitFor } from "@smthrs/flow"
 import { Burndown, PatternError } from "@smthrs/patterns"
@@ -7,8 +8,6 @@ import test from "node:test"
 import Sweep, { Accounts, Dispatch, GhFailed, ghFailed, ListIssues, SweepFailure } from "../flow.ts"
 import { HostFailed, hostFailed, output } from "../host.ts"
 
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import Work, { AgentFailed, FetchIssue, fetchIssueWith } from "../work/flow.ts"
 
 // run-13: one proxy 502 at discovery failed the whole sweep.
@@ -99,7 +98,7 @@ const engine = (
     ).pipe(
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
+      Layer.provideMerge(NodeCrypto.layer),
       Layer.provideMerge(Layer.succeed(Clock.Clock, clock))
     )
   )
@@ -274,7 +273,7 @@ const fetchEngine = (message: string, failures: number) => {
     ).pipe(
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
+      Layer.provideMerge(NodeCrypto.layer),
       Layer.provideMerge(Layer.succeed(Clock.Clock, clock))
     )
   )

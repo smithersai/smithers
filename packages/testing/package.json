@@ -581,8 +581,9 @@
     "@smthrs/platform-browser": "1.0.0-rc.16",
     "@smthrs/scorers": "1.0.0-rc.16",
     "@smthrs/canonical": "1.0.0-rc.16",
-    "@smthrs/crypto": "1.0.0-rc.16",
-    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
+    "string-width": "7.2.0",
+    "@smthrs/platform-node": "workspace:*",
+    "vibelang-runtime": "0.0.12"
   },
   "peerDependencies": {
     "effect": "4.1.1",
@@ -601,7 +602,6 @@
     "@effect/language-service": "0.87.2",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
-    "@smthrs/platform-node": "1.0.0-rc.16",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
@@ -615,8 +615,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
-    "vibelang-vite": "file:../../.vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz",
+    "vibelang": "0.0.12",
+    "vibelang-vite": "0.0.12",
     "vitest": "5.0.0"
   }
 }

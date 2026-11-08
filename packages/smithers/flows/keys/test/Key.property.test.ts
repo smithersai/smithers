@@ -1,6 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Canonical } from "@smthrs/canonical"
-import { Crypto } from "@smthrs/crypto"
 import { Effect, Result, Schema } from "effect"
 import * as FastCheck from "fast-check"
 import { describe, expect, it } from "vitest"
@@ -15,9 +14,7 @@ const params = {
 
 const attemptKey = (value: unknown): Result.Result<string, Schema.SchemaError> =>
   Effect.runSync(
-    Effect.result(Schema.decodeUnknownEffect(Keys.DerivedKey)(value)).pipe(
-      Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
-    )
+    Effect.result(Schema.decodeUnknownEffect(Keys.DerivedKey)(value)).pipe(Effect.provide(NodeCrypto.layer))
   )
 
 const attemptCanonical = (value: unknown): Result.Result<string, Schema.SchemaError> =>

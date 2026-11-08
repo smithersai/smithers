@@ -25,10 +25,10 @@ const githubUp = await fetch("https://github.com/octocat/Spoon-Knife.git/info/re
 
 /** A GitHub that answers every request with `answer`, and the requests it saw. */
 const scriptedGitHub = (answer: (url: URL) => Response) => {
-  const seen: Array<{ readonly url: URL; readonly authorization: string | undefined }> = []
+  const seen: Array<{ readonly url: URL; readonly userAgent: string | undefined; readonly authorization: string | undefined }> = []
   const client = HttpClient.make((request, url) =>
     Effect.sync(() => {
-      seen.push({ url, authorization: request.headers["authorization"] })
+      seen.push({ url, userAgent: request.headers["user-agent"], authorization: request.headers["authorization"] })
       return HttpClientResponse.fromWeb(request, answer(url))
     })
   )
@@ -111,5 +111,6 @@ describe("RepoUpstream", () => {
     )
     expect(github.seen[0]!.url.toString()).toBe("https://github.com/octocat/Gone.git/info/refs?service=git-upload-pack")
     expect(github.seen[0]!.authorization).toBeUndefined()
+    expect(github.seen[0]!.userAgent).toBe("smithers-integrations")
   })
 })

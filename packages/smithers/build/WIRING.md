@@ -9,7 +9,7 @@ install step.
 
 | Dependency       | Version      | Use                                            |
 | ---------------- | ------------ | ---------------------------------------------- |
-| `effect`         | `4.1.0`      | Effects, schemas, layers, files, and processes |
+| `effect`         | `4.1.1`      | Effects, schemas, layers, files, and processes |
 | `@smthrs/flow`   | `1.0.0-rc.0` | Actions, flows, annotations, and file inputs   |
 | `@smthrs/plan`   | `1.0.0-rc.0` | Planned nodes                                  |
 | `@smthrs/crypto` | `1.0.0-rc.0` | SHA-256 digests                                |

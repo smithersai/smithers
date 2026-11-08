@@ -1,13 +1,14 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The body interpreter, against the authoring package's own runtime fixture:
  * what each node variant does when it is driven with real values, and what the
  * interpreter refuses.
  */
 import { describe, expect, expectTypeOf, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node, Planned } from "@smthrs/plan"
 import { Context, Effect, Exit, Layer, Schema } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { ExecutionMiddleware } from "../src/internal/ExecutionMiddleware.vibe"
 import { withCrypto } from "./Crypto.ts"
 import { layerMemory, layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
@@ -69,12 +70,15 @@ const drive = <A, E>(
   effect: Effect.Effect<
     A,
     E,
-    Crypto.Crypto | FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime | Action.Implementations
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
+    | FlowRuntime.FlowInstance
+    | FlowRuntime.FlowRuntime
+    | Action.Implementations
   >,
   layer: Layer.Layer<
     FlowRuntime.FlowRuntime | Action.Implementations,
     never,
-    Crypto.Crypto
+    (EffectDigest.Digest | SecureRandom.SecureRandom)
   > = wired()
 ) =>
   withCrypto(
@@ -100,7 +104,10 @@ const refusal = (
   effect: Effect.Effect<
     unknown,
     unknown,
-    Crypto.Crypto | FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime | Action.Implementations
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
+    | FlowRuntime.FlowInstance
+    | FlowRuntime.FlowRuntime
+    | Action.Implementations
   >
 ) =>
   Effect.gen(function*() {
@@ -940,7 +947,10 @@ describe("Interpreter concurrency", () => {
     effect: Effect.Effect<
       A,
       E,
-      Crypto.Crypto | FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime | Action.Implementations
+      | (EffectDigest.Digest | SecureRandom.SecureRandom)
+      | FlowRuntime.FlowInstance
+      | FlowRuntime.FlowRuntime
+      | Action.Implementations
     >
   ) =>
     drive(

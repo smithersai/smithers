@@ -4,6 +4,8 @@ import { type HttpClient, HttpServerRequest, HttpServerResponse } from "effect/h
 import type { SqlClient } from "effect/sql"
 import { digestSync } from "@smthrs/crypto"
 import {
+  ACCEPTS_HEADER,
+  ACCEPTS_CREDENTIAL_STALE,
   ARRIVE_ROUTE,
   CALLBACK_ROUTE,
   DEVICE_PERSON_HEADER,
@@ -21,17 +23,22 @@ import {
 } from "../src/features/auth/contract.ts"
 import { installUrl } from "../src/features/repo/contract.ts"
 import * as Actor from "#vibelang/emitted/worker/Actor"
+import { DEFAULT_REPOSITORY } from "./defaultRepository.ts"
+import * as Conversations from "./branch/Conversations.ts"
 import { readBounded } from "#vibelang/emitted/worker/Body"
 import { HOSTNAME, parseAliases } from "./aliases.ts"
 import * as Domains from "./domains/Store.ts"
 import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import * as Flows from "#vibelang/emitted/worker/Flows"
+import * as ReplacedTokens from "./flows/RevokeReplacedGitHubToken.ts"
 import { RevokeGitHubToken, revokeExecutionId } from "./flows/RevokeGitHubToken.ts"
 import { appSlug, GitHubAuth, type GitHubRefused, roleOf } from "./GitHubAuth.ts"
 import * as HostedModel from "./HostedModel.ts"
 import * as RunCredentials from "./RunCredentials.ts"
 import * as SessionKeys from "./SessionKeys.ts"
 import * as SessionStore from "./SessionStore.ts"
+import * as SessionPrior from "./SessionPrior.ts"
+import * as WriteAdmission from "./WriteAdmission.ts"
 
 // Sign-in (docs/features/sign-in.md, decision 0008 phase 1): the Smithers GitHub App's user authorization, with PKCE
 // S256 and `state` bound to the browser that started it, and a session per browser kept in Postgres behind a signed,
@@ -42,8 +49,7 @@ import * as SessionStore from "./SessionStore.ts"
 // durable flow `auth/RevokeGitHubToken`, which ends the session and revokes its GitHub token: a route starts it through
 // `Flows.FlowStarter` and answers only once the start is recorded.
 
-/** The repository roles are read on when `GITHUB_REPOSITORY` is unset. */
-export const DEFAULT_REPOSITORY = "smithersai/smithers"
+export { DEFAULT_REPOSITORY }
 
 /** How long a session lasts when `SESSION_MAX_AGE_DAYS` is unset. */
 export const SESSION_MAX_AGE_DAYS = 30
@@ -66,11 +72,23 @@ export const SIGN_IN_TTL_SECONDS = 600
 /** How long a hand-off's code lives, from `APP_DOMAIN` minting it to the alias redeeming it (decision 0130). */
 export const HANDOFF_CODE_TTL_SECONDS = 60
 
-/** Sign-in requests, by `route` (`sign_in`, `callback`, `sign_out`), `outcome` and `reason`. */
+/** Sign-in requests, by `route` (`sign_in`, `callback`, `sign_out`, `session`), `outcome` and `reason`. */
 export const requests = Metric.counter("smithers_auth_requests", {
   description: "Sign-in requests, by route, outcome and reason",
   incremental: true,
 })
+
+/** Identity-free credential outcomes are kept separate from route request counts. */
+export const sessionOutcomes = Metric.counter("smithers_auth_session", { incremental: true })
+
+/** A configured-key cookie for a re-keyed live row authenticates nobody, without asserting a session end. */
+class CredentialStale extends Schema.TaggedError<CredentialStale>()("CredentialStale", {}) {}
+
+/** One request shares its verified lookup, so routing never multiplies session reads or rejection records. */
+class CookieReceipt extends Context.Service<CookieReceipt, {
+  readonly live: Option.Option<SessionStore.Live>
+  readonly lookupStarted: bigint
+}>()("@smthrs/mvp/auth/CookieReceipt") {}
 
 /**
  * Starts `auth/RecheckRole` for a session without waiting for it. `generation` is the check it replaces, the session's
@@ -95,10 +113,13 @@ export interface Signed {
   readonly actor: Actor.Actor
   readonly login: string
   /**
-   * When the session the request presented ends, epoch milliseconds (devpriv FINAL step 1): its home session's end,
-   * which an alias session shares. None for local development's people, who have no session.
+   * The earliest known end of the presented session, epoch milliseconds, including an alias's own bound.
+   * None for local development's people, who have no session.
    */
   readonly expiresAt?: number
+  readonly deadline?: number
+  /** The presented row's opaque tag, shared only by responses for that row. */
+  readonly session?: string
   /** The database's `clock_timestamp()` when the lookup read `expiresAt`, epoch ms; present exactly when it is. */
   readonly serverNow?: number
 }
@@ -126,6 +147,8 @@ export const configured = (github?: GitHubAuth["Service"]) =>
     const clientId = yield* Config.option(Config.NonEmptyString("GITHUB_APP_CLIENT_ID"))
     const clientSecret = yield* Config.option(Config.Redacted("GITHUB_APP_CLIENT_SECRET"))
     const secret = yield* Config.option(Config.Redacted("SESSION_SECRET"))
+    const encodedSecrets = yield* Config.option(Config.Redacted("SESSION_SECRETS"))
+    const sealSecret = yield* Config.option(Config.Redacted("SESSION_SEAL_SECRET"))
     const repository = yield* Config.schema(repositoryName, "GITHUB_REPOSITORY").pipe(
       Config.withDefault(DEFAULT_REPOSITORY),
     )
@@ -135,15 +158,28 @@ export const configured = (github?: GitHubAuth["Service"]) =>
     const recheckMinutes = yield* Config.schema(positive, "ROLE_RECHECK_MINUTES").pipe(
       Config.withDefault(ROLE_RECHECK_MINUTES),
     )
-    if (Option.isNone(clientId) || Option.isNone(clientSecret) || Option.isNone(secret)) {
+    if (Option.isNone(clientId) || Option.isNone(clientSecret) || (Option.isNone(secret) && Option.isNone(encodedSecrets))) {
       return Option.none<Configured>()
     }
-    if (Redacted.value(secret.value).length < SessionKeys.MIN_SECRET_LENGTH) {
+    if (Option.isSome(secret) && Redacted.value(secret.value).length < SessionKeys.MIN_SECRET_LENGTH) {
       yield* Effect.logError("auth.config").pipe(Effect.annotateLogs({ errorCode: "session_secret_too_short" }))
       return Option.none<Configured>()
     }
+    const sealing = Option.orElse(sealSecret, () => secret)
+    if (Option.isNone(sealing) || Redacted.value(sealing.value).length < SessionKeys.MIN_SECRET_LENGTH) {
+      yield* Effect.logError("auth.config").pipe(Effect.annotateLogs({ errorCode: "session_seal_secret_missing" }))
+      return Option.none<Configured>()
+    }
+    const signing = Option.isSome(encodedSecrets) ? SessionKeys.decodeSecrets(encodedSecrets.value)
+      : SessionKeys.decodeSecrets(Redacted.make(JSON.stringify({
+        legacy: Redacted.value(Option.getOrElse(secret, () => sealing.value)),
+      })))
+    if (Option.isNone(signing)) {
+      yield* Effect.logError("auth.config").pipe(Effect.annotateLogs({ errorCode: "session_secrets_invalid" }))
+      return Option.none<Configured>()
+    }
     return Option.some<Configured>({
-      keys: yield* SessionKeys.make(secret.value),
+      keys: yield* SessionKeys.make(sealing.value, { sealSecret: sealing.value, secrets: signing.value }),
       github: github ??
         (yield* GitHubAuth.pipe(
           Effect.provide(GitHubAuth.layer({ clientId: clientId.value, clientSecret: clientSecret.value })),
@@ -265,6 +301,9 @@ const cookieNames = (secure: boolean) =>
 const cookieOptions = (secure: boolean, maxAge: Duration.Duration) =>
   ({ httpOnly: true, secure, sameSite: "lax", path: "/", maxAge }) as const
 
+const sessionCookieOptions = (secure: boolean, deadline: number) =>
+  ({ httpOnly: true, secure, sameSite: "lax", path: "/", expires: new Date(deadline) }) as const
+
 const noStore = { "cache-control": "no-store" }
 const noReferrer = { ...noStore, "referrer-policy": "no-referrer" }
 
@@ -292,6 +331,12 @@ const sameString = (left: string, right: string) =>
   Core.Signature.constantTimeEqual(encoder.encode(left), encoder.encode(right))
 
 /** The host couldn't record the start of a session's sign-out flow; `errorCode` is the host's code, or `conflict`. */
+const reauths = Metric.counter("smithers_auth_reauth", { incremental: true })
+const recordReauth = (outcome: "renewed_in_place" | "new_row", reason: string) => Effect.andThen(
+  Metric.update(Metric.withAttributes(reauths, { outcome, reason }), 1),
+  Effect.logInfo("auth.reauth").pipe(Effect.annotateLogs({ outcome, reason })),
+)
+
 class SignOutNotStarted extends Schema.TaggedError<SignOutNotStarted>()("SignOutNotStarted", {
   errorCode: Schema.String,
 }) {}
@@ -349,6 +394,11 @@ export const make = <E, R>(
 ) =>
   Effect.gen(function* () {
     const setup = yield* configured(options.github)
+    const roleFreshMs = yield* SessionStore.roleFreshMs
+    const signingKeyIds = Option.isSome(setup) ? setup.value.keys.keyIds : []
+    const withSigningKeys = <A, E2, R2>(effect: Effect.Effect<A, E2, R2>) =>
+      effect.pipe(Effect.provideService(SessionStore.SigningKeyIds, signingKeyIds),
+        Effect.provideService(SessionStore.RoleFreshMs, roleFreshMs))
     // Read whether or not sign-in is configured: Alchemy binds a setting only if its plan reads it, and no plan sees
     // SESSION_SECRET, which the stack binds itself, so a read behind `setup` never reached production
     // (worker/ChatApi.bindings.test.ts).
@@ -422,6 +472,125 @@ export const make = <E, R>(
       }))
     })
 
+    const signWithIssuer = (keys: SessionKeys.SessionKeys, purpose: SessionKeys.Purpose, value: string, keyId?: string) =>
+      Effect.gen(function* () {
+        const issuer = keyId ?? (yield* SessionStore.signingIssuer(keys.keyIds).pipe(Effect.provide(database)))
+        return yield* keys.sign(purpose, value, issuer)
+      })
+
+    const recordCookieRejected = Effect.andThen(
+      Metric.update(Metric.withAttributes(sessionOutcomes, { outcome: "cookie_rejected" }), 1),
+      Effect.logInfo("auth.session").pipe(Effect.annotateLogs({ outcome: "cookie_rejected" })),
+    )
+    const recordStale = Effect.andThen(
+      Metric.update(Metric.withAttributes(sessionOutcomes, { outcome: "credential_stale" }), 1),
+      Effect.logInfo("auth.session").pipe(Effect.annotateLogs({ outcome: "credential_stale" })),
+    )
+    const credentialStale = Effect.gen(function* () {
+      if (Option.isNone(setup)) return false
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const { url, secure } = arrival(request)
+      const proof = yield* setup.value.keys.verify("session", request.cookies[cookieNames(secure).session])
+      if (Option.isNone(proof)) return false
+      const digest = SessionKeys.digest(proof.value.value)
+      const away = Option.isSome(handoff) && url.hostname !== handoff.value.host
+      return yield* SessionStore.credentialStale(digest, away ? url.hostname : null, proof.value.keyId).pipe(
+        Effect.provide(database), Effect.mapError(error => new Actor.SessionsUnavailable({ errorCode: codeOf(error) })),
+      )
+    }).pipe(withSigningKeys)
+    // Only clients that retain writes through stale credentials may receive this retryable response.
+    const staleResponse = Effect.map(HttpServerRequest.HttpServerRequest, request => {
+      const accepts = request.headers[ACCEPTS_HEADER] === ACCEPTS_CREDENTIAL_STALE
+      return HttpServerResponse.empty({ status: accepts ? 503 : 401, headers: {
+        ...noStore, "x-smithers-credential": "stale", ...(accepts ? { "retry-after": "1" } : {}),
+      } })
+    })
+    const readCookie = Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const lookupClock = yield* Clock.Clock
+      const initialStarted = yield* lookupClock.monotonicTimeNanos
+      const rawCookie = request.cookies[cookieNames(arrival(request).secure).session]
+      if (Option.isNone(setup)) {
+        if (rawCookie !== undefined) yield* recordCookieRejected
+        return { live: Option.none<SessionStore.Live>(), lookupStarted: initialStarted }
+      }
+      const { keys } = setup.value
+      const { url } = arrival(request)
+      const token = yield* keys.verify("session", rawCookie)
+      if (Option.isNone(token)) {
+        if (rawCookie !== undefined) yield* recordCookieRejected
+        return { live: Option.none<SessionStore.Live>(), lookupStarted: initialStarted }
+      }
+      const digest = SessionKeys.digest(token.value.value)
+      // Away from home, an alias session first; a session signed in at this host itself, as before 0130, still reads.
+      const away = Option.isSome(handoff) && url.hostname !== handoff.value.host
+      if (request.method === "GET" && request.url.split("?")[0] === SESSION_ROUTE) {
+        const renewed = yield* SessionStore.renew(digest, away ? url.hostname : null, setup.value.maxAgeSeconds, token.value.keyId).pipe(
+          Effect.provide(database),
+          Effect.tapError(error => Effect.logError("auth.session").pipe(
+            Effect.annotateLogs({ outcome: "error", errorCode: codeOf(error) }),
+          )),
+          Effect.mapError(error => new Actor.SessionsUnavailable({ errorCode: codeOf(error) })),
+        )
+        if (renewed) yield* record("session", { outcome: "renewed" })
+      }
+      const lookupStarted = yield* lookupClock.monotonicTimeNanos
+      const lookup = (away
+        ? Effect.flatMap(
+          SessionStore.findHostLive(digest, url.hostname, token.value.keyId),
+          (found) => Option.isSome(found) ? Effect.succeed(found) : SessionStore.findLive(digest, token.value.keyId),
+        )
+        : SessionStore.findLive(digest, token.value.keyId)).pipe(
+        Effect.provide(database),
+        Effect.tapError((error) =>
+          Effect.logError("auth.session").pipe(Effect.annotateLogs({ outcome: "error", errorCode: codeOf(error) }))
+        ),
+        Effect.mapError(error => new Actor.SessionsUnavailable({ errorCode: codeOf(error) })),
+      )
+      const found = yield* lookup
+      const live = Option.isNone(found) ? found : yield* renewRole(found.value, lookup)
+      if (Option.isNone(live)) {
+        yield* recordCookieRejected
+        if (yield* credentialStale) { yield* recordStale; return yield* new CredentialStale() }
+        return { live, lookupStarted }
+      }
+      return { live, lookupStarted }
+    }).pipe(withSigningKeys)
+
+    const guard = <E2, R2>(next: Effect.Effect<HttpServerResponse.HttpServerResponse, E2, R2>) => Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const path = request.url.split("?")[0]!
+      // Recovery routes and bearer proofs validate themselves. Sign-out verifies the configured signature and owner
+      // so a lost rotation response cannot strand a live session behind its old cookie.
+      if (Option.isNone(setup) || (Option.isSome(RunCredentials.bearerOf(request)) && !path.startsWith("/api/auth/")) ||
+        [SESSION_ROUTE, SIGN_IN_ROUTE, SIGN_OUT_ROUTE, CALLBACK_ROUTE, ARRIVE_ROUTE, HANDOFF_ROUTE].includes(path)) return yield* next
+      if (Option.isSome(yield* Effect.serviceOption(CookieReceipt))) return yield* next
+      const receipt = yield* readCookie
+      return yield* next.pipe(Effect.provideService(CookieReceipt, receipt))
+    }).pipe(
+      Effect.catchTag("CredentialStale", () => staleResponse),
+      Effect.catchTag("@smthrs/mvp/auth/SessionsUnavailable", error => Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        if (request.url.split("?")[0] === SIGN_OUT_ROUTE) yield* record("sign_out", {
+          outcome: "failed", reason: "error", errorCode: "errorCode" in error && typeof error.errorCode === "string" ? error.errorCode : "sessions_unavailable",
+        })
+        return HttpServerResponse.empty({ status: 503, headers: noStore })
+      })),
+      withSigningKeys,
+    )
+
+    // One attempt per isolate's SignIn service, set before yielding so concurrent requests never join its RPC.
+    let maintenanceStarted = false
+    /** The shared request boundary for body admission and cookie authority. Maintenance is best effort. */
+    const admit = <E2, R2>(next: Effect.Effect<HttpServerResponse.HttpServerResponse, E2, R2>,
+      preflight?: Parameters<typeof WriteAdmission.afterBody>[1]) => WriteAdmission.afterBody(Effect.gen(function* () {
+      if (Option.isSome(setup) && !maintenanceStarted) {
+        maintenanceStarted = true
+        yield* ReplacedTokens.ensure.pipe(Effect.catchCause(() => Effect.void))
+      }
+      return yield* guard(next)
+    }), preflight)
+
     /** The signed-in person behind a request, if any. Starts a role check when their role is stale. */
     const current = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
@@ -436,30 +605,12 @@ export const make = <E, R>(
           : options.newcomer?.(person)
         return Option.fromNullishOr(teammate ?? options.fallback)
       }
-      const { keys, recheckAfterMs } = setup.value
-      const { url, secure } = arrival(request)
-      const token = yield* keys.verify("session", request.cookies[cookieNames(secure).session])
-      if (Option.isNone(token)) return Option.none()
-      const digest = SessionKeys.digest(token.value)
-      // Away from home, an alias session first; a session signed in at this host itself, as before 0130, still reads.
-      const away = Option.isSome(handoff) && url.hostname !== handoff.value.host
-      const lookup = (away
-        ? Effect.flatMap(
-          SessionStore.findHostLive(digest, url.hostname),
-          (found) => Option.isSome(found) ? Effect.succeed(found) : SessionStore.findLive(digest),
-        )
-        : SessionStore.findLive(digest)).pipe(
-        Effect.provide(database),
-        Effect.tapError((error) =>
-          Effect.logError("auth.session").pipe(Effect.annotateLogs({ outcome: "error", errorCode: codeOf(error) }))
-        ),
-        Effect.mapError(() => new Actor.SessionsUnavailable()),
-      )
-      const found = yield* lookup
-      if (Option.isNone(found)) return Option.none()
-      // Read the presented alias again too: ending it while its home refreshes must still sign this host out.
-      const live = yield* renewRole(found.value, lookup)
+      const shared = yield* Effect.serviceOption(CookieReceipt)
+      const { live, lookupStarted } = Option.isSome(shared) ? shared.value : yield* readCookie
       if (Option.isNone(live)) return Option.none()
+      const { recheckAfterMs } = setup.value
+      const lookupClock = yield* Clock.Clock
+      if (Number((yield* lookupClock.monotonicTimeNanos) - lookupStarted) / 1_000_000 >= live.value.expiresAt - live.value.serverNow) return Option.none()
       const unconfirmed = !SessionStore.roleFresh(live.value.roleVerifiedAt, live.value.serverNow, recheckAfterMs)
       // An alias session acts as its home session, which holds the person's GitHub tokens and role (decision 0130).
       return Option.some<Signed>({
@@ -467,6 +618,7 @@ export const make = <E, R>(
           subject: { kind: "person", id: live.value.personId },
           role: live.value.role,
           session: live.value.home ?? live.value.id,
+          cookieKey: live.value.cookieKey,
           // The alias session itself, which signing out at its host ends (worker/SocketAccess.ts and
           // worker/runners/Fence.ts check both).
           ...(live.value.home === undefined ? {} : { alias: live.value.id }),
@@ -475,6 +627,8 @@ export const make = <E, R>(
         login: live.value.login,
         expiresAt: live.value.expiresAt,
         serverNow: live.value.serverNow,
+        deadline: live.value.deadline,
+        session: live.value.sessionTag,
       })
     }).pipe(Effect.withSpan("auth.resolve"))
 
@@ -514,7 +668,7 @@ export const make = <E, R>(
         ).pipe(
           HttpServerResponse.setCookieUnsafe(
             cookieNames(secure).signIn,
-            yield* keys.sign("sign_in", state),
+            yield* signWithIssuer(keys, "sign_in", state),
             cookieOptions(secure, Duration.seconds(SIGN_IN_TTL_SECONDS)),
           ),
         )
@@ -553,18 +707,18 @@ export const make = <E, R>(
       }
       const nonce = yield* keys.token
       const expiresAt = (yield* Clock.currentTimeMillis) + SIGN_IN_TTL_SECONDS * 1000
-      const handoffRequest = yield* keys.sign(
+      const handoffRequest = yield* signWithIssuer(keys,
         "handoff_request",
         JSON.stringify({ host: url.hostname, returnTo, nonce: SessionKeys.digest(nonce), expiresAt }),
       )
       yield* record("sign_in", { outcome: "handed_off", host: url.hostname })
       return HttpServerResponse.redirect(
-        `${url.protocol}//${handoff.value.host}${HANDOFF_ROUTE}?request=${encodeURIComponent(handoffRequest)}`,
+        `${url.protocol}//${handoff.value.host}${HANDOFF_ROUTE}?request=${encodeURIComponent(handoffRequest)}${url.searchParams.get("reauth") === "1" ? "&reauth=1" : ""}`,
         { status: 302, headers: noReferrer },
       ).pipe(
         HttpServerResponse.setCookieUnsafe(
           cookieNames(secure).handoff,
-          yield* keys.sign("handoff", nonce),
+          yield* signWithIssuer(keys, "handoff", nonce),
           cookieOptions(secure, Duration.seconds(SIGN_IN_TTL_SECONDS)),
         ),
       )
@@ -606,7 +760,7 @@ export const make = <E, R>(
         ? new URLSearchParams(yield* readBounded(request, 4096).pipe(Effect.orElseSucceed(() => ""))).get("request")
         : url.searchParams.get("request")
       const verified = yield* keys.verify("handoff_request", signed ?? undefined)
-      const asked = Option.flatMap(verified, decodeHandoffRequest)
+      const asked = Option.flatMap(verified, proof => decodeHandoffRequest(proof.value))
       const now = yield* Clock.currentTimeMillis
       if (Option.isNone(asked) || asked.value.expiresAt <= now) {
         yield* record("handoff", { outcome: "refused", reason: Option.isNone(asked) ? "invalid_request" : "expired_request" })
@@ -623,8 +777,11 @@ export const make = <E, R>(
         yield* record("handoff", { outcome: "failed", reason: "sign_in_failed", host })
         return HttpServerResponse.redirect(`${away}${failedPath(returnTo, away)}`, { status: 303, headers: noReferrer })
       }
-      const signedIn = yield* current
-      if (Option.isNone(signedIn)) {
+      const signedIn = yield* current.pipe(Effect.catchTag("CredentialStale", () => Effect.succeedNone))
+      const reauth = url.searchParams.get("reauth") === "1" && Option.isSome(signedIn) &&
+        signedIn.value.deadline !== undefined && signedIn.value.serverNow !== undefined &&
+        signedIn.value.deadline - signedIn.value.serverNow <= 7 * 86400_000
+      if (Option.isNone(signedIn) || reauth) {
         yield* record("handoff", { outcome: "signing_in", host })
         return yield* toGitHub(keys, github, origin, secure, `${HANDOFF_ROUTE}?request=${encodeURIComponent(signed!)}`)
       }
@@ -673,7 +830,7 @@ export const make = <E, R>(
         return HttpServerResponse.text(ARRIVE_PAGE, { contentType: "text/html; charset=utf-8", headers: ARRIVE_HEADERS })
       }
       if (request.method !== "POST") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET, POST" } })
-      const { keys, maxAgeSeconds } = setup.value
+      const { keys } = setup.value
       const host = url.hostname
       const outcome = yield* Effect.gen(function* () {
         // Only this origin's page posts a code: another site's form signs nobody in here (login CSRF). The arrive page
@@ -707,16 +864,15 @@ export const make = <E, R>(
         if (!(yield* fromDatabase(handsTo(host), returnTo))) return yield* failing("foreign_host")
         const nonce = yield* keys.verify("handoff", request.cookies[names.handoff])
         if (Option.isNone(nonce)) return yield* failing("nonce_missing")
-        if (!sameString(SessionKeys.digest(nonce.value), nonceDigest)) return yield* failing("nonce_mismatch")
+        if (!sameString(SessionKeys.digest(nonce.value.value), nonceDigest)) return yield* failing("nonce_mismatch")
         const stored = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
           fromDatabase(effect.pipe(Effect.provide(database)), returnTo)
-        // Signing in again at this alias ends the session this browser held here: an alias session, or one signed in
-        // through GitHub at this host before 0130, whose sign-out flow is admitted first, as the callback does.
+        // A pre-0130 home session holds GitHub tokens, so its existing sign-out flow still owns termination.
+        // Alias rows are decided under the arrival transaction’s locks below.
         const previous = yield* keys.verify("session", request.cookies[names.session])
         if (Option.isSome(previous)) {
-          const digest = SessionKeys.digest(previous.value)
-          const ended = yield* stored(SessionStore.revokeHost(digest, host))
-          const pending = Option.isSome(ended) ? Option.none<string>() : yield* stored(SessionStore.signingOut(digest))
+          const digest = SessionKeys.digest(previous.value.value)
+          const pending = yield* stored(SessionStore.signingOut(digest))
           if (Option.isSome(pending)) {
             yield* startSignOut(pending.value).pipe(
               Effect.mapError((error) => failing("sign_out_not_started", error.errorCode)),
@@ -724,13 +880,13 @@ export const make = <E, R>(
             yield* stored(SessionStore.revoke({ id: pending.value }, "sign_out"))
           }
         }
-        // A token drawn now, never one the browser brought (session fixation).
-        const token = yield* keys.token
-        const created = yield* stored(
-          SessionStore.createHostSession({ id: crypto.randomUUID(), tokenDigest: SessionKeys.digest(token), parentId: sessionId, host }),
-        )
-        if (!created) return yield* failing("home_ended")
-        return { returnTo, cookie: yield* keys.sign("session", token) }
+        const freshToken = yield* keys.token
+        const issued = yield* stored(SessionStore.reauthenticateHost({ id: crypto.randomUUID(), tokenDigest: SessionKeys.digest(freshToken), parentId: sessionId, host },
+          Option.isNone(previous) ? null : { digest: SessionKeys.digest(previous.value.value), key: previous.value.keyId }, keys.keyIds))
+        if (Option.isNone(issued)) return yield* failing("home_ended")
+        const token = issued.value.renewed ? Option.getOrThrow(previous).value : freshToken
+        yield* recordReauth(issued.value.renewed ? "renewed_in_place" : "new_row", issued.value.renewed ? "eligible_alias" : "ineligible_alias")
+        return { returnTo, cookie: yield* keys.sign("session", token, issued.value.key), deadline: issued.value.deadline }
       }).pipe(
         Effect.catchDefect((defect) => Effect.fail(new ArriveFailed({ reason: "error", errorCode: codeOf(defect) }))),
         Effect.result,
@@ -738,7 +894,7 @@ export const make = <E, R>(
       if (outcome._tag === "Success") {
         yield* record("arrive", { outcome: "signed_in", host })
         return HttpServerResponse.redirect(returnPath(outcome.success.returnTo, origin), { status: 303, headers: noReferrer }).pipe(
-          HttpServerResponse.setCookieUnsafe(names.session, outcome.success.cookie, cookieOptions(secure, Duration.seconds(maxAgeSeconds))),
+          HttpServerResponse.setCookieUnsafe(names.session, outcome.success.cookie, sessionCookieOptions(secure, outcome.success.deadline)),
           HttpServerResponse.expireCookieUnsafe(names.handoff, cookieOptions(secure, Duration.zero)),
         )
       }
@@ -767,7 +923,7 @@ export const make = <E, R>(
         const state = url.searchParams.get("state")
         const started = yield* keys.verify("sign_in", request.cookies[names.signIn])
         // The state must be the one this browser was given: a callback finished in another browser signs nobody in.
-        if (state === null || Option.isNone(started) || !sameString(state, started.value)) {
+        if (state === null || Option.isNone(started) || !sameString(state, started.value.value)) {
           return yield* new CallbackFailed({ reason: "state_mismatch" })
         }
         const stateDigest = SessionKeys.digest(state)
@@ -785,24 +941,7 @@ export const make = <E, R>(
         const codeVerifier = yield* keys.open(verifier, { id: stateDigest, name: "pkce_verifier", version: 1 }).pipe(
           Effect.mapError(() => failing("unreadable")),
         )
-        // Signing in again in this browser ends the session it held. Its sign-out flow is admitted first, before the
-        // code is redeemed, so a start the host refuses fails the sign-in with nothing redeemed and the session kept.
         const previous = yield* keys.verify("session", request.cookies[names.session])
-        const ending = Option.isNone(previous)
-          ? Option.none<string>()
-          : yield* SessionStore.signingOut(SessionKeys.digest(previous.value)).pipe(
-            Effect.provide(database),
-            Effect.mapError((error) => new CallbackFailed({ reason: "database", returnTo, errorCode: codeOf(error) })),
-          )
-        yield* Option.match(ending, {
-          onNone: () => Effect.void,
-          onSome: (sessionId) =>
-            startSignOut(sessionId).pipe(
-              Effect.mapError((error) =>
-                new CallbackFailed({ reason: "sign_out_not_started", returnTo, errorCode: error.errorCode })
-              ),
-            ),
-        })
         const fromGitHub = <A>(effect: Effect.Effect<A, GitHubRefused>) =>
           Effect.mapError(effect, (error) => failing(`${error.step}_${error.reason}`))
         const tokens = yield* fromGitHub(github.exchange({ code: Redacted.make(code), codeVerifier, redirectUri }))
@@ -812,38 +951,54 @@ export const make = <E, R>(
           Effect.mapError((error) => new CallbackFailed({ reason: "database", returnTo, errorCode: codeOf(error) })),
         )
         const role = roleOf(yield* fromGitHub(github.permission(tokens.accessToken, repository)))
-        const sessionId = crypto.randomUUID()
-        const token = yield* keys.token
-        const seal = (value: Redacted.Redacted<string>, name: "github_access" | "github_refresh") =>
-          keys.seal(value, { id: sessionId, name, version: 1 })
-        const signedIn = yield* Effect.gen(function* () {
-          const personId = yield* SessionStore.upsertPerson({
-            id: crypto.randomUUID(),
-            githubId: user.id,
-            login: user.login,
-          })
-          const effectiveRole = yield* SessionStore.createSession({
-            id: sessionId,
-            tokenDigest: SessionKeys.digest(token),
-            personId,
-            role,
-            roleGeneration,
-            access: yield* seal(tokens.accessToken, "github_access"),
-            accessExpiresAt: tokens.expiresAt,
+        const freshId = crypto.randomUUID()
+        const freshToken = yield* keys.token
+        const signedIn = yield* SessionStore.issuance(Effect.gen(function* () {
+          const personId = yield* SessionStore.upsertPerson({ id: crypto.randomUUID(), githubId: user.id, login: user.login })
+          const candidate = Option.isNone(previous) ? Option.none<{ id: string; eligible: boolean }>()
+            : yield* SessionStore.reauthCandidate(SessionKeys.digest(previous.value.value), personId, previous.value.keyId, keys.keyIds)
+          let renewed = Option.isSome(candidate) && candidate.value.eligible
+          const pending: Array<string> = []
+          if (renewed && Option.isSome(candidate)) {
+            const held = yield* SessionStore.held(candidate.value.id)
+            if (Option.isSome(held) && held.value.access !== null) {
+              // Pre-migration rows have no pair digest. Opening their pinned seal recovers it without exposing the token.
+              const pairDigest = held.value.pairDigest ?? (yield* keys.open(held.value.access,
+                { id: candidate.value.id, name: "github_access", version: 1 }).pipe(Effect.map(value => SessionKeys.digest(Redacted.value(value))),
+                  Effect.catchTag("/control/PersistenceError", () => Effect.succeed(null))))
+              if (pairDigest === null) {
+                yield* SessionStore.revoke(candidate.value, "unreadable")
+                renewed = false
+              } else {
+                const cleanup = yield* SessionStore.enqueueCleanup({ sessionId: candidate.value.id, pairDigest, access: held.value.access, refresh: held.value.refresh })
+                if (Option.isSome(cleanup)) pending.push(cleanup.value)
+              }
+            }
+          }
+          const sessionId = renewed ? Option.getOrThrow(candidate).id : freshId
+          const token = renewed ? Option.getOrThrow(previous).value : freshToken
+          const seal = (value: Redacted.Redacted<string>, name: "github_access" | "github_refresh") => keys.seal(value, { id: sessionId, name, version: 1 })
+          const next = {
+            id: sessionId, tokenDigest: SessionKeys.digest(token), personId, role, roleGeneration,
+            access: yield* seal(tokens.accessToken, "github_access"), accessExpiresAt: tokens.expiresAt,
             refresh: tokens.refreshToken === null ? null : yield* seal(tokens.refreshToken, "github_refresh"),
-            refreshDigest: tokens.refreshToken === null
-              ? null
-              : SessionKeys.digest(Redacted.value(tokens.refreshToken)),
-            maxAgeSeconds,
-          })
-          // The session this browser held ends now, so it is refused at once; its admitted flow revokes its tokens.
-          if (Option.isSome(ending)) yield* SessionStore.revoke({ id: ending.value }, "sign_out")
-          return { personId, role: effectiveRole }
-        }).pipe(
+            refreshDigest: tokens.refreshToken === null ? null : SessionKeys.digest(Redacted.value(tokens.refreshToken)),
+            pairDigest: SessionKeys.digest(Redacted.value(tokens.accessToken)), maxAgeSeconds,
+          }
+          const effectiveRole = renewed ? yield* SessionStore.reauthenticate(next, keys.keyIds)
+            : yield* SessionStore.createSession(next, keys.keyIds)
+          if (!renewed && Option.isSome(candidate)) yield* SessionStore.revoke({ id: candidate.value.id }, "sign_out")
+          const live = yield* SessionStore.findLive(SessionKeys.digest(token))
+          if (Option.isNone(live)) return yield* new CallbackFailed({ reason: "expired", returnTo })
+          return { personId, role: effectiveRole, deadline: live.value.deadline, cookieKey: live.value.cookieKey, token, pending, renewed }
+        })).pipe(
           Effect.provide(database),
-          Effect.mapError((error) => new CallbackFailed({ reason: "database", returnTo, errorCode: codeOf(error) })),
+          Effect.mapError((error) => new CallbackFailed({ reason: error instanceof SessionStore.IssuerUnconfigured ? "issuer_unconfigured" : "database", returnTo, errorCode: codeOf(error) })),
         )
-        return { ...signedIn, returnTo, cookie: yield* keys.sign("session", token), maxAgeSeconds }
+        // Commit the cleanup request before admitting its flow. A refused start leaves it for the alarm's sweeper.
+        yield* Effect.forEach(signedIn.pending, ReplacedTokens.start, { discard: true })
+        yield* recordReauth(signedIn.renewed ? "renewed_in_place" : "new_row", signedIn.renewed ? "eligible" : "ineligible")
+        return { ...signedIn, returnTo, cookie: yield* keys.sign("session", signedIn.token, signedIn.cookieKey) }
       }).pipe(
         // A bug: logged by its name, and the browser told sign-in failed.
         Effect.catchDefect((defect) =>
@@ -853,13 +1008,13 @@ export const make = <E, R>(
       )
       const durationMs = (yield* Clock.currentTimeMillis) - startedAt
       if (outcome._tag === "Success") {
-        const { personId, role, returnTo, cookie, maxAgeSeconds } = outcome.success
+        const { personId, role, returnTo, cookie, deadline } = outcome.success
         yield* record("callback", { outcome: "signed_in", personId, role: role ?? "none", durationMs })
         return HttpServerResponse.redirect(returnPath(returnTo, origin), { status: 303, headers: noStore }).pipe(
           HttpServerResponse.setCookieUnsafe(
             names.session,
             cookie,
-            cookieOptions(secure, Duration.seconds(maxAgeSeconds)),
+            sessionCookieOptions(secure, deadline),
           ),
           HttpServerResponse.expireCookieUnsafe(names.signIn, cookieOptions(secure, Duration.zero)),
         )
@@ -901,7 +1056,7 @@ export const make = <E, R>(
           : yield* Effect.gen(function* () {
             const token = yield* setup.value.keys.verify("session", request.cookies[names.session])
             if (Option.isNone(token)) return Option.none<string>()
-            const digest = SessionKeys.digest(token.value)
+            const digest = SessionKeys.digest(token.value.value)
             const atAlias = away ? yield* SessionStore.hostOwnerOf(digest, hostname) : Option.none<string>()
             return Option.isSome(atAlias) ? atAlias : yield* SessionStore.ownerOf(digest)
           }).pipe(Effect.provide(database))
@@ -925,12 +1080,12 @@ export const make = <E, R>(
         )
       }
       const token = Option.isNone(setup)
-        ? Option.none<string>()
+        ? Option.none<SessionKeys.Verified>()
         : yield* setup.value.keys.verify("session", request.cookies[names.session])
       // At an alias, signing out ends this alias's session only; its home session and every other alias's stay
       // (decision 0130). Nothing to revoke on GitHub: an alias session holds no token.
       const ended = Option.isSome(token) && away
-        ? yield* SessionStore.revokeHost(SessionKeys.digest(token.value), hostname).pipe(Effect.provide(database))
+        ? yield* SessionStore.revokeHost(SessionKeys.digest(token.value.value), hostname).pipe(Effect.provide(database))
         : Option.none<string>()
       if (Option.isSome(ended)) {
         yield* record("sign_out", { outcome: "signed_out", reason: "alias" })
@@ -942,7 +1097,7 @@ export const make = <E, R>(
       // so it is refused at once; the flow ends it again, which changes nothing, and revokes its GitHub token.
       const pending = Option.isNone(token)
         ? Option.none<string>()
-        : yield* SessionStore.signingOut(SessionKeys.digest(token.value)).pipe(Effect.provide(database))
+        : yield* SessionStore.signingOut(SessionKeys.digest(token.value.value)).pipe(Effect.provide(database))
       if (Option.isSome(pending)) {
         yield* startSignOut(pending.value)
         yield* SessionStore.revoke({ id: pending.value }, "sign_out").pipe(Effect.provide(database))
@@ -971,7 +1126,7 @@ export const make = <E, R>(
      * read says it does: the endpoint refuses each call itself, so the composer shows and the answer fails visibly
      * rather than hiding chat. Signed in, where Install goes (`install`), when the deployment signs in with the App.
      */
-    const session = Effect.gen(function* () {
+    const sessionAnswer = (prior: SessionPrior.Prior | undefined) => Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
       if (request.method !== "GET") return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
       const signed = yield* current
@@ -981,10 +1136,20 @@ export const make = <E, R>(
           Effect.as(record("session", { outcome: "failed", reason: "hosted_model", errorCode: codeOf(Cause.squash(cause)) }), true)
         ),
       )
+      // The home conversation is every signed-in person's own (decision 0110, the data gate): its rows show on their
+      // devices by this id, with no repository's say. None when the home branch doesn't exist yet.
+      const homeConversationId = Option.isSome(signed)
+        ? yield* Conversations.home.pipe(
+          Effect.provide(database),
+          // A deployment with no home repository configured, or a database that can't say, names none.
+          Effect.catchCause(() => Effect.succeed(undefined)),
+        )
+        : undefined
       const state: SessionState = Option.isSome(signed)
         ? {
           signedIn: true,
           personId: signed.value.actor.subject.id,
+          ...(homeConversationId === undefined ? {} : { homeConversationId }),
           login: signed.value.login,
           role: signed.value.actor.role,
           ...(signed.value.roleConfirmed === false ? { roleConfirmed: false } : {}),
@@ -994,14 +1159,33 @@ export const make = <E, R>(
           // from when it asked. Local development's people have no session: the Worker's now, with no end to compare.
           ...(signed.value.expiresAt === undefined ? {} : { expiresAt: signed.value.expiresAt }),
           serverNow: signed.value.serverNow ?? (yield* Clock.currentTimeMillis),
+          ...(signed.value.deadline === undefined ? {} : { deadline: signed.value.deadline }),
+          ...(signed.value.session === undefined ? {} : { session: signed.value.session }),
         }
         : { signedIn: false, available: Option.isSome(setup) || options.fallback !== undefined, hostedModel }
-      return HttpServerResponse.jsonUnsafe(state, { status: 200, headers: noStore })
+      return HttpServerResponse.jsonUnsafe({ ...state, ...(prior === undefined ? {} : { prior }) }, { status: 200, headers: noStore })
     }).pipe(
+      Effect.catchTag("CredentialStale", () => Effect.succeed(HttpServerResponse.jsonUnsafe({ credential: "stale", ...(prior === undefined ? {} : { prior }) }, { status: 200, headers: noStore }))),
       Effect.catchTag("@smthrs/mvp/auth/SessionsUnavailable", () =>
-        Effect.succeed(HttpServerResponse.empty({ status: 503, headers: noStore }))),
+        Effect.succeed(prior === undefined ? HttpServerResponse.empty({ status: 503, headers: noStore })
+          : HttpServerResponse.jsonUnsafe({ prior }, { status: 503, headers: noStore }))),
       Effect.withSpan("auth.session"),
     )
+
+    const session = Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest
+      const tag = request.headers["x-smithers-session-tag"]
+      const prior = request.method !== "GET" || tag === undefined ? undefined : yield* SessionPrior.read(tag).pipe(
+        Effect.provide(database),
+        Effect.catchCause(() => Effect.succeed("failed" as const)),
+        Effect.tap(outcome => Effect.andThen(
+          Metric.update(Metric.withAttributes(Metric.counter("smithers_auth_session_prior", { incremental: true }), { outcome }), 1),
+          Effect.logInfo("auth.session_prior").pipe(Effect.annotateLogs({ outcome })),
+        )),
+        Effect.withSpan("auth.session_prior"),
+      )
+      return yield* sessionAnswer(prior)
+    })
 
     const fetch = Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest
@@ -1054,23 +1238,28 @@ export const make = <E, R>(
         )
         : claims.sid === undefined
         ? Effect.succeedNone
-        : SessionStore.findLiveById(claims.sid).pipe(
+        : Effect.gen(function* () {
+          const lookupClock = yield* Clock.Clock
+          const lookupStarted = yield* lookupClock.monotonicTimeNanos
+          const found = yield* SessionStore.findLiveById(claims.sid!)
+          if (Option.isNone(found) || found.value.personId !== claims.sub) return Option.none()
+          const renewed = yield* renewRole(found.value)
+          if (Option.isNone(renewed)) return Option.none()
+          const live = renewed.value
+          // Role-check admission may wait even for a still-fresh role. Bound this snapshot's lifetime just as
+          // cookie admission does, using elapsed monotonic time rather than the Worker's wall clock.
+          if (Number((yield* lookupClock.monotonicTimeNanos) - lookupStarted) / 1_000_000 >= live.expiresAt - live.serverNow) return Option.none()
+          if (!SessionStore.roleFresh(live.roleVerifiedAt, live.serverNow, setup.value.recheckAfterMs)) {
+            return yield* new Actor.SessionsUnavailable()
+          }
+          return Option.some<Actor.Actor>({ subject: { kind: "person", id: live.personId },
+            role: live.role, session: live.id, cookieKey: live.cookieKey, login: live.login })
+        }).pipe(
           Effect.provide(database),
-          Effect.map(Option.filter((live) => live.personId === claims.sub)),
-          Effect.flatMap((found) => Option.isNone(found) ? Effect.succeedNone : Effect.gen(function* () {
-            const renewed = yield* renewRole(found.value)
-            if (Option.isNone(renewed)) return Option.none()
-            const live = renewed.value
-            if (!SessionStore.roleFresh(live.roleVerifiedAt, live.serverNow, setup.value.recheckAfterMs)) {
-              return yield* new Actor.SessionsUnavailable()
-            }
-            return Option.some<Actor.Actor>({ subject: { kind: "person", id: live.personId },
-              role: live.role, session: live.id, login: live.login })
-          })),
           Effect.tapError((error) =>
             Effect.logError("auth.session").pipe(Effect.annotateLogs({ outcome: "error", errorCode: codeOf(error) }))
           ),
-          Effect.mapError(() => new Actor.SessionsUnavailable()),
+          Effect.mapError(error => new Actor.SessionsUnavailable({ errorCode: codeOf(error) })),
         )
 
     /**
@@ -1080,10 +1269,16 @@ export const make = <E, R>(
     const sessions = Layer.effectContext(
       Effect.map(Effect.context<RoleChecks | R>(), (context) => {
         const credentials = RunCredentials.make({
-          keys: runKeys,
-          person: (claims) => personOf(claims).pipe(Effect.provide(context)),
+          keys: {
+            ...runKeys,
+            sign: (purpose, value, keyId) => Option.isNone(setup) ? runKeys.sign(purpose, value, keyId)
+              : signWithIssuer(runKeys, purpose, value, keyId).pipe(Effect.provide(context), Effect.orDie),
+          },
+          person: (claims) => personOf(claims).pipe(withSigningKeys, Effect.provide(context)),
         })
         return Context.make(RunCredentials.RunCredentials, credentials).pipe(
+          Context.add(SessionStore.SigningKeyIds, signingKeyIds),
+          Context.add(SessionStore.RoleFreshMs, roleFreshMs),
           Context.add(
             Actor.Sessions,
             (() => {
@@ -1092,6 +1287,7 @@ export const make = <E, R>(
                   ? Effect.fail(new Actor.SessionsUnavailable()) : Effect.succeed(signed)))
               const person = authorized.pipe(
                 Effect.map(Option.map((signed) => ({ ...signed.actor, login: signed.login }))),
+                Effect.catchTag("CredentialStale", () => Effect.succeedNone),
                 Effect.provide(context),
               )
               // The cookie's person also carries when its session ends and the database's clock as it read that, for a
@@ -1104,6 +1300,7 @@ export const make = <E, R>(
                     ? {}
                     : { expiry: { at: signed.expiresAt, now: signed.serverNow } }),
                 }))),
+                Effect.catchTag("CredentialStale", () => Effect.succeedNone),
                 Effect.provide(context),
               )
               return Actor.Sessions.of({
@@ -1116,5 +1313,5 @@ export const make = <E, R>(
       }),
     )
 
-    return { fetch, sessions, configured: setup }
+    return { fetch: withSigningKeys(fetch), sessions, configured: setup, guard, admit }
   })

@@ -485,7 +485,7 @@ describe("GET /api/shapes/notifications", () => {
     expect(synced.every((row) => row.recipient === "person-ben")).toBe(true)
     expect(Object.fromEntries(upstream[0]!.searchParams)).toMatchObject({
       table: "notifications",
-      where: "recipient = $1 AND feed_readable = true",
+      where: "recipient = $1 AND feed_readable = true AND emit_readable = true",
       "params[1]": "person-ben",
       columns: Notifications.SYNCED_NOTIFICATION_COLUMNS.join(","),
     })
@@ -499,10 +499,10 @@ describe("GET /api/shapes/notifications", () => {
     const theirs = await proxy(guest)
     expect((await theirs.h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)).status).toBe(200)
     expect(theirs.upstream[0]!.searchParams.get("params[1]")).toBe(guest.subject.id)
-    expect(theirs.upstream[0]!.searchParams.get("where")).toBe("recipient = $1 AND mine = true AND feed_readable = true")
+    expect(theirs.upstream[0]!.searchParams.get("where")).toBe("recipient = $1 AND mine = true AND feed_readable = true AND emit_readable = true")
     const member = await proxy(ann)
     expect((await member.h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)).status).toBe(200)
-    expect(member.upstream[0]!.searchParams.get("where")).toBe("recipient = $1 AND feed_readable = true")
+    expect(member.upstream[0]!.searchParams.get("where")).toBe("recipient = $1 AND feed_readable = true AND emit_readable = true")
   })
 
   test("a former Member's rows of others' runs stay theirs in Postgres but no longer sync; their own do", async () => {

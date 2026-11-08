@@ -46,12 +46,12 @@
  * @since 0.1.0
  */
 
-import { Crypto } from "@smthrs/crypto"
 import * as Dialect from "@smthrs/database/Dialect"
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import * as DurableWrites from "@smthrs/database/DurableWriter"
 import { Ownership, RunStore } from "@smthrs/run-store"
 import { Clock, Effect, Fiber, Layer, Option, Schema } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as SqlError from "effect/sql/SqlError"
 import * as ApprovalAuthority from "./ApprovalAuthority.vibe"
@@ -84,9 +84,12 @@ import type {
   RunCursor,
   RunQuery,
   Service,
+  SignalPage,
+  SignalQuery,
+  SignalReceipt,
   StoredPlan
 } from "./ControlRuntime.ts"
-import { ApprovalDecision, ControlRuntime, idPageLimit, make } from "./ControlRuntime.ts"
+import { ApprovalDecision, ControlRuntime, idPageLimit, make, signalReceiptId } from "./ControlRuntime.ts"
 import {
   ApprovalTarget,
   type Cancellation,
@@ -147,6 +150,11 @@ export type DurableFlow = MemoryFlow
  * @since 0.1.0
  */
 export interface Options {
+  /** Host admission policy checked within the durable launch transaction. */
+  readonly authorizeLaunch?:
+    | ((card: PlanCard, sql: SqlClient.SqlClient) => Effect.Effect<void, PlanDenied | PersistenceError>)
+    | undefined
+
   readonly flows?: ReadonlyArray<DurableFlow> | undefined
   /**
    * Reads the current flow catalog for each plan and listing. When supplied,
@@ -418,6 +426,39 @@ export const migrate: Effect.Effect<void, PersistenceError, SqlClient.SqlClient>
   )
 }).pipe(Effect.mapError(persistence("migrate")))
 
+/** Read a bounded page directly from the durable signal ledger. This is a
+ * storage port: hosts must authorize visibility of the run before calling it.
+ * No answer payload or wait token is loaded into the process.
+ * @category queries
+ * @since 1.0.0
+ */
+export const querySignalReceipts = (request: SignalQuery): Effect.Effect<
+  SignalPage,
+  InvalidInput | PersistenceError,
+  SqlClient.SqlClient
+> =>
+  Effect.gen(function*() {
+    yield* idPageLimit(request.limit)
+    if (request.after !== undefined && (!Number.isSafeInteger(request.after) || request.after < 0)) {
+      return yield* new InvalidInput({ issue: "after: must be a nonnegative safe integer" })
+    }
+    const sql = yield* SqlClient.SqlClient
+    const rows = yield* sql<Omit<SignalReceipt, "receiptId"> & { readonly rejection: "unauthorized" | null }>`
+    SELECT seq AS sequence, command_id AS "commandId", run_id AS "runId",
+      substr(${Dialect.jsonText(sql, sql`payload_json`, "$.name")}, 1, 1024) AS name, state, rejection
+    FROM control_signal_commands
+    WHERE run_id = ${request.runId} AND seq > ${request.after ?? 0}
+      AND ${request.commandId === undefined ? sql`1 = 1` : sql`command_id = ${request.commandId}`}
+    ORDER BY seq LIMIT ${request.limit + 1}
+  `.pipe(Effect.mapError(persistence("read signal receipts")))
+    const items = rows.slice(0, request.limit).map(({ rejection, ...row }) => ({
+      ...row,
+      receiptId: signalReceiptId(row.commandId),
+      ...(rejection === null ? {} : { rejection })
+    }))
+    return { items, ...(rows.length > request.limit ? { next: items.at(-1)!.sequence } : {}) }
+  })
+
 /**
  * Constructs a durable runtime over the ambient database and run store.
  *
@@ -430,7 +471,7 @@ const makeRuntime = (
 ): Effect.Effect<
   Service,
   PersistenceError,
-  Crypto.Crypto | DurableWriter | SqlClient.SqlClient | RunStore.RunStore
+  EffectDigest.Digest | DurableWriter | SqlClient.SqlClient | RunStore.RunStore
 > => {
   // Snapshot before the Effect starts: construction options are caller-owned
   // and may be mutated while migrations or service acquisition are suspended.
@@ -443,10 +484,10 @@ const makeRuntime = (
     : Object.freeze({ ...options.owner })
   const isAlive = options.isAlive
   const approvalAuthority = options.approvalAuthority ?? ApprovalAuthority.local
-  const authorizeApproval = approvalAuthority.authorize.bind(approvalAuthority)
+  const authorizeLaunch = options.authorizeLaunch
 
   return Effect.gen(function*() {
-    const crypto = yield* Crypto.Crypto
+    const crypto = yield* EffectDigest.Digest
     const writer = yield* DurableWriter
     const runStore = yield* RunStore.RunStore
     yield* migrate
@@ -489,15 +530,21 @@ const makeRuntime = (
      *
      * Inside an enclosing transaction the read takes a savepoint, because a
      * failed statement aborts a PostgreSQL transaction and the catch could not
-     * recover it. Outside one it runs bare: on SQLite a top-level transaction
-     * is `BEGIN IMMEDIATE`, which takes the write lock for a read and fails a
-     * contender with `SQLITE_BUSY` while another plane holds the claim.
+     * recover it. A standalone PostgreSQL probe uses a read transaction so
+     * optional-table diagnostics remain relative to the client's search path;
+     * the lone-read optimization otherwise qualifies them with the schema.
+     * SQLite stays bare: its top-level write transaction takes a write lock
+     * and can fail a contender with SQLITE_BUSY while another plane holds it.
      */
     const probe = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E | SqlError.SqlError, R> =>
       Effect.flatMap(
         Effect.serviceOption(sql.transactionService),
         (enclosing): Effect.Effect<A, E | SqlError.SqlError, R> =>
-          Option.isSome(enclosing) ? sql.withTransaction(effect) : effect
+          Option.isSome(enclosing)
+            ? sql.withTransaction(effect)
+            : Dialect.isPostgres(sql)
+            ? Dialect.readTransaction(sql, effect)
+            : effect
       )
 
     /** Allocates the next value of a durable counter inside one transaction. */
@@ -731,6 +778,7 @@ const makeRuntime = (
       SELECT DISTINCT run_id AS "runId" FROM flows_journal_events
       WHERE event_type = ${Lineage.forkCreatedEventType} AND ${within("run_id", scope)}
     `.pipe(
+        probe,
         Effect.map((rows) => new Set(rows.map((row) => row.runId)) as ReadonlySet<string>),
         Effect.catchIf(
           missingTable("flows_journal_events"),
@@ -903,6 +951,7 @@ const makeRuntime = (
       WHERE event_type = ${Attribution.requestedEventType} AND ${within("run_id", scope)}
       ORDER BY run_id, seq
     `.pipe(
+        probe,
         Effect.catchIf(
           missingTable("flows_journal_events"),
           () =>
@@ -950,6 +999,7 @@ const makeRuntime = (
       FROM flows_journal_events
       WHERE event_type = ${Attribution.interruptedEventType} AND ${within("run_id", scope)}
     `.pipe(
+        probe,
         Effect.catchIf(
           missingTable("flows_journal_events"),
           () => Effect.succeed(new Array<{ readonly runId: string; readonly payloadJson: string }>())
@@ -1598,6 +1648,21 @@ const makeRuntime = (
         `.pipe(Effect.mapError(persistence("append a run message")))
       })
 
+    const authorizeApproval: Service["authorizeApproval"] = (request) =>
+      approvalAuthority.authorize(request, {
+        flowId: Effect.gen(function*() {
+          if (request.target._tag === "Plan") {
+            const row = yield* readPlan(request.target.planId)
+            return Option.isSome(row) ? (yield* storedPlan(row.value)).card.flowId : undefined
+          }
+          return yield* requireRow(request.target.runId).pipe(
+            Effect.flatMap(summaryOf),
+            Effect.map((summary) => summary.flowId),
+            Effect.catchTag("/control/RunNotFound", () => Effect.succeed(undefined))
+          )
+        })
+      })
+
     const service = make({
       authorizeApproval,
       plan: Effect.fn("SqlControlRuntime.plan")(function*(input: PlanInput) {
@@ -1646,7 +1711,7 @@ const makeRuntime = (
           executionDigest: flow.executionDigest,
           handoff,
           idempotencyKey: input.idempotencyKey
-        }).pipe(Effect.provideService(Crypto.Crypto, crypto))
+        }).pipe(Effect.provideService(EffectDigest.Digest, crypto))
         const identity = approvalIdentity(card.approval.target)
         // The key row is claimed FIRST, and the claim is a conditional insert
         // followed by a read of whoever holds it. `idempotency_key` is the
@@ -1922,6 +1987,7 @@ const makeRuntime = (
           return parked
         }
         if (plan.decision !== "approved") return yield* new PlanDenied({ planId })
+        yield* authorizeLaunch?.(plan.card, sql) ?? Effect.void
 
         const sequence = yield* nextSequence("run")
         const runId = reservedRunId ?? `run-${sequence}`
@@ -2036,6 +2102,11 @@ const makeRuntime = (
           return yield* new InvalidInput({ issue: "commandId: already used for a different signal request" })
         }
       }),
+      querySignals: (request) =>
+        Effect.andThen(
+          requireRow(request.runId),
+          querySignalReceipts(request).pipe(Effect.provideService(SqlClient.SqlClient, sql))
+        ),
       signalCommand: Effect.fn("SqlControlRuntime.signalCommand")(function*(commandId) {
         const rows = yield* sql<
           {
@@ -2496,7 +2567,7 @@ export const layer = (
 ): Layer.Layer<
   ControlRuntime,
   PersistenceError,
-  Crypto.Crypto | DurableWriter | SqlClient.SqlClient | RunStore.RunStore
+  EffectDigest.Digest | DurableWriter | SqlClient.SqlClient | RunStore.RunStore
 > => Layer.effect(ControlRuntime)(makeRuntime(options))
 
 /**
@@ -2511,7 +2582,7 @@ export const layerWithStore = (
 ): Layer.Layer<
   ControlRuntime,
   PersistenceError,
-  Crypto.Crypto | DurableWriter | SqlClient.SqlClient
+  EffectDigest.Digest | DurableWriter | SqlClient.SqlClient
 > => layer(options).pipe(Layer.provideMerge(RunStore.layer))
 
 /**

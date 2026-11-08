@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.1.0` peer dependency. Install one
+This package declares `effect` as an exact `4.1.1` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -26,7 +26,7 @@ no verb here rewrites or deletes a node, and a trigger refuses one anyway.
 npm install @smthrs/plan-store@next effect
 ```
 
-It needs Node.js 22.19.0 or later and `effect` `4.1.0`. The root names no
+It needs Node.js 22.19.0 or later and `effect` `4.1.1`. The root names no
 database driver, so it bundles for the browser; the driver layers a durable
 composition adds are on the
 [installation page](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/docs/installation.md).
@@ -35,7 +35,6 @@ composition adds are on the
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Migrations from "@smthrs/plan-store/Migrations"
 import * as PlanStore from "@smthrs/plan-store/PlanStore"
@@ -46,7 +45,7 @@ import * as Option from "effect/Option"
 
 const layer = PlanStore.layer.pipe(
   Layer.provideMerge(Migrations.layer.pipe(Layer.provideMerge(TestDatabase.layer))),
-  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+  Layer.provideMerge(NodeCrypto.layer)
 )
 
 const main = Effect.gen(function*() {

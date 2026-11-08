@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Fault } from "@smthrs/flow"
 import { Unreachable } from "@smthrs/kernel"
@@ -21,8 +22,6 @@ import {
   workspaces
 } from "../host.ts"
 
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { withRetryInstance, withRetryRuntime } from "./retry-runtime.ts"
 
 const outageOptions = (name: string) => ({
@@ -110,7 +109,7 @@ test("identical network commands run at each invocation and replay without runni
       assert.equal(commands, 2)
       assert.deepEqual(yield* sequence(), ["fetched-1", "fetched-2"])
       assert.equal(commands, 2)
-    }).pipe(Effect.provide(FlowEngine.layerMemory), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+    }).pipe(Effect.provide(FlowEngine.layerMemory), Effect.provide(NodeCrypto.layer))
   )
 })
 

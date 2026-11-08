@@ -4,11 +4,16 @@
  * @since 1.0.0-rc.0
  */
 
+import type { ModelStep } from "@smthrs/agent"
 import { type Model, ModelError, type ModelEvent, ModelRequest } from "@smthrs/model"
-import { AgentContext, ConfiguredModel, type NativeAgent } from "@smthrs/rpc"
+import { AgentContext, type NativeAgent } from "@smthrs/rpc"
 import { Effect } from "effect"
+import type { HostModelRoute } from "./ConfiguredModelRoute.vibe"
+import { fastModelFallback, type ModelSource } from "./FastModelFallback.vibe"
 import { createHostDiagnostics } from "./HostDiagnostics.vibe"
 import type { HostDiagnostics } from "./HostDiagnostics.vibe"
+import { StreamingCredentialCutter } from "./StreamingCredentialCutter.ts"
+export { StreamingCredentialCutter } from "./StreamingCredentialCutter.ts"
 
 /**
  * Provider route and output controls for one model turn.
@@ -17,6 +22,9 @@ import type { HostDiagnostics } from "./HostDiagnostics.vibe"
  * @since 1.0.0-rc.0
  */
 export interface ModelTurnOptions {
+  readonly route: HostModelRoute
+  readonly fallbacks?: ReadonlyArray<ModelSource>
+  readonly onFallback?: (index: number) => void!!
   readonly modelId: string
   readonly outputTokenLimitSupported?: boolean
   readonly maxTokens?: number
@@ -63,7 +71,7 @@ const appendWireMessage = (messages: Array<ModelRequest.Message>, item: NativeAg
  */
 export const providerRequest = (
   turn: NativeAgent.StartAgentTurnRequest,
-  options: ModelTurnOptions
+  options: Pick<ModelTurnOptions, "modelId" | "maxTokens">
 ): ModelRequest.ModelRequest => {
   const messages: Array<ModelRequest.Message> = []
   for (const item of turn.messages) appendWireMessage(messages, item)
@@ -84,81 +92,6 @@ export const providerRequest = (
     ),
     params: { ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }) }
   })
-}
-
-/**
- * Removes a configured credential even when provider chunks split it. The
- * concatenation of everything `push` and `finish` return never contains the
- * credential: when cutting one echo joins text already returned with text
- * still to come, the joining text is dropped too.
- *
- * @category utilities
- * @since 1.0.0-rc.0
- */
-export class StreamingCredentialCutter {
-  private pending = ""
-  /** The end of the returned text, one character shorter than the longest secret part. */
-  private returned = ""
-  private readonly parts: ReadonlyArray<string>
-  constructor(secret: string | undefined, additional: ReadonlyArray<string> = []) {
-    this.parts = [secret ?? "", ...additional].flatMap(ConfiguredModel.modelCredentialParts)
-  }
-  private cut(value: string): string {
-    let kept = value
-    let previous: string
-    do {
-      previous = kept
-      for (const part of this.parts) kept = kept.split(part).join("")
-    } while (previous !== kept)
-    return kept
-  }
-  push(value: string): string {
-    if (this.parts.length === 0) return value
-    this.pending = this.cut(this.pending + value)
-    let held = 0
-    for (const part of this.parts) {
-      for (let size = Math.min(this.pending.length, part.length - 1); size > held; size -= 1) {
-        if (this.pending.endsWith(part.slice(0, size))) {
-          held = size
-          break
-        }
-      }
-    }
-    const emitted = this.pending.slice(0, this.pending.length - held)
-    this.pending = this.pending.slice(this.pending.length - held)
-    return this.release(emitted)
-  }
-  finish(): string {
-    const emitted = this.cut(this.pending)
-    this.pending = ""
-    return this.release(emitted)
-  }
-  /**
-   * Drops the start of `text` while it completes a secret part begun in the
-   * returned text. Both sides are already free of whole parts, so any part
-   * found from one part-length before the seam straddles it.
-   */
-  private release(text: string): string {
-    const parts = this.parts
-    let kept = text
-    for (let joined = true; joined;) {
-      joined = false
-      const seam = this.returned.length
-      const combined = this.returned + kept
-      for (const part of parts) {
-        const index = combined.indexOf(part, Math.max(0, seam - part.length + 1))
-        if (index !== -1) {
-          kept = combined.slice(index + part.length)
-          joined = true
-          break
-        }
-      }
-    }
-    const longest = Math.max(0, ...parts.map((part) => part.length))
-    const combined = this.returned + kept
-    this.returned = combined.slice(Math.max(0, combined.length - (longest - 1)))
-    return kept
-  }
 }
 
 interface PendingToolCall {
@@ -269,149 +202,138 @@ export const runModelTurn = <E>(
   write: FrameWriter<E>,
   host?: HostLeg,
   diagnostics: HostDiagnostics = createHostDiagnostics()
-): (HeldToolCalls | undefined)!(Model.ModelFailure | ModelError.ModelError | E) => {
-  const text = new StreamingCredentialCutter(options.credential, options.additionalCredentials)
-  const reasoning = new StreamingCredentialCutter(options.credential, options.additionalCredentials)
-  const cut = (value: string): string => {
-    const cutter = new StreamingCredentialCutter(options.credential, options.additionalCredentials)
-    return cutter.push(value) + cutter.finish()
-  }
-  const tools = new Map<string, PendingToolCall>()
-  const held: Array<HeldToolCall> = []
-  // The terminal is built when the stream ends, not at `settle`: a Chat
-  // Completions provider (api.openai.com, Ollama) sends its counters in a
-  // chunk after `finish_reason`, and the route ends the stream at that chunk.
-  let settled: ModelEvent.Settle | undefined
-  let usage: NativeAgent.AgentTurnUsage | undefined
-  const emit = (frame: NativeAgent.AgentTurnFrame): void!E => write(frame)
-  const emitDelta = (kind: "text" | "reasoning", value: string): void!E =>
-    value === "" ? Effect.void : emit({ runId: turn.runId, type: "delta", kind, text: value })
-  const visit = (event: ModelEvent.ModelEvent): void!(ModelError.ModelError | E) => {
-    switch (event.type) {
-      case "text-delta":
-        return emitDelta("text", text.push(event.text))
-      case "thinking-delta":
-        return emitDelta("reasoning", reasoning.push(event.text))
-      case "tool-call-start":
-        // The id goes back to the provider with the tool result, so it cannot
-        // be cut like text: a provider that names a call with the credential
-        // is refused before the id reaches a frame or the journal.
-        if (cut(event.id) !== event.id) {
-          return Effect.fail(
-            new ModelError.ModelError({
-              code: "invalid_provider_output",
-              message: "tool call id contains the credential"
-            })
-          )
-        }
-        tools.set(event.id, { name: event.name, arguments: "" })
-        return Effect.void
-      case "tool-call-delta": {
-        const pending = tools.get(event.id)
-        if (pending === undefined) {
-          return Effect.fail(
-            new ModelError.ModelError({ code: "invalid_provider_output", message: "tool delta preceded its start" })
-          )
-        }
-        pending.arguments += event.arguments
-        return Effect.void
-      }
-      case "tool-call-end": {
-        const pending = tools.get(event.id)
-        if (pending === undefined) {
-          return Effect.fail(
-            new ModelError.ModelError({ code: "invalid_provider_output", message: "tool end preceded its start" })
-          )
-        }
-        tools.delete(event.id)
-        const call = {
-          id: event.id,
-          name: cut(pending.name),
-          arguments: cut(event.arguments ?? pending.arguments)
-        }
-        if (host !== undefined) {
-          held.push(call)
+): (HeldToolCalls | undefined)!(Model.ModelFailure | ModelError.ModelError | E)!ModelStep.Requirements =>
+  Effect.suspend(() => {
+    const text = new StreamingCredentialCutter(options.credential, options.additionalCredentials)
+    const reasoning = new StreamingCredentialCutter(options.credential, options.additionalCredentials)
+    const cut = (value: string): string => {
+      const cutter = new StreamingCredentialCutter(options.credential, options.additionalCredentials)
+      return cutter.push(value) + cutter.finish()
+    }
+    const tools = new Map<string, PendingToolCall>()
+    const held: Array<HeldToolCall> = []
+    // The terminal is built when the stream ends, not at `settle`: a Chat
+    // Completions provider (api.openai.com, Ollama) sends its counters in a
+    // chunk after `finish_reason`, and the route ends the stream at that chunk.
+    let settled: ModelEvent.Settle | undefined
+    let usage: NativeAgent.AgentTurnUsage | undefined
+    const emit = (frame: NativeAgent.AgentTurnFrame): void!E => write(frame)
+    const emitDelta = (kind: "text" | "reasoning", value: string): void!E =>
+      value === "" ? Effect.void : emit({ runId: turn.runId, type: "delta", kind, text: value })
+    const visit = (event: ModelEvent.ModelEvent): void!(ModelError.ModelError | E) => {
+      switch (event.type) {
+        case "text-delta":
+          return emitDelta("text", text.push(event.text))
+        case "thinking-delta":
+          return emitDelta("reasoning", reasoning.push(event.text))
+        case "tool-call-start":
+          // DurableModelCall refuses credential-bearing IDs before recording.
+          tools.set(event.id, { name: event.name, arguments: "" })
+          return Effect.void
+        case "tool-call-delta": {
+          const pending = tools.get(event.id)
+          if (pending === undefined) {
+            return Effect.fail(
+              new ModelError.ModelError({ code: "invalid_provider_output", message: "tool delta preceded its start" })
+            )
+          }
+          pending.arguments += event.arguments
           return Effect.void
         }
-        return emit({
-          runId: turn.runId,
-          type: "tool_call",
-          call_id: call.id,
-          name: call.name,
-          arguments: call.arguments
-        })
-      }
-      case "settle":
-        if (settled !== undefined) {
-          return Effect.fail(
-            new ModelError.ModelError({ code: "invalid_provider_output", message: "model settled twice" })
-          )
-        }
-        settled = event
-        return effect {
-          try emitDelta("reasoning", reasoning.finish())
-          try emitDelta("text", text.finish())
-        }
-      case "usage":
-        usage = mergeUsage(usage, event)
-        return Effect.void
-      case "retry":
-        // A retried call starts over; the abandoned attempt's counts are not this call's.
-        usage = undefined
-        return Effect.void
-      default:
-        return Effect.void
-    }
-  }
-  // The gap this closes: an upstream response can complete while the guest
-  // consumes none of it. Counting what this process actually took off the
-  // stream separates a provider that did not answer from a stream whose bytes
-  // never reached the application.
-  let consumed = 0
-  let characters = 0
-  const observe = (event: ModelEvent.ModelEvent): void!(ModelError.ModelError | E) => {
-    consumed += 1
-    if (consumed === 1) diagnostics.record("model_stream", "first_event", { kind: event.type })
-    if (event.type === "text-delta" || event.type === "thinking-delta") characters += event.text.length
-    return visit(event)
-  }
-  // Writing a frame from inside this consumer stopped reading the provider's
-  // response, and a commit the host issued in that state never answered:
-  // production turn 2d851bdd attempted its first commit 1 ms after its first
-  // event and was still waiting half an hour later, with the response's last
-  // bytes unread, and turn 7e5fc00f spent 1 h 19 m there and committed
-  // nothing. Buffering runs the provider's side in its own fiber, so the
-  // response keeps draining while a frame is in flight and the host never
-  // holds an unfinished response open waiting on its own journal.
-  //
-  // The capacity is unbounded deliberately. A finite buffer suspends its
-  // producer once it fills, which is the same stall one buffer-length later,
-  // and nothing bounds a turn's event count to a figure this host could pick:
-  // `fastModelFallback` strips the output token limit for a route that does
-  // not support one, so that provider answers at its own maximum, and
-  // `SMITHERS_CHAT_MAX_TOKENS` admits a million. A journal that answers keeps
-  // the queue near empty; what bounds its growth when one does not is the
-  // callback deadline in `DurableChatProducer`, which ends an unanswered
-  // attempt in seconds instead of accumulating a whole turn's response behind
-  // it. The capacity and that deadline are one repair: neither holds alone.
-  const buffered = Stream.buffer(model.stream(providerRequest(turn, options)), { capacity: "unbounded" })
-  return Effect.flatMap(diagnostics.begin("model_stream"), (endStream) =>
-    Stream.runForEach(buffered, observe)
-    |> Effect.flatMap(%, (): (HeldToolCalls | undefined)!(ModelError.ModelError | E) => {
-      if (settled === undefined) {
-        return Effect.fail(
-          new ModelError.ModelError({
-            code: "invalid_provider_output",
-            message: "model stream ended without settlement"
+        case "tool-call-end": {
+          const pending = tools.get(event.id)
+          if (pending === undefined) {
+            return Effect.fail(
+              new ModelError.ModelError({ code: "invalid_provider_output", message: "tool end preceded its start" })
+            )
+          }
+          tools.delete(event.id)
+          const call = {
+            id: event.id,
+            name: cut(pending.name),
+            arguments: cut(event.arguments ?? pending.arguments)
+          }
+          if (host !== undefined) {
+            held.push(call)
+            return Effect.void
+          }
+          return emit({
+            runId: turn.runId,
+            type: "tool_call",
+            call_id: call.id,
+            name: call.name,
+            arguments: call.arguments
           })
-        )
+        }
+        case "settle":
+          if (settled !== undefined) {
+            return Effect.fail(
+              new ModelError.ModelError({ code: "invalid_provider_output", message: "model settled twice" })
+            )
+          }
+          settled = event
+          return effect {
+            try emitDelta("reasoning", reasoning.finish())
+            try emitDelta("text", text.finish())
+          }
+        case "usage":
+          usage = mergeUsage(usage, event)
+          return Effect.void
+        case "retry":
+          // A retried call starts over; the abandoned attempt's counts are not this call's.
+          usage = undefined
+          return Effect.void
+        default:
+          return Effect.void
       }
-      const total = addUsage(host?.usage, usage)
-      if (host !== undefined && settled.stopReason === "tool-calls" && held.length > 0) {
-        return Effect.succeed({ calls: held, usage: total })
-      }
-      return Effect.as(emit(doneFrame(turn.runId, settled, total)), undefined)
-    })
-    |> Effect.onExit(%, effect (exit) =>
-      endStream({ events: consumed, characters, settled: settled !== undefined, failed: exit._tag === "Failure" })))
-}
+    }
+    // The gap this closes: an upstream response can complete while the guest
+    // consumes none of it. Counting what this process actually took off the
+    // stream separates a provider that did not answer from a stream whose bytes
+    // never reached the application.
+    let consumed = 0
+    let characters = 0
+    const observe = (event: ModelEvent.ModelEvent): void!(ModelError.ModelError | E) => {
+      consumed += 1
+      if (consumed === 1) diagnostics.record("model_stream", "first_event", { kind: event.type })
+      if (event.type === "text-delta" || event.type === "thinking-delta") characters += event.text.length
+      return visit(event)
+    }
+    // Writing a frame from inside this consumer stopped reading the provider's
+    // response, and a commit the host issued in that state never answered:
+    // production turn 2d851bdd attempted its first commit 1 ms after its first
+    // event and was still waiting half an hour later, with the response's last
+    // bytes unread, and turn 7e5fc00f spent 1 h 19 m there and committed
+    // nothing. Buffering runs the provider's side in its own fiber, so the
+    // response keeps draining while a frame is in flight and the host never
+    // holds an unfinished response open waiting on its own journal.
+    //
+    // The capacity is unbounded deliberately. A finite buffer suspends its
+    // producer once it fills, which is the same stall one buffer-length later,
+    // and nothing bounds a turn's event count to a figure this host could pick:
+    // `fastModelFallback` strips the output token limit for a route that does
+    // not support one, so that provider answers at its own maximum, and
+    // `SMITHERS_CHAT_MAX_TOKENS` admits a million. A journal that answers keeps
+    // the queue near empty; what bounds its growth when one does not is the
+    // callback deadline in `DurableChatProducer`, which ends an unanswered
+    // attempt in seconds instead of accumulating a whole turn's response behind
+    // it. The capacity and that deadline are one repair: neither holds alone.
+    const buffered = fastModelFallback(
+      [{ model, ...options }, ...(options.fallbacks ?? [])],
+      options.onFallback,
+      "model-host/turn"
+    ).stream(providerRequest(turn, options))
+    return Effect.flatMap(diagnostics.begin("model_stream"), (endStream) =>
+      Stream.runForEach(buffered, observe)
+      |> Effect.flatMap(%, (): (HeldToolCalls | undefined)!(ModelError.ModelError | E) => {
+        // The durable stream refuses any answer without settlement.
+        const completion = settled!
+        const total = addUsage(host?.usage, usage)
+        if (host !== undefined && completion.stopReason === "tool-calls" && held.length > 0) {
+          return Effect.succeed({ calls: held, usage: total })
+        }
+        return Effect.as(emit(doneFrame(turn.runId, completion, total)), undefined)
+      })
+      |> Effect.onExit(%, effect (exit) =>
+        endStream({ events: consumed, characters, settled: settled !== undefined, failed: exit._tag === "Failure" })))
+  })

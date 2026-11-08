@@ -1,3 +1,5 @@
+import { Request } from "./modules.ts"
+
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
@@ -27,7 +29,7 @@ const invoker = FlowInvoker.make({
 })
 
 /** Runs a program with the recording invoker. */
-effect function invoking<A, E>(program: Effect<A, E, FlowInvoker.FlowInvoker>): Effect<A, E, infer R> {
+effect function invoking<A, E>(program: A!E!FlowInvoker.FlowInvoker): A!E {
   provide FlowInvoker.FlowInvoker = invoker {
     return try program
   }
@@ -52,17 +54,18 @@ describe("runtime model visibility", () => {
     const [scanned] = (try scan()).routes
     const stale = { ...scanned!, modelInvocable: true }
     const cli = try invoking(Incur.createCli("app", [stale]))
-    try {
-      const response = try sync(async (cli) => cli.fetch(new Request("http://localhost/hidden?number=1")), cli)
+    try ensuring(effect {
+      const response = try promise(async () => cli.fetch(new Request("http://localhost/hidden?number=1")))
       expect(response.status).toBe(400)
-      expect(try sync(async (response) => response.json(), response)).toMatchObject({
+      expect(try promise(async () => response.json())).toMatchObject({
         ok: false,
         error: { code: "load_failed" }
       })
       expect(invoked).toEqual([])
-    } finally {
-      try sync(async (cli) => cli.close(), cli)
-    }
+    
+    }, effect {
+      try (promise(async () => cli.close()))
+    })
   })
 
   it.effect("still loads the hidden flow for a route that is not model-invocable", effect () => {

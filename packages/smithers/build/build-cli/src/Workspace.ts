@@ -177,6 +177,8 @@ export interface RemoteCacheAccess extends ResolvedRemoteCache {
  * @since 0.1.0
  */
 export const defaultSmithersCloudHosts: ReadonlyArray<string> = [
+  "smithers.sh",
+  // Historical remote hostnames remain recognizable; requests use the current API base.
   "jjhub.tech",
   "api.jjhub.tech",
   "ssh.jjhub.tech",

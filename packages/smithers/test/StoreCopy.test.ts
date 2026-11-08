@@ -5,7 +5,6 @@ import { TestSchemas } from "@smthrs/database"
  * the source is left exactly as it was.
  */
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { NodeRuntime } from "@smthrs/platform-node"
 import { Effect } from "effect"
@@ -40,7 +39,7 @@ const seeded = async (directory: string) => {
   await Effect.runPromise(Effect.void.pipe(
     Effect.provide(NodeRuntime.storage(engine, directory)),
     Effect.provide(NodeServices.layer),
-    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Effect.provide(NodeCrypto.layer)
   ))
   await Effect.runPromise(Effect.void.pipe(
     Effect.provide(ControlDatabaseMigrations.layer),
@@ -173,10 +172,15 @@ it("copies a PostgreSQL schema whole, continues its identities and drops the cop
       Effect.flatMap(
         SqlClient,
         (sql) =>
-          sql<{ name: string }>`SELECT nspname AS name FROM pg_namespace WHERE nspname LIKE ${`%${prefix.slice(-44)}`} ORDER BY 1`
+          sql<{ name: string }>`SELECT nspname AS name FROM pg_namespace WHERE nspname LIKE ${`%${
+            prefix.slice(-44)
+          }`} ORDER BY 1`
       )
     )
-    expect(left.map((row) => row.name)).toEqual([TestSchemas.forStore(prefix, "control_db"), TestSchemas.forStore(prefix, "engine_db")])
+    expect(left.map((row) => row.name)).toEqual([
+      TestSchemas.forStore(prefix, "control_db"),
+      TestSchemas.forStore(prefix, "engine_db")
+    ])
   } finally {
     await on(
       publicUrl(),
@@ -204,7 +208,9 @@ it("refuses a PostgreSQL copy that exists already or would reach its source, and
   const schemas = () =>
     admin(
       Effect.flatMap(SqlClient, (sql) =>
-        sql<{ name: string }>`SELECT nspname AS name FROM pg_namespace WHERE nspname LIKE ${`%${prefix.slice(-44)}`} ORDER BY 1`)
+        sql<{ name: string }>`SELECT nspname AS name FROM pg_namespace WHERE nspname LIKE ${`%${
+          prefix.slice(-44)
+        }`} ORDER BY 1`)
     ).then((rows) =>
       rows.map((row) =>
         row.name
@@ -226,7 +232,10 @@ it("refuses a PostgreSQL copy that exists already or would reach its source, and
     const taken = join(directory, "taken.db")
     await on(taken, Effect.flatMap(SqlClient, (sql) => sql`CREATE TABLE keep (id INTEGER)`))
     expect(await code(StoreCopy.copy(source, taken))).toBeUndefined()
-    expect(await schemas()).toEqual([TestSchemas.forStore(prefix, "source_db"), TestSchemas.forStore(prefix, "taken_db")])
+    expect(await schemas()).toEqual([
+      TestSchemas.forStore(prefix, "source_db"),
+      TestSchemas.forStore(prefix, "taken_db")
+    ])
 
     // A default drawing from a sequence the source owns would advance the source.
     await on(
@@ -252,7 +261,10 @@ it("refuses a PostgreSQL copy that exists already or would reach its source, and
     )
     expect(await code(StoreCopy.copy(source, join(directory, "pinned.db")))).toBe("verify_copy_unsafe")
     // Each refused copy rolled its schema back.
-    expect(await schemas()).toEqual([TestSchemas.forStore(prefix, "source_db"), TestSchemas.forStore(prefix, "taken_db")])
+    expect(await schemas()).toEqual([
+      TestSchemas.forStore(prefix, "source_db"),
+      TestSchemas.forStore(prefix, "taken_db")
+    ])
   } finally {
     await admin(Effect.gen(function*() {
       const sql = yield* SqlClient

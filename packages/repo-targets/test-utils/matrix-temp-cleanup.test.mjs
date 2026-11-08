@@ -81,9 +81,11 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
         join(root, "vitest.config.js"),
         "import {tmpdir} from 'node:os'; import {join} from 'node:path'; export default {cacheDir:join(tmpdir(), 'vite'),test:{include:['case.test.js'],testTimeout:60000,coverage:{enabled:false}}}"
       )
+      // Vitest buffers console output until a test finishes; this deliberately
+      // pending worker must signal through its actual pipe before cancellation.
       writeFileSync(
         join(root, "case.test.js"),
-        "import {test} from 'vitest'; test('running worker', async()=>{console.log('MATRIX_WORKER_READY');await new Promise(()=>{})})"
+        "import {test} from 'vitest'; test('running worker', async()=>{process.stdout.write('MATRIX_WORKER_READY\\n');await new Promise(()=>{})})"
       )
       const env = { ...process.env, TMPDIR: root, TMP: root, TEMP: root }
       delete env.SMITHERS_TEST_PG_URL
@@ -107,7 +109,7 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
       })
       const status = await new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
-          reject(new Error(output))
+          reject(new Error(`matrix ${signal} probe timed out waiting for ${sent ? "child exit" : "worker readiness"}\n${output}`))
         }, 30_000)
         child.on("error", (error) => {
           clearTimeout(timer)

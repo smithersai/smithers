@@ -1,0 +1,12 @@
+diff --git a/lib/Workers/WorkerProvider.js b/lib/Workers/WorkerProvider.js
+--- a/lib/Workers/WorkerProvider.js
++++ b/lib/Workers/WorkerProvider.js
+@@ -3710,7 +3710,7 @@
+                 domainsChanged ||
+                 routesChanged ||
+                 cronsChanged ||
+-                (yield* hasChanged(id, fqn, news, output, Array.isArray(newBindings)
++                (yield* hasChanged(id, fqn, { ...news, build: desired.build }, output, Array.isArray(newBindings)
+                     ? newBindings
+                     : undefined, accountId))) {
+                 // The immutable script ID is always stable across an update —

@@ -112,6 +112,54 @@ caller's automatic resume loop. Inspection remains read-only. Durable clock
 timestamps are integer milliseconds; sampled fractional clocks are normalized
 at persistence boundaries, while caller-supplied timestamps remain validated.
 
+## Alpha candidate contract changes
+
+The declaration review compares actual emitted declarations from the previous
+baseline source with this candidate. Public export maps remain unchanged, but
+existing implementations and callers need these adaptations:
+
+- Custom `ControlRuntime.Service` implementations must provide `querySignals`
+  with bounded ledger queries and the declared errors.
+- Custom `SharedSqlite.Database` adapters must provide ordered `executeBatch`
+  execution with its documented transaction and failure semantics.
+- `NodeControl.layerHostPlatform` and `layerGuardedPlatform` no longer provide
+  `Terminal`; callers using terminal services must provide that layer explicitly.
+- Exhaustive handlers must accept `DocsCheck.StaleReason` value `"unknown"` and
+  `GithubRender.ErrorCode` value `"cache_writer_in_setup"`.
+- Cache-publishing workflow declarations must set literal `cacheWriteRepository`.
+  Publication is restricted to that repository's default branch, and shared
+  setup steps cannot receive publishing credentials.
+- `RemoteCache.defaultSmithersCloudApiBase` is now `https://smithers.sh`.
+  Configure a different endpoint explicitly when required.
+
+`Interpreter.layerWithImplementations` builds implementations before registration
+and removes the services they provide from its remaining requirements. Optional
+additions include deferred flow loading, scoped approval proofs, signal receipts,
+coordination status, bounded failure diagnostics, GitHub pagination and issue
+relations, skill libraries, documentation evidence, and CLI/terminal test tools.
+
+Declaration diagnostics now default `EngineStore.Options.declarationRoot` to the
+injected workspace root. A host without a workspace must pass an explicit root
+to retain relative declaration paths; this default no longer consults `process.cwd()`.
+The private `NodeJournal.hostRoot` helper is not a supported import path.
+
+Node checkpoint writes and file-backed turn-log appends use the host's native
+owner-private publication service. These operations require the matching
+packaged or explicitly configured `smithers-jj-export` helper. The existing
+`AtomicFileSystem.ownerPrivate` injection point supports publication adapters;
+its service covers directory creation, file publication, directory sync and
+append.
+
+Workspace declarations may omit toolchains for repositories whose selected
+targets do not need them. Selecting a target still requires its actual runtime
+and tools; this does not supply an implicit toolchain.
+
+Run-store migration 1006 is exported but remains outside `Migrations.set`.
+Readers that flush deferred revisions must ship before activation; retain the
+staged activation and rollback contract. Existing persisted runs can lack the
+new optional failure and status fields. Declaration review and compilation do
+not establish packed-consumer or published-store upgrade compatibility.
+
 ## MVP compatibility changes
 
 The approved [MVP scope cut](https://github.com/smithersai/smithers/issues/3385)

@@ -5,9 +5,10 @@
  * @private
  */
 
-import { Crypto, Sha256 } from "@smthrs/crypto"
+import { Sha256 } from "@smthrs/crypto"
 import * as Node from "@smthrs/plan/Node"
 import * as Context from "effect/Context"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import type * as Duration from "effect/Duration"
 import * as Schema from "effect/Schema"
 import { ExecutionIdentityConflict } from "../FlowRuntime/ExecutionIdentityConflict.vibe"
@@ -165,10 +166,10 @@ const Proto = {
   },
   start(this: AnyWithProps, payload: unknown) {
     return Effect.flatMap(
-      Crypto.Crypto,
-      (crypto) =>
+      SecureRandom.SecureRandom,
+      (random) =>
         Effect.flatMap(
-          Effect.orDie(crypto.randomUUIDv4()),
+          random.uuidV4(),
           (executionId) => this.execute(payload, { executionId, discard: true })
         )
     )
@@ -191,7 +192,7 @@ const Proto = {
       if (engine.retryFrom === undefined) {
         throw new RetryFromRefused({ code: "unsupported", executionId: source, step: options.step })
       }
-      const executionId = options.executionId ?? (try Effect.orDie((try Crypto.Crypto).randomUUIDv4()))
+      const executionId = options.executionId ?? (try Effect.orDie((try SecureRandom.SecureRandom).uuidV4()))
       try Effect.annotateCurrentSpan({ executionId, source })
       try identityConflictAsFailure(engine.retryFrom(this, { source, step: options.step, executionId }))
       return executionId

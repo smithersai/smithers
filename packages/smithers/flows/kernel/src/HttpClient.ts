@@ -247,7 +247,7 @@ const capabilityFor = (
     return makeCapability(action, request.url).pipe(
       Effect.flatMap((capability) =>
         Effect.fail(
-          new PermissionDenied({
+          PermissionDenied.new({
             code: "permission_denied",
             capability,
             reason: "HTTP capability checks require an absolute, parseable URL"

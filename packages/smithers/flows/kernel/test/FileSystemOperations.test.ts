@@ -85,7 +85,6 @@ const makeHostFileSystem = (calls: Array<string>): EffectFileSystem.FileSystem =
     glob: () => record("glob", [] as Array<string>),
     exists: () => record("exists", false),
     link: () => record("link", undefined),
-    lstat: () => record("lstat", {} as EffectFileSystem.File.Info),
     makeDirectory: () => record("makeDirectory", undefined),
     makeTempDirectory: () => record("makeTempDirectory", "/tmp/dir"),
     makeTempDirectoryScoped: () => record("makeTempDirectoryScoped", "/tmp/dir"),
@@ -93,7 +92,6 @@ const makeHostFileSystem = (calls: Array<string>): EffectFileSystem.FileSystem =
     makeTempFileScoped: () => record("makeTempFileScoped", "/tmp/file"),
     open: () => record("open", file(calls)),
     readDirectory: () => record("readDirectory", [] as Array<string>),
-    readDirectoryEntries: () => record("readDirectoryEntries", [] as Array<EffectFileSystem.DirectoryEntry>),
     readFile: () => record("readFile", new Uint8Array()),
     readFileString: () => record("readFileString", ""),
     readLink: () => record("readLink", "/workspace/target"),
@@ -310,18 +308,6 @@ const cases: ReadonlyArray<Case> = [
     capabilities: [read("/workspace/a")],
     hostCall: "readFileString",
     run: (fs) => fs.readFileString("a")
-  },
-  {
-    name: "lstat",
-    capabilities: [read("/workspace/a")],
-    hostCall: "lstat",
-    run: (fs) => fs.lstat("a")
-  },
-  {
-    name: "readDirectoryEntries",
-    capabilities: [read("/workspace/a")],
-    hostCall: "readDirectoryEntries",
-    run: (fs) => fs.readDirectoryEntries("a")
   },
   {
     name: "readLink",

@@ -74,10 +74,10 @@ getter's message, so treat its output as in-process diagnostics.
 
 ## A missing Crypto service is not this error
 
-If no `Crypto` service is provided, the effect dies rather than failing:
+If no `Digest` service is provided, the effect dies rather than failing:
 
 ```text
-Service not found: effect/Crypto
+Service not found: effect/crypto/Digest
 ```
 
 That is an unsatisfied Effect requirement, which makes it a composition defect,

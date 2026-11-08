@@ -44,7 +44,7 @@ export const maximumResolutionTokens = 4_096
  * @since 0.1.0
  */
 export interface CommandTree {
-  route: Option<Route.Route>
+  route: Option.Option<Route.Route>
   children: ReadonlyMap<string, CommandTree>
 }
 
@@ -60,7 +60,7 @@ export interface Resolved {
 }
 
 interface MutableTree {
-  mutable route: Option<Route.Route>
+  route: Option.Option<Route.Route>
   children: Map<string, MutableTree>
 }
 
@@ -69,50 +69,47 @@ const emptyNode = (): MutableTree => ({ route: Option.none(), children: new Map(
 const resourceLimit = (method: string, description: string): FsError =>
   new FsError({ code: "resource_limit", method, description })
 
-// Bound foreign reflection with a JavaScript try hatch and normalize to FsError.
-const routeReferences = effect (input: ReadonlyArray<Route.Route>): Effect<ReadonlyArray<Route.Route>, FsError> => {
+// Reflection may trigger a hostile proxy; normalize its failure at the boundary.
+effect function inspect<A>(read: () => A): A!FsError {
   return try Effect.try({
-    try: () =>
-      ((input, maximumRoutes, resourceLimit) => {
-        if (!Array.isArray(input) || Object.getPrototypeOf(input) !== Array.prototype) {
-          throw new FsError({
-            code: "invalid_route",
-            method: "CommandTree.make",
-            description: "Routes must be supplied as an ordinary dense array"
-          })
-        }
-        if (input.length > maximumRoutes) {
-          throw resourceLimit("CommandTree.make", `A command tree may contain at most ${maximumRoutes} routes`)
-        }
-        if (Reflect.ownKeys(input).length !== input.length + 1) {
-          throw new FsError({
-            code: "invalid_route",
-            method: "CommandTree.make",
-            description: "Routes must be supplied as an ordinary dense array"
-          })
-        }
-        const output: Array<Route.Route> = []
-        for (let index = 0; index < input.length; index++) {
-          const descriptor = Object.getOwnPropertyDescriptor(input, String(index))
-          if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
-            throw new FsError({
-              code: "invalid_route",
-              method: "CommandTree.make",
-              description: "Routes must be supplied as enumerable data properties",
-              path: `$[${index}]`
-            })
-          }
-          output.push(descriptor.value as Route.Route)
-        }
-        return Object.freeze(output)
-      })(input, maximumRoutes, resourceLimit),
-    catch: (cause) =>
-      cause instanceof FsError ? cause : new FsError({
-        code: "invalid_route",
-        method: "CommandTree.make",
-        description: "Routes could not be inspected without executing user code"
-      })
+    try: read,
+    catch: () => new FsError({
+      code: "invalid_route",
+      method: "CommandTree.make",
+      description: "Routes could not be inspected without executing user code"
+    })
   })
+}
+
+const routeReferences = effect (input: ReadonlyArray<Route.Route>): ReadonlyArray<Route.Route>!FsError => {
+  const ordinary = try inspect(() => Array.isArray(input) && Object.getPrototypeOf(input) === Array.prototype)
+  if (!ordinary) throw new FsError({
+    code: "invalid_route",
+    method: "CommandTree.make",
+    description: "Routes must be supplied as an ordinary dense array"
+  })
+  const length = try inspect(() => input.length)
+  if (length > maximumRoutes) {
+    throw resourceLimit("CommandTree.make", `A command tree may contain at most ${maximumRoutes} routes`)
+  }
+  const keys = try inspect(() => Reflect.ownKeys(input))
+  if (keys.length !== length + 1) throw new FsError({
+    code: "invalid_route",
+    method: "CommandTree.make",
+    description: "Routes must be supplied as an ordinary dense array"
+  })
+  const output: Array<Route.Route> = []
+  for (let index = 0; index < length; index++) {
+    const descriptor = try inspect(() => Object.getOwnPropertyDescriptor(input, String(index)))
+    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) throw new FsError({
+      code: "invalid_route",
+      method: "CommandTree.make",
+      description: "Routes must be supplied as enumerable data properties",
+      path: `$[${index}]`
+    })
+    output.push(descriptor.value as Route.Route)
+  }
+  return Object.freeze(output)
 }
 
 const freezeTree = (root: MutableTree): CommandTree => {
@@ -129,7 +126,7 @@ const freezeTree = (root: MutableTree): CommandTree => {
     frozen.set(
       frame.node,
       Object.freeze({
-        route: frame.node.route.isSome() ? Object.freeze(Option.some(frame.node.route.value)) : Option.none(),
+        route: Option.isSome(frame.node.route) ? Object.freeze(Option.some(frame.node.route.value)) : Option.none(),
         children: ReadonlyMap.make(entries)
       })
     )
@@ -146,7 +143,7 @@ const freezeTree = (root: MutableTree): CommandTree => {
  * @category constructors
  * @since 0.1.0
  */
-export effect function make(input: ReadonlyArray<Route.Route>): Effect<CommandTree, FsError, infer R> {
+export effect function make(input: ReadonlyArray<Route.Route>): CommandTree!FsError {
   const references = try routeReferences(input)
   const routes = try forEach(references, Route.snapshot)
   const totalSegments = routes.reduce((total, route) => total + route.segments.length, 0)
@@ -165,7 +162,7 @@ export effect function make(input: ReadonlyArray<Route.Route>): Effect<CommandTr
       }
       node = child
     }
-    if (node.route.isSome()) {
+    if (Option.isSome(node.route)) {
       throw new FsError({
         code: "duplicate_route",
         method: "CommandTree.make",
@@ -178,12 +175,12 @@ export effect function make(input: ReadonlyArray<Route.Route>): Effect<CommandTr
   return freezeTree(root)
 }
 
-effect function resolutionTokens(input: ReadonlyArray<string>): Effect<ReadonlyArray<string>, FsError, infer R> {
-  const captured = Boundary.stringArray(input, {
+effect function resolutionTokens(input: ReadonlyArray<string>): ReadonlyArray<string>!FsError {
+  const captured = try sync(() => Boundary.stringArray(input, {
     maxItems: maximumResolutionTokens,
     maxLength: CommandLine.maximumTokenLength,
     allowEmpty: true
-  })
+  }))
   if (!captured.ok) {
     if (captured.kind === "invalid_text") {
       throw new FsError({
@@ -204,7 +201,7 @@ effect function resolutionTokens(input: ReadonlyArray<string>): Effect<ReadonlyA
  * @category constructors
  * @since 0.1.0
  */
-export effect function resolve(tree: CommandTree, input: ReadonlyArray<string>): Effect<Resolved, FsError, infer R> {
+export effect function resolve(tree: CommandTree, input: ReadonlyArray<string>): Resolved!FsError {
   const argv = try resolutionTokens(input)
   let node = tree
   let matched: { route: Route.Route; consumed: number } | undefined
@@ -223,7 +220,7 @@ export effect function resolve(tree: CommandTree, input: ReadonlyArray<string>):
     const child = node.children.get(segment.normalize("NFC"))
     if (child === undefined) break
     node = child
-    if (child.route.isSome()) matched = { route: child.route.value, consumed: index + 1 }
+    if (Option.isSome(child.route)) matched = { route: child.route.value, consumed: index + 1 }
   }
   if (matched === undefined) {
     throw new FsError({
@@ -241,10 +238,7 @@ export effect function resolve(tree: CommandTree, input: ReadonlyArray<string>):
  * @category constructors
  * @since 0.1.0
  */
-export effect function resolveExact(
-  tree: CommandTree,
-  argv: ReadonlyArray<string>
-): Effect<Route.Route, FsError, infer R> {
+export effect function resolveExact(tree: CommandTree, argv: ReadonlyArray<string>): Route.Route!FsError {
   const { rest, route } = try resolve(tree, argv)
   if (rest.length !== 0) {
     throw new FsError({
@@ -267,7 +261,7 @@ export const traverse = (tree: CommandTree): ReadonlyArray<Route.Route> => {
   const stack: Array<CommandTree> = [tree]
   while (stack.length > 0) {
     const node = stack.pop()!
-    if (node.route.isSome()) routes.push(node.route.value)
+    if (Option.isSome(node.route)) routes.push(node.route.value)
     const children = Array.from(node.children.keys()).sort().reverse()
     for (const segment of children) stack.push(node.children.get(segment)!)
   }

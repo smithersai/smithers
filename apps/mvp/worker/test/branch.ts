@@ -69,6 +69,7 @@ export interface GitHubRepository {
 
 /** What the scripted GitHub saw of one request. */
 export interface Seen {
+  readonly userAgent: string | null
   readonly method: string
   readonly path: string
   readonly authorization: string | null
@@ -97,6 +98,7 @@ export const gitHost = () => {
     seen.push({
       method: request.method,
       path: `${url.pathname}${url.search}`,
+      userAgent: request.headers.get("user-agent"),
       authorization: request.headers.get("authorization"),
       gitProtocol: request.headers.get("git-protocol"),
       prefixes,

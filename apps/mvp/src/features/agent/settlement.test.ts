@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Flow, Interpreter } from "@smthrs/flow"
 import { Engine } from "@smthrs/flows"
 import { Node } from "@smthrs/plan"
@@ -10,8 +11,6 @@ import { Ending, Settle, settle } from "./flows"
 import { settlementLayers } from "./host"
 import { AnswerProgress } from "./progress"
 import { AnswerReference } from "./reference"
-import { Crypto } from "@smthrs/crypto"
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 
 // The production settlement graph on the real durable engine, with only its API fault-injected.
 test("settlement expiration releases progress after retries, preserving the terminal failure", async () => {
@@ -44,7 +43,7 @@ test("settlement expiration releases progress after retries, preserving the term
       yield* TestClock.adjust("11 minutes")
       return { exit: yield* Fiber.join(fiber), retained: yield* progress.get("a") }
     }).pipe(Effect.provide(runtime))
-  })).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)), Effect.provide(TestClock.layer())))
+  })).pipe(Effect.provide(NodeCrypto.layer), Effect.provide(TestClock.layer())))
   expect(Exit.isFailure(result.exit) ? Cause.squash(result.exit.cause) : result.exit).toEqual(new AnswersUnavailable({ status: 503 }))
   expect(result.retained).toBeUndefined()
 })

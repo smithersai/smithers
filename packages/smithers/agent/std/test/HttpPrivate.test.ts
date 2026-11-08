@@ -316,7 +316,7 @@ describe("HTTP tools private network boundary", () => {
     const permission = new HttpClientError.HttpClientError({
       reason: new HttpClientError.TransportError({
         request,
-        cause: new PermissionDenied({
+        cause: PermissionDenied.new({
           code: "permission_denied",
           capability: make("net:get", "example.test"),
           reason: "missing grant"

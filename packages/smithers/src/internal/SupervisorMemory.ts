@@ -15,7 +15,6 @@ import * as AgentAction from "@smthrs/agent/AgentAction"
 import * as Memory from "@smthrs/agent/Memory"
 import * as MemoryCalibration from "@smthrs/agent/MemoryCalibration"
 import * as Capability from "@smthrs/capability/Capability"
-import type { Crypto } from "@smthrs/crypto"
 import type * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as CapabilitySet from "@smthrs/kernel/CapabilitySet"
 import * as Maintenance from "@smthrs/memory/Maintenance"
@@ -23,6 +22,8 @@ import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import type * as Recall from "@smthrs/memory/Recall"
 import * as RecallKeyword from "@smthrs/memory/RecallKeyword"
 import { Context, Effect, Layer, Option } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { SqlClient } from "effect/sql/SqlClient"
 import { createHash } from "node:crypto"
 import { resolve } from "node:path"
@@ -144,7 +145,7 @@ export const memoryDatabase = (input: {
 export const layer = (input: {
   readonly environment: Environment.Source
   readonly database: (filename: string) => Layer.Layer<DurableWriter.DurableWriter | SqlClient>
-  readonly crypto: Layer.Layer<Crypto.Crypto>
+  readonly crypto: Layer.Layer<(EffectDigest.Digest | SecureRandom.SecureRandom)>
   /** The workspace's own stores, used when `SMITHERS_MEMORY_DB` names no file. */
   readonly stores?: Layer.Layer<DurableWriter.DurableWriter | SqlClient> | undefined
 }): Layer.Layer<MemoryStore.MemoryStore | Recall.Recall> => {

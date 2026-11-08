@@ -23,6 +23,7 @@ describe("a document's items", () => {
       {
         key: "octo/hello:decisions:a",
         repo: "octo/hello",
+        repoId: "github/octo/hello",
         owner: "octo",
         name: "hello",
         document: "decisions",
@@ -35,6 +36,7 @@ describe("a document's items", () => {
       {
         key: "octo/hello:decisions:b",
         repo: "octo/hello",
+        repoId: "github/octo/hello",
         owner: "octo",
         name: "hello",
         document: "decisions",

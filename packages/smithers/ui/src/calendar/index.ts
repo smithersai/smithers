@@ -1,6 +1,6 @@
 export { Calendar, type CalendarProps } from "./Calendar";
 export type { CalendarEvent, CalendarView } from "./types";
-export { CALENDAR_CSS_ID, calendarCss } from "./calendarCss";
+export { CALENDAR_CSS_ID, calendarCss } from "@smthrs/ui-css";
 export {
   DAY_MS,
   HOUR_MS,

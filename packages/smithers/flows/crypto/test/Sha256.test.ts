@@ -1,21 +1,20 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Effect, PlatformError, Schema, SchemaIssue } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
+import * as Hex from "effect/encoding/Hex"
 import { inspect } from "node:util"
 import { describe, expect, it } from "vitest"
-import * as Crypto from "../src/Crypto.ts"
 import { Digest, digest, digestSync, Sha256, Sha256Error, syncCrypto } from "../src/index.ts"
 import { millionA, vectors } from "./fixtures.ts"
 
 const runDigest = (input: string | Uint8Array): Digest =>
-  Effect.runSync(digest(input).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))))
+  Effect.runSync(digest(input).pipe(Effect.provide(NodeCrypto.layer)))
 
 const decode = (input: string | Uint8Array): Digest =>
-  Effect.runSync(
-    Schema.decodeUnknownEffect(Sha256)(input).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
-  )
+  Effect.runSync(Schema.decodeUnknownEffect(Sha256)(input).pipe(Effect.provide(NodeCrypto.layer)))
 
 const digestFailure = (input: string | Uint8Array) =>
-  Effect.runSync(Effect.flip(Effect.provideService(digest(input), Crypto.Crypto, syncCrypto)))
+  Effect.runSync(Effect.flip(Effect.provideService(digest(input), EffectDigest.Digest, syncCrypto)))
 
 const expectRedacted = (error: Schema.SchemaError, secret: string): void => {
   const visit = (issue: SchemaIssue.Issue): void => {
@@ -59,9 +58,7 @@ describe("SHA-256 entry points", () => {
 
     // Snapshot semantics begin when the Effect executes, so this sees the
     // deliberate pre-execution mutation.
-    expect(Effect.runSync(effect.pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))))).toBe(
-      digestSync(new Uint8Array(3))
-    )
+    expect(Effect.runSync(effect.pipe(Effect.provide(NodeCrypto.layer)))).toBe(digestSync(new Uint8Array(3)))
 
     backing.set([0x61, 0x62, 0x63], 2)
     expect(digestSync(view)).toBe(vectors[1][1])
@@ -124,7 +121,7 @@ describe("Digest validation and one-way schema behavior", () => {
     "rejects unsupported hash input %j",
     (value) => {
       expect(Effect.runSync(Effect.flip(
-        Schema.decodeUnknownEffect(Sha256)(value).pipe(Effect.provideService(Crypto.Crypto, syncCrypto))
+        Schema.decodeUnknownEffect(Sha256)(value).pipe(Effect.provideService(EffectDigest.Digest, syncCrypto))
       ))).toMatchObject({ _tag: "SchemaError" })
       expect(() => digestSync(value as never)).toThrow(expect.objectContaining({ code: "invalid_input" }))
     }
@@ -134,7 +131,7 @@ describe("Digest validation and one-way schema behavior", () => {
     const secret = "unsupported-input-secret"
     const error = Effect.runSync(Effect.flip(
       Schema.decodeUnknownEffect(Sha256)({ secret }, { reportInput: true }).pipe(
-        Effect.provideService(Crypto.Crypto, syncCrypto)
+        Effect.provideService(EffectDigest.Digest, syncCrypto)
       )
     ))
     expect(error.message).not.toContain(secret)
@@ -189,18 +186,22 @@ describe("Digest validation and one-way schema behavior", () => {
 describe("composed schema input reporting", () => {
   const secret = "hash-input-secret"
   const bytes = new TextEncoder().encode(secret)
-  const failedHost = Crypto.make({
-    randomBytes: (size) => new Uint8Array(size),
+  const failedHost = EffectDigest.Digest.of({
     digest: () =>
-      Effect.fail(PlatformError.badArgument({
+      Effect.die(PlatformError.badArgument({
         module: "test-host",
         method: "digest",
         description: "host unavailable"
-      }))
+      })),
+    digestHex(algorithm, data) {
+      return Effect.map(this.digest(algorithm, data), Hex.encode)
+    }
   })
-  const defectiveHost = Crypto.make({
-    randomBytes: (size) => new Uint8Array(size),
-    digest: () => Effect.die(new Error("host unavailable"))
+  const defectiveHost = EffectDigest.Digest.of({
+    digest: () => Effect.die(new Error("host unavailable")),
+    digestHex(algorithm, data) {
+      return Effect.map(this.digest(algorithm, data), Hex.encode)
+    }
   })
   const failures = [
     { label: "host failure, text", contents: secret, crypto: failedHost },
@@ -213,7 +214,7 @@ describe("composed schema input reporting", () => {
   it.each(failures)("redacts standalone issues with reportInput:true ($label)", ({ contents, crypto }) => {
     const error = Effect.runSync(Effect.flip(
       Schema.decodeUnknownEffect(Sha256)(contents, { reportInput: true }).pipe(
-        Effect.provideService(Crypto.Crypto, crypto)
+        Effect.provideService(EffectDigest.Digest, crypto)
       )
     ))
     expectRedacted(error, secret)
@@ -241,7 +242,7 @@ describe("composed schema input reporting", () => {
       const decodeFailure = (reportInput: boolean) =>
         Effect.runSync(Effect.flip(
           Schema.decodeUnknownEffect(schema)(input, { reportInput }).pipe(
-            Effect.provideService(Crypto.Crypto, crypto)
+            Effect.provideService(EffectDigest.Digest, crypto)
           )
         ))
 
@@ -275,7 +276,7 @@ describe("composed schema input reporting", () => {
       const decodeFailure = (reportInput: boolean) =>
         Effect.runSync(Effect.flip(
           Schema.decodeUnknownEffect(schema)(input, { reportInput, errors: "all" }).pipe(
-            Effect.provideService(Crypto.Crypto, syncCrypto)
+            Effect.provideService(EffectDigest.Digest, syncCrypto)
           )
         ))
 
@@ -292,4 +293,10 @@ describe("composed schema input reporting", () => {
       expectRedacted(safe, secret)
     })
   })
+})
+
+it("supports an independently captured synchronous hexadecimal digest function", () => {
+  const { digestHex } = syncCrypto
+  const input = new TextEncoder().encode("abc")
+  expect(Effect.runSync(digestHex(EffectDigest.sha256, input))).toBe(digestSync(input))
 })

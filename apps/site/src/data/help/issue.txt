@@ -4,6 +4,7 @@ Usage: smthrs issue <command>
 
 Commands:
   comment  Comment on an issue; waits for the person's confirmation
+  list     List issues
   new      Open a GitHub issue; waits for the person's confirmation
   show     Open an issue's card
 

@@ -49,3 +49,4 @@ Getting production's logs into that Loki is the ingest path's job, set up and do
 ## Tests
 
 `ops/grafana/dashboard.test.ts` fails when a panel reads a log line or a field the app's telemetry contract (`src/flows/contract.ts`) doesn't relay, or the model endpoint doesn't write.
+

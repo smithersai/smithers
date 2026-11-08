@@ -12,6 +12,7 @@ import * as RepoRoles from "./RepoRoles.ts"
 import { appSlug } from "../GitHubAuth.ts"
 import * as Merge from "./Merge.ts"
 import * as Reconcile from "./Reconcile.ts"
+import * as Relations from "./Relations.ts"
 import * as Tokens from "./Tokens.ts"
 import * as Triage from "./Triage.ts"
 import * as MachineWrite from "./MachineWrite.ts"
@@ -24,7 +25,7 @@ import * as Write from "./Write.ts"
 // here names a host.
 
 /** The GitHub flows, in the order a host registers them. */
-export const flows = [Apply.Apply, Reconcile.Reconcile, Write.Write, MachineWrite.MachineDispatch, Triage.TriageRun, Merge.Merge, GitHubCreation.Create] as const
+export const flows = [Apply.Apply, Reconcile.Reconcile, Relations.Relations, Write.Write, MachineWrite.MachineDispatch, Triage.TriageRun, Merge.Merge, GitHubCreation.Create] as const
 
 /** The App, configured and ready: what `services` turns into the flows' services once the host knows how to refresh. */
 export interface Ready<E, R> {
@@ -35,6 +36,7 @@ export interface Ready<E, R> {
   readonly roles: RepoRoles.RepoRoles<R>
   readonly mayAct: (id: string) => boolean
   readonly appLogin: string
+  readonly allowedRepositories?: ReadonlyArray<string>
 }
 
 /**
@@ -56,7 +58,8 @@ export const ready = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
     const allowed = yield* RepoRoles.allowed
     const roles = yield* RepoRoles.make(database, { repository: configured.value.repository, app: configured, allowed, http })
     return Option.some<Ready<E, R>>({ app: app.success, database, http, apiBaseUrl, roles, mayAct: RepoRoles.actsOn(repository, allowed),
-      appLogin: `${yield* appSlug}[bot]` })
+      appLogin: `${yield* appSlug}[bot]`,
+      allowedRepositories: [repository.id, ...Option.match(allowed, { onNone: () => [], onSome: (ids) => [...ids] })] })
   })
 
 /**
@@ -78,15 +81,17 @@ export const services = <E, R>(
   apiBaseUrl: ready.apiBaseUrl,
   mayAct: ready.mayAct,
   appLogin: ready.appLogin,
+  allowedRepositories: ready.allowedRepositories ?? [ready.roles.repository.id],
   tokens: Tokens.make({ app: ready.app, keys: sessions.keys, refresh: sessions.refresh }),
   judge,
 })
 
-/** Registers `github/Apply`, `github/Reconcile`, `github/Write`, `github/MachineDispatch`, `triage/Run` and `pr/Merge` over `services`. */
+/** Registers `github/Apply`, `github/Reconcile`, `github/Relations`, `github/Write`, `github/MachineDispatch`, `triage/Run` and `pr/Merge` over `services`. */
 export const registration = <E, R>(services: Triage.Services<E, R>) =>
   Layer.mergeAll(
     Apply.registration(services),
     Reconcile.registration(services),
+    Relations.registration(services),
     Write.registration(services),
     MachineWrite.registration(services),
     Triage.registration(services),

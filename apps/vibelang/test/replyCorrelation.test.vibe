@@ -1,0 +1,77 @@
+import { describe, expect, it } from "@effect/vitest"
+import { apply, decide, empty, type Conversation, type Intent, type Event } from "../src/core/conversation.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { Ask } from "../src/surfaces/commands.vibe"
+
+function start(id: string, inReplyTo: string) { return { type: "StartReply" as const, id, inReplyTo } }
+function started(seq: number, id: string, inReplyTo: string) { return { type: "ReplyStarted" as const, seq, id, inReplyTo } }
+
+function record(state: Conversation, intent: Intent) {
+  const decision = decide(state, intent)
+  return decision.ok ? apply(state, decision.event) : state
+}
+const posted = record(empty, { type: "Post", id: "m1", clientId: "c1", name: "Guest", text: "first" })
+
+describe("reply targets", () => {
+  it("refuses missing, empty, non-person and already-answered targets", () => {
+    for (const inReplyTo of ["", "missing"]) {
+      expect(decide(posted, start("r1", inReplyTo)).ok).toBe(false)
+    }
+    const started = record(posted, start("r1", "m1"))
+    const finished = record(started, { type: "FinishReply", id: "r1" })
+    for (const inReplyTo of ["m1", "r1"]) {
+      expect(decide(finished, start("r2", inReplyTo)).ok).toBe(false)
+    }
+    const failed = record(started, { type: "FailReply", id: "r1", reason: "network" })
+    expect(decide(failed, start("r2", "m1")).ok).toBe(false)
+  })
+  it("carries the target in the event and the projected entry", () => {
+    const decision = decide(posted, start("r1", "m1"))
+    expect(decision).toMatchObject({ ok: true, event: { inReplyTo: "m1" } })
+    if (decision.ok) expect(apply(posted, decision.event).entries[1]).toMatchObject({ inReplyTo: "m1" })
+  })
+  it("does not apply a malformed reply target", () => {
+    for (const inReplyTo of ["", "missing"]) {
+      expect(apply(posted, started(2, "r1", inReplyTo))).toEqual({ ...posted, seq: 2 })
+    }
+  })
+})
+
+// A transport fixture uses the real sequencer, varying only which accepted post the agent answers first.
+for (const earlier of ["skipped", "later"] as const) {
+  it.live(`ask matches its post id when an earlier post is ${earlier}`, () => effect {
+    let state = empty
+    const log: Event[] = []
+    const commit = (intent: Intent) => {
+      const decision = decide(state, intent)
+      if (decision.ok) { log.push(decision.event); state = apply(state, decision.event) }
+    }
+    const answer = (id: string, inReplyTo: string, text: string) => {
+      commit(start(id, inReplyTo))
+      commit({ type: "AppendReply", id, text })
+      commit({ type: "FinishReply", id })
+    }
+    const layer = Layer.succeed(Factory, {
+      mode: "mock",
+      post: effect (_conversation, clientId, name, text) => {
+        try sync(() => {
+          commit({ type: "Post", id: "old", clientId: "other", name: "Other", text: "earlier" })
+          commit({ type: "Post", id: "mine", clientId, name, text })
+          answer("my-reply", "mine", "my answer")
+          if (earlier === "later") answer("old-reply", "old", "someone else's answer")
+        })
+      },
+      read: () => succeed({ seq: state.seq, entries: state.entries }),
+      events: () => Stream.fromIterable(log),
+    })
+    const actual = try effect {
+      provide layer {
+        return Ask.run({ text: "my question" }) catch (error) => ({ text: error.message, events: [] })
+      }
+    }
+    try Effect.try(() => {
+      expect(actual.text).toBe("my answer")
+      expect(actual.events).toEqual([2, 3, 4, 5])
+    })
+  })
+}

@@ -13,4 +13,4 @@ export {
   type SmithersErrorDefinition,
   smithersErrorDefinitions
 } from "./ErrorCode.ts"
-export { hasSmithersErrorShape, isSmithersError, SmithersError, type SmithersErrorOptions } from "./SmithersError.ts"
+export { hasSmithersErrorShape, isSmithersError, SmithersError, type SmithersErrorOptions } from "./SmithersError.vibe"

@@ -245,14 +245,40 @@ describe("the list and a pull request's page", () => {
     expect(page()).toMatchObject({ loading: false, unknown: false })
   }, WITHIN)
 
-  test.each([[401, "unavailable", "shown"], [403, "unavailable", "shown"]] as const)(
-    "a %s pull refusal survives a failed reconnect and recovers only with an installed batch",
+  // A 401 evicts nothing and changes no authority: the shape stops and the tab asks the session, which still answers.
+  test("a 401 from the pull shape keeps access and recovers on Try again", async () => {
+    let fault: number | undefined = 401
+    const source = ShapeSource.ShapeSource.of({ request: (url, init) => Effect.suspend(() =>
+      new URL(url).pathname === PULLS_SHAPE_ROUTE && fault !== undefined
+        ? Effect.succeed(new Response(null, { status: fault }))
+        : ShapeSource.fetchSource.request(url, init)),
+    })
+    // A confirmed session, as main's version of this case had: a role no session confirmed reads as none.
+    const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) }, { actor: sam, confirmedSessions: [sam] })
+    runtimes.push(runtime)
+    const api = await runtime.runPromise(Effect.service(TestChatApi))
+    const pulls = started(await runtime.runPromise(Effect.service(Pulls)))
+    const issues = started(await runtime.runPromise(Effect.service(Issues)))
+    await server(api).pull(pullOf(2), "Recovered pull")
+    await pulls.actions.open(OWNER, NAME, 2)
+    const view = () => pulls.queries.view.toArray[0]
+    await until(() => expect(view()).toMatchObject({ pullStatus: "unavailable", installed: false }))
+    await until(() => expect(issues.queries.access.toArray[0]).toMatchObject({ status: "allowed", installed: true }))
+    fault = undefined
+    pulls.actions.retry()
+    await until(() => expect(view()).toMatchObject({ pullStatus: "allowed", installed: true }))
+    await until(() => expect(pulls.queries.pull.toArray[0]).toMatchObject({ number: 2, title: "Recovered pull" }))
+  }, WITHIN)
+
+  test.each([[403, "forbidden", "missing"]] as const)(
+    "a %s from the pull shape holds through a retry and recovers with the role and an installed batch",
     async (status, refusal, page) => {
       let fault: number | undefined = status
-      const source = ShapeSource.ShapeSource.of({ request: (url, init) =>
+      // Suspended: a request waiting at the refusal's gate answers as the fault is once it goes.
+      const source = ShapeSource.ShapeSource.of({ request: (url, init) => Effect.suspend(() =>
         new URL(url).pathname === PULLS_SHAPE_ROUTE && fault !== undefined
           ? Effect.succeed(new Response(null, { status: fault }))
-          : ShapeSource.fetchSource.request(url, init),
+          : ShapeSource.fetchSource.request(url, init)),
       })
       const runtime = openTestApp({ replace: Layer.succeed(ShapeSource.ShapeSource, source) }, { actor: sam, confirmedSessions: [sam] })
       runtimes.push(runtime)
@@ -266,17 +292,18 @@ describe("the list and a pull request's page", () => {
         pulls.queries.pull.isReady() && view()?.installed === true, issues.queries.synced.isReady(),
         pullAccessOf(issues.queries.access.toArray[0], view()))
       await until(() => expect(view()).toMatchObject({ pullStatus: refusal, installed: false }))
-      await until(() => expect(issues.queries.access.toArray[0]).toMatchObject({ status: "allowed", installed: true }))
+      // Any shape's refusal is the repository's (decision 0110, 2026-11-03): issues read it too.
+      await until(() => expect(issues.queries.access.toArray[0]).toMatchObject({ status: refusal, installed: false }))
       expect(currentPage()).toBe(page)
+      // No request leaves past the refusal, so a retry that would fail changes nothing.
       fault = 503
       pulls.actions.retry()
-      await until(() => expect(runtime.runSync(Metric.value(
-        Metric.withAttributes(pullShapeTransitions, { phase: "failed" }),
-      )).count).toBeGreaterThan(0))
+      await runtime.runPromise(Effect.sleep("200 millis"))
       expect(view()).toMatchObject({ pullStatus: refusal, installed: false })
       expect(currentPage()).toBe(page)
+      // The next route reads the role again, and access that came back syncs.
       fault = undefined
-      pulls.actions.retry()
+      await runtime.runPromise(readRepositoryRole(OWNER, NAME, true))
       await until(() => expect(view()).toMatchObject({ pullStatus: "allowed", installed: true }))
       await until(() => expect(pulls.queries.pull.toArray[0]).toMatchObject({ number: 2, title: "Recovered pull" }))
       expect(currentPage()).toBe("shown")
@@ -501,16 +528,16 @@ describe("the Files tab", () => {
     const head = scripted.push("smithers/t2", { "README.md": "# Widgets\n\nA line\n" })
     await server(tab.api).pull(pullOf(2, { base, head }))
     await tab.actions.open(OWNER, NAME, 2, "files")
-    await until(() => expect(tab.queries.files.toArray).toContainEqual(expect.objectContaining({ id: `${base}...${head}`, status: "ready" })))
+    await until(() => expect(tab.queries.files.toArray).toContainEqual(expect.objectContaining({ id: `github/${OWNER.toLowerCase()}/${NAME.toLowerCase()}@${base}...${head}`, status: "ready" })))
     await tab.actions.open(OWNER, NAME, 2, "files")
     // A detail refresh or another merge can move the base after the first comparison finished.
     const nextBase = scripted.push("main", { "BASE.md": "Base moved\n" })
     await server(tab.api).pull(pullOf(2, { base: nextBase, head }))
     await until(() => expect(tab.pull()?.baseSha).toBe(nextBase))
-    await until(() => expect(tab.queries.files.toArray).toContainEqual(expect.objectContaining({ id: `${nextBase}...${head}`, status: "ready" })))
+    await until(() => expect(tab.queries.files.toArray).toContainEqual(expect.objectContaining({ id: `github/${OWNER.toLowerCase()}/${NAME.toLowerCase()}@${nextBase}...${head}`, status: "ready" })))
     const nextHead = scripted.push("smithers/t2", { "HEAD.md": "Head moved\n" })
     await server(tab.api).pull(pullOf(2, { base: nextBase, head: nextHead }))
-    await until(() => expect(tab.queries.files.toArray).toContainEqual(expect.objectContaining({ id: `${nextBase}...${nextHead}`, status: "ready" })))
+    await until(() => expect(tab.queries.files.toArray).toContainEqual(expect.objectContaining({ id: `github/${OWNER.toLowerCase()}/${NAME.toLowerCase()}@${nextBase}...${nextHead}`, status: "ready" })))
     // The real route's exit to Chat ends the subscription even though no other pull route opens.
     tab.actions.closeFiles("another-owner", NAME, 2)
     tab.actions.closeFiles(OWNER, "another-repository", 2)
@@ -527,7 +554,7 @@ describe("the Files tab", () => {
     const away = scripted.push("main", { "AWAY.md": "Changed away\n" })
     await server(tab.api).pull(pullOf(2, { base: away, head: nextHead }))
     await until(() => expect(tab.pull()?.baseSha).toBe(away))
-    expect(tab.queries.files.toArray.some(row => row.id === `${away}...${nextHead}`)).toBe(false)
+    expect(tab.queries.files.toArray.some(row => row.id === `github/${OWNER.toLowerCase()}/${NAME.toLowerCase()}@${away}...${nextHead}`)).toBe(false)
   }, WITHIN)
 
   test("reads the files the base and head differ by once, through the compare route, kept on the tab", async () => {
@@ -539,7 +566,7 @@ describe("the Files tab", () => {
     await tab.actions.open(OWNER, NAME, 2, "files")
     await until(() =>
       expect(tab.queries.files.toArray.map(({ id, status, files, truncated }) => ({ id, status, files, truncated }))).toEqual([{
-        id: `${base}...${head}`,
+        id: `github/${OWNER.toLowerCase()}/${NAME.toLowerCase()}@${base}...${head}`,
         status: "ready",
         files: [expect.objectContaining({ filename: "README.md", status: "modified", patch: expect.stringContaining("+A line") })],
         truncated: false,

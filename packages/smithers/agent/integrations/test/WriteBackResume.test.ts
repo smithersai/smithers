@@ -14,7 +14,6 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
-import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { EngineStore, Kernel } from "@smthrs/flows"
 import { NodeRuntime } from "@smthrs/platform-node"
@@ -71,7 +70,7 @@ const crashThenResume = async <
   // attempt storage are the production composition.
   const host = Layer.mergeAll(
     client,
-    Crypto.layerFromDigest(NodeCrypto.layerDigest),
+    NodeCrypto.layer,
     NodeFileSystem.layer,
     Layer.succeed(
       Kernel.Jj.Jj,

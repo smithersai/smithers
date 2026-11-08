@@ -74,12 +74,12 @@ describe("the home blocks", () => {
     expect(Home.Text({ text: "a < b and b > c" }).text).toBe("a < b and b > c")
   })
 
-  it("refuse empty strings, multi-line titles, and non-http links", () => {
+  it("refuse empty strings, multi-line titles, and unsafe links", () => {
     expect(() => Home.Text({ text: "" })).toThrow()
     expect(() => Home.Text({ title: "two\nlines", text: "x" })).toThrow()
     expect(() => Home.Links({ links: [] })).toThrow()
     expect(() => Home.Links({ links: [{ label: "x", url: "javascript:alert(1)" }] })).toThrow()
-    expect(() => Home.Links({ links: [{ label: "x", url: "/relative" }] })).toThrow()
+    expect(() => Home.Links({ links: [{ label: "x", url: "//example.com/relative" }] })).toThrow()
     expect(() => Home.Text({ text: "x", html: "<div/>" } as never)).toThrow(/unknown option "html"/)
     expect(() => Home.Text(null as never)).toThrow(/plain object/)
     expect(Home.Text({ title: undefined, text: "x" })).toEqual({ type: "text", text: "x" })

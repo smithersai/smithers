@@ -1,9 +1,11 @@
 import { describe, expect, it } from "@effect/vitest"
-import { type Crypto, Sha256 } from "@smthrs/crypto"
+import { Sha256 } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { DerivedKey } from "@smthrs/keys"
 import { Node } from "@smthrs/plan"
 import { Effect, Exit, Layer, Schedule, Schema, Scope, Tracer } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as SchemaRepresentation from "effect/SchemaRepresentation"
 import { vi } from "vitest"
 import { actionKey } from "../src/FlowEngine/ActionKey.vibe"
@@ -23,9 +25,9 @@ const provideHost = <A, E>(
   self: Effect.Effect<
     A,
     E,
-    Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Scope.Scope
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Scope.Scope
   >
-): Effect.Effect<A, E, Crypto.Crypto> =>
+): Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   self.pipe(
     Effect.scoped,
     Effect.provideService(

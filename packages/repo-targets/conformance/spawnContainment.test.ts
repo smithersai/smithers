@@ -144,6 +144,24 @@ describe("child-process containment conformance", () => {
       + "runs launchd on a Mac. No durable process ledger or hard-kill recovery guarantee."
     ],
     [
+      "smithers/src/runner/Tree.ts",
+      "Decision 0136's runner process-tree observer, inside the CLI host boundary. "
+      + "It only starts /bin/ps with fixed arguments, a minimal environment, a 5-second timeout "
+      + "and a 16-MiB output cap. An unreadable table proves nothing gone; pid/start-time "
+      + "identity gates every signal. Runner.test.ts exercises detached and orphaned descendants. "
+      + "The observer cannot use the process owner whose tree it is inspecting."
+    ],
+    [
+      "smithers/src/runner/Workspace.ts",
+      "The runner's independent checkout-command owner (decision 0136). Each command has a "
+      + "deadline, a 64-MiB output cap and cancellation cleanup before its mirror gate releases. "
+      + "Credential fetches own a separate process group with a private recovery record; "
+      + "RunnerWorkspace.test.ts covers interruption, host loss and conservative recovery. "
+      + "Its fixed-argument ps identity probe has a 5-second timeout and 64-KiB output cap. "
+      + "This boundary does not claim the durable host's ProcessLedger guarantee. "
+      + "Agent sessions and prestart hooks instead use platform-node ScopedProcess."
+    ],
+    [
       "smithers/src/Detached.ts",
       "`smithers up -d`, the one launcher whose child must OUTLIVE the process that "
       + "started it. Routing it through the host spawner would kill the engine on the "

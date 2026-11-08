@@ -363,7 +363,9 @@ export const apply = <E = never, R = never>(
         moved,
         lanes: lanesOf(after),
       } as const
-    }), () => linkWork(change.repoId)))
+    }), result => result.kind === "applied" || result.kind === "repeated"
+      ? linkWork(change.repoId).pipe(Effect.andThen(WriteAuthority.requireAtCommit(options.session)))
+      : Effect.void)).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed({ kind: "stale" as const })))
     const outcome = applied.kind === "applied"
       ? applied.receipt.outcome
       : applied.kind === "repeated"

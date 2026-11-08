@@ -1,3 +1,4 @@
+import { expectTypeOf } from "vitest"
 /**
  * Issue #88: `Action.CurrentCacheEnvironment` had zero production
  * providers — the machinery issue #75 added defaulted to the empty
@@ -58,12 +59,12 @@ class Unprovided extends Context.Service<Unprovided, { readonly value: string }>
 /** Never called; tsc checks it (#2704). */
 const unprovidedServiceProbe = async () => {
   const withMarker = await kernelOf([{ name: "host", layer: Layer.succeed(Marker)("host") }])
-  // @ts-expect-error no plugin layer provides Unprovided
-  run(Effect.map(Unprovided, (service) => service.value).pipe(Effect.provide(withMarker.layer)))
+  const unmet = Effect.map(Unprovided, (service) => service.value).pipe(Effect.provide(withMarker.layer))
+  expectTypeOf<typeof unmet>().not.toExtend<Parameters<typeof run>[0]>()
   run(Marker.pipe(Effect.provide(withMarker.layer)))
   const withoutMarker = await kernelOf([{ name: "host" }])
-  // @ts-expect-error dropping the host plugin's `Layer.succeed(Marker)` drops Marker
-  run(Marker.pipe(Effect.provide(withoutMarker.layer)))
+  const missing = Marker.pipe(Effect.provide(withoutMarker.layer))
+  expectTypeOf<typeof missing>().not.toExtend<Parameters<typeof run>[0]>()
 }
 
 describe("regression: provide-then-cast test helpers erase layer requirements (#2704)", () => {

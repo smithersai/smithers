@@ -17,19 +17,22 @@ import { read as telemetry } from "../../test/otlp"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type * as Actor from "../../../worker/Actor.vibe"
-import { asPerson, nodeDevice, openFaultyTab, openTab, openTestApi, CHATAPI_ORIGIN, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
+import { asPerson, member, nodeDevice, openFaultyTab, openTab, openTestApi, CHATAPI_ORIGIN, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"
 import { ACTIONS_SHAPE_ROUTE, actionRunPath } from "../actions/contract"
 import { detailsOf } from "./details"
 import { actsOf, hostOf, listRows, missingOf, repoRunRows, repoRunsLoaded, steerOpen, steersOf } from "./page"
 import { Runs } from "./runs"
-import { REMOTE_RUN_SHAPE_ROUTE, stopRoute } from "./contract"
+import { REMOTE_RUN_SHAPE_ROUTE, steersRoute, stopRoute } from "./contract"
+import { browserSession } from "../../test/browserSession"
+import { CONNECTION } from "../chat/schema"
+import { ChatStore } from "../chat/store"
 import { RunSteers } from "./steers"
-import { AuthStore } from "../auth/store"
+import { AuthStore, SESSION } from "../auth/store"
 import { role as readRole } from "../repo/actions"
-import { RepoStore } from "../repo/store"
+import { replaceRole, RepoStore } from "../repo/store"
 import { RunsStore } from "./store"
 import { openRun } from "./actions"
-import { RemoteRunsClient } from "./api"
+import { RemoteReadFailed, RemoteRunsClient } from "./api"
 import type { CloudRun, Inspection, RepoRunRow, RepoRunsLoaded, RunPage, SteerSending, SteerSent } from "./schema"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
@@ -46,7 +49,7 @@ const guest: Actor.Actor = { subject: { kind: "person", id: "person-guest" }, ro
  * `engine`, the device's engine runs the tab's flows, as a steer needs.
  */
 const open = async (person?: string, engine = false) => {
-  const app = openTestApi({ people: { gus: guest } })
+  const app = openTestApi({ people: { gus: guest, ada: { subject: { kind: "person", id: "person-admin" }, role: "admin", login: "ada" } } })
   runtimes.push(app)
   const api = await app.runPromise(Effect.service(TestChatApi))
   const as = person === undefined ? api : asPerson(api, person)
@@ -612,6 +615,50 @@ for (const delay of [0, 100, 300] as const) {
 }
 
 
+test("a steer refused 401 while its person is still signed in is held through a reload, with a sign-in prompt, and sent once after sign-in", async () => {
+  const t = await open(undefined, true)
+  const runId = await Effect.runPromise(t.api.remote.todoRun("Held steer"))
+  await Effect.runPromise(t.api.remote.start(runId, { label: "held", pauseMs: 60_000 }))
+  const browser = browserSession(member.subject.id, (request) =>
+    request.method === "POST" && new URL(request.url).pathname === steersRoute(runId))
+  const host = nodeDevice({ agent: t.api })
+  const opened = async () => {
+    const tab = openTab(t.api, { host, transport: browser.transport })
+    runtimes.push(tab)
+    const runs = await tab.runPromise(Effect.service(Runs))
+    for (const query of Object.values(runs.queries)) query.startSyncImmediate()
+    const { connection } = await tab.runPromise(Effect.service(ChatStore))
+    await runs.actions.openRun(runId)
+    return {
+      tab,
+      runs,
+      signIn: () => connection.tanstack.get(CONNECTION)?.signIn === true,
+    }
+  }
+  const first = await opened()
+  first.runs.actions.setSteerDraft("Held words")
+  await until(() => expect(first.runs.queries.view.toArray[0]?.steerDraft).toBe("Held words"))
+  await first.runs.actions.steer()
+  // Held: sent again, never Not sent, and the page asks its person to sign in.
+  await until(() => expect(browser.state.refusals).toBeGreaterThan(1))
+  await until(() => expect(first.signIn()).toBe(true))
+  expect(first.runs.queries.steerSent.toArray.filter((row) => row.status === "not_sent")).toEqual([])
+  // A reload keeps it held.
+  await first.tab.dispose()
+  const second = await opened()
+  await until(() => expect(second.signIn()).toBe(true))
+  expect(second.runs.queries.steerSending.toArray).toContainEqual(expect.objectContaining({ runId, body: "Held words" }))
+  expect(second.runs.queries.steerSent.toArray.filter((row) => row.status === "not_sent")).toEqual([])
+  // Signing in again comes back to the page: the steer is sent once, and the prompt goes.
+  await second.tab.dispose()
+  browser.state.cookie = "read"
+  const third = await opened()
+  await until(() => expect(third.runs.queries.steerSent.toArray).toContainEqual(expect.objectContaining({ body: "Held words", status: "sent" })))
+  expect(t.api.spans.filter((span) => span.name === "run.steer")).toHaveLength(1)
+  expect(browser.state.delivered).toBe(1)
+  expect(third.signIn()).toBe(false)
+}, 120_000)
+
 test("steering refuses overlong input before retaining a request", async () => {
   const t = await open(undefined, true)
   const runId = await Effect.runPromise(t.api.remote.todoRun("Long steer"))
@@ -629,7 +676,7 @@ test("a refused steer admission retries the retained identity and keeps one visi
   const base = nodeDevice({ agent: t.api })
   let full = true
   const host = { ...base, outbox: { ...base.outbox, storage: { ...base.outbox.storage,
-    set: (key: string, value: string) => full ? Promise.reject(new Error("quota")) : base.outbox.storage.set(key, value),
+    setMany: (rows: ReadonlyArray<readonly [string, string]>) => full ? Promise.reject(new Error("quota")) : base.outbox.storage.setMany(rows),
   } } }
   const tab = openTab(t.api, { host })
   runtimes.push(tab)
@@ -661,7 +708,7 @@ for (const change of ["typing", "navigation"] as const) {
     const entered = new Promise<void>((resolve) => { enter = resolve })
     const held = new Promise<void>((resolve) => { release = resolve })
     const host = { ...base, outbox: { ...base.outbox, storage: { ...base.outbox.storage,
-      set: async (key: string, value: string) => { enter(); await held; return base.outbox.storage.set(key, value) },
+      setMany: async (rows: ReadonlyArray<readonly [string, string]>) => { enter(); await held; return base.outbox.storage.setMany(rows) },
     } } }
     const tab = openTab(t.api, { host })
     runtimes.push(tab)
@@ -717,7 +764,7 @@ test("repeated Steer joins one pending draft, while typing the same text again c
   const entered = new Promise<void>((resolve) => { enter = resolve })
   const held = new Promise<void>((resolve) => { release = resolve })
   const host = { ...base, outbox: { ...base.outbox, online: { ...base.outbox.online, isOnline: () => false }, storage: { ...base.outbox.storage,
-    set: async (key: string, value: string) => { enter(); await held; return base.outbox.storage.set(key, value) },
+    setMany: async (rows: ReadonlyArray<readonly [string, string]>) => { enter(); await held; return base.outbox.storage.setMany(rows) },
   } } }
   const tab = openTab(t.api, { host })
   runtimes.push(tab)
@@ -740,4 +787,72 @@ test("repeated Steer joins one pending draft, while typing the same text again c
   expect(runs.queries.view.toArray[0]?.steerDraft).toBe("Same words")
   await runs.actions.steer()
   expect(await tab.runPromise(writes.sending.toArray)).toHaveLength(2)
+})
+
+// The data gate (decision 0110, 2026-11-03). Astra on b978c783: a run opened at `/app/runs/$runId` never loaded the runs
+// on Cloudflare, so its read named no repository and showed whatever the repository's answer, and attribution stopped
+// after one parent. A read on Cloudflare shows only through its root's repository, and one this tab can't place shows
+// nothing.
+describe("a run on Cloudflare opened directly, through the data gate", () => {
+  test("shows only while its root's repository may: a refusal or an unverified session hides it in the same change", async () => {
+    const t = await open()
+    const runId = await Effect.runPromise(t.api.remote.repoRun("ci"))
+    await Effect.runPromise(t.api.remote.start(runId, { label: "ci", pauseMs: 60_000 }))
+    // A link to the run's page on its repository: the route names the repository, which places nothing on its own.
+    await t.runs.actions.openRun(runId, { owner: "octo", name: "hello" })
+    await until(() => expect(t.inspection()?.run.runId).toBe(runId))
+    const store = await t.tab.runPromise(Effect.service(RunsStore))
+    const auth = await t.tab.runPromise(Effect.service(AuthStore))
+    const repos = await t.tab.runPromise(Effect.service(RepoStore))
+    const id = `github/${TEST_REPOSITORY}`.toLowerCase()
+    const held = Option.getOrThrow(await t.tab.runPromise(repos.roles.get(id)))
+    /** Whether the page shows the run, read in the same Effect as `change`, with nothing run between. */
+    const shownAfter = (change: Effect.Effect<unknown, unknown>) => t.tab.runPromise(Effect.gen(function* () {
+      yield* change
+      return (yield* store.page.toArray).length
+    }))
+    expect(await shownAfter(Effect.orDie(auth.session.update(SESSION, (row) => { row.status = "unreachable"; row.unverifiable = true })))).toBe(0)
+    expect(await shownAfter(Effect.orDie(auth.session.update(SESSION, (row) => { row.status = "signed_in"; delete row.unverifiable })))).toBe(1)
+    expect(await shownAfter(replaceRole(repos, { id, role: null, own: false, refused: "forbidden" }))).toBe(0)
+    expect(await shownAfter(replaceRole(repos, held))).toBe(1)
+  }, 60_000)
+
+  test("a read whose root this tab can't place shows nothing", async () => {
+    const app = openTestApi()
+    runtimes.push(app)
+    const api = await app.runPromise(Effect.service(TestChatApi))
+    // ChatApi's list of runs on Cloudflare can't be read: nothing names the run's repository.
+    const unlisted = Layer.effect(RemoteRunsClient, Effect.map(RemoteRunsClient, (real) =>
+      RemoteRunsClient.of({ ...real, list: Effect.fail(new RemoteReadFailed({ status: 503 })) })))
+      .pipe(Layer.provide(RemoteRunsClient.layer({ origin: CHATAPI_ORIGIN, within: "10 seconds" })))
+    const tab = openTab(api, { replace: unlisted })
+    runtimes.push(tab)
+    await tab.runPromise(readRole(...TEST_REPOSITORY.split("/") as [string, string]))
+    const runs = await tab.runPromise(Effect.service(Runs))
+    for (const query of Object.values(runs.queries)) query.startSyncImmediate()
+    const store = await tab.runPromise(Effect.service(RunsStore))
+    const runId = await Effect.runPromise(api.remote.repoRun("ci"))
+    await Effect.runPromise(api.remote.start(runId, { label: "ci", pauseMs: 60_000 }))
+    // `start` returns before Cloudflare's engine created the run, and a direct open reads it there once: wait until the
+    // engine has it, as a link someone follows later would find it.
+    await until(async () => expect(await Effect.runPromise(api.remote.status(runId))).toBeDefined())
+    // A link to the run alone (`/app/runs/$runId`): no repository's runs load, so nothing names its repository.
+    await runs.actions.openRun(runId)
+    // The read arrived, from Cloudflare, and the page shows none of it.
+    await until(async () => expect(Option.getOrUndefined(await tab.runPromise(store.pages.get(runId)))?.state).toBe("read"))
+    expect(runs.queries.page.toArray).toEqual([])
+    expect(await tab.runPromise(store.page.toArray)).toEqual([])
+  }, 60_000)
+})
+
+
+test("an Admin opens and expands a listed system run through the page data gate", async () => {
+  const t = await open("ada", true)
+  const runId = await Effect.runPromise(t.api.remote.systemRun())
+  await t.runs.actions.openList(runId)
+  await until(() => expect(t.runs.queries.cloudRuns.toArray).toContainEqual(expect.objectContaining({ runId, kind: "system", repo: null })))
+  await until(() => expect(t.runs.queries.expandedPage.toArray[0]?.page).toMatchObject({ id: runId, system: true, state: "read" }))
+  await t.runs.actions.openRun(runId)
+  await until(() => expect(t.page()).toMatchObject({ id: runId, system: true, state: "read" }))
+  expect(t.inspection()?.run.flowName).toBe("ops/SpendAlert")
 })

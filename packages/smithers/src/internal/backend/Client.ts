@@ -168,12 +168,24 @@ export class APIError extends Data.TaggedError("/backend/APIError")<{
   readonly message: string
   /** The origin the request went to, when the client knew it. */
   readonly origin?: string | undefined
+  /** Whether the caller bypassed saved configuration for this request. */
+  readonly explicitOrigin?: boolean | undefined
 }> {
-  constructor(status: number, detail: Values, method: string, path: string, headers: Headers, body = "", origin?: string) {
+  constructor(
+    status: number,
+    detail: Values,
+    method: string,
+    path: string,
+    headers: Headers,
+    body = "",
+    origin?: string,
+    explicitOrigin = false
+  ) {
     super({
       status,
       detail,
       origin,
+      explicitOrigin,
       contentType: headers.get("content-type") || "",
       requestId: headers.get("x-request-id") || "",
       bodyPreview: body.slice(0, 512),
@@ -221,7 +233,11 @@ export const withCause = <E extends Error>(error: E, cause: unknown): E => {
  * @private
  * @since 1.0.0-rc.1
  */
-export const refusalOf = (error: APIError, redact: (value: unknown) => unknown = Redaction.redact): Refused => {
+export const refusalOf = (
+  error: APIError,
+  redact: (value: unknown) => unknown = Redaction.redact,
+  availabilityHint = ""
+): Refused => {
   const contentType = error.contentType
   // An edge filter can return 403 without reaching backend authorization.
   // A request id or a backend JSON error keeps the authorization diagnosis.
@@ -274,7 +290,7 @@ export const refusalOf = (error: APIError, redact: (value: unknown) => unknown =
       ...refusal,
       ...(category === undefined ? {} : { class: category }),
       httpStatus: error.status,
-      message: stated || refusal.message
+      message: (stated || refusal.message) + (error.status >= 500 ? availabilityHint : "")
     }),
     error
   )
@@ -303,11 +319,11 @@ export class Client {
     stdout: Redaction.lineRedactor(this.outputRules),
     stderr: Redaction.lineRedactor(this.outputRules)
   }
-  constructor(runtime: Runtime = {}, live = false) {
+  constructor(runtime: Runtime = {}, live = false, session?: Session) {
     this.runtime = runtime
     this.live = live
     this.env = runtime.environment ?? process.env
-    this.session = new Session(this.env)
+    this.session = session ?? new Session(this.env)
   }
   get home() {
     return this.env.HOME || homedir()
@@ -365,6 +381,22 @@ export class Client {
     this.outputChunk("stdout")
     this.outputChunk("stderr")
   }
+  private originHint(origin?: string, explicitOrigin = false): string {
+    if (explicitOrigin) {
+      return `${origin === undefined ? "" : ` Request origin: ${origin}.`} Check the explicit request origin.`
+    }
+    const source = this.env.SMITHERS_API_ORIGIN ?
+      "SMITHERS_API_ORIGIN"
+      : this.env.SMITHERS_URL
+      ? "SMITHERS_URL"
+      : this.session.configPath
+    return `${
+      origin === undefined ? "" : ` Request origin: ${origin}.`
+    } Check api_origin in ${source}; run \`smthrs config set api_origin <origin>\`.`
+      + (source === this.session.configPath
+        ? ` Legacy login file is ${this.session.authPath}.`
+        : ` The environment override takes precedence over saved config.`)
+  }
   /**
    * What a failed command reports: a backend HTTP failure as the `Refused`
    * its status names, any other designed failure with its tag and its
@@ -372,7 +404,9 @@ export class Client {
    * their generic classification and redact verbose detail as well.
    */
   failure(error: unknown): unknown {
-    if (error instanceof APIError) error = refusalOf(error, (value) => this.redact(value))
+    if (error instanceof APIError) {
+      error = refusalOf(error, (value) => this.redact(value), this.originHint(error.origin, error.explicitOrigin))
+    }
     if (!(error instanceof Error)) {
       return this.redact(Failure.terminalSafeValue(this.redact(error)))
     }
@@ -482,6 +516,8 @@ export class Client {
     body?: unknown,
     options: {
       origin?: string
+      /** A destination pinned internally from session configuration, as for pagination. */
+      configuredOrigin?: boolean
       anonymous?: boolean
       token?: string
       headers?: Record<string, string>
@@ -508,6 +544,7 @@ export class Client {
       })
     }
     const origin = options.origin ?? this.session.target().api_url
+    const explicitOrigin = options.origin !== undefined && options.configuredOrigin !== true
     // Explicit bounded signals also own cancellation cleanup after the command
     // signal aborts; retain that contract rather than poisoning the whole Client.
     const requestSignal = options.signal ?? this.runtime.signal
@@ -597,7 +634,7 @@ export class Client {
           new Refused({
             fault: "infra",
             code: "backend_timed_out",
-            message: "Smithers API timed out. Check api_origin and your connection"
+            message: `Smithers API at ${origin} timed out.${this.originHint(undefined, explicitOrigin)}`
           }),
           error
         )
@@ -606,7 +643,7 @@ export class Client {
         new Refused({
           fault: "infra",
           code: "backend_unavailable",
-          message: "Cannot reach Smithers API. Check api_origin and your connection"
+          message: `Cannot reach Smithers API at ${origin}.${this.originHint(undefined, explicitOrigin)}`
         }),
         error
       )
@@ -626,7 +663,7 @@ export class Client {
         text = await this.text(response)
         detail = object(JSON.parse(text))
       } catch { /* use status */ }
-      throw new APIError(response.status, detail, method, path, response.headers, text, origin)
+      throw new APIError(response.status, detail, method, path, response.headers, text, origin, explicitOrigin)
     }
     return response
   }
@@ -733,7 +770,7 @@ export class Client {
       }
       seen.add(cursor)
       const requestPath = path(cursor)
-      const response = await this.response("GET", requestPath, undefined, { origin })
+      const response = await this.response("GET", requestPath, undefined, { origin, configuredOrigin: true })
       const data: unknown = parseResponse(await this.text(response))
       cursor = paginationCursor(response.headers, new URL(requestPath, origin))
       if (cursor && seen.has(cursor)) {

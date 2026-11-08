@@ -1,45 +1,48 @@
 diff --git a/build/esm/common/internal.js b/build/esm/common/internal.js
-index 711234012c30bbea7e7b3db453a3a6923765004d..6445b6250f64a119a20e71fe0193471f5288a3e2 100644
+index 711234012c30bbea7e7b3db453a3a6923765004d..c631e60834fd18a88866d6f98634b3948bfe89c0 100644
 --- a/build/esm/common/internal.js
 +++ b/build/esm/common/internal.js
-@@ -33,7 +33,9 @@ export function toAnyValue(value, encoder) {
+@@ -33,9 +33,9 @@ export function toAnyValue(value, encoder) {
      if (t === 'string')
          return { stringValue: value };
      if (t === 'number') {
 -        if (!Number.isInteger(value))
-+        // OTLP int_value is a signed 64-bit integer: an integer outside that
-+        // range is sent as a double, as the protobuf serializer does.
 +        if (!Number.isInteger(value) || value < -(2 ** 63) || value >= 2 ** 63)
              return { doubleValue: value };
-         return { intValue: value };
+-        return { intValue: value };
++        return { intValue: Number.isSafeInteger(value) ? value : String(BigInt(value)) };
      }
+     if (t === 'boolean')
+         return { boolValue: value };
 diff --git a/build/esnext/common/internal.js b/build/esnext/common/internal.js
-index 711234012c30bbea7e7b3db453a3a6923765004d..6445b6250f64a119a20e71fe0193471f5288a3e2 100644
+index 711234012c30bbea7e7b3db453a3a6923765004d..c631e60834fd18a88866d6f98634b3948bfe89c0 100644
 --- a/build/esnext/common/internal.js
 +++ b/build/esnext/common/internal.js
-@@ -33,7 +33,9 @@ export function toAnyValue(value, encoder) {
+@@ -33,9 +33,9 @@ export function toAnyValue(value, encoder) {
      if (t === 'string')
          return { stringValue: value };
      if (t === 'number') {
 -        if (!Number.isInteger(value))
-+        // OTLP int_value is a signed 64-bit integer: an integer outside that
-+        // range is sent as a double, as the protobuf serializer does.
 +        if (!Number.isInteger(value) || value < -(2 ** 63) || value >= 2 ** 63)
              return { doubleValue: value };
-         return { intValue: value };
+-        return { intValue: value };
++        return { intValue: Number.isSafeInteger(value) ? value : String(BigInt(value)) };
      }
+     if (t === 'boolean')
+         return { boolValue: value };
 diff --git a/build/src/common/internal.js b/build/src/common/internal.js
-index 68ee8ed0910507b28d18a7fd854543a729e6b1e6..0106b7d1514ef8ac63d21b53967f5f86950bcd76 100644
+index 68ee8ed0910507b28d18a7fd854543a729e6b1e6..5381fd4d1ccbe217e974311b26e7da410b15a412 100644
 --- a/build/src/common/internal.js
 +++ b/build/src/common/internal.js
-@@ -40,7 +40,9 @@ function toAnyValue(value, encoder) {
+@@ -40,9 +40,9 @@ function toAnyValue(value, encoder) {
      if (t === 'string')
          return { stringValue: value };
      if (t === 'number') {
 -        if (!Number.isInteger(value))
-+        // OTLP int_value is a signed 64-bit integer: an integer outside that
-+        // range is sent as a double, as the protobuf serializer does.
 +        if (!Number.isInteger(value) || value < -(2 ** 63) || value >= 2 ** 63)
              return { doubleValue: value };
-         return { intValue: value };
+-        return { intValue: value };
++        return { intValue: Number.isSafeInteger(value) ? value : String(BigInt(value)) };
      }
+     if (t === 'boolean')
+         return { boolValue: value };

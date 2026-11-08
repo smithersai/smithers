@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Quota-aware waits at a model-backed step.
  *
@@ -19,7 +20,6 @@
  * the real requests rather than trusted on its own.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
@@ -39,6 +39,7 @@ import type * as ModelLike from "@smthrs/testing/ModelLike"
 import * as RecordedModel from "@smthrs/testing/RecordedModel"
 import { Cause, Effect, Exit, Fiber, Layer, Metric, Option, Schema, Stream } from "effect"
 import * as Clock from "effect/Clock"
+import type * as EffectDigest from "effect/crypto/Digest"
 import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
@@ -218,13 +219,14 @@ const stores = Layer.mergeAll(
  * same time: the classifier that chooses a deadline, the engine row that
  * records it, and the durable timer that waits it out.
  */
-const durable = <A, E>(body: Effect.Effect<A, E, Crypto.Crypto | Scope.Scope>): Promise<A> =>
+const durable = <A, E>(
+  body: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom) | Scope.Scope>
+): Promise<A> =>
   Effect.runPromise(
-    Effect.scoped(Effect.provide(body, Layer.merge(Crypto.layerFromDigest(NodeCrypto.layerDigest), TestClock.layer())))
-      .pipe(
-        Effect.provideService(Metric.MetricRegistry, new Map()),
-        Effect.orDie
-      )
+    Effect.scoped(Effect.provide(body, Layer.merge(NodeCrypto.layer, TestClock.layer()))).pipe(
+      Effect.provideService(Metric.MetricRegistry, new Map()),
+      Effect.orDie
+    )
   )
 
 /**
@@ -282,7 +284,7 @@ const memory = (model: Model.Model, classifier: Layer.Layer<QuotaPolicy.QuotaCla
     Layer.provideMerge(Budget.layerUnbounded()),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Layer.provideMerge(NodeCrypto.layer)
   )
 
 /**

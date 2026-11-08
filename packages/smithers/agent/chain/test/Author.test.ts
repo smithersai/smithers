@@ -1,5 +1,5 @@
 import { Context, Effect } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Author from "../src/Author.vibe"
 import * as QuickJsRunner from "../src/QuickJsRunner.ts"
 import * as ScriptRunner from "../src/ScriptRunner.ts"
@@ -149,8 +149,8 @@ class Unprovided extends Context.Service<Unprovided, { readonly value: string }>
 
 /** Never called; tsc checks it (#2704). */
 const unprovidedServiceProbe = () => {
-  // @ts-expect-error the author layer does not provide Unprovided
-  runOn(Author.layerMock([]), Effect.map(Unprovided, (service) => service.value))
+  const unmet = Effect.map(Unprovided, (service) => service.value)
+  expectTypeOf<typeof unmet>().not.toExtend<Parameters<typeof runOn<Author.Author, never, string, never>>[1]>()
   runOn(Author.layerMock([]), Effect.map(Author.Author, (author) => author))
 }
 

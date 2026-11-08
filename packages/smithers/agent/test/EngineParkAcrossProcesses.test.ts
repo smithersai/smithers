@@ -23,7 +23,6 @@ import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Control, ControlLive, ControlRuntime, ControlSchema, SqlControlRuntime } from "@smthrs/control"
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
-import { Crypto } from "@smthrs/crypto"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { AttemptEvidenceQuarantined } from "@smthrs/engine-store/Errors"
@@ -44,7 +43,7 @@ import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
 import { Migrations as RunStoreMigrations, type Ownership, RunStore } from "@smthrs/run-store"
-import { Cause, Deferred, Duration, Effect, Exit, Layer, Logger, Option, Schedule, Schema, Stream } from "effect"
+import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer, Logger, Option, Schedule, Schema, Stream } from "effect"
 import * as References from "effect/References"
 import { mkdtempSync } from "node:fs"
 import { rm } from "node:fs/promises"
@@ -289,7 +288,7 @@ const host = (
         })
       )
     )
-  ).pipe(Layer.provide([AtomicFileSystem.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest), jj]))
+  ).pipe(Layer.provide([AtomicFileSystem.layer, NodeCrypto.layer, jj]))
   // `provideMerge` rather than `provide`: a case may drive the engine itself,
   // which is what a heartbeat sweep or a peer's poll is to the executor.
   return ControlLive.layer.pipe(
@@ -303,9 +302,7 @@ const host = (
         )
       ))
     ),
-    Layer.provideMerge(
-      Layer.merge(controlStores(join(root, "control.db")), Crypto.layerFromDigest(NodeCrypto.layerDigest))
-    )
+    Layer.provideMerge(Layer.merge(controlStores(join(root, "control.db")), NodeCrypto.layer))
   )
 }
 
@@ -495,107 +492,137 @@ const settledEngineRow = async (root: string, runId: string): Promise<EngineRow 
 }
 
 describe("an agent execution quarantined by the durable engine", () => {
-  it("fences a delegated resume when a peer quarantines after its wait precheck", async () => {
-    const root = makeRoot()
-    const resumed = Deferred.makeUnsafe<void>()
-    const engineJournal = Deferred.makeUnsafe<Journal.Service>()
-    // The peer's quarantine lands inside the window this case is about: after
-    // the executor read the park as a timer and claimed the control row, and
-    // before the engine is asked to re-drive the execution.
-    let quarantineOnResume = false
-    let quarantines = 0
-    const operatorWakes = (runId: string): number => {
-      const database = new DatabaseSync(join(root, "engine.db"), { readOnly: true })
-      try {
-        const row = database.prepare(`SELECT COUNT(*) AS n FROM flows_journal_events
+  for (const peerParksControl of [false, true]) {
+    it(
+      `fences a delegated resume when a peer quarantines after its wait precheck (control parked: ${peerParksControl})`,
+      async () => {
+        const root = makeRoot()
+        const resumed = Deferred.makeUnsafe<void>()
+        const engineJournal = Deferred.makeUnsafe<Journal.Service>()
+        let peerRuntime: ControlRuntime.Service | undefined
+        let resumeFiber: Fiber.Fiber<unknown, unknown> | undefined
+        // The peer's quarantine lands inside the window this case is about: after
+        // the executor read the park as a timer and claimed the control row, and
+        // before the engine is asked to re-drive the execution.
+        let quarantineOnResume = false
+        let quarantines = 0
+        const operatorWakes = (runId: string): number => {
+          const database = new DatabaseSync(join(root, "engine.db"), { readOnly: true })
+          try {
+            const row = database.prepare(`SELECT COUNT(*) AS n FROM flows_journal_events
           WHERE run_id = ? AND event_type = 'flows.engine.run-decision'
           AND json_extract(payload_json, '$.decision') = 'wake-scheduled'
           AND json_extract(payload_json, '$.reason') = 'operator'`).get(runId) as { readonly n: number }
-        return row.n
-      } finally {
-        database.close()
-      }
-    }
-    const outcome = await Effect.runPromise(
-      Effect.gen(function*() {
-        const id = yield* launch
-        const runtime = yield* ControlRuntime.ControlRuntime
-        yield* awaitStatus(runtime, id, "parked")
-        // The control park is written by the body's exit handler, before the
-        // engine commits its wait classification. Replay and follow the engine
-        // journal so the timer precondition is durable before injecting the peer.
-        const journal = yield* Deferred.await(engineJournal)
-        yield* journal.stream({ runId: JournalEvent.RunId.make(id) }).pipe(
-          Stream.filter((entry) =>
-            entry.eventType === "flows.engine.run-decision" &&
-            typeof entry.payload === "object" && entry.payload !== null &&
-            "decision" in entry.payload && entry.payload.decision === "transitioned" &&
-            "status" in entry.payload && entry.payload.status === "suspended"
-          ),
-          Stream.take(1),
-          Stream.runDrain
+            return row.n
+          } finally {
+            database.close()
+          }
+        }
+        const outcome = await Effect.runPromise(
+          Effect.gen(function*() {
+            const id = yield* launch
+            const runtime = yield* ControlRuntime.ControlRuntime
+            peerRuntime = runtime
+            yield* awaitStatus(runtime, id, "parked")
+            // The control park is written by the body's exit handler, before the
+            // engine commits its wait classification. Replay and follow the engine
+            // journal so the timer precondition is durable before injecting the peer.
+            const journal = yield* Deferred.await(engineJournal)
+            yield* journal.stream({ runId: JournalEvent.RunId.make(id) }).pipe(
+              Stream.filter((entry) =>
+                entry.eventType === "flows.engine.run-decision" &&
+                typeof entry.payload === "object" && entry.payload !== null &&
+                "decision" in entry.payload && entry.payload.decision === "transitioned" &&
+                "status" in entry.payload && entry.payload.status === "suspended"
+              ),
+              Stream.take(1),
+              Stream.runDrain
+            )
+            expect(readEngineRun(root, id)?.waiting_reason).toBe("timer")
+            const wakesBefore = operatorWakes(id)
+            quarantineOnResume = true
+            const executor = yield* ControlExecutor.ControlExecutor
+            const uptake = yield* executor.resumeRun({ runId: id })
+            yield* Deferred.await(resumed)
+            // The engine wrapper finishes before the executor returns its claim.
+            // Join that drive too, including the case where the peer parked first.
+            if (resumeFiber === undefined) return yield* Effect.die("resume drive unavailable")
+            yield* Fiber.join(resumeFiber)
+            // The refused delegation hands its control claim back to the park.
+            yield* awaitStatus(runtime, id, "parked")
+            return { id, uptake, wakesBefore, parkedBy: (yield* runtime.getRun(id)).parkedBy }
+          }).pipe(
+            Effect.provide(host(root, hostOwner, "quarantine-race", {
+              engineJournal,
+              resumed,
+              onEngineResume: Effect.withFiber((fiber) =>
+                Effect.sync(() => {
+                  resumeFiber = fiber
+                })
+              ),
+              beforeEngineResume: (id) =>
+                Effect.suspend(() => {
+                  if (!quarantineOnResume) return Effect.void
+                  quarantineOnResume = false
+                  quarantines++
+                  // The peer writes from this process's event loop, so a busy wait
+                  // here would block the engine fiber that holds `engine.db`'s write
+                  // lock and fail after the timeout with no quarantine recorded.
+                  // Retry a refused lock after yielding instead (#3853).
+                  return Effect.try({
+                    try: () => {
+                      const database = new DatabaseSync(join(root, "engine.db"))
+                      try {
+                        database.prepare(
+                          "UPDATE flows_runs SET waiting_reason = 'quarantine', waiting_token = 'peer-corruption' WHERE run_id = ?"
+                        ).run(id)
+                      } finally {
+                        database.close()
+                      }
+                    },
+                    catch: (error) => error
+                  }).pipe(
+                    Effect.retry({
+                      schedule: Schedule.spaced("5 millis"),
+                      times: 2_000,
+                      while: (error) => (error as { readonly errcode?: unknown }).errcode === 5
+                    }),
+                    Effect.orDie,
+                    Effect.andThen(
+                      peerParksControl ?
+                        Effect.gen(function*() {
+                          // Publish the peer's park through the real control store,
+                          // including its spent fence and ownership release.
+                          if (peerRuntime === undefined) return yield* Effect.die("peer runtime unavailable")
+                          const fence = yield* peerRuntime.claimFence(id)
+                          yield* peerRuntime.writeStatus(id, fence, "parked")
+                        }) :
+                        Effect.void
+                    ),
+                    Effect.orDie
+                  )
+                })
+            })),
+            Effect.scoped,
+            Effect.orDie
+          )
         )
-        expect(readEngineRun(root, id)?.waiting_reason).toBe("timer")
-        const wakesBefore = operatorWakes(id)
-        quarantineOnResume = true
-        const executor = yield* ControlExecutor.ControlExecutor
-        const uptake = yield* executor.resumeRun({ runId: id })
-        yield* Deferred.await(resumed)
-        // The refused delegation hands its control claim back to the park.
-        yield* awaitStatus(runtime, id, "parked")
-        return { id, uptake, wakesBefore, parkedBy: (yield* runtime.getRun(id)).parkedBy }
-      }).pipe(
-        Effect.provide(host(root, hostOwner, "quarantine-race", {
-          engineJournal,
-          resumed,
-          beforeEngineResume: (id) =>
-            Effect.suspend(() => {
-              if (!quarantineOnResume) return Effect.void
-              quarantineOnResume = false
-              quarantines++
-              // The peer writes from this process's event loop, so a busy wait
-              // here would block the engine fiber that holds `engine.db`'s write
-              // lock and fail after the timeout with no quarantine recorded.
-              // Retry a refused lock after yielding instead (#3853).
-              return Effect.try({
-                try: () => {
-                  const database = new DatabaseSync(join(root, "engine.db"))
-                  try {
-                    database.prepare(
-                      "UPDATE flows_runs SET waiting_reason = 'quarantine', waiting_token = 'peer-corruption' WHERE run_id = ?"
-                    ).run(id)
-                  } finally {
-                    database.close()
-                  }
-                },
-                catch: (error) => error
-              }).pipe(
-                Effect.retry({
-                  schedule: Schedule.spaced("5 millis"),
-                  times: 2_000,
-                  while: (error) => (error as { readonly errcode?: unknown }).errcode === 5
-                }),
-                Effect.orDie
-              )
-            })
-        })),
-        Effect.scoped,
-        Effect.orDie
-      )
+        const { id: runId } = outcome
+        expect(quarantines).toBe(1)
+        // The precheck saw a timer, so the executor claimed and handed the run on.
+        expect(outcome.uptake).toBe("resuming")
+        expect(outcome.parkedBy).toBeDefined()
+        const row = readEngineRun(root, runId)
+        expect(row?.status).toBe("suspended")
+        expect(row?.waiting_reason).toBe("quarantine")
+        expect(row?.waiting_token).toBe("peer-corruption")
+        expect(notes).toEqual([])
+        // No recovery consent was recorded for the background delegation.
+        expect(operatorWakes(runId)).toBe(outcome.wakesBefore)
+      },
+      120_000
     )
-    const { id: runId } = outcome
-    expect(quarantines).toBe(1)
-    // The precheck saw a timer, so the executor claimed and handed the run on.
-    expect(outcome.uptake).toBe("resuming")
-    expect(outcome.parkedBy).toBeDefined()
-    const row = readEngineRun(root, runId)
-    expect(row?.status).toBe("suspended")
-    expect(row?.waiting_reason).toBe("quarantine")
-    expect(row?.waiting_token).toBe("peer-corruption")
-    expect(notes).toEqual([])
-    // No recovery consent was recorded for the background delegation.
-    expect(operatorWakes(runId)).toBe(outcome.wakesBefore)
-  }, 120_000)
+  }
 
   // The first detection parks the run whichever resume drove it: the
   // operator's own, or a delegation a host took up in the background.
@@ -650,9 +677,7 @@ describe("an agent execution quarantined by the durable engine", () => {
           run: () =>
             Stream.unwrap(Effect.gen(function*() {
               const engine = yield* FlowRuntime.FlowRuntime
-              const result = yield* engine.actionExecute(sealed, 1).pipe(
-                Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
-              )
+              const result = yield* engine.actionExecute(sealed, 1).pipe(Effect.provide(NodeCrypto.layer))
               return result._tag === "Complete" && Exit.isFailure(result.exit)
                 ? Stream.failCause(result.exit.cause)
                 : completed
@@ -688,7 +713,6 @@ describe("an agent execution quarantined by the durable engine", () => {
           controlDb.close()
         }
         corrupt = true
-        const replayed = Deferred.makeUnsafe<void>()
         await Effect.runPromise(
           Effect.gen(function*() {
             const control = yield* Control.Control
@@ -696,10 +720,12 @@ describe("an agent execution quarantined by the durable engine", () => {
             if (replay === "operator") yield* control.resume({ runId, idempotencyKey: `replay:${runId}` })
             else yield* runtime.requestResume(runId)
             yield* awaitQuarantine(root, runId)
-            yield* Deferred.await(replayed)
+            // Recovery can claim the released engine row before the control
+            // follower calls resume. Both routes must publish the quarantine
+            // park; a resume-only finalizer is not a completion barrier for it.
             yield* awaitStatus(runtime, runId, "parked")
           }).pipe(
-            Effect.provide(host(root, secondOwner, "quarantine-replay", { ...options, resumed: replayed })),
+            Effect.provide(host(root, secondOwner, "quarantine-replay", options)),
             Effect.scoped,
             Effect.orDie
           )

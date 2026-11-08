@@ -35,8 +35,10 @@ The constructors read nothing. A target call collects the declared values it fin
 in its attrs, and a target may add more through its `inputs(attrs)` function. That
 is the whole of input declaration.
 
-The planner expands and digests them during discovery, once per target, in
-`Workspace.expandInputs`. The result is an `ExpandedInput` per declaration:
+The planner expands and digests them during discovery, in
+`Workspace.expandInputs`. One plan reads each distinct declaration of a package
+once, however many targets declare it, so every target keys the same bytes for
+a shared input. The result is an `ExpandedInput` per declaration:
 
 ```ts
 interface ExpandedInput {

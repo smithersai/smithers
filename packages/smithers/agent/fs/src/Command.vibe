@@ -46,14 +46,14 @@ export interface CommandSurface {
   /** Lists executable model-visible module routes without loading them. */
   list: () => ReadonlyArray<ListedCommand>
   /** Loads the selected module and schema-decodes an agent command string. */
-  parse: (commandString: string) => Effect<ParsedCommand, FsError>
+  parse: (commandString: string) => ParsedCommand!FsError
   /** Parses, invokes, and output-encodes an agent command string. */
-  execute: (commandString: string) => Effect<unknown, FsError, FlowInvoker.FlowInvoker>
+  execute: (commandString: string) => unknown!FsError!FlowInvoker.FlowInvoker
   /** Validates decoded input and output for an exact named route. */
   call: <N extends Route.Name>(
     name: N,
     input: Route.Input<N>
-  ) => Effect<Route.Output<N>, FsError, FlowInvoker.FlowInvoker>
+  ) => Route.Output<N>!FsError!FlowInvoker.FlowInvoker
 }
 
 type Loaded = Pick<Flow.Any, "name" | "input" | "output"> & Partial<Pick<Flow.Any, "description">>
@@ -66,8 +66,8 @@ interface Prepared {
 }
 
 // Admit and detach even when the typed value contains native Date leaves.
-effect function snapshotDecoded(value: unknown): Effect<unknown, FsError, infer R> {
-  const admitted = Boundary.admitDecoded(value)
+effect function snapshotDecoded(value: unknown): unknown!FsError {
+  const admitted = try sync(() => Boundary.admitDecoded(value))
   if (!admitted.ok) {
     throw new FsError({
       code: "decode_failed",
@@ -78,16 +78,10 @@ effect function snapshotDecoded(value: unknown): Effect<unknown, FsError, infer 
   return admitted.value
 }
 
-effect function validateDecoded(
-  schema: Schema.Top,
-  value: unknown,
-  field: "input" | "output"
-): Effect<unknown, FsError, infer R> {
+effect function validateDecoded(schema: Schema.Top, value: unknown, field: "input" | "output"): unknown!FsError {
   const decoded = try SchemaBridge.recover(
-    effect {
-      return try Schema.decodeUnknownEffect(Schema.toType(schema))(try snapshotDecoded(value))
-    },
-    effect () =>
+    Schema.decodeUnknownEffect(Schema.toType(schema))(try snapshotDecoded(value)),
+    () =>
       new FsError({
         code: "decode_failed",
         method: "Command.call",
@@ -112,12 +106,12 @@ const routeArgv = (argv: ReadonlyArray<string>): ReadonlyArray<string> => {
  * @category constructors
  * @since 0.1.0
  */
-export effect function make(routes: ReadonlyArray<Route.Route>): Effect<CommandSurface, FsError, infer R> {
+export effect function make(routes: ReadonlyArray<Route.Route>): CommandSurface!FsError {
   const validated = try CommandTree.make(routes)
   const commandRoutes = CommandTree.traverse(validated).filter(Route.isCommandRoute)
   const tree = try CommandTree.make(commandRoutes)
 
-  const prepare = effect (commandString: string): Effect<Prepared, FsError, infer R> => {
+  const prepare = effect (commandString: string): Prepared!FsError => {
     const argv = try CommandLine.lex(commandString)
     const resolved = try CommandTree.resolve(tree, routeArgv(argv))
     const flow = try Route.load(resolved.route)
@@ -128,13 +122,13 @@ export effect function make(routes: ReadonlyArray<Route.Route>): Effect<CommandS
   }
 
   const invoke = effect (route: Route.Route, flow: Loaded, input: unknown) =>
-    try FlowInvoker.FlowInvoker.invoke(Object.freeze({ name: route.name, flow, input }))
+    try (try FlowInvoker.FlowInvoker).invoke(Object.freeze({ name: route.name, flow, input }))
 
   const listed = Object.freeze(
     CommandTree.traverse(tree).map((route) =>
       Object.freeze({
         name: route.name,
-        description: route.description.getOrUndefined()
+        description: Option.getOrUndefined(route.description)
       })
     )
   )
@@ -145,27 +139,21 @@ export effect function make(routes: ReadonlyArray<Route.Route>): Effect<CommandS
       const { argv, input, route } = try prepare(commandString)
       return Object.freeze({ route, argv, input })
     },
-    execute: effect (commandString) =>
-      try withSpan(
-        effect {
-          const { flow, input, route } = try prepare(commandString)
-          return try SchemaBridge.encodeOutput(flow.output, try invoke(route, flow, input))
-        },
-        "Command.execute"
-      ),
-    call: effect <N extends Route.Name>(name: N, candidate: Route.Input<N>) =>
-      try withSpan(
-        effect {
-          const input = try snapshotDecoded(candidate)
-          const segments = typeof name === "string" ? name.split("/") : []
-          const route = try CommandTree.resolveExact(tree, segments)
-          const flow = try Route.load(route)
-          const decoded = try validateDecoded(flow.input, input, "input")
-          const output = try invoke(route, flow, decoded)
-          return (try validateDecoded(flow.output, output, "output")) as Route.Output<N>
-        },
-        "Command.call"
-      )
+    execute: (commandString) =>
+      withSpan(effect {
+        const { flow, input, route } = try prepare(commandString)
+        return try SchemaBridge.encodeOutput(flow.output, try invoke(route, flow, input))
+      }, "Command.execute"),
+    call: <N extends Route.Name>(name: N, candidate: Route.Input<N>) =>
+      withSpan(effect {
+        const input = try snapshotDecoded(candidate)
+        const segments = typeof name === "string" ? name.split("/") : []
+        const route = try CommandTree.resolveExact(tree, segments)
+        const flow = try Route.load(route)
+        const decoded = try validateDecoded(flow.input, input, "input")
+        const output = try invoke(route, flow, decoded)
+        return try validateDecoded(flow.output, output, "output") as Route.Output<N>
+      }, "Command.call")
   }
   return Object.freeze(surface)
 }

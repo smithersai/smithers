@@ -7,6 +7,7 @@
  * @since 0.1.0
  */
 
+import * as PackageManager from "@smthrs/build/PackageManager"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import type * as Node from "@smthrs/plan/Node"
@@ -71,14 +72,28 @@ export const runTarget = (
       error: Schema.Unknown,
       body: () => planned
     })
-    const environment: Exec.ToolEnvironment | undefined = nixEnvironment === undefined
+    const declared = targetToolchain(target._tag, validated)
+    const usesPnpm = declared.packageManager?.name === "pnpm"
+    // Catalog bodies use ExecLive rather than the native planner's argv/env.
+    // Give both routes the same Install store and prevent consumer-side installs.
+    const environment: Exec.ToolEnvironment | undefined = nixEnvironment === undefined && !usesPnpm
       ? undefined
-      : { path: nixEnvironment.path.join(NodePath.delimiter), variables: nixEnvironment.variables }
+      : {
+        path: nixEnvironment?.path.join(NodePath.delimiter) ?? Exec.toolEnvironment({}, sensitiveEnv)["PATH"] ?? "",
+        variables: {
+          ...nixEnvironment?.variables,
+          ...(usesPnpm ?
+            {
+              pnpm_config_store_dir: NodePath.resolve(workspaceRoot, PackageManager.storeRoot, "pnpm"),
+              pnpm_config_verify_deps_before_run: "false"
+            } :
+            {})
+        }
+      }
     const cwd = Exec.resolveWorkspacePath(
       workspaceRoot,
       "cwd" in validated && typeof validated.cwd === "string" ? validated.cwd : "."
     )
-    const declared = targetToolchain(target._tag, validated)
     const declaredEnvironment = declared.runtime === undefined && declared.packageManager === undefined
       ? {}
       : Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.String))(

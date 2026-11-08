@@ -1,9 +1,8 @@
-import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
+import type { ElectricCollection } from "@smthrs/effect-electric"
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, Layer, Metric, type Scope, Stream } from "effect"
-import { signedInShapeSource } from "../auth/source"
-import { AuthStore } from "../auth/store"
-import { MY_CONVERSATIONS_SHAPE_ROUTE } from "./contract"
+import { ConversationOwners } from "./owners"
+import type { Source } from "../repo/gate"
 import { observeShape } from "../issues/shapeSync"
 import { listUpdates, shapeTransitions } from "./metrics"
 import { landed, listOf } from "./list"
@@ -21,7 +20,7 @@ export interface ConversationsConfig {
 }
 
 /** The list this tab shows, the latest opened first. */
-export const listQuery = (list: Collection.Collection<Listed, string>) =>
+export const listQuery = (list: Source<Listed>) =>
   LiveQuery.make((q) =>
     // Electric's UTC timestamps omit the fraction at whole seconds. Locale collation puts '+' after '.', reversing
     // a whole second and a later fraction; code-point order preserves their chronological order.
@@ -39,7 +38,9 @@ export class ConversationsStore extends Context.Service<
     readonly mine: ElectricCollection.ElectricCollection<Mine>
     readonly pending: Collection.Collection<Pending, string>
     readonly search: Collection.Collection<Search, string>
+    /** The list worked out from the rows: the store's own. What shows reads `listState`, through the data gate. */
     readonly list: Collection.Collection<Listed, string>
+    /** The list, only the conversations whose repository may show, or the person's home (owners.ts `ofShown`). */
     readonly listState: Effect.Success<ReturnType<typeof listQuery>>
     readonly searchState: Effect.Success<ReturnType<typeof searchQuery>>
     /** Where the background work an action starts runs. */
@@ -47,22 +48,14 @@ export class ConversationsStore extends Context.Service<
   }
 >()("@smthrs/mvp/conversations/ConversationsStore") {
   /** The store, its follower running until the scope closes. */
-  static readonly layer = (config: ConversationsConfig) =>
+  static readonly layer = (_config: ConversationsConfig) =>
     Layer.effect(
       ConversationsStore,
       Effect.gen(function* () {
         const scope = yield* Effect.scope
-        const mine = yield* ElectricCollection.make<Mine>({
-          id: "my-conversations",
-          schema: Mine,
-          getKey: (row) => row.conversationId,
-          syncMode: "eager",
-          persist: { schemaVersion: 1 },
-          shape: {
-            url: `${config.origin}${MY_CONVERSATIONS_SHAPE_ROUTE}`,
-            columnMapper: ElectricCollection.snakeCamelMapper(),
-          },
-        }).pipe(Effect.provideService(ShapeSource.ShapeSource, signedInShapeSource(yield* ShapeSource.ShapeSource, yield* AuthStore)))
+        // The rows sync once, below every store that attributes a conversation's rows by them (owners.ts).
+        const owners = yield* ConversationOwners
+        const { mine } = owners
         yield* observeShape(mine.sync, "conversations.shape.sync", shapeTransitions).pipe(Effect.forkIn(scope, { startImmediately: true }))
         const pending = yield* Collection.persisted<Pending, string>({
           id: "conversation-pending",
@@ -70,6 +63,9 @@ export class ConversationsStore extends Context.Service<
           getKey: (row) => row.conversationId,
           schemaVersion: 1,
         })
+        // Expose the store only after local pending acts are restored. An empty pre-restore snapshot must not look
+        // settled to a consumer while the resume fiber is still waiting for the device's rows.
+        yield* Effect.ignore(pending.restored)
         const search = yield* Collection.local<Search, string>({
           id: "conversation-search",
           schema: Search,
@@ -145,7 +141,9 @@ export class ConversationsStore extends Context.Service<
           pending,
           search,
           list,
-          listState: yield* listQuery(list),
+          // A refused or hidden repository's conversations leave the list, names included (ruling #4); `mine` and `list`
+          // stay whole for reconciling the acts this device did.
+          listState: yield* listQuery((yield* owners.ofShown(list, "conversationId")) as unknown as Source<Listed>),
           searchState: yield* searchQuery(search),
           scope,
         })

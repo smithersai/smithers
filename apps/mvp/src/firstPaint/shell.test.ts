@@ -248,14 +248,14 @@ describe("the shell", () => {
     expect(shell.outcome()).toBe("painted")
     expect(b.marks).toEqual(["smithers.first_paint.painted"])
     // The page adopts the hold: no gap, and the shell's end never lets go of it.
-    const release = shell.handOver()!
+    const release = (await shell.handOver())!
     shell.revoke()
     await b.settle()
     expect([b.node(), b.lock.held]).toEqual([null, true])
     release()
     await b.settle()
     expect(b.lock.released).toBe(true)
-    expect(shell.handOver()).toBeUndefined()
+    expect(await shell.handOver()).toBeUndefined()
   })
 
   test("a closed issue with no author, and a list's rows as links", async () => {
@@ -536,7 +536,7 @@ describe("the shell", () => {
       channel: () => ({ postMessage: () => {}, close: () => {}, onmessage: null }),
       reload: () => {},
     }, { engine: "engine", outbox: "outbox" })
-    expect(await wipe.open(shell.handOver())).toBe(true)
+    expect(await wipe.open(await shell.handOver())).toBe(true)
     expect(shown.lock.asked).toBe(1)
     wipe.close()
     expect([shown.node(), shell.outcome()]).toEqual([null, "released"])
@@ -547,7 +547,8 @@ describe("the shell", () => {
     const pending = startShell(reading.host)!
     reading.lock.grant()
     await reading.settle()
-    pending.handOver()!()
+    const releasePending = (await pending.handOver())!
+    releasePending()
     reading.read.answer(200, painted())
     await reading.settle()
     await reading.settle()
@@ -571,7 +572,7 @@ describe("the shell", () => {
     const shell = startShell(b.host)!
     await b.paint(body, status)
     expect([b.node(), shell.outcome(), b.lock.held]).toEqual([null, why, false])
-    expect(shell.handOver()).toBeUndefined()
+    expect(await shell.handOver()).toBeUndefined()
   })
 
   test("a failed read, or one past its wait, paints nothing", async () => {
@@ -622,17 +623,51 @@ describe("the shell", () => {
     expect([b.node(), shell.outcome()]).toEqual([null, "mark"])
   })
 
-  test("hand-over: before the grant the shell stops asking; with the mark present it revokes; after its end, nothing", async () => {
+  test("a fast app waits for the shell's pending lock grant and adopts the same hold", async () => {
+    const b = browser()
+    const shell = startShell(b.host)!
+    const adoption = Promise.resolve(shell.handOver())
+    b.lock.grant()
+    const release = await adoption
+    expect(typeof release).toBe("function")
+    expect(b.lock.asked).toBe(1)
+    expect(b.marks).toEqual(["smithers.first_paint.hand_over_waiting", "smithers.first_paint.hand_over_ready"])
+    b.read.answer(200, painted())
+    await b.settle()
+    expect([b.node() !== null, b.lock.held]).toEqual([true, true])
+    release!()
+    await b.settle()
+    expect([b.node(), b.lock.released]).toEqual([null, true])
+  })
+
+  test("a wipe while adoption waits settles it without fetching or keeping a hold", async () => {
+    const b = browser()
+    const shell = startShell(b.host)!
+    const adoption = shell.handOver()
+    b.channels[0]!.onmessage!(new MessageEvent("message", { data: "wipe" }))
+    expect(await adoption).toBeUndefined()
+    expect([b.lock.aborted, b.read.url, shell.outcome()]).toEqual([true, undefined, "wipe"])
+  })
+
+  test("a refused lock grant settles adoption without reading private data", async () => {
+    const b = browser()
+    const shell = startShell({ ...b.host, locks: { request: (() => Promise.reject(new Error("lock unavailable"))) as never } })!
+    expect(await shell.handOver()).toBeUndefined()
+    expect([b.read.url, shell.outcome(), b.channels[0]!.closed]).toEqual([undefined, "none", true])
+  })
+
+  test("hand-over: a mark revokes before or after the grant; after its end, nothing", async () => {
     const early = browser()
     const shell = startShell(early.host)!
-    expect(shell.handOver()).toBeUndefined()
-    expect([early.lock.aborted, shell.outcome()]).toEqual([true, "revoked"])
+    early.setMark("1")
+    expect(await shell.handOver()).toBeUndefined()
+    expect([early.lock.aborted, shell.outcome()]).toEqual([true, "mark"])
 
     const marked = browser()
     const markedShell = startShell(marked.host)!
     await marked.paint(painted())
     marked.setMark("1")
-    expect(markedShell.handOver()).toBeUndefined()
+    expect(await markedShell.handOver()).toBeUndefined()
     await marked.settle()
     expect([marked.node(), marked.lock.held, markedShell.outcome()]).toEqual([null, false, "mark"])
 
@@ -641,7 +676,7 @@ describe("the shell", () => {
     const readingShell = startShell(reading.host)!
     reading.lock.grant()
     await reading.settle()
-    const release = readingShell.handOver()!
+    const release = (await readingShell.handOver())!
     reading.read.answer(200, painted())
     await reading.settle()
     await reading.settle()
@@ -652,3 +687,97 @@ describe("the shell", () => {
 
 const shells = new Map<ReturnType<typeof browser>, NonNullable<ReturnType<typeof startShell>>>()
 const shellOf = (b: ReturnType<typeof browser>) => shells.get(b)!
+
+test("the cold list takes search input before services; no early result reaches the page", async () => {
+  const b = browser({ path: "/acme/app/issues" })
+  const shell = startShell(b.host)!
+  await b.paint(painted({ list: [ISSUE] }))
+  const input = b.node()!.querySelector('input')!
+  input.value = "#42"
+  input.dispatchEvent(new Event("input"))
+  expect(b.node()!.querySelectorAll("a")).toHaveLength(0)
+  // The real observer runs when old rows are removed, before the bundle can bind the input.
+  b.mutate()
+  expect(shell.outcome()).toBe("painted")
+  const asked: string[] = []
+  let forgotten = 0
+  const unbind = shell.bindSearch!((owner, name, q) => asked.push(`${owner}/${name}:${q}`), () => forgotten++)
+  expect(asked).toEqual(["acme/app:#42"])
+  b.location.search = "?q=%2342"
+  shell.routed(b.location.pathname, b.location.search)
+  expect(shell.outcome()).toBe("painted")
+  expect(b.node()!.querySelector('[aria-busy], [data-slot="skeleton"], [role="progressbar"]')).toBeNull()
+  shell.verify({ signedIn: true, personId: "someone-else" })
+  expect(b.node()).toBeNull()
+  expect(forgotten).toBe(1)
+  input.dispatchEvent(new Event("input"))
+  expect(asked).toHaveLength(1)
+  unbind()
+})
+
+test("an early search is revoked on navigation and a late client cannot bind it", async () => {
+  const b = browser({ path: "/acme/app/issues" })
+  const shell = startShell(b.host)!
+  await b.paint(painted({ list: [ISSUE] }))
+  let asked = 0
+  let forgotten = 0
+  shell.bindSearch!(() => asked++, () => forgotten++)
+  const input = b.node()!.querySelector('input')!
+  input.value = "#42"
+  input.dispatchEvent(new Event("input"))
+  shell.routed("/acme/other/issues", "?q=%2342")
+  expect(forgotten).toBe(1)
+  shell.bindSearch!(() => asked++, () => forgotten++)()
+  expect(asked).toBe(1)
+})
+
+test("the app takes a cold search's focus and caret without revoking its pending read", async () => {
+  const b = browser({ path: "/acme/app/issues" })
+  const shell = startShell(b.host)!
+  await b.paint(painted({ list: [ISSUE] }))
+  let forgotten = 0
+  shell.bindSearch!(() => {}, () => forgotten++)
+  const input = b.node()!.querySelector('input')!
+  input.focus()
+  input.value = "#42"
+  input.setSelectionRange(1, 2)
+  input.dispatchEvent(new Event("input"))
+  b.location.search = "?q=%2342"
+  const root = document.createElement("div")
+  root.id = "root"
+  const main = document.createElement("main")
+  main.setAttribute(SETTLED_ATTRIBUTE, "settled")
+  const next = document.createElement("input")
+  next.setAttribute("aria-label", "Search issues")
+  next.value = "#42"
+  main.append(next)
+  root.append(main)
+  document.body.append(root)
+  b.mutate()
+  expect(shell.outcome()).toBe("handed_over")
+  expect(document.activeElement).toBe(next)
+  expect([next.selectionStart, next.selectionEnd]).toEqual([1, 2])
+  expect(forgotten).toBe(0)
+})
+
+test("only the current gated search paints; withholding, revocation and handover remove its rows", async () => {
+  const b = browser({ path: "/acme/app/issues" })
+  const shell = startShell(b.host)!
+  await b.paint(painted({ list: [ISSUE] }))
+  const input = b.node()!.querySelector('input')!
+  input.value = "#42"
+  input.dispatchEvent(new Event("input"))
+  b.mutate()
+  shell.showSearch!("acme", "other", "#42", [ISSUE])
+  shell.showSearch!("acme", "app", "old", [ISSUE])
+  expect(b.node()!.querySelectorAll("a")).toHaveLength(0)
+  shell.showSearch!("ACME", "APP", "#42", [{ ...ISSUE, title: "<img src=x>" }])
+  expect(b.node()!.querySelector("a")!.textContent).toBe("<img src=x>")
+  expect(b.node()!.querySelector("img")).toBeNull()
+  shell.showSearch!("acme", "app", "#42", undefined)
+  expect(b.node()!.querySelectorAll("a")).toHaveLength(0)
+  shell.showSearch!("acme", "app", "#42", [ISSUE])
+  shell.verify({ signedIn: true, personId: "changed" })
+  shell.showSearch!("acme", "app", "#42", [ISSUE])
+  expect(b.node()).toBeNull()
+})

@@ -1,3 +1,6 @@
+import { throwingAssembly } from "./modules.ts"
+import { Request } from "./modules.ts"
+
 /**
  * Pins command schema publication and authoritative input decoding.
  *
@@ -24,7 +27,7 @@ vitest.mock(
 )
 
 // A service that a decoding transformation needs and the bridge cannot supply.
-service Prefix: string
+service Prefix: string {}
 
 const moduleRef = new Descriptor.SchemaRefModule({ path: "/absolute/flow.ts", field: "input" })
 
@@ -38,16 +41,11 @@ effect function request(
   cli: { fetch: (request: Request) => Promise<Response> },
   url: string,
   init: RequestInit = {}
-): Effect<Reply> {
-  return try sync(
-    async (cli, url, init) => {
-      const response = await cli.fetch(new Request(url, init))
-      return { status: response.status, body: await response.json() }
-    },
-    cli,
-    url,
-    init
-  )
+): Reply!! {
+  return try promise(async () => {
+    const response = await cli.fetch(new Request(url, init))
+    return { status: response.status, body: await response.json() }
+  })
 }
 
 describe("SchemaBridge", () => {
@@ -149,7 +147,7 @@ describe("SchemaBridge", () => {
       note: Schema.NullOr(Schema.String)
     })
     const command = try SchemaBridge.toCommandSchema(moduleRef, Input)
-    const advertised = z.toJSONSchema(command.options!, { unrepresentable: "any" }) as {
+    const advertised = (try Effect.orDie(Effect.try({ try: () => z.toJSONSchema(command.options!, { unrepresentable: "any" }), catch: (e) => e }))) as {
       properties: Readonly<Record<string, unknown>>
       required: ReadonlyArray<string>
     }
@@ -160,12 +158,12 @@ describe("SchemaBridge", () => {
     expect(Object.keys(advertised.properties)).toEqual(Object.keys(declared.properties))
     expect(advertised.properties.count).toEqual(declared.properties.count)
     expect(advertised.properties.mode).toEqual(declared.properties.mode)
-    const published = z.fromJSONSchema(z.toJSONSchema(command.options!, { unrepresentable: "any" }))
+    const published = try Effect.orDie(Effect.try({ try: () => z.fromJSONSchema(z.toJSONSchema(command.options!, { unrepresentable: "any" })), catch: (e) => e }))
     for (const note of ["release note", null]) {
-      expect(published.safeParse({ count: 42, mode: "fast", note }).success).toBe(true)
+      expect((try Effect.orDie(Effect.try({ try: () => published.safeParse({ count: 42, mode: "fast", note }), catch: (e) => e }))).success).toBe(true)
     }
     for (const note of [42, true, {}, []]) {
-      expect(published.safeParse({ count: 42, mode: "fast", note }).success).toBe(false)
+      expect((try Effect.orDie(Effect.try({ try: () => published.safeParse({ count: 42, mode: "fast", note }), catch: (e) => e }))).success).toBe(false)
     }
     expect(advertised.required).toEqual(declared.required)
 
@@ -212,25 +210,25 @@ describe("SchemaBridge", () => {
     }
   ])("preserves the declared $name values and requiredness", effect ({ field, optional, value }) => {
     const Input = Schema.Struct({
-      choice: field
-    })
-    type Input = typeof Input.Type
+    choice: Schema.mutableKey(field),
+});
+    type Input = typeof Input.Type;
     const command = try SchemaBridge.toCommandSchema(moduleRef, Input)
-    const advertised = z.toJSONSchema(command.options!, { unrepresentable: "any" })
+    const advertised = try sync(() => z.toJSONSchema(command.options!, { unrepresentable: "any" }))
     const declared = Schema.toJsonSchemaDocument(Input).schema
 
     expect(Object.keys(advertised.properties!)).toEqual(Object.keys(declared.properties!))
     expect(advertised.required).toEqual(declared.required)
-    const published = z.fromJSONSchema(advertised)
+    const published = try sync(() => z.fromJSONSchema(advertised))
     for (const choice of [value, null]) {
-      expect(published.safeParse({ choice }).success).toBe(true)
+      expect((try sync(() => published.safeParse({ choice }))).success).toBe(true)
       expect(try command.decode(command.assemble([], { choice }))).toEqual({ choice })
     }
     for (const choice of [42, true, {}, [], ...(value === "note" ? [] : ["outside-enum"])]) {
-      expect(published.safeParse({ choice }).success).toBe(false)
+      expect((try sync(() => published.safeParse({ choice }))).success).toBe(false)
       expect((try failureOf(command.decode(command.assemble([], { choice })))).code).toBe("decode_failed")
     }
-    expect(published.safeParse({}).success).toBe(optional)
+    expect((try sync(() => published.safeParse({}))).success).toBe(optional)
     if (optional) {
       expect(try command.decode(command.assemble([], {}))).toEqual({})
     } else {
@@ -318,13 +316,13 @@ describe("SchemaBridge", () => {
   ])("projects $name without a synchronous defect", effect ({ schema, value }) => {
     const command = try SchemaBridge.toCommandSchema(moduleRef, schema)
     expect(try command.decode(command.assemble([], { input: value }))).toEqual(value)
-    const advertised = z.toJSONSchema(command.options!, { unrepresentable: "any" })
+    const advertised = try sync(() => z.toJSONSchema(command.options!, { unrepresentable: "any" }))
     expect(advertised.properties?.input).toMatchObject({ type: "array" })
   })
 
   it.effect("advertises tuple positions and refuses missing, extra, or mistyped elements", effect () => {
     const command = try SchemaBridge.toCommandSchema(moduleRef, Schema.Tuple([Schema.String, Schema.Finite]))
-    expect(z.toJSONSchema(command.options!, { unrepresentable: "any" }).properties?.input).toEqual({
+    expect((try Effect.orDie(Effect.try({ try: () => z.toJSONSchema(command.options!, { unrepresentable: "any" }), catch: (e) => e }))).properties?.input).toEqual({
       type: "array",
       prefixItems: [{ type: "string" }, { type: "number" }],
       items: false,
@@ -350,7 +348,7 @@ describe("SchemaBridge", () => {
         values: Schema.Record(Schema.String, Schema.Boolean)
       })
     )
-    const advertised = z.toJSONSchema(command.options!, { unrepresentable: "any" })
+    const advertised = try Effect.orDie(Effect.try({ try: () => z.toJSONSchema(command.options!, { unrepresentable: "any" }), catch: (e) => e }))
     const expected = {
       type: "object",
       properties: {
@@ -381,7 +379,7 @@ describe("SchemaBridge", () => {
       moduleRef,
       Schema.Struct({ nested: Schema.Struct({ mode: Schema.String }) })
     )
-    const advertised = z.toJSONSchema(command.options!, { unrepresentable: "any" })
+    const advertised = try Effect.orDie(Effect.try({ try: () => z.toJSONSchema(command.options!, { unrepresentable: "any" }), catch: (e) => e }))
     expect(advertised.additionalProperties).toBe(false)
     expect(advertised.properties?.nested).toMatchObject({ additionalProperties: false })
     expect(try command.decode(command.assemble([], { nested: { mode: "fast" } }))).toEqual({
@@ -398,16 +396,12 @@ describe("SchemaBridge", () => {
   })
 
   it.effect("turns document-generation errors into sanitized typed unsupported_schema failures", effect () => {
-    const error = try failureOf(effect {
-      return try SchemaBridge.toCommandSchema(
-        moduleRef,
-        try sync(() =>
-          Schema.suspend((): typeof Schema.String => {
-            throw new Error("private schema cause")
-          })
-        )
-      )
-    })
+    const error = try failureOf(SchemaBridge.toCommandSchema(
+      moduleRef,
+      try sync(() => Schema.suspend((): typeof Schema.String => {
+        $raise(new Error("private schema cause"))
+      }))
+    ))
     expect(error).toMatchObject({ code: "unsupported_schema", method: "SchemaBridge.toCommandSchema" })
     expect(JSON.stringify(error)).not.toContain("private schema cause")
   })
@@ -423,11 +417,9 @@ describe("SchemaBridge", () => {
       schema,
       definitions
     })
-    try {
+    try ensuring(effect {
       expect((try failureOf(SchemaBridge.toCommandSchema(moduleRef, Schema.Unknown))).code).toBe("unsupported_schema")
-    } finally {
-      document.mockRestore()
-    }
+    }, sync(() => document.mockRestore()))
   })
 
   it.effect.each([
@@ -450,13 +442,11 @@ describe("SchemaBridge", () => {
       schema: { type: "object", properties: { value: node }, required: ["value"] },
       definitions: {}
     })
-    try {
+    try ensuring(effect {
       const command = try SchemaBridge.toCommandSchema(moduleRef, Schema.Unknown)
       expect(try command.decode(command.assemble([], { value }))).toEqual({ value })
-      expect(z.toJSONSchema(command.options!, { unrepresentable: "any" }).properties?.value).not.toEqual({})
-    } finally {
-      document.mockRestore()
-    }
+      expect((try sync(() => z.toJSONSchema(command.options!, { unrepresentable: "any" }))).properties?.value).not.toEqual({})
+    }, sync(() => document.mockRestore()))
   })
 
   it.effect.each([
@@ -470,11 +460,9 @@ describe("SchemaBridge", () => {
       schema,
       definitions: { Recursive: schema }
     })
-    try {
+    try ensuring(effect {
       expect((try failureOf(SchemaBridge.toCommandSchema(moduleRef, Schema.Unknown))).code).toBe("unsupported_schema")
-    } finally {
-      document.mockRestore()
-    }
+    }, sync(() => document.mockRestore()))
   })
 
   it.effect("follows chained local references and escaped definition names", effect () => {
@@ -483,21 +471,20 @@ describe("SchemaBridge", () => {
       schema: { $ref: "#/$defs/First" },
       definitions: { First: { $ref: "#/$defs/a~1b~0c" }, "a/b~c": { type: "string" } }
     })
-    try {
+    try ensuring(effect {
       const command = try SchemaBridge.toCommandSchema(moduleRef, Schema.String)
       expect(try command.decode(command.assemble(["value"], {}))).toBe("value")
-    } finally {
+    
+    }, effect {
       document.mockRestore()
-    }
+    })
   })
 
   it.effect("keeps help, OpenAPI, and MCP usable beside an unsupported schema", effect () => {
     const inputs: Record<string, Schema.Top> = {
-      bad: try sync(() =>
-        Schema.suspend((): typeof Schema.String => {
-          throw new Error("private schema cause")
-        })
-      ),
+      bad: try sync(() => Schema.suspend((): typeof Schema.String => {
+        $raise(new Error("private schema cause"))
+      })),
       tuple: Schema.Tuple([Schema.String, Schema.Finite]),
       healthy: Schema.Struct({
         nested: Schema.Struct({ mode: Schema.Literals(["fast", "slow"]), count: Schema.Finite })
@@ -510,7 +497,7 @@ describe("SchemaBridge", () => {
       input: inputs[route.name]!,
       output: Schema.Void
     } as const))
-    try {
+    try ensuring(effect {
       const cli = do {
         provide FlowInvoker.layerNoop() {
           try Incur.createCli("flows", Object.keys(inputs).map((name) => makeRoute(name)))
@@ -528,11 +515,7 @@ describe("SchemaBridge", () => {
           })
       }
       const writes: Array<string> = []
-      try sync(
-        async (cli, writes) => cli.serve(["--help"], { stdout: (text) => writes.push(text), exit: () => {} }),
-        cli,
-        writes
-      )
+      try (promise(async () => cli.serve(["--help"], { stdout: (text) => writes.push(text), exit: () => {} })))
       expect(writes.join("")).toContain("healthy")
       expect(writes.join("")).toContain("bad")
       const rpc = effect (method: string, params: unknown) => {
@@ -547,18 +530,16 @@ describe("SchemaBridge", () => {
       const listing = try rpc("tools/list", {})
       expect(listing.result.tools.length).toBeGreaterThan(0)
       const details = try rpc("tools/call", { name: "get_tool_details", arguments: { name: "healthy" } })
-      expect(JSON.parse(details.result.content[0].text).inputSchema.properties.nested).toMatchObject({
+      expect((try ((foreignSyntaxErrorClass: typeof SyntaxError) => Effect.catch(Effect.try({ try: () => JSON.parse(details.result.content[0].text), catch: (error) => error }), (error) => error instanceof foreignSyntaxErrorClass ? Effect.fail(error) : Effect.die(error)))(SyntaxError)).inputSchema.properties.nested).toMatchObject({
         properties: { mode: { enum: ["fast", "slow"] }, count: { type: "number" } },
         required: ["mode", "count"]
       })
       const badDetails = try rpc("tools/call", { name: "get_tool_details", arguments: { name: "bad" } })
-      expect(JSON.parse(badDetails.result.content[0].text).name).toBe("bad")
+      expect((try ((foreignSyntaxErrorClass: typeof SyntaxError) => Effect.catch(Effect.try({ try: () => JSON.parse(badDetails.result.content[0].text), catch: (error) => error }), (error) => error instanceof foreignSyntaxErrorClass ? Effect.fail(error) : Effect.die(error)))(SyntaxError)).name).toBe("bad")
       const failed = try request(cli, "http://localhost/bad")
       expect(failed.status).toBeGreaterThanOrEqual(400)
       expect(failed.body.error.code).toBe("unsupported_schema")
-    } finally {
-      load.mockRestore()
-    }
+    }, sync(() => load.mockRestore()))
   })
 
   it.effect("snapshots decoded inputs and encoded outputs as inert JSON", effect () => {
@@ -607,4 +588,20 @@ describe("SchemaBridge", () => {
     expect(try SchemaBridge.snapshotInput(undefined)).toBeUndefined()
     expect((try failureOf(SchemaBridge.snapshotInput({ value: undefined }))).code).toBe("decode_failed")
   })
+})
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts
+
+
+it.effect("sanitizes throwing assembly accessors in object and scalar decoders", effect () => {
+  for (const schema of [Schema.Struct({ value: Schema.String }), Schema.String]) {
+    const command = try SchemaBridge.toCommandSchema(moduleRef, schema)
+    const assembly = try sync(() => throwingAssembly())
+    const refusal = try failureOf(command.decode(assembly))
+    expect(refusal.code).toBe("decode_failed")
+    expect(JSON.stringify(refusal)).not.toContain("private assembly getter")
+  }
 })

@@ -87,7 +87,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -138,10 +138,12 @@ jobs:
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//packages/smithers:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -227,7 +229,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -278,10 +280,12 @@ jobs:
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//packages/smithers/agent/harness-detect:*' '//packages/smithers/agent/harness:*' '//packages/smithers/agent/memory:*' '//packages/smithers/build/build-cli:*' '//packages/smithers/flows/capability:*' '//packages/smithers/flows/database:*' '//packages/smithers/flows/patterns:*' '//packages/smithers/flows/step-cache:*' '//packages/smthrs-deprecation:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -367,7 +371,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -418,10 +422,12 @@ jobs:
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//packages/effect-electric:*' '//packages/smithers/agent/harness/benchmarks/swebench:*' '//packages/smithers/flows/engine-store:*' '//packages/smithers/flows/kernel:*' '//packages/smithers/flows/secrets:*' '//packages/smithers/gateway:*' '//packages/smithers/ui/repo-view:*' '//packages/smithers/ui:*' '//packages/testing:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -507,7 +513,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -557,11 +563,13 @@ jobs:
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs ci '//packages/effect-tanstack-db:*' '//packages/smithers/agent/model:*' '//packages/smithers/agent/scorers:*' '//packages/smithers/agent/triggers:*' '//packages/smithers/flows/core:*' '//packages/smithers/flows/engine:*' '//packages/smithers/flows/flow:*' '//packages/smithers/flows/platform-browser:*' '//packages/smithers/ui/terminal-frame:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs ci '//packages/effect-tanstack-db:*' '//packages/smithers/agent/harness/benchmarks/cell-comparison:*' '//packages/smithers/agent/model:*' '//packages/smithers/agent/scorers:*' '//packages/smithers/agent/triggers:*' '//packages/smithers/flows/core:*' '//packages/smithers/flows/engine:*' '//packages/smithers/flows/flow:*' '//packages/smithers/flows/platform-browser:*' '//packages/smithers/ui/terminal-frame:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -647,7 +655,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -698,10 +706,12 @@ jobs:
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//packages/errors:*' '//packages/rpc:*' '//packages/smithers/agent/fs:*' '//packages/smithers/agent/harness/benchmarks/ale:*' '//packages/smithers/agent/integrations:*' '//packages/smithers/agent/std:*' '//packages/smithers/agent:*' '//packages/smithers/build:*' '//packages/smithers/flows/journal:*' '//packages/smithers/flows:*' '//packages/smithers/notifications:*' '//packages/smithers/ui/ui-styleguide:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -787,7 +797,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -838,10 +848,12 @@ jobs:
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//packages/repo-targets:*' '//packages/smithers/agent/chain:*' '//packages/smithers/agent/regression:*' '//packages/smithers/build/infra:*' '//packages/smithers/flows/jj-wasm:*' '//packages/smithers/flows/jj:*' '//packages/smithers/flows/keys:*' '//packages/smithers/flows/platform-bun:*' '//packages/smithers/flows/platform-node:*' '//packages/smithers/flows/sync:*' '//packages/smithers/mcp:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -927,7 +939,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -978,10 +990,12 @@ jobs:
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//packages/effect-code-storage:*' '//packages/smithers/agent/model-host:*' '//packages/smithers/agent/plugin:*' '//packages/smithers/flows/crypto:*' '//packages/smithers/flows/plan-store:*' '//packages/smithers/flows/run-store:*' '//packages/smithers/flows/sandbox:*' '//packages/smithers/flows/time-travel:*' '//packages/smithers/migrate:*' '//packages/smithers/ui/views:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -1067,7 +1081,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -1118,10 +1132,12 @@ jobs:
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//packages/smithers/agent/evals:*' '//packages/smithers/agent/harness/benchmarks/harbor:*' '//packages/smithers/agent/registry:*' '//packages/smithers/build/targets:*' '//packages/smithers/control:*' '//packages/smithers/flows/artifacts:*' '//packages/smithers/flows/canonical:*' '//packages/smithers/flows/observability:*' '//packages/smithers/flows/plan:*' '//packages/smithers/flows/platform-cloudflare:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -1249,185 +1265,237 @@ jobs:
       - name: "Repository flows"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:pack' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Judge egress"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:egress' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Coding host size"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:codingHostSize' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Repository flow fixtures"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:repository' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Wiki and release fixtures"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:fixtures' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Repository flows lint"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs lint '//.smithers/flows/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Public export JSDoc"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs lint '//:jsdocTree' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Repository automation lint"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs lint '//.smithers/flows:moduleLint' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "JSDoc rule harness"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//:jsdocRules' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Reference-host runner hooks"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//:referenceHostHooks' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Agent eval suite (offline, baseline-gated)"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/smithers/agent/regression:test' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Agent eval typecheck"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs build '//packages/smithers/agent/regression:check' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Authoring eval dataset (offline)"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//evals/authoring:test' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Authoring eval typecheck"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs build '//evals/authoring:check' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "SWE-bench offline fixtures"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/smithers/agent/harness/benchmarks/swebench:offline' --jobs 1 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "SWE-bench rig typecheck"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs build '//packages/smithers/agent/harness/benchmarks/swebench:check' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "SWE-bench rig lint"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs lint '//packages/smithers/agent/harness/benchmarks/swebench/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Review flow"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//.smithers/flows/review/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Bug worker"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//apps/bug-worker/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Project copy drift"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs lint '//:projectCopy' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Site"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//apps/site/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Review eval suite (offline, baseline-gated)"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows/review/seeded-bugs/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Review eval typecheck"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs build '//.smithers/flows/review/seeded-bugs:check' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Generated workflow drift"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs lint '//:ci' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Factory projection drift"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs lint '//:factoryProjection' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Target index drift"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs lint '//:targetIndex' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -1555,157 +1623,201 @@ jobs:
       - name: "Issue claims and check receipts"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:issueClaim' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Check bindings"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:evidenceBindings' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Release rehearsal and gate inventory"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:releaseRehearsal' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Release version suite"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:releaseVersion' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Command check runner"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:checkRunner' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Benchmark cost gate"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:benchmarkGate' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Mutation gate"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:mutationGate' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Campaign verifiers"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:campaignVerifiers' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Signal campaign verifier"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:signalCampaign' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Landing helper"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:land' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Landing helper end to end"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:landCommit' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "GitHub triage publisher"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:triagePublish' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Release manifest"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:packManifest' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Changelog generator"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:changelog' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Release cut"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:releaseCut' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Release candidate suites"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:releaseSuite' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Release publication integrity"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:releaseIntegrity' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Release smoke"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:releaseSmoke' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "npm consumer dedupe"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:npmDedupe' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "npm consumer dedupe cells"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:npmDedupeUnit' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Release tools and host recorders"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:releaseTools' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Release step flows"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:releaseSteps' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Collect ci-test-tier-evidence"
         if: always()
         run: |
@@ -1774,10 +1886,12 @@ jobs:
       - name: "Package documentation tarballs"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:packageDocs' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -1855,17 +1969,21 @@ jobs:
       - name: "TUI typecheck, lint and tests"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//apps/tui/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "TUI end-to-end suite"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//apps/tui:e2eTests' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Collect apps-e2e-artifacts"
         if: always()
         run: |
@@ -1923,24 +2041,30 @@ jobs:
       - name: "Cargo lint gates"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs lint '//packages/smithers/flows/jj-wasm/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Third-party notices"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/smithers/flows/jj:thirdPartyNotices' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Cargo test suite"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:cargoTest' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -2002,10 +2126,12 @@ jobs:
       - name: "Native FFI clippy and tests"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs build '//:nativeFfi' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -2048,17 +2174,21 @@ jobs:
       - name: "Build-script unit tests"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:buildScript' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Rebuild and byte-compare flows_jj.wasm"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:wasmReproducibility' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -2099,10 +2229,12 @@ jobs:
       - name: "Web bundle compilation guard"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/repo-targets:webBundleContract' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -2196,7 +2328,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'openssh-server'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -2248,10 +2380,12 @@ jobs:
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/smithers:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -2345,7 +2479,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'openssh-server'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -2397,10 +2531,12 @@ jobs:
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/smithers/agent/harness-detect:*' '//packages/smithers/agent/harness:*' '//packages/smithers/agent/memory:*' '//packages/smithers/build/build-cli:*' '//packages/smithers/flows/capability:*' '//packages/smithers/flows/database:*' '//packages/smithers/flows/patterns:*' '//packages/smithers/flows/step-cache:*' '//packages/smthrs-deprecation:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -2494,7 +2630,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'openssh-server'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -2546,10 +2682,12 @@ jobs:
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/effect-electric:*' '//packages/smithers/agent/harness/benchmarks/swebench:*' '//packages/smithers/flows/engine-store:*' '//packages/smithers/flows/kernel:*' '//packages/smithers/flows/secrets:*' '//packages/smithers/gateway:*' '//packages/smithers/ui/repo-view:*' '//packages/smithers/ui:*' '//packages/testing:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -2643,7 +2781,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'openssh-server'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -2694,11 +2832,13 @@ jobs:
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//packages/effect-tanstack-db:*' '//packages/smithers/agent/model:*' '//packages/smithers/agent/scorers:*' '//packages/smithers/agent/triggers:*' '//packages/smithers/flows/core:*' '//packages/smithers/flows/engine:*' '//packages/smithers/flows/flow:*' '//packages/smithers/flows/platform-browser:*' '//packages/smithers/ui/terminal-frame:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//packages/effect-tanstack-db:*' '//packages/smithers/agent/harness/benchmarks/cell-comparison:*' '//packages/smithers/agent/model:*' '//packages/smithers/agent/scorers:*' '//packages/smithers/agent/triggers:*' '//packages/smithers/flows/core:*' '//packages/smithers/flows/engine:*' '//packages/smithers/flows/flow:*' '//packages/smithers/flows/platform-browser:*' '//packages/smithers/ui/terminal-frame:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -2792,7 +2932,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'openssh-server'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -2844,10 +2984,12 @@ jobs:
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/errors:*' '//packages/rpc:*' '//packages/smithers/agent/fs:*' '//packages/smithers/agent/harness/benchmarks/ale:*' '//packages/smithers/agent/integrations:*' '//packages/smithers/agent/std:*' '//packages/smithers/agent:*' '//packages/smithers/build:*' '//packages/smithers/flows/journal:*' '//packages/smithers/flows:*' '//packages/smithers/notifications:*' '//packages/smithers/ui/ui-styleguide:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -2941,7 +3083,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'openssh-server'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -2993,10 +3135,12 @@ jobs:
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/repo-targets:*' '//packages/smithers/agent/chain:*' '//packages/smithers/agent/regression:*' '//packages/smithers/build/infra:*' '//packages/smithers/flows/jj-wasm:*' '//packages/smithers/flows/jj:*' '//packages/smithers/flows/keys:*' '//packages/smithers/flows/platform-bun:*' '//packages/smithers/flows/platform-node:*' '//packages/smithers/flows/sync:*' '//packages/smithers/mcp:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -3090,7 +3234,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'openssh-server'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -3142,10 +3286,12 @@ jobs:
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/effect-code-storage:*' '//packages/smithers/agent/model-host:*' '//packages/smithers/agent/plugin:*' '//packages/smithers/flows/crypto:*' '//packages/smithers/flows/plan-store:*' '//packages/smithers/flows/run-store:*' '//packages/smithers/flows/sandbox:*' '//packages/smithers/flows/time-travel:*' '//packages/smithers/migrate:*' '//packages/smithers/ui/views:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -3239,7 +3385,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'openssh-server'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -3291,10 +3437,12 @@ jobs:
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/smithers/agent/evals:*' '//packages/smithers/agent/harness/benchmarks/harbor:*' '//packages/smithers/agent/registry:*' '//packages/smithers/build/targets:*' '//packages/smithers/control:*' '//packages/smithers/flows/artifacts:*' '//packages/smithers/flows/canonical:*' '//packages/smithers/flows/observability:*' '//packages/smithers/flows/plan:*' '//packages/smithers/flows/platform-cloudflare:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
           "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
           "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
+          "MSYS2_ARG_CONV_EXCL": "//"
       - name: "Upload smthrs results"
         if: always()
         uses: "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"

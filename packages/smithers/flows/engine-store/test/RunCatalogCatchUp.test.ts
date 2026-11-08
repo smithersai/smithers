@@ -1,3 +1,4 @@
+import * as Arr from "effect/Array"
 import { tempDirectory } from "./TempDirectory.ts"
 /**
  * The catch-up read behind a workspace follower's run catalog.
@@ -14,7 +15,6 @@ import { tempDirectory } from "./TempDirectory.ts"
  */
 import { describe, expect, it } from "@effect/vitest"
 import { RunStore } from "@smthrs/run-store"
-import * as Arr from "effect/Array"
 import * as Effect from "effect/Effect"
 import type * as Scope from "effect/Scope"
 import * as SqlClient from "effect/sql/SqlClient"
@@ -22,12 +22,6 @@ import { join } from "node:path"
 import * as RunCatalogOps from "../src/internal/RunCatalogOps.ts"
 import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
-
-// Effect 4.1's sql.insert takes a non-empty array; every batch here has rows.
-const nonEmpty = <A>(rows: ReadonlyArray<A>): Arr.NonEmptyReadonlyArray<A> => {
-  if (!Arr.isReadonlyArrayNonEmpty(rows)) throw new Error("expected at least one row")
-  return rows
-}
 
 const runState = JSON.stringify({ version: 1, flowName: "RunCatalog/Test", payload: {} })
 
@@ -129,16 +123,16 @@ describe("run catalog catch-up", () => {
         const sql = yield* SqlClient.SqlClient
         const catalog = yield* RunCatalogOps.make()
         for (let offset = 0; offset < RunCatalogOps.defaultLimit + 1; offset += 250) {
-          const rows = Array.from(
-            { length: Math.min(250, RunCatalogOps.defaultLimit + 1 - offset) },
-            (_, index) => ({
+          const rows = Arr.makeBy(
+            Math.min(250, RunCatalogOps.defaultLimit + 1 - offset),
+            (index) => ({
               run_id: `run-${String(offset + index).padStart(5, "0")}`,
               status: "pending",
               created_at_ms: offset + index,
               state_json: runState
             })
           )
-          yield* sql`INSERT INTO flows_runs ${sql.insert(nonEmpty(rows))}`
+          yield* sql`INSERT INTO flows_runs ${sql.insert(rows)}`
         }
         return yield* catalog.listRunIds()
       }))

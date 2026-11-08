@@ -1,6 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as Digest from "@smthrs/core/Digest"
-import { Crypto } from "@smthrs/crypto"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import { Flow } from "@smthrs/flow"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
@@ -59,7 +58,7 @@ const observed = (ordinal: number, sample: typeof cases[number]) => {
       eventType: "flows.harness.cell-call-settled.v1",
       flowName: sample.flowName,
       identity,
-      result: new Cell.CallResult({ outcome: "success", value: sample.value, message: sample.message })
+      result: Cell.CallResult.new({ outcome: "success", value: sample.value, message: sample.message })
     })
 }
 
@@ -102,7 +101,7 @@ describe("durable source checkpoint identity", () => {
               : "An agent trace requires its owning dispatch identity"
           })
           expect(yield* facts(runId)).toEqual([])
-        })).pipe(Effect.provide(stores(":memory:")), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+        })).pipe(Effect.provide(stores(":memory:")), Effect.provide(NodeCrypto.layer))
       )
     }
   )
@@ -150,7 +149,7 @@ describe("durable source checkpoint identity", () => {
             return "done"
           }))
         expect(yield* engine.execute(TraceFlow, { executionId: step.executionId, payload: {} })).toBe("done")
-      })).pipe(Effect.provide(stores(":memory:")), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+      })).pipe(Effect.provide(stores(":memory:")), Effect.provide(NodeCrypto.layer))
     )
   })
 
@@ -211,7 +210,7 @@ describe("durable source checkpoint identity", () => {
             }))
           const result = yield* engine.execute(TraceFlow, { executionId: step.executionId, payload: {} })
           expect(result).toBe("done")
-        })).pipe(Effect.provide(stores(":memory:")), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+        })).pipe(Effect.provide(stores(":memory:")), Effect.provide(NodeCrypto.layer))
       )
     },
     60_000

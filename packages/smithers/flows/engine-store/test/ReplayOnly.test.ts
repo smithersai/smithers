@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * A replay-only engine serves recorded dispatches and executes none.
  *
@@ -6,13 +7,13 @@
  * `smthrs runs verify` drives a copy of a project's store under current code.
  */
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
 import { AttemptStore, RunStore } from "@smthrs/run-store"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
@@ -48,7 +49,7 @@ type Services =
   | DurableEngineState.DurableEngineState
   | Jj.Jj
   | TestClock.TestClock
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | Scope.Scope
 
 const run = <A, E>(body: Effect.Effect<A, E, Services>) =>
@@ -89,7 +90,11 @@ const bodies = () => {
 }
 
 /** The steps a fixture flow dispatches before it parks on the gate. */
-type Steps = Effect.Effect<unknown, never, FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Crypto.Crypto>
+type Steps = Effect.Effect<
+  unknown,
+  never,
+  FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)
+>
 
 /** Parks the run after its steps, under an ordinary engine that is then shut down. */
 const park = (steps: Steps) =>

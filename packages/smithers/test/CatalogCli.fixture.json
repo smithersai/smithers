@@ -772,6 +772,7 @@
   ],
   "b6": [
     "login",
+    "issue list",
     "ssh-key add",
     "ssh-key delete",
     "ssh-key list",

@@ -1,3 +1,5 @@
+import * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Issue #75: a sealed action's cache key omitted the two pieces of key
  * material the Step Keys spec calls mandatory — the resolved layers and the
@@ -15,7 +17,6 @@
  * cannot opt out of it.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Exit, Layer, Schema } from "effect"
@@ -50,7 +51,7 @@ const keyUnder = (
   action: Action.Action,
   environment?: Action.CacheEnvironment,
   executionId = "content-environment-run"
-): Effect.Effect<string, never, Crypto.Crypto> => {
+): Effect.Effect<string, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> => {
   let captured: string | undefined
   const engine = scriptedEngine({
     actionExecute: (input) =>
@@ -107,7 +108,7 @@ describe("sealed cache keys fold the resolved environment (issue #75)", () => {
 
   effect("hashes an unchanged boundary document only once", () =>
     Effect.gen(function*() {
-      const crypto = yield* Crypto.Crypto
+      const crypto = yield* EffectDigest.Digest
       const documents: Array<string> = []
       const action = Action.make({
         name: "CacheEnvironmentKeys/memoized-boundary",
@@ -127,7 +128,7 @@ describe("sealed cache keys fold the resolved environment (issue #75)", () => {
         expect(documents.filter((document) => document.includes("src/input.ts"))).toHaveLength(1)
         yield* keyUnder(action, sonnet)
         expect(documents.filter((document) => document.includes("src/input.ts"))).toHaveLength(1)
-      }).pipe(Effect.provideService(Crypto.Crypto, observed))
+      }).pipe(Effect.provideService(EffectDigest.Digest, observed))
     }))
 
   effect("rechecks mutable boundary metadata before reusing its digest", () =>

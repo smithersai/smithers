@@ -7,7 +7,7 @@
 
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
-import { Effect, FileSystem, Layer, PlatformError, Semaphore, Stream } from "effect"
+import { Context, Effect, FileSystem, Layer, Option, PlatformError, Semaphore, Stream } from "effect"
 import { realpath, stat } from "node:fs/promises"
 import { availableParallelism } from "node:os"
 import {
@@ -19,6 +19,7 @@ import {
 import * as Protocol from "./internal/AtomicFileSystemProtocol.ts"
 import * as Transport from "./internal/AtomicFileSystemTransport.ts"
 import { AtomicHelperError } from "./internal/AtomicHelperError.vibe"
+import * as OwnerPrivate from "./OwnerPrivate.ts"
 
 export { AtomicHelperError, AtomicHelperErrorCode } from "./internal/AtomicHelperError.vibe"
 
@@ -229,7 +230,7 @@ const resolveSettings = (options: Options): Settings | { readonly invalid: unkno
  */
 const executeFramed = (options: Options, resolved: Settings | { readonly invalid: unknown }) =>
 (
-  request: KernelFileSystem.AtomicRequest
+  request: Protocol.HostRequest
 ): Effect.Effect<unknown, PlatformError.PlatformError> =>
   Effect.suspend(() => {
     if ("invalid" in resolved) {
@@ -288,7 +289,14 @@ const executeFramed = (options: Options, resolved: Settings | { readonly invalid
       }
       let executable: string
       try {
-        executable = resolveExecutable(options, request.boundaryRoot)
+        // A directory barrier may sync all the way to the filesystem root,
+        // which necessarily contains the installed helper. This host-only
+        // operation cannot read or modify it. Content/mutation requests retain
+        // the executable-outside-workspace check.
+        executable = resolveExecutable(
+          options,
+          request.operation === "syncDirectory" ? undefined : request.boundaryRoot
+        )
       } catch (cause) {
         return Effect.fail(Protocol.failure(request, cause))
       }
@@ -338,6 +346,9 @@ const nativeRealPath = (path: string) =>
       })
   })
 
+const privateFailure = (path: string, cause: unknown): PlatformError.PlatformError =>
+  Protocol.failure({ operation: "writeFileString", path, data: "" }, cause)
+
 /**
  * A Node filesystem layer carrying the kernel's atomic host extension, built
  * against an explicitly configured helper, byte limits, process ceiling,
@@ -356,6 +367,10 @@ export const layerWith = (options: Options): Layer.Layer<FileSystem.FileSystem> 
   // enforce two different ceilings out of one mutated object, and each would
   // get a process ceiling of its own instead of sharing one.
   const settings = resolveSettings(options)
+  const publication = OwnerPrivate.make(
+    executeFramed(options, settings),
+    privateFailure
+  )
   return Layer.effect(
     FileSystem.FileSystem,
     Effect.map(
@@ -374,6 +389,23 @@ export const layerWith = (options: Options): Layer.Layer<FileSystem.FileSystem> 
           ...fileSystem,
           // Expand DOS names before pinning roots or opening native watchers.
           realPath: nativeRealPath,
+          // Keep the actual Node descriptor and every operation on it. A
+          // directory's sync goes to the native owner with the opened inode's
+          // identity; replacing its path between open and sync fails closed.
+          open: (path, options) =>
+            Effect.gen(function*() {
+              const file = yield* fileSystem.open(path, options)
+              const info = yield* file.stat
+              if (info.type !== "Directory") return file
+              const canonical = yield* nativeRealPath(path)
+              // The Node adapter supplies exact bigint inode IDs for every stat.
+              const identity = `${info.dev}:${Option.getOrThrow(info.ino)}`
+              const sync = Effect.flatMap(
+                ownerPrivate,
+                (owner) => (owner === defaultOwner ? publication : owner).syncDirectory(canonical, identity)
+              )
+              return Object.create(file, { sync: { value: sync } }) as FileSystem.File
+            }),
           watch: (path, options) =>
             process.platform !== "win32"
               ? fileSystem.watch(path, options)
@@ -413,3 +445,17 @@ export const layerWith = (options: Options): Layer.Layer<FileSystem.FileSystem> 
  * @category layers
  */
 export const layer: Layer.Layer<FileSystem.FileSystem> = layerWith({})
+
+const defaultOwner = OwnerPrivate.make(
+  executeFramed({}, resolveSettings({})),
+  privateFailure
+)
+/**
+ * Private publication service. The host owns native access checks and durable
+ * append; consumers can inject a faulty service to exercise refusal paths.
+ * @since 1.0.0
+ * @category services
+ */
+export const ownerPrivate = Context.Reference<OwnerPrivate.Service>("@smthrs/platform-node/OwnerPrivate", {
+  defaultValue: () => defaultOwner
+})

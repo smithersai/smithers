@@ -23,10 +23,11 @@
  * @since 0.0.0
  */
 
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
+import * as EffectDigest from "effect/crypto/Digest"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Scope from "effect/Scope"
@@ -41,7 +42,6 @@ import {
 import { conflict, type ExecutionConflict } from "./internal/Execution.vibe"
 import type { EngineSubjectError } from "./TestingError.vibe"
 import { EngineUnavailableError } from "./TestingError.vibe"
-import { layerWebCrypto as layerWebCrypto$platform } from "./FlowEngineLike.platform.ts"
 
 /**
  * The payload wrapper the adapter registers for every `FlowSpec`.
@@ -211,7 +211,7 @@ const raceStep = (
   journal: Array<JournalEntryLike>,
   race: Extract<StepSpec, { readonly kind: "race" }>,
   input: unknown
-): unknown!unknown!(FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Crypto.Crypto) =>
+): unknown!unknown!(FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)) =>
   race.branches.length === 0
     ? Effect.fail(unavailable(`Race ${race.key} has no branches`))
     : Action.raceAll(
@@ -238,13 +238,14 @@ const raceStep = (
  * @category constructors
  * @since 0.0.0
  */
-export const make = effect (): EngineSubjectService!never!(Scope.Scope | FlowRuntime.FlowRuntime | Crypto.Crypto) => {
+export const make = effect (): EngineSubjectService!never!(Scope.Scope | FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)) => {
   const engine = try FlowRuntime.FlowRuntime
   const scope = try Effect.scope
   // Captured once so the service methods stay `R = never`: a Context.Service
   // record cannot carry requirements, and the step-key derivation inside
   // `engine.register` needs a Crypto in strict type environments.
-  const crypto = try Crypto.Crypto
+  const crypto = try EffectDigest.Digest
+  const random = try SecureRandom.SecureRandom
   const journals = new Map<string, Array<JournalEntryLike>>()
   const executions = new Map<string, ExecutionMeta>()
   const idempotencyIndex = new Map<string, string>()
@@ -320,9 +321,9 @@ export const make = effect (): EngineSubjectService!never!(Scope.Scope | FlowRun
           })) |> Scope.provide(%, scope))
         return flow
       },
-      Crypto.Crypto,
+      EffectDigest.Digest,
       crypto
-    )
+    ) |> Effect.provideService(%, SecureRandom.SecureRandom, random)
 
   const requireMeta = (executionId: string): ExecutionMeta!EngineUnavailableError =>
     Effect.suspend(() => {
@@ -505,9 +506,18 @@ export const make = effect (): EngineSubjectService!never!(Scope.Scope | FlowRun
 export const layer = (): Layer.Layer<
   EngineSubjectService,
   never,
-  FlowRuntime.FlowRuntime | Crypto.Crypto
+  FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)
 > => Layer.effect(EngineSubjectTag)(make())
-const layerWebCrypto: typeof layerWebCrypto$platform = layerWebCrypto$platform
+
+/**
+ * Web Crypto as the engine's `Crypto`, so `layerMemory` stays a
+ * zero-configuration bundle. The engine digests step identities through the
+ * service, and `globalThis.crypto` is the one implementation both Node and the
+ * browser ship — pulling in a platform package here would cost this package
+ * its browser safety.
+ */
+const layerWebCrypto = Layer.mergeAll(EffectDigest.layerWebCrypto, SecureRandom.layerWebCrypto)
+
 /**
  * Provides an `EngineSubject` over any `FlowRuntime` implementation.
  *
@@ -524,7 +534,7 @@ const layerWebCrypto: typeof layerWebCrypto$platform = layerWebCrypto$platform
  */
 export const layerOver = <E, R>(
   runtime: Layer.Layer<FlowRuntime.FlowRuntime, E, R>
-): Layer.Layer<EngineSubjectService | Crypto.Crypto, E, R> =>
+): Layer.Layer<EngineSubjectService | (EffectDigest.Digest | SecureRandom.SecureRandom), E, R> =>
   layer().pipe(
     Layer.provide(runtime),
     Layer.provideMerge(layerWebCrypto)
@@ -535,4 +545,5 @@ export const layerOver = <E, R>(
  * @category layers
  * @since 0.0.0
  */
-export const layerMemory: Layer.Layer<EngineSubjectService | Crypto.Crypto> = layerOver(FlowEngine.layerMemory)
+export const layerMemory: Layer.Layer<EngineSubjectService | (EffectDigest.Digest | SecureRandom.SecureRandom)> =
+  layerOver(FlowEngine.layerMemory)

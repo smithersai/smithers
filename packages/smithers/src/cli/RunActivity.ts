@@ -12,15 +12,44 @@
  */
 
 import type { ControlSchema, Health } from "@smthrs/control"
-import { type ReleaseCause, releaseCauseOf } from "@smthrs/engine-store/RunState"
+import {
+  type Failure,
+  Failure as FailureSchema,
+  type ReleaseCause,
+  releaseCauseOf
+} from "@smthrs/engine-store/RunState"
 import { clip, type Digest, firstLine, resolvedOutput } from "@smthrs/gateway/Diagnosis"
 import { statusRollup } from "@smthrs/gateway/GatewayProjection"
+import { Redaction } from "@smthrs/journal"
+import { Schema } from "effect"
 import * as Forensics from "../Forensics.ts"
 
 /** The engine flow that executes an approved plan. */
 const planWrapper = "agent/run"
 /** The registry's entry execution: `registry/entry/<digest>/<flow>`. */
 const entryWrapper = /^registry\/entry\/[0-9a-f]+\/(.+)$/
+
+/**
+ * Latest terminal action failure copied from an engine transition, safe for display.
+ * Historical records without these facts return undefined.
+ * @category getters
+ * @since 1.0.0
+ */
+export const failureOf = (events: ReadonlyArray<ControlSchema.ControlEvent>, runId: string): Failure | undefined => {
+  let failure: Failure | undefined
+  for (const event of events) {
+    if (event.kind !== "control.engine.event") continue
+    const envelope = record(event.payload)
+    if (envelope.executionId !== runId || envelope.eventType !== "flows.engine.run-decision") continue
+    const payload = record(envelope.payload)
+    if (payload.decision !== "transitioned" || payload.status !== "failed") continue
+    if (!Schema.is(FailureSchema)(payload.failure)) continue
+    // Root settlement carries the originating site's persisted coordinates.
+    // A failed child that was caught never supplies this terminal diagnosis.
+    failure = Redaction.redactDiagnostic(payload.failure) as Failure
+  }
+  return failure
+}
 
 /**
  * Rows `runs show` prints before it reports the rest as omitted.
@@ -434,6 +463,7 @@ export type Shown = Omit<ControlSchema.RunSummary, "codeDrift"> & {
   readonly released?: ReadonlyArray<Released>
   /** Lease reconfirmations recorded without releasing ownership. */
   readonly warnings?: ReadonlyArray<Warning>
+  readonly failure?: Failure
   readonly diagnosis: Forensics.Digest
 }
 
@@ -468,11 +498,13 @@ export const show = (
   const rollup = statusRollup(run, events, now)
   const warnings = warningsOf(events)
   const { codeDrift, runId, flowId, status, waitingReason, ...recorded } = run
+  const failure = status === "failed" ? failureOf(events, run.runId) : undefined
   return {
     // What a reader needs first leads, so the bounded human summary shows it.
     runId,
     flowId,
     status,
+    ...(failure === undefined ? {} : { failure }),
     ...(waitingReason === undefined ? {} : { waitingReason }),
     health: {
       health: rollup.health,

@@ -11,7 +11,6 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { afterAll, expect, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
 import { Action, EngineStore as EngineStorePackage, Flow, Interpreter, Kernel } from "@smthrs/flows"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as Effect from "effect/Effect"
@@ -41,7 +40,7 @@ const stubJj = Layer.succeed(
   })
 )
 
-const host = Layer.mergeAll(Crypto.layerFromDigest(NodeCrypto.layerDigest), AtomicFileSystem.layer, stubJj)
+const host = Layer.mergeAll(NodeCrypto.layer, AtomicFileSystem.layer, stubJj)
 
 const Step = Action.make("source-revision/step", {
   payload: { label: Schema.String },

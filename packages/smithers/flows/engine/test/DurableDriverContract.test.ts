@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The durable-driver contract, proved over a persistent `Encoded` fixture
  * rather than a scripted log: an engine instance is killed mid-run and a
@@ -12,17 +13,19 @@
  * without real process boundaries. See `DurableLogEngine.ts`.
  */
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Cause, Effect, Exit, Layer, Option, Schema } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { TestClock } from "effect/testing"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
 import { layerDurable, makeLog } from "./DurableLogEngine.ts"
 import { pollUntil } from "./Harness.ts"
 
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body().pipe(Effect.provide(TestClock.layer()))))
+const effect = (
+  name: string,
+  body: () => Effect.Effect<void, unknown, (EffectDigest.Digest | SecureRandom.SecureRandom)>
+) => it.effect(name, () => withCrypto(body().pipe(Effect.provide(TestClock.layer()))))
 
 /** Yields until the predicate holds, bounded by scheduler turns. */
 const waitFor = (predicate: () => boolean): Effect.Effect<void> =>

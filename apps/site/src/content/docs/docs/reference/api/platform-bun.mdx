@@ -8,7 +8,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-bun/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-bun/docs)
 
-> **Related APIs:** [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/)
+> **Related APIs:** [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/)
 
 ```ts
 import { BunHost } from "@smthrs/platform-bun"
@@ -24,7 +24,7 @@ const program = Effect.gen(function*() {
 
 This barrel and `BunHost` import `@effect/platform-bun` at module load. It
 and the Effect Node platform packages are bundled privately, built from
-`effect@4.1.0`. `effect` is a required peer at exactly `4.1.0`.
+`effect@4.1.1`. `effect` is a required peer at exactly `4.1.1`.
 
 :::warning
 This entry point is Node-only in the browser-bundle sense: it falls back to the
@@ -65,13 +65,13 @@ implementation identities, and platform module re-exports.
 
 ### Layers
 
-| Export             | Signature                                                                                                   |
-| ------------------ | ----------------------------------------------------------------------------------------------------------- |
-| `layer`            | `Layer.Layer<BunHost \| Crypto.Crypto>`                                                                     |
-| `layerAt`          | `(root: string) => Layer.Layer<BunHost \| Crypto.Crypto>`                                                   |
-| `layerContained`   | `(options?: ContainedOptions) => Layer.Layer<BunHost \| Crypto.Crypto, never, ProcessLedger>`               |
-| `layerContainedAt` | `(root: string, options?: ContainedOptions) => Layer.Layer<BunHost \| Crypto.Crypto, never, ProcessLedger>` |
-| `layerHttpClient`  | `Layer.Layer<HttpClient>`                                                                                   |
+| Export             | Signature                                                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `layer`            | `Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom)>`                                                                     |
+| `layerAt`          | `(root: string) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom)>`                                                   |
+| `layerContained`   | `(options?: ContainedOptions) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom), never, ProcessLedger>`               |
+| `layerContainedAt` | `(root: string, options?: ContainedOptions) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom), never, ProcessLedger>` |
+| `layerHttpClient`  | `Layer.Layer<HttpClient>`                                                                                                                        |
 
 `layer` provides all five Host services, including the runtime-independent
 `Path`. `Jj` is bound to the process working directory.

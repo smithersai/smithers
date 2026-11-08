@@ -1,3 +1,4 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
 import { NodeServices } from "@effect/platform-node"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as Agent from "@smthrs/agent/Agent"
@@ -8,7 +9,6 @@ import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as StandardFlows from "@smthrs/agent/StandardFlows"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import * as Model from "@smthrs/model/Model"
@@ -16,6 +16,7 @@ import { ModelEvent } from "@smthrs/model/ModelEvent"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
 import { Context, Effect, Exit, FileSystem, Layer, ManagedRuntime, Option, Path, Schema, Scope, Stream } from "effect"
+import * as EffectLayer from "effect/Layer"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import assert from "node:assert/strict"
@@ -35,9 +36,6 @@ import * as Workspace from "../../../packages/smithers/flows/kernel/src/Workspac
 import * as AtomicFileSystem from "../../../packages/smithers/flows/platform-node/src/AtomicFileSystem.ts"
 import * as ProcessConfinement from "../../../packages/smithers/flows/platform-node/src/ProcessConfinement.ts"
 import { evidenceOnly } from "../coding/planning-authority.ts"
-
-// Effect 4.1 removed effect/Crypto, and NodeServices.layer no longer provides it.
-const nodeServices = Layer.merge(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 
 const all = [new CapabilityPattern({ action: "*", resource: "*" })]
 const Output = Schema.Struct({
@@ -140,8 +138,10 @@ const fixture = async (t: TestContext, contributed = false) => {
   const platform = Layer.mergeAll(KernelFileSystem.layer, KernelSpawner.layer).pipe(
     Layer.provideMerge(ProcessConfinement.layer()),
     Layer.provideMerge(Layer.mergeAll(grants, workspace)),
-    Layer.provideMerge(AtomicFileSystem.layer.pipe(Layer.provide(nodeServices))),
-    Layer.provideMerge(nodeServices)
+    Layer.provideMerge(
+      AtomicFileSystem.layer.pipe(Layer.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
+    ),
+    Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
   )
   const layer = Layer.unwrap(Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem, path = yield* Path.Path, spawner = yield* ChildProcessSpawner
@@ -298,12 +298,7 @@ test("evidence authority preserves live flow registrations and scoped override o
         assert.equal(yield* flow.execute({}, { executionId: `${name}/restored` }), "host")
       }
     }
-  }).pipe(
-    Effect.provide(FlowEngine.layerMemory),
-    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
-    Effect.scoped,
-    Effect.runPromise
-  )
+  }).pipe(Effect.provide(FlowEngine.layerMemory), Effect.provide(NodeCrypto.layer), Effect.scoped, Effect.runPromise)
 })
 
 test(

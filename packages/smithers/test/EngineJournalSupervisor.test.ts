@@ -3,7 +3,6 @@ import { LaunchFailed, PersistenceError, RunNotFound } from "@smthrs/control/Con
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import type { Service as ControlRuntime, StoredPlan } from "@smthrs/control/ControlRuntime"
 import type { RunSummary } from "@smthrs/control/ControlSchema"
-import { Crypto } from "@smthrs/crypto"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
 import * as Journal from "@smthrs/journal/Journal"
@@ -105,7 +104,7 @@ const setup = Effect.gen(function*() {
         Effect.map((page) => page.entries.filter((entry) => entry.eventType !== "control.engine.bound"))
       )
   }
-}).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+}).pipe(Effect.provide(NodeCrypto.layer))
 
 const until = <A, E>(read: Effect.Effect<A, E>, ready: (value: A) => boolean) =>
   Effect.retry(

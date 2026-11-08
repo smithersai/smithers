@@ -2,7 +2,9 @@
  * `SandboxObject.wake`, `SandboxObject.run` and `ContainerTerminal` in local workerd with a real
  * container: Miniflare runs the Durable Object's container image through
  * Docker, as `alchemy dev` does. The image is the branch sandbox's
- * (`apps/mvp/infra/sandbox`), built before the suite.
+ * (`apps/mvp/infra/sandbox`), built before the suite. The test target first packs
+ * its CLI through the sandboxCli build dependency; direct Vitest runs need
+ * `node apps/mvp/infra/sandbox/pack-cli.mjs` from the workspace root first.
  *
  * It proves what the in-memory suite cannot: the box reaches the
  * intercepted forge and nothing else, and holds no secret; a command run
@@ -180,7 +182,7 @@ describe.skipIf(!("socketPath" in docker))(`ContainerTerminal in workerd with a 
     try {
       execFileSync("docker", ["image", "inspect", egressImage], { stdio: "ignore" })
     } catch {
-      execFileSync("docker", ["pull", egressImage], { stdio: "ignore" })
+      execFileSync("docker", ["pull", egressImage], { stdio: "inherit" })
     }
     const before = (() => {
       try {
@@ -189,7 +191,12 @@ describe.skipIf(!("socketPath" in docker))(`ContainerTerminal in workerd with a 
         return undefined
       }
     })()
-    execFileSync("docker", ["build", "--quiet", "--tag", image, context], { stdio: "ignore" })
+    console.info("container.integration stage=build-image")
+    execFileSync("docker", ["build", "--tag", image, context], {
+      stdio: "inherit",
+      env: { ...process.env, BUILDKIT_PROGRESS: "plain" }
+    })
+    console.info("container.integration stage=start-workerd")
     const after = execFileSync("docker", ["image", "inspect", "--format", "{{.Id}}", image], { encoding: "utf8" })
       .trim()
     // A rebuilt image leaves its predecessor untagged; remove it unless a container still uses it.

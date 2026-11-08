@@ -55,6 +55,7 @@ export type ErrorCode =
   | "outside_write_set"
   | "write_failed"
   | "unsupported_affected"
+  | "cache_writer_in_setup"
 
 /**
  * One typed CI-generation refusal.
@@ -330,6 +331,18 @@ const renderSetupAction = (
   setup: (typeof GithubTarget.SetupAttrs)["Type"],
   workspace: WorkspaceDeclaration.WorkspaceDeclaration
 ): string => {
+  // Setup runs repository-local code on PRs and manual topic refs. Its token
+  // deliberately grants read-only cache access. A known workspace writer must
+  // never be passed as either shared setup input, regardless of its name.
+  const write = workspace.cache.remote?.write
+  if (
+    write !== undefined &&
+    [setup.cacheUrl, setup.cacheToken].some((secret) =>
+      secret !== undefined && secret.env.toUpperCase() === write.env.toUpperCase()
+    )
+  ) {
+    throw new GithubRenderError("cache_writer_in_setup", "shared setup must not receive the cache write credential")
+  }
   const toolchain = toolchainOf(workspace)
   const lines: Array<string> = [header(label)]
   lines.push("name: setup")

@@ -1,5 +1,4 @@
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -175,7 +174,7 @@ const fixture = (route: Route | "down", decline = false) => {
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
+    Layer.provideMerge(NodeCrypto.layer),
     Layer.provideMerge(NodeServices.layer)
   )
   return { host: ManagedRuntime.make(layer), events, planned, checkout }

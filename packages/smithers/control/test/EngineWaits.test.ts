@@ -16,7 +16,6 @@
  * writers of one row.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { DurableWriter } from "@smthrs/database"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
@@ -103,7 +102,7 @@ const database = Layer.mergeAll(
   DurableEngineState.layer
 ).pipe(
   Layer.provideMerge(Layer.effectDiscard(EngineMigrations.run)),
-  Layer.provideMerge(Layer.merge(TestDatabase.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+  Layer.provideMerge(Layer.merge(TestDatabase.layer, NodeCrypto.layer))
 )
 
 const marks: Array<string> = []

@@ -19,12 +19,12 @@ stored under.
 ## Hash bytes and store them under the digest
 
 Create `quickstart.ts`. `digest` returns an Effect that requires
-`Crypto.Crypto`, so `put` carries that requirement outward instead of choosing
+`EffectDigest.Digest`, so `put` carries that requirement outward instead of choosing
 a host for its callers:
 
 ```ts
 import { Digest, digest, type Sha256Error } from "@smthrs/crypto"
-import type { Crypto } from "@smthrs/crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 
 /** The store: bytes under the digest of those bytes, and nothing else. */
@@ -33,7 +33,7 @@ const blobs = new Map<string, Uint8Array>()
 /** Publishes bytes and returns the only name they will ever have. */
 export const put = (
   bytes: Uint8Array
-): Effect.Effect<Digest, Sha256Error, Crypto.Crypto> =>
+): Effect.Effect<Digest, Sha256Error, EffectDigest.Digest> =>
   Effect.gen(function*() {
     const owned = Uint8Array.from(bytes)
     const address = yield* digest(owned)
@@ -77,7 +77,6 @@ rejection happens before the map is touched.
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 
 const program = Effect.gen(function*() {
   const input = new TextEncoder().encode("the quickstart bytes")
@@ -88,7 +87,7 @@ const program = Effect.gen(function*() {
   console.log(yield* get("0".repeat(64)))
 })
 
-await Effect.runPromise(program.pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)), Effect.orDie))
+await Effect.runPromise(program.pipe(Effect.provide(NodeCrypto.layer), Effect.orDie))
 ```
 
 Run the file with your TypeScript runner:

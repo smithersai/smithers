@@ -9,7 +9,7 @@ import {
   MODEL_HOST_CONTEXT_SELECT_PATH,
   type ModelTurnHandlerOptions,
   type ModelTurnResolver
-} from "../src/HostServer.ts"
+} from "./fixtures/durable.ts"
 
 /** The handler as a host serves it: a Fetch handler. */
 const serve = (options: ModelTurnHandlerOptions) => HttpEffect.toWebHandler(createModelTurnHandler(options))
@@ -187,11 +187,19 @@ test("the environment resolver uses a selection's own input and never reads the 
   const resolver = environmentModelResolver({ binding, preflightBinding: fastBinding, env, fetchImpl })
   const selected = await Effect.runPromise(resolver(grant, input))
   expect(selected.preflight?.input).toEqual(input)
-  expect(selected.preflight?.options).toEqual({ modelId: "owner-fast", credential: "fast-key" })
+  expect(selected.preflight?.options).toEqual({
+    route: { prepare: expect.any(Function) },
+    modelId: "owner-fast",
+    credential: "fast-key"
+  })
   // Without a selection, a turn that is not a shared conversation has no preflight.
   expect((await Effect.runPromise(resolver(grant))).preflight).toBeUndefined()
   // Without a fast binding the selection falls back to the resolved model.
   const fallback = await Effect.runPromise(environmentModelResolver({ binding, env, fetchImpl })(grant, input))
-  expect(fallback.preflight?.options).toEqual({ modelId: "fixture", credential: "fixture-key" })
+  expect(fallback.preflight?.options).toEqual({
+    route: { prepare: expect.any(Function) },
+    modelId: "fixture",
+    credential: "fixture-key"
+  })
   expect(fetchImpl).not.toHaveBeenCalled()
 })

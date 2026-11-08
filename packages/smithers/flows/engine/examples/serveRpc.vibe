@@ -14,7 +14,6 @@
  */
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { FlowEngine, FlowProxy, FlowProxyServer } from "../src/index.ts"
 
@@ -67,7 +66,7 @@ export const runServeRpc = (): Promise<{
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Layer.provideMerge(NodeCrypto.layer)
   )
 
   const ServerLayer = FlowProxyServer.layerRpcHandlers(flows, { prefix }).pipe(Layer.provide(EngineLayer))

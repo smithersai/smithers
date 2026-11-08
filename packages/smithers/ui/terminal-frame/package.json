@@ -37,6 +37,7 @@
   },
   "dependencies": {
     "@smthrs/ui": "workspace:*",
+    "@smthrs/ui-css": "workspace:*",
     "@smthrs/views": "workspace:*"
   },
   "peerDependencies": {
@@ -56,6 +57,6 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "typescript": "~5.9.3",
-    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz"
+    "vibelang": "0.0.12"
   }
 }

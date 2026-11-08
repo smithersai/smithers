@@ -28,11 +28,13 @@ import * as Failure from "../internal/Failure.ts"
 import * as FeaturedFlows from "../internal/FeaturedFlows.ts"
 import * as RunListing from "../internal/RunListing.ts"
 import * as NodeControl from "../NodeControl.ts"
+import * as TriggerPlans from "../operator/TriggerPlans.ts"
 import * as Project from "../Project.ts"
 import * as Bridge from "./ControlBridge.ts"
 import { prepareHistoryRun, reconcileHistory } from "./HistoryCommands.ts"
 import * as Presentation from "./Presentation.ts"
 import * as RunActivity from "./RunActivity.ts"
+import * as RunHistory from "./RunHistory.ts"
 import * as RunProgress from "./RunProgress.ts"
 import * as TargetApprovals from "./TargetApprovals.ts"
 
@@ -311,7 +313,8 @@ export const createFlowCli = (runtime: Bridge.Runtime = {}) =>
               })
             ),
             c.options,
-            runtime
+            runtime,
+            [c.args.flow]
           )
         })
     })
@@ -410,25 +413,79 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
       description: "Show a run's current status and diagnosis",
       mcp: { annotations: { readOnlyHint: true } },
       args: runArgs,
-      options,
+      options: options.extend({
+        field: z.string().optional().describe(
+          "Read one bounded event field by JSON pointer: /events/<sequence>/payload/<field>"
+        ),
+        offset: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional().describe(
+          "Character offset in a string --field"
+        ),
+        length: z.number().int().min(1).max(65536).optional().describe(
+          "Characters per string field page (default 4096)"
+        )
+      }),
       run: (c) =>
         guard(c, async () => {
           if (!Bridge.hasRecords(c.options, runtime)) {
             await Bridge.project(checks(c.options, runtime), c.options, runtime)
             throw unknownRun(c.args.run)
           }
+          if (c.options.field === undefined && (c.options.offset !== undefined || c.options.length !== undefined)) {
+            throw new CliError.UsageError({ message: "--offset/--length require --field" })
+          }
           return observing("runs show", c.options, runtime, async () => {
             await reconcileHistory(c.options, runtime)
             return Bridge.read(
               Effect.gen(function*() {
                 const control = yield* Control.Control
-                const page = yield* control.list({ _tag: "runs", filters: { runId: c.args.run } })
-                const run = page._tag === "runs" ? page.items.find((row) => row.runId === c.args.run) : undefined
+                const runId = yield* Bridge.resolveRunId(c.args.run, c.options, runtime)
+                const page = yield* control.list({ _tag: "runs", filters: { runId } })
+                const run = page._tag === "runs" ? page.items.find((row) => row.runId === runId) : undefined
                 if (run === undefined) throw unknownRun(c.args.run)
-                const events = yield* BoundedEvents.collect(control.watch({ runId: run.runId, follow: false }), {
-                  operation: "run diagnosis",
-                  subject: run.runId
-                })
+                const stream = control.watch({ runId: run.runId, follow: false })
+                if (c.options.field !== undefined) {
+                  return yield* RunHistory.field(
+                    stream,
+                    c.options.field,
+                    undefined,
+                    c.options.offset === undefined && c.options.length === undefined ? undefined : {
+                      offset: c.options.offset ?? 0,
+                      length: c.options.length ?? 4096
+                    }
+                  )
+                }
+                const history = yield* RunHistory.read(
+                  stream,
+                  run.runId,
+                  undefined,
+                  run.executionView?.current.executionId ?? run.runId
+                )
+                const events = history.events
+                if (history.history !== undefined) {
+                  return {
+                    ...run,
+                    diagnosis: {
+                      status: run.status,
+                      ...(run.status === "failed" && typeof history.history.lastError === "string"
+                        ? { cause: history.history.lastError }
+                        : {}),
+                      unavailable: true
+                    },
+                    activityUnavailable: true,
+                    healthUnavailable: true,
+                    history: {
+                      ...history.history,
+                      ...(["completed", "failed", "cancelled"].includes(run.status) ?
+                        {
+                          lastRecordedNode: history.history.lastRecordedNode ?? history.history.currentNode,
+                          currentNode: undefined,
+                          currentNodeUnavailable: true as const
+                        } :
+                        {}),
+                      round: run.executionView?.current.roundOrdinal ?? history.history.round ?? run.roundOrdinal
+                    }
+                  }
+                }
                 const executionIds = RunActivity.knownExecutionIds(events)
                 const batches: Array<ControlSchema.ExecutionBatch> = []
                 for (let offset = 0; offset < executionIds.length; offset += 200) {
@@ -459,7 +516,30 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
               runtime
             )
           })
-        }, { next: Presentation.runs({ show: false }) })
+        }, {
+          next: Presentation.runs({ show: false }),
+          render: (value) => {
+            if (!("history" in value) || value.history === undefined) return {}
+            const h = value.history
+            const clean = Presentation.clean
+            return {
+              human: [
+                `${clean(value.runId)} · ${clean(value.flowId)} · ${clean(value.status)}`,
+                h.currentNode === undefined ? "Current node: unavailable" : `Current node: ${clean(h.currentNode)}`,
+                ...(h.round === undefined ? [] : [`Round: ${h.round}`]),
+                ...(h.lastError === undefined ? [] : [`Last error: ${clean(RunHistory.errorText(h.lastError))}`]),
+                `History: ${h.events} events, ${h.bytes} bytes`,
+                `Omitted: ${h.omittedEvents} events, ${h.omittedBytes} bytes`,
+                ...h.truncatedFields.map((field) => `Truncated: ${clean(field.path)} (${field.bytes} bytes)`),
+                ...(h.truncatedFieldsOmitted === 0
+                  ? []
+                  : [`${h.truncatedFieldsOmitted} more truncated fields; use --json`]),
+                ...h.largestFields.slice(0, 5).map((field) => `Largest: ${clean(field.path)} (${field.bytes} bytes)`),
+                Failure.terminalSafe(h.read)
+              ].join("\n")
+            }
+          }
+        })
     })
     .command("devtools", {
       description: "Inspect a run's node tree: state, timings, inputs, outputs and journal frames",
@@ -644,18 +724,73 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
       options,
       run: (c) => guard(c, () => decideIncident(c.args.run, "stop", c.options, runtime), { next: afterDecision })
     })
+    .command("signals", {
+      description: "Inspect durable signal delivery receipts",
+      mcp: { annotations: { readOnlyHint: true } },
+      args: runArgs,
+      options: options.extend({
+        limit: z.number().int().min(1).max(500).default(100),
+        after: z.number().int().nonnegative().optional().describe("Continue after a receipt sequence"),
+        receipt: z.string().optional().describe("Look up one durable command id")
+      }),
+      run: (c) =>
+        guard(c, () =>
+          Bridge.signalReceipts(
+            {
+              runId: c.args.run,
+              limit: c.options.limit,
+              after: c.options.after,
+              commandId: c.options.receipt
+            },
+            c.options,
+            runtime
+          ))
+    })
     .command("signal", {
       description: "Deliver a durable JSON signal",
       mcp: { annotations: { readOnlyHint: false } },
       args: runArgs.extend({ payload: z.string() }),
-      options,
+      options: options.extend({
+        wait: z.boolean().default(false).describe("Wait for delivery or rejection"),
+        timeout: z.number().int().nonnegative().optional().describe("Maximum delivery wait in milliseconds")
+      }),
       run: (c) =>
-        guard(c, async () =>
-          Bridge.query(
+        guard(c, async () => {
+          if (c.options.timeout !== undefined && !c.options.wait) {
+            throw new CliError.UsageError({ message: "--timeout requires --wait" })
+          }
+          if (c.options.wait && Bridge.isRemote(c.options, runtime)) {
+            throw new CliError.UnsupportedError({ message: "Signal --wait requires the run's local --root" })
+          }
+          const receipt = await Bridge.query(
             Effect.andThen(checks(c.options, runtime), RunControl.deliverSignal(c.args.run, c.args.payload)),
             c.options,
             { ...runtime, ...await prepareHistoryRun(c.args.run, c.options, runtime) }
-          ))
+          )
+          if (!c.options.wait || (receipt._tag !== "Accepted" && receipt._tag !== "AlreadyApplied")) return receipt
+          const page = await Bridge.signalReceipts({ runId: c.args.run, limit: 1 }, c.options, runtime, {
+            receiptId: receipt.receiptId,
+            timeout: c.options.timeout
+          })
+          const delivery = page.items[0]
+          if (delivery === undefined) {
+            throw new CliError.Refused({
+              fault: "dependency",
+              code: "receipt_missing",
+              message: "The admitted signal receipt is unavailable"
+            })
+          }
+          if (delivery.state !== "delivered") {
+            throw new CliError.Refused({
+              fault: delivery.state === "pending" ? "wait" : "user",
+              code: `signal_${delivery.state}`,
+              message: `Signal ${receipt.receiptId}: ${delivery.state}${
+                delivery.rejection === undefined ? "" : ` (${delivery.rejection})`
+              }`
+            })
+          }
+          return { ...receipt, delivery }
+        })
     })
     .command("steer", {
       description: "Send an attributed operator message",
@@ -870,6 +1005,54 @@ export const pendingApprovals = (runId?: string) =>
  */
 export const createApprovalsCli = (runtime: Bridge.Runtime = {}) =>
   Cli.create("approvals", { description: "Find and resolve pending approval requests" })
+    .command("trigger-plan", {
+      description: "Prepare exact standing consent for an enabled trigger",
+      args: z.object({ trigger: z.string().min(1) }),
+      options,
+      run: (c) =>
+        guard(c, () => {
+          const config = Bridge.configuration(c.options, runtime)
+          if (config.remote !== undefined) {
+            throw new CliError.UnsupportedError({ message: "Standing trigger approval requires a local --root" })
+          }
+          return Bridge.query(TriggerPlans.previewApproval(config.root, c.args.trigger), c.options, runtime, {
+            plansFlows: true
+          })
+        })
+    })
+    .command("grant-trigger", {
+      description: "Grant the exact standing consent returned by approvals trigger-plan (JSON or @file)",
+      mcp: false,
+      args: z.object({ approval: z.string() }),
+      options,
+      run: (c) =>
+        guard(c, async () => {
+          const config = Bridge.configuration(c.options, runtime)
+          if (config.remote !== undefined) {
+            throw new CliError.UnsupportedError({ message: "Standing trigger approval requires a local --root" })
+          }
+          const consent = Schema.decodeUnknownSync(Schema.fromJsonString(TriggerPlans.StandingApproval))(
+            await payload(c.args.approval)
+          )
+          return Bridge.query(TriggerPlans.grantApproval(config.root, consent), c.options, runtime, {
+            plansFlows: true
+          })
+        })
+    })
+    .command("revoke-trigger", {
+      description: "Revoke a standing trigger grant, preserving its historical uses",
+      mcp: false,
+      args: z.object({ grant: z.string().min(1) }),
+      options,
+      run: (c) =>
+        guard(c, () => {
+          const config = Bridge.configuration(c.options, runtime)
+          if (config.remote !== undefined) {
+            throw new CliError.UnsupportedError({ message: "Standing trigger approval requires a local --root" })
+          }
+          return Bridge.query(TriggerPlans.revokeApproval(config.root, c.args.grant), c.options, runtime)
+        })
+    })
     .command("list", {
       description: "List pending in-run approvals with their exact authorization payloads",
       mcp: { annotations: { readOnlyHint: true } },

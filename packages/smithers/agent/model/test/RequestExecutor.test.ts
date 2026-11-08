@@ -522,7 +522,7 @@ describe("RequestExecutor", () => {
       Effect.fail(
         KernelHttpClient.toHttpClientError({
           request: attempted,
-          error: new Permission.PermissionDenied({
+          error: Permission.PermissionDenied.new({
             capability: Capability.make("model:call", "provider.test/test-model"),
             reason: "denied by policy"
           })
@@ -1399,7 +1399,7 @@ describe("RequestExecutor", () => {
       Effect.fail(
         KernelHttpClient.toHttpClientError({
           request,
-          error: new Permission.PermissionDenied({
+          error: Permission.PermissionDenied.new({
             capability: Capability.make("model:call", "provider.test/test-model"),
             reason: "denied by policy"
           })
@@ -1427,7 +1427,7 @@ describe("RequestExecutor", () => {
   })
 
   it("reconstructs the complete typed permission suspension from a transported payload", async () => {
-    const required = new Permission.PermissionRequired({
+    const required = Permission.PermissionRequired.new({
       requestId: "permission-model-1",
       runId: "run-7",
       capability: Capability.make("model:call", "provider.test/test-model"),

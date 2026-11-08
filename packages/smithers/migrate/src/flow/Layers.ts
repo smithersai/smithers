@@ -32,7 +32,6 @@ import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as SeatRouter from "@smthrs/agent/SeatRouter"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action } from "@smthrs/flow"
 import type * as FlowRuntime from "@smthrs/flow/FlowRuntime"
@@ -393,7 +392,7 @@ export const layerSnapshotBoundary: Layer.Layer<FlowEngine.SnapshotBoundary> = L
 export const layerPlan = MigrateFlow.layerPlan.pipe(
   Layer.provideMerge(FlowEngine.layerMemory),
   Layer.provideMerge(layerSnapshotBoundary),
-  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
+  Layer.provideMerge(NodeCrypto.layer),
   Layer.provideMerge(NodeServices.layer)
 )
 
@@ -558,7 +557,7 @@ export const layerNode = (config: NodeConfig) => {
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
       Layer.provideMerge(layerSnapshotBoundary),
-      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
+      Layer.provideMerge(NodeCrypto.layer),
       Layer.provideMerge(NodeServices.layer),
       Layer.provideMerge(evaluator!)
     )
@@ -753,7 +752,7 @@ export const layerScripted = (config: NodeConfig & { readonly script: Script }) 
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
       Layer.provideMerge(layerSnapshotBoundary),
-      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
+      Layer.provideMerge(NodeCrypto.layer),
       Layer.provideMerge(NodeServices.layer),
       // The model is scripted, so the judge is too, and it answers every
       // classifier a judged step asks: the completion brake never falls

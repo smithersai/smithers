@@ -563,7 +563,9 @@ describe("findCommentByWrite", () => {
       { ...rawComment(1, 7, Issues.withWriteMarker("copied in", "w-1")), user: { id: 9, login: "mallory" } },
       { ...rawComment(2, 7, Issues.withWriteMarker("original", "w-1")), user: { id: 7, login: "app[bot]" } }
     ])
-    const found = await run(Issues.findCommentByWrite("o", "r", 7, { writeId: "w-1", since: SINCE, author: "app[bot]" }))
+    const found = await run(
+      Issues.findCommentByWrite("o", "r", 7, { writeId: "w-1", since: SINCE, author: "app[bot]" })
+    )
     expect(Option.getOrThrow(found).id).toBe(2)
   })
 

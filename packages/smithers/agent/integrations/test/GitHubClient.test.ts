@@ -177,7 +177,7 @@ describe("GitHubClient request typing", () => {
       .toEqualTypeOf<Effect.Effect<string, IntegrationError>>()
 
     // @ts-expect-error a request without a schema cannot name its response type
-    offline.request<{ login: string }>("GET", "/user")
+    const _untypedRequest = offline.request<{ login: string }>("GET", "/user")
   })
 })
 
@@ -206,11 +206,17 @@ describe("GitHubClient over a real HTTP server", () => {
       json(response, 403, { message: "You have exceeded a secondary rate limit" }, { "retry-after": "600" })
     )
     const error = await Effect.runPromise(Effect.flip(client().request("GET", "/repos/acme/widgets")))
-    expect(error.details).toMatchObject({ rateLimited: true, retryAfterMillis: 60_000, retryAfterUncappedMillis: 600_000 })
+    expect(error.details).toMatchObject({
+      rateLimited: true,
+      retryAfterMillis: 60_000,
+      retryAfterUncappedMillis: 600_000
+    })
   })
 
   it("keeps a bare 403's Retry-After in full, and leaves it not a rate limit", async () => {
-    fixture = await startFixture((_request, response) => json(response, 403, { message: "Forbidden" }, { "retry-after": "600" }))
+    fixture = await startFixture((_request, response) =>
+      json(response, 403, { message: "Forbidden" }, { "retry-after": "600" })
+    )
     const error = await Effect.runPromise(Effect.flip(client().request("GET", "/repos/acme/widgets")))
     expect(error.details).toMatchObject({ rateLimited: false, retryable: false, retryAfterUncappedMillis: 600_000 })
   })
@@ -315,6 +321,7 @@ describe("GitHubClient over a real HTTP server", () => {
     expect(created).toEqual({ id: 7, url: "https://x" })
     const [sent] = fixture.requests
     expect(sent?.headers["authorization"]).toBe(`Bearer ${TOKEN}`)
+    expect(sent?.headers["user-agent"]).toBe("smithers-integrations")
     expect(sent?.headers["x-github-api-version"]).toBe("2022-11-28")
     expect(sent?.headers["content-type"]).toBe("application/json")
     expect(JSON.parse(sent?.body ?? "{}")).toEqual({ body: "hello" })
@@ -1011,4 +1018,18 @@ describe("write safety regressions", () => {
     expect(fixture.requests).toHaveLength(1)
     expect(fixture.requests[0]?.headers["authorization"]).toBeUndefined()
   })
+})
+
+it("returns resumable cursor URLs only when explicitly requested", async () => {
+  fixture = await startFixture((request, response) => {
+    const cursor = new URL(request.url, "http://x").searchParams.get("cursor")
+    if (cursor === "second") json(response, 200, [2])
+    else json(response, 200, [1], { link: "<?cursor=second>; rel=\"next\"" })
+  })
+  const first = await Effect.runPromise(client().paginate("/x", { maxPages: 1, withNext: true }))
+  expect(first).toEqual({ items: [1], truncated: true, next: `${fixture.origin}/x?cursor=second` })
+  expect(fixture.requests).toHaveLength(1)
+  expect(await Effect.runPromise(client().paginate(first.next!, { maxPages: 1, withNext: true })))
+    .toEqual({ items: [2], truncated: false, next: null })
+  expect(fixture.requests).toHaveLength(2)
 })

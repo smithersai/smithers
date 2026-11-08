@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import { FetchHttpClient } from "effect/http"
 import { TestClock } from "effect/testing"
 import { AuthUnreachable, getSession } from "../features/auth/api"
-import { NO_DEVICE_DATA, type SessionState } from "../features/auth/contract"
+import { CONFIRM_401_HEADER, NO_DEVICE_DATA, SESSION_CHECK_HEADER, SESSION_ROUTE, SIGN_OUT_ROUTE, type SessionState } from "../features/auth/contract"
 import { deviceFrom, type Fixture } from "../test/deviceFixture"
 import deployed from "./fixtures/7b96f878.json" with { type: "json" }
 import production from "./fixtures/c6940ac53e5a.json" with { type: "json" }
@@ -22,6 +22,7 @@ import {
   type Outcome,
   readReceipt,
   readSession,
+  reopenDue,
   sessionNow,
   stale,
   VISITOR,
@@ -416,6 +417,39 @@ describe("a tab about to follow a leader", () => {
 })
 
 describe("requests", () => {
+  test("advertises stale-credential support on every own-origin API request, including session rereads", async () => {
+    const alice: SessionState = { signedIn: true, personId: "alice", login: "alice", role: "member" }
+    const seen: Array<{ path: string; accepts: string | undefined }> = []
+    const server = createServer((request, response) => {
+      seen.push({ path: request.url!, accepts: request.headers["x-smithers-accepts"] as string | undefined })
+      response.writeHead(request.url === "/api/questions" ? 401 : 200, { "content-type": "application/json" })
+      response.end(JSON.stringify(alice))
+    })
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+    const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+    const bound = boundFetch(fetch, { origin, principal: () => "alice", reauthorize: async () => false })
+    try {
+      for (const method of ["GET", "POST", "HEAD"]) {
+        await bound(`${origin}/api/questions`, { method, headers: { "x-smithers-accepts": "unsupported" } })
+      }
+      await bound(`${origin}/api/auth/session`)
+      await bound(`${origin}/assets/app.js`)
+      await boundFetch(fetch, { origin: "http://elsewhere.test", principal: () => "alice" })(`${origin}/api/questions`)
+      expect(seen).toEqual([
+        ...Array.from({ length: 3 }, () => [
+          { path: "/api/questions", accepts: "credential-stale" },
+          { path: "/api/auth/session", accepts: "credential-stale" },
+        ]).flat(),
+        { path: "/api/auth/session", accepts: "credential-stale" },
+        { path: "/assets/app.js", accepts: undefined },
+        { path: "/api/questions", accepts: undefined },
+      ])
+    } finally {
+      server.closeAllConnections()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
   const serve = async (answer: () => unknown) => {
     const seen: Array<{ url: string; headers: IncomingHttpHeaders }> = []
     const server = createServer((request, response) => {
@@ -469,7 +503,10 @@ describe("requests", () => {
     let session: unknown = { signedIn: true, personId: "alice", login: "alice", role: "member" }
     const api = await serve(() => session)
     let reauthorized = 0
-    const bound = boundFetch(fetch, { origin: api.origin, principal: () => "alice", reauthorize: async () => void reauthorized++ })
+    const bound = boundFetch(fetch, { origin: api.origin, principal: () => "alice", reauthorize: async () => {
+      reauthorized++
+      return true
+    } })
     try {
       expect((await bound(`${api.origin}/api/auth/session`)).ok).toBe(true)
       session = { signedIn: false, available: true }
@@ -505,7 +542,10 @@ describe("requests", () => {
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
     let reauthorized = 0
-    const bound = boundFetch(fetch, { origin, principal: () => "alice", reauthorize: async () => void reauthorized++ })
+    const bound = boundFetch(fetch, { origin, principal: () => "alice", reauthorize: async () => {
+      reauthorized++
+      return true
+    } })
     const ask = () => bound(`${origin}/api/questions`, { method: "POST", body: "{}" })
     try {
       // Taken: no session read.
@@ -531,17 +571,212 @@ describe("requests", () => {
     // ChatApi gone altogether: the refusal it can't explain stands.
     const unreachable = boundFetch(
       async (input, init) => new URL(new Request(input, init).url).pathname === "/api/questions" ? new Response("{}", { status: 401 }) : Promise.reject(new TypeError("offline")),
-      { origin, principal: () => "alice", reauthorize: async () => void reauthorized++ },
+      { origin, principal: () => "alice", reauthorize: async () => {
+      reauthorized++
+      return true
+    } },
     )
     expect((await unreachable(`${origin}/api/questions`, { method: "POST", body: "{}" })).status).toBe(401)
     expect(reauthorized).toBe(1)
+  })
+
+  test("a write that opts in has its 401 checked: still its person, marked; signed out, held for the page's reopening", async () => {
+    let session: unknown = { signedIn: true, personId: "alice", login: "alice", role: "member" }
+    const sent: Array<Request> = []
+    const next: typeof fetch = async (input, init) => {
+      const request = new Request(input, init)
+      if (new URL(request.url).pathname === SESSION_ROUTE) return Response.json(session)
+      sent.push(request)
+      return new Response("{}", { status: 401 })
+    }
+    let reauthorized = 0
+    const origin = "http://chat.test"
+    const bound = boundFetch(next, { origin, principal: () => "alice", reauthorize: async () => {
+      reauthorized++
+      return true
+    } })
+    const write = (confirm: boolean) =>
+      bound(`${origin}/api/texts/t`, { method: "POST", body: "{}", headers: confirm ? { [CONFIRM_401_HEADER]: "1" } : {} })
+    // Still Alice: the refusal stands, marked for the caller; the opt-in never reaches ChatApi.
+    const marked = await write(true)
+    expect(marked.status).toBe(401)
+    expect(marked.headers.get(SESSION_CHECK_HEADER)).toBe("same_person")
+    expect(sent.at(-1)!.headers.has(CONFIRM_401_HEADER)).toBe(false)
+    // A write that didn't opt in gets ChatApi's refusal as it was.
+    const plain = await write(false)
+    expect(plain.status).toBe(401)
+    expect(plain.headers.has(SESSION_CHECK_HEADER)).toBe(false)
+    expect(reauthorized).toBe(0)
+    // Signed out: the page reopens and the write fails as unsent, so it stays queued for the reopened page's decision.
+    session = { signedIn: false, available: true }
+    await expect(write(true)).rejects.toEqual(new DeviceIdentityRefused({ reason: "signed_out" }))
+    expect(reauthorized).toBe(1)
+  })
+
+  test.each([[undefined, "2"], ["0123456789abcdef0123456789abcdef", "Thu, 01 Jan 1970 00:00:12 GMT"]])("a stale credential is transport-only and gates retries with the recorded tag %s", async (tag, retryAfter) => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    try {
+      vi.setSystemTime(10_000)
+      let writes = 0
+      const reads: Array<Request> = []
+      let session: unknown = { credential: "stale", prior: "live" }
+      const next: typeof fetch = async (input, init) => {
+        const request = new Request(input, init)
+        if (new URL(request.url).pathname === SESSION_ROUTE) {
+          reads.push(request)
+          return Response.json(session)
+        }
+        writes++
+        return writes === 1
+          ? new Response(null, { status: 503, headers: { "x-smithers-credential": "stale", "Retry-After": retryAfter! } })
+          : Response.json({ txid: 1 })
+      }
+      const origin = "http://chat.test"
+      // The activation's recorded tag is diagnostic only, never a person or credential.
+      const binding = { origin, principal: () => "alice", sessionTag: () => tag }
+      const bound = boundFetch(next, binding)
+      const write = () => bound(`${origin}/api/texts/t`, { method: "POST", body: "{}" })
+      const refused = new DeviceIdentityRefused({ reason: "credential_stale" })
+      await expect(write()).rejects.toEqual(refused)
+      vi.setSystemTime(11_999)
+      await expect(write()).rejects.toEqual(refused)
+      expect(writes).toBe(1)
+      vi.setSystemTime(12_000)
+      await expect(write()).rejects.toEqual(refused)
+      expect(writes).toBe(1)
+      expect(reads.at(-1)?.headers.get("x-smithers-session-tag")).toBe(tag ?? null)
+      session = { signedIn: true, personId: "alice", login: "alice", role: "member" }
+      expect((await write()).status).toBe(200)
+      expect(writes).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test.each([
+    [{ credential: "stale", prior: "live" }, "credential_stale", 0],
+    [{ signedIn: false, available: true }, "signed_out", 1],
+    [{ signedIn: true, personId: "ben", login: "ben", role: "member" }, "reauthorizing", 1],
+  ] as const)("a stale credential never sends the held write on an inconclusive or different session %j", async (session, reason, reopens) => {
+    let writes = 0
+    let reopened = 0
+    const origin = "http://chat.test"
+    const bound = boundFetch(async (input, init) => {
+      const request = new Request(input, init)
+      if (new URL(request.url).pathname === SESSION_ROUTE) return Response.json(session)
+      writes++
+      return new Response(null, { status: 503, headers: { "x-smithers-credential": "stale", "Retry-After": "invalid" } })
+    }, { origin, principal: () => "alice", reauthorize: async () => { reopened++; return false } })
+    const write = () => bound(`${origin}/api/texts/t`, { method: "POST", body: "{}" })
+    await expect(write()).rejects.toEqual(new DeviceIdentityRefused({ reason: "credential_stale" }))
+    await expect(write()).rejects.toEqual(new DeviceIdentityRefused({ reason }))
+    expect(writes).toBe(1)
+    expect(reopened).toBe(reopens)
+  })
+
+  test("the device retains its verified session tag across an offline activation without borrowing another person's tag", async () => {
+    const device = store()
+    const tag = "0123456789abcdef0123456789abcdef"
+    const seen: Array<string | undefined> = []
+    const activate = (session: Effect.Effect<SessionState, unknown>) => Effect.runPromise(Effect.exit(authorizeDevice({
+      database: device.database, session,
+      report: (...args: unknown[]) => { seen.push(args[3] as string | undefined) },
+    })))
+    await activate(Effect.succeed({ signedIn: true, personId: "alice", login: "alice", role: "member", session: tag } as SessionState))
+    await activate(offline)
+    await activate(Effect.succeed({ signedIn: true, personId: "ben", login: "ben", role: "member", session: "abcdef0123456789abcdef0123456789" } as SessionState))
+    await activate(offline)
+    expect(seen).toEqual([tag, tag, undefined, tag])
+  })
+
+  test("the opt-in never leaves the page: not to another origin, not to this origin outside its API", async () => {
+    const seen: Array<string> = []
+    const next: typeof fetch = async (input, init) => {
+      const request = new Request(input, init)
+      seen.push(`${request.url} ${request.headers.has(CONFIRM_401_HEADER)}`)
+      return new Response("{}")
+    }
+    const origin = "http://chat.test"
+    const bound = boundFetch(next, { origin, principal: () => "alice", reauthorize: async () => true })
+    const confirm = { headers: { [CONFIRM_401_HEADER]: "1" } }
+    await bound("http://elsewhere.test/api/texts/t", confirm)
+    await bound(`${origin}/assets/app.js`, confirm)
+    await bound(`${origin}/api/texts/t`, confirm)
+    expect(seen).toEqual([
+      "http://elsewhere.test/api/texts/t false",
+      `${origin}/assets/app.js false`,
+      `${origin}/api/texts/t false`,
+    ])
+  })
+
+  test("a reopen the page holds back leaves its transport sending, after a session end and after another person alike", async () => {
+    let session: unknown = { signedIn: false, available: true }
+    let status = 401
+    const next: typeof fetch = async (input, init) => {
+      const request = new Request(input, init)
+      if (new URL(request.url).pathname === SESSION_ROUTE) return Response.json(session)
+      return new Response("{}", { status })
+    }
+    let asked = 0
+    const origin = "http://chat.test"
+    // main.tsx's `reopen` holds back a second reopen within the minute: nothing reopens, so nothing must wait for it.
+    const bound = boundFetch(next, { origin, principal: () => "alice", reauthorize: async () => {
+      asked++
+      return false
+    } })
+    const write = () => bound(`${origin}/api/texts/t`, { method: "POST", body: "{}", headers: { [CONFIRM_401_HEADER]: "1" } })
+    await expect(write()).rejects.toEqual(new DeviceIdentityRefused({ reason: "signed_out" }))
+    expect(asked).toBe(1)
+    status = 200
+    expect((await write()).status).toBe(200)
+    session = { signedIn: true, personId: "bob", login: "bob", role: "member" }
+    status = 401
+    await expect(write()).rejects.toEqual(new DeviceIdentityRefused({ reason: "reauthorizing" }))
+    expect(asked).toBe(2)
+    status = 200
+    expect((await write()).status).toBe(200)
+  })
+
+  test("a session that ended by a sign-out of this page's never reopens it: the sign-out's wipe decides the write", async () => {
+    let session: unknown = { signedIn: true, personId: "alice", login: "alice", role: "member" }
+    let answerSignOut!: () => void
+    const signedOut = new Promise<void>((resolve) => (answerSignOut = resolve))
+    const next: typeof fetch = async (input, init) => {
+      const path = new URL(new Request(input, init).url).pathname
+      if (path === SESSION_ROUTE) return Response.json(session)
+      if (path === SIGN_OUT_ROUTE) {
+        // ChatApi ends the session at once; its answer is still on its way.
+        session = { signedIn: false, available: true }
+        await signedOut
+        return new Response(null, { status: 204 })
+      }
+      return new Response("{}", { status: 401 })
+    }
+    let reauthorized = 0
+    const origin = "http://chat.test"
+    const bound = boundFetch(next, { origin, principal: () => "alice", reauthorize: async () => {
+      reauthorized++
+      return true
+    } })
+    const write = () => bound(`${origin}/api/texts/t`, { method: "POST", body: "{}", headers: { [CONFIRM_401_HEADER]: "1" } })
+    const signingOut = bound(`${origin}${SIGN_OUT_ROUTE}`, { method: "POST" })
+    // The write fails as unsent, so it stays queued, and the page stays open for the sign-out to mark its wipe.
+    await expect(write()).rejects.toBeInstanceOf(DeviceIdentityRefused)
+    answerSignOut()
+    expect((await signingOut).status).toBe(204)
+    // Taken: the page wipes and loads again next; until then, nothing reopens it either.
+    await expect(write()).rejects.toBeInstanceOf(DeviceIdentityRefused)
+    expect(reauthorized).toBe(0)
   })
 
   test("a page with no data open reopens only when sealed until someone signs in; the worker never does", async () => {
     let session: unknown = { signedIn: false, available: true }
     const api = await serve(() => session)
     let reauthorized = 0
-    const reauthorize = async () => void reauthorized++
+    const reauthorize = async () => {
+      reauthorized++
+      return true
+    }
     const read = (bound: typeof fetch) => bound(`${api.origin}/api/auth/session`)
     try {
       // Sealed for another person, or a visitor's tab on memory: a sign-in changes nothing here.
@@ -582,7 +817,10 @@ describe("requests", () => {
       }
       return outcome
     }
-    const bound = boundFetch(fetch, { origin: api.origin, principal: () => owner, reauthorize: async () => void reauthorized++, adopt })
+    const bound = boundFetch(fetch, { origin: api.origin, principal: () => owner, reauthorize: async () => {
+      reauthorized++
+      return true
+    }, adopt })
     try {
       await expect(bound(`${api.origin}/api/auth/session`)).rejects.toMatchObject({ reason: "adopting" })
       const reading = bound(`${api.origin}/api/auth/session`)
@@ -612,7 +850,10 @@ describe("requests", () => {
         const bound = boundFetch(fetch, {
           origin: api.origin,
           principal: () => VISITOR,
-          reauthorize: async () => void reauthorized++,
+          reauthorize: async () => {
+      reauthorized++
+      return true
+    },
           // Fault: the leader never sends a receipt. As in the page, the caller's abort ends the wait.
           adopt: (_session, requestSignal) => {
             signal = requestSignal
@@ -649,7 +890,10 @@ describe("requests", () => {
         const bound = boundFetch(fetch, {
           origin: api.origin,
           principal: () => principal,
-          reauthorize: async () => void reauthorized++,
+          reauthorize: async () => {
+      reauthorized++
+      return true
+    },
           adopt: async () => (asked++, "refused" as const),
         })
         await expect(bound(`${api.origin}/api/auth/session`)).rejects.toMatchObject({ reason: "reauthorizing" })
@@ -691,4 +935,184 @@ test("the activation settles once: memory or retained, and a later receipt can't
   expect(allowed.refuse()).toBe(false)
   expect(allowed.state()).toBe("retained")
   expect(stopped).toBe(1)
+})
+
+
+test("a cancelled or rejected reopen releases concurrent and subsequent API requests", async () => {
+  for (const rejected of [false, true]) {
+    let finish!: (value: boolean) => void
+    let fail!: (error: Error) => void
+    let entered!: () => void
+    const started = new Promise<void>((resolve) => { entered = resolve })
+    const opening = new Promise<boolean>((resolve, reject) => { finish = resolve; fail = reject })
+    let calls = 0
+    const fetch = boundFetch(async () => {
+      calls++
+      return Response.json({ signedIn: true, personId: calls === 1 ? "bob" : "alice", login: "person", role: "member" })
+    }, { origin: "https://app.test", principal: () => "alice", reauthorize: () => { entered(); return opening } })
+    const first = fetch("https://app.test/api/auth/session").catch(() => undefined)
+    await started
+    const second = fetch("https://app.test/api/auth/session").then((response) => response.status, () => "refused")
+    await Promise.resolve()
+    if (rejected) fail(new Error("Reopen cancelled"))
+    else finish(false)
+    await first
+    expect(await second).toBe(200)
+    expect((await fetch("https://app.test/api/auth/session")).status).toBe(200)
+    expect(calls).toBe(3)
+  }
+})
+
+
+test("suppressed reopen requests cannot slide the recovery deadline", () => {
+  const marks = new Map([["reopen", "100000"]])
+  const storage = { getItem: (key: string) => marks.get(key) ?? null, setItem: (key: string, value: string) => void marks.set(key, value) }
+  for (const now of [130000, 159000]) expect(reopenDue(storage, "reopen", 60000, now)).toBe(false)
+  expect(reopenDue(storage, "reopen", 60000, 160000)).toBe(true)
+  // Eligibility alone is not an accepted reopen, such as while sign-out protects its wipe.
+  expect(marks.get("reopen")).toBe("100000")
+})
+
+test("a stale-credential deadline and verification survive a successor transport", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] })
+  try {
+    vi.setSystemTime(10000)
+    const rows = new Map<string, string>()
+    const credentialStorage = { get: async (key: string) => rows.get(key) ?? null, set: async (key: string, value: string) => void rows.set(key, value) }
+    let writes = 0
+    let reads = 0
+    let person = "alice"
+    const next: typeof fetch = async (input, init) => {
+      const request = new Request(input, init)
+      if (new URL(request.url).pathname === SESSION_ROUTE) {
+        reads++
+        return Response.json({ signedIn: true, personId: person, login: person, role: "member" })
+      }
+      writes++
+      return writes === 1 ? new Response(null, { status: 503, headers: { "x-smithers-credential": "stale", "Retry-After": "120" } }) : Response.json({ txid: 1 })
+    }
+    const binding = { origin: "https://app.test", principal: () => "alice", credentialStorage, reauthorize: async () => false }
+    const send = (transport: typeof fetch) => transport("https://app.test/api/questions", { method: "POST" })
+    await expect(send(boundFetch(next, binding))).rejects.toMatchObject({ reason: "credential_stale" })
+    const successor = boundFetch(next, binding)
+    await expect(send(successor)).rejects.toMatchObject({ reason: "credential_stale" })
+    expect(writes).toBe(1)
+    expect(reads).toBe(0)
+    vi.setSystemTime(130000)
+    person = "bob"
+    await expect(send(successor)).rejects.toMatchObject({ reason: "reauthorizing" })
+    expect(writes).toBe(1)
+    person = "alice"
+    expect((await send(boundFetch(next, binding))).status).toBe(200)
+    expect(reads).toBe(2)
+    expect(writes).toBe(2)
+  } finally { vi.useRealTimers() }
+})
+
+test.each(["confirming 401", "expired deadline"] as const)("an internal %s session reread preserves Retry-After for this transport and its successor", async mode => {
+  vi.useFakeTimers({ toFake: ["Date"] })
+  vi.setSystemTime(10_000)
+  const rows = new Map<string, string>()
+  const credentialStorage = {
+    get: async (key: string) => rows.get(key) ?? null,
+    set: async (key: string, value: string) => void rows.set(key, value),
+  }
+  const lock = `credential-reread-${crypto.randomUUID()}`
+  let writes = 0
+  let reads = 0
+  let staleRead = true
+  const server = createServer((request, response) => {
+    if (request.url === SESSION_ROUTE) {
+      reads++
+      if (staleRead) {
+        response.writeHead(503, { "x-smithers-credential": "stale", "retry-after": "120" })
+        response.end()
+      } else {
+        response.writeHead(200, { "content-type": "application/json" })
+        response.end(JSON.stringify({ signedIn: true, personId: "alice", login: "alice", role: "member" }))
+      }
+      return
+    }
+    writes++
+    if (writes === 1) {
+      response.writeHead(mode === "confirming 401" ? 401 : 503,
+        mode === "confirming 401" ? {} : { "x-smithers-credential": "stale", "retry-after": "1" })
+      response.end()
+    } else {
+      response.writeHead(200, { "content-type": "application/json" })
+      response.end(JSON.stringify({ txid: 1 }))
+    }
+  })
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve))
+  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+  const binding = { origin, principal: () => "alice", credentialStorage,
+    withCredential: <A>(action: () => Promise<A>) => navigator.locks.request(lock, action),
+    reauthorize: async () => false,
+  }
+  const send = (transport: typeof fetch) => transport(`${origin}/api/questions`, {
+    method: "POST", headers: { [CONFIRM_401_HEADER]: "1" }, body: "{}",
+  })
+  try {
+    const transport = boundFetch(fetch, binding)
+    await expect(send(transport)).rejects.toBeInstanceOf(DeviceIdentityRefused)
+    if (mode === "expired deadline") {
+      vi.setSystemTime(11_000)
+      await expect(send(transport)).rejects.toBeInstanceOf(DeviceIdentityRefused)
+    }
+    expect([writes, reads]).toEqual([1, 1])
+    const until = mode === "confirming 401" ? 130_000 : 131_000
+    vi.setSystemTime(until - 1)
+    await expect(send(transport)).rejects.toMatchObject({ reason: "credential_stale" })
+    await expect(send(boundFetch(fetch, binding))).rejects.toMatchObject({ reason: "credential_stale" })
+    expect([writes, reads]).toEqual([1, 1])
+    staleRead = false
+    vi.setSystemTime(until)
+    expect((await send(boundFetch(fetch, binding))).status).toBe(200)
+    expect([writes, reads]).toEqual([2, 2])
+  } finally {
+    vi.useRealTimers()
+    server.closeAllConnections()
+    await new Promise<void>(resolve => server.close(() => resolve()))
+  }
+})
+
+test("a memory-only page verifies its signed-in person after stale credentials", async () => {
+  let writes = 0
+  let reads = 0
+  const transport = boundFetch(async (input, init) => {
+    const request = new Request(input, init)
+    if (new URL(request.url).pathname === SESSION_ROUTE) {
+      reads++
+      return Response.json({ signedIn: true, personId: "alice", login: "alice", role: "member" })
+    }
+    writes++
+    expect(request.headers.get("x-smithers-device-person")).toBe(writes === 1 ? NO_DEVICE_DATA : "alice")
+    return writes === 1 ? new Response(null, { status: 503, headers: { "x-smithers-credential": "stale", "Retry-After": "0" } }) : Response.json({ txid: 1 })
+  }, { origin: "https://app.test", principal: () => NO_DEVICE_DATA, reauthorize: async () => false })
+  const write = () => transport("https://app.test/api/questions", { method: "POST" })
+  await expect(write()).rejects.toMatchObject({ reason: "credential_stale" })
+  expect((await write()).status).toBe(200)
+  expect(reads).toBe(1)
+  expect(writes).toBe(2)
+})
+
+
+test("a memory-only page never releases its verified person's held write as another person", async () => {
+  let person = "alice"
+  let writes = 0
+  const transport = boundFetch(async (input, init) => {
+    const request = new Request(input, init)
+    if (new URL(request.url).pathname === SESSION_ROUTE) return Response.json({ signedIn: true, personId: person, login: person, role: "member" })
+    writes++
+    return writes === 1 ? new Response(null, { status: 503, headers: { "x-smithers-credential": "stale", "Retry-After": "0" } }) : Response.json({ txid: 1 })
+  }, { origin: "https://app.test", principal: () => NO_DEVICE_DATA, reauthorize: async () => false })
+  await transport("https://app.test/api/auth/session")
+  const write = () => transport("https://app.test/api/questions", { method: "POST" })
+  await expect(write()).rejects.toMatchObject({ reason: "credential_stale" })
+  person = "bob"
+  await expect(write()).rejects.toMatchObject({ reason: "credential_stale" })
+  expect(writes).toBe(1)
+  person = "alice"
+  expect((await write()).status).toBe(200)
+  expect(writes).toBe(2)
 })

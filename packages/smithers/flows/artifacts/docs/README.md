@@ -58,14 +58,11 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
-import { Crypto } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 
 const layer = ArtifactStore.layerFileSystem({ directory: ".flows/objects" }).pipe(
-  Layer.provideMerge(
-    Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
-  )
+  Layer.provideMerge(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer))
 )
 
 const program = Effect.gen(function*() {

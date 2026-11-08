@@ -254,7 +254,7 @@ describe("FlowBinding.make", () => {
     const exit = await run(binding.run(call("echo", { text: "hi" })))
 
     expect(exit).toStrictEqual(
-      Exit.succeed(new Cell.CallResult({ outcome: "success", value: { text: "hi", length: 2 } }))
+      Exit.succeed(Cell.CallResult.new({ outcome: "success", value: { text: "hi", length: 2 } }))
     )
   })
 
@@ -442,7 +442,7 @@ describe("FlowBinding.make", () => {
 
     expect(JSON.stringify(result)).not.toContain("SYNTHETIC_")
     expect(result).toStrictEqual(
-      new Cell.CallResult({
+      Cell.CallResult.new({
         outcome: "failure",
         value: null,
         code: "flow_failed",
@@ -547,7 +547,7 @@ describe("FlowBinding.make", () => {
     const busy = await Effect.runPromise(binding.run(call("echo", { text: "busy" })))
 
     expect(slow).toStrictEqual(
-      new Cell.CallResult({
+      Cell.CallResult.new({
         outcome: "failure",
         value: { limitMillis: 250 },
         code: "timeout",
@@ -555,7 +555,7 @@ describe("FlowBinding.make", () => {
       })
     )
     expect(unsaid).toStrictEqual(
-      new Cell.CallResult({
+      Cell.CallResult.new({
         outcome: "failure",
         value: null,
         code: "timeout",
@@ -563,7 +563,7 @@ describe("FlowBinding.make", () => {
       })
     )
     expect(busy).toStrictEqual(
-      new Cell.CallResult({
+      Cell.CallResult.new({
         outcome: "failure",
         value: null,
         code: "flow_failed",
@@ -760,7 +760,7 @@ describe("FlowBinding.make", () => {
   })
 
   it("keeps a permission requirement in the typed channel where a cell cannot swallow it", async () => {
-    const required = new Permission.PermissionRequired({
+    const required = Permission.PermissionRequired.new({
       requestId: "request-1",
       capability: Capability.make("fs:write", "**"),
       tier: "irreversible",

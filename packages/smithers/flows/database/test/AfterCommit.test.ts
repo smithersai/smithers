@@ -181,7 +181,7 @@ describe("DurableWriter.afterCommit", () => {
           published = true
         }))
         yield* Deferred.succeed(ready, undefined)
-        yield* Effect.never
+        return yield* Effect.never
       })).pipe(Effect.forkChild({ startImmediately: true }))
       yield* Deferred.await(ready)
       yield* Fiber.interrupt(fiber)

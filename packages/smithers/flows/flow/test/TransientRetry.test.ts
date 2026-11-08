@@ -21,7 +21,7 @@ const provideRuntime = <A, E>(
   operation: Effect.Effect<
     A,
     E,
-    FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime | import("@smthrs/crypto").Crypto.Crypto
+    FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime | import("effect/crypto/Digest").Digest
   >
 ) =>
   withCrypto(operation.pipe(

@@ -3,8 +3,8 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Calendar } from "../src/calendar/Calendar";
-import { calendarCss } from "../src/calendar/calendarCss";
-import { smithersUiCss } from "../src/uiCss";
+import { calendarCss } from "@smthrs/ui-css";
+import { uiCss as smithersUiCss } from "@smthrs/ui-css";
 import type { CalendarEvent } from "../src/calendar/types";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

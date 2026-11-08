@@ -106,7 +106,8 @@ describe("failure evidence across restarts", () => {
             )
             const journal = yield* Journal.Journal
             yield* journal.flush
-            return { firstExit, secondExit, afterFailure }
+            const afterRestart = yield* runs.get("failure-evidence-run")
+            return { firstExit, secondExit, afterFailure, afterRestart }
           }).pipe(
             Effect.provideService(DurableEngineState.DurableEngineState, state),
             Effect.provideService(Jj.Jj, jj)
@@ -119,6 +120,9 @@ describe("failure evidence across restarts", () => {
 
       expect(outcome.firstExit._tag).toBe("Failure")
       expect(outcome.afterFailure.status).toBe("failed")
+      const failure = JSON.parse(outcome.afterFailure.stateJson).failure
+      expect(failure).toMatchObject({ action: "flaky", attempts: 1, message: "\"transient\"" })
+      expect(JSON.parse(outcome.afterRestart.stateJson).failure).toEqual(failure)
       // the successful step's evidence is durable: it is never dispatched twice
       expect(successDispatches).toBe(1)
       // a terminal run failure is *persistent* evidence: re-executing the same

@@ -18,7 +18,8 @@
  * @since 1.0.0
  */
 
-import type { Crypto } from "@smthrs/crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Action from "./Action/index.ts"
@@ -82,7 +83,7 @@ export const start = effect (options: {
    * Absent, the execution's first start is journaled and read back.
    */
   readonly startedAtMs?: number | undefined
-}): (LineageDeadline | undefined)!never!(FlowRuntime | FlowInstance | Crypto.Crypto) => {
+}): (LineageDeadline | undefined)!never!(FlowRuntime | FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)) => {
   const instance = try FlowInstance
   let lineage = instance.lineageDeadline
   if (lineage === undefined) {
@@ -196,5 +197,5 @@ export const bound = (options: {
 }) =>
 <A, E, R>(
   body: A!E!R
-): A!E!(R | FlowRuntime | FlowInstance | Crypto.Crypto) =>
+): A!E!(R | FlowRuntime | FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)) =>
   Effect.flatMap(start(options), (deadline) => within(deadline, options.flowName)(body))

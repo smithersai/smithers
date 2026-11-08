@@ -9,7 +9,6 @@
  * Send while the agent works.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Notifications from "@smthrs/harness/Notifications"
@@ -144,7 +143,7 @@ const runSteered = (
           Layer.provideMerge(Layer.merge(Budget.layerUnbounded(), QuotaPolicy.layerUnclassified())),
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(FlowEngine.layerMemory),
-          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+          Layer.provideMerge(NodeCrypto.layer)
         )
       )
     )

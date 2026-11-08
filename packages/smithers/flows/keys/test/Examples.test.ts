@@ -1,12 +1,11 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { Effect } from "effect"
 import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
 import { compileKey, decodeIdentity, example, readIdentity } from "../examples/identities.vibe"
 
-const run = <A, E>(program: Effect.Effect<A, E, import("@smthrs/crypto").Crypto.Crypto>) =>
-  Effect.runPromise(Effect.provide(program, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+const run = <A, E>(program: Effect.Effect<A, E, import("effect/crypto/Digest").Digest>) =>
+  Effect.runPromise(Effect.provide(program, NodeCrypto.layer))
 
 describe("runnable identity examples", () => {
   it("round-trips a derived identity without rehashing stored text", async () => {

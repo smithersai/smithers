@@ -160,7 +160,7 @@ describe("composed migrations", () => {
 
       expect(Exit.isFailure(result.failed)).toBe(true)
       if (Exit.isFailure(result.failed)) {
-        const defect = Cause.findDefect(result.failed.cause)
+        const defect = Cause.findError(result.failed.cause)
         expect(Result.isSuccess(defect)).toBe(true)
         if (Result.isSuccess(defect)) {
           expect(defect.success).toBeInstanceOf(Migrator.MigrationError)
@@ -408,7 +408,7 @@ describe("composed migrations", () => {
 
       expect(Exit.isFailure(result.failed)).toBe(true)
       if (Exit.isFailure(result.failed)) {
-        const defect = Cause.findDefect(result.failed.cause)
+        const defect = Cause.findError(result.failed.cause)
         expect(Result.isSuccess(defect)).toBe(true)
         if (Result.isSuccess(defect)) {
           expect(defect.success).toBeInstanceOf(Migrator.MigrationError)
@@ -601,4 +601,97 @@ describe("composed migrations", () => {
       expect(yield* failureMessage(Migrations.run([malformed])))
         .toContain("Malformed migration key")
     }))
+
+  describe.skipIf(process.env.SMITHERS_TEST_PG_URL === undefined)("deferred triggers on PostgreSQL", () => {
+    const bumps = (sql: SqlClient.SqlClient) =>
+      Effect.gen(function*() {
+        yield* sql`CREATE TABLE deferred_rows (id INTEGER PRIMARY KEY, n INTEGER NOT NULL)`
+        yield* sql`CREATE TABLE deferred_bumps (n INTEGER NOT NULL)`
+        yield* sql.unsafe(`CREATE FUNCTION deferred_bump_fn() RETURNS trigger LANGUAGE plpgsql AS $f$
+          BEGIN INSERT INTO deferred_bumps VALUES (NEW.n); RETURN NEW; END $f$`)
+        yield* sql.unsafe(`CREATE CONSTRAINT TRIGGER deferred_bump AFTER INSERT OR UPDATE ON deferred_rows
+          DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION deferred_bump_fn()`)
+      })
+    // Without immediate triggers PostgreSQL refuses the index: 55006, pending trigger events.
+    const backfill = (sql: SqlClient.SqlClient) =>
+      Effect.gen(function*() {
+        yield* sql`INSERT INTO deferred_rows VALUES (1, 1)`
+        yield* sql`CREATE INDEX deferred_rows_n ON deferred_rows (n)`
+      })
+    const immediateTriggers = [["deferred_rows", "deferred_bump"]] as const
+
+    it.effect("runs a set's declared triggers immediately, in any set's later migration", () =>
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        const sets = [
+          { namespace: "owner", idOffset: 0, immediateTriggers, migrations: { "0001_initial": bumps(sql) } },
+          { namespace: "writer", idOffset: Migrations.idBlock, migrations: { "0001_backfill": backfill(sql) } }
+        ]
+        expect(yield* Migrations.run(sets)).toEqual([[1, "owner_initial"], [1001, "writer_backfill"]])
+        expect(yield* sql`SELECT n FROM deferred_bumps`).toEqual([{ n: 1 }])
+        // The pass leaves the trigger deferred for later transactions.
+        const inside = yield* sql.withTransaction(
+          sql`INSERT INTO deferred_rows VALUES (2, 2)`.pipe(
+            Effect.andThen(sql`SELECT n FROM deferred_bumps ORDER BY n`)
+          )
+        )
+        expect(inside).toEqual([{ n: 1 }])
+        expect(yield* sql`SELECT n FROM deferred_bumps ORDER BY n`).toEqual([{ n: 1 }, { n: 2 }])
+      }).pipe(Effect.provide(TestDatabase.layer)))
+
+    it.effect("runs migration zero with the declared triggers immediate too", () =>
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        // The trigger exists before the pass: a trigger mode applies only to triggers already created.
+        yield* bumps(sql)
+        const sets = [{
+          namespace: "zero",
+          idOffset: 0,
+          immediateTriggers,
+          migrations: { "0000_setup": backfill(sql) }
+        }]
+        expect(yield* Migrations.run(sets)).toEqual([[0, "zero_setup"]])
+        expect(yield* sql`SELECT n FROM deferred_bumps`).toEqual([{ n: 1 }])
+      }).pipe(Effect.provide(TestDatabase.layer)))
+
+    it.effect("cannot help a migration that creates a declared trigger and writes it in one body", () =>
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        const sets = [{
+          namespace: "same",
+          idOffset: 0,
+          immediateTriggers,
+          migrations: { "0001_initial": Effect.andThen(bumps(sql), backfill(sql)) }
+        }]
+        // The switch runs before the body, when the trigger does not exist yet: the documented limit.
+        const exit = yield* Effect.exit(Migrations.run(sets))
+        expect(Exit.isFailure(exit) && Cause.pretty(exit.cause)).toContain("same_initial")
+        // The pass rolled back whole.
+        expect(yield* sql`SELECT to_regclass('deferred_rows') AS found`).toEqual([{ found: null }])
+      }).pipe(Effect.provide(TestDatabase.layer)))
+
+    it.effect("keeps an undeclared deferred foreign key deferred, so a child may precede its parent", () =>
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        const sets = [{
+          namespace: "family",
+          idOffset: 0,
+          immediateTriggers,
+          migrations: {
+            "0001_initial": Effect.gen(function*() {
+              yield* bumps(sql)
+              yield* sql`CREATE TABLE parents (id INTEGER PRIMARY KEY)`
+              yield* sql`CREATE TABLE children (id INTEGER PRIMARY KEY,
+                parent_id INTEGER NOT NULL REFERENCES parents (id) DEFERRABLE INITIALLY DEFERRED)`
+            }),
+            "0002_seed": Effect.gen(function*() {
+              yield* sql`INSERT INTO children VALUES (1, 1)`
+              yield* sql`INSERT INTO parents VALUES (1)`
+            })
+          }
+        }]
+        expect(yield* Migrations.run(sets)).toEqual([[1, "family_initial"], [2, "family_seed"]])
+        expect(yield* sql`SELECT parent_id FROM children`).toEqual([{ parent_id: 1 }])
+      }).pipe(Effect.provide(TestDatabase.layer)))
+  })
 })

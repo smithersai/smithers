@@ -11,13 +11,13 @@ import * as DatabaseMigrations from "@smthrs/database/Migrations"
  * sequence of calls on one runtime can produce them.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as EngineMigrations from "@smthrs/engine-store/Migrations"
 import { Migrations } from "@smthrs/journal"
 import { Migrations as RunStoreMigrations, RunStore } from "@smthrs/run-store"
 import { Effect, Layer } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import {
@@ -67,7 +67,7 @@ const withRuntime = <A, E>(
   use: (
     runtime: ControlRuntimeService,
     sql: SqlClient.SqlClient
-  ) => Effect.Effect<A, E, RunStore.RunStore | SqlClient.SqlClient | DurableWriter | Crypto.Crypto>,
+  ) => Effect.Effect<A, E, RunStore.RunStore | SqlClient.SqlClient | DurableWriter | EffectDigest.Digest>,
   options: SqlControlRuntime.Options = { flows }
 ): Promise<A> =>
   Effect.runPromise(
@@ -76,7 +76,7 @@ const withRuntime = <A, E>(
       const sql = yield* SqlClient.SqlClient
       return yield* use(runtime, sql)
     }).pipe(
-      Effect.provide(Layer.merge(database(), Crypto.layerFromDigest(NodeCrypto.layerDigest))),
+      Effect.provide(Layer.merge(database(), NodeCrypto.layer)),
       Effect.scoped,
       Effect.orDie
     )
@@ -815,7 +815,7 @@ describe("SqlControlRuntime when the run store answers about another row", () =>
     override: (store: RunStore.Service) => Partial<RunStore.Service>,
     use: (
       runtime: ControlRuntimeService
-    ) => Effect.Effect<A, E, RunStore.RunStore | SqlClient.SqlClient | Crypto.Crypto>
+    ) => Effect.Effect<A, E, RunStore.RunStore | SqlClient.SqlClient | EffectDigest.Digest>
   ): Promise<A> =>
     Effect.runPromise(
       Effect.gen(function*() {
@@ -824,7 +824,7 @@ describe("SqlControlRuntime when the run store answers about another row", () =>
       }).pipe(
         Effect.provide(
           Layer.merge(
-            Crypto.layerFromDigest(NodeCrypto.layerDigest),
+            NodeCrypto.layer,
             Layer.effect(
               RunStore.RunStore,
               Effect.map(RunStore.RunStore, (store) => ({ ...store, ...override(store) }))
@@ -990,7 +990,7 @@ describe("SqlControlRuntime layers and stores", () => {
             Layer.orDie,
             Layer.provideMerge(
               Layer.merge(
-                Crypto.layerFromDigest(NodeCrypto.layerDigest),
+                NodeCrypto.layer,
                 Layer.provideMerge(
                   DatabaseMigrations.layer([Migrations.set, RunStoreMigrations.set]),
                   TestDatabase.layer
@@ -1021,7 +1021,7 @@ describe("SqlControlRuntime layers and stores", () => {
       }).pipe(
         Effect.provide(
           Layer.merge(
-            Crypto.layerFromDigest(NodeCrypto.layerDigest),
+            NodeCrypto.layer,
             Layer.effect(
               RunStore.RunStore,
               Effect.map(RunStore.RunStore, (store) => ({
@@ -1051,6 +1051,22 @@ describe("SqlControlRuntime layers and stores", () => {
 })
 
 describe("SqlControlRuntime when the tables are gone", () => {
+  it("reads a control-only run without optional engine tables and leaves the connection usable", async () => {
+    await withRuntime((runtime, sql) =>
+      Effect.gen(function*() {
+        const { runId } = yield* start(runtime, "control-only-schema")
+        expect((yield* runtime.getRun(runId)).runId).toBe(runId)
+        expect(yield* sql`SELECT 1 AS usable`).toEqual([{ usable: 1 }])
+        // The same missing relation inside a transaction must roll back only
+        // its probe savepoint, so the enclosing read remains usable too.
+        yield* sql.withTransaction(Effect.gen(function*() {
+          expect((yield* runtime.getRun(runId)).runId).toBe(runId)
+          expect(yield* sql`SELECT 1 AS usable`).toEqual([{ usable: 1 }])
+        }))
+      })
+    )
+  })
+
   it("reports a missing relation referenced by the spawn view instead of treating the view as absent", async () => {
     const error = await withRuntime((runtime, sql) =>
       Effect.gen(function*() {

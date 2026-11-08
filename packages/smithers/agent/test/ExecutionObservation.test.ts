@@ -3,7 +3,6 @@ import { Control } from "@smthrs/control/Control"
 import { PersistenceError } from "@smthrs/control/ControlError"
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
-import { Crypto } from "@smthrs/crypto"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
 import { RunStore } from "@smthrs/run-store"
@@ -39,7 +38,7 @@ const databases = async (
           })
         }))
         yield* body(engine, control, engineFile)
-      })).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+      })).pipe(Effect.provide(NodeCrypto.layer))
     )
   } finally {
     await rm(directory, { recursive: true, force: true })

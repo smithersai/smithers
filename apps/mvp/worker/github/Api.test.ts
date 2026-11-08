@@ -29,6 +29,7 @@ import {
 import { CHECKS_SHAPE_ROUTE, compareRoute, PULLS_SHAPE_ROUTE } from "../../src/features/pulls/contract.ts"
 import * as Actor from "../Actor.vibe"
 import { FlowStarter, StartConflict, StartUnavailable } from "../Flows.vibe"
+import * as WriteAdmission from "../WriteAdmission.ts"
 import { testFile } from "../test/harness.ts"
 import { handles, make, parseWritesPath, RECONCILE_START_TIMEOUT } from "./Api.ts"
 import * as Metrics from "./Metrics.vibe"
@@ -201,7 +202,9 @@ describe("POST /api/github/webhook", () => {
     expect(get.status).toBe(405)
     expect(h.starts).toEqual([])
     expect(h.count(Metrics.webhooks, { event: "issues", outcome: "refused" })).toBe(2)
-    expect(h.count(Metrics.webhooks, { event: "issues", outcome: "too_large" })).toBe(1)
+    // Route-capped admission rejects this body before the webhook handler runs.
+    expect(h.count(WriteAdmission.bodies, { status: "413" })).toBe(1)
+    expect(h.count(Metrics.webhooks, { event: "issues", outcome: "too_large" })).toBe(0)
   })
 
   test("with REPO_FLOWS on, a push or a pull request of any installed repository starts its triggers/Dispatch; off, none", async () => {
@@ -550,7 +553,7 @@ describe("POST /api/repos/<owner>/<name>/writes on another repository (decision 
     expect([response.status, await response.json()]).toEqual([403, { code: "forbidden" }])
     expect(await sql(runtime, `SELECT * FROM github_writes`)).toEqual([])
     // A person sign-in recorded no account for has nobody to ask GitHub about, whatever login the request carries.
-    const nameless = await githubHarness(runtime, { own: OWN, actor: { ...member(), role: "admin", login: "maya" } })
+    const nameless = await githubHarness(runtime, { own: OWN, actor: { ...member(undefined, null), role: "admin", login: "maya" } })
     expect((await nameless.fetch(route, post(createWrite()))).status).toBe(403)
     expect(nameless.github.seen("GET", /\/permission$/)).toEqual([])
   })
@@ -785,7 +788,8 @@ describe("POST /api/repos/<owner>/<name>/writes on another repository (decision 
     // The deployment's own repository, where Maya's session makes her a Member: the id is acme/widgets' write.
     const own = await h.fetch(writesRoute("acme", "home"), post(write))
     expect([own.status, await own.json()]).toEqual([409, { code: "conflict" }])
-    const other = await githubHarness(runtime, { own: OWN, actor: { ...actor, subject: { kind: "person", id: crypto.randomUUID() } }, github })
+    // Another person, signed in with their own session.
+    const other = await githubHarness(runtime, { own: OWN, actor: member(), github })
     expect((await other.fetch(writesRoute("acme", "home"), post(write))).status).toBe(409)
     expect(h.starts).toHaveLength(1)
   })
@@ -969,7 +973,14 @@ describe("the shapes", () => {
     { name: "defect", start: Effect.die(new Error(SENTINEL)), errorCode: "unknown" },
   ])("a starter $name is counted and logged without failing the read or leaking error text", async ({ start, errorCode }) => {
     const h = await githubHarness(runtime, { starter: FlowStarter.of({ start: () => start }) })
-    expect((await shape(h, ITEMS_SHAPE_ROUTE)).status).toBe(200)
+    const read = await shape(h, ITEMS_SHAPE_ROUTE)
+    if (read.status === 409) {
+      // An earlier fixture's TRUNCATE can invalidate the snapshot. This is Electric's successful restart protocol,
+      // independent of the failed starter; keep one physical request so its admission log and count stay exact.
+      expect(read.rows).toEqual(expect.arrayContaining([expect.objectContaining({ headers: expect.objectContaining({ control: "must-refetch" }) })]))
+    } else {
+      expect(read.status).toBe(200)
+    }
     expect(h.line("github.reconcile.start").map((line) => ({ level: line.level, ...line.annotations }))).toMatchObject([
       { level: "WARN", repoId: REPOSITORY.id, outcome: "not_started", errorCode },
     ])
@@ -1123,10 +1134,11 @@ describe("the shapes", () => {
       h.github.installed = false
       const listed = await shapeOf(h, ITEMS_SHAPE_ROUTE, "acme/gadgets")
       expect([listed.status, values(listed.rows).map((row) => row.title)]).toEqual([200, ["Gadget"]])
-      // A private one is refused, as to anyone with no role.
+      // The role read found the App absent and remembered it: every later read is refused before anyone's role or
+      // the repository's visibility is asked, a private one included.
       await sql(runtime, `UPDATE github_repositories SET private = true`)
       h.github.private = true
-      expect((await shapeOf(h, ITEMS_SHAPE_ROUTE, "acme/gadgets")).status).toBe(403)
+      expect((await shapeOf(h, ITEMS_SHAPE_ROUTE, "acme/gadgets")).status).toBe(404)
     })
 
     test("where an About read found the App absent, the shapes say app_not_installed, to anyone, asking GitHub nothing", async () => {
@@ -1170,6 +1182,46 @@ describe("the shapes", () => {
       } finally {
         await sql(runtime, `TRUNCATE repo_about`)
       }
+    })
+
+    test("local development's synced repository is synced and keeps its issue only without the App; otherwise nothing changes", async () => {
+      // worker/DevChatApi.ts names octocat/Spoon-Knife; acme/strangers stands in for it, so no other test's rows meet it.
+      const strangers = { owner: "acme", name: "strangers", id: "github/acme/strangers" } as const
+      const gadgetsRepo = { owner: "acme", name: "gadgets", id: GADGETS } as const
+      const issue = {
+        id: 101, node_id: "I_local_101", number: 1, title: "Local issue", body: "Kept locally.", state: "open" as const,
+        state_reason: null, user: null, comments: 0, created_at: "2026-11-01T00:00:00Z", updated_at: "2026-11-01T00:00:00Z",
+        closed_at: null, labels: [],
+      }
+      const localSynced = { repository: strangers, issue }
+      const kept = async () => (await sql(runtime, `SELECT number, title, state, fetched_at::text AS fetched, source_updated_at::text AS source
+        FROM items WHERE repo_id = '${strangers.id}'`)) as unknown as Array<unknown>
+      // Read as of the issue's own updated_at, so a second read is no newer and changes nothing.
+      const seeded = [{ number: 1, title: "Local issue", state: "open", fetched: "2026-11-01 00:00:00+00", source: "2026-11-01 00:00:00+00" }]
+      // Without the option, as every deployment: no App syncs only the deployment's own repository, as before.
+      const plain = await githubHarness(runtime, { own: OWN, github: gadgets(), actor: null, app: null })
+      expect([await plain.maySync(OWN), await plain.maySync(strangers), await plain.maySync(gadgetsRepo)]).toEqual([true, false, false])
+      expect((await plain.fetch(`${named(ITEM_SUMMARIES_SHAPE_ROUTE, "acme/strangers")}&offset=-1`)).status).toBe(404)
+      // With the App the option counts for nothing: the allowed list alone decides, and no row is written.
+      const withApp = await githubHarness(runtime, { own: OWN, github: gadgets(), actor: null, allowed: new Set([OWN.id]), localSynced })
+      expect([await withApp.maySync(OWN), await withApp.maySync(strangers), await withApp.maySync(gadgetsRepo)]).toEqual([true, false, false])
+      expect((await withApp.fetch(`${named(ITEM_SUMMARIES_SHAPE_ROUTE, "acme/strangers")}&offset=-1`)).status).toBe(404)
+      expect(await kept()).toEqual([])
+      // With the App and the repository allowed, it syncs as any other: Reconcile starts, and nothing is seeded.
+      const allowedApp = await githubHarness(runtime, { own: OWN, github: gadgets(), actor: null, allowed: new Set([OWN.id, strangers.id]), localSynced })
+      expect(await allowedApp.maySync(strangers)).toBe(true)
+      await allowedApp.fetch(`${named(ITEM_SUMMARIES_SHAPE_ROUTE, "acme/strangers")}&offset=-1`)
+      expect(allowedApp.starts.map((start) => start.flow)).toContain("github/Reconcile")
+      expect(await kept()).toEqual([])
+      // Local development (no App, the option set, its roles local, as ChatApiProgram makes them): that repository is
+      // synced too, and its shape keeps its one issue.
+      const local = await githubHarness(runtime, { own: OWN, github: gadgets(), app: null, localSynced, roleOptions: { local: true } })
+      expect([await local.maySync(OWN), await local.maySync(strangers), await local.maySync(gadgetsRepo)]).toEqual([true, true, false])
+      expect((await local.fetch(`${named(ITEM_SUMMARIES_SHAPE_ROUTE, "acme/strangers")}&offset=-1`)).status).toBe(200)
+      expect(await kept()).toEqual(seeded)
+      // Again: the same row, its observation fence unmoved.
+      expect((await local.fetch(`${named(ITEM_SUMMARIES_SHAPE_ROUTE, "acme/strangers")}&offset=-1`)).status).toBe(200)
+      expect(await kept()).toEqual(seeded)
     })
   })
 })
@@ -1220,15 +1272,18 @@ test("an item read whose Reconcile start never resolves answers at the timeout, 
   expect(h.count(Metrics.reconcileStarts, { outcome: "timed_out" })).toBe(1)
 })
 
-test("a private metadata answer refuses every shape and is shared across requests", async () => {
+test("GitHub's 404 to an anonymous metadata read is a cached denial for every shape", async () => {
   await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private) VALUES ('${REPOSITORY.id}', 1, false)`)
   const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
   github.private = true
   const h = await githubHarness(runtime, { actor: null, github, app: app({ privateKey: await import("./test/scriptedGitHub.ts").then((m) => m.appKey()) }) })
-  for (const route of [ITEM_SUMMARIES_SHAPE_ROUTE, ITEMS_SHAPE_ROUTE, COMMENTS_SHAPE_ROUTE, SYNC_SHAPE_ROUTE]) {
+  const routes = [ITEM_SUMMARIES_SHAPE_ROUTE, ITEMS_SHAPE_ROUTE, COMMENTS_SHAPE_ROUTE, SYNC_SHAPE_ROUTE]
+  for (const route of routes) {
     expect((await h.fetch(`${route}?offset=-1`)).status).toBe(401)
   }
-  expect(h.count(Metrics.visibilityReads, { outcome: "private", statusClass: "4xx", rateLimited: "false", remaining: "unknown", errorCode: "delivery-failed" })).toBe(1)
+  // Missing and inaccessible give the same denial; a second shape reuses the bounded receipt.
+  expect(h.count(Metrics.visibilityReads, { outcome: "not_found", statusClass: "4xx", rateLimited: "false", remaining: "unknown", errorCode: "delivery-failed" })).toBe(1)
+  expect(h.count(Metrics.visibilityReads, { outcome: "private", statusClass: "4xx", rateLimited: "false", remaining: "unknown", errorCode: "delivery-failed" })).toBe(0)
   expect(h.line("github.visibility")).toHaveLength(1)
 })
 
@@ -1287,6 +1342,38 @@ test.each([undefined, "metadata-fixture-token"])("default metadata transport che
       }
     })).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config)))
     expect(seen).toEqual([token === undefined ? undefined : `Bearer ${token}`])
+  } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+  }
+})
+
+// A metadata 404 definitively denies public access without revealing whether the repository exists.
+// Other failed reads remain unavailable, preserving the data gate's retry action.
+test.each([404, 410])("readable distinguishes a metadata denial from an unavailable read (%s)", async (status) => {
+  const server = createServer((request, response) => {
+    expect(request.url).toBe("/repos/acme/widgets")
+    response.writeHead(status, { "content-type": "application/json" })
+    response.end(JSON.stringify({ message: "Not Found" }))
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  try {
+    await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private) VALUES ('${REPOSITORY.id}', 1, false)`)
+    const config = ConfigProvider.fromUnknown({
+      ELECTRIC_URL: await runtime.runPromise(TestDatabase.electricUrl),
+      GITHUB_API_URL: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    })
+    await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
+      const scratch = yield* TestDatabase.Scratch
+      const roles = rolesThatRead(REPOSITORY, "member")
+      const routes = yield* make(scratch.database, { repository: REPOSITORY, app: Option.none(), roles })
+      const readable = yield* routes.mayRead(REPOSITORY).pipe(
+        Effect.provide(Actor.signedOut),
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://app.test/"))),
+      )
+      if (status === 404) expect(readable).toBe(false)
+      else expect(readable).toMatchObject({ unavailable: true })
+    })).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config)))
   } finally {
     server.closeAllConnections()
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))

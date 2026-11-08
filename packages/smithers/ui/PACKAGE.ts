@@ -44,6 +44,8 @@ const generatedViewInputs = [Smithers.file("//packages/smithers/ui/scripts/build
  */
 const viewsSources = Smithers.Target.subtree("//packages/smithers/ui/views/...", "sourceFiles")
 
+const cssSources = Smithers.Target.subtree("//packages/smithers/ui/ui-css/...", "sourceFiles")
+
 /**
  * Checks every component source against the package tsconfig.
  *
@@ -80,7 +82,7 @@ const unitTests = Smithers.NodeTest({
     Smithers.glob("//packages/smithers/ui/tests/**/*.ts"),
     Smithers.glob("//packages/smithers/ui/tests/**/*.tsx")
   ],
-  deps: [viewsSources],
+  deps: [viewsSources, cssSources],
   cwd
 })
 
@@ -103,7 +105,7 @@ const browserProbes = Smithers.NodeTest({
     Smithers.glob("//packages/smithers/ui/browser/**/*.ts"),
     Smithers.glob("//packages/smithers/ui/browser/**/*.tsx")
   ],
-  deps: [viewsSources],
+  deps: [viewsSources, cssSources],
   cwd
 })
 

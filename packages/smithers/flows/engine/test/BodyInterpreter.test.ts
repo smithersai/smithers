@@ -5,10 +5,10 @@
  * body re-driven after a park does with the effects it already ran.
  */
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Interpreter, StepIdentity } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
 import { pollUntil } from "./Harness.ts"

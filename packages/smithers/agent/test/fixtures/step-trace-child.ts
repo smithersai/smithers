@@ -1,6 +1,5 @@
 /** A full EngineStore process stopped while its second provider call is pending. */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { Journal } from "@smthrs/journal"
 import * as Model from "@smthrs/model/Model"
 import { RunStore } from "@smthrs/run-store"
@@ -38,5 +37,5 @@ const program = Effect.scoped(Effect.gen(function*() {
   const result = yield* Single.execute({ input: "two frames" }, { executionId }).pipe(Effect.provide(wiring))
   if (recover) process.stdout.write(JSON.stringify({ status: "recovered", result, calls }) + "\n")
   return result
-})).pipe(Effect.provide(stores(filename)), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+})).pipe(Effect.provide(stores(filename)), Effect.provide(NodeCrypto.layer))
 await Effect.runPromise(recover ? program.pipe(Effect.provide(TestClock.layer())) : program)

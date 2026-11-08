@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { StackRefused } from "../coding/outside-stack.ts"
 import { CodingError } from "../coding/schema.ts"
 import { DocsImportError } from "../memory/deps.ts"
 
@@ -53,4 +54,23 @@ test("a decline closes the TODO and a stalled plan is replanned", () => {
   assert.equal(Fault.respond(checkInfra, state), "retry")
   assert.equal(Fault.of(new CodingError({ code: "fast_gate", message: "test failed" })).class, "factory")
   assert.equal(Fault.of(new CodingError({ code: "unavailable", message: "down" })).class, "dependency")
+})
+
+test("outside stack refusals request author repair instead of an infrastructure retry", () => {
+  for (
+    const reason of [
+      "empty",
+      "not_linear",
+      "stale",
+      "base_not_on_tip",
+      "already_applied",
+      "immutable",
+      "conflict",
+      "fast_gate"
+    ] as const
+  ) {
+    const fault = Fault.of(new StackRefused({ stack: "outside", reason, message: "refused", findings: [] }))
+    assert.deepEqual(fault, { class: "user", tag: "coding/StackRefused" })
+    assert.equal(Fault.respond(fault, { attempt: 1, seatsLeft: 0, parksLeft: 8, replans: 0, veryHard: false }), "help")
+  }
 })

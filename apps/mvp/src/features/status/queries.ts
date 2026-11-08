@@ -1,6 +1,7 @@
 import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import type { Effect } from "effect"
 import type { Message } from "../chat/schema"
+import type { Source } from "../repo/gate"
 import type { Local, Run } from "./schema"
 
 // What frontends read about the agent's status (decision 0015), each a live query over this device's collections:
@@ -13,7 +14,7 @@ import type { Local, Run } from "./schema"
  * `focus` and `draft` are this tab's, for the open question only.
  */
 export const statusesQuery = (
-  messages: Collection.Collection<Message>,
+  messages: Source<Message>,
   runs: Collection.Collection<Run>,
   local: Collection.Collection<Local, string>,
 ) =>
@@ -58,7 +59,7 @@ export type Statuses = Effect.Success<ReturnType<typeof statusesQuery>>
  * settled still wins over its run's row, as in `statusesQuery`; ChatApi fails a run's row when it settles its answer
  * itself (worker/flows/Expire.ts, worker/Answers.ts). Each row is `WAITS_ROW` (./contract.ts).
  */
-export const waitsQuery = (home: Collection.Collection<Message>, runs: Collection.Collection<Run>) =>
+export const waitsQuery = (home: Collection.Collection<Message>, runs: Source<Run>) =>
   LiveQuery.make((q) =>
     q
       .from({ run: runs.tanstack })
@@ -89,6 +90,31 @@ export const waitsQuery = (home: Collection.Collection<Message>, runs: Collectio
         approval: Query.caseWhen(Query.eq(run.wait!.kind, "approval"), true, false),
         createdAt: run.createdAt,
       })),
+  )
+
+/**
+ * The person's runs whose wait may show (decision 0110, the data gate): a run of the home conversation, which is theirs
+ * (its answer is one of `home`), or of a conversation whose repository may show now (`conversations`,
+ * ConversationOwners' `shown`). A run neither proves, such as one of a refused repository's conversation, or of a
+ * conversation this device has no row of, is hidden.
+ */
+export const shownRunsQuery = (
+  home: Source<Message>,
+  runs: Source<Run>,
+  conversations: Source<{ readonly conversationId: string }>,
+) =>
+  LiveQuery.make(
+    (q) =>
+      q
+        .from({ run: runs.tanstack })
+        .leftJoin({ message: home.tanstack }, ({ run, message }) => Query.eq(run.id, message.id))
+        .leftJoin({ owner: conversations.tanstack }, ({ run, owner }) => Query.eq(run.conversationId, owner.conversationId))
+        .where(({ message, owner }) =>
+          Query.or(Query.not(Query.isUndefined(message?.id)), Query.not(Query.isUndefined(owner?.conversationId)))
+        )
+        .select(({ run }) => run),
+    // Each row keeps its run's id as its key, as the runs collection does.
+    { getKey: (run) => run.id },
   )
 
 /** The open waits addressed to the viewer. */

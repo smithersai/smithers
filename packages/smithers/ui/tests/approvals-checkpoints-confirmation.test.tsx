@@ -14,7 +14,7 @@ import {
   approvalStateToStatus,
   type ApprovalState,
 } from "../src/approvals/Confirmation";
-import { approvalsCss } from "../src/approvals/approvalsCss";
+import { approvalsCss } from "@smthrs/ui-css";
 import { SMITHERS_UI_STYLE_ATTR } from "../src/styles";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

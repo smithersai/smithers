@@ -1,8 +1,9 @@
-import { NodeCrypto, NodeServices } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
+import { NodeServices } from "@effect/platform-node"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, FlowRuntime, HumanTask, Interpreter } from "@smthrs/flow"
 import { Effect, FileSystem, Layer, ManagedRuntime, Schema } from "effect"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { test } from "node:test"
@@ -26,9 +27,6 @@ import {
 } from "../repository/jobs.ts"
 import type { StepResult } from "../repository/schema.ts"
 import { makeHostJudge } from "./fixtures/scripted-judge.ts"
-
-// Effect 4.1 removed effect/Crypto, and NodeServices.layer no longer provides it.
-const nodeServices = Layer.merge(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 
 const source = {
   changeId: "change",
@@ -91,7 +89,9 @@ const answered = {
  * a step that reached a frontier model records which one. */
 const runStep = async (work: typeof Work.Type, answer: typeof Finding.Type = answered) => {
   const seat: Array<string> = []
-  const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(nodeServices)))
+  const fs = await Effect.runPromise(
+    FileSystem.FileSystem.pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
+  )
   const seatOnly = (tag: string) =>
     Effect.sync(() => {
       seat.push(tag)
@@ -112,7 +112,7 @@ const runStep = async (work: typeof Work.Type, answer: typeof Finding.Type = ans
       Layer.provide([Jj.layerNoop({}), Layer.succeed(NativeCoding, undefined as never)]),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(nodeServices)
+      Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
     )
   )
   try {
@@ -193,7 +193,9 @@ test("no investigation seat is asked to classify anything", () => {
 /** The gate at the head of `repository/execute-repro`, reached through the
  * layer the host binds rather than through a re-implementation of it. */
 const runRepro = async (classification: typeof Observation.Type["classification"]) => {
-  const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(nodeServices)))
+  const fs = await Effect.runPromise(
+    FileSystem.FileSystem.pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
+  )
   const handlers = new Map<string, (payload: unknown) => { execute: Effect.Effect<unknown, unknown, never> }>()
   const runtime = {
     register: (
@@ -236,7 +238,7 @@ const runRepro = async (classification: typeof Observation.Type["classification"
         Effect.provideService(FlowRuntime.FlowInstance, { executionId: "repro-step" } as never),
         Effect.result
       )
-    }).pipe(Effect.scoped, Effect.provide(nodeServices))
+    }).pipe(Effect.scoped, Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
   )
 }
 

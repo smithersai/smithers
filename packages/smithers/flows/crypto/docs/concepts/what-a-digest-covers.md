@@ -68,11 +68,11 @@ starts is not:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto, digest } from "@smthrs/crypto"
+import { digest } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 
 const input = new TextEncoder().encode("abc")
-const running = Effect.runPromise(digest(input).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))))
+const running = Effect.runPromise(digest(input).pipe(Effect.provide(NodeCrypto.layer)))
 input.fill(0) // Too late: the snapshot was taken when the Effect began.
 ```
 

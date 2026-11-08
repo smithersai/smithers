@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Golden vectors for the durable identities this package derives.
  *
@@ -19,7 +20,6 @@
  * not a value recomputed from the same source the assertion is checking.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import * as Cell from "@smthrs/harness/Cell"
@@ -31,6 +31,7 @@ import * as ModelRequest from "@smthrs/model/ModelRequest"
 import type * as Route from "@smthrs/model/Route"
 import { Node } from "@smthrs/plan"
 import { Deferred, Effect, Layer, Option, Schema, Scope, Stream } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { describe, expect, it } from "vitest"
 import * as Budget from "../src/Budget.ts"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
@@ -120,7 +121,7 @@ const drive = <A>(
   body: Effect.Effect<
     A,
     unknown,
-    | Crypto.Crypto
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
     | FlowRuntime.FlowRuntime
     | FlowRuntime.FlowInstance
     | Budget.Budget
@@ -141,7 +142,7 @@ const drive = <A>(
     Effect.provide(
       Layer.mergeAll(
         FlowEngine.layerMemory,
-        Crypto.layerFromDigest(NodeCrypto.layerDigest),
+        NodeCrypto.layer,
         Budget.layerUnbounded(),
         QuotaPolicy.layerUnclassified()
       )
@@ -176,7 +177,7 @@ const callUnder = (layers: ReadonlyArray<string>) =>
         run: () =>
           Effect.map(
             Action.CurrentInvocationKey,
-            (key) => new Cell.CallResult({ outcome: "success", value: key ?? "missing" })
+            (key) => Cell.CallResult.new({ outcome: "success", value: key ?? "missing" })
           )
       }
     })

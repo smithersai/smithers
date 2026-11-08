@@ -16,7 +16,7 @@ npm install @smthrs/platform-cloudflare@next @smthrs/flow@next @smthrs/database@
   session state.
 - `@effect/sql-pg` is the socket driver `PostgresDatabase.layer` takes as its
   `driver` option.
-- `effect` is a peer dependency at exactly `4.1.0`. Two copies of `effect` in
+- `effect` is a peer dependency at exactly `4.1.1`. Two copies of `effect` in
   one program are two sets of service tags.
 
 Import from the package root only:

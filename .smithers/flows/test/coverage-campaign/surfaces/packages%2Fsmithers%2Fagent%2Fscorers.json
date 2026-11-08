@@ -1,0 +1,565 @@
+{
+  "id": "packages/smithers/agent/scorers",
+  "name": "@smthrs/scorers",
+  "owner": {
+    "declaration": "packages/smithers/agent/scorers/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
+    "circular": "node ../../../repo-targets/scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "node ../../flows/database/scripts/test-matrix.mjs",
+    "test:matrix": "node ../../flows/database/scripts/test-matrix.mjs"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./migrations/*": null,
+    "./*/index": null,
+    "./Binding": "./src/Binding.ts",
+    "./Checks": "./src/Checks.ts",
+    "./Rubric": "./src/Rubric.ts",
+    "./Sampling": "./src/Sampling.ts",
+    "./ScoreGate": "./src/ScoreGate.ts",
+    "./ScoreStore": "./src/ScoreStore.ts",
+    "./Scorer": "./src/Scorer.ts",
+    "./ScorerError": "./src/ScorerError.ts",
+    "./SqlScoreStore": "./src/SqlScoreStore.ts",
+    "./index": "./src/index.ts",
+    "./Scorers": "./src/Scorers.ts",
+    "./Scoring": "./src/Scoring.ts",
+    "./Runner": null,
+    "./RunnerLive": null
+  },
+  "production": [
+    "eslint.config.js",
+    "PACKAGE.ts",
+    "scripts/build.mjs",
+    "src/Binding.ts",
+    "src/Checks.ts",
+    "src/index.ts",
+    "src/internal/json.ts",
+    "src/internal/text.ts",
+    "src/Migrations.ts",
+    "src/migrations/0001_scores.ts",
+    "src/migrations/0002_score_jobs.ts",
+    "src/migrations/0003_score_failure_codes.ts",
+    "src/migrations/0004_require_failure_codes.ts",
+    "src/Rubric.ts",
+    "src/Sampling.ts",
+    "src/ScoreGate.ts",
+    "src/Scorer.ts",
+    "src/ScorerError.ts",
+    "src/Scorers.ts",
+    "src/ScoreStore.ts",
+    "src/Scoring.ts",
+    "src/SqlScoreStore.ts",
+    "vitest.config.ts"
+  ],
+  "tests": [
+    "packages/smithers/agent/scorers/test/Binding.test.ts",
+    "packages/smithers/agent/scorers/test/Checks.test.ts",
+    "packages/smithers/agent/scorers/test/docs.test.ts",
+    "packages/smithers/agent/scorers/test/DurableScoring.test.ts",
+    "packages/smithers/agent/scorers/test/Exports.test.ts",
+    "packages/smithers/agent/scorers/test/json.test.ts",
+    "packages/smithers/agent/scorers/test/Migrations.test.ts",
+    "packages/smithers/agent/scorers/test/Quickstart.test.ts",
+    "packages/smithers/agent/scorers/test/Rubric.test.ts",
+    "packages/smithers/agent/scorers/test/Sampling.test.ts",
+    "packages/smithers/agent/scorers/test/ScoreGate.test.ts",
+    "packages/smithers/agent/scorers/test/Scorer.test.ts",
+    "packages/smithers/agent/scorers/test/Scorers.integration.test.ts",
+    "packages/smithers/agent/scorers/test/Scorers.test.ts",
+    "packages/smithers/agent/scorers/test/ScoreStore.test.ts",
+    "packages/smithers/agent/scorers/test/Scoring.test.ts",
+    "packages/smithers/agent/scorers/test/SqlScoreStoreAffectedRows.test.ts",
+    "packages/smithers/agent/scorers/tsconfig.test.json"
+  ],
+  "benchmarks": [],
+  "platformPaths": [],
+  "ignoredCases": [],
+  "configurations": [
+    {
+      "path": "packages/smithers/agent/scorers/eslint.config.js",
+      "sha256": "b9056e86c56d923ffe686cca4890f4d89ef90e1f101122fab92d296092eb6ee2",
+      "source": "import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  {\n    ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]\n  },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: {\n      parserOptions: {\n        projectService: true,\n        tsconfigRootDir: import.meta.dirname\n      }\n    },\n    settings: {\n      \"import/resolver\": {\n        typescript: {\n          project: [\"./tsconfig.json\"]\n        }\n      }\n    },\n    plugins: {\n      unicorn\n    },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n",
+      "coverageDirectives": [
+        {
+          "line": 10,
+          "text": "ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]"
+        },
+        {
+          "line": 41,
+          "text": "\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/scorers/package.json",
+      "sha256": "2175673e38f08b55a7f972e585d8cce8ede9637467195d49e9af665136fc42a6",
+      "source": "{\n  \"name\": \"@smthrs/scorers\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"agent\"\n  },\n  \"description\": \"Flow-native scoring and durable observations for caller-owned flow steps\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/agent/scorers\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"effect\",\n    \"flow\",\n    \"scorers\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"effect\",\n    \"flow\",\n    \"scorers\"\n  ],\n  \"engines\": {\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [],\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./internal/*\": null,\n    \"./migrations/*\": null,\n    \"./*/index\": null,\n    \"./Binding\": \"./src/Binding.ts\",\n    \"./Checks\": \"./src/Checks.ts\",\n    \"./Rubric\": \"./src/Rubric.ts\",\n    \"./Sampling\": \"./src/Sampling.ts\",\n    \"./ScoreGate\": \"./src/ScoreGate.ts\",\n    \"./ScoreStore\": \"./src/ScoreStore.ts\",\n    \"./Scorer\": \"./src/Scorer.ts\",\n    \"./ScorerError\": \"./src/ScorerError.ts\",\n    \"./SqlScoreStore\": \"./src/SqlScoreStore.ts\",\n    \"./index\": \"./src/index.ts\",\n    \"./Scorers\": \"./src/Scorers.ts\",\n    \"./Scoring\": \"./src/Scoring.ts\",\n    \"./Runner\": null,\n    \"./RunnerLive\": null\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"docs/\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./internal/*\": null,\n      \"./migrations/*\": null,\n      \"./*/index\": null,\n      \"./Binding\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Binding.d.ts\",\n          \"default\": \"./dist/esm/Binding.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Binding.d.ts\",\n          \"default\": \"./dist/cjs/Binding.js\"\n        }\n      },\n      \"./Checks\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Checks.d.ts\",\n          \"default\": \"./dist/esm/Checks.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Checks.d.ts\",\n          \"default\": \"./dist/cjs/Checks.js\"\n        }\n      },\n      \"./Rubric\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Rubric.d.ts\",\n          \"default\": \"./dist/esm/Rubric.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Rubric.d.ts\",\n          \"default\": \"./dist/cjs/Rubric.js\"\n        }\n      },\n      \"./Sampling\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Sampling.d.ts\",\n          \"default\": \"./dist/esm/Sampling.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Sampling.d.ts\",\n          \"default\": \"./dist/cjs/Sampling.js\"\n        }\n      },\n      \"./ScoreGate\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ScoreGate.d.ts\",\n          \"default\": \"./dist/esm/ScoreGate.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ScoreGate.d.ts\",\n          \"default\": \"./dist/cjs/ScoreGate.js\"\n        }\n      },\n      \"./ScoreStore\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ScoreStore.d.ts\",\n          \"default\": \"./dist/esm/ScoreStore.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ScoreStore.d.ts\",\n          \"default\": \"./dist/cjs/ScoreStore.js\"\n        }\n      },\n      \"./Scorer\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Scorer.d.ts\",\n          \"default\": \"./dist/esm/Scorer.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Scorer.d.ts\",\n          \"default\": \"./dist/cjs/Scorer.js\"\n        }\n      },\n      \"./ScorerError\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ScorerError.d.ts\",\n          \"default\": \"./dist/esm/ScorerError.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ScorerError.d.ts\",\n          \"default\": \"./dist/cjs/ScorerError.js\"\n        }\n      },\n      \"./SqlScoreStore\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SqlScoreStore.d.ts\",\n          \"default\": \"./dist/esm/SqlScoreStore.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SqlScoreStore.d.ts\",\n          \"default\": \"./dist/cjs/SqlScoreStore.js\"\n        }\n      },\n      \"./index\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./Scorers\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Scorers.d.ts\",\n          \"default\": \"./dist/esm/Scorers.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Scorers.d.ts\",\n          \"default\": \"./dist/cjs/Scorers.js\"\n        }\n      },\n      \"./Scoring\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Scoring.d.ts\",\n          \"default\": \"./dist/esm/Scoring.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Scoring.d.ts\",\n          \"default\": \"./dist/cjs/Scoring.js\"\n        }\n      },\n      \"./Runner\": null,\n      \"./RunnerLive\": null\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"check\": \"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"node ../../flows/database/scripts/test-matrix.mjs\",\n    \"test:matrix\": \"node ../../flows/database/scripts/test-matrix.mjs\"\n  },\n  \"dependencies\": {\n    \"@smthrs/core\": \"1.0.0-rc.16\",\n    \"@smthrs/database\": \"1.0.0-rc.16\",\n    \"@smthrs/journal\": \"1.0.0-rc.16\",\n    \"@smthrs/sandbox\": \"1.0.0-rc.16\"\n  },\n  \"peerDependencies\": {\n    \"effect\": \"4.0.5\"\n  },\n  \"devDependencies\": {\n    \"@effect/language-service\": \"0.87.2\",\n    \"@effect/vitest\": \"4.0.5\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"effect\": \"4.0.5\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\",\n    \"@effect/platform-node\": \"4.0.5\",\n    \"@smthrs/kernel\": \"1.0.0-rc.16\",\n    \"@smthrs/platform-node\": \"1.0.0-rc.16\",\n    \"@smthrs/flow\": \"workspace:*\",\n    \"@smthrs/plan\": \"workspace:*\"\n  }\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 218,
+          "text": "\"coverage\": \"node ../../flows/database/scripts/test-matrix.mjs\","
+        },
+        {
+          "line": 235,
+          "text": "\"@vitest/coverage-v8\": \"5.0.0\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/scorers/PACKAGE.ts",
+      "sha256": "26b40273b0892dc94000ffde541bd105cb529f56c44dcf330facde0def3c03ae",
+      "source": "import { BuildAndCheckTypeScriptPackage } from \"@smthrs/repo-targets\"\n/** Standard package targets plus package-owned documentation generation. */\nimport { Smithers } from \"@smthrs/targets\"\n\nconst { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({\n  testProgram: Smithers.file(\"//packages/smithers/flows/database/scripts/test-matrix.mjs\"),\n  deps: [],\n  cwd: \"packages/smithers/agent/scorers\"\n})\n\nconst securityReview = Smithers.SecurityReview({\n  cwd: \"packages/smithers/agent/scorers\",\n  include: [\"src/**\"],\n  checks: [\n    {\n      id: \"score-store-parameterized-sql\",\n      title: \"Every score store query binds caller values as parameters\",\n      threat: \"A flow that controls a step key, scorer key, or page option injects SQL into the shared run database.\",\n      lookFor: [\n        \"A sql template in SqlScoreStore.ts that splices a caller string through sql.unsafe, sql.literal, or string concatenation.\",\n        \"A page limit, offset, before, or prune cutoff that reaches LIMIT, OFFSET, or DELETE without the safe-integer validation.\"\n      ],\n      paths: [\"src/SqlScoreStore.ts\", \"src/Migrations.ts\", \"src/migrations/**\"]\n    },\n    {\n      id: \"observation-redaction\",\n      title: \"Every persisted observation reason and metadata passes redaction before the insert\",\n      threat:\n        \"A scorer that echoes a model output or error cause writes an API key or token into the durable score table readable by anyone with the run database.\",\n      lookFor: [\n        \"An insert path in SqlScoreStore.ts (record, recordOnce) that stores reason or metadata_json without redactReason or Redaction.redactJsonString.\",\n        \"Scoring.inconclusive or Scoring.runBatch building a reason from an error cause that bypasses the store's redaction path.\",\n        \"The byte bound measured before redaction so a scrub-grown payload is stored past maxMetadataBytes.\"\n      ],\n      paths: [\"src/SqlScoreStore.ts\", \"src/Scoring.ts\", \"src/internal/**\"]\n    },\n    {\n      id: \"judge-prompt-injection\",\n      title: \"Judged output and context cannot rewrite the rubric instructions or forge the verdict\",\n      threat:\n        \"An agent whose output is being scored embeds instructions or a fake JSON verdict that makes the judge pass a failing run and opens a quality gate.\",\n      lookFor: [\n        \"A caller-controlled field (context, focus, output, example transcript) placed into the system or prompt text outside the backtick fence from fenced().\",\n        \"fenced() choosing a fence the text can close, for example backticks counted per line rather than per longest run.\",\n        \"parse() taking the first JSON object in the reply so a judge that quotes the output reads the quoted scores instead of its own.\"\n      ],\n      paths: [\"src/Rubric.ts\"]\n    },\n    {\n      id: \"caller-regex-redos\",\n      title: \"Caller-supplied check patterns cannot hang the scoring process\",\n      threat:\n        \"A check author or a flow payload supplies a catastrophic regex that blocks the event loop and stalls every scorer in the run.\",\n      lookFor: [\n        \"phrase() compiling a /.../ entry with new RegExp and matching it against unbounded model output.\",\n        \"linkedReferences compiling ref.pattern with new RegExp on every call without a length or timeout bound.\"\n      ],\n      paths: [\"src/Checks.ts\"]\n    },\n    {\n      id: \"leakage-check-fidelity\",\n      title: \"The leakage check fails whenever a marker appears in any sink and does not republish the marker\",\n      threat:\n        \"An agent leaks a canary secret into a public sink and the leakage check passes, or the failing check copies the secret into a stored reason.\",\n      lookFor: [\n        \"Word-boundary lookarounds in phrase() that miss a marker embedded inside a longer token.\",\n        \"leakage() quoting the full marker text in its failure detail, which flows into a persisted reason.\"\n      ],\n      paths: [\"src/Checks.ts\"]\n    },\n    {\n      id: \"gate-fails-closed\",\n      title: \"Score gates never report a pass for invalid, missing, or unstated failures\",\n      threat:\n        \"A broken or adversarial scorer returns NaN, out-of-range, or empty results and the CI gate exits 0, shipping an unscored change.\",\n      lookFor: [\n        \"A path in ScoreGate.ts where a NaN, Infinity, or out-of-range score or threshold reaches the comparison without validateSamples or validateThreshold.\",\n        \"combine or grade mapping a Failed or Inconclusive verdict to exit code 0.\",\n        \"Rubric.decide or Scorer.validate accepting an empty score set or a non-finite score as a pass.\"\n      ],\n      paths: [\"src/ScoreGate.ts\", \"src/Rubric.ts\", \"src/Scorer.ts\"]\n    },\n    {\n      id: \"scorer-identity-integrity\",\n      title: \"Scorer keys and job identities are content-derived and cannot collide\",\n      threat:\n        \"A changed scorer config or a crafted job identity reuses another scorer's key, so recordOnce drops a real observation as a duplicate or sampling skips it.\",\n      lookFor: [\n        \"scorerKey derived from anything other than Digest over the canonical id, version, and config.\",\n        \"Sampling material() or job identity built by joining parts without length prefixes, so two part lists hash to the same string.\"\n      ],\n      paths: [\"src/Scorer.ts\", \"src/Sampling.ts\", \"src/Binding.ts\", \"src/SqlScoreStore.ts\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: { check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 13,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 77,
+          "text": "\"A path in ScoreGate.ts where a NaN, Infinity, or out-of-range score or threshold reaches the comparison without validateSamples or validateThreshold.\","
+        },
+        {
+          "line": 87,
+          "text": "\"A changed scorer config or a crafted job identity reuses another scorer's key, so recordOnce drops a real observation as a duplicate or sampling skips it.\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/scorers/tsconfig.json",
+      "sha256": "0064dce36d22143039105eb068be99456971e6caf6e7cebac24633514a2009b8",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [\n      {\n        \"name\": \"@effect/language-service\",\n        \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n        \"includeSuggestionsInTsc\": false,\n        \"ignoreEffectWarningsInTscExitCode\": true,\n        \"ignoreEffectErrorsInTscExitCode\": true,\n        \"diagnosticSeverity\": {\n          \"globalErrorInEffectFailure\": \"off\"\n        }\n      }\n    ]\n  },\n  \"include\": [\"src/**/*\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 17,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 30,
+          "text": "\"includeSuggestionsInTsc\": false,"
+        },
+        {
+          "line": 31,
+          "text": "\"ignoreEffectWarningsInTscExitCode\": true,"
+        },
+        {
+          "line": 32,
+          "text": "\"ignoreEffectErrorsInTscExitCode\": true,"
+        },
+        {
+          "line": 39,
+          "text": "\"include\": [\"src/**/*\"]"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/scorers/vitest.config.ts",
+      "sha256": "1be58bd6c4ce19c875d2ebc9dec6e0296e36dc58796d1fb444acfc4e2049976b",
+      "source": "import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-schemas.ts\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],\n    environment: \"node\",\n    // House convention (see packages/smithers/flows/journal/vitest.config.ts): a finite 30 s\n    // wall-clock budget so correct suites survive coverage-instrumented load\n    // while a genuine hang still fails the run.\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      enabled: true,\n      provider: \"v8\",\n      // Per-process report directory so concurrent vitest runs do not destroy\n      // each other's coverage scratch state (issues #115/#121).\n      reportsDirectory: join(tmpdir(), `flows-scorers-coverage-${process.pid}`),\n      include: [\"src/**\"],\n      // The measured coverage of `src/**` is 100 in all four categories.\n      thresholds: {\n        branches: 100,\n        functions: 100,\n        lines: 100,\n        statements: 100\n      }\n    }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 12,
+          "text": "fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"
+        },
+        {
+          "line": 15,
+          "text": "include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],"
+        },
+        {
+          "line": 18,
+          "text": "// wall-clock budget so correct suites survive coverage-instrumented load"
+        },
+        {
+          "line": 22,
+          "text": "coverage: {"
+        },
+        {
+          "line": 24,
+          "text": "provider: \"v8\","
+        },
+        {
+          "line": 26,
+          "text": "// each other's coverage scratch state (issues #115/#121)."
+        },
+        {
+          "line": 27,
+          "text": "reportsDirectory: join(tmpdir(), `flows-scorers-coverage-${process.pid}`),"
+        },
+        {
+          "line": 28,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 29,
+          "text": "// The measured coverage of `src/**` is 100 in all four categories."
+        },
+        {
+          "line": 30,
+          "text": "thresholds: {"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/agent/scorers",
+      "label": "//packages/smithers/agent/scorers:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/scorers/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/scorers/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/scorers/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/scorers/tsconfig.test.json"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/agent/scorers:lib"
+      ]
+    },
+    {
+      "package": "packages/smithers/agent/scorers",
+      "label": "//packages/smithers/agent/scorers:circular",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/circular.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/scorers/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/scorers/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/scorers",
+      "label": "//packages/smithers/agent/scorers:docs",
+      "rule": "DocsParity",
+      "kinds": [
+        "docs"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/scorers/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/scorers",
+      "label": "//packages/smithers/agent/scorers:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/scorers/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/scorers/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/scorers/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/scorers",
+      "label": "//packages/smithers/agent/scorers:fmt",
+      "rule": "Dprint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/scorers/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/scorers/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/scorers/dprint.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/scorers",
+      "label": "//packages/smithers/agent/scorers:lib",
+      "rule": "TsBuild",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/scorers/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/build-library.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/scripts/compile-commonjs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-single-effect-version.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/scorers/src/index.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/scorers/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/scorers/scripts/build.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/scorers",
+      "label": "//packages/smithers/agent/scorers:lint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/scorers/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/scorers/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.jsdoc.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/scorers",
+      "label": "//packages/smithers/agent/scorers:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/agent/scorers/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/scorers/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/scorers",
+      "label": "//packages/smithers/agent/scorers:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/agent/scorers/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/scorers/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/scorers",
+      "label": "//packages/smithers/agent/scorers:test",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/scripts/test-matrix.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/scorers/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/scorers/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/scorers/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/scorers/vitest.config.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/agent/scorers:lib"
+      ]
+    }
+  ],
+  "areas": [
+    "PACKAGE.ts",
+    "eslint.config.js",
+    "scripts/build.mjs",
+    "src/Binding.ts",
+    "src/Checks.ts",
+    "src/Migrations.ts",
+    "src/Rubric.ts",
+    "src/Sampling.ts",
+    "src/ScoreGate.ts",
+    "src/ScoreStore.ts",
+    "src/Scorer.ts",
+    "src/ScorerError.ts",
+    "src/Scorers.ts",
+    "src/Scoring.ts",
+    "src/SqlScoreStore.ts",
+    "src/index.ts",
+    "src/internal",
+    "src/migrations",
+    "vitest.config.ts"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

@@ -1,0 +1,2574 @@
+{
+  "id": "apps/site",
+  "name": "@smithers/site",
+  "owner": {
+    "declaration": "apps/site/package.json",
+    "assignedLane": null
+  },
+  "kind": "retained-tooling",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build && node scripts/filter-sitemap.mjs dist && node scripts/check-built-site.mjs",
+    "check": "astro check",
+    "preview": "astro preview",
+    "sync:docs": "node scripts/sync-app-docs.mjs && node scripts/sync-support-docs.mjs && node scripts/gen-cli-data.mjs && node scripts/gen-cli-reference.mjs && node scripts/sync-api-docs.mjs && node scripts/ingest-reference.mjs && node scripts/generate-llms.mjs",
+    "check:docs": "node --test --test-concurrency=1 scripts/regressions/*.test.mjs scripts/support-matrix.test.mjs scripts/docs-text.test.mjs scripts/quickstart-accuracy.test.mjs scripts/local-model-accuracy.test.mjs scripts/flow-terms.test.mjs scripts/docs-branding.test.mjs scripts/repository-install-link.test.mjs scripts/product-copy.test.mjs scripts/flows-location.test.mjs scripts/gen-cli-data.test.mjs scripts/migration-guide.test.mjs scripts/install-page.test.mjs scripts/generate-project-copy.test.mjs scripts/llms-order.test.mjs scripts/built-site.test.mjs scripts/deployment.test.mjs scripts/catalog-publication.test.mjs scripts/api-reference.test.mjs scripts/check-exit.test.mjs scripts/sync-app-docs.test.mjs scripts/gen-cli-reference.test.mjs && node scripts/check-docs.mjs && node scripts/sync-app-docs.mjs --check && node scripts/gen-cli-data.mjs --check && node scripts/gen-cli-reference.mjs --check && node scripts/sync-api-docs.mjs --check && node scripts/ingest-reference.mjs --check && node scripts/generate-llms.mjs --check",
+    "lint": "eslint --no-config-lookup scripts/support-matrix.test.mjs scripts/sync-support-docs.mjs --rule \"no-unused-vars:error\" && node scripts/check-docs.mjs && node scripts/sync-support-docs.mjs --check",
+    "test": "node --test --test-concurrency=1 scripts/regressions/*.test.mjs scripts/record-tape.test.mjs scripts/support-matrix.test.mjs scripts/docs-text.test.mjs scripts/quickstart-accuracy.test.mjs scripts/local-model-accuracy.test.mjs scripts/flow-terms.test.mjs scripts/docs-branding.test.mjs scripts/repository-install-link.test.mjs scripts/product-copy.test.mjs scripts/flows-location.test.mjs scripts/gen-cli-data.test.mjs scripts/migration-guide.test.mjs scripts/generate-project-copy.test.mjs scripts/install-page.test.mjs scripts/built-site.test.mjs scripts/deployment.test.mjs scripts/demo-form.test.mjs scripts/bug-redirect.test.mjs scripts/filter-sitemap.test.mjs scripts/catalog-publication.test.mjs scripts/api-reference.test.mjs scripts/sync-app-docs.test.mjs scripts/gen-cli-reference.test.mjs",
+    "check:redirect": "vibelang -p docs-redirect/tsconfig.json --noEmit",
+    "test:redirect": "bun test docs-redirect/src"
+  },
+  "exports": null,
+  "production": [
+    "docs-redirect/scripts/probe.mjs",
+    "docs-redirect/scripts/workerd.mjs",
+    "docs-redirect/src/Boundary.ts",
+    "docs-redirect/src/docsRedirect.ts",
+    "docs-redirect/src/docsRedirectMap.ts",
+    "docs-redirect/src/Failures.ts",
+    "docs-redirect/src/Http.ts",
+    "docs-redirect/src/worker.ts",
+    "docs-redirect/src/wranglerConfig.ts",
+    "docs/app/toc.ts",
+    "scripts/app-docs-integration.mjs",
+    "scripts/catalog-publication.mjs",
+    "scripts/check-built-site.mjs",
+    "scripts/check-docs.mjs",
+    "scripts/docs-text.mjs",
+    "scripts/filter-sitemap.mjs",
+    "scripts/gen-cli-data.mjs",
+    "scripts/gen-cli-reference.mjs",
+    "scripts/generate-llms.mjs",
+    "scripts/generate-project-copy.mjs",
+    "scripts/ingest-reference.mjs",
+    "scripts/migration-guide.mjs",
+    "scripts/package-doc-links.mjs",
+    "scripts/published-links.mjs",
+    "scripts/render-og.mjs",
+    "scripts/sync-api-docs.mjs",
+    "scripts/sync-app-docs.mjs",
+    "scripts/sync-support-docs.mjs",
+    "src/content.config.ts",
+    "src/data/landingCopy.ts",
+    "src/env.d.ts"
+  ],
+  "tests": [
+    "apps/site/docs-redirect/src/Boundary.test.ts",
+    "apps/site/docs-redirect/src/docsRedirect.test.ts",
+    "apps/site/docs-redirect/src/docsRedirect.workerd.test.ts",
+    "apps/site/docs-redirect/src/Http.test.ts",
+    "apps/site/scripts/api-reference.test.mjs",
+    "apps/site/scripts/bug-redirect.test.mjs",
+    "apps/site/scripts/built-site.test.mjs",
+    "apps/site/scripts/catalog-publication.test.mjs",
+    "apps/site/scripts/check-exit.test.mjs",
+    "apps/site/scripts/demo-form.test.mjs",
+    "apps/site/scripts/deployment.test.mjs",
+    "apps/site/scripts/docs-branding.test.mjs",
+    "apps/site/scripts/docs-text.test.mjs",
+    "apps/site/scripts/filter-sitemap.test.mjs",
+    "apps/site/scripts/flow-terms.test.mjs",
+    "apps/site/scripts/flows-location.test.mjs",
+    "apps/site/scripts/gen-cli-data.test.mjs",
+    "apps/site/scripts/gen-cli-reference.test.mjs",
+    "apps/site/scripts/generate-project-copy.test.mjs",
+    "apps/site/scripts/inline-comment.test.mjs",
+    "apps/site/scripts/install-page.test.mjs",
+    "apps/site/scripts/landing-html.test.mjs",
+    "apps/site/scripts/llms-order.test.mjs",
+    "apps/site/scripts/local-model-accuracy.test.mjs",
+    "apps/site/scripts/migration-guide.test.mjs",
+    "apps/site/scripts/page-metadata.test.mjs",
+    "apps/site/scripts/product-copy.test.mjs",
+    "apps/site/scripts/published-links.test.mjs",
+    "apps/site/scripts/quickstart-accuracy.test.mjs",
+    "apps/site/scripts/record-tape.test.mjs",
+    "apps/site/scripts/regressions/flow-commands.test.mjs",
+    "apps/site/scripts/regressions/inline-code.test.mjs",
+    "apps/site/scripts/regressions/integrations.test.mjs",
+    "apps/site/scripts/regressions/literal-flags.test.mjs",
+    "apps/site/scripts/regressions/local-commands.test.mjs",
+    "apps/site/scripts/regressions/operator.test.mjs",
+    "apps/site/scripts/regressions/published-cli-types.test.mjs",
+    "apps/site/scripts/regressions/published-quickstart.test.mjs",
+    "apps/site/scripts/regressions/reference-scope.test.mjs",
+    "apps/site/scripts/regressions/removed-agents.test.mjs",
+    "apps/site/scripts/regressions/settings.test.mjs",
+    "apps/site/scripts/regressions/slash-reference.test.mjs",
+    "apps/site/scripts/regressions/table-cues.test.mjs",
+    "apps/site/scripts/regressions/tui.test.mjs",
+    "apps/site/scripts/regressions/wiki.test.mjs",
+    "apps/site/scripts/repository-install-link.test.mjs",
+    "apps/site/scripts/smithers-links.test.mjs",
+    "apps/site/scripts/support-matrix.test.mjs",
+    "apps/site/scripts/sync-app-docs.test.mjs",
+    "apps/site/src/content/docs/docs/reference/api/evals.mdx"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    "apps/site/docs-redirect/scripts/workerd.mjs",
+    "apps/site/docs-redirect/src/docsRedirect.workerd.test.ts",
+    "apps/site/docs-redirect/src/worker.ts",
+    "apps/site/src/content/docs/docs/reference/api/platform-browser.mdx",
+    "apps/site/src/content/docs/docs/reference/api/platform-bun.mdx",
+    "apps/site/src/content/docs/docs/reference/api/platform-node.mdx"
+  ],
+  "ignoredCases": [],
+  "configurations": [
+    {
+      "path": "apps/site/astro.config.mjs",
+      "sha256": "c866fbfd3ddd6cadae2a6e61b77e1d41b0dc08402883bc8d5366fd09452e4a35",
+      "source": "// @ts-check\nimport react from \"@astrojs/react\"\nimport starlight from \"@astrojs/starlight\"\nimport { defineConfig, fontProviders } from \"astro/config\"\nimport vibelang from \"vibelang-vite\"\nimport { appDocsAssets } from \"./scripts/app-docs-integration.mjs\"\nimport sidebar from \"./src/data/docs-sidebar.json\" with { type: \"json\" }\nimport project from \"./src/data/project.json\" with { type: \"json\" }\n\n/**\n * smithers.sh: the landing page at `/` (src/pages/index.astro), the demo\n * request page at `/demo`, and the Starlight documentation at `/docs/**` with\n * the release changelogs under `/changelogs/**`.\n *\n * Starlight content is authored under src/content/docs/docs/ so every route\n * carries the /docs prefix and the root stays a plain Astro page. The guides\n * come from apps/site/docs/app: scripts/sync-app-docs.mjs projects each page\n * and writes the sidebar from its toc.ts, and appDocsAssets serves their\n * screenshots at /images/docs/.\n *\n * @since 1.0.0\n * @category configuration\n */\nexport default defineConfig({\n  site: \"https://smithers.sh\",\n  output: \"static\",\n  prefetch: { defaultStrategy: \"hover\" },\n  experimental: { clientPrerender: true },\n  // Inter and IBM Plex Mono are the product UI's pairing. Astro downloads them\n  // at build time and serves them from /_astro/fonts, so no page waits on a\n  // cross-origin Google Fonts stylesheet. Each family names a generic family\n  // last, which makes Astro generate a metric-adjusted local fallback; that is\n  // what keeps the ASCII wordmark from reflowing when the real face swaps in.\n  fonts: [\n    {\n      provider: fontProviders.google(),\n      name: \"Inter\",\n      cssVariable: \"--font-inter\",\n      weights: [400, 500, 600, 700],\n      fallbacks: [\"ui-sans-serif\", \"system-ui\", \"sans-serif\"],\n      display: \"swap\"\n    },\n    {\n      provider: fontProviders.google(),\n      name: \"IBM Plex Mono\",\n      cssVariable: \"--font-plex-mono\",\n      weights: [400, 500, 600],\n      fallbacks: [\"ui-monospace\", \"monospace\"],\n      display: \"swap\"\n    }\n  ],\n  vite: {\n    // A workspace package exports its source, so a page can import `.vibe` modules; each compiles with its own\n    // package's tsconfig.\n    plugins: [vibelang()],\n    build: {\n      // The home page's stylesheet is about 7.5 kB, over Vite's 4 kB default;\n      // raising the limit lets `build.inlineStylesheets: \"auto\"` inline it and\n      // removes the last render-blocking request on `/`. Fonts never inline:\n      // @fontsource's non-latin subsets are under 8 kB each, and as files their\n      // unicode-range keeps a Latin visitor from downloading them at all,\n      // while inlined they add ~180 kB of base64 to every page's CSS.\n      assetsInlineLimit: (filePath, content) => (/\\.woff2?$/.test(filePath) ? false : content.byteLength < 8192)\n    }\n  },\n  integrations: [\n    react(),\n    appDocsAssets(),\n    starlight({\n      title: \"Smithers\",\n      disable404Route: true,\n      description: project.description,\n      logo: { src: \"./src/docs-assets/logo.png\", alt: \"Smithers\" },\n      favicon: \"/favicon.svg\",\n      customCss: [\"./src/styles/starlight.css\", \"./src/styles/navigation.css\"],\n      // Inter and IBM Plex Mono are the product UI's pairing. They come from\n      // Google Fonts rather than an npm package so the docs add no dependency,\n      // and src/styles/starlight.css names a system stack behind each one.\n      head: [\n        { tag: \"meta\", attrs: { property: \"og:image\", content: \"https://smithers.sh/media/og.png\" } },\n        { tag: \"meta\", attrs: { name: \"twitter:image\", content: \"https://smithers.sh/media/og.png\" } },\n        { tag: \"link\", attrs: { rel: \"preconnect\", href: \"https://fonts.googleapis.com\" } },\n        { tag: \"link\", attrs: { rel: \"preconnect\", href: \"https://fonts.gstatic.com\", crossorigin: true } },\n        {\n          tag: \"link\",\n          attrs: {\n            rel: \"stylesheet\",\n            href:\n              \"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap\"\n          }\n        }\n      ],\n      expressiveCode: {\n        styleOverrides: {\n          codeFontFamily: \"\\\"IBM Plex Mono\\\", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace\"\n        }\n      },\n      social: [\n        { icon: \"github\", label: \"GitHub\", href: \"https://github.com/smithersai/smithers\" }\n      ],\n      editLink: { baseUrl: \"https://github.com/smithersai/smithers/edit/main/apps/site/src/content/docs/\" },\n      // One group per apps/site/docs/app/toc.ts section, Install beside\n      // self-hosting, then the reference. Generated by scripts/sync-app-docs.mjs.\n      sidebar\n    })\n  ]\n})\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "apps/site/docs-redirect/tsconfig.json",
+      "sha256": "3bf53e4fb2680d27ff583d3282bd4fddb51d9015e5ce17b6982c283ea1f51048",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"ESNext\",\n    \"skipLibCheck\": true,\n    \"moduleResolution\": \"bundler\",\n    \"allowImportingTsExtensions\": true,\n    \"isolatedModules\": true,\n    \"moduleDetection\": \"force\",\n    \"noEmit\": true,\n    \"strict\": true,\n    \"noUnusedLocals\": true,\n    \"noUnusedParameters\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"types\": [\"bun\", \"node\"]\n  },\n  \"include\": [\"src\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 6,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 18,
+          "text": "\"include\": [\"src\"]"
+        }
+      ]
+    },
+    {
+      "path": "apps/site/package.json",
+      "sha256": "8ad7fc322aa85607128a28be3b4e13639eae4e9346e31fa501849d4de55be0ba",
+      "source": "{\n  \"name\": \"@smithers/site\",\n  \"version\": \"0.0.1\",\n  \"private\": true,\n  \"description\": \"The smithers.sh landing page\",\n  \"type\": \"module\",\n  \"scripts\": {\n    \"dev\": \"astro dev\",\n    \"build\": \"astro build && node scripts/filter-sitemap.mjs dist && node scripts/check-built-site.mjs\",\n    \"check\": \"astro check\",\n    \"preview\": \"astro preview\",\n    \"sync:docs\": \"node scripts/sync-app-docs.mjs && node scripts/sync-support-docs.mjs && node scripts/gen-cli-data.mjs && node scripts/gen-cli-reference.mjs && node scripts/sync-api-docs.mjs && node scripts/ingest-reference.mjs && node scripts/generate-llms.mjs\",\n    \"check:docs\": \"node --test --test-concurrency=1 scripts/regressions/*.test.mjs scripts/support-matrix.test.mjs scripts/docs-text.test.mjs scripts/quickstart-accuracy.test.mjs scripts/local-model-accuracy.test.mjs scripts/flow-terms.test.mjs scripts/docs-branding.test.mjs scripts/repository-install-link.test.mjs scripts/product-copy.test.mjs scripts/flows-location.test.mjs scripts/gen-cli-data.test.mjs scripts/migration-guide.test.mjs scripts/install-page.test.mjs scripts/generate-project-copy.test.mjs scripts/llms-order.test.mjs scripts/built-site.test.mjs scripts/deployment.test.mjs scripts/catalog-publication.test.mjs scripts/api-reference.test.mjs scripts/check-exit.test.mjs scripts/sync-app-docs.test.mjs scripts/gen-cli-reference.test.mjs && node scripts/check-docs.mjs && node scripts/sync-app-docs.mjs --check && node scripts/gen-cli-data.mjs --check && node scripts/gen-cli-reference.mjs --check && node scripts/sync-api-docs.mjs --check && node scripts/ingest-reference.mjs --check && node scripts/generate-llms.mjs --check\",\n    \"lint\": \"eslint --no-config-lookup scripts/support-matrix.test.mjs scripts/sync-support-docs.mjs --rule \\\"no-unused-vars:error\\\" && node scripts/check-docs.mjs && node scripts/sync-support-docs.mjs --check\",\n    \"test\": \"node --test --test-concurrency=1 scripts/regressions/*.test.mjs scripts/record-tape.test.mjs scripts/support-matrix.test.mjs scripts/docs-text.test.mjs scripts/quickstart-accuracy.test.mjs scripts/local-model-accuracy.test.mjs scripts/flow-terms.test.mjs scripts/docs-branding.test.mjs scripts/repository-install-link.test.mjs scripts/product-copy.test.mjs scripts/flows-location.test.mjs scripts/gen-cli-data.test.mjs scripts/migration-guide.test.mjs scripts/generate-project-copy.test.mjs scripts/install-page.test.mjs scripts/built-site.test.mjs scripts/deployment.test.mjs scripts/demo-form.test.mjs scripts/bug-redirect.test.mjs scripts/filter-sitemap.test.mjs scripts/catalog-publication.test.mjs scripts/api-reference.test.mjs scripts/sync-app-docs.test.mjs scripts/gen-cli-reference.test.mjs\",\n    \"check:redirect\": \"vibelang -p docs-redirect/tsconfig.json --noEmit\",\n    \"test:redirect\": \"bun test docs-redirect/src\"\n  },\n  \"devDependencies\": {\n    \"@astrojs/check\": \"^0.9.10\",\n    \"@effect/platform-node\": \"4.0.5\",\n    \"@effect/platform-node-shared\": \"4.0.5\",\n    \"@smthrs/agent\": \"workspace:*\",\n    \"@smthrs/capability\": \"workspace:*\",\n    \"@smthrs/control\": \"workspace:*\",\n    \"@smthrs/database\": \"workspace:*\",\n    \"@smthrs/engine\": \"workspace:*\",\n    \"@smthrs/engine-store\": \"workspace:*\",\n    \"@smthrs/flow\": \"workspace:*\",\n    \"@smthrs/flows\": \"workspace:*\",\n    \"@smthrs/harness\": \"workspace:*\",\n    \"@smthrs/jj\": \"workspace:*\",\n    \"@smthrs/journal\": \"workspace:*\",\n    \"@smthrs/kernel\": \"workspace:*\",\n    \"@smthrs/mcp\": \"workspace:*\",\n    \"@smthrs/memory\": \"workspace:*\",\n    \"@smthrs/model\": \"workspace:*\",\n    \"@smthrs/observability\": \"workspace:*\",\n    \"@smthrs/plan\": \"workspace:*\",\n    \"@smthrs/platform-node\": \"workspace:*\",\n    \"@smthrs/registry\": \"workspace:*\",\n    \"@smthrs/rpc\": \"workspace:*\",\n    \"@smthrs/run-store\": \"workspace:*\",\n    \"@smthrs/sandbox\": \"workspace:*\",\n    \"@smthrs/std\": \"workspace:*\",\n    \"@smthrs/sync\": \"workspace:*\",\n    \"@smthrs/testing\": \"workspace:*\",\n    \"@smthrs/time-travel\": \"workspace:*\",\n    \"@smthrs/ui\": \"workspace:*\",\n    \"@types/bun\": \"1.4.4\",\n    \"@types/react\": \"^19.2.18\",\n    \"effect\": \"4.0.5\",\n    \"typescript\": \"~5.9.3\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"wrangler\": \"4.151.2\"\n  },\n  \"dependencies\": {\n    \"@astrojs/react\": \"^6.0.5\",\n    \"@astrojs/starlight\": \"^0.42.0\",\n    \"@shikijs/themes\": \"^4.4.3\",\n    \"astro\": \"^7.3.1\",\n    \"react\": \"19.2.8\",\n    \"react-dom\": \"19.2.8\"\n  }\n}\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "apps/site/PACKAGE.ts",
+      "sha256": "8bea77ab59e004e03e96b9a13255cbdbb6f58b3895199f30d4d622786dcf2e59",
+      "source": "/**\n * Targets for smithers.sh: the Astro site with the landing page, the /demo\n * request page, the Starlight documentation under /docs and the release\n * changelogs under /changelogs; and the docs redirect Worker in\n * docs-redirect/, which answers the retired `<slug>.smithers.sh` docs sites.\n *\n * The media the hero plays (public/media) is recorded, not built:\n * `scripts/record-tape.sh` runs real flows through vhs. It needs a provider\n * and a display, so it is not a target; the build ships whatever recordings\n * the tree carries.\n *\n * @since 1.0.0\n */\nimport { Smithers } from \"@smthrs/targets\"\nimport { Package as errorsPackage } from \"../../packages/errors/PACKAGE.ts\"\nimport { Package as repoTargetsPackage } from \"../../packages/repo-targets/PACKAGE.ts\"\nimport { workspacePackages } from \"../../packages/repo-targets/scripts/workspace-packages.mjs\"\nimport { Package as chainPackage } from \"../../packages/smithers/agent/chain/PACKAGE.ts\"\nimport { Package as evalsPackage } from \"../../packages/smithers/agent/evals/PACKAGE.ts\"\nimport { Package as fsPackage } from \"../../packages/smithers/agent/fs/PACKAGE.ts\"\nimport { Package as harnessPackage } from \"../../packages/smithers/agent/harness/PACKAGE.ts\"\nimport { Package as integrationsPackage } from \"../../packages/smithers/agent/integrations/PACKAGE.ts\"\nimport { Package as memoryPackage } from \"../../packages/smithers/agent/memory/PACKAGE.ts\"\nimport { Package as modelPackage } from \"../../packages/smithers/agent/model/PACKAGE.ts\"\nimport { Package as agentPackage } from \"../../packages/smithers/agent/PACKAGE.ts\"\nimport { Package as pluginPackage } from \"../../packages/smithers/agent/plugin/PACKAGE.ts\"\nimport { Package as registryPackage } from \"../../packages/smithers/agent/registry/PACKAGE.ts\"\nimport { Package as scorersPackage } from \"../../packages/smithers/agent/scorers/PACKAGE.ts\"\nimport { Package as stdPackage } from \"../../packages/smithers/agent/std/PACKAGE.ts\"\nimport { Package as triggersPackage } from \"../../packages/smithers/agent/triggers/PACKAGE.ts\"\nimport { Package as buildCliPackage } from \"../../packages/smithers/build/build-cli/PACKAGE.ts\"\nimport { Package as buildPackage } from \"../../packages/smithers/build/PACKAGE.ts\"\nimport { Package as targetsPackage } from \"../../packages/smithers/build/targets/PACKAGE.ts\"\nimport { Package as controlPackage } from \"../../packages/smithers/control/PACKAGE.ts\"\nimport { Package as artifactsPackage } from \"../../packages/smithers/flows/artifacts/PACKAGE.ts\"\nimport { Package as canonicalPackage } from \"../../packages/smithers/flows/canonical/PACKAGE.ts\"\nimport { Package as capabilityPackage } from \"../../packages/smithers/flows/capability/PACKAGE.ts\"\nimport { Package as corePackage } from \"../../packages/smithers/flows/core/PACKAGE.ts\"\nimport { Package as cryptoPackage } from \"../../packages/smithers/flows/crypto/PACKAGE.ts\"\nimport { Package as databasePackage } from \"../../packages/smithers/flows/database/PACKAGE.ts\"\nimport { Package as engineStorePackage } from \"../../packages/smithers/flows/engine-store/PACKAGE.ts\"\nimport { Package as enginePackage } from \"../../packages/smithers/flows/engine/PACKAGE.ts\"\nimport { Package as flowPackage } from \"../../packages/smithers/flows/flow/PACKAGE.ts\"\nimport { Package as jjPackage } from \"../../packages/smithers/flows/jj/PACKAGE.ts\"\nimport { Package as journalPackage } from \"../../packages/smithers/flows/journal/PACKAGE.ts\"\nimport { Package as kernelPackage } from \"../../packages/smithers/flows/kernel/PACKAGE.ts\"\nimport { Package as keysPackage } from \"../../packages/smithers/flows/keys/PACKAGE.ts\"\nimport { Package as observabilityPackage } from \"../../packages/smithers/flows/observability/PACKAGE.ts\"\nimport { Package as flowsPackage } from \"../../packages/smithers/flows/PACKAGE.ts\"\nimport { Package as patternsPackage } from \"../../packages/smithers/flows/patterns/PACKAGE.ts\"\nimport { Package as planStorePackage } from \"../../packages/smithers/flows/plan-store/PACKAGE.ts\"\nimport { Package as planPackage } from \"../../packages/smithers/flows/plan/PACKAGE.ts\"\nimport { Package as platformBrowserPackage } from \"../../packages/smithers/flows/platform-browser/PACKAGE.ts\"\nimport { Package as platformBunPackage } from \"../../packages/smithers/flows/platform-bun/PACKAGE.ts\"\nimport { Package as platformNodePackage } from \"../../packages/smithers/flows/platform-node/PACKAGE.ts\"\nimport { Package as runStorePackage } from \"../../packages/smithers/flows/run-store/PACKAGE.ts\"\nimport { Package as sandboxPackage } from \"../../packages/smithers/flows/sandbox/PACKAGE.ts\"\nimport { Package as stepCachePackage } from \"../../packages/smithers/flows/step-cache/PACKAGE.ts\"\nimport { Package as syncPackage } from \"../../packages/smithers/flows/sync/PACKAGE.ts\"\nimport { Package as timeTravelPackage } from \"../../packages/smithers/flows/time-travel/PACKAGE.ts\"\nimport { Package as gatewayPackage } from \"../../packages/smithers/gateway/PACKAGE.ts\"\nimport { Package as mcpPackage } from \"../../packages/smithers/mcp/PACKAGE.ts\"\nimport { Package as migratePackage } from \"../../packages/smithers/migrate/PACKAGE.ts\"\nimport { Package as notificationsPackage } from \"../../packages/smithers/notifications/PACKAGE.ts\"\nimport { Package as cliPackage } from \"../../packages/smithers/PACKAGE.ts\"\nimport { Package as testingPackage } from \"../../packages/testing/PACKAGE.ts\"\nimport { Package as mvpPackage } from \"../mvp/PACKAGE.ts\"\n\nconst cwd = \"apps/site\"\n\n/** The product docs pages and toc.ts that sync-app-docs.mjs projects onto /docs. */\nconst appDocsInputs = [Smithers.glob(\"docs/app/pages/*.md\"), Smithers.file(\"docs/app/toc.ts\")]\n\n/** The docs screenshots app-docs-integration.mjs publishes at /images/docs/. */\nconst appDocsImages = Smithers.glob(\"docs/app/images/*\")\n\nconst supportDocs = Smithers.Generate({\n  summary: \"Project the RC support reference and entry pages from colocated docs.\",\n  script: Smithers.file(\"scripts/sync-support-docs.mjs\"),\n  data: [Smithers.glob(\"docs/**/*\")],\n  changes: [\n    \"src/content/docs/docs/reference/api/index.mdx\",\n    \"src/content/docs/docs/installation.mdx\",\n    \"src/content/docs/changelogs/1.0.0-rc.0.mdx\"\n  ]\n})\n\n/**\n * The product docs (docs/app, mvp.md M-35) on smithers.sh/docs: one Starlight\n * page per toc.ts page (`welcome` at /docs/), its Markdown copy at\n * /docs/<slug>.md, and the sidebar astro.config.mjs reads. The screenshots are\n * not projected: the build copies them from docs/app/images (`build`).\n */\nconst appDocs = Smithers.Generate({\n  summary:\n    \"Project the docs pages, their Markdown copies, and the docs sidebar from apps/site/docs/app; check drift under lint.\",\n  script: Smithers.file(\"scripts/sync-app-docs.mjs\"),\n  data: [...appDocsInputs, appDocsImages, Smithers.file(\"scripts/docs-text.mjs\")],\n  changes: [\"src/content/docs/docs/*.md\", \"public/docs/*.md\", \"src/data/docs-sidebar.json\"]\n})\n\n/** The pages, docs content, components, layouts, styles, scripts, public assets, Astro config, and tsconfig. */\nconst sources = [\n  Smithers.glob(\"//apps/site/src/**/*\"),\n  Smithers.glob(\"//apps/site/scripts/**/*\"),\n  Smithers.glob(\"//apps/site/public/**/*\"),\n  Smithers.file(\"//apps/site/astro.config.mjs\"),\n  Smithers.file(\"//apps/site/package.json\"),\n  Smithers.file(\"//apps/site/tsconfig.json\")\n]\n\n/** Package metadata used by documentation projections. */\nconst docsKit = Smithers.Filegroup({\n  srcs: [\n    Smithers.file(\"//.smithers/flows/docs-sync/package-docs.mjs\"),\n    Smithers.file(\"//packages/repo-targets/scripts/workspace-packages.mjs\"),\n    Smithers.file(\"//pnpm-workspace.yaml\"),\n    ...workspacePackages().map(({ dir }) => Smithers.file(`//${dir}/package.json`))\n  ],\n  cwd\n})\n\n/** `astro check`: the pages, components and scripts typecheck against the package tsconfig. */\nconst check = Smithers.ToolRun({\n  command: \"pnpm\",\n  args: [\"run\", \"check\"],\n  inputs: sources,\n  deps: [docsKit],\n  cwd\n})\n\n/**\n * Build the site and verify its links against the CLI and release changelog.\n * scripts/app-docs-integration.mjs copies the docs screenshots from\n * docs/app/images into dist/images/docs.\n */\nconst build = Smithers.ToolBuild({\n  tool: \"astro\",\n  command: \"pnpm\",\n  args: [\"run\", \"build\"],\n  inputs: [...sources, Smithers.file(\"//CHANGELOG.md\")],\n  outputs: [\"dist\"],\n  deps: [cliPackage.docsSources, docsKit],\n  env: {},\n  cache: true,\n  cwd\n})\n\n// --- reference docs pipeline ----------------------------------------------\n// Generated reference pages. Each documented package writes its own\n// `docs/reference/*.md` (its `referenceDocs` Agent.Diff target); this target\n// is the deterministic ingest that copies them into\n// src/content/docs/docs/reference/<area>/ with Starlight frontmatter. The\n// committed copy is the cache: `smithers-build lint //apps/site:referenceIngest`\n// fails on drift, `smithers-build target //apps/site:referenceIngest --write`\n// applies. The data edges are the packages' `referencePages` filegroups, not\n// their agent targets, so no verb here ever spawns a model.\nconst referenceIngest = Smithers.Generate({\n  summary: \"Copy colocated package reference pages into the docs tree; check drift under lint.\",\n  script: Smithers.file(\"scripts/ingest-reference.mjs\"),\n  data: [flowPackage.referencePages, enginePackage.referencePages, targetsPackage.referencePages],\n  changes: [\"src/content/docs/docs/reference/api/**\"]\n})\n// --- end reference docs pipeline ------------------------------------------\n\n// --- CLI data --------------------------------------------------------------\n// The CLI facts the docs quote instead of retyping: verbatim `--help` for\n// every verb and subcommand, the version pins, the removed-command anchor\n// contract (every `smithers.sh/migration/1.0#<anchor>` the binary links), and\n// the migration guide those links land on. The script writes the guide from\n// the CLI package's docs/migration.md with one table row per removed command,\n// so `smithers-build lint //apps/site:cliData` fails the moment a removed\n// verb, a help string, or the guide moves without the site.\nconst cliData = Smithers.Generate({\n  summary:\n    \"Regenerate CLI help captures, version pins, and the removed-command anchor contract; check drift under lint.\",\n  script: Smithers.file(\"scripts/gen-cli-data.mjs\"),\n  // `cliPackage.docsSources` is the CLI's src tree, README, docs, and\n  // package.json by label. A `//packages/smithers/src/**` glob declared here\n  // expands to nothing: input globs are package scoped, so a start inside\n  // another package yields no files and the edge is vacuous.\n  data: [\n    cliPackage.docsSources,\n    Smithers.file(\"src/data/migration-paths.json\")\n  ],\n  changes: [\n    \"src/data/versions.json\",\n    \"src/data/cli-commands.json\",\n    \"src/data/cli-reference-extra.json\",\n    \"src/data/removed-commands.json\",\n    \"src/data/help/**\",\n    \"src/pages/migration/1.0.md\"\n  ]\n})\n// --- end CLI data ----------------------------------------------------------\n\n/**\n * The CLI reference at /docs/reference/cli/ and its Markdown copy, rendered\n * from the command manifest and help captures `cliData` writes, with TUI\n * guidance from the CLI package. A help capture that disagrees with the manifest\n * fails the generator rather than publishing.\n */\nconst cliReferenceInputs = [\n  Smithers.file(\"src/data/cli-commands.json\"),\n  Smithers.file(\"src/data/cli-reference-extra.json\"),\n  Smithers.file(\"//packages/smithers/docs/reference/cli/tui.md\"),\n  Smithers.glob(\"src/data/help/**/*.txt\")\n]\n\nconst cliReference = Smithers.Generate({\n  summary:\n    \"Render the CLI reference page and its Markdown copy from the captured command manifest and help; check drift under lint.\",\n  script: Smithers.file(\"scripts/gen-cli-reference.mjs\"),\n  data: cliReferenceInputs,\n  changes: [\"src/content/docs/docs/reference/cli.md\", \"public/docs/reference/cli.md\"]\n})\n\n/** The CLI reference generator: fixture help and manifest in, Markdown sections out, plus write, check and drift. */\nconst cliReferenceTest = Smithers.Shell.Test({\n  shell: \"node --test apps/site/scripts/gen-cli-reference.test.mjs\",\n  data: [\n    Smithers.file(\"scripts/gen-cli-reference.mjs\"),\n    Smithers.file(\"scripts/gen-cli-reference.test.mjs\"),\n    ...cliReferenceInputs\n  ]\n})\n\n/** Real docs projections and installed npm consumer regressions. */\nconst docsRegressionTest = Smithers.Shell.Test({\n  shell: \"node --test apps/site/scripts/regressions/*.test.mjs\",\n  data: [\n    Smithers.glob(\"scripts/regressions/*.test.mjs\"),\n    Smithers.file(\"scripts/gen-cli-reference.mjs\"),\n    Smithers.file(\"scripts/sync-app-docs.mjs\"),\n    Smithers.file(\"scripts/docs-text.mjs\"),\n    Smithers.file(\"src/data/cli-commands.json\"),\n    Smithers.file(\"src/data/cli-reference-extra.json\"),\n    Smithers.glob(\"src/data/help/**/*.txt\"),\n    Smithers.glob(\"docs/app/**/*.md\"),\n    Smithers.file(\"docs/app/toc.ts\"),\n    Smithers.file(\"src/styles/starlight.css\"),\n    Smithers.file(\"//packages/smithers/flows/docs/quickstart.md\"),\n    Smithers.file(\"//packages/smithers/docs/reference/cli/tui.md\"),\n    Smithers.file(\"//apps/mvp/src/flows/registry.ts\"),\n    Smithers.file(\"//apps/mvp/src/screens/settings/SettingsScreen.tsx\")\n  ]\n})\n\n// --- API reference pages ---------------------------------------------------\n// One page per published package, stitched from its colocated docs/api.md by\n// scripts/sync-api-docs.mjs. The script discovers packages off disk (a\n// public @smthrs/* manifest beside a docs/api.md); this map is the same set\n// as declared edges, keyed by the page slug the script writes. Each entry is\n// the package's `docsFiles` filegroup (docs/**\\/*.md, README, package.json),\n// which is what makes `smithers-build lint //apps/site:apiDocs` rerun when a\n// package's api.md or description moves. flow, engine, and targets are\n// absent on purpose: ingest-reference.mjs owns their pages through\n// `referenceIngest`, and the sync script skips those slugs.\nconst apiPackages = {\n  agent: agentPackage,\n  artifacts: artifactsPackage,\n  build: buildPackage,\n  \"build-cli\": buildCliPackage,\n  canonical: canonicalPackage,\n  capability: capabilityPackage,\n  chain: chainPackage,\n  cli: cliPackage,\n  control: controlPackage,\n  core: corePackage,\n  crypto: cryptoPackage,\n  database: databasePackage,\n  \"engine-store\": engineStorePackage,\n  errors: errorsPackage,\n  evals: evalsPackage,\n  flows: flowsPackage,\n  fs: fsPackage,\n  gateway: gatewayPackage,\n  harness: harnessPackage,\n  integrations: integrationsPackage,\n  jj: jjPackage,\n  journal: journalPackage,\n  kernel: kernelPackage,\n  keys: keysPackage,\n  mcp: mcpPackage,\n  memory: memoryPackage,\n  migrate: migratePackage,\n  model: modelPackage,\n  notifications: notificationsPackage,\n  observability: observabilityPackage,\n  patterns: patternsPackage,\n  plan: planPackage,\n  \"plan-store\": planStorePackage,\n  \"platform-browser\": platformBrowserPackage,\n  \"platform-bun\": platformBunPackage,\n  \"platform-node\": platformNodePackage,\n  plugin: pluginPackage,\n  registry: registryPackage,\n  \"run-store\": runStorePackage,\n  sandbox: sandboxPackage,\n  scorers: scorersPackage,\n  std: stdPackage,\n  \"step-cache\": stepCachePackage,\n  sync: syncPackage,\n  testing: testingPackage,\n  \"time-travel\": timeTravelPackage,\n  triggers: triggersPackage\n}\nconst apiDocs = Smithers.Generate({\n  summary: \"Stitch every published package's docs/api.md into a reference page; check drift under lint.\",\n  script: Smithers.file(\"scripts/sync-api-docs.mjs\"),\n  data: Object.values(apiPackages).map((pkg) => pkg.docsFiles),\n  changes: Object.keys(apiPackages).map((slug) => `src/content/docs/docs/reference/api/${slug}.mdx`)\n})\n// --- end API reference pages -----------------------------------------------\n\n/**\n * The compact agent index and full plain-text documentation bundle. Both read\n * the same project.json description as the rendered site and root README, so\n * the machine-facing one-sentence explanation cannot drift either.\n */\nconst llms = Smithers.Generate({\n  summary: \"Generate the compact and full LLM documentation bundles; check drift under lint.\",\n  script: Smithers.file(\"scripts/generate-llms.mjs\"),\n  data: [\n    Smithers.glob(\"src/content/docs/**/*.mdx\"),\n    Smithers.glob(\"src/content/docs/**/*.md\"),\n    Smithers.glob(\"public/docs/**/*.md\"),\n    Smithers.file(\"src/data/docs-sidebar.json\"),\n    Smithers.file(\"src/data/project.json\"),\n    Smithers.file(\"src/data/versions.json\"),\n    Smithers.glob(\"src/data/help/**/*.txt\"),\n    Smithers.file(\"scripts/docs-text.mjs\")\n  ],\n  changes: [\"public/llms.txt\", \"public/llms-full.txt\"]\n})\n\n/**\n * Checks documentation text extraction, install guidance, public CLI page\n * selection, and built release URLs, including redirects and migration anchors,\n * and where site copy says a repository's flows live (M-49).\n */\nconst docsTextTest = Smithers.Shell.Test({\n  shell:\n    \"node --test --test-concurrency=1 apps/site/scripts/docs-text.test.mjs apps/site/scripts/built-site.test.mjs apps/site/scripts/gen-cli-data.test.mjs apps/site/scripts/flows-location.test.mjs\",\n  data: [\n    Smithers.file(\"scripts/flows-location.test.mjs\"),\n    Smithers.file(\"src/data/migration-paths.json\"),\n    Smithers.file(\"src/components/HeroStage.astro\"),\n    Smithers.file(\"scripts/docs-text.mjs\"),\n    Smithers.file(\"scripts/docs-text.test.mjs\"),\n    Smithers.file(\"src/content/docs/docs/reference/http-api.mdx\"),\n    Smithers.file(\"//packages/smithers/gateway/docs/guides/serve-beyond-loopback.md\"),\n    Smithers.file(\"//packages/smithers/flows/sync/src/SyncProtocol.ts\"),\n    Smithers.file(\"//packages/smithers/flows/kernel/src/HostServices.ts\"),\n    Smithers.file(\"//packages/smithers/agent/registry/src/Discovery.ts\"),\n    Smithers.file(\"//packages/smthrs-deprecation/docs/notice.md\"),\n    Smithers.file(\"//packages/smithers/migrate/src/flow/MigrateFlow.ts\"),\n    Smithers.file(\"//packages/smithers/migrate/src/Scan.ts\"),\n    Smithers.file(\"//packages/smithers/flows/flow/src/DurableClock.ts\"),\n    Smithers.file(\"scripts/check-built-site.mjs\"),\n    Smithers.file(\"scripts/built-site.test.mjs\"),\n    Smithers.file(\"//apps/mvp/src/router.tsx\"),\n    Smithers.file(\"//apps/mvp/src/features/bugs/contract.ts\"),\n    Smithers.file(\"public/robots.txt\"),\n    Smithers.file(\"scripts/gen-cli-data.mjs\"),\n    Smithers.file(\"scripts/gen-cli-data.test.mjs\"),\n    cliPackage.docsSources,\n    Smithers.file(\"//packages/smithers/build/build-cli/src/effect-resolution.js\")\n  ]\n})\n\n/**\n * Three generators' `--check` run against a temporary copy of their inputs and\n * must exit 1 naming the stale file; no docs script may call process.exit().\n */\nconst checkExitTest = Smithers.Shell.Test({\n  shell: \"node --test --test-concurrency=1 apps/site/scripts/check-exit.test.mjs\",\n  data: [\n    Smithers.file(\"scripts/check-exit.test.mjs\"),\n    ...[\n      \"check-docs\",\n      \"docs-text\",\n      \"gen-cli-data\",\n      \"gen-cli-reference\",\n      \"generate-llms\",\n      \"generate-project-copy\",\n      \"ingest-reference\",\n      \"sync-api-docs\",\n      \"sync-app-docs\",\n      \"sync-support-docs\"\n    ].map((name) => Smithers.file(`scripts/${name}.mjs`)),\n    Smithers.glob(\"src/content/docs/docs/**/*\"),\n    Smithers.glob(\"src/data/**/*\"),\n    Smithers.glob(\"public/docs/**\"),\n    Smithers.file(\"public/llms.txt\"),\n    Smithers.file(\"public/llms-full.txt\"),\n    docsKit,\n    // The copied tree carries every member manifest and each documented\n    // package's docs; explicit files cross package boundaries, a glob cannot.\n    ...workspacePackages().map(({ dir }) => Smithers.file(`//${dir}/package.json`)),\n    ...[...Object.values(apiPackages), flowPackage, enginePackage, targetsPackage].map((pkg) => pkg.docsFiles)\n  ]\n})\n\n/**\n * The generated project copy matches its source and retires superseded pages.\n */\nconst projectCopyTest = Smithers.Shell.Test({\n  shell: \"node --test apps/site/scripts/generate-project-copy.test.mjs\",\n  data: [\n    Smithers.file(\"scripts/generate-project-copy.mjs\"),\n    Smithers.file(\"scripts/generate-project-copy.test.mjs\"),\n    Smithers.file(\"src/data/project.json\"),\n    Smithers.file(\"docs/installation.mdx\"),\n    Smithers.file(\"//README.md\"),\n    Smithers.file(\"//package.json\")\n  ]\n})\n\n/**\n * Installation and app docs commands resolve against the source CLI; planned\n * commands stay ticket-bound; the sidebar and published tree follow toc.ts.\n */\nconst installPageTest = Smithers.Shell.Test({\n  shell: \"node --test apps/site/scripts/install-page.test.mjs\",\n  data: [\n    Smithers.file(\"scripts/install-page.test.mjs\"),\n    Smithers.file(\"scripts/sync-app-docs.mjs\"),\n    Smithers.file(\"scripts/gen-cli-reference.mjs\"),\n    Smithers.file(\"scripts/docs-text.mjs\"),\n    Smithers.file(\"src/data/docs-sidebar.json\"),\n    ...appDocsInputs,\n    Smithers.file(\"src/layouts/Base.astro\"),\n    Smithers.glob(\"src/pages/**/*.astro\"),\n    Smithers.glob(\"docs/**/*\"),\n    Smithers.file(\"public/_redirects\"),\n    ...[\"T-INS-04\", \"T-INS-05\", \"T-INS-08\"].map((name) => Smithers.file(`//.specs/engineering/tickets/${name}.md`)),\n    Smithers.file(\"astro.config.mjs\"),\n    Smithers.file(\"src/data/project.json\"),\n    Smithers.glob(\"src/content/docs/docs/**/*\"),\n    cliPackage.docsSources,\n    repoTargetsPackage.repositoryInputs\n  ]\n})\n\n/** The app docs projection: toc.ts parsing, link and screenshot rewrites, the sidebar, and write, check and retirement. */\nconst appDocsTest = Smithers.Shell.Test({\n  shell: \"node --test apps/site/scripts/sync-app-docs.test.mjs\",\n  data: [\n    Smithers.file(\"scripts/sync-app-docs.test.mjs\"),\n    Smithers.file(\"scripts/sync-app-docs.mjs\"),\n    Smithers.file(\"scripts/docs-text.mjs\"),\n    Smithers.file(\"docs/app/toc.ts\")\n  ]\n})\n\n/** Preserve checkout state while recording against an owned detached worktree. */\nconst recordTapeTest = Smithers.Shell.Test({\n  shell: \"node --test apps/site/scripts/record-tape.test.mjs\",\n  data: [\n    Smithers.file(\"scripts/record-tape.sh\"),\n    Smithers.file(\"scripts/record-tape.test.mjs\"),\n    Smithers.file(\"tapes/cli.tape\"),\n    Smithers.file(\"tapes/bin/smithers\")\n  ]\n})\n\n/**\n * Verify the package catalog's publication labels against the release roster:\n * a package the train does not publish cannot be presented as installable, and\n * one it does publish cannot be labelled workspace-private.\n */\nconst catalogPublicationTest = Smithers.Shell.Test({\n  shell: \"node --test --test-concurrency=1 apps/site/scripts/catalog-publication.test.mjs\",\n  data: [\n    Smithers.file(\"scripts/catalog-publication.mjs\"),\n    Smithers.file(\"scripts/catalog-publication.test.mjs\"),\n    Smithers.file(\"docs/reference/api/index.mdx\"),\n    Smithers.glob(\"src/content/docs/docs/reference/api/*.mdx\"),\n    Smithers.file(\"//.smithers/flows/release/pack-release.mjs\"),\n    Smithers.file(\"//packages/repo-targets/scripts/workspace-packages.mjs\"),\n    Smithers.file(\"//pnpm-workspace.yaml\"),\n    // The roster is checked against what every member manifest declares, so a\n    // manifest flipping `private` has to re-run this.\n    ...workspacePackages().map(({ dir }) => Smithers.file(`//${dir}/package.json`))\n  ]\n})\n\n/** The API index must link every published package; keep this in the docs verb. */\nconst docs = Smithers.DocsParity({\n  cwd,\n  readme: Smithers.file(\"README.md\"),\n  deps: [catalogPublicationTest]\n})\n\n/**\n * The collector and resolver behind `//apps/site:smithersLinks`:\n * which smithers.sh URLs a published package ships, and whether the page a URL\n * lands on is about the URL's own path. Fixtures only, so it needs no site\n * build; the contract gate runs the same rules over the real build.\n *\n * @since 1.0.0\n * @category test\n */\nconst publishedLinksUnit = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//apps/site/scripts/published-links.test.mjs\")]),\n  srcs: [\n    ...sources,\n    Smithers.file(\"//.smithers/flows/release/pack-release.mjs\"),\n    Smithers.file(\"//packages/repo-targets/scripts/workspace-packages.mjs\"),\n    Smithers.file(\"//pnpm-workspace.yaml\")\n  ],\n  deps: [],\n  cwd\n})\n\n/** Verify the support claims against the release workflow and complete workspace inventory. */\nconst supportMatrixTest = Smithers.Shell.Test({\n  shell: \"node --test --test-concurrency=1 apps/site/scripts/support-matrix.test.mjs\",\n  data: [\n    Smithers.file(\"scripts/support-matrix.test.mjs\"),\n    Smithers.file(\"scripts/sync-support-docs.mjs\"),\n    Smithers.glob(\"docs/**/*\"),\n    Smithers.file(\"src/content/docs/docs/reference/api/index.mdx\"),\n    Smithers.file(\"src/content/docs/docs/installation.mdx\"),\n    Smithers.file(\"src/content/docs/changelogs/1.0.0-rc.0.mdx\"),\n    Smithers.file(\"//.github/workflows/ci.yml\"),\n    Smithers.file(\"//.github/workflows/release.yml\"),\n    Smithers.file(\"//pnpm-workspace.yaml\"),\n    ...[\"pack-release\", \"packed-export-targets\", \"publish-release\", \"release-rehearsal\"].map(\n      (name) => Smithers.file(`//.smithers/flows/release/${name}.mjs`)\n    ),\n    Smithers.file(\"//packages/repo-targets/scripts/workspace-packages.mjs\"),\n    // The shared reader parses every member before selecting public packages.\n    // Explicit files cross package boundaries; a site-scoped glob cannot.\n    ...workspacePackages().map(({ dir }) => Smithers.file(`//${dir}/package.json`)),\n    platformBunPackage.docsFiles,\n    Smithers.file(\"//packages/smithers/flows/README.md\")\n  ]\n})\n\n/** Validate deployment entry points offline. */\nconst docsRuntimeTests = Smithers.Shell.Test({\n  shell: \"node --test --test-concurrency=1 apps/site/scripts/deployment.test.mjs\",\n  data: [\n    Smithers.file(\"scripts/deployment.test.mjs\"),\n    Smithers.file(\"package.json\"),\n    Smithers.file(\"docs-redirect/wrangler.jsonc\"),\n    Smithers.file(\"//apps/patterns-site/wrangler.jsonc\"),\n    Smithers.file(\"//apps/bug-worker/alchemy.run.ts\"),\n    Smithers.file(\"//apps/bug-worker/README.md\"),\n    Smithers.file(\"//apps/bug-worker/package.json\"),\n    mvpPackage.deploymentSources,\n    cliPackage.docsSources,\n    flowPackage.docsSources,\n    enginePackage.docsSources,\n    agentPackage.lib,\n    flowsPackage.lib,\n    targetsPackage.lib\n  ]\n})\n\nconst docsLint = Smithers.Shell.Test({\n  script: Smithers.file(\"scripts/check-docs.mjs\"),\n  data: [\n    Smithers.glob(\"//apps/site/src/content/**/*\"),\n    Smithers.glob(\"//apps/site/src/pages/**/*\"),\n    Smithers.file(\"//apps/site/src/data/versions.json\"),\n    Smithers.file(\"//apps/site/public/_redirects\"),\n    Smithers.file(\"//apps/site/scripts/catalog-publication.mjs\"),\n    Smithers.file(\"//apps/site/scripts/app-docs-integration.mjs\"),\n    Smithers.file(\"//apps/site/scripts/sync-app-docs.mjs\"),\n    Smithers.file(\"//apps/site/scripts/docs-text.mjs\"),\n    Smithers.file(\"//.smithers/flows/release/pack-release.mjs\"),\n    // The screenshots a page shows are checked against docs/app/images.\n    ...appDocsInputs,\n    appDocsImages\n  ]\n})\n\n/**\n * The docs redirect Worker's sources and what its tests read: the slug roster\n * from the docs-sync generator, which loads the workspace package list on\n * import, and its wrangler config. The map's freshness against the docs is\n * //.smithers/flows:packageDocs (`pnpm docs:check`).\n */\nconst docsRedirectSources = [\n  Smithers.glob(\"docs-redirect/src/**/*.ts\"),\n  Smithers.file(\"docs-redirect/scripts/workerd.mjs\"),\n  Smithers.file(\"docs-redirect/wrangler.jsonc\"),\n  Smithers.file(\"//.smithers/flows/docs-sync/package-docs.mjs\"),\n  Smithers.file(\"//.smithers/flows/docs-sync/package-docs.d.mts\"),\n  Smithers.file(\"//packages/repo-targets/scripts/workspace-packages.mjs\"),\n  Smithers.file(\"//pnpm-workspace.yaml\")\n]\n\n/**\n * Checks the docs redirect Worker against its own tsconfig.\n *\n * @since 1.0.0\n * @category build\n */\nconst docsRedirectCheck = Smithers.Typecheck({\n  srcs: docsRedirectSources,\n  deps: [],\n  tsconfig: Smithers.file(\"docs-redirect/tsconfig.json\"),\n  buildMode: false,\n  incremental: false,\n  cwd\n})\n\n/**\n * The docs redirect Worker's suite under Bun: the decision, pass-through and\n * DNS cases, the config, and the bundle run in workerd.\n *\n * @since 1.0.0\n * @category test\n */\n// Coverage policy: assertion-only for the Bun Worker suite. Bun's loaded-file\n// coverage does not establish the whole production denominator; no percentage\n// guarantee is claimed. See packages/repo-targets/contracts/README.md for the exception.\nconst docsRedirectTests = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.testSuite([\"docs-redirect/src\"]),\n  srcs: docsRedirectSources,\n  deps: [],\n  cwd\n})\n\n/**\n * Security review for the public site: the /demo intake form, the\n * Cloudflare _headers/_redirects, the docs redirect Worker, the recording\n * script that runs the CLI with provider credentials, and the install and\n * tutorial pages visitors copy into a shell.\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\n    \"src/*.ts\",\n    \"src/components/**\",\n    \"src/layouts/**\",\n    \"src/pages/**\",\n    \"docs-redirect/src/**\",\n    \"docs-redirect/wrangler.jsonc\",\n    \"scripts/**\",\n    \"tapes/**\",\n    \"public/_headers\",\n    \"public/_redirects\",\n    \"astro.config.mjs\",\n    \"docs/installation.mdx\",\n    \"src/content/docs/docs/installation.mdx\"\n  ],\n  checks: [\n    {\n      id: \"demo-intake-form\",\n      title: \"The demo form sends only the typed fields to the fixed intake endpoint\",\n      threat:\n        \"A visitor's name, work email and message reach a third party, or a script on the page rewrites where the form posts.\",\n      lookFor: [\n        \"An intake endpoint taken from a query parameter, env var, or page data instead of the literal bug.smithers.sh URL.\",\n        \"Error handling that renders the server's response body into the page with innerHTML.\",\n        \"The fetch sending credentials or extra headers (cookies, tokens) to the cross-origin intake worker.\"\n      ],\n      paths: [\"src/pages/demo/**\", \"scripts/demo-form.test.mjs\"]\n    },\n    {\n      id: \"redirects\",\n      title: \"Redirects stay on smithers.sh\",\n      threat:\n        \"An attacker uses a smithers.sh URL, or a retired `<slug>.smithers.sh` docs host, as an open redirect to a phishing origin.\",\n      lookFor: [\n        \"A _redirects rule whose destination is an absolute off-site URL or a splat that forwards a user-controlled host.\",\n        \"A docs-redirect Location built from request text (host suffix, path, query or headers) instead of a value of the generated maps under https://github.com/smithersai/smithers/.\"\n      ],\n      paths: [\n        \"public/_headers\",\n        \"public/_redirects\",\n        \"scripts/check-built-site.mjs\",\n        \"docs-redirect/src/**\",\n        \"docs-redirect/wrangler.jsonc\"\n      ]\n    },\n    {\n      id: \"build-time-secret-exposure\",\n      title: \"No secret or server-only env var is inlined into the built client bundle\",\n      threat:\n        \"Anyone who loads smithers.sh reads a provider key, deploy token, or dev API origin baked into static HTML or JS.\",\n      lookFor: [\n        \"import.meta.env reads of a non-PUBLIC_ variable in a component or client script.\",\n        \"A vite `define` that embeds process.env values other than the commit sha.\",\n        \"A fixture flag that stays active in a production build.\"\n      ],\n      paths: [\"astro.config.mjs\", \"src/**\"]\n    },\n    {\n      id: \"recording-scripts-credentials\",\n      title: \"The recording script keeps provider credentials and git state on the operator's machine\",\n      threat:\n        \"Running record-tape leaks the operator's ChatGPT or API key into a committed recording, or removes a worktree it does not own.\",\n      lookFor: [\n        \"A tape or script that echoes env, prints auth files, or types a key that lands in public/media output.\",\n        \"A cleanup trap that runs `rm -rf` or `git worktree remove` on a path not created by mktemp in the same script.\",\n        \"An unquoted variable in a shell command that splits or globs a path with spaces.\"\n      ],\n      paths: [\"scripts/record-tape.sh\", \"tapes/**\"]\n    },\n    {\n      id: \"copyable-install-snippets\",\n      title: \"Install and tutorial snippets that visitors run are safe to paste\",\n      threat:\n        \"A visitor who copies a docs command runs an unpinned remote script or leaks a key into shell history or a committed file.\",\n      lookFor: [\n        \"A `curl | sh` or `npx` command fetching from a host other than the project's own domains or npm.\",\n        \"A snippet with a real-looking API key or token rather than a placeholder.\",\n        \"A tutorial that writes a key into a source file instead of reading it from the environment.\"\n      ],\n      paths: [\"docs/installation.mdx\", \"src/content/docs/docs/installation.mdx\"]\n    }\n  ]\n})\n\n/**\n * Build and documentation targets for the public site.\n *\n * @since 1.0.0\n * @category packages\n */\n/**\n * Every smithers.sh URL a published package ships or prints lands on a built\n * page about the URL's own path: directly, or through one production redirect\n * that keeps every path segment, with the fragment present on the page.\n * `apps/site/scripts/published-links.mjs` holds the rules; its `--live` mode applies them\n * to production after a deploy.\n *\n * The route oracle is the emitted files under `apps/site/dist`, so the site's\n * build is a dependency rather than a step someone ran first. The edge orders\n * the build ahead of the gate, keys the gate on the build's own key so a\n * content change re-runs it, and puts the build's declared outputs in the\n * gate's sandbox read set.\n *\n * `dist` is deliberately not declared as an input: declared inputs expand at\n * plan time, and on a clean checkout the directory the build has not produced\n * yet expands to nothing, which is both a vacuous edge and no read at all.\n *\n * @since 1.0.0\n * @category test\n */\nconst smithersLinks = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//apps/site/scripts/smithers-links.test.mjs\")]),\n  srcs: [\n    Smithers.file(\"//apps/site/scripts/published-links.mjs\"),\n    Smithers.file(\"//.smithers/flows/release/pack-release.mjs\"),\n    Smithers.file(\"//packages/repo-targets/scripts/workspace-packages.mjs\")\n  ],\n  deps: [build]\n})\n\nexport const Package = Smithers.Package({\n  targets: {\n    check,\n    build,\n    supportDocs,\n    appDocs,\n    appDocsTest,\n    referenceIngest,\n    cliData,\n    cliReference,\n    cliReferenceTest,\n    docsRegressionTest,\n    apiDocs,\n    docsLint,\n    docsTextTest,\n    checkExitTest,\n    projectCopyTest,\n    installPageTest,\n    recordTapeTest,\n    supportMatrixTest,\n    publishedLinksUnit,\n    smithersLinks,\n    catalogPublicationTest,\n    docs,\n    docsRuntimeTests,\n    docsRedirectCheck,\n    docsRedirectTests,\n    llms,\n    ...securityReview\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 258,
+          "text": "// `referenceIngest`, and the sync script skips those slugs."
+        },
+        {
+          "line": 619,
+          "text": "// Coverage policy: assertion-only for the Bun Worker suite. Bun's loaded-file"
+        },
+        {
+          "line": 620,
+          "text": "// coverage does not establish the whole production denominator; no percentage"
+        },
+        {
+          "line": 638,
+          "text": "include: ["
+        }
+      ]
+    },
+    {
+      "path": "apps/site/src/content.config.ts",
+      "sha256": "ae83ed4f566e7e80b6ab8bc5b2b27e39a5a2ef9d247a1867dabc31a097ff6957",
+      "source": "import { docsLoader } from \"@astrojs/starlight/loaders\"\nimport { docsSchema } from \"@astrojs/starlight/schema\"\nimport { defineCollection } from \"astro:content\"\n\nexport const collections = {\n  docs: defineCollection({ loader: docsLoader(), schema: docsSchema() })\n}\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "apps/site/tsconfig.json",
+      "sha256": "a1f91f6a0df12a2bf6b772a8207075c1dbcea67225035e58d7b6e895748fa15b",
+      "source": "{\n  \"extends\": \"astro/tsconfigs/strict\",\n  \"compilerOptions\": {\n    \"jsx\": \"react-jsx\",\n    \"jsxImportSource\": \"react\"\n  },\n  \"include\": [\".astro/types.d.ts\", \"**/*\"],\n  // docs-redirect is a Worker with its own tsconfig (`pnpm run check:redirect`).\n  \"exclude\": [\"dist\", \"docs-redirect\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 7,
+          "text": "\"include\": [\".astro/types.d.ts\", \"**/*\"],"
+        },
+        {
+          "line": 9,
+          "text": "\"exclude\": [\"dist\", \"docs-redirect\"]"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "apps/site",
+      "label": "//apps/site:apiDocs",
+      "rule": "Generate",
+      "kinds": [
+        "run",
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/sync-api-docs.mjs"
+        }
+      ],
+      "dependencies": [
+        "//packages/errors:docsFiles",
+        "//packages/smithers/agent/chain:docsFiles",
+        "//packages/smithers/agent/evals:docsFiles",
+        "//packages/smithers/agent/fs:docsFiles",
+        "//packages/smithers/agent/harness:docsFiles",
+        "//packages/smithers/agent/integrations:docsFiles",
+        "//packages/smithers/agent/memory:docsFiles",
+        "//packages/smithers/agent/model:docsFiles",
+        "//packages/smithers/agent/plugin:docsFiles",
+        "//packages/smithers/agent/registry:docsFiles",
+        "//packages/smithers/agent/scorers:docsFiles",
+        "//packages/smithers/agent/std:docsFiles",
+        "//packages/smithers/agent/triggers:docsFiles",
+        "//packages/smithers/agent:docsFiles",
+        "//packages/smithers/build/build-cli:docsFiles",
+        "//packages/smithers/build:docsFiles",
+        "//packages/smithers/control:docsFiles",
+        "//packages/smithers/flows/artifacts:docsFiles",
+        "//packages/smithers/flows/canonical:docsFiles",
+        "//packages/smithers/flows/capability:docsFiles",
+        "//packages/smithers/flows/core:docsFiles",
+        "//packages/smithers/flows/crypto:docsFiles",
+        "//packages/smithers/flows/database:docsFiles",
+        "//packages/smithers/flows/engine-store:docsFiles",
+        "//packages/smithers/flows/jj:docsFiles",
+        "//packages/smithers/flows/journal:docsFiles",
+        "//packages/smithers/flows/kernel:docsFiles",
+        "//packages/smithers/flows/keys:docsFiles",
+        "//packages/smithers/flows/observability:docsFiles",
+        "//packages/smithers/flows/patterns:docsFiles",
+        "//packages/smithers/flows/plan-store:docsFiles",
+        "//packages/smithers/flows/plan:docsFiles",
+        "//packages/smithers/flows/platform-browser:docsFiles",
+        "//packages/smithers/flows/platform-bun:docsFiles",
+        "//packages/smithers/flows/platform-node:docsFiles",
+        "//packages/smithers/flows/run-store:docsFiles",
+        "//packages/smithers/flows/sandbox:docsFiles",
+        "//packages/smithers/flows/step-cache:docsFiles",
+        "//packages/smithers/flows/sync:docsFiles",
+        "//packages/smithers/flows/time-travel:docsFiles",
+        "//packages/smithers/flows:docsFiles",
+        "//packages/smithers/gateway:docsFiles",
+        "//packages/smithers/mcp:docsFiles",
+        "//packages/smithers/migrate:docsFiles",
+        "//packages/smithers/notifications:docsFiles",
+        "//packages/smithers:docsFiles",
+        "//packages/testing:docsFiles"
+      ]
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:appDocs",
+      "rule": "Generate",
+      "kinds": [
+        "run",
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/sync-app-docs.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/docs/app/pages/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/docs/app/toc.ts"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/docs/app/images/*",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/docs-text.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:appDocsTest",
+      "rule": "Shell.Test",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/sync-app-docs.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/sync-app-docs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/docs-text.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/docs/app/toc.ts"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:build",
+      "rule": "ToolBuild",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/scripts/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/public/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/astro.config.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "CHANGELOG.md"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers:docsSources"
+      ]
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:catalogPublicationTest",
+      "rule": "Shell.Test",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/catalog-publication.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/catalog-publication.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/docs/reference/api/index.mdx"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/content/docs/docs/reference/api/*.mdx",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/release/pack-release.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "pnpm-workspace.yaml"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/package.json"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/coding/package.json"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/review/seeded-bugs/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/bug-worker/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/maintainer-site/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/mvp/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/tui/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "evals/authoring/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/effect-code-storage/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/effect-electric/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/effect-tanstack-db/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/errors/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/rpc/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/chain/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/evals/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/fs/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness-detect/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/benchmarks/swebench/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/integrations/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/memory/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/model/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/model-host/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/plugin/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/registry/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/regression/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/scorers/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/std/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/triggers/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/build-cli/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/artifacts/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/canonical/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/capability/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/core/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/crypto/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine-store/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/flow/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/journal/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/kernel/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/keys/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/observability/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/patterns/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/plan/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/plan-store/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-browser/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-bun/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-cloudflare/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-node/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/run-store/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/secrets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/step-cache/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sync/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/time-travel/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/mcp/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/migrate/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/notifications/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/repo-view/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/terminal-frame/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/ui-styleguide/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/views/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smthrs-deprecation/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/testing/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:check",
+      "rule": "ToolRun",
+      "kinds": [
+        "run"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/scripts/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/public/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/astro.config.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/tsconfig.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:checkExitTest",
+      "rule": "Shell.Test",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/check-exit.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/check-docs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/docs-text.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/gen-cli-data.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/gen-cli-reference.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/generate-llms.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/generate-project-copy.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/ingest-reference.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/sync-api-docs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/sync-app-docs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/sync-support-docs.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/content/docs/docs/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/data/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/public/docs/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/public/llms.txt"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/public/llms-full.txt"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/package.json"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/coding/package.json"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/review/seeded-bugs/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/bug-worker/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/maintainer-site/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/mvp/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/tui/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "evals/authoring/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/effect-code-storage/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/effect-electric/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/effect-tanstack-db/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/errors/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/rpc/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/chain/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/evals/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/fs/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness-detect/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/benchmarks/swebench/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/integrations/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/memory/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/model/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/model-host/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/plugin/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/registry/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/regression/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/scorers/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/std/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/triggers/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/build-cli/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/artifacts/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/canonical/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/capability/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/core/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/crypto/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine-store/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/flow/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/journal/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/kernel/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/keys/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/observability/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/patterns/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/plan/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/plan-store/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-browser/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-bun/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-cloudflare/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-node/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/run-store/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/secrets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/step-cache/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sync/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/time-travel/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/mcp/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/migrate/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/notifications/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/repo-view/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/terminal-frame/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/ui-styleguide/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/views/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smthrs-deprecation/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/testing/package.json"
+        }
+      ],
+      "dependencies": [
+        "//packages/errors:docsFiles",
+        "//packages/smithers/agent/chain:docsFiles",
+        "//packages/smithers/agent/evals:docsFiles",
+        "//packages/smithers/agent/fs:docsFiles",
+        "//packages/smithers/agent/harness:docsFiles",
+        "//packages/smithers/agent/integrations:docsFiles",
+        "//packages/smithers/agent/memory:docsFiles",
+        "//packages/smithers/agent/model:docsFiles",
+        "//packages/smithers/agent/plugin:docsFiles",
+        "//packages/smithers/agent/registry:docsFiles",
+        "//packages/smithers/agent/scorers:docsFiles",
+        "//packages/smithers/agent/std:docsFiles",
+        "//packages/smithers/agent/triggers:docsFiles",
+        "//packages/smithers/agent:docsFiles",
+        "//packages/smithers/build/build-cli:docsFiles",
+        "//packages/smithers/build/targets:docsFiles",
+        "//packages/smithers/build:docsFiles",
+        "//packages/smithers/control:docsFiles",
+        "//packages/smithers/flows/artifacts:docsFiles",
+        "//packages/smithers/flows/canonical:docsFiles",
+        "//packages/smithers/flows/capability:docsFiles",
+        "//packages/smithers/flows/core:docsFiles",
+        "//packages/smithers/flows/crypto:docsFiles",
+        "//packages/smithers/flows/database:docsFiles",
+        "//packages/smithers/flows/engine-store:docsFiles",
+        "//packages/smithers/flows/engine:docsFiles",
+        "//packages/smithers/flows/flow:docsFiles",
+        "//packages/smithers/flows/jj:docsFiles",
+        "//packages/smithers/flows/journal:docsFiles",
+        "//packages/smithers/flows/kernel:docsFiles",
+        "//packages/smithers/flows/keys:docsFiles",
+        "//packages/smithers/flows/observability:docsFiles",
+        "//packages/smithers/flows/patterns:docsFiles",
+        "//packages/smithers/flows/plan-store:docsFiles",
+        "//packages/smithers/flows/plan:docsFiles",
+        "//packages/smithers/flows/platform-browser:docsFiles",
+        "//packages/smithers/flows/platform-bun:docsFiles",
+        "//packages/smithers/flows/platform-node:docsFiles",
+        "//packages/smithers/flows/run-store:docsFiles",
+        "//packages/smithers/flows/sandbox:docsFiles",
+        "//packages/smithers/flows/step-cache:docsFiles",
+        "//packages/smithers/flows/sync:docsFiles",
+        "//packages/smithers/flows/time-travel:docsFiles",
+        "//packages/smithers/flows:docsFiles",
+        "//packages/smithers/gateway:docsFiles",
+        "//packages/smithers/mcp:docsFiles",
+        "//packages/smithers/migrate:docsFiles",
+        "//packages/smithers/notifications:docsFiles",
+        "//packages/smithers:docsFiles",
+        "//packages/testing:docsFiles"
+      ]
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:cliData",
+      "rule": "Generate",
+      "kinds": [
+        "run",
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/gen-cli-data.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/data/migration-paths.json"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers:docsSources"
+      ]
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:cliReference",
+      "rule": "Generate",
+      "kinds": [
+        "run",
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/gen-cli-reference.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/data/cli-commands.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/data/cli-reference-extra.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/docs/reference/cli/tui.md"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/data/help/**/*.txt",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:cliReferenceTest",
+      "rule": "Shell.Test",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/gen-cli-reference.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/gen-cli-reference.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/data/cli-commands.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/data/cli-reference-extra.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/docs/reference/cli/tui.md"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/data/help/**/*.txt",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:docs",
+      "rule": "DocsParity",
+      "kinds": [
+        "docs"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/README.md"
+        }
+      ],
+      "dependencies": [
+        "//apps/site:catalogPublicationTest"
+      ]
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:docsLint",
+      "rule": "Shell.Test",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/check-docs.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/content/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/pages/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/data/versions.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/public/_redirects"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/catalog-publication.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/app-docs-integration.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/sync-app-docs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/docs-text.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/release/pack-release.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/docs/app/pages/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/docs/app/toc.ts"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/docs/app/images/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:docsRedirectCheck",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "apps/site/docs-redirect/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/docs-redirect/scripts/workerd.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/docs-redirect/wrangler.jsonc"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/docs-sync/package-docs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/docs-sync/package-docs.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "pnpm-workspace.yaml"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/docs-redirect/tsconfig.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:docsRedirectTests",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "apps/site/docs-redirect/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/docs-redirect/scripts/workerd.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/docs-redirect/wrangler.jsonc"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/docs-sync/package-docs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/docs-sync/package-docs.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "pnpm-workspace.yaml"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:docsRegressionTest",
+      "rule": "Shell.Test",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "apps/site/scripts/regressions/*.test.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/gen-cli-reference.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/sync-app-docs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/docs-text.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/data/cli-commands.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/data/cli-reference-extra.json"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/data/help/**/*.txt",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/docs/app/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/docs/app/toc.ts"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/styles/starlight.css"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/docs/quickstart.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/docs/reference/cli/tui.md"
+        },
+        {
+          "kind": "file",
+          "path": "apps/mvp/src/flows/registry.ts"
+        },
+        {
+          "kind": "file",
+          "path": "apps/mvp/src/screens/settings/SettingsScreen.tsx"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:docsRuntimeTests",
+      "rule": "Shell.Test",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/deployment.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/docs-redirect/wrangler.jsonc"
+        },
+        {
+          "kind": "file",
+          "path": "apps/patterns-site/wrangler.jsonc"
+        },
+        {
+          "kind": "file",
+          "path": "apps/bug-worker/alchemy.run.ts"
+        },
+        {
+          "kind": "file",
+          "path": "apps/bug-worker/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "apps/bug-worker/package.json"
+        }
+      ],
+      "dependencies": [
+        "//apps/mvp:deploymentSources",
+        "//packages/smithers/agent:lib",
+        "//packages/smithers/build/targets:lib",
+        "//packages/smithers/flows/engine:docsSources",
+        "//packages/smithers/flows/flow:docsSources",
+        "//packages/smithers/flows:lib",
+        "//packages/smithers:docsSources"
+      ]
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:docsTextTest",
+      "rule": "Shell.Test",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/flows-location.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/data/migration-paths.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/components/HeroStage.astro"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/docs-text.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/docs-text.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/content/docs/docs/reference/http-api.mdx"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/docs/guides/serve-beyond-loopback.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sync/src/SyncProtocol.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/kernel/src/HostServices.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/registry/src/Discovery.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smthrs-deprecation/docs/notice.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/migrate/src/flow/MigrateFlow.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/migrate/src/Scan.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/flow/src/DurableClock.ts"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/check-built-site.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/built-site.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/mvp/src/router.tsx"
+        },
+        {
+          "kind": "file",
+          "path": "apps/mvp/src/features/bugs/contract.ts"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/public/robots.txt"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/gen-cli-data.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/gen-cli-data.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/build-cli/src/effect-resolution.js"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers:docsSources"
+      ]
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:installPageTest",
+      "rule": "Shell.Test",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/install-page.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/sync-app-docs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/gen-cli-reference.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/docs-text.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/data/docs-sidebar.json"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/docs/app/pages/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/docs/app/toc.ts"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/layouts/Base.astro"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/pages/**/*.astro",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/docs/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/public/_redirects"
+        },
+        {
+          "kind": "file",
+          "path": ".specs/engineering/tickets/T-INS-04.md"
+        },
+        {
+          "kind": "file",
+          "path": ".specs/engineering/tickets/T-INS-05.md"
+        },
+        {
+          "kind": "file",
+          "path": ".specs/engineering/tickets/T-INS-08.md"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/astro.config.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/data/project.json"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/content/docs/docs/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": [
+        "//packages/repo-targets:repositoryInputs",
+        "//packages/smithers:docsSources"
+      ]
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:llms",
+      "rule": "Generate",
+      "kinds": [
+        "run",
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/generate-llms.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/content/docs/**/*.mdx",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/content/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/public/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/data/docs-sidebar.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/data/project.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/data/versions.json"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/data/help/**/*.txt",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/docs-text.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:projectCopyTest",
+      "rule": "Shell.Test",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/generate-project-copy.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/generate-project-copy.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/data/project.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/docs/installation.mdx"
+        },
+        {
+          "kind": "file",
+          "path": "README.md"
+        },
+        {
+          "kind": "file",
+          "path": "package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:publishedLinksUnit",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/published-links.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/scripts/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/public/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/astro.config.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/release/pack-release.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "pnpm-workspace.yaml"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:recordTapeTest",
+      "rule": "Shell.Test",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/record-tape.sh"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/record-tape.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/tapes/cli.tape"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/tapes/bin/smithers"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:referenceIngest",
+      "rule": "Generate",
+      "kinds": [
+        "run",
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/ingest-reference.mjs"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/build/targets:referencePages",
+        "//packages/smithers/flows/engine:referencePages",
+        "//packages/smithers/flows/flow:referencePages"
+      ]
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "apps/site/src/*.ts",
+            "apps/site/src/components/**",
+            "apps/site/src/layouts/**",
+            "apps/site/src/pages/**",
+            "apps/site/docs-redirect/src/**",
+            "apps/site/docs-redirect/wrangler.jsonc",
+            "apps/site/scripts/**",
+            "apps/site/tapes/**",
+            "apps/site/public/_headers",
+            "apps/site/public/_redirects",
+            "apps/site/astro.config.mjs",
+            "apps/site/docs/installation.mdx",
+            "apps/site/src/content/docs/docs/installation.mdx"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/components/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/layouts/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/pages/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/docs-redirect/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/docs-redirect/wrangler.jsonc"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/scripts/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/tapes/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/public/_headers"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/public/_redirects"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/astro.config.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/docs/installation.mdx"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/content/docs/docs/installation.mdx"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "apps/site/src/*.ts",
+            "apps/site/src/components/**",
+            "apps/site/src/layouts/**",
+            "apps/site/src/pages/**",
+            "apps/site/docs-redirect/src/**",
+            "apps/site/docs-redirect/wrangler.jsonc",
+            "apps/site/scripts/**",
+            "apps/site/tapes/**",
+            "apps/site/public/_headers",
+            "apps/site/public/_redirects",
+            "apps/site/astro.config.mjs",
+            "apps/site/docs/installation.mdx",
+            "apps/site/src/content/docs/docs/installation.mdx"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/components/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/layouts/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/src/pages/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/docs-redirect/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/docs-redirect/wrangler.jsonc"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/scripts/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/tapes/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/public/_headers"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/public/_redirects"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/astro.config.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/docs/installation.mdx"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/content/docs/docs/installation.mdx"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:smithersLinks",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/smithers-links.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/published-links.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/release/pack-release.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": [
+        "//apps/site:build"
+      ]
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:supportDocs",
+      "rule": "Generate",
+      "kinds": [
+        "run",
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/sync-support-docs.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/docs/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/site",
+      "label": "//apps/site:supportMatrixTest",
+      "rule": "Shell.Test",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/support-matrix.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/scripts/sync-support-docs.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/site/docs/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/content/docs/docs/reference/api/index.mdx"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/content/docs/docs/installation.mdx"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/content/docs/changelogs/1.0.0-rc.0.mdx"
+        },
+        {
+          "kind": "file",
+          "path": ".github/workflows/ci.yml"
+        },
+        {
+          "kind": "file",
+          "path": ".github/workflows/release.yml"
+        },
+        {
+          "kind": "file",
+          "path": "pnpm-workspace.yaml"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/release/pack-release.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/release/packed-export-targets.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/release/publish-release.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/release/release-rehearsal.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/package.json"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/coding/package.json"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/review/seeded-bugs/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/bug-worker/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/maintainer-site/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/mvp/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "apps/tui/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "evals/authoring/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/effect-code-storage/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/effect-electric/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/effect-tanstack-db/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/errors/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/rpc/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/chain/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/evals/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/fs/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness-detect/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/benchmarks/swebench/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/integrations/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/memory/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/model/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/model-host/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/plugin/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/registry/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/regression/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/scorers/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/std/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/triggers/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/build-cli/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/artifacts/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/canonical/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/capability/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/core/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/crypto/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine-store/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/flow/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/journal/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/kernel/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/keys/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/observability/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/patterns/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/plan/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/plan-store/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-browser/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-bun/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-cloudflare/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-node/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/run-store/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/secrets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/step-cache/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sync/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/time-travel/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/mcp/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/migrate/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/notifications/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/repo-view/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/terminal-frame/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/ui-styleguide/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/views/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smthrs-deprecation/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/testing/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/README.md"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows/platform-bun:docsFiles"
+      ]
+    }
+  ],
+  "areas": [
+    "docs-redirect/scripts",
+    "docs-redirect/src",
+    "docs/app",
+    "scripts/app-docs-integration.mjs",
+    "scripts/catalog-publication.mjs",
+    "scripts/check-built-site.mjs",
+    "scripts/check-docs.mjs",
+    "scripts/docs-text.mjs",
+    "scripts/filter-sitemap.mjs",
+    "scripts/gen-cli-data.mjs",
+    "scripts/gen-cli-reference.mjs",
+    "scripts/generate-llms.mjs",
+    "scripts/generate-project-copy.mjs",
+    "scripts/ingest-reference.mjs",
+    "scripts/migration-guide.mjs",
+    "scripts/package-doc-links.mjs",
+    "scripts/published-links.mjs",
+    "scripts/render-og.mjs",
+    "scripts/sync-api-docs.mjs",
+    "scripts/sync-app-docs.mjs",
+    "scripts/sync-support-docs.mjs",
+    "src/content.config.ts",
+    "src/data",
+    "src/env.d.ts"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

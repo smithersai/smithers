@@ -129,6 +129,48 @@ describe("BrowserSqlite over OPFS", () => {
       expect(yield* client`PRAGMA synchronous`).toEqual([{ synchronous: 2 }])
     }).pipe(Effect.provide(database())))
 
+  for (const exclusive of [true, false]) {
+    for (const synchronous of [0, 1, 3]) {
+      it.effect(`refuses synchronous=${synchronous} on an exclusive=${exclusive} connection and closes it`, () =>
+        Effect.gen(function*() {
+          const shared = yield* Layer.build(sqlite())
+          const real = Context.get(shared, BrowserSqlite.Sqlite)
+          let closed = 0
+          // Faulty SQLite configuration: execute the real PRAGMA with an unsafe mode instead of FULL.
+          const faulty = BrowserSqlite.Sqlite.of({
+            ...real,
+            exclusive,
+            sqlite3: {
+              ...real.sqlite3,
+              open_v2: async (...args) => {
+                const db = await real.sqlite3.open_v2(...args)
+                await real.sqlite3.exec(db, `PRAGMA synchronous = ${synchronous}`)
+                return db
+              },
+              statements: (db, statements, options) =>
+                real.sqlite3.statements(
+                  db,
+                  statements.replace("PRAGMA synchronous = FULL", `PRAGMA synchronous = ${synchronous}`),
+                  options
+                ),
+              close: (db) => (closed++, real.sqlite3.close(db))
+            }
+          })
+          const result = yield* BrowserSqlite.open("unsafe.db").pipe(
+            Effect.provideService(BrowserSqlite.Sqlite, faulty),
+            Effect.scoped,
+            Effect.result
+          )
+          expect(result._tag).toBe("Failure")
+          if (result._tag === "Failure") {
+            expect(result.failure.message).toContain("Failed to journal database")
+            expect(result.failure.reason.cause).toMatchObject({ message: "SQLite synchronous must be FULL" })
+          }
+          expect(closed).toBe(1)
+        }).pipe(Effect.scoped))
+    }
+  }
+
   it.effect("keeps every committed transaction through a power loss, syncing the log at each commit", () =>
     Effect.gen(function*() {
       // The worker's pool and a connection it never closes: a power loss takes the process and every unsynced write.

@@ -7,6 +7,7 @@ import { shapeRows } from "./shape"
 import { dropWord } from "./stackWrites"
 import { oldBuildDir, requires, stackRepository } from "./target"
 import { expectConsoleError, expectOfflineErrors, expectServerError } from "./watch"
+import { chooseIssue } from "./todoDraft"
 
 // A deploy that moved the stack's device stores a version (decision 0153: todo-requested 4 to 5, the todo-sending
 // payload 2 to 3), on one device. The build production ran before it (its files in OLD_BUILD_DIR, docs/infrastructure.md
@@ -88,6 +89,9 @@ test(
       const draft = page.getByRole("form", { name: "TODO draft" }).first()
       await draft.getByLabel("Title").fill(title)
       await draft.getByLabel("Prompt").fill(`Add a line to the README: ${title}`)
+      // A TODO hangs under exactly one issue (decision 0153): a build with the Issue picker waits for one before Commit.
+      // A build from before 0153 has no picker and commits without one.
+      if (await draft.getByLabel("Issue").count() > 0) await chooseIssue(draft)
       await draft.getByRole("button", { name: "Commit" }).click()
     }
     // Electric's live updates are held from the start, so a commit the route takes stays Requested.

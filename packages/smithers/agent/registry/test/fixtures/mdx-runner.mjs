@@ -1,18 +1,17 @@
 import assert from "node:assert/strict"
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { FlowEngine } from "@smthrs/engine"
 import { Action } from "@smthrs/flow"
 import { Effect, Exit, Layer, Scope } from "effect"
 import { Discovery, Executable } from "../../src/index.ts"
-import { Crypto } from "@smthrs/crypto"
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 
 const fixture = fileURLToPath(new URL("./mdx", import.meta.url))
 const root = await mkdtemp(fileURLToPath(new URL("./.mdx-", import.meta.url)))
-const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
+const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)
 const scope = await Effect.runPromise(Scope.make())
 const context = await Effect.runPromise(Layer.buildWithScope(
   Layer.mergeAll(platform, FlowEngine.layerMemory, Action.layerImplementations), scope

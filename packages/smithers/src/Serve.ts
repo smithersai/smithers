@@ -238,7 +238,7 @@ export const host = (bind: Bind, root: string) =>
         })
       )
     }
-    yield* gateway.value.launch(health(root), {
+    return yield* gateway.value.launch(health(root), {
       host: bind.host,
       port: bind.port,
       listen: bind.listen,

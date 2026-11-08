@@ -529,7 +529,7 @@ const table: ReadonlyArray<MappingRow> = [
   ),
   row(
     "package.json",
-    "@smthrs/* at the migrator's own version and effect at 4.1.0",
+    "@smthrs/* at the migrator's own version and effect at 4.1.1",
     null,
     "Old packages are removed only in the final `project` unit. `zod` stays only if non-workflow code still imports it.",
     "automatic"

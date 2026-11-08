@@ -14,9 +14,8 @@ it("terminates and joins a Docker probe that ignores SIGTERM, reporting its dead
   // only after its SIGTERM handler is installed; a server keeps it alive
   // without polling or sleeps. It never fabricates a successful probe.
   writeFileSync(
-    join(directory, "docker"),
-    `#!${process.execPath}\n`
-      + `const { writeFileSync } = require("node:fs");\n`
+    join(directory, "docker.cjs"),
+    `const { writeFileSync } = require("node:fs");\n`
       + `process.on("SIGTERM", () => writeFileSync(${JSON.stringify(term)}, "ignored"));\n`
       + `require("node:net").createServer().listen(0, "127.0.0.1", () => {\n`
       + `  writeFileSync(${JSON.stringify(ready)}, JSON.stringify({ pid: process.pid, node: process.execPath }));\n`
@@ -27,12 +26,13 @@ it("terminates and joins a Docker probe that ignores SIGTERM, reporting its dead
     "--input-type=module",
     "-e",
     `import { docker } from ${JSON.stringify(helper)};\n`
-    + `try { docker(["info"]); } catch (error) {\n`
+    + `try { docker(["info"], { command: process.execPath, args: [${
+      JSON.stringify(join(directory, "docker.cjs"))
+    }] }); } catch (error) {\n`
     + `  console.log(JSON.stringify({ message: error.message, code: error.cause?.code }));\n`
     + `}\n`
   ], {
-    detached: true,
-    env: { ...process.env, PATH: `${directory}:${process.env.PATH}` },
+    detached: process.platform !== "win32",
     stdio: ["ignore", "pipe", "pipe"]
   })
   let stdout = ""
@@ -47,7 +47,7 @@ it("terminates and joins a Docker probe that ignores SIGTERM, reporting its dead
     watchdog = true
     const pid = existsSync(ready)
       ? (JSON.parse(readFileSync(ready, "utf8")) as { pid: number }).pid
-      : -child.pid!
+      : child.pid!
     try {
       process.kill(pid, "SIGKILL")
     } catch (error) {
@@ -73,7 +73,8 @@ it("terminates and joins a Docker probe that ignores SIGTERM, reporting its dead
     clearTimeout(timer)
     if (child.pid !== undefined) {
       try {
-        process.kill(-child.pid, "SIGKILL")
+        if (process.platform === "win32") child.kill("SIGKILL")
+        else process.kill(-child.pid, "SIGKILL")
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
       }

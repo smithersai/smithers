@@ -137,6 +137,16 @@ describe("schema identity for what rc.115 did not have", () => {
       .toEqual({ type: "string", allOf: [{ minLength: 2 }, { maxLength: 5 }] })
   })
 
+  it("owns the new ASCII check while retaining Effect's runtime validation", () => {
+    const ascii = Schema.String.check(Schema.isAscii())
+    expect(Node.schemaIdentity(ascii).schema).toEqual({ type: "string", pattern: "^[\\x00-\\x7F]*$" })
+    expect(Schema.is(ascii)("plain\0text")).toBe(true)
+    expect(Schema.is(ascii)("café")).toBe(false)
+    const ulid = Schema.String.check(Schema.isULID())
+    expect(Schema.is(ulid)("00000000000000000000000000")).toBe(true)
+    expect(Schema.is(ulid)("80000000000000000000000000")).toBe(false)
+  })
+
   it("takes the schema of a check result marked approximate", () => {
     const approximate = Schema.String.check(
       Schema.makeFilter((text: string) => text.length > 0, { toJsonSchema: () => [{ minLength: 1 }, true] })

@@ -1,6 +1,6 @@
-import { NodeCrypto, NodeServices } from "@effect/platform-node"
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
+import { NodeServices } from "@effect/platform-node"
 import * as Digest from "@smthrs/core/Digest"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -25,9 +25,6 @@ import {
 import { batches, hunks, jevSemanticCheck, MAX_STATES, proposalHunks } from "../repository/jev-checks.ts"
 import type { Work } from "../repository/jobs.ts"
 import type { Check, Draft, JobResult, StepResult } from "../repository/schema.ts"
-
-// Effect 4.1 removed effect/Crypto, and NodeServices.layer no longer provides it.
-const nodeServices = Layer.merge(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 
 const base = "a".repeat(40), candidate = "b".repeat(40)
 const lines = (count: number, prefix: string) =>
@@ -312,7 +309,7 @@ const runCheck = async (
   evaluator?: Layer.Layer<Evaluator.Evaluator>
 ) => {
   const asked: Array<string> = []
-  const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(nodeServices)))
+  const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(NodeServices.layer)))
   const scripted = evaluator ?? Evaluator.layerScripted((request) => {
     const state = request.state as { path: string; line: number; rule: string; hunk: string }
     assert.equal(state.rule, rule, "Jev is asked the maintainer's own rule")
@@ -329,7 +326,7 @@ const runCheck = async (
       Layer.provide(Jj.layerNoop({})),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(nodeServices)
+      Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NativeCrypto.layer))
     )
   )
   try {
@@ -475,7 +472,7 @@ const runChecksWith = (failure: CodingError) =>
       Effect.provideService(FlowRuntime.FlowInstance, { executionId: "step-checks" } as never),
       Effect.provideService(FlowRuntime.FlowRuntime, runtime as never)
     )) as typeof StepResult.Type
-  }).pipe(Effect.scoped, Effect.provide([Jj.layerNoop({}), nodeServices]), Effect.runPromise)
+  }).pipe(Effect.scoped, Effect.provide([Jj.layerNoop({}), NodeServices.layer]), Effect.runPromise)
 
 test("an evaluator failure is an errored row carrying its typed error, and blocks the gate", async () => {
   const failure = new CodingError({

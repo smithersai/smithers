@@ -1,10 +1,10 @@
 // Deep reviewed and polished by a human on 2026-08-10.
 
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Exit, Fiber, Latch, Layer, Option, Schema, Scope } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { effect, isComplete, pollUntil } from "./Harness.ts"
 import { layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
 

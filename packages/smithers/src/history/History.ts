@@ -7,7 +7,6 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as AgentSession from "@smthrs/agent/AgentSession"
 import { Control, ControlRuntime } from "@smthrs/control"
-import { Crypto } from "@smthrs/crypto"
 import * as Dialect from "@smthrs/database/Dialect"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
@@ -119,7 +118,7 @@ const writerLayer = (root: string, workspace: string) => {
     Layer.provideMerge(stores),
     Layer.provide(NodeJj.layerAt(workspace)),
     Layer.provide(NodeServices.layer),
-    Layer.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Layer.provide(NodeCrypto.layer)
   )
 }
 

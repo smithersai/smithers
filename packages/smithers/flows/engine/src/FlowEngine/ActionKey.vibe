@@ -7,11 +7,12 @@
 
 import { firstPath as schemaErrorPath } from "@smthrs/canonical/IssuePath"
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
-import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, StepIdentity } from "@smthrs/flow"
 import { DerivedKey, type StoredKey } from "@smthrs/keys"
 import * as Node from "@smthrs/plan/Node"
 import * as Context from "effect/Context"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 
@@ -107,7 +108,7 @@ const fileBoundary = (
 export const ordinalScope = (
   action: Action.Any,
   site?: string | undefined
-): string!Schema.SchemaError!Crypto.Crypto =>
+): string!Schema.SchemaError!(EffectDigest.Digest | SecureRandom.SecureRandom) =>
   StepIdentity.allocationScope({
     kind: "action",
     name: action.name,
@@ -231,7 +232,7 @@ export const actionKey = effect (
   } | undefined,
   scope: string,
   encoding: 1 | 2 | 3 = keyEncodings[0]
-): StoredKey!Schema.SchemaError!Crypto.Crypto => {
+): StoredKey!Schema.SchemaError!(EffectDigest.Digest | SecureRandom.SecureRandom) => {
   if (action.tier === "sealed" && action.idempotencyKey !== undefined) {
     // Skyframe's SkyKey is (functionName, argument): a string idempotencyKey
     // is namespaced by the action name so two distinct actions sharing an

@@ -1,0 +1,50 @@
+// The agent's model and budget, from the deployment's Effect `Config` (wiki/decisions/0010-live-agent.md):
+//
+//   CHAT_MODEL          a configured-model record as JSON: { protocol, baseUrl?, path?, modelId, credential, extraBody? }
+//                       Unset, DEFAULT_CHAT_MODEL, the model smithers.sh chats with.
+//   <credential>        the record's key, by its credential's name: CEREBRAS_API_KEY for the default; a custom
+//                       credential NAME reads SMITHERS_MODEL_KEY_NAME (@smthrs/model-host's HostModel).
+//   CHAT_DAILY_TOKENS   the day's token budget across every conversation; DEFAULT_DAILY_TOKENS unset.
+//
+// A missing key is not a broken deployment: every reply fails, visibly, saying the agent has no model.
+import { HostModel, type HostModelRecord } from "@smthrs/model-host"
+import { ChatModel } from "./Reply.vibe"
+
+/** The model smithers.sh's chat uses by default (apps/mvp/worker/ModelRoles.ts `DEFAULT_CHAT_MODEL`). */
+export const DEFAULT_CHAT_MODEL: HostModelRecord = {
+  protocol: "openai-chat",
+  baseUrl: "https://api.cerebras.ai",
+  modelId: "qwen-3.8-27b",
+  credential: "CEREBRAS_API_KEY",
+}
+
+/** Two million tokens a day: about a thousand answers. */
+export const DEFAULT_DAILY_TOKENS = 2_000_000
+
+schema ModelRecord {
+  readonly protocol: string
+  readonly baseUrl?: string
+  readonly path?: string
+  readonly modelId: string
+  readonly credential: string
+  readonly extraBody?: Record<string, Schema.Unknown>
+}
+
+/** `CHAT_MODEL`, or the default. A value that isn't a record fails the configuration. */
+export const chatModelRecord = Config.schema(Schema.fromJsonString(ModelRecord), "CHAT_MODEL").pipe(
+  Config.withDefault(DEFAULT_CHAT_MODEL),
+)
+
+/** `CHAT_DAILY_TOKENS`, a positive whole number, or the default. */
+export const dailyTokens = Config.Int("CHAT_DAILY_TOKENS").pipe(
+  Config.withDefault(DEFAULT_DAILY_TOKENS),
+)
+
+/** The agent's model from configuration: usable, or the reason it isn't (a planner code, never a key). */
+export effect function chatModel() {
+  const record = try chatModelRecord
+  return try Effect.match(HostModel.make(record), {
+    onFailure: (error): ChatModel.Shape => ({ model: undefined, unusable: error.reason }),
+    onSuccess: (model): ChatModel.Shape => ({ model, unusable: "" }),
+  })
+}

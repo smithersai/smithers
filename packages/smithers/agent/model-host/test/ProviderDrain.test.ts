@@ -2,7 +2,7 @@ import { Model, ModelError, type ModelEvent } from "@smthrs/model"
 import type { NativeAgent } from "@smthrs/rpc"
 import { Effect, Exit, Fiber, Latch, Stream } from "effect"
 import { describe, expect, test } from "vitest"
-import { runModelTurn } from "../src/ModelTurnHost.vibe"
+import { runModelTurn } from "./fixtures/durable.ts"
 
 const turn: NativeAgent.StartAgentTurnRequest = {
   runId: "run",

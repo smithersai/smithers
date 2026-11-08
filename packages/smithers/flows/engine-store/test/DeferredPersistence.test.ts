@@ -146,6 +146,17 @@ describe("DeferredPersistence", () => {
         expect(completed.row.exit).toEqual(exit)
       }
 
+      for (const field of ["failures", "reasons"]) {
+        const completed = yield* state.completeDeferred({
+          flowName: TestFlow._tag,
+          executionId: `${field}-failure`,
+          deferredName: "answer",
+          exit: { _id: "Exit", _tag: "Failure", cause: { [field]: [{ _tag: "Fail", error: "stored" }] } },
+          completedAtMs: 0
+        })
+        expect(completed.row.exit).toEqual(Exit.fail("stored"))
+      }
+
       const interrupted = yield* state.completeDeferred({
         flowName: TestFlow._tag,
         executionId: "numeric-interrupt",

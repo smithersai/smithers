@@ -46,6 +46,22 @@ import type { Lock } from "./Outbox.ts"
 export class PersistenceUnavailable extends Data.TaggedError("PersistenceUnavailable")<{ readonly cause: unknown }> {}
 
 /**
+ * The database couldn't say which collections it holds: TanStack DB's private table changed or can't be read.
+ *
+ * @category errors
+ * @since 0.4.0
+ */
+export class CollectionsUnreadable extends Data.TaggedError("CollectionsUnreadable")<{ readonly cause: unknown }> {}
+
+/**
+ * The statement `Service.collections` lists a database's collections with.
+ *
+ * @category constants
+ * @since 0.4.0
+ */
+export const LIST_COLLECTIONS = "SELECT collection_id FROM collection_registry"
+
+/**
  * An open database: whatever `open` returns and `make` builds on. `close`, when
  * present, runs as the layer closes.
  *
@@ -111,6 +127,12 @@ export interface Service {
   readonly registry?: Registry | undefined
   /** The lock persisted synced collections elect their writer with (`Options.lock`); none when each program writes. */
   readonly lock?: Lock | undefined
+  /**
+   * The ids of the collections the database holds, whichever program made them: a family's members nobody has open.
+   * Reads TanStack DB's private `collection_registry`. If that can't be read or changed shape, it fails, and never
+   * answers an empty list. Absent when there's no database, so nothing is stored.
+   */
+  readonly collections?: Effect.Effect<ReadonlyArray<string>, CollectionsUnreadable> | undefined
 }
 
 /**
@@ -265,7 +287,21 @@ export const layer = <D extends Database>(options: Options<D>): Layer.Layer<Pers
       return Persistence.of({
         persistence: Option.some(options.make(database, coordinator)),
         ...registry,
-        ...(options.lock === undefined ? {} : { lock: options.lock })
+        ...(options.lock === undefined ? {} : { lock: options.lock }),
+        collections: Effect.tryPromise({
+          try: async () => {
+            const { execute } = database as {
+              readonly execute?: (sql: string) => Promise<ReadonlyArray<{ readonly collection_id?: unknown }>>
+            }
+            if (execute === undefined) throw new Error("no execute")
+            const rows = await execute.call(database, LIST_COLLECTIONS)
+            return rows.map((row) => {
+              if (typeof row.collection_id !== "string") throw new Error("collection_registry changed shape")
+              return row.collection_id
+            })
+          },
+          catch: (cause) => new CollectionsUnreadable({ cause })
+        })
       })
     })
   )

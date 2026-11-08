@@ -3,7 +3,7 @@ title: "API reference"
 description: "Every public export of @smthrs/gateway: the assembled server and its Node host, the served read path, the wire schemas and folds, the RPC group, the diagnosis renderer, and the failure vocabulary."
 ---
 
-The gateway requires `effect` at exactly `4.1.0` as its only peer. Node and Bun adapters are bundled privately, built from 4.1.0; hosts need no separate adapter install.
+The gateway requires `effect` at exactly `4.1.1` as its only peer. Node and Bun adapters are bundled privately, built from 4.1.1; hosts need no separate adapter install.
 
 The root entry point exports one namespace per module, and every local module is
 also importable from `@smthrs/gateway/<Module>`.

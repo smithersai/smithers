@@ -1,4 +1,5 @@
 import * as Dialect from "@smthrs/database/Dialect"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { tempDirectory } from "./TempDirectory.ts"
 /**
  * Pins the backup/restore contract of `DisasterRecovery`: a hot backup is a
@@ -12,7 +13,6 @@ import { tempDirectory } from "./TempDirectory.ts"
  */
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { DurableWriter } from "@smthrs/database"
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
@@ -20,6 +20,7 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as SqlConsensus from "@smthrs/journal/SqlConsensus"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import * as Cause from "effect/Cause"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import type * as FileSystem from "effect/FileSystem"
@@ -38,7 +39,7 @@ type Environment =
   | DurableWriter.DurableWriter
   | SqlClient.SqlClient
   | FileSystem.FileSystem
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
 
 /** The migrated in-memory database plus the real host filesystem. */
 const environment = Layer.mergeAll(TestStores.databaseAt(":memory:"), NodeFileSystem.layer)

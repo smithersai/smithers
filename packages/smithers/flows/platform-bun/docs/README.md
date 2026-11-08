@@ -41,7 +41,7 @@ is Effect's Node spawner re-exported; contained POSIX variants use
 bun add @smthrs/platform-bun@1.0.0-rc.16 effect
 ```
 
-`effect` is a required peer at exactly `4.1.0`. `@effect/platform-bun` is
+`effect` is a required peer at exactly `4.1.1`. `@effect/platform-bun` is
 bundled privately, built from `effect@4.1.1`. The filesystem slot runs the
 `smithers-jj-export` helper that the required peer `@smthrs/platform-node`
 ships. The `Jj` slot needs jj 0.39.0 or later, checked on its first operation;

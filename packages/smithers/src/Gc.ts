@@ -16,7 +16,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
-import { Crypto } from "@smthrs/crypto"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as ArtifactGc from "@smthrs/engine-store/ArtifactGc"
 import * as Retention from "@smthrs/engine-store/Retention"
@@ -218,9 +217,7 @@ export const sweep = (
         ArtifactGc.layerFileSystem({ directory: objects }).pipe(
           Layer.provide([NodeDatabase.layer({ filename: engine }), NodeFileSystem.layer])
         ).pipe(
-          Layer.provideMerge(
-            Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
-          )
+          Layer.provideMerge(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer))
         )
       ),
       Effect.map((report): ArtifactGc.GcReport | Failure => report),

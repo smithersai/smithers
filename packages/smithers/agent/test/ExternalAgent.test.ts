@@ -7,7 +7,6 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { FlowEngine } from "@smthrs/engine"
-import { Crypto } from "@smthrs/crypto"
 import { Action, ExternalJob, Fault, Flow, Interpreter } from "@smthrs/flow"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import * as Cause from "effect/Cause"
@@ -135,7 +134,7 @@ const stack = (service: AgentRunner.AgentJobs["Service"]) =>
     Layer.provideMerge(Layer.succeed(AgentRunner.AgentJobs, service)),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Layer.provideMerge(NodeCrypto.layer)
   )
 
 const turns = Effect.gen(function*() {

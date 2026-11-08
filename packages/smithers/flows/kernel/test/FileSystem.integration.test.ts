@@ -230,3 +230,23 @@ describe("FileSystem real host confinement", () => {
       expect(yield* Effect.promise(() => readFile(moved, "utf8"))).toBe("inside-original")
     }))
 })
+
+it.effect("guards Effect 4.1 directory entries and non-following stat on a real filesystem", () =>
+  Effect.gen(function*() {
+    const workspace = yield* Effect.promise(() => temporaryDirectory())
+    const directory = join(workspace, "nested")
+    yield* Effect.promise(() => mkdir(directory))
+    yield* Effect.promise(() => writeFile(join(directory, "entry.txt"), "entry"))
+    yield* Effect.promise(() => symlink("entry.txt", join(directory, "link.txt")))
+    yield* withGuardedFileSystem(workspace, workspaceRules(workspace), () =>
+      Effect.gen(function*() {
+        const fs = yield* EffectFileSystem.FileSystem
+        const entries = yield* fs.readDirectoryEntries(directory)
+        expect([...entries].sort((left, right) => left.name.localeCompare(right.name))).toEqual([
+          { name: "entry.txt", type: "Unknown" },
+          { name: "link.txt", type: "Unknown" }
+        ])
+        expect((yield* fs.lstat(join(directory, "entry.txt"))).type).toBe("File")
+        expect((yield* fs.lstat(join(directory, "link.txt"))).type).toBe("SymbolicLink")
+      }))
+  }))

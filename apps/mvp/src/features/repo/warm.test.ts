@@ -265,3 +265,24 @@ describe("a link's warm", () => {
     await h.settled()
   })
 })
+
+// Astra on 11855d97: a read on its way when the repository refused this person wrote its answer back after the wipe.
+describe("a repository's refusal", () => {
+  test("a file list already asked for writes nothing once the repository refused", async () => {
+    const h = await repoHarness(server)
+    const { id, headSha } = await h.seed("octocat", "Spoon-Knife")
+    const answer = Promise.withResolvers<void>()
+    const tab = await open(h, {
+      client: withTree(h, (real) => (owner, name, sha) => Effect.andThen(Effect.promise(() => answer.promise), real.tree(owner, name, sha))),
+    })
+    void tab.repo.actions.warmRoute("tree", { ...SPOON, ref: "main" }, {})
+    await waitFor(() => expect(tab.repo.lookups.tree(id, headSha)?.state).toBe("loading"))
+    const repos = await tab.runtime.runPromise(Effect.service(RepoStore))
+    await tab.runtime.runPromise(repos.refuse(id))
+    expect(tab.repo.lookups.tree(id, headSha)).toBeUndefined()
+    answer.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    expect(tab.repo.lookups.tree(id, headSha)).toBeUndefined()
+  })
+})
+

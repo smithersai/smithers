@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { type ComponentProps, createContext, type ReactNode, useContext, useId, useState } from "react";
-import { cn } from "../cn";
-import { formatStatus, statusClass } from "../status";
+import { cn } from "@smthrs/ui-css";
+import { formatStatus, statusClass } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 
 export type PlanStepStatus = "pending" | "active" | "done" | "failed" | "skipped";

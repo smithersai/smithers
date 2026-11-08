@@ -112,13 +112,24 @@ export type Ended =
   | "handed_over"
   | "navigated"
 
+/** Content-free evidence for the one terminal mark, retained on the browser's performance timeline. */
+export interface EndRecord {
+  readonly previous: "pending" | "painted"
+  readonly trigger: "router" | "dom" | "response" | "request" | "lock" | "session" | "storage" | "lifecycle" | "timer" | "revoke" | "release" | "search"
+  readonly connected: boolean
+}
+
 /** What the app reads of the shell (`window.__smithersFirstPaint`). */
 export interface Shell {
+  /** Connects public search input to the early HTTP client; only `showSearch` accepts gated rows. */
+  readonly bindSearch?: (ask: (owner: string, name: string, q: string) => void, forget: () => void) => () => void
+  /** Rows already authorized by the app's data gate; absent rows withdraw the early answer synchronously. */
+  readonly showSearch?: (owner: string, name: string, q: string, issues: ReadonlyArray<FirstPaintIssue> | undefined) => void
   /**
    * The app's page takes over the shell's `smithers-data` hold: its release, when the shell holds it and the mark is
-   * still absent; otherwise `undefined`, after the shell revoked what it had and stopped asking for the lock.
+   * still absent. Waits for a pending grant; a wipe, revocation or refused grant resolves to `undefined`.
    */
-  readonly handOver: () => (() => void) | undefined
+  readonly handOver: () => Promise<(() => void) | undefined>
   /** The page's session answer: a paint read for anyone else goes. */
   readonly verify: (session: SessionAnswer) => void
   /**
@@ -144,7 +155,7 @@ export interface ShellHost {
   readonly marks: Pick<Storage, "getItem">
   readonly channel: (name: string) => Pick<BroadcastChannel, "close"> & { onmessage: ((event: MessageEvent) => void) | null }
   readonly observe: (callback: () => void) => { readonly disconnect: () => void }
-  readonly mark: (name: string) => void
+  readonly mark: (name: string, detail?: EndRecord) => void
 }
 
 /** `path` without its trailing slash. */
@@ -160,6 +171,21 @@ const unmarked = (marks: ShellHost["marks"]) => {
   }
 }
 
+const fillList = (doc: ShellHost["document"], list: HTMLElement, owner: string, name: string, issues: ReadonlyArray<FirstPaintIssue>) => {
+  const path = (number: number) => `/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/issues/${number}`
+  list.replaceChildren()
+  for (const issue of issues) {
+      const row = doc.createElement("li")
+      const link = doc.createElement("a")
+      link.href = path(issue.number)
+      link.textContent = issue.title
+      const number = doc.createElement("span")
+      number.textContent = ` #${issue.number}`
+      row.append(link, number)
+      list.append(row)
+    }
+}
+
 /** The heading or the list as plain DOM, with `textContent` only. */
 const render = (doc: ShellHost["document"], route: Route, answer: FirstPaint): HTMLElement => {
   const node = doc.createElement("div")
@@ -171,7 +197,6 @@ const render = (doc: ShellHost["document"], route: Route, answer: FirstPaint): H
   repository.className = "first-paint-repo"
   repository.textContent = `${route.owner}/${route.name}`
   main.append(repository)
-  const path = (number: number) => `/${route.owner}/${route.name}/issues/${number}`
   // `answerOf` checked that the answer holds what its route asked for.
   if (route.kind === "issue") {
     const issue = answer.issue!
@@ -186,16 +211,7 @@ const render = (doc: ShellHost["document"], route: Route, answer: FirstPaint): H
     heading.className = "first-paint-list-title"
     heading.textContent = "Issues"
     const list = doc.createElement("ul")
-    for (const issue of answer.list!) {
-      const row = doc.createElement("li")
-      const link = doc.createElement("a")
-      link.href = path(issue.number)
-      link.textContent = issue.title
-      const number = doc.createElement("span")
-      number.textContent = ` #${issue.number}`
-      row.append(link, number)
-      list.append(row)
-    }
+    fillList(doc, list, route.owner, route.name, answer.list!)
     main.append(heading, list)
   }
   return node
@@ -209,6 +225,8 @@ export const startShell = (host: ShellHost): Shell | undefined => {
 
   let state: "pending" | "painted" | "none" | Ended = "pending"
   let granted = false
+  let grantSettled!: () => void
+  const ready = new Promise<void>((resolve) => { grantSettled = resolve })
   let adopted = false
   let release: (() => void) | undefined
   let node: HTMLElement | undefined
@@ -218,6 +236,11 @@ export const startShell = (host: ShellHost): Shell | undefined => {
   // The answer, while it may be shown; and the page's last session answer, which an answer arriving later must agree with.
   let seed: FirstPaint | undefined
   let session: SessionAnswer | undefined
+  let query = ""
+  let typed = false
+  let searchInput: HTMLInputElement | undefined
+  let askSearch: ((owner: string, name: string, q: string) => void) | undefined
+  let forgetSearch: (() => void) | undefined
   const asking = new AbortController()
   const timers: Array<number> = []
   const wipes = host.channel(WIPE)
@@ -236,34 +259,53 @@ export const startShell = (host: ShellHost): Shell | undefined => {
     wipes.onmessage = null
     wipes.close()
   }
-  const end = (why: Ended | "none") => {
+  const handOverInput = () => {
+    const next = doc.querySelector<HTMLInputElement>('#root input[aria-label="Search issues"]')
+    if (next === null || searchInput === undefined) return
+    if (searchInput.ownerDocument.activeElement === searchInput) {
+      next.focus()
+      next.setSelectionRange(searchInput.selectionStart, searchInput.selectionEnd)
+    }
+    searchInput.remove()
+    searchInput = undefined
+  }
+  const end = (why: Ended | "none", trigger: EndRecord["trigger"]) => {
     if (state !== "pending" && state !== "painted") return
+    const detail: EndRecord = { previous: state, trigger, connected: node?.isConnected ?? false }
     state = why
+    // Commit the outcome before any DOM reaction, search teardown or lock release can run.
+    host.mark(`smithers.first_paint.${why}`, detail)
+    grantSettled()
+    if (why === "handed_over") handOverInput()
     node?.remove()
     node = undefined
     seed = undefined
+    // Hand-over leaves one read for the ordinary gated action to consume. Every other ending revokes it.
+    if (why !== "handed_over") forgetSearch?.()
+    searchInput = undefined
     letGo()
     stopListening()
-    host.mark(`smithers.first_paint.${why}`)
   }
 
   // Still the page the read was for: the same path, whatever its trailing slash (the router's first replace drops it);
   // for a list, no search, as any search filters what it shows. A search says nothing of which issue a page shows.
   const sameRoute = (nextPath: string, nextSearch: string) =>
-    bare(nextPath) === bare(pathname) && (route.kind === "issue" || nextSearch === "")
+    bare(nextPath) === bare(pathname) && (route.kind === "issue" || nextSearch === "" && (!typed || askSearch === undefined) ||
+      typed && [...new URLSearchParams(nextSearch).keys()].every((key) => key === "q") &&
+      (new URLSearchParams(nextSearch).get("q") ?? "") === query)
   const routed = (nextPath: string, nextSearch: string) => {
-    if (!sameRoute(nextPath, nextSearch)) end("navigated")
+    if (!sameRoute(nextPath, nextSearch)) end("navigated", "router")
   }
-  wipes.onmessage = () => end("wipe")
+  wipes.onmessage = () => end("wipe", "storage")
   const on = <K extends string>(target: { addEventListener: (k: K, l: (e: never) => void) => void; removeEventListener: (k: K, l: (e: never) => void) => void }, kind: K, listener: (event: never) => void) => {
     target.addEventListener(kind, listener)
     listeners.push(() => target.removeEventListener(kind, listener))
   }
   on(win as never, "storage", ((event: StorageEvent) => {
-    if (event.key === WIPE && event.newValue !== null) end("mark")
-    else if (event.key === null) end("mark")
+    if (event.key === WIPE && event.newValue !== null) end("mark", "storage")
+    else if (event.key === null) end("mark", "storage")
   }) as never)
-  on(win as never, "pagehide", (() => end("pagehide")) as never)
+  on(win as never, "pagehide", (() => end("pagehide", "lifecycle")) as never)
   // Back or forward, before the app's router exists to say so.
   on(win as never, "popstate", (() => routed(win.location.pathname, win.location.search)) as never)
   // Hidden or frozen, the node hides; visible or resumed, the clock and the mark are checked first, as a hidden or
@@ -273,8 +315,8 @@ export const startShell = (host: ShellHost): Shell | undefined => {
   }
   const recheck = () => {
     if (node === undefined || doc.visibilityState !== "visible") return
-    if (host.now() >= showUntil) return end(showUntil === deadline ? "deadline" : "hand_over_timeout")
-    if (!unmarked(host.marks)) return end("mark")
+    if (host.now() >= showUntil) return end(showUntil === deadline ? "deadline" : "hand_over_timeout", "lifecycle")
+    if (!unmarked(host.marks)) return end("mark", "storage")
     node.hidden = false
   }
   on(doc as never, "visibilitychange", (() => (doc.visibilityState === "visible" ? recheck() : hide())) as never)
@@ -293,6 +335,7 @@ export const startShell = (host: ShellHost): Shell | undefined => {
   // the app. A slot the app took away with the node in it is the app showing the page itself.
   const place = () => {
     const shown = node!
+    handOverInput()
     const slot = doc.querySelector(`#root [${SLOT_ATTRIBUTE}]`)
     if (slot !== null) {
       if (shown.parentNode !== slot) {
@@ -301,7 +344,7 @@ export const startShell = (host: ShellHost): Shell | undefined => {
       }
       return
     }
-    if (!shown.isConnected) return end("handed_over")
+    if (!shown.isConnected) return end("handed_over", "dom")
     if (!shown.hasAttribute(PLACED_ATTRIBUTE) && doc.querySelector(ACTIONABLE) !== null) {
       shown.setAttribute(PLACED_ATTRIBUTE, "")
       doc.body.append(shown)
@@ -310,24 +353,44 @@ export const startShell = (host: ShellHost): Shell | undefined => {
 
   const paint = (answer: FirstPaint) => {
     if (state !== "pending") return
-    if (!unmarked(host.marks)) return end("mark")
-    if (host.now() >= deadline) return end("deadline")
-    if (session !== undefined && !sameViewer(answer.viewer, session)) return end("person_mismatch")
+    if (!unmarked(host.marks)) return end("mark", "storage")
+    if (host.now() >= deadline) return end("deadline", "response")
+    if (session !== undefined && !sameViewer(answer.viewer, session)) return end("person_mismatch", "session")
     // An answer that arrives after the app showed the page, or after the route moved on, is never painted.
     const already = superseded()
-    if (already !== undefined) return end(already)
+    if (already !== undefined) return end(already, "response")
     seed = answer
     node = render(doc, route, answer)
+    if (route.kind === "list") {
+      const input = doc.createElement("input")
+      input.type = "text"
+      input.setAttribute("aria-label", "Search issues")
+      input.placeholder = "Search issues"
+      input.addEventListener("input", () => {
+        if (state !== "painted" || !unmarked(host.marks) || host.now() >= showUntil) {
+          end("revoked", "search")
+          return
+        }
+        query = input.value
+        typed = true
+        // Old unfiltered rows are no answer to the new search. Only the data gate may publish its answer.
+        node?.querySelector("ul")?.replaceChildren()
+        askSearch?.(route.owner, route.name, query)
+        host.mark("smithers.first_paint.search")
+      })
+      node.querySelector("h1")!.after(input)
+      searchInput = input
+    }
     node.hidden = doc.visibilityState !== "visible"
     doc.body.prepend(node)
     state = "painted"
     host.mark("smithers.first_paint.painted")
     showUntil = Math.min(deadline, host.now() + HAND_OVER_WITHIN_MS)
-    timers.push(win.setTimeout(() => end(showUntil === deadline ? "deadline" : "hand_over_timeout"), showUntil - host.now()))
+    timers.push(win.setTimeout(() => end(showUntil === deadline ? "deadline" : "hand_over_timeout", "timer"), showUntil - host.now()))
     // The app's page shows itself, or the route moves on: the node goes, and so does the answer.
     const watch = host.observe(() => {
       const why = superseded()
-      if (why !== undefined) return end(why)
+      if (why !== undefined) return end(why, "dom")
       place()
     })
     listeners.push(() => watch.disconnect())
@@ -335,40 +398,67 @@ export const startShell = (host: ShellHost): Shell | undefined => {
   }
 
   // The hold first, then the read; nothing private exists outside it.
+  // recorded: smithers.first_paint.none records a refused lock as well as a refused read
   void host.locks.request(DATA_LOCK, { mode: "shared", signal: asking.signal }, () => {
     granted = true
+    grantSettled()
     return new Promise<void>((resolve) => {
       // Revoked while it waited: let go at once.
       if (state !== "pending") return resolve()
       release = resolve
-      if (!unmarked(host.marks)) return end("mark")
+      if (!unmarked(host.marks)) return end("mark", "storage")
       const sentAt = host.now()
       timers.push(win.setTimeout(() => asking.abort(), ANSWER_WITHIN_MS))
       host.fetch(requestOf(route), { credentials: "same-origin", cache: "no-store", signal: asking.signal })
         .then((response) => (response.status === 200 ? response.json() : undefined))
         .then((body) => {
           const answer = body === undefined ? undefined : answerOf(body, route)
-          if (answer === undefined) return end("none")
+          if (answer === undefined) return end("none", "response")
           deadline = deadlineOf(answer, sentAt)
           paint(answer)
         })
         // recorded: smithers.first_paint.none on the boot timeline; the app's own page follows as before
-        .catch(() => end("none"))
+        .catch(() => end("none", "request"))
     })
   }).catch(() => {
-    // expected: an aborted lock request, the shell's own revocation
+    // recorded: smithers.first_paint.none records a refused lock and releases the waiting app
+    end("none", "lock")
   })
 
   return {
-    handOver: () => {
+    showSearch: (owner, name, q, issues) => {
+      if (state !== "painted" || route.kind !== "list" || !typed || q !== query.trim() ||
+          owner.toLowerCase() !== route.owner.toLowerCase() || name.toLowerCase() !== route.name.toLowerCase()) return
+      if (!unmarked(host.marks)) return end("mark", "storage")
+      if (host.now() >= showUntil) return end(showUntil === deadline ? "deadline" : "hand_over_timeout", "search")
+      const list = node?.querySelector("ul")
+      if (list === null || list === undefined) return
+      fillList(doc, list, route.owner, route.name, issues ?? [])
+      host.mark(issues === undefined ? "smithers.first_paint.search_withheld" : "smithers.first_paint.search_answer")
+    },
+    bindSearch: (ask, forget) => {
+      if (state !== "pending" && state !== "painted") return () => {}
+      askSearch = ask
+      forgetSearch = forget
+      if (typed) ask(route.owner, route.name, query)
+      return () => { askSearch = undefined; forgetSearch = undefined }
+    },
+    handOver: async () => {
       if (state !== "pending" && state !== "painted") return undefined
-      if (!granted) {
-        // Not granted yet (a wipe holds the data): the page's own path decides; the shell stops asking.
-        end("revoked")
+      if (!unmarked(host.marks)) {
+        end("mark", "storage")
         return undefined
       }
+      if (!granted) {
+        // A fast bundle can reach this before WebKit dispatches the lock callback. Keep the shell's queued
+        // request: adopting an ungranted hold would be unsafe, and revoking it loses the first paint entirely.
+        host.mark("smithers.first_paint.hand_over_waiting")
+        await ready
+        if (state !== "pending" && state !== "painted") return undefined
+        host.mark("smithers.first_paint.hand_over_ready")
+      }
       if (!unmarked(host.marks)) {
-        end("mark")
+        end("mark", "storage")
         return undefined
       }
       // Granted while pending: the callback kept its release. The page's release ends the paint first, so no private
@@ -376,16 +466,16 @@ export const startShell = (host: ShellHost): Shell | undefined => {
       adopted = true
       const held = release!
       return () => {
-        end("released")
+        end("released", "release")
         held()
       }
     },
     verify: (answer) => {
       session = answer
-      if (seed !== undefined && !sameViewer(seed.viewer, answer)) end("person_mismatch")
+      if (seed !== undefined && !sameViewer(seed.viewer, answer)) end("person_mismatch", "session")
     },
     routed,
-    revoke: (why = "revoked") => end(why),
+    revoke: (why = "revoked") => end(why, "revoke"),
     outcome: () => state,
   }
 }

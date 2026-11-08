@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    // DOM beside workers-types, as apps/mvp's Worker project has: the Smithers packages the API Worker compiles from
+    // source are typed against DOM's globals (`globalThis.crypto`, `TextDecoder` options), which workerd provides and
+    // workers-types declares narrower. Only this project sees Worker globals; the browser's tsconfig.json has none.
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "types": ["@cloudflare/workers-types"]
+  },
+  "include": [".", "../test/worker.test.vibe"]
+}

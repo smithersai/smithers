@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import type { ComponentProps, ReactNode } from "react";
-import { cn } from "./cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "./styles";
 
 /** Uppercase overline label — the pattern consumer UIs previously each hand-rolled. */

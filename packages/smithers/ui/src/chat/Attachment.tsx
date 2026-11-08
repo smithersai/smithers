@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { createContext, useContext, type ComponentProps, type ReactNode } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { byteCountString } from "../diff-paginate";
 import { useInjectUiCss } from "../styles";
 

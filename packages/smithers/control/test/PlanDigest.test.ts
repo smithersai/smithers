@@ -18,14 +18,14 @@
  * for `{ tokens: 5 }`. No envelope a caller can build hashes differently
  * because of it.
  */
-import { Crypto } from "@smthrs/crypto"
 import * as Sha256 from "@smthrs/crypto/Sha256"
 import { Effect, Layer } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import { describe, expect, it } from "vitest"
 import type { Envelope } from "../src/ControlSchema.ts"
 import { planCard, type PlanSource } from "../src/internal/planning.vibe"
 
-const crypto = Layer.succeed(Crypto.Crypto, Sha256.syncCrypto)
+const crypto = Layer.succeed(EffectDigest.Digest, Sha256.syncCrypto)
 
 const emptyEnvelope: Envelope = { capabilities: [], flows: [], budget: {} }
 

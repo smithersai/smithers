@@ -1,0 +1,1176 @@
+{
+  "task": "group-03",
+  "seed": 184603,
+  "family": "group",
+  "arm": "cell",
+  "taskHash": "9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2",
+  "model": "gpt-6-luna",
+  "cohort": "codex-proton",
+  "maxTurns": 6,
+  "executionId": "cell-comparison/9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2/13/cell/2026-11-05T14:22:23.672Z",
+  "startedAt": "2026-11-05T14:27:10.222Z",
+  "elapsedMs": 7400,
+  "outcome": "correct",
+  "turns": [
+    {
+      "turn": 0,
+      "request": {
+        "modelId": "gpt-6-luna",
+        "system": [
+          {
+            "type": "text",
+            "text": "Solve the task using JavaScript in a persistent QuickJS realm. Reply only with executable JavaScript, without Markdown. No filesystem, imports, Date or Math.random. Read the input with await ctx.call(\"records\", {}). It returns {records, owners}. Print intermediate data with console.log for the next turn. Submit the requested JSON object with ctx.done(object). Top-level declarations persist across turns. You have at most six turns."
+          }
+        ],
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Return {\"a\":n,\"b\":n,\"c\":n}: sum value by group over active records only. Include groups with zero total."
+              }
+            ]
+          }
+        ],
+        "tools": [],
+        "params": {
+          "reasoningEffort": "low"
+        },
+        "cacheKey": "cell-comparison/9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2/13/cell/2026-11-05T14:22:23.672Z"
+      },
+      "events": [
+        {
+          "type": "thinking-start",
+          "id": "rs_09fe6a93c055da9b016aec923f262087d2ab47941a8eb79c06"
+        },
+        {
+          "type": "thinking-delta",
+          "id": "rs_09fe6a93c055da9b016aec923f262087d2ab47941a8eb79c06",
+          "text": "**Inspecting records**"
+        },
+        {
+          "type": "thinking-end",
+          "id": "rs_09fe6a93c055da9b016aec923f262087d2ab47941a8eb79c06"
+        },
+        {
+          "type": "thinking-start",
+          "id": "rs_09fe6a93c055da9b016aec923f262087d2ab47941a8eb79c06:encrypted",
+          "signature": "{\"encrypted_content\":\"gAAAAABq7JJCUnPeEIHDhiRiABenMT-6LBvEXgwDGgPS9lrOQK7Zui8spLWF44rhPSUuifNa4cnDw-l34uDoFtnzPV85fTWCTf8bf7OpFN-hu8BMjg6Gmyfx1Qn42s--FZoo5_Wzh24t7Hi6vq5Dq_zz3dZYvZ612BchmmU0OrLkwjvqMPPbZfr985eeSmDC_3uU6bZXxMAarFPLP0UGmYlGrR5Bv11GIF56bv11G4FmImsndmxvdRyILpOYFEyb0IlTLtVdNPNU70t6aegWxPyepmFHQu1mfan_gmWKgqn_QTSjJ2z6j62IceFKzJUc2FXhg4CXXwvNYXqpS4x_QrDqOhPhc8NM__AiMXK24t15AX3CUVikHluVShHUq-0HOstc97kdGxMF1IeSCQchg0eIhgGStDMbx4pZd-vbL1mup3vs28hFw-YlQsT07x_1_8rRXl3qlOwiLqG6xRs6Aj90QzAEkFVfnCAT3sHCtsSSxwN7Hgdz3NvqxvdfzfCjXC-P1SK4EFWOy088EQ05VSF5voS3TifEjBaTV6RjXflJn0vy-C7TJ2aM6sTOK0bSXahXxEIn12W2KK1eDdXW0cMyvxAM-EVkA1J2qNLNsNpDmnFjmGEPhn0VbSm5lFcJre4wG8aQNFf2xg8bpsl5YWR_AHM3z9Ak4xgT72m4L2pDeo3kxVFtzi6JBOM1giOcZUDN0ZGBanlZucukMKghxBFaRRVvovRD2401JnsT5SVPtjD4mA0PCLIYtDj6avG9Q6moXDmKpVNBy3vTTJ0xfoAgp-LSV61l5DuL-zI8oTBsqXyqQUWTyn7bGqR49vN0jUT_ELLcKlSNeW24IvYztkY-ICXh2JLy_k9uaIbFed-LOsZvvu6O-otoll2lbortwzKPVbjYdNYfRCBezK-KzFBcA7YesyK8m8n_63FAZ22F-Wb-IvSi6naHBEazfAKX3MCXN-_eFAPfHUs_wDtsxVIr14an1bcMIVGtX3opWJOKjFUyQREaQnedZFUNw-4F4JVXyW1FCsWfsXKYDktnEBuvgKiBRfHy_lHMON7m_Z4p-zg93xQURuWHvNUZVxNV91JiwIw3BFw_nEgV3T1mw40l72UNRv39EuPKt4hfhSoWjxSnYWQYJADPrV4dJT0vifV_l1Pm-DTdkZ4AswDEqO4DInk5kmXzye9-oRVKSv1hbrN15qLZNUoPnIawBEJZrJ7Z6sE4LKxMqPAs-Ve-s86xmbYNMeC4ap1ii07KQVKpYISJ9ZSAMKcNxs4wnbTeHqdKTOx1Wc0qoiIAM9UPsj2O14mfbzYGfuFZC9aq0tpMOIE1byObasvgDzX-kYh5nplzgViio10nIg0KRgQiWcccjaqxF0DQew-zBUU9itY90D-s-CHmkvr4EoaWf013GaKfO9c2LokQ2LaqQ31B0xcNg9pPNWeBQZQHMz4gJv8LuR9hkTTNWspnX3LwD8T-0jeEkPFcSCPq8wfWtABNCPRlDpkKYZm_m88iQuZhn2hasWvDDR1pkZgnGtM3ZRzCpJ9w4G-_-FAnAIsRbs6Oc2Pm82ed-0iQnD9pERR9ZAljzZml5rjZM_sMSgHovVrZzRkRwCZmbiuqYEE16IjHrL8gG99ZcCNaRkCHyXvCjkxFjTOV4NUaj_S9ogJ14yEjLy-bXqdYLIHk5O46grZfqHn6ObLWoxFbrd9YANgyqBlHNqDUL0opCqBNLQW47eAoPrBPCgQR6wEv\",\"id\":\"rs_09fe6a93c055da9b016aec923f262087d2ab47941a8eb79c06\",\"summary\":[{\"text\":\"**Inspecting records**\",\"type\":\"summary_text\"}],\"type\":\"reasoning\"}"
+        },
+        {
+          "type": "thinking-end",
+          "id": "rs_09fe6a93c055da9b016aec923f262087d2ab47941a8eb79c06:encrypted"
+        },
+        {
+          "type": "text-start",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "const"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": " data"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": " ="
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": " await"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": " ctx"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ".call"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "(\""
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "records"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "\","
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": " {});\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "console"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ".log"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "(data"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ");\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "console"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ".log"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "(data"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ".records"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ".filter"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "(r"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": " =>"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": " r"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ".active"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "));\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "console"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ".log"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "(data"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ".records"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ".filter"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "(r"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": " =>"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": " r"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ".active"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ")."
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "reduce"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "(("
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "s"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ",r"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ")=>"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "{"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "s"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "[r"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ".group"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "]=("
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "s"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "[r"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ".group"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "]"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "||"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "0"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ")+"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "r"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ".value"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ";"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "return"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": " s"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ";"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "},{"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "a"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ":"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "0"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ",b"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ":"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "0"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ",c"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": ":"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "0"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e",
+          "text": "}));\n"
+        },
+        {
+          "type": "text-end",
+          "id": "msg_09fe6a93c055da9b016aec92428ef487d2a324e38000b18e5e"
+        },
+        {
+          "type": "thinking-start",
+          "id": "rs_09fe6a93c055da9b016aec9242a2ec87d2964c953cb1936d98:encrypted",
+          "signature": "{\"encrypted_content\":\"gAAAAABq7JJEjnnHbxtEwg1KyfumcG2x_lB-AmnM2pGFxOzqA-92c3mEtXnPYqGJZL9roHEZftw4br4QMJnrc_qpPMr8tND66h2qPag4YPnjrolbQVmIfCljuPf9R7tuasuGc5YZoMP9gJgTlNgINVuo06LYu9PM0fprQvoGkjNYly0Iy_xa_kb_RZ8RbgptkQpYbHYXWVQRJvxiGFCjRVpWV27G9PLbhhSTxNZ__Ma0ktsWal6IP15acPuAeZAjv_JAf5K1PP2nM5ty_oQaw3BpTJDq5EnU-KXta-JUr-u3Dyapnupuzzy5WA57zEqPlyGGuhHaxejhtdM-gHmHvzZLV42w0j6l4rVJM90fZ183lQXfMtETbggvY0Y8sBZqac_4mbj1IHn49uIMaeW58mfsFLwBQglALYjfdNSpfhh_l8r3YcmS5sND2vLKyQHIGKu05LUR1G1D2IT40Hx3huD2eSi89Xy9w6V7lGADWDZEYQAV2Ov-i5zTHIn2-l5BxmsZWDttN6sCtB7k9bwR-POJPNrZv0ZKB82jdriybnRqaiML3GEmcfm4oKhoAdX0ySVYe450gExNktKohnA0qW9ADz0WC1WPUd9lAOzXgg2CVzbyTjG1kxAV_30v7ecMHvjOYX-hK80CSmRpMRf_DrfWAC9oHhWlGpByjux8rTor_u1f_SQtxeA_oJ8fF89aBa3WRtsE0IIyLGxfl7FnJQylqe6sddnmTd4Ub8YsHoSCfBChFns1gJC27wYqHuGBEGgVw-PUzb7dQMvnye8rs2SDC1NlMijgvHNXCfyJli4QJPsLVU5YdTtkGWJBV6Hmq5Om3h39vqTx2eBnwgnqlcyM9-Fc6gYxGkFwyYLPrL0O0iOMxhPwUeKAYgJRoWzGcBo7jsubFKmAL8gxQBsFaemB7QkY8AXT3PJKuhAAW75PUoJoqQ3YnaJJ1S3DWmFAl57yO-A_CacsFBrlmPKAZI77-IxJsTwJDK3jxwWkwBIufp1iCJVyFkeutybtq7uvlIBPlqQVMuGOoeG1_SNlfLPkd3EC0mRyZST7PcNISlfuaDKEBQdrKjUYU4881JvS5gadjCIILChqNF8wzNykDRmoWci1jI0bh0-d8Jy_IRnp18Z_OTT6vJ0VsneXkMOZFchyv0z8ezPLpbw2_cjf7EiaxYJ0Sj8insn2x0MzeVCKqhqsCZL7euWrzMv2HKrmmhTF1J326C0X68pop8Hu4JUnIBIjgI1qgp-QVi22sxZ5gGfKDHSFHk0JlGrsroJTkIWEf8gpgTdGDA7fS1yseSPEiNXjK48Yc0jxDua6N1VU1AN8MIU5W8HlkFW2Ppd2KuIq2-LpYtDhOgfqly0-_oHEu28Xcxcz6o0gzwqQZbGbW4JH-Nqn8gcJZr1LIUs63EjxE2J2dLah1whJgowWm9sDowSDykEJ8OHqqUqXxvMVi0ys_Un-s-Ka6IQWj5W3A5dgRAZQeHFRtbn16HR_QAMUGJOGV1jksRMLOsj_h6MfyKl1W7_F3xY-7oFIEACQglZq6Es-Rs55UcvJeCXq-bspmaZG0tnkGcH6wWaMSi-ojh-_ILmsJeu32AYT0StX7TeaRuO5YnIZQEqifbyYxefF4wseDDAw07mQVjtAf_tv85KSXO7xJSRMoqXxnfkwLRPAS8ShB0YKYfPk9z_dWSABZrZTyRUK3A==\",\"id\":\"rs_09fe6a93c055da9b016aec9242a2ec87d2964c953cb1936d98\",\"summary\":[],\"type\":\"reasoning\"}"
+        },
+        {
+          "type": "thinking-end",
+          "id": "rs_09fe6a93c055da9b016aec9242a2ec87d2964c953cb1936d98:encrypted"
+        },
+        {
+          "type": "text-start",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": "const"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " data"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " ="
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " await"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " ctx"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": ".call"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": "(\""
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": "records"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": "\","
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " {});\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": "const"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " result"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " ="
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " {"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": "a"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": ":"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " "
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": "0"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": ","
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " b"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": ":"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " "
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": "0"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": ","
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " c"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": ":"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " "
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": "0"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": "};\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": "for"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " ("
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": "const"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " record"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " of"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " data"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": ".records"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": ")"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " {\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " "
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " if"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " ("
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": "record"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": ".active"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " &&"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " record"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": ".group"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " in"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " result"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": ")"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " result"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": "["
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": "record"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": ".group"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": "]"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " +="
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": " record"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": ".value"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": ";\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": "}\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": "ctx"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": ".done"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": "(result"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642",
+          "text": ");"
+        },
+        {
+          "type": "text-end",
+          "id": "msg_09fe6a93c055da9b016aec9244e5d087d290c665f53ca8b642"
+        },
+        {
+          "type": "usage",
+          "inputTokens": 125,
+          "outputTokens": 175,
+          "reasoningTokens": 31,
+          "cachedInputTokens": 0,
+          "totalTokens": 300
+        },
+        {
+          "type": "settle",
+          "stopReason": "stop",
+          "responseId": "resp_09fe6a93c055da9b016aec923e9f2887d2b7845096edcd46fa",
+          "servedTier": "default",
+          "timing": {
+            "startedAt": 1793888830231,
+            "attempts": 1,
+            "requestBytes": 907,
+            "preparedMs": 0,
+            "signedMs": 1,
+            "sentMs": 1,
+            "headersMs": 605,
+            "firstEventMs": 606,
+            "firstThinkingMs": 4336,
+            "firstOutputMs": 4383,
+            "lastOutputMs": 7272,
+            "completedMs": 7360,
+            "closedMs": 7360
+          }
+        }
+      ],
+      "usage": {
+        "inputTokens": 125,
+        "outputTokens": 175,
+        "reasoningTokens": 31,
+        "cachedInputTokens": 0,
+        "totalTokens": 300
+      },
+      "cost": {
+        "costUsd": 0.0001,
+        "costSource": "estimated"
+      },
+      "elapsedMs": 7380,
+      "replayed": false,
+      "frame": {
+        "outcome": {
+          "_tag": "settled",
+          "transition": {
+            "_tag": "complete",
+            "output": "{\"a\":256,\"b\":99,\"c\":54}",
+            "value": {
+              "a": 256,
+              "b": 99,
+              "c": 54
+            }
+          }
+        },
+        "prints": "{\"owners\":{\"a\":\"Ada\",\"b\":\"Bo\",\"c\":\"Cy\"}}\nrecords (18):\nid | sku | revision | group | value | active | tags\nr00 | s0 | 0 | b | 44 | true |  BLUE,green \nr01 | s1 | 0 | a | 36 | true |  green, yellow\nr02 | s2 | 0 | a | -12 | false | \nr03 | s3 | 0 | a | -8 | true |  BLUE,green \nr04 | s4 | 0 | a | 97 | true |  BLUE,green \nr05 | s5 | 0 | c | 54 | true |  BLUE,green \nr06 | s0 | 1 | b | 55 | false | \nr07 | s1 | 1 | b | 40 | false | \nr08 | s2 | 1 | a | -13 | false |  BLUE,green \nr09 | s3 | 1 | c | 85 | false |  green, yellow\nr10 | s4 | 1 | b | 85 | false |  BLUE,green \nr11 | s5 | 1 | c | 73 | false |  green, yellow\nr12 | s0 | 2 | a | 47 | true | Red, blue\nr13 | s1 | 2 | b | -1 | false |  BLUE,green \nr14 | s2 | 2 | b | 78 | false | red,RED\nr15 | s3 | 2 | a | 35 | false | Red, blue\nr16 | s4 | 2 | b | 55 | true | \nr17 | s5 | 2 | a | 84 | true |  green, yellow\nid | sku | revision | group | value | active | tags\nr00 | s0 | 0 | b | 44 | true |  BLUE,green \nr01 | s1 | 0 | a | 36 | true |  green, yellow\nr03 | s3 | 0 | a | -8 | true |  BLUE,green \nr04 | s4 | 0 | a | 97 | true |  BLUE,green \nr05 | s5 | 0 | c | 54 | true |  BLUE,green \nr12 | s0 | 2 | a | 47 | true | Red, blue\nr16 | s4 | 2 | b | 55 | true | \nr17 | s5 | 2 | a | 84 | true |  green, yellow\n{\"a\":256,\"b\":99,\"c\":54}",
+        "bindings": [
+          {
+            "name": "data",
+            "type": "object",
+            "size": "2 keys"
+          },
+          {
+            "name": "result",
+            "type": "object",
+            "size": "3 keys"
+          }
+        ]
+      }
+    }
+  ],
+  "calls": [
+    {
+      "ordinal": 0,
+      "name": "records",
+      "input": {},
+      "value": {
+        "records": [
+          {
+            "id": "r00",
+            "sku": "s0",
+            "revision": 0,
+            "group": "b",
+            "value": 44,
+            "active": true,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r01",
+            "sku": "s1",
+            "revision": 0,
+            "group": "a",
+            "value": 36,
+            "active": true,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r02",
+            "sku": "s2",
+            "revision": 0,
+            "group": "a",
+            "value": -12,
+            "active": false,
+            "tags": ""
+          },
+          {
+            "id": "r03",
+            "sku": "s3",
+            "revision": 0,
+            "group": "a",
+            "value": -8,
+            "active": true,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r04",
+            "sku": "s4",
+            "revision": 0,
+            "group": "a",
+            "value": 97,
+            "active": true,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r05",
+            "sku": "s5",
+            "revision": 0,
+            "group": "c",
+            "value": 54,
+            "active": true,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r06",
+            "sku": "s0",
+            "revision": 1,
+            "group": "b",
+            "value": 55,
+            "active": false,
+            "tags": ""
+          },
+          {
+            "id": "r07",
+            "sku": "s1",
+            "revision": 1,
+            "group": "b",
+            "value": 40,
+            "active": false,
+            "tags": ""
+          },
+          {
+            "id": "r08",
+            "sku": "s2",
+            "revision": 1,
+            "group": "a",
+            "value": -13,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r09",
+            "sku": "s3",
+            "revision": 1,
+            "group": "c",
+            "value": 85,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r10",
+            "sku": "s4",
+            "revision": 1,
+            "group": "b",
+            "value": 85,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r11",
+            "sku": "s5",
+            "revision": 1,
+            "group": "c",
+            "value": 73,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r12",
+            "sku": "s0",
+            "revision": 2,
+            "group": "a",
+            "value": 47,
+            "active": true,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r13",
+            "sku": "s1",
+            "revision": 2,
+            "group": "b",
+            "value": -1,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r14",
+            "sku": "s2",
+            "revision": 2,
+            "group": "b",
+            "value": 78,
+            "active": false,
+            "tags": "red,RED"
+          },
+          {
+            "id": "r15",
+            "sku": "s3",
+            "revision": 2,
+            "group": "a",
+            "value": 35,
+            "active": false,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r16",
+            "sku": "s4",
+            "revision": 2,
+            "group": "b",
+            "value": 55,
+            "active": true,
+            "tags": ""
+          },
+          {
+            "id": "r17",
+            "sku": "s5",
+            "revision": 2,
+            "group": "a",
+            "value": 84,
+            "active": true,
+            "tags": " green, yellow"
+          }
+        ],
+        "owners": {
+          "a": "Ada",
+          "b": "Bo",
+          "c": "Cy"
+        }
+      }
+    },
+    {
+      "ordinal": 1,
+      "name": "records",
+      "input": {},
+      "value": {
+        "records": [
+          {
+            "id": "r00",
+            "sku": "s0",
+            "revision": 0,
+            "group": "b",
+            "value": 44,
+            "active": true,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r01",
+            "sku": "s1",
+            "revision": 0,
+            "group": "a",
+            "value": 36,
+            "active": true,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r02",
+            "sku": "s2",
+            "revision": 0,
+            "group": "a",
+            "value": -12,
+            "active": false,
+            "tags": ""
+          },
+          {
+            "id": "r03",
+            "sku": "s3",
+            "revision": 0,
+            "group": "a",
+            "value": -8,
+            "active": true,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r04",
+            "sku": "s4",
+            "revision": 0,
+            "group": "a",
+            "value": 97,
+            "active": true,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r05",
+            "sku": "s5",
+            "revision": 0,
+            "group": "c",
+            "value": 54,
+            "active": true,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r06",
+            "sku": "s0",
+            "revision": 1,
+            "group": "b",
+            "value": 55,
+            "active": false,
+            "tags": ""
+          },
+          {
+            "id": "r07",
+            "sku": "s1",
+            "revision": 1,
+            "group": "b",
+            "value": 40,
+            "active": false,
+            "tags": ""
+          },
+          {
+            "id": "r08",
+            "sku": "s2",
+            "revision": 1,
+            "group": "a",
+            "value": -13,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r09",
+            "sku": "s3",
+            "revision": 1,
+            "group": "c",
+            "value": 85,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r10",
+            "sku": "s4",
+            "revision": 1,
+            "group": "b",
+            "value": 85,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r11",
+            "sku": "s5",
+            "revision": 1,
+            "group": "c",
+            "value": 73,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r12",
+            "sku": "s0",
+            "revision": 2,
+            "group": "a",
+            "value": 47,
+            "active": true,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r13",
+            "sku": "s1",
+            "revision": 2,
+            "group": "b",
+            "value": -1,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r14",
+            "sku": "s2",
+            "revision": 2,
+            "group": "b",
+            "value": 78,
+            "active": false,
+            "tags": "red,RED"
+          },
+          {
+            "id": "r15",
+            "sku": "s3",
+            "revision": 2,
+            "group": "a",
+            "value": 35,
+            "active": false,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r16",
+            "sku": "s4",
+            "revision": 2,
+            "group": "b",
+            "value": 55,
+            "active": true,
+            "tags": ""
+          },
+          {
+            "id": "r17",
+            "sku": "s5",
+            "revision": 2,
+            "group": "a",
+            "value": 84,
+            "active": true,
+            "tags": " green, yellow"
+          }
+        ],
+        "owners": {
+          "a": "Ada",
+          "b": "Bo",
+          "c": "Cy"
+        }
+      }
+    }
+  ],
+  "output": {
+    "a": 256,
+    "b": 99,
+    "c": 54
+  }
+}

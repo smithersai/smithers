@@ -350,7 +350,8 @@ export const fail = (context: Failing, cause: unknown, refusal: Refusal = {}): n
     exitCode: tag === "/cli/UsageError" ? 2 : refusal.exitCode ?? 1,
     // A backend that didn't answer is most often the wrong backend: name the setting before any other notice
     // (Incur appends its own, such as stale skills, to this block).
-    ...(cause instanceof CliError.Refused && (cause.code === "backend_unavailable" || cause.code === "backend_timed_out")
+    ...(cause instanceof CliError.Refused &&
+        (cause.code === "backend_unavailable" || cause.code === "backend_timed_out")
       ? {
         cta: {
           description: "Check which Smithers API this CLI calls:",

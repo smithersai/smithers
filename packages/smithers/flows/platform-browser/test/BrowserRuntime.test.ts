@@ -362,6 +362,32 @@ describe("BrowserRuntime.serve", () => {
     })))
   })
 
+  it.live("refuses retry when the host runtime has no history operation", () =>
+    Effect.gen(function*() {
+      const name = Engines.name()
+      const database = yield* MemorySqlite.open
+      const runtime = Layer.effectContext(
+        Layer.build(Engines.engine(name, database, Engines.steps())).pipe(Effect.map((context) => {
+          const { retryFrom: _retryFrom, ...withoutHistory } = Context.get(context, FlowRuntime.FlowRuntime)
+          return Context.add(context, FlowRuntime.FlowRuntime, withoutHistory)
+        }))
+      )
+      yield* Engines.leader(name, runtime)
+      const engine = yield* Engines.tab(name)
+      expect(
+        yield* Effect.flip(engine.retry(Steps, {
+          source: "source",
+          step: "root",
+          executionId: "refused-retry"
+        }))
+      ).toMatchObject({
+        _tag: "@smthrs/platform-browser/RequestRefused",
+        request: "Retry",
+        error: "@smthrs/platform-browser/UnknownFlow"
+      })
+      expect((yield* engine.list()).runs).toEqual([])
+    }).pipe(Effect.scoped))
+
   it.live("a tab retries a settled run from a step, and a run nobody holds is refused by name", () =>
     Effect.gen(function*() {
       const name = Engines.name()
@@ -377,7 +403,10 @@ describe("BrowserRuntime.serve", () => {
       expect(steps.ran.filter((step) => step === "p:three")).toHaveLength(2)
       expect(steps.ran.filter((step) => step === "p:one")).toHaveLength(1)
       const refused = yield* Effect.flip(engine.inspect("nobody"))
-      expect(refused).toMatchObject({ _tag: "@smthrs/platform-browser/RequestRefused", error: "@smthrs/engine-store/RunNotFound" })
+      expect(refused).toMatchObject({
+        _tag: "@smthrs/platform-browser/RequestRefused",
+        error: "@smthrs/engine-store/RunNotFound"
+      })
     }).pipe(Effect.scoped))
 
   it.live("wakes each unfinished run once, counts the outcome, and carries no content", () => {

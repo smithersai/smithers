@@ -13,7 +13,6 @@ import { afterAll, describe, expect, it } from "@effect/vitest"
 import { CapabilityPattern } from "@smthrs/capability/Capability"
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import { PermissionDenied } from "@smthrs/capability/Permission"
-import { Crypto } from "@smthrs/crypto"
 import { Action, Engine, Flow, Interpreter } from "@smthrs/flows"
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import { DirectorySandbox, type Sandbox } from "@smthrs/sandbox"
@@ -111,7 +110,7 @@ const runLocally = (
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(Engine.FlowEngine.layerMemory),
         Layer.provideMerge(guarded.host(workspace)),
-        Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+        Layer.provideMerge(NodeCrypto.layer)
       )
     ),
     Effect.map(() => existsSync(join(workspace, name)))
@@ -286,7 +285,7 @@ describe("a sandboxed action journals the ceiling receipt and the refusal in the
       const layers = Layer.mergeAll(implementation, Interpreter.layer(Parent)).pipe(
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(Engine.FlowEngine.layerMemory),
-        Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+        Layer.provideMerge(NodeCrypto.layer)
       )
       const executionId = `parent-${name}`
       return yield* Effect.gen(function*() {

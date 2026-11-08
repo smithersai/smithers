@@ -14,7 +14,7 @@ import { DerivedKey, deriveKey, digest, KeyDerivationError, KeyV1, StoredKey } f
 
 Both entry points perform the same three steps: canonicalize with
 [`@smthrs/canonical`](/api/canonical), hash the canonical UTF-8 document with
-SHA-256 through the injected Effect `Crypto` service that
+SHA-256 through the injected Effect `Digest` service that
 [`@smthrs/crypto`](/api/crypto) wraps, and prefix the lowercase digest with
 `key1_`. Neither validates an existing key. See
 [Key derivation](./concepts/key-derivation.md).
@@ -22,7 +22,7 @@ SHA-256 through the injected Effect `Crypto` service that
 ### deriveKey
 
 ```ts
-const deriveKey: (input: unknown) => Effect.Effect<KeyV1, KeyDerivationError, Crypto.Crypto>
+const deriveKey: (input: unknown) => Effect.Effect<KeyV1, KeyDerivationError, EffectDigest.Digest>
 ```
 
 Derives the current key format from structured input.
@@ -30,20 +30,19 @@ Derives the current key format from structured input.
 - `input`: any value with a canonical form. Values without one fail; see
   [Key material](./concepts/key-material.md).
 - Returns a branded `KeyV1`, always 69 characters.
-- Requires `Crypto.Crypto` from `effect/Crypto`. A missing service is an
+- Requires `EffectDigest.Digest` from `effect/crypto/Digest`. A missing service is an
   unsatisfied Effect requirement and therefore a configuration defect, not a
   `KeyDerivationError`.
 - Fails with `KeyDerivationError`.
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { deriveKey } from "@smthrs/keys"
 import * as Effect from "effect/Effect"
 
 const key = await Effect.runPromise(
   deriveKey({ domain: "example/compile", version: 1, source: "main.ts" }).pipe(
-    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Effect.provide(NodeCrypto.layer)
   )
 )
 // key1_74a286a394e4b0619c05801dd4e7315deeb83b8203cd3c3ee7cd6033ec55c683
@@ -52,11 +51,11 @@ const key = await Effect.runPromise(
 ### DerivedKey
 
 ```ts
-const DerivedKey: Schema.Codec<KeyV1, unknown, Crypto.Crypto, never>
+const DerivedKey: Schema.Codec<KeyV1, unknown, EffectDigest.Digest, never>
 ```
 
 The same derivation as a schema transformation, for composing inside a decode.
-Decoding requires the `Crypto` service; encoding requires none.
+Decoding requires the `Digest` service; encoding requires none.
 
 - Decoding derives a fresh key from whatever it is given. Decoding the text
   `key1_...` hashes that text into a different key; it does not parse it. Use
@@ -87,7 +86,7 @@ See [Derive a key inside a schema](./guides/derive-a-key-inside-a-schema.md).
 ## Validation
 
 Validation returns the input text unchanged, performs no hashing, and requires
-no `Crypto` service.
+no `Digest` service.
 
 ### StoredKey
 
@@ -197,7 +196,7 @@ type KeyDerivationErrorCode = typeof KeyDerivationErrorCode.Type
 | `canonicalization_failed` | The input has no accepted canonical form.                            |
 | `digest_failed`           | The injected SHA-256 operation failed or returned an invalid digest. |
 
-A missing `Crypto.Crypto` service is deliberately not a member. It remains an
+A missing `EffectDigest.Digest` service is deliberately not a member. It remains an
 unsatisfied Effect requirement, which is a configuration defect rather than a
 provided host failing an operation.
 

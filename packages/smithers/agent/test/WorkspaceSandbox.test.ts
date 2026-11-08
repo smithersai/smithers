@@ -1,7 +1,8 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
 import { Effect, Layer } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { describe, expect, it } from "vitest"
 import * as InMemoryWorkspaceSandbox from "../src/InMemoryWorkspaceSandbox.ts"
 import * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
@@ -19,8 +20,8 @@ const descriptor = (
   boundaryMode
 })
 
-const run = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>): Promise<A> =>
-  Effect.runPromise(effect.pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))))
+const run = <A, E>(effect: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom)>): Promise<A> =>
+  Effect.runPromise(effect.pipe(Effect.provide(NodeCrypto.layer)))
 
 const text = (files: ReadonlyArray<InMemoryWorkspaceSandbox.HostFile>, path: string): string | undefined => {
   const file = files.find((candidate) => candidate.path === path)
@@ -136,7 +137,7 @@ describe("WorkspaceSandbox", () => {
     if (stale._tag !== "Accepted" || current._tag !== "Accepted") throw new Error("expected accepted executions")
     await run(test.service.materialize(current))
     const conflict = await Effect.runPromiseExit(
-      test.service.materialize(stale).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+      test.service.materialize(stale).pipe(Effect.provide(NodeCrypto.layer))
     )
 
     expect(conflict._tag).toBe("Failure")
@@ -190,9 +191,7 @@ describe("WorkspaceSandbox", () => {
   it("rejects invalid paths and missing files", async () => {
     for (const path of ["", "/absolute.txt", "nested/../escape.txt", "."]) {
       const invalid = await Effect.runPromiseExit(
-        InMemoryWorkspaceSandbox.make({ [path]: "invalid" }).pipe(
-          Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
-        )
+        InMemoryWorkspaceSandbox.make({ [path]: "invalid" }).pipe(Effect.provide(NodeCrypto.layer))
       )
       expect(invalid._tag).toBe("Failure")
     }
@@ -206,7 +205,7 @@ describe("WorkspaceSandbox", () => {
           yield* workspace.readFile("missing.txt")
           return null
         })
-      }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+      }).pipe(Effect.provide(NodeCrypto.layer))
     )
     expect(missing._tag).toBe("Failure")
     expect(text(await Effect.runPromise(test.files), "bytes.bin")).toBe("bytes")

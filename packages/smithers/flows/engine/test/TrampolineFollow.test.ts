@@ -85,6 +85,35 @@ const advanceUntilDone = Effect.fnUntraced(
 )
 
 describe("a followed lineage's dispatches", () => {
+  it.effect("does not revisit every earlier handoff's patterns when the ceiling repeats", () =>
+    Effect.gen(function*() {
+      let reads = 0
+      const read = new CapabilityPattern({ action: "fs:read", resource: "src/**" })
+      // Count real capability normalization work, independently of wall time.
+      Object.defineProperty(read, "resource", {
+        get: () => {
+          reads++
+          return "src/**"
+        }
+      })
+      const perRound: Array<number> = []
+      const { engine } = recording((index) => {
+        perRound.push(reads)
+        reads = 0
+        return index === 39 ? complete(40) : handoff(index + 1, [[read]])
+      })
+      yield* engine.register(Counter, () => Effect.succeed(0))
+      expect(
+        yield* withCrypto(engine.execute(Counter, {
+          executionId: "bounded-follower",
+          payload: { n: 0 }
+        }))
+      ).toBe(40)
+      expect(perRound).toHaveLength(40)
+      expect(perRound[1]).toBeGreaterThan(0)
+      expect(perRound[39]).toBe(perRound[1])
+    }).pipe(Effect.scoped))
+
   it.effect("marks only the round after a handoff with its predecessor, and only followed rounds as follows", () =>
     Effect.gen(function*() {
       const script = [handoff(1), new Flow.Suspended({}), complete(7)]

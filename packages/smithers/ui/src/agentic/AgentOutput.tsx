@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import type { ComponentProps } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { MessageResponse as Response } from "./MessageResponse";
 import { Reasoning, ReasoningSummary } from "./Reasoning";

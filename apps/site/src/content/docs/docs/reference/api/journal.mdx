@@ -582,9 +582,12 @@ See [Test against a real journal](https://github.com/smithersai/smithers/blob/ma
 
 ## Sequence allocation
 
-`emitDurable` allocates both sequences inside the writer's transaction
-(`MAX(seq) + 1`, taking the in-memory clock as a floor) and inserts the row
-before returning, so the returned `seq` is already committed. Use it wherever a
+`emitDurable` allocates both sequences inside the writer's transaction and
+inserts the row before returning, so the returned `seq` is already committed.
+The `INSERT` itself takes `seq` as the greater of the in-memory floor and the
+run's `MAX(seq) + 1`, in the same statement, so the write costs one round trip
+for the sequence and the row; the producer sequence, when the input names
+none, is read first (`MAX(source_seq) + 1`). Use it wherever a
 caller acts on the returned sequence: lifecycle finalization, cross-process
 supervisors, or any deployment where a second writer may open the same run. A
 durable boundary must not advance the run or expose its result until this

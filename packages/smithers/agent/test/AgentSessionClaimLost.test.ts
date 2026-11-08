@@ -3,7 +3,6 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { ClaimLost } from "@smthrs/control/ControlError"
 import type * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
-import { Crypto } from "@smthrs/crypto"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
@@ -183,7 +182,7 @@ const run = async (contention: boolean) => {
           Layer.provideMerge(StepBoundary.layerTest()),
           Layer.provideMerge(TestStores.layerAt(":memory:")),
           Layer.provideMerge(Layer.merge(
-            Crypto.layerFromDigest(NodeCrypto.layerDigest),
+            NodeCrypto.layer,
             Layer.succeed(Jj.Jj)(Jj.make({
               snapshot: () => Effect.succeed({ commitId: "test" as never, changeId: "test" as never }),
               restore: () => Effect.void,
@@ -194,7 +193,7 @@ const run = async (contention: boolean) => {
             }))
           ))
         ),
-        Crypto.layerFromDigest(NodeCrypto.layerDigest)
+        NodeCrypto.layer
       )),
       Effect.scoped
     )

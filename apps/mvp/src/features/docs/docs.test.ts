@@ -1,3 +1,4 @@
+import { ShapeSource } from "@smthrs/effect-electric"
 import { Persistence } from "@smthrs/effect-tanstack-db"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import { Deferred, Effect, Layer, Logger, ManagedRuntime, Metric } from "effect"
@@ -13,6 +14,7 @@ import { DOCS_UNREADABLE, NO_DOCS, NO_MATCHES, PAGE_UNREADABLE } from "./contrac
 import { Docs } from "./docs"
 import { loads } from "./records"
 import { DocsStore } from "./store"
+import { replaceRole, RepoStore } from "../repo/store"
 import { docsPageOf } from "./view"
 
 // The Docs tab on a tab, driven as React drives it, with no React: the routes call `warm` and `open`, the searchbox
@@ -273,4 +275,38 @@ describe("the Docs tab", () => {
     const all = JSON.stringify(tab.logs)
     for (const secret of [SECRET, "/guide/", "Retrying", "docs.example"]) expect(all).not.toContain(secret)
   })
+})
+
+// The data gate (decision 0110, 2026-11-03): a repository's docs leave the page's query in the change that refuses it,
+// before any wipe runs, and show again when the mark goes.
+test("a refused repository's docs leave the page's query in the change that refuses it", async () => {
+  const h = await harness()
+  const runtime = ManagedRuntime.make(
+    Docs.layer.pipe(
+      Layer.provideMerge(DocsStore.layer),
+      Layer.provideMerge(RepoStore.layer({ origin: h.origin })),
+      // No repository's row syncs here: the store's shape is never answered.
+      Layer.provideMerge(Layer.succeed(ShapeSource.ShapeSource, ShapeSource.ShapeSource.of({ request: () => Effect.never }))),
+      Layer.provideMerge(DocsClient.layer({ origin: h.origin, within: "10 seconds" }).pipe(Layer.provide(FetchHttpClient.layer))),
+      Layer.provideMerge(Persistence.memory),
+      Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, h.fetch)),
+    ),
+  )
+  tabs.push({ dispose: () => runtime.dispose() })
+  const docs = await runtime.runPromise(Effect.service(Docs))
+  docs.queries.docs.startSyncImmediate()
+  docs.actions.open("acme", "widgets", "/guide/retrying.md")
+  await waitFor(() => expect(docs.queries.docs.toArray[0]).toMatchObject({ index: { state: "ready" }, page: { state: "text" } }))
+  const id = "github/acme/widgets"
+  const shownAfter = (change: Effect.Effect<unknown>) => runtime.runPromise(Effect.gen(function* () {
+    const store = yield* DocsStore
+    yield* change
+    const row = (yield* store.docs.toArray)[0] as Record<string, unknown> | undefined
+    return { index: row?.index, page: row?.page, search: row?.search }
+  }))
+  const repos = await runtime.runPromise(Effect.service(RepoStore))
+  expect(await shownAfter(replaceRole(repos, { id, role: null, own: false, refused: "forbidden" })))
+    .toEqual({ index: undefined, page: undefined, search: undefined })
+  const again = await shownAfter(Effect.orDie(repos.roles.delete(id)))
+  expect(again).toMatchObject({ index: { state: "ready" }, page: { state: "text" } })
 })

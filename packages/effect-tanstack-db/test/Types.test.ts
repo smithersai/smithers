@@ -32,8 +32,8 @@ describe("types", () => {
   })
 
   test("a schema that transforms rows is refused: a row schema only checks", () => {
-    // @ts-expect-error NumberFromString decodes a string into a number
-    Collection.local({ id: "x", schema: Schema.Struct({ id: Schema.NumberFromString }), getKey: (row) => row.id })
+    const transformed = Schema.Struct({ id: Schema.NumberFromString })
+    expectTypeOf<typeof transformed>().not.toExtend<Collection.RowSchema<{ readonly id: string }>>()
   })
 
   test("a live query's rows are typed by its select, and findOne is a single result", () => {

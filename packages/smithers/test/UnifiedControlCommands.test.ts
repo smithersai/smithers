@@ -808,7 +808,163 @@ describe("unified control dispatch", () => {
     }
   )
 
-  it.each(["show", "approvals"])("fails %s when its transcript exceeds the event byte budget", async (command) => {
+  it("summarizes a synthetic run state over 16 MiB and names omitted fields", async () => {
+    ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [row("run-1", "failed")] }))
+    ports.watch.mockReturnValue(Stream.make(
+      event(1, "example.state", { state: "x".repeat(16 * 1024 * 1024 + 1), round: 401, currentNode: "handoff" }),
+      event(2, "control.run.failed", { cause: "synthetic failure" })
+    ))
+    const result = await invoke(["runs", "show", "run-1", "--json"])
+    expect(result.codes, result.stdout).toEqual([])
+    const output = JSON.parse(result.stdout)
+    expect(output.status).toBe("failed")
+    expect(output.history.truncatedFields).toContainEqual({
+      path: "/events/1/payload/state",
+      bytes: 16 * 1024 * 1024 + 3
+    })
+    expect(output.history.largestFields[0]).toMatchObject({ path: "/events/1/payload/state" })
+    expect(output.diagnosis.cause).toBe("synthetic failure")
+    expect(result.stdout.length).toBeLessThan(100_000)
+  })
+
+  it("summarizes more than 16 MiB of individually bounded state events", async () => {
+    ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [row("run-1", "failed")] }))
+    ports.watch.mockReturnValue(Stream.fromIterable((function*() {
+      for (let i = 1; i <= 34; i++) yield event(i, "example.state", { state: "x".repeat(512 * 1024) })
+      yield event(35, "control.run.failed", { cause: "aggregate failure" })
+    })()))
+    const result = await invoke(["runs", "show", "run-1", "--json"])
+    expect(result.codes, result.stdout).toEqual([])
+    const output = JSON.parse(result.stdout)
+    expect(output.status).toBe("failed")
+    expect(output.history.bytes).toBeGreaterThan(16 * 1024 * 1024)
+    expect(output.history.omittedEvents).toBeGreaterThan(0)
+    expect(output.diagnosis.cause).toBe("aggregate failure")
+  })
+
+  it("does not compare omitted call inputs as duplicate calls", async () => {
+    ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [row("run-1", "running")] }))
+    ports.watch.mockReturnValue(Stream.make(
+      event(1, "control.agent.cell-call-started", { flowName: "example", input: "a".repeat(2 * 1024 * 1024) }),
+      event(2, "control.agent.cell-call-started", { flowName: "example", input: "b".repeat(2 * 1024 * 1024) })
+    ))
+    const result = await invoke(["runs", "show", "run-1", "--json"])
+    expect(result.codes, result.stdout).toEqual([])
+    expect(JSON.parse(result.stdout).diagnosis).toEqual({ status: "running", unavailable: true })
+    expect(JSON.parse(result.stdout)).not.toHaveProperty("health")
+    expect(JSON.parse(result.stdout)).not.toHaveProperty("executions")
+    expect(JSON.parse(result.stdout)).toMatchObject({ activityUnavailable: true, healthUnavailable: true })
+  })
+
+  it("prefers the native current lineage round over historical state and child observations", async () => {
+    const observed = (executionId: string, roundOrdinal: number) => ({
+      executionId,
+      flowName: "demo/ship",
+      status: "failed" as const,
+      createdAtMs: 1,
+      startedAtMs: 1,
+      finishedAtMs: 2,
+      parentRunId: null,
+      lineageId: "run-1",
+      roundOrdinal,
+      cancelRequestedAtMs: null,
+      waiting: null
+    })
+    const run = {
+      ...row("run-1", "failed"),
+      executionView: { root: observed("run-1", 400), current: observed("current", 401) }
+    }
+    ports.list.mockImplementation((request: ControlSchema.ListRequest) =>
+      Effect.succeed(
+        request._tag === "executions"
+          ? { _tag: "executions", source: "native", revision: 1, items: [] }
+          : { _tag: "runs", items: [run] }
+      )
+    )
+    ports.watch.mockReturnValue(Stream.make(
+      event(1, "example.state", { state: "x".repeat(2 * 1024 * 1024), round: 999 }),
+      event(2, "control.engine.event", {
+        executionId: "child",
+        eventType: "observation",
+        payload: { executionFact: { observation: observed("child", 0) } }
+      })
+    ))
+    const result = await invoke(["runs", "show", "run-1", "--json"])
+    expect(result.codes, result.stdout).toEqual([])
+    expect(JSON.parse(result.stdout).history.round).toBe(401)
+  })
+
+  it.each([
+    { cause: "x".repeat(6000) },
+    { fault: { code: "synthetic_fault", message: "structured failure" } }
+  ])("renders a bounded error or its omission receipt for a human", async (payload) => {
+    ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [row("run-1", "failed")] }))
+    ports.watch.mockReturnValue(Stream.make(
+      event(1, "example.state", { blob: "x".repeat(2 * 1024 * 1024) }),
+      event(2, "control.run.failed", payload)
+    ))
+    let printed = ""
+    const result = await invoke(["runs", "show", "run-1", "--audience", "human"], {
+      stdout: {
+        isTTY: true,
+        columns: 120,
+        write: (text) => {
+          printed += text
+        }
+      }
+    })
+    expect(result.codes).toEqual([])
+    printed += result.stdout
+    expect(printed).not.toContain("[object Object]")
+    if ("cause" in payload) {
+      expect(printed).toContain("6002 bytes")
+      expect(printed).toContain("/events/2/payload/cause")
+    } else expect(printed).toContain("synthetic_fault")
+  })
+
+  it("returns a partial-history summary without materializing unused execution batches", async () => {
+    ports.list.mockImplementation((request: ControlSchema.ListRequest) =>
+      request._tag === "executions"
+        ? Effect.fail(new Error("must not read unused snapshots"))
+        : Effect.succeed({ _tag: "runs", items: [row("run-1", "running")] })
+    )
+    ports.watch.mockReturnValue(Stream.make(event(1, "control.engine.event", {
+      executionId: "native",
+      eventType: "flows.engine.node-scheduled",
+      payload: { kind: "ActionCall", nodeId: "node", action: "current", state: "x".repeat(2 * 1024 * 1024) }
+    })))
+    const result = await invoke(["runs", "show", "run-1", "--json"])
+    expect(result.codes, result.stdout).toEqual([])
+    expect(JSON.parse(result.stdout).history.currentNode).toBe("current")
+    expect(ports.list).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(["completed", "failed", "cancelled"] as const)(
+    "uses authoritative %s status to invalidate stale action evidence",
+    async (status) => {
+      ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [row("run-1", status)] }))
+      ports.watch.mockReturnValue(
+        Stream.make(event(1, "example.state", { currentNode: "handoff", state: "x".repeat(2 * 1024 * 1024) }))
+      )
+      const result = await invoke(["runs", "show", "run-1", "--json"])
+      expect(result.codes).toEqual([])
+      expect(JSON.parse(result.stdout).history).toMatchObject({
+        lastRecordedNode: "handoff",
+        currentNodeUnavailable: true
+      })
+      expect(JSON.parse(result.stdout).history).not.toHaveProperty("currentNode")
+    }
+  )
+
+  it("keeps the small-run diagnosis golden unchanged", async () => {
+    ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [row("run-1", "failed")] }))
+    ports.watch.mockReturnValue(Stream.make(event(1, "control.run.failed", { cause: "synthetic failure" })))
+    const result = await invoke(["runs", "show", "run-1", "--json"])
+    expect(result.codes).toEqual([])
+    expect(JSON.parse(result.stdout)).toMatchSnapshot()
+  })
+
+  it.each(["approvals"])("fails %s when its transcript exceeds the event byte budget", async (command) => {
     ports.list.mockReturnValue(Effect.succeed({ _tag: "runs", items: [row("run-1", "waiting-approval")] }))
     ports.watch.mockReturnValue(
       Stream.fromIterable([...approvalEvents, event(4, "example", { text: "x".repeat(1024 * 1024) })])

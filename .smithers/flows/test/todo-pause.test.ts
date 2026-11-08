@@ -5,7 +5,6 @@ import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import * as ControlLive from "@smthrs/control/ControlLive"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import * as SqlControlRuntime from "@smthrs/control/SqlControlRuntime"
-import { Crypto } from "@smthrs/crypto"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
@@ -41,7 +40,7 @@ const database = Layer.mergeAll(
   DurableEngineState.layer
 ).pipe(
   Layer.provideMerge(Layer.effectDiscard(Migrations.run)),
-  Layer.provideMerge(Layer.merge(TestDatabase.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+  Layer.provideMerge(Layer.merge(TestDatabase.layer, NodeCrypto.layer))
 )
 const bridge = Layer.effect(ControlExecutor.ControlExecutor)(Effect.gen(function*() {
   const services = yield* Effect.context<DurableEngineState.DurableEngineState | FlowRuntime.FlowRuntime>()
@@ -180,7 +179,7 @@ test(
         DurableEngineState.layer
       ).pipe(
         Layer.provideMerge(Layer.effectDiscard(Migrations.run)),
-        Layer.provideMerge(Layer.merge(sqlite, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+        Layer.provideMerge(Layer.merge(sqlite, NodeCrypto.layer))
       )
       const engine = Layer.mergeAll(
         Interpreter.layer(Todo),
@@ -346,7 +345,7 @@ test(
         DurableEngineState.layer
       ).pipe(
         Layer.provideMerge(Layer.effectDiscard(Migrations.run)),
-        Layer.provideMerge(Layer.merge(sqlite, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+        Layer.provideMerge(Layer.merge(sqlite, NodeCrypto.layer))
       )
       const engine = Layer.mergeAll(
         Interpreter.layer(Todo),

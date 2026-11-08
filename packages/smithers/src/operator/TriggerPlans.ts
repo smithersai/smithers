@@ -4,15 +4,18 @@
  * @since 1.0.0
  */
 
+import { canonicalize } from "@smthrs/canonical"
 import * as Control from "@smthrs/control/Control"
-import { PlanCard } from "@smthrs/control/ControlSchema"
+import { ApprovalPayload, PlanCard, Principal } from "@smthrs/control/ControlSchema"
+import { Sha256 } from "@smthrs/crypto"
 import { DurableWriter } from "@smthrs/database"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as Scheduler from "@smthrs/triggers/Scheduler"
 import { TriggerError } from "@smthrs/triggers/TriggerError"
-import { Effect, Layer, Schema } from "effect"
+import { Clock, Effect, Layer, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { join } from "node:path"
+import { triggerDeclaration } from "../internal/ApprovalScope.ts"
 import { databaseLayer } from "./Store.ts"
 
 const prefix = "trigger-plan:"
@@ -109,6 +112,108 @@ export const inspect = (root: string, handle: string): Promise<StoredPlan | null
     )
     : Promise.resolve(null)
 
+/** Reviewable consent to one exact registration and executable plan.
+ * @category schemas
+ * @since 1.0.0
+ */
+export const StandingApproval = Schema.Struct({
+  triggerId: Schema.NonEmptyString,
+  declarationDigest: Schema.NonEmptyString,
+  plan: PlanCard
+})
+
+/** Prepare the exact standing consent payload; does not approve anything.
+ * @category queries
+ * @since 1.0.0
+ */
+export const previewApproval = (root: string, triggerId: string) =>
+  Effect.gen(function*() {
+    const control = yield* Control.Control
+    const current = yield* triggerDeclaration(triggerId)
+    if (current?.trigger.enabled !== true) return yield* failure("Unknown or disabled trigger")
+    const plan = yield* control.plan({ flowId: current.trigger.flowId, input: current.trigger.input })
+    return { triggerId, declarationDigest: current.digest, plan }
+  }).pipe(Effect.provide(databaseLayer(root)))
+
+/** Install operator consent only after Control validates the exact approval.
+ * Reusing the same consent is idempotent and never resurrects a revoked grant.
+ * @category commands
+ * @since 1.0.0
+ */
+export const grantApproval = (root: string, submitted: typeof StandingApproval.Type) =>
+  Effect.gen(function*() {
+    const consent = yield* Schema.decodeUnknownEffect(StandingApproval)(submitted)
+    const control = yield* Control.Control
+    const { sql, write } = yield* makeStore
+    const current = yield* previewApproval(root, consent.triggerId)
+    if (
+      current.declarationDigest !== consent.declarationDigest || current.plan.digest !== consent.plan.digest ||
+      canonicalize(current.plan.envelope) !== canonicalize(consent.plan.envelope) ||
+      consent.plan.approval.target._tag !== "Plan" || consent.plan.approval.target.planId !== consent.plan.planId ||
+      consent.plan.approval.target.digest !== consent.plan.digest
+    ) return yield* failure("Standing approval no longer matches the registered trigger and plan")
+    const grantId = Sha256.digestSync(
+      canonicalize([consent.triggerId, consent.declarationDigest, consent.plan.digest, consent.plan.planId])
+    )
+    const approval = {
+      ...consent.plan.approval,
+      scope: "remembered" as const,
+      idempotencyKey: `trigger-grant:${grantId}`
+    }
+    yield* control.approve(approval)
+    yield* write(Effect.gen(function*() {
+      const latest = yield* triggerDeclaration(consent.triggerId).pipe(Effect.provideService(SqlClient.SqlClient, sql))
+      if (latest?.digest !== consent.declarationDigest) return yield* failure("Trigger changed while granting approval")
+      const rows = yield* sql<{ principal: string }>`SELECT decision_principal_json AS principal FROM control_tokens
+      WHERE target_tag = 'Plan' AND run_id = '' AND target_id = ${consent.plan.planId} AND resolved = 1`
+      if (rows[0] === undefined) return yield* failure("Control did not record the granting principal")
+      const principal = yield* Schema.decodeUnknownEffect(Principal)(
+        yield* Effect.try(() => JSON.parse(rows[0]!.principal))
+      )
+      yield* sql`INSERT INTO control_trigger_approvals
+      (grant_id, trigger_id, declaration_digest, plan_digest, approval_json, principal_json, granted_at_ms)
+      VALUES (${grantId}, ${consent.triggerId}, ${consent.declarationDigest}, ${consent.plan.digest},
+        ${JSON.stringify(approval)}, ${JSON.stringify(principal)}, ${yield* Clock.currentTimeMillis})
+      ON CONFLICT (grant_id) DO NOTHING`
+      const grant = yield* sql<
+        { revoked: number | null }
+      >`SELECT revoked_at_ms AS revoked FROM control_trigger_approvals WHERE grant_id = ${grantId}`
+      if (grant[0]?.revoked !== null) {
+        return yield* failure("This standing approval has been revoked; prepare a new consent")
+      }
+    }))
+    return {
+      grantId,
+      triggerId: consent.triggerId,
+      declarationDigest: consent.declarationDigest,
+      planDigest: consent.plan.digest
+    }
+  }).pipe(Effect.provide(databaseLayer(root)))
+
+/** Recheck the caller's authority, then revoke without deleting historical uses.
+ * @category commands
+ * @since 1.0.0
+ */
+export const revokeApproval = (root: string, grantId: string) =>
+  Effect.gen(function*() {
+    const control = yield* Control.Control
+    const { sql, write } = yield* makeStore
+    const rows = yield* sql<
+      { approval: string }
+    >`SELECT approval_json AS approval FROM control_trigger_approvals WHERE grant_id = ${grantId}`
+    if (rows[0] === undefined) return yield* failure("Unknown standing approval")
+    const approval = yield* Schema.decodeUnknownEffect(ApprovalPayload)(
+      yield* Effect.try(() => JSON.parse(rows[0]!.approval))
+    )
+    // Control rechecks policy before replaying the original decision receipt.
+    yield* control.approve(approval)
+    yield* write(
+      sql`UPDATE control_trigger_approvals SET revoked_at_ms = COALESCE(revoked_at_ms, ${yield* Clock
+        .currentTimeMillis}) WHERE grant_id = ${grantId}`
+    )
+    return { grantId, revoked: true as const }
+  }).pipe(Effect.provide(databaseLayer(root)))
+
 const terminalErrors = new Set(["PlanDenied", "PlanNotFound", "PlanDigestMismatch", "EnvelopeMismatch", "InvalidInput"])
 const settled = new Set(["cancelled", "completed", "failed"])
 const stateOf = (status: StoredPlan["status"] | undefined): Scheduler.RunState =>
@@ -119,7 +224,8 @@ const stateOf = (status: StoredPlan["status"] | undefined): Scheduler.RunState =
     : "active"
 
 /**
- * Provides recoverable scheduled launches without approving or timing out a plan.
+ * Provides recoverable scheduled launches with manual approval by default.
+ * Exact, revocable standing consent may approve a matching occurrence.
  *
  * The stable handle is recorded as the trigger's active run. Its monitor can
  * restart in another process, re-offer the persisted card, and attach the real
@@ -135,6 +241,53 @@ export const layer = (root: string) =>
     Effect.gen(function*() {
       const control = yield* Control.Control
       const { read, sql, write } = yield* makeStore
+      const standingApproval = (entry: StoredPlan) =>
+        Effect.gen(function*() {
+          const decisions = yield* sql<{ resolved: number }>`SELECT resolved FROM control_tokens
+          WHERE target_tag = 'Plan' AND run_id = '' AND target_id = ${entry.plan.planId}`
+          // Decisions survive a later loss of decision authority. Recover an
+          // accepted receipt without making the same approval again; a not-yet
+          // accepted run still checks grant revocation in its launch transaction.
+          // This also preserves a person's earlier approval or denial.
+          if (decisions[0]?.resolved === 1) return
+          const rows = yield* sql<{ grantId: string; principal: string }>`
+          SELECT g.grant_id AS grantId, g.principal_json AS principal
+          FROM control_trigger_plan_bindings b
+          LEFT JOIN control_trigger_approval_uses u ON u.plan_id = b.plan_id
+          JOIN control_trigger_approvals g
+            ON g.trigger_id = b.trigger_id AND g.declaration_digest = b.declaration_digest
+          WHERE b.plan_id = ${entry.plan.planId} AND g.plan_digest = ${entry.plan.digest} AND g.revoked_at_ms IS NULL
+            AND (u.grant_id IS NULL OR g.grant_id = u.grant_id)
+          ORDER BY g.granted_at_ms DESC, g.grant_id LIMIT 1
+        `
+          const grant = rows[0]
+          if (grant === undefined) return
+          const current = yield* sql<
+            { digest: string; triggerId: string }
+          >`SELECT declaration_digest AS digest, trigger_id AS triggerId
+          FROM control_trigger_plan_bindings WHERE plan_id = ${entry.plan.planId}`
+          const declaration = yield* triggerDeclaration(current[0]!.triggerId).pipe(
+            Effect.provideService(SqlClient.SqlClient, sql)
+          )
+          if (declaration?.trigger.enabled !== true || declaration.digest !== current[0]!.digest) return
+          const principal = yield* Schema.decodeUnknownEffect(Principal)(
+            yield* Effect.try(() => JSON.parse(grant.principal))
+          )
+          yield* write(sql`INSERT INTO control_trigger_approval_uses (plan_id, handle, grant_id, used_at_ms)
+          VALUES (${entry.plan.planId}, ${entry.handle}, ${grant.grantId}, ${yield* Clock
+            .currentTimeMillis}) ON CONFLICT (plan_id) DO NOTHING`)
+          const use = yield* sql<
+            { grantId: string }
+          >`SELECT grant_id AS grantId FROM control_trigger_approval_uses WHERE plan_id = ${entry.plan.planId}`
+          // A revoked use cannot be rebound to a later grant after a crash.
+          if (use[0]?.grantId !== grant.grantId) return
+          yield* control.approve({
+            ...entry.plan.approval,
+            scope: "once",
+            principal,
+            idempotencyKey: `trigger-use:${grant.grantId}:${entry.plan.planId}`
+          })
+        })
       // Control uses the main database too, so its calls cannot run under
       // that database's write lock. A separate writer serializes inspections
       // across layers and processes; a crashed inspector releases it through
@@ -208,6 +361,23 @@ export const layer = (root: string) =>
               // SqlControlRuntime persists this key together with the card.
               // A crash before our INSERT therefore cannot create a new plan.
               const plan = yield* control.plan(input)
+              // The scheduler's stable key ends with an ISO occurrence. Bind
+              // only a matching durable declaration, never an arbitrary caller key.
+              const identity = /^(.*):(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)$/.exec(input.idempotencyKey)
+              if (identity !== null) {
+                yield* write(Effect.gen(function*() {
+                  const declaration = yield* triggerDeclaration(identity[1]!).pipe(
+                    Effect.provideService(SqlClient.SqlClient, sql)
+                  )
+                  if (
+                    declaration?.trigger.flowId === input.flowId &&
+                    canonicalize(declaration.trigger.input) === canonicalize(input.input)
+                  ) {
+                    yield* sql`INSERT INTO control_trigger_plan_bindings (plan_id, trigger_id, declaration_digest)
+                      VALUES (${plan.planId}, ${identity[1]!}, ${declaration.digest}) ON CONFLICT (plan_id) DO NOTHING`
+                  }
+                }))
+              }
               yield* write(sql`
                 INSERT INTO control_trigger_plans (handle, idempotency_key, plan_json, status)
                 VALUES (${handle}, ${input.idempotencyKey}, ${JSON.stringify(plan)}, 'waiting-approval')
@@ -257,13 +427,13 @@ export const layer = (root: string) =>
               RETURNING handle
             `)
             if (launching.length === 0) return "active"
-            return yield* control.run({
+            return yield* standingApproval(entry).pipe(Effect.andThen(control.run({
               _tag: "Plan",
               planId: entry.plan.planId,
               digest: entry.plan.digest,
               envelope: entry.plan.envelope,
               idempotencyKey: entry.idempotencyKey
-            }).pipe(
+            }))).pipe(
               Effect.flatMap((receipt) =>
                 Effect.gen(function*() {
                   if (receipt._tag === "Parked") {

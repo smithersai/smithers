@@ -20,9 +20,9 @@ import { ArtifactStore } from "@smthrs/artifacts"
 import { Capability, Permission } from "@smthrs/capability"
 import { EngineStore, OwnerIdentity, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { Action } from "@smthrs/flow"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 // Runtime's public subpath avoids the aggregate barrel's browser sync graph.
 // The native host needs the injected runtime, not Yjs or browser storage.
-import type { Crypto } from "@smthrs/crypto"
 import * as Runtime from "@smthrs/flows/Runtime"
 import { RedactedLogger } from "@smthrs/journal"
 import {
@@ -36,6 +36,7 @@ import {
 import type { Ownership } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as FileSystem from "effect/FileSystem"
@@ -98,7 +99,7 @@ export interface Platform {
   readonly name: string
   readonly database: (filename: string) => Layer.Layer<SqlClient.SqlClient>
   readonly host: Pick<typeof NodeHost, "layerAt" | "layerContainedAt">
-  readonly crypto: Layer.Layer<Crypto.Crypto>
+  readonly crypto: Layer.Layer<(EffectDigest.Digest | SecureRandom.SecureRandom)>
 }
 
 const RuntimeConfigurationError = Runtime.RuntimeConfigurationError

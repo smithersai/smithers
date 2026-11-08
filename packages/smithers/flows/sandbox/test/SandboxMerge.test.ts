@@ -1,6 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/jj/Jj"
@@ -94,9 +93,7 @@ const applyFlow = Flow.make("test/SandboxMerge/Apply", {
 
 const mergeRuntime = Interpreter.layerWithImplementations(applyFlow, SandboxMerge.layerApply).pipe(
   Layer.provideMerge(FlowEngine.layerMemory),
-  Layer.provideMerge(
-    Layer.mergeAll(rawPlatform, layerRepositoryMutation, Crypto.layerFromDigest(NodeCrypto.layerDigest))
-  )
+  Layer.provideMerge(Layer.mergeAll(rawPlatform, layerRepositoryMutation, NodeCrypto.layer))
 )
 
 const durableApply = (work: Sandbox.Work, repository: string, onto: string) =>

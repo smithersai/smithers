@@ -1,6 +1,5 @@
-import { TestSchemas } from "@smthrs/database"
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
+import { TestSchemas } from "@smthrs/database"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { NodeRuntime } from "@smthrs/platform-node"
 import * as TimeTravelMigrations from "@smthrs/time-travel/Migrations"
@@ -33,7 +32,7 @@ it(
       await Effect.runPromise(Effect.void.pipe(
         Effect.provide(NodeRuntime.storage(join(root, ".flows", "engine.db"), root)),
         Effect.provide(NodeServices.layer),
-        Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+        Effect.provide(NodeCrypto.layer)
       ))
       await Effect.runPromise(
         Effect.void.pipe(Effect.provide(ControlDatabaseMigrations.layer), Effect.provide(database("control")))

@@ -411,6 +411,17 @@ describe("stackOf", () => {
     expect(pills.map((pill) => pill?.status)).toEqual(["queued", "running", "waiting", "done", "cancelled", "failed"])
   })
 
+  test("a stack whose role read failed lists nothing the device kept", () => {
+    const none = { total: 0, href: "/maya/tinyhttp/stack", entries: [] }
+    for (const access of ["unavailable"] as const) {
+      expect(stackOf([todo({})], "maya", "tinyhttp", access)).toEqual(none)
+    }
+    for (const access of ["unknown", "unverified", "syncing", undefined] as const) {
+      const shown = stackOf([todo({})], "maya", "tinyhttp", access)
+      expect("entries" in shown && shown.entries).toHaveLength(1)
+    }
+  })
+
   test("a person the stack refused sees why", () => {
     expect(stackOf([todo({})], "maya", "tinyhttp", "sign_in")).toEqual({ notice: SIGN_IN })
     expect(stackOf([todo({})], "maya", "tinyhttp", "forbidden")).toEqual({ notice: MEMBERS_ONLY })

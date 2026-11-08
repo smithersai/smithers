@@ -71,7 +71,7 @@ export const REFUSALS = {
 export type Refusal = keyof typeof REFUSALS
 
 /** Finite operation names only: provider messages and SQL text never enter diagnostics. */
-const stages = ["configuration", "allowlist", "database", "row_read", "claim", "account_read", "app_auth", "installation_token", "permission", "role_record", "deadline", "cooldown"] as const
+const stages = ["configuration", "allowlist", "database", "row_read", "claim", "account_read", "app_auth", "installation_token", "permission", "metadata", "visibility_record", "role_record", "deadline", "cooldown"] as const
 
 export class RoleRefused extends Schema.TaggedError<RoleRefused>()("@smthrs/mvp/github/RoleRefused", {
   code: Schema.Literals(Object.keys(REFUSALS) as Array<Refusal>),
@@ -181,23 +181,29 @@ const decodeRole = Schema.decodeUnknownSync(Schema.NullOr(Schema.Literals(ROLES)
  * clock once the lock is granted (`clock_timestamp()`): Postgres computes a locking `SELECT`'s columns before it waits
  * for the row, so one statement would judge a row released unchanged after it expired by the clock before the wait.
  */
-export const holds = (held: Held, permitted?: ReadonlyArray<Role>) =>
+export const checkHeld = (held: Held, permitted?: ReadonlyArray<Role>) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
     const [row] = yield* sql<{ readonly role: string | null; readonly checkedAt: string }>`
       SELECT role, checked_at::text AS "checkedAt" FROM github_repo_roles
       WHERE repo_id = ${held.repoId} AND person_id = ${held.personId}
       FOR SHARE`
-    if (row === undefined) return false
+    if (row === undefined) return "unavailable" as const
     const role = decodeRole(row.role)
-    if (permitted === undefined ? role !== held.role : role === null || !permitted.includes(role)) return false
+    const allowed = permitted === undefined ? role === held.role : role !== null && permitted.includes(role)
+    if (permitted === undefined && !allowed) return "denied" as const
     const [now] = yield* sql<{ readonly fresh: boolean; readonly same: boolean }>`
       SELECT ${row.checkedAt}::timestamptz > clock_timestamp() - make_interval(secs => ${held.freshSeconds ?? FRESH_SECONDS}) AS fresh,
         ${held.checkedAt === undefined ? sql`true` : sql`${row.checkedAt}::timestamptz >= ${held.checkedAt}::timestamptz`} AS same`
     // A deferred operation needs a fresh observation, not permanent refusal because its queued read aged out.
     if (permitted !== undefined && !now!.fresh) return yield* new RoleRefused({ code: "unavailable", retryAfterSeconds: 1 })
-    return now!.fresh && now!.same
+    if (!now!.fresh || !now!.same) return "unavailable" as const
+    return allowed ? "held" as const : "denied" as const
   })
+
+/** Boolean admission for callers that already treat any lost observation as retryable. */
+export const holds = (held: Held, permitted?: ReadonlyArray<Role>) =>
+  Effect.map(checkHeld(held, permitted), outcome => outcome === "held")
 
 /** What `make` needs: the deployment's own repository, the App when it is configured, and how far it may act. */
 export interface Options {
@@ -522,6 +528,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       const visible = answer.visible
       if (Option.isNone(visible)) return yield* new RoleRefused({
         code: answer.rateLimited ? "rate_limited" : "unavailable", retryAfterSeconds: answer.retryAfterSeconds ?? 5,
+        stage: "metadata", upstreamStatus: answer.upstreamStatus,
       })
       const recorded = yield* VisibilityReceipt.recordRepository(repository.id, { private: !visible.value }, observedAt)
       // A rejected update lost to a newer commit. Read it in a new statement (the insert's snapshot predates
@@ -531,7 +538,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           visibility_verified_at > clock_timestamp() - interval '60 seconds'
             AND visibility_verified_at <= clock_timestamp() AS fresh
         FROM github_repositories WHERE repo_id = ${repository.id}`)[0]
-      if (winning?.fresh !== true) return yield* new RoleRefused({ code: "unavailable", retryAfterSeconds: 1 })
+      if (winning?.fresh !== true) return yield* new RoleRefused({ code: "unavailable", retryAfterSeconds: 1, stage: "visibility_record" })
       return winning.public
     }).pipe(Effect.mapError((error) => error instanceof RoleRefused ? error : new RoleRefused({ code: "unavailable" })))
 
@@ -575,8 +582,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       repository: options.repository,
       freshSeconds,
       workBasis: (repository, installed): WorkBasis => {
-        if (!installed) return options.local === true ? "local" : "public"
         if (repository.id === options.repository.id) return "deployment"
+        if (!installed) return options.local === true ? "local" : "public"
         if (Option.isNone(app)) return options.local === true ? "local" : "public"
         if (Option.isSome(allowedIds) && !allowedIds.value.has(repository.id)) return options.local === true ? "local" : "public"
         return "repository"
@@ -584,12 +591,15 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       resolve: (actor, repository) => resolve(actor, repository),
       refresh: (actor, repository, read) => resolve(actor, repository, read),
       uninstalled,
-      workUninstalled: (actor, repository) => options.local === true
+      // Installation discovery and public metadata cannot demote the deployment's confirmed session role.
+      workUninstalled: (actor, repository) => repository.id === options.repository.id
+        ? Effect.map(resolve(actor, repository), (resolved) => resolved.role)
+        : options.local === true
         ? Effect.succeed(uninstalled(actor, repository))
         : Effect.gen(function* () {
           const publicNow = yield* visibility(repository)
-          const role = yield* SessionStore.freshRole(actor)
-          return publicNow ? role : null
+          if (!publicNow) return null
+          return yield* SessionStore.freshRole(actor)
         }).pipe(Effect.provide(database), Effect.mapError((error) => error instanceof RoleRefused ? error : new RoleRefused({ code: "unavailable" }))),
     } satisfies RepoRoles<R>
   })
@@ -597,7 +607,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
 /**
  * The role `actor` works with on Smithers' own copy of `repository`: a branch's workspace, its conversation, its
  * terminals, a new branch, a run's page. Where the deployment may act on the repository, the role `resolve` gives
- * there. Where it can't (`CANT_ACT`), only recorded public visibility admits the deployment's role
+ * there, including the deployment's own repository without an installation row. Elsewhere it can't (`CANT_ACT`), only recorded public visibility admits the deployment's role
  * (`workUninstalled`); private visibility denies; unknown or expired visibility is unavailable. A public repository without the App
  * is cloned and worked on as Smithers' copy by the deployment's own Members (GH-4, GH-5), and by nobody else (ruling
  * AUTH-8). GitHub or Postgres not answering passes on as the refusal, never a guess.

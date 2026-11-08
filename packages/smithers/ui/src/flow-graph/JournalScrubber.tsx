@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import type { ComponentProps } from "react";
 import { Button } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 export interface JournalTick { readonly seq: number; readonly emittedAtMs: number; readonly eventType: string; }
 export const journalPosition = (events: ReadonlyArray<JournalTick>, at: number | null, direction: -1 | 1, byStep = false): number => {

@@ -5,7 +5,6 @@ import { TestSchemas } from "@smthrs/database"
  */
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
 import { Control } from "@smthrs/control"
-import { Crypto } from "@smthrs/crypto"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { NodeRuntime } from "@smthrs/platform-node"
 import { Context, Effect, Exit, Layer } from "effect"
@@ -64,7 +63,7 @@ const fixture = async () => {
   await Effect.runPromise(Effect.void.pipe(
     Effect.provide(NodeRuntime.storage(join(root, ".flows", "engine.db"), root)),
     Effect.provide(NodeServices.layer),
-    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Effect.provide(NodeCrypto.layer)
   ))
   await Effect.runPromise(Effect.void.pipe(Effect.provide(NodeControl.engineDurable(root).runtime)))
   const state = { version: 1, flowName: "agent/run", payload: { runId: "run-1", planId: "plan-1" } }
@@ -333,7 +332,7 @@ const postgresProject = async () => {
     await Effect.runPromise(Effect.void.pipe(
       Effect.provide(NodeRuntime.storage(join(root, ".flows", "engine.db"), root)),
       Effect.provide(NodeServices.layer),
-      Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+      Effect.provide(NodeCrypto.layer)
     ))
     await Effect.runPromise(Effect.void.pipe(Effect.provide(NodeControl.engineDurable(root).runtime)))
     await sql(

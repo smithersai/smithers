@@ -1,0 +1,87 @@
+// The reply's pieces around smithers.sh's agent (worker/Reply.vibe, wiki/decisions/0012-smithers-agent.md): the task
+// it is asked, the answer a person sees while it streams, the tokens it spent, and the reason a failure reads.
+import { describe, expect, it } from "@effect/vitest"
+import type { AgentEvent } from "@smthrs/harness"
+import { failureReason, fold, MAX_TURNS, promptOf, REASONS, started, type Progress } from "../worker/Reply.vibe"
+
+const fence = "`".repeat(3)
+
+/** An agent event as the controller emits it, with the fields the fold reads. */
+function event(fields: Record<string, unknown>): AgentEvent.AgentEvent {
+  return fields as unknown as AgentEvent.AgentEvent
+}
+
+const delta = (text: string) => event({ _tag: "model-delta", delta: { type: "text-delta", text } })
+
+function folded(events: ReadonlyArray<AgentEvent.AgentEvent>): Progress {
+  return events.reduce(fold, started)
+}
+
+describe("the agent's task", () => {
+  it("is the post alone when it opens the conversation", () => {
+    expect(promptOf({ turns: [{ author: "person", text: "How do services work?" }] })).toBe("How do services work?")
+  })
+
+  it("carries the conversation so far, then the post it answers", () => {
+    expect(promptOf({
+      turns: [
+        { author: "person", text: "hi" },
+        { author: "agent", text: "Hello." },
+        { author: "person", text: "And layers?" },
+      ],
+    })).toBe("The conversation so far:\nPerson: hi\nVibeLang agent: Hello.\n\nThe person now asks: And layers?")
+  })
+
+  it("reads at most the last MAX_TURNS turns", () => {
+    const turns = Array.from({ length: MAX_TURNS + 6 }, (_, index) => ({ author: "person" as const, text: `t${index}` }))
+    const prompt = promptOf({ turns })
+    expect(prompt).not.toContain("Person: t5\n")
+    expect(prompt).toContain("Person: t6\n")
+    expect(prompt.endsWith(`asks: t${MAX_TURNS + 5}`)).toBe(true)
+  })
+})
+
+describe("the answer while it streams", () => {
+  it("shows the text the reply passes to ctx.done, as far as it has arrived", () => {
+    const progress = folded([
+      event({ _tag: "model-requested" }),
+      delta(`${fence}cell\nctx.done("Use a serv`),
+      delta(`ice.")\n${fence}`),
+    ])
+    expect(progress.text).toBe("Use a service.")
+  })
+
+  it("shows nothing for cell code that hasn't reached ctx.done", () => {
+    expect(folded([delta(`${fence}cell\nconst x = 1\n`)]).text).toBe("")
+  })
+
+  it("keeps the shown text when a new model call starts, and replaces it once the new reply says more", () => {
+    const progress = folded([
+      delta(`${fence}cell\nctx.done("first")\n${fence}`),
+      event({ _tag: "model-retried", attempt: 2, code: "transport" }),
+      delta(`${fence}cell\nctx.done("sec`),
+    ])
+    expect(progress.reply).toBe(`${fence}cell\nctx.done("sec`)
+    expect(progress.text).toBe("sec")
+  })
+
+  it("counts every settled model call's tokens, and remembers the last failed call's code", () => {
+    const progress = folded([
+      event({ _tag: "model-settled", usage: { inputTokens: 100, outputTokens: 20 } }),
+      event({ _tag: "model-settled", usage: { inputTokens: 50 } }),
+      event({ _tag: "model-failed", code: "content_policy" }),
+    ])
+    expect(progress.tokens).toBe(170)
+    expect(progress.failed).toBe("content_policy")
+  })
+})
+
+describe("the reason a failed agent reads", () => {
+  it("names a missing model, an answer that never came, and the model's own failure", () => {
+    expect(failureReason("@smthrs/agent/Seat/SeatUnresolved", started)).toBe(REASONS.unconfigured)
+    expect(failureReason("/harness/StructuredOutputFailure", started)).toBe(REASONS.empty)
+    expect(failureReason("/harness/HarnessError", { ...started, failed: "out_of_credit" })).toBe(REASONS.credit)
+    expect(failureReason("/harness/HarnessError", { ...started, failed: "transport" })).toBe(REASONS.unavailable)
+    expect(failureReason("/harness/HarnessError", started)).toBe(REASONS.failed)
+  })
+})

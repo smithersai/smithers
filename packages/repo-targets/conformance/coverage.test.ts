@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
-import { readdirSync, readFileSync, statSync } from "node:fs"
-import { join, relative, resolve } from "node:path"
+import { execFileSync } from "node:child_process"
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { describe, it } from "node:test"
 import { pathToFileURL } from "node:url"
 import { readWorkspaceInventory } from "./readWorkspaceInventory.ts"
@@ -35,18 +36,25 @@ describe("coverage conformance", () => {
       const { name, source } = entry
 
       if (name === "smithers/flows/platform-bun") {
-        // Bun has no V8 inspector. Its Node lane owns a unique private directory,
-        // kept through reporting and removed on exit, including failed runs.
-        assert.ok(source.includes("const coverageRoot = join(import.meta.dirname, \"coverage\")"))
-        assert.ok(source.includes("const reportsDirectory = process.versions.bun ? undefined : (() => {"))
-        assert.ok(source.includes("mkdirSync(coverageRoot, { recursive: true, mode: 0o700 })"))
-        assert.ok(source.includes("const directory = mkdtempSync(join(coverageRoot, \"run-\"))"))
-        assert.ok(source.includes("process.once(\"exit\", () => rmSync(directory, { recursive: true, force: true }))"))
-        assert.ok(source.includes("return directory"))
-        assert.ok(source.includes("...(reportsDirectory === undefined ? {} : { reportsDirectory })"))
+        // Probe the real config in two Node processes: source spelling cannot
+        // prove uniqueness, privacy, location or cleanup. Bun itself uses its
+        // native coverage lane and does not create a V8 report directory.
+        const directories = Array.from({ length: 2 }, () => {
+          const output = execFileSync(process.execPath, ["--input-type=module", "--eval", `
+            import config from ${JSON.stringify(pathToFileURL(entry.path).href)};
+            import { realpathSync, statSync } from "node:fs";
+            const directory = config.test.coverage.reportsDirectory;
+            console.log(JSON.stringify({ directory: realpathSync(directory), mode: statSync(directory).mode }));
+          `], { cwd: dirname(entry.path), encoding: "utf8" })
+          const { directory, mode } = JSON.parse(output) as { directory: string; mode: number }
+          const path = relative(realpathSync(dirname(packagesDir)), directory)
+          assert.ok(path === ".." || path.startsWith(`..${sep}`) || isAbsolute(path), "reports must stay outside discovery")
+          if (process.platform !== "win32") assert.equal(mode & 0o777, 0o700)
+          assert.equal(existsSync(directory), false, "runner exit must reclaim its private reports")
+          return directory
+        })
+        assert.notEqual(directories[0], directories[1], "each runner must own a fresh directory")
         assert.ok(source.includes("clean: false"))
-        assert.ok(source.includes("import { mkdirSync, mkdtempSync, rmSync } from \"node:fs\""))
-        assert.ok(source.includes("import { join } from \"node:path\""))
         return
       }
       // The report directory must be derived per process and live outside the

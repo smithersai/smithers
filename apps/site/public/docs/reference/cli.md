@@ -37,7 +37,7 @@ npm install -g smthrs@next
 | [`monitor`](#monitor) | Every run, with its debug view |
 | [`pr`](#pr) | Open a pull request's card |
 | [`review`](#review) | Review a change, return findings; waits for the person's confirmation |
-| [`run`](#run) | Advanced |
+| [`run`](#run) | Execute run targets selected by a pattern |
 | [`runs`](#runs) | Inspect and control durable execution records |
 | [`search`](#search) | Search code, wiki and runs |
 | [`shell`](#shell) | Open an interactive terminal in a workspace via the WebSocket terminal endpoint |
@@ -780,6 +780,25 @@ smthrs issue comment <number> [options]
 | `--repo` | string |  | no | Repository (OWNER/REPO) |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
+### `issue list`
+
+List issues
+
+```text
+smthrs issue list [options]
+```
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--all` | boolean | `false` | no | Fetch all pages automatically |
+| `--cursor` | string |  | no | Pagination cursor (from previous response) |
+| `--limit` | number | `30` | no | Results per page |
+| `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
+| `--search` | string |  | no | Search titles, or #number |
+| `--state` | one of `open`, `closed`, `fixed`, `verified`, `all` | `open` | no | Filter by state |
+| `--view` | string |  | no | Saved issue view id from issue views; replaces `--state` |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
 ### `issue new`
 
 Open a GitHub issue; waits for the person's confirmation
@@ -919,11 +938,32 @@ smthrs review <patterns...> [options]
 
 ## `run`
 
-Advanced
+Execute run targets selected by a pattern
 
 ```text
-smthrs run <command>
+smthrs run <patterns...> [options] | <command>
 ```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `patterns` | array of string, min items 1 |  | yes | Bazel labels or recursive patterns; the verb runs their union |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--workspace`, `-w` | string | `<cwd>` | no | Directory inside a workspace containing WORKSPACE.ts |
+| `--cache-dir` | string |  | no | Workspace-relative cache directory; overrides the WORKSPACE.ts declaration |
+| `--verbose` | boolean | `false` | no | Show plain progress for agent and pipe consumers |
+| `--plan` | boolean | `false` | no | Print the inert plan instead of executing |
+| `--jobs`, `-j` | integer, minimum 1 |  | no | Maximum concurrent targets; defaults to host parallelism. Exclusive targets run alone after ready ordinary work |
+| `--include-exclusive` | boolean | `false` | no | Include exclusive targets in wildcard ci/test selections; explicit labels already include them |
+| `--cache` | boolean | `true` | no | Consult the result cache before running; `--no-cache` bypasses reads |
+| `--known-red` | string |  | no | JSON list of targets already red, with owner and expiry; their failures are reported but fail only when newly red |
+| `--fail-fast` | boolean | `false` | no | Stop at the first failure that fails the run: start nothing new, cancel running targets, report, exit 1 |
+| `--results-file` | string |  | no | Also write the run's summary, one status per label, as JSON to this new file; human output is unchanged |
+| `--name`, `-n` | string |  | no | Package name supplied to scaffold targets |
+| `--message`, `-m` | string |  | no | Commit message for a Git.Commit target; wins over the declared message |
+| `--sweep` | boolean | `false` | no | Let a Git.Commit target with no declared path scope commit the whole working tree |
+| `--input`, `-i` | array of string |  | no | Payload input for agent targets as name=value; repeatable |
 
 ### `run inspect`
 
@@ -1016,6 +1056,9 @@ smthrs runs show <run> [options]
 | `--remote` | string |  | no | Remote control plane URL; defaults to SMITHERS_REMOTE |
 | `--mcp-config` | string |  | no | Path to the configured MCP servers |
 | `--quiet` | boolean | `false` | no | Suppress progress messages |
+| `--field` | string |  | no | Read one bounded event field by JSON pointer: /events/\<sequence>/payload/\<field> |
+| `--offset` | integer, minimum 0 |  | no | Character offset in a string `--field` |
+| `--length` | integer, minimum 1, maximum 65536 |  | no | Characters per string field page (default 4096) |
 | `--timing` | boolean | `false` | no | Report where the run's time and tokens went |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 | `--cloud` | boolean | `false` | no | Use repository flows and runs on the backend |

@@ -144,8 +144,7 @@ const trackedHygieneUnit = Smithers.NodeTest({
  */
 const toolchainPins = Smithers.NodeTest({
   runner: Smithers.testRunner([
-    Smithers.file("//packages/repo-targets/contracts/check-toolchain-pins.test.mjs"),
-    Smithers.file("//packages/repo-targets/contracts/toolchain-archives.test.mjs")
+    Smithers.file("//packages/repo-targets/contracts/check-toolchain-pins.test.mjs")
   ]),
   srcs: [
     ...contracts,
@@ -695,7 +694,10 @@ const egressHttpClient = Smithers.NodeTest({
  * release gate; the NodeTest stays uncached.
  */
 const ciInventory = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/ci-inventory.test.mjs")]),
+  runner: Smithers.testRunner([
+    Smithers.file("//packages/repo-targets/contracts/ci-inventory.test.mjs"),
+    Smithers.file("//packages/repo-targets/contracts/ci-terminal-media.test.mjs")
+  ]),
   srcs: [...contracts],
   deps: []
 })

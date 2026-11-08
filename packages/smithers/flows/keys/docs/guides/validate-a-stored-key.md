@@ -11,7 +11,7 @@ you did not just derive, claiming to be a key.
 
 ## Decode at the boundary
 
-`StoredKey` returns the input text unchanged and requires no `Crypto` service:
+`StoredKey` returns the input text unchanged and requires no `Digest` service:
 
 ```ts
 import { StoredKey } from "@smthrs/keys"

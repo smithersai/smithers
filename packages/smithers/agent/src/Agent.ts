@@ -40,7 +40,6 @@
  */
 
 import * as Capability from "@smthrs/capability/Capability"
-import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableClock, Fault, FlowRuntime, type RetryPolicy, RunMetrics } from "@smthrs/flow"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
@@ -76,6 +75,8 @@ import * as Checkpoints from "@smthrs/std/Checkpoints"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"
@@ -624,7 +625,11 @@ const withCapacity = (
   >,
   capacity: Options["capacity"],
   services: Context.Context<
-    FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Crypto.Crypto | Budget.Budget | QuotaPolicy.QuotaClassifier
+    | FlowRuntime.FlowRuntime
+    | FlowRuntime.FlowInstance
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
+    | Budget.Budget
+    | QuotaPolicy.QuotaClassifier
   >
 ): EngineLike.EngineLike => {
   const primary = seats[0]!.engine
@@ -1080,7 +1085,7 @@ const runProductionUnmeasured: Service["run"] = (options) =>
           const capacityServices = yield* Effect.context<
             | FlowRuntime.FlowRuntime
             | FlowRuntime.FlowInstance
-            | Crypto.Crypto
+            | (EffectDigest.Digest | SecureRandom.SecureRandom)
             | Budget.Budget
             | QuotaPolicy.QuotaClassifier
           >()

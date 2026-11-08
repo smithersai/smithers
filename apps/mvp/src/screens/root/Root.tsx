@@ -14,7 +14,7 @@ import "./root.css"
 // (docs/features/navigation.md). A plain link's hover or focus preloads its page (IntentPreload).
 export function Root() {
   const pathname = useRouterState({ select: (state) => state.resolvedLocation?.pathname ?? state.location.pathname })
-  const loading = useRouterState({ select: (state) => state.status === "pending" })
+  const loading = useRouterState({ select: (state) => state.status === "pending" && state.resolvedLocation !== undefined })
   const routeId = useRouterState({ select: (state) => state.matches.at(-1)?.routeId })
   return (
     <>

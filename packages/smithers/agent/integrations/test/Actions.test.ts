@@ -12,11 +12,10 @@
  * Nothing is mocked. The clients talk to a `node:http` server over a socket.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, type FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Context, Effect, Layer, Schema } from "effect"
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, expectTypeOf, it } from "vitest"
 import { fromIntegrationError, IntegrationFailure, toIntegrationError } from "../src/core/ActionFailure.vibe"
 import { IntegrationError } from "../src/core/IntegrationError.ts"
 import * as GitHubActions from "../src/github/Actions.ts"
@@ -61,7 +60,7 @@ const runAction = <
   })
   const layer = Layer.mergeAll(actionLayer, Interpreter.layer(flow)).pipe(
     Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(Layer.mergeAll(FlowEngine.layerMemory, clients, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+    Layer.provideMerge(Layer.mergeAll(FlowEngine.layerMemory, clients, NodeCrypto.layer))
   )
   // No `orDie`: a failing action must reject with its decoded failure, which
   // is exactly what the failure cases below assert on.
@@ -84,10 +83,24 @@ const unprovidedServiceProbe = () => {
   const needsUnprovided = GitHubActions.CommentOnIssue.toLayer(() =>
     Effect.map(Unprovided, (service) => ({ id: 1, url: service.value }))
   )
-  // @ts-expect-error the action layer needs Unprovided, which neither the clients nor the engine provide
-  runAction(GitHubActions.CommentOnIssue, needsUnprovided, payload, clients)
-  // @ts-expect-error GitHubActions.layer needs GitHubClient, which an empty client layer does not provide
-  runAction(GitHubActions.CommentOnIssue, GitHubActions.layer, payload, Layer.empty)
+  const withClients = runAction<
+    typeof GitHubActions.CommentOnIssue.name,
+    typeof GitHubActions.CommentOnIssue.payloadSchema,
+    typeof GitHubActions.CommentOnIssue.successSchema,
+    typeof GitHubActions.CommentOnIssue.errorSchema,
+    Layer.Success<typeof clients>,
+    Layer.Error<typeof clients>
+  >
+  const withoutClients = runAction<
+    typeof GitHubActions.CommentOnIssue.name,
+    typeof GitHubActions.CommentOnIssue.payloadSchema,
+    typeof GitHubActions.CommentOnIssue.successSchema,
+    typeof GitHubActions.CommentOnIssue.errorSchema,
+    never,
+    never
+  >
+  expectTypeOf<typeof needsUnprovided>().not.toExtend<Parameters<typeof withClients>[1]>()
+  expectTypeOf<typeof GitHubActions.layer>().not.toExtend<Parameters<typeof withoutClients>[1]>()
   runAction(GitHubActions.CommentOnIssue, GitHubActions.layer, payload, clients)
 }
 

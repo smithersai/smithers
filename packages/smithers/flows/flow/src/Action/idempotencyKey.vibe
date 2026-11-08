@@ -6,7 +6,7 @@
  * @since 0.1.0
  */
 
-import type { Crypto } from "@smthrs/crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import { FlowInstance } from "../FlowRuntime/FlowInstance.vibe"
 import { CurrentAttempt } from "./Context.ts"
@@ -28,7 +28,7 @@ export const idempotencyKey: (
     readonly includeAttempt?: boolean | undefined
     readonly parentScope?: string | undefined
   } | undefined
-) => string!never!(FlowInstance | Crypto.Crypto) =
+) => string!never!(FlowInstance | EffectDigest.Digest) =
   // Untraced because action-key allocation is on every action attempt.
   effect (name: string, options?: {
     readonly includeAttempt?: boolean | undefined

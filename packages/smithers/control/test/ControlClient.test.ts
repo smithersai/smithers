@@ -1,7 +1,7 @@
+import { NodeWS } from "@effect/platform-node"
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import * as NodeSocket from "@effect/platform-node/NodeSocket"
-import * as NodeWS from "@effect/platform-node/NodeWS"
 import { Journal } from "@smthrs/journal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Cause, Effect, Fiber, Layer, Schema, Stream } from "effect"

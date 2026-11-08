@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import type { ComponentProps, ReactNode } from "react";
-import { cn } from "./cn";
+import { cn } from "@smthrs/ui-css";
 import { safeHref } from "./internal/safeHref";
 import { LoadingBar } from "./loading";
 import { useInjectUiCss } from "./styles";

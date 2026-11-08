@@ -18,7 +18,6 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
 import { DurableWriter } from "@smthrs/database"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as Plan from "@smthrs/plan/Plan"
@@ -58,7 +57,7 @@ const migrated = (filename: string) =>
         DurableWriter.layer(),
         NodeDatabase.layer({ filename, busyTimeout: Duration.millis(250) })
       ),
-      Crypto.layerFromDigest(NodeCrypto.layerDigest)
+      NodeCrypto.layer
     )
   )
 

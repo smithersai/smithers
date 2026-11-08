@@ -1,5 +1,4 @@
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
 import { NodeRuntime } from "@smthrs/platform-node"
 import { forkWorkspaceName } from "@smthrs/time-travel/TimeTravel"
 import { Effect } from "effect"
@@ -27,7 +26,7 @@ const fixture = async (withJj = false) => {
   await Effect.runPromise(Effect.void.pipe(
     Effect.provide(NodeRuntime.storage(join(root, ".flows", "engine.db"), root)),
     Effect.provide(NodeServices.layer),
-    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Effect.provide(NodeCrypto.layer)
   ))
   await Effect.runPromise(Effect.void.pipe(Effect.provide(NodeControl.engineDurable(root).runtime)))
   const engine = new DatabaseSync(join(root, ".flows", "engine.db"))

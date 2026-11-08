@@ -31,7 +31,7 @@ export interface HomeQueries {
   readonly syncs: (repoId: string) => RepoIssues["syncRows"]["tanstack"] | Store["noSyncs"]["tanstack"]
   readonly runs: Store["runs"]["tanstack"]
   /** A repository's TODOs once `open` opened its stack for a `stack` block; no rows before, nor without the TODOs. */
-  readonly stack: (repoId: string) => Stacks["empty"]["todos"]["tanstack"] | Store["noTodos"]["tanstack"]
+  readonly stack: (repoId: string) => Stacks["empty"]["todos"]["tanstack"]
   /** Whether this person may read each opened stack, as its shape last said; none without the TODOs. */
   readonly stackAccess: Stacks["accessQuery"]["tanstack"] | Store["noAccess"]["tanstack"]
 }
@@ -80,7 +80,10 @@ export class Home extends Context.Service<Home, { readonly queries: HomeQueries;
           syncs: (repoId) => opened(repoId)?.syncRows.tanstack ?? store.noSyncs.tanstack,
           runs: store.runs.tanstack,
           stack: (repoId) =>
-            Option.isSome(todos) ? (todos.value.opened(repoId) ?? todos.value.empty).todos.tanstack : store.noTodos.tanstack,
+            Option.isSome(todos)
+              ? (todos.value.opened(repoId) ?? todos.value.empty).todos.tanstack
+              // No TODOs at all: the same rows, none, typed as a stack's.
+              : store.noTodos.tanstack as unknown as Stacks["empty"]["todos"]["tanstack"],
           stackAccess: Option.isSome(todos) ? todos.value.accessQuery.tanstack : store.noAccess.tanstack,
         },
         actions: {

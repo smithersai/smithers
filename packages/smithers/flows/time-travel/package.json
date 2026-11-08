@@ -248,7 +248,7 @@
     "@smthrs/journal": "1.0.0-rc.16",
     "@smthrs/run-store": "1.0.0-rc.16",
     "@smthrs/step-cache": "1.0.0-rc.16",
-    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
+    "vibelang-runtime": "0.0.12"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -256,7 +256,6 @@
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
     "@smthrs/artifacts": "1.0.0-rc.16",
-    "@smthrs/crypto": "1.0.0-rc.16",
     "@smthrs/engine": "1.0.0-rc.16",
     "@smthrs/flow": "1.0.0-rc.16",
     "@smthrs/kernel": "1.0.0-rc.16",
@@ -275,8 +274,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
-    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz",
+    "vibelang": "0.0.12",
+    "vibelang-vite": "0.0.12",
     "vitest": "5.0.0"
   },
   "peerDependencies": {

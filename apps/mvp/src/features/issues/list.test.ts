@@ -1,5 +1,18 @@
 import { expect, test } from "vitest"
-import { listSearch, visibleRows, withSearched } from "./list"
+import { awaitingListRows, listSearch, visibleRows, withSearched } from "./list"
+
+test("a cold search keeps its gated first paint until this repository and query have an answer", () => {
+  const pending = { syncing: true, failed: false, rows: 0, filtered: false, repoId: "r", q: " #12 ", searched: undefined }
+  expect(awaitingListRows(pending)).toBe(true)
+  expect(awaitingListRows({ ...pending, searched: { repoId: "other", q: "#12" } })).toBe(true)
+  expect(awaitingListRows({ ...pending, searched: { repoId: "r", q: "#13" } })).toBe(true)
+  // Even zero matching rows is a complete answer; the shell must not outlive it.
+  expect(awaitingListRows({ ...pending, searched: { repoId: "r", q: "#12" } })).toBe(false)
+  expect(awaitingListRows({ ...pending, q: undefined })).toBe(true)
+  for (const settled of [{ syncing: false }, { failed: true }, { rows: 1 }, { filtered: true }]) {
+    expect(awaitingListRows({ ...pending, ...settled })).toBe(false)
+  }
+})
 
 test("search and sort survive validated URLs", () => {
   expect(listSearch({ q: " crash ", sort: "oldest", ignored: 1 })).toEqual({ q: " crash ", sort: "oldest" })

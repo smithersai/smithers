@@ -1,5 +1,4 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { EngineStore } from "@smthrs/flows"
 import { NodeHost, NodeRuntime } from "@smthrs/platform-node"
@@ -68,7 +67,7 @@ it("reopens SQLite after handling and replays the batch and handler before commi
         EngineStore.WorkspaceSandbox.layerFileSystem(),
         registration
       ).pipe(
-        Layer.provide(Layer.merge(NodeHost.layerAt(root), Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+        Layer.provide(Layer.merge(NodeHost.layerAt(root), NodeCrypto.layer))
       )
     )
   const execute = FlowRuntime.FlowRuntime.pipe(

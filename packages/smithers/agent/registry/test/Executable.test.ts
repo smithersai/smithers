@@ -14,7 +14,6 @@ import { describe, expect, it } from "@effect/vitest"
 import { Annotations, Placement as CorePlacement } from "@smthrs/core"
 import * as Digest from "@smthrs/core/Digest"
 import * as CoreMarkdown from "@smthrs/core/Markdown"
-import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Graph } from "@smthrs/flow"
 import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
 import { Node } from "@smthrs/plan"
@@ -724,7 +723,7 @@ export default ({
     Effect.gen(function*() {
       const descriptor = yield* descriptorNamed("greet")
       const logs: Array<string> = []
-      const capture = Logger.make((entry) => void logs.push(JSON.stringify(entry.message)))
+      const capture = Logger.make((entry) => logs.push(JSON.stringify(entry.message)))
       const entered = yield* Deferred.make<void>()
       const pending = yield* Effect.forkChild(
         Executable.fromDescriptor(
@@ -846,11 +845,7 @@ export default ({
                     Effect.andThen(Effect.sleep("45 seconds")),
                     Effect.as({ default: greetModule })
                   )
-            })).pipe(
-              Layer.provideMerge(
-                Layer.mergeAll(runtime, Action.layerImplementations, Crypto.layerFromDigest(NodeCrypto.layerDigest))
-              )
-            )
+            })).pipe(Layer.provideMerge(Layer.mergeAll(runtime, Action.layerImplementations, NodeCrypto.layer)))
           ),
           Effect.provideService(Registry.Registry, { ...registry, list: () => Effect.succeed([descriptor]) })
         )
@@ -864,7 +859,7 @@ export default ({
     Effect.gen(function*() {
       const descriptor = yield* descriptorNamed("greet")
       const logs: Array<string> = []
-      const capture = Logger.make((entry) => void logs.push(JSON.stringify(entry.message)))
+      const capture = Logger.make((entry) => logs.push(JSON.stringify(entry.message)))
       const entered = yield* Deferred.make<void>()
       const pending = yield* Effect.forkChild(
         Executable.fromDescriptor(
@@ -933,11 +928,7 @@ export default ({
                     ? Effect.fail(new Error("cannot load retry"))
                     : Effect.succeed({ default: greetModule })
                 }
-              })).pipe(
-                Layer.provideMerge(
-                  Layer.mergeAll(runtime, Action.layerImplementations, Crypto.layerFromDigest(NodeCrypto.layerDigest))
-                )
-              )
+              })).pipe(Layer.provideMerge(Layer.mergeAll(runtime, Action.layerImplementations, NodeCrypto.layer)))
             ),
             Effect.provideService(Registry.Registry, { ...registry, list: () => Effect.succeed([descriptor]) })
           )
@@ -970,11 +961,7 @@ export default ({
               attempts++
               return Effect.succeed({ default: greetModule })
             }
-          })).pipe(
-            Layer.provideMerge(
-              Layer.mergeAll(runtime, Action.layerImplementations, Crypto.layerFromDigest(NodeCrypto.layerDigest))
-            )
-          )
+          })).pipe(Layer.provideMerge(Layer.mergeAll(runtime, Action.layerImplementations, NodeCrypto.layer)))
         ),
         Effect.provideService(Registry.Registry, { ...registry, list: () => Effect.succeed([]) })
       )
@@ -995,7 +982,9 @@ export default ({
         )
       }
       const logs: Array<string> = []
-      const capture = Logger.make((entry) => void logs.push(JSON.stringify(entry.message)))
+      const capture = Logger.make((entry) => {
+        if (entry.logLevel === "Warn") logs.push(JSON.stringify(entry.message))
+      })
       const built = yield* Executable.catalog(options({ loadTimeoutMs: 500 })).pipe(
         Effect.provide(Registry.layerProject({ root })),
         Effect.provide(Logger.layer([capture])),
@@ -1809,7 +1798,9 @@ describe("the host's catalog", () => {
       // warning per prompt flow on every launch is noise no operator can act on;
       // a flow that names a delegate nobody registered still warns.
       const logs: Array<string> = []
-      const capture = Logger.make((entry) => void logs.push(JSON.stringify(entry.message)))
+      const capture = Logger.make((entry) => {
+        if (entry.logLevel === "Warn") logs.push(JSON.stringify(entry.message))
+      })
       const built = yield* Executable.catalog(options({ delegates: [Echo, Other] })).pipe(
         Effect.provide(Logger.layer([capture]))
       )
@@ -1864,7 +1855,7 @@ describe("the host's catalog", () => {
       const warnings: Array<Readonly<Record<string, unknown>>> = []
       const capture = Logger.make((entry) => {
         const [, fields] = entry.message as ReadonlyArray<Readonly<Record<string, unknown>>>
-        if (fields !== undefined) warnings.push(fields)
+        if (entry.logLevel === "Warn" && fields !== undefined) warnings.push(fields)
       })
       const built = yield* Executable.catalog(options()).pipe(
         Effect.provide(Registry.layerProject({ root })),
@@ -1907,7 +1898,7 @@ describe("the host's catalog", () => {
         const warnings: Array<Readonly<Record<string, unknown>>> = []
         const capture = Logger.make((entry) => {
           const [, fields] = entry.message as ReadonlyArray<Readonly<Record<string, unknown>>>
-          if (fields !== undefined) warnings.push(fields)
+          if (entry.logLevel === "Warn" && fields !== undefined) warnings.push(fields)
         })
         const built = yield* Executable.catalog(options({ load: () => Effect.fail(cause) })).pipe(
           Effect.provideService(Registry.Registry, { ...registry, list: () => Effect.succeed([descriptor]) }),
@@ -1955,11 +1946,7 @@ describe("the host's catalog", () => {
                 ++attempts === 1
                   ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never))
                   : Effect.fail(new Error("retry first line\n    at stack (file.ts:1:1)"))
-            })).pipe(
-              Layer.provideMerge(
-                Layer.mergeAll(runtime, Action.layerImplementations, Crypto.layerFromDigest(NodeCrypto.layerDigest))
-              )
-            )
+            })).pipe(Layer.provideMerge(Layer.mergeAll(runtime, Action.layerImplementations, NodeCrypto.layer)))
           ),
           Effect.provideService(Registry.Registry, { ...registry, list: () => Effect.succeed([descriptor]) }),
           Effect.provide(Logger.layer([capture]))
@@ -2279,7 +2266,9 @@ describe("registration", () => {
   it.effect("retains refreshed prompt-agent refusals without warning and still warns for named missing delegates", () =>
     Effect.gen(function*() {
       const logs: Array<string> = []
-      const capture = Logger.make((entry) => void logs.push(JSON.stringify(entry.message)))
+      const capture = Logger.make((entry) => {
+        if (entry.logLevel === "Warn") logs.push(JSON.stringify(entry.message))
+      })
       const runtime = Layer.succeed(FlowRuntime.FlowRuntime, { register: () => Effect.void } as never)
       yield* Effect.gen(function*() {
         const catalog = yield* Executable.Catalog
@@ -2304,9 +2293,7 @@ describe("registration", () => {
       }).pipe(
         Effect.provide(
           Executable.layer(options({ delegates: [Echo, Other] })).pipe(
-            Layer.provideMerge(
-              Layer.mergeAll(runtime, Action.layerImplementations, Crypto.layerFromDigest(NodeCrypto.layerDigest))
-            )
+            Layer.provideMerge(Layer.mergeAll(runtime, Action.layerImplementations, NodeCrypto.layer))
           )
         ),
         Effect.provide(Logger.layer([capture]))
@@ -2324,9 +2311,7 @@ describe("registration", () => {
       const built = yield* Effect.provide(
         Executable.Catalog,
         Executable.layer(options()).pipe(
-          Layer.provideMerge(
-            Layer.mergeAll(runtime, Action.layerImplementations, Crypto.layerFromDigest(NodeCrypto.layerDigest))
-          )
+          Layer.provideMerge(Layer.mergeAll(runtime, Action.layerImplementations, NodeCrypto.layer))
         )
       ).pipe(Effect.provide(Logger.layer([capture])))
 
@@ -2351,9 +2336,7 @@ describe("registration", () => {
         // `Crypto` is part of the registration requirement now: the action the
         // bridged flow dispatches derives its delegate's child execution id.
         Executable.layer(options()).pipe(
-          Layer.provideMerge(
-            Layer.mergeAll(runtime, Action.layerImplementations, Crypto.layerFromDigest(NodeCrypto.layerDigest))
-          )
+          Layer.provideMerge(Layer.mergeAll(runtime, Action.layerImplementations, NodeCrypto.layer))
         )
       )
       // One registration per runnable flow, plus a second for each descriptor

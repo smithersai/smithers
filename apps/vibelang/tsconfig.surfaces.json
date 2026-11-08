@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "src",
+    "outDir": "dist-factory",
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src/surfaces",
+    "src/core"
+  ]
+}

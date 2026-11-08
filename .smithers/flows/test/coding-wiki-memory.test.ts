@@ -1,6 +1,9 @@
-import { NodeCrypto, NodeServices } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
-import { Effect, Exit, FileSystem, Layer, Path } from "effect"
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
+import { NodeServices } from "@effect/platform-node"
+import { Effect, Exit, FileSystem, Path } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -12,13 +15,12 @@ import { cloudWikiBody, reviewCounts } from "../coding/wiki-refresh.ts"
 import { operations } from "../wiki/operations.ts"
 import type { PageSpec } from "../wiki/schema.ts"
 
-// Effect 4.1 removed effect/Crypto, and NodeServices.layer no longer provides it.
-const nodeServices = Layer.merge(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
-
-const run = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto | FileSystem.FileSystem | Path.Path>) =>
-  Effect.runPromise(effect.pipe(Effect.provide(nodeServices)))
-const exit = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto | FileSystem.FileSystem | Path.Path>) =>
-  Effect.runPromiseExit(effect.pipe(Effect.provide(nodeServices)))
+const run = <A, E>(
+  effect: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom) | FileSystem.FileSystem | Path.Path>
+) => Effect.runPromise(effect.pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))))
+const exit = <A, E>(
+  effect: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom) | FileSystem.FileSystem | Path.Path>
+) => Effect.runPromiseExit(effect.pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))))
 const spec: PageSpec = {
   id: "runtime",
   title: "Runtime",
@@ -36,7 +38,7 @@ const repository = async () => {
   const digest = async () =>
     (await Effect.runPromise(
       operations({ root, output: join(root, "..", "unused") }).collect(spec)
-        .pipe(Effect.provide(nodeServices))
+        .pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
     )).inputDigest
   return { root, digest }
 }
@@ -157,7 +159,8 @@ test("API generated pages retain source freshness checks; authored pages do not 
     f.provider.read = () =>
       Effect.succeed({ ...authored, generated: { id: "runtime", inputDigest, sourceRevision: "main@abc" } })
     const opts = { ...options, repositoryPath: root, pages: [spec], wikiProvider: f.provider }
-    const memory = () => run(wikiMemory(opts, input).pipe(Effect.provide(nodeServices)))
+    const memory = () =>
+      run(wikiMemory(opts, input).pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))))
     assert.equal((await memory()).pages.length, 1)
     await writeFile(join(root, "runtime.ts"), "export const start = () => 2\n")
     assert.deepEqual((await memory()).pages, [])
@@ -173,7 +176,7 @@ test("API generated pages retain source freshness checks; authored pages do not 
           sourceRevision: "wiki:page-retry:3",
           inputDigest: authored.digest,
           generated: false
-        }]).pipe(Effect.provide(nodeServices))
+        }]).pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
       ),
       []
     )

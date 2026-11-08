@@ -1,5 +1,4 @@
 import { expect, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
 import * as NodeHost from "@smthrs/platform-node/NodeHost"
 import { Effect } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
@@ -29,7 +28,7 @@ it("composes the Bun facade over the same migrated SQL service and validates its
       }).pipe(
         Effect.provide(BunRuntime.storage(join(root, "flows.sqlite"))),
         Effect.provide(NodeHost.layer),
-        Effect.provide(Crypto.layerFromDigest(NodeHost.NodeCrypto.layerDigest)),
+        Effect.provide(NodeHost.NodeCrypto.layer),
         Effect.scoped
       )
     )

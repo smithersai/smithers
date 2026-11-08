@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The assembled cell path, run end-to-end outside a unit test's hand-wiring.
  *
@@ -10,7 +11,6 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import * as DurableClock from "@smthrs/flow/DurableClock"
@@ -67,6 +67,7 @@ import {
   Stream,
   Tracer
 } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as PlatformError from "effect/PlatformError"
 import * as TestClock from "effect/testing/TestClock"
 import { describe, expect, it, vi } from "vitest"
@@ -209,7 +210,7 @@ const implementations = (
       (call) =>
         Effect.sync(() => {
           executed.push(`fs/list#${call.identity.ordinal}`)
-          return new Cell.CallResult({ outcome: "success", value: ["alpha.md"] })
+          return Cell.CallResult.new({ outcome: "success", value: ["alpha.md"] })
         })
     ],
     [
@@ -217,7 +218,7 @@ const implementations = (
       (call) =>
         Effect.sync(() => {
           executed.push(`fs/write#${call.identity.ordinal}`)
-          return new Cell.CallResult({
+          return Cell.CallResult.new({
             outcome: "success",
             value: `wrote ${(call.input as { readonly path: string }).path}`
           })
@@ -266,7 +267,7 @@ const drive = <A, E>(
   body: Effect.Effect<
     A,
     E,
-    | Crypto.Crypto
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
     | FlowRuntime.FlowRuntime
     | FlowRuntime.FlowInstance
     | Budget.Budget
@@ -293,9 +294,7 @@ const drive = <A, E>(
     yield* engine.resume(flow, "exec-1")
     return yield* Deferred.await(settled)
   }).pipe(
-    Effect.provide(
-      Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest), Safety.layer)
-    ),
+    Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
     Effect.provideService(Metric.MetricRegistry, new Map()),
     Effect.scoped,
     Effect.runPromise
@@ -647,9 +646,9 @@ describe("capacity seat chain", () => {
       }
     })
     const outcome = await drive(Effect.gen(function*() {
-      const crypto = yield* Crypto.Crypto
+      const crypto = yield* EffectDigest.Digest
       return yield* collect({ model, seat: dynamic, capacity: { park: false }, registry: registryOf([]) }).pipe(
-        Effect.provideService(Crypto.Crypto, {
+        Effect.provideService(EffectDigest.Digest, {
           ...crypto,
           digest: (algorithm, data) => {
             if (mode === "key" && new TextDecoder().decode(data).includes("FactoryModelChoice")) {
@@ -1055,9 +1054,7 @@ describe("capacity seat chain", () => {
         yield* TestClock.adjust(waitMillis)
         return classify(yield* Effect.exit(engine.execute(driveFlow, { executionId: "exec-1", payload: {} })))
       }).pipe(
-        Effect.provide(
-          Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest), Safety.layer)
-        ),
+        Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
         Effect.provide(TestClock.layer()),
         Effect.provideService(Metric.MetricRegistry, new Map()),
         Effect.scoped,
@@ -1185,9 +1182,7 @@ describe("capacity seat chain", () => {
       yield* TestClock.adjust("5 seconds")
       return classify(yield* Effect.exit(engine.execute(driveFlow, { executionId: "exec-1", payload: {} })))
     }).pipe(
-      Effect.provide(
-        Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest), Safety.layer)
-      ),
+      Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
       Effect.provide(TestClock.layer()),
       Effect.provideService(Metric.MetricRegistry, new Map()),
       Effect.scoped,
@@ -1253,9 +1248,7 @@ describe("capacity seat chain", () => {
       yield* engine.execute(driveFlow, { executionId: "exec-2", payload: {}, discard: true })
       return yield* Deferred.await(settled)
     }).pipe(
-      Effect.provide(
-        Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest), Safety.layer)
-      ),
+      Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
       Effect.provide(TestClock.layer()),
       Effect.provideService(Metric.MetricRegistry, new Map()),
       Effect.scoped,
@@ -1550,9 +1543,7 @@ describe("capacity seat chain", () => {
       yield* TestClock.adjust("3 seconds")
       return classify(yield* Effect.exit(engine.execute(driveFlow, { executionId: "exec-1", payload: {} })))
     }).pipe(
-      Effect.provide(
-        Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest), Safety.layer)
-      ),
+      Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
       Effect.provide(TestClock.layer()),
       Effect.provideService(Metric.MetricRegistry, new Map()),
       Effect.scoped,
@@ -1622,9 +1613,7 @@ describe("capacity seat chain", () => {
       yield* TestClock.adjust("5 seconds")
       return classify(yield* Effect.exit(engine.execute(driveFlow, { executionId: "exec-1", payload: {} })))
     }).pipe(
-      Effect.provide(
-        Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest), Safety.layer)
-      ),
+      Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
       Effect.provide(TestClock.layer()),
       Effect.provideService(Metric.MetricRegistry, new Map()),
       Effect.scoped,
@@ -1664,9 +1653,7 @@ describe("capacity seat chain", () => {
       yield* TestClock.adjust("5 seconds")
       return classify(yield* Effect.exit(engine.execute(driveFlow, { executionId: "exec-1", payload: {} })))
     }).pipe(
-      Effect.provide(
-        Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest), Safety.layer)
-      ),
+      Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
       Effect.provide(TestClock.layer()),
       Effect.provideService(Metric.MetricRegistry, new Map()),
       Effect.scoped,
@@ -1706,9 +1693,7 @@ describe("capacity seat chain", () => {
       }
       return result
     }).pipe(
-      Effect.provide(
-        Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest), Safety.layer)
-      ),
+      Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
       Effect.provide(TestClock.layer()),
       Effect.provideService(Metric.MetricRegistry, new Map()),
       Effect.scoped,
@@ -1765,9 +1750,7 @@ describe("capacity seat chain", () => {
       yield* TestClock.adjust(waitMillis / 2)
       return classify(yield* Effect.exit(engine.execute(driveFlow, { executionId: "exec-1", payload: {} })))
     }).pipe(
-      Effect.provide(
-        Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest), Safety.layer)
-      ),
+      Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
       Effect.provide(TestClock.layer()),
       Effect.provideService(Metric.MetricRegistry, new Map()),
       Effect.scoped,
@@ -1820,9 +1803,7 @@ describe("capacity seat chain", () => {
       })
       return yield* Deferred.await(settled)
     }).pipe(
-      Effect.provide(
-        Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest), Safety.layer)
-      ),
+      Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
       Effect.provide(TestClock.layer()),
       Effect.provideService(Metric.MetricRegistry, new Map()),
       Effect.scoped,
@@ -2004,9 +1985,7 @@ describe("capacity seat chain", () => {
         yield* TestClock.adjust("1 millis")
         return yield* Deferred.await(settled)
       }).pipe(
-        Effect.provide(
-          Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest), Safety.layer)
-        ),
+        Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
         Effect.provide(TestClock.layer()),
         Effect.provideService(Metric.MetricRegistry, new Map()),
         Effect.scoped,
@@ -2549,7 +2528,7 @@ describe("Agent.run", () => {
       }
     })
     const failing = new Map(implementations([]))
-    failing.set("fs/write", () => Effect.succeed(new Cell.CallResult({ outcome: "failure", value: null, ...failure })))
+    failing.set("fs/write", () => Effect.succeed(Cell.CallResult.new({ outcome: "failure", value: null, ...failure })))
     const outcome = await drive(
       collect({ registry: registryOf(flows), model: recorded([]), implementations: failing }).pipe(
         Effect.provideService(Tracer.Tracer, tracer)
@@ -2606,7 +2585,7 @@ describe("Agent.run", () => {
           prompt: "write the first file",
           registry: registryOf(flows),
           implementations: implementations(executed),
-          promptRunner: () => Effect.succeed(new Cell.CallResult({ outcome: "success", value: "unused" })),
+          promptRunner: () => Effect.succeed(Cell.CallResult.new({ outcome: "success", value: "unused" })),
           authorize: (call) => Effect.sync(() => void authorized.push(call.flowName)),
           modelParams: ModelRequest.GenerationParams.make({ maxTokens: 512 }),
           layers: ["layer-a"],
@@ -2922,7 +2901,7 @@ describe("Agent.run", () => {
                 code: "engine_failed",
                 message: "permission required",
                 cause: Schema.encodeUnknownSync(Permission.PermissionRequired)(
-                  new Permission.PermissionRequired({
+                  Permission.PermissionRequired.new({
                     requestId: "memory-restart",
                     capability: Capability.make("fs:write", "**"),
                     tier: "irreversible",

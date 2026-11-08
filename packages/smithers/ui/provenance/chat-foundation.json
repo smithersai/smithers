@@ -1,6 +1,6 @@
 [
   {
-    "file": "src/uiCss.ts",
+    "file": "ui-css/src/uiCss.ts",
     "exports": [
       "chatScrollerCss"
     ],

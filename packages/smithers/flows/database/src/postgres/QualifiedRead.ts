@@ -14,6 +14,8 @@
  * misses fails loudly: outside the search path it resolves nowhere, unless
  * `public` holds a table of that name, and each table position is checked so
  * that no name is missed.
+ *
+ * @since 1.0.0-rc.17
  */
 
 const REFUSED =
@@ -62,7 +64,7 @@ const segments = (sql: string): ReadonlyArray<{ readonly code: boolean; readonly
  * of only those tables; undefined when it isn't, or when that can't be proved.
  *
  * @category internals
- * @since 1.0.0
+ * @since 1.0.0-rc.17
  */
 export const qualify = (sql: string, schema: string): string | undefined => {
   if (!/^\s*select\b/i.test(sql)) return undefined

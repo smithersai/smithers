@@ -41,6 +41,7 @@ import * as Ref from "effect/Ref"
 import * as Migrator from "effect/sql/Migrator"
 import * as SqlClient from "effect/sql/SqlClient"
 import type { SqlError } from "effect/sql/SqlError"
+import * as Dialect from "./Dialect.ts"
 import * as WriteRetry from "./internal/WriteRetry.vibe"
 
 /**
@@ -73,10 +74,24 @@ export interface MigrationSet {
    * a new migration id. Existing ledger rows are preserved, never renamed.
    */
   readonly previousNames?: Readonly<Record<string, ReadonlyArray<string>>>
+  /**
+   * Deferred constraint triggers this set owns that fire at the end of each
+   * statement while any migration of the pass runs, in every set. A migration
+   * that writes their table and then alters or indexes it in one transaction
+   * would otherwise fail with `55006`, "pending trigger events". The switch
+   * runs before each migration's body, so it covers only triggers that exist
+   * when that migration starts: a migration, zero included, that creates such
+   * a trigger and then writes and alters its table in one body still fails,
+   * and must set the mode itself or split into two migrations. Only these
+   * triggers change mode; deferred foreign keys and other constraints keep
+   * their own. PostgreSQL only.
+   */
+  readonly immediateTriggers?: ReadonlyArray<Dialect.DeferredTrigger>
 }
 
 /** A caller-owned migration set copied into an execution-stable plan. */
 interface PlannedMigrationSet {
+  readonly immediateTriggers: ReadonlyArray<Dialect.DeferredTrigger>
   readonly previousNames: ReadonlyArray<readonly [key: string, names: ReadonlyArray<string>]>
   readonly namespace: string
   readonly idOffset: number
@@ -89,6 +104,7 @@ interface PlannedMigrationSet {
 const snapshotMigrationSets = (sets: ReadonlyArray<MigrationSet>): ReadonlyArray<PlannedMigrationSet> =>
   Array.from(sets, (set) => ({
     idOffset: set.idOffset,
+    immediateTriggers: [...(set.immediateTriggers ?? [])],
     migrations: Object.entries(set.migrations),
     namespace: set.namespace,
     previousNames: Object.entries(set.previousNames ?? {}).map(([key, names]) => [key, [...names]] as const)
@@ -176,7 +192,7 @@ interface ZeroMigration {
  *
  * The loader runs inside the migrator's transaction, so this application
  * commits and rolls back with the rest of the run. Failures follow the
- * migrator's own convention for a failed migration: they die with a `Failed`
+ * migrator's own convention for a failed migration: they fail with a `Failed`
  * `MigrationError` that keeps the cause, so a transient lock conflict stays
  * classifiable by {@link run}'s retry while a real failure surfaces loudly.
  *
@@ -189,7 +205,7 @@ const applyZero = (zero: ZeroMigration) =>
     yield* sql`INSERT INTO ${sql(table)} ${sql.insert([{ migration_id: 0, name: zero.name }])}`.withoutTransform
   }).pipe(
     Effect.catch((cause) =>
-      Effect.die(new Migrator.MigrationError({ cause, kind: "Failed", message: `Migration "0_${zero.name}" failed` }))
+      Effect.fail(new Migrator.MigrationError({ cause, kind: "Failed", message: `Migration "0_${zero.name}" failed` }))
     )
   )
 
@@ -285,7 +301,7 @@ const finish = (
         yield* migration
         yield* sql`INSERT INTO ${sql(table)} ${sql.insert([{ migration_id: id, name }])}`.withoutTransform
       }).pipe(Effect.catch((cause) =>
-        Effect.die(new Migrator.MigrationError({ cause, kind: "Failed", message: `Migration "${id}_${name}" failed` }))
+        Effect.fail(new Migrator.MigrationError({ cause, kind: "Failed", message: `Migration "${id}_${name}" failed` }))
       ))
       applied.add(id)
       installed.set(block, id)
@@ -293,6 +309,24 @@ const finish = (
     }
     return yield* rejectSkipped(resolved, applied)
   })
+
+/**
+ * Runs `migration` with `triggers` firing at the end of each statement, then
+ * defers them, as they are declared. A pass nested in a caller's transaction
+ * therefore overwrites an `IMMEDIATE` the caller set on them. See
+ * {@link MigrationSet.immediateTriggers}.
+ *
+ * @private
+ */
+const immediately = <E>(
+  triggers: ReadonlyArray<Dialect.DeferredTrigger>,
+  migration: Effect.Effect<void, E, SqlClient.SqlClient>
+): Effect.Effect<void, E | SqlError, SqlClient.SqlClient> =>
+  triggers.length === 0 ? migration : Effect.flatMap(SqlClient.SqlClient, (sql) =>
+    Effect.andThen(
+      Dialect.setTriggerMode(sql, triggers, "IMMEDIATE"),
+      Effect.andThen(migration, Dialect.setTriggerMode(sql, triggers, "DEFERRED"))
+    ))
 
 /** @private */
 const loaderFromPlan = (
@@ -328,6 +362,9 @@ const resolvePlan = (sets: ReadonlyArray<PlannedMigrationSet>): Effect.Effect<
     const previousNames = new Map<number, ReadonlySet<string>>()
     let zero: ZeroMigration | undefined
 
+    // A trigger one set declares binds every set's migrations: engine-store's write
+    // `flows_runs`, whose revision triggers run-store owns.
+    const triggers = sets.flatMap((set) => set.immediateTriggers)
     for (const set of sets) {
       if (namespaces.has(set.namespace)) {
         return Effect.fail(fail(`Duplicate migration namespace: ${set.namespace}`))
@@ -404,9 +441,9 @@ const resolvePlan = (sets: ReadonlyArray<PlannedMigrationSet>): Effect.Effect<
           previousNames.set(id, new Set(oldNames.map((name) => `${set.namespace}_${name}`)))
         }
         if (id === 0) {
-          zero = { migration, name: `${set.namespace}_${match[2]}` }
+          zero = { migration: immediately(triggers, migration), name: `${set.namespace}_${match[2]}` }
         }
-        resolved.push([id, `${set.namespace}_${match[2]}`, Effect.succeed(migration)])
+        resolved.push([id, `${set.namespace}_${match[2]}`, Effect.succeed(immediately(triggers, migration))])
       }
     }
 
@@ -486,11 +523,7 @@ export const run = (
           Effect.andThen(loaderFromPlan(plan, (entry) => Ref.update(loaderApplied, (entries) => [...entries, entry])))
         ),
         table
-      }).pipe(
-        // Effect 4.0's migrator died with a failed migration; 4.1 fails with it.
-        // Keep it a defect, as this module's own lower-block appends raise it.
-        Effect.catchTag("MigrationError", (error) => error.kind === "Failed" ? Effect.die(error) : Effect.fail(error))
-      )
+      })
     )
     const appliedByLoader = yield* Ref.get(loaderApplied)
     return [...appliedByLoader, ...completed]

@@ -118,8 +118,7 @@ Capability.Permission.evaluate([policy], Capability.Capability.make("fs:read", "
 ```
 
 Install `@smthrs/capability` on its own when the vocabulary is all you want.
-Its runtime dependencies are [`@smthrs/canonical`](/api/canonical) and
-`vibelang-runtime`, which the modules written in VibeLang import, and its one
+Its one runtime dependency is [`@smthrs/canonical`](/api/canonical) and its one
 peer is `effect@4.1.1`. It has no engine, no storage, and no I/O.
 
 Within that engine, this package is deliberately the leaf of the permission

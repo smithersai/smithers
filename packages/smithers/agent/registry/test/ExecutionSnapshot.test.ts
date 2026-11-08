@@ -2,7 +2,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
-import { Crypto } from "@smthrs/crypto"
 import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, FileSystem, Layer, Path, Schema } from "effect"
@@ -14,7 +13,7 @@ import * as Executable from "../src/Executable.ts"
 import * as Snapshot from "../src/ExecutionSnapshot.ts"
 import * as Registry from "../src/Registry.ts"
 
-const platform = Layer.mergeAll(Crypto.layerFromDigest(NodeCrypto.layerDigest), NodeFileSystem.layer, NodePath.layer)
+const platform = Layer.mergeAll(NodeCrypto.layer, NodeFileSystem.layer, NodePath.layer)
 const source = `import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"

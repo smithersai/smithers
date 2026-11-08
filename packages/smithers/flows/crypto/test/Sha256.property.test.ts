@@ -1,9 +1,9 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Effect } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as FastCheck from "fast-check"
 import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
-import * as Crypto from "../src/Crypto.ts"
 import { digest, digestSync, syncCrypto } from "../src/index.ts"
 
 const params = {
@@ -13,11 +13,10 @@ const params = {
   markInterruptAsFailure: true
 } satisfies FastCheck.Parameters<unknown>
 
-const runDigest = (input: string | Uint8Array) =>
-  Effect.runSync(digest(input).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))))
+const runDigest = (input: string | Uint8Array) => Effect.runSync(digest(input).pipe(Effect.provide(NodeCrypto.layer)))
 
 const runSynchronousService = (input: string | Uint8Array) =>
-  Effect.runSync(Effect.provideService(digest(input), Crypto.Crypto, syncCrypto))
+  Effect.runSync(Effect.provideService(digest(input), EffectDigest.Digest, syncCrypto))
 
 const isWellFormed = (value: string): boolean => {
   for (let index = 0; index < value.length; index++) {
@@ -39,7 +38,7 @@ describe("SHA-256 properties", () => {
         if (!isWellFormed(text)) {
           expect(() => digestSync(text)).toThrow(expect.objectContaining({ code: "invalid_text" }))
           expect(Effect.runSync(Effect.flip(
-            Effect.provideService(digest(text), Crypto.Crypto, syncCrypto)
+            Effect.provideService(digest(text), EffectDigest.Digest, syncCrypto)
           ))).toMatchObject({ code: "invalid_text" })
           return
         }

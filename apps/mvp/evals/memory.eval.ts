@@ -12,7 +12,6 @@ import { DEFAULT_CHAT_MODEL } from "../worker/ModelRoles.ts"
 import { testFile } from "../worker/test/harness.ts"
 import { answerRow, openAgent } from "../src/test/agent"
 import { openDevice } from "../src/test/device"
-import { Crypto } from "@smthrs/crypto"
 
 // Only synthetic eval context and canonical model messages; never provider headers or app logs.
 const transcript: Array<{ test: string | undefined; request: unknown; reply: string }> = []
@@ -39,7 +38,7 @@ const realModel = (scope: Scope.Closeable) => Effect.runPromise(Effect.gen(funct
 const memoryStore = MemoryStore.layer.pipe(
   // A database that can't open is the fixture's defect, not the memory store's failure.
   Layer.provide(Layer.orDie(Layer.provideMerge(DurableWriter.layer(), TestDatabase.layer("memory_eval")))),
-  Layer.provide(Crypto.layerFromDigest(NodeHost.NodeCrypto.layerDigest)),
+  Layer.provide(NodeHost.NodeCrypto.layer),
 )
 const savedMemory = (password: string, skills: ReadonlyArray<Opening.Candidate> = []) =>
   Opening.layerSources(["agent-chat"], skills).pipe(

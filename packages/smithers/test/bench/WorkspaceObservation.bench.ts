@@ -26,7 +26,6 @@ import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import { layer as scriptedCompletionJudge } from "@smthrs/agent/ScriptedJudge"
 import * as Seat from "@smthrs/agent/Seat"
 import * as WorkspaceObservation from "@smthrs/agent/WorkspaceObservation"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import * as Model from "@smthrs/model/Model"
@@ -131,9 +130,7 @@ const turn = (observer: Layer.Layer<never> | Layer.Layer<WorkspaceObservation.Ob
     yield* Deferred.await(settled)
     if (!resolved) throw new Error("the bench turn did not resolve")
   }).pipe(
-    Effect.provide(
-      Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest), Safety.layer, observer)
-    ),
+    Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer, observer)),
     Effect.provideService(Metric.MetricRegistry, new Map()),
     Effect.scoped,
     Effect.runPromise

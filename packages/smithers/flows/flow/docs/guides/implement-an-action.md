@@ -223,6 +223,8 @@ is the one option table. Reach for the inline form when an implementation needs
 a nested durable operation of its own; reach for the declared form when a body
 should name the step.
 
+Error encoding retains the originating cause annotations. A flow invoked inside an action can therefore report its own failing action and retry count through the enclosing action; durable engines retain the failure coordinates when replaying a failed attempt.
+
 ## Related pages
 
 - [Flows and actions](../concepts/flows-and-actions.md): why the split exists.

@@ -18,15 +18,15 @@ export const props = {
   observability: {
     enabled: true,
     logs: { enabled: true, invocationLogs: true, persist: true },
-    traces: { enabled: true, persist: true },
-  },
+    traces: { enabled: true, persist: true }
+  }
 }
 
 export default class ElectricGateway extends Cloudflare.Worker<ElectricGateway>()(
   "ElectricGateway",
   props,
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const objects = yield* ElectricObject.from(ElectricRuntime)
     return { fetch: logged(serve((request) => objects.getByName(INSTANCE).fetch(request))) }
-  }),
+  })
 ) {}

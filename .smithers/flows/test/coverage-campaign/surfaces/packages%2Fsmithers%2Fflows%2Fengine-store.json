@@ -1,0 +1,1292 @@
+{
+  "id": "packages/smithers/flows/engine-store",
+  "name": "@smthrs/engine-store",
+  "owner": {
+    "declaration": "packages/smithers/flows/engine-store/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
+    "circular": "node ../../../repo-targets/scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "node ../database/scripts/test-matrix.mjs",
+    "test:matrix": "node ../database/scripts/test-matrix.mjs"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./migrations/*": null,
+    "./*/index": null,
+    "./ArtifactGc": "./src/ArtifactGc.ts",
+    "./ArtifactSync": "./src/ArtifactSync.ts",
+    "./CacheSync": "./src/CacheSync.ts",
+    "./DisasterRecovery": "./src/DisasterRecovery.ts",
+    "./DurableEngineState": "./src/DurableEngineState.ts",
+    "./EngineStore": "./src/EngineStore.ts",
+    "./EngineStoreMetrics": "./src/EngineStoreMetrics.ts",
+    "./Errors": "./src/Errors.ts",
+    "./ExecutionSnapshot": "./src/ExecutionSnapshot.ts",
+    "./RunChangeFeed": "./src/RunChangeFeed.ts",
+    "./RunInspection": "./src/RunInspection.ts",
+    "./Inconsistency": "./src/Inconsistency.ts",
+    "./Migrations": "./src/Migrations.ts",
+    "./OwnerIdentity": "./src/OwnerIdentity.ts",
+    "./PlanScheduler": "./src/PlanScheduler.ts",
+    "./PlanInputStore": "./src/PlanInputStore.ts",
+    "./PlanMergeStore": "./src/PlanMergeStore.ts",
+    "./Reconciliation": "./src/Reconciliation.ts",
+    "./ReplayOnly": "./src/ReplayOnly.ts",
+    "./Retention": "./src/Retention.ts",
+    "./RunCatalogRead": "./src/RunCatalogRead.ts",
+    "./RunState": "./src/RunState.ts",
+    "./Selection": "./src/Selection.ts",
+    "./SelectionStore": "./src/SelectionStore.ts",
+    "./StepBoundary": "./src/StepBoundary.ts",
+    "./StepLogs": "./src/StepLogs.ts",
+    "./DeferredClockFold": "./src/DeferredClockFold.ts",
+    "./StepCacheFold": "./src/StepCacheFold.ts",
+    "./StepSandbox": "./src/StepSandbox.ts",
+    "./WakeBus": "./src/WakeBus.ts",
+    "./WorkspaceSandbox": "./src/WorkspaceSandbox.ts",
+    "./index": "./src/index.ts",
+    "./test/TestStores": "./src/test/TestStores.ts",
+    "./EventTypes": "./src/EventTypes.ts"
+  },
+  "production": [
+    "eslint.config.js",
+    "examples/quickstart.ts",
+    "PACKAGE.ts",
+    "scripts/build.mjs",
+    "scripts/flows-backup.mjs",
+    "src/ArtifactGc.ts",
+    "src/ArtifactSync.ts",
+    "src/CacheSync.ts",
+    "src/DeferredClockFold.ts",
+    "src/DisasterRecovery.ts",
+    "src/DurableEngineState.ts",
+    "src/EngineStore.ts",
+    "src/EngineStoreMetrics.ts",
+    "src/Errors.ts",
+    "src/EventTypes.ts",
+    "src/ExecutionFacts.ts",
+    "src/ExecutionSnapshot.ts",
+    "src/Inconsistency.ts",
+    "src/index.ts",
+    "src/internal/ActionPersistence.ts",
+    "src/internal/ArtifactRoots.ts",
+    "src/internal/AttemptAdmission.ts",
+    "src/internal/AttemptLifecycle.ts",
+    "src/internal/AttemptProbe.ts",
+    "src/internal/CacheAdmission.ts",
+    "src/internal/CacheAgeHistory.ts",
+    "src/internal/CacheAgeVerdicts.ts",
+    "src/internal/CacheOutputPolicy.ts",
+    "src/internal/CachePublication.ts",
+    "src/internal/CallFacts.ts",
+    "src/internal/CopiedRecord.ts",
+    "src/internal/DeferredPersistence.ts",
+    "src/internal/DriveBudget.ts",
+    "src/internal/EffectRecords.ts",
+    "src/internal/EngineJj.ts",
+    "src/internal/EngineStateSchema.ts",
+    "src/internal/ExecutionSnapshotRead.ts",
+    "src/internal/ExecutionSnapshotRelations.ts",
+    "src/internal/ExitEncoding.ts",
+    "src/internal/FailureDiagnostic.ts",
+    "src/internal/FileBoundarySnapshot.ts",
+    "src/internal/FileEnumeration.ts",
+    "src/internal/HostReflection.ts",
+    "src/internal/JournalRecords.ts",
+    "src/internal/NodeJournal.ts",
+    "src/internal/Ordering.ts",
+    "src/internal/PlanInputs.ts",
+    "src/internal/PlanMerges.ts",
+    "src/internal/ProvenanceSlot.ts",
+    "src/internal/ReplaySeed.ts",
+    "src/internal/ResultEnvelope.ts",
+    "src/internal/RetentionOps.ts",
+    "src/internal/RetrySource.ts",
+    "src/internal/RunCatalogOps.ts",
+    "src/internal/RunCoordinator.ts",
+    "src/internal/RunDriver.ts",
+    "src/internal/RunLifecycle.ts",
+    "src/internal/RunListing.ts",
+    "src/internal/RunListingError.ts",
+    "src/internal/RuntimeGraph.ts",
+    "src/internal/SandboxedExecution.ts",
+    "src/internal/StateTransaction.ts",
+    "src/internal/StepFacts.ts",
+    "src/internal/StepLogCapture.ts",
+    "src/internal/TypedEvents.ts",
+    "src/Migrations.ts",
+    "src/migrations/0001_initial.ts",
+    "src/migrations/0002_selection_store.ts",
+    "src/migrations/0003_plan_inputs.ts",
+    "src/migrations/0004_plan_environment.ts",
+    "src/migrations/0005_plan_merges.ts",
+    "src/migrations/0006_execution_listing.ts",
+    "src/migrations/0007_run_parent_sequence.ts",
+    "src/migrations/0008_deferred_consumption.ts",
+    "src/migrations/0009_deferred_clock_facts.ts",
+    "src/migrations/0010_pending_cancellation.ts",
+    "src/OwnerIdentity.ts",
+    "src/PlanInputStore.ts",
+    "src/PlanMergeStore.ts",
+    "src/PlanScheduler.ts",
+    "src/Reconciliation.ts",
+    "src/ReplayOnly.ts",
+    "src/Retention.ts",
+    "src/RunCatalogRead.ts",
+    "src/RunChangeFeed.ts",
+    "src/RunInspection.ts",
+    "src/RunState.ts",
+    "src/Selection.ts",
+    "src/SelectionStore.ts",
+    "src/StepBoundary.ts",
+    "src/StepCacheFold.ts",
+    "src/StepLogs.ts",
+    "src/StepSandbox.ts",
+    "src/test/TestStores.ts",
+    "src/WakeBus.ts",
+    "src/WorkspaceSandbox.ts",
+    "test/CachePolicyFixtures.ts",
+    "test/ChildProcesses.ts",
+    "test/Clocks.ts",
+    "test/contract/DurableEngineStateContract.ts",
+    "test/ExecuteAndDrain.ts",
+    "test/ExecuteUntilParked.ts",
+    "test/ExecutionSnapshotFixture.ts",
+    "test/fixtures/artifact-cjs.cjs",
+    "test/fixtures/artifact-esm.mjs",
+    "test/fixtures/cache-permit-process.mjs",
+    "test/fixtures/cancel-lineage-process.mjs",
+    "test/fixtures/durable-wait-child.ts",
+    "test/fixtures/external-job-child.ts",
+    "test/fixtures/lease-reclaim-child.ts",
+    "test/fixtures/LeaseReclaimFlow.ts",
+    "test/fixtures/MemoryFileSystem.ts",
+    "test/fixtures/MinifiedAnswerFlow.ts",
+    "test/fixtures/MinifiedBuild.ts",
+    "test/fixtures/OpaqueHandlerBody.ts",
+    "test/fixtures/PersistentDatabase.ts",
+    "test/fixtures/placed-caller-engine.ts",
+    "test/fixtures/PlacedParentFlow.ts",
+    "test/fixtures/plan-input-process.mjs",
+    "test/fixtures/plan-merge-frontier-process.mjs",
+    "test/fixtures/reap-host.ts",
+    "test/fixtures/RebuiltAnswerFlow.ts",
+    "test/fixtures/reclaimed-attempt-child.ts",
+    "test/fixtures/ReclaimedAttemptFlow.ts",
+    "test/fixtures/remote-ceiling-engine.ts",
+    "test/fixtures/RemoteCeilingFlow.ts",
+    "test/fixtures/RemoteTestDatabase.ts",
+    "test/fixtures/workspace-lock-child.ts",
+    "test/HostPath.ts",
+    "test/LeaseReclaimProcess.ts",
+    "test/PlanSchedulerReference.ts",
+    "test/ReclaimedAttemptProcess.ts",
+    "test/RuntimeGraphBenchmark.ts",
+    "test/SchedulerDifferentialHarness.ts",
+    "test/Sha256.ts",
+    "test/TempDirectory.ts",
+    "test/Win32Host.ts",
+    "vitest.config.ts"
+  ],
+  "tests": [
+    "packages/smithers/flows/engine-store/scripts/flows-backup.test.mjs",
+    "packages/smithers/flows/engine-store/src/test/TestStores.ts",
+    "packages/smithers/flows/engine-store/test/ActionDispatchSteps.test.ts",
+    "packages/smithers/flows/engine-store/test/ActionEdgeCases.test.ts",
+    "packages/smithers/flows/engine-store/test/ActionFailurePaths.test.ts",
+    "packages/smithers/flows/engine-store/test/ActionPersistence.test.ts",
+    "packages/smithers/flows/engine-store/test/ActionTimeoutReplay.test.ts",
+    "packages/smithers/flows/engine-store/test/AdmissionDrive.test.ts",
+    "packages/smithers/flows/engine-store/test/AdoptionGuard.test.ts",
+    "packages/smithers/flows/engine-store/test/AnnotatedWaiting.test.ts",
+    "packages/smithers/flows/engine-store/test/ArtifactGc.test.ts",
+    "packages/smithers/flows/engine-store/test/ArtifactRoots.test.ts",
+    "packages/smithers/flows/engine-store/test/Artifacts.test.ts",
+    "packages/smithers/flows/engine-store/test/ArtifactSync.test.ts",
+    "packages/smithers/flows/engine-store/test/AttemptAdmission.test.ts",
+    "packages/smithers/flows/engine-store/test/AttemptProbeCost.test.ts",
+    "packages/smithers/flows/engine-store/test/AttemptQuarantine.test.ts",
+    "packages/smithers/flows/engine-store/test/AttemptSurvivorsParity.test.ts",
+    "packages/smithers/flows/engine-store/test/BoundaryRefusalReplay.test.ts",
+    "packages/smithers/flows/engine-store/test/BrandedDeclarationReplay.test.ts",
+    "packages/smithers/flows/engine-store/test/BrowserEntry.test.ts",
+    "packages/smithers/flows/engine-store/test/CacheAdmission.test.ts",
+    "packages/smithers/flows/engine-store/test/CacheAdmissionSerialization.test.ts",
+    "packages/smithers/flows/engine-store/test/CacheAgeHistory.test.ts",
+    "packages/smithers/flows/engine-store/test/CacheAgePolicy.test.ts",
+    "packages/smithers/flows/engine-store/test/CacheEmptyOutputs.test.ts",
+    "packages/smithers/flows/engine-store/test/CacheHitPrepareFailure.test.ts",
+    "packages/smithers/flows/engine-store/test/CacheHitReadSetVerification.test.ts",
+    "packages/smithers/flows/engine-store/test/CacheLegacyPolicy.test.ts",
+    "packages/smithers/flows/engine-store/test/CacheOutputPolicy.test.ts",
+    "packages/smithers/flows/engine-store/test/CachePermitProcess.test.ts",
+    "packages/smithers/flows/engine-store/test/CachePolicyFixtures.ts",
+    "packages/smithers/flows/engine-store/test/CacheProvenanceGeneration.test.ts",
+    "packages/smithers/flows/engine-store/test/CacheProvenanceIdempotency.test.ts",
+    "packages/smithers/flows/engine-store/test/CachePublicationRecovery.test.ts",
+    "packages/smithers/flows/engine-store/test/CacheRecordGating.test.ts",
+    "packages/smithers/flows/engine-store/test/CacheTtl.test.ts",
+    "packages/smithers/flows/engine-store/test/CallFacts.test.ts",
+    "packages/smithers/flows/engine-store/test/CancelCascade.test.ts",
+    "packages/smithers/flows/engine-store/test/CancelParked.test.ts",
+    "packages/smithers/flows/engine-store/test/CapabilityCeiling.integration.test.ts",
+    "packages/smithers/flows/engine-store/test/ChildCancellationWake.test.ts",
+    "packages/smithers/flows/engine-store/test/ChildExitPolicy.test.ts",
+    "packages/smithers/flows/engine-store/test/ChildProcesses.ts",
+    "packages/smithers/flows/engine-store/test/ChildReaping.test.ts",
+    "packages/smithers/flows/engine-store/test/ClaimLogOwners.test.ts",
+    "packages/smithers/flows/engine-store/test/Clocks.ts",
+    "packages/smithers/flows/engine-store/test/CompensableSnapshotRestart.test.ts",
+    "packages/smithers/flows/engine-store/test/CompletedOutputDurability.test.ts",
+    "packages/smithers/flows/engine-store/test/ConnectionLoss.test.ts",
+    "packages/smithers/flows/engine-store/test/contract/DurableEngineStateContract.ts",
+    "packages/smithers/flows/engine-store/test/CopiedRecord.test.ts",
+    "packages/smithers/flows/engine-store/test/CorruptRowBlastRadius.test.ts",
+    "packages/smithers/flows/engine-store/test/CrossDriverCancelSettles.test.ts",
+    "packages/smithers/flows/engine-store/test/CrossHostRecovery.test.ts",
+    "packages/smithers/flows/engine-store/test/CycleDetection.test.ts",
+    "packages/smithers/flows/engine-store/test/CycleDetectionSql.test.ts",
+    "packages/smithers/flows/engine-store/test/DeferredClockFold.test.ts",
+    "packages/smithers/flows/engine-store/test/DeferredPersistence.test.ts",
+    "packages/smithers/flows/engine-store/test/DeferredRecovery.test.ts",
+    "packages/smithers/flows/engine-store/test/DeferredRestartMatrix.test.ts",
+    "packages/smithers/flows/engine-store/test/DeferredRevisionReads.test.ts",
+    "packages/smithers/flows/engine-store/test/DetachedStart.test.ts",
+    "packages/smithers/flows/engine-store/test/DisasterRecovery.test.ts",
+    "packages/smithers/flows/engine-store/test/DispatchLogFields.test.ts",
+    "packages/smithers/flows/engine-store/test/Docs.test.ts",
+    "packages/smithers/flows/engine-store/test/DriveBudget.test.ts",
+    "packages/smithers/flows/engine-store/test/DurableAttemptCachePrecedence.test.ts",
+    "packages/smithers/flows/engine-store/test/DurableCancel.test.ts",
+    "packages/smithers/flows/engine-store/test/DurableEngineStateContract.test.ts",
+    "packages/smithers/flows/engine-store/test/DurableEngineStateSql.test.ts",
+    "packages/smithers/flows/engine-store/test/DurableQueueCrash.test.ts",
+    "packages/smithers/flows/engine-store/test/DurableStateOrdering.test.ts",
+    "packages/smithers/flows/engine-store/test/DurableWaitingRestart.test.ts",
+    "packages/smithers/flows/engine-store/test/EffectBoundaryRecords.test.ts",
+    "packages/smithers/flows/engine-store/test/EngineStateFault.test.ts",
+    "packages/smithers/flows/engine-store/test/EngineStoreAdmissionSharing.test.ts",
+    "packages/smithers/flows/engine-store/test/EngineStoreLayer.test.ts",
+    "packages/smithers/flows/engine-store/test/EngineStoreMetrics.test.ts",
+    "packages/smithers/flows/engine-store/test/EventDrivenWake.test.ts",
+    "packages/smithers/flows/engine-store/test/examples.test.ts",
+    "packages/smithers/flows/engine-store/test/ExecuteAndDrain.ts",
+    "packages/smithers/flows/engine-store/test/ExecuteReclaim.test.ts",
+    "packages/smithers/flows/engine-store/test/ExecuteUntilParked.ts",
+    "packages/smithers/flows/engine-store/test/ExecutionFacts.test.ts",
+    "packages/smithers/flows/engine-store/test/ExecutionIdentityConflict.test.ts",
+    "packages/smithers/flows/engine-store/test/ExecutionSnapshot.test.ts",
+    "packages/smithers/flows/engine-store/test/ExecutionSnapshotBatch.test.ts",
+    "packages/smithers/flows/engine-store/test/ExecutionSnapshotCompatibility.test.ts",
+    "packages/smithers/flows/engine-store/test/ExecutionSnapshotDriver.test.ts",
+    "packages/smithers/flows/engine-store/test/ExecutionSnapshotFixture.ts",
+    "packages/smithers/flows/engine-store/test/ExecutionSnapshotLargeState.test.ts",
+    "packages/smithers/flows/engine-store/test/ExecutionSnapshotMigrations.test.ts",
+    "packages/smithers/flows/engine-store/test/ExecutionSnapshotRelations.test.ts",
+    "packages/smithers/flows/engine-store/test/ExitEncoding.test.ts",
+    "packages/smithers/flows/engine-store/test/ExternalJobRestart.test.ts",
+    "packages/smithers/flows/engine-store/test/FailureEvidenceReplay.test.ts",
+    "packages/smithers/flows/engine-store/test/FaultMatrix.test.ts",
+    "packages/smithers/flows/engine-store/test/FileEnumeration.test.ts",
+    "packages/smithers/flows/engine-store/test/FileEnumerationBatch.test.ts",
+    "packages/smithers/flows/engine-store/test/fixtures/artifact-cjs.cjs",
+    "packages/smithers/flows/engine-store/test/fixtures/artifact-esm.mjs",
+    "packages/smithers/flows/engine-store/test/fixtures/cache-permit-process.mjs",
+    "packages/smithers/flows/engine-store/test/fixtures/cancel-lineage-process.mjs",
+    "packages/smithers/flows/engine-store/test/fixtures/durable-wait-child.ts",
+    "packages/smithers/flows/engine-store/test/fixtures/external-job-child.ts",
+    "packages/smithers/flows/engine-store/test/fixtures/lease-reclaim-child.ts",
+    "packages/smithers/flows/engine-store/test/fixtures/LeaseReclaimFlow.ts",
+    "packages/smithers/flows/engine-store/test/fixtures/MemoryFileSystem.ts",
+    "packages/smithers/flows/engine-store/test/fixtures/MinifiedAnswerFlow.ts",
+    "packages/smithers/flows/engine-store/test/fixtures/MinifiedBuild.ts",
+    "packages/smithers/flows/engine-store/test/fixtures/OpaqueHandlerBody.ts",
+    "packages/smithers/flows/engine-store/test/fixtures/PersistentDatabase.ts",
+    "packages/smithers/flows/engine-store/test/fixtures/placed-caller-engine.ts",
+    "packages/smithers/flows/engine-store/test/fixtures/PlacedParentFlow.ts",
+    "packages/smithers/flows/engine-store/test/fixtures/plan-input-process.mjs",
+    "packages/smithers/flows/engine-store/test/fixtures/plan-merge-frontier-process.mjs",
+    "packages/smithers/flows/engine-store/test/fixtures/reap-host.ts",
+    "packages/smithers/flows/engine-store/test/fixtures/RebuiltAnswerFlow.ts",
+    "packages/smithers/flows/engine-store/test/fixtures/reclaimed-attempt-child.ts",
+    "packages/smithers/flows/engine-store/test/fixtures/ReclaimedAttemptFlow.ts",
+    "packages/smithers/flows/engine-store/test/fixtures/remote-ceiling-engine.ts",
+    "packages/smithers/flows/engine-store/test/fixtures/RemoteCeilingFlow.ts",
+    "packages/smithers/flows/engine-store/test/fixtures/RemoteTestDatabase.ts",
+    "packages/smithers/flows/engine-store/test/fixtures/workspace-lock-child.ts",
+    "packages/smithers/flows/engine-store/test/ForkReplayEvidence.test.ts",
+    "packages/smithers/flows/engine-store/test/HardKillReclaim.test.ts",
+    "packages/smithers/flows/engine-store/test/HeartbeatReceipts.test.ts",
+    "packages/smithers/flows/engine-store/test/HostCeiling.test.ts",
+    "packages/smithers/flows/engine-store/test/HostedEngine.test.ts",
+    "packages/smithers/flows/engine-store/test/HostPath.ts",
+    "packages/smithers/flows/engine-store/test/HostReflection.test.ts",
+    "packages/smithers/flows/engine-store/test/Inconsistency.test.ts",
+    "packages/smithers/flows/engine-store/test/InterpreterNodeJournal.test.ts",
+    "packages/smithers/flows/engine-store/test/InterpreterSequenceDurability.test.ts",
+    "packages/smithers/flows/engine-store/test/InterruptedSuspensionPark.test.ts",
+    "packages/smithers/flows/engine-store/test/InterruptReleaseReclaim.test.ts",
+    "packages/smithers/flows/engine-store/test/IrreversibleRestartRefusal.test.ts",
+    "packages/smithers/flows/engine-store/test/JoinAuthority.test.ts",
+    "packages/smithers/flows/engine-store/test/JoinLoserChildCrash.test.ts",
+    "packages/smithers/flows/engine-store/test/JournalFencing.test.ts",
+    "packages/smithers/flows/engine-store/test/JournalIntegration.test.ts",
+    "packages/smithers/flows/engine-store/test/JournalTransaction.test.ts",
+    "packages/smithers/flows/engine-store/test/KeyEncoding.test.ts",
+    "packages/smithers/flows/engine-store/test/LateClockArm.test.ts",
+    "packages/smithers/flows/engine-store/test/LateLinkedChildCancellation.test.ts",
+    "packages/smithers/flows/engine-store/test/LeaseLiveness.test.ts",
+    "packages/smithers/flows/engine-store/test/LeaseReclaimProcess.ts",
+    "packages/smithers/flows/engine-store/test/LeaseWaitNotice.test.ts",
+    "packages/smithers/flows/engine-store/test/LifecycleDurability.test.ts",
+    "packages/smithers/flows/engine-store/test/LineageCancellation.test.ts",
+    "packages/smithers/flows/engine-store/test/MaterializedOutputBounds.test.ts",
+    "packages/smithers/flows/engine-store/test/MatrixEnvironment.test.ts",
+    "packages/smithers/flows/engine-store/test/MemoryStateTransaction.test.ts",
+    "packages/smithers/flows/engine-store/test/MigrationModules.test.ts",
+    "packages/smithers/flows/engine-store/test/Migrations.test.ts",
+    "packages/smithers/flows/engine-store/test/NestedActionFailure.test.ts",
+    "packages/smithers/flows/engine-store/test/NestedDurableWait.test.ts",
+    "packages/smithers/flows/engine-store/test/NodeJournal.test.ts",
+    "packages/smithers/flows/engine-store/test/NondeterministicConflict.test.ts",
+    "packages/smithers/flows/engine-store/test/NonRetryableReplay.test.ts",
+    "packages/smithers/flows/engine-store/test/Once.test.ts",
+    "packages/smithers/flows/engine-store/test/Ordering.test.ts",
+    "packages/smithers/flows/engine-store/test/OutOfLadderSchema.test.ts",
+    "packages/smithers/flows/engine-store/test/OwnerIdentity.test.ts",
+    "packages/smithers/flows/engine-store/test/Ownership.test.ts",
+    "packages/smithers/flows/engine-store/test/PayloadChangedAcrossBuilds.test.ts",
+    "packages/smithers/flows/engine-store/test/PendingAdmissionRecovery.test.ts",
+    "packages/smithers/flows/engine-store/test/PendingAdmissionSweep.test.ts",
+    "packages/smithers/flows/engine-store/test/PendingCancellationRuns.test.ts",
+    "packages/smithers/flows/engine-store/test/PendingCancellationSweepEdges.test.ts",
+    "packages/smithers/flows/engine-store/test/PendingRuns.test.ts",
+    "packages/smithers/flows/engine-store/test/PendingUnregisteredCancellation.test.ts",
+    "packages/smithers/flows/engine-store/test/PersistedEvidenceBounds.test.ts",
+    "packages/smithers/flows/engine-store/test/PlanIdentityAcrossBuilds.test.ts",
+    "packages/smithers/flows/engine-store/test/PlanInputProcess.test.ts",
+    "packages/smithers/flows/engine-store/test/PlanInputs.test.ts",
+    "packages/smithers/flows/engine-store/test/PlanInputStore.test.ts",
+    "packages/smithers/flows/engine-store/test/PlanMergeProcessFrontiers.test.ts",
+    "packages/smithers/flows/engine-store/test/PlanMergeRecovery.test.ts",
+    "packages/smithers/flows/engine-store/test/PlanMerges.test.ts",
+    "packages/smithers/flows/engine-store/test/PlanMergeStore.test.ts",
+    "packages/smithers/flows/engine-store/test/PlanScheduler.test.ts",
+    "packages/smithers/flows/engine-store/test/PlanSchedulerAdmission.test.ts",
+    "packages/smithers/flows/engine-store/test/PlanSchedulerAttemptSharing.test.ts",
+    "packages/smithers/flows/engine-store/test/PlanSchedulerCost.test.ts",
+    "packages/smithers/flows/engine-store/test/PlanSchedulerPriority.test.ts",
+    "packages/smithers/flows/engine-store/test/PlanSchedulerProduction.test.ts",
+    "packages/smithers/flows/engine-store/test/PlanSchedulerReference.ts",
+    "packages/smithers/flows/engine-store/test/PlanSchedulerReplayOnly.test.ts",
+    "packages/smithers/flows/engine-store/test/PlanSchedulerTiers.test.ts",
+    "packages/smithers/flows/engine-store/test/ProjectionRebuild.test.ts",
+    "packages/smithers/flows/engine-store/test/ProvenanceSlot.test.ts",
+    "packages/smithers/flows/engine-store/test/QuarantineClaimRace.test.ts",
+    "packages/smithers/flows/engine-store/test/RacedParkResume.test.ts",
+    "packages/smithers/flows/engine-store/test/ReadTransactionLock.test.ts",
+    "packages/smithers/flows/engine-store/test/ReadyTimerRecovery.test.ts",
+    "packages/smithers/flows/engine-store/test/ReadyTimerSweep.test.ts",
+    "packages/smithers/flows/engine-store/test/ReclaimedAttemptCache.test.ts",
+    "packages/smithers/flows/engine-store/test/ReclaimedAttemptProcess.ts",
+    "packages/smithers/flows/engine-store/test/Reconciliation.test.ts",
+    "packages/smithers/flows/engine-store/test/RegistrationRecovery.test.ts",
+    "packages/smithers/flows/engine-store/test/RemoteCacheProtocol.test.ts",
+    "packages/smithers/flows/engine-store/test/RemoteCapabilityCeiling.test.ts",
+    "packages/smithers/flows/engine-store/test/Replay.test.ts",
+    "packages/smithers/flows/engine-store/test/ReplayConflictValidation.test.ts",
+    "packages/smithers/flows/engine-store/test/ReplayCorruptionClassification.test.ts",
+    "packages/smithers/flows/engine-store/test/ReplayCost.test.ts",
+    "packages/smithers/flows/engine-store/test/ReplayFence.test.ts",
+    "packages/smithers/flows/engine-store/test/ReplayOnly.test.ts",
+    "packages/smithers/flows/engine-store/test/ReplayOutputsFallback.test.ts",
+    "packages/smithers/flows/engine-store/test/ReplaySeed.test.ts",
+    "packages/smithers/flows/engine-store/test/RestoreDrill.test.ts",
+    "packages/smithers/flows/engine-store/test/Retention.test.ts",
+    "packages/smithers/flows/engine-store/test/RetentionFacade.test.ts",
+    "packages/smithers/flows/engine-store/test/RetryExpiration.test.ts",
+    "packages/smithers/flows/engine-store/test/RetryFrom.test.ts",
+    "packages/smithers/flows/engine-store/test/RetryOrigin.test.ts",
+    "packages/smithers/flows/engine-store/test/RunCatalogCatchUp.test.ts",
+    "packages/smithers/flows/engine-store/test/RunChangeProgress.test.ts",
+    "packages/smithers/flows/engine-store/test/RunCoordinator.test.ts",
+    "packages/smithers/flows/engine-store/test/RunDeadline.test.ts",
+    "packages/smithers/flows/engine-store/test/RunDriverAtomicPark.test.ts",
+    "packages/smithers/flows/engine-store/test/RunDriverEdges.test.ts",
+    "packages/smithers/flows/engine-store/test/RunDriverGuards.test.ts",
+    "packages/smithers/flows/engine-store/test/RunDriverLivenessFaults.test.ts",
+    "packages/smithers/flows/engine-store/test/RunInspection.test.ts",
+    "packages/smithers/flows/engine-store/test/RunLifecycleModel.test.ts",
+    "packages/smithers/flows/engine-store/test/RunListing.test.ts",
+    "packages/smithers/flows/engine-store/test/RunParentAtomicity.test.ts",
+    "packages/smithers/flows/engine-store/test/RunParentEdges.test.ts",
+    "packages/smithers/flows/engine-store/test/RunParentReplayLock.test.ts",
+    "packages/smithers/flows/engine-store/test/RuntimeGraph.test.ts",
+    "packages/smithers/flows/engine-store/test/RuntimeGraphBenchmark.ts",
+    "packages/smithers/flows/engine-store/test/RunUsageMetrics.test.ts",
+    "packages/smithers/flows/engine-store/test/SandboxedAction.test.ts",
+    "packages/smithers/flows/engine-store/test/SchedulerDifferential.test.ts",
+    "packages/smithers/flows/engine-store/test/SchedulerDifferentialFiles.test.ts",
+    "packages/smithers/flows/engine-store/test/SchedulerDifferentialHarness.ts",
+    "packages/smithers/flows/engine-store/test/SchedulerDifferentialRecovery.test.ts",
+    "packages/smithers/flows/engine-store/test/ScopedRegistrationOwnership.test.ts",
+    "packages/smithers/flows/engine-store/test/Selection.test.ts",
+    "packages/smithers/flows/engine-store/test/SelectionStore.test.ts",
+    "packages/smithers/flows/engine-store/test/Sha256.ts",
+    "packages/smithers/flows/engine-store/test/SharedChildCompletion.test.ts",
+    "packages/smithers/flows/engine-store/test/ShutdownRelease.test.ts",
+    "packages/smithers/flows/engine-store/test/StaleRunningAttempt.test.ts",
+    "packages/smithers/flows/engine-store/test/StaleSweepBackoff.test.ts",
+    "packages/smithers/flows/engine-store/test/StateLockOrder.test.ts",
+    "packages/smithers/flows/engine-store/test/StepBoundary.test.ts",
+    "packages/smithers/flows/engine-store/test/StepBoundaryBatch.test.ts",
+    "packages/smithers/flows/engine-store/test/StepBoundaryConfinement.test.ts",
+    "packages/smithers/flows/engine-store/test/StepCacheFold.test.ts",
+    "packages/smithers/flows/engine-store/test/StepFacts.test.ts",
+    "packages/smithers/flows/engine-store/test/StepLogCapture.test.ts",
+    "packages/smithers/flows/engine-store/test/StepLogs.test.ts",
+    "packages/smithers/flows/engine-store/test/StepSandbox.test.ts",
+    "packages/smithers/flows/engine-store/test/StringBoundaryLiteral.integration.test.ts",
+    "packages/smithers/flows/engine-store/test/SuspendedParking.test.ts",
+    "packages/smithers/flows/engine-store/test/SweepAndScopes.test.ts",
+    "packages/smithers/flows/engine-store/test/SweeperResilience.test.ts",
+    "packages/smithers/flows/engine-store/test/SweepFiltering.test.ts",
+    "packages/smithers/flows/engine-store/test/TempDirectory.test.ts",
+    "packages/smithers/flows/engine-store/test/TempDirectory.ts",
+    "packages/smithers/flows/engine-store/test/TerminalEmitDurability.test.ts",
+    "packages/smithers/flows/engine-store/test/TerminalRoundClocks.test.ts",
+    "packages/smithers/flows/engine-store/test/TestStores.test.ts",
+    "packages/smithers/flows/engine-store/test/Tiers.test.ts",
+    "packages/smithers/flows/engine-store/test/Trampoline.test.ts",
+    "packages/smithers/flows/engine-store/test/TypedEvents.test.ts",
+    "packages/smithers/flows/engine-store/test/UnencodableSettlement.test.ts",
+    "packages/smithers/flows/engine-store/test/UnregisteredFlowWarning.test.ts",
+    "packages/smithers/flows/engine-store/test/UnresolvedActionSettles.test.ts",
+    "packages/smithers/flows/engine-store/test/WaitingReason.test.ts",
+    "packages/smithers/flows/engine-store/test/WaitingTree.test.ts",
+    "packages/smithers/flows/engine-store/test/WakeBus.test.ts",
+    "packages/smithers/flows/engine-store/test/WalAtomicity.test.ts",
+    "packages/smithers/flows/engine-store/test/Win32Host.ts",
+    "packages/smithers/flows/engine-store/test/WorkspaceSandbox.test.ts",
+    "packages/smithers/flows/engine-store/tsconfig.test.json"
+  ],
+  "benchmarks": [
+    "packages/smithers/flows/engine-store/docs/benchmarks/hosted-registration-2026-10-22.json"
+  ],
+  "platformPaths": [
+    "packages/smithers/flows/engine-store/docs/guides/coordinate-two-processes.md",
+    "packages/smithers/flows/engine-store/src/internal/NodeJournal.ts",
+    "packages/smithers/flows/engine-store/test/BrowserEntry.test.ts",
+    "packages/smithers/flows/engine-store/test/CachePermitProcess.test.ts",
+    "packages/smithers/flows/engine-store/test/ChildProcesses.ts",
+    "packages/smithers/flows/engine-store/test/fixtures/cache-permit-process.mjs",
+    "packages/smithers/flows/engine-store/test/fixtures/cancel-lineage-process.mjs",
+    "packages/smithers/flows/engine-store/test/fixtures/plan-input-process.mjs",
+    "packages/smithers/flows/engine-store/test/fixtures/plan-merge-frontier-process.mjs",
+    "packages/smithers/flows/engine-store/test/InterpreterNodeJournal.test.ts",
+    "packages/smithers/flows/engine-store/test/LeaseReclaimProcess.ts",
+    "packages/smithers/flows/engine-store/test/NodeJournal.test.ts",
+    "packages/smithers/flows/engine-store/test/PlanInputProcess.test.ts",
+    "packages/smithers/flows/engine-store/test/PlanMergeProcessFrontiers.test.ts",
+    "packages/smithers/flows/engine-store/test/ReclaimedAttemptProcess.ts"
+  ],
+  "ignoredCases": [
+    {
+      "path": "packages/smithers/flows/engine-store/src/internal/ActionPersistence.ts",
+      "line": 630,
+      "text": "/* v8 ignore next 3 -- A non-proxy Array always has an own data-property uint32 length. */"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/src/internal/ActionPersistence.ts",
+      "line": 660,
+      "text": "/* v8 ignore next -- A key returned by Reflect.ownKeys exists on a non-proxy object. */"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/src/internal/ActionPersistence.ts",
+      "line": 687,
+      "text": "/* v8 ignore next -- The typeof switch covers every JavaScript value category. */"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/src/PlanScheduler.ts",
+      "line": 1180,
+      "text": "/* v8 ignore next 3 -- verified plans have serializable material, admission resolves every dependency, and successful upstream values already crossed durable serialization; key derivation still exposes its honest failure channel */"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/src/PlanScheduler.ts",
+      "line": 1941,
+      "text": "/* v8 ignore next 7 -- unreachable while the invariants above hold */"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/src/WorkspaceSandbox.ts",
+      "line": 1569,
+      "text": "/* v8 ignore next -- `FileBoundary.removes` is `FileSet.Pattern`-checked, so a decoded boundary cannot carry an upward or absolute removal; the branch guards hand-built descriptors */"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/test/ConnectionLoss.test.ts",
+      "line": 161,
+      "text": "it.skipIf(!target.available)(`leaves the attempt adoptable for a later drive (${target.label})`, async () => {"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/test/DeferredRevisionReads.test.ts",
+      "line": 43,
+      "text": "describe.skipIf(url === undefined)(\"deferred run revisions on PostgreSQL\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/test/EngineStoreMetrics.test.ts",
+      "line": 62,
+      "text": "/* v8 ignore next */"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/test/EngineStoreMetrics.test.ts",
+      "line": 65,
+      "text": "/* v8 ignore next */"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/test/EngineStoreMetrics.test.ts",
+      "line": 227,
+      "text": "/* v8 ignore next 3 */"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/test/PlanScheduler.test.ts",
+      "line": 98,
+      "text": "/* v8 ignore next */"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/test/PlanScheduler.test.ts",
+      "line": 101,
+      "text": "/* v8 ignore next */"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/test/PlanScheduler.test.ts",
+      "line": 1142,
+      "text": "/* v8 ignore next -- the activated deterministic store cannot reject its first attempt row */"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/test/PlanScheduler.test.ts",
+      "line": 1157,
+      "text": "/* v8 ignore next -- the owner-fenced running row above has one valid terminal transition */"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/test/PlanScheduler.test.ts",
+      "line": 1509,
+      "text": "/* v8 ignore next -- identical successful dispatches never enter conflict reconciliation */"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/test/PlanScheduler.test.ts",
+      "line": 1546,
+      "text": "/* v8 ignore next */"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/test/PlanSchedulerProduction.test.ts",
+      "line": 121,
+      "text": "/* v8 ignore next */"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/test/PlanSchedulerProduction.test.ts",
+      "line": 124,
+      "text": "/* v8 ignore next */"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/test/RunParentReplayLock.test.ts",
+      "line": 155,
+      "text": "it.skip(`skipped: ${absent}`, () => {})"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/test/Selection.test.ts",
+      "line": 83,
+      "text": "/* v8 ignore next */"
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/test/Selection.test.ts",
+      "line": 86,
+      "text": "/* v8 ignore next */"
+    }
+  ],
+  "configurations": [
+    {
+      "path": "packages/smithers/flows/engine-store/eslint.config.js",
+      "sha256": "2c4969888178383154f9172253928d3af13cbfdd790d71c0695e9af2016c05ab",
+      "source": "import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport {\n  ambientAuthority,\n  hostPath,\n  invariants,\n  swallowedCause,\n  uninstalledSafety\n} from \"../../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  {\n    ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]\n  },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\", \"examples/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: {\n      parserOptions: {\n        // The test project covers src and examples; examples are outside the\n        // build project, so the project service would not find them.\n        project: \"./tsconfig.test.json\",\n        tsconfigRootDir: import.meta.dirname\n      }\n    },\n    settings: {\n      \"import/resolver\": {\n        typescript: {\n          project: [\"./tsconfig.json\"]\n        }\n      }\n    },\n    plugins: {\n      unicorn\n    },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority, hostPath)\n)\n",
+      "coverageDirectives": [
+        {
+          "line": 16,
+          "text": "ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]"
+        },
+        {
+          "line": 49,
+          "text": "\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/package.json",
+      "sha256": "434d23befcbe461171a8b90d65bcfeb54fd332cd5da36a7d47ed64957be583a8",
+      "source": "{\n  \"name\": \"@smthrs/engine-store\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"engine\"\n  },\n  \"description\": \"Effect services for durable engine action persistence and replay boundaries\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/flows/engine-store\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"effect\",\n    \"journal\",\n    \"durability\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"effect\",\n    \"journal\",\n    \"durability\"\n  ],\n  \"engines\": {\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [],\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./internal/*\": null,\n    \"./migrations/*\": null,\n    \"./*/index\": null,\n    \"./ArtifactGc\": \"./src/ArtifactGc.ts\",\n    \"./ArtifactSync\": \"./src/ArtifactSync.ts\",\n    \"./CacheSync\": \"./src/CacheSync.ts\",\n    \"./DisasterRecovery\": \"./src/DisasterRecovery.ts\",\n    \"./DurableEngineState\": \"./src/DurableEngineState.ts\",\n    \"./EngineStore\": \"./src/EngineStore.ts\",\n    \"./EngineStoreMetrics\": \"./src/EngineStoreMetrics.ts\",\n    \"./Errors\": \"./src/Errors.ts\",\n    \"./ExecutionSnapshot\": \"./src/ExecutionSnapshot.ts\",\n    \"./RunChangeFeed\": \"./src/RunChangeFeed.ts\",\n    \"./RunInspection\": \"./src/RunInspection.ts\",\n    \"./Inconsistency\": \"./src/Inconsistency.ts\",\n    \"./Migrations\": \"./src/Migrations.ts\",\n    \"./OwnerIdentity\": \"./src/OwnerIdentity.ts\",\n    \"./PlanScheduler\": \"./src/PlanScheduler.ts\",\n    \"./PlanInputStore\": \"./src/PlanInputStore.ts\",\n    \"./PlanMergeStore\": \"./src/PlanMergeStore.ts\",\n    \"./Reconciliation\": \"./src/Reconciliation.ts\",\n    \"./ReplayOnly\": \"./src/ReplayOnly.ts\",\n    \"./Retention\": \"./src/Retention.ts\",\n    \"./RunCatalogRead\": \"./src/RunCatalogRead.ts\",\n    \"./RunState\": \"./src/RunState.ts\",\n    \"./Selection\": \"./src/Selection.ts\",\n    \"./SelectionStore\": \"./src/SelectionStore.ts\",\n    \"./StepBoundary\": \"./src/StepBoundary.ts\",\n    \"./StepLogs\": \"./src/StepLogs.ts\",\n    \"./DeferredClockFold\": \"./src/DeferredClockFold.ts\",\n    \"./StepCacheFold\": \"./src/StepCacheFold.ts\",\n    \"./StepSandbox\": \"./src/StepSandbox.ts\",\n    \"./WakeBus\": \"./src/WakeBus.ts\",\n    \"./WorkspaceSandbox\": \"./src/WorkspaceSandbox.ts\",\n    \"./index\": \"./src/index.ts\",\n    \"./test/TestStores\": \"./src/test/TestStores.ts\",\n    \"./EventTypes\": \"./src/EventTypes.ts\"\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"docs/\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./internal/*\": null,\n      \"./migrations/*\": null,\n      \"./*/index\": null,\n      \"./ArtifactGc\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ArtifactGc.d.ts\",\n          \"default\": \"./dist/esm/ArtifactGc.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ArtifactGc.d.ts\",\n          \"default\": \"./dist/cjs/ArtifactGc.js\"\n        }\n      },\n      \"./ArtifactSync\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ArtifactSync.d.ts\",\n          \"default\": \"./dist/esm/ArtifactSync.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ArtifactSync.d.ts\",\n          \"default\": \"./dist/cjs/ArtifactSync.js\"\n        }\n      },\n      \"./CacheSync\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CacheSync.d.ts\",\n          \"default\": \"./dist/esm/CacheSync.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CacheSync.d.ts\",\n          \"default\": \"./dist/cjs/CacheSync.js\"\n        }\n      },\n      \"./DisasterRecovery\": {\n        \"import\": {\n          \"types\": \"./dist/esm/DisasterRecovery.d.ts\",\n          \"default\": \"./dist/esm/DisasterRecovery.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/DisasterRecovery.d.ts\",\n          \"default\": \"./dist/cjs/DisasterRecovery.js\"\n        }\n      },\n      \"./DurableEngineState\": {\n        \"import\": {\n          \"types\": \"./dist/esm/DurableEngineState.d.ts\",\n          \"default\": \"./dist/esm/DurableEngineState.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/DurableEngineState.d.ts\",\n          \"default\": \"./dist/cjs/DurableEngineState.js\"\n        }\n      },\n      \"./EngineStore\": {\n        \"import\": {\n          \"types\": \"./dist/esm/EngineStore.d.ts\",\n          \"default\": \"./dist/esm/EngineStore.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/EngineStore.d.ts\",\n          \"default\": \"./dist/cjs/EngineStore.js\"\n        }\n      },\n      \"./EngineStoreMetrics\": {\n        \"import\": {\n          \"types\": \"./dist/esm/EngineStoreMetrics.d.ts\",\n          \"default\": \"./dist/esm/EngineStoreMetrics.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/EngineStoreMetrics.d.ts\",\n          \"default\": \"./dist/cjs/EngineStoreMetrics.js\"\n        }\n      },\n      \"./Errors\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Errors.d.ts\",\n          \"default\": \"./dist/esm/Errors.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Errors.d.ts\",\n          \"default\": \"./dist/cjs/Errors.js\"\n        }\n      },\n      \"./ExecutionSnapshot\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ExecutionSnapshot.d.ts\",\n          \"default\": \"./dist/esm/ExecutionSnapshot.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ExecutionSnapshot.d.ts\",\n          \"default\": \"./dist/cjs/ExecutionSnapshot.js\"\n        }\n      },\n      \"./RunChangeFeed\": {\n        \"import\": {\n          \"types\": \"./dist/esm/RunChangeFeed.d.ts\",\n          \"default\": \"./dist/esm/RunChangeFeed.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/RunChangeFeed.d.ts\",\n          \"default\": \"./dist/cjs/RunChangeFeed.js\"\n        }\n      },\n      \"./RunInspection\": {\n        \"import\": {\n          \"types\": \"./dist/esm/RunInspection.d.ts\",\n          \"default\": \"./dist/esm/RunInspection.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/RunInspection.d.ts\",\n          \"default\": \"./dist/cjs/RunInspection.js\"\n        }\n      },\n      \"./Inconsistency\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Inconsistency.d.ts\",\n          \"default\": \"./dist/esm/Inconsistency.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Inconsistency.d.ts\",\n          \"default\": \"./dist/cjs/Inconsistency.js\"\n        }\n      },\n      \"./Migrations\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Migrations.d.ts\",\n          \"default\": \"./dist/esm/Migrations.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Migrations.d.ts\",\n          \"default\": \"./dist/cjs/Migrations.js\"\n        }\n      },\n      \"./OwnerIdentity\": {\n        \"import\": {\n          \"types\": \"./dist/esm/OwnerIdentity.d.ts\",\n          \"default\": \"./dist/esm/OwnerIdentity.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/OwnerIdentity.d.ts\",\n          \"default\": \"./dist/cjs/OwnerIdentity.js\"\n        }\n      },\n      \"./PlanScheduler\": {\n        \"import\": {\n          \"types\": \"./dist/esm/PlanScheduler.d.ts\",\n          \"default\": \"./dist/esm/PlanScheduler.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/PlanScheduler.d.ts\",\n          \"default\": \"./dist/cjs/PlanScheduler.js\"\n        }\n      },\n      \"./PlanInputStore\": {\n        \"import\": {\n          \"types\": \"./dist/esm/PlanInputStore.d.ts\",\n          \"default\": \"./dist/esm/PlanInputStore.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/PlanInputStore.d.ts\",\n          \"default\": \"./dist/cjs/PlanInputStore.js\"\n        }\n      },\n      \"./PlanMergeStore\": {\n        \"import\": {\n          \"types\": \"./dist/esm/PlanMergeStore.d.ts\",\n          \"default\": \"./dist/esm/PlanMergeStore.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/PlanMergeStore.d.ts\",\n          \"default\": \"./dist/cjs/PlanMergeStore.js\"\n        }\n      },\n      \"./ReplayOnly\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ReplayOnly.d.ts\",\n          \"default\": \"./dist/esm/ReplayOnly.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ReplayOnly.d.ts\",\n          \"default\": \"./dist/cjs/ReplayOnly.js\"\n        }\n      },\n      \"./Reconciliation\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Reconciliation.d.ts\",\n          \"default\": \"./dist/esm/Reconciliation.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Reconciliation.d.ts\",\n          \"default\": \"./dist/cjs/Reconciliation.js\"\n        }\n      },\n      \"./Retention\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Retention.d.ts\",\n          \"default\": \"./dist/esm/Retention.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Retention.d.ts\",\n          \"default\": \"./dist/cjs/Retention.js\"\n        }\n      },\n      \"./RunCatalogRead\": {\n        \"import\": {\n          \"types\": \"./dist/esm/RunCatalogRead.d.ts\",\n          \"default\": \"./dist/esm/RunCatalogRead.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/RunCatalogRead.d.ts\",\n          \"default\": \"./dist/cjs/RunCatalogRead.js\"\n        }\n      },\n      \"./RunState\": {\n        \"import\": {\n          \"types\": \"./dist/esm/RunState.d.ts\",\n          \"default\": \"./dist/esm/RunState.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/RunState.d.ts\",\n          \"default\": \"./dist/cjs/RunState.js\"\n        }\n      },\n      \"./Selection\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Selection.d.ts\",\n          \"default\": \"./dist/esm/Selection.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Selection.d.ts\",\n          \"default\": \"./dist/cjs/Selection.js\"\n        }\n      },\n      \"./SelectionStore\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SelectionStore.d.ts\",\n          \"default\": \"./dist/esm/SelectionStore.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SelectionStore.d.ts\",\n          \"default\": \"./dist/cjs/SelectionStore.js\"\n        }\n      },\n      \"./StepBoundary\": {\n        \"import\": {\n          \"types\": \"./dist/esm/StepBoundary.d.ts\",\n          \"default\": \"./dist/esm/StepBoundary.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/StepBoundary.d.ts\",\n          \"default\": \"./dist/cjs/StepBoundary.js\"\n        }\n      },\n      \"./StepLogs\": {\n        \"import\": {\n          \"types\": \"./dist/esm/StepLogs.d.ts\",\n          \"default\": \"./dist/esm/StepLogs.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/StepLogs.d.ts\",\n          \"default\": \"./dist/cjs/StepLogs.js\"\n        }\n      },\n      \"./DeferredClockFold\": {\n        \"import\": {\n          \"types\": \"./dist/esm/DeferredClockFold.d.ts\",\n          \"default\": \"./dist/esm/DeferredClockFold.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/DeferredClockFold.d.ts\",\n          \"default\": \"./dist/cjs/DeferredClockFold.js\"\n        }\n      },\n      \"./StepCacheFold\": {\n        \"import\": {\n          \"types\": \"./dist/esm/StepCacheFold.d.ts\",\n          \"default\": \"./dist/esm/StepCacheFold.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/StepCacheFold.d.ts\",\n          \"default\": \"./dist/cjs/StepCacheFold.js\"\n        }\n      },\n      \"./StepSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/StepSandbox.d.ts\",\n          \"default\": \"./dist/esm/StepSandbox.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/StepSandbox.d.ts\",\n          \"default\": \"./dist/cjs/StepSandbox.js\"\n        }\n      },\n      \"./WakeBus\": {\n        \"import\": {\n          \"types\": \"./dist/esm/WakeBus.d.ts\",\n          \"default\": \"./dist/esm/WakeBus.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/WakeBus.d.ts\",\n          \"default\": \"./dist/cjs/WakeBus.js\"\n        }\n      },\n      \"./WorkspaceSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/WorkspaceSandbox.d.ts\",\n          \"default\": \"./dist/esm/WorkspaceSandbox.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/WorkspaceSandbox.d.ts\",\n          \"default\": \"./dist/cjs/WorkspaceSandbox.js\"\n        }\n      },\n      \"./index\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./test/TestStores\": {\n        \"import\": {\n          \"types\": \"./dist/esm/test/TestStores.d.ts\",\n          \"default\": \"./dist/esm/test/TestStores.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/test/TestStores.d.ts\",\n          \"default\": \"./dist/cjs/test/TestStores.js\"\n        }\n      },\n      \"./EventTypes\": {\n        \"import\": {\n          \"types\": \"./dist/esm/EventTypes.d.ts\",\n          \"default\": \"./dist/esm/EventTypes.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/EventTypes.d.ts\",\n          \"default\": \"./dist/cjs/EventTypes.js\"\n        }\n      }\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"check\": \"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"node ../database/scripts/test-matrix.mjs\",\n    \"test:matrix\": \"node ../database/scripts/test-matrix.mjs\"\n  },\n  \"dependencies\": {\n    \"@smthrs/artifacts\": \"1.0.0-rc.16\",\n    \"@smthrs/canonical\": \"1.0.0-rc.16\",\n    \"@smthrs/crypto\": \"1.0.0-rc.16\",\n    \"@smthrs/database\": \"1.0.0-rc.16\",\n    \"@smthrs/engine\": \"1.0.0-rc.16\",\n    \"@smthrs/flow\": \"1.0.0-rc.16\",\n    \"@smthrs/journal\": \"1.0.0-rc.16\",\n    \"@smthrs/kernel\": \"1.0.0-rc.16\",\n    \"@smthrs/keys\": \"1.0.0-rc.16\",\n    \"@smthrs/plan\": \"1.0.0-rc.16\",\n    \"@smthrs/plan-store\": \"1.0.0-rc.16\",\n    \"@smthrs/run-store\": \"1.0.0-rc.16\",\n    \"@smthrs/step-cache\": \"1.0.0-rc.16\",\n    \"@smthrs/capability\": \"1.0.0-rc.16\"\n  },\n  \"devDependencies\": {\n    \"@effect/language-service\": \"0.87.2\",\n    \"@effect/platform-node\": \"4.0.5\",\n    \"@effect/sql-pg\": \"4.0.5\",\n    \"@effect/vitest\": \"4.0.5\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@smthrs/core\": \"1.0.0-rc.16\",\n    \"@smthrs/platform-node\": \"1.0.0-rc.16\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"effect\": \"4.0.5\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"fast-check\": \"4.9.0\",\n    \"madge\": \"8.0.0\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\"\n  },\n  \"peerDependencies\": {\n    \"effect\": \"4.0.5\"\n  }\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 456,
+          "text": "\"coverage\": \"node ../database/scripts/test-matrix.mjs\","
+        },
+        {
+          "line": 484,
+          "text": "\"@vitest/coverage-v8\": \"5.0.0\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/PACKAGE.ts",
+      "sha256": "c6c330b7b528732caba7f487b33bf69c62a33553f82ab1d0ba8d1dc66feb4b9a",
+      "source": "import {\n  BuildAndCheckTypeScriptPackage,\n  ReviewDocsAgainstCode,\n  ReviewJsdocAgainstCode,\n  ReviewTagsMigrationsAndKeys\n} from \"@smthrs/repo-targets\"\n/**\n * Standard package targets.\n *\n * `cwd` anchors every emitted tool run in this package directory.\n */\nimport { Smithers } from \"@smthrs/targets\"\nimport * as Input from \"@smthrs/targets/Input\"\n\nconst { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({\n  deps: [],\n  // Examples are type-checked, linted and run by test/examples.test.ts.\n  sources: Input.glob(\"{src,examples}/**/*.ts\"),\n  cwd: \"packages/smithers/flows/engine-store\"\n})\n\n// Declared env appears in plans, so an external connection must carry no\n// password or libpq credential/config-file indirection. The stock matrix's\n// private disposable-server password stays inside its existing runner.\nconst postgresEnvironment: Record<string, string> = {}\nconst postgresUrls = {\n  SMITHERS_TEST_PG_URL: process.env[\"SMITHERS_TEST_PG_URL\"],\n  SMITHERS_TEST_COMPOSE_PG_URL: process.env[\"SMITHERS_TEST_COMPOSE_PG_URL\"],\n  SMITHERS_TEST_PGBOUNCER_URL: process.env[\"SMITHERS_TEST_PGBOUNCER_URL\"]\n}\nfor (const [name, postgresUrl] of Object.entries(postgresUrls)) {\n  if (postgresUrl === undefined) continue\n  let usable = false\n  try {\n    const url = new URL(postgresUrl)\n    const query = Array.from(url.searchParams)\n    usable = postgresUrl.length <= 4096 && !/[\\u0000-\\u0020\\u007f]/.test(postgresUrl) &&\n      (url.protocol === \"postgres:\" || url.protocol === \"postgresql:\") && url.hostname !== \"\" &&\n      url.password === \"\" && url.hash === \"\" &&\n      new Set(query.map(([name]) => name)).size === query.length &&\n      query.every(([name, value]) =>\n        name === \"sslmode\" ?\n          [\"disable\", \"allow\", \"prefer\", \"require\", \"verify-ca\", \"verify-full\"].includes(value) :\n          name === \"connect_timeout\" && /^[1-9][0-9]?$/.test(value)\n      )\n  } catch { /* Refuse unusable configuration without echoing the URL. */ }\n  if (!usable) throw new Error(`${name} requires a credential-free PostgreSQL URL`)\n  postgresEnvironment[name] = postgresUrl\n}\n\n/** The same SQLite/PostgreSQL matrix, optionally using a declared external server. */\nconst test = Smithers.NodeTest({\n  runner: Smithers.entrypoint(Smithers.file(\"//packages/smithers/flows/database/scripts/test-matrix.mjs\")),\n  srcs: [\n    Smithers.glob(\"src/**/*.{ts,vibe}\"),\n    Smithers.glob(\"test/**/*.{ts,vibe}\"),\n    Smithers.glob(\"examples/**/*.ts\"),\n    Smithers.file(\"package.json\"),\n    Smithers.file(\"vitest.config.ts\"),\n    Smithers.file(\"//packages/repo-targets/test-utils/effect-property.mjs\"),\n    Smithers.file(\"//packages/repo-targets/test-utils/coverage-teardown.mjs\"),\n    Smithers.file(\"//packages/repo-targets/test-utils/test-process-environment.mjs\"),\n    Smithers.file(\"//packages/repo-targets/test-utils/test-schemas.ts\"),\n    Smithers.file(\"//packages/smithers/flows/database/src/TestSchemas.ts\"),\n    Smithers.file(\"//packages/repo-targets/test-utils/vitest-root-temp.mjs\"),\n    Smithers.file(\"//packages/repo-targets/test-utils/effect-property.d.mts\")\n  ],\n  deps: [lib],\n  env: {\n    ...(postgresEnvironment[\"SMITHERS_TEST_PG_URL\"] === undefined\n      ? {}\n      : { SMITHERS_TEST_PG_URL: postgresEnvironment[\"SMITHERS_TEST_PG_URL\"] }),\n    ...(postgresEnvironment[\"SMITHERS_TEST_COMPOSE_PG_URL\"] === undefined\n      ? {}\n      : { SMITHERS_TEST_COMPOSE_PG_URL: postgresEnvironment[\"SMITHERS_TEST_COMPOSE_PG_URL\"] }),\n    ...(postgresEnvironment[\"SMITHERS_TEST_PGBOUNCER_URL\"] === undefined\n      ? {}\n      : { SMITHERS_TEST_PGBOUNCER_URL: postgresEnvironment[\"SMITHERS_TEST_PGBOUNCER_URL\"] })\n  },\n  timeout: \"1200000ms\",\n  cwd: \"packages/smithers/flows/engine-store\"\n})\n\n/**\n * The operator's backup, verify, and restore entry point, driven the way an\n * operator drives it: spawned `node scripts/flows-backup.mjs` invocations\n * against a real migrated store. The script wraps `DisasterRecovery`, so it\n * lives beside the module it exercises.\n *\n * @since 0.1.0\n * @category test\n */\nconst disasterRecovery = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/smithers/flows/engine-store/scripts/flows-backup.test.mjs\")]),\n  srcs: [\n    Smithers.glob(\"//packages/smithers/flows/engine-store/scripts/flows-backup*.mjs\"),\n    Smithers.glob(\"//packages/smithers/flows/engine-store/src/**/*.{ts,vibe}\")\n  ],\n  deps: [],\n  cwd: \"packages/smithers/flows/engine-store\"\n})\n\n/**\n * The durable-identity review: identity strings, migrations, persisted\n * schemas, and durable keys, read out of this package's own changed sources.\n *\n * @since 0.1.0\n * @category lint\n */\nconst reviewTagsMigrationsAndKeys = ReviewTagsMigrationsAndKeys({ cwd: \"packages/smithers/flows/engine-store\" })\n\n/**\n * Changed public APIs against the package prose. The default context reads\n * only `docs/*.md`; the concept and guide pages document the same stores,\n * layers, and error codes, so the review reads all of them.\n *\n * @since 1.0.0\n * @category lint\n */\nconst reviewDocsAgainstCode = ReviewDocsAgainstCode({\n  cwd: \"packages/smithers/flows/engine-store\",\n  context: [\n    Smithers.file(\"README.md\"),\n    Smithers.glob(\"docs/**/*.md\"),\n    Smithers.file(\"//apps/site/src/content/docs/docs/reference/api/engine-store.mdx\")\n  ]\n})\n\n/**\n * Changed exports against their own JSDoc.\n *\n * @since 1.0.0\n * @category lint\n */\nconst reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: \"packages/smithers/flows/engine-store\" })\n\n/**\n * The security review: `security` reviews this package's changed files against\n * `origin/main`, and `securityAudit` audits every reviewed file.\n *\n * @since 1.0.0\n * @category lint\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd: \"packages/smithers/flows/engine-store\",\n  include: [\"src/**\", \"scripts/**\"],\n  checks: [\n    {\n      id: \"copy-back-confinement\",\n      title: \"Sandbox copy-back writes only inside the pinned workspace root\",\n      threat:\n        \"A step body or its agent writes or replaces host files outside the workspace, or the engine database, on the operator's machine.\",\n      lookFor: [\n        \"normalizePath accepting a path with '..', an absolute path outside root, a backslash or NUL spelling that later resolves outside root.\",\n        \"A copy-back, preflight, apply, or rollback call that uses `fs` instead of the `confined` host and so follows a symlink or hard link.\",\n        \"reservedAt comparing `.flows` and `.smithers-workspace-lock` case-sensitively, so `.FLOWS/...` reaches the engine state on a case-insensitive filesystem.\",\n        \"The lease heartbeat's path-based `utimes` being reachable before the confined read proved the lock holds this call's token.\"\n      ],\n      paths: [\"src/WorkspaceSandbox.ts\", \"src/StepSandbox.ts\", \"src/internal/SandboxedExecution.ts\"]\n    },\n    {\n      id: \"hermetic-read-enforcement\",\n      title: \"A hermetic step reads only its declared read set\",\n      threat:\n        \"A step body reads undeclared workspace files, secrets included, and still records a cacheable, verified result.\",\n      lookFor: [\n        \"An undeclared-read violation that yields Materialized instead of UndeclaredRead or Invalidated.\",\n        \"A sandbox read path that serves host bytes for a path the seeded transaction did not declare.\",\n        \"Glob coverage in the write-set matcher treating `*` as crossing `/` or `**` as matching outside its prefix.\"\n      ],\n      paths: [\n        \"src/WorkspaceSandbox.ts\",\n        \"src/StepSandbox.ts\",\n        \"src/StepBoundary.ts\",\n        \"src/internal/SandboxedExecution.ts\",\n        \"src/internal/FileBoundarySnapshot.ts\"\n      ]\n    },\n    {\n      id: \"cache-poisoning\",\n      title: \"Cache hits replay only results whose read set and artifacts verify\",\n      threat:\n        \"A writer to the shared cache or artifact tier makes another machine's run replay forged outputs or file changes.\",\n      lookFor: [\n        \"A replayed cache entry admitted without readSetVerified or with a quarantined boundary.\",\n        \"Artifact bytes fetched from the remote tier and materialized without re-hashing against the referenced digest.\",\n        \"CacheSync or ArtifactSync publishing an entry before every referenced blob is durable in the shared tier.\"\n      ],\n      paths: [\n        \"src/internal/CacheAdmission.ts\",\n        \"src/internal/CachePublication.ts\",\n        \"src/internal/CacheOutputPolicy.ts\",\n        \"src/CacheSync.ts\",\n        \"src/ArtifactSync.ts\",\n        \"src/internal/ActionPersistence.ts\"\n      ]\n    },\n    {\n      id: \"backup-restore-integrity\",\n      title: \"Backup, verify, and restore trust only digests and fixed file names\",\n      threat:\n        \"Whoever controls a backup directory makes restore write outside the target directory or load a tampered database into production.\",\n      lookFor: [\n        \"A manifest field other than the literal database file name or a Sha256 digest reaching a filesystem path.\",\n        \"Restore writing a blob or database file whose bytes were not re-hashed against the manifest first.\",\n        \"`VACUUM INTO` receiving an unparameterized or operator-unchecked path.\",\n        \"A failed backup's cleanup removing entries outside the backup directory it created.\"\n      ],\n      paths: [\"src/DisasterRecovery.ts\", \"scripts/flows-backup.mjs\"]\n    },\n    {\n      id: \"owner-fencing\",\n      title: \"Every durable claim and settlement is fenced by the current owner\",\n      threat:\n        \"A stale or rival engine process overwrites another owner's run state, settling or cancelling runs it no longer holds.\",\n      lookFor: [\n        \"An UPDATE or DELETE on flows_attempts or flows_runs claim columns without owner_host_id and owner_nonce predicates.\",\n        \"An OwnerId nonce drawn from a non-cryptographic or predictable source.\",\n        \"Restore fencing that leaves any pre-backup claim or running run unsuspended.\"\n      ],\n      paths: [\n        \"src/DurableEngineState.ts\",\n        \"src/OwnerIdentity.ts\",\n        \"src/internal/RunDriver.ts\",\n        \"src/internal/AttemptLifecycle.ts\",\n        \"src/internal/RunCoordinator.ts\",\n        \"src/DisasterRecovery.ts\"\n      ]\n    },\n    {\n      id: \"sql-construction\",\n      title: \"Store SQL binds every value and builds identifiers only from constants\",\n      threat: \"A flow author or caller-supplied filter injects SQL into the operator's engine database.\",\n      lookFor: [\n        \"`sql.unsafe` or `sql.literal` interpolating anything other than compile-time constants or dialect choices.\",\n        \"A listing, selection, or retention filter that splices a caller string into ORDER BY, a column name, or a LIKE pattern without escaping.\"\n      ],\n      paths: [\n        \"src/migrations/**\",\n        \"src/internal/EngineStateSchema.ts\",\n        \"src/internal/RunListing.ts\",\n        \"src/Selection.ts\",\n        \"src/SelectionStore.ts\",\n        \"src/internal/RetentionOps.ts\",\n        \"src/PlanInputStore.ts\",\n        \"src/PlanMergeStore.ts\"\n      ]\n    },\n    {\n      id: \"durable-row-decoding\",\n      title: \"Durable rows decode fail-closed and bounded\",\n      threat:\n        \"A corrupted or attacker-written store row crashes the engine, exhausts memory, or is misread as a successful exit.\",\n      lookFor: [\n        \"A JSON column decoded without a Schema, or a decode failure mapped to a default value instead of a typed error.\",\n        \"An unbounded recursive walk or read of a checkpoint, envelope, or output column with no size cap.\",\n        \"ExitEncoding decoding an unknown tag as success.\"\n      ],\n      paths: [\n        \"src/internal/ArtifactRoots.ts\",\n        \"src/internal/ExitEncoding.ts\",\n        \"src/internal/ResultEnvelope.ts\",\n        \"src/internal/JournalRecords.ts\",\n        \"src/internal/CopiedRecord.ts\",\n        \"src/internal/ExecutionSnapshotRead.ts\"\n      ]\n    },\n    {\n      id: \"gc-retention-safety\",\n      title: \"Artifact GC and retention delete only unreferenced data\",\n      threat:\n        \"A retention or GC sweep deletes blobs or rows a live run or cache entry still references, destroying another user's results.\",\n      lookFor: [\n        \"A sweep that deletes a blob without a fence against concurrent new references.\",\n        \"A root enumeration that skips a table or checkpoint column holding digests.\",\n        \"Retention deleting a run that is still running, parked, or referenced by a child run.\"\n      ],\n      paths: [\"src/ArtifactGc.ts\", \"src/Retention.ts\", \"src/internal/RetentionOps.ts\", \"src/internal/ArtifactRoots.ts\"]\n    },\n    {\n      id: \"wait-token-exposure\",\n      title: \"Waiting resume tokens and requests leave read surfaces only as digests or redacted values\",\n      threat:\n        \"A viewer of run listings, facts, snapshots, or events obtains another run's resume token and resumes or answers its approval wait.\",\n      lookFor: [\n        \"A read model, fact, snapshot, or event that returns flows_runs waiting_token verbatim instead of a Sha256 digest.\",\n        \"A waiting request copied into an observation without Redaction.redact.\",\n        \"A resume path that accepts a token without matching it to the run id and current wait.\"\n      ],\n      paths: [\n        \"src/ExecutionFacts.ts\",\n        \"src/ExecutionSnapshot.ts\",\n        \"src/internal/ExecutionSnapshotRead.ts\",\n        \"src/DurableEngineState.ts\",\n        \"src/RunCatalogRead.ts\",\n        \"src/RunChangeFeed.ts\",\n        \"src/internal/TypedEvents.ts\",\n        \"src/EngineStore.ts\"\n      ]\n    },\n    {\n      id: \"engine-jj-authority\",\n      title: \"Engine-private Jj authority never reaches action bodies\",\n      threat:\n        \"A flow's action body gains the engine's snapshot and restore repository authority and rewrites the user's repository.\",\n      lookFor: [\n        \"EngineJj provided into an Effect that runs user action code.\",\n        \"HostReflection or a test store helper in src exposing host services to action context.\"\n      ],\n      paths: [\n        \"src/internal/EngineJj.ts\",\n        \"src/internal/HostReflection.ts\",\n        \"src/internal/RunDriver.ts\",\n        \"src/test/TestStores.ts\"\n      ]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: {\n    check,\n    circular,\n    disasterRecovery,\n    docs,\n    docsFiles,\n    reviewDocsAgainstCode,\n    reviewJsdocAgainstCode,\n    reviewTagsMigrationsAndKeys,\n    fmt,\n    lib,\n    lint,\n    test,\n    ...securityReview\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 43,
+          "text": "[\"disable\", \"allow\", \"prefer\", \"require\", \"verify-ca\", \"verify-full\"].includes(value) :"
+        },
+        {
+          "line": 61,
+          "text": "Smithers.file(\"//packages/repo-targets/test-utils/coverage-teardown.mjs\"),"
+        },
+        {
+          "line": 146,
+          "text": "include: [\"src/**\", \"scripts/**\"],"
+        },
+        {
+          "line": 165,
+          "text": "\"A step body reads undeclared workspace files, secrets included, and still records a cacheable, verified result.\","
+        },
+        {
+          "line": 169,
+          "text": "\"Glob coverage in the write-set matcher treating `*` as crossing `/` or `**` as matching outside its prefix.\""
+        },
+        {
+          "line": 275,
+          "text": "\"A root enumeration that skips a table or checkpoint column holding digests.\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/tsconfig.json",
+      "sha256": "0064dce36d22143039105eb068be99456971e6caf6e7cebac24633514a2009b8",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [\n      {\n        \"name\": \"@effect/language-service\",\n        \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n        \"includeSuggestionsInTsc\": false,\n        \"ignoreEffectWarningsInTscExitCode\": true,\n        \"ignoreEffectErrorsInTscExitCode\": true,\n        \"diagnosticSeverity\": {\n          \"globalErrorInEffectFailure\": \"off\"\n        }\n      }\n    ]\n  },\n  \"include\": [\"src/**/*\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 17,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 30,
+          "text": "\"includeSuggestionsInTsc\": false,"
+        },
+        {
+          "line": 31,
+          "text": "\"ignoreEffectWarningsInTscExitCode\": true,"
+        },
+        {
+          "line": 32,
+          "text": "\"ignoreEffectErrorsInTscExitCode\": true,"
+        },
+        {
+          "line": 39,
+          "text": "\"include\": [\"src/**/*\"]"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/engine-store/vitest.config.ts",
+      "sha256": "1a016097f8d0167681e0ee524171c62a671ebeb67a592592e94953796b11d352",
+      "source": "import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-schemas.ts\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    environment: \"node\",\n    // The Vitest suites are `test/**` alone. `scripts/flows-backup.test.mjs`\n    // is a `node:test` file driven by the `//packages/smithers/flows/engine-store:disasterRecovery`\n    // target, and Vitest's default include (`**/*.test.?(c|m)[jt]s`) collects\n    // it, where it fails as \"No test suite found\" because it registers with\n    // `node:test` rather than with Vitest. Naming the include keeps each\n    // runner to the files it owns.\n    include: [\"test/**/*.test.{ts,vibe}\"],\n    // Vitest's 5 s default is a wall-clock budget, but no suite in this repo\n    // asserts on elapsed time — each is bounded by an explicit iteration,\n    // cycle, or completion count. The real gate runs those counts under v8\n    // coverage instrumentation across parallel workers, where cases that\n    // finish in well under a second in isolation have been measured 6-12x\n    // slower; that machine-load multiplier, not the workload, is what put\n    // correct suites over the default wall. Raise the budget instead of\n    // trimming the workload, and keep it FINITE so a genuine hang still\n    // fails the run rather than hanging the gate forever.\n    testTimeout: 60_000,\n    hookTimeout: 60_000,\n    // The package has several real-filesystem integration suites. Letting\n    // Vitest scale to every logical CPU makes sixteen coverage-instrumented\n    // workers contend for the same disk and turns 13-17 s tests into 60 s\n    // timeouts. A bounded pool is faster and stable under a loaded CI host.\n    maxWorkers: 4,\n    coverage: {\n      // `enabled: true` makes every `vitest` run compute and ENFORCE these\n      // thresholds — a red gate fails the run (issues #20/#32).\n      enabled: true,\n      provider: \"v8\",\n      // Scope the report directory — and the `.tmp` scratch dir the v8\n      // provider clears at run start and reads at run end — to this process.\n      // The default `./coverage` is shared, so two concurrent `vitest run`\n      // invocations destroy each other: one aborts with a removed-coverage-\n      // directory error and the other enforces 100% against a partial\n      // profile with every test passing (issues #115/#121).\n      reportsDirectory: join(tmpdir(), `flows-engine-store-coverage-${process.pid}`),\n      // Gate on production code only — without this, well-covered helpers\n      // under test/ (e.g. test/contract/DurableEngineStateContract.ts)\n      // dilute the denominator and give src regressions slack (issue #51).\n      include: [\"src/**\"],\n      // The complete src tree, including barrel modules, is fully covered.\n      thresholds: {\n        branches: 100,\n        functions: 100,\n        lines: 100,\n        statements: 100\n      }\n    }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 12,
+          "text": "fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"
+        },
+        {
+          "line": 18,
+          "text": "// target, and Vitest's default include (`**/*.test.?(c|m)[jt]s`) collects"
+        },
+        {
+          "line": 20,
+          "text": "// `node:test` rather than with Vitest. Naming the include keeps each"
+        },
+        {
+          "line": 22,
+          "text": "include: [\"test/**/*.test.{ts,vibe}\"],"
+        },
+        {
+          "line": 25,
+          "text": "// cycle, or completion count. The real gate runs those counts under v8"
+        },
+        {
+          "line": 26,
+          "text": "// coverage instrumentation across parallel workers, where cases that"
+        },
+        {
+          "line": 35,
+          "text": "// Vitest scale to every logical CPU makes sixteen coverage-instrumented"
+        },
+        {
+          "line": 39,
+          "text": "coverage: {"
+        },
+        {
+          "line": 41,
+          "text": "// thresholds — a red gate fails the run (issues #20/#32)."
+        },
+        {
+          "line": 43,
+          "text": "provider: \"v8\","
+        },
+        {
+          "line": 44,
+          "text": "// Scope the report directory — and the `.tmp` scratch dir the v8"
+        },
+        {
+          "line": 46,
+          "text": "// The default `./coverage` is shared, so two concurrent `vitest run`"
+        },
+        {
+          "line": 47,
+          "text": "// invocations destroy each other: one aborts with a removed-coverage-"
+        },
+        {
+          "line": 50,
+          "text": "reportsDirectory: join(tmpdir(), `flows-engine-store-coverage-${process.pid}`),"
+        },
+        {
+          "line": 54,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 56,
+          "text": "thresholds: {"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/flows/engine-store",
+      "label": "//packages/smithers/flows/engine-store:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine-store/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine-store/tsconfig.test.json"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows/engine-store:lib"
+      ]
+    },
+    {
+      "package": "packages/smithers/flows/engine-store",
+      "label": "//packages/smithers/flows/engine-store:circular",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/circular.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine-store/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/engine-store",
+      "label": "//packages/smithers/flows/engine-store:disasterRecovery",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine-store/scripts/flows-backup.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/scripts/flows-backup*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/src/**/*.{ts,vibe}",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/engine-store",
+      "label": "//packages/smithers/flows/engine-store:docs",
+      "rule": "DocsParity",
+      "kinds": [
+        "docs"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine-store/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/engine-store",
+      "label": "//packages/smithers/flows/engine-store:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine-store/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine-store/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/engine-store",
+      "label": "//packages/smithers/flows/engine-store:fmt",
+      "rule": "Dprint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine-store/dprint.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/engine-store",
+      "label": "//packages/smithers/flows/engine-store:lib",
+      "rule": "TsBuild",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/build-library.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/scripts/compile-commonjs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-single-effect-version.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine-store/src/index.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine-store/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine-store/scripts/build.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/engine-store",
+      "label": "//packages/smithers/flows/engine-store:lint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine-store/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.jsdoc.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/engine-store",
+      "label": "//packages/smithers/flows/engine-store:reviewDocsAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/flows/engine-store/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine-store/README.md"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/content/docs/docs/reference/api/engine-store.mdx"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/engine-store",
+      "label": "//packages/smithers/flows/engine-store:reviewJsdocAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/flows/engine-store/src/**/*.{ts,vibe}"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/src/**/*.{ts,vibe}",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/engine-store",
+      "label": "//packages/smithers/flows/engine-store:reviewTagsMigrationsAndKeys",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/flows/engine-store/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/engine-store",
+      "label": "//packages/smithers/flows/engine-store:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/flows/engine-store/src/**",
+            "packages/smithers/flows/engine-store/scripts/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/scripts/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/engine-store",
+      "label": "//packages/smithers/flows/engine-store:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/flows/engine-store/src/**",
+            "packages/smithers/flows/engine-store/scripts/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/scripts/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/engine-store",
+      "label": "//packages/smithers/flows/engine-store:test",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/scripts/test-matrix.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/examples/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine-store/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/engine-store/vitest.config.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows/engine-store:lib"
+      ]
+    }
+  ],
+  "areas": [
+    "PACKAGE.ts",
+    "eslint.config.js",
+    "examples/quickstart.ts",
+    "scripts/build.mjs",
+    "scripts/flows-backup.mjs",
+    "src/ArtifactGc.ts",
+    "src/ArtifactSync.ts",
+    "src/CacheSync.ts",
+    "src/DeferredClockFold.ts",
+    "src/DisasterRecovery.ts",
+    "src/DurableEngineState.ts",
+    "src/EngineStore.ts",
+    "src/EngineStoreMetrics.ts",
+    "src/Errors.ts",
+    "src/EventTypes.ts",
+    "src/ExecutionFacts.ts",
+    "src/ExecutionSnapshot.ts",
+    "src/Inconsistency.ts",
+    "src/Migrations.ts",
+    "src/OwnerIdentity.ts",
+    "src/PlanInputStore.ts",
+    "src/PlanMergeStore.ts",
+    "src/PlanScheduler.ts",
+    "src/Reconciliation.ts",
+    "src/ReplayOnly.ts",
+    "src/Retention.ts",
+    "src/RunCatalogRead.ts",
+    "src/RunChangeFeed.ts",
+    "src/RunInspection.ts",
+    "src/RunState.ts",
+    "src/Selection.ts",
+    "src/SelectionStore.ts",
+    "src/StepBoundary.ts",
+    "src/StepCacheFold.ts",
+    "src/StepLogs.ts",
+    "src/StepSandbox.ts",
+    "src/WakeBus.ts",
+    "src/WorkspaceSandbox.ts",
+    "src/index.ts",
+    "src/internal",
+    "src/migrations",
+    "src/test",
+    "test/CachePolicyFixtures.ts",
+    "test/ChildProcesses.ts",
+    "test/Clocks.ts",
+    "test/ExecuteAndDrain.ts",
+    "test/ExecuteUntilParked.ts",
+    "test/ExecutionSnapshotFixture.ts",
+    "test/HostPath.ts",
+    "test/LeaseReclaimProcess.ts",
+    "test/PlanSchedulerReference.ts",
+    "test/ReclaimedAttemptProcess.ts",
+    "test/RuntimeGraphBenchmark.ts",
+    "test/SchedulerDifferentialHarness.ts",
+    "test/Sha256.ts",
+    "test/TempDirectory.ts",
+    "test/Win32Host.ts",
+    "test/contract",
+    "test/fixtures",
+    "vitest.config.ts"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

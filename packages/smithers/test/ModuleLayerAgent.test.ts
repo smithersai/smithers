@@ -7,7 +7,6 @@ import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import * as Model from "@smthrs/model/Model"
@@ -20,7 +19,7 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 
 const root = fileURLToPath(new URL("./fixtures/module-layer-agent", import.meta.url))
-const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
+const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)
 
 describe("a discovered AgentAction implementation", () => {
   it("resolves its declared seat through the existing host and returns structured output", async () => {

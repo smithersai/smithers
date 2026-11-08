@@ -175,6 +175,23 @@ describe("POST /api/terminals", () => {
     expect(ids(await terminalRows(runtime, elsewhere.branchId))).toEqual([mineElsewhere])
   })
 
+  test("a lost shell's stale open row is recovered through a new open, preserving the other person's terminal", async () => {
+    const branch = await tracked(runtime, REPO, "feature/x")
+    const stale = crypto.randomUUID()
+    const theirs = crypto.randomUUID()
+    await terminal(runtime, { id: stale, branchId: branch.branchId, ownerId: "person-member", status: "open" })
+    await terminal(runtime, { id: theirs, branchId: branch.branchId, ownerId: "person-other", status: "open" })
+    const h = await open()
+    // Fault injection at the existing Effect service: this person's shell no longer exists.
+    h.sockets.alive = false
+    const next = request(branch.branchId)
+    expect(await json(await post(h, next))).toEqual([202, { terminalId: next.terminalId }])
+    expect(ids(await terminalRows(runtime, branch.branchId)).sort()).toEqual([next.terminalId, theirs].sort())
+    expect(h.starts.map((start) => start.executionId)).toEqual([openExecutionId(next.terminalId)])
+    expect(h.only("terminal.open").annotations).toMatchObject({ recoveredTerminalId: stale, status: 202 })
+    expect(h.count(Terminals.recoveries, {})).toBe(1)
+  })
+
   test("an open stuck past its deadline is settled failed by the next open, which is admitted", async () => {
     const branch = await tracked(runtime, REPO, "feature/x")
     const stuck = crypto.randomUUID()

@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { executeAndDrain } from "./ExecuteAndDrain.ts"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
 /**
@@ -20,7 +21,6 @@ import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
  * (`reference/temporal/service/history/workflow/transaction_impl.go`).
  */
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { DurableWriter } from "@smthrs/database"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { DurableClock, Flow, FlowRuntime } from "@smthrs/flow"
@@ -32,6 +32,7 @@ import { AttemptStore, Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -87,7 +88,11 @@ const services = Layer.mergeAll(
   DurableEngineState.layer
 ).pipe(Layer.provideMerge(migratedDatabase), Layer.merge(StepBoundary.layerTest()), Layer.merge(jj))
 
-type Services = Layer.Success<typeof services> | TestClock.TestClock | Crypto.Crypto | Scope.Scope
+type Services =
+  | Layer.Success<typeof services>
+  | TestClock.TestClock
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
+  | Scope.Scope
 
 const run = <A, E>(effect: Effect.Effect<A, E, Services>) =>
   withCrypto(Effect.scoped(effect).pipe(Effect.provide(services), Effect.provide(TestClock.layer())))

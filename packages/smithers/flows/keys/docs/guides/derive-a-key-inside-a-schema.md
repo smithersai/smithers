@@ -29,7 +29,7 @@ const program = keyOf({ domain: "docs/schema", version: 1, target: "web" }).pipe
 )
 ```
 
-The result is a `KeyV1`, and the effect requires `Crypto.Crypto` exactly as
+The result is a `KeyV1`, and the effect requires `EffectDigest.Digest` exactly as
 `deriveKey` does.
 
 ## Chain it after another decode

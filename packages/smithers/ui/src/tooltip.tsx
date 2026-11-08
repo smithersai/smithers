@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import type { ComponentProps } from "react";
 import { Tooltip as TooltipPrimitive } from "radix-ui";
-import { cn } from "./cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "./styles";
 
 /**

@@ -37,6 +37,8 @@ import { commitmentSearch } from "./features/issues/lifecycle"
 import { workSearch } from "./features/issues/workView"
 import { ActionRunScreen } from "./screens/actions/ActionRunScreen"
 import { ActionsScreen } from "./screens/actions/ActionsScreen"
+import { IssuesPendingScreen } from "./screens/issues/IssuesPendingScreen"
+import { IssuePendingScreen } from "./screens/issues/IssuePendingScreen"
 import { IssuesScreen } from "./screens/issues/IssuesScreen"
 import { NewIssueScreen } from "./screens/issues/NewIssueScreen"
 import { Landing } from "./screens/landing/Landing"
@@ -45,6 +47,7 @@ import { RepoHomeScreen } from "./screens/repo/RepoHomeScreen"
 import { BranchesScreen } from "./screens/repo/BranchesScreen"
 import { RepoPendingScreen } from "./screens/repo/RepoPendingScreen"
 import { RepoScreen } from "./screens/repo/RepoScreen"
+import { repoGated } from "./features/repo/components/RepoGate"
 import { Root } from "./screens/root/Root"
 import { RouteNotFound } from "./screens/root/RouteNotFound"
 import { RouteError } from "./screens/root/RouteError"
@@ -120,6 +123,32 @@ interface Load {
 }
 
 /**
+ * How long a navigation waits before its route's pending screen replaces the page shown: the router's own default.
+ * Decision 0020 keeps the previous page until the next is ready, and a hovered link's warm usually makes that quick.
+ */
+export const PENDING_MS = 1_000
+
+/** How long a pending screen, once shown, stays at least: the router's own default, so it never flashes. */
+export const PENDING_MIN_MS = 500
+
+/**
+ * The page's first load has no previous page to keep: a route whose pending screen is no loading state (the issues
+ * list's: its search box beside the first paint's rows) shows it as soon as the app renders, so a cold issues list
+ * takes a search at once instead of seconds later, when its route resolves (proof (a), browserListSearchMs). Once a
+ * load resolves, `PENDING_MS` and `PENDING_MIN_MS` apply.
+ */
+export const FIRST_LOAD_PENDING_MS = 0
+
+/** On the first load the pending screen stands in for nothing, so a page that loaded replaces it at once. */
+export const FIRST_LOAD_PENDING_MIN_MS = 0
+
+/**
+ * A route whose pending screen is a loading state (a skeleton, `aria-busy`): it keeps the router's usual wait on the
+ * first load too, so a cold path that loads within it never paints one (e2e/fixtures.ts `watchForSpinners`).
+ */
+const LOADING_PENDING = { pendingMs: PENDING_MS, pendingMinMs: PENDING_MIN_MS } as const
+
+/**
  * Every route opens what it shows in `beforeLoad`, never a loader: the router runs `beforeLoad` afresh for each
  * navigation and each preload, while a navigation adopts a loader a preload left in flight (router-core's flights), so
  * a loader can't tell a preload from the click that follows it. A preload only warms what the page shows; a navigation
@@ -145,9 +174,13 @@ const enterRepo = (
   enter(load, async () => {
     // A navigation asks once, as it starts, beside the page's warm reads; a warm that needs the role joins this read.
     if (!load.preload) context.repo.actions.role(params.owner, params.repo, staysInRepository(shownPath(context), params))
-    await warm()
-    const canonical = await context.repo.actions.canonicalName(params.owner, params.repo)
-    const fileAtTree = load.location.pathname.split("/")[3] === "tree" && await context.repo.actions.fileAtTree(params)
+    // The checks run beside the warm, never after it: each waits up to `pageWait` on its own, and in turn they added up
+    // (a cold issues list showed its search box a second later than its warm allowed).
+    const [, canonical, fileAtTree] = await Promise.all([
+      warm(),
+      context.repo.actions.canonicalName(params.owner, params.repo),
+      load.location.pathname.split("/")[3] === "tree" && context.repo.actions.fileAtTree(params),
+    ])
     const href = canonicalRepoHref(load.location, params, canonical, fileAtTree)
     if (href !== undefined) throw redirect({ href, replace: true })
   }, open)
@@ -233,6 +266,7 @@ const newFlowRoute = createRoute({
   path: ROUTE_PATHS.newFlow,
   component: NewFlowScreen,
   pendingComponent: FlowPendingScreen,
+  ...LOADING_PENDING,
   validateSearch: (search: Record<string, unknown>): { readonly name?: string } =>
     typeof search.name === "string" && search.name !== "" ? { name: search.name } : {},
   beforeLoad: (load) => enter(load, local, () => load.context.flows.actions.openNew(load.search.name)),
@@ -244,6 +278,7 @@ const draftRoute = createRoute({
   path: ROUTE_PATHS.draft,
   component: DraftScreen,
   pendingComponent: FlowPendingScreen,
+  ...LOADING_PENDING,
   beforeLoad: (load) => enter(load, local, () => load.context.flows.actions.openDraft(load.params.draftId)),
 })
 
@@ -253,6 +288,7 @@ const codeRoute = createRoute({
   path: ROUTE_PATHS.code,
   component: CodeScreen,
   pendingComponent: FlowPendingScreen,
+  ...LOADING_PENDING,
   beforeLoad: (load) => enter(load, local, () => load.context.flows.actions.openCode(load.params.name)),
 })
 
@@ -304,7 +340,7 @@ const repoPluginRoute = (path: (typeof ROUTE_PATHS)["repoPluginIndex" | "repoPlu
   createRoute({
     getParentRoute: () => rootRoute,
     path,
-    component: RepoPluginScreen,
+    component: repoGated(RepoPluginScreen),
     beforeLoad: ({ context, params, ...load }) => {
       const view = context.plugins.actions.viewAt(params.plugin, (params as { readonly _splat?: string })._splat ?? "", "repository")
       if (view === undefined) throw notFound()
@@ -334,7 +370,7 @@ const runRoute = createRoute({
 const repoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.repo,
-  component: RepoHomeScreen,
+  component: repoGated(RepoHomeScreen),
   validateSearch: lineSearch,
   beforeLoad: ({ context, params, search, ...load }) =>
     enterRepo(
@@ -357,7 +393,7 @@ const repoRoute = createRoute({
 const branchesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.branches,
-  component: BranchesScreen,
+  component: repoGated(BranchesScreen),
   beforeLoad: ({ context, params, ...load }) =>
     enterRepo(context, params, load, () => context.repo.actions.warmRoute("tree", params, {}), () =>
       context.repo.actions.openRoute("tree", params, {})),
@@ -372,8 +408,9 @@ const branchesRoute = createRoute({
 const treeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.tree,
-  component: TreeScreen,
+  component: repoGated(TreeScreen),
   pendingComponent: BranchPendingScreen,
+  ...LOADING_PENDING,
   validateSearch: branchSearch,
   beforeLoad: ({ context, params, search, ...load }) =>
     enterRepo(context, params, load, () => Promise.all([context.repo.actions.warmRoute("tree", params, { L: search.L }), context.home.actions.warm(params.owner, params.repo)]), () =>
@@ -397,8 +434,9 @@ const treeRoute = createRoute({
 const blobRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.blob,
-  component: BlobScreen,
+  component: repoGated(BlobScreen),
   pendingComponent: BranchPendingScreen,
+  ...LOADING_PENDING,
   validateSearch: lineSearch,
   beforeLoad: ({ context, params, search, ...load }) =>
     enterRepo(context, params, load, () => context.repo.actions.warmRoute("blob", params, search), () =>
@@ -436,7 +474,7 @@ const leaveWorkspace = (context: RouterContext) => {
 const rawRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.raw,
-  component: RepoScreen,
+  component: repoGated(RepoScreen),
   // Nothing to warm: a preload would load the raw file in place of the app.
   beforeLoad: ({ context, params, ...load }) =>
     enterRepo(context, params, load, local, async () => {
@@ -478,14 +516,14 @@ const docsBeforeLoad = (
 const docsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.docs,
-  component: DocsScreen,
+  component: repoGated(DocsScreen),
   beforeLoad: docsBeforeLoad,
 })
 
 const docsPageRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.docsPage,
-  component: DocsScreen,
+  component: repoGated(DocsScreen),
   beforeLoad: docsBeforeLoad,
 })
 
@@ -496,10 +534,12 @@ const docsPageRoute = createRoute({
 const issuesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.issues,
-  component: IssuesScreen,
+  component: repoGated(IssuesScreen),
+  pendingComponent: IssuesPendingScreen,
   validateSearch: (search) => ({ ...commitmentSearch(search), ...listSearch(search), ...workSearch(search) }),
-  beforeLoad: ({ context, params, ...load }) =>
-    enterRepository(context, params,
+  beforeLoad: ({ context, params, search, ...load }) => {
+    if (!load.preload) context.issues.actions.restoreSearch(params.owner, params.repo, search.q)
+    return enterRepository(context, params,
       load,
       () => Promise.all([context.issues.actions.warm(params.owner, params.repo), context.todos.actions.warm(params.owner, params.repo)]),
       () =>
@@ -507,14 +547,15 @@ const issuesRoute = createRoute({
           context.issues.actions.open(params.owner, params.repo),
           context.todos.actions.open(params.owner, params.repo),
         ]),
-    ),
+    )
+  },
 })
 
 /** `/$owner/$repo/issues/new`: the new-issue form. */
 const newIssueRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.newIssue,
-  component: NewIssueScreen,
+  component: repoGated(NewIssueScreen),
   validateSearch: (search: Record<string, unknown>): { readonly write?: string } =>
     typeof search.write === "string" && /^[0-9a-f-]{36}$/i.test(search.write) ? { write: search.write } : {},
   beforeLoad: ({ context, params, search, ...load }) =>
@@ -525,8 +566,8 @@ const newIssueRoute = createRoute({
 const issueRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.issue,
-  component: IssueScreen,
-  pendingComponent: RepoPendingScreen,
+  component: repoGated(IssueScreen),
+  pendingComponent: IssuePendingScreen,
   params: {
     parse: (params) => {
       const number = issueNumberOf(params.number)
@@ -534,8 +575,9 @@ const issueRoute = createRoute({
     },
     stringify: (params) => ({ ...params, number: String(params.number) }),
   },
-  beforeLoad: ({ context, params, ...load }) =>
-    enterRepository(
+  beforeLoad: ({ context, params, ...load }) => {
+    if (!load.preload) context.issues.actions.readIssue(params.owner, params.repo, params.number)
+    return enterRepository(
       context,
       params,
       load,
@@ -545,7 +587,8 @@ const issueRoute = createRoute({
           context.issues.actions.open(params.owner, params.repo, params.number),
           context.todos.actions.open(params.owner, params.repo),
         ]),
-    ),
+    )
+  },
 })
 
 /**
@@ -555,7 +598,7 @@ const issueRoute = createRoute({
 const actionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.actions,
-  component: ActionsScreen,
+  component: repoGated(ActionsScreen),
   beforeLoad: ({ context, params, ...load }) => enterRepository(context, params, load, () => context.runs.actions.openRepoRuns(params.owner, params.repo), local),
   // A Run still answering no longer moves a tab that left (docs/features/actions.md#running-a-flow-by-hand).
   onLeave: ({ context }) => context.runs.actions.closeRepoRuns(),
@@ -565,7 +608,7 @@ const actionsRoute = createRoute({
 const actionRunRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.actionRun,
-  component: ActionRunScreen,
+  component: repoGated(ActionRunScreen),
   validateSearch: runOriginSearch,
   beforeLoad: (load) =>
     enterRepo(load.context, load.params, load, local, () =>
@@ -577,7 +620,7 @@ const actionRunRoute = createRoute({
 const pullsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.pulls,
-  component: PullsScreen,
+  component: repoGated(PullsScreen),
   validateSearch: listSearch,
   beforeLoad: ({ context, params, ...load }) =>
     enterRepository(context, params, load, () => context.pulls.actions.warm(params.owner, params.repo), () => context.pulls.actions.open(params.owner, params.repo)),
@@ -609,7 +652,7 @@ const pluralPullRoute = createRoute({
 const pullRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.pull,
-  component: () => <PullScreen tab="conversation" />,
+  component: repoGated(() => <PullScreen tab="conversation" />),
   params: pullParams,
   beforeLoad: ({ context, params, ...load }) =>
     enterRepository(context, params, load, () => context.pulls.actions.warm(params.owner, params.repo, params.number), () => context.pulls.actions.open(params.owner, params.repo, params.number)),
@@ -619,10 +662,10 @@ const pullRoute = createRoute({
 const pullTabRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.pullTab,
-  component: function PullTab() {
+  component: repoGated(function PullTab() {
     const { tab } = pullTabRoute.useParams()
     return <PullScreen tab={tab} />
-  },
+  }),
   params: {
     parse: (params: { readonly owner: string; readonly repo: string; readonly number: string; readonly tab: string }) => {
       const number = issueNumberOf(params.number)
@@ -656,7 +699,7 @@ const pullTabRoute = createRoute({
 const repoSettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.repoSettings,
-  component: RepoSettingsScreen,
+  component: repoGated(RepoSettingsScreen),
   beforeLoad: ({ context, params, ...load }) =>
     enterRepository(context, params, load, local, () => context.domains.actions.open(params.owner, params.repo)),
 })
@@ -668,7 +711,7 @@ const repoSettingsRoute = createRoute({
 const stackRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.stack,
-  component: StackScreen,
+  component: repoGated(StackScreen),
   validateSearch: (search: Record<string, unknown>): { readonly state?: StackFilter } =>
     stackFilterOf(search.state) === "closed" ? { state: "closed" } : {},
   beforeLoad: ({ context, params, ...load }) =>
@@ -683,7 +726,7 @@ const stackRoute = createRoute({
 const todoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.todo,
-  component: TodoScreen,
+  component: repoGated(TodoScreen),
   params: {
     parse: (params) => {
       const number = todoNumberOf(params.number)
@@ -708,7 +751,7 @@ const todoRoute = createRoute({
 const secretsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.secrets,
-  component: SecretsScreen,
+  component: repoGated(SecretsScreen),
   beforeLoad: ({ context, params, ...load }) =>
     enterRepository(context, params,
       load,
@@ -778,6 +821,7 @@ const routeTree = rootRoute.addChildren([
 ])
 
 /** Builds an app router whose route context always reads this instance's navigation state. */
+
 export const createAppRouter = (options: {
   readonly context?: RouterContext
   readonly history?: RouterHistory
@@ -791,6 +835,8 @@ export const createAppRouter = (options: {
     // A link's hover or focus preloads its page: its route's `beforeLoad` warms what it shows (`enter`).
     defaultPreload: "intent",
     defaultPreloadDelay: PRELOAD_DELAY_MS,
+    defaultPendingMs: FIRST_LOAD_PENDING_MS,
+    defaultPendingMinMs: FIRST_LOAD_PENDING_MIN_MS,
     // main.tsx's `RouterProvider` gives the real one before the first load.
     context: {
       repo: undefined!,
@@ -811,6 +857,10 @@ export const createAppRouter = (options: {
     ...options,
   })
   appRouter.update({ context: { ...appRouter.options.context, router: appRouter } })
+  const firstResolved = appRouter.subscribe("onResolved", () => {
+    firstResolved()
+    appRouter.update({ ...appRouter.options, defaultPendingMs: PENDING_MS, defaultPendingMinMs: PENDING_MIN_MS })
+  })
   return appRouter
 }
 

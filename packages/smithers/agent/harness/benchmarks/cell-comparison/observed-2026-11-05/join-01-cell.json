@@ -1,0 +1,1717 @@
+{
+  "task": "join-01",
+  "seed": 184601,
+  "family": "join",
+  "arm": "cell",
+  "taskHash": "9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2",
+  "model": "gpt-6-luna",
+  "cohort": "codex-proton",
+  "maxTurns": 6,
+  "executionId": "cell-comparison/9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2/31/cell/2026-11-05T14:22:23.672Z",
+  "startedAt": "2026-11-05T14:34:14.141Z",
+  "elapsedMs": 12546,
+  "outcome": "correct",
+  "turns": [
+    {
+      "turn": 0,
+      "request": {
+        "modelId": "gpt-6-luna",
+        "system": [
+          {
+            "type": "text",
+            "text": "Solve the task using JavaScript in a persistent QuickJS realm. Reply only with executable JavaScript, without Markdown. No filesystem, imports, Date or Math.random. Read the input with await ctx.call(\"records\", {}). It returns {records, owners}. Print intermediate data with console.log for the next turn. Submit the requested JSON object with ctx.done(object). Top-level declarations persist across turns. You have at most six turns."
+          }
+        ],
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Join records.group to owners. For each owner sum value of active records only. Return {\"Ada\":n,\"Bo\":n,\"Cy\":n}, including zero totals."
+              }
+            ]
+          }
+        ],
+        "tools": [],
+        "params": {
+          "reasoningEffort": "low"
+        },
+        "cacheKey": "cell-comparison/9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2/31/cell/2026-11-05T14:22:23.672Z"
+      },
+      "events": [
+        {
+          "type": "thinking-start",
+          "id": "rs_0645ab1ab8a3ef4d016aec93e7431087d2a39be6c2bdc4f7cc"
+        },
+        {
+          "type": "thinking-delta",
+          "id": "rs_0645ab1ab8a3ef4d016aec93e7431087d2a39be6c2bdc4f7cc",
+          "text": "**Invoking records**"
+        },
+        {
+          "type": "thinking-end",
+          "id": "rs_0645ab1ab8a3ef4d016aec93e7431087d2a39be6c2bdc4f7cc"
+        },
+        {
+          "type": "thinking-start",
+          "id": "rs_0645ab1ab8a3ef4d016aec93e7431087d2a39be6c2bdc4f7cc:encrypted",
+          "signature": "{\"encrypted_content\":\"gAAAAABq7JPoZKg8VaIikF-NeyxZh6rugM4L4Y7BDtTg5Db5PcCwDjvEGb-qjOFe2ICO0virFvlLqnlCGEQoNbmGvPqsEblxJyOXQv1kwdiZL-eFBNK6iYXu_uvZrGYnnFNFk-baS7BajPXeI9_ZDTCILGFfirCbAbfp7Hx0cqLNvyO8ve_qq9lXgp_ZzX018S88kPO_RRi8NJ8s6IpbxcUMK-1NtFDNOZNRuTnepggyLic14LW7K890eOGMdfaTQdFnHGNVKEt-N5inxy08hjEv8sw_Xl9IeUru4wfGTvErWTviJrnrysmF5wzSWuDRSJ3dp65byV4mBhPCWXolsOslsY6SX3v2l5mFfP3ePfGjVxLh9iEJh-sAvs9FgdqQzBq3VM4G8zuzgZCT4BsKBpMgGBf6KyckrUGf8T0MOjaD0CSNAStalJd1eLeGBdIReJwu_1bCGsm52l9z85D0VQPRumK85teF3g-0zmhOuj6PhMxTfoLxKq9glsbuN11bKsEOlMKa7jmCuT4VOeIfVHQ2NzwRuhWiwZAu4V7-9Y9SzAd0m3hQ5iKTYZeyFFcX18jRdbjSYcq_f1TCq7wl1EkGX0T1bOMpD-LSssj5S6m1AkBLC1xR0WZh_A2AXudyRn2KPKvCbD9-T8nW4qObkCmrGzENoo6HGInfU8lHyTECumJ32-jYM1vHxZxGPRN1OzNtjNpyKdYE0_BoQEQBDd8dgrg4tLZ-hXnTA04Teue-g51O8iQ9EyugfZ8t01caV9DPYhk1VwVvypFO7IYGT4Ts-hPzBHtKNoSIVBOdgoO8USZYEsZ9JnLw21I-U5k8atZZmUFEx1qt_yaQMRRQlclbRttoU-_RFuEpnxz9Kmb6ohoG-ubKVabi-iT_eKIUCchJmNw8Jiewipz2W_rmhDrfuPusCQvME2ISoP-WSqcbm6oPkXA9nt2q_QkrZtCZx98u6up0GGZPIrfelVXSZrekeEz7K5cssRAvy_g73tX6BnfzzklcSvoeed51yAxjflYpFkYQoipL59KU0HjJ4Fn15p8UjmICcNshOQJMqkHZxRTcaI482nDT4uQMsOqPfM5zYbGZMVCdhjZoKHHZJ4cIoODSyaHAzdXoiGB82FhhgHqznmBvA7IhcDnXjSiPLKDTPpPKsloy5R_lyS1FWw5d6lXq24rteVRaOFCCmnu9Z5GH5-T3W_tNz_-8QFM28gGcZCgV19-qKKkmW9_-qL3Xhx6ppO4nwB1FpVLKmedjZstAO1ux-dmE_yvnbXz4ho_5ECZd0w0ReyqewDkaSvPoDB9-9sEI-DaxmEib4slIPpLEAWIpRslzSV0Y8FP2_9AILpaxbUgriRjVjC3reGeGYVl9lYw0PbAEgrsX29twjMMc7BnWyGCN6zW-zXINqvfebx44Q_rk3zqILzRp1_7ObR4sAtCjHeQuoN_eb76-6lwViiWv8FEk2V5F3iDWNXPPnLirEWWgoSrLSltY4E8KqQB2N2D3QP06hxsqmjlqXfcE96BHX6sckpCbY1Mdo96LLVRyU99asrAE1zrzKtSJ7a04vKkkCxlmIgH6uNjBm2P8k3igDWmyfLzEDcsE56SDDscONNEsJG9rwdtxZeIWqzkceY-LVw==\",\"id\":\"rs_0645ab1ab8a3ef4d016aec93e7431087d2a39be6c2bdc4f7cc\",\"summary\":[{\"text\":\"**Invoking records**\",\"type\":\"summary_text\"}],\"type\":\"reasoning\"}"
+        },
+        {
+          "type": "thinking-end",
+          "id": "rs_0645ab1ab8a3ef4d016aec93e7431087d2a39be6c2bdc4f7cc:encrypted"
+        },
+        {
+          "type": "text-start",
+          "id": "msg_0645ab1ab8a3ef4d016aec93e8c6b487d2abbf7b942315a24f"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93e8c6b487d2abbf7b942315a24f",
+          "text": "const"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93e8c6b487d2abbf7b942315a24f",
+          "text": " data"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93e8c6b487d2abbf7b942315a24f",
+          "text": " ="
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93e8c6b487d2abbf7b942315a24f",
+          "text": " await"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93e8c6b487d2abbf7b942315a24f",
+          "text": " ctx"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93e8c6b487d2abbf7b942315a24f",
+          "text": ".call"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93e8c6b487d2abbf7b942315a24f",
+          "text": "(\""
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93e8c6b487d2abbf7b942315a24f",
+          "text": "records"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93e8c6b487d2abbf7b942315a24f",
+          "text": "\","
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93e8c6b487d2abbf7b942315a24f",
+          "text": " {});\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93e8c6b487d2abbf7b942315a24f",
+          "text": "console"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93e8c6b487d2abbf7b942315a24f",
+          "text": ".log"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93e8c6b487d2abbf7b942315a24f",
+          "text": "(data"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93e8c6b487d2abbf7b942315a24f",
+          "text": ");\n"
+        },
+        {
+          "type": "text-end",
+          "id": "msg_0645ab1ab8a3ef4d016aec93e8c6b487d2abbf7b942315a24f"
+        },
+        {
+          "type": "thinking-start",
+          "id": "rs_0645ab1ab8a3ef4d016aec93e8c85c87d293579f00a7b9c51b:encrypted",
+          "signature": "{\"encrypted_content\":\"gAAAAABq7JPsfSpF38-OH7rHoSIymP9Nqsekjh69vYEAc7sgxb9p9k2RizkQt75Ucwhl9MBWI2Kn_XpYHZpBTxLEDN0gyKSdQbnuBmGKW40THg_Finwv4aVl2hfkFrxfREwSO_MCX36EgFFotxZbdckzMMjHCAa71mIIGTRsYrug6eFZmpgrhi-l9e1VBNbYbjoZ3LMkbDwkxrGdltQ9UYe_Qhbp6JhT-4ZxQuGARvcxXKnOxvjoB_M7jzuRGj4f0pbJVSsWGDa-Sqzcql_pgLa1zppogAmDbPV1GbL1dya1poEWtZp0E9VF27FarIhCTAgKKyHKa7-wuqkdH9wkMGePyBkbiqwltopXkB4mmfgzW-uUpFYn8pMLaV9SMA2kDknbV1AluQB_X3ER7foK-TNYrVBX9JqITAiSXx3Q3z3yOQExjVzE3X9EvxA1nx0wtTI1tx4R4KHF3fAL5fC8fc0SFRzBwWsrvTNUqXy-Hp90GaDdRRbxgD8ozaKx-lxGnfZtKq7ByeS7kZvqdRFXTY70x2VnepmIDqMi7SBM8kwAEMuymEXAnlBzqNJfvMQyX-QKuD7vM04-mIkPJyTMsKNIyD5Ivc3Uo0LHd7lpKki7v50UHyLxWh1mGtHA9QGLiDf9LibGP87JZNQyegsgglngCcspIBPvI8y1cmijCa8WADsKSjGJ6NqHOfCGkbAOYD07XYmssj47WG7pyWBQ1m-FZk6aDo1zUg8SbFTL6fDdzErEH3OBZv0Wq3S1dbz5gM_8TUZb9dd3kNsv_h4hY6b75AUydkGujzV2-dYOAe_Srahd0FJDq5PzUHSWELzc8itouicrAq8JFJZq2CNQnoQFaC27zj9ED-K87hUPtYq8vwXe6B7yG3yMAwxF9SWbdNAZYdOtk-rQQ9l-BvIFBIjjUIdekgdADTvR4AXnJ4W6tADyCNtUhGsEANMQ8yEMYun_8-fTEyzx30Vy0CsU83crzbBJNYEWMUfqQXNBzT-8wJCv4Gj8tW8mpgIaH2SkHOtak2GyHwInuZ_93QGZ_PXtvXcV9qHAH215Fo9jOklQ0lEZhbh3IjH4SH-WInIPl7f-_0pGqoIck4fXF61D-ytZVQ4c-VUpvkrDCOnGjxwOstsKVYXBUHM0-YPBKVNBC4VEsnanK8p4n1e0hYGGkcCokRnSXZlVLjdLUCKj7pxmYTg6VxT5xdIp0uzN9EWSSAZ6TXnKZbwMq_UFX988FeFkmkigmtVtZi_26sdWzb92GsZz7xSuZzvSM6I90A8d0YWJEeiXpwVAoztoTM8-cXS6wArRi8-MhKI4h6Q0kf-4Lwr85_RiVDSt67_IecNQbv9L2gcLqQw2LdGwmVCkjj6DjPzwvEoKXB43D96SfDQI5atg0HbiEAmzgSweBqAOylNt7VsWCDC1YyYRJ4DVJR26e5BdeE5Tg7gSeK9zfko2DzonmVwKZVPPwLfapAL8K-fa_rqILVpiQuV2KOxyL8guHaKloqKQvrwFyA-Cj3tRp_NbZPX5vUUFp7MhbXLZlpm-D-_CELcB7xtpJmITM03SMdfcPYC_ZvINZGkA_HaOpo6qfuTd0i7UgUCMheEGez6YYqvEYYhqddTFRnnhtpNNfyU3rhr9SASKITWlVwfhwLXEF8mrKEMcAZVwhgF_2HyU6_iPemxLi_cEGLNAp6i7bhd8nhxZYPYR6TbuTvUog8kuTy9_Rgi9yIUMI83PYT260CWj37NDA5tYRFFV45Mi07GgJnvJRQ==\",\"id\":\"rs_0645ab1ab8a3ef4d016aec93e8c85c87d293579f00a7b9c51b\",\"summary\":[],\"type\":\"reasoning\"}"
+        },
+        {
+          "type": "thinking-end",
+          "id": "rs_0645ab1ab8a3ef4d016aec93e8c85c87d293579f00a7b9c51b:encrypted"
+        },
+        {
+          "type": "text-start",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "const"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " {"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " records"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": ","
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " owners"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " }"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " ="
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " await"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " ctx"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": ".call"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "(\""
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "records"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "\","
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " {});\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "const"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " totals"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " ="
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " Object"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": ".from"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "Entries"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "("
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "owners"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": ".map"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "(owner"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " =>"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " ["
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "owner"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": ","
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " "
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "0"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "]));\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "for"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " ("
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "const"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " record"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " of"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " records"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": ")"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " {\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " "
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " if"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " ("
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "record"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": ".active"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " &&"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " Object"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": ".has"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "Own"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "(t"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "ot"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "als"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": ","
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " record"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": ".group"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "))"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " {\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "   "
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " totals"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "["
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "record"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": ".group"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "]"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " +="
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " record"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": ".value"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": ";\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " "
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": " }\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "}\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "ctx"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": ".done"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "(t"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "ot"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": "als"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303",
+          "text": ");"
+        },
+        {
+          "type": "text-end",
+          "id": "msg_0645ab1ab8a3ef4d016aec93ec016887d2b190e221c2184303"
+        },
+        {
+          "type": "usage",
+          "inputTokens": 130,
+          "outputTokens": 130,
+          "reasoningTokens": 28,
+          "cachedInputTokens": 0,
+          "totalTokens": 260
+        },
+        {
+          "type": "settle",
+          "stopReason": "stop",
+          "responseId": "resp_0645ab1ab8a3ef4d016aec93e68c3887d2b31952fc34e9acb2",
+          "servedTier": "default",
+          "timing": {
+            "startedAt": 1793889254148,
+            "attempts": 1,
+            "requestBytes": 936,
+            "preparedMs": 0,
+            "signedMs": 1,
+            "sentMs": 2,
+            "headersMs": 661,
+            "firstEventMs": 662,
+            "firstThinkingMs": 2644,
+            "firstOutputMs": 2663,
+            "lastOutputMs": 5877,
+            "completedMs": 6717,
+            "closedMs": 6717
+          }
+        }
+      ],
+      "usage": {
+        "inputTokens": 130,
+        "outputTokens": 130,
+        "reasoningTokens": 28,
+        "cachedInputTokens": 0,
+        "totalTokens": 260
+      },
+      "cost": {
+        "costUsd": 0.000078,
+        "costSource": "estimated"
+      },
+      "elapsedMs": 6729,
+      "replayed": false,
+      "frame": {
+        "outcome": {
+          "_tag": "raised",
+          "name": "TypeError",
+          "message": "not a function"
+        },
+        "prints": "{\"owners\":{\"a\":\"Ada\",\"b\":\"Bo\",\"c\":\"Cy\"}}\nrecords (18):\nid | sku | revision | group | value | active | tags\nr00 | s0 | 0 | b | 27 | false |  BLUE,green \nr01 | s1 | 0 | c | -1 | false | red,RED\nr02 | s2 | 0 | a | 47 | false | red,RED\nr03 | s3 | 0 | c | 13 | false | Red, blue\nr04 | s4 | 0 | b | 55 | false |  green, yellow\nr05 | s5 | 0 | a | -12 | true |  BLUE,green \nr06 | s0 | 1 | b | -17 | false | Red, blue\nr07 | s1 | 1 | c | 5 | false | \nr08 | s2 | 1 | b | -3 | false | red,RED\nr09 | s3 | 1 | a | 9 | false |  BLUE,green \nr10 | s4 | 1 | a | 82 | false | \nr11 | s5 | 1 | a | 67 | true |  BLUE,green \nr12 | s0 | 2 | a | 52 | true |  green, yellow\nr13 | s1 | 2 | a | 37 | true | \nr14 | s2 | 2 | c | 1 | false |  BLUE,green \nr15 | s3 | 2 | a | 84 | false |  green, yellow\nr16 | s4 | 2 | b | 44 | true |  BLUE,green \nr17 | s5 | 2 | a | 41 | false | red,RED",
+        "bindings": [
+          {
+            "name": "data",
+            "type": "object",
+            "size": "2 keys"
+          },
+          {
+            "name": "records",
+            "type": "array",
+            "size": "18 items"
+          },
+          {
+            "name": "owners",
+            "type": "object",
+            "size": "3 keys"
+          },
+          {
+            "name": "totals",
+            "type": "unset",
+            "size": ""
+          }
+        ]
+      }
+    },
+    {
+      "turn": 1,
+      "request": {
+        "modelId": "gpt-6-luna",
+        "system": [
+          {
+            "type": "text",
+            "text": "Solve the task using JavaScript in a persistent QuickJS realm. Reply only with executable JavaScript, without Markdown. No filesystem, imports, Date or Math.random. Read the input with await ctx.call(\"records\", {}). It returns {records, owners}. Print intermediate data with console.log for the next turn. Submit the requested JSON object with ctx.done(object). Top-level declarations persist across turns. You have at most six turns."
+          }
+        ],
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Join records.group to owners. For each owner sum value of active records only. Return {\"Ada\":n,\"Bo\":n,\"Cy\":n}, including zero totals."
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "text": "**Invoking records**"
+              },
+              {
+                "type": "thinking",
+                "text": "",
+                "signature": "{\"encrypted_content\":\"gAAAAABq7JPoZKg8VaIikF-NeyxZh6rugM4L4Y7BDtTg5Db5PcCwDjvEGb-qjOFe2ICO0virFvlLqnlCGEQoNbmGvPqsEblxJyOXQv1kwdiZL-eFBNK6iYXu_uvZrGYnnFNFk-baS7BajPXeI9_ZDTCILGFfirCbAbfp7Hx0cqLNvyO8ve_qq9lXgp_ZzX018S88kPO_RRi8NJ8s6IpbxcUMK-1NtFDNOZNRuTnepggyLic14LW7K890eOGMdfaTQdFnHGNVKEt-N5inxy08hjEv8sw_Xl9IeUru4wfGTvErWTviJrnrysmF5wzSWuDRSJ3dp65byV4mBhPCWXolsOslsY6SX3v2l5mFfP3ePfGjVxLh9iEJh-sAvs9FgdqQzBq3VM4G8zuzgZCT4BsKBpMgGBf6KyckrUGf8T0MOjaD0CSNAStalJd1eLeGBdIReJwu_1bCGsm52l9z85D0VQPRumK85teF3g-0zmhOuj6PhMxTfoLxKq9glsbuN11bKsEOlMKa7jmCuT4VOeIfVHQ2NzwRuhWiwZAu4V7-9Y9SzAd0m3hQ5iKTYZeyFFcX18jRdbjSYcq_f1TCq7wl1EkGX0T1bOMpD-LSssj5S6m1AkBLC1xR0WZh_A2AXudyRn2KPKvCbD9-T8nW4qObkCmrGzENoo6HGInfU8lHyTECumJ32-jYM1vHxZxGPRN1OzNtjNpyKdYE0_BoQEQBDd8dgrg4tLZ-hXnTA04Teue-g51O8iQ9EyugfZ8t01caV9DPYhk1VwVvypFO7IYGT4Ts-hPzBHtKNoSIVBOdgoO8USZYEsZ9JnLw21I-U5k8atZZmUFEx1qt_yaQMRRQlclbRttoU-_RFuEpnxz9Kmb6ohoG-ubKVabi-iT_eKIUCchJmNw8Jiewipz2W_rmhDrfuPusCQvME2ISoP-WSqcbm6oPkXA9nt2q_QkrZtCZx98u6up0GGZPIrfelVXSZrekeEz7K5cssRAvy_g73tX6BnfzzklcSvoeed51yAxjflYpFkYQoipL59KU0HjJ4Fn15p8UjmICcNshOQJMqkHZxRTcaI482nDT4uQMsOqPfM5zYbGZMVCdhjZoKHHZJ4cIoODSyaHAzdXoiGB82FhhgHqznmBvA7IhcDnXjSiPLKDTPpPKsloy5R_lyS1FWw5d6lXq24rteVRaOFCCmnu9Z5GH5-T3W_tNz_-8QFM28gGcZCgV19-qKKkmW9_-qL3Xhx6ppO4nwB1FpVLKmedjZstAO1ux-dmE_yvnbXz4ho_5ECZd0w0ReyqewDkaSvPoDB9-9sEI-DaxmEib4slIPpLEAWIpRslzSV0Y8FP2_9AILpaxbUgriRjVjC3reGeGYVl9lYw0PbAEgrsX29twjMMc7BnWyGCN6zW-zXINqvfebx44Q_rk3zqILzRp1_7ObR4sAtCjHeQuoN_eb76-6lwViiWv8FEk2V5F3iDWNXPPnLirEWWgoSrLSltY4E8KqQB2N2D3QP06hxsqmjlqXfcE96BHX6sckpCbY1Mdo96LLVRyU99asrAE1zrzKtSJ7a04vKkkCxlmIgH6uNjBm2P8k3igDWmyfLzEDcsE56SDDscONNEsJG9rwdtxZeIWqzkceY-LVw==\",\"id\":\"rs_0645ab1ab8a3ef4d016aec93e7431087d2a39be6c2bdc4f7cc\",\"summary\":[{\"text\":\"**Invoking records**\",\"type\":\"summary_text\"}],\"type\":\"reasoning\"}"
+              },
+              {
+                "type": "text",
+                "text": "const data = await ctx.call(\"records\", {});\nconsole.log(data);\n"
+              },
+              {
+                "type": "thinking",
+                "text": "",
+                "signature": "{\"encrypted_content\":\"gAAAAABq7JPsfSpF38-OH7rHoSIymP9Nqsekjh69vYEAc7sgxb9p9k2RizkQt75Ucwhl9MBWI2Kn_XpYHZpBTxLEDN0gyKSdQbnuBmGKW40THg_Finwv4aVl2hfkFrxfREwSO_MCX36EgFFotxZbdckzMMjHCAa71mIIGTRsYrug6eFZmpgrhi-l9e1VBNbYbjoZ3LMkbDwkxrGdltQ9UYe_Qhbp6JhT-4ZxQuGARvcxXKnOxvjoB_M7jzuRGj4f0pbJVSsWGDa-Sqzcql_pgLa1zppogAmDbPV1GbL1dya1poEWtZp0E9VF27FarIhCTAgKKyHKa7-wuqkdH9wkMGePyBkbiqwltopXkB4mmfgzW-uUpFYn8pMLaV9SMA2kDknbV1AluQB_X3ER7foK-TNYrVBX9JqITAiSXx3Q3z3yOQExjVzE3X9EvxA1nx0wtTI1tx4R4KHF3fAL5fC8fc0SFRzBwWsrvTNUqXy-Hp90GaDdRRbxgD8ozaKx-lxGnfZtKq7ByeS7kZvqdRFXTY70x2VnepmIDqMi7SBM8kwAEMuymEXAnlBzqNJfvMQyX-QKuD7vM04-mIkPJyTMsKNIyD5Ivc3Uo0LHd7lpKki7v50UHyLxWh1mGtHA9QGLiDf9LibGP87JZNQyegsgglngCcspIBPvI8y1cmijCa8WADsKSjGJ6NqHOfCGkbAOYD07XYmssj47WG7pyWBQ1m-FZk6aDo1zUg8SbFTL6fDdzErEH3OBZv0Wq3S1dbz5gM_8TUZb9dd3kNsv_h4hY6b75AUydkGujzV2-dYOAe_Srahd0FJDq5PzUHSWELzc8itouicrAq8JFJZq2CNQnoQFaC27zj9ED-K87hUPtYq8vwXe6B7yG3yMAwxF9SWbdNAZYdOtk-rQQ9l-BvIFBIjjUIdekgdADTvR4AXnJ4W6tADyCNtUhGsEANMQ8yEMYun_8-fTEyzx30Vy0CsU83crzbBJNYEWMUfqQXNBzT-8wJCv4Gj8tW8mpgIaH2SkHOtak2GyHwInuZ_93QGZ_PXtvXcV9qHAH215Fo9jOklQ0lEZhbh3IjH4SH-WInIPl7f-_0pGqoIck4fXF61D-ytZVQ4c-VUpvkrDCOnGjxwOstsKVYXBUHM0-YPBKVNBC4VEsnanK8p4n1e0hYGGkcCokRnSXZlVLjdLUCKj7pxmYTg6VxT5xdIp0uzN9EWSSAZ6TXnKZbwMq_UFX988FeFkmkigmtVtZi_26sdWzb92GsZz7xSuZzvSM6I90A8d0YWJEeiXpwVAoztoTM8-cXS6wArRi8-MhKI4h6Q0kf-4Lwr85_RiVDSt67_IecNQbv9L2gcLqQw2LdGwmVCkjj6DjPzwvEoKXB43D96SfDQI5atg0HbiEAmzgSweBqAOylNt7VsWCDC1YyYRJ4DVJR26e5BdeE5Tg7gSeK9zfko2DzonmVwKZVPPwLfapAL8K-fa_rqILVpiQuV2KOxyL8guHaKloqKQvrwFyA-Cj3tRp_NbZPX5vUUFp7MhbXLZlpm-D-_CELcB7xtpJmITM03SMdfcPYC_ZvINZGkA_HaOpo6qfuTd0i7UgUCMheEGez6YYqvEYYhqddTFRnnhtpNNfyU3rhr9SASKITWlVwfhwLXEF8mrKEMcAZVwhgF_2HyU6_iPemxLi_cEGLNAp6i7bhd8nhxZYPYR6TbuTvUog8kuTy9_Rgi9yIUMI83PYT260CWj37NDA5tYRFFV45Mi07GgJnvJRQ==\",\"id\":\"rs_0645ab1ab8a3ef4d016aec93e8c85c87d293579f00a7b9c51b\",\"summary\":[],\"type\":\"reasoning\"}"
+              },
+              {
+                "type": "text",
+                "text": "const { records, owners } = await ctx.call(\"records\", {});\nconst totals = Object.fromEntries(owners.map(owner => [owner, 0]));\nfor (const record of records) {\n  if (record.active && Object.hasOwn(totals, record.group)) {\n    totals[record.group] += record.value;\n  }\n}\nctx.done(totals);"
+              }
+            ],
+            "stopReason": "stop",
+            "responseId": "resp_0645ab1ab8a3ef4d016aec93e68c3887d2b31952fc34e9acb2"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Cell observation: {\"outcome\":{\"_tag\":\"raised\",\"name\":\"TypeError\",\"message\":\"not a function\"},\"prints\":\"{\\\"owners\\\":{\\\"a\\\":\\\"Ada\\\",\\\"b\\\":\\\"Bo\\\",\\\"c\\\":\\\"Cy\\\"}}\\nrecords (18):\\nid | sku | revision | group | value | active | tags\\nr00 | s0 | 0 | b | 27 | false |  BLUE,green \\nr01 | s1 | 0 | c | -1 | false | red,RED\\nr02 | s2 | 0 | a | 47 | false | red,RED\\nr03 | s3 | 0 | c | 13 | false | Red, blue\\nr04 | s4 | 0 | b | 55 | false |  green, yellow\\nr05 | s5 | 0 | a | -12 | true |  BLUE,green \\nr06 | s0 | 1 | b | -17 | false | Red, blue\\nr07 | s1 | 1 | c | 5 | false | \\nr08 | s2 | 1 | b | -3 | false | red,RED\\nr09 | s3 | 1 | a | 9 | false |  BLUE,green \\nr10 | s4 | 1 | a | 82 | false | \\nr11 | s5 | 1 | a | 67 | true |  BLUE,green \\nr12 | s0 | 2 | a | 52 | true |  green, yellow\\nr13 | s1 | 2 | a | 37 | true | \\nr14 | s2 | 2 | c | 1 | false |  BLUE,green \\nr15 | s3 | 2 | a | 84 | false |  green, yellow\\nr16 | s4 | 2 | b | 44 | true |  BLUE,green \\nr17 | s5 | 2 | a | 41 | false | red,RED\",\"bindings\":[{\"name\":\"data\",\"type\":\"object\",\"size\":\"2 keys\"},{\"name\":\"records\",\"type\":\"array\",\"size\":\"18 items\"},{\"name\":\"owners\",\"type\":\"object\",\"size\":\"3 keys\"},{\"name\":\"totals\",\"type\":\"unset\",\"size\":\"\"}]}"
+              }
+            ]
+          }
+        ],
+        "tools": [],
+        "params": {
+          "reasoningEffort": "low"
+        },
+        "cacheKey": "cell-comparison/9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2/31/cell/2026-11-05T14:22:23.672Z"
+      },
+      "events": [
+        {
+          "type": "thinking-start",
+          "id": "rs_0645ab1ab8a3ef4d016aec93ee279487d2af36c76a3b6e52e0"
+        },
+        {
+          "type": "thinking-delta",
+          "id": "rs_0645ab1ab8a3ef4d016aec93ee279487d2af36c76a3b6e52e0",
+          "text": "**Mapping groups to owners**"
+        },
+        {
+          "type": "thinking-end",
+          "id": "rs_0645ab1ab8a3ef4d016aec93ee279487d2af36c76a3b6e52e0"
+        },
+        {
+          "type": "thinking-start",
+          "id": "rs_0645ab1ab8a3ef4d016aec93ee279487d2af36c76a3b6e52e0:encrypted",
+          "signature": "{\"encrypted_content\":\"gAAAAABq7JPy9MF7ip1Jdgip76ZjByg7_HCwao5Lq4uoveGOaNag2nr7s84f-EfoPVu0Nwsat5EtkcvoNstLRlbqeABjciZoYzBkM2zICZDrUyw07igL92gZUpVyhz0GoBhpI46Gp7xYPGADK5aQbXEuds7swcq7YlOH_NRRbSgJ5Z5qJVvkyw-02qK71qDkLGbvs59BjhRt-nTOxH_Y5dy10KjRcn7LUSs2bg9UtWGDiwTbu-ti_Rc5Q97v6tERut4j02dsHwOXKtKIQVyvAfhBmXSl_2_56Vh2f9hi1EZIypsctDAQlzItRcHD_maALxH9eP7RVYdpAtbZxCm-lNMNfkuz9SQCOM4a25RmK8dVmAlaHT7FUPAUK9s-AcrUvNqAf1g9nw8BehUbbUTLwTnjLg5HkxFHa_N09PfvW8nE4aPLugObRiHWS3Z0clm7Jv-imovi57nrOxVzPkwj_3Fmu2oxD9R8tYtIW9H9ZM3WUOcM2X3jIT228c93-qFzHL7FO4KpoRga0jaiGn3aWyXXRwKfu66yrKxaPDKKwxQiO170WhTkUoh5Xi7PaNddorXIGO1fHUvbw7rqGOX_3A-kxef2Vu8dLWj6iuUVCeg8TR2iSBg8OlIkcXJ0YmTkPgON5r5UtgNfDW3p6FqTZN_It9Nmx67PmecemOS4C3oVgvhKfgNyM2-xzxzPZ95s2xz5PSWukaA4ifpRQSaGW5ynaTo2QXBPlQY4EsldI92f9G0WTKjT-KjtyeCyRL7PVO7FvPcxaXWJtaFnETE0UtyucvxWeGVxxoTvW84pbSGJikjqIgVhYVsDaVaQJd99FTHDDKNdUMPEfPUIR_j9w-V6Auq25ap42iKSaBQE5SVM-ud-f8zPvkdHur75pK9Aiv1juI799-QK8TNkKJBrVr55kIhpd-niDbL-0-rkwkCeZX7BIpFj5zsjGIg65ygEfyGZeD35kyGRgXE53eUv7aqHcjyBo-DKdHbU0ktKGnzu2rs7LhVeoiA-Z1yx2QPtyjJdWP5ZCBt30euUDBP_kKEnB1dhMg0Jtp9Os9k1SNOV1ppLo7TUc__e5OW_8_fFADjjLXgS_SdCA9BRKRPB66E7D_rjxtVJzi6CmttfKKRfhuiZ7fxoaAu4exfuDXh1OlcDD-VpyFUozVFHER40YumzOJcW1ZnhwVXU_QRZbJSocsn7KsW6xV8ZMCtMOZDgHsxRrAglqRgLLkexzofcCbsUFmNrOgFTDPAWzp3_bXJnc2IyjUgdGmrh0ceShdIbXLYr4g_xkdLCqE14M8WFGa0KTtqLSq9O2_y8jYIZiRBhhKYbwmNhwtGKPfYLa18dEZWVt_kSB-HbU1A5xZq9DcwUKWsAu4QHBoVyjY9pzDX0yIawlHZ9vyIQ4Kd6Lz_Qz1ATljrtuEEI_g6lHoIs0MNo4sAz3BLhOUgkb8q0kga0D0ksKwhcdv9Y5d3Ezv1COHi068f25Ooocfjfu4xRMtp4-4nZg28_cq9e4CWB7U6HhyK0mz2TjZSClXVhhQntYxQKVpu-d8kqqgVbsyKsgus8GIoj87StuX8kYoPBbMdbmGKyS4MLjtwKIiyV73Y_zIPA_U9L4-x_loPOPy1b06OqyN3fSBb5OaNsKfcIxLBcGacTkkJ-QzHltSmkdoZZAzikM4dScm9I1UU6EyupHnwBgNsGy3o8-XKgh1KHl7AN2gK01iohlvdwUfKVUart8fjfjZtI67xjn33PEmwhWZuKDu_x7x2YqFc-Fo4nuKcfVL6THebs241caQ9pKopzrUmEL8wpD1V9ShRBZ77kPahwMgl7suQG-aOOsmE6gHLRIG-nPXlNWN4bL1sniWA_2tPkO1dQUO068IGhpcbYCKz79vb9WK11yfXGGkZNGG1rzkxPcpOQpAzKgHTzStM0g42LFbM26cTEWXdgADaKHFLPU7nxi4lulzbY1ucCnFHveVCUx1LyDxHfIPoZRy_qSj2238_QXJLfW_jEA7cwhtrJy349MClrbdT6-A3HVUbTMgh4667VUGos4oJ-Zk8uIRHrD_lhsbSg_00hO1iJMzH8a5kIVrH2o3YHhKzDNKI-uOjy-kMIuThUvqcGMJpo57FQ8KWa6U6KJmo4Ah7Oc1_tSswU5KhkFI9QcWFnJ3AYBt1KNS60KzqcE6fcfwxeYEntIOqXxWdM\",\"id\":\"rs_0645ab1ab8a3ef4d016aec93ee279487d2af36c76a3b6e52e0\",\"summary\":[{\"text\":\"**Mapping groups to owners**\",\"type\":\"summary_text\"}],\"type\":\"reasoning\"}"
+        },
+        {
+          "type": "thinking-end",
+          "id": "rs_0645ab1ab8a3ef4d016aec93ee279487d2af36c76a3b6e52e0:encrypted"
+        },
+        {
+          "type": "text-start",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "const"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " {"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " records"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": ","
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " owners"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " }"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " ="
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " await"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " ctx"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": ".call"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "(\""
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "records"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "\","
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " {});\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "const"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " totals"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " ="
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " Object"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": ".from"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "Entries"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "(Object"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": ".values"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "("
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "owners"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": ")."
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "map"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "(name"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " =>"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " ["
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "name"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": ","
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " "
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "0"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "]));\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "for"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " ("
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "const"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " record"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " of"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " records"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": ")"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " {\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " "
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " if"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " ("
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "record"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": ".active"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " &&"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " Object"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": ".has"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "Own"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "("
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "owners"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": ","
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " record"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": ".group"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "))"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " {\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "   "
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " totals"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "["
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "owners"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "["
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "record"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": ".group"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "]]"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " +="
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " record"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": ".value"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": ";\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " "
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": " }\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "}\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "ctx"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": ".done"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "(t"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "ot"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": "als"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d",
+          "text": ");"
+        },
+        {
+          "type": "text-end",
+          "id": "msg_0645ab1ab8a3ef4d016aec93f297a887d29fc2318dc157ff9d"
+        },
+        {
+          "type": "usage",
+          "inputTokens": 737,
+          "outputTokens": 133,
+          "reasoningTokens": 48,
+          "cachedInputTokens": 0,
+          "totalTokens": 870
+        },
+        {
+          "type": "settle",
+          "stopReason": "stop",
+          "responseId": "resp_0645ab1ab8a3ef4d016aec93ed6c2487d28d70ab26da04ac94",
+          "servedTier": "default",
+          "timing": {
+            "startedAt": 1793889260894,
+            "attempts": 1,
+            "requestBytes": 6428,
+            "preparedMs": 1,
+            "signedMs": 2,
+            "sentMs": 2,
+            "headersMs": 751,
+            "firstEventMs": 752,
+            "firstThinkingMs": 5710,
+            "firstOutputMs": 5715,
+            "lastOutputMs": 5724,
+            "completedMs": 5780,
+            "closedMs": 5780
+          }
+        }
+      ],
+      "usage": {
+        "inputTokens": 737,
+        "outputTokens": 133,
+        "reasoningTokens": 48,
+        "cachedInputTokens": 0,
+        "totalTokens": 870
+      },
+      "cost": {
+        "costUsd": 0.0001402,
+        "costSource": "estimated"
+      },
+      "elapsedMs": 5790,
+      "replayed": false,
+      "frame": {
+        "outcome": {
+          "_tag": "settled",
+          "transition": {
+            "_tag": "complete",
+            "output": "{\"Ada\":144,\"Bo\":44,\"Cy\":0}",
+            "value": {
+              "Ada": 144,
+              "Bo": 44,
+              "Cy": 0
+            }
+          }
+        },
+        "prints": "",
+        "bindings": [
+          {
+            "name": "data",
+            "type": "object",
+            "size": "2 keys"
+          },
+          {
+            "name": "records",
+            "type": "array",
+            "size": "18 items"
+          },
+          {
+            "name": "owners",
+            "type": "object",
+            "size": "3 keys"
+          },
+          {
+            "name": "totals",
+            "type": "object",
+            "size": "3 keys"
+          }
+        ]
+      }
+    }
+  ],
+  "calls": [
+    {
+      "ordinal": 0,
+      "name": "records",
+      "input": {},
+      "value": {
+        "records": [
+          {
+            "id": "r00",
+            "sku": "s0",
+            "revision": 0,
+            "group": "b",
+            "value": 27,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r01",
+            "sku": "s1",
+            "revision": 0,
+            "group": "c",
+            "value": -1,
+            "active": false,
+            "tags": "red,RED"
+          },
+          {
+            "id": "r02",
+            "sku": "s2",
+            "revision": 0,
+            "group": "a",
+            "value": 47,
+            "active": false,
+            "tags": "red,RED"
+          },
+          {
+            "id": "r03",
+            "sku": "s3",
+            "revision": 0,
+            "group": "c",
+            "value": 13,
+            "active": false,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r04",
+            "sku": "s4",
+            "revision": 0,
+            "group": "b",
+            "value": 55,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r05",
+            "sku": "s5",
+            "revision": 0,
+            "group": "a",
+            "value": -12,
+            "active": true,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r06",
+            "sku": "s0",
+            "revision": 1,
+            "group": "b",
+            "value": -17,
+            "active": false,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r07",
+            "sku": "s1",
+            "revision": 1,
+            "group": "c",
+            "value": 5,
+            "active": false,
+            "tags": ""
+          },
+          {
+            "id": "r08",
+            "sku": "s2",
+            "revision": 1,
+            "group": "b",
+            "value": -3,
+            "active": false,
+            "tags": "red,RED"
+          },
+          {
+            "id": "r09",
+            "sku": "s3",
+            "revision": 1,
+            "group": "a",
+            "value": 9,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r10",
+            "sku": "s4",
+            "revision": 1,
+            "group": "a",
+            "value": 82,
+            "active": false,
+            "tags": ""
+          },
+          {
+            "id": "r11",
+            "sku": "s5",
+            "revision": 1,
+            "group": "a",
+            "value": 67,
+            "active": true,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r12",
+            "sku": "s0",
+            "revision": 2,
+            "group": "a",
+            "value": 52,
+            "active": true,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r13",
+            "sku": "s1",
+            "revision": 2,
+            "group": "a",
+            "value": 37,
+            "active": true,
+            "tags": ""
+          },
+          {
+            "id": "r14",
+            "sku": "s2",
+            "revision": 2,
+            "group": "c",
+            "value": 1,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r15",
+            "sku": "s3",
+            "revision": 2,
+            "group": "a",
+            "value": 84,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r16",
+            "sku": "s4",
+            "revision": 2,
+            "group": "b",
+            "value": 44,
+            "active": true,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r17",
+            "sku": "s5",
+            "revision": 2,
+            "group": "a",
+            "value": 41,
+            "active": false,
+            "tags": "red,RED"
+          }
+        ],
+        "owners": {
+          "a": "Ada",
+          "b": "Bo",
+          "c": "Cy"
+        }
+      }
+    },
+    {
+      "ordinal": 1,
+      "name": "records",
+      "input": {},
+      "value": {
+        "records": [
+          {
+            "id": "r00",
+            "sku": "s0",
+            "revision": 0,
+            "group": "b",
+            "value": 27,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r01",
+            "sku": "s1",
+            "revision": 0,
+            "group": "c",
+            "value": -1,
+            "active": false,
+            "tags": "red,RED"
+          },
+          {
+            "id": "r02",
+            "sku": "s2",
+            "revision": 0,
+            "group": "a",
+            "value": 47,
+            "active": false,
+            "tags": "red,RED"
+          },
+          {
+            "id": "r03",
+            "sku": "s3",
+            "revision": 0,
+            "group": "c",
+            "value": 13,
+            "active": false,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r04",
+            "sku": "s4",
+            "revision": 0,
+            "group": "b",
+            "value": 55,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r05",
+            "sku": "s5",
+            "revision": 0,
+            "group": "a",
+            "value": -12,
+            "active": true,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r06",
+            "sku": "s0",
+            "revision": 1,
+            "group": "b",
+            "value": -17,
+            "active": false,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r07",
+            "sku": "s1",
+            "revision": 1,
+            "group": "c",
+            "value": 5,
+            "active": false,
+            "tags": ""
+          },
+          {
+            "id": "r08",
+            "sku": "s2",
+            "revision": 1,
+            "group": "b",
+            "value": -3,
+            "active": false,
+            "tags": "red,RED"
+          },
+          {
+            "id": "r09",
+            "sku": "s3",
+            "revision": 1,
+            "group": "a",
+            "value": 9,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r10",
+            "sku": "s4",
+            "revision": 1,
+            "group": "a",
+            "value": 82,
+            "active": false,
+            "tags": ""
+          },
+          {
+            "id": "r11",
+            "sku": "s5",
+            "revision": 1,
+            "group": "a",
+            "value": 67,
+            "active": true,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r12",
+            "sku": "s0",
+            "revision": 2,
+            "group": "a",
+            "value": 52,
+            "active": true,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r13",
+            "sku": "s1",
+            "revision": 2,
+            "group": "a",
+            "value": 37,
+            "active": true,
+            "tags": ""
+          },
+          {
+            "id": "r14",
+            "sku": "s2",
+            "revision": 2,
+            "group": "c",
+            "value": 1,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r15",
+            "sku": "s3",
+            "revision": 2,
+            "group": "a",
+            "value": 84,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r16",
+            "sku": "s4",
+            "revision": 2,
+            "group": "b",
+            "value": 44,
+            "active": true,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r17",
+            "sku": "s5",
+            "revision": 2,
+            "group": "a",
+            "value": 41,
+            "active": false,
+            "tags": "red,RED"
+          }
+        ],
+        "owners": {
+          "a": "Ada",
+          "b": "Bo",
+          "c": "Cy"
+        }
+      }
+    },
+    {
+      "ordinal": 2,
+      "name": "records",
+      "input": {},
+      "value": {
+        "records": [
+          {
+            "id": "r00",
+            "sku": "s0",
+            "revision": 0,
+            "group": "b",
+            "value": 27,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r01",
+            "sku": "s1",
+            "revision": 0,
+            "group": "c",
+            "value": -1,
+            "active": false,
+            "tags": "red,RED"
+          },
+          {
+            "id": "r02",
+            "sku": "s2",
+            "revision": 0,
+            "group": "a",
+            "value": 47,
+            "active": false,
+            "tags": "red,RED"
+          },
+          {
+            "id": "r03",
+            "sku": "s3",
+            "revision": 0,
+            "group": "c",
+            "value": 13,
+            "active": false,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r04",
+            "sku": "s4",
+            "revision": 0,
+            "group": "b",
+            "value": 55,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r05",
+            "sku": "s5",
+            "revision": 0,
+            "group": "a",
+            "value": -12,
+            "active": true,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r06",
+            "sku": "s0",
+            "revision": 1,
+            "group": "b",
+            "value": -17,
+            "active": false,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r07",
+            "sku": "s1",
+            "revision": 1,
+            "group": "c",
+            "value": 5,
+            "active": false,
+            "tags": ""
+          },
+          {
+            "id": "r08",
+            "sku": "s2",
+            "revision": 1,
+            "group": "b",
+            "value": -3,
+            "active": false,
+            "tags": "red,RED"
+          },
+          {
+            "id": "r09",
+            "sku": "s3",
+            "revision": 1,
+            "group": "a",
+            "value": 9,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r10",
+            "sku": "s4",
+            "revision": 1,
+            "group": "a",
+            "value": 82,
+            "active": false,
+            "tags": ""
+          },
+          {
+            "id": "r11",
+            "sku": "s5",
+            "revision": 1,
+            "group": "a",
+            "value": 67,
+            "active": true,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r12",
+            "sku": "s0",
+            "revision": 2,
+            "group": "a",
+            "value": 52,
+            "active": true,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r13",
+            "sku": "s1",
+            "revision": 2,
+            "group": "a",
+            "value": 37,
+            "active": true,
+            "tags": ""
+          },
+          {
+            "id": "r14",
+            "sku": "s2",
+            "revision": 2,
+            "group": "c",
+            "value": 1,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r15",
+            "sku": "s3",
+            "revision": 2,
+            "group": "a",
+            "value": 84,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r16",
+            "sku": "s4",
+            "revision": 2,
+            "group": "b",
+            "value": 44,
+            "active": true,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r17",
+            "sku": "s5",
+            "revision": 2,
+            "group": "a",
+            "value": 41,
+            "active": false,
+            "tags": "red,RED"
+          }
+        ],
+        "owners": {
+          "a": "Ada",
+          "b": "Bo",
+          "c": "Cy"
+        }
+      }
+    }
+  ],
+  "output": {
+    "Ada": 144,
+    "Bo": 44,
+    "Cy": 0
+  }
+}

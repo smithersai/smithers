@@ -1,0 +1,22 @@
+#!/usr/bin/env node
+// The Factory MCP server's process: `--mock`, `VIBELANG_FACTORY`, and stdio for the protocol (0009-surfaces.md).
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { mcp } from "./mcp.vibe"
+
+export effect function main() {
+  const args = try (try Stdio.Stdio).args
+  const environment = try Config.option(Config.String("VIBELANG_FACTORY"))
+  try mcp(args.includes("--mock"), Option.getOrUndefined(environment))
+}
+
+/**
+ * Warnings and errors go to stderr: stdout carries the protocol. A step's routine lines (`vibelang.post`, the engine's) are
+ * for a server's operators, not a person at a terminal.
+ */
+const logs = Layer.mergeAll(
+  Logger.layer([Logger.withConsoleError(Logger.formatLogFmt)]),
+  Layer.succeed(References.MinimumLogLevel, "Warn"),
+)
+
+NodeRuntime.runMain(Effect.provide(main(), Layer.mergeAll(NodeServices.layer, logs)), { disableErrorReporting: true })

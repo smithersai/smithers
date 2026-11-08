@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The requirement channel: what a plan demands, what an execution demands, and
  * the gap between them.
@@ -14,10 +15,10 @@
  * fails the gate whether or not the suite is run.
  */
 import { describe, expect, expectTypeOf, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Graph, Interpreter, Sleep, WaitFor } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Exit, Layer, Option, Schema, Scope } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { withCrypto } from "./Crypto.ts"
 import { layerMemory } from "./MemoryFlowRuntime.ts"
 
@@ -125,7 +126,7 @@ describe("a flow carries what its body requires", () => {
   it("puts it in execute, and nowhere a plan is only being described", () => {
     expectTypeOf<Flow.Requirements<typeof Paying>>().toEqualTypeOf<ChargeNeeded>()
     expectTypeOf<Effect.Services<ReturnType<typeof Paying.execute>>>().toEqualTypeOf<
-      Crypto.Crypto | FlowRuntime.FlowRuntime | ChargeNeeded
+      (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | ChargeNeeded
     >()
     expectTypeOf<Effect.Error<ReturnType<typeof Paying.execute>>>().toEqualTypeOf<
       Schema.SchemaError | FlowRuntime.FlowCycleDetected | FlowRuntime.ExecutionIdentityConflict | string
@@ -169,7 +170,7 @@ describe("a flow carries what its body requires", () => {
         Effect.provide(wired)
       )
 
-      expectTypeOf<Effect.Services<typeof run>>().toEqualTypeOf<Crypto.Crypto>()
+      expectTypeOf<Effect.Services<typeof run>>().toEqualTypeOf<(EffectDigest.Digest | SecureRandom.SecureRandom)>()
       expect(yield* withCrypto(run)).toBe(100)
     }))
 })
@@ -237,7 +238,7 @@ describe("requirements travel the way the plan does", () => {
 
     expectTypeOf<Flow.Requirements<typeof Self>>().toEqualTypeOf<ChargeNeeded>()
     expectTypeOf<Effect.Services<ReturnType<typeof Self.execute>>>().toEqualTypeOf<
-      Crypto.Crypto | FlowRuntime.FlowRuntime | ChargeNeeded
+      (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | ChargeNeeded
     >()
   })
 })
@@ -406,12 +407,12 @@ describe("a hand annotation on a toLayer result", () => {
   // about what compiles.
   const chargeNeedingCrypto: (
     payload: { readonly cents: number }
-  ) => Effect.Effect<number, string, Crypto.Crypto> = () => Effect.die("type-only witness")
+  ) => Effect.Effect<number, string, (EffectDigest.Digest | SecureRandom.SecureRandom)> = () =>
+    Effect.die("type-only witness")
 
   it("cannot drop a requirement while every member is concrete", () => {
-    const dropped = (): Layer.Layer<ChargeNeeded, never, FlowRuntime.FlowRuntime> =>
-      // @ts-expect-error the implementation also needs Crypto.Crypto
-      Charge.toLayer(chargeNeedingCrypto)
+    const dropped = () => Charge.toLayer(chargeNeedingCrypto)
+    expectTypeOf<ReturnType<typeof dropped>>().not.toExtend<Layer.Layer<ChargeNeeded, never, FlowRuntime.FlowRuntime>>()
 
     expectTypeOf(dropped).toBeFunction()
   })
@@ -429,16 +430,20 @@ describe("a hand annotation on a toLayer result", () => {
       Charge.toLayer(chargeNeedingCrypto)
 
     // What the lie costs: at a concrete instantiation the layer's type no
-    // longer names Crypto.Crypto, though the implementation still needs it.
+    // longer names EffectDigest.Digest, though the implementation still needs it.
     const annotated = () => witness(Schema.String)
     type Annotated = Layer.Services<ReturnType<typeof annotated>>
-    expectTypeOf<Crypto.Crypto extends Annotated ? true : false>().toEqualTypeOf<false>()
+    expectTypeOf<(EffectDigest.Digest | SecureRandom.SecureRandom) extends Annotated ? true : false>().toEqualTypeOf<
+      false
+    >()
 
     // The recipe: a wrapper that must annotate pins its requirement set where
     // the schema arguments are concrete, and membership checks work again.
     const inferred = () => Charge.toLayer(chargeNeedingCrypto)
     type Inferred = Layer.Services<ReturnType<typeof inferred>>
-    expectTypeOf<Crypto.Crypto extends Inferred ? true : false>().toEqualTypeOf<true>()
+    expectTypeOf<(EffectDigest.Digest | SecureRandom.SecureRandom) extends Inferred ? true : false>().toEqualTypeOf<
+      true
+    >()
     expectTypeOf<FlowRuntime.FlowRuntime extends Inferred ? true : false>().toEqualTypeOf<true>()
   })
 })

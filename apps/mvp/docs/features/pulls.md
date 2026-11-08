@@ -199,7 +199,7 @@ Migrations `0031_pulls`, `0033_pull_writes`, `0037_pull_default_branch` and `007
 | `github.merge` | log, span | `writeId`, `outcome` (`done` or the refusal), `settled`, `flow` (`github`, `queue`; once the repository's file was read), `base` (`seen`, `moved`, `unchecked`), `projection` (`failed`), `errorCode` |
 | `smithers_pr_merges{outcome,flow,base}` | counter | `flow` once the file was read; `base` on a GitHub merge only |
 | `github.compare`, `smithers_github_compares{outcome}` | log, span, counter | `outcome`, `files` |
-| `checks.script`, `checks.review`, `checks.sync`; `smithers_checks{check,outcome}` | logs, spans, counter | `repoId`, `sha`, `check`, `prNumber`, `outcome` |
+| `checks.script`, `checks.review`, `checks.sync`; `smithers_checks{check,outcome}` | logs, spans, counter | `repoId`, `sha`, `check`, `prNumber`, `outcome`; a model failure adds `stage: model`, typed `errorCode` (or `empty_answer`), and `providerStatus` when retained; no provider message or diff |
 | `sandbox.registry.egress`, `secrets.egress`; `smithers_registry_egress_requests{outcome}` | span, log, counter | a box's outbound request through the registry egress, a check job's included: `host`, `method`, `status`, `outcome` (`forwarded` or the refusal), never a path or a header |
 | `checks.status`, `checks.report`; `smithers_check_statuses{state,outcome}` | log, span, counter | `repoId`, `sha`, `check`, `state` (`pending`, `success`, `failure`), `outcome` (`sent`, `refused`, `dropped`), `errorCode` |
 | `github.apply` | log, span | as issues' (`event` `pull_request` or `pull_request_review`) |
@@ -225,6 +225,7 @@ No record carries a title, a body, a diff, a finding, a command's output or a lo
 | `packages/smithers/agent/integrations/test/Statuses.test.ts` | `GitHub.Statuses.create` against a fake GitHub on a real socket: per-commit statuses, a lost answer retryable, refusals unretried, every invalid input refused before a request, 100% |
 | `src/features/pulls/pulls.test.ts` | the browser's layer on a Node device against ChatApi's real routes and Electric: the list, a pull request's tabs, the checks on its head only, the files through the compare route on the scripted GitHub, a Maintainer's merge followed to its write's refusal, a Member's, a signed-out person's and an unreachable ChatApi's; a Maintainer's Review starting `pull/Review`, a Member's refused, a moved head |
 | `src/features/pulls/view.test.ts`, `contract.test.ts`, `api.test.ts` | the pages' words and the merge box (Queued while a queue holds the request), the deploy warning (into the default branch only, never without Merge), the paths, and the client against a local server |
+| `e2e/pull-review.spec.ts` | production review on the test account's configured scratch repository: prepare a fresh head through its leased, unrecorded GitHub profile; read Files; require `started: true`, successful Checks and one GitHub `COMMENTED` bot review on that SHA; ask again with `started: false` and no duplicate; leave the PR open and unmerged. The same account's real Member role on the existing shared scratch repository hides Review and is refused `403 forbidden`. No open VibeLang PR or development role override is required. |
 
 ## Not built yet
 
@@ -241,3 +242,10 @@ A merge's attempt count is a record of how many times the step went to GitHub; i
 Issue and pull request detail pages link back to their repository's list. Every pull request tab keeps its title and number, including Checks, Commits and Files. The read-only `item-navigation.spec.ts` regression checks these links and headings against a deployment.
 
 Pull request bodies and conversation comments use the issue store's item-scoped persisted shapes. PR metadata, reviews, commits and checks continue using their existing repository shapes. Hover preload carries the PR number so its body starts before navigation.
+
+
+Comparisons are cached by repository and both commit SHAs. A read owns its cache row; completion after a refusal, wipe, or replacement read cannot modify another comparison. Forks that share SHAs keep separate rows.
+
+The list screen exposes safe readiness receipts as `data-access-status`, `data-access-installed`, `data-pull-status`, `data-pull-installed`, `data-query-ready`, `data-sync-complete` and `data-list-ready`. They carry no row or search content.
+
+`list-search-sort.spec.ts` records these transitions, verifies that the unmatched search is in the URL and has no matching rows, then waits for the real `data-list-sync` completion receipt before asserting the empty state. The production pull case completes successfully; a cached row is not its completion receipt.

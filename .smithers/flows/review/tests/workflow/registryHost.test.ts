@@ -3,7 +3,6 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as Budget from "@smthrs/agent/Budget"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import * as Discovery from "@smthrs/registry/Discovery"
@@ -157,7 +156,7 @@ test("the normal registry refuses a review without host agent services", async (
         Effect.provide(Discovery.layer),
         Effect.provide(
           Layer.mergeAll(
-            Crypto.layerFromDigest(NodeCrypto.layerDigest),
+            NodeCrypto.layer,
             NodeFileSystem.layer,
             NodePath.layer,
             FlowEngine.layerMemory,

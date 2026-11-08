@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Simulation } from "d3-force";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { Badge } from "../badge";
 import { Button } from "../button";
 import { EmptyState } from "../empty-state";

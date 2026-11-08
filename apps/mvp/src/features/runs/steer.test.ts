@@ -2,11 +2,12 @@
 // the run's journal and this device's own messages, which refusals are final, and the steer step where its tab is gone
 // or won't keep the message. The whole path, a tab through ChatApi to the run's queue, runs in remote.test.ts; the agent
 // reading a message, in worker/flows/Todo.test.ts.
-import { type Crypto, WebCrypto } from "@smthrs/crypto"
+import { WebCrypto } from "@smthrs/crypto"
 import { Collection, Outbox } from "@smthrs/effect-tanstack-db"
 import { FlowRuntime } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
 import { Cause, Effect, Exit, Layer, Metric, Option } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, test } from "vitest"
@@ -14,13 +15,20 @@ import { deviceRegistry } from "../../device/registry"
 import * as RunCredentials from "../../flows/credentials"
 import { faultyPersistenceOn } from "../../test/deviceFixture"
 import { afterFailedSteer } from "./actions"
+import { RemoteRunsClient, SteerFailed } from "./api"
 import { EXTERNAL_AGENT_ACTION, STEERED_ACTION } from "./contract"
 import { SteerStepRefused } from "./flows"
 import { steersQueued } from "./metrics"
 import { type PageStep, responseStep, steerOpen, steersOf } from "./page"
-import { type Inspection, type RunPage, type RunsCall, type SteerSending, type SteerSent, SteerSent as SteerSentRow } from "./schema"
+import {
+  type Inspection,
+  type RunPage,
+  type RunsCall,
+  type SteerSending,
+  type SteerSent,
+  SteerSent as SteerSentRow
+} from "./schema"
 import { queueSteer, TabRuns } from "./steps"
-import { RemoteRunsClient, SteerFailed } from "./api"
 import { finalReasonOf, keep, send } from "./writes"
 
 const RUN = "todo:0b9e6a3c-1f2d-4c5e-8a7b-9c0d1e2f3a4b"
@@ -42,22 +50,27 @@ const admitted = (seq: number, at: number, id: string, body: string, login = "ma
         sourceLineageId: RUN,
         sourceTurn: 0,
         sourceActor: "person:person-maya",
-        attribution: { login, via: "person" },
+        attribution: { login, via: "person" }
       },
-      payload: { kind: "Message", body },
+      payload: { kind: "Message", body }
     },
-    decision: "admitted",
-  })),
+    decision: "admitted"
+  }))
 })
 const promoted = (seq: number, at: number, ids: ReadonlyArray<string>, lineage = RUN, boundary = `${seq}:0`) => ({
   seq,
   eventType: "flows/notifications/Promoted",
   emittedAtMs: at,
-  payload: value(JSON.stringify({ boundary, targetLineageId: lineage, ids })),
+  payload: value(JSON.stringify({ boundary, targetLineageId: lineage, ids }))
 })
 
 /** A cell call the agent made: the journal's record that a turn acted. */
-const acted = (seq: number) => ({ seq, eventType: "flows.harness.call-fact.v1", emittedAtMs: seq * 100, payload: value("{}") })
+const acted = (seq: number) => ({
+  seq,
+  eventType: "flows.harness.call-fact.v1",
+  emittedAtMs: seq * 100,
+  payload: value("{}")
+})
 
 const step = (action: string | null, status: string, settledAtMs: number | null = null) => ({
   nodeId: `n-${action}`,
@@ -68,12 +81,16 @@ const step = (action: string | null, status: string, settledAtMs: number | null 
   settledAtMs,
   seq: 0,
   output: null,
-  attempts: [],
+  attempts: []
 })
 
 const pageOf = (
   events: ReadonlyArray<unknown>,
-  options: { readonly status?: string; readonly steps?: ReadonlyArray<unknown>; readonly more?: ReadonlyArray<unknown> } = {},
+  options: {
+    readonly status?: string
+    readonly steps?: ReadonlyArray<unknown>
+    readonly more?: ReadonlyArray<unknown>
+  } = {}
 ): RunPage => ({
   id: RUN,
   state: "read",
@@ -90,24 +107,36 @@ const pageOf = (
       waiting: null,
       lastSeq: 99,
       input: value("{}"),
-      result: null,
+      result: null
     },
     steps: options.steps ?? [step(STEERED_ACTION, "running")],
     children: [],
-    journal: { events, nextSeq: 99, hasMore: false },
+    journal: { events, nextSeq: 99, hasMore: false }
   },
   more: options.more ?? [],
-  hasMore: false,
+  hasMore: false
 })
 
-const sending = (id: string, body: string, queuedAt: number, runId = RUN): SteerSending => ({ id, runId, body, queuedAt, v: 1 })
-const sent = (id: string, body: string, queuedAt: number, status: SteerSent["status"], reason: SteerSent["reason"] = null): SteerSent => ({
+const sending = (id: string, body: string, queuedAt: number, runId = RUN): SteerSending => ({
+  id,
+  runId,
+  body,
+  queuedAt,
+  v: 1
+})
+const sent = (
+  id: string,
+  body: string,
+  queuedAt: number,
+  status: SteerSent["status"],
+  reason: SteerSent["reason"] = null
+): SteerSent => ({
   id,
   runId: RUN,
   body,
   queuedAt,
   status,
-  reason,
+  reason
 })
 
 describe("the run page's steers", () => {
@@ -119,11 +148,11 @@ describe("the run page's steers", () => {
       promoted(6, 500, ["a"]),
       acted(7),
       // A later drain that names it again changes nothing.
-      promoted(8, 700, ["a"]),
+      promoted(8, 700, ["a"])
     ])
     expect(steersOf(page, [], [])).toEqual([
       { id: "a", body: "Use tabs", by: "maya", state: "delivered", reason: null, atMs: 300, deliveredAtMs: 500 },
-      { id: "b", body: "Then add a test", by: "ben", state: "sent", reason: null, atMs: 400, deliveredAtMs: null },
+      { id: "b", body: "Then add a test", by: "ben", state: "sent", reason: null, atMs: 400, deliveredAtMs: null }
     ])
   })
 
@@ -131,7 +160,11 @@ describe("the run page's steers", () => {
     const bare = JSON.parse(admitted(3, 300, "seat", "x").payload.text)
     bare.notification.provenance = { sourceRunId: RUN, sourceLineageId: RUN, sourceTurn: 0, sourceActor: "machine:ci" }
     bare.notification.payload = { kind: "Seat", seat: "fast" }
-    const item = steersOf(pageOf([{ ...admitted(3, 300, "seat", "x"), payload: value(JSON.stringify(bare)) }]), [], [])[0]!
+    const item = steersOf(
+      pageOf([{ ...admitted(3, 300, "seat", "x"), payload: value(JSON.stringify(bare)) }]),
+      [],
+      []
+    )[0]!
     expect([item.by, item.body]).toEqual([null, ""])
   })
 
@@ -140,13 +173,32 @@ describe("the run page's steers", () => {
       more: [
         { ...admitted(4, 350, "cut", "x"), payload: value("{\"notification\":", true) },
         { ...admitted(5, 360, "bad", "x"), payload: value("not json") },
-        { ...admitted(6, 370, "follow", "x"), payload: value(JSON.stringify({ decision: "admitted", notification: { _tag: "system-event", id: "s", delivery: "queue", targetLineageId: RUN, provenance: { sourceRunId: "ci", sourceLineageId: "ci", sourceTurn: 0, sourceActor: "machine:ci" }, payload: {} } })) },
+        {
+          ...admitted(6, 370, "follow", "x"),
+          payload: value(
+            JSON.stringify({
+              decision: "admitted",
+              notification: {
+                _tag: "system-event",
+                id: "s",
+                delivery: "queue",
+                targetLineageId: RUN,
+                provenance: { sourceRunId: "ci", sourceLineageId: "ci", sourceTurn: 0, sourceActor: "machine:ci" },
+                payload: {}
+              }
+            })
+          )
+        },
         promoted(7, 400, ["a"], "another-lineage"),
         promoted(8, 410, ["a"]),
-        acted(9),
-      ],
+        acted(9)
+      ]
     })
-    expect(steersOf(page, [], []).map((item) => [item.id, item.state, item.deliveredAtMs])).toEqual([["a", "delivered", 410]])
+    expect(steersOf(page, [], []).map((item) => [item.id, item.state, item.deliveredAtMs])).toEqual([[
+      "a",
+      "delivered",
+      410
+    ]])
   })
 
   test("handed to a turn is not yet read: Sent until the agent acts or answers, Not delivered if it stops first", () => {
@@ -168,9 +220,11 @@ describe("the run page's steers", () => {
     const events = [
       admitted(3, 300, "a", "Also add steer"),
       admitted(4, 350, "b", "And this"),
-      promoted(5, 420, ["a"], RUN, "runner:todo:x#g1:0123456789abcdef0123456789abcdef"),
+      promoted(5, 420, ["a"], RUN, "runner:todo:x#g1:0123456789abcdef0123456789abcdef")
     ]
-    expect(steersOf(pageOf(events, { steps: external }), [], []).map((item) => [item.id, item.state, item.deliveredAtMs]))
+    expect(
+      steersOf(pageOf(events, { steps: external }), [], []).map((item) => [item.id, item.state, item.deliveredAtMs])
+    )
       .toEqual([["a", "delivered", 420], ["b", "sent", null]])
     expect(steerOpen(pageOf(events, { steps: external }).inspection as never)).toBe(true)
     // Its agent's step ended: the one it never read is Not delivered, and the composer goes.
@@ -182,7 +236,9 @@ describe("the run page's steers", () => {
   test("a message no turn read before the agent ended is Not delivered, whether the run or only its agent ended", () => {
     const events = [admitted(3, 300, "a", "Too late")]
     expect(steersOf(pageOf(events, { status: "completed" }), [], [])[0]!.state).toBe("not_delivered")
-    expect(steersOf(pageOf(events, { steps: [step(STEERED_ACTION, "completed")] }), [], [])[0]!.state).toBe("not_delivered")
+    expect(steersOf(pageOf(events, { steps: [step(STEERED_ACTION, "completed")] }), [], [])[0]!.state).toBe(
+      "not_delivered"
+    )
     expect(steersOf(pageOf(events, { steps: [step(STEERED_ACTION, "waiting")] }), [], [])[0]!.state).toBe("sent")
   })
 
@@ -190,17 +246,28 @@ describe("the run page's steers", () => {
     const page = pageOf([admitted(3, 300, "a", "In the journal")])
     const items = steersOf(
       page,
-      [sending("a", "In the journal", 250), sending("s", "Sending", 260), sending("n", "Answered", 270), sending("x", "Other run", 1, "todo:other")],
-      [sent("a", "In the journal", 250, "sent"), sent("n", "Answered", 270, "not_sent", "not_working"), sent("t", "Taken", 280, "sent")],
+      [
+        sending("a", "In the journal", 250),
+        sending("s", "Sending", 260),
+        sending("n", "Answered", 270),
+        sending("x", "Other run", 1, "todo:other")
+      ],
+      [
+        sent("a", "In the journal", 250, "sent"),
+        sent("n", "Answered", 270, "not_sent", "not_working"),
+        sent("t", "Taken", 280, "sent")
+      ]
     )
     expect(items.map((item) => [item.id, item.state, item.reason])).toEqual([
       ["s", "sending", null],
       ["n", "not_sent", "not_working"],
       ["t", "sent", null],
-      ["a", "sent", null],
+      ["a", "sent", null]
     ])
     // Taken, then the agent ended before the page read the journal again.
-    expect(steersOf(pageOf([], { status: "failed" }), [], [sent("t", "Taken", 1, "sent")])[0]!.state).toBe("not_delivered")
+    expect(steersOf(pageOf([], { status: "failed" }), [], [sent("t", "Taken", 1, "sent")])[0]!.state).toBe(
+      "not_delivered"
+    )
     // A page with no run read shows none.
     expect(steersOf({ ...page, state: "unavailable", inspection: null }, [sending("s", "x", 1)], [])).toEqual([])
   })
@@ -212,7 +279,12 @@ describe("the run page's steers", () => {
     expect(of(pageOf([], { status: "cancelled" }))).toBe(false)
     expect(of(pageOf([], { steps: [step(STEERED_ACTION, "failed")] }))).toBe(false)
     const local = pageOf([])
-    expect(steerOpen({ ...(local.inspection as Inspection), run: { ...(local.inspection as Inspection).run, runId: "run-1" } }))
+    expect(
+      steerOpen({
+        ...(local.inspection as Inspection),
+        run: { ...(local.inspection as Inspection).run, runId: "run-1" }
+      })
+    )
       .toBe(false)
   })
 
@@ -226,9 +298,20 @@ describe("the run page's steers", () => {
 })
 
 describe("a steer that couldn't be queued", () => {
-  const view = { id: "view" as const, runId: RUN, listOpen: false, selected: null, tab: "steps" as const, acting: null, refusal: null }
+  const view = {
+    id: "view" as const,
+    runId: RUN,
+    listOpen: false,
+    selected: null,
+    tab: "steps" as const,
+    acting: null,
+    refusal: null
+  }
   test("gives its words back to the composer it came from, and says why", () => {
-    expect(afterFailedSteer({ ...view, steerDraft: "" }, RUN, "Use tabs")).toEqual({ steerDraft: "Use tabs", refusal: "unavailable" })
+    expect(afterFailedSteer({ ...view, steerDraft: "" }, RUN, "Use tabs")).toEqual({
+      steerDraft: "Use tabs",
+      refusal: "unavailable"
+    })
     expect(afterFailedSteer(view, RUN, "Use tabs")).toEqual({ steerDraft: "Use tabs", refusal: "unavailable" })
   })
   test("never over what was typed since, nor into another run's composer", () => {
@@ -242,11 +325,16 @@ describe("a steer's send", () => {
     const store = faultyPersistenceOn(join(tmpdir(), `mvp-steer-keep-${crypto.randomUUID()}.sqlite`), deviceRegistry)
     const exit = await Effect.runPromise(
       Effect.gen(function*() {
-        const sent = yield* Collection.persisted<SteerSent, string>({ id: "steer-sent", schema: SteerSentRow, getKey: (row) => row.id, schemaVersion: 1 })
+        const sent = yield* Collection.persisted<SteerSent, string>({
+          id: "steer-sent",
+          schema: SteerSentRow,
+          getKey: (row) => row.id,
+          schemaVersion: 1
+        })
         yield* sent.preload
         store.failWrites()
         return yield* Effect.exit(keep(sent, sending("a", "Use tabs", 5), "not_sent", "not_working"))
-      }).pipe(Effect.provide(Layer.fresh(store.layer)), Effect.scoped),
+      }).pipe(Effect.provide(Layer.fresh(store.layer)), Effect.scoped)
     )
     expect(Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined).toBeInstanceOf(Outbox.Retry)
   })
@@ -255,14 +343,29 @@ describe("a steer's send", () => {
   const sendWith = (answer: Effect.Effect<{ readonly id: string; readonly existing: boolean }, SteerFailed>) =>
     Effect.runPromise(
       Effect.gen(function*() {
-        const sent = yield* Collection.local<SteerSent, string>({ id: `steer-sent-${crypto.randomUUID()}`, schema: SteerSentRow, getKey: (row) => row.id })
+        const sent = yield* Collection.local<SteerSent, string>({
+          id: `steer-sent-${crypto.randomUUID()}`,
+          schema: SteerSentRow,
+          getKey: (row) => row.id
+        })
         const verdict = yield* Effect.exit(send(sent, { rows: [sending("a", "Use tabs", 5)] }))
         return { verdict, rows: (yield* sent.toArray).map((row) => [row.status, row.reason]) }
       }).pipe(
-        Effect.provideService(RemoteRunsClient, RemoteRunsClient.of({ inspect: () => Effect.die("unused"), steer: () => answer, stop: () => Effect.die("unused"), list: Effect.succeed([]), flows: () => Effect.die("unused"), inputs: () => Effect.die("unused"), start: () => Effect.die("unused") })),
+        Effect.provideService(
+          RemoteRunsClient,
+          RemoteRunsClient.of({
+            inspect: () => Effect.die("unused"),
+            steer: () => answer,
+            stop: () => Effect.die("unused"),
+            list: Effect.succeed([]),
+            flows: () => Effect.die("unused"),
+            inputs: () => Effect.die("unused"),
+            start: () => Effect.die("unused")
+          })
+        ),
         Effect.provideService(Metric.MetricRegistry, new Map()),
-        Effect.scoped,
-      ),
+        Effect.scoped
+      )
     )
   const errorOf = (exit: Exit.Exit<unknown, unknown>) => Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
 
@@ -283,16 +386,34 @@ describe("a steer's send", () => {
   test("keeps the route's answer on the device, replacing one a replayed send finds there, never the credential", async () => {
     const kept = await Effect.runPromise(
       Effect.gen(function*() {
-        const sent = yield* Collection.local<SteerSent, string>({ id: `steer-sent-${crypto.randomUUID()}`, schema: SteerSentRow, getKey: (row) => row.id })
+        const sent = yield* Collection.local<SteerSent, string>({
+          id: `steer-sent-${crypto.randomUUID()}`,
+          schema: SteerSentRow,
+          getKey: (row) => row.id
+        })
         const row: SteerSending = { ...sending("a", "Use tabs", 5), credential: "run-token" }
         yield* keep(sent, row, "sent", null)
         const first = yield* sent.toArray
         yield* keep(sent, row, "not_sent", "not_working")
         return { first, then: yield* sent.toArray }
-      }).pipe(Effect.scoped),
+      }).pipe(Effect.scoped)
     )
-    expect(kept.first).toMatchObject([{ id: "a", runId: RUN, body: "Use tabs", queuedAt: 5, status: "sent", reason: null }])
-    expect(kept.then).toMatchObject([{ id: "a", runId: RUN, body: "Use tabs", queuedAt: 5, status: "not_sent", reason: "not_working" }])
+    expect(kept.first).toMatchObject([{
+      id: "a",
+      runId: RUN,
+      body: "Use tabs",
+      queuedAt: 5,
+      status: "sent",
+      reason: null
+    }])
+    expect(kept.then).toMatchObject([{
+      id: "a",
+      runId: RUN,
+      body: "Use tabs",
+      queuedAt: 5,
+      status: "not_sent",
+      reason: "not_working"
+    }])
     expect(kept.then[0]).not.toHaveProperty("credential")
   })
 
@@ -321,15 +442,15 @@ const acting = (as: { readonly token?: string; readonly reason?: string } = {}) 
   RunCredentials.RunCredentials.of({
     bearer: as.reason !== undefined
       ? Effect.fail(new RunCredentials.CredentialUnavailable({ reason: as.reason }))
-      : Effect.succeed(Option.fromNullishOr(as.token)),
+      : Effect.succeed(Option.fromNullishOr(as.token))
   })
 
 const run = <A, E>(
-  effect: Effect.Effect<A, E, FlowRuntime.FlowInstance | TabRuns | Crypto.Crypto | RunCredentials.RunCredentials>,
+  effect: Effect.Effect<A, E, FlowRuntime.FlowInstance | TabRuns | EffectDigest.Digest | RunCredentials.RunCredentials>,
   executionId: string,
   tabs: Layer.Layer<TabRuns>,
   registry: Metric.MetricRegistry,
-  credentials: RunCredentials.RunCredentials["Service"] = acting(),
+  credentials: RunCredentials.RunCredentials["Service"] = acting()
 ) =>
   Effect.runPromise(
     Effect.exit(
@@ -339,9 +460,9 @@ const run = <A, E>(
         Effect.provideService(RunCredentials.RunCredentials, credentials),
         Effect.provide(tabs),
         Effect.provide(WebCrypto.layer),
-        Effect.provideService(Metric.MetricRegistry, registry),
-      ),
-    ),
+        Effect.provideService(Metric.MetricRegistry, registry)
+      )
+    )
   )
 
 /** A tab that answers every call, recording what it was asked. */
@@ -349,24 +470,32 @@ const recordingTab = (kept: boolean) => {
   const asked: Array<{ readonly requester: string; readonly call: RunsCall }> = []
   return {
     asked,
-    layer: Layer.succeed(TabRuns, TabRuns.of({
-      ask: (call) => Effect.sync(() => {
-        asked.push(call)
-        return Option.some({ door: "composer" as const, kept })
-      }),
-    })),
+    layer: Layer.succeed(
+      TabRuns,
+      TabRuns.of({
+        ask: (call) =>
+          Effect.sync(() => {
+            asked.push(call)
+            return Option.some({ door: "composer" as const, kept })
+          })
+      })
+    )
   }
 }
 
 /** No tab listens on this engine's channel (Node's own `BroadcastChannel`): the tab that asked is gone. */
-const noTab = TabRuns.layerChannel({ name: `none-${crypto.randomUUID()}`, within: "100 millis" }).pipe(Layer.provide(TabChannel.layer))
+const noTab = TabRuns.layerChannel({ name: `none-${crypto.randomUUID()}`, within: "100 millis" }).pipe(
+  Layer.provide(TabChannel.layer)
+)
 
 const failure = (exit: Exit.Exit<unknown, unknown>) =>
   Exit.isFailure(exit) ? Option.getOrUndefined(Cause.findErrorOption(exit.cause)) : undefined
 
 const count = (registry: Metric.MetricRegistry, attributes: Record<string, string>) =>
   Effect.runSync(
-    Metric.value(Metric.withAttributes(steersQueued, attributes)).pipe(Effect.provideService(Metric.MetricRegistry, registry)),
+    Metric.value(Metric.withAttributes(steersQueued, attributes)).pipe(
+      Effect.provideService(Metric.MetricRegistry, registry)
+    )
   ).count
 
 describe("the steer step", () => {
@@ -380,7 +509,7 @@ describe("the steer step", () => {
     const steerId = Exit.isSuccess(first) ? first.value.steerId : ""
     expect(tab.asked).toEqual([
       { requester: PERSON, call: { kind: "steer", steer: { id: steerId, runId: RUN, body: "Use tabs" } } },
-      { requester: PERSON, call: { kind: "steer", steer: { id: steerId, runId: RUN, body: "Use tabs" } } },
+      { requester: PERSON, call: { kind: "steer", steer: { id: steerId, runId: RUN, body: "Use tabs" } } }
     ])
     expect(count(registry, { door: "composer", outcome: "kept" })).toBe(2)
   })
@@ -388,7 +517,13 @@ describe("the steer step", () => {
   test("the agent's call asks the tab whose answer it belongs to with its run credential, and counts as the agent's", async () => {
     const registry: Metric.MetricRegistry = new Map()
     const tab = recordingTab(true)
-    const exit = await run(queueSteer({ runId: RUN, body: "Keep it short" }), AGENT, tab.layer, registry, acting({ token: "run-token" }))
+    const exit = await run(
+      queueSteer({ runId: RUN, body: "Keep it short" }),
+      AGENT,
+      tab.layer,
+      registry,
+      acting({ token: "run-token" })
+    )
     expect(Exit.isSuccess(exit)).toBe(true)
     expect(tab.asked[0]!.requester).toBe("answer-1")
     expect(tab.asked[0]!.call.steer.credential).toBe("run-token")
@@ -398,7 +533,13 @@ describe("the steer step", () => {
   test("a run with no credential to send queues nothing: its message never goes in the person's session", async () => {
     const registry: Metric.MetricRegistry = new Map()
     const tab = recordingTab(true)
-    const exit = await run(queueSteer({ runId: RUN, body: "x" }), AGENT, tab.layer, registry, acting({ reason: "expired" }))
+    const exit = await run(
+      queueSteer({ runId: RUN, body: "x" }),
+      AGENT,
+      tab.layer,
+      registry,
+      acting({ reason: "expired" })
+    )
     expect(failure(exit)).toEqual(new SteerStepRefused({ reason: "no_credential" }))
     expect(tab.asked).toEqual([])
     expect(count(registry, { door: "agent", outcome: "no_credential" })).toBe(1)

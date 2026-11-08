@@ -1,0 +1,932 @@
+{
+  "id": "packages/smithers/gateway",
+  "name": "@smthrs/gateway",
+  "owner": {
+    "declaration": "packages/smithers/gateway/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
+    "circular": "node ../../repo-targets/scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./Diagnosis": "./src/Diagnosis.ts",
+    "./GatewayError": "./src/GatewayError.ts",
+    "./GatewayProjection": "./src/GatewayProjection.ts",
+    "./GatewayRpcs": "./src/GatewayRpcs.ts",
+    "./GatewaySchema": "./src/GatewaySchema.ts",
+    "./GatewayServer": "./src/GatewayServer.ts",
+    "./Projections": "./src/Projections.ts",
+    "./RuntimeBridge": "./src/RuntimeBridge.ts",
+    "./index": "./src/index.ts",
+    "./node/NodeGateway": "./src/node/NodeGateway.ts",
+    "./bun/BunGateway": "./src/bun/BunGateway.ts",
+    "./RunTrace": "./src/RunTrace.ts",
+    "./EngineTrace": "./src/EngineTrace.ts",
+    "./RunDevTools": "./src/RunDevTools.ts",
+    "./RunHistory": "./src/RunHistory.ts",
+    "./SuperviseRuntime": null,
+    "./test/TestSuperviseRuntime": null
+  },
+  "production": [
+    "eslint.config.js",
+    "examples/diagnose.ts",
+    "PACKAGE.ts",
+    "scripts/build.mjs",
+    "scripts/check-boundary-mutations.mjs",
+    "src/bun/BunGateway.ts",
+    "src/Diagnosis.ts",
+    "src/EngineTrace.ts",
+    "src/GatewayError.ts",
+    "src/GatewayProjection.ts",
+    "src/GatewayRpcs.ts",
+    "src/GatewaySchema.ts",
+    "src/GatewayServer.ts",
+    "src/HostBranchPresence.ts",
+    "src/index.ts",
+    "src/InspectionJournal.ts",
+    "src/internal/actionRenderings.ts",
+    "src/internal/callEvents.ts",
+    "src/internal/digestIndex.ts",
+    "src/internal/digestMemory.ts",
+    "src/internal/inspectLabels.ts",
+    "src/internal/NativeGateway.ts",
+    "src/internal/nativeResolution.ts",
+    "src/internal/nodeEvents.ts",
+    "src/node/NodeGateway.ts",
+    "src/Projections.ts",
+    "src/RunDevTools.ts",
+    "src/RunHistory.ts",
+    "src/RuntimeBridge.ts",
+    "src/RunTrace.ts",
+    "test/fixtures/bun-gateway.ts",
+    "test/fixtures/module-run-journal.ts",
+    "test/GatewayStack.ts",
+    "test/host-presence-fixture.ts",
+    "test/RealEngineRun.ts",
+    "vitest.config.ts"
+  ],
+  "tests": [
+    "packages/smithers/gateway/test/ApprovalFollow.test.ts",
+    "packages/smithers/gateway/test/BunGateway.test.ts",
+    "packages/smithers/gateway/test/BunGatewayAdapter.test.ts",
+    "packages/smithers/gateway/test/CallFacts.test.ts",
+    "packages/smithers/gateway/test/DefectRedaction.test.ts",
+    "packages/smithers/gateway/test/Diagnosis.test.ts",
+    "packages/smithers/gateway/test/DiagnosisForeignRun.test.ts",
+    "packages/smithers/gateway/test/DigestIndex.test.ts",
+    "packages/smithers/gateway/test/DigestRetention.test.ts",
+    "packages/smithers/gateway/test/DocsAccuracy.test.ts",
+    "packages/smithers/gateway/test/EngineTrace.test.ts",
+    "packages/smithers/gateway/test/Examples.test.ts",
+    "packages/smithers/gateway/test/fixtures/bun-gateway.ts",
+    "packages/smithers/gateway/test/fixtures/module-run-journal.ts",
+    "packages/smithers/gateway/test/GatewayProjection.test.ts",
+    "packages/smithers/gateway/test/GatewayRpcs.test.ts",
+    "packages/smithers/gateway/test/GatewaySchema.test.ts",
+    "packages/smithers/gateway/test/GatewayServer.test.ts",
+    "packages/smithers/gateway/test/GatewayStack.ts",
+    "packages/smithers/gateway/test/HealthProjection.test.ts",
+    "packages/smithers/gateway/test/host-presence-fixture.ts",
+    "packages/smithers/gateway/test/HostBranchPresence.test.ts",
+    "packages/smithers/gateway/test/Index.test.ts",
+    "packages/smithers/gateway/test/InspectionJournal.test.ts",
+    "packages/smithers/gateway/test/MutationContracts.test.ts",
+    "packages/smithers/gateway/test/NativeResolution.test.ts",
+    "packages/smithers/gateway/test/Projections.test.ts",
+    "packages/smithers/gateway/test/ProjectionsUnit.test.ts",
+    "packages/smithers/gateway/test/ReadmeExports.test.ts",
+    "packages/smithers/gateway/test/RealEngineRun.test.ts",
+    "packages/smithers/gateway/test/RealEngineRun.ts",
+    "packages/smithers/gateway/test/RunDevTools.test.ts",
+    "packages/smithers/gateway/test/RunHistory.test.ts",
+    "packages/smithers/gateway/test/RuntimeBridge.test.ts",
+    "packages/smithers/gateway/test/RuntimeBridgeCursor.test.ts",
+    "packages/smithers/gateway/test/RunTrace.test.ts",
+    "packages/smithers/gateway/test/RunTraceBoundaries.test.ts",
+    "packages/smithers/gateway/test/RunTraceFold.test.ts",
+    "packages/smithers/gateway/test/RunTraceForeignRun.test.ts",
+    "packages/smithers/gateway/test/RunTraceMemory.test.ts",
+    "packages/smithers/gateway/test/RunTraceSteps.test.ts",
+    "packages/smithers/gateway/test/SourceDocblocks.test.ts",
+    "packages/smithers/gateway/test/StepFacts.test.ts",
+    "packages/smithers/gateway/test/WireFormat.test.ts",
+    "packages/smithers/gateway/tsconfig.test.json"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    "packages/smithers/gateway/src/bun/BunGateway.ts",
+    "packages/smithers/gateway/src/internal/NativeGateway.ts",
+    "packages/smithers/gateway/src/internal/nativeResolution.ts",
+    "packages/smithers/gateway/src/internal/nodeEvents.ts",
+    "packages/smithers/gateway/src/node/NodeGateway.ts",
+    "packages/smithers/gateway/test/BunGateway.test.ts",
+    "packages/smithers/gateway/test/BunGatewayAdapter.test.ts",
+    "packages/smithers/gateway/test/fixtures/bun-gateway.ts",
+    "packages/smithers/gateway/test/NativeResolution.test.ts"
+  ],
+  "ignoredCases": [
+    {
+      "path": "packages/smithers/gateway/src/Projections.ts",
+      "line": 474,
+      "text": "/* v8 ignore next 3 -- unreachable while every term above is a byte length. */"
+    },
+    {
+      "path": "packages/smithers/gateway/src/Projections.ts",
+      "line": 772,
+      "text": "/* v8 ignore next -- rows, selectors, cursors, and tags were admitted before this internal assembly step. */"
+    },
+    {
+      "path": "packages/smithers/gateway/src/Projections.ts",
+      "line": 774,
+      "text": "/* v8 ignore next -- the assembled frame consists only of already-admitted fields. */"
+    },
+    {
+      "path": "packages/smithers/gateway/src/Projections.ts",
+      "line": 783,
+      "text": "/* v8 ignore next -- boundedRows and cursorOf admit every field before this internal assembly step. */"
+    },
+    {
+      "path": "packages/smithers/gateway/src/Projections.ts",
+      "line": 785,
+      "text": "/* v8 ignore next -- the assembled snapshot consists only of already-admitted fields. */"
+    },
+    {
+      "path": "packages/smithers/gateway/src/Projections.ts",
+      "line": 1491,
+      "text": "/* v8 ignore next -- only runs still followed after the batch are refreshed. */"
+    }
+  ],
+  "configurations": [
+    {
+      "path": "packages/smithers/gateway/eslint.config.js",
+      "sha256": "876fbacb2be2f5db92d214f3271d5443d6481b1455e74d3684973d0e883ff56e",
+      "source": "import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  {\n    ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]\n  },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: {\n      parserOptions: {\n        projectService: true,\n        tsconfigRootDir: import.meta.dirname\n      }\n    },\n    settings: {\n      \"import/resolver\": {\n        typescript: {\n          project: [\"./tsconfig.json\"]\n        }\n      }\n    },\n    plugins: {\n      unicorn\n    },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n",
+      "coverageDirectives": [
+        {
+          "line": 10,
+          "text": "ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]"
+        },
+        {
+          "line": 41,
+          "text": "\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/gateway/package.json",
+      "sha256": "3e043bd2887430efb5c6ebb9a3f1061e5a23117a70c86f02e16b97416481d721",
+      "source": "{\n  \"name\": \"@smthrs/gateway\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"agent\",\n    \"privateEffectAdapters\": [\n      \"@effect/platform-bun\",\n      \"@effect/platform-node\",\n      \"@effect/platform-node-shared\"\n    ]\n  },\n  \"description\": \"Effect workspace gateway contracts, projections, and supervision ports for flows\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/gateway\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"effect\",\n    \"gateway\",\n    \"control\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"effect\",\n    \"gateway\",\n    \"control\"\n  ],\n  \"engines\": {\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [],\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./internal/*\": null,\n    \"./*/index\": null,\n    \"./Diagnosis\": \"./src/Diagnosis.ts\",\n    \"./GatewayError\": \"./src/GatewayError.ts\",\n    \"./GatewayProjection\": \"./src/GatewayProjection.ts\",\n    \"./GatewayRpcs\": \"./src/GatewayRpcs.ts\",\n    \"./GatewaySchema\": \"./src/GatewaySchema.ts\",\n    \"./GatewayServer\": \"./src/GatewayServer.ts\",\n    \"./Projections\": \"./src/Projections.ts\",\n    \"./RuntimeBridge\": \"./src/RuntimeBridge.ts\",\n    \"./index\": \"./src/index.ts\",\n    \"./node/NodeGateway\": \"./src/node/NodeGateway.ts\",\n    \"./bun/BunGateway\": \"./src/bun/BunGateway.ts\",\n    \"./RunTrace\": \"./src/RunTrace.ts\",\n    \"./EngineTrace\": \"./src/EngineTrace.ts\",\n    \"./RunDevTools\": \"./src/RunDevTools.ts\",\n    \"./RunHistory\": \"./src/RunHistory.ts\",\n    \"./SuperviseRuntime\": null,\n    \"./test/TestSuperviseRuntime\": null\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"dist/vendor/**\",\n    \"docs/\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./internal/*\": null,\n      \"./*/index\": null,\n      \"./Diagnosis\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Diagnosis.d.ts\",\n          \"default\": \"./dist/esm/Diagnosis.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Diagnosis.d.ts\",\n          \"default\": \"./dist/cjs/Diagnosis.js\"\n        }\n      },\n      \"./GatewayError\": {\n        \"import\": {\n          \"types\": \"./dist/esm/GatewayError.d.ts\",\n          \"default\": \"./dist/esm/GatewayError.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/GatewayError.d.ts\",\n          \"default\": \"./dist/cjs/GatewayError.js\"\n        }\n      },\n      \"./GatewayProjection\": {\n        \"import\": {\n          \"types\": \"./dist/esm/GatewayProjection.d.ts\",\n          \"default\": \"./dist/esm/GatewayProjection.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/GatewayProjection.d.ts\",\n          \"default\": \"./dist/cjs/GatewayProjection.js\"\n        }\n      },\n      \"./GatewayRpcs\": {\n        \"import\": {\n          \"types\": \"./dist/esm/GatewayRpcs.d.ts\",\n          \"default\": \"./dist/esm/GatewayRpcs.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/GatewayRpcs.d.ts\",\n          \"default\": \"./dist/cjs/GatewayRpcs.js\"\n        }\n      },\n      \"./GatewaySchema\": {\n        \"import\": {\n          \"types\": \"./dist/esm/GatewaySchema.d.ts\",\n          \"default\": \"./dist/esm/GatewaySchema.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/GatewaySchema.d.ts\",\n          \"default\": \"./dist/cjs/GatewaySchema.js\"\n        }\n      },\n      \"./GatewayServer\": {\n        \"import\": {\n          \"types\": \"./dist/esm/GatewayServer.d.ts\",\n          \"default\": \"./dist/esm/GatewayServer.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/GatewayServer.d.ts\",\n          \"default\": \"./dist/cjs/GatewayServer.js\"\n        }\n      },\n      \"./Projections\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Projections.d.ts\",\n          \"default\": \"./dist/esm/Projections.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Projections.d.ts\",\n          \"default\": \"./dist/cjs/Projections.js\"\n        }\n      },\n      \"./RuntimeBridge\": {\n        \"import\": {\n          \"types\": \"./dist/esm/RuntimeBridge.d.ts\",\n          \"default\": \"./dist/esm/RuntimeBridge.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/RuntimeBridge.d.ts\",\n          \"default\": \"./dist/cjs/RuntimeBridge.js\"\n        }\n      },\n      \"./index\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./node/NodeGateway\": {\n        \"import\": {\n          \"types\": \"./dist/esm/node/NodeGateway.d.ts\",\n          \"default\": \"./dist/esm/node/NodeGateway.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/node/NodeGateway.d.ts\",\n          \"default\": \"./dist/cjs/node/NodeGateway.js\"\n        }\n      },\n      \"./bun/BunGateway\": {\n        \"import\": {\n          \"types\": \"./dist/esm/bun/BunGateway.d.ts\",\n          \"default\": \"./dist/esm/bun/BunGateway.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/bun/BunGateway.d.ts\",\n          \"default\": \"./dist/cjs/bun/BunGateway.js\"\n        }\n      },\n      \"./RunTrace\": {\n        \"import\": {\n          \"types\": \"./dist/esm/RunTrace.d.ts\",\n          \"default\": \"./dist/esm/RunTrace.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/RunTrace.d.ts\",\n          \"default\": \"./dist/cjs/RunTrace.js\"\n        }\n      },\n      \"./EngineTrace\": {\n        \"import\": {\n          \"types\": \"./dist/esm/EngineTrace.d.ts\",\n          \"default\": \"./dist/esm/EngineTrace.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/EngineTrace.d.ts\",\n          \"default\": \"./dist/cjs/EngineTrace.js\"\n        }\n      },\n      \"./RunDevTools\": {\n        \"import\": {\n          \"types\": \"./dist/esm/RunDevTools.d.ts\",\n          \"default\": \"./dist/esm/RunDevTools.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/RunDevTools.d.ts\",\n          \"default\": \"./dist/cjs/RunDevTools.js\"\n        }\n      },\n      \"./RunHistory\": {\n        \"import\": {\n          \"types\": \"./dist/esm/RunHistory.d.ts\",\n          \"default\": \"./dist/esm/RunHistory.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/RunHistory.d.ts\",\n          \"default\": \"./dist/cjs/RunHistory.js\"\n        }\n      },\n      \"./SuperviseRuntime\": null,\n      \"./test/TestSuperviseRuntime\": null\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"check\": \"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"vitest --coverage\"\n  },\n  \"dependencies\": {\n    \"@smthrs/control\": \"1.0.0-rc.16\",\n    \"@smthrs/engine-store\": \"1.0.0-rc.16\",\n    \"@smthrs/flow\": \"1.0.0-rc.16\",\n    \"@smthrs/journal\": \"1.0.0-rc.16\",\n    \"@smthrs/registry\": \"1.0.0-rc.16\",\n    \"@smthrs/sync\": \"1.0.0-rc.16\",\n    \"undici\": \"8.11.2\",\n    \"redis\": \"6.2.1\",\n    \"@types/ws\": \"8.18.2\",\n    \"ws\": \"8.22.0\"\n  },\n  \"devDependencies\": {\n    \"@effect/language-service\": \"0.87.2\",\n    \"@effect/platform-node\": \"4.0.5\",\n    \"@effect/vitest\": \"4.0.5\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@smthrs/database\": \"1.0.0-rc.16\",\n    \"@smthrs/flows\": \"1.0.0-rc.16\",\n    \"@smthrs/kernel\": \"1.0.0-rc.16\",\n    \"@smthrs/notifications\": \"1.0.0-rc.16\",\n    \"@smthrs/platform-node\": \"1.0.0-rc.16\",\n    \"@smthrs/run-store\": \"1.0.0-rc.16\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"effect\": \"4.0.5\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\",\n    \"fast-check\": \"4.9.0\",\n    \"@effect/platform-bun\": \"4.0.5\",\n    \"@effect/platform-node-shared\": \"4.0.5\"\n  },\n  \"peerDependencies\": {\n    \"effect\": \"4.0.5\"\n  },\n  \"peerDependenciesMeta\": {}\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 255,
+          "text": "\"coverage\": \"vitest --coverage\""
+        },
+        {
+          "line": 281,
+          "text": "\"@vitest/coverage-v8\": \"5.0.0\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/gateway/PACKAGE.ts",
+      "sha256": "5252c31b2226fa5ed4edb62f7579e648cf3f5293baece7171fecd32988fa863e",
+      "source": "import {\n  BuildAndCheckTypeScriptPackage,\n  ImportRules,\n  ReviewDocsAgainstCode,\n  ReviewJsdocAgainstCode\n} from \"@smthrs/repo-targets\"\n/**\n * Standard package targets.\n *\n * `cwd` anchors every emitted tool run in this package directory.\n */\nimport { Smithers } from \"@smthrs/targets\"\nimport * as Input from \"@smthrs/targets/Input\"\n\nconst { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({\n  deps: [],\n  testSources: Input.glob(\"{test,examples}/**/*.ts\"),\n  cwd: \"packages/smithers/gateway\"\n})\n\nconst importRules = ImportRules({\n  cwd: \"packages/smithers/gateway\",\n  rules: [{\n    kind: \"forbidCalls\",\n    files: [\"src/internal/NativeGateway.ts\"],\n    callees: [\"*.runPromise\", \"*.runSync\", \"*.runFork\"],\n    because: \"effect.boundary-only: native gateway composition supplies services and returns layers.\"\n  }, {\n    kind: \"forbidCalls\",\n    files: [\"test/DefectRedaction.test.ts\"],\n    callees: [\"setTimeout\", \"*.sleep\", \"*.waitForTimeout\", \"vi.mock\", \"vi.doMock\", \"jest.mock\"],\n    because: \"test.behavioral: defect redaction uses real HTTP handlers and faulty Effect services.\"\n  }]\n})\n\n/**\n * Changed public APIs against the package README, every docs page (concepts\n * and guides included), and the site API reference page.\n *\n * @since 1.0.0\n * @category lint\n */\nconst reviewDocsAgainstCode = ReviewDocsAgainstCode({\n  cwd: \"packages/smithers/gateway\",\n  context: [\n    Smithers.file(\"README.md\"),\n    Smithers.glob(\"docs/**/*.md\"),\n    Smithers.file(\"//apps/site/src/content/docs/docs/reference/api/gateway.mdx\")\n  ]\n})\n\n/**\n * Changed exports against their own JSDoc.\n *\n * @since 1.0.0\n * @category lint\n */\nconst reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: \"packages/smithers/gateway\" })\n\nconst securityReview = Smithers.SecurityReview({\n  cwd: \"packages/smithers/gateway\",\n  include: [\"src/**\", \"scripts/**\"],\n  boundaries: [{\n    id: \"gateway-control-execution\",\n    actors: [\"Network client\", \"Authenticated control principal\", \"Run executor\"],\n    assets: [\"Workspace runs\", \"Approval decisions\", \"Credentials\"],\n    entryPoints: [\"Gateway control RPC and runtime bridge\"],\n    identityTransformations: [\"Configured bearer becomes a ControlPrincipal passed into control operations\"],\n    enforcementPoints: [\n      \"Bind, Host and Origin policy; RPC bearer authentication; control ownership and approval authority\"\n    ],\n    deploymentAssumptions: [\n      \"Loopback is local operator authority; remote listeners require an explicit credential and trusted host composition\"\n    ],\n    path: {\n      caller: [\"src/GatewayServer.ts\", \"src/RuntimeBridge.ts\"],\n      authorization: [\n        \"src/internal/NativeGateway.ts\",\n        \"//packages/smithers/control/src/ControlRpcs.ts\",\n        \"//packages/smithers/control/src/ApprovalAuthority.ts\"\n      ],\n      service: [\"//packages/smithers/control/src/ControlServer.ts\", \"//packages/smithers/control/src/ControlLive.ts\"],\n      storageOrEgress: [\n        \"//packages/smithers/control/src/ControlExecutor.ts\",\n        \"//packages/smithers/control/src/ControlRuntime.ts\",\n        \"//packages/smithers/control/src/SqlControlRuntime.ts\"\n      ]\n    }\n  }],\n  checks: [\n    {\n      id: \"bind-fails-closed\",\n      title: \"A non-loopback or bridge-enabled gateway never starts without --listen and a bearer credential\",\n      threat:\n        \"Anyone on a shared network launches, cancels, or approves runs on a developer's workspace through an unauthenticated gateway.\",\n      lookFor: [\n        \"A path through bindRefusal or listenOptions that admits a host outside loopbackHostNames when listen !== true or credential is empty.\",\n        \"layerAuth choosing layerNoopAuth while the bind host is not loopback, or isLoopbackHost trusting a spelling such as 0.0.0.0, ::, or 127.0.0.1.nip.io.\",\n        \"A Bun or Node adapter that binds options it did not first pass through the shared listenOptions policy.\",\n        \"A runtimeBridge enabled with credential undefined or empty, or the non-null credential assertion in makeLayer reachable without it.\"\n      ],\n      paths: [\"src/internal/NativeGateway.ts\", \"src/bun/**\", \"src/node/**\"]\n    },\n    {\n      id: \"ingress-host-origin\",\n      title:\n        \"Host and Origin checks stop browser pages and DNS rebinding from reaching the credential-free loopback gateway\",\n      threat:\n        \"A malicious web page the developer visits drives the local operator's control plane through DNS rebinding or cross-origin requests.\",\n      lookFor: [\n        \"requestAuthority or browserRequestRefusal accepting a Host header whose hostname is not in allowedHosts, or a loopbackOnly gateway accepting a non-loopback Host.\",\n        \"An Origin header that is present but not http(s) with the exact Host authority and port, and still reaches a mount, including on a WebSocket upgrade.\",\n        \"A request path, such as GET /health or a 404, that runs before the Host/Origin check and returns non-identity data.\",\n        \"ingressOptions adding a wildcard bind (0.0.0.0 or ::) or an attacker-controlled name to allowedHosts.\"\n      ],\n      paths: [\"src/GatewayServer.ts\", \"src/internal/NativeGateway.ts\"]\n    },\n    {\n      id: \"edge-auth-path-aliases\",\n      title: \"Every alias the router resolves to a protected mount is authenticated and body-bounded first\",\n      threat:\n        \"An unauthenticated network caller reads projections, sync state, or opens /rpc/ws and /runtime/v1 sockets by spelling the path so routedPath misses it.\",\n      lookFor: [\n        \"A spelling (percent-encoding, ;params, duplicate slashes, dot segments, case, backslash) that HttpRouter routes to a mount while routedPath returns a string outside protectedPaths or boundedPostPaths.\",\n        \"A new HttpRouter.add or RpcServer mount path that is not listed in protectedPaths, rpcPaths, or boundedPostPaths.\",\n        \"The authorize callback skipped for a protected path when options.authorize is set, or run after the body is read.\"\n      ],\n      paths: [\"src/GatewayServer.ts\", \"src/RuntimeBridge.ts\"]\n    },\n    {\n      id: \"principal-stamped-by-server\",\n      title: \"Every mutation records the server-authenticated principal, never a client-supplied one\",\n      threat:\n        \"A bearer holder or bridge caller records approvals, signals, steers, or cancels under another operator's identity, forging the audit trail.\",\n      lookFor: [\n        \"Approval.Submit or RuntimeBridge.execute passing a principal, requestedBy, or identity field decoded from the request payload instead of ControlPrincipal or config.authenticate.\",\n        \"A spread of client input (such as input.approval or input.steer) placed after principal so a client field overwrites it.\",\n        \"A RuntimeBridge route that runs a command or observation before config.authenticate succeeds.\"\n      ],\n      paths: [\"src/GatewayServer.ts\", \"src/RuntimeBridge.ts\", \"src/GatewayRpcs.ts\"]\n    },\n    {\n      id: \"human-wait-answer-routing\",\n      title:\n        \"An answer or approval reaches only the wait the payload proves, and a question is never granted by a bare approve\",\n      threat:\n        \"A caller answers or approves a different run's gate, or resumes a HumanTask with no answer, by editing the target runId, digest, or decision.\",\n      lookFor: [\n        \"Approval.Submit signalling a runId or wait name taken from input without ControlExecutor.answerableWait deriving it from the target digest.\",\n        \"A deny or answer-less approve on an answerable wait that falls through to control.approve or control.deny.\",\n        \"humanWaitRow or approvals building a submit payload whose digest or idempotencyKey is not bound to the observed wait token, letting two parks share one decision.\"\n      ],\n      paths: [\"src/GatewayServer.ts\", \"src/GatewayProjection.ts\", \"src/GatewayRpcs.ts\"]\n    },\n    {\n      id: \"bridge-launch-provenance\",\n      title:\n        \"The runtime bridge launches only flows whose artifact digest, source revision, and owner generation match the host\",\n      threat:\n        \"A stale or compromised product backend launches a flow built from a different source revision or through a superseded owner process.\",\n      lookFor: [\n        \"execute reaching control.plan or control.run before validateOwner and the runtimeArtifactDigest and sourceRevision comparisons.\",\n        \"plannedSource falling back to a request-supplied or environment-supplied revision instead of plan.graph.sourceRevision or verifiedCatalogSourceRevision.\",\n        \"idempotencyKey built from fields a caller can vary to replay a completed launch or decision under a new key.\"\n      ],\n      paths: [\"src/RuntimeBridge.ts\"]\n    },\n    {\n      id: \"error-and-log-sanitization\",\n      title: \"Wire errors carry only stable codes and tags, never backend messages, SQL, paths, or credentials\",\n      threat:\n        \"Any bearer holder, or a browser behind the product relay, reads storage paths, SQL diagnostics, executor output, or the bearer token from an error frame or log line.\",\n      lookFor: [\n        \"A GatewayError, BridgeError, or ErrorResponse built with a cause's message, stack, or nested cause instead of summarize or the stable code.\",\n        \"bindFailure, mapServeError, or the Bun catchCause copying host, port, or errno onto the wire error rather than only the operator log.\",\n        \"An Effect.log call that logs request headers, the credential, or a full request body.\"\n      ],\n      paths: [\n        \"src/GatewayError.ts\",\n        \"src/Projections.ts\",\n        \"src/RuntimeBridge.ts\",\n        \"src/internal/NativeGateway.ts\",\n        \"src/bun/**\"\n      ]\n    },\n    {\n      id: \"read-path-resource-bounds\",\n      title:\n        \"Every request body, event scan, page, subscription, and projection stays under its declared byte and count limit\",\n      threat:\n        \"An authenticated client or a run emitting huge events exhausts gateway memory or CPU and takes down the workspace control plane.\",\n      lookFor: [\n        \"A body read in layerIngress or RuntimeBridge.readJson without HttpServerRequest.MaxBodySize, or a route outside boundedPostPaths that reads a body.\",\n        \"A control.watch or control.list stream in Projections or RuntimeBridge.observe consumed without Stream.take or a limit clamp such as maximumEventLimit.\",\n        \"A projection fold, subscription follower set, or digest index that grows past maxEventsPerRun, maxProjectionBytes, or maxWorkspaceRuns without evicting or failing with resource_limit.\",\n        \"A client-supplied limit or cursor that reaches Number arithmetic unclamped.\"\n      ],\n      paths: [\n        \"src/GatewayServer.ts\",\n        \"src/Projections.ts\",\n        \"src/RuntimeBridge.ts\",\n        \"src/internal/digestIndex.ts\",\n        \"src/internal/digestMemory.ts\"\n      ]\n    },\n    {\n      id: \"projection-output-integrity\",\n      title: \"A run's final output and approval rows come only from committed, bound root facts\",\n      threat:\n        \"A child flow or forged telemetry event makes the product show, or the bridge return, a result or approval the root run never committed.\",\n      lookFor: [\n        \"nativeResolution.output returning text when binding and result disagree, conflict is set, or the event came from a non-root execution.\",\n        \"A projection row that trusts event.payload fields (flowName, status, finalOutput) without the version and executionId checks fromEvent applies.\",\n        \"RuntimeBridge.observe returning finalOutput when the snapshot row's runId, planDigest, or status differs from the listed summary.\"\n      ],\n      paths: [\n        \"src/internal/nativeResolution.ts\",\n        \"src/internal/NativeGateway.ts\",\n        \"src/GatewayProjection.ts\",\n        \"src/Projections.ts\",\n        \"src/RuntimeBridge.ts\"\n      ]\n    },\n    {\n      id: \"trace-verdict-provenance\",\n      title:\n        \"Run trace and diagnosis verdicts come only from the root run's control records, never from agent-authored payload text\",\n      threat:\n        \"An agent's cell output or a child run's journal records make the run card or diagnosis show a run as completed, passed, or failed when the root run's control journal says otherwise.\",\n      lookFor: [\n        \"A control.run.completed, failed, or cancelled record whose runId differs from the traced run still setting state.verdict, a pin, or accumulator.status.\",\n        \"A verdict, status, or sufficiency note derived from payload fields (message, cause, failed, passed, flow) that a cell-printed or model-settled record can supply.\",\n        \"A fold over journal records with no cap on records, spans, notes, or refusalCounts, so a run that emits many records exhausts the viewer.\"\n      ],\n      paths: [\n        \"src/RunTrace.ts\",\n        \"src/Diagnosis.ts\",\n        \"src/EngineTrace.ts\",\n        \"src/internal/callEvents.ts\",\n        \"src/internal/nodeEvents.ts\"\n      ]\n    },\n    {\n      id: \"health-probe-identity-only\",\n      title: \"The unauthenticated GET /health answers identity only\",\n      threat:\n        \"An unauthenticated network caller learns tokens, run ids, prompts, or filesystem paths from the health probe.\",\n      lookFor: [\n        \"A field added to Health or RuntimeBridge.Identity that carries a credential, run, path, or environment value.\",\n        \"layerHealth serving anything other than the fixed encoded Health value.\"\n      ],\n      paths: [\"src/GatewayServer.ts\", \"src/GatewaySchema.ts\", \"src/RuntimeBridge.ts\"]\n    },\n    {\n      id: \"mutation-script-exec\",\n      title: \"The boundary-mutation script runs only fixed commands on fixed files\",\n      threat:\n        \"A contributor's environment or file contents inject commands into the pnpm/vitest subprocess the script spawns on a developer or CI machine.\",\n      lookFor: [\n        \"spawnSync called with shell: true or with arguments built from environment variables or file contents.\",\n        \"Generated config code that interpolates values without JSON.stringify.\"\n      ],\n      paths: [\"scripts/**\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: {\n    check,\n    circular,\n    docs,\n    docsFiles,\n    fmt,\n    lib,\n    lint,\n    importRules,\n    reviewDocsAgainstCode,\n    reviewJsdocAgainstCode,\n    test,\n    ...securityReview\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 38,
+          "text": "* and guides included), and the site API reference page."
+        },
+        {
+          "line": 62,
+          "text": "include: [\"src/**\", \"scripts/**\"],"
+        },
+        {
+          "line": 126,
+          "text": "\"The authorize callback skipped for a protected path when options.authorize is set, or run after the body is read.\""
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/gateway/tsconfig.json",
+      "sha256": "0064dce36d22143039105eb068be99456971e6caf6e7cebac24633514a2009b8",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [\n      {\n        \"name\": \"@effect/language-service\",\n        \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n        \"includeSuggestionsInTsc\": false,\n        \"ignoreEffectWarningsInTscExitCode\": true,\n        \"ignoreEffectErrorsInTscExitCode\": true,\n        \"diagnosticSeverity\": {\n          \"globalErrorInEffectFailure\": \"off\"\n        }\n      }\n    ]\n  },\n  \"include\": [\"src/**/*\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 17,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 30,
+          "text": "\"includeSuggestionsInTsc\": false,"
+        },
+        {
+          "line": 31,
+          "text": "\"ignoreEffectWarningsInTscExitCode\": true,"
+        },
+        {
+          "line": 32,
+          "text": "\"ignoreEffectErrorsInTscExitCode\": true,"
+        },
+        {
+          "line": 39,
+          "text": "\"include\": [\"src/**/*\"]"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/gateway/vitest.config.ts",
+      "sha256": "4fa7d5eeffffab504f01272d3729d7fbf9d6a7998da34ee14105e0458d39c8a7",
+      "source": "import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],\n    environment: \"node\",\n    // House convention (see packages/smithers/flows/journal/vitest.config.ts): a finite 30 s\n    // wall-clock budget so correct suites survive coverage-instrumented load\n    // while a genuine hang still fails the run.\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      enabled: true,\n      provider: \"v8\",\n      // Per-process report directory so concurrent vitest runs do not destroy\n      // each other's coverage scratch state (issues #115/#121).\n      reportsDirectory: join(tmpdir(), `flows-gateway-coverage-${process.pid}`),\n      include: [\"src/**\"],\n      thresholds: {\n        branches: 100,\n        functions: 100,\n        lines: 100,\n        statements: 100\n      }\n    }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 11,
+          "text": "fileURLToPath(new URL(\"../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"
+        },
+        {
+          "line": 14,
+          "text": "include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],"
+        },
+        {
+          "line": 17,
+          "text": "// wall-clock budget so correct suites survive coverage-instrumented load"
+        },
+        {
+          "line": 21,
+          "text": "coverage: {"
+        },
+        {
+          "line": 23,
+          "text": "provider: \"v8\","
+        },
+        {
+          "line": 25,
+          "text": "// each other's coverage scratch state (issues #115/#121)."
+        },
+        {
+          "line": 26,
+          "text": "reportsDirectory: join(tmpdir(), `flows-gateway-coverage-${process.pid}`),"
+        },
+        {
+          "line": 27,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 28,
+          "text": "thresholds: {"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/gateway",
+      "label": "//packages/smithers/gateway:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/gateway/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/gateway/{test,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/tsconfig.test.json"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/gateway:lib"
+      ]
+    },
+    {
+      "package": "packages/smithers/gateway",
+      "label": "//packages/smithers/gateway:circular",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/circular.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/gateway/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/gateway",
+      "label": "//packages/smithers/gateway:docs",
+      "rule": "DocsParity",
+      "kinds": [
+        "docs"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/gateway",
+      "label": "//packages/smithers/gateway:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/gateway/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/gateway",
+      "label": "//packages/smithers/gateway:fmt",
+      "rule": "Dprint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/gateway/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/gateway/{test,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/dprint.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/gateway",
+      "label": "//packages/smithers/gateway:importRules",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/import-rules.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/gateway/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs,.vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/import-rules.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportRulesCheck.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/gateway",
+      "label": "//packages/smithers/gateway:lib",
+      "rule": "TsBuild",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/gateway/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/build-library.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/scripts/compile-commonjs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-single-effect-version.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/src/index.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/scripts/build.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/gateway",
+      "label": "//packages/smithers/gateway:lint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/gateway/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.jsdoc.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/gateway",
+      "label": "//packages/smithers/gateway:reviewDocsAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/gateway/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/gateway/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/README.md"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/gateway/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/content/docs/docs/reference/api/gateway.mdx"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/gateway",
+      "label": "//packages/smithers/gateway:reviewJsdocAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/gateway/src/**/*.{ts,vibe}"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/gateway/src/**/*.{ts,vibe}",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/gateway",
+      "label": "//packages/smithers/gateway:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/gateway/src/**",
+            "packages/smithers/gateway/scripts/**",
+            "packages/smithers/gateway/src/GatewayServer.ts",
+            "packages/smithers/gateway/src/RuntimeBridge.ts",
+            "packages/smithers/gateway/src/internal/NativeGateway.ts",
+            "packages/smithers/control/src/ControlRpcs.ts",
+            "packages/smithers/control/src/ApprovalAuthority.ts",
+            "packages/smithers/control/src/ControlServer.ts",
+            "packages/smithers/control/src/ControlLive.ts",
+            "packages/smithers/control/src/ControlExecutor.ts",
+            "packages/smithers/control/src/ControlRuntime.ts",
+            "packages/smithers/control/src/SqlControlRuntime.ts"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/gateway/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/gateway/scripts/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/src/GatewayServer.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/src/RuntimeBridge.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/src/internal/NativeGateway.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ControlRpcs.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ApprovalAuthority.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ControlServer.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ControlLive.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ControlExecutor.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ControlRuntime.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/SqlControlRuntime.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/src/GatewayServer.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/src/RuntimeBridge.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/src/internal/NativeGateway.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ControlRpcs.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ApprovalAuthority.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ControlServer.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ControlLive.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ControlExecutor.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ControlRuntime.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/SqlControlRuntime.ts"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/gateway",
+      "label": "//packages/smithers/gateway:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/gateway/src/**",
+            "packages/smithers/gateway/scripts/**",
+            "packages/smithers/gateway/src/GatewayServer.ts",
+            "packages/smithers/gateway/src/RuntimeBridge.ts",
+            "packages/smithers/gateway/src/internal/NativeGateway.ts",
+            "packages/smithers/control/src/ControlRpcs.ts",
+            "packages/smithers/control/src/ApprovalAuthority.ts",
+            "packages/smithers/control/src/ControlServer.ts",
+            "packages/smithers/control/src/ControlLive.ts",
+            "packages/smithers/control/src/ControlExecutor.ts",
+            "packages/smithers/control/src/ControlRuntime.ts",
+            "packages/smithers/control/src/SqlControlRuntime.ts"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/gateway/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/gateway/scripts/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/src/GatewayServer.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/src/RuntimeBridge.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/src/internal/NativeGateway.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ControlRpcs.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ApprovalAuthority.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ControlServer.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ControlLive.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ControlExecutor.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ControlRuntime.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/SqlControlRuntime.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/src/GatewayServer.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/src/RuntimeBridge.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/src/internal/NativeGateway.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ControlRpcs.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ApprovalAuthority.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ControlServer.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ControlLive.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ControlExecutor.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/ControlRuntime.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/control/src/SqlControlRuntime.ts"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/gateway",
+      "label": "//packages/smithers/gateway:test",
+      "rule": "Vitest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/gateway/test/**/*.test.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/gateway/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/gateway/{test,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/vitest.config.ts"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/gateway:lib"
+      ]
+    }
+  ],
+  "areas": [
+    "PACKAGE.ts",
+    "eslint.config.js",
+    "examples/diagnose.ts",
+    "scripts/build.mjs",
+    "scripts/check-boundary-mutations.mjs",
+    "src/Diagnosis.ts",
+    "src/EngineTrace.ts",
+    "src/GatewayError.ts",
+    "src/GatewayProjection.ts",
+    "src/GatewayRpcs.ts",
+    "src/GatewaySchema.ts",
+    "src/GatewayServer.ts",
+    "src/HostBranchPresence.ts",
+    "src/InspectionJournal.ts",
+    "src/Projections.ts",
+    "src/RunDevTools.ts",
+    "src/RunHistory.ts",
+    "src/RunTrace.ts",
+    "src/RuntimeBridge.ts",
+    "src/bun",
+    "src/index.ts",
+    "src/internal",
+    "src/node",
+    "test/GatewayStack.ts",
+    "test/RealEngineRun.ts",
+    "test/fixtures",
+    "test/host-presence-fixture.ts",
+    "vitest.config.ts"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

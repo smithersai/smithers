@@ -27,7 +27,8 @@
     "lint": "eslint --config eslint.config.js . --max-warnings=0",
     "test:worker-io-lint": "node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 eslint.worker-inflight.test.mjs eslint.worker-prelude.test.mjs",
     "test:failure-lint": "node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 eslint.frontend-failures.test.mjs",
-    "test:mobile:visitors": "playwright test mobile.spec.ts --project=deployment --no-deps --grep 'signed out.*(curated-home|branch|doc-page|docs|home):'"
+    "test:mobile:visitors": "playwright test mobile.spec.ts --project=deployment --no-deps --grep 'signed out.*(curated-home|branch|doc-page|docs|home):'",
+    "test:production-runner": "node --import=vibelang/register --test e2e/resource-locks.test.mjs"
   },
   "imports": {
     "#quickjs.wasm": "@jitl/quickjs-wasmfile-release-sync/wasm",
@@ -380,6 +381,7 @@
     "@smthrs/sync": "workspace:*",
     "@smthrs/terminal-frame": "workspace:*",
     "@smthrs/ui": "workspace:*",
+    "@smthrs/ui-css": "workspace:*",
     "@smthrs/views": "workspace:*",
     "@tanstack/browser-db-sqlite-persistence": "0.2.36",
     "@tanstack/db": "0.15.1",
@@ -392,7 +394,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "sucrase": "3.35.1",
-    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
+    "vibelang-runtime": "0.0.12"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.64.0",
@@ -407,21 +409,23 @@
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.7",
     "@vitejs/plugin-react": "6.1.2",
-    "@alchemy.run/cloudflare": "2.0.0-beta.84",
-    "@alchemy.run/neon": "2.0.0-beta.84",
-    "alchemy": "2.0.0-beta.84",
+    "alchemy": "2.0.0-beta.85",
     "esbuild": "0.28.2",
+    "fast-check": "4.9.0",
     "happy-dom": "20.13.2",
     "miniflare": "5.20261019.0-beta",
     "minimatch": "10.2.6",
     "typescript": "^5.9.3",
-    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
-    "vibelang-unplugin": "file:../../.vibelang-toolchain/vibelang-unplugin-0.0.11-45a3600458c6.tgz",
-    "vibelang-vite": "file:../../.vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz",
+    "vibelang": "0.0.12",
+    "vibelang-unplugin": "0.0.12",
+    "vibelang-vite": "0.0.12",
     "vite": "8.3.4",
     "vite-plugin-pwa": "2.0.0",
     "vitest": "5.0.0",
     "workbox-window": "7.4.1",
-    "wrangler": "4.151.2"
+    "wrangler": "4.151.2",
+    "@alchemy.run/cloudflare": "2.0.0-beta.85",
+    "@alchemy.run/neon": "2.0.0-beta.85",
+    "@alchemy.run/test": "2.0.0-beta.85"
   }
 }

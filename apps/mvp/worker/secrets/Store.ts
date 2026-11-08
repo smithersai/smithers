@@ -62,8 +62,9 @@ export const put = (write: Put): Effect.Effect<Change, unknown, SqlClient.SqlCli
       yield* sql`
         INSERT INTO secret_events (repo_id, action, names, actor_id, invocation_key)
         VALUES (${write.repoId}, ${change}, ARRAY[${write.name}]::text[], ${write.actorId}, ${write.invocationKey})`
+      yield* ProtectedAuthority.requireAtCommit(write.authority)
       return change
-    }))
+    })).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed("stale" as const)))
   })
 
 /** Deletes a secret and records `delete` once: whether it was there, or nothing again (`repeat`). */
@@ -85,8 +86,9 @@ export const remove = (write: {
       yield* sql`
         INSERT INTO secret_events (repo_id, action, names, actor_id, invocation_key)
         VALUES (${write.repoId}, 'delete', ARRAY[${write.name}]::text[], ${write.actorId}, ${write.invocationKey})`
+      yield* ProtectedAuthority.requireAtCommit(write.authority)
       return deleted.length > 0 ? "deleted" as const : "missing" as const
-    }))
+    })).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed("stale" as const)))
   })
 
 /** A repository's bindings, by name: never a ciphertext. */

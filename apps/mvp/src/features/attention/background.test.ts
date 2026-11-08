@@ -41,11 +41,12 @@ afterEach(async () => {
 })
 
 /** Maya, a Member who may write the test repository's issues. */
-const maya: Actor = { subject: { kind: "person", id: "person-maya" }, role: "member", login: "maya", session: "6f1d7c1e-0b7a-4f1c-9d55-2a1c0b8e3f10" }
+const maya: Actor = { subject: { kind: "person", id: "0d9a3c52-6a8e-4f0b-8d1e-3b7c2a9f4e61" }, role: "member", login: "maya", session: "6f1d7c1e-0b7a-4f1c-9d55-2a1c0b8e3f10" }
 
 /** A ChatApi, as Maya unless `actor` is the test API's own Member. `/new` needs a forge to make branches on. */
 const openApi = async (actor: Actor | undefined = maya) => {
-  const server = openTestApi({ ...(actor === undefined ? {} : { actor }), forge: "code-storage" })
+  // Maya's session confirmed as sign-in records it: the deployment repository's role is that receipt.
+  const server = openTestApi({ ...(actor === undefined ? {} : { actor, confirmedSessions: [actor] }), forge: "code-storage" })
   closing.push(server)
   return server.runPromise(Effect.service(TestChatApi))
 }
@@ -194,7 +195,7 @@ describe("Create issue", () => {
     const api = await openApi()
     const device = deviceOf(api)
     let refusing = true
-    const storage = { ...device.outbox.storage, set: (key: string, value: string) => refusing ? Promise.reject(new Error("quota")) : device.outbox.storage.set(key, value) }
+    const storage = { ...device.outbox.storage, setMany: (rows: ReadonlyArray<readonly [string, string]>) => refusing ? Promise.reject(new Error("quota")) : device.outbox.storage.setMany(rows) }
     const tab = await tabOn(api, { ...device, outbox: { ...device.outbox, storage } })
     const pressed = Date.now()
     const writeId = await createIssue(tab, "Refused once")
@@ -233,11 +234,11 @@ describe("an outbox that waits, then refuses storage", () => {
     let first = true
     const storage = {
       ...device.outbox.storage,
-      set: async (key: string, value: string) => {
-        if (!first) return device.outbox.storage.set(key, value)
+      setMany: async (rows: ReadonlyArray<readonly [string, string]>) => {
+        if (!first) return device.outbox.storage.setMany(rows)
         first = false
         if (!(await verdict)) throw new Error("quota")
-        return device.outbox.storage.set(key, value)
+        return device.outbox.storage.setMany(rows)
       },
     }
     const tab = await tabOn(api, { ...device, outbox: { ...device.outbox, storage } })
@@ -260,7 +261,7 @@ describe("two tabs of one device", () => {
     // The first tab's outbox write never finishes: the tab closes before the outbox took it. Its work ends
     // with the tab, so nothing of it runs after the close.
     const never = new Promise<void>(() => {})
-    const storage = { ...device.outbox.storage, set: async (key: string, value: string) => { await never; return device.outbox.storage.set(key, value) } }
+    const storage = { ...device.outbox.storage, setMany: async (rows: ReadonlyArray<readonly [string, string]>) => { await never; return device.outbox.storage.setMany(rows) } }
     const first = await tabOn(api, { ...device, outbox: { ...device.outbox, storage } })
     const second = await tabOn(api, otherTab(device))
     void first.issues.actions.open(OWNER, NAME).then(() => {
@@ -289,6 +290,8 @@ describe("Commit", () => {
     // The stack's TODOs sync once the repository's role answers, as the stack page asks.
     await tab.runtime.runPromise(readRepositoryRole(OWNER, NAME))
     await tab.todos.actions.open(OWNER, NAME)
+    // The stack page reads its TODOs through the data gate, a live query its subscription starts: start it as the page does.
+    tab.todosStore.opened(REPO_ID)!.todos.tanstack.startSyncImmediate()
     const draft = tab.todos.actions.newDraft(OWNER, NAME)
     tab.todos.actions.setTitle(draft, "Progress")
     tab.todos.actions.setPrompt(draft, "Show it.")
@@ -317,6 +320,8 @@ describe("Commit after recovery cleanup", () => {
     await tab.runtime.runPromise(Option.getOrThrow(shapes).withhold(NOTIFICATIONS_SHAPE_ROUTE))
     await tab.runtime.runPromise(readRepositoryRole(OWNER, NAME))
     await tab.todos.actions.open(OWNER, NAME)
+    // The stack page reads its TODOs through the data gate, a live query its subscription starts: start it as the page does.
+    tab.todosStore.opened(REPO_ID)!.todos.tanstack.startSyncImmediate()
     const draft = tab.todos.actions.newDraft(OWNER, NAME)
     tab.todos.actions.setTitle(draft, "Successful answer")
     tab.todos.actions.setPrompt(draft, "Keep the result until its notification arrives.")

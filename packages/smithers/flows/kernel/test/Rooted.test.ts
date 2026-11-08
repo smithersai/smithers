@@ -105,37 +105,39 @@ describe("Rooted", () => {
     const rooted = Rooted.path(Effect.runSync(Effect.provide(Path.Path, Path.layer)), "/root")
     const fs = Rooted.fileSystem(base, rooted)
     const data = new Uint8Array()
-    fs.access("a", { ok: true })
-    fs.copy("a", "b", { overwrite: true })
-    fs.copyFile("a", "b")
-    fs.chmod("a", 0o644)
-    fs.chown("a", 1, 2)
-    fs.glob("*.ts", { root: "src" })
-    fs.glob("*.ts")
-    fs.exists("a")
-    fs.link("a", "b")
-    fs.makeDirectory("a", { recursive: true })
-    fs.makeTempDirectory({ directory: "tmp" })
-    fs.makeTempDirectoryScoped()
-    fs.makeTempFile({ prefix: "p" })
-    fs.makeTempFileScoped({ directory: "tmp" })
-    fs.open("a", { flag: "r" })
-    fs.readDirectory("a", { recursive: true })
-    fs.readFile("a")
-    fs.readFileString("a", "utf8")
-    fs.readLink("a")
-    fs.realPath("a")
-    fs.remove("a", { recursive: true })
-    fs.rename("a", "b")
+    const _program107 = fs.access("a", { ok: true })
+    const _program108 = fs.copy("a", "b", { overwrite: true })
+    const _program109 = fs.copyFile("a", "b")
+    const _program110 = fs.chmod("a", 0o644)
+    const _program111 = fs.chown("a", 1, 2)
+    const _program112 = fs.glob("*.ts", { root: "src" })
+    const _program113 = fs.glob("*.ts")
+    const _program114 = fs.exists("a")
+    const _program115 = fs.link("a", "b")
+    const _program116 = fs.makeDirectory("a", { recursive: true })
+    const _program117 = fs.makeTempDirectory({ directory: "tmp" })
+    const _program118 = fs.makeTempDirectoryScoped()
+    const _program119 = fs.makeTempFile({ prefix: "p" })
+    const _program120 = fs.makeTempFileScoped({ directory: "tmp" })
+    const _program121 = fs.open("a", { flag: "r" })
+    const _program122 = fs.readDirectory("a", { recursive: true })
+    const _directoryEntries = fs.readDirectoryEntries("a")
+    const _program123 = fs.readFile("a")
+    const _program124 = fs.readFileString("a", "utf8")
+    const _program125 = fs.readLink("a")
+    const _program126 = fs.realPath("a")
+    const _program127 = fs.remove("a", { recursive: true })
+    const _program128 = fs.rename("a", "b")
     fs.sink("a", { flag: "w" })
-    fs.stat("a")
-    fs.stream("a")
-    fs.symlink("target", "a")
-    fs.truncate("a", 1)
-    fs.utimes("a", 1, 2)
-    fs.watch("a", { recursive: true })
-    fs.writeFile("a", data, { flag: "w" })
-    fs.writeFileString("/abs", "text", { flag: "w" })
+    const _program130 = fs.stat("a")
+    const _lstat = fs.lstat("a")
+    const _program131 = fs.stream("a")
+    const _program132 = fs.symlink("target", "a")
+    const _program133 = fs.truncate("a", 1)
+    const _program134 = fs.utimes("a", 1, 2)
+    const _program135 = fs.watch("a", { recursive: true })
+    const _program136 = fs.writeFile("a", data, { flag: "w" })
+    const _program137 = fs.writeFileString("/abs", "text", { flag: "w" })
     expect(calls).toEqual([
       ["access", "/root/a", { ok: true }],
       ["copy", "/root/a", "/root/b", { overwrite: true }],
@@ -153,6 +155,7 @@ describe("Rooted", () => {
       ["makeTempFileScoped", { directory: "/root/tmp" }],
       ["open", "/root/a", { flag: "r" }],
       ["readDirectory", "/root/a", { recursive: true }],
+      ["readDirectoryEntries", "/root/a"],
       ["readFile", "/root/a"],
       ["readFileString", "/root/a", "utf8"],
       ["readLink", "/root/a"],
@@ -161,6 +164,7 @@ describe("Rooted", () => {
       ["rename", "/root/a", "/root/b"],
       ["sink", "/root/a", { flag: "w" }],
       ["stat", "/root/a"],
+      ["lstat", "/root/a"],
       ["stream", "/root/a", undefined],
       ["symlink", "target", "/root/a"],
       ["truncate", "/root/a", 1],
@@ -179,9 +183,9 @@ describe("Rooted", () => {
     })
     const rooted = Rooted.path(Effect.runSync(Effect.provide(Path.Path, NodePath.layerWin32)), "D:\\root")
     const fs = Rooted.fileSystem(base, rooted)
-    fs.readFile("src\\a.ts")
-    fs.readFile("E:\\other\\a.ts")
-    fs.readFile("\\\\server\\share\\a.ts")
+    const _program181 = fs.readFile("src\\a.ts")
+    const _program182 = fs.readFile("E:\\other\\a.ts")
+    const _program183 = fs.readFile("\\\\server\\share\\a.ts")
     expect(calls).toEqual([
       ["readFile", "D:\\root\\src\\a.ts"],
       ["readFile", "E:\\other\\a.ts"],

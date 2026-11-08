@@ -1,9 +1,9 @@
+import { testChatDatabase } from "./test/chatApi"
 import { LogFailures } from "@smthrs/observability"
 import { Effect, Fiber, Layer, ManagedRuntime, Metric } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, expect, test, vi } from "vitest"
-import * as TestDatabase from "../db/TestDatabase.ts"
 import { boot, logHostRecords, logPageErrors, realServices, start } from "./boot"
 import { markStage, stageTimes } from "./bootStages"
 import { hostRecords } from "./hostRecords"
@@ -170,7 +170,7 @@ test("renders the chat, sign-in, theme, repository, slash-command, views, web-pa
 })
 
 test("the repository layer: its routes open over the app's RepoApi and Electric, sign-in's row decides Clone, and Copy permalink runs repo/copy, which writes the host's clipboard", async () => {
-  const server = ManagedRuntime.make(TestChatApi.layer.pipe(Layer.provideMerge(TestDatabase.layer("test_boot"))))
+  const server = ManagedRuntime.make(TestChatApi.layer.pipe(Layer.provideMerge(testChatDatabase("test_boot"))))
   runtimes.push(server)
   const api = await server.runPromise(Effect.service(TestChatApi))
   // A device whose engine leads, as a browser's does: `repo/copy` runs there and asks this tab to write its clipboard.
@@ -204,7 +204,7 @@ test("the repository layer: its routes open over the app's RepoApi and Electric,
 
 /** A ChatApi of its own, with no browser on it. */
 const chatApi = async () => {
-  const host = ManagedRuntime.make(TestChatApi.layer.pipe(Layer.provideMerge(TestDatabase.layer("test_boot"))))
+  const host = ManagedRuntime.make(TestChatApi.layer.pipe(Layer.provideMerge(testChatDatabase("test_boot"))))
   runtimes.push(host)
   return host.runPromise(Effect.service(TestChatApi))
 }
@@ -333,6 +333,7 @@ test("logs what the page's host saw, those from before it listened first: render
     host.record({ _tag: "pwa.update", outcome: "editor_unpersisted" })
     host.record({ _tag: "page.reload", reason: "pwa_update" })
     host.record({ _tag: "page.reload", reason: "browser" })
+    host.record({ _tag: "device.lifecycle", outcome: "reopen_held" })
   })))
   // Once the program stops listening, nothing it hears is logged.
   host.record({ _tag: "pwa.install" })
@@ -360,6 +361,8 @@ test("logs what the page's host saw, those from before it listened first: render
   ])
   expect(records.point("smithers_web_page_reloads", { reason: "pwa_update" })?.value).toBe(1)
   expect(records.point("smithers_web_page_reloads", { reason: "browser" })?.value).toBe(1)
+  expect(lines("device.lifecycle")).toEqual([{ severity: "Info", attributes: { feature: "app", outcome: "reopen_held" } }])
+  expect(records.point("smithers_device_lifecycle", { outcome: "reopen_held" })?.value).toBe(1)
 })
 
 test("start logs a defect that ends the program, by its name, never its message", async () => {

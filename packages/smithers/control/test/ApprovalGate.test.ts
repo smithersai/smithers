@@ -1,5 +1,4 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { EngineStore, StepBoundary } from "@smthrs/engine-store"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
@@ -36,7 +35,7 @@ const request = (runId: string) => ({
 })
 
 const stack = (filename: string, reads: Array<string>, after: () => string) => {
-  const stores = TestStores.layerAt(filename).pipe(Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+  const stores = TestStores.layerAt(filename).pipe(Layer.provideMerge(NodeCrypto.layer))
   const runtime = Layer.mergeAll(
     EngineStore.layer({
       owner: { hostId: "approval-gate" },

@@ -68,32 +68,31 @@ structured values rather than two strings, canonicalize instead: see
 ## Use syncCrypto when the code already takes a Crypto service
 
 Sometimes the derivation you want to run synchronously is already written as
-an Effect that requires `Crypto.Crypto`, because it is shared with the
+an Effect that requires `EffectDigest.Digest`, because it is shared with the
 asynchronous path. `syncCrypto` satisfies that requirement without a platform
 layer:
 
 ```ts
 import { syncCrypto } from "@smthrs/crypto"
-import { Crypto } from "@smthrs/crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 
 /** Provides the synchronous SHA-256 service to an Effect-shaped derivation. */
 export const provideSync = <A, E>(
-  effect: Effect.Effect<A, E, Crypto.Crypto>
-): Effect.Effect<A, E> => Effect.provideService(effect, Crypto.Crypto, syncCrypto)
+  effect: Effect.Effect<A, E, EffectDigest.Digest>
+): Effect.Effect<A, E> => Effect.provideService(effect, EffectDigest.Digest, syncCrypto)
 
-export const runSync = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>): A => Effect.runSync(provideSync(effect))
+export const runSync = <A, E>(effect: Effect.Effect<A, E, EffectDigest.Digest>): A =>
+  Effect.runSync(provideSync(effect))
 ```
 
 One derivation then serves both callers. The asynchronous path provides a
 platform layer, the synchronous path provides `syncCrypto`, and the digest is
 the same digest either way.
 
-`syncCrypto` answers `SHA-256` and nothing else. Ask it for `SHA-1`,
-`SHA-384`, or `SHA-512` and it fails with a `BadArgument` naming the algorithm
-it received. Ask it for randomness and it throws, including through every
-random helper `Crypto.make` derives from `randomBytes`. Provide a platform
-layer for those.
+`syncCrypto` implements Digest for SHA-256. Other algorithms are rejected as
+defects, and it supplies no SecureRandom service. Provide a platform layer for
+other algorithms, secure random bytes, or UUIDv4.
 
 ## Know when not to use the synchronous path
 
@@ -105,7 +104,7 @@ layer for those.
   for a reason: it is the seam a test, a browser build, and a hardware module
   all attach to.
 - **Anything but hashing.** `syncCrypto` is not a platform `Crypto` layer. It
-  refuses randomness deliberately rather than returning weak bytes.
+  does not supply a SecureRandom service.
 
 ## Related
 

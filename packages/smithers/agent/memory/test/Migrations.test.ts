@@ -1,17 +1,21 @@
-import { Crypto } from "@smthrs/crypto"
 import * as Dialect from "@smthrs/database/Dialect"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect, Exit, Layer } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import * as Hex from "effect/encoding/Hex"
 import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import * as MemoryStore from "../src/MemoryStore.ts"
 import * as Migrations from "../src/Migrations.vibe"
 import * as TestMemory from "../src/test/TestMemory.ts"
 
-const testCrypto = Layer.succeed(Crypto.Crypto)(Crypto.make({
-  randomBytes: (size) => new Uint8Array(size),
-  digest: (_algorithm, data) => Effect.succeed(data)
-}))
+const testCrypto = Layer.succeed(EffectDigest.Digest)(EffectDigest.Digest.of({
+  digest: (_algorithm, data) => Effect.succeed(data),
+  digestHex(algorithm, data) {
+    return Effect.map(this.digest(algorithm, data), Hex.encode)
+  }
+})).pipe(Layer.merge(SecureRandom.layerWebCrypto))
 
 interface ColumnRow {
   readonly name: string

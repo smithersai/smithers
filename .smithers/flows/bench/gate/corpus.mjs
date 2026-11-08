@@ -7,6 +7,7 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { performance } from "node:perf_hooks"
 import { Effect, Layer } from "effect"
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
 import * as PlanScheduler from "@smthrs/engine-store/PlanScheduler"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
@@ -15,12 +16,10 @@ import * as Jj from "@smthrs/kernel/Jj"
 import * as KeyMaterial from "@smthrs/plan/KeyMaterial"
 import * as Plan from "@smthrs/plan/Plan"
 import * as RunStore from "@smthrs/run-store/RunStore"
-import { Crypto } from "@smthrs/crypto"
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 
 const owner = { hostId: "benchmark", pid: process.pid, nonce: "deterministic-fixture" }
 const digest = (output) => createHash("sha256").update(JSON.stringify(output)).digest("hex")
-const run = (program) => Effect.runPromise(Effect.scoped(Effect.provide(program, Crypto.layerFromDigest(NodeCrypto.layerDigest))))
+const run = (program) => Effect.runPromise(Effect.scoped(Effect.provide(program, NodeCrypto.layer)))
 
 /** Count actual SQLite executions and statement allocations in this dedicated process. */
 function meter() {

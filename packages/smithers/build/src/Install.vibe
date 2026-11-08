@@ -60,11 +60,11 @@
  * @since 0.1.0
  */
 
-import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow } from "@smthrs/flow"
 import { FileInput } from "@smthrs/flow/FileInput"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
@@ -522,7 +522,7 @@ const verifyContent = effect (manager: PackageManager.Service, content: Content)
  * @category layers
  * @since 0.1.0
  */
-export const executeMeasure = effect (): Content!PackageManager.PackageManagerError!(PackageManager.PackageManager | FileSystem.FileSystem | Crypto.Crypto) => {
+export const executeMeasure = effect (): Content!PackageManager.PackageManagerError!(PackageManager.PackageManager | FileSystem.FileSystem | EffectDigest.Digest) => {
   const manager = try PackageManager.PackageManager
   try verifyManagerContract(manager)
   const lockfile = try PackageManager.lockfileDigest(manager.projectRoot, manager.lockfileName)
@@ -605,7 +605,7 @@ const verifyStoreContent = (
   platform: PackageManager.Platform | null,
   content: Content,
   store: PackageManager.StoreManifest
-): void!PackageManager.PackageManagerError!Crypto.Crypto =>
+): void!PackageManager.PackageManagerError!EffectDigest.Digest =>
   Effect.flatMap(
     PackageManager.storeManifest({
       manager: manager.name,

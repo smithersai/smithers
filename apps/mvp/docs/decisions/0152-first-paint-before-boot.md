@@ -48,3 +48,91 @@ the DOM.
 Rendering the app on the server (the document would become private, and the service worker answers navigations from
 the precached shell anyway); keeping the answer on the device for a faster reload (a new private cache); reordering the
 restores (measured before: no gain).
+
+## 2026-11-04: an issue read after a missed shell paint
+
+The issue route starts `issues?q=%23N` before opening its collections. This reuses
+the list search client's deadline, in-memory answer, generation fencing and
+`RepoStore.gate`; nothing waits for Electric to render a known heading. Since
+search also matches titles, the direct read follows cursors until it finds the
+exact number or exhausts the results, under one deadline. The shell's deliberately
+short, empty-on-failure first-paint contract stays intact.
+
+The route result is retained only after this device establishes allowed repository
+authority and restores refusals; a failed summary transport cannot discard it.
+It never supplies a body or comments, and synced detail remains authoritative.
+A pending or failed read shows the requested issue number, without skeletons or
+"Syncing issue…". A known absence and a refusal keep their real page states.
+List navigation restores its URL search if a direct read replaced the retained
+answer, fencing late issue responses so browser Back cannot strand the list.
+An issue result survives list sync; detail failures keep the authorized heading
+alongside their unavailable state and Try again action.
+
+The separate WebKit list failure came from treating the unrelated About flow's
+failure as issue unavailability. That settled the list and removed authorized
+first paint while its own shape still waited. Only repository authority and the
+issue transport now decide list availability. Existing `repo.about.load`,
+`repo.role` and `issues.shape.sync` records identify those independent stages.
+
+`issues.read` spans, `issues.search` logs and `smithers_issue_reads` counts
+distinguish direct issue reads from list searches without query or content.
+This repairs existing navigation and issue presentation infrastructure, not a
+new feature or plugin. Catalog entries used: `@smthrs/ui` for the heading,
+`@smthrs/effect-tanstack-db` for the existing gated in-memory result, and the
+existing Effect HTTP issues client. No new runtime or cache.
+
+
+## Search before global startup (2026-11-04)
+
+The list's shell accepts search text before React mounts. The browser's existing issues client is built below the
+store and service startup chain; its read waits for device identity as every app API read does, but not for SQLite
+preparation or restored drafts. TanStack Router owns the query URL. The shell drops its unfiltered rows as soon as
+text changes. A separate publisher follows the existing data gate before passing it any search rows.
+The gate exposes synchronous boolean decisions through its observer API; the publisher never reads its raw collection.
+
+One transient, bounded response serves the early gated paint and is consumed once by the ordinary search action.
+The early publisher waits for restored refusals and follows the existing gate synchronously; a changed refusal fence
+or a closed gate revokes the answer permanently. Once refusals are known, the publisher observes the gate before
+joining the HTTP body, so a close-and-reopen during a delayed body cannot revive it. A normal consumer that already
+claimed that revoked answer discards it too and makes its own fresh authorized read. Expiry, replacement and publisher
+teardown revoke the same entry even after consumption; the consumer rechecks its generation after the body joins. The ordinary action still waits for repository authority and lets
+synced rows win. Applying authoritative summaries withdraws the early answer, and the shell gives way to the settled
+view when it has rows, an answer to this repository and query (including zero matches), or complete sync. A query
+without an answer does not mark an empty view settled and discard the gated shell. Restoring refusal marks is
+an authorization dependency and is deliberately retained. No response is inserted into any collection by this early
+reader. A replacement query, navigation, wipe, changed viewer, expiry, or closing the app revokes an unconsumed read;
+it also expires after 15 seconds. The bridge changes no transaction or durable acknowledgment.
+
+The HTTP read overlaps device storage and draft/outbox startup. Those local writes retain their existing independence
+from repository restoration. Authority starts before repository metadata and branch conversations; store construction
+does not await refusal restoration. The publisher alone waits for the gate, while other feature services may start.
+The same refusal collection, restore follower, closed gate, statements and commit acknowledgments are used. A failed
+restore still leaves private rows hidden while local drafts remain writable, and in-memory stores construct synchronously.
+The route starts each search once; the public input only changes its URL. No cold-list loading label is rendered.
+
+This belongs to the existing first-paint core boundary because it runs before the plugin host exists. It uses the
+existing issues HTTP client and the catalog's persisted-collection/data-gate libraries (`@smthrs/effect-tanstack-db`),
+not a second issues store. `issues.search.early` and `issues_early_search_reads` record duration and outcome without
+search text. `issues.search.paint` and `issues_early_search_paints` record gate decisions. The shell marks when it accepted input on the boot timeline.
+
+
+## Terminal evidence and the smoke contract (2026-11-05)
+
+The shell commits its one terminal performance mark before removing its node or running teardown callbacks. The
+mark's content-free detail names the previous state (`pending` or `painted`), the triggering boundary (router, DOM,
+response, request, lock, session, storage, lifecycle, timer, search, release or revocation), and whether the node
+was connected. A detached slot is distinguishable from a shell-directed removal, and a refused read from a paint.
+Reentrant revocation cannot add a second terminal mark.
+
+The issue smoke accepts the shell's title **or** the authorized early issue read (the 2026-11-04 rule above). Therefore
+absence of `#first-paint` does not establish that it was removed: a permitted empty shell response ends as `none`
+without painting. The smoke requires exactly one terminal mark; `none` is valid only from `pending`, with no paint
+mark or connected node. If it painted, only navigation or hand-over satisfies this navigation test. Wipe, expiry,
+revocation, missing records and duplicate outcomes still fail. Every run attaches the first-paint timeline even on
+failure, without page content, URLs or identities. No retry or assertion delay is needed.
+
+The 2026-11-05 production failure supplied only a zero count for navigation/hand-over, so its precise terminal path
+cannot be recovered from that excerpt. Native Chromium regressions reproduce both the zero-count empty-response case
+(using a failed Effect read service through the real HTTP response contract) and the old removal-before-mark order.
+This changes the existing boot/privacy boundary, using its browser host and Effect service contract; no new library,
+plugin, data store or runtime is introduced.

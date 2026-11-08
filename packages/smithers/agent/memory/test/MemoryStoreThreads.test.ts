@@ -1,5 +1,5 @@
-import { Crypto } from "@smthrs/crypto"
 import { Effect } from "effect"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import * as MemoryStore from "../src/MemoryStore.ts"
@@ -10,12 +10,12 @@ describe("MemoryStore threads and messages", () => {
   it("reports generated thread id failure without writing a thread", async () => {
     const result = await Effect.runPromise(
       Effect.gen(function*() {
-        const crypto = yield* Crypto.Crypto
+        const crypto = yield* SecureRandom.SecureRandom
         const unavailable = new Error("random source unavailable")
-        const failingCrypto = Object.assign(Object.create(crypto) as Crypto.Crypto, {
-          randomUUIDv4: () => Effect.fail(unavailable)
+        const failingCrypto = Object.assign(Object.create(crypto) as typeof SecureRandom.SecureRandom.Service, {
+          uuidV4: () => Effect.die(unavailable)
         })
-        const store = yield* MemoryStore.make.pipe(Effect.provideService(Crypto.Crypto, failingCrypto))
+        const store = yield* MemoryStore.make.pipe(Effect.provideService(SecureRandom.SecureRandom, failingCrypto))
         const failure = yield* Effect.flip(store.createThread({ namespace }))
         const threads = yield* store.listThreads({ namespace })
         return { failure, threads }

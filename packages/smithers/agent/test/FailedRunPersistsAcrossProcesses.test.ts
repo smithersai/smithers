@@ -22,7 +22,6 @@ import * as DatabaseMigrations from "@smthrs/database/Migrations"
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Control, ControlLive, ControlRuntime, type ControlSchema, SqlControlRuntime } from "@smthrs/control"
-import { Crypto } from "@smthrs/crypto"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
@@ -185,7 +184,7 @@ const host = (root: string, owner: Ownership.OwnerId, engineHost: string) => {
     StepBoundary.layer,
     WorkspaceSandbox.layerFileSystem(),
     registration
-  ).pipe(Layer.provide([AtomicFileSystem.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest), jj]))
+  ).pipe(Layer.provide([AtomicFileSystem.layer, NodeCrypto.layer, jj]))
   return ControlLive.layer.pipe(
     Layer.provide(engine),
     Layer.provideMerge(
@@ -195,9 +194,7 @@ const host = (root: string, owner: Ownership.OwnerId, engineHost: string) => {
         registryLayer
       )
     ),
-    Layer.provideMerge(
-      Layer.merge(controlStores(join(root, "control.db")), Crypto.layerFromDigest(NodeCrypto.layerDigest))
-    )
+    Layer.provideMerge(Layer.merge(controlStores(join(root, "control.db")), NodeCrypto.layer))
   )
 }
 

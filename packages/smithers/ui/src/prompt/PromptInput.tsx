@@ -17,7 +17,7 @@ import {
   type RefObject,
 } from "react";
 import { Attachment, AttachmentGroup } from "../chat/Attachment";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { LoadingBar } from "../loading";
 import { useInjectUiCss } from "../styles";
 import type { AttachmentState } from "../chat/Attachment";

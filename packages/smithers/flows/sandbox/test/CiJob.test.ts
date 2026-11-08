@@ -4,7 +4,6 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
@@ -81,7 +80,7 @@ const host = <ROut>(machineLayer: Layer.Layer<CiJob.Machine>, ...flows: Readonly
     Layer.provide(machineLayer),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Layer.provideMerge(NodeCrypto.layer)
   )
 
 const job = (name: string, ...runs: ReadonlyArray<string>): CiJob.Job => ({

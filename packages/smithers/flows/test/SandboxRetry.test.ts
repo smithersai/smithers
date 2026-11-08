@@ -14,7 +14,6 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
 import * as RemoteChildProcessSpawner from "@smthrs/sandbox/RemoteChildProcessSpawner"
 import * as SandboxSupervision from "@smthrs/sandbox/SandboxSupervision"
 import * as Effect from "effect/Effect"
@@ -82,7 +81,7 @@ describe("an action retried inside a supervised sandbox", () => {
             Layer.provideMerge(Action.layerImplementations),
             Layer.provideMerge(Engine.FlowEngine.layerMemory),
             Layer.provideMerge(SandboxSupervision.layer(provider, { interval: "50 millis" })),
-            Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+            Layer.provideMerge(NodeCrypto.layer)
           )
         )
       )

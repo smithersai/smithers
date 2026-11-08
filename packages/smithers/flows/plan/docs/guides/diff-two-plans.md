@@ -30,7 +30,6 @@ draft's body, compiles again, and compares:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import * as KeyMaterial from "@smthrs/plan/KeyMaterial"
 import * as Plan from "@smthrs/plan/Plan"
 import * as PlanDiff from "@smthrs/plan/PlanDiff"
@@ -73,7 +72,7 @@ export const compare = Effect.gen(function*() {
   ])
   const changes: PlanDiff.PlanDiff = PlanDiff.diff(before, after)
   return changes.rekeyed.map((entry) => `${entry.id}: ${entry.changed.join(", ")}`)
-}).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+}).pipe(Effect.provide(NodeCrypto.layer))
 
 console.log(await Effect.runPromise(compare))
 ```
@@ -147,7 +146,6 @@ third inserted before them, so every id shifts by one:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import * as KeyMaterial from "@smthrs/plan/KeyMaterial"
 import * as Plan from "@smthrs/plan/Plan"
 import * as PlanDiff from "@smthrs/plan/PlanDiff"
@@ -178,7 +176,7 @@ const program = Effect.gen(function*() {
   const previous = yield* compile(["lint", "test"])
   const next = yield* compile(["format", "lint", "test"])
   console.log(PlanDiff.diff(previous, next))
-}).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+}).pipe(Effect.provide(NodeCrypto.layer))
 
 await Effect.runPromise(program)
 ```
@@ -232,7 +230,6 @@ compares the two plans:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, Graph } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import * as Plan from "@smthrs/plan/Plan"
@@ -278,7 +275,7 @@ const program = Effect.gen(function*() {
     addedSteps: changes.added.filter((id) => steps.has(id)),
     rekeyedSteps: changes.rekeyed.filter((entry) => steps.has(entry.id)).map((entry) => entry.id)
   })
-}).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+}).pipe(Effect.provide(NodeCrypto.layer))
 
 await Effect.runPromise(program)
 ```

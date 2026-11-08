@@ -2,18 +2,18 @@
  * Physical identity is a necessary check, not proof against arbitrary loader
  * namespaces. The executable loading contract has separate instance tests.
  */
-import { createRequire } from "node:module"
 import { readFileSync, realpathSync } from "node:fs"
+import { createRequire } from "node:module"
 import { join, resolve } from "node:path"
 
-import { workspacePackages, isMain, repoRoot } from "../scripts/workspace-packages.mjs"
 import { readWorkspaceManifests } from "../../../.smithers/flows/release/pack-release.mjs"
+import { isMain, repoRoot, workspacePackages } from "../scripts/workspace-packages.mjs"
 
 /**
  * The Effect release this repository is built and tested on. Update the family
  * atomically with manifests and both package-manager locks.
  */
-export const EXPECTED_EFFECT_VERSION = "4.1.0"
+export const EXPECTED_EFFECT_VERSION = "4.1.1"
 
 /**
  * The exact Effect peer every published library requires. Wider supported
@@ -43,11 +43,16 @@ const isFamily = (name) => name === "effect" || name.startsWith("@effect/") && !
 /** Every dependency and explicit peer selects the approved Effect cohort. */
 export const expectedEffectDeclaration = () => EXPECTED_EFFECT_VERSION
 
-export const effectDeclarations = (manifest, source) => sections.flatMap((section) =>
-  Object.entries(manifest[section] ?? {}).filter(([name]) => isFamily(name))
-    .map(([name, version]) => ({
-      name, version, expected: expectedEffectDeclaration(manifest, section, name), source: `${source} (${section})`
-    })))
+export const effectDeclarations = (manifest, source) =>
+  sections.flatMap((section) =>
+    Object.entries(manifest[section] ?? {}).filter(([name]) => isFamily(name))
+      .map(([name, version]) => ({
+        name,
+        version,
+        expected: expectedEffectDeclaration(manifest, section, name),
+        source: `${source} (${section})`
+      }))
+  )
 
 /** Read resolved package entries, including quoted scoped pnpm keys. */
 export const effectLockVersions = (text, format) => {
@@ -61,10 +66,14 @@ export const effectLockVersions = (text, format) => {
 /** Exact declarations, lock entries and installed versions must all agree. */
 export const assertEffectPins = (records) => {
   const wrong = records.filter(({ version, expected = EXPECTED_EFFECT_VERSION }) => version !== expected)
-  if (wrong.length > 0) throw new Error(
-    `Effect-family entries off the release policy (${EXPECTED_EFFECT_VERSION}; a published library's peers ${SUPPORTED_EFFECT_RANGE}):\n` +
-    wrong.map(({ name, version, expected = EXPECTED_EFFECT_VERSION, source }) =>
-      `  ${source}: ${name}@${version} must be ${expected}`).join("\n"))
+  if (wrong.length > 0) {
+    throw new Error(
+      `Effect-family entries off the release policy (${EXPECTED_EFFECT_VERSION}; a published library's peers ${SUPPORTED_EFFECT_RANGE}):\n` +
+        wrong.map(({ name, version, expected = EXPECTED_EFFECT_VERSION, source }) =>
+          `  ${source}: ${name}@${version} must be ${expected}`
+        ).join("\n")
+    )
+  }
 }
 
 /**
@@ -90,8 +99,12 @@ export const nodeSharedPinProblems = (manifests) => {
       const wanted = allowed.map((where) => [where, expectedEffectDeclaration(manifest, where)])
       const pinned = wanted.some(([where, expected]) => manifest[where]?.["@effect/platform-node-shared"] === expected)
       if (!pinned) {
-        problems.push(`${directory} (${manifest.name}): ${section} declares ${platforms.join(" and ")} without ` +
-          `@effect/platform-node-shared at ${wanted.map(([where, expected]) => `${expected} in ${where}`).join(" or ")}`)
+        problems.push(
+          `${directory} (${manifest.name}): ${section} declares ${platforms.join(" and ")} without ` +
+            `@effect/platform-node-shared at ${
+              wanted.map(([where, expected]) => `${expected} in ${where}`).join(" or ")
+            }`
+        )
       }
     }
   }
@@ -100,7 +113,11 @@ export const nodeSharedPinProblems = (manifests) => {
 
 export const assertNodeSharedPins = (manifests) => {
   const problems = nodeSharedPinProblems(manifests)
-  if (problems.length > 0) throw new Error(`Published packages leave @effect/platform-node-shared to a transitive caret range:\n  ${problems.join("\n  ")}`)
+  if (problems.length > 0) {
+    throw new Error(
+      `Published packages leave @effect/platform-node-shared to a transitive caret range:\n  ${problems.join("\n  ")}`
+    )
+  }
 }
 
 /**
@@ -117,7 +134,9 @@ export const optionalAdapterPeerProblems = (manifests) => {
     for (const [name, version] of Object.entries(manifest.peerDependencies)) {
       if (name === "effect" || !isFamily(name) || manifest.peerDependenciesMeta?.[name]?.optional !== true) continue
       if (version !== EXPECTED_EFFECT_VERSION) {
-        problems.push(`${directory} (${manifest.name}): optional peer ${name}@${version} must be pinned to ${EXPECTED_EFFECT_VERSION} or declared in peerDependenciesMeta only`)
+        problems.push(
+          `${directory} (${manifest.name}): optional peer ${name}@${version} must be pinned to ${EXPECTED_EFFECT_VERSION} or declared in peerDependenciesMeta only`
+        )
       }
     }
   }
@@ -137,11 +156,15 @@ export const installedEffectResolutions = (root, manifests) => {
       if (installed.name !== name) throw new Error(`${directory}: ${name} resolves to ${installed.name} at ${path}`)
       records.push({ name, version: installed.version, source: `${directory} resolves ${path}` })
       if (name === "effect" && path !== rootEffect) {
-        throw new Error(`${directory}: a different physical Effect instance resolves at ${path}; root uses ${rootEffect}`)
+        throw new Error(
+          `${directory}: a different physical Effect instance resolves at ${path}; root uses ${rootEffect}`
+        )
       }
       if (name !== "effect") {
         const adapterEffect = realpathSync(createRequire(path).resolve("effect/package.json"))
-        if (adapterEffect !== rootEffect) throw new Error(`${directory}: ${name} resolves a different physical Effect instance at ${adapterEffect}`)
+        if (adapterEffect !== rootEffect) {
+          throw new Error(`${directory}: ${name} resolves a different physical Effect instance at ${adapterEffect}`)
+        }
       }
     }
   }
@@ -158,20 +181,31 @@ export const checkEffectVersions = (root = repoRoot) => {
     ...effectLockVersions(readFileSync(join(root, "bun.lock"), "utf8"), "bun")
   ]
   for (const format of ["pnpm-lock.yaml", "bun.lock"]) {
-    if (!locked.some((entry) => entry.source === format && entry.name === "effect")) throw new Error(`${format}: no resolved Effect package`)
+    if (!locked.some((entry) => entry.source === format && entry.name === "effect")) {
+      throw new Error(`${format}: no resolved Effect package`)
+    }
   }
   assertEffectPins([...manifestRecords, ...locked])
   const published = readWorkspaceManifests(root)
   assertNodeSharedPins(published)
   const optional = optionalAdapterPeerProblems(published)
-  if (optional.length > 0) throw new Error(`Published libraries range an optional Effect adapter peer:\n  ${optional.join("\n  ")}`)
+  if (optional.length > 0) {
+    throw new Error(`Published libraries range an optional Effect adapter peer:\n  ${optional.join("\n  ")}`)
+  }
   const installed = installedEffectResolutions(root, published)
   assertEffectPins(installed)
-  return { declarations: manifestRecords.length, locked: locked.length, resolutions: installed.length, packages: published.size }
+  return {
+    declarations: manifestRecords.length,
+    locked: locked.length,
+    resolutions: installed.length,
+    packages: published.size
+  }
 }
 
 if (isMain(import.meta)) {
   const result = checkEffectVersions()
-  console.log(`check-single-effect-version: effect ${EXPECTED_EFFECT_VERSION}, published library peers ${SUPPORTED_EFFECT_RANGE}; ${result.declarations} declarations, ` +
-    `${result.locked} locked entries, ${result.resolutions} installed resolutions across ${result.packages} published packages; one physical Effect`)
+  console.log(
+    `check-single-effect-version: effect ${EXPECTED_EFFECT_VERSION}, published library peers ${SUPPORTED_EFFECT_RANGE}; ${result.declarations} declarations, ` +
+      `${result.locked} locked entries, ${result.resolutions} installed resolutions across ${result.packages} published packages; one physical Effect`
+  )
 }

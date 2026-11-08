@@ -1,7 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { expect, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/jj"
 import * as Cause from "effect/Cause"
@@ -134,7 +133,7 @@ it("creates the database directory with the host's own mkdir when the injected f
     await Effect.runPromise(
       Effect.void.pipe(
         Effect.provide(NodeRuntime.storage(filename)),
-        Effect.provide(Layer.merge(confinedTo(parent), Crypto.layerFromDigest(NodeCrypto.layerDigest))),
+        Effect.provide(Layer.merge(confinedTo(parent), NodeCrypto.layer)),
         Effect.scoped
       )
     )
@@ -152,7 +151,7 @@ it("leaves an interrupted directory creation interrupted instead of retrying it 
     const exit = await Effect.runPromiseExit(
       Effect.void.pipe(
         Effect.provide(NodeRuntime.storage(filename)),
-        Effect.provide(Layer.merge(interruptedAt(parent), Crypto.layerFromDigest(NodeCrypto.layerDigest))),
+        Effect.provide(Layer.merge(interruptedAt(parent), NodeCrypto.layer)),
         Effect.scoped
       )
     )

@@ -1,0 +1,102 @@
+// One command registry; CLI parameters, MCP tools and discovery all derive from it (decision 0009).
+import { Argument, Flag, type Command } from "effect/cli"
+import { IdGenerator, Tool } from "effect/ai"
+import { Factory } from "../core/Factory.vibe"
+import { Entry, Seq } from "../core/schemas.vibe"
+
+export schema error CommandError { readonly message: string }
+
+const Conversation = Schema.String.check(Schema.isMinLength(1))
+const conversation = Conversation.pipe(Schema.withDecodingDefaultKey(succeed("home")))
+const after = Seq.pipe(Schema.withDecodingDefaultKey(succeed(0)))
+export schema AskInput { readonly text: string; readonly conversation: conversation }
+export schema ReadInput { readonly conversation: conversation; readonly after: after }
+export schema AskOutput {
+  readonly conversation: string
+  readonly text: string
+  readonly events: ReadonlyArray<Seq>
+}
+export schema ReadOutput {
+  readonly conversation: string
+  readonly seq: Seq
+  readonly entries: ReadonlyArray<Entry>
+}
+
+effect function ask(input: AskInput) {
+  const factory = try Factory
+  const clientId = try IdGenerator.defaultIdGenerator.generateId()
+  try factory.post(input.conversation, clientId, "Factory CLI", input.text)
+  // Correlate by post identity even when an agent skips or reorders prompts.
+  let postId = ""
+  const numbers: Array<number> = []
+  let replyId = ""
+  let text = ""
+  let failure: string | undefined
+  let finished = false
+  try Stream.runForEachWhile(factory.events(input.conversation, 0), effect (event) => {
+    if (event.type === "Posted") {
+      if (event.clientId === clientId) { postId = event.id; numbers.push(event.seq) }
+    } else if (event.type === "ReplyStarted") {
+      if (postId !== "" && event.inReplyTo === postId) replyId = event.id
+    }
+    if (event.id !== replyId) return true
+    numbers.push(event.seq)
+    if (event.type === "ReplyDelta") text += event.text
+    if (event.type === "ReplyRestarted") text = ""
+    if (event.type === "ReplyFailed") failure = event.reason
+    if (event.type === "ReplyFinished") finished = true
+    return event.type !== "ReplyFinished" && event.type !== "ReplyFailed"
+  })
+  if (failure !== undefined) throw new CommandError({ message: `The agent's reply failed: ${failure}` })
+  if (!finished) throw new CommandError({ message: "The conversation ended before the agent's reply finished." })
+  return { conversation: input.conversation, text, events: numbers }
+}
+
+effect function read(input: ReadInput) {
+  const factory = try Factory
+  const snapshot = try factory.read(input.conversation, input.after)
+  return { conversation: input.conversation, ...snapshot }
+}
+
+function define<const Name extends string, I extends Schema.ConstraintCodec<unknown>, O extends Schema.ConstraintCodec<unknown>, P extends Command.Command.Config>(
+  name: Name,
+  description: string,
+  input: I,
+  output: O,
+  parameters: P,
+  handler: (input: I["Type"]) => O["Type"]!(CommandError | import("../core/Factory.vibe").Unavailable | import("../core/Factory.vibe").Refused)!Factory,
+  format: (output: O["Type"]) => string,
+) {
+  const invoke = effect (value: unknown) => {
+    const decoded = try Schema.decodeUnknownEffect(input)(value)
+    const result = try handler(decoded)
+    return try Schema.decodeUnknownEffect(output)(result)
+  }
+  const run = effect (value: unknown) => {
+    return invoke(value) catch effect (error) => {
+      if (error._tag === "CommandError") throw error
+      const message = error._tag === "Unavailable" ? error.reason
+        : error._tag === "Refused" ? `The message was refused: ${error.refusal}` : error.message
+      throw new CommandError({ message })
+    }
+  }
+  const tool = Tool.make(name, { description, parameters: input, success: output, failure: CommandError })
+  const render = effect (value: unknown, json: boolean) => {
+    const result = try run(value)
+    return json ? JSON.stringify(result) : format(result)
+  }
+  return { name, description, input, output, parameters, run, render, tool }
+}
+
+export const Ask = define("ask", "Post a message and wait for the complete agent reply.", AskInput, AskOutput, {
+  text: Argument.String("text"),
+  conversation: Flag.String("conversation").pipe(Flag.withDefault("home"), Flag.withSchema(Conversation)),
+}, ask, (output) => `${output.text}\n\nEvents: ${output.events.join(", ")}`)
+
+export const Read = define("read", "Read current entries changed after an event number.", ReadInput, ReadOutput, {
+  conversation: Flag.String("conversation").pipe(Flag.withDefault("home"), Flag.withSchema(Conversation)),
+  after: Flag.Int("after").pipe(Flag.withDefault(0), Flag.withSchema(Seq)),
+}, read, (output) => output.entries.length === 0 ? `No entries. Event: ${output.seq}`
+  : `${output.entries.map((entry) => `${entry.name}: ${entry.text}`).join("\n\n")}\n\nEvent: ${output.seq}`)
+
+export const commands = [Ask, Read] as const

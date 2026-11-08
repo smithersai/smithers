@@ -1,6 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { expect, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
@@ -8,7 +7,7 @@ import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import { audit, drain, main, repair, settle, shadow, tune, wordy } from "../../examples/31-bounded-loops.vibe"
 
-const runtime = FlowEngine.layerMemory.pipe(Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+const runtime = FlowEngine.layerMemory.pipe(Layer.provideMerge(NodeCrypto.layer))
 
 it.effect("repairs every violation and stops when the next scan is clean", () =>
   Effect.gen(function*() {

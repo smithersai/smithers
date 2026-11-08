@@ -42,7 +42,7 @@ const recording = (seen: Array<Cell.Call>): FlowEngineLike.CallRunner => ({
   run: (received) =>
     Effect.sync(() => {
       seen.push(received)
-      return new Cell.CallResult({ outcome: "success", value: { ran: received.flowName } })
+      return Cell.CallResult.new({ outcome: "success", value: { ran: received.flowName } })
     })
 })
 
@@ -188,7 +188,7 @@ describe("Checkpointed.checkpointed", () => {
     const authorized: Array<string> = []
     const wrapped = Checkpointed.checkpointed(store([]), {
       authorize: (target) => Effect.sync(() => void authorized.push(target.flowName)),
-      run: () => Effect.succeed(new Cell.CallResult({ outcome: "success", value: null }))
+      run: () => Effect.succeed(Cell.CallResult.new({ outcome: "success", value: null }))
     })
 
     expect(wrapped.authorize).toBeDefined()
@@ -235,7 +235,7 @@ describe("Checkpointed.decorate", () => {
   it("carries authorize through the unpinned refusal as well", async () => {
     const wrapped = Checkpointed.unpinned({
       authorize: () => Effect.void,
-      run: () => Effect.succeed(new Cell.CallResult({ outcome: "success", value: null }))
+      run: () => Effect.succeed(Cell.CallResult.new({ outcome: "success", value: null }))
     })
     expect(wrapped.authorize).toBeDefined()
   })

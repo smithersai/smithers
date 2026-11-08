@@ -33,7 +33,7 @@ const projection = (name: string): Cell.FlowProjection =>
 const flows = { echo: projection("echo") }
 
 const succeeds: Sandbox.Handler = (invocation) =>
-  Effect.succeed(new Cell.CallResult({ outcome: "success", value: { seen: invocation.input } }))
+  Effect.succeed(Cell.CallResult.new({ outcome: "success", value: { seen: invocation.input } }))
 
 /** Runs a sequence of cells against one realm and reports every frame. */
 const session = (
@@ -731,7 +731,7 @@ describe("QuickJSSandbox.openRealm", () => {
     const frames = await session(["const got = await ctx.call('echo', {})\nconsole.log(got.ok, got.error.code)"], {
       call: () =>
         Effect.succeed(
-          new Cell.CallResult({ outcome: "failure", value: null, code: "unknown_flow", message: "no such flow" })
+          Cell.CallResult.new({ outcome: "failure", value: null, code: "unknown_flow", message: "no such flow" })
         )
     })
     expect(frames[0]!.prints).toBe("false unknown_flow")
@@ -739,7 +739,7 @@ describe("QuickJSSandbox.openRealm", () => {
 
   describe("a successful call answers .ok as true", () => {
     const answering = (value: Schema.Json): Sandbox.Handler => () =>
-      Effect.succeed(new Cell.CallResult({ outcome: "success", value }))
+      Effect.succeed(Cell.CallResult.new({ outcome: "success", value }))
 
     it("passes the !result.ok guard a model wrote against the failure envelope", async () => {
       // The cell gpt-4.1-mini wrote on smithers.sh on 2026-10-25, cut to its first call: the machine wrote the file,
@@ -763,7 +763,7 @@ describe("QuickJSSandbox.openRealm", () => {
          ctx.done(got.ok ? "wrote it" : "couldn't: " + got.error.code)`
       ], {
         call: () =>
-          Effect.succeed(new Cell.CallResult({ outcome: "failure", value: null, code: "invalid_input", message: "no" }))
+          Effect.succeed(Cell.CallResult.new({ outcome: "failure", value: null, code: "invalid_input", message: "no" }))
       })
       expect(frames[0]!.outcome).toMatchObject({
         _tag: "settled",
@@ -796,7 +796,7 @@ describe("QuickJSSandbox.openRealm", () => {
       ], {
         call: (invocation) =>
           Effect.succeed(
-            new Cell.CallResult({
+            Cell.CallResult.new({
               outcome: "success",
               value: (invocation.input as { n: number }).n === 1
                 ? { ok: false, host: "api.example.com" }
@@ -913,7 +913,7 @@ describe("QuickJSSandbox.openRealm", () => {
 
   it("hands a call that settled with no value at all back as null", async () => {
     const frames = await session(["const got = await ctx.call('echo', {})\nconsole.log(String(got))"], {
-      call: () => Effect.succeed(new Cell.CallResult({ outcome: "success", value: null }))
+      call: () => Effect.succeed(Cell.CallResult.new({ outcome: "success", value: null }))
     })
     expect(frames[0]!.prints).toBe("null")
   })
@@ -1148,7 +1148,7 @@ describe("the REPL contract's worked example", () => {
               return null
           }
         })()
-        return new Cell.CallResult({ outcome: "success", value: value as never })
+        return Cell.CallResult.new({ outcome: "success", value: value as never })
       })
 
     const frames = await Effect.gen(function*() {
@@ -1193,7 +1193,7 @@ describe("the REPL contract's worked example", () => {
     const blocks = [...contract.matchAll(/```cell\n([\s\S]*?)```/g)].map((match) => match[1]!)
     const stubbed: Sandbox.Handler = (invocation) =>
       Effect.sync(() =>
-        new Cell.CallResult({
+        Cell.CallResult.new({
           outcome: "success",
           value: ((): unknown => {
             switch (invocation.flow) {

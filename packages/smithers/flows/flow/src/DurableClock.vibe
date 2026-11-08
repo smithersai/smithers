@@ -11,7 +11,8 @@
  * @since 0.1.0
  */
 
-import type { Crypto } from "@smthrs/crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import type * as Schema from "effect/Schema"
@@ -123,7 +124,7 @@ export const sleep = (
      */
     readonly inMemoryThreshold?: Duration.Input | undefined
   }
-): void!never!(Crypto.Crypto | FlowRuntime | FlowInstance) => {
+): void!never!((EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime | FlowInstance) => {
   const name = options.name
   const duration = clockDuration(options.duration)
   const inMemoryThreshold = durationFromInput(

@@ -1,14 +1,14 @@
 // The Hyperdrive configs ChatApi binds, `ChatDatabase` and `EngineDatabase`, and in production the deploy step that
 // migrates Postgres first.
 // Only alchemy.run.ts imports this file: it runs `db/migrations` from the deploying machine.
-import * as Alchemy from "alchemy"
 import * as Cloudflare from "@alchemy.run/cloudflare"
+import * as Alchemy from "alchemy"
 import * as Output from "alchemy/Output"
 import { Effect, FileSystem, type Redacted } from "effect"
 import * as Database from "../db/Database.ts"
 import * as Connection from "../ops/database/Connection.ts"
 import { COMPUTE_MAX_CU, COMPUTE_MIN_CU, CONNECTION_BUDGET } from "./Connections.ts"
-import { Compute, migrationUrl, Postgres } from "./Postgres.ts"
+import { Compute, directUrl, migrationUrl, Postgres } from "./Postgres.ts"
 
 /**
  * Applies `db/migrations` to the production database with `Database.migrate`, the migrations `pnpm db:migrate` runs
@@ -18,11 +18,11 @@ import { Compute, migrationUrl, Postgres } from "./Postgres.ts"
 const Migrations = Alchemy.Action(
   "ChatMigrations",
   (input: { readonly database: Redacted.Redacted<string>; readonly migrations: ReadonlyArray<string> }) =>
-    Connection.migrate(input.database).pipe(Effect.as(input.migrations)),
+    Connection.migrate(input.database).pipe(Effect.as(input.migrations))
 )
 
 /** The migration files in `db/migrations`, in order. */
-const migrationFiles = Effect.gen(function* () {
+const migrationFiles = Effect.gen(function*() {
   const fs = yield* FileSystem.FileSystem
   const files = yield* fs.readDirectory("db/migrations")
   return files.filter((file) => file.endsWith(".ts")).sort()
@@ -41,12 +41,13 @@ const migrationFiles = Effect.gen(function* () {
  * alchemy.run.ts declares them before ChatApi, so ChatApi's own `Hyperdrive.Connection("ChatDatabase", …)` and
  * `Hyperdrive.Connection("EngineDatabase", …)` resolve to these.
  */
-export const Databases = Effect.gen(function* () {
+export const Databases = Effect.gen(function*() {
   if (yield* Alchemy.ALCHEMY_DEV) {
-    const { origin, sslmode } = Database.hyperdrive(yield* Database.url)
+    const databaseUrl = yield* Database.url
+    const { origin, sslmode } = Database.hyperdrive(databaseUrl)
     const dev = (name: string) =>
       Cloudflare.Hyperdrive.Connection(name, { origin, caching: { disabled: true }, dev: { ...origin, sslmode } })
-    return { chat: yield* dev("ChatDatabase"), engine: yield* dev("EngineDatabase") }
+    return { chat: yield* dev("ChatDatabase"), engine: yield* dev("EngineDatabase"), migratedDatabase: databaseUrl }
   }
   const postgres = yield* Postgres
   // The compute's size before anything connects to it (infra/Connections.ts `COMPUTE_MIN_CU`).
@@ -54,7 +55,7 @@ export const Databases = Effect.gen(function* () {
     projectId: postgres.projectId,
     branchId: postgres.defaultBranchId,
     minCu: COMPUTE_MIN_CU,
-    maxCu: COMPUTE_MAX_CU,
+    maxCu: COMPUTE_MAX_CU
   })
   const migrated = yield* Migrations({ database: migrationUrl(postgres), migrations: yield* migrationFiles })
   const origin = Output.map(Output.all(postgres.origin, migrated, compute), ([origin]) => origin)
@@ -62,12 +63,12 @@ export const Databases = Effect.gen(function* () {
   const chat = yield* Cloudflare.Hyperdrive.Connection("ChatDatabase", {
     origin,
     caching: { disabled: true },
-    originConnectionLimit: CONNECTION_BUDGET.hyperdrive,
+    originConnectionLimit: CONNECTION_BUDGET.hyperdrive
   })
   const engine = yield* Cloudflare.Hyperdrive.Connection("EngineDatabase", {
     origin,
     caching: { disabled: true },
-    originConnectionLimit: CONNECTION_BUDGET.engine,
+    originConnectionLimit: CONNECTION_BUDGET.engine
   })
-  return { chat, engine }
+  return { chat, engine, migratedDatabase: Output.map(Output.all(directUrl(postgres), migrated), ([url]) => url) }
 })

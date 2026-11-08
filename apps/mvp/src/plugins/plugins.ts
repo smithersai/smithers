@@ -9,6 +9,11 @@ import { itemsOf } from "../features/feeds/items"
 import { FeedItem } from "../features/feeds/schema"
 import { FeedsStore } from "../features/feeds/store"
 import { FleetStore } from "../features/fleet/store"
+import { AuthStore } from "../features/auth/store"
+import { repoId } from "../features/repo/contract"
+import { RepoStore } from "../features/repo/store"
+import type { Gated } from "../features/repo/gate"
+import { repoVisibility } from "../features/repo/visibility"
 import { StatusStore } from "../features/status/store"
 import { FlowDispatch } from "../flows/dispatch"
 import { codeOfFailure } from "../flows/history"
@@ -46,6 +51,26 @@ export const presses = Metric.counter("smithers_plugin_presses", {
 })
 
 /** A live list of rows, as `PluginHost.query` answers: the current rows, and a way to hear they changed. */
+/** `live`, answering no rows while repository `id` may not show, and telling its listeners when that changes. */
+// One gated view per live query, so two reads of one query answer the same object, as the queries do. It holds no
+// decision: `current` reads the rule each time, so a session or role change shows in the next read.
+const gatedViews = new WeakMap<object, Host.Live<unknown>>()
+const EMPTY_ROWS: ReadonlyArray<never> = Object.freeze([])
+export const gateLive = <R>(plugins: { readonly visible: (id: string) => boolean; readonly onVisibility: (listener: () => void) => () => void }, id: string, live: Host.Live<R>): Host.Live<R> => {
+  const known = gatedViews.get(live)
+  if (known !== undefined) return known as Host.Live<R>
+  const gated: Host.Live<R> = {
+    current: () => plugins.visible(id) ? live.current() : EMPTY_ROWS,
+    subscribe: (listener) => {
+      const rows = live.subscribe(listener)
+      const visibility = plugins.onVisibility(listener)
+      return () => { rows(); visibility() }
+    },
+  }
+  gatedViews.set(live, gated as Host.Live<unknown>)
+  return gated
+}
+
 export const liveOf = <R>(rows: Stream.Stream<ReadonlyArray<R>>, initial: ReadonlyArray<R> = []) =>
   Effect.gen(function* () {
     let current: ReadonlyArray<R> = initial
@@ -61,6 +86,39 @@ export const liveOf = <R>(rows: Stream.Stream<ReadonlyArray<R>>, initial: Readon
     )
     return {
       current: () => current,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener)
+        return () => void listeners.delete(listener)
+      },
+    } satisfies Host.Live<R>
+  })
+
+/**
+ * `query` as a plugin reads it: `current` reads the gated live query itself, so a change that hides rows (a refusal,
+ * through the data gate) hides them from the next read in the same change. Its rows stream only tells listeners. A
+ * snapshot that stream kept (`liveOf`) still held a refused repository's question right after the refusal (Astra on
+ * 0c7b9f01).
+ */
+export const liveQueryOf = <R extends object>(query: Gated<R>) =>
+  Effect.gen(function* () {
+    query.tanstack.startSyncImmediate()
+    let current: ReadonlyArray<R> = EMPTY_ROWS
+    // TanStack allocates toArray on each read. Keep an unchanged React snapshot stable, but read the gate now:
+    // a cached stream value could still expose rows synchronously after permission was refused.
+    const snapshot = () => {
+      const rows = query.tanstack.toArray
+      if (rows.length !== current.length || rows.some((row, index) => row !== current[index])) {
+        current = rows.length === 0 ? EMPTY_ROWS : Object.freeze(rows)
+      }
+      return current
+    }
+    const listeners = new Set<() => void>()
+    yield* query.rows.pipe(
+      Stream.runForEach(() => Effect.sync(() => { for (const listener of listeners) listener() })),
+      Effect.forkScoped({ startImmediately: true }),
+    )
+    return {
+      current: snapshot,
       subscribe: (listener: () => void) => {
         listeners.add(listener)
         return () => void listeners.delete(listener)
@@ -126,10 +184,14 @@ export class Plugins extends Context.Service<
     readonly itemsOpen: Map<string, CoreQuery>
     /** Every repository's feeds, which `core/feeds` and `core/feed` read. */
     readonly feeds: FeedsStore["Service"]
+    /** Where the host's own repository rows show: the app's required data gate (repo/gate.ts). */
+    readonly repos: RepoStore["Service"]
     /** Every repository's agent runs and machines, which `core/agent-runs` and `core/machines` read. */
     readonly fleet: FleetStore["Service"]
     /** `core/agent-runs` and `core/machines` of each repository asked for so far, by `<query>:<repo>`, opened once. */
     readonly fleetOpen: Map<string, Effect.Effect<Host.Live<Readonly<Record<string, unknown>>>>>
+    readonly visible: (id: string) => boolean
+    readonly onVisibility: (listener: () => void) => () => void
     readonly shown: Collection.Collection<Shown, string>
     readonly views: Collection.Collection<ViewState, string>
     /** The strip's notes, by view and item, kept on the device. */
@@ -164,10 +226,30 @@ export class Plugins extends Context.Service<
         const bugs = yield* BugsStore
         const feeds = yield* FeedsStore
         const fleet = yield* FleetStore
+        const auth = yield* Effect.serviceOption(AuthStore)
+        const repos = yield* RepoStore
+        const visible = (id: string) => {
+          if (Option.isNone(auth)) return true
+          const session = auth.value.sessionState.tanstack.toArray[0]
+          if (session === undefined) return true
+          return repoVisibility(session, repos.rolesState.tanstack.toArray.find((row) => row.id === id)) === "show"
+        }
+        const onVisibility = (listener: () => void) => {
+          const stops: Array<() => void> = []
+          if (Option.isSome(auth)) {
+            const sessions = auth.value.sessionState.tanstack.subscribeChanges(listener)
+            stops.push(() => sessions.unsubscribe())
+          }
+          const roles = repos.rolesState.tanstack.subscribeChanges(listener)
+          stops.push(() => roles.unsubscribe())
+          return () => { for (const stop of stops) stop() }
+        }
         const core = new Map<string, CoreQuery>([
+          // The status store's waits come through the data gate (src/features/status/queries.ts `shownRunsQuery`): a wait
+          // of a conversation whose repository may not show is in neither the plugin's rows nor the strip's.
           ["core/waits", {
             key: "runId",
-            live: (yield* liveOf(status.waits.rows)) as CoreQuery["live"],
+            live: (yield* liveQueryOf(status.waits as unknown as Gated<Readonly<Record<string, unknown>>>)) as CoreQuery["live"],
             rows: status.waits.tanstack,
           }],
           // The bug reports the viewer may see, newest first, each with GitHub's prefilled form for it
@@ -200,6 +282,23 @@ export class Plugins extends Context.Service<
         const strips = yield* stripsQuery(views)
         const notes = yield* draftsQuery(drafts)
         const delivered = yield* PubSub.unbounded<Delivered>()
+        // A view's selection of a wait that no longer shows (answered, or of a repository the person may no longer see,
+        // through the data gate) is cleared once no press on it is on its way: the strip never keeps an item the
+        // person can't see. A plugin selects the next one it shows (`select`).
+        const clearHidden = Effect.gen(function* () {
+          const shownWaits = new Set((yield* status.waits.toArray).map((row) => row.runId))
+          for (const view of yield* views.toArray) {
+            if (view.query !== "core/waits" || view.item === null || view.sending || shownWaits.has(view.item)) continue
+            yield* views.update(view.id, (draft) => {
+              draft.item = null
+              draft.failed = false
+            })
+          }
+        }).pipe(Effect.orDie)
+        yield* Stream.merge(Stream.map(status.waits.rows, () => undefined), Stream.map(views.changes(), () => undefined)).pipe(
+          Stream.runForEach(() => clearHidden),
+          Effect.forkIn(scope, { startImmediately: true }),
+        )
         return Plugins.of({
           contributions: loaded.contributions,
           refused: loaded.refused,
@@ -210,8 +309,13 @@ export class Plugins extends Context.Service<
           items: new Map(),
           itemsOpen: new Map(),
           feeds,
+          repos,
           fleet,
           fleetOpen: new Map(),
+          /** Whether repository `id` may show now, read from the session and its role row (`repoVisibility`). */
+          visible,
+          /** Calls `listener` on each session or role change: a gated query's rows are read again. */
+          onVisibility,
           shown,
           views,
           drafts,
@@ -339,10 +443,13 @@ const openItems = (plugins: Plugins["Service"], repo: string, document: string) 
       schema: FeedItem,
       getKey: (row) => row.key,
     })
-    const ordered = yield* LiveQuery.make((q) => q.from({ item: collection.tanstack }).orderBy(({ item }) => item.index, "asc"))
+    // The host shows a document's items only through the data gate (repo/gate.ts).
+    const shown = yield* plugins.repos.gate(collection)
+    const ordered = yield* LiveQuery.make((q) => q.from({ item: shown.tanstack }).orderBy(({ item }) => item.index, "asc"))
+    // What `collection` holds, kept beside it: the host reads its rows only through the gate.
+    let current = new Map<string, FeedItem>()
     const apply = (next: ReadonlyArray<FeedItem>) =>
       Effect.gen(function* () {
-        const current = new Map((yield* collection.toArray).map((row) => [row.key, row]))
         const kept = new Set(next.map((row) => row.key))
         const gone = [...current.keys()].filter((key) => !kept.has(key))
         if (gone.length > 0) yield* collection.delete(gone)
@@ -354,6 +461,7 @@ const openItems = (plugins: Plugins["Service"], repo: string, document: string) 
             yield* collection.update(row.key, (draft) => void Object.assign(draft, row))
           }
         }
+        current = new Map(next.map((row) => [row.key, row]))
       }).pipe(Effect.orDie)
     yield* index.byName.rows.pipe(
       Stream.map((rows) => rows.find((row) => row.name === document)?.body),
@@ -388,6 +496,9 @@ export const queryOf = (name: string, params: Host.QueryParams | undefined) =>
     const { repo: asked = "", name: document = "" } = params ?? {}
     const repo = parseFeedRepo(asked)
     if (repo === undefined) return yield* Effect.fail("repo" as const)
+    // A repository's rows reach a plugin only while the repository may show (`repoVisibility`), read at each read.
+    const [owner = "", repoName = ""] = repo.split("/")
+    const gated = (live: Host.Live<Readonly<Record<string, unknown>>>) => gateLive(plugins, repoId(owner, repoName), live)
     if (fleetQuery) {
       // One live list per repository and query, opened on the first ask and kept for the host's life: a shape each.
       const key = `${name}:${repo}`
@@ -404,18 +515,18 @@ export const queryOf = (name: string, params: Host.QueryParams | undefined) =>
         }).pipe(Scope.provide(plugins.scope)),
       ))
       plugins.fleetOpen.set(key, opening)
-      return yield* opening
+      return gated(yield* opening)
     }
-    if (name === FEED_INDEX) return (yield* indexOf(plugins, repo)).live
+    if (name === FEED_INDEX) return gated((yield* indexOf(plugins, repo)).live)
     if (!isFeedName(document)) return yield* Effect.fail("name" as const)
-    if (name === FEED_DOCUMENT) return plugins.feeds.document(repo, document) as unknown as CoreQuery["live"]
+    if (name === FEED_DOCUMENT) return gated(plugins.feeds.document(repo, document) as unknown as CoreQuery["live"])
     // Items come from an index document only: the strip reads them while the view is gone, and only the index stays.
     if (!isIndexName(document)) return yield* Effect.fail("name" as const)
     const key = itemsKey(repo, document)
     // Asked twice at once, a document's items open once: the first ask keeps the opening for every later one.
     const opening = plugins.items.get(key) ?? (yield* Effect.cached(openItems(plugins, repo, document)))
     plugins.items.set(key, opening)
-    return (yield* opening).live
+    return gated((yield* opening).live)
   })
 
 /** View `id`'s strip state now. */

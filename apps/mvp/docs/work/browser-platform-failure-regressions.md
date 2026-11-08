@@ -17,7 +17,7 @@ Regressions reproduced before fixes on Latitude:
 - Interrupting BEGIN discarded transaction state and caused COMMIT after handover to fail with `TransactionLost`.
 
 Not reproduced:
-- Unchanged replay rows: the real SQLite handover tests pass; Effect 4.1.0 structurally compares ordinary arrays and row objects.
+- Unchanged replay rows: the real SQLite handover tests pass; Effect 4.0.5 structurally compares ordinary arrays and row objects.
 - BrowserServices filesystem identity: no failing behavioral regression established. Both inputs are opaque caller-owned adapters, with no public interpreter filesystem identity to inspect. Left unchanged.
 
 Validation: Latitude `pnpm exec vitest run --silent`: 25 files, 303 tests passed, 100% statements, branches, functions and lines. Existing real MessageChannel, Web Locks, BroadcastChannel and wa-sqlite tests retained. Runtime setup and engine client failure records contain only failure tags or names. Public failure semantics documented in platform-browser's durable engine guide.

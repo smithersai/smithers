@@ -1,0 +1,674 @@
+{
+  "id": "packages/smithers/flows/platform-bun",
+  "name": "@smthrs/platform-bun",
+  "owner": {
+    "declaration": "packages/smithers/flows/platform-bun/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
+    "circular": "node ../../../repo-targets/scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./BunFileSystem": "./src/BunFileSystem.ts",
+    "./BunHost": "./src/BunHost.ts",
+    "./index": "./src/index.ts"
+  },
+  "production": [
+    "eslint.config.js",
+    "PACKAGE.ts",
+    "scripts/build.mjs",
+    "scripts/run-bun-tests.mjs",
+    "src/BunFileSystem.ts",
+    "src/BunGarbageCollector.ts",
+    "src/BunHost.ts",
+    "src/BunRuntime.ts",
+    "src/index.ts",
+    "test/BunRuntime.setup.ts",
+    "test/fixtures/native-runtime.ts",
+    "vitest.config.ts"
+  ],
+  "tests": [
+    "packages/smithers/flows/platform-bun/test/ApiDocs.test.ts",
+    "packages/smithers/flows/platform-bun/test/BunArtifact.test.ts",
+    "packages/smithers/flows/platform-bun/test/BunFileSystemGuarded.integration.test.ts",
+    "packages/smithers/flows/platform-bun/test/BunGarbageCollector.test.ts",
+    "packages/smithers/flows/platform-bun/test/BunHostContainment.integration.test.ts",
+    "packages/smithers/flows/platform-bun/test/BunHostRepositoryRoot.test.ts",
+    "packages/smithers/flows/platform-bun/test/BunHostStartupProbe.integration.test.ts",
+    "packages/smithers/flows/platform-bun/test/BunHostVersion.test.ts",
+    "packages/smithers/flows/platform-bun/test/BunRuntime.setup.ts",
+    "packages/smithers/flows/platform-bun/test/BunRuntime.test.ts",
+    "packages/smithers/flows/platform-bun/test/BunRuntime.types.test.ts",
+    "packages/smithers/flows/platform-bun/test/contract/BunHost.contract.test.ts",
+    "packages/smithers/flows/platform-bun/test/contract/BunHostRedirect.contract.test.ts",
+    "packages/smithers/flows/platform-bun/test/fixtures/native-runtime.ts",
+    "packages/smithers/flows/platform-bun/test/HostSurfaceDocs.test.ts",
+    "packages/smithers/flows/platform-bun/test/HttpPinning.integration.test.ts",
+    "packages/smithers/flows/platform-bun/test/index.test.ts",
+    "packages/smithers/flows/platform-bun/test/InstallationDocs.test.ts",
+    "packages/smithers/flows/platform-bun/test/LeaderExit.integration.test.ts",
+    "packages/smithers/flows/platform-bun/test/NativeRuntimeParity.test.ts",
+    "packages/smithers/flows/platform-bun/tsconfig.test.json"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    "packages/smithers/flows/platform-bun/CHANGELOG.md",
+    "packages/smithers/flows/platform-bun/docs/api.md",
+    "packages/smithers/flows/platform-bun/docs/concepts/host-surface.md",
+    "packages/smithers/flows/platform-bun/docs/concepts/runtime-parity.md",
+    "packages/smithers/flows/platform-bun/docs/guides/bind-a-repository-root.md",
+    "packages/smithers/flows/platform-bun/docs/guides/configure-the-filesystem-helper.md",
+    "packages/smithers/flows/platform-bun/docs/guides/contain-child-processes.md",
+    "packages/smithers/flows/platform-bun/docs/installation.md",
+    "packages/smithers/flows/platform-bun/docs/quickstart.md",
+    "packages/smithers/flows/platform-bun/docs/README.md",
+    "packages/smithers/flows/platform-bun/docs/troubleshooting.md",
+    "packages/smithers/flows/platform-bun/dprint.json",
+    "packages/smithers/flows/platform-bun/eslint.config.js",
+    "packages/smithers/flows/platform-bun/LICENSE",
+    "packages/smithers/flows/platform-bun/package.json",
+    "packages/smithers/flows/platform-bun/PACKAGE.ts",
+    "packages/smithers/flows/platform-bun/README.md",
+    "packages/smithers/flows/platform-bun/scripts/build.mjs",
+    "packages/smithers/flows/platform-bun/scripts/run-bun-tests.mjs",
+    "packages/smithers/flows/platform-bun/src/BunFileSystem.ts",
+    "packages/smithers/flows/platform-bun/src/BunGarbageCollector.ts",
+    "packages/smithers/flows/platform-bun/src/BunHost.ts",
+    "packages/smithers/flows/platform-bun/src/BunRuntime.ts",
+    "packages/smithers/flows/platform-bun/src/index.ts",
+    "packages/smithers/flows/platform-bun/test/ApiDocs.test.ts",
+    "packages/smithers/flows/platform-bun/test/BunArtifact.test.ts",
+    "packages/smithers/flows/platform-bun/test/BunFileSystemGuarded.integration.test.ts",
+    "packages/smithers/flows/platform-bun/test/BunGarbageCollector.test.ts",
+    "packages/smithers/flows/platform-bun/test/BunHostContainment.integration.test.ts",
+    "packages/smithers/flows/platform-bun/test/BunHostRepositoryRoot.test.ts",
+    "packages/smithers/flows/platform-bun/test/BunHostStartupProbe.integration.test.ts",
+    "packages/smithers/flows/platform-bun/test/BunHostVersion.test.ts",
+    "packages/smithers/flows/platform-bun/test/BunRuntime.setup.ts",
+    "packages/smithers/flows/platform-bun/test/BunRuntime.test.ts",
+    "packages/smithers/flows/platform-bun/test/BunRuntime.types.test.ts",
+    "packages/smithers/flows/platform-bun/test/contract/BunHost.contract.test.ts",
+    "packages/smithers/flows/platform-bun/test/contract/BunHostRedirect.contract.test.ts",
+    "packages/smithers/flows/platform-bun/test/fixtures/native-runtime.ts",
+    "packages/smithers/flows/platform-bun/test/HostSurfaceDocs.test.ts",
+    "packages/smithers/flows/platform-bun/test/HttpPinning.integration.test.ts",
+    "packages/smithers/flows/platform-bun/test/index.test.ts",
+    "packages/smithers/flows/platform-bun/test/InstallationDocs.test.ts",
+    "packages/smithers/flows/platform-bun/test/LeaderExit.integration.test.ts",
+    "packages/smithers/flows/platform-bun/test/NativeRuntimeParity.test.ts",
+    "packages/smithers/flows/platform-bun/tsconfig.json",
+    "packages/smithers/flows/platform-bun/tsconfig.test.json",
+    "packages/smithers/flows/platform-bun/vitest.config.ts"
+  ],
+  "ignoredCases": [
+    {
+      "path": "packages/smithers/flows/platform-bun/test/BunGarbageCollector.test.ts",
+      "line": 27,
+      "text": "it.skipIf(onBun)(\"asks Bun's global for a synchronous collection\", async () => {"
+    },
+    {
+      "path": "packages/smithers/flows/platform-bun/test/BunHostContainment.integration.test.ts",
+      "line": 116,
+      "text": "describe.skipIf(process.platform === \"win32\")(\"BunHost.layerContained\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/platform-bun/test/BunHostRepositoryRoot.test.ts",
+      "line": 214,
+      "text": "it.skipIf(ProcessSandbox.isUnenforceable(ProcessSandbox.select({ network: \"none\" }, ProcessSandbox.host())))("
+    },
+    {
+      "path": "packages/smithers/flows/platform-bun/test/BunHostStartupProbe.integration.test.ts",
+      "line": 13,
+      "text": "describe.skipIf(process.platform === \"win32\")(\"BunHost first-use jj probe budget\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/platform-bun/test/BunHostVersion.test.ts",
+      "line": 46,
+      "text": "it.skipIf(process.env.SMITHERS_PLATFORM_BUN_LANE === \"1\")(\"executes the declared Bun lane in a Bun worker\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/platform-bun/test/contract/BunHost.contract.test.ts",
+      "line": 169,
+      "text": "describe.skipIf(process.platform === \"win32\")(\"BunHost child-process lifecycle\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/platform-bun/test/LeaderExit.integration.test.ts",
+      "line": 32,
+      "text": "describe.skipIf(process.platform === \"win32\")(\"leader exit containment\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/platform-bun/test/NativeRuntimeParity.test.ts",
+      "line": 19,
+      "text": "it.skipIf(!bunInstalled).each([[\"node\", \"bun\"], [\"bun\", \"node\"]] as const)("
+    }
+  ],
+  "configurations": [
+    {
+      "path": "packages/smithers/flows/platform-bun/eslint.config.js",
+      "sha256": "dbad3d51b9846d92e0c287734163e2a4cee1f04f9f94124d12c9e1656aaebe49",
+      "source": "import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  { ignores: [\"**/dist\", \"**/build\", \"**/coverage\"] },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },\n    settings: { \"import/resolver\": { typescript: { project: [\"./tsconfig.json\"] } } },\n    plugins: { unicorn },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n",
+      "coverageDirectives": [
+        {
+          "line": 9,
+          "text": "{ ignores: [\"**/dist\", \"**/build\", \"**/coverage\"] },"
+        },
+        {
+          "line": 26,
+          "text": "\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/platform-bun/package.json",
+      "sha256": "b8a81e9379e3ca2ff959b7e962a80c9919c2d9f5974e21fdcd9e6e599b82151a",
+      "source": "{\n  \"name\": \"@smthrs/platform-bun\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"engine\",\n    \"privateEffectAdapters\": [\n      \"@effect/platform-bun\",\n      \"@effect/platform-node\",\n      \"@effect/platform-node-shared\"\n    ]\n  },\n  \"description\": \"Bun Host bundle for flows: Effect's Bun platform services composed into the closed Host surface\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/flows/platform-bun\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"effect\",\n    \"bun\",\n    \"platform\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"effect\",\n    \"bun\",\n    \"platform\"\n  ],\n  \"engines\": {\n    \"bun\": \">=1.4.0\",\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [],\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./internal/*\": null,\n    \"./*/index\": null,\n    \"./BunFileSystem\": \"./src/BunFileSystem.ts\",\n    \"./BunHost\": \"./src/BunHost.ts\",\n    \"./index\": \"./src/index.ts\"\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"dist/vendor/**\",\n    \"docs/\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./internal/*\": null,\n      \"./*/index\": null,\n      \"./BunFileSystem\": {\n        \"import\": {\n          \"types\": \"./dist/esm/BunFileSystem.d.ts\",\n          \"default\": \"./dist/esm/BunFileSystem.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/BunFileSystem.d.ts\",\n          \"default\": \"./dist/cjs/BunFileSystem.js\"\n        }\n      },\n      \"./BunHost\": {\n        \"import\": {\n          \"types\": \"./dist/esm/BunHost.d.ts\",\n          \"default\": \"./dist/esm/BunHost.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/BunHost.d.ts\",\n          \"default\": \"./dist/cjs/BunHost.js\"\n        }\n      },\n      \"./index\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      }\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"check\": \"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"vitest --coverage\"\n  },\n  \"dependencies\": {\n    \"@smthrs/database\": \"1.0.0-rc.16\",\n    \"@smthrs/jj\": \"1.0.0-rc.16\",\n    \"@smthrs/kernel\": \"1.0.0-rc.16\",\n    \"@smthrs/sandbox\": \"1.0.0-rc.16\",\n    \"@types/ws\": \"8.18.2\",\n    \"redis\": \"6.2.1\",\n    \"undici\": \"8.11.2\",\n    \"ws\": \"8.22.0\"\n  },\n  \"peerDependencies\": {\n    \"@smthrs/platform-node\": \"1.0.0-rc.16\",\n    \"effect\": \"4.0.5\"\n  },\n  \"devDependencies\": {\n    \"@effect/language-service\": \"0.87.2\",\n    \"@effect/platform-bun\": \"4.0.5\",\n    \"@effect/platform-node\": \"4.0.5\",\n    \"@effect/platform-node-shared\": \"4.0.5\",\n    \"@effect/sql-pg\": \"4.0.5\",\n    \"@effect/vitest\": \"4.0.5\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@smthrs/artifacts\": \"1.0.0-rc.16\",\n    \"@smthrs/flows\": \"1.0.0-rc.16\",\n    \"@smthrs/platform-node\": \"1.0.0-rc.16\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"effect\": \"4.0.5\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\"\n  }\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 120,
+          "text": "\"coverage\": \"vitest --coverage\""
+        },
+        {
+          "line": 148,
+          "text": "\"@vitest/coverage-v8\": \"5.0.0\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/platform-bun/PACKAGE.ts",
+      "sha256": "30ad89ed66ef7786d00971028f348d1ed31e61f47c42c566d9fe85591e0fd886",
+      "source": "import { BuildAndCheckTypeScriptPackage } from \"@smthrs/repo-targets\"\n/**\n * Standard package targets.\n *\n * `cwd` anchors every emitted tool run in this package directory.\n */\nimport { Smithers } from \"@smthrs/targets\"\n\nconst { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({\n  deps: [],\n  cwd: \"packages/smithers/flows/platform-bun\"\n})\n\n/**\n * The package's own suite, re-run under Bun.\n *\n * A package opts into the runtime-compatibility matrix by declaring this key,\n * so `//packages/...:bunTest` is the whole matrix and nothing central lists\n * which packages are in it.\n */\nconst bunTest = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.entrypoint(Smithers.file(\"scripts/run-bun-tests.mjs\")),\n  srcs: [Smithers.glob(\"src/**/*.ts\"), Smithers.glob(\"test/**/*.ts\"), Smithers.file(\"vitest.config.ts\")],\n  deps: [],\n  cwd: \"packages/smithers/flows/platform-bun\"\n})\n\nconst securityReview = Smithers.SecurityReview({\n  cwd: \"packages/smithers/flows/platform-bun\",\n  include: [\"src/**\", \"scripts/**\", \"docs/**\", \"README.md\"],\n  checks: [\n    {\n      id: \"http-redirect-manual\",\n      title: \"Every HttpClient the bundle provides stops at a redirect\",\n      threat:\n        \"A remote server answers an authorized request with a 3xx and makes the host fetch an origin the capability kernel never authorized (SSRF to metadata or internal services).\",\n      lookFor: [\n        \"A factory in src/BunHost.ts that merges BunHttpClient.layer without the RequestInit { redirect: \\\"manual\\\" } override.\",\n        \"A RequestInit that sets redirect to \\\"follow\\\" or omits it, or a second HttpClient layer that shadows layerHttpClient.\",\n        \"A re-export of @effect/platform-bun/BunHttpClient, whose layer follows redirects, or docs that tell callers to provide BunHttpClient.layer directly instead of BunHost.layerHttpClient.\"\n      ],\n      paths: [\"src/BunHost.ts\", \"docs/**\", \"README.md\"]\n    },\n    {\n      id: \"contained-spawner-wiring\",\n      title: \"Contained factories route every child, jj included, through the ProcessReaper spawner\",\n      threat:\n        \"An agent command or jj child spawned through the raw BunChildProcessSpawner escapes the ledger and outlives the host, keeping running with the host's credentials after cancellation.\",\n      lookFor: [\n        \"layerContained or layerContainedAt exposing a ChildProcessSpawner that is not ProcessReaper.layerSpawner, or merging BunChildProcessSpawner.layer unwrapped into the output.\",\n        \"BunJj.layer or BunJj.layerAt (self-spawning) used in a contained factory instead of BunJj.layerSpawner / layerSpawnerAt provided by the contained spawner.\",\n        \"ContainedOptions accepting a platform override that could record pgid null for a real process group.\",\n        \"reaping() dropping or rewriting the caller's ownerPid or system, so the reaper signals the live host's own group or reads another host's ledger rows.\"\n      ],\n      paths: [\"src/BunHost.ts\"]\n    },\n    {\n      id: \"filesystem-slot-atomic\",\n      title: \"The filesystem slot is always the atomic, no-follow AtomicFileSystem\",\n      threat:\n        \"A guarded write by an agent follows a symlink swapped in after authorization and overwrites a file outside the workspace owned by the host user.\",\n      lookFor: [\n        \"Any layer in src/BunHost.ts or src/BunFileSystem.ts providing FileSystem from @effect/platform-bun's BunFileSystem or NodeFileSystem instead of AtomicFileSystem.\",\n        \"The spawner's platform layer resolving files through a non-atomic FileSystem.\",\n        \"BunFileSystem.layer or BunFileSystem.layerWith aliasing anything other than AtomicFileSystem.layer or AtomicFileSystem.layerWith, which own the absolute-helper-path and no-PATH checks.\"\n      ],\n      paths: [\"src/BunHost.ts\", \"src/BunFileSystem.ts\"]\n    },\n    {\n      id: \"repository-root-refusal\",\n      title: \"Repository roots are validated before any layer is built and refusal messages are bounded and escaped\",\n      threat:\n        \"A caller-supplied root binds jj to the process cwd, or a hostile root string injects forged lines or megabytes into host logs through the BunHostError message.\",\n      lookFor: [\n        \"layerAt or layerContainedAt passing root to BunJj without first calling absoluteRoot.\",\n        \"preview() emitting a raw control character or newline, splitting a surrogate pair, or exceeding messageLimit for any input length.\"\n      ],\n      paths: [\"src/BunHost.ts\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: { bunTest, check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 31,
+          "text": "include: [\"src/**\", \"scripts/**\", \"docs/**\", \"README.md\"],"
+        },
+        {
+          "line": 47,
+          "text": "title: \"Contained factories route every child, jj included, through the ProcessReaper spawner\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/platform-bun/tsconfig.json",
+      "sha256": "bceba129ef0350a4a2726e756840042e5b866875f033becfd5637d36c06f1597",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [{\n      \"name\": \"@effect/language-service\",\n      \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n      \"includeSuggestionsInTsc\": false,\n      \"ignoreEffectWarningsInTscExitCode\": true,\n      \"ignoreEffectErrorsInTscExitCode\": true,\n      \"diagnosticSeverity\": { \"globalErrorInEffectFailure\": \"off\" }\n    }]\n  },\n  \"include\": [\"src/**/*\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 17,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 29,
+          "text": "\"includeSuggestionsInTsc\": false,"
+        },
+        {
+          "line": 30,
+          "text": "\"ignoreEffectWarningsInTscExitCode\": true,"
+        },
+        {
+          "line": 31,
+          "text": "\"ignoreEffectErrorsInTscExitCode\": true,"
+        },
+        {
+          "line": 35,
+          "text": "\"include\": [\"src/**/*\"]"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/platform-bun/vitest.config.ts",
+      "sha256": "8716ac4f6bc1dfe80e38a3573c9a8c48c1388bbd4ea8b3c3cfd49ea889084d07",
+      "source": "import { mkdirSync, mkdtempSync, rmSync } from \"node:fs\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\n// Each Node runner owns a private report directory. Keep it until reporting has\n// finished, including failed runs, then remove it when the runner exits.\nconst coverageRoot = join(import.meta.dirname, \"coverage\")\nconst reportsDirectory = process.versions.bun ? undefined : (() => {\n  mkdirSync(coverageRoot, { recursive: true, mode: 0o700 })\n  const directory = mkdtempSync(join(coverageRoot, \"run-\"))\n  process.once(\"exit\", () => rmSync(directory, { recursive: true, force: true }))\n  return directory\n})()\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-schemas.ts\", import.meta.url))],\n    include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],\n    environment: \"node\",\n    setupFiles: [\"./test/BunRuntime.setup.ts\"],\n    // Like platform-node, these contracts exercise real filesystem operations,\n    // child processes, jj, and loopback HTTP. The macOS runner exceeded\n    // Vitest's 5 s default in the filesystem contract; retain the same finite\n    // 30 s test and cleanup budgets used by the Node host suite.\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      enabled: !process.versions.bun,\n      // This directory is fresh; cleaning would recreate it with broader permissions.\n      clean: false,\n      provider: \"v8\",\n      ...(reportsDirectory === undefined ? {} : { reportsDirectory }),\n      include: [\"src/**/*.{ts,vibe}\"],\n      thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }\n    }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 9,
+          "text": "const coverageRoot = join(import.meta.dirname, \"coverage\")"
+        },
+        {
+          "line": 11,
+          "text": "mkdirSync(coverageRoot, { recursive: true, mode: 0o700 })"
+        },
+        {
+          "line": 12,
+          "text": "const directory = mkdtempSync(join(coverageRoot, \"run-\"))"
+        },
+        {
+          "line": 21,
+          "text": "include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],"
+        },
+        {
+          "line": 30,
+          "text": "coverage: {"
+        },
+        {
+          "line": 34,
+          "text": "provider: \"v8\","
+        },
+        {
+          "line": 36,
+          "text": "include: [\"src/**/*.{ts,vibe}\"],"
+        },
+        {
+          "line": 37,
+          "text": "thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/flows/platform-bun",
+      "label": "//packages/smithers/flows/platform-bun:bunTest",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-bun/scripts/run-bun-tests.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-bun/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-bun/test/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-bun/vitest.config.ts"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/platform-bun",
+      "label": "//packages/smithers/flows/platform-bun:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-bun/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-bun/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-bun/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-bun/tsconfig.test.json"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows/platform-bun:lib"
+      ]
+    },
+    {
+      "package": "packages/smithers/flows/platform-bun",
+      "label": "//packages/smithers/flows/platform-bun:circular",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/circular.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-bun/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-bun/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/platform-bun",
+      "label": "//packages/smithers/flows/platform-bun:docs",
+      "rule": "DocsParity",
+      "kinds": [
+        "docs"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-bun/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/platform-bun",
+      "label": "//packages/smithers/flows/platform-bun:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-bun/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-bun/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-bun/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/platform-bun",
+      "label": "//packages/smithers/flows/platform-bun:fmt",
+      "rule": "Dprint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-bun/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-bun/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-bun/dprint.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/platform-bun",
+      "label": "//packages/smithers/flows/platform-bun:lib",
+      "rule": "TsBuild",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-bun/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/build-library.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/scripts/compile-commonjs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-single-effect-version.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-bun/src/index.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-bun/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-bun/scripts/build.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/platform-bun",
+      "label": "//packages/smithers/flows/platform-bun:lint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-bun/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-bun/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.jsdoc.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/platform-bun",
+      "label": "//packages/smithers/flows/platform-bun:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/flows/platform-bun/src/**",
+            "packages/smithers/flows/platform-bun/scripts/**",
+            "packages/smithers/flows/platform-bun/docs/**",
+            "packages/smithers/flows/platform-bun/README.md"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-bun/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-bun/scripts/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-bun/docs/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-bun/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/platform-bun",
+      "label": "//packages/smithers/flows/platform-bun:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/flows/platform-bun/src/**",
+            "packages/smithers/flows/platform-bun/scripts/**",
+            "packages/smithers/flows/platform-bun/docs/**",
+            "packages/smithers/flows/platform-bun/README.md"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-bun/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-bun/scripts/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-bun/docs/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-bun/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/platform-bun",
+      "label": "//packages/smithers/flows/platform-bun:test",
+      "rule": "Vitest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-bun/test/**/*.test.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-bun/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-bun/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-bun/vitest.config.ts"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows/platform-bun:lib"
+      ]
+    }
+  ],
+  "areas": [
+    "PACKAGE.ts",
+    "eslint.config.js",
+    "scripts/build.mjs",
+    "scripts/run-bun-tests.mjs",
+    "src/BunFileSystem.ts",
+    "src/BunGarbageCollector.ts",
+    "src/BunHost.ts",
+    "src/BunRuntime.ts",
+    "src/index.ts",
+    "test/BunRuntime.setup.ts",
+    "test/fixtures",
+    "vitest.config.ts"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

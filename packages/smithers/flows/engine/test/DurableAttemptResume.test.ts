@@ -1,3 +1,6 @@
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
+import { expectTypeOf } from "vitest"
 /**
  * Issue #59: the attempt counter resumes from the persisted sequence. A
  * durable driver exposes `actionLatestAttempt`, and the engine starts the
@@ -6,7 +9,6 @@
  * and the retry decision sees the true attempt count.
  */
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Context, Effect, Exit, Layer, Logger, Option, Schema } from "effect"
@@ -42,9 +44,13 @@ const scriptedWith = (options: {
   })
 
 const provideInstance = <A, E>(
-  self: Effect.Effect<A, E, FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime | Crypto.Crypto>,
+  self: Effect.Effect<
+    A,
+    E,
+    FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)
+  >,
   engine: FlowRuntime.FlowRuntime["Service"]
-): Effect.Effect<A, E, Crypto.Crypto> =>
+): Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   self.pipe(
     Effect.provideService(
       FlowRuntime.FlowInstance,
@@ -211,12 +217,8 @@ class Unprovided extends Context.Service<Unprovided, { readonly value: string }>
 /** Never called; tsc checks it (#2704). */
 const unprovidedServiceProbe = () => {
   const needsUnprovided = Effect.map(Unprovided, (service) => service.value)
-  provideInstance(
-    // @ts-expect-error provideInstance provides only the flow instance and runtime, not Unprovided
-    needsUnprovided,
-    scriptedWith({ latestAttempt: Option.none(), attempts: [] })
-  )
-  provideInstance(
+  expectTypeOf<typeof needsUnprovided>().not.toExtend<Parameters<typeof provideInstance>[0]>()
+  const _provided = provideInstance(
     Effect.map(FlowRuntime.FlowInstance, (instance) => instance),
     scriptedWith({ latestAttempt: Option.none(), attempts: [] })
   )

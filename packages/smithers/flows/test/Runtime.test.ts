@@ -2,7 +2,6 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { expect, it } from "@effect/vitest"
 import { ArtifactStore } from "@smthrs/artifacts"
-import { Crypto } from "@smthrs/crypto"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { FlowEngine } from "@smthrs/engine"
@@ -82,9 +81,9 @@ it("records each runtime construction phase without payload or database details"
   })
   const host = Layer.mergeAll(
     NodeDatabase.layer({ filename: ":memory:" }),
-    Crypto.layerFromDigest(NodeCrypto.layerDigest),
+    NodeCrypto.layer,
     Jj.layerNoop({}),
-    OwnerIdentity.layerWithoutPid.pipe(Layer.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+    OwnerIdentity.layerWithoutPid.pipe(Layer.provide(NodeCrypto.layer))
   )
   const registration = Layer.effectDiscard(Effect.map(Effect.currentSpan, (span) => {
     registrationParent = span.name
@@ -132,7 +131,7 @@ it("uses the caller's SQL instance for every migrated store without opening a se
           nativeStorage(root).pipe(Layer.provideMerge(Layer.mergeAll(
             NodeDatabase.layer({ filename: ":memory:" }),
             AtomicFileSystem.layer,
-            Crypto.layerFromDigest(NodeCrypto.layerDigest),
+            NodeCrypto.layer,
             NodePath.layer,
             Jj.layerNoop({})
           )))
@@ -200,7 +199,7 @@ it("takes the engine's step snapshots on the privileged Jj and leaves the ambien
           nativeStorage(root).pipe(Layer.provideMerge(Layer.mergeAll(
             NodeDatabase.layer({ filename: ":memory:" }),
             AtomicFileSystem.layer,
-            Crypto.layerFromDigest(NodeCrypto.layerDigest),
+            NodeCrypto.layer,
             NodePath.layer,
             Layer.succeed(Jj.Jj, recording(ambient))
           )))
@@ -237,7 +236,7 @@ it("runs a flow on a host with no filesystem, from injected services alone", asy
   // FileSystem, Path, Workspace or ArtifactStore exists anywhere below.
   const host = OwnerIdentity.layerWithoutPid.pipe(Layer.provideMerge(Layer.mergeAll(
     NodeDatabase.layer({ filename: ":memory:" }),
-    Crypto.layerFromDigest(NodeCrypto.layerDigest),
+    NodeCrypto.layer,
     Jj.layerNoop({})
   )))
   const runtime = Runtime.layer(
@@ -299,7 +298,7 @@ it("recovers every registration at once when registration finishes, and logs tha
       )
     ).pipe(Layer.provide(OwnerIdentity.layerWithoutPid.pipe(Layer.provideMerge(Layer.mergeAll(
       NodeDatabase.layer({ filename: ":memory:" }),
-      Crypto.layerFromDigest(NodeCrypto.layerDigest),
+      NodeCrypto.layer,
       Jj.layerNoop({})
     )))))
     await Effect.runPromise(
@@ -353,7 +352,7 @@ it("provides a declared cache environment under the engine, where an action read
             )
           ).pipe(Layer.provide(OwnerIdentity.layerWithoutPid.pipe(Layer.provideMerge(Layer.mergeAll(
             NodeDatabase.layer({ filename: ":memory:" }),
-            Crypto.layerFromDigest(NodeCrypto.layerDigest),
+            NodeCrypto.layer,
             Jj.layerNoop({})
           )))))
         ),

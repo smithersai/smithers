@@ -8,9 +8,62 @@
  * @since 1.0.0
  */
 
+import { Context, Effect, Layer, Schema } from "effect"
 import * as CliError from "./CliError.ts"
 import { processHost, resolveRepo } from "./commands/Open.ts"
+import { auth } from "./internal/backend/Auth.ts"
+import { Client } from "./internal/backend/Client.ts"
 import { Session } from "./internal/backend/Session.ts"
+
+/**
+ * The existing `auth status` read, without credential metadata.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const AuthStatus = Schema.Struct({
+  logged_in: Schema.Boolean,
+  verified: Schema.optional(Schema.Boolean),
+  username: Schema.optional(Schema.NullOr(Schema.String)),
+  email: Schema.optional(Schema.NullOr(Schema.String))
+})
+/**
+ * The signed-in state and the person named by the CLI's auth status.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type AuthStatus = typeof AuthStatus.Type
+
+/**
+ * Authentication reads are injected so unavailable credentials stay unknown.
+ *
+ * @category services
+ * @since 1.0.0
+ */
+export class Authentication extends Context.Service<Authentication, {
+  readonly status: Effect.Effect<AuthStatus, unknown>
+}>()("@smthrs/cli/CloudSession/Authentication") {}
+
+/**
+ * Uses the CLI's `auth status` handler, including its offline and refusal semantics.
+ * Reads never sign in, change credentials, or print them. Cancellation reaches
+ * the client's transport through the Effect's signal.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const layerAuthentication = (environment: Readonly<Record<string, string | undefined>>) =>
+  Layer.succeed(Authentication)({
+    status: Effect.tryPromise({
+      try: async (signal) => {
+        const client = new Client({ environment, signal })
+        const result = await auth["auth status"]!(client, {}, { context: true })
+        return Schema.decodeUnknownSync(AuthStatus)(client.redact(result))
+      },
+      catch: (error) => error
+    })
+  })
 
 /** A read that hangs gives up here. */
 const timeoutMs = 30_000

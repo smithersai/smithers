@@ -1,4 +1,5 @@
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { executeUntilParked } from "./ExecuteUntilParked.ts"
 /**
  * N-08: a run parked inside {@link module:DurableDeferred.raceAll} resumes on
@@ -16,13 +17,13 @@ import { executeUntilParked } from "./ExecuteUntilParked.ts"
  * stores (`TestStores.layerAt`).
  */
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, DurableClock, DurableDeferred, Flow, FlowRuntime, HumanTask, Interpreter } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import * as Node from "@smthrs/plan/Node"
 import { AttemptStore, type Ownership, RunStore } from "@smthrs/run-store"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -51,7 +52,7 @@ type Services =
   | Layer.Success<ReturnType<typeof TestStores.layerAt>>
   | StepBoundary.Service
   | Jj.Jj
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
 
 const provide = <A, E>(effect: Effect.Effect<A, E, Services>) =>
   withCrypto(

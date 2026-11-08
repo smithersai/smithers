@@ -167,7 +167,7 @@ describe("flow registration ownership", () => {
                 if (++admissions === 1) {
                   if (installed) yield* registerInMemory(memory, flow, execute)
                   yield* Deferred.succeed(entered, undefined)
-                  yield* Effect.never
+                  return yield* Effect.never
                 }
                 yield* registerInMemory(memory, flow, execute)
               })

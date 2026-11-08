@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import type { ComponentProps } from "react";
-import { cn } from "./cn";
-import { LOADING_DELAY_MS } from "./loading-delay";
+import { cn } from "@smthrs/ui-css";
+import { LOADING_DELAY_MS } from "@smthrs/ui-css";
 import { useInjectUiCss } from "./styles";
 
 export { LOADING_DELAY_MS };

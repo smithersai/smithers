@@ -36,7 +36,6 @@
 
 import * as Capability from "@smthrs/capability/Capability"
 import * as Digest from "@smthrs/core/Digest"
-import type { Crypto } from "@smthrs/crypto"
 import { DurableClock } from "@smthrs/flow"
 import type { FlowRuntime } from "@smthrs/flow"
 import * as Fault from "@smthrs/flow/Fault"
@@ -73,6 +72,8 @@ import * as TestRun from "@smthrs/std/TestRun"
 import type * as TestRunner from "@smthrs/std/TestRunner"
 import * as Write from "@smthrs/std/Write"
 import * as Context from "effect/Context"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
@@ -1052,7 +1053,9 @@ Fault.register("@smthrs/agent/StandardFlows/WaitRefused", "factory")
  * @since 0.1.0
  */
 export const clock = (
-  services: Context.Context<Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>,
+  services: Context.Context<
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+  >,
   options: { readonly maxSeconds?: number | undefined } = {}
 ): FlowBinding.Source => {
   const requested = options.maxSeconds

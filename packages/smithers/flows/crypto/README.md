@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.1.0` peer dependency. Install one
+This package declares `effect` as an exact `4.1.1` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -29,11 +29,11 @@ imports no `node:` built-in, so it also runs under Bun and in a browser.
 
 ```typescript
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto, digest, digestSync } from "@smthrs/crypto"
+import { digest, digestSync } from "@smthrs/crypto"
 import { Effect } from "effect"
 
 const injected = await Effect.runPromise(
-  digest("hello").pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+  digest("hello").pipe(Effect.provide(NodeCrypto.layer))
 )
 const synchronous = digestSync("hello")
 
@@ -44,13 +44,13 @@ const synchronous = digestSync("hello")
 ## Public API
 
 - `digest(input)` is the normal operational API. It requires an Effect
-  `Crypto.Crypto` service and fails with `Sha256Error`.
+  `EffectDigest.Digest` service and fails with `Sha256Error`.
 - `digestSync(input)` is the explicit synchronous API for pure plan and
   identity construction. It uses the package-owned FIPS 180-4 implementation.
 - `Digest` validates an existing digest without hashing it.
 - `Sha256` is the one-way schema adapter. `Sha256.Digest`, `Sha256.digest`, and
   `Sha256.digestSync` remain attached for compatibility.
-- `syncCrypto` adapts the synchronous implementation to Effect `Crypto`. It
+- `syncCrypto` adapts the synchronous implementation to Effect `Digest`. It
   accepts only `SHA-256` and deliberately refuses randomness.
 - `WebCrypto.layer` and `WebCrypto.make()` provide Effect `Crypto` over the
   global WebCrypto in Node, Bun, a browser, or a Cloudflare Worker. Randomness

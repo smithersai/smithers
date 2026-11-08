@@ -61,6 +61,7 @@ export class PluginRefused extends Schema.TaggedError<PluginRefused>()("plugin/P
  * @since 1.1.0
  */
 export interface Live<R> {
+  /** Reads current access synchronously; retains the snapshot reference while the visible rows are unchanged. */
   readonly current: () => ReadonlyArray<R>
   /** Calls `listener` after every change; the returned function unsubscribes. */
   readonly subscribe: (listener: () => void) => () => void

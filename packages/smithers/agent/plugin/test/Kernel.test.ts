@@ -1,5 +1,5 @@
 import { Context, Effect } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Config from "../src/Config.vibe"
 import type { ResolvedConfig } from "../src/Config.vibe"
 import type { HookCatalog, ParallelHook, WaterfallHook } from "../src/Hooks.vibe"
@@ -307,14 +307,8 @@ describe("Kernel startup context", () => {
   class Settings extends Context.Service<Settings, { readonly enabled: boolean }>()("test/Settings") {}
 
   it("refuses a shared config hook that requires a service at the type level", () => {
-    const plugin: FlowsPlugin = {
-      name: "needs-settings",
-      hooks: {
-        // @ts-expect-error the shared startup hooks are context-free; a service requirement does not compile.
-        config: () => Settings.pipe(Effect.map((settings) => ({ feature: settings.enabled })))
-      }
-    }
-    expect(plugin.name).toBe("needs-settings")
+    const needsSettings = () => Settings.pipe(Effect.map((settings) => ({ feature: settings.enabled })))
+    expectTypeOf<typeof needsSettings>().not.toExtend<NonNullable<FlowsPlugin["hooks"]>["config"]>()
   })
 
   it("still refuses an untyped service-reading startup hook at runtime, attributed to the hook", async () => {
@@ -346,9 +340,7 @@ describe("Kernel startup context", () => {
       {},
       { hooks: { config: "waterfall", configResolved: "parallel" } }
     )
-    // @ts-expect-error the startup Effect requires Settings, so it is not context-free.
-    const contextFree: Effect.Effect<Kernel.Kernel<ServiceHooks>, PluginError, never> = startup
-    expect(contextFree).toBe(startup)
+    expectTypeOf<typeof startup>().not.toExtend<Effect.Effect<Kernel.Kernel<ServiceHooks>, PluginError, never>>()
     const kernel = await Effect.runPromise(startup.pipe(Effect.provideService(Settings, { enabled: true })))
     expect(kernel.config.feature).toEqual({ enabled: true })
     expect(seen).toEqual([{ enabled: true }, true])

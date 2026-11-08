@@ -1,9 +1,9 @@
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import type { Transcript } from "@smthrs/agent"
 import { RuntimeContext } from "alchemy"
-import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect, Layer } from "effect"
-import type { SqlClient } from "effect/sql"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import type { SqlClient } from "effect/sql"
 import * as Store from "./runners/RunContent.ts"
 import * as TranscriptHost from "./runners/TranscriptHost.ts"
 import * as SocketAccess from "./SocketAccess.ts"
@@ -21,7 +21,7 @@ import * as SocketChecks from "./SocketChecks.ts"
 export interface RunContentShape {
   readonly append: (
     generation: number,
-    events: ReadonlyArray<Transcript.Event>,
+    events: ReadonlyArray<Transcript.Event>
   ) => Effect.Effect<{ readonly next: number; readonly summary: Store.Summary }, never, RuntimeContext>
 }
 
@@ -31,80 +31,81 @@ export class RunContent extends Cloudflare.DurableObject<RunContent, RunContentS
 /** The object's implementation: the transcript of one run. */
 export const live = <E, R>(
   connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
-  options: SocketChecks.Options = {},
-) => RunContent.make(
-  Effect.gen(function* () {
-    const state = yield* Cloudflare.DurableObjectState
-    const checks = yield* SocketChecks.checker(connection, options)
-    return Effect.gen(function* () {
-      const runtime = yield* RuntimeContext
-      const sql: Store.Sql = {
-        exec: (query, ...bindings) =>
-          state.storage.sql.raw.exec(query, ...bindings).toArray() as ReadonlyArray<Record<string, Store.SqlValue>>,
-      }
-      Store.migrate(sql)
-
-      const host = TranscriptHost.make<RuntimeContext, RuntimeContext | SqlClient.SqlClient>({
-        sql,
-        storage: state.storage,
-        sockets: state.getWebSockets().pipe(Effect.provideService(RuntimeContext, runtime)),
-        check: checks.check,
-        within: checks.within,
-      })
-      // A socket from before leases is closed before this incarnation sends anything.
-      yield* host.restore
-
-      const append = (generation: number, events: ReadonlyArray<Transcript.Event>) =>
-        host.append(generation, events).pipe(
-          Effect.withSpan("run_content.append", { attributes: { "smithers.transcript.generation": generation } }),
-        )
-
-      /** A socket ChatApi admitted: replayed from `?after=`, then live (`TranscriptHost.join`). */
-      const join = Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
-        const after = Number(new URL(request.url, "http://run").searchParams.get("after") ?? "-1")
-        const admission = SocketAccess.admissionOf(request)
-        if (!Number.isInteger(after) || after < -1 || admission === undefined) {
-          return HttpServerResponse.empty({ status: 400 })
+  options: SocketChecks.Options = {}
+) =>
+  RunContent.make(
+    Effect.gen(function*() {
+      const state = yield* Cloudflare.DurableObjectState
+      const checks = yield* SocketChecks.checker(connection, options)
+      return Effect.gen(function*() {
+        const runtime = yield* RuntimeContext
+        const sql: Store.Sql = {
+          exec: (query, ...bindings) =>
+            state.storage.sql.raw.exec(query, ...bindings).toArray() as ReadonlyArray<Record<string, Store.SqlValue>>
         }
-        // A session that ended on the way here gets nothing; nor does a person over the cap.
-        const refusal = yield* host.admissible(admission)
-        if (refusal !== undefined) {
-          yield* Effect.logWarning("run_content.join").pipe(Effect.annotateLogs({ outcome: refusal }))
-          return HttpServerResponse.empty({ status: refusal === "expired" ? 401 : 429 })
-        }
-        const [response, socket] = yield* Cloudflare.upgrade()
-        const events = yield* host.join(socket, admission, after)
-        yield* Effect.logInfo("run_content.join").pipe(Effect.annotateLogs({ after, events }))
-        return response
-      })
+        Store.migrate(sql)
 
-      return {
-        append,
-        fetch: join,
-        alarm: () => host.alarm,
-        // Watchers only read; anything they send is ignored.
-        webSocketMessage: () => Effect.void,
-        webSocketClose: () => Effect.void,
-        webSocketError: () => Effect.void,
-      }
+        const host = TranscriptHost.make<RuntimeContext, RuntimeContext | SqlClient.SqlClient>({
+          sql,
+          storage: state.storage,
+          sockets: state.getWebSockets().pipe(Effect.provideService(RuntimeContext, runtime)),
+          check: checks.check,
+          within: checks.within
+        })
+        // A socket from before leases is closed before this incarnation sends anything.
+        yield* host.restore
+
+        const append = (generation: number, events: ReadonlyArray<Transcript.Event>) =>
+          host.append(generation, events).pipe(
+            Effect.withSpan("run_content.append", { attributes: { "smithers.transcript.generation": generation } })
+          )
+
+        /** A socket ChatApi admitted: replayed from `?after=`, then live (`TranscriptHost.join`). */
+        const join = Effect.gen(function*() {
+          const request = yield* HttpServerRequest.HttpServerRequest
+          const after = Number(new URL(request.url, "http://run").searchParams.get("after") ?? "-1")
+          const admission = SocketAccess.admissionOf(request)
+          if (!Number.isInteger(after) || after < -1 || admission === undefined) {
+            return HttpServerResponse.empty({ status: 400 })
+          }
+          // A session that ended on the way here gets nothing; nor does a person over the cap.
+          const refusal = yield* host.admissible(admission)
+          if (refusal !== undefined) {
+            yield* Effect.logWarning("run_content.join").pipe(Effect.annotateLogs({ outcome: refusal }))
+            return HttpServerResponse.empty({ status: refusal === "expired" ? 401 : 429 })
+          }
+          const [response, socket] = yield* Cloudflare.upgrade()
+          const events = yield* host.join(socket, admission, after)
+          yield* Effect.logInfo("run_content.join").pipe(Effect.annotateLogs({ after, events }))
+          return response
+        })
+
+        return {
+          append,
+          fetch: join,
+          alarm: () => host.alarm,
+          // Watchers only read; anything they send is ignored.
+          webSocketMessage: () => Effect.void,
+          webSocketClose: () => Effect.void,
+          webSocketError: () => Effect.void
+        }
+      })
     })
-  }),
-)
+  )
 
 /** The namespace as ChatApi holds it once it has bound it (`yield* RunContent`). */
 type Objects = Cloudflare.DurableObject<RunContentShape>
 
 /** ChatApi's `Transcripts` over the bound namespace, for the request that calls it. */
 export const transcriptsOver = (objects: Objects) =>
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const runtime = yield* RuntimeContext
     return Store.Transcripts.of({
       append: (runId, generation, events) =>
         objects.getByName(runId).append(generation, events).pipe(
           Effect.provideService(RuntimeContext, runtime),
-          Effect.mapError(() => new Store.TranscriptsUnavailable()),
-        ),
+          Effect.mapError(() => new Store.TranscriptsUnavailable())
+        )
     })
   })
 
@@ -116,7 +117,7 @@ export const transcriptsLayer = (objects: Objects) => Layer.effect(Store.Transcr
  * can't.
  */
 export const connect = (objects: Objects, runId: string, admission: SocketAccess.Admission) =>
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const runtime = yield* RuntimeContext
     const request = SocketAccess.forward(yield* HttpServerRequest.HttpServerRequest, admission)
     return yield* objects.getByName(runId).fetch(request).pipe(Effect.provideService(RuntimeContext, runtime))

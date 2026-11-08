@@ -103,11 +103,15 @@ export const Compared = Schema.Struct({
 export type Compared = typeof Compared.Type
 
 /**
- * Two commits' comparison, kept on this tab by `<base>...<head>`: `loading` while the route is asked, `ready` with the
+ * Two commits' comparison, kept on this tab by `<repository>@<base>...<head>`: `loading` while the route is asked, `ready` with the
  * files and commits they differ by, or `failed`. A pull request's Files tab and a branch's Compare read it alike.
  */
 export const FilesRow = Schema.Struct({
   id: Schema.String,
+  /** The repository it was read from (`github/owner/name`): what the data gate joins (repo/gate.ts). */
+  repoId: Schema.String,
+  /** The particular read that owns this row; late completions cannot populate its replacement. */
+  requestId: Schema.optional(Schema.String),
   status: Schema.Literals(["loading", "ready", "failed"]),
   files: Schema.Array(ChangedFile),
   truncated: Schema.Boolean,
@@ -142,7 +146,7 @@ export const PullsView = Schema.Struct({
   pullAbsent: Schema.optionalKey(Schema.Boolean),
   pullCheckedAt: Schema.optionalKey(Schema.Number),
   /** The pull shape's current access or failure, separate from the shared issue shape. */
-  pullStatus: Schema.Literals(["unknown", "allowed", "unavailable", "sign_in", "forbidden", "elsewhere"]),
+  pullStatus: Schema.Literals(["unknown", "unverified", "allowed", "unavailable", "sign_in", "forbidden", "elsewhere"]),
 })
 export type PullsView = typeof PullsView.Type
 

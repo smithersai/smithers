@@ -5,7 +5,6 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
 import * as Consensus from "@smthrs/journal/Consensus"
 import { Journal } from "@smthrs/journal/Journal"
 import { type RunId, type SourceId } from "@smthrs/journal/JournalEvent"
@@ -45,7 +44,7 @@ describe("TestStores", () => {
         expect(refused.code).toBe("fence_lost")
       }).pipe(
         Effect.provide(bundle.pipe(Layer.provideMerge(strategy))),
-        Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
+        Effect.provide(NodeCrypto.layer),
         Effect.scoped
       )
     })
@@ -119,7 +118,7 @@ describe("TestStores", () => {
           }
         }).pipe(
           Effect.provide(TestStores.layer({ capacity: 8 })),
-          Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
+          Effect.provide(NodeCrypto.layer),
           Effect.scoped
         )
       )

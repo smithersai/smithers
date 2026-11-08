@@ -67,7 +67,6 @@ node --test .smithers/flows/land/farm/farm.test.mjs
 shellcheck -S warning .smithers/flows/land/farm/{mini-run,mini-remote.sh,lat-remote.sh,lat-services.sh,health.sh}
 ```
 
-
 The tiny remote protocol regression can run independently of occupied app slots:
 set `DEVX_MINI_TEST_HOST` to your private SSH alias and run
 `node --test .smithers/flows/land/farm/mini-live.test.mjs`. It creates a zero-dependency

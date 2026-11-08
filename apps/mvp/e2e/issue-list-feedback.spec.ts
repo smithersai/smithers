@@ -9,14 +9,14 @@ for (const [suffix, label] of [["issues", "Syncing issues…"], ["pulls", "Synci
       Object.assign(window, { listBlanks: blank })
       const inspect = () => {
         const list = document.querySelector('[data-slot="issues-view"]')
-        if (list && !list.querySelector('.sui-issues-list, .sui-issues-counts') && !document.querySelector('[data-list-sync]')) blank.push(location.pathname)
+        if (list && !list.querySelector('.sui-issues-list, .sui-issues-counts') && !document.querySelector('[data-list-sync], input[aria-label="Search issues"]')) blank.push(location.pathname)
         requestAnimationFrame(inspect)
       }
       requestAnimationFrame(inspect)
     })
     await page.goto(`/smithersai/smithers/${suffix}`)
     await expect(page.locator('[data-slot="issues-view"]')).toBeVisible({ timeout: 60_000 })
-    await expect(page.locator('.sui-issues-list').or(page.getByText(label, { exact: true }))).toBeVisible()
+    await expect(page.locator('.sui-issues-list').or(suffix === "issues" ? page.getByRole("textbox", { name: "Search issues" }) : page.getByText(label, { exact: true })).first()).toBeVisible()
     expect(await page.evaluate(() => (window as unknown as { listBlanks: string[] }).listBlanks)).toEqual([])
   })
 }

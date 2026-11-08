@@ -1,10 +1,13 @@
+import * as Hex from "effect/encoding/Hex"
+import * as Redacted from "effect/Redacted"
 /**
  * The dumb-HTTP CAS protocol: `GET`/`PUT`/`HEAD /cas/{digest}` and
  * `POST /cas/findMissing`, mirroring
  * `com.google.devtools.build.lib.remote.http.HttpCacheClient`.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Crypto, syncCrypto } from "@smthrs/crypto"
+import { syncCrypto } from "@smthrs/crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -397,18 +400,20 @@ describe("uploads", () => {
     Effect.gen(function*() {
       const entered = yield* Deferred.make<void>()
       const release = yield* Deferred.make<void>()
-      const crypto = Crypto.make({
-        randomBytes: (size) => new Uint8Array(size),
+      const crypto = EffectDigest.Digest.of({
         digest: (algorithm, snapshot) =>
           Deferred.succeed(entered, undefined).pipe(
             Effect.andThen(Deferred.await(release)),
             Effect.andThen(syncCrypto.digest(algorithm, snapshot))
-          )
+          ),
+        digestHex(algorithm, data) {
+          return Effect.map(this.digest(algorithm, data), Hex.encode)
+        }
       })
       const tier = remote(() => new Response(null, { status: 201 }))
       const input = bytes(artifact)
       const running = yield* Effect.flatMap(tier.store, (store) => store.put(input)).pipe(
-        Effect.provideService(Crypto.Crypto, crypto),
+        Effect.provideService(EffectDigest.Digest, crypto),
         Effect.forkChild({ startImmediately: true })
       )
       yield* Deferred.await(entered)
@@ -1181,7 +1186,7 @@ describe("the address guard", () => {
       Effect.gen(function*() {
         const tier = remote(() => new Response(null, { status: 200 }))
         const store = yield* withCrypto(tier.store)
-        const refused = (operation: Effect.Effect<unknown, unknown, Crypto.Crypto>) =>
+        const refused = (operation: Effect.Effect<unknown, unknown, EffectDigest.Digest>) =>
           withCrypto(operation.pipe(Effect.exit)).pipe(
             Effect.map((exit) => (errorOf(exit) as ArtifactStore.ArtifactStoreError).code)
           )
@@ -1266,3 +1271,7 @@ describe("transport failures", () => {
       expect(failure.message).not.toContain("secret")
     }))
 })
+
+/** Native test hosts inspect the arguments they actually execute. */
+const plainWord = (value: string | Redacted.Redacted<string>): string =>
+  Redacted.isRedacted(value) ? Redacted.value(value) : value

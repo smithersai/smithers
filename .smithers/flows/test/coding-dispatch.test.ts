@@ -9,7 +9,6 @@ import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as StandardFlows from "@smthrs/agent/StandardFlows"
 import { CapabilityPattern } from "@smthrs/capability/Capability"
-import { Crypto } from "@smthrs/crypto"
 import { Action, Graph } from "@smthrs/flow"
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as Model from "@smthrs/model/Model"
@@ -432,7 +431,7 @@ for (const hosted of [false, true]) {
           t.after(start.release)
           const state = await realpath(await mkdtemp(join(tmpdir(), "coding-dispatch-state-")))
           t.after(() => rm(state, { recursive: true, force: true }))
-          const services = Layer.merge(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
+          const services = Layer.merge(NodeServices.layer, NodeCrypto.layer)
           const policy = "a".repeat(64)
           const registry = Layer.effect(Registry.Registry)(
             Effect.gen(function*() {

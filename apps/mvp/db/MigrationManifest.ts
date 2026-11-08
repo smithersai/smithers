@@ -103,6 +103,17 @@ import m0102 from "./migrations/0102_repository_visibility_receipt.ts"
 import m0103 from "./migrations/0103_notification_access_projection.ts"
 import m0104 from "./migrations/0104_visibility_read_claims.ts"
 import m0105 from "./migrations/0105_notification_denial_sequence.ts"
+import m0106 from "./migrations/0106_machine_write_diagnostics.ts"
+import m0107 from "./migrations/0107_notification_emit_projection.ts"
+import m0108 from "./migrations/0108_issue_tree.ts"
+import m0109 from "./migrations/0109_session_deadlines.ts"
+import m0110 from "./migrations/0110_session_signing_keys.ts"
+import m0111 from "./migrations/0111_session_reauthentication.ts"
+import m0112 from "./migrations/0112_session_tags.ts"
+import m0113 from "./migrations/0113_session_ends.ts"
+import m0114 from "./migrations/0114_session_key_fingerprints.ts"
+import m0115 from "./migrations/0115_compromised_session_keys.ts"
+import m0116 from "./migrations/0116_session_seal_fingerprint.ts"
 
 /** Every published migration identity, in ascending apply order. */
 export const migrations = {
@@ -210,4 +221,15 @@ export const migrations = {
   "0103_notification_access_projection": m0103,
   "0104_visibility_read_claims": m0104,
   "0105_notification_denial_sequence": m0105,
+  "0106_machine_write_diagnostics": m0106,
+  "0107_notification_emit_projection": m0107,
+  "0108_issue_tree": m0108,
+  "0109_session_deadlines": m0109,
+  "0110_session_signing_keys": m0110,
+  "0111_session_reauthentication": m0111,
+  "0112_session_tags": m0112,
+  "0113_session_ends": m0113,
+  "0114_session_key_fingerprints": m0114,
+  "0115_compromised_session_keys": m0115,
+  "0116_session_seal_fingerprint": m0116,
 }

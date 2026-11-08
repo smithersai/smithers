@@ -7,7 +7,6 @@ import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as SeatRouter from "@smthrs/agent/SeatRouter"
-import { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
@@ -119,7 +118,7 @@ for (const host of ["wiki", "release-support", "suggest", "migrate"] as const) {
         Layer.provideMerge([production]),
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(FlowEngine.layerMemory),
-        Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
+        Layer.provideMerge(NodeCrypto.layer),
         Layer.provideMerge(NodeServices.layer),
         Layer.provideMerge(sink),
         Layer.provideMerge(stores)

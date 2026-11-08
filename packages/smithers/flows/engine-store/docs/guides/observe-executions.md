@@ -60,7 +60,11 @@ remains interruption and releases the reserved connection and transaction.
 The read uses a deferred SQLite transaction, allowing a WAL writer to commit
 while it reads. All fields still describe the same database snapshot. A read
 inside an existing transaction joins that transaction and can see its writes;
-publish such observations only after that transaction commits.
+publish such observations only after that transaction commits. Once
+run-store migration 1006 has run, PostgreSQL bumps run revisions at COMMIT, so a
+joined read first fires the transaction's queued bumps: its own writes read back
+with the revisions the commit keeps, and the transaction holds the shared
+revision row from that read to its COMMIT.
 
 ## Cancellation intent and acknowledgement
 
@@ -258,3 +262,13 @@ yet. The control projection consumer and public control list routing are a
 separate integration step. They must expose their durable applied revision and
 the source revision observed during catch-up to represent lag. These ports
 provide that information but do not claim the control projection is current.
+
+## Large execution state
+
+Snapshot and catalog queries select lifecycle columns plus the JSON version and
+flow name in SQL. They do not return `state_json`, payloads, results, or other
+execution state to the driver. A large payload therefore does not multiply the
+application's snapshot-buffer size by the requested batch size. The lifecycle
+read validates the projected version and flow name and retains ownership,
+ancestry, wait and revision invariant checks; it does not decode execution data.
+The optional waiting-request column is discovered for older read-only stores.

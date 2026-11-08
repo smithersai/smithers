@@ -9,9 +9,9 @@ import {
   type ComponentProps,
   type ReactNode,
 } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { EmptyState } from "../empty-state";
-import { formatStatus } from "../status";
+import { formatStatus } from "@smthrs/ui-css";
 import { StatusPill } from "../status-pill";
 import { useInjectUiCss } from "../styles";
 

@@ -18,7 +18,6 @@ import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import * as ControlLive from "@smthrs/control/ControlLive"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import * as SqlControlRuntime from "@smthrs/control/SqlControlRuntime"
-import { Crypto } from "@smthrs/crypto"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Migrations, SqlJournal } from "@smthrs/journal"
@@ -84,7 +83,7 @@ export const stack = (options: {
             Registry.layerNoop()
           )
         ),
-        Layer.provideMerge(Layer.merge(storage(filename), Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+        Layer.provideMerge(Layer.merge(storage(filename), NodeCrypto.layer))
       ))
   )
 
@@ -105,7 +104,7 @@ export const defaultCadenceStack = Layer.unwrap(
           Registry.layerNoop()
         )
       ),
-      Layer.provideMerge(Layer.merge(storage(filename), Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+      Layer.provideMerge(Layer.merge(storage(filename), NodeCrypto.layer))
     ))
 )
 

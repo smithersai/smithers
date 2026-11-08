@@ -1,4 +1,5 @@
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
+import * as EffectDigest from "effect/crypto/Digest"
 /**
  * A complete durable `ControlLive` stack over one in-memory SQLite database.
  *
@@ -8,7 +9,6 @@ import * as DatabaseMigrations from "@smthrs/database/Migrations"
  * attribution, or steering delivery need that meeting point.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import * as DurableWriterModule from "@smthrs/database/DurableWriter"
 import type { DurableWriter } from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
@@ -18,6 +18,7 @@ import * as Journal from "@smthrs/journal/Journal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
 import { Migrations as RunStoreMigrations, type Ownership, RunStore } from "@smthrs/run-store"
+import type {} from "effect"
 import { Layer } from "effect"
 import type * as SqlClient from "effect/sql/SqlClient"
 import type * as ApprovalAuthority from "../src/ApprovalAuthority.vibe"
@@ -80,7 +81,7 @@ export type DurableStack =
   | RunStore.RunStore
   | DurableWriter
   | SqlClient.SqlClient
-  | Crypto.Crypto
+  | EffectDigest.Digest
 
 /** Everything the control plane needs a database and a journal to supply. */
 export type DurableStackDependencies =
@@ -88,7 +89,7 @@ export type DurableStackDependencies =
   | RunStore.RunStore
   | DurableWriter
   | SqlClient.SqlClient
-  | Crypto.Crypto
+  | EffectDigest.Digest
 
 /**
  * The control plane over a database somebody else provides.
@@ -155,5 +156,5 @@ export const durable = (
   } = {}
 ): Layer.Layer<DurableStack> =>
   controlPlane(options).pipe(
-    Layer.provideMerge(Layer.merge(options.database ?? journalBundle, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+    Layer.provideMerge(Layer.merge(options.database ?? journalBundle, NodeCrypto.layer))
   ) as Layer.Layer<DurableStack>

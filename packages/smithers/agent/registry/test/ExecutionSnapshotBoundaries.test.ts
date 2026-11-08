@@ -4,10 +4,10 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import * as Digest from "@smthrs/core/Digest"
-import { Crypto } from "@smthrs/crypto"
 import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Deferred, Effect, Fiber, FileSystem, Layer, Logger, Path, PlatformError, Schema } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import { pathToFileURL } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as Descriptor from "../src/Descriptor.vibe"
@@ -17,7 +17,7 @@ import * as Snapshot from "../src/ExecutionSnapshot.ts"
 import * as Prompt from "../src/Prompt.vibe"
 import * as Registry from "../src/Registry.ts"
 
-const platform = Layer.mergeAll(Crypto.layerFromDigest(NodeCrypto.layerDigest), NodeFileSystem.layer, NodePath.layer)
+const platform = Layer.mergeAll(NodeCrypto.layer, NodeFileSystem.layer, NodePath.layer)
 const source = `import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
@@ -42,7 +42,7 @@ const fixture = (lockfiles = false) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const crypto = yield* Crypto.Crypto
+    const crypto = yield* EffectDigest.Digest
     const root = yield* fs.makeTempDirectoryScoped({ prefix: "smithers-snapshot-boundaries-" })
     const entry = `${root}/flows/snapshot/flow.ts`
     const helper = `${root}/flows/snapshot/helper.ts`
@@ -66,12 +66,12 @@ const fixture = (lockfiles = false) =>
     const index = `${root}/.flows/executions/${digest}.json`
     const blob: string = JSON.parse(yield* fs.readFileString(index))
     const manifest: Manifest = JSON.parse(new TextDecoder().decode(
-      yield* store.get(blob).pipe(Effect.provideService(Crypto.Crypto, crypto))
+      yield* store.get(blob).pipe(Effect.provideService(EffectDigest.Digest, crypto))
     ))
     const publishBytes = (bytes: Uint8Array) =>
       Effect.gen(function*() {
         const blob = yield* store.put(bytes).pipe(
-          Effect.provideService(Crypto.Crypto, crypto)
+          Effect.provideService(EffectDigest.Digest, crypto)
         )
         yield* fs.writeFileString(index, JSON.stringify(blob))
         return blob

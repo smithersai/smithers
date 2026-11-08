@@ -508,11 +508,11 @@
   },
   "dependencies": {
     "typescript": "7.0.2",
-    "undici": "8.12.3",
+    "undici": "8.11.2",
     "redis": "6.2.1",
     "@types/ws": "8.18.2",
     "ws": "8.22.0",
-    "vibelang-runtime": "file:../../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
+    "vibelang-runtime": "0.0.12"
   },
   "optionalDependencies": {
     "@smthrs/agent": "1.0.0-rc.16",
@@ -526,8 +526,7 @@
     "@smthrs/plan": "1.0.0-rc.16",
     "@smthrs/platform-node": "1.0.0-rc.16",
     "@smthrs/registry": "1.0.0-rc.16",
-    "@smthrs/canonical": "1.0.0-rc.16",
-    "@smthrs/crypto": "1.0.0-rc.16"
+    "@smthrs/canonical": "1.0.0-rc.16"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -545,8 +544,8 @@
     "eslint-plugin-unicorn": "65.0.0",
     "madge": "8.0.0",
     "typescript-eslint": "8.69.0",
-    "vibelang": "file:../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
-    "vibelang-vite": "file:../../../.vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz",
+    "vibelang": "0.0.12",
+    "vibelang-vite": "0.0.12",
     "vitest": "5.0.0",
     "@effect/platform-node": "4.1.1",
     "@effect/platform-node-shared": "4.1.1",

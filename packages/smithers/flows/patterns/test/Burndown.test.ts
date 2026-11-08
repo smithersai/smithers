@@ -1,6 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, DurableDeferred, Fault, Flow, Graph, Interpreter, Sleep, WaitFor } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
@@ -779,7 +778,7 @@ const host = (flow: unknown, ...layers: ReadonlyArray<Layer.Layer<any, any, any>
   Layer.mergeAll(Interpreter.layer(flow as never), Sleep.layer, WaitFor.layer, ...layers).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Layer.provideMerge(NodeCrypto.layer)
   ) as Layer.Layer<any, never, never>
 
 describe("Burndown.child", () => {

@@ -24,7 +24,10 @@ import {
   type QueryBuilder,
   type SingleResult
 } from "@tanstack/db"
+import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
 import * as Queue from "effect/Queue"
 import type * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
@@ -95,6 +98,38 @@ export interface LiveQuery<Q extends AnyQuery> {
 }
 
 /**
+ * How a live query keys its rows. By default TanStack DB derives a key from
+ * the query's sources, so a join's row is keyed by both rows. `getKey` keys
+ * each row itself, as its source collection does, so `tanstack.get(key)` reads
+ * a row by the same key the source knows it by. Each result row's key must be
+ * unique.
+ *
+ * @category models
+ * @since 0.3.0
+ */
+export interface Options<Q extends AnyQuery> {
+  readonly getKey?: (row: Row<Q>) => string | number
+  /** Overrides Publication for this query. Incremental rows follow the graph while a window is still loading. */
+  readonly publication?: "settled" | "incremental"
+}
+
+/**
+ * How queries publish rows during ordered refills; absent, they retain the last settled window.
+ * @category services
+ * @since 0.4.0
+ */
+export class Publication extends Context.Service<Publication, { readonly mode: "settled" | "incremental" }>()(
+  "@smthrs/effect-tanstack-db/LiveQuery/Publication"
+) {}
+
+/**
+ * Current graph rows, including immediate removals, without waiting for ordered refills.
+ * @category layers
+ * @since 0.4.0
+ */
+export const incremental = Layer.succeed(Publication, { mode: "incremental" })
+
+/**
  * A live query over other collections, cleaned up when the scope closes. It
  * starts on its first read, `preload` or stream. Construction exceptions fail
  * with `Collection.LoadFailed`, preserving the original cause.
@@ -103,30 +138,41 @@ export interface LiveQuery<Q extends AnyQuery> {
  * @since 0.1.0
  */
 export const make = <Q extends AnyQuery>(
-  query: (q: InitialQueryBuilder) => Q
+  query: (q: InitialQueryBuilder) => Q,
+  options?: Options<Q>
 ): Effect.Effect<LiveQuery<Q>, LoadFailed, Scope.Scope> =>
-  Effect.acquireRelease(
-    // Garbage collection is off: the scope owns the lifetime.
-    Effect.try({
-      try: () => createLiveQueryCollection({ query, gcTime: 0 }) as unknown as TanStackLiveQuery<Q>,
-      catch: (cause) => new LoadFailed({ cause })
-    }),
-    release
-  ).pipe(Effect.map((tanstack): LiveQuery<Q> => ({
-    tanstack,
-    toArray: toArray(tanstack),
-    preload: preload(tanstack),
-    rows: rows(tanstack),
-    changes: (options) => changes(tanstack, options),
-    setWindow: (window) =>
-      Effect.try({ try: () => tanstack.utils.setWindow(window), catch: (cause) => new LoadFailed({ cause }) }).pipe(
-        Effect.flatMap((loading) =>
-          loading === true
-            ? Effect.void
-            : Effect.tryPromise({ try: () => loading, catch: (cause) => new LoadFailed({ cause }) })
+  Effect.gen(function*() {
+    const policy = yield* Effect.serviceOption(Publication)
+    const publication = options?.publication ?? (Option.isSome(policy) ? policy.value.mode : "settled")
+    return yield* Effect.acquireRelease(
+      // Garbage collection is off: the scope owns the lifetime.
+      Effect.try({
+        try: () =>
+          createLiveQueryCollection({
+            query,
+            gcTime: 0,
+            publication,
+            ...(options?.getKey === undefined ? {} : { getKey: options.getKey })
+          }) as unknown as TanStackLiveQuery<Q>,
+        catch: (cause) => new LoadFailed({ cause })
+      }),
+      release
+    ).pipe(Effect.map((tanstack): LiveQuery<Q> => ({
+      tanstack,
+      toArray: toArray(tanstack),
+      preload: preload(tanstack),
+      rows: rows(tanstack),
+      changes: (options) => changes(tanstack, options),
+      setWindow: (window) =>
+        Effect.try({ try: () => tanstack.utils.setWindow(window), catch: (cause) => new LoadFailed({ cause }) }).pipe(
+          Effect.flatMap((loading) =>
+            loading === true
+              ? Effect.void
+              : Effect.tryPromise({ try: () => loading, catch: (cause) => new LoadFailed({ cause }) })
+          )
         )
-      )
-  })))
+    })))
+  })
 
 const rows = <Q extends AnyQuery>(collection: TanStackLiveQuery<Q>): Stream.Stream<ReadonlyArray<Row<Q>>> =>
   // Subscribes first, then reads, so a change between the two is never lost; at worst a result repeats.
@@ -144,3 +190,29 @@ const rows = <Q extends AnyQuery>(collection: TanStackLiveQuery<Q>): Stream.Stre
       Stream.map((): ReadonlyArray<Row<Q>> => collection.toArray)
     )
   }))
+
+/**
+ * Observes current rows and later publications synchronously, in the caller's context.
+ *
+ * Use for synchronous receipts such as metrics that must be recorded before a
+ * publication returns to its caller. The callback must not suspend; use `rows`
+ * for asynchronous consumers. Closing the registration's scope unsubscribes it.
+ *
+ * @category reads
+ * @since 0.2.0
+ */
+export const observeSync = <Q extends AnyQuery, R>(
+  self: LiveQuery<Q>,
+  onRows: (rows: ReadonlyArray<Row<Q>>) => Effect.Effect<void, never, R>
+): Effect.Effect<void, never, R | Scope.Scope> =>
+  Effect.gen(function*() {
+    const context = yield* Effect.context<R>()
+    // TanStack invokes this callback at its publication boundary. Keep the
+    // caller's services while running the synchronous receipt in that turn.
+    const notify = () => Effect.runSyncWith(context)(onRows(self.tanstack.toArray))
+    yield* Effect.acquireRelease(
+      Effect.sync(() => self.tanstack.subscribeChanges(notify, { includeInitialState: false })),
+      (subscription) => Effect.sync(() => subscription.unsubscribe())
+    )
+    yield* Effect.sync(notify)
+  })

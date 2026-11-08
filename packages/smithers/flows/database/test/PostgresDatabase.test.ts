@@ -1,7 +1,6 @@
-import * as TestSchemas from "../src/TestSchemas.ts"
 import * as Pg from "@effect/sql-pg"
 import { describe, expect, it } from "@effect/vitest"
-import { Context, Effect, Exit, Fiber, Layer, Scope } from "effect"
+import { Context, Effect, Exit, Fiber, Layer, Scope, Stream } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import * as Dialect from "../src/Dialect.vibe"
 import * as DurableWriter from "../src/DurableWriter.ts"
@@ -9,6 +8,7 @@ import * as Migrations from "../src/Migrations.ts"
 import * as NodeDatabase from "../src/node/NodeDatabase.ts"
 import * as PostgresDatabase from "../src/postgres/PostgresDatabase.ts"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
+import * as TestSchemas from "../src/TestSchemas.ts"
 
 const url = process.env.SMITHERS_TEST_PG_URL
 const fixture = <A, E>(body: (first: SqlClient, second: SqlClient) => Effect.Effect<A, E>) =>
@@ -24,6 +24,27 @@ const fixture = <A, E>(body: (first: SqlClient, second: SqlClient) => Effect.Eff
   })))
 
 describe.skipIf(!url)("PostgreSQL adapter (independent pools)", () => {
+  it("keeps value and streaming queries inside nested write rollback boundaries", async () => {
+    await fixture((sql, peer) =>
+      Effect.gen(function*() {
+        yield* sql`CREATE TABLE receipts (id INTEGER PRIMARY KEY)`
+        const writer = DurableWriter.make(sql)
+        yield* writer.write(Effect.gen(function*() {
+          expect(yield* sql`INSERT INTO receipts VALUES(1) RETURNING id`.values).toEqual([[1]])
+          const nested = yield* Effect.exit(writer.write(Effect.gen(function*() {
+            expect(yield* sql`INSERT INTO receipts VALUES(2) RETURNING id`.valuesUnprepared).toEqual([[2]])
+            expect(yield* Stream.runCollect(sql`SELECT id FROM receipts ORDER BY id`.stream))
+              .toEqual([{ id: 1 }, { id: 2 }])
+            return yield* Effect.fail("rollback values and stream")
+          })))
+          expect(nested._tag).toBe("Failure")
+          expect(yield* sql`SELECT id FROM receipts ORDER BY id`).toEqual([{ id: 1 }])
+        }))
+        expect(yield* peer`SELECT id FROM receipts ORDER BY id`).toEqual([{ id: 1 }])
+      })
+    )
+  })
+
   it("serializes read-modify-write and concurrent first migration across pools", async () => {
     await fixture((a, b) =>
       Effect.gen(function*() {

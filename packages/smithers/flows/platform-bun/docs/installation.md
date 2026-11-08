@@ -22,7 +22,7 @@ The manifest declares two required peers, neither optional:
 
 | Peer                    | Version                        | Why                                                       |
 | ----------------------- | ------------------------------ | --------------------------------------------------------- |
-| `effect`                | `4.1.0`                        | The runtime every service tag belongs to.                 |
+| `effect`                | `4.1.1`                        | The runtime every service tag belongs to.                 |
 | `@smthrs/platform-node` | exactly this package's version | The atomic filesystem slot and the containment machinery. |
 
 Bun installs required peers, so the line above also installs

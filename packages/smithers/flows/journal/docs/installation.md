@@ -19,7 +19,7 @@ CommonJS with TypeScript declarations. Its only runtime dependencies are
 Composing a journal layer imports from both of them by name, so install them as
 direct dependencies rather than relying on them being hoisted.
 
-`effect` is a peer dependency at exactly `4.1.0`. Install one `effect` in
+`effect` is a peer dependency at exactly `4.1.1`. Install one `effect` in
 that range: two copies of `effect` in one program are two sets of service tags, so
 a journal layer built against one copy cannot be provided to a program holding
 the other, and the mismatch shows up as a missing service rather than as a

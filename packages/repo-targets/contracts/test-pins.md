@@ -37,7 +37,7 @@ the status of each runtime, platform and storage combination.
 
 The repository is built and tested on one Effect release: every development
 dependency, both override blocks and both lockfiles pin `effect` to exactly
-`4.1.0`. A published library accepts the version `4.1.0` from its application
+`4.1.1`. A published library accepts the version `4.1.1` from its application
 as a peer. `packages/repo-targets/contracts/check-single-effect-version.mjs` enforces the one tested
 version across the workspace and the range in the published peers, and a
 candidate that moves either records the move in

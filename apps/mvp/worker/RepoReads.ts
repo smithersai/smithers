@@ -24,7 +24,7 @@ import * as Repos from "./Repos.ts"
 
 /** Why a read couldn't answer: RepoApi's status and code, a file's size, and Code Storage's wait. */
 export class ReadRefused extends Data.TaggedError("ReadRefused")<{
-  readonly code: "not_imported" | "not_found" | "not_synced" | "too_large" | "capacity" | "unavailable"
+  readonly code: "not_imported" | "not_found" | "not_synced" | "too_large" | "capacity" | "rate_limited" | "unavailable"
   readonly size?: number
   readonly retryAfterMillis?: number
 }> {}

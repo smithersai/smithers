@@ -1,9 +1,11 @@
+import * as Hex from "effect/encoding/Hex"
 /**
  * The memory and no-op stores: the browser/test tier, and the honest refusal
  * a composition gets when it has no artifact store at all.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Crypto, syncCrypto } from "@smthrs/crypto"
+import { syncCrypto } from "@smthrs/crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -45,18 +47,20 @@ describe("makeMemory", () => {
     Effect.gen(function*() {
       const entered = yield* Deferred.make<void>()
       const release = yield* Deferred.make<void>()
-      const crypto = Crypto.make({
-        randomBytes: (size) => new Uint8Array(size),
+      const crypto = EffectDigest.Digest.of({
         digest: (algorithm, snapshot) =>
           Deferred.succeed(entered, undefined).pipe(
             Effect.andThen(Deferred.await(release)),
             Effect.andThen(syncCrypto.digest(algorithm, snapshot))
-          )
+          ),
+        digestHex(algorithm, data) {
+          return Effect.map(this.digest(algorithm, data), Hex.encode)
+        }
       })
       const artifacts = ArtifactStore.makeMemory()
       const input = bytes(artifact)
       const running = yield* artifacts.put(input).pipe(
-        Effect.provideService(Crypto.Crypto, crypto),
+        Effect.provideService(EffectDigest.Digest, crypto),
         Effect.forkChild({ startImmediately: true })
       )
       yield* Deferred.await(entered)
@@ -74,25 +78,31 @@ describe("makeMemory", () => {
         method: "digest"
       })
       const hosts = [
-        Crypto.make({
-          randomBytes: (size) => new Uint8Array(size),
-          digest: () => Effect.fail(failure)
-        }),
-        Crypto.make({
-          randomBytes: (size) => new Uint8Array(size),
-          digest: () => {
-            throw new Error("host digest throw")
+        EffectDigest.Digest.of({
+          digest: () => Effect.die(failure),
+          digestHex(algorithm, data) {
+            return Effect.map(this.digest(algorithm, data), Hex.encode)
           }
         }),
-        Crypto.make({
-          randomBytes: (size) => new Uint8Array(size),
-          digest: () => Effect.succeed(new Uint8Array(1))
+        EffectDigest.Digest.of({
+          digest: () => {
+            throw new Error("host digest throw")
+          },
+          digestHex(algorithm, data) {
+            return Effect.map(this.digest(algorithm, data), Hex.encode)
+          }
+        }),
+        EffectDigest.Digest.of({
+          digest: () => Effect.succeed(new Uint8Array(1)),
+          digestHex(algorithm, data) {
+            return Effect.map(this.digest(algorithm, data), Hex.encode)
+          }
         })
       ]
       const secret = "artifact-bytes-that-must-not-enter-errors"
       for (const crypto of hosts) {
         const exit = yield* ArtifactStore.makeMemory().put(bytes(secret)).pipe(
-          Effect.provideService(Crypto.Crypto, crypto),
+          Effect.provideService(EffectDigest.Digest, crypto),
           Effect.exit
         )
         const error = errorOf(exit) as ArtifactStore.ArtifactStoreError

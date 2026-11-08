@@ -51,7 +51,7 @@ describe("Archive.rewriteManifest", () => {
       add: ["effect"]
     })
     expect((JSON.parse(text) as { dependencies: Record<string, string> }).dependencies.effect)
-      .toBe("4.1.0")
+      .toBe("4.1.1")
   })
 
   it("pins effect to the tested version where a manifest installs it and to the supported range where it peers it", () => {
@@ -61,31 +61,31 @@ describe("Archive.rewriteManifest", () => {
       devDependencies: { effect: "4.0.0-rc.115" },
       peerDependencies: { effect: "4.0.0-rc.115", react: "^19.0.0" },
       optionalDependencies: { effect: "latest" },
-      overrides: { effect: "4.1.0" },
+      overrides: { effect: "4.1.1" },
       resolutions: { effect: "*" }
     }
     for (const kind of ["dependencies", "project"] as const) {
       const after = Archive.rewritten("package.json", JSON.stringify(before), {}, kind)
       expect(JSON.parse(after!.text)).toEqual({
         name: "library",
-        dependencies: { effect: "4.1.0", left: "1.0.0" },
-        devDependencies: { effect: "4.1.0" },
+        dependencies: { effect: "4.1.1", left: "1.0.0" },
+        devDependencies: { effect: "4.1.1" },
         // The package's own consumer installs this one, inside the range
         // every published Smithers library accepts.
-        peerDependencies: { effect: "4.1.0", react: "^19.0.0" },
-        optionalDependencies: { effect: "4.1.0" },
-        overrides: { effect: "4.1.0" },
-        resolutions: { effect: "4.1.0" }
+        peerDependencies: { effect: "4.1.1", react: "^19.0.0" },
+        optionalDependencies: { effect: "4.1.1" },
+        overrides: { effect: "4.1.1" },
+        resolutions: { effect: "4.1.1" }
       })
       // A manifest already on those declarations is returned byte for byte.
       expect(Archive.rewritten("package.json", after!.text, {}, kind)!.text).toBe(after!.text)
     }
     // The reverse is rewritten too: a range where effect is installed, an
     // exact version where it is peered.
-    const reversed = JSON.stringify({ dependencies: { effect: "^4.1.0" }, peerDependencies: { effect: "^4.1.0" } })
+    const reversed = JSON.stringify({ dependencies: { effect: "^4.1.1" }, peerDependencies: { effect: "^4.1.1" } })
     expect(JSON.parse(Archive.rewritten("package.json", reversed, {}, "dependencies")!.text)).toEqual({
-      dependencies: { effect: "4.1.0" },
-      peerDependencies: { effect: "4.1.0" }
+      dependencies: { effect: "4.1.1" },
+      peerDependencies: { effect: "4.1.1" }
     })
   })
 

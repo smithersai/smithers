@@ -1,3 +1,4 @@
+import * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The production engine port, exercised against the real flow engine.
  *
@@ -6,7 +7,6 @@
  * engine's own, not a stand-in.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
@@ -47,6 +47,7 @@ import {
   Scope,
   Stream
 } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import { TestClock } from "effect/testing"
 import { describe, expect, it, vi } from "vitest"
 import * as AgentSession from "../src/AgentSession.ts"
@@ -65,7 +66,7 @@ import * as WorkspaceObservation from "../src/WorkspaceObservation.ts"
  * which is the whole point of them not being optional.
  */
 type PortServices =
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | FlowRuntime.FlowRuntime
   | FlowRuntime.FlowInstance
   | Budget.Budget
@@ -200,7 +201,7 @@ const drive = <A, E>(
   body: Effect.Effect<
     A,
     E,
-    | Crypto.Crypto
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
     | FlowRuntime.FlowRuntime
     | FlowRuntime.FlowInstance
     | Budget.Budget
@@ -237,7 +238,7 @@ const drive = <A, E>(
     Effect.provide(
       Layer.mergeAll(
         FlowEngine.layerMemory,
-        Crypto.layerFromDigest(NodeCrypto.layerDigest),
+        NodeCrypto.layer,
         Budget.layerUnbounded(),
         QuotaPolicy.layerUnclassified()
       )
@@ -594,12 +595,12 @@ describe("FlowEngineLike.make", () => {
   it("fails before dispatch if a usage receipt cannot be allocated", async () => {
     const calls: Array<string> = []
     const outcome = await drive(Effect.gen(function*() {
-      const crypto = yield* Crypto.Crypto
+      const crypto = yield* SecureRandom.SecureRandom
       const engine = yield* FlowEngineLike.make({ model: countingModel(calls), route: staticRoute() }).pipe(
-        Effect.provideService(Crypto.Crypto, {
+        Effect.provideService(SecureRandom.SecureRandom, {
           ...crypto,
-          randomUUIDv4: () =>
-            Effect.fail(PlatformError.systemError({
+          uuidV4: () =>
+            Effect.die(PlatformError.systemError({
               module: "Crypto",
               method: "randomUUIDv4",
               _tag: "Unknown",
@@ -1210,7 +1211,7 @@ describe("FlowEngineLike.make", () => {
         const events = yield* Stream.runCollect(engine.sealStep(step("hello")))
         if (park) {
           park = false
-          yield* engine.suspend(new EngineLike.SuspendReason({ code: "engine", message: "park" }))
+          return yield* engine.suspend(new EngineLike.SuspendReason({ code: "engine", message: "park" }))
         }
         return events.length
       }),
@@ -1282,7 +1283,7 @@ const driveBoth = <A, E>(
     Effect.provide(
       Layer.mergeAll(
         FlowEngine.layerMemory,
-        Crypto.layerFromDigest(NodeCrypto.layerDigest),
+        NodeCrypto.layer,
         Budget.layerUnbounded(),
         QuotaPolicy.layerUnclassified()
       )
@@ -1356,7 +1357,7 @@ describe("FlowEngineLike.record", () => {
         })
         if (park) {
           park = false
-          yield* port.suspend(new EngineLike.SuspendReason({ code: "engine", message: "killed" }))
+          return yield* port.suspend(new EngineLike.SuspendReason({ code: "engine", message: "killed" }))
         }
         return held
       }),
@@ -1397,7 +1398,7 @@ describe("FlowEngineLike.record", () => {
         yield* paying("unmetered", null)
         if (park) {
           park = false
-          yield* port.suspend(new EngineLike.SuspendReason({ code: "engine", message: "killed" }))
+          return yield* port.suspend(new EngineLike.SuspendReason({ code: "engine", message: "killed" }))
         }
         const budget = yield* Budget.Budget
         return yield* budget.usage
@@ -1550,7 +1551,7 @@ describe("FlowEngineLike.record", () => {
         yield* unjudged("unpaid", { inputTokens: 1_000, outputTokens: 0 }, false)
         if (park) {
           park = false
-          yield* port.suspend(new EngineLike.SuspendReason({ code: "engine", message: "killed" }))
+          return yield* port.suspend(new EngineLike.SuspendReason({ code: "engine", message: "killed" }))
         }
         return yield* (yield* Budget.Budget).usage
       }).pipe(Effect.provide(Budget.layer(
@@ -1667,7 +1668,7 @@ describe("FlowEngineLike.record", () => {
         yield* payingBoundary(port, readings, "spends-it", [{ usage: { inputTokens: 100, outputTokens: 0 } }])
         if (park) {
           park = false
-          yield* port.suspend(new EngineLike.SuspendReason({ code: "engine", message: "killed" }))
+          return yield* port.suspend(new EngineLike.SuspendReason({ code: "engine", message: "killed" }))
         }
         const refused = yield* Effect.flip(
           payingBoundary(port, readings, "over", [{ usage: { inputTokens: 1, outputTokens: 0 } }])
@@ -1736,7 +1737,7 @@ describe("cell call identity across runs", () => {
     run: (call) =>
       Effect.sync(() => {
         executed.push(`${call.flowName}#${call.identity.ordinal}`)
-        return new Cell.CallResult({ outcome: "success", value: executed.length })
+        return Cell.CallResult.new({ outcome: "success", value: executed.length })
       })
   })
 
@@ -1777,7 +1778,7 @@ describe("cell call identity across runs", () => {
           run: () =>
             Effect.sync(() => {
               executions++
-              return new Cell.CallResult({ outcome: "success", value: "host" })
+              return Cell.CallResult.new({ outcome: "success", value: "host" })
             })
         }
       }).pipe(Effect.provideService(FlowRuntime.FlowRuntime, observed))
@@ -1818,7 +1819,7 @@ describe("cell call identity across runs", () => {
           run: () =>
             Effect.map(
               Action.CurrentInvocationKey,
-              (key) => new Cell.CallResult({ outcome: "success", value: key ?? "missing" })
+              (key) => Cell.CallResult.new({ outcome: "success", value: key ?? "missing" })
             )
         }
       })
@@ -1898,7 +1899,7 @@ describe("cell call identity across runs", () => {
     const runner = await Effect.gen(function*() {
       const sandbox = yield* InMemoryWorkspaceSandbox.make()
       return yield* FlowEngineLike.sandboxed(sandbox.service, countingCalls(executed))
-    }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)), Effect.runPromise)
+    }).pipe(Effect.provide(NodeCrypto.layer), Effect.runPromise)
     const body = Effect.gen(function*() {
       const port = yield* FlowEngineLike.make({ model: countingModel([]), route: staticRoute(), calls: runner })
       return (yield* port.call(sharedCellCall("sealed"))).value
@@ -1984,7 +1985,7 @@ describe("FlowEngineLike.CallReadings (#3010)", () => {
     run: () =>
       Effect.forEach(Array.from({ length: readings }), () => Effect.result(judge.evaluate(request))).pipe(
         Effect.map((results) =>
-          new Cell.CallResult({
+          Cell.CallResult.new({
             outcome: "success",
             value: results.map((result) => result._tag === "Success" ? "answered" : result.failure.code)
           })
@@ -2017,7 +2018,7 @@ describe("FlowEngineLike.CallReadings (#3010)", () => {
         const result = yield* port.call(readingCall(0))
         if (park) {
           park = false
-          yield* port.suspend(new EngineLike.SuspendReason({ code: "engine", message: "killed" }))
+          return yield* port.suspend(new EngineLike.SuspendReason({ code: "engine", message: "killed" }))
         }
         return { value: result.value, usage: yield* (yield* Budget.Budget).usage }
       }).pipe(Effect.provide(Budget.layer(
@@ -2091,17 +2092,17 @@ describe("FlowEngineLike.CallReadings (#3010)", () => {
   it("fails a call before its flow runs if a reading receipt cannot be allocated", async () => {
     const judge = judging([answered()])
     const outcome = await drive(Effect.gen(function*() {
-      const crypto = yield* Crypto.Crypto
+      const crypto = yield* SecureRandom.SecureRandom
       const port = yield* FlowEngineLike.make({
         model: countingModel([]),
         route: staticRoute(),
         calls: reading(judge, 1)
       })
         .pipe(
-          Effect.provideService(Crypto.Crypto, {
+          Effect.provideService(SecureRandom.SecureRandom, {
             ...crypto,
-            randomUUIDv4: () =>
-              Effect.fail(PlatformError.systemError({
+            uuidV4: () =>
+              Effect.die(PlatformError.systemError({
                 module: "Crypto",
                 method: "randomUUIDv4",
                 _tag: "Unknown",

@@ -30,7 +30,7 @@ with its peer dependencies at these exact versions. It depends on
     "@electric-sql/client": "1.5.28",
     "@tanstack/db": "0.15.1",
     "@tanstack/electric-db-collection": "0.6.2",
-    "effect": "4.1.0"
+    "effect": "4.1.1"
   }
 }
 ```
@@ -79,6 +79,14 @@ is absent, runs the complete coverage suite, then removes its containers and
 volumes. To supply other services, run `node scripts/test-services.mjs` with both
 `DATABASE_URL` and `ELECTRIC_URL`. Required services failing to start or answer
 fail the target; its integration cases never silently skip.
+
+The Node SQLite fixture uses separate connections to each test's own file, with
+real Web Locks held through `COMMIT`, `ROLLBACK` or close and synchronous batches.
+This matches the browser's `SharedSqlite` transaction ownership: another tab waits
+without blocking the owner. An async wrapper around synchronous `node:sqlite`
+alone cannot provide that contract; competing `BEGIN IMMEDIATE` calls fail with
+`SQLITE_BUSY` before the owning connection can resume. Fixture regressions and
+production sources both run under the 100% coverage gate.
 
 ## Learn more
 

@@ -1,5 +1,4 @@
-import { NodeServices } from "@effect/platform-node"
-import { WebCrypto } from "@smthrs/crypto"
+import { NodeCrypto, NodeServices } from "@effect/platform-node"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as ChildProcess from "effect/process/ChildProcess"
@@ -29,4 +28,4 @@ export const layer = Layer.effect(
           : command
       )
     ))
-).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, WebCrypto.layer)))
+).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)))

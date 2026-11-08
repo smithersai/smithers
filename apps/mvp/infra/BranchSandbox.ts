@@ -12,7 +12,7 @@ import { Config, Effect, Option } from "effect"
 
 /** SANDBOX_IMAGE when set (a prebuilt image by digest), else infra/sandbox, built by the deploy. */
 export const sandboxImage = Config.option(Config.String("SANDBOX_IMAGE")).pipe(
-  Config.map(Option.flatMap((image) => image.trim() === "" ? Option.none() : Option.some(image.trim()))),
+  Config.map(Option.flatMap((image) => image.trim() === "" ? Option.none() : Option.some(image.trim())))
 )
 
 export class BranchSandbox extends Cloudflare.Container<BranchSandbox>()(
@@ -20,5 +20,5 @@ export class BranchSandbox extends Cloudflare.Container<BranchSandbox>()(
   Effect.map(Effect.orDie(sandboxImage), (image) =>
     Option.isSome(image)
       ? { schedulingPolicy: "durable_object" as const, image: image.value }
-      : { schedulingPolicy: "durable_object" as const, context: `${import.meta.dirname}/sandbox` }),
+      : { schedulingPolicy: "durable_object" as const, context: `${import.meta.dirname}/sandbox` })
 ) {}

@@ -2,12 +2,13 @@
 // synced `runs` in every conversation, with the home conversation's settled answers winning over their runs' rows, over
 // real local collections holding the rows Electric would deliver.
 import { Collection } from "@smthrs/effect-tanstack-db"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import { plain } from "../../test/deviceFixture"
 import { WAITS_ROW } from "./contract"
 import { Message } from "../chat/schema"
-import { waitsQuery } from "./queries"
+import type { Source } from "../repo/gate"
+import { shownRunsQuery, waitsQuery } from "./queries"
 import { Run } from "./schema"
 
 const question = { execution: "q/call/0.0", kind: "question", prompt: "Which branch?", options: ["main", "docs-v2"] } as const
@@ -143,5 +144,56 @@ describe("waitsQuery", () => {
       [answer("done", "done"), answer("failed", "failed"), answer("streaming", "streaming")],
     )
     expect(waits.map((wait) => wait.runId)).toEqual(["branch", "streaming"])
+  })
+})
+
+// Decision 0110, 2026-11-03, the data gate: a wait shows through its run's conversation. The home conversation's runs are
+// the person's own; a branch's show while its conversation is one whose repository may show (ConversationOwners'
+// `shown`), and leave in the change that hides it.
+describe("shownRunsQuery", () => {
+  test("a home run's wait shows; a branch run's only while its conversation shows; one of no known conversation never", async () => {
+    const [before, after] = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const runs = yield* Collection.local<Run, string>({
+        id: `runs-${crypto.randomUUID()}`,
+        schema: Run,
+        getKey: (run) => run.id,
+        initialData: [
+          row("home", { conversationId: "home-conversation" }),
+          row("shown", { conversationId: "c-shown", createdAt: "2026-10-21T10:00:01.000Z" }),
+          row("refused", { conversationId: "c-refused", createdAt: "2026-10-21T10:00:02.000Z" }),
+          row("unknown", { conversationId: "c-unknown" }),
+          row("unattributed"),
+        ],
+      })
+      const home = yield* Collection.local<Message, string>({
+        id: `messages-${crypto.randomUUID()}`,
+        schema: Message,
+        getKey: (message) => message.id,
+        initialData: [answer("home", "streaming")],
+      })
+      const Owned = Schema.Struct({ conversationId: Schema.String, repoId: Schema.String })
+      const shownConversations = yield* Collection.local<typeof Owned.Type, string>({
+        id: `owned-${crypto.randomUUID()}`,
+        schema: Owned,
+        getKey: (owned) => owned.conversationId,
+        initialData: [
+          { conversationId: "c-shown", repoId: "github/acme/open" },
+          { conversationId: "c-refused", repoId: "github/acme/private" },
+        ],
+      })
+      const waits = yield* waitsQuery(home as unknown as Collection.Collection<Message>, (yield* shownRunsQuery(
+        home as unknown as Source<Message>,
+        runs as unknown as Source<Run>,
+        shownConversations as unknown as Source<{ readonly conversationId: string }>,
+      )) as unknown as Source<Run>)
+      yield* waits.preload
+      const read = Effect.map(waits.toArray, (rows) => rows.map((wait) => wait.runId))
+      const shown = yield* read
+      // The repository refuses: its conversation leaves `shown`, and its wait goes in the same change.
+      yield* shownConversations.delete("c-refused")
+      return [shown, yield* read] as const
+    })))
+    expect(before).toEqual(["home", "shown", "refused"])
+    expect(after).toEqual(["home", "shown"])
   })
 })

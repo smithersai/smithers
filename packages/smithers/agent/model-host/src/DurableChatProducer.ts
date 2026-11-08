@@ -4,6 +4,8 @@
  * @since 1.0.0-rc.0
  */
 
+import type { ModelStep } from "@smthrs/agent"
+
 import { type Model, ModelError } from "@smthrs/model"
 import { AgentTurnJournal, ContextPreflight, type DocsPages, type NativeAgent } from "@smthrs/rpc"
 import { Duration, Effect } from "effect"
@@ -478,7 +480,7 @@ export const runDurableChatTurn = (
   docs?: ReadonlyArray<DocsPages.DocsPage>,
   diagnostics: HostDiagnostics = createHostDiagnostics({ turnId: grant.turnId }),
   observeTransport: CallbackTransportObserver = unobserved
-): Effect.Effect<void, Model.ModelFailure | ProducerError> =>
+): Effect.Effect<void, Model.ModelFailure | ProducerError, ModelStep.Requirements> =>
   // The runtime's records for this turn's callbacks, observed for exactly as
   // long as the turn runs: an attempt that ends without an answer reports the
   // phase it reached, so an operator reading the guest's own log tells a
@@ -506,7 +508,7 @@ const runTurn = (
     | undefined,
   docs: ReadonlyArray<DocsPages.DocsPage> | undefined,
   diagnostics: HostDiagnostics
-): Effect.Effect<void, Model.ModelFailure | ProducerError> =>
+): Effect.Effect<void, Model.ModelFailure | ProducerError, ModelStep.Requirements> =>
   Effect.gen(function*() {
     const producer = new DurableChatProducer(
       callbackBaseUrl,

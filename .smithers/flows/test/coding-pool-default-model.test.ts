@@ -1,6 +1,5 @@
 import { NodeCrypto } from "@effect/platform-node"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
@@ -448,7 +447,7 @@ test("factory seat choices replay their admitted model while a new call reads th
           Layer.provideMerge(platform.requestExecutor),
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(FlowEngine.layerMemory),
-          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+          Layer.provideMerge(NodeCrypto.layer)
         )
       ),
       Effect.scoped

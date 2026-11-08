@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { executeAndDrain } from "./ExecuteAndDrain.ts"
 /**
  * Closes the late-linked-child cancellation race (issue #83).
@@ -30,11 +31,11 @@ import { executeAndDrain } from "./ExecuteAndDrain.ts"
  * flow body never ran.
  */
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { SqlJournal } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -71,7 +72,11 @@ const services = Layer.mergeAll(
   DurableEngineState.layer
 ).pipe(Layer.provideMerge(migratedDatabase))
 
-type Services = Layer.Success<typeof services> | TestClock.TestClock | Crypto.Crypto | Scope.Scope
+type Services =
+  | Layer.Success<typeof services>
+  | TestClock.TestClock
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
+  | Scope.Scope
 
 const run = <A, E>(effect: Effect.Effect<A, E, Services>) =>
   withCrypto(Effect.scoped(effect).pipe(Effect.provide(services), Effect.provide(TestClock.layer())))

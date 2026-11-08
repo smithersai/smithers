@@ -46,7 +46,7 @@ const flows: Readonly<Record<string, Cell.FlowProjection>> = {
   })
 }
 
-const succeeds: Sandbox.Handler = () => Effect.succeed(new Cell.CallResult({ outcome: "success", value: null }))
+const succeeds: Sandbox.Handler = () => Effect.succeed(Cell.CallResult.new({ outcome: "success", value: null }))
 
 /**
  * The variant a workerd host builds, built the way a workerd host builds it.

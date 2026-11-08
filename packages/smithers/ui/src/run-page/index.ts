@@ -22,7 +22,7 @@ export {
   type WaterfallBar,
   waterfallBars,
 } from "./runPage";
-export { runPageCss } from "./runPageCss";
+export { runPageCss } from "@smthrs/ui-css";
 export { RunDetails, type RunDetailsJob, type RunDetailsProps, type RunDetailsStep } from "./RunDetails";
 export { RunHeader, type RunHeaderProps } from "./RunHeader";
 export { RunJournal, type JournalRow, type RunJournalProps } from "./RunJournal";

@@ -4,7 +4,7 @@ import * as NodePath from "@effect/platform-node/NodePath"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { CapabilityPattern } from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
-import { Deferred, Effect, Fiber, Option, type PlatformError } from "effect"
+import { Deferred, Effect, Fiber, Option, type PlatformError, Redacted } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner as EffectChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { access, mkdtemp, readFile, rm } from "node:fs/promises"
@@ -127,6 +127,28 @@ describe("ChildProcessSpawner real Node lifecycle", () => {
           delete process.env[name]
         } else process.env[name] = previous
       }
+    }))
+
+  it.effect("reveals a protected argument to the real child while its grant stays redacted", () =>
+    Effect.gen(function*() {
+      const command = ChildProcess.make(process.execPath, [
+        "-e",
+        "console.log(process.argv[1])",
+        Redacted.make("protected argument")
+      ])
+      const resource = CommandLine.resource(command)
+      expect(resource).toContain("<redacted>")
+      expect(resource).not.toContain("protected argument")
+      const output = yield* withGuardedSpawner({
+        attended: false,
+        rules: [
+          new Permission.Rule({
+            effect: "allow",
+            pattern: new CapabilityPattern({ action: "proc:spawn", resource })
+          })
+        ]
+      }, () => Effect.flatMap(EffectChildProcessSpawner, (spawner) => spawner.string(command)))
+      expect(output.trim()).toBe("protected argument")
     }))
 
   it.effect("passes own __proto__ and ordinary environment values to a real child", () =>

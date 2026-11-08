@@ -99,6 +99,8 @@ import {
   Semaphore
 } from "effect"
 import type { Path } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Deferred from "effect/Deferred"
 import { SqlClient } from "effect/sql/SqlClient"
 import type * as Terminal from "effect/Terminal"
@@ -113,7 +115,7 @@ import { packageVersion } from "../Version.ts"
 import * as AuthoredRebuild from "./AuthoredRebuild.ts"
 import * as ReplacedFlowPolicy from "./ReplacedFlowPolicy.ts"
 
-import type { Crypto } from "@smthrs/crypto"
+import { authorizeTriggerLaunch } from "./ApprovalScope.ts"
 import * as ControlAffinity from "./ControlAffinity.ts"
 import * as ControlDatabasePath from "./ControlDatabasePath.ts"
 import * as DatabaseLocation from "./DatabaseLocation.ts"
@@ -125,6 +127,7 @@ import * as HostLanguageServers from "./HostLanguageServers.ts"
 import * as LocalControl from "./LocalControl.ts"
 import * as ModuleAdmission from "./ModuleAdmission.ts"
 import * as ModuleAuthority from "./ModuleAuthority.ts"
+import { ModuleOwner } from "./ModuleOwner.ts"
 import {
   askPolicy,
   cellLimits,
@@ -407,6 +410,8 @@ export interface ExecutorOptions {
   readonly startsRuns?: boolean | undefined
   /** Planning imports authored modules without enabling launches or resumes. */
   readonly plansFlows?: boolean | undefined
+  /** Requested flow bodies, plus persisted active bodies, loaded before admission. */
+  readonly initialFlows?: ReadonlyArray<string> | undefined
   /** A human can answer this executor's in-run waits. */
   readonly approvalChannel?: boolean | undefined
   /**
@@ -458,7 +463,7 @@ export interface Platform {
    */
   readonly toolCallLimitMs?: number | undefined
   readonly host: Layer.Layer<Exclude<NodeServices.NodeServices, Terminal.Terminal>>
-  readonly crypto: Layer.Layer<Crypto.Crypto>
+  readonly crypto: Layer.Layer<(EffectDigest.Digest | SecureRandom.SecureRandom)>
   readonly database: (filename: string) => Layer.Layer<DurableWriter.DurableWriter | SqlClient>
   /** Opens an existing store read-only: no directory, migration, schema object or write lock. */
   readonly observe: (filename: string) => Layer.Layer<DurableWriter.DurableWriter | SqlClient>
@@ -1046,16 +1051,18 @@ export const make = (
               : Failure.operatorSentence(cause)
           })
       })
-    const retryLoad = executable === undefined && refusal?.code === "load_timeout" && host.catalog?.load !== undefined
-      ? host.catalog.load(descriptor.name).pipe(
-        Effect.mapError((cause) => new ControlError.InvalidInput({ issue: loadIssue(descriptor.name, cause) })),
-        Effect.flatMap((loaded) =>
-          Descriptor.executionDigest(loaded.descriptor) === Descriptor.executionDigest(descriptor)
-            ? Effect.succeed(loaded)
-            : Effect.fail(new ControlError.InvalidInput({ issue: `Flow ${descriptor.name} changed while loading` }))
+    const deferred = host.catalog?.deferred?.some((entry) => entry.name === descriptor.name) === true
+    const retryLoad =
+      executable === undefined && (refusal?.code === "load_timeout" || deferred) && host.catalog?.load !== undefined
+        ? host.catalog.load(descriptor.name).pipe(
+          Effect.mapError((cause) => new ControlError.InvalidInput({ issue: loadIssue(descriptor.name, cause) })),
+          Effect.flatMap((loaded) =>
+            Descriptor.executionDigest(loaded.descriptor) === Descriptor.executionDigest(descriptor)
+              ? Effect.succeed(loaded)
+              : Effect.fail(new ControlError.InvalidInput({ issue: `Flow ${descriptor.name} changed while loading` }))
+          )
         )
-      )
-      : undefined
+        : undefined
     return {
       flowId: descriptor.name,
       description: descriptor.description,
@@ -1144,6 +1151,7 @@ export const make = (
     const file = authority.databases?.control ?? databasePath(authority.stateRoot ?? root)
     const host = emptyHost()
     const authorization = {
+      authorizeLaunch: authorizeTriggerLaunch,
       principal: authority.principal,
       approvalAuthority: authority.approvalAuthority ??
         (authority.credential === undefined || authority.credential === ""
@@ -1519,6 +1527,10 @@ export const make = (
         })
         return Executable.layer({
           delegates: [],
+          initialFlows: options.initialFlows === undefined ? undefined : [
+            ...options.initialFlows,
+            ...[...pinned.values()].map((entry) => entry.name)
+          ],
           snapshots,
           adapterExecutionDigest: (descriptor) => {
             // New sources get their own adapter. Replay and explicit adoption
@@ -1866,7 +1878,20 @@ export const make = (
           Layer.provide(Layer.succeedContext(memoryServices)),
           Layer.provide(QuickJSSandbox.layer.pipe(Layer.orDie)),
           Layer.provide(Layer.succeed(Steering.Source, authority!.steering)),
-          Layer.provide(Layer.succeed(FlowRuntime.FlowRuntime, authority!.runtime))
+          Layer.provide(Layer.succeed(FlowRuntime.FlowRuntime, {
+            ...authority!.runtime,
+            register: (flow, handler, options) =>
+              authority!.runtime.register(
+                flow,
+                (payload, executionId) =>
+                  Effect.flatMap(Effect.serviceOption(ModuleOwner), (owner) =>
+                    handler(payload, executionId).pipe(Effect.provideService(
+                      ControlRuntime.CurrentRunId,
+                      Option.isSome(owner) ? owner.value.rootId : undefined
+                    ))),
+                options
+              )
+          }))
         ))
         const catalog = registrations === undefined ? undefined : Context.get(registrations, Executable.Catalog)
         // Product hosts must establish their pinned source before any run
@@ -1975,7 +2000,8 @@ export const make = (
                   const plan = yield* resumes!.getPlan(run.planId)
                   if (
                     plan.decision === "approved" && run.planDigest === plan.card.digest &&
-                    catalog.refused.some((entry) => entry.flow === plan.card.flowId && entry.code === "load_timeout")
+                    (catalog.refused.some((entry) => entry.flow === plan.card.flowId && entry.code === "load_timeout")
+                      || catalog.deferred?.some((entry) => entry.name === plan.card.flowId))
                   ) yield* catalog.load(plan.card.flowId)
                 }
                 return yield* moduleAdmission(runId, native)
@@ -2360,6 +2386,7 @@ export const make = (
         evaluator: config.evaluator,
         startsRuns: config.startsRuns,
         plansFlows: config.plansFlows,
+        initialFlows: config.initialFlows,
         expectedSourceRevision: config.expectedSourceRevision,
         catalogRevision: config.catalogRevision,
         approvalChannel: config.approvalChannel,

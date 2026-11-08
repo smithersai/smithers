@@ -1,5 +1,4 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
@@ -12,6 +11,8 @@ import * as ModelEvent from "@smthrs/model/ModelEvent"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Layer, Option, Schema, Stream } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Agent from "../../src/Agent.ts"
 import * as AgentAction from "../../src/AgentAction.ts"
 import * as Budget from "../../src/Budget.ts"
@@ -81,7 +82,7 @@ export const stores = (filename: string) =>
   Layer.mergeAll(
     TestStores.layerAt(filename),
     StepBoundary.layerTest(),
-    Crypto.layerFromDigest(NodeCrypto.layerDigest),
+    NodeCrypto.layer,
     Layer.succeed(
       Jj.Jj,
       Jj.make({
@@ -110,7 +111,8 @@ export const incarnation = (
       isAlive: () => Effect.succeed(false)
     })
     const journal = yield* Journal.Journal
-    const crypto = yield* Crypto.Crypto
+    const crypto = yield* EffectDigest.Digest
+    const random = yield* SecureRandom.SecureRandom
     const runtime = FlowRuntime.FlowRuntime.of({
       ...engine,
       register: (flow, handler) =>
@@ -123,7 +125,8 @@ export const incarnation = (
             const sink = yield* EventSink.durable(journal).pipe(
               Effect.provideService(FlowRuntime.FlowInstance, instance.value),
               Effect.provideService(FlowRuntime.FlowRuntime, engine),
-              Effect.provideService(Crypto.Crypto, crypto)
+              Effect.provideService(EffectDigest.Digest, crypto),
+              Effect.provideService(SecureRandom.SecureRandom, random)
             )
             return yield* handler(payload, executionId).pipe(
               Effect.tap(() =>

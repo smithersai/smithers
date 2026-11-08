@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import type { ComponentProps } from "react";
 import { Badge, type BadgeProps } from "../badge";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { AGENT_STATUS_GLYPHS, AGENT_STATUS_WORDS, type AgentState } from "./agentStatus";
 

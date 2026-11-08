@@ -1,3 +1,4 @@
+import { withUserAgent } from "../github/Http.ts"
 import { ImmutableCache } from "@smthrs/artifacts"
 import { Docs, Home } from "@smthrs/views"
 import { Cause, Clock, Config, Context, Data, Duration, Effect, Layer, Schema } from "effect"
@@ -88,7 +89,7 @@ export const settings = Effect.gen(function* () {
 export const make = <R = never>({ kept }: { readonly kept: number }, options: Options<R>) =>
   Effect.gen(function* () {
     const privateHosts = options.privateHosts ?? []
-    const context = yield* Effect.context<HttpClient.HttpClient | ImmutableCache.ImmutableCache | R>()
+    const context = yield* Effect.context<HttpClient.HttpClient | ImmutableCache.ImmutableCache | R>().pipe((effect) => withUserAgent(effect, true))
 
     /**
      * The index `owner/name` names: its own home's `docs` at the newest commit, else its curated home's. When GitHub

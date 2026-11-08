@@ -8,9 +8,9 @@
  */
 import { FlowEngine } from "@smthrs/engine"
 import type { FlowRuntime as FlowRuntimeTypes } from "@smthrs/flow"
-import { Flow, FlowRuntime } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
-import { Jj } from "@smthrs/kernel"
+import { Jj, Workspace } from "@smthrs/kernel"
 import { RunStore } from "@smthrs/run-store"
 import { Cause, Effect, Exit, Layer, Schema } from "effect"
 import { describe, expect, it, vi } from "vitest"
@@ -122,13 +122,11 @@ describe("the records a driven graph makes, as journal entries", () => {
     expect(graph.nodes[1]!["effects"]).toEqual({ reads: ["a"], writes: [], boundaryMode: "hard" })
   })
 
-  it("takes the root the host names, and none where the host names none", () => {
-    expect(NodeJournal.hostRoot("/explicit", { process: { cwd: () => "/cwd" } })).toBe("/explicit")
-    expect(NodeJournal.hostRoot(undefined, { process: { cwd: () => "/cwd" } })).toBe("/cwd")
-    // A worker and a browser have no process to ask, so nothing is recorded
-    // rather than a path a reader would have to guess the meaning of.
-    expect(NodeJournal.hostRoot(undefined, {})).toBeUndefined()
-    expect(NodeJournal.hostRoot(undefined, { process: {} })).toBeUndefined()
+  it("takes only an explicit or injected workspace root, even in a Node process", () => {
+    expect(NodeJournal.hostRoot("/explicit", { root: "/workspace" })).toBe("/explicit")
+    expect(NodeJournal.hostRoot(undefined, { root: "/workspace" })).toBe("/workspace")
+    expect(NodeJournal.hostRoot(undefined)).toBeUndefined()
+    expect(NodeJournal.hostRoot("/explicit")).toBe("/explicit")
   })
 
   it("records a declaration path relative to the root, and no path at all otherwise", () => {
@@ -291,6 +289,46 @@ const recordAgainst = (failure: Journal.JournalError, deferred = true, flush = f
       Effect.orDie
     )
   )
+
+const RootRead = Action.make("node-journal/root-read", { payload: {}, success: Schema.Number })
+const RootFlow = Flow.make("node-journal/root", {
+  payload: {},
+  success: Schema.Number,
+  body: () => RootRead.call({})
+})
+
+it.each([
+  { explicit: undefined, workspace: undefined, expected: undefined },
+  { explicit: undefined, workspace: process.cwd(), expected: "test/NodeJournal.test.ts" },
+  { explicit: process.cwd(), workspace: "/other", expected: "test/NodeJournal.test.ts" }
+])("journals declaration paths only under the injected root: %j", async ({ explicit, workspace, expected }) => {
+  await runPromise(
+    Effect.scoped(Effect.gen(function*() {
+      const engine = yield* EngineStore.make({
+        owner: { hostId: "root" },
+        journalSource: "root",
+        declarationRoot: explicit
+      }).pipe(Effect.provide(workspace === undefined ? Layer.empty : Workspace.layer(workspace)))
+      const implementations = Layer.mergeAll(
+        RootRead.toLayer(() => Effect.succeed(1)),
+        Interpreter.layer(RootFlow)
+      ).pipe(
+        Layer.provideMerge(Action.layerImplementations),
+        Layer.provideMerge(Layer.succeed(FlowRuntime.FlowRuntime, engine))
+      )
+      yield* RootFlow.execute({}, { executionId: "root-run" }).pipe(Effect.provide(implementations))
+      const journal = yield* Journal.Journal
+      const page = yield* journal.entries({ runId: JournalEvent.RunId.make("root-run"), limit: 100 })
+      const plan = page.entries.find((entry) => entry.eventType === "flows.engine.plan-recorded")!
+      const graph = (plan.payload as { graph: { nodes: Array<{ declaredAt?: { path: string } }> } }).graph
+      expect(graph.nodes.map((node) => node.declaredAt?.path)).toEqual([expected, expected])
+    })).pipe(
+      Effect.provide(jj),
+      Effect.provide(StepBoundary.layerTest()),
+      Effect.provide(TestStores.layerAt(":memory:"))
+    )
+  )
+})
 
 describe("what identifies a recorded plan", () => {
   const plan = (
@@ -649,6 +687,7 @@ describe("plan provenance lookup", () => {
         const engine = yield* EngineStore.make({
           owner: { hostId: "provenance" },
           journalSource: "provenance",
+          declarationRoot: process.cwd(),
           sourceRevision: () => revision
         }).pipe(Effect.provideService(Journal.Journal, {
           ...real,
@@ -780,13 +819,19 @@ describe("plan provenance lookup", () => {
         )
         yield* walk([...pages("src/Answer.ts", 2), ...pages("src/Answer.ts", 1, 1)])
         const recorded = yield* rows
+        expect(recorded.map((row) =>
+          (row.payload as { graph: { nodes: Array<{ declaredAt?: { path: string } }> } }).graph.nodes[0]!.declaredAt
+            ?.path
+        )).toEqual(["src/Answer.ts", "src/Answer.ts", "src/Answer.ts"])
         // The rebuilt plans page differently because their sites encode differently.
         const rebuilt = FlowEngine.makeInstance(Empty, runId)
         yield* walk([...pages("dist/App-3f2a1c.js", 3), ...pages("dist/App-3f2a1c.js", 1, 1)], rebuilt)
         expect(yield* rows).toEqual(recorded)
         // A plan no earlier build recorded still writes its pages.
         yield* walk([{ _tag: "SubgraphAppended", ...page("dist/App-3f2a1c.js", 2, 1, 2) }], rebuilt)
-        expect((yield* rows).map((row) => row.sourceId)).toEqual([
+        expect((yield* rows).map((row) =>
+          row.sourceId
+        )).toEqual([
           "provenance/plan/0/0",
           "provenance/plan/0/1",
           "provenance/plan/1/0",

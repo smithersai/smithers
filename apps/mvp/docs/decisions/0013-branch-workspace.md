@@ -32,6 +32,7 @@ It builds on [0002](0002-local-first.md) (the device store and the outbox), [000
    - tmux keeps the shell while the container runs, and redraws the screen on reattach.
    - `sandbox/Sleep` stores each session's last screen and ends it.
    - `sandbox/Keep` decides idleness from what the box is doing, not from open sockets, so an idle tab never keeps a container awake.
+   - **Recovery clarification (2026-11-04):** a shell can exit while the machine remains awake. An ended socket offers the owner Open terminal even if its row still says open. Before admitting a new id, the server checks only that person's existing session and retires a missing one; a live session and an idempotent resend retain their identities. Replacement still uses `terminal/Open`. The secrets egress proof exercises this with real shell exits; recovery records contain ids and counts, never terminal bytes.
 8. **Sharing works as in Google Docs and Figma, within GitHub's ceiling.**
    - **Private until shared:** a branch's live workspace is visible only to its owner, the person who created or first tracked it.
    - **The team's branches have no owner:** `main`, and branches tracked before sharing existed, are open to every Member and above. `main` stays `locked`.

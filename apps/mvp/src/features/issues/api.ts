@@ -1,6 +1,8 @@
-import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
+import { earlySearch, type EarlySearchHost, type EarlyRead } from "./earlySearch"
+import { Context, Data, type Duration, Effect, Layer, Option, Schema, type SubscriptionRef } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import { renewalOf, renewed, withBearer, withoutCookie } from "../../flows/bearer"
+import { CONFIRM_401_HEADER, sessionCheckOf } from "../auth/contract"
 import { issuesRoute, type TriageDecision, type WriteOp, writesRoute } from "./contract"
 import { ListedIssue, WriteTaken } from "./schema"
 
@@ -9,9 +11,14 @@ import { ListedIssue, WriteTaken } from "./schema"
 
 /**
  * ChatApi didn't take the write: no whole answer within the deadline, or no network (`status` absent), any status but
- * 200 and 202 (`status`), or a 200 or 202 whose body isn't the contract's.
+ * 200 and 202 (`status`), or a 200 or 202 whose body isn't the contract's. A session write's `401` the page's transport
+ * checked against the session carries what it found (`sessionCheck`).
  */
-export class WriteNotTaken extends Data.TaggedError("WriteNotTaken")<{ readonly status?: number; readonly code?: string }> {}
+export class WriteNotTaken extends Data.TaggedError("WriteNotTaken")<{
+  readonly status?: number
+  readonly code?: string
+  readonly sessionCheck?: "same_person"
+}> {}
 
 /** A write as the route takes it. It names nobody: who acts is the session's or the run credential's to say. */
 export type WriteRequest =
@@ -65,8 +72,10 @@ export const postWrite = (
       : yield* renewed(origin, credential).pipe(
         Effect.mapError(({ status }) => new WriteNotTaken(status === undefined ? {} : { status })),
       )
+    // A 401 in the session is checked against the session first, so a queued write can be held (writes.ts); a run's
+    // 401 is about the run, and stands.
     const response = yield* (authority === undefined
-      ? client.execute(request)
+      ? client.execute(HttpClientRequest.setHeader(request, CONFIRM_401_HEADER, "1"))
       : withoutCookie(client.execute(withBearer(request, authority))))
       .pipe(Effect.mapError(() => new WriteNotTaken({})))
     yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
@@ -75,7 +84,9 @@ export const postWrite = (
       const code = yield* response.json.pipe(Effect.map(decodeCode), Effect.orElseSucceed(() => undefined))
       return yield* new WriteNotTaken(code === undefined ? { status: 404 } : { status: 404, code })
     }
-    if (response.status !== 200 && response.status !== 202) return yield* new WriteNotTaken({ status: response.status })
+    if (response.status !== 200 && response.status !== 202) {
+      return yield* new WriteNotTaken({ status: response.status, ...sessionCheckOf(response.headers) })
+    }
     return yield* response.json.pipe(
       Effect.flatMap(decodeTaken),
       Effect.mapError(() => new WriteNotTaken({ status: response.status })),
@@ -90,19 +101,38 @@ export class SearchNotAnswered extends Data.TaggedError("SearchNotAnswered")<{ r
 
 const decodeListed = Schema.decodeUnknownEffect(Schema.Array(ListedIssue))
 
-/** `GET /api/repos/<owner>/<name>/issues?state=all&q=`: the first page of issues matching `q`, as the list orders them. */
+/**
+ * The list's first search page, or the exact `number` across those pages for a direct issue. Title matches can precede
+ * that number, so a direct read follows the route's cursors until found or exhausted, under one whole-read deadline.
+ * It retains only the exact issue and never follows a link's authority or path.
+ */
 export const getSearch = (
   origin: string,
   repository: { readonly owner: string; readonly name: string },
   q: string,
   within: Duration.Input,
+  number?: number,
 ) =>
   Effect.gen(function* () {
     const client = yield* HttpClient.HttpClient
     const url = `${origin}${issuesRoute(repository.owner, repository.name)}?state=all&q=${encodeURIComponent(q)}`
-    const response = yield* client.execute(HttpClientRequest.get(url))
-    if (response.status !== 200) return yield* new SearchNotAnswered({ status: response.status })
-    return yield* decodeListed(yield* response.json)
+    let cursor: string | undefined
+    const seen = new Set<string>()
+    while (true) {
+      const response = yield* client.execute(HttpClientRequest.get(cursor === undefined ? url : `${url}&cursor=${encodeURIComponent(cursor)}`))
+      if (response.status !== 200) return yield* new SearchNotAnswered({ status: response.status })
+      const issues = yield* decodeListed(yield* response.json)
+      if (number === undefined) return issues
+      const exact = issues.find((issue) => issue.number === number)
+      if (exact !== undefined) return [exact]
+      const link = response.headers.link
+      if (link === undefined) return []
+      const next = /<([^>]+)>;\s*rel="next"/.exec(link)?.[1]
+      const nextUrl = next === undefined ? undefined : new URL(next, url)
+      cursor = nextUrl?.searchParams.get("cursor") ?? undefined
+      if (cursor === undefined || seen.has(cursor)) return yield* new SearchNotAnswered({})
+      seen.add(cursor)
+    }
   }).pipe(
     Effect.scoped,
     Effect.timeoutOption(within),
@@ -124,22 +154,28 @@ export class IssuesClient extends Context.Service<
       write: WriteRequest,
       credential?: string,
     ) => Effect.Effect<WriteTaken, WriteNotTaken>
-    /** The issues route's first page for search `q`, for a list that hasn't synced yet. */
-    readonly search: (owner: string, name: string, q: string) => Effect.Effect<ReadonlyArray<ListedIssue>, SearchNotAnswered>
+    readonly early?: SubscriptionRef.SubscriptionRef<EarlyRead | undefined>
+    /** The list's first search page, or only the exact `number` across its pages for a direct issue. */
+    readonly search: (owner: string, name: string, q: string, number?: number) => Effect.Effect<ReadonlyArray<ListedIssue>, SearchNotAnswered>
   }
 >()("@smthrs/mvp/issues/IssuesClient") {
   /** The real client: ChatApi at `origin`, with `within` for each whole request. */
-  static readonly layer = (options: { readonly origin: string; readonly within: Duration.Input }) =>
+  static readonly layer = (options: { readonly origin: string; readonly within: Duration.Input; readonly early?: EarlySearchHost }) =>
     Layer.effect(
       IssuesClient,
-      Effect.map(HttpClient.HttpClient, (client) =>
-        IssuesClient.of({
+      Effect.gen(function* () {
+        const client = yield* HttpClient.HttpClient
+        const search: IssuesClient["Service"]["search"] = (owner, name, q, number) =>
+          getSearch(options.origin, { owner, name }, q, options.within, number).pipe(Effect.provideService(HttpClient.HttpClient, client))
+        const early = options.early === undefined ? undefined : yield* earlySearch(search, options.early)
+        return IssuesClient.of({
+          ...(early === undefined ? {} : { early: early.pending }),
           write: (owner, name, write, credential) =>
             postWrite(options.origin, { owner, name }, write, options.within, credential).pipe(
               Effect.provideService(HttpClient.HttpClient, client),
             ),
-          search: (owner, name, q) =>
-            getSearch(options.origin, { owner, name }, q, options.within).pipe(Effect.provideService(HttpClient.HttpClient, client)),
-        })),
+          search: early ?? search,
+        })
+      }),
     )
 }

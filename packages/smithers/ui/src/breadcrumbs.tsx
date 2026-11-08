@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import type { ComponentProps, MouseEvent, ReactNode } from "react";
-import { cn } from "./cn";
+import { cn } from "@smthrs/ui-css";
 import { isPlainNavigationClick } from "./internal/navigationClick";
 import { safeHref } from "./internal/safeHref";
 import { useInjectUiCss } from "./styles";

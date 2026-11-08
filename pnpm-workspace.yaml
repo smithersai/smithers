@@ -43,19 +43,28 @@ allowBuilds:
   workerd: false
 
 linkWorkspacePackages: true
-verifyDepsBeforeRun: false
-# Test dependencies form intentional package cycles; source cycles have their own gate.
+# Test adapters depend on the runtime they exercise, forming deliberate development cycles.
+# pnpm 11 must schedule these cycles to run recursive typecheck/check/test scripts.
 ignoreWorkspaceCycles: true
+verifyDepsBeforeRun: false
 
 # Keep transitive prerelease adapters on the same tested Effect family.
 overrides:
   "@types/bun": "1.4.4"
   "effect": "4.1.1"
+  "vibelang": "0.0.12"
+  "vibelang-runtime": "0.0.12"
+  "vibelang-vite": "0.0.12"
+  "vibelang-unplugin": "0.0.12"
+  "alchemy": "2.0.0-beta.85"
+  "@alchemy.run/node-utils": "2.0.0-beta.85"
+  "@alchemy.run/frontend-frameworks": "2.0.0-beta.85"
   "@effect/opentelemetry": "4.1.1"
   "@effect/platform-bun": "4.1.1"
   "@effect/platform-node": "4.1.1"
   "@effect/platform-node-shared": "4.1.1"
   "@effect/sql-d1": "4.1.1"
+  "@effect/sql-pg": "4.1.1"
   "@effect/sql-sqlite-bun": "4.1.1"
   "@effect/sql-sqlite-do": "4.1.1"
   "@effect/sql-sqlite-node": "4.1.1"
@@ -64,37 +73,43 @@ overrides:
 # @vitest/coverage-v8 5.0.0 remaps native-loader hits against code Vite did not run.
 # Remove when an upstream Vitest release fixes coverage of natively loaded copies.
 patchedDependencies:
-  # @alchemy.run/cloudflare 2.0.0-beta.84 (Alchemy's Cloudflare provider, alchemy/Cloudflare until beta.83):
-  # WorkerProvider.diff bundles a Worker from the props Diff.stripEffects returns, which turns its build.input.plugins
-  # into undefined, so `alchemy plan` bundled every Worker without its build plugins and failed on .vibe sources. The
-  # patch hands hasChanged the Worker's own build options. Delete it with the release that fixes this upstream;
-  # apps/mvp/infra/WorkerBundles.test.ts's expected failure says when.
-  '@alchemy.run/cloudflare@2.0.0-beta.84': patches/@alchemy.run__cloudflare@2.0.0-beta.84.patch
-  # @effect/platform-node-shared 4.1.1: NodeChildProcessSpawner builds the child environment on `{}`, so an env key
-  # `__proto__` sets the object's prototype and the child never sees the variable (4.0.x passed env through). The
-  # patch builds it with Object.create(null). Effect main (4.1.1) still has the bug; delete the patch with the Effect
-  # release that fixes it. flows/kernel's ChildProcessSpawner integration tests cover both env paths.
-  '@effect/platform-node-shared@4.1.1': patches/@effect__platform-node-shared@4.1.1.patch
-  # @opentelemetry/otlp-transformer 0.222.0: the JSON encoder (toAnyValue) writes every integer as intValue, so
-  # Number.MAX_VALUE leaves NodeOtel as `intValue: 1.7976931348623157e+308`, outside OTLP's int64. The SDK's own
-  # protobuf serializer and Effect's OtlpResource send it as doubleValue. The patch applies the same int64 range check.
-  # 0.300.0 still has the bug; delete the patch with the release that fixes it. flows/observability's NodeOtelBudget
-  # "boundary 4" case holds the SDK's JSON body to Effect's encoder.
+  # otlp-transformer 0.222.0 sends every JS integer as intValue, even Number.MAX_VALUE, which int64 cannot hold.
+  # The patch sends integers outside int64 as doubleValue, as Effect 4.1's OTLP exporter does, and unsafe ones inside
+  # it as decimal strings (observability/test/NodeOtelBudget.test.ts). Delete it when OpenTelemetry bounds intValue.
   '@opentelemetry/otlp-transformer@0.222.0': patches/@opentelemetry__otlp-transformer@0.222.0.patch
+  # vibelang-runtime 0.0.12 matches a schema error class by its own _tag only, so a family base rejects its real
+  # subclasses (packages/errors/test/TaggedFailures.test.vibe). This patch mirrors the upstream VibeLang fix;
+  # delete it when vibelang 0.0.13 is published.
+  vibelang-runtime@0.0.12: patches/vibelang-runtime@0.0.12.patch
+  # beta.85 lib/Local/LocalProvider.js still strips build plugins in diff/reconcile;
+  # lib/Local/RpcSerialization.js still drops functions and has no deferred-module rehydration.
+  # Port the existing local-dev fix after inspecting both beta.85 sources.
+  alchemy@2.0.0-beta.85: patches/alchemy@2.0.0-beta.85.patch
+  # beta.85 moved WorkerProvider to @alchemy.run/cloudflare; its diff still passes
+  # stripped news to hasChanged (lib/Workers/WorkerProvider.js:3713), losing build plugins.
+  "@alchemy.run/cloudflare@2.0.0-beta.85": patches/@alchemy.run__cloudflare@2.0.0-beta.85.patch
+  # Opt-in incremental query publication: access revocations must not wait behind ordered-window refills.
+  # LiveQuery.Publication preserves settled publication by default; apps/mvp selects incremental (decision 0110).
+  # Audited 0.15.1 src/query/live/types.ts and collection.ts: no publication option or incremental refill mode.
+  "@tanstack/db@0.15.1": patches/@tanstack__db@0.15.1.patch
+  # Audited 1.1.3 dist/esm/types.d.ts and executor/TransactionExecutor.js: no keyed retry isolation hooks.
+  "@tanstack/offline-transactions@1.1.3": patches/@tanstack__offline-transactions@1.1.3.patch
+  # Audited 5.0.0 dist/index.js:47: maps every filtered native-loader hit even without moduleExecutionInfo.
   "@vitest/coverage-v8@5.0.0": patches/@vitest__coverage-v8@5.0.0.patch
-  # alchemy 2.0.0-beta.84: lib/Auth/OAuthFlow.js and lib/Util/PlatformServices.js import effect/Crypto, which Effect
-  # 4.1.0 removed, so every stack import failed with ERR_MODULE_NOT_FOUND. VibeLang's patch (examples/alchemy-stack)
-  # moves them to effect/crypto/Digest and SecureRandom in lib/, src/ and the .d.ts files. Local dev also keeps build
-  # through stripEffects (LocalProvider) and rehydrates deferred plugin module references after RPC (RpcSerialization),
-  # as the beta.83 patch did. Delete the Crypto part with the first alchemy release built on Effect 4.1.
-  alchemy@2.0.0-beta.84: patches/alchemy@2.0.0-beta.84.patch
+  # VibeLang 0.0.12 uses inline-source-map.mjs with a split sourceMappingURL directive; the 0.0.8 loader patch is upstream.
   # TanStack DB's SQLite persistence sends every statement on its own, about 35 to restore one collection, and each is
   # a round trip to the engine worker over SharedSqlite (~2 ms). The patches give its driver `batch` and
   # `transactionBatch` over the database's `executeBatch`, and restore a collection in about five batches: schema once
   # per adapter, its tables in one, and each restore read in one transaction. Delete them when TanStack batches
   # (~/Desktop/UPSTREAM.md); packages/smithers/flows/platform-browser/test/SharedSqliteRestore.test.ts counts requests.
+  # Audited 0.4.11 dist/esm/broadcast-coordinator.js:333 and persisted.js: index RPC lacks initial-route wait; restore still issues individual SQL.
   "@tanstack/db-sqlite-persistence-core@0.4.11": patches/@tanstack__db-sqlite-persistence-core@0.4.11.patch
+  # Audited 0.2.36 dist/esm/wa-sqlite-driver.js: driver has execute/transaction but no batch/transactionBatch.
   "@tanstack/browser-db-sqlite-persistence@0.2.36": patches/@tanstack__browser-db-sqlite-persistence@0.2.36.patch
+  # platform-node-shared 4.1.1 assigns a child's env entries into {}, so an own __proto__ entry is lost
+  # (kernel/test/ChildProcessSpawner.integration.test.ts), and NodeWS's `export * from "ws"` hides WebSocket from
+  # esbuild's split bundles (smithers/test/TuiRuntimes.test.ts). Delete it when an Effect release fixes both.
+  '@effect/platform-node-shared@4.1.1': patches/@effect__platform-node-shared@4.1.1.patch
 
 minimumReleaseAgeExclude:
   # VibeLang is ours (smithersai/vibelang), so its releases need no waiting
@@ -110,10 +125,12 @@ minimumReleaseAgeExclude:
   - 'vibelang-linux-x64'
   - 'vibelang-win32-arm64'
   - 'vibelang-win32-x64'
+  - '@smthrs/cli-win32-arm64@0.0.12'
+  - '@smthrs/cli-win32-x64@0.0.12'
 
 # Alchemy publishes declarations importing workers-types but declares it only for development.
 # Give its declarations the same exact type dependency as the app, independent of hoisting.
 packageExtensions:
-  alchemy@2.0.0-beta.83:
+  "@alchemy.run/cloudflare@2.0.0-beta.85":
     dependencies:
       "@cloudflare/workers-types": "5.20261019.1"

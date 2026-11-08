@@ -6,4 +6,4 @@ export {
   ConfirmButton,
   type ConfirmButtonProps,
 } from "./ActionMenu";
-export { actionMenuCss } from "./actionMenuCss";
+export { actionMenuCss } from "@smthrs/ui-css";

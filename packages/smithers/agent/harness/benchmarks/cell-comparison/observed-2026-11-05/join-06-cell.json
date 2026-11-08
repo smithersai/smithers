@@ -1,0 +1,904 @@
+{
+  "task": "join-06",
+  "seed": 184606,
+  "family": "join",
+  "arm": "cell",
+  "taskHash": "9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2",
+  "model": "gpt-6-luna",
+  "cohort": "codex-proton",
+  "maxTurns": 6,
+  "executionId": "cell-comparison/9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2/36/cell/2026-11-05T14:22:23.672Z",
+  "startedAt": "2026-11-05T14:36:22.874Z",
+  "elapsedMs": 16393,
+  "outcome": "correct",
+  "turns": [
+    {
+      "turn": 0,
+      "request": {
+        "modelId": "gpt-6-luna",
+        "system": [
+          {
+            "type": "text",
+            "text": "Solve the task using JavaScript in a persistent QuickJS realm. Reply only with executable JavaScript, without Markdown. No filesystem, imports, Date or Math.random. Read the input with await ctx.call(\"records\", {}). It returns {records, owners}. Print intermediate data with console.log for the next turn. Submit the requested JSON object with ctx.done(object). Top-level declarations persist across turns. You have at most six turns."
+          }
+        ],
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Join records.group to owners. For each owner sum value of active records only. Return {\"Ada\":n,\"Bo\":n,\"Cy\":n}, including zero totals."
+              }
+            ]
+          }
+        ],
+        "tools": [],
+        "params": {
+          "reasoningEffort": "low"
+        },
+        "cacheKey": "cell-comparison/9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2/36/cell/2026-11-05T14:22:23.672Z"
+      },
+      "events": [
+        {
+          "type": "thinking-start",
+          "id": "rs_0030cb76fce6242b016aec9467ff9c87d2836d48064cc354a6"
+        },
+        {
+          "type": "thinking-delta",
+          "id": "rs_0030cb76fce6242b016aec9467ff9c87d2836d48064cc354a6",
+          "text": "**Inspecting schema**"
+        },
+        {
+          "type": "thinking-end",
+          "id": "rs_0030cb76fce6242b016aec9467ff9c87d2836d48064cc354a6"
+        },
+        {
+          "type": "thinking-start",
+          "id": "rs_0030cb76fce6242b016aec9467ff9c87d2836d48064cc354a6:encrypted",
+          "signature": "{\"encrypted_content\":\"gAAAAABq7JRrNI_i079VFCVRslTEz5kXc8ZOfX4cpCldaw1s9JJBOy9Z32XAg9oZk0N-nWQK_9qDFzuAt3Uy8Pxe2ur3cYNcukwF4CGetWju_Puf6BuEVgXdj_uJb9fgCoHu1tAeF3zFf_8Hzf2N2cHPeEFLjBKqeOBtADazl-EPmX_COnDK6SkJg8o0-tz7B4myhqecEnFYL6qud7vVm18I7Zufd-rc_RsbVBQmfEBlay20qZfORy_wgAVyVadECI_ECSMBHXC4mhv_oH9GGGJ6w1h0dDWzsRWC2G9VmBnH6HPceZmPVb6LFgEoiRRwzvtnT7CW4NszYbnD7E9gNXKeiT04-i6Va3C7bfddNgpyZkA15TI9-Sf0hVYlSScOxyvX1vpZ_OIsaokUiujCHmuWqxwYQeoaD9nr5j0KTDfaUbqUkR6ZTV9RLp0olWBhlVB3IsIIwFGoAnT9vx3ktZVfkC8_tWE99zSu66ZXpFhOBi3DQkhbGv6D1cA6cLg5CNijy2_DZvz24kK9RYF3Ui5GoXJrz1vqXwyinEE036cdJN0LWER3Slpe0qS2JOrEJEfxr1S1J2EM5yikwBrs4l7wxHdwmiZ1iVRjA6xAvgTJirK-icm3Vaw46E0ZLoxAtwVZA--OVYsLzJYhSnRDmgOO10A4Mk8PpgU3k4zSSlHxH_hrVMlP7dd4RUdpYlS0tGo_UsGFZ3ENN1yEtQK27ZDqHqE82YlA6FPlFjHBJ7cpdk79QKNGuXMXwJjKhyvUUaDPPWG5wLRL-WDvCSQ16zYMLOOiuSNcsSFtM7O1rnUoIk-K--oqMC7TgC4DZ6tlNz6oHNq0lpgL2-yyoPzgB-R5ojMKA0JTC38DSCnkR89PB9EIFxkVpS9lD_CTtO4COgJWQFVbE68oY3mvSJCxWo9fqAc-tnk549QgV_F8aVpJ-a9OMO7CUEMSHSq0QRJz5lY5a32DDXg2jr3m-ep_KylycmhpSbY9Y4_AyLuRuHbW5ESbkos5exj8c_ReaVwxMXWo2UoreU8MoenERAVwr8-dwZDpF8utdg7gXw8LCAU-zJmC62Sd_c0My9elFNploR0NO23XPm2YwwSp1ib942H80f26AKPhOF0JZ-vKnifS86oLj4casPrSn60XMWa6F2yFO8Z9DuON9X1KZGewSY6S7_IZoGqRh3CXJmUWMOWFt3PLYVPdpMOyw_AQo9ts0aeGBdhDOaZydG2Xqr-c8a3Ei73ovc3__-Hr50QSN8eMWsD8tupOgPS1Sy8AoaMQVGSRyWe_g8iuZ2XV6hSv8XCpFd5h6-qIwTHFbX8KqEz1JU5bzlm2JOVyO5EnPRSdgP6phRZp7zLqrozDoPOCGiezxVS-j8Iflki8Ay2HpPGzOPlGjipD6G4nq1sN7kfzpQd6YPfkajJPCUHzhIuh3sc24XrInm4dPiciSHXakVi8IQg7WJJKKQBTziaIu3B2yaUmlmDo1VD-bYH7jhu3_XICMcnUcBDAhBk5JQ9iyWAIVPKfA3Gw8Bb0nAy_9lMJRCecn0_F-y_56vqlLAVinq_QdhinIyxJm3U95YEe1NZqY_eSH6rGGNIoNKrMYQPZPZt85l6uDM-qj1CVapocSsF0-XcAFfjN280U-WAomTTzYwX8rXxJ0v1LshG0vxU0qgSXcJY3UGzDrTVmAQSwINAEg2pc2FCrahUEqiJRg4ISfJxUxumrtt0=\",\"id\":\"rs_0030cb76fce6242b016aec9467ff9c87d2836d48064cc354a6\",\"summary\":[{\"text\":\"**Inspecting schema**\",\"type\":\"summary_text\"}],\"type\":\"reasoning\"}"
+        },
+        {
+          "type": "thinking-end",
+          "id": "rs_0030cb76fce6242b016aec9467ff9c87d2836d48064cc354a6:encrypted"
+        },
+        {
+          "type": "text-start",
+          "id": "msg_0030cb76fce6242b016aec946b71f487d2880c050da0aa8077"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946b71f487d2880c050da0aa8077",
+          "text": "const"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946b71f487d2880c050da0aa8077",
+          "text": " data"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946b71f487d2880c050da0aa8077",
+          "text": " ="
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946b71f487d2880c050da0aa8077",
+          "text": " await"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946b71f487d2880c050da0aa8077",
+          "text": " ctx"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946b71f487d2880c050da0aa8077",
+          "text": ".call"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946b71f487d2880c050da0aa8077",
+          "text": "(\""
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946b71f487d2880c050da0aa8077",
+          "text": "records"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946b71f487d2880c050da0aa8077",
+          "text": "\","
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946b71f487d2880c050da0aa8077",
+          "text": " {});\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946b71f487d2880c050da0aa8077",
+          "text": "console"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946b71f487d2880c050da0aa8077",
+          "text": ".log"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946b71f487d2880c050da0aa8077",
+          "text": "(data"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946b71f487d2880c050da0aa8077",
+          "text": ");"
+        },
+        {
+          "type": "text-end",
+          "id": "msg_0030cb76fce6242b016aec946b71f487d2880c050da0aa8077"
+        },
+        {
+          "type": "thinking-start",
+          "id": "rs_0030cb76fce6242b016aec946b798c87d2bdbd085764892291"
+        },
+        {
+          "type": "thinking-delta",
+          "id": "rs_0030cb76fce6242b016aec946b798c87d2bdbd085764892291",
+          "text": "**Preparing next output**"
+        },
+        {
+          "type": "thinking-end",
+          "id": "rs_0030cb76fce6242b016aec946b798c87d2bdbd085764892291"
+        },
+        {
+          "type": "thinking-start",
+          "id": "rs_0030cb76fce6242b016aec946b798c87d2bdbd085764892291:encrypted",
+          "signature": "{\"encrypted_content\":\"gAAAAABq7JRvePClG8Vo5v6syDWlSTH5PaLOD2jxHlGjyMkvCG1TQb5c7e8-HHFeoZOOCtncwRebSepUyEQ4bz25ZPjKe_OzNkQZzHfnZiojS-fFqlGr1Z1T_yL8xGTu1ofbg3s9SBCZhr87FX7JhXb80OWgSInKXw4D2Dnphx3r6fxD1rYdRmhkbPaXKkfhWzT2KuxN0dSXvKphZSPZJ1ZCsvbxaL-EgJCDmf8o_g4UQmx35aJkGiu_pOs0GPkZk-TlvPr51Wf_mdqilgk5l-v0SOACmYSFNb7sVLrIG9j6lDw97P2VziTjRsH0GV6cwFdJlEImnSCGCbLnHQUW2atzxHAzYY_0Z7tNsFM_A1GB46sEPU9TiQEvzUa3fr3Wu8AKXKaUra7deequKJHyCO7W9gBgyxyg5yGl6ydvpk3J0xYdjG0rNwqLiZLF9-SBUnt2fEB4Zg6ybxn-EQM3AzDOyGpRAQWvk_XKjp94grGE45BwYwSMN831cDVIUjKPeV0I7YdSPBi4iqELBMBF4kXmn-okqs-CCIM3EyTyBVRpFzmtNoMaR8SNaVr-QKX7NNaKUm5LMD-ldXoY7shA26pQcge_ylsVpWZcV0zmNyTx1P9RT2zIKAwEIbXxEEZ3ZamT0izgT3WftFTezEJeWT6D_zcgE0vs8g6R9pm_BxC_9NnuGmosu-bG7SbQeX15g0FsVC-E2--rzbTkzW1oohEgOX73s3GGD_xt4oBqoT9ytcNt0i0FL4cYO9kOrKY5KAwQcXQQDJjT3kSNJTVLfkTFG9yvYNC3BqEbclnfjOSLAxd2O5LN-R3ndSV2xSTT_WpiAj7QE5PvyhPTUffJy0F55UM16wkSc70m0sfpjw_u0dL7HPQj2GxwHaSaJQVidx4fHTtlsdECtEFjI6TBP0EAdMq-YDAMxP1-fWe_AN1nxEwYYqWRplDF-VyHhU28L0YauhCRDTdeVr44Lf9Zjw6FnUgrG2RTXgjrMkTkS8Gw9XghF-hm9KB6pf4WhUJO59IEl78lWxrPuiTrWXhbnrvEodZmc64OtqSoxoGnBBQGD9pigJPQI4XUk_HdbQL27p_yEQdEHWos_inT0F0-ick1YnbJ9dajQD6VxHvsoHtqmQMYBMJFCtzj6y30i7LsFmFy4YHi43YXV-toKyY-OG8Th4h6-GMGZ3z07Kbwx-FZXrILbca90LhBxpJ67vf7_xaFexOQflF1ZPYOkqcxdpe2u05z5u7XJ4xkzfjUmFntdwcGvQSFbxr-rUyrzQbD3-nmm6OirQytE9Esm6qA9KBtLQcL6h8W60WCNjsR-uVq7rek5N5OpUEg2MIU2zeFdefpBNqdor13TZfrztv6UUkdWsJQzz-RCpsKFFn9i4F0t-6JMtW9eBx8yhJHEM72ciqJoUwkYwAinOhsCLbfGwIA591XkwrXIGiC-BedpXE7pDJhJ3Qvn5NxaQTvdHF1kmN3rsF6UFN4z8OsxqT0UpxpCMwDbKA3t0t4WwFwIVpUAZRJVmt-Y9whAkMMGQMMKnA7LVJwngAx3VlArlytnFBqJsmS1gH42XI-dtCHpN1CnnBlPBwlcZfbjAhuh5n-9-B1SgtGWOap4Kb5srvjNll7_2v2nlUTqIdAUJ9Ov6-fqErdGpMrY7M=\",\"id\":\"rs_0030cb76fce6242b016aec946b798c87d2bdbd085764892291\",\"summary\":[{\"text\":\"**Preparing next output**\",\"type\":\"summary_text\"}],\"type\":\"reasoning\"}"
+        },
+        {
+          "type": "thinking-end",
+          "id": "rs_0030cb76fce6242b016aec946b798c87d2bdbd085764892291:encrypted"
+        },
+        {
+          "type": "text-start",
+          "id": "msg_0030cb76fce6242b016aec946f690887d29c811a654cebcde8"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946f690887d29c811a654cebcde8",
+          "text": "const"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946f690887d29c811a654cebcde8",
+          "text": " data"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946f690887d29c811a654cebcde8",
+          "text": " ="
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946f690887d29c811a654cebcde8",
+          "text": " await"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946f690887d29c811a654cebcde8",
+          "text": " ctx"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946f690887d29c811a654cebcde8",
+          "text": ".call"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946f690887d29c811a654cebcde8",
+          "text": "(\""
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946f690887d29c811a654cebcde8",
+          "text": "records"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946f690887d29c811a654cebcde8",
+          "text": "\","
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946f690887d29c811a654cebcde8",
+          "text": " {});\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946f690887d29c811a654cebcde8",
+          "text": "console"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946f690887d29c811a654cebcde8",
+          "text": ".log"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946f690887d29c811a654cebcde8",
+          "text": "(data"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec946f690887d29c811a654cebcde8",
+          "text": ");"
+        },
+        {
+          "type": "text-end",
+          "id": "msg_0030cb76fce6242b016aec946f690887d29c811a654cebcde8"
+        },
+        {
+          "type": "usage",
+          "inputTokens": 130,
+          "outputTokens": 69,
+          "reasoningTokens": 28,
+          "cachedInputTokens": 0,
+          "totalTokens": 199
+        },
+        {
+          "type": "settle",
+          "stopReason": "stop",
+          "responseId": "resp_0030cb76fce6242b016aec9467491487d2acf3429afb28aea5",
+          "servedTier": "default",
+          "timing": {
+            "startedAt": 1793889382882,
+            "attempts": 1,
+            "requestBytes": 936,
+            "preparedMs": 0,
+            "signedMs": 2,
+            "sentMs": 2,
+            "headersMs": 663,
+            "firstEventMs": 665,
+            "firstThinkingMs": 4572,
+            "firstOutputMs": 4588,
+            "lastOutputMs": 8555,
+            "completedMs": 8607,
+            "closedMs": 8606
+          }
+        }
+      ],
+      "usage": {
+        "inputTokens": 130,
+        "outputTokens": 69,
+        "reasoningTokens": 28,
+        "cachedInputTokens": 0,
+        "totalTokens": 199
+      },
+      "cost": {
+        "costUsd": 0.0000475,
+        "costSource": "estimated"
+      },
+      "elapsedMs": 8618,
+      "replayed": false,
+      "frame": {
+        "outcome": {
+          "_tag": "settled",
+          "transition": {
+            "_tag": "continue"
+          }
+        },
+        "prints": "{\"owners\":{\"a\":\"Ada\",\"b\":\"Bo\",\"c\":\"Cy\"}}\nrecords (18):\nid | sku | revision | group | value | active | tags\nr00 | s0 | 0 | a | 92 | true |  green, yellow\nr01 | s1 | 0 | a | 97 | false | Red, blue\nr02 | s2 | 0 | a | 61 | false |  green, yellow\nr03 | s3 | 0 | a | 96 | false |  green, yellow\nr04 | s4 | 0 | c | 32 | false | \nr05 | s5 | 0 | c | 7 | false |  BLUE,green \nr06 | s0 | 1 | c | 82 | false | \nr07 | s1 | 1 | a | 1 | true | \nr08 | s2 | 1 | a | 32 | true | Red, blue\nr09 | s3 | 1 | a | 55 | true | \nr10 | s4 | 1 | a | 43 | false |  BLUE,green \nr11 | s5 | 1 | b | 64 | false | Red, blue\nr12 | s0 | 2 | c | -2 | false |  green, yellow\nr13 | s1 | 2 | a | 81 | true | red,RED\nr14 | s2 | 2 | b | 44 | true | red,RED\nr15 | s3 | 2 | c | 53 | false | Red, blue\nr16 | s4 | 2 | c | 76 | true | Red, blue\nr17 | s5 | 2 | a | 93 | true |  green, yellow\n{\"owners\":{\"a\":\"Ada\",\"b\":\"Bo\",\"c\":\"Cy\"}}\nrecords (18):\nid | sku | revision | group | value | active | tags\nr00 | s0 | 0 | a | 92 | true |  green, yellow\nr01 | s1 | 0 | a | 97 | false | Red, blue\nr02 | s2 | 0 | a | 61 | false |  green, yellow\nr03 | s3 | 0 | a | 96 | false |  green, yellow\nr04 | s4 | 0 | c | 32 | false | \nr05 | s5 | 0 | c | 7 | false |  BLUE,green \nr06 | s0 | 1 | c | 82 | false | \nr07 | s1 | 1 | a | 1 | true | \nr08 | s2 | 1 | a | 32 | true | Red, blue\nr09 | s3 | 1 | a | 55 | true | \nr10 | s4 | 1 | a | 43 | false |  BLUE,green \nr11 | s5 | 1 | b | 64 | false | Red, blue\nr12 | s0 | 2 | c | -2 | false |  green, yellow\nr13 | s1 | 2 | a | 81 | true | red,RED\nr14 | s2 | 2 | b | 44 | true | red,RED\nr15 | s3 | 2 | c | 53 | false | Red, blue\nr16 | s4 | 2 | c | 76 | true | Red, blue\nr17 | s5 | 2 | a | 93 | true |  green, yellow",
+        "bindings": [
+          {
+            "name": "data",
+            "type": "object",
+            "size": "2 keys"
+          }
+        ]
+      }
+    },
+    {
+      "turn": 1,
+      "request": {
+        "modelId": "gpt-6-luna",
+        "system": [
+          {
+            "type": "text",
+            "text": "Solve the task using JavaScript in a persistent QuickJS realm. Reply only with executable JavaScript, without Markdown. No filesystem, imports, Date or Math.random. Read the input with await ctx.call(\"records\", {}). It returns {records, owners}. Print intermediate data with console.log for the next turn. Submit the requested JSON object with ctx.done(object). Top-level declarations persist across turns. You have at most six turns."
+          }
+        ],
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Join records.group to owners. For each owner sum value of active records only. Return {\"Ada\":n,\"Bo\":n,\"Cy\":n}, including zero totals."
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "text": "**Inspecting schema**"
+              },
+              {
+                "type": "thinking",
+                "text": "",
+                "signature": "{\"encrypted_content\":\"gAAAAABq7JRrNI_i079VFCVRslTEz5kXc8ZOfX4cpCldaw1s9JJBOy9Z32XAg9oZk0N-nWQK_9qDFzuAt3Uy8Pxe2ur3cYNcukwF4CGetWju_Puf6BuEVgXdj_uJb9fgCoHu1tAeF3zFf_8Hzf2N2cHPeEFLjBKqeOBtADazl-EPmX_COnDK6SkJg8o0-tz7B4myhqecEnFYL6qud7vVm18I7Zufd-rc_RsbVBQmfEBlay20qZfORy_wgAVyVadECI_ECSMBHXC4mhv_oH9GGGJ6w1h0dDWzsRWC2G9VmBnH6HPceZmPVb6LFgEoiRRwzvtnT7CW4NszYbnD7E9gNXKeiT04-i6Va3C7bfddNgpyZkA15TI9-Sf0hVYlSScOxyvX1vpZ_OIsaokUiujCHmuWqxwYQeoaD9nr5j0KTDfaUbqUkR6ZTV9RLp0olWBhlVB3IsIIwFGoAnT9vx3ktZVfkC8_tWE99zSu66ZXpFhOBi3DQkhbGv6D1cA6cLg5CNijy2_DZvz24kK9RYF3Ui5GoXJrz1vqXwyinEE036cdJN0LWER3Slpe0qS2JOrEJEfxr1S1J2EM5yikwBrs4l7wxHdwmiZ1iVRjA6xAvgTJirK-icm3Vaw46E0ZLoxAtwVZA--OVYsLzJYhSnRDmgOO10A4Mk8PpgU3k4zSSlHxH_hrVMlP7dd4RUdpYlS0tGo_UsGFZ3ENN1yEtQK27ZDqHqE82YlA6FPlFjHBJ7cpdk79QKNGuXMXwJjKhyvUUaDPPWG5wLRL-WDvCSQ16zYMLOOiuSNcsSFtM7O1rnUoIk-K--oqMC7TgC4DZ6tlNz6oHNq0lpgL2-yyoPzgB-R5ojMKA0JTC38DSCnkR89PB9EIFxkVpS9lD_CTtO4COgJWQFVbE68oY3mvSJCxWo9fqAc-tnk549QgV_F8aVpJ-a9OMO7CUEMSHSq0QRJz5lY5a32DDXg2jr3m-ep_KylycmhpSbY9Y4_AyLuRuHbW5ESbkos5exj8c_ReaVwxMXWo2UoreU8MoenERAVwr8-dwZDpF8utdg7gXw8LCAU-zJmC62Sd_c0My9elFNploR0NO23XPm2YwwSp1ib942H80f26AKPhOF0JZ-vKnifS86oLj4casPrSn60XMWa6F2yFO8Z9DuON9X1KZGewSY6S7_IZoGqRh3CXJmUWMOWFt3PLYVPdpMOyw_AQo9ts0aeGBdhDOaZydG2Xqr-c8a3Ei73ovc3__-Hr50QSN8eMWsD8tupOgPS1Sy8AoaMQVGSRyWe_g8iuZ2XV6hSv8XCpFd5h6-qIwTHFbX8KqEz1JU5bzlm2JOVyO5EnPRSdgP6phRZp7zLqrozDoPOCGiezxVS-j8Iflki8Ay2HpPGzOPlGjipD6G4nq1sN7kfzpQd6YPfkajJPCUHzhIuh3sc24XrInm4dPiciSHXakVi8IQg7WJJKKQBTziaIu3B2yaUmlmDo1VD-bYH7jhu3_XICMcnUcBDAhBk5JQ9iyWAIVPKfA3Gw8Bb0nAy_9lMJRCecn0_F-y_56vqlLAVinq_QdhinIyxJm3U95YEe1NZqY_eSH6rGGNIoNKrMYQPZPZt85l6uDM-qj1CVapocSsF0-XcAFfjN280U-WAomTTzYwX8rXxJ0v1LshG0vxU0qgSXcJY3UGzDrTVmAQSwINAEg2pc2FCrahUEqiJRg4ISfJxUxumrtt0=\",\"id\":\"rs_0030cb76fce6242b016aec9467ff9c87d2836d48064cc354a6\",\"summary\":[{\"text\":\"**Inspecting schema**\",\"type\":\"summary_text\"}],\"type\":\"reasoning\"}"
+              },
+              {
+                "type": "text",
+                "text": "const data = await ctx.call(\"records\", {});\nconsole.log(data);"
+              },
+              {
+                "type": "thinking",
+                "text": "**Preparing next output**"
+              },
+              {
+                "type": "thinking",
+                "text": "",
+                "signature": "{\"encrypted_content\":\"gAAAAABq7JRvePClG8Vo5v6syDWlSTH5PaLOD2jxHlGjyMkvCG1TQb5c7e8-HHFeoZOOCtncwRebSepUyEQ4bz25ZPjKe_OzNkQZzHfnZiojS-fFqlGr1Z1T_yL8xGTu1ofbg3s9SBCZhr87FX7JhXb80OWgSInKXw4D2Dnphx3r6fxD1rYdRmhkbPaXKkfhWzT2KuxN0dSXvKphZSPZJ1ZCsvbxaL-EgJCDmf8o_g4UQmx35aJkGiu_pOs0GPkZk-TlvPr51Wf_mdqilgk5l-v0SOACmYSFNb7sVLrIG9j6lDw97P2VziTjRsH0GV6cwFdJlEImnSCGCbLnHQUW2atzxHAzYY_0Z7tNsFM_A1GB46sEPU9TiQEvzUa3fr3Wu8AKXKaUra7deequKJHyCO7W9gBgyxyg5yGl6ydvpk3J0xYdjG0rNwqLiZLF9-SBUnt2fEB4Zg6ybxn-EQM3AzDOyGpRAQWvk_XKjp94grGE45BwYwSMN831cDVIUjKPeV0I7YdSPBi4iqELBMBF4kXmn-okqs-CCIM3EyTyBVRpFzmtNoMaR8SNaVr-QKX7NNaKUm5LMD-ldXoY7shA26pQcge_ylsVpWZcV0zmNyTx1P9RT2zIKAwEIbXxEEZ3ZamT0izgT3WftFTezEJeWT6D_zcgE0vs8g6R9pm_BxC_9NnuGmosu-bG7SbQeX15g0FsVC-E2--rzbTkzW1oohEgOX73s3GGD_xt4oBqoT9ytcNt0i0FL4cYO9kOrKY5KAwQcXQQDJjT3kSNJTVLfkTFG9yvYNC3BqEbclnfjOSLAxd2O5LN-R3ndSV2xSTT_WpiAj7QE5PvyhPTUffJy0F55UM16wkSc70m0sfpjw_u0dL7HPQj2GxwHaSaJQVidx4fHTtlsdECtEFjI6TBP0EAdMq-YDAMxP1-fWe_AN1nxEwYYqWRplDF-VyHhU28L0YauhCRDTdeVr44Lf9Zjw6FnUgrG2RTXgjrMkTkS8Gw9XghF-hm9KB6pf4WhUJO59IEl78lWxrPuiTrWXhbnrvEodZmc64OtqSoxoGnBBQGD9pigJPQI4XUk_HdbQL27p_yEQdEHWos_inT0F0-ick1YnbJ9dajQD6VxHvsoHtqmQMYBMJFCtzj6y30i7LsFmFy4YHi43YXV-toKyY-OG8Th4h6-GMGZ3z07Kbwx-FZXrILbca90LhBxpJ67vf7_xaFexOQflF1ZPYOkqcxdpe2u05z5u7XJ4xkzfjUmFntdwcGvQSFbxr-rUyrzQbD3-nmm6OirQytE9Esm6qA9KBtLQcL6h8W60WCNjsR-uVq7rek5N5OpUEg2MIU2zeFdefpBNqdor13TZfrztv6UUkdWsJQzz-RCpsKFFn9i4F0t-6JMtW9eBx8yhJHEM72ciqJoUwkYwAinOhsCLbfGwIA591XkwrXIGiC-BedpXE7pDJhJ3Qvn5NxaQTvdHF1kmN3rsF6UFN4z8OsxqT0UpxpCMwDbKA3t0t4WwFwIVpUAZRJVmt-Y9whAkMMGQMMKnA7LVJwngAx3VlArlytnFBqJsmS1gH42XI-dtCHpN1CnnBlPBwlcZfbjAhuh5n-9-B1SgtGWOap4Kb5srvjNll7_2v2nlUTqIdAUJ9Ov6-fqErdGpMrY7M=\",\"id\":\"rs_0030cb76fce6242b016aec946b798c87d2bdbd085764892291\",\"summary\":[{\"text\":\"**Preparing next output**\",\"type\":\"summary_text\"}],\"type\":\"reasoning\"}"
+              },
+              {
+                "type": "text",
+                "text": "const data = await ctx.call(\"records\", {});\nconsole.log(data);"
+              }
+            ],
+            "stopReason": "stop",
+            "responseId": "resp_0030cb76fce6242b016aec9467491487d2acf3429afb28aea5"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Cell observation: {\"outcome\":{\"_tag\":\"settled\",\"transition\":{\"_tag\":\"continue\"}},\"prints\":\"{\\\"owners\\\":{\\\"a\\\":\\\"Ada\\\",\\\"b\\\":\\\"Bo\\\",\\\"c\\\":\\\"Cy\\\"}}\\nrecords (18):\\nid | sku | revision | group | value | active | tags\\nr00 | s0 | 0 | a | 92 | true |  green, yellow\\nr01 | s1 | 0 | a | 97 | false | Red, blue\\nr02 | s2 | 0 | a | 61 | false |  green, yellow\\nr03 | s3 | 0 | a | 96 | false |  green, yellow\\nr04 | s4 | 0 | c | 32 | false | \\nr05 | s5 | 0 | c | 7 | false |  BLUE,green \\nr06 | s0 | 1 | c | 82 | false | \\nr07 | s1 | 1 | a | 1 | true | \\nr08 | s2 | 1 | a | 32 | true | Red, blue\\nr09 | s3 | 1 | a | 55 | true | \\nr10 | s4 | 1 | a | 43 | false |  BLUE,green \\nr11 | s5 | 1 | b | 64 | false | Red, blue\\nr12 | s0 | 2 | c | -2 | false |  green, yellow\\nr13 | s1 | 2 | a | 81 | true | red,RED\\nr14 | s2 | 2 | b | 44 | true | red,RED\\nr15 | s3 | 2 | c | 53 | false | Red, blue\\nr16 | s4 | 2 | c | 76 | true | Red, blue\\nr17 | s5 | 2 | a | 93 | true |  green, yellow\\n{\\\"owners\\\":{\\\"a\\\":\\\"Ada\\\",\\\"b\\\":\\\"Bo\\\",\\\"c\\\":\\\"Cy\\\"}}\\nrecords (18):\\nid | sku | revision | group | value | active | tags\\nr00 | s0 | 0 | a | 92 | true |  green, yellow\\nr01 | s1 | 0 | a | 97 | false | Red, blue\\nr02 | s2 | 0 | a | 61 | false |  green, yellow\\nr03 | s3 | 0 | a | 96 | false |  green, yellow\\nr04 | s4 | 0 | c | 32 | false | \\nr05 | s5 | 0 | c | 7 | false |  BLUE,green \\nr06 | s0 | 1 | c | 82 | false | \\nr07 | s1 | 1 | a | 1 | true | \\nr08 | s2 | 1 | a | 32 | true | Red, blue\\nr09 | s3 | 1 | a | 55 | true | \\nr10 | s4 | 1 | a | 43 | false |  BLUE,green \\nr11 | s5 | 1 | b | 64 | false | Red, blue\\nr12 | s0 | 2 | c | -2 | false |  green, yellow\\nr13 | s1 | 2 | a | 81 | true | red,RED\\nr14 | s2 | 2 | b | 44 | true | red,RED\\nr15 | s3 | 2 | c | 53 | false | Red, blue\\nr16 | s4 | 2 | c | 76 | true | Red, blue\\nr17 | s5 | 2 | a | 93 | true |  green, yellow\",\"bindings\":[{\"name\":\"data\",\"type\":\"object\",\"size\":\"2 keys\"}]}"
+              }
+            ]
+          }
+        ],
+        "tools": [],
+        "params": {
+          "reasoningEffort": "low"
+        },
+        "cacheKey": "cell-comparison/9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2/36/cell/2026-11-05T14:22:23.672Z"
+      },
+      "events": [
+        {
+          "type": "thinking-start",
+          "id": "rs_0030cb76fce6242b016aec9471a27887d290eb751d1e07843e"
+        },
+        {
+          "type": "thinking-delta",
+          "id": "rs_0030cb76fce6242b016aec9471a27887d290eb751d1e07843e",
+          "text": "**Preparing the totals**"
+        },
+        {
+          "type": "thinking-end",
+          "id": "rs_0030cb76fce6242b016aec9471a27887d290eb751d1e07843e"
+        },
+        {
+          "type": "thinking-start",
+          "id": "rs_0030cb76fce6242b016aec9471a27887d290eb751d1e07843e:encrypted",
+          "signature": "{\"encrypted_content\":\"gAAAAABq7JR3MsjuFNN4Pn9vjSfoTQIYAe_FtciykZ87-PmxfBqhsfONFzivXxPDIFpvQFLy21-fDEXZ3q_HSvaKp2H7nXT7PRoOIaySg-U0EkERI96Nd3-9vZYI7soO7mI9Idun1ESVNTyp5dAON6rnATjF4Wu3yHApirfDhacHqEUCh8Xe-XEZG_Yl0ZPL5LWZjC-8cDSQC2kFHJZeG6jjN4CBdwKtzJS5D_cZAsTBx7xl54TzPPJQKMCeJ2ACv3GWpKN5-wNFNZMbKZm6kvvQZMxKpsz9LPcdyo-mbDhAUUAqI81I46HsEjGQKnSOZ3JPqgFW27oH2sgc2nyucbZgVxrLBdB71l-_maEzsCTRwiJvi_a6NHckAhEZeJaZqaUY6jyZTtS6FxeUKmD9ze1ZuI9suTiA_lo88-RSksrB2S0vprFjsKamg0kADKGgJhQesS_vMCnX4Wi3fwjaBJb1bfscljKn9fGmnlFTJUTzmFUtKHOpuCWst2bk7-Yviz1Qny0a05FO8srpNDLnwOArPYWd1pCxBZCo3lT6dRI43OGcRx4AXXNzuxjVi0j7OOZkbuA8tj9WWF3s27SL1a8i8RJCT-XSuh1ka1knJ_M2IltojI5EM5u5SOu2lI93vOEFIcL7fVh7fWfYOu4ySWVnLbxRm83X5DFPrcql-OQcnpktDYzBRZSGfhPgN302k3nd-q6rrhlJ528SClrBUld9TsF6CTiKCeAktZW7iNPMpXEUhSEZ5lezrcWEMCbYeIWVltCpFysDGrj645e5lo8TByvMfhSwMVi6B7j_hokZpPy5nXyBc948F_2Q9DwKCD4I5xpZBukiMr8B88T61CehycLwh2lOZKSvZFpodtFeptROb7CJ256Y0Pukc93tkDkQe-avgZNuaE4alS0mcOi8wd5bFjvHIPR0Vk5zSr-NKm7Bn2zOEzAMhd54q7f9q5rEccK0cNuVD0I2p5Zpm-7KXC3sxIAVD83HoHVC96Q7QYXoNx8quMGOaUzuNOZGTVe9D_7zg-yhO_6lqOcmiTYSOeXgYuUtT4p_yhhQVl307nldhKg_eOQMunBg7ejJ3mc61O576C9f3YnGKABy2pFvLvsaUbRkPOatNBuaq8X3LWMBLN9s2NzbSER0tfC2pxkVnAsachBcChLMxqEJdtvgzjpzCfAhnT747a3J_48MGYKCoQNgtAyt3bNu2iRLr8ajXiZAGCal93qmgWDXU94CBU3vlq5pLUEzhuOOiDv9WzWvasQOnf5ftHLQ6sphW4EOpu1CU9jJvNmefWEc56qI-2Rxp8BvsmkJ5DVYqy6LJieyKBs3qGf14Ub0AtvOan0LuR1wTMSFhh_eHAeQfxSgVvHuqv31nrV6PsteDxCaPOTq3SYn4T0I9o5wyQHI1tIytpnq-2mfwrOP2cim24u2arsk8gj5LQJNwrhrsPQDAi4yoKgYqUwGk74nR7i7UM-xeExC9MBP0TDGTq9PokbH5uKlKMZJ3mv1DAwTwdzV3dWSBB3CopAxMhhfSt74QcFAcm6alphtc1O4B4r64cSexw7sZnVv049rV_KEnESYkqSSo-EFjLyCvU_03Zb-qH6_qKSatczaZtoOM-Uc2YWNuubrcYcCao2MUXL-JYliKmHzplhJlxWlNKEuHYA_D1MGBL4c7etHIGre3AoWYRTrQvFQ_cPk0kMAy5EI2YRQkQYCODoCUl6wCMKORwYqlnj68EK-dJOeT-EYI4hbZ0ZPJBMEerkvQiAYO8t5bMwUh0zfZ4-FHPprF_Sm0ym93s9J2evCuHyPMjbWCZCjabsZ-RF7vLc7HXsDlcD4pRUB2ikuiaG3_-8N4xm3vShdsNDlEuH9zKmJW_2MxNe2UUmiizCUdwydBeQqvbkTPD-NdJ1ufYpA5FlxamqAK0Ag7yHNFGJdm7rrXi4e6sdjQDfXyvk-i1Ok5_lgu77Pa6vaZJ2gQzD5lfDwv3JHpUriVyboku-Mf9g5XH8gnKdnqQagqgvqAY3CczyEJhx3mp0tc_lawFTlxQt7jFeZr6-zsgmqiCbQpDEkGNwpmIvOtnk2ZzXpIFKAntbdss60pXZJqrfaea47h9YIqbWaVGkF5xg2JEOpAwEiUIHArJecuN9onp0dUbD0wA==\",\"id\":\"rs_0030cb76fce6242b016aec9471a27887d290eb751d1e07843e\",\"summary\":[{\"text\":\"**Preparing the totals**\",\"type\":\"summary_text\"}],\"type\":\"reasoning\"}"
+        },
+        {
+          "type": "thinking-end",
+          "id": "rs_0030cb76fce6242b016aec9471a27887d290eb751d1e07843e:encrypted"
+        },
+        {
+          "type": "text-start",
+          "id": "msg_0030cb76fce6242b016aec9477315887d29be91f3930e74166"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec9477315887d29be91f3930e74166",
+          "text": "ctx"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec9477315887d29be91f3930e74166",
+          "text": ".done"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec9477315887d29be91f3930e74166",
+          "text": "({\""
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec9477315887d29be91f3930e74166",
+          "text": "Ada"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec9477315887d29be91f3930e74166",
+          "text": "\":"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec9477315887d29be91f3930e74166",
+          "text": "354"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec9477315887d29be91f3930e74166",
+          "text": ",\""
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec9477315887d29be91f3930e74166",
+          "text": "Bo"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec9477315887d29be91f3930e74166",
+          "text": "\":"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec9477315887d29be91f3930e74166",
+          "text": "44"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec9477315887d29be91f3930e74166",
+          "text": ",\""
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec9477315887d29be91f3930e74166",
+          "text": "Cy"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec9477315887d29be91f3930e74166",
+          "text": "\":"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec9477315887d29be91f3930e74166",
+          "text": "76"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_0030cb76fce6242b016aec9477315887d29be91f3930e74166",
+          "text": "});"
+        },
+        {
+          "type": "text-end",
+          "id": "msg_0030cb76fce6242b016aec9477315887d29be91f3930e74166"
+        },
+        {
+          "type": "usage",
+          "inputTokens": 1020,
+          "outputTokens": 87,
+          "reasoningTokens": 66,
+          "cachedInputTokens": 0,
+          "totalTokens": 1107
+        },
+        {
+          "type": "settle",
+          "stopReason": "stop",
+          "responseId": "resp_0030cb76fce6242b016aec94702eb887d285622d2196c0bafe",
+          "servedTier": "default",
+          "timing": {
+            "startedAt": 1793889391523,
+            "attempts": 1,
+            "requestBytes": 6953,
+            "preparedMs": 1,
+            "signedMs": 3,
+            "sentMs": 3,
+            "headersMs": 841,
+            "firstEventMs": 842,
+            "firstThinkingMs": 7681,
+            "firstOutputMs": 7683,
+            "lastOutputMs": 7685,
+            "completedMs": 7738,
+            "closedMs": 7738
+          }
+        }
+      ],
+      "usage": {
+        "inputTokens": 1020,
+        "outputTokens": 87,
+        "reasoningTokens": 66,
+        "cachedInputTokens": 0,
+        "totalTokens": 1107
+      },
+      "cost": {
+        "costUsd": 0.0001455,
+        "costSource": "estimated"
+      },
+      "elapsedMs": 7750,
+      "replayed": false,
+      "frame": {
+        "outcome": {
+          "_tag": "settled",
+          "transition": {
+            "_tag": "complete",
+            "output": "{\"Ada\":354,\"Bo\":44,\"Cy\":76}",
+            "value": {
+              "Ada": 354,
+              "Bo": 44,
+              "Cy": 76
+            }
+          }
+        },
+        "prints": "",
+        "bindings": [
+          {
+            "name": "data",
+            "type": "object",
+            "size": "2 keys"
+          }
+        ]
+      }
+    }
+  ],
+  "calls": [
+    {
+      "ordinal": 0,
+      "name": "records",
+      "input": {},
+      "value": {
+        "records": [
+          {
+            "id": "r00",
+            "sku": "s0",
+            "revision": 0,
+            "group": "a",
+            "value": 92,
+            "active": true,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r01",
+            "sku": "s1",
+            "revision": 0,
+            "group": "a",
+            "value": 97,
+            "active": false,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r02",
+            "sku": "s2",
+            "revision": 0,
+            "group": "a",
+            "value": 61,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r03",
+            "sku": "s3",
+            "revision": 0,
+            "group": "a",
+            "value": 96,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r04",
+            "sku": "s4",
+            "revision": 0,
+            "group": "c",
+            "value": 32,
+            "active": false,
+            "tags": ""
+          },
+          {
+            "id": "r05",
+            "sku": "s5",
+            "revision": 0,
+            "group": "c",
+            "value": 7,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r06",
+            "sku": "s0",
+            "revision": 1,
+            "group": "c",
+            "value": 82,
+            "active": false,
+            "tags": ""
+          },
+          {
+            "id": "r07",
+            "sku": "s1",
+            "revision": 1,
+            "group": "a",
+            "value": 1,
+            "active": true,
+            "tags": ""
+          },
+          {
+            "id": "r08",
+            "sku": "s2",
+            "revision": 1,
+            "group": "a",
+            "value": 32,
+            "active": true,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r09",
+            "sku": "s3",
+            "revision": 1,
+            "group": "a",
+            "value": 55,
+            "active": true,
+            "tags": ""
+          },
+          {
+            "id": "r10",
+            "sku": "s4",
+            "revision": 1,
+            "group": "a",
+            "value": 43,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r11",
+            "sku": "s5",
+            "revision": 1,
+            "group": "b",
+            "value": 64,
+            "active": false,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r12",
+            "sku": "s0",
+            "revision": 2,
+            "group": "c",
+            "value": -2,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r13",
+            "sku": "s1",
+            "revision": 2,
+            "group": "a",
+            "value": 81,
+            "active": true,
+            "tags": "red,RED"
+          },
+          {
+            "id": "r14",
+            "sku": "s2",
+            "revision": 2,
+            "group": "b",
+            "value": 44,
+            "active": true,
+            "tags": "red,RED"
+          },
+          {
+            "id": "r15",
+            "sku": "s3",
+            "revision": 2,
+            "group": "c",
+            "value": 53,
+            "active": false,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r16",
+            "sku": "s4",
+            "revision": 2,
+            "group": "c",
+            "value": 76,
+            "active": true,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r17",
+            "sku": "s5",
+            "revision": 2,
+            "group": "a",
+            "value": 93,
+            "active": true,
+            "tags": " green, yellow"
+          }
+        ],
+        "owners": {
+          "a": "Ada",
+          "b": "Bo",
+          "c": "Cy"
+        }
+      }
+    },
+    {
+      "ordinal": 1,
+      "name": "records",
+      "input": {},
+      "value": {
+        "records": [
+          {
+            "id": "r00",
+            "sku": "s0",
+            "revision": 0,
+            "group": "a",
+            "value": 92,
+            "active": true,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r01",
+            "sku": "s1",
+            "revision": 0,
+            "group": "a",
+            "value": 97,
+            "active": false,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r02",
+            "sku": "s2",
+            "revision": 0,
+            "group": "a",
+            "value": 61,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r03",
+            "sku": "s3",
+            "revision": 0,
+            "group": "a",
+            "value": 96,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r04",
+            "sku": "s4",
+            "revision": 0,
+            "group": "c",
+            "value": 32,
+            "active": false,
+            "tags": ""
+          },
+          {
+            "id": "r05",
+            "sku": "s5",
+            "revision": 0,
+            "group": "c",
+            "value": 7,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r06",
+            "sku": "s0",
+            "revision": 1,
+            "group": "c",
+            "value": 82,
+            "active": false,
+            "tags": ""
+          },
+          {
+            "id": "r07",
+            "sku": "s1",
+            "revision": 1,
+            "group": "a",
+            "value": 1,
+            "active": true,
+            "tags": ""
+          },
+          {
+            "id": "r08",
+            "sku": "s2",
+            "revision": 1,
+            "group": "a",
+            "value": 32,
+            "active": true,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r09",
+            "sku": "s3",
+            "revision": 1,
+            "group": "a",
+            "value": 55,
+            "active": true,
+            "tags": ""
+          },
+          {
+            "id": "r10",
+            "sku": "s4",
+            "revision": 1,
+            "group": "a",
+            "value": 43,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r11",
+            "sku": "s5",
+            "revision": 1,
+            "group": "b",
+            "value": 64,
+            "active": false,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r12",
+            "sku": "s0",
+            "revision": 2,
+            "group": "c",
+            "value": -2,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r13",
+            "sku": "s1",
+            "revision": 2,
+            "group": "a",
+            "value": 81,
+            "active": true,
+            "tags": "red,RED"
+          },
+          {
+            "id": "r14",
+            "sku": "s2",
+            "revision": 2,
+            "group": "b",
+            "value": 44,
+            "active": true,
+            "tags": "red,RED"
+          },
+          {
+            "id": "r15",
+            "sku": "s3",
+            "revision": 2,
+            "group": "c",
+            "value": 53,
+            "active": false,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r16",
+            "sku": "s4",
+            "revision": 2,
+            "group": "c",
+            "value": 76,
+            "active": true,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r17",
+            "sku": "s5",
+            "revision": 2,
+            "group": "a",
+            "value": 93,
+            "active": true,
+            "tags": " green, yellow"
+          }
+        ],
+        "owners": {
+          "a": "Ada",
+          "b": "Bo",
+          "c": "Cy"
+        }
+      }
+    }
+  ],
+  "output": {
+    "Ada": 354,
+    "Bo": 44,
+    "Cy": 76
+  }
+}

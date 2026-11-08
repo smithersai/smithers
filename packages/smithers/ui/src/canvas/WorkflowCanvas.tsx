@@ -8,9 +8,9 @@ import {
   type RefObject,
 } from "react";
 import { Badge } from "../badge";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { composeRefs } from "../internal/composeRefs";
-import { formatStatus, statusClass, type StatusClass } from "../status";
+import { formatStatus, statusClass, type StatusClass } from "@smthrs/ui-css";
 import { StatusPill } from "../status-pill";
 import { useInjectUiCss } from "../styles";
 

@@ -9,8 +9,33 @@
  */
 export const DEVICE_PERSON_HEADER = "x-smithers-device-person"
 
+/** The client advertises `credential-stale` here because its transport handles the server's stale-credential answer. */
+export const ACCEPTS_HEADER = "x-smithers-accepts"
+
+/**
+ * A write that asks the page's transport (src/device/identity.ts `boundFetch`) to check a `401` against the session
+ * before its caller decides. The transport removes it from every request, so it never leaves the page. Only a write the
+ * outbox holds, sent in the person's session, opts in: co-edit's updates, issue writes without a run credential, TODO
+ * changes, chat questions and steers without a run credential. A write sent with a run credential never does: its `401` is the run's.
+ */
+export const CONFIRM_401_HEADER = "x-smithers-confirm-401"
+
+/**
+ * On such a write's `401`, set by the transport (never by ChatApi): `same_person` when a session read after the refusal
+ * named the person the write was bound to, so the refusal said only that ChatApi couldn't tell who asked then.
+ */
+export const SESSION_CHECK_HEADER = "x-smithers-session-check"
+
+/** What a write's client reads from {@link SESSION_CHECK_HEADER}: `same_person`, or nothing. */
+export const sessionCheckOf = (headers: Readonly<Record<string, string | undefined>>) =>
+  headers[SESSION_CHECK_HEADER] === "same_person" ? { sessionCheck: "same_person" as const } : {}
+
+export const ACCEPTS_CREDENTIAL_STALE = "credential-stale"
 /** {@link DEVICE_PERSON_HEADER}'s value for a page or worker that opened none of the device's data. */
 export const NO_DEVICE_DATA = "@none"
+
+/** A page whose verified viewer is nobody, so neither cookie nor bearer can act. */
+export const ANONYMOUS_DEVICE_PERSON = "@anonymous"
 
 /**
  * The window event the page dispatches once the person signed in adopts, in place, the visitor's data it opened
@@ -141,15 +166,25 @@ export type SessionState =
     readonly personId?: string
     /** False while the last observed role awaits a durable confirmation; identity remains signed in. */
     readonly roleConfirmed?: boolean
+    /** The home conversation's id, every signed-in person's own (decision 0110, the data gate); none when there is none. */
+    readonly homeConversationId?: string
     readonly login: string
     readonly role: Role | null
     readonly hostedModel?: boolean
     readonly install?: string
     /** When the session ends, epoch milliseconds on the server's clock; none for a session that has no end, as in local development. */
     readonly expiresAt?: number
+    /** The absolute server deadline, epoch milliseconds; optional for older clients and local development. */
+    readonly deadline?: number
+    /** An opaque tag for the presented session row; optional for older servers and local development. */
+    readonly session?: string
     /** The server's clock when it answered, epoch milliseconds: a tab's deadline is `sentAt + (expiresAt - serverNow)`. */
     readonly serverNow?: number
   }
+
+/** The identity-free third answer, consumed by device handling in rollout step 3. */
+export type CredentialStaleState = { readonly credential: "stale" }
+export type SessionResponse = SessionState | CredentialStaleState
 
 /** How a tab's session check ended: ChatApi said signed in or signed out, or couldn't confirm authority (`unconfirmed`) or reach ChatApi (`unreachable`). */
 export const CHECK_OUTCOMES = ["signed_in", "signed_out", "unreachable", "unconfirmed"] as const
@@ -206,6 +241,9 @@ export const CANCEL_HANDOFF = "Cancel"
 /** The button that ends the session. */
 export const SIGN_OUT = "Sign out"
 
+/** What the page offers while the outbox holds a write ChatApi refused because it couldn't tell who asked (src/outbox.ts). */
+export const SIGN_IN_TO_SEND = "Sign in to send your changes"
+
 /**
  * What sign-in records in the browser (docs/observability.md#browser), by name, and the attributes they carry. ChatApi's
  * relay keeps exactly what src/telemetry.ts merges from every feature; none of these fields carries a login or a token.
@@ -217,6 +255,26 @@ export const AUTH_TELEMETRY = {
     "auth.refresh",
     "auth.refresh.check",
     "smithers_auth_session_refreshes",
+    "smithers_auth_session",
+    "smithers_device_principal_refusals",
+    "auth.device_principal",
+    "smithers_auth_issue",
+    "smithers_auth_key_rotations",
+    "smithers_auth_session_prior",
+    "smithers_auth_session_ends",
+    "auth.session_prior",
+    "auth.session_end",
+    "auth.session_retention",
+    "auth.reauth",
+    "auth.token_store",
+    "auth.token_cleanup",
+    "auth.token_cleanup.failure",
+    "smithers_auth_reauth",
+    "smithers_auth_token_cleanup",
+    "smithers_auth_token_store",
+    "auth.issue",
+    "auth.key_rotation",
+    "auth.session",
     "session loaded",
     "session unreachable",
     "sign in pressed",
@@ -231,5 +289,5 @@ export const AUTH_TELEMETRY = {
     "smithers_web_device_wipes",
   ],
   // `stage`, `reason` and `via` also carry the engine worker's owner check (src/device/identity.ts, FLOWS_TELEMETRY).
-  fields: ["signedIn", "status", "outcome", "stage", "reason", "via", "executionId", "durationMs", "smithers.auth.outcome", "errorCode", "feature"],
+  fields: ["signedIn", "status", "outcome", "stage", "step", "reason", "via", "executionId", "durationMs", "smithers.auth.outcome", "errorCode", "feature"],
 } as const

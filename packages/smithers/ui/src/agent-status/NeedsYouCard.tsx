@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { type ComponentProps, type FormEvent, useEffect, useId, useRef } from "react";
 import { Button } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { type Collaborator, CollaboratorCarets, type FieldSelection, selectionOf, useSharedSelection } from "../collaborators";
 import { Input } from "../input";
 import { useInjectUiCss } from "../styles";

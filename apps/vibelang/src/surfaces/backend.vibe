@@ -1,0 +1,34 @@
+import { FetchHttpClient } from "effect/http"
+import { health, LiveFactory } from "../core/LiveFactory.vibe"
+import { MockFactory } from "../core/MockFactory.vibe"
+
+export schema error LiveBackendNotDeployed { readonly message: string }
+
+/** Where the live Factory runs unless `VIBELANG_FACTORY_URL` names another deployment, such as a local `alchemy dev`. */
+export const DEFAULT_FACTORY_URL = "https://vibelang.smithers.sh"
+
+/** `VIBELANG_FACTORY_URL`: the live Factory's origin. */
+export const factoryUrl = Config.String("VIBELANG_FACTORY_URL").pipe(Config.withDefault(DEFAULT_FACTORY_URL))
+
+export function notDeployed(origin: string): string {
+  return `The live Factory backend is not deployed at ${origin}. Use --mock or VIBELANG_FACTORY=mock.`
+}
+
+export function unreachable(origin: string): string {
+  return `The live Factory at ${origin} can't be reached. Use --mock or VIBELANG_FACTORY=mock.`
+}
+
+/** The live Factory, once its origin's health says it runs the live agent. */
+const live = Layer.unwrap(effect {
+  const origin = (try factoryUrl).replace(/\/+$/, "")
+  const answer = health(origin) catch effect () => {
+    throw new LiveBackendNotDeployed({ message: unreachable(origin) })
+  }
+  if (answer.agent !== "live") throw new LiveBackendNotDeployed({ message: notDeployed(origin) })
+  return LiveFactory(origin)
+}).pipe(Layer.provide(FetchHttpClient.layer))
+
+/** Backend choice belongs to the host: `--mock` or `VIBELANG_FACTORY=mock` for the mock, else the live Factory. */
+export function backend(mock: boolean, environment: string | undefined) {
+  return mock || environment === "mock" ? MockFactory : live
+}

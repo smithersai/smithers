@@ -1,3 +1,4 @@
+import { withUserAgent } from "../github/Http.ts"
 import { GitHub } from "@smthrs/integrations"
 import { Clock, Effect, Function, type Layer, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
@@ -70,6 +71,6 @@ export const make = <E, R>(
           HttpClientRequest.acceptJson,
           HttpClientRequest.setHeader("x-github-api-version", "2022-11-28"),
         ),
-      ).pipe(Effect.timeout(REVOKE_TIMEOUT_MS), client, Effect.ignore)
+      ).pipe(withUserAgent, Effect.timeout(REVOKE_TIMEOUT_MS), client, Effect.ignore)
   return { mint, revoke }
 }

@@ -1,4 +1,5 @@
 import { Context, Effect, Exit, Layer } from "effect"
+import { expectTypeOf } from "vitest"
 import { describe, expect, it } from "vitest"
 import * as Config from "../src/Config.vibe"
 import * as Hooks from "../src/Hooks.vibe"
@@ -50,12 +51,12 @@ class Unprovided extends Context.Service<Unprovided, { readonly value: string }>
 /** Never called; tsc checks it (#2704). */
 const unprovidedServiceProbe = async () => {
   const withAlpha = await resolvedLayer([{ name: "alpha", layer: Layer.succeed(Alpha)({ value: "alpha" }) }])
-  // @ts-expect-error no plugin layer provides Unprovided
-  run(Effect.map(Unprovided, (service) => service.value).pipe(Effect.provide(withAlpha)))
+  const unmet = Effect.map(Unprovided, (service) => service.value).pipe(Effect.provide(withAlpha))
+  expectTypeOf<typeof unmet>().not.toExtend<Parameters<typeof run>[0]>()
   run(Effect.map(Alpha, (alpha) => alpha.value).pipe(Effect.provide(withAlpha)))
   const withoutAlpha = await resolvedLayer([{ name: "alpha" }])
-  // @ts-expect-error dropping the alpha plugin's layer drops Alpha
-  run(Effect.map(Alpha, (alpha) => alpha.value).pipe(Effect.provide(withoutAlpha)))
+  const missing = Effect.map(Alpha, (alpha) => alpha.value).pipe(Effect.provide(withoutAlpha))
+  expectTypeOf<typeof missing>().not.toExtend<Parameters<typeof run>[0]>()
 }
 
 describe("regression: provide-then-cast test helpers erase layer requirements (#2704)", () => {

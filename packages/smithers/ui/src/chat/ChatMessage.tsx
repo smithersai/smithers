@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import type { ComponentProps, ReactNode } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { Skeleton } from "../skeleton";
 import { useInjectUiCss } from "../styles";
 

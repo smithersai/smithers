@@ -1,0 +1,58 @@
+import { expect, it } from "@effect/vitest"
+import { vi } from "vitest"
+import { Runtime } from "foldkit"
+import { apply, empty } from "../src/core/conversation.vibe"
+import { init } from "../src/web/main.vibe"
+import { application } from "./support/application.vibe"
+import { mockReply } from "../src/core/mockReplies.vibe"
+import { faultyFactory, trace } from "./support/FaultyFactory.vibe"
+import { activeId, clickAsk, container, focusComposer, hasAsk, reconnect, remove, send } from "./support/browser.ts"
+
+for (const fault of ["drop", "disconnect", "end"] as const) {
+  it.live(`real runtime recovers from ${fault} using its last applied seq, without duplicates`, () => scoped(effect {
+    const observation = trace()
+    let latest = init({ session: "runtime", name: "Ada", mode: "mock" }).model
+    const node = try sync(container)
+    const program = try Effect.try(() => application(node, faultyFactory(fault, observation), (model) => { latest = model }))
+    try acquireRelease(
+      sync(() => Runtime.embed(program, { flags: succeed({ session: "runtime", name: "Ada", mode: "mock" as const }) })),
+      (handle) => sync(() => { handle.dispose(); remove(node) }),
+    )
+    try promise(() => vi.waitFor(() => expect(hasAsk()).toBe(true)))
+    try sync(clickAsk)
+    try promise(() => vi.waitFor(() => expect(activeId()).toBe("vl-palette-prompt")))
+    try sync(() => send("What is a service?"))
+    if (fault !== "drop") {
+      try promise(() => vi.waitFor(() => expect(latest.stream).toBe("failed")))
+      try Effect.try(() => {
+        expect(latest.client.conversation.seq).toBe(3)
+        expect(latest.client.conversation.agent).toBe("working")
+        expect(latest.client.conversation.entries[1]?.text).not.toBe("")
+        expect(observation.subscriptions.map(item => item.after)).toEqual([0])
+      })
+      try sync(reconnect)
+    }
+    try promise(() => vi.waitFor(() => expect(latest.client.conversation.entries[1]?.done).toBe(true), { timeout: 4000 }))
+    const expectedCursor = fault === "drop" ? 2 : 3
+    try Effect.try(() => {
+      expect(observation.subscriptions).toEqual([
+        { conversation: "home", after: 0 }, { conversation: "home", after: expectedCursor },
+      ])
+      expect(latest.client.pending).toEqual([])
+      expect(latest.client.conversation.entries).toHaveLength(2)
+      expect(latest.client.conversation.entries[1]?.text).toBe(mockReply("What is a service?"))
+      expect(new Set(latest.client.conversation.entries.map(entry => entry.id)).size).toBe(2)
+    })
+    const canonical = try Stream.runCollect(observation.base!.events("home", 0).pipe(Stream.takeUntil(event => event.type === "ReplyFinished")))
+    try Effect.try(() => expect(latest.client.conversation).toEqual(Array.from(canonical).reduce(apply, empty)))
+    // Prove this remains a live subscription, rather than only repairing a replay snapshot.
+    try sync(focusComposer)
+    try sync(() => send("How do I install it?"))
+    try promise(() => vi.waitFor(() => expect(latest.client.conversation.entries[3]?.done).toBe(true), { timeout: 4000 }))
+    try Effect.try(() => {
+      expect(latest.client.conversation.entries).toHaveLength(4)
+      expect(latest.client.conversation.entries[3]?.text).toBe(mockReply("How do I install it?"))
+      expect(observation.subscriptions.map(item => item.after)).toEqual([0, expectedCursor])
+    })
+  }))
+}

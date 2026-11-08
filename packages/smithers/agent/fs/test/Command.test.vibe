@@ -1,3 +1,4 @@
+import { throwingProxy } from "./modules.ts"
 import { afterEach, describe, expect, it, vi } from "@effect/vitest"
 import * as Command from "../src/Command.vibe"
 import * as FlowInvoker from "../src/FlowInvoker.vibe"
@@ -160,12 +161,7 @@ describe("Command", () => {
     const tooMany = `${exact} x`
     expect(try exit(CommandLine.lex(tooMany)) is Exit.Failure).toBe(true)
 
-    const hostile = try sync((target) =>
-      new Proxy(target, {
-        ownKeys: () => {
-          throw new Error("trap")
-        }
-      }), ["--safe=x"])
+    const hostile = try sync(() => throwingProxy(["--safe=x"]))
     expect(try exit(CommandLine.parseFlags(hostile)) is Exit.Failure).toBe(true)
   })
 
@@ -220,7 +216,7 @@ describe("Command.call decoded boundary", () => {
 
   it.effect("accepts decoded transforming input in call and encoded input in execute", effect () => {
     const surface = try surfaceFor(Schema.NumberFromString, Schema.Number)
-    const invoke = vi.fn<FlowInvoker.FlowInvoker["invoke"]>(effect ({ input }) => input)
+    const invoke = vi.fn<FlowInvoker.FlowInvoker.Shape["invoke"]>(effect ({ input }) => input)
     provide FlowInvoker.layerNoop({ invoke }) {
       expect(try surface.call("scalar", 42)).toBe(42)
       expect(try surface.execute("scalar 42")).toBe(42)
@@ -232,7 +228,7 @@ describe("Command.call decoded boundary", () => {
 
   it.effect("refuses scalar tokens that execute would otherwise drop", effect () => {
     const surface = try surfaceFor(Schema.Number, Schema.NumberFromString)
-    const invoke = vi.fn<FlowInvoker.FlowInvoker["invoke"]>(effect () => 42)
+    const invoke = vi.fn<FlowInvoker.FlowInvoker.Shape["invoke"]>(effect () => 42)
     provide FlowInvoker.layerNoop({ invoke }) {
       for (const command of ["scalar 1 --typo x", "scalar 1 2", "scalar 1 --input 2", "scalar --input 1 --typo x"]) {
         expect(try failureOf(surface.execute(command)), command).toMatchObject({ code: "decode_failed" })
@@ -244,7 +240,7 @@ describe("Command.call decoded boundary", () => {
 
   it.effect("refuses unsafe decoded input before loading or invoking", effect () => {
     const surface = try Command.make([makeRoute("review")])
-    const invoke = vi.fn<FlowInvoker.FlowInvoker["invoke"]>(effect ({ input }) => input)
+    const invoke = vi.fn<FlowInvoker.FlowInvoker.Shape["invoke"]>(effect ({ input }) => input)
     let getterCalls = 0
     const accessor = Object.defineProperty({}, "number", {
       enumerable: true,
@@ -303,17 +299,17 @@ describe("Command.call decoded boundary", () => {
     const loading = try Deferred.make<void>()
     const release = try Deferred.make<typeof flow>()
     vi.spyOn(Route, "load").mockImplementation(effect () => {
-      try loading.succeed(undefined)
-      return try release.await()
+      try Deferred.succeed(loading, undefined)
+      return try Deferred.await(release)
     })
     const surface = try Command.make([makeRoute("scalar")])
-    const invoke = vi.fn<FlowInvoker.FlowInvoker["invoke"]>(effect ({ input }) => (input as { number: number }).number)
-    const input: { mutable number: number } = { number: 1 }
+    const invoke = vi.fn<FlowInvoker.FlowInvoker.Shape["invoke"]>(effect ({ input }) => (input as { number: number }).number)
+    const input: { number: number } = { number: 1 }
     provide FlowInvoker.layerNoop({ invoke }) {
       const pending = fork surface.call("scalar", input)
-      try loading.await()
+      try Deferred.await(loading)
       input.number = 2
-      try release.succeed(flow)
+      try Deferred.succeed(release, flow)
       expect(join pending).toBe(1)
     }
     expect(invoke).toHaveBeenCalledWith(expect.objectContaining({ input: { number: 1 } }))
@@ -338,3 +334,8 @@ describe("Command.call decoded boundary", () => {
     }
   })
 })
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

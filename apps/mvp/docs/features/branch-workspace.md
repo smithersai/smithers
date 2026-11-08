@@ -48,6 +48,8 @@ stacks under the view.
 - **`/app`** shows the home conversation: the deployment repository's (`GITHUB_REPOSITORY`) `main`. Its route leaves the branch, so the composer asks there again.
 - **A ref that isn't a branch** (a commit, a tag, a name GitHub doesn't have) shows the repository view alone.
 
+The transcript owns the page’s one named `Conversation` landmark, both here and at `/app`. Layout containers add no duplicate landmark; the live `Messages` log remains inside it. `e2e/accessibility-chat-log.spec.ts` checks both pages without a model call.
+
 ## Tracking a branch
 
 `branch/track { repo, branch, openId? }` is a client flow a person's page and the agent run alike (`src/features/branch/flows.ts`). Its one step posts `POST /api/branches { owner, name, ref, openId? }` (`worker/branch/Branches.ts`); a page's open names itself in `openId`, so the same open tried again never undoes an archive made since ([conversations](conversations.md#archive)):
@@ -113,6 +115,7 @@ typed errors; branch names, response text, URLs and credentials are never record
 - **Waiting for a sandbox.** `sandbox/Admit` holds the branch a machine under the [sandbox limits](sandbox-budgets.md) before it wakes it. With none free, the row says `waiting`, Open terminal stays disabled and the panel says **Waiting for a sandbox**, for up to 30 minutes (`ADMIT_WAIT_SECONDS`); once one is free the row records `admitted_at`.
 - **One terminal per person per branch.** While theirs opens or is open, `POST /api/terminals` answers its id. An open that hasn't finished within `OPEN_DEADLINE_SECONDS` (180) of its admission (after a wait) or of its row settles `failed` (in `terminal/Record`, or at the person's next open), so it never locks them out. A waiting one has the wait's time first.
 - **An unfinished open.** The panel waits until the row's `createdAt` plus that deadline, plus the wait when the row says `waiting`, including after reload. Once failed, it offers Open terminal even while the row still says `opening`; the next press lets the server replace the stale row.
+- **An ended shell.** The socket can report `ended` before its row changes. The panel offers Open terminal for that shell; a new open checks the person's existing session, marks a missing one `lost`, and admits its replacement through `terminal/Open`. A live session and a resend of the same id keep their existing behavior. The request records `recoveredTerminalId`, the span records `smithers.terminal.recovered`, and `smithers_terminal_recoveries` counts the recovery without identifiers as labels.
 - **The socket.** `GET /api/terminals/<id>` with `Upgrade: websocket` checks the `Origin` is the app's own, then the session: the terminal's owner attaches `write`, any other Member `read`. A terminal whose machine lost its session answers `410` and is ended `lost`. ChatApi strips any `x-smithers-*` header the browser sent and forwards its decision to the branch's `SandboxObject` (`worker/BranchSandboxes.ts`), which accepts the socket (no hibernation, which would drop the tmux client) and runs `@smthrs/platform-cloudflare`'s `ContainerTerminal.attach` in its own scope.
 - **The wire protocol** is `@smthrs/sandbox`'s `TerminalProtocol`: binary frames are bytes; JSON text frames are control (`resize` from the owner, `ready` and `ended` from the host); frames over 64 KiB close with 1009; final close codes don't reconnect; `@smthrs/platform-browser`'s `TerminalSocket` reconnects after 1 s, doubling to 30 s, 10 times, and drops keystrokes typed while disconnected.
 - **The frame** is `@smthrs/terminal-frame`'s `TerminalFrame`: our xterm in an opaque-origin `srcdoc` frame whose script is pinned by hash and whose CSP allows no network. ⌘K comes back to the page; links open only from a click.
@@ -125,6 +128,15 @@ typed errors; branch names, response text, URLs and credentials are never record
 - **Each person is their own user** (`worker/branch/Users.ts`): `p` and 16 hex digits of the SHA-256 of their person id, made on first use in the `workspace` group. Their tmux server's socket is theirs alone, so one person's shell can't attach to, type into or signal another's; `/workspace` is shared through the group (setgid, umask 002, `safe.directory`).
 
 ## The forge
+
+Checkout failures retain their exit code and bounded `checkoutFailure` (`forge`,
+`branch`, `clone`, `other`) across the object RPC in the durable tool step's error
+receipt. Its `sandbox.tool` log correlates them by call and branch id. Existing
+receipts without these fields remain readable. `sandbox.checkout` additionally
+records namespace, forge, generation and stage durations; failed wake stages keep
+their elapsed time. No command output, URL or credential is recorded.
+The object log keeps its existing `failure` field; the tool log and durable
+error receipt call the same value `checkoutFailure`.
 
 The box has no credential and no internet. It reaches the package registries through its egress ([the machine](sandbox-tools.md#the-machine)), and its repository only through `http://forge.smithers.internal`, which `SandboxObject` intercepts (`interceptOutboundHttp`) and answers with `@smthrs/effect-code-storage`'s `GitProxy.uploadPack`: only `info/refs?service=git-upload-pack` and `git-upload-pack` (a push and anything else is 403), to the branch's own repository whatever the guest's path names, with the read credential added outside the box (`worker/branch/Forge.ts`):
 
@@ -221,7 +233,7 @@ No record carries a login, a person's place or a path; a share's records name it
 | Component | `src/screens/branch/connection.test.ts` (offline queue and reconnection), `src/screens/branch/offline.test.ts` (evicted storage, pending route identity, verified recovery and terminal preload), with real app services and injected faults |
 | Unit | `worker/branch/*.test.ts` (sharing: `Access`, `Shares`, `Presence`), `worker/flows/TerminalOpen.test.ts` and `worker/ExecutionHost.test.ts` (`terminal/Open` on the remote host), conversations in `worker/Chat.test.ts`, `worker/Views.test.ts` and `worker/ShapeProxy.test.ts`, `src/features/branch/*.test.ts`, `src/features/sharing/*.test.ts`, `src/features/presence/*.test.ts`, `src/features/terminal/*.test.ts`; `@smthrs/sync` (`PresenceProtocol`, `PresenceRoom`, `PresenceSocket`), `@smthrs/ui` (`AvatarStack`, `ShareDialog`); `@smthrs/effect-code-storage` (`GitProxy`, `GitRemote.ref`, `gitRemote`), `@smthrs/crypto` (`Uuid`), `@smthrs/sandbox` (`TerminalProtocol`), `@smthrs/platform-browser` (`TerminalSocket`), `@smthrs/ui` (`TerminalFrame`) |
 | Real container | `@smthrs/platform-cloudflare`'s `test/ContainerTerminal.workerd.test.ts`: local workerd and Docker with this image |
-| End to end | `e2e/branch-workspace.spec.ts`, `e2e/branch-offline.spec.ts` (a branch's page opened offline past tracking's 30 s, then the network returning) and `e2e/branch-sharing.spec.ts` (two and three people on separate devices: share to view and edit, a viewer's input refused by the server, revoke, general access and a Guest) against `alchemy dev` (`pnpm e2e e2e/branch-sharing.spec.ts`, `pnpm e2e:gifs`) |
+| End to end | `e2e/branch-workspace.spec.ts`, `e2e/branch-offline.spec.ts` (a branch's page opened offline past tracking's 30 s, then the network returning) and `e2e/branch-sharing.spec.ts` (two and three people on separate devices: share to view and edit, viewer API/input refusal, independent room/text/terminal socket revocation, empty revoked shapes, general access and a Guest). Sharing runs against `alchemy dev` and deployments with independently verified test sessions; missing production identities block the run ([identity setup](../../e2e/README.md#distinct-people)). |
 
 The branch workspace's composer helper waits for either the visible input or
 Chat button before choosing an action (`e2e/composer.ts`). A branch URL and its

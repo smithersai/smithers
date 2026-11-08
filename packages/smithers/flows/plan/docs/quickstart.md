@@ -64,7 +64,6 @@ and a key can never disagree about what a node consumes.
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import * as PlanDiff from "@smthrs/plan/PlanDiff"
 import * as Effect from "effect/Effect"
 
@@ -85,7 +84,7 @@ const program = Effect.gen(function*() {
   console.log(PlanDiff.diff(plan, grown).added)
 })
 
-await Effect.runPromise(program.pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)), Effect.orDie))
+await Effect.runPromise(program.pipe(Effect.provide(NodeCrypto.layer), Effect.orDie))
 ```
 
 Run the file with your TypeScript runner. The digests on your machine match

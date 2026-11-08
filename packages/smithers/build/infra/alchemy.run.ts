@@ -4,8 +4,8 @@
  * @since 0.1.0
  */
 
-import * as Alchemy from "alchemy"
 import * as Cloudflare from "@alchemy.run/cloudflare"
+import * as Alchemy from "alchemy"
 import { Stack } from "alchemy/Stack"
 import {
   cacheBucketOptions,

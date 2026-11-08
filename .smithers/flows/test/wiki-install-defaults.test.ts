@@ -1,6 +1,7 @@
-import { NodeCrypto, NodeServices } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
-import { Effect, Layer } from "effect"
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
+import { NodeServices } from "@effect/platform-node"
+import { Effect } from "effect"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
@@ -10,10 +11,9 @@ import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import { operations } from "../wiki/operations.ts"
 
-// Effect 4.1 removed effect/Crypto, and neither platform's services layer provides it.
-const platform = Layer.merge(
+const platform = EffectLayer.mergeAll(
   process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer,
-  Crypto.layerFromDigest(NodeCrypto.layerDigest)
+  NativeCrypto.layer
 )
 
 test(
@@ -140,7 +140,10 @@ test("300-entry install repository publishes overview and architecture summaries
     effect: Effect.Effect<
       A,
       E,
-      import("effect/FileSystem").FileSystem | import("effect/Path").Path | import("@smthrs/crypto").Crypto.Crypto
+      | import("effect/FileSystem").FileSystem
+      | import("effect/Path").Path
+      | import("effect/crypto/Digest").Digest
+      | import("effect/crypto/SecureRandom").SecureRandom
     >
   ) => Effect.runPromise(effect.pipe(Effect.provide(platform)))
   const pages = await Promise.all(specs.map((spec) => run(ops.collect(spec))))

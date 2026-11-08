@@ -71,7 +71,6 @@ Compose the layers:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Interpreter } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
@@ -82,7 +81,7 @@ const GreetingLayer = Interpreter.layerWithImplementations(
   Greet.toLayer(({ name }) => Effect.succeed(`Hello, ${name}.`))
 ).pipe(
   Layer.provideMerge(FlowEngine.layerMemory),
-  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+  Layer.provideMerge(NodeCrypto.layer)
 )
 ```
 
@@ -94,7 +93,7 @@ providers supply the runtime and digest:
 - `FlowEngine.layerMemory` supplies the `FlowRuntime` port. Swap it for the
   durable engine from [`@smthrs/engine-store`](/api/engine-store) and nothing
   above changes.
-- `Crypto.layerFromDigest(NodeCrypto.layerDigest)` supplies `Crypto`. Every dispatch is recorded under a
+- `NodeCrypto.layer` supplies `Crypto`. Every dispatch is recorded under a
   derived step identity, so the engine needs a digest even in memory.
 
 ## Run it

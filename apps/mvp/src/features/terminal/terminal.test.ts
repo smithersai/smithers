@@ -7,7 +7,7 @@
 // JSON control (`ready`, `ended`, `resize`), and its close codes say whether to come back (1000 ended, 1003
 // unsupported, 1008 no access, 1011 failed). `terminal/open`'s client and step are also driven over an injected
 // `fetch` for the answers a valid request never gets (test.faults-by-injection).
-import * as NodeWS from "@effect/platform-node/NodeWS"
+import { NodeWS } from "@effect/platform-node"
 import { Effect, Layer, Logger, Metric, Ref, Scheduler } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
@@ -16,17 +16,25 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Actor } from "../../../worker/Actor.vibe"
 import * as Conversations from "../../../worker/branch/Conversations.ts"
 import { shaOf } from "../../../worker/test/branch.ts"
-import { type ChatApiOptions, failingWorker, member, nodeDevice, openTestApp, type TabOptions, TestChatApi } from "../../test/chatApi"
-import { FlowDispatch, dispatches } from "../../flows/dispatch"
+import { dispatches, FlowDispatch } from "../../flows/dispatch"
+import {
+  type ChatApiOptions,
+  failingWorker,
+  member,
+  nodeDevice,
+  openTestApp,
+  type TabOptions,
+  TestChatApi
+} from "../../test/chatApi"
 import { AuthStore, SESSION } from "../auth/store"
 import { Branch } from "../branch/branch"
+import { attach as attachTerminal, open as openTerminal, show, socketUrl } from "./actions"
 import { OpenRefused, TerminalClient } from "./api"
 import { ADMIT_WAIT_SECONDS, DEFAULT_COLS, DEFAULT_ROWS, OPEN_DEADLINE_SECONDS, openExecutionId } from "./contract"
 import { TerminalOpenRefused, TerminalOpenUnavailable } from "./flows"
 import { bytes, ended, openMs, opens, reconnects } from "./metrics"
-import { requestOpen } from "./steps"
-import { attach as attachTerminal, open as openTerminal, show, socketUrl } from "./actions"
 import { PANEL } from "./schema"
+import { requestOpen } from "./steps"
 import { TerminalStore } from "./store"
 import { Terminal } from "./terminal"
 import { panelViewOf } from "./view"
@@ -37,7 +45,8 @@ afterEach(async () => {
 })
 
 /** How long a flow may take on the device's engine, its first start included, on a loaded machine. */
-const until = (assertion: () => void | Promise<void>, timeout = 40_000) => vi.waitFor(assertion, { timeout, interval: 20 })
+const until = (assertion: () => void | Promise<void>, timeout = 40_000) =>
+  vi.waitFor(assertion, { timeout, interval: 20 })
 
 /** A test's budget: flows on a fresh device's engine, each with its first start, on a loaded machine. */
 const WITHIN = 90_000
@@ -79,7 +88,7 @@ const terminalHost = async () => {
         socket.send(JSON.stringify({ type: "ended", reason }))
         socket.close(1000)
       },
-      close: (code) => socket.close(code),
+      close: (code) => socket.close(code)
     })
   })
   closers.push(() =>
@@ -110,7 +119,7 @@ const open = async (options: TabOptions = {}, chatApi: ChatApiOptions = {}) => {
   terminal.queries.tabs.startSyncImmediate()
   api.branches.github.publish("octo", "hello", {
     defaultBranch: "main",
-    branches: { main: shaOf("main"), "feature/one": shaOf("feature/one") },
+    branches: { main: shaOf("main"), "feature/one": shaOf("feature/one") }
   })
   const actor = chatApi.actor === undefined ? member : chatApi.actor
   const { session } = await runtime.runPromise(Effect.service(AuthStore))
@@ -121,8 +130,8 @@ const open = async (options: TabOptions = {}, chatApi: ChatApiOptions = {}) => {
         row,
         actor === null
           ? { status: "signed_out", login: null, role: null }
-          : { status: "signed_in", login: actor.subject.id, role: actor.role },
-      )),
+          : { status: "signed_in", login: actor.subject.id, role: actor.role }
+      ))
   )
   const sql = <A>(statement: (sql: SqlClient.SqlClient) => Effect.Effect<A, unknown>) =>
     runtime.runPromise(api.branches.run(Effect.flatMap(SqlClient.SqlClient, statement)))
@@ -133,11 +142,12 @@ const open = async (options: TabOptions = {}, chatApi: ChatApiOptions = {}) => {
     actions: terminal.actions,
     panel: () => terminal.queries.panel.toArray[0],
     /** The panel's tabs, oldest first: whose, whether the person's own, and open yet. */
-    tabs: () => terminal.queries.tabs.toArray.map(({ id, ownerLogin, mine, status }) => ({ id, ownerLogin, mine, status })),
+    tabs: () =>
+      terminal.queries.tabs.toArray.map(({ id, ownerLogin, mine, status }) => ({ id, ownerLogin, mine, status })),
     /** Tracks branch `name` of `octo/hello` as `POST /api/branches` does, with no page open: its id. */
     track: (name: string, mode: "locked" | "open" = "open") =>
       runtime.runPromise(
-        api.branches.run(Conversations.track("github/octo/hello", name, mode, shaOf(name))),
+        api.branches.run(Conversations.track("github/octo/hello", name, mode, shaOf(name)))
       ).then((tracked) => tracked.branch.branchId),
     /** Opens branch `name`'s page, as the route does: its id. */
     openBranch: async (name: string) => (await branch.actions.open("octo", "hello", name))!,
@@ -157,7 +167,7 @@ const open = async (options: TabOptions = {}, chatApi: ChatApiOptions = {}) => {
         readonly createdAt?: string
         readonly waiting?: boolean
       },
-      options: { readonly receive?: boolean } = {},
+      options: { readonly receive?: boolean } = {}
     ) => {
       await sql((sql) =>
         sql`
@@ -170,13 +180,18 @@ const open = async (options: TabOptions = {}, chatApi: ChatApiOptions = {}) => {
       )
       if (options.receive === false) return
       // Socket tests start from a delivered row; the real open flow's delivery timing is tested separately.
-      await runtime.runPromise(Effect.flatMap(store.terminals(row.branchId), (terminals) =>
-        Effect.andThen(terminals.preload, terminals.awaitRow((terminal) => terminal.id === row.id, "40 seconds")),
-      ).pipe(Effect.provideService(FetchHttpClient.Fetch, api.fetch), Effect.timeout("40 seconds")))
+      await runtime.runPromise(
+        Effect.flatMap(store.terminals(row.branchId), (terminals) =>
+          Effect.andThen(
+            terminals.preload,
+            terminals.awaitRow((terminal) => terminal.id === row.id, "40 seconds")
+          )).pipe(Effect.provideService(FetchHttpClient.Fetch, api.fetch), Effect.timeout("40 seconds"))
+      )
       await runtime.runPromise(Effect.yieldNow)
     },
     /** Marks terminal `id` waiting for a free machine, as `terminal/Open`'s admission does. */
-    wait: (id: string) => sql((sql) => sql`UPDATE terminal_sessions SET waiting = true, updated_at = now() WHERE id = ${id}`),
+    wait: (id: string) =>
+      sql((sql) => sql`UPDATE terminal_sessions SET waiting = true, updated_at = now() WHERE id = ${id}`),
     /** Settles terminal `id` as `terminal/Open` or its machine does: open, failed to open, or ended. */
     settle: (id: string, status: "open" | "failed" | "ended") =>
       sql((sql) =>
@@ -199,8 +214,8 @@ const open = async (options: TabOptions = {}, chatApi: ChatApiOptions = {}) => {
     /** `terminal/open` dispatches from Open terminal that ended `outcome`. */
     dispatched: (outcome: string) =>
       runtime.runSync(
-        Metric.value(Metric.withAttributes(dispatches, { flow: "terminal/open", door: "button", outcome })),
-      ).count,
+        Metric.value(Metric.withAttributes(dispatches, { flow: "terminal/open", door: "button", outcome }))
+      ).count
   }
 }
 
@@ -242,8 +257,8 @@ describe("Open terminal", () => {
       payload: {
         terminalId,
         ownerId: member.subject.id,
-        branch: { branchId, owner: "octo", name: "hello", branch: "feature/one" },
-      },
+        branch: { branchId, owner: "octo", name: "hello", branch: "feature/one" }
+      }
     }])
     expect(await tab.rows(branchId)).toEqual([{ id: terminalId, status: "opening", ownerId: member.subject.id }])
     // Pressing it again while it opens asks nothing more.
@@ -274,7 +289,7 @@ describe("Open terminal", () => {
     await until(() =>
       expect(peer.frames).toEqual([
         { bytes: "ls\r" },
-        { control: { type: "resize", cols: 120, rows: 40 } },
+        { control: { type: "resize", cols: 120, rows: 40 } }
       ])
     )
     expect(tab.count(bytes, { direction: "in" })).toBe(3)
@@ -401,26 +416,30 @@ describe("Open terminal", () => {
 })
 
 describe("Open terminal settles", () => {
-  test("failed when its machine couldn't start; the next press opens a new one; no branch shown asks nothing", async () => {
-    const tab = await open()
-    const branchId = await tab.track("feature/one")
-    await tab.actions.show(branchId)
+  test(
+    "failed when its machine couldn't start; the next press opens a new one; no branch shown asks nothing",
+    async () => {
+      const tab = await open()
+      const branchId = await tab.track("feature/one")
+      await tab.actions.show(branchId)
 
-    const first = await pressOpen(tab)
-    await tab.settle(first, "failed")
-    await until(() => expect(tab.panel()).toMatchObject({ terminalId: first, phase: "failed" }))
+      const first = await pressOpen(tab)
+      await tab.settle(first, "failed")
+      await until(() => expect(tab.panel()).toMatchObject({ terminalId: first, phase: "failed" }))
 
-    // The person's next press opens a new one, and their failed one goes.
-    const second = await pressOpen(tab)
-    expect(second).not.toBe(first)
-    expect((await tab.rows(branchId)).map(({ id }) => id)).toEqual([second])
+      // The person's next press opens a new one, and their failed one goes.
+      const second = await pressOpen(tab)
+      expect(second).not.toBe(first)
+      expect((await tab.rows(branchId)).map(({ id }) => id)).toEqual([second])
 
-    await until(() => expect(tab.dispatched("done")).toBe(2))
-    await tab.actions.show(null)
-    tab.actions.open()
-    expect(tab.panel()).toMatchObject({ branchId: null, terminalId: null, phase: "idle" })
-    expect(tab.api.branches.starts).toHaveLength(2)
-  }, WITHIN)
+      await until(() => expect(tab.dispatched("done")).toBe(2))
+      await tab.actions.show(null)
+      tab.actions.open()
+      expect(tab.panel()).toMatchObject({ branchId: null, terminalId: null, phase: "idle" })
+      expect(tab.api.branches.starts).toHaveLength(2)
+    },
+    WITHIN
+  )
 
   test("an answer that comes after the person left the branch isn't shown", async () => {
     const tab = await open()
@@ -443,11 +462,13 @@ describe("Open terminal settles", () => {
 
     const terminalId = await pressOpen(tab)
     // Its run settled it failed and another open dropped it, in one transaction.
-    await tab.runtime.runPromise(tab.api.branches.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
-      sql.withTransaction(Effect.andThen(
-        sql`UPDATE terminal_sessions SET status = 'failed', failure = 'unavailable', ended_at = now() WHERE id = ${terminalId}`,
-        sql`DELETE FROM terminal_sessions WHERE id = ${terminalId}`,
-      )))))
+    await tab.runtime.runPromise(
+      tab.api.branches.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        sql.withTransaction(Effect.andThen(
+          sql`UPDATE terminal_sessions SET status = 'failed', failure = 'unavailable', ended_at = now() WHERE id = ${terminalId}`,
+          sql`DELETE FROM terminal_sessions WHERE id = ${terminalId}`
+        ))))
+    )
 
     await until(() => expect(tab.panel()).toMatchObject({ terminalId, phase: "failed" }))
   }, WITHIN)
@@ -482,67 +503,90 @@ describe("Open terminal settles", () => {
     expect(await stopped.rows(branchId)).toEqual([])
   }, WITHIN)
 
-  test.each([null, "guest"] as const)("an existing terminal is refused for deployment role %s before any socket can dial", async role => {
-    const host = await terminalHost()
-    const tab = await open({}, { origin: host.origin })
-    const branchId = await tab.track("feature/one")
-    const terminalId = crypto.randomUUID()
-    await tab.insert({ id: terminalId, branchId, ownerId: other, status: "open" })
-    const { session } = await tab.runtime.runPromise(Effect.service(AuthStore))
-    await tab.runtime.runPromise(session.update(SESSION, row => { row.role = role }))
-    await tab.actions.show(branchId, terminalId)
-    expect(tab.panel()?.phase).toBe("members_only")
-    expect(panelViewOf(tab.panel(), [], true)).toMatchObject({ badge: "Members can run machines.", open: undefined })
-    tab.actions.attach(terminalId, frame().sink)
-    expect(host.peers).toEqual([])
-    expect(tab.panel()?.phase).toBe("members_only")
-  }, WITHIN)
+  test.each([null, "guest"] as const)(
+    "an existing terminal is refused for deployment role %s before any socket can dial",
+    async (role) => {
+      const host = await terminalHost()
+      const tab = await open({}, { origin: host.origin })
+      const branchId = await tab.track("feature/one")
+      const terminalId = crypto.randomUUID()
+      await tab.insert({ id: terminalId, branchId, ownerId: other, status: "open" })
+      const { session } = await tab.runtime.runPromise(Effect.service(AuthStore))
+      await tab.runtime.runPromise(session.update(SESSION, (row) => {
+        row.role = role
+      }))
+      await tab.actions.show(branchId, terminalId)
+      expect(tab.panel()?.phase).toBe("members_only")
+      expect(panelViewOf(tab.panel(), [], true)).toMatchObject({ badge: "Members can run machines.", open: undefined })
+      tab.actions.attach(terminalId, frame().sink)
+      expect(host.peers).toEqual([])
+      expect(tab.panel()?.phase).toBe("members_only")
+    },
+    WITHIN
+  )
 
-  test("a Member's terminal remains usable while the session view is reconnecting; the server still authorizes the socket", async () => {
-    const host = await terminalHost()
-    const tab = await open({}, { origin: host.origin })
-    const branchId = await tab.track("feature/one")
-    const terminalId = crypto.randomUUID()
-    await tab.insert({ id: terminalId, branchId, ownerId: member.subject.id, status: "open" })
-    const { session } = await tab.runtime.runPromise(Effect.service(AuthStore))
-    await tab.runtime.runPromise(session.update(SESSION, row => { row.status = "unreachable" }))
-    await tab.actions.show(branchId)
-    const detach = tab.actions.attach(terminalId, frame().sink)
-    await until(() => expect(host.peers).toHaveLength(1))
-    host.peers[0]!.ready("write")
-    await until(() => expect(tab.panel()?.phase).toBe("open"))
-    detach()
-  }, WITHIN)
+  test(
+    "a Member's terminal remains usable while the session view is reconnecting; the server still authorizes the socket",
+    async () => {
+      const host = await terminalHost()
+      const tab = await open({}, { origin: host.origin })
+      const branchId = await tab.track("feature/one")
+      const terminalId = crypto.randomUUID()
+      await tab.insert({ id: terminalId, branchId, ownerId: member.subject.id, status: "open" })
+      const { session } = await tab.runtime.runPromise(Effect.service(AuthStore))
+      await tab.runtime.runPromise(session.update(SESSION, (row) => {
+        row.status = "unreachable"
+      }))
+      await tab.actions.show(branchId)
+      const detach = tab.actions.attach(terminalId, frame().sink)
+      await until(() => expect(host.peers).toHaveLength(1))
+      host.peers[0]!.ready("write")
+      await until(() => expect(tab.panel()?.phase).toBe("open"))
+      detach()
+    },
+    WITHIN
+  )
 
-  test.each([null, "guest", "signed_out", "another_person"] as const)("a live terminal closes on confirmed %s and never redials", async role => {
-    const host = await terminalHost()
-    const tab = await open({}, { origin: host.origin })
-    const branchId = await tab.track("feature/one")
-    const terminalId = crypto.randomUUID()
-    await tab.insert({ id: terminalId, branchId, ownerId: member.subject.id, status: "open" })
-    await tab.actions.show(branchId)
-    const { session } = await tab.runtime.runPromise(Effect.service(AuthStore))
-    await tab.runtime.runPromise(Effect.gen(function* () {
-      yield* attachTerminal(terminalId, frame().sink)
-      yield* Effect.promise(() => until(() => expect(host.peers).toHaveLength(1)))
-      const peer = host.peers[0]!
-      peer.ready("write")
-      yield* Effect.promise(() => until(() => expect(tab.panel()?.phase).toBe("open")))
-      yield* session.update(SESSION, row => {
-        if (role === "signed_out") row.status = "signed_out"
-        else if (role === "another_person") row.login = "another-person"
-        else row.role = role
-      })
-      yield* Effect.promise(() => until(() => expect(tab.panel()?.phase).toBe(role === "signed_out" || role === "another_person" ? "no_access" : "members_only"), 10_000))
-      yield* Effect.promise(() => peer.closed)
-      expect(yield* Ref.get(tab.store.connection)).toBeUndefined()
-      // Advance beyond every initial reconnect delay: the cancelled connection must have no pending dial.
-      yield* TestClock.adjust(60_000)
-      expect(host.peers).toHaveLength(1)
-      tab.actions.input("must not reach the old shell")
-      expect(peer.frames).toEqual([])
-    }).pipe(Effect.provide(TestClock.layer())))
-  }, WITHIN)
+  test.each([null, "guest", "signed_out", "another_person"] as const)(
+    "a live terminal closes on confirmed %s and never redials",
+    async (role) => {
+      const host = await terminalHost()
+      const tab = await open({}, { origin: host.origin })
+      const branchId = await tab.track("feature/one")
+      const terminalId = crypto.randomUUID()
+      await tab.insert({ id: terminalId, branchId, ownerId: member.subject.id, status: "open" })
+      await tab.actions.show(branchId)
+      const { session } = await tab.runtime.runPromise(Effect.service(AuthStore))
+      await tab.runtime.runPromise(
+        Effect.gen(function*() {
+          yield* attachTerminal(terminalId, frame().sink)
+          yield* Effect.promise(() => until(() => expect(host.peers).toHaveLength(1)))
+          const peer = host.peers[0]!
+          peer.ready("write")
+          yield* Effect.promise(() => until(() => expect(tab.panel()?.phase).toBe("open")))
+          yield* session.update(SESSION, (row) => {
+            if (role === "signed_out") row.status = "signed_out"
+            else if (role === "another_person") row.login = "another-person"
+            else row.role = role
+          })
+          yield* Effect.promise(() =>
+            until(() =>
+              expect(tab.panel()?.phase).toBe(
+                role === "signed_out" || role === "another_person" ? "no_access" : "members_only"
+              ), 10_000)
+          )
+          yield* Effect.promise(() => peer.closed)
+          expect(yield* Ref.get(tab.store.connection)).toBeUndefined()
+          // Advance beyond every initial reconnect delay: the cancelled connection must have no pending dial.
+          yield* TestClock.adjust(60_000)
+          expect(host.peers).toHaveLength(1)
+          tab.actions.input("must not reach the old shell")
+          expect(peer.frames).toEqual([])
+        }).pipe(Effect.provide(TestClock.layer()))
+      )
+    },
+    WITHIN
+  )
 
   test("a deployment role lost after selection is checked again before the existing terminal dials", async () => {
     const host = await terminalHost()
@@ -553,7 +597,9 @@ describe("Open terminal settles", () => {
     await tab.actions.show(branchId)
     expect(tab.panel()?.phase).toBe("connecting")
     const { session } = await tab.runtime.runPromise(Effect.service(AuthStore))
-    await tab.runtime.runPromise(session.update(SESSION, row => { row.role = null }))
+    await tab.runtime.runPromise(session.update(SESSION, (row) => {
+      row.role = null
+    }))
     tab.actions.attach(terminalId, frame().sink)
     expect(tab.panel()?.phase).toBe("members_only")
     expect(host.peers).toEqual([])
@@ -566,7 +612,10 @@ describe("Open terminal settles", () => {
     let attempts = 0
     // Inject the dispatch service's refusal, as a durable terminal/open result would deliver it.
     await tab.runtime.runPromise(openTerminal.pipe(Effect.provideService(FlowDispatch, {
-      dispatch: () => { attempts++; return Effect.succeed({ _tag: "Failed", error: new TerminalOpenRefused({ reason: "members_only" }) }) as never },
+      dispatch: () => {
+        attempts++
+        return Effect.succeed({ _tag: "Failed", error: new TerminalOpenRefused({ reason: "members_only" }) }) as never
+      }
     })))
     expect(tab.panel()?.phase).toBe("members_only")
     expect(panelViewOf(tab.panel(), [], true)).toMatchObject({ badge: "Members can run machines.", open: undefined })
@@ -576,7 +625,7 @@ describe("Open terminal settles", () => {
 
   test.each<[string, Actor | null]>([
     ["signed out", null],
-    ["a Guest", { subject: { kind: "person", id: "person-guest" }, role: "guest" }],
+    ["a Guest", { subject: { kind: "person", id: "person-guest" }, role: "guest" }]
   ])("%s has no access, and no terminal is recorded", async (_who, actor) => {
     const tab = await open({}, { actor })
     const branchId = await tab.track("feature/one")
@@ -600,50 +649,69 @@ describe("the panel", () => {
       const createdAt = "2026-10-21T12:00:00.000Z"
       await tab.insert({ id: mine, branchId, ownerId: member.subject.id, status: "opening", createdAt })
       const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
-      await tab.runtime.runPromise(Effect.gen(function* () {
-        yield* TestClock.setTime(Date.parse(createdAt) + age)
-        expect(yield* show(branchId)).toBe(mine)
-        yield* TestClock.adjust(0)
-        const panel = yield* tab.store.panel.get(PANEL)
-        expect(panel).toMatchObject({ _tag: "Some", value: { terminalId: mine, phase: "failed" } })
-        const tabs = yield* tab.store.tabs.toArray
-        expect(tabs).toMatchObject([{ id: mine, mine: true, status: "opening" }])
-        expect(panelViewOf(panel._tag === "Some" ? panel.value : undefined, tabs, true)).toEqual({
-          badge: undefined, open: "button", screen: { kind: "open" },
-        })
-      }).pipe(
-        Effect.provide(TestClock.layer()),
-        Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((entry) => void logs.push(Logger.formatStructured.log(entry)))])),
-      ))
+      await tab.runtime.runPromise(
+        Effect.gen(function*() {
+          yield* TestClock.setTime(Date.parse(createdAt) + age)
+          expect(yield* show(branchId)).toBe(mine)
+          yield* TestClock.adjust(0)
+          const panel = yield* tab.store.panel.get(PANEL)
+          expect(panel).toMatchObject({ _tag: "Some", value: { terminalId: mine, phase: "failed" } })
+          const tabs = yield* tab.store.tabs.toArray
+          expect(tabs).toMatchObject([{ id: mine, mine: true, status: "opening" }])
+          expect(panelViewOf(panel._tag === "Some" ? panel.value : undefined, tabs, true)).toEqual({
+            badge: undefined,
+            open: "button",
+            screen: { kind: "open" }
+          })
+        }).pipe(
+          Effect.provide(TestClock.layer()),
+          Effect.provideService(
+            Logger.CurrentLoggers,
+            new Set([Logger.make((entry) => void logs.push(Logger.formatStructured.log(entry)))])
+          )
+        )
+      )
       expect(await tab.synced(branchId, mine)).toBe("opening")
       // A row that never settled is logged once as it fails the panel.
       expect(logs.filter((log) => log.message === "terminal.open.unsettled")).toEqual([
-        expect.objectContaining({ level: "WARN", annotations: expect.objectContaining({ feature: "terminal", outcome: "timeout" }) }),
+        expect.objectContaining({
+          level: "WARN",
+          annotations: expect.objectContaining({ feature: "terminal", outcome: "timeout" })
+        })
       ])
-    }, WITHIN,
+    },
+    WITHIN
   )
 
-  test("a row waiting for a free machine stays opening past the open's deadline, says so, and fails only past the wait", async () => {
-    const tab = await open()
-    const branchId = await tab.track("feature/one")
-    const mine = crypto.randomUUID()
-    const createdAt = "2026-10-21T12:00:00.000Z"
-    await tab.insert({ id: mine, branchId, ownerId: member.subject.id, status: "opening", createdAt, waiting: true })
-    await tab.runtime.runPromise(Effect.gen(function* () {
-      yield* TestClock.setTime(Date.parse(createdAt))
-      expect(yield* show(branchId)).toBe(mine)
-      yield* TestClock.adjust(OPEN_DEADLINE_SECONDS * 1000 + 60_000)
-      const panel = yield* tab.store.panel.get(PANEL)
-      expect(panel).toMatchObject({ _tag: "Some", value: { terminalId: mine, phase: "opening" } })
-      const tabs = yield* tab.store.tabs.toArray
-      expect(tabs).toMatchObject([{ id: mine, mine: true, status: "opening", waiting: true }])
-      expect(panelViewOf(panel._tag === "Some" ? panel.value : undefined, tabs, true)).toEqual({
-        badge: undefined, open: "waiting", screen: { kind: "open" },
-      })
-      yield* TestClock.adjust(ADMIT_WAIT_SECONDS * 1000)
-      expect(yield* tab.store.panel.get(PANEL)).toMatchObject({ _tag: "Some", value: { phase: "failed" } })
-    }).pipe(Effect.provide(TestClock.layer())))
-  }, WITHIN)
+  test(
+    "a row waiting for a free machine stays opening past the open's deadline, says so, and fails only past the wait",
+    async () => {
+      const tab = await open()
+      const branchId = await tab.track("feature/one")
+      const mine = crypto.randomUUID()
+      const createdAt = "2026-10-21T12:00:00.000Z"
+      await tab.insert({ id: mine, branchId, ownerId: member.subject.id, status: "opening", createdAt, waiting: true })
+      await tab.runtime.runPromise(
+        Effect.gen(function*() {
+          yield* TestClock.setTime(Date.parse(createdAt))
+          expect(yield* show(branchId)).toBe(mine)
+          yield* TestClock.adjust(OPEN_DEADLINE_SECONDS * 1000 + 60_000)
+          const panel = yield* tab.store.panel.get(PANEL)
+          expect(panel).toMatchObject({ _tag: "Some", value: { terminalId: mine, phase: "opening" } })
+          const tabs = yield* tab.store.tabs.toArray
+          expect(tabs).toMatchObject([{ id: mine, mine: true, status: "opening", waiting: true }])
+          expect(panelViewOf(panel._tag === "Some" ? panel.value : undefined, tabs, true)).toEqual({
+            badge: undefined,
+            open: "waiting",
+            screen: { kind: "open" }
+          })
+          yield* TestClock.adjust(ADMIT_WAIT_SECONDS * 1000)
+          expect(yield* tab.store.panel.get(PANEL)).toMatchObject({ _tag: "Some", value: { phase: "failed" } })
+        }).pipe(Effect.provide(TestClock.layer()))
+      )
+    },
+    WITHIN
+  )
 
   test("a row that starts waiting while the panel waits on it gets the wait's time too", async () => {
     const tab = await open()
@@ -651,85 +719,101 @@ describe("the panel", () => {
     const mine = crypto.randomUUID()
     const createdAt = "2026-10-21T12:00:00.000Z"
     await tab.insert({ id: mine, branchId, ownerId: member.subject.id, status: "opening", createdAt })
-    await tab.runtime.runPromise(Effect.gen(function* () {
-      yield* TestClock.setTime(Date.parse(createdAt))
-      expect(yield* show(branchId)).toBe(mine)
-      yield* Effect.promise(() => tab.wait(mine))
-      yield* Effect.promise(() =>
-        until(async () => expect(await tab.runtime.runPromise(tab.store.tabs.toArray)).toMatchObject([{ id: mine, waiting: true }]))
-      )
-      // Past the open's own deadline from its creation: still opening, waiting.
-      yield* TestClock.adjust(OPEN_DEADLINE_SECONDS * 1000 + 1_000)
-      expect(yield* tab.store.panel.get(PANEL)).toMatchObject({ _tag: "Some", value: { phase: "opening" } })
-    }).pipe(Effect.provide(TestClock.layer())))
-  }, WITHIN)
-
-  test.each([0, 90_000])("page load keeps an opening row aged %i ms opening until its original deadline", async (age) => {
-    const tab = await open()
-    const branchId = await tab.track("feature/one")
-    const mine = crypto.randomUUID()
-    const createdAt = "2026-10-21T12:00:00.000Z"
-    await tab.insert({ id: mine, branchId, ownerId: member.subject.id, status: "opening", createdAt })
-    await tab.runtime.runPromise(Effect.gen(function* () {
-      yield* TestClock.setTime(Date.parse(createdAt) + age)
-      expect(yield* show(branchId)).toBe(mine)
-      yield* TestClock.adjust(OPEN_DEADLINE_SECONDS * 1000 - age - 1)
-      const panel = yield* tab.store.panel.get(PANEL)
-      expect(panel).toMatchObject({ _tag: "Some", value: { terminalId: mine, phase: "opening" } })
-      const tabs = yield* tab.store.tabs.toArray
-      expect(panelViewOf(panel._tag === "Some" ? panel.value : undefined, tabs, true)).toEqual({
-        badge: undefined, open: "opening", screen: { kind: "open" },
-      })
-      yield* TestClock.adjust(1)
-      expect(yield* tab.store.panel.get(PANEL)).toMatchObject({ _tag: "Some", value: { phase: "failed" } })
-    }).pipe(Effect.provide(TestClock.layer())))
-  }, WITHIN)
-
-  test("shows the person's own live terminal, or the one they watch, by its row; else the branch's first live one, else Open terminal", async () => {
-    const tab = await open()
-    const branchId = await tab.track("feature/one")
-    const [ended, failed, theirs] = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()]
-    await tab.insert({ id: ended, branchId, ownerId: member.subject.id, status: "ended" })
-    await tab.insert({ id: failed, branchId, ownerId: other, status: "failed" })
-    await tab.insert({ id: theirs, branchId, ownerId: other, status: "opening" })
-
-    // The person's own ended terminal isn't theirs to show: wait for the branch's live one, even if it isn't theirs.
-    expect(await tab.actions.show(branchId)).toBe(theirs)
-    expect(tab.panel()).toMatchObject({ branchId, terminalId: theirs, phase: "opening" })
-    await tab.settle(theirs, "open")
-    await until(() => expect(tab.panel()?.phase).toBe("connecting"))
-    expect(tab.panel()).toMatchObject({ branchId, terminalId: theirs, phase: "connecting" })
-    expect(tab.tabs()).toEqual([{ id: theirs, ownerLogin: other, mine: false, status: "open" }])
-    await tab.actions.show(branchId, ended)
-    expect(tab.panel()).toMatchObject({ terminalId: ended, phase: "ended" })
-    await tab.actions.show(branchId, failed)
-    expect(tab.panel()).toMatchObject({ terminalId: failed, phase: "failed" })
-    await tab.actions.show(branchId, theirs)
-    expect(tab.panel()).toMatchObject({ terminalId: theirs, phase: "connecting" })
-    expect(await tab.actions.show(branchId, crypto.randomUUID())).toBeNull()
-    expect(tab.panel()).toMatchObject({ terminalId: null, phase: "idle" })
-
-    // Their own terminal opening: the panel waits for its row, then shows it, and the tabs follow the rows.
-    const mine = crypto.randomUUID()
-    await tab.insert({ id: mine, branchId, ownerId: member.subject.id, status: "opening" })
-    await until(async () => expect(await tab.synced(branchId, mine)).toBe("opening"))
-    await tab.actions.show(branchId)
-    expect(tab.panel()).toMatchObject({ terminalId: mine, phase: "opening" })
-    await until(() =>
-      expect(tab.tabs()).toEqual([
-        { id: theirs, ownerLogin: other, mine: false, status: "open" },
-        { id: mine, ownerLogin: member.subject.id, mine: true, status: "opening" },
-      ])
+    await tab.runtime.runPromise(
+      Effect.gen(function*() {
+        yield* TestClock.setTime(Date.parse(createdAt))
+        expect(yield* show(branchId)).toBe(mine)
+        yield* Effect.promise(() => tab.wait(mine))
+        yield* Effect.promise(() =>
+          until(async () =>
+            expect(await tab.runtime.runPromise(tab.store.tabs.toArray)).toMatchObject([{ id: mine, waiting: true }])
+          )
+        )
+        // Past the open's own deadline from its creation: still opening, waiting.
+        yield* TestClock.adjust(OPEN_DEADLINE_SECONDS * 1000 + 1_000)
+        expect(yield* tab.store.panel.get(PANEL)).toMatchObject({ _tag: "Some", value: { phase: "opening" } })
+      }).pipe(Effect.provide(TestClock.layer()))
     )
-    await tab.settle(mine, "open")
-    await until(() => expect(tab.panel()).toMatchObject({ terminalId: mine, phase: "connecting" }))
-    // Shown from its row, not pressed: nothing to time.
-    expect(tab.openTimes()).toBe(0)
-
-    await tab.actions.show(null)
-    expect(tab.panel()).toMatchObject({ branchId: null, terminalId: null, phase: "idle", access: null })
-    expect(tab.tabs()).toEqual([])
   }, WITHIN)
+
+  test.each([0, 90_000])(
+    "page load keeps an opening row aged %i ms opening until its original deadline",
+    async (age) => {
+      const tab = await open()
+      const branchId = await tab.track("feature/one")
+      const mine = crypto.randomUUID()
+      const createdAt = "2026-10-21T12:00:00.000Z"
+      await tab.insert({ id: mine, branchId, ownerId: member.subject.id, status: "opening", createdAt })
+      await tab.runtime.runPromise(
+        Effect.gen(function*() {
+          yield* TestClock.setTime(Date.parse(createdAt) + age)
+          expect(yield* show(branchId)).toBe(mine)
+          yield* TestClock.adjust(OPEN_DEADLINE_SECONDS * 1000 - age - 1)
+          const panel = yield* tab.store.panel.get(PANEL)
+          expect(panel).toMatchObject({ _tag: "Some", value: { terminalId: mine, phase: "opening" } })
+          const tabs = yield* tab.store.tabs.toArray
+          expect(panelViewOf(panel._tag === "Some" ? panel.value : undefined, tabs, true)).toEqual({
+            badge: undefined,
+            open: "opening",
+            screen: { kind: "open" }
+          })
+          yield* TestClock.adjust(1)
+          expect(yield* tab.store.panel.get(PANEL)).toMatchObject({ _tag: "Some", value: { phase: "failed" } })
+        }).pipe(Effect.provide(TestClock.layer()))
+      )
+    },
+    WITHIN
+  )
+
+  test(
+    "shows the person's own live terminal, or the one they watch, by its row; else the branch's first live one, else Open terminal",
+    async () => {
+      const tab = await open()
+      const branchId = await tab.track("feature/one")
+      const [ended, failed, theirs] = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()]
+      await tab.insert({ id: ended, branchId, ownerId: member.subject.id, status: "ended" })
+      await tab.insert({ id: failed, branchId, ownerId: other, status: "failed" })
+      await tab.insert({ id: theirs, branchId, ownerId: other, status: "opening" })
+
+      // The person's own ended terminal isn't theirs to show: wait for the branch's live one, even if it isn't theirs.
+      expect(await tab.actions.show(branchId)).toBe(theirs)
+      expect(tab.panel()).toMatchObject({ branchId, terminalId: theirs, phase: "opening" })
+      await tab.settle(theirs, "open")
+      await until(() => expect(tab.panel()?.phase).toBe("connecting"))
+      expect(tab.panel()).toMatchObject({ branchId, terminalId: theirs, phase: "connecting" })
+      expect(tab.tabs()).toEqual([{ id: theirs, ownerLogin: other, mine: false, status: "open" }])
+      await tab.actions.show(branchId, ended)
+      expect(tab.panel()).toMatchObject({ terminalId: ended, phase: "ended" })
+      await tab.actions.show(branchId, failed)
+      expect(tab.panel()).toMatchObject({ terminalId: failed, phase: "failed" })
+      await tab.actions.show(branchId, theirs)
+      expect(tab.panel()).toMatchObject({ terminalId: theirs, phase: "connecting" })
+      expect(await tab.actions.show(branchId, crypto.randomUUID())).toBeNull()
+      expect(tab.panel()).toMatchObject({ terminalId: null, phase: "idle" })
+
+      // Their own terminal opening: the panel waits for its row, then shows it, and the tabs follow the rows.
+      const mine = crypto.randomUUID()
+      await tab.insert({ id: mine, branchId, ownerId: member.subject.id, status: "opening" })
+      await until(async () => expect(await tab.synced(branchId, mine)).toBe("opening"))
+      await tab.actions.show(branchId)
+      expect(tab.panel()).toMatchObject({ terminalId: mine, phase: "opening" })
+      await until(() =>
+        expect(tab.tabs()).toEqual([
+          { id: theirs, ownerLogin: other, mine: false, status: "open" },
+          { id: mine, ownerLogin: member.subject.id, mine: true, status: "opening" }
+        ])
+      )
+      await tab.settle(mine, "open")
+      await until(() => expect(tab.panel()).toMatchObject({ terminalId: mine, phase: "connecting" }))
+      // Shown from its row, not pressed: nothing to time.
+      expect(tab.openTimes()).toBe(0)
+
+      await tab.actions.show(null)
+      expect(tab.panel()).toMatchObject({ branchId: null, terminalId: null, phase: "idle", access: null })
+      expect(tab.tabs()).toEqual([])
+    },
+    WITHIN
+  )
 
   test("with no live terminal on the branch, the panel offers Open terminal", async () => {
     const tab = await open()
@@ -742,53 +826,65 @@ describe("the panel", () => {
     expect(tab.tabs()).toEqual([])
   }, WITHIN)
 
-  test("ended rows leave the empty panel alone; someone else's opening terminal is selected and followed until open", async () => {
-    const tab = await open()
-    const branchId = await tab.track("feature/one")
-    await tab.actions.show(branchId)
-    const closed = crypto.randomUUID()
-    await tab.insert({ id: closed, branchId, ownerId: other, status: "ended" })
-    await until(async () => expect(await tab.synced(branchId, closed)).toBe("ended"))
-    expect(tab.panel()).toMatchObject({ terminalId: null, phase: "idle" })
-    expect(tab.tabs()).toEqual([])
-    const theirs = crypto.randomUUID()
-    await tab.insert({ id: theirs, branchId, ownerId: other, status: "opening" })
-    await until(() => expect(tab.panel()).toMatchObject({ terminalId: theirs, phase: "opening" }))
-    await tab.settle(theirs, "open")
-    await until(() => expect(tab.panel()).toMatchObject({ terminalId: theirs, phase: "connecting" }))
-  }, WITHIN)
+  test(
+    "ended rows leave the empty panel alone; someone else's opening terminal is selected and followed until open",
+    async () => {
+      const tab = await open()
+      const branchId = await tab.track("feature/one")
+      await tab.actions.show(branchId)
+      const closed = crypto.randomUUID()
+      await tab.insert({ id: closed, branchId, ownerId: other, status: "ended" })
+      await until(async () => expect(await tab.synced(branchId, closed)).toBe("ended"))
+      expect(tab.panel()).toMatchObject({ terminalId: null, phase: "idle" })
+      expect(tab.tabs()).toEqual([])
+      const theirs = crypto.randomUUID()
+      await tab.insert({ id: theirs, branchId, ownerId: other, status: "opening" })
+      await until(() => expect(tab.panel()).toMatchObject({ terminalId: theirs, phase: "opening" }))
+      await tab.settle(theirs, "open")
+      await until(() => expect(tab.panel()).toMatchObject({ terminalId: theirs, phase: "connecting" }))
+    },
+    WITHIN
+  )
 
   // The branch terminal's reload on a loaded machine (2026-10-20): the branch's rows came after the preload's deadline,
   // so the panel showed nothing, and the Terminal view stayed blank beside the person's live terminal.
-  test("a panel that found no terminal shows the first that turns up: the person's own, waiting while it opens", async () => {
-    const tab = await open()
-    const branchId = await tab.track("feature/one")
-    expect(await tab.actions.show(branchId)).toBeNull()
-    expect(tab.panel()).toMatchObject({ branchId, terminalId: null, phase: "idle" })
+  test(
+    "a panel that found no terminal shows the first that turns up: the person's own, waiting while it opens",
+    async () => {
+      const tab = await open()
+      const branchId = await tab.track("feature/one")
+      expect(await tab.actions.show(branchId)).toBeNull()
+      expect(tab.panel()).toMatchObject({ branchId, terminalId: null, phase: "idle" })
 
-    const mine = crypto.randomUUID()
-    await tab.insert({ id: mine, branchId, ownerId: member.subject.id, status: "opening" })
-    await until(() => expect(tab.panel()).toMatchObject({ branchId, terminalId: mine, phase: "opening" }))
-    await tab.settle(mine, "open")
-    await until(() => expect(tab.panel()).toMatchObject({ terminalId: mine, phase: "connecting" }))
+      const mine = crypto.randomUUID()
+      await tab.insert({ id: mine, branchId, ownerId: member.subject.id, status: "opening" })
+      await until(() => expect(tab.panel()).toMatchObject({ branchId, terminalId: mine, phase: "opening" }))
+      await tab.settle(mine, "open")
+      await until(() => expect(tab.panel()).toMatchObject({ terminalId: mine, phase: "connecting" }))
 
-    // Once it shows one, another terminal turning up doesn't take the panel over.
-    const theirs = crypto.randomUUID()
-    await tab.insert({ id: theirs, branchId, ownerId: other, status: "open" })
-    await until(async () => expect(await tab.synced(branchId, theirs)).toBe("open"))
-    expect(tab.panel()).toMatchObject({ terminalId: mine })
-  }, WITHIN)
+      // Once it shows one, another terminal turning up doesn't take the panel over.
+      const theirs = crypto.randomUUID()
+      await tab.insert({ id: theirs, branchId, ownerId: other, status: "open" })
+      await until(async () => expect(await tab.synced(branchId, theirs)).toBe("open"))
+      expect(tab.panel()).toMatchObject({ terminalId: mine })
+    },
+    WITHIN
+  )
 
-  test("watching a terminal that isn't there waits for nothing else; another branch's panel ignores this one's rows", async () => {
-    const tab = await open()
-    const branchId = await tab.track("feature/one")
-    expect(await tab.actions.show(branchId, crypto.randomUUID())).toBeNull()
-    const theirs = crypto.randomUUID()
-    await tab.insert({ id: theirs, branchId, ownerId: other, status: "open" })
-    await until(async () => expect(await tab.synced(branchId, theirs)).toBe("open"))
-    await until(() => expect(tab.tabs()).toEqual([{ id: theirs, ownerLogin: other, mine: false, status: "open" }]))
-    expect(tab.panel()).toMatchObject({ branchId, terminalId: null, phase: "idle" })
-  }, WITHIN)
+  test(
+    "watching a terminal that isn't there waits for nothing else; another branch's panel ignores this one's rows",
+    async () => {
+      const tab = await open()
+      const branchId = await tab.track("feature/one")
+      expect(await tab.actions.show(branchId, crypto.randomUUID())).toBeNull()
+      const theirs = crypto.randomUUID()
+      await tab.insert({ id: theirs, branchId, ownerId: other, status: "open" })
+      await until(async () => expect(await tab.synced(branchId, theirs)).toBe("open"))
+      await until(() => expect(tab.tabs()).toEqual([{ id: theirs, ownerLogin: other, mine: false, status: "open" }]))
+      expect(tab.panel()).toMatchObject({ branchId, terminalId: null, phase: "idle" })
+    },
+    WITHIN
+  )
 
   test("a terminal that opens after the person left the branch doesn't take the panel over", async () => {
     const tab = await open()
@@ -809,7 +905,9 @@ describe("the panel", () => {
     const tab = await open({}, { actor: null })
     const branchId = await tab.track("feature/one")
     // A signed-out shape intentionally delivers no terminal rows.
-    await tab.insert({ id: crypto.randomUUID(), branchId, ownerId: member.subject.id, status: "open" }, { receive: false })
+    await tab.insert({ id: crypto.randomUUID(), branchId, ownerId: member.subject.id, status: "open" }, {
+      receive: false
+    })
 
     await tab.actions.show(branchId)
 
@@ -823,8 +921,8 @@ describe("the panel", () => {
     // Each fiber yields every 16 operations, so the two interleave: the second asks while the first opens it.
     const [first, second] = await tab.runtime.runPromise(
       Effect.all([tab.store.terminals(branchId), tab.store.terminals(branchId)], { concurrency: 2 }).pipe(
-        Effect.provideService(Scheduler.MaxOpsBeforeYield, 16),
-      ),
+        Effect.provideService(Scheduler.MaxOpsBeforeYield, 16)
+      )
     )
 
     expect(second).toBe(first)
@@ -842,14 +940,18 @@ const client = (fetch: typeof globalThis.fetch, within?: "50 millis") =>
   Effect.runPromise(
     Effect.flatMap(Effect.service(TerminalClient), (terminals) =>
       terminals.open({ terminalId: "t-1", branchId: "b-1", cols: DEFAULT_COLS, rows: DEFAULT_ROWS })).pipe(
-        Effect.match({ onSuccess: (opened) => opened, onFailure: (refused) => refused }),
+        Effect.match({
+          onSuccess: (opened) =>
+            opened,
+          onFailure: (refused) => refused
+        }),
         Effect.provide(
           TerminalClient.layer({ origin: "http://chat.test", ...(within === undefined ? {} : { within }) }).pipe(
             Layer.provide(FetchHttpClient.layer),
-            Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
-          ),
-        ),
-      ),
+            Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch))
+          )
+        )
+      )
   )
 
 describe("the terminal client", () => {
@@ -863,20 +965,20 @@ describe("the terminal client", () => {
     expect(await client(recording)).toEqual({ terminalId: "t-1" })
     expect(posted).toEqual([{
       url: "http://chat.test/api/terminals",
-      body: { terminalId: "t-1", branchId: "b-1", cols: 80, rows: 24 },
+      body: { terminalId: "t-1", branchId: "b-1", cols: 80, rows: 24 }
     }])
     expect(await client(async () => Response.json({ terminalId: "t-0" }))).toEqual({ terminalId: "t-0" })
 
     expect(await client(() => Promise.reject(new TypeError("offline")))).toEqual(new OpenRefused({}))
     expect(await client(() => new Promise(() => {}), "50 millis")).toEqual(new OpenRefused({}))
     expect(await client(async () => Response.json({ code: "locked" }, { status: 409 }))).toEqual(
-      new OpenRefused({ status: 409, code: "locked" }),
+      new OpenRefused({ status: 409, code: "locked" })
     )
     expect(await client(async () => new Response("busy", { status: 503 }))).toEqual(new OpenRefused({ status: 503 }))
     const cut = new ReadableStream({ start: (controller) => controller.error(new TypeError("cut")) })
     expect(await client(async () => new Response(cut, { status: 502 }))).toEqual(new OpenRefused({ status: 502 }))
     expect(await client(async () => Response.json({ opened: true }, { status: 202 }))).toEqual(
-      new OpenRefused({ status: 202 }),
+      new OpenRefused({ status: 202 })
     )
   })
 })
@@ -893,16 +995,18 @@ describe("the step", () => {
         Effect.provide(
           TerminalClient.layer({ origin: "http://chat.test", within: "50 millis" }).pipe(
             Layer.provide(FetchHttpClient.layer),
-            Layer.provide(Layer.succeed(FetchHttpClient.Fetch, () => answer())),
-          ),
+            Layer.provide(Layer.succeed(FetchHttpClient.Fetch, () => answer()))
+          )
         ),
         Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
-        Effect.provideService(Metric.MetricRegistry, registry),
-      ),
+        Effect.provideService(Metric.MetricRegistry, registry)
+      )
     )
     const count = (outcome: string) =>
       Effect.runSync(
-        Metric.value(Metric.withAttributes(opens, { outcome })).pipe(Effect.provideService(Metric.MetricRegistry, registry)),
+        Metric.value(Metric.withAttributes(opens, { outcome })).pipe(
+          Effect.provideService(Metric.MetricRegistry, registry)
+        )
       ).count
     return { ended, logs, count }
   }
@@ -916,27 +1020,40 @@ describe("the step", () => {
     [404, undefined, new TerminalOpenRefused({ reason: "not_found" }), "not_found"],
     [400, undefined, new TerminalOpenRefused({ reason: "invalid" }), "invalid"],
     [413, undefined, new TerminalOpenRefused({ reason: "invalid" }), "invalid"],
-    [503, undefined, new TerminalOpenUnavailable(), "unavailable"],
-  ])("ChatApi's %s (%s) fails the step, counted and logged by its outcome and status", async (status, code, failure, outcome) => {
-    const { ended, logs, count } = await step(async () => Response.json({ code: code ?? "x" }, { status }))
+    [503, undefined, new TerminalOpenUnavailable(), "unavailable"]
+  ])(
+    "ChatApi's %s (%s) fails the step, counted and logged by its outcome and status",
+    async (status, code, failure, outcome) => {
+      const { ended, logs, count } = await step(async () => Response.json({ code: code ?? "x" }, { status }))
 
-    expect(ended).toEqual({ failed: failure })
-    expect(count(outcome)).toBe(1)
-    expect(logs).toEqual([
-      expect.objectContaining({
-        level: "WARN",
-        message: "terminal.open",
-        annotations: expect.objectContaining({ outcome, status, terminalId: "t-1", branchId: "b-1", feature: "terminal" }),
-      }),
-    ])
-  })
+      expect(ended).toEqual({ failed: failure })
+      expect(count(outcome)).toBe(1)
+      expect(logs).toEqual([
+        expect.objectContaining({
+          level: "WARN",
+          message: "terminal.open",
+          annotations: expect.objectContaining({
+            outcome,
+            status,
+            terminalId: "t-1",
+            branchId: "b-1",
+            feature: "terminal"
+          })
+        })
+      ])
+    }
+  )
 
   test("opening is counted and logged as Info; no answer at all is unavailable, with no status", async () => {
     const opened = await step(async () => Response.json({ terminalId: "t-1" }, { status: 202 }))
     expect(opened.ended).toEqual({ opened: { terminalId: "t-1" } })
     expect(opened.count("opening")).toBe(1)
     expect(opened.logs).toEqual([
-      expect.objectContaining({ level: "INFO", message: "terminal.open", annotations: expect.objectContaining({ outcome: "opening" }) }),
+      expect.objectContaining({
+        level: "INFO",
+        message: "terminal.open",
+        annotations: expect.objectContaining({ outcome: "opening" })
+      })
     ])
     expect(opened.logs[0]!.annotations).not.toHaveProperty("status")
 

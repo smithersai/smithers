@@ -425,7 +425,7 @@ describe("Permission construction and PlatformError projection", () => {
 
   it.each([[null], [[]], [new Date()], ["text"]])("rejects non-record metadata roots: %s", (meta) => {
     expect(() =>
-      new PermissionRequired({
+      PermissionRequired.new({
         requestId: "r",
         capability,
         tier: "sealed",

@@ -17,7 +17,7 @@ const program = Effect.gen(function*() {
 
 This barrel and `BunHost` import `@effect/platform-bun` at module load. It
 and the Effect Node platform packages are bundled privately, built from
-`effect@4.1.1`. `effect` is a required peer at exactly `4.1.0`.
+`effect@4.1.1`. `effect` is a required peer at exactly `4.1.1`.
 
 :::warning
 This entry point is Node-only in the browser-bundle sense: it falls back to the
@@ -58,13 +58,13 @@ implementation identities, and platform module re-exports.
 
 ### Layers
 
-| Export             | Signature                                                                                                   |
-| ------------------ | ----------------------------------------------------------------------------------------------------------- |
-| `layer`            | `Layer.Layer<BunHost \| Crypto.Crypto>`                                                                     |
-| `layerAt`          | `(root: string) => Layer.Layer<BunHost \| Crypto.Crypto>`                                                   |
-| `layerContained`   | `(options?: ContainedOptions) => Layer.Layer<BunHost \| Crypto.Crypto, never, ProcessLedger>`               |
-| `layerContainedAt` | `(root: string, options?: ContainedOptions) => Layer.Layer<BunHost \| Crypto.Crypto, never, ProcessLedger>` |
-| `layerHttpClient`  | `Layer.Layer<HttpClient>`                                                                                   |
+| Export             | Signature                                                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `layer`            | `Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom)>`                                                                     |
+| `layerAt`          | `(root: string) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom)>`                                                   |
+| `layerContained`   | `(options?: ContainedOptions) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom), never, ProcessLedger>`               |
+| `layerContainedAt` | `(root: string, options?: ContainedOptions) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom), never, ProcessLedger>` |
+| `layerHttpClient`  | `Layer.Layer<HttpClient>`                                                                                                                        |
 
 `layer` provides all five Host services, including the runtime-independent
 `Path`. `Jj` is bound to the process working directory.

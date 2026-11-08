@@ -3,7 +3,7 @@
  * @since 1.0.0
  */
 
-import { WebSocket as NodeWebSocketClient } from "@effect/platform-node/NodeWS"
+import { WebSocket as NodeWebSocket } from "@effect/platform-node/NodeWS"
 import type * as Socket from "effect/socket/Socket"
 
 /**
@@ -16,7 +16,7 @@ export const make = (credential?: string): Socket.WebSocketConstructor["Service"
     ? options
     : undefined
   const protocols = configured === undefined ? options as string | Array<string> | undefined : undefined
-  const socket = new NodeWebSocketClient(address, protocols, {
+  const socket = new NodeWebSocket(address, protocols, {
     ...configured,
     headers: { ...configured?.headers, ...(credential === undefined ? {} : { authorization: `Bearer ${credential}` }) }
   })

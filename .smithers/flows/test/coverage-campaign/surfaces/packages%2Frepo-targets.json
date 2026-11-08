@@ -1,0 +1,3867 @@
+{
+  "id": "packages/repo-targets",
+  "name": "@smthrs/repo-targets",
+  "owner": {
+    "declaration": "packages/repo-targets/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "test": "vitest run",
+    "check": "vibelang --noEmit"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "production": [
+    "browser/browser-check.mjs",
+    "browser/browser-contract.mjs",
+    "bun-coverage/children.mjs",
+    "bun-coverage/instrument.mjs",
+    "bun-coverage/manifest.mjs",
+    "bun-coverage/preload.mjs",
+    "bun-coverage/receipts.mjs",
+    "bun-coverage/run.mjs",
+    "ci/shards.ts",
+    "conformance/readWorkspaceInventory.ts",
+    "contracts/check-conflict-markers.mjs",
+    "contracts/check-dependency-boundaries.mjs",
+    "contracts/check-known-red-coverage.mjs",
+    "contracts/check-lockfile-parity.mjs",
+    "contracts/check-release-evidence-tags.mjs",
+    "contracts/check-single-effect-version.mjs",
+    "contracts/check-test-pins.mjs",
+    "contracts/check-toolchain-pins.mjs",
+    "contracts/check-tracked-hygiene.d.mts",
+    "contracts/check-tracked-hygiene.mjs",
+    "contracts/ci-inventory.mjs",
+    "contracts/ci-planner.mjs",
+    "contracts/generate-ci.mjs",
+    "contracts/register-public-export.mjs",
+    "contracts/require-toolchain.mjs",
+    "scripts/build-library.d.mts",
+    "scripts/build-library.mjs",
+    "scripts/build.mjs",
+    "scripts/circular.d.mts",
+    "scripts/circular.mjs",
+    "scripts/import-rules.mjs",
+    "scripts/private-effect-adapters.mjs",
+    "scripts/workspace-packages.d.mts",
+    "scripts/workspace-packages.mjs",
+    "src/BuildAndCheckTypeScriptPackage.ts",
+    "src/CircularImports.ts",
+    "src/HiddenHostAccess.ts",
+    "src/ImportAnalysis.ts",
+    "src/ImportRules.ts",
+    "src/ImportRulesCheck.ts",
+    "src/index.ts",
+    "src/JevRules.ts",
+    "src/ReviewDocsAgainstCode.ts",
+    "src/ReviewJsdocAgainstCode.ts",
+    "src/ReviewLint.ts",
+    "src/ReviewTagsMigrationsAndKeys.ts",
+    "src/SdkRules.ts",
+    "test-utils/coverage-teardown.mjs",
+    "test-utils/effect-property.d.mts",
+    "test-utils/effect-property.mjs",
+    "test-utils/test-process-environment.mjs",
+    "test-utils/test-schemas.ts",
+    "test-utils/vitest-root-temp.d.mts",
+    "test-utils/vitest-root-temp.mjs"
+  ],
+  "tests": [
+    "packages/repo-targets/bun-coverage/coverage.test.mjs",
+    "packages/repo-targets/bun-coverage/fixtures/child.ts",
+    "packages/repo-targets/bun-coverage/fixtures/entry.ts",
+    "packages/repo-targets/bun-coverage/fixtures/hard-kill-parent.ts",
+    "packages/repo-targets/bun-coverage/fixtures/parallel-parent.ts",
+    "packages/repo-targets/bun-coverage/fixtures/parent.test.ts",
+    "packages/repo-targets/bun-coverage/fixtures/parent.ts",
+    "packages/repo-targets/bun-coverage/fixtures/signal-child.ts",
+    "packages/repo-targets/bun-coverage/fixtures/signal-parent.ts",
+    "packages/repo-targets/bun-coverage/fixtures/source.ts",
+    "packages/repo-targets/bun-coverage/fixtures/syntax.test.ts",
+    "packages/repo-targets/bun-coverage/fixtures/syntax.ts",
+    "packages/repo-targets/bun-coverage/fixtures/types.d.ts",
+    "packages/repo-targets/bun-coverage/fixtures/view.tsx",
+    "packages/repo-targets/bun-coverage/receipts.test.mjs",
+    "packages/repo-targets/bun-coverage/run.test.mjs",
+    "packages/repo-targets/conformance/ci.test.ts",
+    "packages/repo-targets/conformance/conformanceOwnership.test.ts",
+    "packages/repo-targets/conformance/coverage.test.ts",
+    "packages/repo-targets/conformance/publication.test.ts",
+    "packages/repo-targets/conformance/repositoryConformance.test.ts",
+    "packages/repo-targets/conformance/spawnContainment.test.ts",
+    "packages/repo-targets/conformance/workspaceInventory.test.ts",
+    "packages/repo-targets/contracts/barrels.test.mjs",
+    "packages/repo-targets/contracts/check-conflict-markers.test.mjs",
+    "packages/repo-targets/contracts/check-dependency-boundaries.test.mjs",
+    "packages/repo-targets/contracts/check-known-red-coverage.test.mjs",
+    "packages/repo-targets/contracts/check-lockfile-parity.test.mjs",
+    "packages/repo-targets/contracts/check-single-effect-version.test.mjs",
+    "packages/repo-targets/contracts/check-test-pins.test.mjs",
+    "packages/repo-targets/contracts/check-toolchain-pins.test.mjs",
+    "packages/repo-targets/contracts/check-tracked-hygiene.test.mjs",
+    "packages/repo-targets/contracts/ci-inventory.test.mjs",
+    "packages/repo-targets/contracts/cli-verbs.test.mjs",
+    "packages/repo-targets/contracts/dev-compiler-isolation.test.mjs",
+    "packages/repo-targets/contracts/drift-job.test.mjs",
+    "packages/repo-targets/contracts/egress-http-client.test.mjs",
+    "packages/repo-targets/contracts/fault-skips.test.mjs",
+    "packages/repo-targets/contracts/fixtures/public-export-surface.json",
+    "packages/repo-targets/contracts/installed-consumer-boundary.test.mjs",
+    "packages/repo-targets/contracts/mac-distribution.test.mjs",
+    "packages/repo-targets/contracts/machine-paths.test.mjs",
+    "packages/repo-targets/contracts/mvp-docs.test.mjs",
+    "packages/repo-targets/contracts/native-windows.test.mjs",
+    "packages/repo-targets/contracts/package-contract.test.mjs",
+    "packages/repo-targets/contracts/private-effect-adapters.test.mjs",
+    "packages/repo-targets/contracts/public-export-maps.test.mjs",
+    "packages/repo-targets/contracts/reliability-workflow.test.mjs",
+    "packages/repo-targets/contracts/runner-contract.test.mjs",
+    "packages/repo-targets/contracts/scratch-artifacts.test.mjs",
+    "packages/repo-targets/contracts/test-script-wiring.test.mjs",
+    "packages/repo-targets/scripts/workspace-packages.test.mjs",
+    "packages/repo-targets/test-utils/coverage-temp-cleanup.test.mjs",
+    "packages/repo-targets/test-utils/matrix-temp-cleanup.test.mjs",
+    "packages/repo-targets/test-utils/orphan-temp-cleanup.test.mjs",
+    "packages/repo-targets/test-utils/process-cache-temp-cleanup.test.mjs",
+    "packages/repo-targets/test-utils/vitest-temp-cleanup.test.mjs",
+    "packages/repo-targets/test/BuildAndCheckTypeScriptPackage.test.ts",
+    "packages/repo-targets/test/BuildLibrary.test.ts",
+    "packages/repo-targets/test/Circular.test.ts",
+    "packages/repo-targets/test/CiSelection.test.ts",
+    "packages/repo-targets/test/CiShards.test.ts",
+    "packages/repo-targets/test/EffectProperty.test.ts",
+    "packages/repo-targets/test/HiddenHostAccess.test.ts",
+    "packages/repo-targets/test/ImportAnalysis.test.ts",
+    "packages/repo-targets/test/ImportRules.test.ts",
+    "packages/repo-targets/test/index.test.ts",
+    "packages/repo-targets/test/JevRules.test.ts",
+    "packages/repo-targets/test/NativeCoverage.test.ts",
+    "packages/repo-targets/test/plan.test.ts",
+    "packages/repo-targets/test/plan.ts",
+    "packages/repo-targets/test/ReviewLint.test.ts",
+    "packages/repo-targets/test/SdkRules.test.ts",
+    "packages/repo-targets/test/TempCleanup.test.ts",
+    "packages/repo-targets/test/toolchain.ts"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    "packages/repo-targets/browser/browser-check.mjs",
+    "packages/repo-targets/browser/browser-contract.mjs",
+    "packages/repo-targets/bun-coverage/children.mjs",
+    "packages/repo-targets/bun-coverage/coverage.test.mjs",
+    "packages/repo-targets/bun-coverage/fixtures/child.ts",
+    "packages/repo-targets/bun-coverage/fixtures/entry.ts",
+    "packages/repo-targets/bun-coverage/fixtures/hard-kill-parent.ts",
+    "packages/repo-targets/bun-coverage/fixtures/parallel-parent.ts",
+    "packages/repo-targets/bun-coverage/fixtures/parent.test.ts",
+    "packages/repo-targets/bun-coverage/fixtures/parent.ts",
+    "packages/repo-targets/bun-coverage/fixtures/signal-child.ts",
+    "packages/repo-targets/bun-coverage/fixtures/signal-parent.ts",
+    "packages/repo-targets/bun-coverage/fixtures/source.ts",
+    "packages/repo-targets/bun-coverage/fixtures/syntax.test.ts",
+    "packages/repo-targets/bun-coverage/fixtures/syntax.ts",
+    "packages/repo-targets/bun-coverage/fixtures/types.d.ts",
+    "packages/repo-targets/bun-coverage/fixtures/view.tsx",
+    "packages/repo-targets/bun-coverage/instrument.mjs",
+    "packages/repo-targets/bun-coverage/manifest.mjs",
+    "packages/repo-targets/bun-coverage/preload.mjs",
+    "packages/repo-targets/bun-coverage/README.md",
+    "packages/repo-targets/bun-coverage/receipts.mjs",
+    "packages/repo-targets/bun-coverage/receipts.test.mjs",
+    "packages/repo-targets/bun-coverage/run.mjs",
+    "packages/repo-targets/bun-coverage/run.test.mjs",
+    "packages/repo-targets/contracts/native-windows.test.mjs",
+    "packages/repo-targets/test-utils/process-cache-temp-cleanup.test.mjs",
+    "packages/repo-targets/test-utils/test-process-environment.mjs",
+    "packages/repo-targets/test/NativeCoverage.test.ts"
+  ],
+  "ignoredCases": [
+    {
+      "path": "packages/repo-targets/bun-coverage/coverage.test.mjs",
+      "line": 77,
+      "text": "writeFileSync(join(root, \"ignore.ts\"), '/* istanbul ignore next */\\nexport const skip = () => 1')"
+    },
+    {
+      "path": "packages/repo-targets/bun-coverage/coverage.test.mjs",
+      "line": 79,
+      "text": "writeFileSync(join(root, \"literal.ts\"), 'export const text = \"istanbul ignore next\"')"
+    },
+    {
+      "path": "packages/repo-targets/conformance/coverage.test.ts",
+      "line": 481,
+      "text": "// activate `istanbul ignore` comments under a different parser while"
+    },
+    {
+      "path": "packages/repo-targets/conformance/coverage.test.ts",
+      "line": 500,
+      "text": "// plus a start/stop range variant — so `c8 ignore next`,"
+    },
+    {
+      "path": "packages/repo-targets/conformance/coverage.test.ts",
+      "line": 501,
+      "text": "// `istanbul ignore else`, and `node:coverage ignore file` are all live"
+    },
+    {
+      "path": "packages/repo-targets/conformance/coverage.test.ts",
+      "line": 502,
+      "text": "// directives that the earlier literal-`v8 ignore` grep never saw."
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.mjs",
+      "line": 6,
+      "text": "* `it.fails`/`test.fails` (an assertion that current behavior is wrong),"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.mjs",
+      "line": 7,
+      "text": "* `.skip`/`.todo` (disabled outright), and a `.skipIf`/`.runIf` gated on an"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.mjs",
+      "line": 13,
+      "text": "* A `.skipIf`/`.runIf` on `process.platform`, on an installed binary, or on a"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.test.mjs",
+      "line": 11,
+      "text": "`it.fails(\"a\", () => {})`,"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.test.mjs",
+      "line": 12,
+      "text": "`test.skip(\"b\", () => {})`,"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.test.mjs",
+      "line": 13,
+      "text": "`it.effect.skip(\"c\", () => {})`,"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.test.mjs",
+      "line": 14,
+      "text": "`it.live.todo(\"d\")`,"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.test.mjs",
+      "line": 15,
+      "text": "`describe.skip(\"e\", () => {})`"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.test.mjs",
+      "line": 29,
+      "text": "`describe.skipIf(process.platform === \"win32\")(\"windows\", () => {})`,"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.test.mjs",
+      "line": 30,
+      "text": "`describe.skipIf(!jjInstalled)(\"needs jj\", () => {})`,"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.test.mjs",
+      "line": 31,
+      "text": "`describe.skipIf(wasmBytes === undefined)(\"needs wasm\", () => {})`,"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.test.mjs",
+      "line": 43,
+      "text": "`describe.skipIf(wasmBytes === undefined)(\"needs wasm\", () => {})`"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.test.mjs",
+      "line": 58,
+      "text": "`it.effect.skipIf(!slowTests)(\"slow three\", () => {})`"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.test.mjs",
+      "line": 66,
+      "text": "`describe.skipIf(seat === undefined)(\"live seat\", () => {})`"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.test.mjs",
+      "line": 72,
+      "text": "const bracketed = `describe.skipIf(process.env[\"GITHUB_TOKEN\"] === undefined)(\"live\", () => {})`"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.test.mjs",
+      "line": 77,
+      "text": "`describe.skipIf(token === undefined)(\"live aliased\", () => {})`"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.test.mjs",
+      "line": 83,
+      "text": "const gated = `describe.skipIf(!process.env.SMITHERS_TEST_PG_URL)(\"real database\", () => {})`"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.test.mjs",
+      "line": 141,
+      "text": "const gated = `describe.skipIf(!process.env.SUPPLIED_URL)(\"real database\", () => {})`"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.test.mjs",
+      "line": 143,
+      "text": "const serviceOnly = `describe.skipIf(!process.env.POSTGRES_PASSWORD)(\"service secret\", () => {})`"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.test.mjs",
+      "line": 172,
+      "text": "{ file = \"Ledger.test.mjs\", text = `it.skip(${JSON.stringify(title)}, () => {})\\n` } = {}"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.test.mjs",
+      "line": 192,
+      "text": "const row = (name, pinned) => `| \\`${name}\\` | \\`${pinned}\\` | \\`it.skip\\` |`"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.test.mjs",
+      "line": 223,
+      "text": "`it.effect.skip(${JSON.stringify(title)}) {`,"
+    },
+    {
+      "path": "packages/repo-targets/contracts/check-test-pins.test.mjs",
+      "line": 256,
+      "text": "writeFileSync(join(packageDirectory, \"test\", \"Capability.test.mjs\"), `it.fails(${JSON.stringify(title)}, () => {})\\n`)"
+    },
+    {
+      "path": "packages/repo-targets/contracts/fault-skips.test.mjs",
+      "line": 20,
+      "text": "* every other case in its file, and a `.todo` reports as a pass. Both are"
+    },
+    {
+      "path": "packages/repo-targets/contracts/fault-skips.test.mjs",
+      "line": 21,
+      "text": "* refused outright, and so is an inverted expectation (`.fails`)."
+    },
+    {
+      "path": "packages/repo-targets/contracts/fault-skips.test.mjs",
+      "line": 23,
+      "text": "* `.fails` is refused for a narrow reason, and the reason is not \"a matrix may"
+    },
+    {
+      "path": "packages/repo-targets/contracts/fault-skips.test.mjs",
+      "line": 29,
+      "text": "* `.fails` does is turn exactly that test into a pass: the run goes green, the"
+    },
+    {
+      "path": "packages/repo-targets/contracts/fault-skips.test.mjs",
+      "line": 239,
+      "text": "const parked = [...source.text.matchAll(/\\b(?:it|test|describe)\\.todo\\b/g)]"
+    },
+    {
+      "path": "packages/repo-targets/contracts/fault-skips.test.mjs",
+      "line": 258,
+      "text": "const inverted = [...source.text.matchAll(/\\b(?:it|test)\\.fails\\b/g)]"
+    },
+    {
+      "path": "packages/repo-targets/contracts/fault-skips.test.mjs",
+      "line": 262,
+      "text": "`${source.relative} pins a defect with .fails, which turns a failing required gate into a pass. `"
+    }
+  ],
+  "configurations": [
+    {
+      "path": "packages/repo-targets/package.json",
+      "sha256": "4534c04a822a7e0d1a0de122a0f8f30ef12e9befd0ace306939b6e0d68cedadc",
+      "source": "{\n  \"name\": \"@smthrs/repo-targets\",\n  \"version\": \"0.0.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"smthrs\": {\n    \"group\": \"tooling\"\n  },\n  \"description\": \"Build defaults and AI review rules for the Smithers repository.\",\n  \"exports\": {\n    \".\": \"./src/index.ts\"\n  },\n  \"scripts\": {\n    \"test\": \"vitest run\",\n    \"check\": \"vibelang --noEmit\"\n  },\n  \"dependencies\": {\n    \"@effect/sql-pg\": \"4.0.5\",\n    \"@smthrs/targets\": \"workspace:*\",\n    \"effect\": \"4.0.5\"\n  },\n  \"devDependencies\": {\n    \"typescript\": \"5.9.3\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\",\n    \"@smthrs/plan\": \"workspace:*\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"fast-check\": \"4.9.0\",\n    \"vibelang-runtime\": \"0.0.8\",\n    \"vibelang-unplugin\": \"0.0.8\"\n  }\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 28,
+          "text": "\"@vitest/coverage-v8\": \"5.0.0\","
+        }
+      ]
+    },
+    {
+      "path": "packages/repo-targets/PACKAGE.ts",
+      "sha256": "51d2716648d92b95d7d7b6b38d775a1f7e5eb9ba1d7b80bd164b2f9f7f744e6b",
+      "source": "import { Smithers } from \"@smthrs/targets\"\nimport { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from \"./src/index.ts\"\nimport { listFiles } from \"./contracts/check-tracked-hygiene.mjs\"\nimport { repoRoot } from \"./scripts/workspace-packages.mjs\"\n\nconst cwd = \"packages/repo-targets\"\nconst sources = Smithers.glob(\"src/**/*.ts\")\n// Files the cases import or read beside the suites themselves: the shared\n// test helpers, the property helper every package typechecks against, the\n// build scripts `BuildLibrary.test.ts` runs, and this declaration, which\n// `CiSelection.test.ts` loads.\nconst testSupportFiles = [\n  Smithers.glob(\"test/**/*.ts\"),\n  Smithers.glob(\"test-utils/**\"),\n  Smithers.file(\"//packages/smithers/flows/database/src/TestSchemas.ts\"),\n  Smithers.glob(\"scripts/**\"),\n  Smithers.glob(\"ci/**\"),\n  Smithers.file(\"PACKAGE.ts\")\n]\nconst testSupport = Smithers.Filegroup({\n  srcs: [Smithers.file(\"//packages/smithers/build/targets/test-support/plan.ts\")],\n  cwd\n})\nconst check = Smithers.Typecheck({\n  srcs: [sources, ...testSupportFiles],\n  deps: [testSupport],\n  tsconfig: Smithers.file(\"tsconfig.json\"),\n  buildMode: false,\n  incremental: false,\n  cwd\n})\nconst test = Smithers.Vitest({\n  tests: [Smithers.glob(\"test/**/*.test.ts\")],\n  sources: [sources, ...testSupportFiles],\n  deps: [testSupport],\n  config: Smithers.file(\"vitest.config.ts\"),\n  environment: \"node\",\n  passWithNoTests: false,\n  cwd\n})\n\n/** The whole checkout is the subject of repository-wide engineering gates. */\nconst repositoryPackages = Object.fromEntries(\n  [...new Set([\"\", ...listFiles(repoRoot, { includeUntracked: true })\n    .filter((path) => path === \"PACKAGE.ts\" || path.endsWith(\"/PACKAGE.ts\"))\n    .map((path) => path === \"PACKAGE.ts\" ? \"\" : path.slice(0, -\"/PACKAGE.ts\".length))])]\n    .sort()\n    .map((directory) => [\n      `repositoryInputs_${Buffer.from(directory).toString(\"hex\") || \"root\"}`,\n      Smithers.Filegroup({ cwd: directory === \"\" ? \"./\" : directory, srcs: [Smithers.glob(\"**/*\")] })\n    ])\n)\nconst repositoryInputs = Smithers.Filegroup({ srcs: Object.values(repositoryPackages) })\nconst workflowSources = Smithers.Filegroup({ cwd: \".github\", srcs: [Smithers.glob(\"workflows/*.yml\")] })\n\n/**\n * The repository contract gates under `contracts/`, digested as the input of\n * each gate here, with the workspace inventory they import from this package's\n * `scripts/`.\n */\nconst contracts = [\n  Smithers.glob(\"//packages/repo-targets/contracts/**/*.mjs\"),\n  Smithers.file(\"//packages/repo-targets/scripts/workspace-packages.mjs\")\n]\n\n/**\n * Fails on a git or jj conflict marker committed into a tracked text file\n * (#3151). A per-commit drift gate: `git grep` over the tree takes a second.\n * Check mode runs it in a scratch copy with no `.git`, where it searches every\n * file no `.gitignore` excludes.\n *\n * @since 1.0.0\n * @category lint\n */\nconst conflictMarkers = Smithers.Shell.Diff({\n  shell: \"node packages/repo-targets/contracts/check-conflict-markers.mjs\",\n  changes: [],\n  timeout: \"2m\"\n})\n\n/**\n * The conflict-marker check's own contract: every git and jj marker form, the\n * look-alikes it leaves, binary and untracked files, and a failed search.\n *\n * @since 1.0.0\n * @category test\n */\nconst conflictMarkersUnit = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/check-conflict-markers.test.mjs\")]),\n  srcs: contracts,\n  deps: []\n})\n\n/** Tracked files must resolve declared paths and exclude local build and agent state. */\nconst trackedHygiene = Smithers.Shell.Diff({\n  shell: \"node packages/repo-targets/contracts/check-tracked-hygiene.mjs --projected-tree\",\n  data: [repositoryInputs],\n  changes: [],\n  timeout: \"2m\"\n})\n\nconst trackedHygieneUnit = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/check-tracked-hygiene.test.mjs\")]),\n  srcs: contracts,\n  deps: []\n})\n\n/**\n * The toolchain drift gate: package.json `engines` and `packageManager`,\n * flake.nix, and the generated CI workflow must agree with the runtimes and\n * package manager `.smithers/WORKSPACE.ts` declares, and every workflow,\n * script and image that names a Rust release must name the channel\n * `rust-toolchain.toml` pins. The gate reads both declarations itself, so a\n * version moves in one file.\n *\n * @since 0.1.0\n * @category test\n */\nconst toolchainPins = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/check-toolchain-pins.test.mjs\")]),\n  srcs: [\n    ...contracts,\n    Smithers.file(\"//.smithers/WORKSPACE.ts\"),\n    Smithers.file(\"//package.json\"),\n    Smithers.file(\"//flake.nix\"),\n    Smithers.file(\"//.node-version\"),\n    Smithers.file(\"//rust-toolchain.toml\"),\n    Smithers.file(\"//PACKAGE.ts\"),\n    Smithers.file(\"//.github/scripts/ci/cloud.sh\")\n  ],\n  deps: [workflowSources]\n})\n\n/**\n * One `effect` version across every manifest, both lockfiles, and the install.\n *\n * Two Effect instances do not share schema internals, so a duplicate is a\n * runtime defect rather than a size problem. The release pins one supported\n * version and this target proves the tree agrees.\n *\n * @since 0.1.0\n * @category test\n */\nconst effectVersion = Smithers.NodeTest({\n  summary: \"Exactly one effect version resolves across every manifest and both lockfiles.\",\n  featured: true,\n  runner: Smithers.entrypoint(Smithers.file(\"//packages/repo-targets/contracts/check-single-effect-version.mjs\")),\n  srcs: [...contracts, Smithers.file(\"//.smithers/flows/release/pack-release.mjs\"), Smithers.file(\"//pnpm-lock.yaml\"), Smithers.file(\"//bun.lock\")],\n  deps: []\n})\n\n/**\n * The effect-version gate's own cases, installed consumer boundaries, and\n * development-only compiler isolation in the root pnpm hook.\n *\n * @since 0.1.0\n * @category test\n */\nconst releaseContracts = Smithers.NodeTest({\n  runner: Smithers.testRunner([\n    Smithers.file(\"//packages/repo-targets/contracts/check-single-effect-version.test.mjs\"),\n    Smithers.file(\"//packages/repo-targets/contracts/installed-consumer-boundary.test.mjs\"),\n    Smithers.file(\"//packages/repo-targets/contracts/dev-compiler-isolation.test.mjs\")\n  ]),\n  srcs: [\n    ...contracts,\n    Smithers.file(\"//.smithers/flows/release/pack-release.mjs\"),\n    Smithers.file(\"//packages/repo-targets/contracts/check-dependency-boundaries.mjs\"),\n    Smithers.file(\"//packages/repo-targets/src/ImportAnalysis.ts\"),\n    Smithers.file(\"//.smithers/flows/release/fixtures/installed-consumer/consumer-boundary.mjs\"),\n    Smithers.file(\"//.smithers/flows/release/fixtures/installed-consumer/dependency-adapters.mjs\"),\n    Smithers.file(\"//packages/repo-targets/scripts/private-effect-adapters.mjs\"),\n    Smithers.file(\"//.pnpmfile.mjs\")\n  ],\n  deps: []\n})\n\n/**\n * Fails on any pin in the engine or tooling groups that\n * `packages/repo-targets/contracts/test-pins.md` does not explain.\n *\n * A test the default gate never runs to a pass is only acceptable when it is\n * written down.\n *\n * @since 0.1.0\n * @category test\n */\nconst testPinRegister = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/check-test-pins.test.mjs\")]),\n  srcs: [...contracts, Smithers.file(\"//packages/repo-targets/contracts/test-pins.md\")],\n  deps: []\n})\n\n/** The workspace packages whose manifests declare private Effect adapters. */\nconst privateAdapterManifests = [\n  \"packages/smithers\",\n  \"packages/smithers/build/build-cli\",\n  \"packages/smithers/migrate\",\n  \"packages/smithers/flows/platform-node\",\n  \"packages/smithers/flows/platform-bun\",\n  \"packages/smithers/gateway\",\n  \"packages/smithers/flows\"\n].map((directory) => Smithers.file(`//${directory}/package.json`))\n\nconst privateEffectAdapters = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/private-effect-adapters.test.mjs\")]),\n  srcs: [\n    ...contracts,\n    Smithers.file(\"//packages/repo-targets/scripts/private-effect-adapters.mjs\"),\n    Smithers.file(\"//packages/repo-targets/package.json\"),\n    Smithers.file(\"//packages/repo-targets/scripts/build-library.mjs\"),\n    Smithers.file(\"//packages/smithers/scripts/compile-commonjs.mjs\"),\n    ...privateAdapterManifests,\n    Smithers.file(\"//package.json\"),\n    Smithers.file(\"//pnpm-lock.yaml\"),\n    Smithers.file(\"//pnpm-workspace.yaml\")\n  ],\n  deps: []\n})\n\nconst driftJob = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/drift-job.test.mjs\")]),\n  srcs: [\n    ...contracts,\n    Smithers.file(\"//PACKAGE.ts\"),\n    Smithers.file(\"//package.json\"),\n    Smithers.file(\"//.smithers/flows/release/check-api-baseline.mjs\"),\n    Smithers.file(\"//.smithers/flows/PACKAGE.ts\"),\n    Smithers.file(\"//.smithers/flows/checks/coding-check.sh\"),\n    Smithers.file(\"//.github/workflows/drift.yml\"),\n    Smithers.file(\"//.github/workflows/ci.yml\"),\n    Smithers.file(\"//.github/workflows/release.yml\")\n  ],\n  deps: []\n})\n\n/** The Windows kernel suite runs independently of the native and Node host jobs. */\nconst nativeWindowsWorkflow = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/native-windows.test.mjs\")]),\n  srcs: [...contracts, Smithers.file(\"//.github/workflows/native-windows.yml\")],\n  deps: []\n})\n\n/**\n * The web bundle compatibility contract, compiled without a browser process.\n *\n * Browser support is a hard requirement met through layers: the contract entry\n * points must bundle for the browser, and the documented Node-only ones must\n * still fail, and fail only on a documented `node:` built-in. This gates both\n * halves.\n *\n * @since 0.1.0\n * @category test\n */\nconst webBundleContract = Smithers.NodeTest({\n  summary: \"Compile the web bundle and validate its exported surface; no browser process is started.\",\n  featured: true,\n  runner: Smithers.entrypoint(Smithers.file(\"//packages/repo-targets/browser/browser-check.mjs\")),\n  // The entry points this bundles live in other packages, and a declared glob\n  // may not cross a package boundary — it would expand to nothing and read as\n  // a contract it is not. The gate is not cacheable, so it re-runs regardless.\n  srcs: [Smithers.glob(\"//packages/repo-targets/browser/**/*.mjs\"), Smithers.file(\"//packages/repo-targets/scripts/workspace-packages.mjs\")],\n  deps: []\n})\n\n/** Real-runner sentinels: a declared runner executes its suite and fails closed. */\nconst runnerContract = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/runner-contract.test.mjs\")]),\n  srcs: contracts,\n  deps: []\n})\n\n/** Every red required target in a CI log has an owned known-red entry. */\nconst knownRedCoverage = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/check-known-red-coverage.test.mjs\")]),\n  srcs: [...contracts, Smithers.file(\"//packages/smithers/build/build-cli/src/KnownRed.ts\")],\n  deps: []\n})\n\n/** Exercises real Bun coverage collection and sealed process receipts. */\nconst bunCoverage = Smithers.NodeTest({\n  runner: Smithers.testRunner([\n    Smithers.file(\"//packages/repo-targets/bun-coverage/coverage.test.mjs\"),\n    Smithers.file(\"//packages/repo-targets/bun-coverage/receipts.test.mjs\"),\n    Smithers.file(\"//packages/repo-targets/bun-coverage/run.test.mjs\")\n  ]),\n  srcs: [Smithers.glob(\"//packages/repo-targets/bun-coverage/**/*\")],\n  timeout: \"2m\",\n  deps: []\n})\n\n/**\n * The workspace membership reader every release and repository gate shares.\n *\n * @since 0.1.0\n * @category test\n */\nconst workspacePackages = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/scripts/workspace-packages.test.mjs\")]),\n  srcs: [Smithers.file(\"//packages/repo-targets/scripts/workspace-packages.mjs\"), Smithers.file(\"//packages/repo-targets/scripts/workspace-packages.d.mts\")],\n  deps: []\n})\n\n/**\n * Lints the contract gates and the Bun coverage collector against the root\n * config's operator-script block: statement style only, no semicolons.\n *\n * @since 1.0.0\n * @category lint\n */\nconst contractsLint = Smithers.EsLint({\n  sources: [\n    Smithers.glob(\"//packages/repo-targets/browser/**/*.mjs\"),\n    Smithers.glob(\"//packages/repo-targets/contracts/**/*.mjs\"),\n    Smithers.glob(\"//packages/repo-targets/bun-coverage/**/*.mjs\"),\n    Smithers.glob(\"//packages/repo-targets/scripts/**/*.mjs\")\n  ],\n  configs: [Smithers.file(\"//eslint.config.js\")],\n  deps: [],\n  maxWarnings: 0,\n  fix: false\n})\n\n/**\n * One version across the release line, a declared publishable surface, and the\n * scripts every other gate invokes.\n *\n * The manifests it reads live in other packages, and a declared glob may not\n * cross a package boundary, so `srcs` names only this directory. The gate is\n * therefore not cacheable and re-runs regardless, which is correct: its subject\n * is the whole workspace.\n *\n * @since 1.0.0\n * @category test\n */\nconst packageContract = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/package-contract.test.mjs\")]),\n  srcs: contracts,\n  deps: []\n})\n\n/**\n * Explicit entrypoints preserve reviewed imports and block future source files.\n * @since 1.0.0\n * @category test\n */\nconst publicExportMaps = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/public-export-maps.test.mjs\")]),\n  srcs: [\n    ...contracts,\n    Smithers.file(\"//packages/smithers/build/build-cli/scripts/public-export-map.mjs\"),\n    Smithers.file(\"//packages/repo-targets/contracts/fixtures/public-export-surface.json\"),\n    Smithers.file(\"//pnpm-workspace.yaml\")\n  ],\n  deps: []\n})\n\n/**\n * The barrels re-export what they claim, checked by importing them.\n *\n * A typecheck reads the same source the declarations are generated from, so it\n * cannot catch a re-export that was never written. Loading the module can.\n *\n * @since 1.0.0\n * @category test\n */\nconst barrels = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/barrels.test.mjs\")]),\n  srcs: contracts,\n  deps: []\n})\n\n/**\n * The scheduled signal campaign records its seed, preserves its evidence and\n * verifies it.\n *\n * @since 1.0.0\n * @category test\n */\nconst reliabilityWorkflow = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/reliability-workflow.test.mjs\")]),\n  srcs: [...contracts, Smithers.file(\"//.smithers/flows/release/release-rehearsal.mjs\"), Smithers.file(\"//.github/workflows/reliability.yml\")],\n  deps: []\n})\n\n/**\n * No focused or parked test in the fault matrix, every conditional skip\n * declared with its reason, and every package that carries fault cases wired to\n * a target that runs them.\n *\n * The coverage record the suite reads is an input beside the gates themselves:\n * a required red gate names a row in `fault-gaps.md`, so editing that row has\n * to re-key this target.\n *\n * @since 1.0.0\n * @category test\n */\nconst faultSkips = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/fault-skips.test.mjs\")]),\n  srcs: [...contracts, Smithers.file(\"//packages/repo-targets/contracts/fault-gaps.md\")],\n  deps: []\n})\n\n/**\n * No operator rig under `evals/`, `scripts/`, or a package's `test/faults` tree\n * names one machine's home directory.\n *\n * @since 1.0.0\n * @category test\n */\nconst machinePaths = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/machine-paths.test.mjs\")]),\n  srcs: contracts,\n  deps: []\n})\n\n/**\n * No app tracks a run's scratch output: captured exit codes or enrollment\n * traces.\n *\n * @since 1.0.0\n * @category test\n */\nconst scratchArtifacts = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/scratch-artifacts.test.mjs\")]),\n  srcs: contracts,\n  deps: []\n})\n\n/**\n * The reference indexes every canonical command, retains the compatibility\n * pages, and describes flags accepted by the public parser. The generated\n * manifest and help have their own executable drift gate.\n *\n * @since 1.0.0\n * @category test\n */\nconst cliVerbs = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/cli-verbs.test.mjs\")]),\n  srcs: contracts,\n  deps: []\n})\n\n/**\n * Changed public APIs against the README. This private package has no docs\n * directory and no site reference page, so the README is its whole prose.\n *\n * @since 0.1.0\n * @category lint\n */\nconst reviewDocsAgainstCode = ReviewDocsAgainstCode({ cwd, context: [Smithers.file(\"README.md\")] })\n\n/**\n * Changed exports against their own JSDoc.\n *\n * @since 0.1.0\n * @category lint\n */\nconst reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })\n\n/**\n * `bun.lock` records the dependency ranges the manifests declare.\n *\n * A manifest change is required to refresh both lockfiles, but only\n * `pnpm-lock.yaml` was ever proved: every CI job installs with pnpm and\n * `--frozen-lockfile` rejects a stale one on the spot, while no job runs `bun\n * install` at all. Bun still executes `apps/*`, the `//packages/...:bunTest`\n * matrix, and `packages/smithers/agent/regression`, so a stale entry resolves a\n * real package at the wrong version on exactly those surfaces and nowhere else.\n *\n * The target compares rather than installs. It reads the lockfile's own\n * `workspaces` table against the manifests on disk, which is offline,\n * deterministic, and needs no Bun on the machine.\n *\n * @since 0.1.0\n * @category test\n */\nconst lockfileParity = Smithers.NodeTest({\n  runner: Smithers.entrypoint(Smithers.file(\"//packages/repo-targets/contracts/check-lockfile-parity.mjs\")),\n  srcs: [...contracts, Smithers.file(\"//bun.lock\"), Smithers.pnpmWorkspace(\"//pnpm-workspace.yaml\")],\n  deps: []\n})\n\n/**\n * The lockfile parity gate's own cases.\n *\n * @since 1.0.0\n * @category test\n */\nconst lockfileParityUnit = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/check-lockfile-parity.test.mjs\")]),\n  srcs: [...contracts],\n  deps: []\n})\n\n/**\n * Every import a workspace source makes is declared by that workspace, and no\n * source under `apps/` or `packages/` imports a durable runtime or model SDK\n * that \"Everything is a durable flow\" in the root `AGENTS.md` bans: Cloudflare\n * Workflows (directly or through Alchemy), Temporal, Inngest, Trigger.dev, the\n * Vercel AI SDK, LangChain or Mastra.\n *\n * pnpm links the whole workspace under one `node_modules`, so an undeclared\n * import of a sibling still resolves locally and then fails for a consumer who\n * installs the tarball. The sources it reads live in other packages, and a\n * declared glob may not cross a package boundary, so the gate is not cacheable\n * and re-runs regardless.\n *\n * @since 0.1.0\n * @category test\n */\nconst dependencyBoundaries = Smithers.NodeTest({\n  summary: \"No package imports cross declared workspace boundaries or a banned durable runtime.\",\n  featured: true,\n  runner: Smithers.entrypoint(Smithers.file(\"//packages/repo-targets/contracts/check-dependency-boundaries.mjs\")),\n  srcs: [\n    ...contracts,\n    Smithers.file(\"//packages/repo-targets/src/ImportAnalysis.ts\"),\n    Smithers.file(\"//packages/repo-targets/scripts/private-effect-adapters.mjs\")\n  ],\n  deps: []\n})\n\n/**\n * The dependency-boundaries gate's own cases: workspace reach-throughs, the\n * runtime and development dependency split, private Effect adapters and\n * optional peers count as runtime imports, and the durable-flow ban catches\n * every import form of a banned runtime and no lookalike, and fails the gate\n * on one outside `src/`.\n *\n * @since 0.1.0\n * @category test\n */\nconst dependencyBoundariesUnit = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/check-dependency-boundaries.test.mjs\")]),\n  srcs: [\n    ...contracts,\n    Smithers.file(\"//packages/repo-targets/src/ImportAnalysis.ts\"),\n    Smithers.file(\"//packages/repo-targets/scripts/private-effect-adapters.mjs\")\n  ],\n  deps: []\n})\n\n/** The repository conformance suites and the workspace reader they share. */\nconst conformanceSources = [Smithers.glob(\"//packages/repo-targets/conformance/**/*.ts\")]\n\n/** Typecheck the repository conformance suites. */\nconst conformanceCheck = Smithers.Typecheck({\n  srcs: conformanceSources,\n  tsconfig: Smithers.file(\"conformance/tsconfig.conformance.json\"),\n  cwd,\n  buildMode: false,\n  incremental: false,\n  deps: []\n})\n\n/**\n * Repository-wide CI, publication, coverage and containment policy.\n *\n * These checks read other packages and root configuration, so they run\n * uncached. One runner imports the suites to keep filesystem scans in one\n * process.\n */\nconst repositoryConformance = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/conformance/repositoryConformance.test.ts\")]),\n  srcs: conformanceSources,\n  deps: [conformanceCheck]\n})\n\n/**\n * Every workspace member with tests is reachable from the command CI runs.\n *\n * @since 1.0.0\n * @category test\n */\nconst testScriptWiring = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/test-script-wiring.test.mjs\")]),\n  srcs: [\n    ...contracts,\n    Smithers.file(\"//.smithers/flows/release/release-rehearsal.mjs\"),\n    Smithers.file(\"//PACKAGE.ts\"),\n    Smithers.file(\"//.smithers/target-index.json\"),\n    Smithers.file(\"//.github/workflows/ci.yml\"),\n    Smithers.file(\"//package.json\"),\n    Smithers.file(\"//pnpm-workspace.yaml\")\n  ],\n  deps: [repositoryInputs]\n})\n\n/** Mac distribution deletion and lifecycle handoff contract. */\nconst macDistribution = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/mac-distribution.test.mjs\")]),\n  srcs: [...contracts],\n  deps: [repositoryInputs]\n})\n\n/**\n * No shipped Node composition installs an HTTP client that ignores the egress\n * proxy its environment names. The gate reads shipped source across\n * `packages/`, `apps/` and `flows/`, which a declared glob may not cross, so it\n * re-runs regardless: its subject is the whole workspace.\n *\n * @since 1.0.0\n * @category test\n */\nconst egressHttpClient = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/egress-http-client.test.mjs\")]),\n  srcs: [...contracts],\n  deps: []\n})\n\n/**\n * Actual planner selection, runtime policy, sentinels and cache behavior. It\n * only plans commands, so it stays independent of builds and can run beside a\n * release gate; the NodeTest stays uncached.\n */\nconst ciInventory = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/ci-inventory.test.mjs\")]),\n  srcs: [...contracts],\n  deps: []\n})\n\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"src/**\",\n    Smithers.glob(\"contracts/**/*.mjs\", { exclude: [\"**/*.test.mjs\"] }),\n    Smithers.glob(\"bun-coverage/**/*.mjs\", { exclude: [\"**/*.test.mjs\"] }),\n    Smithers.glob(\"bun-coverage/**/*.ts\", { exclude: [\"**/*.test.ts\"] }),\n    Smithers.glob(\"browser/**/*.mjs\"),\n    \"scripts/**\", \"test-utils/**\",\n    // The repository-contract suites carry their own review checks below.\n    \"contracts/barrels.test.mjs\", \"contracts/cli-verbs.test.mjs\", \"contracts/fault-skips.test.mjs\", \"contracts/fault-gaps.md\",\n    \"contracts/machine-paths.test.mjs\", \"contracts/package-contract.test.mjs\", \"contracts/public-export-maps.test.mjs\",\n    \"contracts/reliability-workflow.test.mjs\", \"contracts/scratch-artifacts.test.mjs\",\n    \"contracts/egress-http-client.test.mjs\", \"contracts/ci-inventory.test.mjs\", \"contracts/test-script-wiring.test.mjs\"],\n  checks: [\n    {\n      id: \"review-gate-strength\",\n      title: \"Shared review macros cannot be weakened or silenced by the code they review\",\n      threat:\n        \"A contributor whose diff carries prompt text or a narrowed include makes every package's model review pass their change unreviewed.\",\n      lookFor: [\n        \"smithersReviewPrompt or a rubric that lets diff contents redefine the rubric, or that tells the model to skip files, instead of treating reviewed text as data.\",\n        \"A macro whose failOn defaults to a weaker severity than its README states, or a caller option that overrides failOn or rubric silently.\",\n        \"An anchor or include mapping in review() where the gitDiff paths and the include globs can diverge so changed files escape the reviewed set.\"\n      ],\n      paths: [\"src/ReviewLint.ts\", \"src/ReviewTagsMigrationsAndKeys.ts\", \"src/ReviewDocsAgainstCode.ts\", \"src/ReviewJsdocAgainstCode.ts\"]\n    },\n    {\n      id: \"review-context-confinement\",\n      title: \"A review sends the model only the declaring package's files and its named prose\",\n      threat:\n        \"A review macro ships a maintainer's .env, keys, or another package's private sources to a third-party model CLI because a default or derived glob matches more than the package.\",\n      lookFor: [\n        \"ReviewDocsAgainstCode interpolating packageName, taken from cwd, into a site glob without escaping glob metacharacters such as *, ?, {, or [.\",\n        \"A default include or context glob in any macro that can match .env*, *.pem, credentials files, or node_modules.\",\n        \"anchor() re-rooting an exclude or pattern without Input.resolvePath, so a '..' segment survives into the emitted workspace glob.\"\n      ],\n      paths: [\"src/ReviewLint.ts\", \"src/ReviewDocsAgainstCode.ts\"]\n    },\n    {\n      id: \"build-script-exec\",\n      title: \"Build scripts execute only the package's own toolchain and write only its dist\",\n      threat:\n        \"A build started from the wrong working directory deletes or overwrites another tree's dist on a maintainer's machine or CI runner, or ships a CommonJS bundle whose rewritten require() loads a different module.\",\n      lookFor: [\n        \"A spawnSync or exec in build-library.mjs that uses a shell or a string command instead of process.execPath with an argv array.\",\n        \"rmSync, cpSync, or writeFileSync whose target is not confined under packageRoot/dist, or that follows a symlink out of it.\",\n        \"The require-path rewrite or import() lowering regex rewriting non-relative or computed specifiers, or content outside require() and import() calls, in emitted CommonJS.\"\n      ],\n      paths: [\"scripts/**\"]\n    },\n    {\n      id: \"gate-cache-integrity\",\n      title: \"Every file a gate reads is a declared cache input\",\n      threat:\n        \"A contributor changes an undeclared test fixture, config, or tool script so CI reuses a stale green result and merges a broken or malicious change.\",\n      lookFor: [\n        \"A target in BuildAndCheckTypeScriptPackage whose tool reads a file (tsconfig, vitest config, eslint config, test-utils, build script) absent from its srcs or sources.\",\n        \"A tsconfig.test.json or vitest config that extends or imports a file (tsconfig.json, a shared base) that the check or test target does not list as an input.\",\n        \"A default such as maxWarnings, passWithNoTests, or fix that a caller can flip to make lint or test pass vacuously.\"\n      ],\n      paths: [\"src/BuildAndCheckTypeScriptPackage.ts\"]\n    },\n    {\n      id: \"ci-bootstrap-downloads\",\n      title: \"Every tool the Cloud CI bootstrap downloads and executes is pinned by version and digest\",\n      threat:\n        \"A compromised or spoofed release host swaps a jj, ripgrep, Foundry, rustup or Node binary that then runs with the CI task's repository access.\",\n      lookFor: [\n        \"A download() or curl that reaches tar/chmod/exec without download_verified, which checks node_digest or tool_digest with sha256sum -c and exits on a mismatch.\",\n        \"A version read from a repository file used unvalidated in a URL or shell word.\",\n        \"apt or npm installs that run lifecycle scripts or use sudo in a Cloud task.\"\n      ],\n      paths: [\"contracts/require-toolchain.mjs\"]\n    },\n    {\n      id: \"script-subprocess-args\",\n      title: \"Scripts spawn processes with argument vectors, never shell strings built from inputs\",\n      threat:\n        \"A crafted CLI flag, environment value, commit message or git ref makes an operator script run arbitrary shell commands on a maintainer or CI host.\",\n      lookFor: [\n        \"exec, execSync or spawn with shell:true, or sh -c, interpolating argv, environment variables, file contents or git output.\",\n        \"A string option split on spaces and executed, like rebase-cache --install.\",\n        \"An unvalidated positional argument placed into go build -ldflags or a similar command-line flag string.\"\n      ],\n      paths: [\"contracts/check-known-red-coverage.mjs\", \"bun-coverage/**\"]\n    },\n    {\n      id: \"credential-scrubbing\",\n      title: \"Cache and registry tokens never reach child processes that do not need them\",\n      threat:\n        \"A planner, benchmark or consumer probe subprocess inherits SMITHERS_CACHE_* or registry tokens and leaks them into logs or untrusted package code.\",\n      lookFor: [\n        \"A spawn passing { ...process.env } to package installs or repository code without deleting SMITHERS_CACHE_TOKEN, SMITHERS_CACHE_READ_TOKEN, SMITHERS_CACHE_WRITE_TOKEN, NPM_TOKEN or GH_TOKEN.\",\n        \"Environment dumps or error messages that print token-bearing variables.\"\n      ],\n      paths: [\"contracts/ci-planner.mjs\", \"contracts/ci-inventory.mjs\"]\n    },\n    {\n      id: \"home-path-leak-gate\",\n      title: \"The machine-path gate catches every tracked home-directory path under evals, scripts and fault suites\",\n      threat: \"A contributor commits an operator's username and home layout, leaking a maintainer's local identity and paths in the public repository, while the gate stays green.\",\n      lookFor: [\n        \"A homePath regex that misses a username-bearing path: the superuser's home (also under macOS's /var), a shell ~<name> home, Windows C:\\\\Users\\\\<name> at any escaping depth, or /Users/<name> followed by punctuation or the end of the line.\",\n        \"An isRecorded exemption broader than the reports, archive and SFT-corpus directories it documents.\",\n        \"An inventory command whose failure or empty output is treated as a pass instead of asserting status 0 and a nonempty list.\",\n        \"A git/jj selection that reads an ancestor repository's inventory instead of this workspace's.\"\n      ],\n      paths: [\"contracts/machine-paths.test.mjs\", \"contracts/scratch-artifacts.test.mjs\"]\n    },\n    {\n      id: \"child-process-containment\",\n      title: \"Gate child processes run fixed code with bounded time and no inherited secrets they do not need\",\n      threat: \"A repository file or environment value controls code a gate evaluates, or a hung child survives the gate, running attacker-chosen code or holding CI runner resources.\",\n      lookFor: [\n        \"A spawn or spawnSync `--eval`/`-e` string built by interpolating file contents, package names or environment values instead of passing data on stdin or IPC.\",\n        \"A shell: true spawn or an exec() of a string assembled from repository data.\",\n        \"A child spawned without timeout, SIGKILL fallback or t.after cleanup.\",\n        \"A child env built from `...process.env` that forwards cache tokens or credentials (SMITHERS_CACHE_TOKEN, NPM_TOKEN) to a stub it does not need them for.\",\n        \"A PATH prefix pointing at a directory that is not a fresh mkdtemp owned by the test.\"\n      ],\n      paths: [\"contracts/public-export-maps.test.mjs\", \"contracts/machine-paths.test.mjs\", \"contracts/scratch-artifacts.test.mjs\"]\n    },\n    {\n      id: \"temp-file-safety\",\n      title: \"Gates write only inside fresh temporary directories they create and remove\",\n      threat: \"Another local user on a shared CI runner pre-plants a symlink at a predictable temp path so a gate overwrites or reads a file it should not.\",\n      lookFor: [\n        \"A writeFileSync to a predictable tmpdir() path (fixed name or pid) instead of a mkdtemp directory, such as the default smithers-ci-inventory-<pid>.json artifact.\",\n        \"An environment-supplied output path (SMITHERS_CI_INVENTORY) written without checking it stays inside the workspace or a temp directory.\",\n        \"rmSync(..., { recursive: true, force: true }) on a path not returned by mkdtemp in the same test.\",\n        \"symlinkSync into a fixture that points outside the fixture root.\"\n      ],\n      paths: [\"contracts/cli-verbs.test.mjs\", \"contracts/public-export-maps.test.mjs\"]\n    },\n    {\n      id: \"publish-surface-gate\",\n      title: \"The package contract keeps the published npm surface explicit and free of private code\",\n      threat: \"A release publishes a private workspace package, an undeclared file (a .env or credentials fixture), or an unreviewed subpath to every npm user.\",\n      lookFor: [\n        \"A publishable manifest accepted without a nonempty `files` allowlist or with publishConfig.access other than public.\",\n        \"The private-dependency check skipping dependency kinds (optionalDependencies, peerDependencies) a consumer installs.\",\n        \"An export-map baseline entry or wildcard subpath admitted without the gate failing on a new source file.\",\n        \"A private: true check that treats a missing or string \\\"true\\\" value as private.\"\n      ],\n      paths: [\"contracts/package-contract.test.mjs\", \"contracts/public-export-maps.test.mjs\", \"contracts/barrels.test.mjs\"]\n    },\n    {\n      id: \"ci-workflow-gates\",\n      title: \"Workflow gates keep required CI jobs failing on real failures\",\n      threat: \"A contributor edits ci.yml or reliability.yml so a required security or test job passes on failure, letting vulnerable code merge to main.\",\n      lookFor: [\n        \"An assertion that tolerates continue-on-error: true, `|| true`, or an allow-failure known-red list on a required job.\",\n        \"A regex match on a workflow run string loose enough to accept an extra command that skips or neuters the suite.\",\n        \"A test file excluded from every target in test-script-wiring without a stated reason.\",\n        \"A skip or todo in the fault matrix accepted without a declared reason row in fault-gaps.md.\"\n      ],\n      paths: [\"contracts/reliability-workflow.test.mjs\", \"contracts/fault-skips.test.mjs\", \"contracts/fault-gaps.md\"]\n    },\n    {\n      id: \"egress-gate-coverage\",\n      title: \"The egress gate reads every shipped source that could install a proxy-blind HTTP client\",\n      threat: \"A contributor ships a Node host that dials origins directly past the sandbox egress proxy, letting a sandboxed run exfiltrate data, while the gate stays green.\",\n      lookFor: [\n        \"A shipped source extension (.js, .cjs, .mts, .cts, .jsx) that isSource drops, so layerUndici or makeDispatcher in it is never scanned.\",\n        \"A skippedDirectories or skippedPaths entry that prunes a directory holding shipped, non-test source.\",\n        \"An isComment rule that exempts a code line (for example one starting with `*` inside an expression, or code after a `/* */` on the same line).\",\n        \"A banned spelling reachable without matching the regex, such as a renamed import or a computed property access on NodeHttpClient.\",\n        \"The defines allowlist or install-count floor changed so the ban can pass with the replacement absent.\"\n      ],\n      paths: [\"contracts/egress-http-client.test.mjs\"]\n    },\n    {\n      id: \"inventory-child-process-containment\",\n      title: \"Gate child processes run fixed code with bounded time and no inherited secrets they do not need\",\n      threat: \"A repository file or environment value controls code a gate evaluates, or a hung child survives the gate, running attacker-chosen code or holding CI runner resources.\",\n      lookFor: [\n        \"A spawn or spawnSync `--eval`/`-e` string built by interpolating file contents, package names or environment values instead of passing data on stdin or IPC.\",\n        \"A shell: true spawn or an exec() of a string assembled from repository data.\",\n        \"A child spawned without timeout, SIGKILL fallback or t.after cleanup.\",\n        \"A child env built from `...process.env` that forwards cache tokens or credentials (SMITHERS_CACHE_TOKEN, NPM_TOKEN) to a stub it does not need them for.\",\n        \"A PATH prefix pointing at a directory that is not a fresh mkdtemp owned by the test.\"\n      ],\n      paths: [\"contracts/ci-inventory.test.mjs\"]\n    },\n    {\n      id: \"inventory-temp-file-safety\",\n      title: \"Gates write only inside fresh temporary directories they create and remove\",\n      threat: \"Another local user on a shared CI runner pre-plants a symlink at a predictable temp path so a gate overwrites or reads a file it should not.\",\n      lookFor: [\n        \"A writeFileSync to a predictable tmpdir() path (fixed name or pid) instead of a mkdtemp directory, such as the default smithers-ci-inventory-<pid>.json artifact.\",\n        \"An environment-supplied output path (SMITHERS_CI_INVENTORY) written without checking it stays inside the workspace or a temp directory.\",\n        \"rmSync(..., { recursive: true, force: true }) on a path not returned by mkdtemp in the same test.\",\n        \"symlinkSync into a fixture that points outside the fixture root.\"\n      ],\n      paths: [\"contracts/ci-inventory.test.mjs\"]\n    },\n    {\n      id: \"inventory-ci-workflow-gates\",\n      title: \"Workflow gates keep required CI jobs failing on real failures\",\n      threat: \"A contributor edits ci.yml or reliability.yml so a required security or test job passes on failure, letting vulnerable code merge to main.\",\n      lookFor: [\n        \"An assertion that tolerates continue-on-error: true, `|| true`, or an allow-failure known-red list on a required job.\",\n        \"A regex match on a workflow run string loose enough to accept an extra command that skips or neuters the suite.\",\n        \"A test file excluded from every target in test-script-wiring without a stated reason.\",\n        \"A skip or todo in the fault matrix accepted without a declared reason row in fault-gaps.md.\"\n      ],\n      paths: [\"contracts/test-script-wiring.test.mjs\", \"contracts/ci-inventory.test.mjs\"]\n    }\n  ]\n})\n\n/**\n * Checks the proposed Mac install ADR, its supersession links and relative\n * architecture document links, including target headings.\n *\n * @since 0.1.0\n * @category test\n */\nconst mvpDocs = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/mvp-docs.test.mjs\")]),\n  srcs: [\n    Smithers.file(\"//packages/repo-targets/contracts/mvp-docs.test.mjs\"),\n    Smithers.file(\"//AGENTS.md\"),\n    Smithers.file(\"//docs/architecture/0001-shared-product.md\"),\n    Smithers.file(\"//docs/architecture/0002-mac-install.md\"),\n    Smithers.file(\"//docs/architecture/self-host-implementation.md\"),\n    Smithers.file(\"//.specs/product/mvp.md\"),\n    Smithers.file(\"//packages/repo-targets/contracts/check-release-evidence-tags.mjs\"),\n    Smithers.file(\"//.specs/engineering/README.md\"),\n    Smithers.file(\"//.specs/design/README.md\"),\n    Smithers.file(\"//.specs/engineering/spec.md\")\n  ],\n  deps: [repositoryInputs]\n})\n\nexport const Package = Smithers.Package({ targets: { ...repositoryPackages, repositoryInputs, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })\n",
+      "coverageDirectives": [
+        {
+          "line": 44,
+          "text": "[...new Set([\"\", ...listFiles(repoRoot, { includeUntracked: true })"
+        },
+        {
+          "line": 70,
+          "text": "* file no `.gitignore` excludes."
+        },
+        {
+          "line": 94,
+          "text": "/** Tracked files must resolve declared paths and exclude local build and agent state. */"
+        },
+        {
+          "line": 274,
+          "text": "const knownRedCoverage = Smithers.NodeTest({"
+        },
+        {
+          "line": 275,
+          "text": "runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/check-known-red-coverage.test.mjs\")]),"
+        },
+        {
+          "line": 280,
+          "text": "/** Exercises real Bun coverage collection and sealed process receipts. */"
+        },
+        {
+          "line": 281,
+          "text": "const bunCoverage = Smithers.NodeTest({"
+        },
+        {
+          "line": 283,
+          "text": "Smithers.file(\"//packages/repo-targets/bun-coverage/coverage.test.mjs\"),"
+        },
+        {
+          "line": 284,
+          "text": "Smithers.file(\"//packages/repo-targets/bun-coverage/receipts.test.mjs\"),"
+        },
+        {
+          "line": 285,
+          "text": "Smithers.file(\"//packages/repo-targets/bun-coverage/run.test.mjs\")"
+        },
+        {
+          "line": 287,
+          "text": "srcs: [Smithers.glob(\"//packages/repo-targets/bun-coverage/**/*\")],"
+        },
+        {
+          "line": 305,
+          "text": "* Lints the contract gates and the Bun coverage collector against the root"
+        },
+        {
+          "line": 315,
+          "text": "Smithers.glob(\"//packages/repo-targets/bun-coverage/**/*.mjs\"),"
+        },
+        {
+          "line": 387,
+          "text": "* No focused or parked test in the fault matrix, every conditional skip"
+        },
+        {
+          "line": 391,
+          "text": "* The coverage record the suite reads is an input beside the gates themselves:"
+        },
+        {
+          "line": 398,
+          "text": "const faultSkips = Smithers.NodeTest({"
+        },
+        {
+          "line": 399,
+          "text": "runner: Smithers.testRunner([Smithers.file(\"//packages/repo-targets/contracts/fault-skips.test.mjs\")]),"
+        },
+        {
+          "line": 558,
+          "text": "* Repository-wide CI, publication, coverage and containment policy."
+        },
+        {
+          "line": 598,
+          "text": "* No shipped Node composition installs an HTTP client that ignores the egress"
+        },
+        {
+          "line": 625,
+          "text": "include: [\"src/**\","
+        },
+        {
+          "line": 626,
+          "text": "Smithers.glob(\"contracts/**/*.mjs\", { exclude: [\"**/*.test.mjs\"] }),"
+        },
+        {
+          "line": 627,
+          "text": "Smithers.glob(\"bun-coverage/**/*.mjs\", { exclude: [\"**/*.test.mjs\"] }),"
+        },
+        {
+          "line": 628,
+          "text": "Smithers.glob(\"bun-coverage/**/*.ts\", { exclude: [\"**/*.test.ts\"] }),"
+        },
+        {
+          "line": 632,
+          "text": "\"contracts/barrels.test.mjs\", \"contracts/cli-verbs.test.mjs\", \"contracts/fault-skips.test.mjs\", \"contracts/fault-gaps.md\","
+        },
+        {
+          "line": 641,
+          "text": "\"A contributor whose diff carries prompt text or a narrowed include makes every package's model review pass their change unreviewed.\","
+        },
+        {
+          "line": 643,
+          "text": "\"smithersReviewPrompt or a rubric that lets diff contents redefine the rubric, or that tells the model to skip files, instead of treating reviewed text as data.\","
+        },
+        {
+          "line": 645,
+          "text": "\"An anchor or include mapping in review() where the gitDiff paths and the include globs can diverge so changed files escape the reviewed set.\""
+        },
+        {
+          "line": 656,
+          "text": "\"A default include or context glob in any macro that can match .env*, *.pem, credentials files, or node_modules.\","
+        },
+        {
+          "line": 657,
+          "text": "\"anchor() re-rooting an exclude or pattern without Input.resolvePath, so a '..' segment survives into the emitted workspace glob.\""
+        },
+        {
+          "line": 707,
+          "text": "paths: [\"contracts/check-known-red-coverage.mjs\", \"bun-coverage/**\"]"
+        },
+        {
+          "line": 763,
+          "text": "\"The private-dependency check skipping dependency kinds (optionalDependencies, peerDependencies) a consumer installs.\","
+        },
+        {
+          "line": 775,
+          "text": "\"A regex match on a workflow run string loose enough to accept an extra command that skips or neuters the suite.\","
+        },
+        {
+          "line": 776,
+          "text": "\"A test file excluded from every target in test-script-wiring without a stated reason.\","
+        },
+        {
+          "line": 777,
+          "text": "\"A skip or todo in the fault matrix accepted without a declared reason row in fault-gaps.md.\""
+        },
+        {
+          "line": 779,
+          "text": "paths: [\"contracts/reliability-workflow.test.mjs\", \"contracts/fault-skips.test.mjs\", \"contracts/fault-gaps.md\"]"
+        },
+        {
+          "line": 782,
+          "text": "id: \"egress-gate-coverage\","
+        },
+        {
+          "line": 787,
+          "text": "\"A skippedDirectories or skippedPaths entry that prunes a directory holding shipped, non-test source.\","
+        },
+        {
+          "line": 825,
+          "text": "\"A regex match on a workflow run string loose enough to accept an extra command that skips or neuters the suite.\","
+        },
+        {
+          "line": 826,
+          "text": "\"A test file excluded from every target in test-script-wiring without a stated reason.\","
+        },
+        {
+          "line": 827,
+          "text": "\"A skip or todo in the fault matrix accepted without a declared reason row in fault-gaps.md.\""
+        },
+        {
+          "line": 858,
+          "text": "export const Package = Smithers.Package({ targets: { ...repositoryPackages, repositoryInputs, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })"
+        }
+      ]
+    },
+    {
+      "path": "packages/repo-targets/tsconfig.json",
+      "sha256": "7a863f94677707b00368b38f7088ed13141a25d8fd05f5251edfabbad74fd223",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2024\",\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"strict\": true,\n    \"skipLibCheck\": true,\n    \"resolveJsonModule\": true,\n    \"noEmit\": true,\n    \"allowImportingTsExtensions\": true,\n    \"types\": [\"node\"]\n  },\n  \"include\": [\n    \"src/**/*.ts\",\n    \"test/**/*.ts\"\n  ]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 7,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 13,
+          "text": "\"include\": ["
+        }
+      ]
+    },
+    {
+      "path": "packages/repo-targets/vitest.config.ts",
+      "sha256": "040852c02fe0ec6a040753ebdda66ae42013cac996daf4bedf714c63edf266ee",
+      "source": "import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  // Tests start Node on source that reaches VibeLang packages; register: true loads .vibe in those processes.\n  plugins: [vibelang({ project: \"tsconfig.json\", register: true })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"test-utils/test-schemas.ts\", import.meta.url)),\n      fileURLToPath(new URL(\"test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    include: [\"test/**/*.test.{ts,vibe}\"],\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      enabled: true,\n      provider: \"v8\",\n      reportsDirectory: join(tmpdir(), `flows-repo-targets-coverage-${process.pid}`),\n      include: [\"src/**\", \"ci/**/*.ts\"],\n      thresholds: {\n        branches: 100,\n        functions: 100,\n        lines: 100,\n        statements: 100\n      }\n    }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 13,
+          "text": "fileURLToPath(new URL(\"test-utils/coverage-teardown.mjs\", import.meta.url)),"
+        },
+        {
+          "line": 16,
+          "text": "include: [\"test/**/*.test.{ts,vibe}\"],"
+        },
+        {
+          "line": 19,
+          "text": "coverage: {"
+        },
+        {
+          "line": 21,
+          "text": "provider: \"v8\","
+        },
+        {
+          "line": 22,
+          "text": "reportsDirectory: join(tmpdir(), `flows-repo-targets-coverage-${process.pid}`),"
+        },
+        {
+          "line": 23,
+          "text": "include: [\"src/**\", \"ci/**/*.ts\"],"
+        },
+        {
+          "line": 24,
+          "text": "thresholds: {"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:barrels",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/barrels.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:bunCoverage",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/bun-coverage/coverage.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/bun-coverage/receipts.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/bun-coverage/run.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/bun-coverage/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/test/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/test-utils/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/scripts/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/ci/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/PACKAGE.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/tsconfig.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:ciInventory",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/ci-inventory.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:cliVerbs",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/cli-verbs.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:conflictMarkers",
+      "rule": "Shell.Diff",
+      "kinds": [
+        "run",
+        "lint"
+      ],
+      "inputs": [],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:conflictMarkersUnit",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-conflict-markers.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:conformanceCheck",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/conformance/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/conformance/tsconfig.conformance.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:contractsLint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/browser/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/bun-coverage/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/scripts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "eslint.config.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:dependencyBoundaries",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-dependency-boundaries.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:dependencyBoundariesUnit",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-dependency-boundaries.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:driftJob",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/drift-job.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "PACKAGE.ts"
+        },
+        {
+          "kind": "file",
+          "path": "package.json"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/release/check-api-baseline.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/PACKAGE.ts"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/checks/coding-check.sh"
+        },
+        {
+          "kind": "file",
+          "path": ".github/workflows/drift.yml"
+        },
+        {
+          "kind": "file",
+          "path": ".github/workflows/ci.yml"
+        },
+        {
+          "kind": "file",
+          "path": ".github/workflows/release.yml"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:effectVersion",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-single-effect-version.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/release/pack-release.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "pnpm-lock.yaml"
+        },
+        {
+          "kind": "file",
+          "path": "bun.lock"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:egressHttpClient",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/egress-http-client.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:faultSkips",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/fault-skips.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/fault-gaps.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:knownRedCoverage",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-known-red-coverage.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/build-cli/src/KnownRed.ts"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:lockfileParity",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-lockfile-parity.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "bun.lock"
+        },
+        {
+          "kind": "pnpm-workspace",
+          "path": "pnpm-workspace.yaml"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:lockfileParityUnit",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-lockfile-parity.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:macDistribution",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/mac-distribution.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": [
+        "//packages/repo-targets:repositoryInputs"
+      ]
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:machinePaths",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/machine-paths.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:mvpDocs",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/mvp-docs.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/mvp-docs.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "AGENTS.md"
+        },
+        {
+          "kind": "file",
+          "path": "docs/architecture/0001-shared-product.md"
+        },
+        {
+          "kind": "file",
+          "path": "docs/architecture/0002-mac-install.md"
+        },
+        {
+          "kind": "file",
+          "path": "docs/architecture/self-host-implementation.md"
+        },
+        {
+          "kind": "file",
+          "path": ".specs/product/mvp.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-release-evidence-tags.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".specs/engineering/README.md"
+        },
+        {
+          "kind": "file",
+          "path": ".specs/design/README.md"
+        },
+        {
+          "kind": "file",
+          "path": ".specs/engineering/spec.md"
+        }
+      ],
+      "dependencies": [
+        "//packages/repo-targets:repositoryInputs"
+      ]
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:nativeWindowsWorkflow",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/native-windows.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".github/workflows/native-windows.yml"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:packageContract",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/package-contract.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:privateEffectAdapters",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/private-effect-adapters.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/build-library.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/scripts/compile-commonjs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/build-cli/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/migrate/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-node/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-bun/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/gateway/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "package.json"
+        },
+        {
+          "kind": "file",
+          "path": "pnpm-lock.yaml"
+        },
+        {
+          "kind": "file",
+          "path": "pnpm-workspace.yaml"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:publicExportMaps",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/public-export-maps.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/build-cli/scripts/public-export-map.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/fixtures/public-export-surface.json"
+        },
+        {
+          "kind": "file",
+          "path": "pnpm-workspace.yaml"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:releaseContracts",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-single-effect-version.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/installed-consumer-boundary.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/dev-compiler-isolation.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/release/pack-release.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-dependency-boundaries.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/release/fixtures/installed-consumer/consumer-boundary.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/release/fixtures/installed-consumer/dependency-adapters.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".pnpmfile.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:reliabilityWorkflow",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/reliability-workflow.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/release/release-rehearsal.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".github/workflows/reliability.yml"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryConformance",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/conformance/repositoryConformance.test.ts"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/conformance/**/*.ts",
+          "exclude": []
+        }
+      ],
+      "dependencies": [
+        "//packages/repo-targets:conformanceCheck"
+      ]
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [],
+      "dependencies": [
+        "//packages/repo-targets:repositoryInputs_2e736d6974686572732f666c6f7773",
+        "//packages/repo-targets:repositoryInputs_2e736d6974686572732f666c6f77732f726576696577",
+        "//packages/repo-targets:repositoryInputs_2e736d6974686572732f666c6f77732f7265766965772f7365656465642d62756773",
+        "//packages/repo-targets:repositoryInputs_2e736d6974686572732f666c6f77732f77696b69",
+        "//packages/repo-targets:repositoryInputs_617070732f6275672d776f726b6572",
+        "//packages/repo-targets:repositoryInputs_617070732f6d7670",
+        "//packages/repo-targets:repositoryInputs_617070732f7061747465726e732d73697465",
+        "//packages/repo-targets:repositoryInputs_617070732f73697465",
+        "//packages/repo-targets:repositoryInputs_617070732f747569",
+        "//packages/repo-targets:repositoryInputs_6576616c732f617574686f72696e67",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f6566666563742d636f64652d73746f72616765",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f6566666563742d656c656374726963",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f6566666563742d74616e737461636b2d6462",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f6572726f7273",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f7265706f2d74617267657473",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f727063",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d697468657273",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e74",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f636861696e",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6576616c73",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6673",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6861726e657373",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6861726e6573732d646574656374",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6861726e6573732f62656e63686d61726b732f616c65",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6861726e6573732f62656e63686d61726b732f686172626f72",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6861726e6573732f62656e63686d61726b732f73776562656e6368",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f696e746567726174696f6e73",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6d656d6f7279",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6d6f64656c",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6d6f64656c2d686f7374",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f706c7567696e",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f7265676973747279",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f72656772657373696f6e",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f73636f72657273",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f737464",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f7472696767657273",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c64",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c69",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f636861696e2d65786563",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d73706563",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f2e676974687562",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f2e73746f7279626f6f6b",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f64617461",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f70617463686573",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f706c6179777269676874",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f737263",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f7372632f417070732f41756374696f6e",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f7372632f417070732f4f7264657232",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f7372632f417070732f53657474696e6773",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f7372632f536572766572",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f776f726b666c6f77732f616464696e672d612d6e65772d6170702d726f757465",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f776f726b666c6f77732f62656570",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f776f726b666c6f77732f6669782d73656e7472792d6973737565",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f6d756c74692d7265706f",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f6d756c74692d7265706f2d63726564656e7469616c73",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f6d756c74692d7265706f2d63726564656e7469616c732f6368696c64",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f6d756c74692d7265706f2f62726f6b656e",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f6d756c74692d7265706f2f6368696c64",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f73746570732d666f726d",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f73746570732d666f726d2f2e676974687562",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f7461726765742d626f6479",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f7669656d2d6e6f64652d737065632f656e7669726f6e6d656e7473",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f7669656d2d6e6f64652d737065632f6578616d706c6573",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f7669656d2d6e6f64652d737065632f73697465",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f7669656d2d6e6f64652d737065632f737263",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f7669656d2d6e6f64652d737065632f766563746f7273",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f696e667261",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f74617267657473",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f636f6e74726f6c",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f7773",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f617274696661637473",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f63616e6f6e6963616c",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f6361706162696c697479",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f636f7265",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f63727970746f",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f6461746162617365",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f656e67696e65",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f656e67696e652d73746f7265",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f666c6f77",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f6a6a",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f6a6a2d7761736d",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f6a6f75726e616c",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f6b65726e656c",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f6b657973",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f6f62736572766162696c697479",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f7061747465726e73",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f706c616e",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f706c616e2d73746f7265",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f706c6174666f726d2d62726f77736572",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f706c6174666f726d2d62756e",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f706c6174666f726d2d636c6f7564666c617265",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f706c6174666f726d2d6e6f6465",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f72756e2d73746f7265",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f73616e64626f78",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f73656372657473",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f737465702d6361636865",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f73796e63",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f74696d652d74726176656c",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f67617465776179",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6d6370",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6d696772617465",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6e6f74696669636174696f6e73",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f7569",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f75692f7265706f2d76696577",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f75692f7465726d696e616c2d6672616d65",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f75692f75692d7374796c656775696465",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f75692f7669657773",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f736d746872732d6465707265636174696f6e",
+        "//packages/repo-targets:repositoryInputs_7061636b616765732f74657374696e67",
+        "//packages/repo-targets:repositoryInputs_root"
+      ]
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_2e736d6974686572732f666c6f7773",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_2e736d6974686572732f666c6f77732f726576696577",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/review/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_2e736d6974686572732f666c6f77732f7265766965772f7365656465642d62756773",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/review/seeded-bugs/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_2e736d6974686572732f666c6f77732f77696b69",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/wiki/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_617070732f6275672d776f726b6572",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "apps/bug-worker/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_617070732f6d7670",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "apps/mvp/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_617070732f7061747465726e732d73697465",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "apps/patterns-site/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_617070732f73697465",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "apps/site/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_617070732f747569",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "apps/tui/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_6576616c732f617574686f72696e67",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "evals/authoring/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f6566666563742d636f64652d73746f72616765",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/effect-code-storage/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f6566666563742d656c656374726963",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/effect-electric/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f6566666563742d74616e737461636b2d6462",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/effect-tanstack-db/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f6572726f7273",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/errors/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f7265706f2d74617267657473",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f727063",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/rpc/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d697468657273",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e74",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f636861696e",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/chain/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6576616c73",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/evals/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6673",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/fs/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6861726e657373",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6861726e6573732d646574656374",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness-detect/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6861726e6573732f62656e63686d61726b732f616c65",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/ale/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6861726e6573732f62656e63686d61726b732f686172626f72",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/harbor/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6861726e6573732f62656e63686d61726b732f73776562656e6368",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f696e746567726174696f6e73",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/integrations/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6d656d6f7279",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/memory/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6d6f64656c",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/model/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6d6f64656c2d686f7374",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/model-host/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f706c7567696e",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/plugin/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f7265676973747279",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/registry/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f72656772657373696f6e",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/regression/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f73636f72657273",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/scorers/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f737464",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/std/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f7472696767657273",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/triggers/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c64",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c69",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f636861696e2d65786563",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/chain-exec/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d73706563",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/force-spec/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f2e676974687562",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/force-spec/.github/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f2e73746f7279626f6f6b",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/force-spec/.storybook/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f64617461",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/force-spec/data/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f70617463686573",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/force-spec/patches/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f706c6179777269676874",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/force-spec/playwright/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f737263",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/force-spec/src/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f7372632f417070732f41756374696f6e",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/force-spec/src/Apps/Auction/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f7372632f417070732f4f7264657232",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/force-spec/src/Apps/Order2/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f7372632f417070732f53657474696e6773",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/force-spec/src/Apps/Settings/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f7372632f536572766572",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/force-spec/src/Server/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f776f726b666c6f77732f616464696e672d612d6e65772d6170702d726f757465",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/force-spec/workflows/adding-a-new-app-route/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f776f726b666c6f77732f62656570",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/force-spec/workflows/beep/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f666f7263652d737065632f776f726b666c6f77732f6669782d73656e7472792d6973737565",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/force-spec/workflows/fix-sentry-issue/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f6d756c74692d7265706f",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/multi-repo/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f6d756c74692d7265706f2d63726564656e7469616c73",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/multi-repo-credentials/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f6d756c74692d7265706f2d63726564656e7469616c732f6368696c64",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/multi-repo-credentials/child/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f6d756c74692d7265706f2f62726f6b656e",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/multi-repo/broken/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f6d756c74692d7265706f2f6368696c64",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/multi-repo/child/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f73746570732d666f726d",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/steps-form/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f73746570732d666f726d2f2e676974687562",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/steps-form/.github/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f7461726765742d626f6479",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/target-body/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f7669656d2d6e6f64652d737065632f656e7669726f6e6d656e7473",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/viem-node-spec/environments/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f7669656d2d6e6f64652d737065632f6578616d706c6573",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/viem-node-spec/examples/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f7669656d2d6e6f64652d737065632f73697465",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/viem-node-spec/site/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f7669656d2d6e6f64652d737065632f737263",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/viem-node-spec/src/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f6275696c642d636c692f746573742f66697874757265732f7669656d2d6e6f64652d737065632f766563746f7273",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/build-cli/test/fixtures/viem-node-spec/vectors/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f696e667261",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6275696c642f74617267657473",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/targets/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f636f6e74726f6c",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/control/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f7773",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f617274696661637473",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/artifacts/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f63616e6f6e6963616c",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/canonical/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f6361706162696c697479",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/capability/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f636f7265",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/core/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f63727970746f",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/crypto/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f6461746162617365",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/database/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f656e67696e65",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f656e67696e652d73746f7265",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/engine-store/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f666c6f77",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/flow/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f6a6a",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f6a6a2d7761736d",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj-wasm/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f6a6f75726e616c",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/journal/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f6b65726e656c",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/kernel/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f6b657973",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/keys/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f6f62736572766162696c697479",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f7061747465726e73",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/patterns/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f706c616e",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/plan/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f706c616e2d73746f7265",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/plan-store/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f706c6174666f726d2d62726f77736572",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-browser/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f706c6174666f726d2d62756e",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-bun/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f706c6174666f726d2d636c6f7564666c617265",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-cloudflare/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f706c6174666f726d2d6e6f6465",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/platform-node/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f72756e2d73746f7265",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/run-store/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f73616e64626f78",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/sandbox/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f73656372657473",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/secrets/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f737465702d6361636865",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/step-cache/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f73796e63",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/sync/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f666c6f77732f74696d652d74726176656c",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/time-travel/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f67617465776179",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/gateway/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6d6370",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/mcp/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6d696772617465",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/migrate/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6e6f74696669636174696f6e73",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/notifications/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f7569",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f75692f7265706f2d76696577",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/repo-view/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f75692f7465726d696e616c2d6672616d65",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/terminal-frame/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f75692f75692d7374796c656775696465",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/ui-styleguide/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f75692f7669657773",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/views/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d746872732d6465707265636174696f6e",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smthrs-deprecation/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f74657374696e67",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/testing/**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:repositoryInputs_root",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "**/*",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:reviewDocsAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/repo-targets/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:reviewJsdocAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/repo-targets/src/**/*.{ts,vibe}"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/src/**/*.{ts,vibe}",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:runnerContract",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/runner-contract.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:scratchArtifacts",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/scratch-artifacts.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/repo-targets/src/**",
+            "packages/repo-targets/contracts/**/*.mjs",
+            "packages/repo-targets/bun-coverage/**/*.mjs",
+            "packages/repo-targets/bun-coverage/**/*.ts",
+            "packages/repo-targets/browser/**/*.mjs",
+            "packages/repo-targets/scripts/**",
+            "packages/repo-targets/test-utils/**",
+            "packages/repo-targets/contracts/barrels.test.mjs",
+            "packages/repo-targets/contracts/cli-verbs.test.mjs",
+            "packages/repo-targets/contracts/fault-skips.test.mjs",
+            "packages/repo-targets/contracts/fault-gaps.md",
+            "packages/repo-targets/contracts/machine-paths.test.mjs",
+            "packages/repo-targets/contracts/package-contract.test.mjs",
+            "packages/repo-targets/contracts/public-export-maps.test.mjs",
+            "packages/repo-targets/contracts/reliability-workflow.test.mjs",
+            "packages/repo-targets/contracts/scratch-artifacts.test.mjs",
+            "packages/repo-targets/contracts/egress-http-client.test.mjs",
+            "packages/repo-targets/contracts/ci-inventory.test.mjs",
+            "packages/repo-targets/contracts/test-script-wiring.test.mjs"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": [
+            "packages/repo-targets/**/*.test.mjs"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/bun-coverage/**/*.mjs",
+          "exclude": [
+            "packages/repo-targets/**/*.test.mjs"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/bun-coverage/**/*.ts",
+          "exclude": [
+            "packages/repo-targets/**/*.test.ts"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/browser/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/scripts/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/test-utils/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/barrels.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/cli-verbs.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/fault-skips.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/fault-gaps.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/machine-paths.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/package-contract.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/public-export-maps.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/reliability-workflow.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/scratch-artifacts.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/egress-http-client.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/ci-inventory.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/test-script-wiring.test.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/repo-targets/src/**",
+            "packages/repo-targets/contracts/**/*.mjs",
+            "packages/repo-targets/bun-coverage/**/*.mjs",
+            "packages/repo-targets/bun-coverage/**/*.ts",
+            "packages/repo-targets/browser/**/*.mjs",
+            "packages/repo-targets/scripts/**",
+            "packages/repo-targets/test-utils/**",
+            "packages/repo-targets/contracts/barrels.test.mjs",
+            "packages/repo-targets/contracts/cli-verbs.test.mjs",
+            "packages/repo-targets/contracts/fault-skips.test.mjs",
+            "packages/repo-targets/contracts/fault-gaps.md",
+            "packages/repo-targets/contracts/machine-paths.test.mjs",
+            "packages/repo-targets/contracts/package-contract.test.mjs",
+            "packages/repo-targets/contracts/public-export-maps.test.mjs",
+            "packages/repo-targets/contracts/reliability-workflow.test.mjs",
+            "packages/repo-targets/contracts/scratch-artifacts.test.mjs",
+            "packages/repo-targets/contracts/egress-http-client.test.mjs",
+            "packages/repo-targets/contracts/ci-inventory.test.mjs",
+            "packages/repo-targets/contracts/test-script-wiring.test.mjs"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": [
+            "packages/repo-targets/**/*.test.mjs"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/bun-coverage/**/*.mjs",
+          "exclude": [
+            "packages/repo-targets/**/*.test.mjs"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/bun-coverage/**/*.ts",
+          "exclude": [
+            "packages/repo-targets/**/*.test.ts"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/browser/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/scripts/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/test-utils/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/barrels.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/cli-verbs.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/fault-skips.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/fault-gaps.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/machine-paths.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/package-contract.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/public-export-maps.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/reliability-workflow.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/scratch-artifacts.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/egress-http-client.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/ci-inventory.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/test-script-wiring.test.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:test",
+      "rule": "Vitest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/test/**/*.test.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/test/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/test-utils/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/scripts/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/ci/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/PACKAGE.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/vitest.config.ts"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:testPinRegister",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-test-pins.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/test-pins.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:testScriptWiring",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/test-script-wiring.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/release/release-rehearsal.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "PACKAGE.ts"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/target-index.json"
+        },
+        {
+          "kind": "file",
+          "path": ".github/workflows/ci.yml"
+        },
+        {
+          "kind": "file",
+          "path": "package.json"
+        },
+        {
+          "kind": "file",
+          "path": "pnpm-workspace.yaml"
+        }
+      ],
+      "dependencies": [
+        "//packages/repo-targets:repositoryInputs"
+      ]
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:toolchainPins",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-toolchain-pins.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/WORKSPACE.ts"
+        },
+        {
+          "kind": "file",
+          "path": "package.json"
+        },
+        {
+          "kind": "file",
+          "path": "flake.nix"
+        },
+        {
+          "kind": "file",
+          "path": ".node-version"
+        },
+        {
+          "kind": "file",
+          "path": "rust-toolchain.toml"
+        },
+        {
+          "kind": "file",
+          "path": "PACKAGE.ts"
+        },
+        {
+          "kind": "file",
+          "path": ".github/scripts/ci/cloud.sh"
+        }
+      ],
+      "dependencies": [
+        "//packages/repo-targets:workflowSources"
+      ]
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:trackedHygiene",
+      "rule": "Shell.Diff",
+      "kinds": [
+        "run",
+        "lint"
+      ],
+      "inputs": [],
+      "dependencies": [
+        "//packages/repo-targets:repositoryInputs"
+      ]
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:trackedHygieneUnit",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-tracked-hygiene.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/contracts/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:webBundleContract",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/browser/browser-check.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/repo-targets/browser/**/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:workflowSources",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": ".github/workflows/*.yml",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/repo-targets",
+      "label": "//packages/repo-targets:workspacePackages",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.d.mts"
+        }
+      ],
+      "dependencies": []
+    }
+  ],
+  "areas": [
+    "browser/browser-check.mjs",
+    "browser/browser-contract.mjs",
+    "bun-coverage/children.mjs",
+    "bun-coverage/instrument.mjs",
+    "bun-coverage/manifest.mjs",
+    "bun-coverage/preload.mjs",
+    "bun-coverage/receipts.mjs",
+    "bun-coverage/run.mjs",
+    "ci/shards.ts",
+    "conformance/readWorkspaceInventory.ts",
+    "contracts/check-conflict-markers.mjs",
+    "contracts/check-dependency-boundaries.mjs",
+    "contracts/check-known-red-coverage.mjs",
+    "contracts/check-lockfile-parity.mjs",
+    "contracts/check-release-evidence-tags.mjs",
+    "contracts/check-single-effect-version.mjs",
+    "contracts/check-test-pins.mjs",
+    "contracts/check-toolchain-pins.mjs",
+    "contracts/check-tracked-hygiene.d.mts",
+    "contracts/check-tracked-hygiene.mjs",
+    "contracts/ci-inventory.mjs",
+    "contracts/ci-planner.mjs",
+    "contracts/generate-ci.mjs",
+    "contracts/register-public-export.mjs",
+    "contracts/require-toolchain.mjs",
+    "scripts/build-library.d.mts",
+    "scripts/build-library.mjs",
+    "scripts/build.mjs",
+    "scripts/circular.d.mts",
+    "scripts/circular.mjs",
+    "scripts/import-rules.mjs",
+    "scripts/private-effect-adapters.mjs",
+    "scripts/workspace-packages.d.mts",
+    "scripts/workspace-packages.mjs",
+    "src/BuildAndCheckTypeScriptPackage.ts",
+    "src/CircularImports.ts",
+    "src/HiddenHostAccess.ts",
+    "src/ImportAnalysis.ts",
+    "src/ImportRules.ts",
+    "src/ImportRulesCheck.ts",
+    "src/JevRules.ts",
+    "src/ReviewDocsAgainstCode.ts",
+    "src/ReviewJsdocAgainstCode.ts",
+    "src/ReviewLint.ts",
+    "src/ReviewTagsMigrationsAndKeys.ts",
+    "src/SdkRules.ts",
+    "src/index.ts",
+    "test-utils/coverage-teardown.mjs",
+    "test-utils/effect-property.d.mts",
+    "test-utils/effect-property.mjs",
+    "test-utils/test-process-environment.mjs",
+    "test-utils/test-schemas.ts",
+    "test-utils/vitest-root-temp.d.mts",
+    "test-utils/vitest-root-temp.mjs"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

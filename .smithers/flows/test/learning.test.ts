@@ -1,5 +1,4 @@
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Interpreter } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -180,7 +179,7 @@ test("guest Binding reads only its runtime run, refuses mismatches and cancels u
       ).pipe(
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(FlowEngine.layerMemory),
-        Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
+        Layer.provideMerge(NodeCrypto.layer),
         Layer.provideMerge(NodeServices.layer)
       )
     )

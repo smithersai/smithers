@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { createContext, useContext, type ComponentProps, type ReactNode } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { dateFromMs } from "../time/dateFromMs";
 

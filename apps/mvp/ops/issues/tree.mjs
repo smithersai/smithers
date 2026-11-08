@@ -60,27 +60,12 @@ export const nodeOfParentText = (text) => {
   return undefined
 }
 
-/** The node a queue entry's lane belongs under, by its name. */
-export const nodeOfLane = (lane) => {
-  const t = String(lane ?? "").toLowerCase()
-  const repo = MIGRATED_REPOS.find((name) => t.includes(name))
-  if (repo !== undefined) return `tree:repos:${repo}`
-  if (/^(release|rel-)/.test(t)) return "tree:release"
-  if (/^(spec|sl\d|sl-|rev-|decide|declstyle|vip\d|review)/.test(t)) return "tree:spec"
-  if (/^(fz|fuzz|impl-hunt|oracle)/.test(t)) return "tree:fuzz"
-  if (/^(core-|flip|nothrow|w2-|explicit|await)/.test(t)) return "tree:explicit-effects"
-  if (/^(mq|platform|plat|cf|box|queue|fixer|main-red|postmerge|pm-)/.test(t)) return "tree:workflow"
-  if (/^(docs|site|f3|launch)/.test(t)) return "tree:docs"
-  if (/(bun|vite|webpack|metro|lsp|editor|format|fmt|lint|tooling|loader|plugin|unplugin|shim)/.test(t)) return "tree:tooling"
-  return "tree:impl"
-}
-
 /**
  * Places `records` (each with `key`, `title` and `parent`, a node key) in the tree: the fixed nodes, area nodes the
  * records ask for (`areaNodes`: `[key, title, parent]`), and part nodes wherever a node would hold more than GitHub's
  * 100 sub-issues. Returns `{ nodes, records }`: every node and record with its final `parent` and `depth` (the root
- * is 1). A record with `asNode` naming a node becomes that node's issue. Throws when a depth would pass GitHub's eight
- * levels.
+ * is 1). A record with `asNode` naming a node becomes that node's issue. Throws for a record whose parent is not a
+ * node, and when a depth would pass GitHub's eight levels.
  */
 export const place = (records, areaNodes = []) => {
   const nodes = new Map()
@@ -96,7 +81,9 @@ export const place = (records, areaNodes = []) => {
     if (node !== undefined) Object.assign(node, { title: record.title, about: record.body, labels: record.labels, draft: record.key, repo: record.repo })
   }
   const placed = records.filter((record) => record.asNode === undefined || !nodes.has(record.asNode)).map((record) => {
-    const parent = nodes.has(record.parent) ? record.parent : nodes.has(record.parentHint) ? record.parentHint : "tree:impl"
+    // No silent placement: a record whose parent is not a node of the tree is refused, never dropped under a default.
+    if (!nodes.has(record.parent)) throw new Error(`${record.key} names ${record.parent}, which is not a node of the tree`)
+    const parent = record.parent
     const out = { ...record, parent }
     childrenOf(parent).items.push(out)
     return out

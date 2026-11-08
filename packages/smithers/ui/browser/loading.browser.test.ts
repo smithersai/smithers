@@ -85,6 +85,25 @@ describe("loading browser probes", () => {
       [ms, forMs, [BAR, SKELETON, PENDING, BUTTON_BAR]] as const,
     );
 
+  /** Sample Chromium's animation timelines before the delay, independent of late host frames. */
+  const sampleBeforeDelay = (page: Page, ms: number, forMs: number): Promise<Peaks> =>
+    page.evaluate(([ms, forMs, selectors]) => {
+      window.load(ms);
+      const animations = document.getAnimations();
+      for (const animation of animations) animation.pause();
+      const peak = { bar: 0, skeleton: 0, pending: 0, button: 0 };
+      const keys = ["bar", "skeleton", "pending", "button"] as const;
+      for (let elapsed = 0; elapsed <= forMs; elapsed++) {
+        for (const animation of animations) animation.currentTime = elapsed;
+        for (const [index, key] of keys.entries()) {
+          const element = document.querySelector(selectors[index]!);
+          peak[key] = Math.max(peak[key], element === null ? 0 : Number(getComputedStyle(element).opacity));
+        }
+      }
+      for (const animation of animations) animation.play();
+      return peak;
+    }, [ms, forMs, [BAR, SKELETON, PENDING, BUTTON_BAR]] as const);
+
   const opacities = (page: Page) =>
     page.evaluate((selectors) => selectors.map((selector) => {
       const element = document.querySelector(selector);
@@ -121,7 +140,7 @@ describe("loading browser probes", () => {
     test("past 300 ms the bar, the skeleton, the pending answer and the button's bar show, then the bar settles", async () => {
       const context = await browser.newContext();
       const page = await open(context);
-      expect(await sample(page, 1_500, 250)).toEqual(NOTHING);
+      expect(await sampleBeforeDelay(page, 1_500, 250)).toEqual(NOTHING);
       await page.waitForTimeout(450);
       expect(await opacities(page)).toEqual(["1", "1", "1", "1"]);
       expect(await page.getByRole("progressbar", { name: "Loading page" }).count()).toBe(1);
@@ -159,7 +178,7 @@ describe("loading browser probes", () => {
       const page = await open(context);
       expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
       expect(await sample(page, 200, 600)).toEqual(NOTHING);
-      expect(await sample(page, 1_500, 250)).toEqual(NOTHING);
+      expect(await sampleBeforeDelay(page, 1_500, 250)).toEqual(NOTHING);
       await page.waitForTimeout(250);
       expect(await opacities(page)).toEqual(["1", "1", "1", "1"]);
       const bar = await page.$eval(BAR, (element) => {

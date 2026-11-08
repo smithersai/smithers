@@ -145,6 +145,8 @@ export default defineConfig(({ command }) => ({
   // as a new `effect/*` module, is optimized before the first page loads instead of reloading every open page (Vite's
   // "optimized dependencies changed. reloading", which answers 504 to the modules the pages were still loading).
   server: {
+    // The built-PWA offline relay forwards this reserved hostname to the real API.
+    allowedHosts: ["smithers.test"],
     port: 5190,
     strictPort: true,
     fs: { strict: true },

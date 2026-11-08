@@ -2,7 +2,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
-import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Deferred, Effect, Exit, Fiber, FileSystem, Layer, Schema, Scope } from "effect"
@@ -11,7 +10,7 @@ import { describe, expect, it, vi } from "vitest"
 import * as Discovery from "../src/Discovery.ts"
 import * as Executable from "../src/Executable.ts"
 
-const platform = Layer.mergeAll(Crypto.layerFromDigest(NodeCrypto.layerDigest), NodeFileSystem.layer, NodePath.layer)
+const platform = Layer.mergeAll(NodeCrypto.layer, NodeFileSystem.layer, NodePath.layer)
 
 describe("module callback quiescence", () => {
   it.each([true, false])(
@@ -81,7 +80,7 @@ body: Node.capture({}, ({ label }) => Node.succeed(label)) })`
               calls.push(label)
               if (label === "selected") {
                 yield* Deferred.succeed(selected, undefined)
-                yield* Effect.never
+                return yield* Effect.never
               }
               if (label === "unrelated") {
                 yield* Deferred.succeed(unrelated, undefined)
@@ -93,7 +92,7 @@ body: Node.capture({}, ({ label }) => Node.succeed(label)) })`
               }
               if (label === "shared-second") {
                 yield* Deferred.succeed(sharedSecond, undefined)
-                yield* Effect.never
+                return yield* Effect.never
               }
               return label
             }).pipe(Effect.ensuring(Effect.sync(() => {

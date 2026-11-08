@@ -113,6 +113,17 @@ fn directory(root: &Directory, parts: &[&OsStr], create: bool) -> io::Result<Dir
     }
     Ok(current)
 }
+fn private_directory(root: &Directory, parts: &[&OsStr]) -> io::Result<Directory> {
+    let mut current = root.try_clone()?;
+    for name in parts {
+        let child = current.prepare_private_child(name)?;
+        child.sync()?;
+        current.sync()?;
+        current = child;
+    }
+    Ok(current)
+}
+
 fn parent<'a>(
     root: &Directory,
     request: &'a Value,
@@ -356,6 +367,20 @@ pub(super) fn run(
     content_limit: usize,
     response_limit: usize,
 ) -> io::Result<Value> {
+    run_observed(request, content_limit, response_limit, &mut |stage| {
+        eprintln!(
+            "atomic-publication pid={} stage={stage}",
+            std::process::id()
+        );
+    })
+}
+
+pub(super) fn run_observed(
+    request: &Value,
+    content_limit: usize,
+    response_limit: usize,
+    observe: &mut dyn FnMut(&str),
+) -> io::Result<Value> {
     let operation = field(request, "operation")?;
     let boundary = field(request, "boundaryRoot")?;
     let root = Directory::root(Path::new(boundary))
@@ -365,6 +390,68 @@ pub(super) fn run(
     }
     let options = &request["options"];
     match operation {
+        "makePrivateDirectory" => {
+            private_directory(&root, &confined(&root, request, field(request, "path")?)?)?;
+            Ok(Value::Null)
+        }
+        "writePrivateFile" => {
+            let path = field(request, "path")?;
+            let parts = confined(&root, request, path)?;
+            let (name, parents) = parts
+                .split_last()
+                .ok_or_else(|| error("EPERM", "refusing root mutation"))?;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(field(request, "data")?)
+                .map_err(|_| invalid("invalid base64"))?;
+            if bytes.len() > content_limit {
+                return Err(error("EFBIG", "payload exceeds content limit"));
+            }
+            let dir = private_directory(&root, parents)?;
+            match dir.metadata(name) {
+                Ok(info)
+                    if info.basic.FileAttributes
+                        & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)
+                        != 0
+                        || info.standard.NumberOfLinks > 1 =>
+                {
+                    return Err(error(
+                        "EPERM",
+                        "backup destination is not an unaliased regular file",
+                    ))
+                }
+                Err(e) if code(&e) != "ENOENT" => return Err(e),
+                _ => {}
+            }
+            let temporary = atomic_protocol::publication_name();
+            let temporary = OsStr::new(&temporary);
+            let mut file = dir.create_publication_file(temporary)?;
+            let result = (|| {
+                observe("temporary-created");
+                file.write_all(&bytes)?;
+                file.sync_all()?;
+                observe("file-synced");
+                dir.publish_file(&file, name)?;
+                observe("renamed");
+                dir.sync()?;
+                observe("directory-synced");
+                Ok(Value::Null)
+            })();
+            drop(file);
+            if result.is_err() {
+                // Keep the publication error, especially a failed flush.
+                let _cleanup = dir.remove(temporary);
+            }
+            result
+        }
+        "syncDirectory" => {
+            directory(
+                &root,
+                &confined(&root, request, field(request, "path")?)?,
+                false,
+            )?
+            .sync()?;
+            Ok(Value::Null)
+        }
         "exists" | "stat" | "realPath" => {
             let path = field(request, "path")?;
             let parts = confined(&root, request, path)?;
@@ -420,7 +507,7 @@ pub(super) fn run(
                 "r+" => (false, false, false, false),
                 "w" | "w+" => (true, false, true, false),
                 "wx" | "wx+" => (true, true, false, false),
-                "a" | "a+" => (true, false, false, true),
+                "a" | "a+" | "a-private" => (true, false, false, true),
                 "ax" | "ax+" => (true, true, false, true),
                 _ => return Err(invalid("unknown file open flag")),
             };
@@ -453,6 +540,9 @@ pub(super) fn run(
                     Err(failure) => return Err(failure),
                 }
             };
+            if flag == "a-private" {
+                super::atomic_windows_handle::verify_private(&file)?;
+            }
             if truncate {
                 file.set_len(0)?;
             }
@@ -466,6 +556,9 @@ pub(super) fn run(
                 file.set_permissions(permissions)?;
             }
             file.sync_all()?;
+            if flag == "a-private" {
+                dir.sync()?;
+            }
             Ok(Value::Null)
         }
         "makeDirectory" => {
@@ -693,6 +786,87 @@ mod tests {
     use super::*;
     use std::fs;
     use std::os::windows::fs::{symlink_dir, symlink_file};
+
+    // These tests are in atomic_windows_ so the existing Windows CI command
+    // executes them, as well as the standalone publication integration suite.
+    #[test]
+    fn private_publication_crash_child() {
+        let Ok(root) = std::env::var("SMITHERS_PRIVATE_CRASH_ROOT") else {
+            return;
+        };
+        let root = Path::new(&root);
+        let stop = std::env::var("SMITHERS_PRIVATE_CRASH_STAGE").unwrap();
+        let identity = Directory::root(root).unwrap().identity().unwrap();
+        let request = json!({"operation":"writePrivateFile", "boundaryRoot":root,
+            "logicalRoot":root, "rootIdentity":identity, "path":root.join("private/snapshot"),
+            "data":base64::engine::general_purpose::STANDARD.encode(b"new complete snapshot")});
+        run_observed(&request, 10000, 10000, &mut |stage| {
+            if stage == stop {
+                std::process::exit(73);
+            }
+        })
+        .unwrap();
+        panic!("requested crash boundary was not reached");
+    }
+
+    #[test]
+    fn interrupted_private_publication_reopens_complete_and_recovers() {
+        for stage in [
+            "temporary-created",
+            "file-synced",
+            "renamed",
+            "directory-synced",
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            let root = std::fs::canonicalize(temp.path()).unwrap();
+            let identity = Directory::root(&root).unwrap().identity().unwrap();
+            let mut request = json!({"operation":"writePrivateFile", "boundaryRoot":root,
+                "logicalRoot":root, "rootIdentity":identity, "path":root.join("private/snapshot"),
+                "data":base64::engine::general_purpose::STANDARD.encode(b"old complete snapshot")});
+            run(&request, 10000, 10000).unwrap();
+            let module = module_path!()
+                .split("::")
+                .skip(1)
+                .collect::<Vec<_>>()
+                .join("::");
+            let child = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    &format!("{module}::private_publication_crash_child"),
+                    "--nocapture",
+                ])
+                .env("SMITHERS_PRIVATE_CRASH_ROOT", &root)
+                .env("SMITHERS_PRIVATE_CRASH_STAGE", stage)
+                .status()
+                .unwrap();
+            assert_eq!(child.code(), Some(73), "{stage}");
+            assert_eq!(
+                std::fs::read(root.join("private/snapshot")).unwrap(),
+                if ["temporary-created", "file-synced"].contains(&stage) {
+                    b"old complete snapshot".as_slice()
+                } else {
+                    b"new complete snapshot".as_slice()
+                },
+                "{stage}"
+            );
+            request["data"] =
+                json!(base64::engine::general_purpose::STANDARD
+                    .encode(b"recovered complete snapshot"));
+            run(&request, 10000, 10000).unwrap();
+            assert_eq!(
+                std::fs::read(root.join("private/snapshot")).unwrap(),
+                b"recovered complete snapshot"
+            );
+            let parent = Directory::root(&root)
+                .unwrap()
+                .private_child(OsStr::new("private"))
+                .unwrap();
+            super::super::atomic_windows_handle::verify_private(
+                &parent.read_file(OsStr::new("snapshot")).unwrap(),
+            )
+            .unwrap();
+        }
+    }
 
     #[test]
     fn drive_rooted_exclusions_do_not_become_workspace_basenames() {

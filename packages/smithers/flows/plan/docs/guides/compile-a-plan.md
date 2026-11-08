@@ -10,7 +10,6 @@ a keyed graph with a digest.
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import * as KeyMaterial from "@smthrs/plan/KeyMaterial"
 import * as Plan from "@smthrs/plan/Plan"
 import * as Effect from "effect/Effect"
@@ -48,7 +47,7 @@ const compiled = Plan.compile({
   planId: "review-4821",
   flow: "example/Review",
   nodes: [readPr, runTests]
-}).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+}).pipe(Effect.provide(NodeCrypto.layer))
 ```
 
 ## What a draft carries
@@ -93,9 +92,8 @@ platform package:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 
-const plan = compiled.pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+const plan = compiled.pipe(Effect.provide(NodeCrypto.layer))
 ```
 
 In a browser, provide the browser platform's `Crypto` layer instead. No part of

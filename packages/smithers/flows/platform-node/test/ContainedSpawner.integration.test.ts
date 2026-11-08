@@ -79,7 +79,7 @@ describe("ContainedSpawner", () => {
           const spawner = yield* ChildProcessSpawner
           const handle = yield* spawner.spawn(command)
           yield* Deferred.succeed(started, handle.pid)
-          yield* Effect.never
+          return yield* Effect.never
         })
       ).pipe(Effect.scoped, Effect.forkChild({ startImmediately: true }))
 
@@ -109,7 +109,7 @@ describe("ContainedSpawner", () => {
           const spawner = yield* ChildProcessSpawner
           const handle = yield* spawner.spawn(command)
           yield* Deferred.succeed(started, handle.pid)
-          yield* Effect.never
+          return yield* Effect.never
         }), { graceMs: 400 }).pipe(Effect.scoped, Effect.forkChild({ startImmediately: true }))
 
       const pid = yield* Deferred.await(started)

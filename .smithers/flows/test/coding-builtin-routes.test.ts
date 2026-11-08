@@ -10,6 +10,7 @@
  * are the functions `.smithers/flows/coding/host.ts` calls at startup.
  */
 import { NodeServices } from "@effect/platform-node"
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Flow, FlowRuntime, Graph } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import * as Descriptor from "@smthrs/registry/Descriptor"
@@ -38,11 +39,9 @@ import { scriptedSeats } from "../review/tests/workflow/scriptedSeats.ts"
 import Todo from "../todo/flow.ts"
 import { systemFlows } from "./fixtures/system-flows.ts"
 
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
-import * as Command from "../../../packages/smithers/agent/fs/src/Command.vibe"
-import * as FileRouter from "../../../packages/smithers/agent/fs/src/FileRouter.vibe"
-import * as FlowInvoker from "../../../packages/smithers/agent/fs/src/FlowInvoker.vibe"
+import { Command } from "@smthrs/fs"
+import { FileRouter } from "@smthrs/fs"
+import { FlowInvoker } from "@smthrs/fs"
 
 const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
 const policy = "a".repeat(64)
@@ -284,7 +283,7 @@ export default ({ name: "repository-jobs/ci", description: "Run the reviewed ci 
     assert.equal(new TextDecoder().decode(restored.bytes), body)
   }).pipe(
     Effect.provide(Discovery.layer),
-    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
+    Effect.provide(NodeCrypto.layer),
     Effect.provide(platform),
     Effect.runPromise
   )

@@ -19,9 +19,9 @@ import { packageVersion } from "../src/Version.ts"
 
 const runMain = vi.fn()
 
-vi.mock("@effect/platform-node", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@effect/platform-node")>()
-  return { ...original, NodeRuntime: { ...original.NodeRuntime, runMain } }
+vi.mock("@effect/platform-node/NodeRuntime", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@effect/platform-node/NodeRuntime")>()
+  return { ...original, runMain }
 })
 
 type Teardown = (exit: Exit.Exit<unknown, unknown>, onExit: (code: number) => void) => void

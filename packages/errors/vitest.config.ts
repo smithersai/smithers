@@ -5,7 +5,7 @@ import vibelang from "vibelang-vite"
 import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
-  plugins: [vibelang({ register: true, project: "tsconfig.test.json" })],
+  plugins: [vibelang({ project: "tsconfig.test.json" })],
   test: {
     globalSetup: [
       fileURLToPath(new URL("../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)),

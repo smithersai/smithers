@@ -20,13 +20,8 @@
  */
 
 import type * as ChildProcess from "effect/process/ChildProcess"
-import type { Word } from "effect/process/CommandLine"
 import * as Redacted from "effect/Redacted"
 import { isInheritedName } from "./ChildProcessEnvironment.ts"
-
-// Effect 4.1 lets an argument or an environment value be Redacted; the
-// process receives its value, as Effect's own spawners pass it.
-const word = (value: Word): string => Redacted.isRedacted(value) ? Redacted.value(value) : value
 
 /** Tokens made only of these characters need no quoting in a POSIX shell. */
 const SAFE = /^[A-Za-z0-9_@%+=:,./-]+$/
@@ -68,13 +63,32 @@ export const quote = (token: string): string =>
  * @since 1.0.0-rc.0
  */
 export const render = (command: ChildProcess.Command): string =>
-  command._tag === "StandardCommand"
-    ? command.options.shell === undefined || command.options.shell === false
-      ? [command.command, ...command.args.map(word)].map(quote).join(" ")
-      : command.options.shell === true
-      ? [command.command, ...command.args.map(word)].join(" ")
-      : `${quote(command.options.shell)} -c ${quote([command.command, ...command.args.map(word)].join(" "))}`
-    : `${render(command.left)} | ${render(command.right)}`
+  renderWith(command, (value) => Redacted.isRedacted(value) ? "<redacted>" : value)
+
+/**
+ * Renders arguments at the interpreter host boundary, revealing protected
+ * values only for execution. Diagnostics and grants use {@link render}.
+ *
+ * @category rendering
+ * @since 1.0.0
+ */
+export const renderForExecution = (command: ChildProcess.Command): string =>
+  renderWith(command, (value) => Redacted.isRedacted(value) ? Redacted.value(value) : value)
+
+const renderWith = (
+  command: ChildProcess.Command,
+  argument: (value: string | Redacted.Redacted<string>) => string
+): string => {
+  if (command._tag === "PipedCommand") {
+    return `${renderWith(command.left, argument)} | ${renderWith(command.right, argument)}`
+  }
+  const tokens = [command.command, ...command.args.map(argument)]
+  return command.options.shell === undefined || command.options.shell === false
+    ? tokens.map(quote).join(" ")
+    : command.options.shell === true
+    ? tokens.join(" ")
+    : `${quote(command.options.shell)} -c ${quote(tokens.join(" "))}`
+}
 
 /**
  * Shell syntax that chains, substitutes, groups, or redirects: everything that
@@ -252,17 +266,5 @@ export const cwd = (command: ChildProcess.Command): string | undefined =>
  */
 export const env = (
   command: ChildProcess.Command
-): Record<string, string | undefined> | undefined =>
-  command._tag === "StandardCommand" ? values(command.options.env) : env(command.left)
-
-const values = (
-  environment: Readonly<Record<string, Word | undefined>> | undefined
-): Record<string, string | undefined> | undefined => {
-  if (environment === undefined || !Object.values(environment).some(Redacted.isRedacted)) {
-    return environment as Record<string, string | undefined> | undefined
-  }
-  // A null prototype keeps an own `__proto__` name an ordinary variable.
-  const text: Record<string, string | undefined> = Object.create(null)
-  for (const [name, value] of Object.entries(environment)) text[name] = value === undefined ? undefined : word(value)
-  return text
-}
+): Record<string, string | Redacted.Redacted<string> | undefined> | undefined =>
+  command._tag === "StandardCommand" ? command.options.env : env(command.left)

@@ -3,6 +3,7 @@ import { Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Deferred, Effect, Fiber, Layer, Logger, ManagedRuntime, Option, Stream } from "effect"
 import { afterEach, expect, test } from "vitest"
+import { repoAuthority } from "../../test/repoAuthority"
 import { DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { RemoteRunsClient, RepoRunsFailed } from "./api"
 import * as actions from "./actions"
@@ -39,7 +40,7 @@ const setup = async (options: { dispatch?: Effect.Effect<unknown, DispatchFailed
     return Effect.andThen(Deferred.succeed(started, undefined), options.dispatch ?? Deferred.await(pending))
   }) as never }))
   const runtime = ManagedRuntime.make(Layer.mergeAll(
-    RunsStore.layer({ origin: "http://test" }).pipe(Layer.provide(Layer.mergeAll(engine, Persistence.memory, Layer.succeed(RemoteRunsClient, RemoteRunsClient.of({ ...unused, ...options.remote } as RemoteRunsClient["Service"]))))),
+    RunsStore.layer({ origin: "http://test" }).pipe(Layer.provide(repoAuthority), Layer.provide(Layer.mergeAll(engine, Persistence.memory, Layer.succeed(RemoteRunsClient, RemoteRunsClient.of({ ...unused, ...options.remote } as RemoteRunsClient["Service"]))))),
     dispatch, engine, Layer.succeed(actions.RunsNavigation, { navigate: (path) => { navigated.push(path) } }),
   ))
   opened.push(runtime)

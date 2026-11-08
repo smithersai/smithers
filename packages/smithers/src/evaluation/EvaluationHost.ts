@@ -2,7 +2,7 @@
  * @since 1.0.0
  */
 
-import { NodeRuntime } from "@smthrs/platform-node"
+import { type NativeRuntime, NodeRuntime } from "@smthrs/platform-node"
 import { Context, Effect } from "effect"
 import type { UnknownError } from "effect/Cause"
 
@@ -21,7 +21,7 @@ export const Host = Context.Reference<{ readonly bun: boolean }>("@smthrs/cli/Ev
  * @category constructors
  * @since 1.0.0
  */
-export const runtime: Effect.Effect<typeof NodeRuntime, UnknownError> = Effect.flatMap(Host, (host) =>
+export const runtime: Effect.Effect<NativeRuntime.Api, UnknownError> = Effect.flatMap(Host, (host) =>
   host.bun
     ? Effect.tryPromise(() => import("@smthrs/platform-bun").then((platform) => platform.BunRuntime))
     : Effect.succeed(NodeRuntime))

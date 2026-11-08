@@ -4,10 +4,10 @@ import { Duration, Effect, Fiber, Stream } from "effect"
 import { describe, expect, test, vi } from "vitest"
 import { inertCallbackTransport } from "../src/CallbackTransport.ts"
 import type { CallbackTransportObserver } from "../src/CallbackTransport.ts"
-import { DurableChatProducer, runDurableChatTurn } from "../src/DurableChatProducer.ts"
 import { HOST_DIAGNOSTIC_MARKER } from "../src/HostDiagnostics.vibe"
-import { runModelTurn } from "../src/ModelTurnHost.vibe"
 import { createHostDiagnostics } from "./diagnostics.ts"
+import { DurableChatProducer, runDurableChatTurn } from "./fixtures/durable.ts"
+import { runModelTurn } from "./fixtures/durable.ts"
 
 /** Collects the record lines one recorder writes. */
 const collector = () => {
@@ -293,7 +293,7 @@ describe("the guest runtime a turn reports", () => {
     )
     // One record per turn that RAN: building the Effect writes nothing.
     const unrun = collector()
-    runDurableChatTurn(
+    const _unrunTurn = runDurableChatTurn(
       Model.make({ stream: () => Stream.never }),
       grant,
       { modelId: "m" },

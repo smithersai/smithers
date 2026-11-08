@@ -1,6 +1,5 @@
 /** Module-local action tables survive callers and refresh on a real engine. */
 import { NodeCrypto, NodeFileSystem, NodePath } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import * as Executable from "@smthrs/registry/Executable"
@@ -13,7 +12,7 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 
 class HostPrefix extends Context.Service<HostPrefix, string>()("test/module/HostPrefix") {}
-const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
+const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)
 const host = Layer.mergeAll(platform, FlowEngine.layerMemory, Action.layerImplementations)
 const nodeModules = fileURLToPath(new URL("../node_modules", import.meta.url))
 const source = (name: string, version: string, prefix = false) => `

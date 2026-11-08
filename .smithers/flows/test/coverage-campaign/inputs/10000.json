@@ -1,0 +1,4002 @@
+[
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/incident-runbook-memory.test.ts",
+    "sha256": "1d1f664dd5cf8407fb1be5a838a53ce1e1fda10cd889002d8bbd96f69af30523"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/invoice-approval-watch.test.ts",
+    "sha256": "10bb777b8c5b16730dedf377d1863d142c9430010636603c73c96b15232244cd"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/kit.test.ts",
+    "sha256": "48db9b7294cba868911b569a017a24e3222f38314dbcdb20e5451c3d1a7e1ec5"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/lead-enricher.test.ts",
+    "sha256": "b17a388f2faabf2e2165e8d825388137cfe24a20b079c353600a2f63b97ef22c"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/lead-router-with-approval.test.ts",
+    "sha256": "66d35355e6f8bfa52c08916a7457782988346564b83ab2beb6d4af3674636fbb"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/log-digest.test.ts",
+    "sha256": "6de6bf51e3381957ec38abe8bd3126ca6c05e01a7f9df63eb2d0d5c78c6a5dbb"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/mcp-health-probe.test.ts",
+    "sha256": "d8878f4fe4818f6eae950c742ef7487c4457ea91418f12370b5d65c4c8bef1c0"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/meeting-briefer.test.ts",
+    "sha256": "998a5f28d164c3c76c61ceed2d78e4e653e3d3037c9ec37071d3f1fbec249e11"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/memory-support-agent.test.ts",
+    "sha256": "b3bd6860c294b8f89dd04d48b46044037be011164ae09a3a8b5227c860797396"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/milestone.test.ts",
+    "sha256": "d86322e8b5759fb96aeb67aa1afffc9102ebcb9d9430da090c150b06c3512775"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/monitor-workflow.test.ts",
+    "sha256": "bb521f8fb6a65d95b9518f9e1d2bb4d1b6a79b74cc2998b6da5837fa030ae0dc"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/openapi-contract-agent.test.ts",
+    "sha256": "bdf74413350feacca7bc1ff31cb54ccef3a5f46e6e23e93a48ba0fb099fcc957"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/playwright-test-agent.test.ts",
+    "sha256": "437b9b394f05520c8b9e52bd02771e658348eca168b87820e3844f68ec6b64f4"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/ransomware-isolation-coordinator.test.ts",
+    "sha256": "541fb5f215d67684538860a4cd3e08fcde261174a80e3f7c0ae4eaf29ca583d7"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/receipt-stream-watcher.test.ts",
+    "sha256": "8626a9b478ad750f890c5795f75a9daa86dcb8c0c85990dbdf074f51c1ed6361"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/refactor.test.ts",
+    "sha256": "607641c9ec683fe62f7562457039767425acac0386e56cc7f9e78d37f7ef603c"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/repo-janitor.test.ts",
+    "sha256": "e0c90fdcc932285e037fec3afbdfd86e54b15d268c8238b7341525effeed365e"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/retry-budget-manager.test.ts",
+    "sha256": "0666c5659c5c8f43fd388933b51d3d7d89793e16c340a6d836a9a13ca935144a"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/revenue-scout.test.ts",
+    "sha256": "9601bb506df81ec3983a71799b11e9a98d71f0ee226d31a91fa2e7f5d3182542"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/rfp-response-room.test.ts",
+    "sha256": "74ff86cb33665f971b4b2cec529c7d3901c43dedcf9590a2b39ccac984d6abf4"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/rollback-advisor.test.ts",
+    "sha256": "3d20379ba2ee020f17618b84ef616c59365b80e4a3c59cc2acf2db20a617a36e"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/service-desk-dispatcher.test.ts",
+    "sha256": "2db64459291fbafd4cc479676e44619fb89a803a0a64aa23b30ee4fa27944364"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/slo-breach-explainer.test.ts",
+    "sha256": "8eb3e73fcde1b66f23ab05755f73e486767464a52f921263f9e84d6f7995e537"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/smoketest.test.ts",
+    "sha256": "02156cbdd3271e6ee48bc82e4773962bf2bbbf666163a15a23584b14fba59d4c"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/social-inbox-router.test.ts",
+    "sha256": "ad6eeed0820ca5a416d1c4f7f68bc7aa58c1d4819f454f8011d51c5a7756bc48"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/sql-analyst-dashboard.test.ts",
+    "sha256": "ae5ff4f8f84f27f6edf669375eb2b0144aceaaffacb8df864ad8b13401824cc4"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/support-deflector.test.ts",
+    "sha256": "070e09c16899effe83ac7f685e500899060489421b0587890f8801a777de2acb"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/survey-answerer-agent.test.ts",
+    "sha256": "a06831b67bc480ca173b35887c4ac3044d36ae6c0c04c808994799b6d8622431"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/swe-evo.test.ts",
+    "sha256": "4bc9605d56cf785e82521d1c7569fcabb6334584b328f273545c9c9328c56b0f"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/test-sharder-judge.test.ts",
+    "sha256": "33a67064f30e1d9ceb790dfb78a5d83b7ba408be0de4db694bb71664a5e92dd2"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/threat-intel-enricher.test.ts",
+    "sha256": "3b90b98b0c54b550b3c4282871a3c330fc6e977f68524baa0fd324ecde142782"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/trace-explainer.test.ts",
+    "sha256": "071c2bd8a0136afca22aec13fc32746fdd181642e92c51b96a4175ca3fc5937d"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/triage.test.ts",
+    "sha256": "4a4010889709966618f232a72abc97b7ae32ef03348bfc1e776284713c451555"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/trust-safety-moderator.test.ts",
+    "sha256": "b3694cbdf949d590721c3165a6e102f6b01c7297c9c89be7fdca2b57df2649a2"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/tweet-thread.test.ts",
+    "sha256": "812aa26db5073ddacf81d1fe6be202d95e0a6ecbaee3efcb0378e2788ad04531"
+  },
+  {
+    "path": "packages/smithers/agent/test/examples/use-cases/visual-diff-explainer.test.ts",
+    "sha256": "07c3adb5f0434a8783b185b72f89f665e2d829e1520b3f6d26c65fd26275ae77"
+  },
+  {
+    "path": "packages/smithers/agent/test/ExecutionObservation.test.ts",
+    "sha256": "f674b79f8328dee15fdb62063ef44ae8bd7eb56eb0947aa515a13cf70dfd3753"
+  },
+  {
+    "path": "packages/smithers/agent/test/ExternalAgent.test.ts",
+    "sha256": "9e2b9d45236945e6bbed77227593515e5e7112cd6a2e3b7905ea3c16d49ff1e3"
+  },
+  {
+    "path": "packages/smithers/agent/test/FailedRunPersistsAcrossProcesses.test.ts",
+    "sha256": "3c2d4f3fdda6966048917aaa0ea42a89151c398cdcc5cb2de81b5d8c1a70cc55"
+  },
+  {
+    "path": "packages/smithers/agent/test/FailureJson.test.ts",
+    "sha256": "1f0269f8f2182b51cf05ae570904f62dea0852f8687c8c8043ecc2cc0f8227a7"
+  },
+  {
+    "path": "packages/smithers/agent/test/FailureSummary.test.ts",
+    "sha256": "84f81c7bf107ce705a606ae574e6fbe77df811a6cfc634c7742396fb7871fe04"
+  },
+  {
+    "path": "packages/smithers/agent/test/Fault.sweep.test.ts",
+    "sha256": "410cdaca4436f4951005908973ba3450f6945c7b3fb70ff9891955c010e993e9"
+  },
+  {
+    "path": "packages/smithers/agent/test/faults/case32-checkpoint-kill-resume.test.ts",
+    "sha256": "d531d1a236742d722723f49aa5007ab07db87ea2af73d1e1348a67746557d447"
+  },
+  {
+    "path": "packages/smithers/agent/test/faults/fixtures/checkpointChild.ts",
+    "sha256": "07610ec9b21ad1d0ff225ada5b7f0c8997a9bd43e14cc5395a011ee3eaa18132"
+  },
+  {
+    "path": "packages/smithers/agent/test/fixtures/acp-test-agent.mjs",
+    "sha256": "0d05dabfe8338a6051fc88f8db37b7f1a4aac98cdb77b8920728c91b2789650d"
+  },
+  {
+    "path": "packages/smithers/agent/test/fixtures/call-descriptor-trail.json",
+    "sha256": "97c13d34e69cbdac52e8da8e8fe57af61d4681542974372749da95cd4125fdf8"
+  },
+  {
+    "path": "packages/smithers/agent/test/fixtures/cell-call-material-approval-required.json",
+    "sha256": "e034cc41b0d32d326c8c93df78fbaf80c79ffb55024e5b006f477b669e3a468f"
+  },
+  {
+    "path": "packages/smithers/agent/test/fixtures/cell-call-material-effect-rc115.json",
+    "sha256": "33a274a07cc32d72a96cc8c59ed595f05c74c7dcc89763ac4ccb5f25a6ac0696"
+  },
+  {
+    "path": "packages/smithers/agent/test/fixtures/cell-call-material-key-encoding-3.json",
+    "sha256": "199e84dbf04bd6fe490c7257f52a692e2e65588d9ed8b9087a7981bc1d0279d4"
+  },
+  {
+    "path": "packages/smithers/agent/test/fixtures/cell-call-material-model-error-cause.json",
+    "sha256": "837c5ea79d73885b9d9a6283fd5d82888f8408210485cb6af5706340c422b87d"
+  },
+  {
+    "path": "packages/smithers/agent/test/fixtures/cell-call-material-reported-cost.json",
+    "sha256": "9ae47098c7bc8f33615c093ef2d522f0249a01da8c025bf7a05d0049e5c88832"
+  },
+  {
+    "path": "packages/smithers/agent/test/fixtures/cell-call-material-v1.json",
+    "sha256": "7c28c47ed0031c2d47078e4962006ca8a8f7a1d39ae074cd50f8220f5bfb2eb4"
+  },
+  {
+    "path": "packages/smithers/agent/test/fixtures/CellCallV1.ts",
+    "sha256": "dd515ac886d56bee9a9b6b3f3cccdb26392c89913888a4b8925f27e6752b3f3f"
+  },
+  {
+    "path": "packages/smithers/agent/test/fixtures/HarnessErrorBeforeApproval.ts",
+    "sha256": "77665be1162e1ef17c47ca2937126b3fa0853efe692bca5b778b18f843d9ce13"
+  },
+  {
+    "path": "packages/smithers/agent/test/fixtures/jev-flat-file-picks.json",
+    "sha256": "e4b3c8f63697dfdc5cc8fa030a695a7a31f8a7f7504206e1fa60b7eb3aaa2a3f"
+  },
+  {
+    "path": "packages/smithers/agent/test/fixtures/legacyCompaction.json",
+    "sha256": "28075f6fa45208dd9ded3b93b21dd4d58bc177afcdf6879a332b129a8a7250b3"
+  },
+  {
+    "path": "packages/smithers/agent/test/fixtures/model-step-child.ts",
+    "sha256": "ad1991865f38ba54065bf024c41efa38210896ac3d2062222a063ae13b3500c7"
+  },
+  {
+    "path": "packages/smithers/agent/test/fixtures/model-step-stack.ts",
+    "sha256": "0405c9d3a1e877eafaf61ef8b6ca662f6b111aaaa32a979b49498285bde91cfd"
+  },
+  {
+    "path": "packages/smithers/agent/test/fixtures/step-trace-calls-child.ts",
+    "sha256": "e485f3484ba9d54c729735ef830e77c9b40614a7b7d84da98f419afaf938097f"
+  },
+  {
+    "path": "packages/smithers/agent/test/fixtures/step-trace-calls-host.ts",
+    "sha256": "37e4cee35488c2ce314dad07363f1b8a695fea5cbbf0a85a4dcea5d4c7866920"
+  },
+  {
+    "path": "packages/smithers/agent/test/fixtures/step-trace-child.ts",
+    "sha256": "944667a8a16b11c85509ed1915d9eb667f09368c0759f5ea7e11985b97484193"
+  },
+  {
+    "path": "packages/smithers/agent/test/fixtures/step-trace-stack.ts",
+    "sha256": "4aa1de4e18c941487c6aa155e3ede48ac6c46d34003da993c6dbfd6a8bfab1f8"
+  },
+  {
+    "path": "packages/smithers/agent/test/FlowEngineLike.test.ts",
+    "sha256": "c38a6c657a87a0fb105c6ceed662f59443d205c818a4da5598be49f5abd929a6"
+  },
+  {
+    "path": "packages/smithers/agent/test/FlowEngineLikeFailures.test.ts",
+    "sha256": "e772b430b5b23b572ca9e8215ba64721b0c387765146916f17022f06362ff408"
+  },
+  {
+    "path": "packages/smithers/agent/test/FlowStore.test.ts",
+    "sha256": "19c2baab1de501f88924e1775572468279b92a19845d80ae04a9930d63700347"
+  },
+  {
+    "path": "packages/smithers/agent/test/JudgeBudget.test.ts",
+    "sha256": "e562a6ae7d2ece363c8e2ca4d8d1c8c82977077ab9491974fc31f8969825fa9c"
+  },
+  {
+    "path": "packages/smithers/agent/test/LayerRequirements.test.ts",
+    "sha256": "9cd6d4f585b47dde3efb78f80abf071b541d4ebbefcabe55a359e2caac969bb0"
+  },
+  {
+    "path": "packages/smithers/agent/test/LoweredBinding.test.ts",
+    "sha256": "0eab749314c7a486676f1a249d41ff919b4c02a3b03b39192a08777757303adf"
+  },
+  {
+    "path": "packages/smithers/agent/test/Memory.test.ts",
+    "sha256": "f490446586a62d65603c6e4a7bfaef5c8a78c9a0d10ab5a7159607483bd9af44"
+  },
+  {
+    "path": "packages/smithers/agent/test/MemoryCalibration.test.ts",
+    "sha256": "51e8ddfc168dc9359df5bdd4ecfb8b686bac7719028e93c1d30f065baf98e5b3"
+  },
+  {
+    "path": "packages/smithers/agent/test/MemoryMine.test.ts",
+    "sha256": "680248d244bb40ec7af6d105212c3d3b4a74560995bb0fbc81bcec8f4467a301"
+  },
+  {
+    "path": "packages/smithers/agent/test/MemoryPromptCache.test.ts",
+    "sha256": "7102851af69b70b9708e90519cbcd2a6fa9d650ab9ee687cc944fb2919f5a496"
+  },
+  {
+    "path": "packages/smithers/agent/test/MemoryReaders.test.ts",
+    "sha256": "5d2c4cfbda76fcc86e4e2adf01819c71496f55cd6a055830f1511a2007885967"
+  },
+  {
+    "path": "packages/smithers/agent/test/MemorySnapshotRecorder.test.ts",
+    "sha256": "bc850352689a7c888d1110177f14f0925991e2bb952a4e41eae36c44d1efc19d"
+  },
+  {
+    "path": "packages/smithers/agent/test/ModelRetriesOnEngine.test.ts",
+    "sha256": "19c9d29551f0585f15619a86f9e342fc436d70cded1b736888834b4fc7485d4f"
+  },
+  {
+    "path": "packages/smithers/agent/test/ModelStep.test.ts",
+    "sha256": "faaf6d898e2771fd65c56eaa1059370d2d82fd5364ec6ed009960297cfec8fba"
+  },
+  {
+    "path": "packages/smithers/agent/test/ModelStepPublic.test.ts",
+    "sha256": "ac75ac45434cd2e97a32f190c69935aaa311c85ab73def2d75d7c63bd660d674"
+  },
+  {
+    "path": "packages/smithers/agent/test/PendingApproval.test.ts",
+    "sha256": "78ef6d6848aedd8b3c3c4f4120a37aee7e419cf3533ccfdff08a5528b265bca1"
+  },
+  {
+    "path": "packages/smithers/agent/test/PromoteFlows.test.ts",
+    "sha256": "1c886debf2523d144d6f93ad2e240af2099ee1d0b830709a97e1f1826be49fa8"
+  },
+  {
+    "path": "packages/smithers/agent/test/QuickstartExample.test.ts",
+    "sha256": "460e9215e732aedcf69efca397e6622ba10ec6d34969c10f450a98a0e49298d6"
+  },
+  {
+    "path": "packages/smithers/agent/test/QuotaPolicy.test.ts",
+    "sha256": "c85df731a60cadd91b6dd36d23e3b0bcf65136a4e6cf339c2a2d1ae72939b0e8"
+  },
+  {
+    "path": "packages/smithers/agent/test/QuotaRefusalNeverRecorded.test.ts",
+    "sha256": "1adb188e48b07866f27a69ad3adb177c1eb84bab01e137b2987080d98dab943a"
+  },
+  {
+    "path": "packages/smithers/agent/test/RunawayGuard.test.ts",
+    "sha256": "5218a56057be2a93a89629d085770c5a90494b06bb188619d9582b465b008413"
+  },
+  {
+    "path": "packages/smithers/agent/test/RunawayGuardFlowLimit.test.ts",
+    "sha256": "9098ede76af1928af8831d684eeaea48f7c80156eb917b91c59173f01d366246"
+  },
+  {
+    "path": "packages/smithers/agent/test/Safety.ts",
+    "sha256": "756f12c3db5145be9deb232b525c5917378ea449fd3540b887eeb39f2225b789"
+  },
+  {
+    "path": "packages/smithers/agent/test/ScriptedJudge.test.ts",
+    "sha256": "4b73ecf93e4cabd16ef79d8cbf440147a652e977061fc3306f463997d68bf0d5"
+  },
+  {
+    "path": "packages/smithers/agent/test/SeatResolver.test.ts",
+    "sha256": "3633b03ff0e3333e4195e6e47be01586aea7ddbe7863a3097680ed813e61d9d6"
+  },
+  {
+    "path": "packages/smithers/agent/test/SeatRouter.test.ts",
+    "sha256": "06cfbc43e23c12b9d67e1ac8f54a13fdfa44e0f9879ed6b02afc0ec52bcae9c8"
+  },
+  {
+    "path": "packages/smithers/agent/test/SmithersPlugin.test.ts",
+    "sha256": "69110fa07634622195d99d0a54b80832f7a3e71d0e3e6d889e6277534aebf55f"
+  },
+  {
+    "path": "packages/smithers/agent/test/StandardFlows.test.ts",
+    "sha256": "704be9fec3fded3391d6a45a783a9d130a1a1378521d0a50a872881be0d1f368"
+  },
+  {
+    "path": "packages/smithers/agent/test/StandardFlowsFilesystem.test.ts",
+    "sha256": "a2723467eb0e01cc54b46367a492c7d4583f54eeb025cd92884fce224c25f8df"
+  },
+  {
+    "path": "packages/smithers/agent/test/StandardFlowsMemoryScope.test.ts",
+    "sha256": "152b0bd425d36ed94831be11056b83bc703e9f6aaff087c72e7d6547ddb2f3dd"
+  },
+  {
+    "path": "packages/smithers/agent/test/StepKeyGolden.test.ts",
+    "sha256": "e9fe31b2b850b722ef03155b09056a516a10862e42bd601839c3f6a79d9b05f0"
+  },
+  {
+    "path": "packages/smithers/agent/test/StepTrace.test.ts",
+    "sha256": "9db4ca099b6082d707d53abaccbf26d2cc931667894ef13183a9457d5faa6fe9"
+  },
+  {
+    "path": "packages/smithers/agent/test/StepTraceCalls.test.ts",
+    "sha256": "8513e7aee1261222966d7ec9fcac0d214237aea0a31a66608cb74f61587ec998"
+  },
+  {
+    "path": "packages/smithers/agent/test/StepTraceIdentity.test.ts",
+    "sha256": "15fcdcd5cf0bbe73f463a86544842767a223a38bf916b8b3ea077f8e807ba481"
+  },
+  {
+    "path": "packages/smithers/agent/test/StructuredOutputPolicy.test.ts",
+    "sha256": "c71b2780f17fb1579e216cf78b268b1a74af1dbd18d78157dd235eaa8163209b"
+  },
+  {
+    "path": "packages/smithers/agent/test/Transcript.test.ts",
+    "sha256": "ea2576a9a603fddefc216a6ed957059f84cffe9b79576b8bc5a74ac00568f845"
+  },
+  {
+    "path": "packages/smithers/agent/test/TypedCompletion.test.ts",
+    "sha256": "46b488106b2b71b3926f1ad74e6d6a980d2b13b524fad26d48515dab51e0d1db"
+  },
+  {
+    "path": "packages/smithers/agent/test/WaitingAnnotation.test.ts",
+    "sha256": "c84e61b7aed7eb076c5ed6b59ada55a85f66a5f4ad2dc876c5daafa01136f609"
+  },
+  {
+    "path": "packages/smithers/agent/test/WorkspaceObservation.test.ts",
+    "sha256": "ba1e7afaf3257e7a33ab7129626bedbfa4d638f376c52d5ae8d1b88920e13456"
+  },
+  {
+    "path": "packages/smithers/agent/test/WorkspaceSandbox.test.ts",
+    "sha256": "e56bd710d8e7f3b58b9bc3c47ca2390abc114cf5e8aff23d91e8172a185f3344"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/CHANGELOG.md",
+    "sha256": "e35316d7ce96ac455a322205ddfd8528319f3a8e41dc0841e14dd8a1486a26b6"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/docs/api.md",
+    "sha256": "747dfb7367947a5b51748ff93bb9489a4f5e7bdb8830a24a88ccd6b9956ae804"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/docs/concepts/channels.md",
+    "sha256": "39bca34714853ba004451369c6101c2aaed31ff89d20574f275f7298db649327"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/docs/concepts/claim-protocol.md",
+    "sha256": "b1fa2f9a575f2bc8357b5cbab042720d596f2db71046bde6f1af62f85cf27014"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/docs/concepts/policies.md",
+    "sha256": "af341320c7a435cb8048e395dc607228edcc5d7b00c579e0f34d81170703682e"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/docs/concepts/schedules.md",
+    "sha256": "1dc42cf8ae97ad47435ea627abab0448b405ecaeb1910db8294ec4d0ee6d8151"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/docs/guides/choose-a-policy.md",
+    "sha256": "7dc95a91e34da8550d29f681080d3375a44421be07be191d2866a0a6f4dd7d43"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/docs/guides/declare-a-trigger.md",
+    "sha256": "4df5e36905ed39ff697b4e8241cfd2cebad4e83172c4b7124e0dd75eba27a834"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/docs/guides/ingest-a-webhook.md",
+    "sha256": "7763f15da621e551ee9b16289ce68c5fe7d673e6ceaa1714948579969995d1b8"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/docs/guides/run-the-scheduler.md",
+    "sha256": "1c80164a910dd6e778e784ab09d80d5fc39c16e7c0f380f054e9dbd872dc4eb3"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/docs/guides/testing.md",
+    "sha256": "c8bf06ee8b1f1d74733d558dbf5d76f7e0c5a9aafae3b7a866393e8f4996402b"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/docs/installation.md",
+    "sha256": "ba09bffcdf9dad3b2d508f5c9a2f5d4f79e975cddc7156fe9cdf80557473b781"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/docs/quickstart.md",
+    "sha256": "41a9b1d20f402560f96bd13b125a4866a32b028855aa131850b221a65fab166d"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/docs/README.md",
+    "sha256": "c50beceeccc48fb695d30bff0df2c9a22fc3fbfa3be432f9cc52a28e7664541d"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/docs/troubleshooting.md",
+    "sha256": "9da76375f6ede414d56da3b40f811d1845295dc08d028b126da89b256a8f294f"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/dprint.json",
+    "sha256": "5398037d436a06d239e17f14f9d9cb62aeda687c8f7350e80e36525790db8f13"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/eslint.config.js",
+    "sha256": "22e5634f82cfa20363df8538178cb9f64bdd01a0bfdf746f13d0771ed2a7a044"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/examples/quickstart.ts",
+    "sha256": "3b52c07c58a1fa6f1b46a031b9b2d2cc89af4d22b1ceaef8edebfa62367775a7"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/LICENSE",
+    "sha256": "a3aaca5d88b4805fdc839fc70dca35fb5c9d2465d2bd986729e218076f66adc5"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/package.json",
+    "sha256": "a297dafaa2a6f1276e0ea2633deafcb7a44125a65622c790391b685c5fc9a210"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/PACKAGE.ts",
+    "sha256": "1a47a5107ea5ee443e6b90233b9f0e3c26cd433bf870b0badb04f43b7ec1d122"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/README.md",
+    "sha256": "4d9637c3adaa34334e7911ede41ec9e9ded4e4491c273bb05973ef7fc2e61762"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/scripts/build.mjs",
+    "sha256": "d7580eb74ee80418322b8fee99a4158dea624782ecfc1b8e6306fdef7dc9e613"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/CatchUp.ts",
+    "sha256": "b42926ca7ac2a52148f8c81894b6d195eaf528b021e79fc502fdfc7bdecacb46"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/Channel.ts",
+    "sha256": "258dbda1f2440bf84497f5b6feecbf8927b1f2bbd87c8faec1c8d2267c4c60f9"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/ClaimDecision.ts",
+    "sha256": "762c3e8d4510168651c06b171633bd26c2e708da30768343ff990e7d0073555f"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/Cron.ts",
+    "sha256": "101785506d720373172f16a5c8755dc649416351a71dfbd8c7a268a56d66fca8"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/DispatchReader.ts",
+    "sha256": "f45b437cef35cf2cd5dc7a410c292b33d47f28ca274aa1694d46e48ae895cc65"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/index.ts",
+    "sha256": "3a3944659feb75fa4259791ff60f2ad6c6bb62c47d1674236164cd23b04715a0"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/internal/ActiveRuns.ts",
+    "sha256": "277c698fc6742cd3d5d7ed5fe6901f45e58d26666d799cc87bd49b021eaac1cd"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/internal/DueOccurrences.ts",
+    "sha256": "d2dd94fdbd5e788d36b946124c9769705e3288070396d6dc1dcfd959d6572f68"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/internal/WallClock.ts",
+    "sha256": "0473db695ebb780c0420a0fd0d6e5db85fa84cdfe30cc6d863343f83f3372137"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/migrations/0001_triggers.ts",
+    "sha256": "fc1036b9e115ecd2ed5be652fd149e90fe10b2a0271865e2799425cb3d4818d8"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/migrations/0002_reservation_lease.ts",
+    "sha256": "1c49dff972aef7685bbc47ad7b1111f107c39fc86c1ef06ef5333a20fe07926b"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/migrations/0003_heartbeat.ts",
+    "sha256": "0e152bff8fd256c961c3708f4a61f92c3a810dc614727c4e4c9699e60ca78186"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/migrations/0004_fire_run_index.ts",
+    "sha256": "ab5522ef739cf241e45c16f39f5c8d9c49e6b9c82950622dfd058b28b6d2cace"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/migrations/index.ts",
+    "sha256": "a92c698757af6e893b4b3eb9a90c0c3c828115a16d7e7cdde66f1ea0753d51da"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/Overlap.ts",
+    "sha256": "36e26c21e89c19c5e0f55ac4ca8ffc0b83e6141326fd5037ae4e02cb97365a29"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/Schedule.ts",
+    "sha256": "7dbc54e55e3451d786b89447f7109f0905e1dd70932d2f07a7094c5c663537eb"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/Scheduler.ts",
+    "sha256": "9202589c51d1f150a6551d6668dacd00a8330fe33444d729c940f246fe87b499"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/SqlTriggerStore.ts",
+    "sha256": "852d75bfdda622ff6921a7f3da53fa9771468218d479bbc91678004b5a602588"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/test/TestTriggers.ts",
+    "sha256": "3c3b26b8e8fb954d1f19c15815dffda0e45a9be5d4356397ff5132ff35b9e262"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/Trigger.ts",
+    "sha256": "30bef6e9e91efd174e0e0edc83faad7e26fff1d3db2f5920f10abf89509c0ea5"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/TriggerError.ts",
+    "sha256": "ffec8f15b997f7ac51f5da101f1834c9b013faf64c8ccc30a96e51b7cfcd15f2"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/TriggerStore.ts",
+    "sha256": "5fc2bc8b71c966bf564b22ca1b9489aca2ed6d6eeffc1623f9f114d67971adf1"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/src/Webhook.ts",
+    "sha256": "6926d1acc27f683d55d69fa5c8fa20c04329221ea424f98c0267d34003d516a5"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/ActiveRuns.test.ts",
+    "sha256": "6d3577a819d0ab96328593646c4e8dbf6112b3429f8ad02579ecddd667257469"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/CatchUp.test.ts",
+    "sha256": "168f4303a15b4e189242f7c0e244fef53b134381db1bc338fea6aea88252a0fa"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/Channel.test.ts",
+    "sha256": "0b3192d8dfd2ae8a0d9467a282218ca94b6da16b5eb5806e1676583014fc2df7"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/Cron.test.ts",
+    "sha256": "5bd4fda12055646f18032bc5545e5da20abf9beda07f6f0742d44a31fee456a4"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/CronDst.test.ts",
+    "sha256": "7d38bccfddbc6bfc71ffa6cfac0d4010cc482e6eea0a5ae52c2f22d367f79fd3"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/DispatchReader.test.ts",
+    "sha256": "4f9c8ec4aaddec231102f605157438f8f79913b3a9faac11d99d9d12ac763c6a"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/Docs.test.ts",
+    "sha256": "675cce5588ce81210a408b4c1a38480b10cf19dffa3fe968159b024226308272"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/DueOccurrences.test.ts",
+    "sha256": "840b999cb364963314685b3f0363a161dae57b579fd5b6187242d6e468c3826c"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/examples.test.ts",
+    "sha256": "7ba7aaa50c074d570eabf22a4fd1fe735858e455653bf8af36943284afa6fc54"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/InvalidDates.test.ts",
+    "sha256": "b6affc5c3adbdb2602e2b42596ca9e97932f0036be707aad2143e58d5d56f169"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/InvalidIntervalDates.test.ts",
+    "sha256": "c21d9be731ee10121e6a9c6ebceef032b9295d9be49841758420199cce34d338"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/Migrations.test.ts",
+    "sha256": "d8a44ab0661fe15953cfb1fadbfb2596a23bdce03e3e7664870f95e5e40d47f0"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/Overlap.test.ts",
+    "sha256": "933ff792f4b14cb55c96500ca3ea7b73e861cb92c13282e8f8ce3f1eba9886e6"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/PackageInputs.test.ts",
+    "sha256": "396428738f02f8f1baba5704bf8e8e415ed562192986e4caa407570a90a83f73"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/Scheduler.test.ts",
+    "sha256": "a1bf3d28f5c3cbf3504d8cc178eee67621e71e6e397279e5c7792103a4963731"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/SchedulerRecovery.test.ts",
+    "sha256": "39d7e2d296907106c753edf457417bfe16768ca32ee7f6bc032bc8c30eb25198"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/StoreConformance.ts",
+    "sha256": "da09689dfacd37d891276eae581fd83169473fb50f6c2ca315a44fc1d44d19cf"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/TestTriggers.test.ts",
+    "sha256": "f53d7a95c372ec0ceced72f4e045fe0405578bc9331b42605f1bb69e86174c68"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/Trigger.test.ts",
+    "sha256": "7bdc92abccb6218717b55d0782a759355320c60d287201ce7fcae7936698654e"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/TriggerError.test.ts",
+    "sha256": "3ee7be8fefc1537036344f0218753f8560112bc2a25a42134a4d7b42346f2aa8"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/TriggerStore.test.ts",
+    "sha256": "83c5ad07205ce4b853e1f58f1abd2d18518d9f629656349c25f75f53edf5ab10"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/TriggerStoreNoop.test.ts",
+    "sha256": "9b968817c760d59c6891c4d0704162e99fd5815afc6965fc9e6d8cad14c29f39"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/test/Webhook.test.ts",
+    "sha256": "0bd33b737ebf62c24e0110718f4caa3e300d402a925b0983a07dec34513cbc2d"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/tsconfig.json",
+    "sha256": "0064dce36d22143039105eb068be99456971e6caf6e7cebac24633514a2009b8"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/tsconfig.test.json",
+    "sha256": "6dc35c4d36caa43a16fa411ccbff39a750eb7a1a32dc327c5f98bec835fee39c"
+  },
+  {
+    "path": "packages/smithers/agent/triggers/vitest.config.ts",
+    "sha256": "134d173817363da9af28158857939ed00364f0b8cab905b6bfb26cbc4e1e1df8"
+  },
+  {
+    "path": "packages/smithers/agent/tsconfig.json",
+    "sha256": "0064dce36d22143039105eb068be99456971e6caf6e7cebac24633514a2009b8"
+  },
+  {
+    "path": "packages/smithers/agent/tsconfig.test.json",
+    "sha256": "1f20576064c09dbcc190c0482a2cf6e24f1f9efdd016d0a134b87388605bc167"
+  },
+  {
+    "path": "packages/smithers/agent/vitest.config.ts",
+    "sha256": "c362b3dc4cd06b4af70e09d6d8c8200824a520843ce1cbd783dd472fa2485f54"
+  },
+  {
+    "path": "packages/smithers/agent/vitest.faults.config.ts",
+    "sha256": "4619b0dc03d2f7c3ffc8800235ccb93ebb2bc03d3bdaed1c313b535916116ea0"
+  },
+  {
+    "path": "packages/smithers/bin/dangling-workspace-links.mjs",
+    "sha256": "4d781e662e9894774b50e9a3e1ff9bf99db727aefc6b4e0b573c400840c16a6d"
+  },
+  {
+    "path": "packages/smithers/bin/smithers.mjs",
+    "sha256": "ffc7e9552f7bba124301ebd47db36f1c4816df377c182fb77a4de1151d625074"
+  },
+  {
+    "path": "packages/smithers/build/.gitignore",
+    "sha256": "1f6f1457d55d9f6711d68a85b59db616620b03e5b522c1c4dd3a572d650e54df"
+  },
+  {
+    "path": "packages/smithers/build/API-REVIEW.md",
+    "sha256": "d6cbfc2ae6e9efa9b37d8cb8f835d7f615d5f5132d30380d74371cd58a5f2732"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/CHANGELOG.md",
+    "sha256": "f2b39e4c6d7bedb99544d47d560ff084c74ed27cd7f26ad3accd1835426c9271"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/api.md",
+    "sha256": "ec1c06e91e1c884c9aafb0822b0c90be596cd6ef0838a682ce963881f7133a54"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/cli.md",
+    "sha256": "0213e40c361e6740a8e78386a39781d0455b7a0e01f7c98b570abd92da4e27a4"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/concepts/agent-edits.md",
+    "sha256": "96cb5b2d236a01b82a9fda1e9192c9f731f734ffeee60a576bf195309090bac2"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/concepts/caching.md",
+    "sha256": "1ae6067a4ed2b9d1392332738c8dd2cf3d1250d4299b8185f7a4627d63938dad"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/concepts/declaration-loading.md",
+    "sha256": "78cb1cf0375bcb3402a4b4b3c9f054b4ca9154d339878d73bc0edd0674ec81bb"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/concepts/discovery.md",
+    "sha256": "2573ee40131ea0b5b8e1be7733547a1d59e4725bb3931cde275883c0580356cc"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/concepts/execution.md",
+    "sha256": "33c5878a31545df83e2d01a3315fa73c63952a72abd12913203e9a0631e96b04"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/concepts/invocation.md",
+    "sha256": "b95bc55968386357e377c3de18fb432df46ca596a8837c914eea7ac725533a47"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/concepts/mounts.md",
+    "sha256": "79778f44ee58a037f2b518eaf3c9973875c9cedddc2675f2af6fcd1a8a03b944"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/concepts/native-file-outputs.md",
+    "sha256": "bb5c4351c603febe9d9410acaabbfa63cfdf22a24a471f02cd9b45f19a8e66a6"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/concepts/output.md",
+    "sha256": "9313481ef43ee79f4daf8b482623bd054ea2bf6b5bd32e640eea3d79dc03aec5"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/concepts/rule-contracts.md",
+    "sha256": "d944fc797cd797ff309d1b8bfe4517bebc7cac22cb59db80b6f2ee9a7cce7c62"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/cross-package-globs.md",
+    "sha256": "2e049e4f4963ecef01d354baa7ef6cd13c2e9a5f802e4de095e1e6a0935759ff"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/guides/embed-the-cli.md",
+    "sha256": "069457a995d06ff54e30199fc310cdc7d7c65905f1d0e90e838644077d7de410"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/guides/inspect-a-workspace.md",
+    "sha256": "ee7de072d1810fc0904e84f3897f30966fd68ab9bf8e89d1c5593ec8b1ba8abf"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/guides/preserve-evaluation-evidence.md",
+    "sha256": "9afc1529757ae22537b8a496960bf15a47e25296b9ce833a9076a0feb67dc560"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/guides/select-targets.md",
+    "sha256": "c37061d544bd841dd7d5806cbf133e2857454c1ef4f980805855b1c64e4073c8"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/guides/share-a-remote-cache.md",
+    "sha256": "40dbede104620325eedbb5572b2c3a8dd56302dbc9302b5619c3985cb7aeb4ed"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/installation.md",
+    "sha256": "ff11f9d7dc4df59027b03fb0fba93c748fbbb2486a8a7b6495604efe7ada4edd"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/quickstart.md",
+    "sha256": "0dd407f686fb585b378266b36e0bcf958e5c3822d0a07a6448166601b4e9b347"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/README.md",
+    "sha256": "4487669c1ca72b18fccaff5a51dad3d9066440773b908d03ad9e42a0afbcfdbc"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/reference/agent-detection.md",
+    "sha256": "8129738f10c74926fc177afd00ab7b66e59bf471073376803d0b4dad36cc2b14"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/docs/troubleshooting.md",
+    "sha256": "7e7c43c622d15cce4349d283744d5f2ecccc5d9f0094d9c71434af7a11c331ab"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/dprint.json",
+    "sha256": "380c47655c2c8b03a0e9bec95cf6d87b91724573c1a7493eba6c286e9e7a30a0"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/eslint.config.js",
+    "sha256": "dfe9a4bdc8f96cb8795c4aef50cd7212efc6c4dde8322d5d5024c74bf53bdbde"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/examples/who-owns.ts",
+    "sha256": "53de24814b316d5a91d06fabb1cfbb0fd682b305e9eeb908feaf8f2bdcf5f6d2"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/LICENSE",
+    "sha256": "a3aaca5d88b4805fdc839fc70dca35fb5c9d2465d2bd986729e218076f66adc5"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/package.json",
+    "sha256": "79b9e0400465ae2f13c29f99aec3ac9ac8ccd16afe4c4d0778fc417c07e66114"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/PACKAGE.ts",
+    "sha256": "63faa427c0a14f2bbd7d48b5b087d30b43beeedcb89adfa8f0857c590bdd4dcb"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/README.md",
+    "sha256": "4abc422470df845ef0dde648c04b4c2ff69011784271e256fd6998588cbb5991"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/scripts/build.mjs",
+    "sha256": "6bf071f6acecb3e70f13ae8d8691787ac832b05ded3d00aaae16b369da535720"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/scripts/package-api-sweep.d.mts",
+    "sha256": "ab3db78877f8d6b626385df78612662ba570137b0de5746010f94fa67a9059f9"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/scripts/package-api-sweep.mjs",
+    "sha256": "5426fd962259f180396c5599fd34d58fbc41f5b2140a2ef25933e8c3f1c87a82"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/scripts/public-export-map.mjs",
+    "sha256": "6d7c99abf12b3256cdcaf82b6d2f6e73ac2f5dec23278ef250d89344e5df2d73"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/Affected.ts",
+    "sha256": "a03615d771a77043ef2475cccee02412fab5821ec212e0e68409419656307390"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/AgentFake.ts",
+    "sha256": "ef7b48c4f28e60f6a0dfe4264cac43304b2589d6024a6635019bc94c7d356ac4"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/AgentSession.ts",
+    "sha256": "60a91056874f3cc4acd66d28ce825b700a142905a79d3a3466a15714a4cfa48b"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/Ansi.ts",
+    "sha256": "1559ab9222ee1cb52ff2de8ebcb4acc6beb1cb44dd404299704d077a82166817"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/AnvilExec.ts",
+    "sha256": "9770769c2f5613409ad402375beb9a860ab95f4110545448f50bf255d10e9361"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/Audience.ts",
+    "sha256": "498a8e5e98acd2d139c97238b9e81f253436f5f5c004b01ce4e55f8b0456928d"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/Cache.ts",
+    "sha256": "d5a5758a1fea1cf10433cfecfbc1cbf81f12609d4d116e3faf89b363bf39b935"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/CacheAdmin.ts",
+    "sha256": "55d783984ced52f28169202e93838609c7dfb0a6f8716254b163cba265fb205d"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/Cli.ts",
+    "sha256": "bc70251da2df1661afca920208a73474e3ac08d0e78d4f673df1f65041dde5f1"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/Diagnostic.ts",
+    "sha256": "ce4afbac4067fc97f80dc1371fbe18763c58a9213f1537eee6f0a5e38d15ab79"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/DockerExec.ts",
+    "sha256": "3161bff01f0189b789a2f647649525a5f9c7259e30917b721dcd151a3fd58335"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/effect-resolution.d.ts",
+    "sha256": "f70c90580f9f14194066cbad83b9a69d362a7183e705f7ba3016df8bc249f48c"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/effect-resolution.js",
+    "sha256": "54bce4e0ba48d094aefacd2afd2fa3dbcae7ecc705ce179d6cee826989e61dd5"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/engine.ts",
+    "sha256": "dd3526dba092bff35ce70294de156ff916c7cec410c205a0a8d27b7c5c506f2e"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/Entry.ts",
+    "sha256": "c0c88ac7f5f604cb735cdc1d0a70a90148cf2778c13fcac28985bbe993319994"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/Environment.ts",
+    "sha256": "bcb16afc071cb7ded6a9f791e4c7665184a473acf9da17a44dfb16321d5d5163"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/Executor.ts",
+    "sha256": "5531ea55b05cc04f4e71c2d48a6c2be2092e0f1b26ff197fc3f9c35eb89c3fa9"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/FactoryLoader.ts",
+    "sha256": "ef2718b36b5331401373cff6f22dbe65ed9f1ae0ed276e35e57ce801a4b1e44a"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/FactoryProjectionExec.ts",
+    "sha256": "cd5726ec69d16bade2136dd4b727ea90afdf1aa2581934d1301b780697717880"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/FetchExec.ts",
+    "sha256": "5c5cb0c3aabca1ebaeda94918ef38227cf41f2ac914eeca70b1ad9eddd510517"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/FoundryExec.ts",
+    "sha256": "19c067ca6034930adc047b67e02db9cdc2acd0acf4c578bacd8d41f989773f7f"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/GitCommit.ts",
+    "sha256": "c2926e181ee9bd2b8e377b8b9c5369d22c8effb1f844da18163882f48861a617"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/GitHooks.ts",
+    "sha256": "9b4794526e802a4b00ed4a86ff26f1479c41b17e2a8d4aee3f2eb889390ec5cb"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/GithubRender.ts",
+    "sha256": "78860cf17857907e1b1a7b596238ea487965664bf1cbac812e57b3d2efaf628d"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/GitSubmoduleExec.ts",
+    "sha256": "6466dcb6a7753202c4d87c2015fbc83ffb87a5af957d8b5bc07ceece4e193c94"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/GoExec.ts",
+    "sha256": "b3cb027a53f73ff1ff414af9c67365578bb02ad02a7413842f6edf858858cb9e"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/GraphOutput.ts",
+    "sha256": "9b9f8e65c8e7f7271a788f577b44aa84a5cb507b219357207132f22ea2f809d1"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/index.ts",
+    "sha256": "18fa3484e8062ecc9ba99b8a5b5cb412e63d44f587961c9a7ab03e03cc56e807"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/ApprovalBridge.ts",
+    "sha256": "0762b0986b2816b135c8c6ce149c01df2f9d465949b33326241c16b095bff386"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/Attrs.ts",
+    "sha256": "c0491a146552d89122149f6b39bd335fa7c377b011535016219ccd5268df9fc1"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/ContainedProcess.ts",
+    "sha256": "38722e640b174fe7b424142010ecbe3f71bb76399293c3829dc869e795967345"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/CoreRuleSelection.ts",
+    "sha256": "43932ce3058f97302a4e6cff3f3458af045225678bcd94194c2539fda8b0bb2f"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/DeclarationDependencies.ts",
+    "sha256": "9265b499a5caeacdb3049731f3d91e8a7d0cd855545ac88dfdec666f870b5f68"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/Fs.ts",
+    "sha256": "58976e4d6d8d0769aa295b6dad5b9ad4306070983b954c54f47539adcce2452a"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/GitPathspecBatches.ts",
+    "sha256": "745bececae3bc5b3e385f95ca8c439959e0415318999e7341f2f2bfd5d458ffd"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/HostProbes.ts",
+    "sha256": "b4e66d6c801c5da75a5db30deb1c7a53f35a6904d29b026b86d5b3f345e1b6a5"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/InputPackage.ts",
+    "sha256": "a1178f7ca8042c0f8b82d5a666230f8ae0918db518be3818ba3a78a1570258a5"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/js-extension-siblings.d.ts",
+    "sha256": "f46f81c7f12ebfbf732eafb9d6848348a8a8ca0ab0a777e9c3abfab893d60bc9"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/js-extension-siblings.js",
+    "sha256": "643f89b592b30f499ab66e1ee877fa09de289101582ef22d8f4578f95ce1f591"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/PackageOptions.ts",
+    "sha256": "c8c830730f5688a45b15681d3fb309435b11bd41a36ab732a758dc9f92eebce6"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/PackagePlanner.ts",
+    "sha256": "0e36b7b55a121d5007f980735ac02cb1caf89291cf8ff525da94729816fab8ad"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/PackageRunner.ts",
+    "sha256": "a3e70be93b415454880fe88f64bba3f2609a749293c4bace92be0a854edc08ac"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/ParseModule.ts",
+    "sha256": "0dfb1889603fdb727f82e95d3fd32392e5dc8b3099070d7c76f6564a1e4131b8"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/Path.ts",
+    "sha256": "a7a9d075968e95dd931eaf0cf1c00b0afc67c33fec9eb767699d4322705260a9"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/RuleContract.ts",
+    "sha256": "e606f838acc2f020fc2f911baad0a6fbe8a5d1ee20c6d17fe7f50d05e158a5e8"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/RulePolicy.ts",
+    "sha256": "5f50f26d7c1c229cae5e10f3a851d3c4fd0dc153d40e81b9de62313580bfc34a"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/rules/DocsCheckRule.ts",
+    "sha256": "0bb4ab3e0edabe5b28db17171c2f32be8e8dd722eb27b79741e2f0e86ed80907"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/rules/FetchExecutor.ts",
+    "sha256": "da73b0d1d79ab3b0f918d439dfd917c6df5a8cc252ee9b6df157662f85967cba"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/rules/FetchPlan.ts",
+    "sha256": "bcd3ccfaa3fb2dc9838fc64c7556cd927ffefb41d85cc27db2d5602127bec4f9"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/rules/FetchRule.ts",
+    "sha256": "1ec65ded2b7432a653820506d16a95e8f82b8ae986ac16973d88703d45c6ca61"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/rules/NativeArtifactOutput.ts",
+    "sha256": "738ecf01ed4b1484852d72e5b9179b93d8baf728cc328080901474ce2d8dae83"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/rules/NativeFileRule.ts",
+    "sha256": "132443c11701271dbcd02744d050c85722d6b21d667ca8698b12b7d7faaec268"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/rules/NativeRules.ts",
+    "sha256": "0206cb1ad8e725e4c5d172169ad824766537476508b9f487b24e8826b13ec4cc"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/Text.ts",
+    "sha256": "bff04491b7632edf9dd4c1d0fd4c33a23fcbef04d2644a5ee9d7d9ef35d63dee"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/TreeGate.ts",
+    "sha256": "8532b7a72f44378348075dfb41129a082e2faf04e44e1dd032c25ebe4fd99e3d"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/internal/UnrecordedGates.ts",
+    "sha256": "c8409ab9fc0f09f6f5ff896ae9a943bd7e6e4d128427a81909393214d47658c0"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/KnownRed.ts",
+    "sha256": "31f55a45e94f7722ca9d3f2791d3d7fd35f211ea2d13743448171ba6e5f85b0b"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/Label.ts",
+    "sha256": "72580f29d49bcfe709f02ef3b792e426f56735f917ae07d55ea86f1e4e2195d9"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/main.js",
+    "sha256": "d9d451a8bdac837adcc4d3cde3b697e979f5d2e46768c4a179ecfa2655611880"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/main.ts",
+    "sha256": "d9c86d52e9493e22795161937e87a22e41e13db18e819257c2a1d22e4ed89f43"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/MarkdownCodeBlocks.ts",
+    "sha256": "00daf783d81e7a773d4c12e51876d9e57a1c679238c67fb74c6d5eaa47a314ed"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/MemoryBackend.ts",
+    "sha256": "453b6a37d6cb85775bb0b6802c10224ac3c83970031d3d8cdab8aa123c2edf79"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/Mount.ts",
+    "sha256": "9bd5261b1cf61b0af3445626c1f450f82cd0b4a670c923d1ee26cb00eec0ff46"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/NixExec.ts",
+    "sha256": "93066c1e4b1c83fd88af5786b19a6a7cf2c841f0d4e0d3793f479a5538368fd7"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/OutputStream.ts",
+    "sha256": "f23ed77c0c17deccd8e2c4e881210932c71d7ba45fbea6f7711c2a0a11ca5d69"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/OverlayExec.ts",
+    "sha256": "102e0d42be68a937a7b8204028cf09d1a17ef9a7120d33bf2692c64023251974"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/Owners.ts",
+    "sha256": "bf62613efec275c1cee59d781a96a97b006991263d70061c63a0327923755856"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/PackageDiscovery.ts",
+    "sha256": "1614ab1465def89ca8825bc5786fa033ea1e294ac27d77d547ec587a4dc3ed80"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/PackageError.ts",
+    "sha256": "16a9ba46995c3025129a051a25b82877cb04516956e6457a113bf6be4612cce7"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/PackageExec.ts",
+    "sha256": "23d0da8f81e91492e72438edc7e368f0db43ba90aab0f5948dcc2ba6192f9221"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/PackageIndex.ts",
+    "sha256": "291da25555ff234f4fe0d37f28da4e3467ac7537db42820b45771a70de23cdf1"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/PackageLoader.ts",
+    "sha256": "1037e1ab54d39a528f4b24f023d15ca016004a9343d34545616d806a2581b05d"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/PackageTree.ts",
+    "sha256": "230754ff73d1578d165f33766d6171e2728269cd663f049c711fe6ce9c7a5a2b"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/Planner.ts",
+    "sha256": "68ed25e56419ea1573a470aec69087b3bfb8d1d470baf49597b68ac6ab000999"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/Positionals.ts",
+    "sha256": "e8a7c4177011df1d41ed57d8e16004ac475e50076636445ccb35b3ae9e39493a"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/Query.ts",
+    "sha256": "70aae00064838fac6d604764da83d7101895e95c8d1d00928af45c65df0297dc"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/RepoResolution.ts",
+    "sha256": "8e68065ff22bf9f8b3891d8c5e66662245f89226130319843e013c638f22e97e"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/Reporter.ts",
+    "sha256": "8860654cbd5b2e8f8f6a402d345e5434c98a9865bffd1bc28d6d346f15ec50c7"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/Resolver.ts",
+    "sha256": "e2c9f4de467da43dc2aafacc5b0fa479962e258b5e7a4d77100d96b1cf930f4f"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/RspackRunner.ts",
+    "sha256": "ca25eef4f94a68ab1e4eba33da54d9dee16b63fce85503858c8c7639154850b1"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/ServiceSupervisor.ts",
+    "sha256": "d03002576fe38caba6cf0ec3850a4b136338f2ea4d753780bbe706874bcc15b2"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/StampExec.ts",
+    "sha256": "3e15d2a2c999cfbd09459d08c4e35993bb973689fdbf00b1ae965318e2f54712"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/TargetExecution.ts",
+    "sha256": "1bbc332c842573d1bb3bd97c375cd28094cec8e5b743f16552fa342ab024ec35"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/TargetIndex.ts",
+    "sha256": "96e74cf1c821718f54ea62fd4ecf3a36ac8151c4147a442c8e77985b922b3213"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/TrustedReview.ts",
+    "sha256": "839d00cfcde4c185c4dd0ec6e86a13191ea9557c52249504ec81a07eb51eb9ea"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/Watch.ts",
+    "sha256": "bca61352a774f1f15974acf418ad87f024ee04bbeb3f980401844b4639021188"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/Workspace.ts",
+    "sha256": "bbb5d6ce1ab612a52801423e5e61e233d5da9980f865feb6d10d60bfb032c41c"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/WorkspaceLoader.ts",
+    "sha256": "1e40c832ad9f8981b02124914ff690f85448d84d5250a209ca9ae85761a283f5"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/src/WorkspaceToolchain.ts",
+    "sha256": "dcf876c85fd3d600b8cb2740f6d508f1af20fba138ee1ca11a0192c7334852c4"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/__snapshots__/FetchRuleEquivalence.test.ts.snap",
+    "sha256": "b3ae8827a8dcdca2aa4818cd090c045a38c346c6f62e39c865154dea489e1740"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/Affected.test.ts",
+    "sha256": "c5e044b5cffb38147fe79538d0975769426123fff507ef40f0aa8bb962355fd5"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/AffectedCliContainment.test.ts",
+    "sha256": "a3e79c6dd7b1d5c4a1fdf2490dbfefa458498da140b6451366a9eb95f2694d33"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/AffectedContainment.test.ts",
+    "sha256": "953f65458fdc384b18e432bf53487685ab23270126a9d02272fe4eb8a8ee6460"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/AffectedFired.test.ts",
+    "sha256": "da752a89788b8e92343cd75783a5926d2acd3db9373f77f29b15e82dcb031b1b"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/AgentCliHardlink.test.ts",
+    "sha256": "44055918bd3c317fbc81bb79754c800ec2e03357be9309e2a2323b93ea2bd26d"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/AgentLaneExecution.test.ts",
+    "sha256": "3f5e1db12df03fee9bfd3cfb44da8e6b442951a92e77e62c86b4a3958d27c0ce"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/AgentPublication.test.ts",
+    "sha256": "a0e7cb39ea93f2ba26c796fe042111f2c79ff88fed3bea6dd70ee2f62afd5f16"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/AgentSession.test.ts",
+    "sha256": "58711263e2998c07a0dfca083104bb519e6cb6dc4df68dfa0107a011a95be0a1"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/AgentVerdictPublication.test.ts",
+    "sha256": "d868768ecfee8fd8adb1b81e4e2a1826df15214783d94e899edf3f0b78fd2da1"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/Ansi.test.ts",
+    "sha256": "ce1de3bb0730012132a64140f036d9021ffb9b37b59cfd8d77650d2aeef429df"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/ApprovalBridge.test.ts",
+    "sha256": "27457a41f14f9f87b44efa1d0759d21eb5325e3a06d0c320d1b178f56ee8cc73"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/Audience.test.ts",
+    "sha256": "d362386c5faeaa66e00a5623d661b66217e2b19e6b56a8a059ad266f69359b2f"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/Cache.test.ts",
+    "sha256": "c9861daac6d63b4226f2a1ed874fd82f8e369e2451ed8c3f151660ee092a4b69"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/CacheOutput.test.ts",
+    "sha256": "e1efb0715431a71e3080156f1b19826d4ce92cb4f55828eacbd01383e372b044"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/CargoPlan.test.ts",
+    "sha256": "7ac10ab6def79ca3ef14d90a297bba128a4af45deb41f64d44381d92e2629013"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/CargoToolEdge.test.ts",
+    "sha256": "aa2fc6e48c7736b98e645b01db9427baa8a0d56bb91eb485b75f20f5a5821824"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/CatalogToolIdentity.test.ts",
+    "sha256": "e787040636ad4eb556656853fd72c91c1b6380caf0db45a52e8880bc0ac171af"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/ChainExecution.test.ts",
+    "sha256": "7ce3e2066b620cacf765cc570986849eb3da854ea310d87cb91437ee976207b8"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/CiServices.test.ts",
+    "sha256": "2463797678fabb2d5f102f139c7bc2aaae6bdb7ad2c741c928e216c315ab17f4"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/CliBranches.test.ts",
+    "sha256": "b29c9526996a596080db78eebeda0fa96481698ef2989b4deca337caefddd8bd"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/CliExecution.test.ts",
+    "sha256": "8eddb5242d4b4dbbd19208a4395102ff451cd578026f28a28f89160e70626f3a"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/ContainedCommand.test.ts",
+    "sha256": "4f38c8973c88fa87c9b3a40d22af57f31e265da1c854ab9e4ba78fc7fb9d4ddd"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/ContainedProcess.test.ts",
+    "sha256": "a58dabbf9d76ddc77513dba2dacc179761c165d96d0f7ff91114f130afed3b62"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/ContainedProcessWindows.test.ts",
+    "sha256": "7cc9918fbbb8c0aeaf9e5577704d89bf074ed6ed201f2250cb18528fb3c61cbe"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/CoreRuleSelection.test.ts",
+    "sha256": "49014175a44a10835373b46cb4b1b093d67734d0fff0b69c24a6f0fc9ec49e92"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/DescribeFailure.test.ts",
+    "sha256": "ddccdb1d20dcc7205b4fc87351ca36102df80d53c7eb118d3ffafa6394033adb"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/Diagnostic.test.ts",
+    "sha256": "07dee1f8294bbae1a179f55a57c2823ad6ea1e2746a75c9eee3f8c402f90c4fd"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/DockerExecFailures.test.ts",
+    "sha256": "6a89cc09c0a6b41075805db61f79c28ffe9797ce7c5a44a3709c7746db230d1e"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/DockerOwnership.test.ts",
+    "sha256": "2db91df4152b06d0c2a5f0f884eb8c64be5069395824e2a90f06b1145a855a63"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/DockerProbe.test.ts",
+    "sha256": "cb1a84fbbac96626c05a436521e1b3ce61bee4fd124c110c115b37b4c38edbc3"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/DockerPushBoundary.test.ts",
+    "sha256": "66fa9c34b1e303bd3a57bbeacafde3c86c0da75148e40a04f1ae373b57b29c91"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/DockerPushExecution.test.ts",
+    "sha256": "2f5058a64d276c7bdfaadc6b0c7966d40d0a96170ddd6b60d677f23ef2ba57f1"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/Docs.test.ts",
+    "sha256": "800f7e601b48e586331d992b6bef35c54129e15c246b13212784711f556477da"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/DocsCheckExecution.test.ts",
+    "sha256": "0e5660f9eb5da50525ed99a62324b72eadf0de8498582f0333776dfdcf92b0fc"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/DocsPageLane.test.ts",
+    "sha256": "6165059ff36018309eba9d4bc98ea29b24b50bae5b4cb71b57dbc1dcaaccf46f"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/EffectResolution.test.ts",
+    "sha256": "d0fb4de6a2ea027535032f118d1f61c4605963b7ff0dba3f44c2f01ef579b06f"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/EffectResolutionContract.test.ts",
+    "sha256": "9debac57195a25a80fe2933cd52768f9357123399425e094645a5ce6fa9bc7db"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/EffectResolutionRuntime.test.ts",
+    "sha256": "411a7a78cee38d1eec6a9108e8f264eebbdcc361c4693cb8d20551e62652180c"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/EffectResolutionVibeLang.test.ts",
+    "sha256": "c3f5b034a6a780dc396d67dfb5414b61e5033e0f22aa63fa942768ebd87c34bc"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/Engine.test.ts",
+    "sha256": "4b1239b0cbc23963932ea21fab9b80df999727b564c0c0a71b727950a33890ce"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/Entry.test.ts",
+    "sha256": "039dd75fdc3497873c794da2f96c82cae18242a7c2db6320a7a2f11f523c75e8"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/examples.test.ts",
+    "sha256": "2acb6650e0b06cd676141dc8238d8b45d4fcc23f6fff410732de9b842a55360d"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/Executable.test.ts",
+    "sha256": "eedc1f27d5b640229a943f415579c0182300b3264fc671b179ad77be3e685df8"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/ExecutableIdentity.test.ts",
+    "sha256": "7871c98a2580203933db727b488879a26cc18df2c4f39ae5eb311d7815a07b4a"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/FactoryLoader.test.ts",
+    "sha256": "419d19d9dc16dd62f9d2b0a75313e1aa2beeb93bc71957573be30c52901be0b9"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/FactoryProjectionExecution.test.ts",
+    "sha256": "e7851b659571d8f711b4b814b15523961ef1bbbb918399db5cc8fc4a14e87b14"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/FailFast.test.ts",
+    "sha256": "007f88d3d2aef9e246b6361e85a9f1fcae196a2e0a46ca8037ac3dff14f707b3"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/FaultTier.test.ts",
+    "sha256": "022dda8ebff80682856b0af727563081466464cf0525d762da7a655ff3ab07a8"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/FetchExecAdapter.test.ts",
+    "sha256": "4636a18347385aac150b63b6cd5318ecbb70d636fa06a7ac2e97d3f18bec400f"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/FetchRedirect.test.ts",
+    "sha256": "f508b23ea340f043874ba5a711b56fe034fec3e4c846ac2fb5ca8fce8c16fa42"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/FetchRuleContract.test.ts",
+    "sha256": "b5f282b09230138f1eaf2eba176deb41a25a47425107828106a20c226bcdfd3a"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/FetchRuleEquivalence.test.ts",
+    "sha256": "c3a19a4275b111d83bc6ca7620ebdc95981247cb3ad1076b178704cdb584482a"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/FetchTarget.test.ts",
+    "sha256": "ca7afc6099713fe11ba6bd5ad1911acaa96be72b02124f34f3ec947bad86ec73"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/FilegroupCache.test.ts",
+    "sha256": "799291b6607a61d4e73c7b2d03dcdf3d70c9c19aeeb6717ca5b76e9e090f3294"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/FilegroupCwd.test.ts",
+    "sha256": "61038eaf708ea0635c1c5b36893560174bccbd2815a2500363e535593c05300c"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/chain-exec/docker-bake.hcl",
+    "sha256": "b26be4e7fd0dd01f3d64f715e78adc6acba742973cff4d0020a6c6ae52fb0e7b"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/chain-exec/Dockerfile",
+    "sha256": "c2f522659b21828083fc8c6d4ea7fd59bde86f7e6d7087a2e1600efcc8c5fb2b"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/chain-exec/foundry.toml",
+    "sha256": "c90aa557946897fa07b0283fc1b24d727e3343e5be4c268407389d4fc521a98a"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/chain-exec/hello.txt",
+    "sha256": "56ad4e30ca2d87e87bed836cbc03682c618088825984fa4e9529a9254e3d70b9"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/chain-exec/mise.toml",
+    "sha256": "525bfca7bf4c048c4a8a7c51e67327a72591a6ae1b98da7a7b89d5ea3d5a3d68"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/chain-exec/package.json",
+    "sha256": "ab4e9f8c2f7392ec7e245d6309609e7fda5fe717453e43dbeac715d7f262bb71"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/chain-exec/PACKAGE.ts",
+    "sha256": "1e8354e5f0ec51b8fd6df07b9bf421060af88ce04d15a9a55664c781fea621a3"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/chain-exec/src/Counter.sol",
+    "sha256": "111abcb02feaf598c02789e7495398bcd04e97bdc5b2081e59c5aa7e60c6a7e8"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/chain-exec/test/Counter.t.sol",
+    "sha256": "8af08066cc840328680b8c8844fd9a61254204c4c515e7903542db2aa062a74f"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/chain-exec/WORKSPACE.ts",
+    "sha256": "91ca89098fbc2c42be3991c760bad45193b06e9df64d3ff26908285a0ef7a9ca"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/chain-exec/yarn.lock",
+    "sha256": "faa5b4816800b8cbe1595e5533fe36c53f396c0c26a3a876dd3e4085232348a1"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/force-spec/.github/PACKAGE.ts",
+    "sha256": "e9d0a50a97d91e9648d2327dbad6793f5f3c97f800229b5390a4c24eef532482"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/force-spec/.smithers/agents.ts",
+    "sha256": "42f8021a28a2c4dd2767254e50a20d01bdd4a9d37be27f81c3764219d3bbf29c"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/force-spec/.smithers/sandbox.ts",
+    "sha256": "8627b78c4dd85a4e261b39291863b847e4efa5e90890ee4b8182003b426c47ab"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/force-spec/.smithers/WORKSPACE.ts",
+    "sha256": "531e82e6df007cfd77e8c5b806746a955146921f165229befbbddf48d9d2bd0d"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/force-spec/.storybook/PACKAGE.ts",
+    "sha256": "40b5e9c5c9b87970175db2405e9853224deb06becbcce542fcfe830685db76a7"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/force-spec/data/PACKAGE.ts",
+    "sha256": "0072d04f99d45fde61d1eae9e6805a8496119a73556a932ba7066397ecc550c7"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/force-spec/package.json",
+    "sha256": "1b1e5b5f98e4ed47c76b20b30a9d09a1a7fc4e56ef0d49bb3636ad1c9f1a95e4"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/force-spec/PACKAGE.ts",
+    "sha256": "56c147b28cf484ea7f2e37d543f639489897819e28a9456481d85d3e9646745b"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/force-spec/patches/PACKAGE.ts",
+    "sha256": "9f325779b8fda9c3c92509a0a15fe88648c17f81f6b06332ff633a6a41aad800"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/force-spec/playwright/PACKAGE.ts",
+    "sha256": "5af0288d427fab91b5ec0dc040e7b67181af424791068ef7eec5b751e8580470"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/force-spec/smithers.d.ts",
+    "sha256": "aae4cb1e9b285845ffa6f8acad2f596d42b84791df7bddf9c3676f6b3bbd3cb1"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/force-spec/src/Apps/Auction/PACKAGE.ts",
+    "sha256": "d099e5c0f604f9d96c4f5a818cc45dac4adbee840b7f99740941d3f0d4aead71"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/force-spec/src/Apps/Order2/PACKAGE.ts",
+    "sha256": "79139eb08a5e4bb78a6a732bad40c99ed7d07e5a6e08b2f0887e30264e9dae2a"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/force-spec/src/Apps/Settings/PACKAGE.ts",
+    "sha256": "d065f11e0efe7a0a6d9ad8ea5819b434c22e5a3a07be88656fae8e8ac1632bfd"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/force-spec/src/PACKAGE.ts",
+    "sha256": "7320cb31f07bf1a17d5bed7953a39e542b1d26ab8726ccabef33f9226d63ae45"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/force-spec/src/Server/PACKAGE.ts",
+    "sha256": "8c312b21feb7068cc07724093f32385c8fc1ce6fb8ba9ec31182745bedfde528"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/force-spec/workflows/adding-a-new-app-route/PACKAGE.ts",
+    "sha256": "253173c13a197664b7a2a74be02254b88af26a9d324665037ab75a4f36841954"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/force-spec/workflows/beep/PACKAGE.ts",
+    "sha256": "fe2c1779dec8ae78c7638b12556e4e666695867ab4e151603b79cd610efa63f0"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/force-spec/workflows/fix-sentry-issue/PACKAGE.ts",
+    "sha256": "12abf58a406b974596cc09ecca0cd834c0ba3e9e1b2d907d2e68f31db407e1c0"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/git-hooks/post-commit",
+    "sha256": "5c5b9f43b539b3f53cbb74e47df3f306bd84dac51d542482553206f469e258d5"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/git-hooks/post-merge",
+    "sha256": "2c857e41238d710397a5942ef25e0288182e5296631fde86e8e3566859ab234b"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/git-hooks/pre-commit",
+    "sha256": "955715478ea54354f3d0f23c82c789e431b31d1ce68ae6f84031d8729df579c0"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/git-hooks/pre-push",
+    "sha256": "b4946da5945c1d062dfae34e9e56e3c7fa625acabe10ed0ad78dac40726ca4ef"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/github-render/actions/setup/action.yml",
+    "sha256": "d12c72080ad868d58fe38f4fc6f2e78ec89d613e3c32f621f874f1aa88988066"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/github-render/originals/coordinate.yaml",
+    "sha256": "e157bd17381091e7c7b414bb7848c09b55e98502422ad893c4e1fc478a0e3b51"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/github-render/originals/publish-sdk.yml",
+    "sha256": "98031db228b687bcc38649cdab6931e35899aaf030048fd5bfcb74281c514e3c"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/github-render/workflows/ci.yml",
+    "sha256": "7f19941a15eaf5b5aed725f0b33466cec4a8ef01343a87e80765e39bd1ccb08e"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/github-render/workflows/danger.yml",
+    "sha256": "009c7e864cc5b888687f2f8642f2273292dc84be511ed5df22ad280537452e29"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/github-render/workflows/manual.yml",
+    "sha256": "e4b423765233f8d57224d5bed5a9bc37749b9184c930f88fe9b8c4c8f5d419bd"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/github-render/workflows/review.yml",
+    "sha256": "4fe0f609e98a2e5528c869953ef7d77242ab707bc932f0801e58287cc4d2c6d2"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/install-tier-manager.mjs",
+    "sha256": "99ba1a15f6c97cc645aef8e8e0e0040c9c825f3d0d649f4e1f58921546631a76"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/multi-repo-credentials/child/PACKAGE.ts",
+    "sha256": "5969a5b0ab48c4a99b96d21f41a9c9743fa97d324b40b8bf9e52060c7dfbee19"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/multi-repo-credentials/child/WORKSPACE.ts",
+    "sha256": "db4625bf765ca75a4f237fffc9f9dcbcff1eb1e27a95e3b0556a1b6321c73d0f"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/multi-repo-credentials/PACKAGE.ts",
+    "sha256": "8077d6b24b3bb9e268cbeb841889cb6cb0153f98db14f61ef7f5a92e4556a01e"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/multi-repo-credentials/WORKSPACE.ts",
+    "sha256": "04c3cf87a1123621d86856da271ee479baa044fde978886a71252a81a641c9a8"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/multi-repo/broken/PACKAGE.ts",
+    "sha256": "d0277be7d6ce3454e2e8a28b625d7a693f9e30b53fd6837fcd8541ba1f2c1a58"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/multi-repo/broken/WORKSPACE.ts",
+    "sha256": "38f82b9930e4b08d7a3ff304b39d9b869d25812ddb8a79e0dde33b7317581850"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/multi-repo/child/.gitignore",
+    "sha256": "06d5256eb763b639f1a259d2346a5ad9cb8241e85c4269a8d1cf9f7e27b867e6"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/multi-repo/child/PACKAGE.ts",
+    "sha256": "eb58fa99ec09bff96c729b8f02c4d586b70e48b182ea6de6e3584d736c80cfd2"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/multi-repo/child/README.md",
+    "sha256": "4c43dab868b9fd5d3f0fd392e8fab2a66590660f8aa8d0f7f838b93d48d38fc4"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/multi-repo/child/WORKSPACE.ts",
+    "sha256": "8b43ee24fa148d7637ec27a1a09e3f29874af400d5a7644555ae3e6f2079112c"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/multi-repo/PACKAGE.ts",
+    "sha256": "98a441f9e92d83e0d31187d70c6887c0ac419a2a3d365c38fcf38f91ff0e6856"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/multi-repo/README.md",
+    "sha256": "cddbb50863cf5ecbff9c85d270a0654d73e35cfe2e87e98aacf381cf4bbd29bb"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/multi-repo/WORKSPACE.ts",
+    "sha256": "2ba2c95d3f845c8e077e1d7ce172ce0f507de432db7a1d85de82d1e71008e00a"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/presentation.ts",
+    "sha256": "9868aae35d8bf392bc4012ee4dac125ffe4b9c90e4e47bcfe7c5835f1ebdd890"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/rsbuild-mini/package.json",
+    "sha256": "f73a3fc98da3a1e3009126689d241b047a6e05944e8293f76f2efe1fe63f558d"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/rsbuild-mini/rsbuild.config.mjs",
+    "sha256": "6f42643a985ae1fe7bd63be2322a6bfc8d6a30000304878612ab05fe11d0a978"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/rsbuild-mini/src/dep.ts",
+    "sha256": "e12a9bb26f4e4c3eed2cbe05ee19046071048e7b5cf864d38cf3fcd4b63cee94"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/rsbuild-mini/src/main.ts",
+    "sha256": "40a11b88575c02046d9c95a88e1812d27d9633e8512571f30592cc87b8d17d3c"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/service-supervisor/server.mjs",
+    "sha256": "9ba09c374afcadede8609c43a9b8ecb905856ae708c527583a8872fc43edfae2"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/service-supervisor/sigint-driver.ts",
+    "sha256": "ac123477b6e55b4842cda9acc2a130c5b2e8e8f651bb7ce94324a28acf1b9e9c"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/smithers-memory-help.txt",
+    "sha256": "50772c6b56fa506b32a18fea5da169f188c29eced7c61eef6a7a43915a8c2c86"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/steps-form/.github/PACKAGE.ts",
+    "sha256": "34fe09ece2652df9d9b0c2279944dc506749efc0958c559d296dbb1a0131d336"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/steps-form/Cargo.toml",
+    "sha256": "573df38a85429a5192c8fc70fa541da9baf4a296daba0813350ddef77ff02db6"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/steps-form/package.json",
+    "sha256": "278e3e6c782bed7e68e4b64d32ae289467a55cd3e23c5c49f864d8e1e5032665"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/steps-form/PACKAGE.ts",
+    "sha256": "569766c42a57956dd498421aa05880c4f9d6587f3e9677696562ae3cd6bed5c9"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/steps-form/WORKSPACE.ts",
+    "sha256": "a75e84e35a7970780fa43b56338979b18cdbb38a6ebb503eddde46f6cc677353"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/sweep-expectations.json",
+    "sha256": "6c57774e077116af66336741e6e7bf6540d2eeae841f5f9e3539919df555eb84"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/target-body/.gitignore",
+    "sha256": "8709fb755b42526dbf83f88deb082eb90738746e826261eddd93443ea10de715"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/target-body/dep/package.json",
+    "sha256": "4b01ded41e870e8cce733f045d4aa2245cce2ab7b5196cb4e8be8f148ad5883a"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/target-body/dprint.json",
+    "sha256": "40240c899dbd2830519344dfa4e7955ef3b97f3983742c86f1eaf00a205ee0f0"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/target-body/eslint.config.js",
+    "sha256": "75759f0276d5e922fd93eb37c096401b6c681214fb857f80b3e82668c83782d9"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/target-body/package.json",
+    "sha256": "220f2628fb9121ce9f392a1aa5eeee7859e9b44b2f0988299cbcf2d5c3918615"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/target-body/PACKAGE.ts",
+    "sha256": "00f05134eb4602a820bc0b1ab18f0151915c26dc649c614d3d9a69d1d4393c0b"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/target-body/pnpm-lock.yaml",
+    "sha256": "17c814b167307942d3609c7b9d916ceddb85839573ab39baa114e30edb132a1a"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/target-body/README.md",
+    "sha256": "60159c577d71f5dda427ae56beb717d96b4dd97598a317784a3040fd81b659b3"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/target-body/src/value.ts",
+    "sha256": "7e2312f98bde5ad78527d287f8221d27a89df7d4dc5cf769348907aba416884b"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/target-body/test/node.test.mjs",
+    "sha256": "1e5733972814a6712bd3a6fdd50a086ceee4df09518e5df9ebbba85ab51bb9d6"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/target-body/test/value.test.ts",
+    "sha256": "72c09748df8c15c0fa11ff9234484aaa798fd719f7dd661946e6fa2c56edde53"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/target-body/tsconfig.build.json",
+    "sha256": "1186213563ed83685ed6fb9bb3da26e6d72c2fefb347a00eef6bd4b2b8c0e0b8"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/target-body/tsconfig.json",
+    "sha256": "83291eeb3d6be162a0a3938268ceba12cbf952ef8914f67a508869b8283c5b05"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/target-body/vitest.config.ts",
+    "sha256": "9b5ffb1efe4f318e3c1f23323a246439c90798af177ceae2c97b508e9c0583c7"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/target-body/WORKSPACE.ts",
+    "sha256": "5419365cdaec8dfa6faa3ac118dc28e4ba7d245e2054435de2069aedde224086"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/viem-node-spec/environments/PACKAGE.ts",
+    "sha256": "2dec53a3cccd86ad13398a6f579acc6738f434fb36af5a3182ef67081fd7d7bb"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/viem-node-spec/examples/PACKAGE.ts",
+    "sha256": "1facc265af256bb75ef5f83f57f8665998a84ddfde518f408c6b66bc034c12d9"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/viem-node-spec/package.json",
+    "sha256": "e4242c48bf5b3bef1c9a306c682c5003ff27aac005588880ee914874aadcd181"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/viem-node-spec/pnpm-lock.yaml",
+    "sha256": "f0bcde463fa201480015b9caa7db2017d3c1b6ca9c7e133df955038c54333d48"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/viem-node-spec/pnpm-workspace.yaml",
+    "sha256": "afe3b9cce1567142c38aa7add5ce88b7b278915004d65e325ddde9106a1b3adf"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/viem-node-spec/site/PACKAGE.ts",
+    "sha256": "14a8c533f93a341575fedbb698d69a05e0726762734e8df5397ccdfb92455e87"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/viem-node-spec/smithers.d.ts",
+    "sha256": "1e1cb321711063539f28486f5988a5e9c33d02496f166db031c027a62ca962d3"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/viem-node-spec/src/package.json",
+    "sha256": "ee27c54890341043b2f7af28548a6708adc495446562fbbb6bdbacef31c88d8a"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/viem-node-spec/src/PACKAGE.ts",
+    "sha256": "836717352cd442476d9ba9bdc30436f929e5db263ba659e453db94c3b246e933"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/viem-node-spec/vectors/PACKAGE.ts",
+    "sha256": "5a98791e7a8c38d7b2407dda9362e50136840b1667eceb830bef1539ac4faaa9"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/fixtures/viem-node-spec/WORKSPACE.ts",
+    "sha256": "f7d7b4498d67b2338fda71ec2959c69994769dbda102719724df3dbe86a21e38"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/GenerateEmitContainment.test.ts",
+    "sha256": "d74be6beb2fedad29c92bbd2be2a969696408f1691898895679fcc00f226dba9"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/GitCommit.test.ts",
+    "sha256": "9729d08786b91119b808647027bbe66675e752aeb5893dc1fe37e02d425f129d"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/GitHooks.test.ts",
+    "sha256": "e6bbd8e95977f432e731a88b449a10a3660e32a575c425db821184d29318bf39"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/GithubRender.test.ts",
+    "sha256": "0f4dd1faf46d23760a7e08fdcb1ad9899d33f0bb939740b3bd17a9083efed5ed"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/GitSubmoduleExecution.test.ts",
+    "sha256": "1d0302b88cf90eafa5caba6b189301b9d3a50823a2fab6a6bc2725ec6f0dced5"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/GitSubmoduleSources.test.ts",
+    "sha256": "b7d0d1f1b9b6bab7ae15b8f229352bff8c63cf627742513b440a24d9ab87ab1d"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/GoExec.test.ts",
+    "sha256": "e174f3fa3b388ac868a046f3ceeabce422e74cd1017843b6cd5f6eb85d60335f"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/GoExecFailures.test.ts",
+    "sha256": "fc9f6c126dabc71de7363ef493b73e33103153e3bd969b0290ea0bdd18b76101"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/GoExecution.test.ts",
+    "sha256": "a133a49bbfa0a1a43f683f23259cabbde05f4bf8cefe34ab432e68d23c4d44e8"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/GoPlanningContracts.test.ts",
+    "sha256": "af549aab7f833ec359535d457ffe698bed2fbc80bf48ed6d1de18e3689ac1303"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/GraphOutput.test.ts",
+    "sha256": "4abb6ca4fffea3816059b2d0865038d0442aa66f1d923ce288a7a17cfd0356f3"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/GuideClaims.test.ts",
+    "sha256": "7d7b6fbff1250fd4fafcca9c693134786644f60a5e9479e6d04500403187e0f9"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/GuidePackageExamples.test.ts",
+    "sha256": "3b6c03ccc2d7070f16f07fcb86ed5956e4cb86d2a2b1215caa1a544e219e4280"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/HarnessSeam.test.ts",
+    "sha256": "ef9c8f4e3230583a9a39ac187a2c381a5f8b6525b03d44216c7e2a121d5d7cac"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/helpers/ContainedCommand.ts",
+    "sha256": "2058ce81a782a2a2bf5a62241b6ffd383c21f802b830ca3d07c941d22590ad17"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/helpers/DockerProbe.ts",
+    "sha256": "7fa7e113d3726a32e668f962ad47ebac3ae9c3b0654f7d378b2731984900c20d"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/helpers/Executable.ts",
+    "sha256": "5172040ef817871d87530797b6888e73bef7e11aa1f2320f54b26cf093508e08"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/helpers/OciArchive.ts",
+    "sha256": "9c88b8de922069b593fc6cf9db312999b7075a712874e2c8f3a18a878cc8f565"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/helpers/PackageRunnerFixture.ts",
+    "sha256": "b2c2053030ad342e17b9091f2e21fe702fbd85a7ab178e9053e2c3236c5414a9"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/helpers/RepositoryPnpm.ts",
+    "sha256": "1c74d2ca38050c9fba07d7c12ca0ce1921cdeb841d04f75f8940c30a5e685503"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/helpers/ServeCli.ts",
+    "sha256": "153a1b892b6dcd825e2f43d81325e5bab257c2ad3cf075bf99bf1a0519d352af"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/helpers/WriteFile.ts",
+    "sha256": "60feec5c8ab6dd90b87d28e15dd8922ac6a3948416eebde9ce6deb9691f21286"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/HostProbes.test.ts",
+    "sha256": "6e7a091d5de6287d57505003eae29d1384a027da2767a4c89addea3714013597"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/HostProbeSharing.test.ts",
+    "sha256": "be86a7785345f140ebbb21eb1a0a4af616622b6fab7efac21e60cd454f13a55a"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/InstallTier.test.ts",
+    "sha256": "1058cbb28d34ee076b63b7a4e98afa91868a1e97e2515f32f532394c4cb1fc71"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/InternalFs.test.ts",
+    "sha256": "c489449b9f3bab41899d2db3cd1836631b8dbbde404e7264aca6dd16cd61c58d"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/InternalPath.test.ts",
+    "sha256": "2ddf67f4cbff4c992cb258ada90cdfd71a6cf050ba453084ec6383b083101acb"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/KnownRed.test.ts",
+    "sha256": "9d1de6c101ccc821e6a6101a08e142d5d480b48dd9cdd11afc6fa0028c4900b1"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/Label.test.ts",
+    "sha256": "317872b63bf3a948a816a5705439ee4129b101a51f532409e387bebe3cfda43f"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/LaneExecution.test.ts",
+    "sha256": "68cd3618080d69ac807354e4ea0838e015bb74db53a81bb81692de9c17ae60b6"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/Lifecycle.test.ts",
+    "sha256": "64a59f8ebaebcca7cf75bc0b5695ca32d808f13affa043a0ce94a5ad170bed67"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/ManualSelection.test.ts",
+    "sha256": "a624f21483e332bd78eed4ccb2859dc3539691d7ab663c42a0a92a364c5f58b2"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/MarkdownCodeBlocks.test.ts",
+    "sha256": "18b35a5135c649402c3a0f5a5928861fd39d331f0202cd4ba7e10824e8b0b250"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/MaterializeRollback.test.ts",
+    "sha256": "ca7c2fe52560d4759b8fc9ebc79a9f44111da656392ff90f196f14e539491d8e"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/MemoryBackend.test.ts",
+    "sha256": "89805c5cf749a9267ddee480b0d4ac1e3f1e299f5ac84e474ed1a32ace430822"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/MergePlans.test.ts",
+    "sha256": "0eb42e74a5b296994f78b84f67016befc4089b33de1e6ed284257af3fe892bab"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/Mount.test.ts",
+    "sha256": "ae40a047babf679507fc11c5f17f6817012f927fe7e335b2f7fbf686aee189ca"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/MultiPattern.test.ts",
+    "sha256": "4f27d63aa70a311a467c0b626e00b60800d7e900044600ba2bf6d8518f19fce8"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/MultiRepo.test.ts",
+    "sha256": "0c9350de9d1cc4cf90ea606aadb60df4dfae30e7eee508a5244dc3ac451acd39"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/NativeArtifactContainment.test.ts",
+    "sha256": "552fe8d62aba71346f8b9c24007f2b0781041f00f3a6d6a31311bc5546da084d"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/NativeArtifactOutput.test.ts",
+    "sha256": "9b83225bf7ffb1da3a955011f8bd395148ed8961688d4bff9ba8e8e8f751f162"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/NativeToolProbe.test.ts",
+    "sha256": "d2779eec6b328abfda1fd4f2e8dbbe0db5d82deb77e803ae99b2981fa7ddaa9b"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/NixExec.test.ts",
+    "sha256": "1d381444bde4fbf5d4b72918228e8898fc224182c2feeb583a9477907989ffc4"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/NodeLaneExecution.test.ts",
+    "sha256": "3179fe7442804b818f70034c19ce329eb392b45b5bb7b34dd1ea599b5ab1d8e0"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/OutputStream.test.ts",
+    "sha256": "d40286a84943e42264a5d0bc9a51cac51536ba5ec4640e4c68b9dd52e5c4e594"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/OverlayExec.test.ts",
+    "sha256": "0db1db18376a8958c4ef1b338d6a172091abe63172004eb43b5a68a63db3dbe7"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/Owners.test.ts",
+    "sha256": "2393ba5ec4165ceb4635552961a96bb65399fa1ee3e32e842b2cd5ae3c0d389d"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PackageDiscovery.test.ts",
+    "sha256": "fb2674a96125fcec4e3a2135885ff384a7715abfdef6bfe9c0ce8ed66e2afdb2"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PackageExec.test.ts",
+    "sha256": "0dcfc454bd5c6cc8468948809689053232287e4c94303aaa3057d6a9b066c2cf"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PackageExecReporter.test.ts",
+    "sha256": "fe26eeedef050d371c9ffea9fe7ff097af600346c4a54993ff3b3d5067eefc93"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PackageExecution.test.ts",
+    "sha256": "025ce12f407d9f5311cff8798e24bbd829d0d65fe5125b209a96506fb7f51810"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PackageIgnoredAdmission.test.ts",
+    "sha256": "e72cdbf36fe97dd34fe102478d4840ab6e758675ceaa88f9b98662ab55205da8"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PackageLoaderBoundaries.test.ts",
+    "sha256": "b771c1514eab9c87b1d0f0f0651631b5f47995a8a0cb74d0fcede99eaa12826c"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PackagePlannerBoundary.test.ts",
+    "sha256": "9870714c6d0a1cacffbf1f2afcf63d8ee63b11d3f3690c857f017b335707ba52"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PackageRouting.test.ts",
+    "sha256": "c0938f6bf122b7e4a74595555e8aa03692ac6df83d89b775593016212b527f6e"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PackageRunnerAgentBoundary.test.ts",
+    "sha256": "7931925717b06daf5e150d8ba997e47d51496527fe8c44e8aebec54771b683c9"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PackageRunnerArchive.test.ts",
+    "sha256": "e1fea78642ab4dc85b75d23bf543bceafb965b96995a801a5a0bcb5061a63183"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PackageRunnerEdges.test.ts",
+    "sha256": "615019d9d29b04c154be04cbb5f2509be5ba43a7cb867b518c328c251b5d1c0a"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PackageRunnerFailureBoundary.test.ts",
+    "sha256": "ea648ead023460969f802f69b84044ff7b11bceee41dd115ca6d41587463985c"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PackageRunnerFilesDigest.test.ts",
+    "sha256": "1605f8a67334cde78eda780dbb37f23b6f8b1be272364a2c78b73761ef6c0298"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PackageRunnerHostBoundary.test.ts",
+    "sha256": "72635d6ac8cfcac109bd48741d35360f689a1e328c27906b87d9d03eac0238eb"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PackageRunnerPlanBoundary.test.ts",
+    "sha256": "f02d89476b618ba177ddca7d319abcbb8e61fdafa44b27a7868df2a18a9cba9d"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PackageRunnerValueRules.test.ts",
+    "sha256": "889b337d8a563f8813ede7f2af91c24b8c2e06b9db0588aa962239fe47594416"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PackageTree.test.ts",
+    "sha256": "5bf20529ff7b287a141b33994ab780bb041d5021509e1817d7152aaef2a3e74c"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/ParseModule.test.ts",
+    "sha256": "067992dddb80cfbf607b6bda40af8ee3fb129ffdf33ac3452ccce9cd26e41b26"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/ParseModuleFailures.test.ts",
+    "sha256": "796f3dfc97d3e3dffad22c546e421f3149ec126e771655762c93b76a9e1fb0e0"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PlanCredentialBoundary.test.ts",
+    "sha256": "35c89896d8d60d03e83fc29946de1f6410fcf8df568575a86ac451ecd5e15545"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PlannedRule.types.ts",
+    "sha256": "4af2525a0084e51553bfb572a8eb43b60e3aea5d219ef3c26e773167c734e369"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/Planner.test.ts",
+    "sha256": "27d36930981e8bcb5b914057ebabddb591ea983bbf9622e820b3306f8a4e36da"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PlatformSelection.test.ts",
+    "sha256": "622e4bda37434072e9e4b9682af468ad4e439d753b26b6c9323b999d1b4ec41f"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/Positionals.test.ts",
+    "sha256": "3189d7751025071ced1e3a43cc1a6d343ad2a38fe047b3dcc1c71e94cb128f29"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/PreparedOutput.test.ts",
+    "sha256": "c952fa4c2f69907f208dcc7696d65987817c0a041c4b0b2e31f5dbeed5fc1f7a"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/ProcessGroup.test.ts",
+    "sha256": "f5c67f07fce62dd8dab47900693fec78b9a5c44b6edd9b9bd0a7617880845850"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/QueryOutput.test.ts",
+    "sha256": "3293956fae0887e00c385ea724e73736bc46a54f9fe7a4c3a8f068dab76ef5d5"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/RawErrorSites.test.ts",
+    "sha256": "3c377b2472caa7e5efabe61e64ab216dc12402b8a1be1dcee4c54548a3817950"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/RebaseKeyStability.test.ts",
+    "sha256": "4f8f0bbb3644839c57a025b2f700d2966bc8a31ec92446658d164f50df6c3933"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/RepoResolutionFailures.test.ts",
+    "sha256": "aa6cb4ac9caddb402147ca0a0214eb29c955234b9d07b1675ef0de3527603f19"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/RepoResolutionOutput.test.ts",
+    "sha256": "6f6d0e3a6e431eebe5e29f5319c5e6257a6c43b4751e3480f7e8e4242116aed6"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/Reporter.test.ts",
+    "sha256": "cb7eba99b65f95c263a895ba8b965bcd8aa35424c426fb22155152c4309598de"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/Resolver.test.ts",
+    "sha256": "57cd59f20098d5c376b570d0937961b642b7beeadd75d15d9f842049f0a40051"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/ResolverCompose.test.ts",
+    "sha256": "6e793abfa04ff3dc3ce5ef2c974fac857113803086102d841f858210d11cbe35"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/ReviewFindingOutput.test.ts",
+    "sha256": "ccb911afda35cc524d5368ade894d04119941ce9f716ed314442c8ea2946f5f6"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/RspackRunner.test.ts",
+    "sha256": "3d50989e23963344f0082db2531a4510b24aac38d071da1cc2c5986635a2f8ae"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/RulePolicy.test.ts",
+    "sha256": "f66d6c9258473b5c3c6be481bb7a6656e936608d098b8a348627bbf6e74d5cad"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/SandboxEnforcement.test.ts",
+    "sha256": "246b6f31374a511e19e2bf7cd699420dfbb58b26145b31bb5e38948eeb270a99"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/Schedule.test.ts",
+    "sha256": "0fb8a57b6d628abdaa2a1b80834f9f43d6d9aa9efdf9a0e005f09ed58d30786c"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/ServeCli.test.ts",
+    "sha256": "86f3c695e7d3605b8e4f9eb9cb796eb5baeac5670e57c65e44d9a6ba5bf38a5f"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/ServiceContainment.test.ts",
+    "sha256": "d26ae322f1ac28745834a3cd541fdb054f9b3af916e3ce122fe1738513e69764"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/ServiceSupervisor.test.ts",
+    "sha256": "3d684883789249343abaacfdf20d80278d652481976f0843a395878f43545bee"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/StampExec.test.ts",
+    "sha256": "d6abcc35673b54e1ec61ac06206c1b7879a62eab1da0c0eb40230f1dc8f8346f"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/SweepHarness.test.ts",
+    "sha256": "868ccd035ef73942e8dd1f7ce903da874b032550ad24945f8e882600d0ba5f29"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/TaggedErrors.test.ts",
+    "sha256": "e39f282c281aa7f79a2f684174d154f3bb7f44787868ac2e05a494270a44954e"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/TargetApproval.test.ts",
+    "sha256": "34add39d032ac99dad5703ec39c385cfe7f0e4e1946a9ee11a4115e655b39a55"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/TargetExecution.test.ts",
+    "sha256": "6fce2e5e7b950b36a0456020353b4b54b6b6d772a9a8f50f993f43172782241b"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/TargetIndexDestinations.test.ts",
+    "sha256": "45827c62f7d08ae03c7529a67bba014592a6c71c59fe84380a81bd46f752c623"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/TargetIndexExclusive.test.ts",
+    "sha256": "c2a4c874bf6659e3b9b377206b0949836306ac36b4f03748b9b83f5c06cdeaa8"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/TargetIndexExecution.test.ts",
+    "sha256": "9b0630749ada98b46f3668fab946624e9d4b4df77e479670a3c31627dfb926a2"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/TargetIndexOutput.test.ts",
+    "sha256": "6e3fe9cd5cee2023d82f8efaee32017f78c33d3e5987bcb83f3e13cc41eb6c82"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/TreeGate.test.ts",
+    "sha256": "04cb0a491bc1b5fd863b462a17d297cec2937d6ae25282dc4baf9cd22a4ab6a3"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/TrustedReview.test.ts",
+    "sha256": "cf94501eff34ae9d0053de5971eda58651b9156a2c1ad75bf197951390ce9841"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/UiFlag.test.ts",
+    "sha256": "67e47fdbb55dbbabbfa0b78199a1643a45cef1385496aa2f62b07ff323bedfad"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/UnrecordedGates.test.ts",
+    "sha256": "4b174d87075e188dd372375753d02949869165276b48f9df5536d7f5724917c5"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/ValueTargetsCli.test.ts",
+    "sha256": "805d6954e7bee1b8a8eb9fec064f91b842cc1d5d30e8e525b1c93e09c33e65e3"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/ViemNodeFixture.test.ts",
+    "sha256": "316648fcfd1f2f1247cd58bc78f0bf60daada597b102a81409f8ed081aa1713a"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/WatchContainment.test.ts",
+    "sha256": "da267a485c6e9b9f00990cffe2f54e06ed442fece50c78d534fe1ff616f187d8"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/WindowsPathResolution.test.ts",
+    "sha256": "4e079f2719779ea9f3d0dfcb765942c1822519acb5e4355b8262436e228da121"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/Workspace.test.ts",
+    "sha256": "59e28414c3aef5c9289d0f704a06ea5c2ed1c79c77f5eac612dcf2340b269f7a"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/WorkspaceCommands.test.ts",
+    "sha256": "699220a7b0a331d536e61bd784f543445c59f7625d76da068a298eac5438e918"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/WorkspaceLoader.test.ts",
+    "sha256": "e723e3af6d750d40507522bc1f2b90f1eea80de123234c66ae6325031bfe8855"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/WorkspaceToolchain.test.ts",
+    "sha256": "d026e093c693f19c3c956cab831d5e4548289351f07fec5f1b58c8f691bd0bf8"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/test/WorkspaceToolchainExecution.test.ts",
+    "sha256": "4757e7baa25a73ded2cd3aeb54e13a0e7cf350fc2e87ed7336a2cc29d18193bb"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/tsconfig.json",
+    "sha256": "834521e11fe5570a7204e625ddd835544bf7eaa4713414b15ad668fdd1fab0e9"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/tsconfig.test.json",
+    "sha256": "77ae9a912d9f7ed0b183a17878e722f0d620e9de464fdfed1adbe7881e93d06f"
+  },
+  {
+    "path": "packages/smithers/build/build-cli/vitest.config.ts",
+    "sha256": "6b65c88b6b3293572d105a85a17075d9b227392b2675f3be3a1fcbecb167d5db"
+  },
+  {
+    "path": "packages/smithers/build/CHANGELOG.md",
+    "sha256": "59227d475260a7d25f869219ec951ae2855d70777ed7cd5a690a11299552d389"
+  },
+  {
+    "path": "packages/smithers/build/DESIGN.md",
+    "sha256": "a118498dbf8db0f242553b336312ef00d8141fbfd73832744ab493489f06970d"
+  },
+  {
+    "path": "packages/smithers/build/docs/about/faq.md",
+    "sha256": "7f2ffa97b2082321c265ac02088da4e3fc4d0d6082084bde0a75de1fa85fb19b"
+  },
+  {
+    "path": "packages/smithers/build/docs/about/what-is-smithers-build.md",
+    "sha256": "3149e047ce0962a61b84b3d08eb6ed5c04eb289b4ed8497c3548f532bf42ca27"
+  },
+  {
+    "path": "packages/smithers/build/docs/api.md",
+    "sha256": "0c1c1942923ec4649734049170ffcb5548411b0fede246ad2e70c8a0d70d57a3"
+  },
+  {
+    "path": "packages/smithers/build/docs/concepts/actions-and-boundaries.md",
+    "sha256": "d17bebc74b0dde0b325b97008e7eb9d773879079a32a5f40acba602be9215a9e"
+  },
+  {
+    "path": "packages/smithers/build/docs/concepts/dependencies.md",
+    "sha256": "d9eb86c58940b256a4fb3b0318e57f9e533c48d7958c37d75cfc9c01f991a87c"
+  },
+  {
+    "path": "packages/smithers/build/docs/concepts/environments.md",
+    "sha256": "bec73f25d45888721fb20feb19ff2173343845005d7c6996fa63997331baafb9"
+  },
+  {
+    "path": "packages/smithers/build/docs/concepts/inputs.md",
+    "sha256": "eeb84d79396778ed1b80a9bf8ed5e7bdee8661090b2b59446af7cbd7d8017c44"
+  },
+  {
+    "path": "packages/smithers/build/docs/concepts/install.md",
+    "sha256": "3fee8944288330ee9366cbc95474ae12c2ef2c4e861a480c305b8415aa974b4c"
+  },
+  {
+    "path": "packages/smithers/build/docs/concepts/labels.md",
+    "sha256": "8175fb5a9dc7c2f3708b910cfd2608e99f9fe278c5a015a08bbd249833925833"
+  },
+  {
+    "path": "packages/smithers/build/docs/concepts/ownership.md",
+    "sha256": "1641cda8049f63edf3303526f63f2d4ddfc40577b392ac2f2013187868904a79"
+  },
+  {
+    "path": "packages/smithers/build/docs/concepts/targets.md",
+    "sha256": "3d80128bf1a0129bacf5bd7e506b0d3d90263c7b9ccd01ad7838b26751e54996"
+  },
+  {
+    "path": "packages/smithers/build/docs/extending/default-rules.md",
+    "sha256": "6351a85d9ecfc89907be15539392299510b2546648ec21ca0be18ff89275bd38"
+  },
+  {
+    "path": "packages/smithers/build/docs/extending/writing-macros.md",
+    "sha256": "a6381a501f2a5f7de1bab35dd88f096ba4295c5866e87f088406ba38e592041c"
+  },
+  {
+    "path": "packages/smithers/build/docs/extending/writing-targets.md",
+    "sha256": "c5d5fba649d0d18e0bc9b71e845ca057d7f425ee5723f3a4a13aa883de6df18c"
+  },
+  {
+    "path": "packages/smithers/build/docs/getting-started/first-build.md",
+    "sha256": "1bdee56d502a60e309f0ed750571f6dcf02026abbe72988200d504049b48ce7e"
+  },
+  {
+    "path": "packages/smithers/build/docs/getting-started/install.md",
+    "sha256": "de5e9ce1aebaa9a453224ba12bee3a441ef4ef3a9055a2c33f74394f39500426"
+  },
+  {
+    "path": "packages/smithers/build/docs/README.md",
+    "sha256": "b5375c3b4bb6620832a72352548dd36e052e8996179edb2c0e350afcafd1cf07"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/cli-output.md",
+    "sha256": "3da90d1d7af20f490126dba52f5240e5831f3ba154ab3ea19fe7824832b9914c"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/cli.md",
+    "sha256": "96b2f14eed7c22e09a58edb07683e36a9374e953ead64b3bc350bc519127d3af"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/config.md",
+    "sha256": "28cb8dcdbc9967d0e86a02996780760111b9b54d7b989f58b4e427e6c5c5a704"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/biome-check.md",
+    "sha256": "f4f53f5702c0532c7b13256ef74fbf6249abb47ef63cc29bd85902071d9d42ab"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/cargo.md",
+    "sha256": "77722eb8910e484e281eb8ef821751c29b4449d34c5dc9f026db6684ee825dc6"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/changesets.md",
+    "sha256": "656724a905ad0d60d81ad447f7b2c85f488b14edde5d33bfee05b90b513d5211"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/clean.md",
+    "sha256": "cc85bbd7470d0835dd301710aca9899731d0880930a6cdec13d21819d8438763"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/deps-lint.md",
+    "sha256": "f775ddffebcf80894289a8a7d64bced67b8eaad050ba4d06e3153f6cc898858f"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/dev.md",
+    "sha256": "500649c9e42b9696ed4cfcef3efb882c5c88875c59e4e6136c1556d6aaf74c3c"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/docs-check.md",
+    "sha256": "4d7e280b23c7524062ab2df7047eb95b62e664adcc1f16df43ef370064aac9e1"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/docs-page.md",
+    "sha256": "373e0dcac0efb0e1c64a8be5c050a0347eeeedbb67e17b107f1a1fda59747e4e"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/docs-parity.md",
+    "sha256": "4b20fb5efcc01105bead2199f067c43dbf8b613962216ce20a8bce0f1e3e6f6c"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/dprint.md",
+    "sha256": "fd84dde87bb4f0a400d7910730e60ef747b97b08f9b0a5363e6cfb9bdd2e010f"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/dts-build.md",
+    "sha256": "ff7fb728c1a273df1bd8e60f45a29a69e268c7ee3c5d29a92d20acfe8da30b2b"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/es-lint.md",
+    "sha256": "317c27ada71d4250b79d87c6e2c6a8b992a0cfb4131777c52e0406317ad3ec7c"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/filegroup.md",
+    "sha256": "8f048ab4e851d36c8fa768389e90a8776f33be322f5359ad43c9a3a137e73e64"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/github-ci-gen.md",
+    "sha256": "487d6beb7c591d8ec78c2d986a7d7bbb9acc5d4c32d7e40aa9a1819d453c16ed"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/install.md",
+    "sha256": "f418420073f2b0c2a5e162961537e12daf6dc322abe5d0571f61dfb227406344"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/jsr-publish.md",
+    "sha256": "833f27203e11a8c26106a31a244389db5e2b25b324fea42a117ba9b5b5d51e92"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/llm-lint.md",
+    "sha256": "54201b9fda3b735728cdabe274e65155e155d2236ef8c828bfff57b054e0c6d6"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/lockfile.md",
+    "sha256": "5bb0ab9ca6b070a0cc26dd36d19a63671be6a915325797adc4885f7d64fff55a"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/markdown-code-blocks.md",
+    "sha256": "f94c1d8f199cd2d85174da2ff0dcb3d2454c51bc8267bd5b8cfec6d360516fd2"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/new-package.md",
+    "sha256": "6f57b8e55ae802b709225fe8f1b217184e4fa9d11280ecf2ec80558424e4000a"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/node-binary.md",
+    "sha256": "7c5066e17654dc6aa796816785e7f849670fd5c27b93bc6bc82226f0aa701721"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/node-test.md",
+    "sha256": "f8cd1871a02cd153730f1b92c3e7e2ce81c450107fa7aee3d3ad5b909159dcef"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/npm-publish.md",
+    "sha256": "edde53c4f7745e048f36e1e7f5b908f6c896beca1856685065e2f0b161ed3749"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/owners-codeowners.md",
+    "sha256": "893cb31dcc4e3b36a30363923c9aa821604c797278fc26a659d33d4345f81388"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/owners-tree.md",
+    "sha256": "a3e661f129190805b3e339fd2a621d2e282fc463a6b92d6be2445887261ebae8"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/package-json-gen.md",
+    "sha256": "bcc37c4d4840e1ced184da2c216d087f15482af294f09a1d3bb6a2d48ad37a16"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/package-lint.md",
+    "sha256": "9952c8fc9c18e7762b9857dcd5b756b06ca5e6dd6387388b6ef5571981576bcf"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/pnpm-workspace.md",
+    "sha256": "52d96e6a5a10cc715a5e78aaa640aa10dedb53278e2874b4309a5600b33ad1eb"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/README.md",
+    "sha256": "a63dd1a4dc15d76a44012ea79a14c9a1598c907088e7f24357b5b30e64c42205"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/sort-package-json.md",
+    "sha256": "3d868a926bc2e21bf48322398613202d8827e6c85ac88e9cc66a8f555a4e181a"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/standard-package.md",
+    "sha256": "0bb5c46d8b041b0968c7f0534ec20caa7205fe1300dc5c2fa3636c0686d14e7b"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/tool-build.md",
+    "sha256": "1073865bed77804c9464415911f1ba46a68b761853c1086b6248469779366c21"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/tool-run.md",
+    "sha256": "5b12a41d47fd99a5d9dd13e347e843745b9dc908ccc20f71521d67fb3c9f3432"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/ts-build.md",
+    "sha256": "f09dfb51a628e74ac82fcef134b9dc08a6c73be4e513ed84a04fa63c33ee3d6b"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/tsconfig.md",
+    "sha256": "742902588f22466dd7caa6d2d6e1b1c7d3c90af0cd78332f34e54df162248d9c"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/typecheck.md",
+    "sha256": "615d94ab60c8d40d28cc1807d90393a25a3eecdbfb43ae63b9fbefce9d4846e7"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/typedoc-docs.md",
+    "sha256": "5030f4550f20b40491ad09e060bf2a938976766f8241de08cd208e787b211c2c"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/vitest-coverage.md",
+    "sha256": "169633a60ea589614dbb5ced8d825aa15a0cbf7c7fb3aaa5890ed58f914b0bca"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/vitest-watch.md",
+    "sha256": "0f5dadec273d7f924c3b43f4be0ddbfbef76da4bd10db470e36cbb47d7179220"
+  },
+  {
+    "path": "packages/smithers/build/docs/reference/targets/vitest.md",
+    "sha256": "42c06604970ddb90923aef03b9102b9876d8ae310e8def4989d32fc64ab557b6"
+  },
+  {
+    "path": "packages/smithers/build/docs/workspace/adoption.md",
+    "sha256": "ce5c589a1184fae3cc75d8c73b161e5fab78e944263661c5b1b92483a0e523b3"
+  },
+  {
+    "path": "packages/smithers/build/docs/workspace/caching.md",
+    "sha256": "2eae5cae3e1634d6b085ddf809f4bb8df2cd0762c72c6c1485c3f6f9062ea6e1"
+  },
+  {
+    "path": "packages/smithers/build/docs/workspace/configuration.md",
+    "sha256": "e28197c981f3e44912cd13685de6f64784fa75c5457d944cf97f4af58d356c97"
+  },
+  {
+    "path": "packages/smithers/build/docs/workspace/querying.md",
+    "sha256": "8e6b33bbe94746917efb94aa9e7769f8c1fc0a310e2216c4e61e9d655fc536a6"
+  },
+  {
+    "path": "packages/smithers/build/docs/workspace/remote-caching.md",
+    "sha256": "2cfde354c858395b813d7fefd38546f26c1e8846873eb9b54fc9af3ef55ed3c7"
+  },
+  {
+    "path": "packages/smithers/build/docs/workspace/running-targets.md",
+    "sha256": "86e19651e144c767554143590237a34f143c5a6b7a35bbbde0cb2a0142c01a34"
+  },
+  {
+    "path": "packages/smithers/build/docs/workspace/smithers-cloud-cache.md",
+    "sha256": "d39203a44342f4709467d4f53bac14d1100a115b690dccd143136e45820218dc"
+  },
+  {
+    "path": "packages/smithers/build/docs/workspace/structure.md",
+    "sha256": "2d6ae9ef214fbc4a4da3145e6fd8c93402ddbfac14adb5a62e597c735b4166cf"
+  },
+  {
+    "path": "packages/smithers/build/docs/workspace/writing-build-files.md",
+    "sha256": "7742b0eb43eb71d0a7f6ecae94f11df5785542bc1dafd10fb6a7b7cd799c7d8b"
+  },
+  {
+    "path": "packages/smithers/build/dprint.json",
+    "sha256": "a628866c55ef1b7a5cf73f8ccf5136c8eefb65f1dafbb7085f5352402d1d3ebd"
+  },
+  {
+    "path": "packages/smithers/build/eslint.config.js",
+    "sha256": "f8076ae82c44ba4982294addd41cc04b6af4a97db4d711d6ac429aacd486e2c7"
+  },
+  {
+    "path": "packages/smithers/build/examples/check-runtime.ts",
+    "sha256": "72bc79661d56430ce2f8762cd8e3aa3706b0b099ad276a84449088b127c2e25b"
+  },
+  {
+    "path": "packages/smithers/build/examples/digest-npmrc.ts",
+    "sha256": "9fc27386970b4ca00a08b042c342665be578ff39990b45051bbca6bf1c763628"
+  },
+  {
+    "path": "packages/smithers/build/infra/alchemy.run.ts",
+    "sha256": "369fefa75b4b4b0582f3f71a6acda9cb4ec8faad5ead414f67e3d65ac374eff7"
+  },
+  {
+    "path": "packages/smithers/build/infra/CACHE-TRUST.md",
+    "sha256": "345b08d3f7da3b5f909e773852c2c6da9a7a430b264e61351a7cd29b176611bc"
+  },
+  {
+    "path": "packages/smithers/build/infra/deployment.ts",
+    "sha256": "dc7bccbce2dc83ef4c8b730a4e0ec481ec49f47f6e7f15469067d8f3a021ba43"
+  },
+  {
+    "path": "packages/smithers/build/infra/dprint.json",
+    "sha256": "c6c97c22bfdb9889d307d033e44ef71349f4a828b29ef67ccdcf66e4df39962b"
+  },
+  {
+    "path": "packages/smithers/build/infra/eslint.config.js",
+    "sha256": "50036a09ad3aed4fb03b34ed71f18c36fd2b1529a2a516e338c2bec39fb00f1c"
+  },
+  {
+    "path": "packages/smithers/build/infra/package.json",
+    "sha256": "690c16d85c16f02343557f661e8cbb19e193f80d0c0c81b40593a3d004f716e9"
+  },
+  {
+    "path": "packages/smithers/build/infra/PACKAGE.ts",
+    "sha256": "f4b29896cbe5010666bb7bae062eb207132a92ceda59a59142bbec809c3c82f1"
+  },
+  {
+    "path": "packages/smithers/build/infra/README.md",
+    "sha256": "68a575ebc06f9635ee97c4339a8fe2c6e943dbda9b6ef5db535711477069ca37"
+  },
+  {
+    "path": "packages/smithers/build/infra/scripts/deploy.test.ts",
+    "sha256": "24cd5b78c70abbc8cd660a5e8943d2f233c112be20c1ebd24211c044c3726260"
+  },
+  {
+    "path": "packages/smithers/build/infra/scripts/deploy.ts",
+    "sha256": "b9d3aac9785d9c4bab5b04ff1eae1238ed335d65949fa124d7c576a7fca68e9b"
+  },
+  {
+    "path": "packages/smithers/build/infra/scripts/failure-message.test.ts",
+    "sha256": "a54d45b2841cb74b76638adb473a0142a06ee36a7e9872dd34e5715a4a24087c"
+  },
+  {
+    "path": "packages/smithers/build/infra/scripts/failure-message.ts",
+    "sha256": "35d6dad7601ae4f1b53a9abf8b9a315a29484e29c0e4ef1c52ccc737a22bc5b6"
+  },
+  {
+    "path": "packages/smithers/build/infra/scripts/redact-state.flags.test.ts",
+    "sha256": "05fa65c1a80df8fcea4234119f05c564213149303dffc51eb8c275abbe85e788"
+  },
+  {
+    "path": "packages/smithers/build/infra/scripts/redact-state.identity.test.ts",
+    "sha256": "3e4b8e545d02c8399601771667f9f75af42f848cd62623ece5d5689921d7de36"
+  },
+  {
+    "path": "packages/smithers/build/infra/scripts/redact-state.test.ts",
+    "sha256": "8b39156103bda16cb28f6c85b74de2d1a1cc5a558859056a5094f2e075587d3c"
+  },
+  {
+    "path": "packages/smithers/build/infra/scripts/redact-state.ts",
+    "sha256": "821036b5cd49a1824b7a73fc144aca520a54082a95a53b3786df17fd1effd02c"
+  },
+  {
+    "path": "packages/smithers/build/infra/scripts/remote-state.test.ts",
+    "sha256": "26597a90fb3e15088e51f881b7d8189b0cbc880ffd851b84f38c85778df8a980"
+  },
+  {
+    "path": "packages/smithers/build/infra/scripts/remote-state.topology.test.ts",
+    "sha256": "45bd8328f7d03bf40a89caa398ce7d6461febd7801c7f68c67fddaf10fafb23c"
+  },
+  {
+    "path": "packages/smithers/build/infra/scripts/remote-state.ts",
+    "sha256": "71496af22109db476fd3a46b8c528e28e973b2ce71b39119c844aefc2eb4d08f"
+  },
+  {
+    "path": "packages/smithers/build/infra/scripts/state-ownership.test.ts",
+    "sha256": "3ac181d76166489a3f41c595728ac4f638a8660554026e86842de1f1ddf9e7d2"
+  },
+  {
+    "path": "packages/smithers/build/infra/scripts/state-ownership.ts",
+    "sha256": "3b3d9b6fff885f8462da4272dbe5cbb71124e84291803994801d0405ba5b4d00"
+  },
+  {
+    "path": "packages/smithers/build/infra/tsconfig.contract.json",
+    "sha256": "166f574b232672a56004079f1b1360a9bb7f63a62a614e4b744df583d589f499"
+  },
+  {
+    "path": "packages/smithers/build/infra/tsconfig.json",
+    "sha256": "49f07c06c7d4d81365bb1c3d3dba68d81c6ca8c8609823f8c2f687845c3b425d"
+  },
+  {
+    "path": "packages/smithers/build/infra/tsconfig.node.json",
+    "sha256": "bb133f17a563cc3152a9cab5cc45073b90330b6452df893a719f1ce40ffbf8ce"
+  },
+  {
+    "path": "packages/smithers/build/infra/tsconfig.test.json",
+    "sha256": "52b2e2e678f6e653ffa538b188dc2deaf55b6b74c3fa8f6fb67d00d5c4babfa2"
+  },
+  {
+    "path": "packages/smithers/build/infra/tsconfig.worker.json",
+    "sha256": "03f4e808f27ad4cd6fd6cdba8fd0cc7e0b1fa44348201d96ec1c3d2182bf56b7"
+  },
+  {
+    "path": "packages/smithers/build/infra/vitest.config.ts",
+    "sha256": "0869f0a23f09c2e31dfcce956d0e53dc236fd5b72af4f1f31b2ddd3ef0f333a1"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/cache-failure.ts",
+    "sha256": "a8aba1478a12d2702c8faeecfa8148285fbebc0bfea8e7cb715a222454593c3a"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/CacheWorker.ts",
+    "sha256": "49f9f35d9e7a564da089cc781084351ef6ada69f37f99f2a7f5b5697bdb4d39c"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/constantTimeEquals.ts",
+    "sha256": "6137588460fdbf67287580f5375195aaae8071f792bfb30987fc12c071e75cf8"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/D1ActionCache.ts",
+    "sha256": "88887ea5ffa6ecb63b9bb6854afdc816ccaf359c366ff913149d6f94f54a6d99"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/digestBytes.ts",
+    "sha256": "e99fab77651444088b0284f761fe1e5e75b2d128c5ed12e8de5f54f345088fd6"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/discardBody.ts",
+    "sha256": "d19331fc8d54a1f7ca1649494ad22afb6b19212e6f0e5432b8e6f47dc06cffc0"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/jsonTextFault.ts",
+    "sha256": "a4eb72b835c57a903f5fcabd161166795e7ef9151f8bcbfe2983c265716a4af5"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/migrations/0001_initial.sql",
+    "sha256": "86d2ed96ba355d9081d96246e7bbd90a9016a0eb28711cd2890058e1dcd7941a"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/migrations/0002_bound_cache_rows.sql",
+    "sha256": "6d9012ddce4a26c5b86ac8b257cc001eb0da6646e0c6448b4d7063142893dce6"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/protocol.ts",
+    "sha256": "bfa50aac62b25f01cce1da8d6176ea4b5d8c73bb936731d7b34c6c1fd4e8b01a"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/R2ContentStore.ts",
+    "sha256": "17047653b9f7759bbdfd513c51d7f8572ad75bf6ac5a9b00f94a207db8890ad4"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/RateLimitCredentialBudget.ts",
+    "sha256": "bed57a7b9699292b78e01b2b9e2c63d6f44f695337532122cfc659d53498570d"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/RetentionSweep.ts",
+    "sha256": "a9555d6a1796caf291d3ed2b1ea9a6d76011328ca26606580f768557d21d3607"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/test/action-cache.test.ts",
+    "sha256": "c85e15fde52eb88cce59da6d638daf4ebb35de1218739a2dd1413d3919dff2dc"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/test/admission-slots.test.ts",
+    "sha256": "7056bbb66ed32bbf4ad200f2b9042203d9312db25acca5aea38af76a28b7ec23"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/test/build-inputs.test.ts",
+    "sha256": "558b68195fc8d68d2450714fa1688dc19df6df58e73cbe4ada6e25c387e68e86"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/test/cli-contract.test.ts",
+    "sha256": "57a35b7658aa9e2a56be1203b833dbd37fb7b6b147309ddc8842982998f1b2cd"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/test/content-store.test.ts",
+    "sha256": "03e192b53a8d8f9ea654b08b0a6a807ffd87283022b8196edb82482b15c9cca8"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/test/credential-budget.test.ts",
+    "sha256": "918dca6bf2d48db9f0680d1fd0a8b1d9f1e73f4bf5b7b1c0f4d6478865280109"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/test/credential-split.test.ts",
+    "sha256": "967c3e40d37f4c7e48d880584f62fa61e8359feab6ed83eddb118e16cfc1f77a"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/test/d1.ts",
+    "sha256": "238ca763ebc2d96fcfa9845d921794123836052348c6abe0c248e88a385a4438"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/test/deployment-config.test.ts",
+    "sha256": "063630a844940e61acd60ca15c481dcc20fbd348f4afdcdfd1380c78d3b4955c"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/test/jsonTextFault.test.ts",
+    "sha256": "d7f7e79114bf6fd54586629926a43200d9503508852ffaef23713d313a2a8905"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/test/MemoryStores.ts",
+    "sha256": "bab9337114f338725532da92df528da1fdd09399ee13c3fb6fc4000d6090a9a5"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/test/migrations.test.ts",
+    "sha256": "2072f4cd48ed8b5a50c60b401cfe1ac3ec1e87739ae1e18e9c168db0c7152e72"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/test/operator-docs.test.ts",
+    "sha256": "e401842a83374aa0280de617fe3707c30ddb72bfe3c6af0c861b65578567d0ed"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/test/protocol-hardening.test.ts",
+    "sha256": "e1bc371fed653ce54f8b8e4147b46e162b52e51e7fae451b40e4dd21454e9271"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/test/protocol.test.ts",
+    "sha256": "7e2796e058ce82a13c3688da2418d7bcd3e9035185ec320943829097a56e1359"
+  },
+  {
+    "path": "packages/smithers/build/infra/worker/test/worker-entry.test.ts",
+    "sha256": "ae84daef2b8e77323549227a78cf15c4c4f7c0e93e7971072bec6c74d830a02b"
+  },
+  {
+    "path": "packages/smithers/build/LICENSE",
+    "sha256": "a3aaca5d88b4805fdc839fc70dca35fb5c9d2465d2bd986729e218076f66adc5"
+  },
+  {
+    "path": "packages/smithers/build/package.json",
+    "sha256": "d9c81f9bb5dd1f02741db94baa3bd75de9496deab9df40fcc45332e71c0fc64d"
+  },
+  {
+    "path": "packages/smithers/build/PACKAGE.ts",
+    "sha256": "875e84e1aa4420be40e843136ad3d981755c67e5938be360c5d6458c5fafb08d"
+  },
+  {
+    "path": "packages/smithers/build/README.md",
+    "sha256": "f26ca973bc560ceecaeb3715597aeeff0ab6dd174ec2d5765d762ecf5810467f"
+  },
+  {
+    "path": "packages/smithers/build/scripts/build.mjs",
+    "sha256": "a55f4a0c01e00687ce77e86e822c5107310b7a47e8e0bb64405f00aa749f4591"
+  },
+  {
+    "path": "packages/smithers/build/scripts/reference-docs.test.mjs",
+    "sha256": "5cc96aa78b25d993f6b4df6a210fe1202c4fad798043a002a9f20bfcb593403a"
+  },
+  {
+    "path": "packages/smithers/build/src/index.ts",
+    "sha256": "78113544f84cb4f8f6297179f202d41567952d85b6eb035b3cc50d31c9dabdaf"
+  },
+  {
+    "path": "packages/smithers/build/src/Install.ts",
+    "sha256": "92cfd24f12e4a98e424d055fdc8fe8d06ebae58e86a7569dbcc0034c69e616c7"
+  },
+  {
+    "path": "packages/smithers/build/src/internal/boundedOutput.ts",
+    "sha256": "c19a7ae3c92c6a7939f3eb37c5e991b59e6ba6b929fcd40f05133604d9add7df"
+  },
+  {
+    "path": "packages/smithers/build/src/internal/diagnostic.ts",
+    "sha256": "b50cd18ea3c49e892e40676d82d6f5ec7a127fc9c87864480e1e3cb66fb4595f"
+  },
+  {
+    "path": "packages/smithers/build/src/internal/platform.ts",
+    "sha256": "1dac1dcc11c84465298d04fa25f00dbf84fa20517c83ad5bc4c92aae23389e64"
+  },
+  {
+    "path": "packages/smithers/build/src/internal/validate.ts",
+    "sha256": "d64f7bbdb09d23387df7954098d2b399ae22458e1c89c85e5015cf1306746a72"
+  },
+  {
+    "path": "packages/smithers/build/src/PackageManager.ts",
+    "sha256": "1a11e262f102dbbe1580ed4a0b389511df0af463008ae5788c962dc4735c1334"
+  },
+  {
+    "path": "packages/smithers/build/src/Runtime.ts",
+    "sha256": "04f3f37a4aa50248af4ae7348eefcff73277e0592776ead81396305df425dbf0"
+  },
+  {
+    "path": "packages/smithers/build/targets/AGENTS.md",
+    "sha256": "3f9de8e4f7635a75f60435cded00d0473f9b35ac6bd9679a8acad29e4ea2801b"
+  },
+  {
+    "path": "packages/smithers/build/targets/CHANGELOG.md",
+    "sha256": "b74c585a1fc5f0c60112231e7d454e7bb824e448bf66fa5f475f42867f55dec4"
+  },
+  {
+    "path": "packages/smithers/build/targets/docs/api.md",
+    "sha256": "44a0f2a34bd523f8a428f0bf090105e3e23294808aa01611e8d5b13ec8ab96ac"
+  },
+  {
+    "path": "packages/smithers/build/targets/docs/guides/go.md",
+    "sha256": "8392cb716019d09bff9f26d677db97b92ed50af5b6c677fdb7ee323a65c502b5"
+  },
+  {
+    "path": "packages/smithers/build/targets/docs/guides/local-repositories.md",
+    "sha256": "03f812b09cfdaa29474bdd1f8a9da015e025ad6a0c8e5d643eaac731f7af0d03"
+  },
+  {
+    "path": "packages/smithers/build/targets/docs/guides/nix.md",
+    "sha256": "0a372833cd4867dd2c8a917807a829d9bf1c3710cb8364c605a6d310ad0edab3"
+  },
+  {
+    "path": "packages/smithers/build/targets/docs/guides/review-credentials.md",
+    "sha256": "e713081e00b42c5ae5036a2d5ac4c2efb3f6fb8b392bfaf05170948c1023a06b"
+  },
+  {
+    "path": "packages/smithers/build/targets/docs/guides/review-isolation.md",
+    "sha256": "c666f1ad6f9b5a9042fd29b47bc00021ad82cb42b066ef4bba36efd7a675fdfd"
+  },
+  {
+    "path": "packages/smithers/build/targets/docs/guides/security-completion.md",
+    "sha256": "084ffc389a971eedf63f6416512efc8997e03042ba0fc9d92c752af8798ddb5c"
+  },
+  {
+    "path": "packages/smithers/build/targets/docs/guides/security-review.md",
+    "sha256": "9d69bf950b23701aba46b5af58b4c8fc74b0758b642ae624b9c7ce674e264900"
+  },
+  {
+    "path": "packages/smithers/build/targets/docs/guides/stamps.md",
+    "sha256": "8fe65c8e7ad1cd3d210895354bf1e4c1251305ba3ee43c36273599593517818f"
+  },
+  {
+    "path": "packages/smithers/build/targets/docs/guides/toolchains.md",
+    "sha256": "c3b5c066e6f0e72a91ab29d054a1881f0c64d61520e19678d65b94ec589f211d"
+  },
+  {
+    "path": "packages/smithers/build/targets/docs/README.md",
+    "sha256": "b63e6a9904fcb704c3bf782268b0cc2920d32bd920239d5a52be1569c3185ad7"
+  },
+  {
+    "path": "packages/smithers/build/targets/docs/reference/agent-diff.md",
+    "sha256": "e597e9f6bd28e9a368ac7cc620c2f5cbe4d3e8237a1f9b3e45882de55f041f23"
+  },
+  {
+    "path": "packages/smithers/build/targets/docs/reference/cheat-sheet.md",
+    "sha256": "ab8c4c51fa2e7905123767c0f405601efe458230215f3aeafa29a4535e860f9d"
+  },
+  {
+    "path": "packages/smithers/build/targets/docs/reference/filegroup.md",
+    "sha256": "582d4b4e45bcb8ca3ee9b842075d5ffe9dcd622d0751e43c2b54f2a8a23b1c39"
+  },
+  {
+    "path": "packages/smithers/build/targets/docs/reference/targets.md",
+    "sha256": "4ebc390d640910d8116e555cdf850adf91facb8a4805890cd925d8cd7a846c0a"
+  },
+  {
+    "path": "packages/smithers/build/targets/docs/rules.md",
+    "sha256": "c42decc15398afa1bbcac6eb46e38205fbdd9f132ff0cbf3f735a3714ace1eb3"
+  },
+  {
+    "path": "packages/smithers/build/targets/dprint.json",
+    "sha256": "5398037d436a06d239e17f14f9d9cb62aeda687c8f7350e80e36525790db8f13"
+  },
+  {
+    "path": "packages/smithers/build/targets/eslint.config.js",
+    "sha256": "589a3c7396059a418fc892385eb2b540f29265c69ac62886f39a9773ac335c27"
+  },
+  {
+    "path": "packages/smithers/build/targets/examples/declare-a-package.ts",
+    "sha256": "78bb5e49e4d00bca69d98a238cb551cf99d8bb8e0ad714f3833728d5a60e04b0"
+  },
+  {
+    "path": "packages/smithers/build/targets/examples/declare-issue-transitions.ts",
+    "sha256": "78d77ee1d483c060c4ae42f0ca6b08ae6a2092d229f1449264931aabe9eca935"
+  },
+  {
+    "path": "packages/smithers/build/targets/LICENSE",
+    "sha256": "a3aaca5d88b4805fdc839fc70dca35fb5c9d2465d2bd986729e218076f66adc5"
+  },
+  {
+    "path": "packages/smithers/build/targets/package.json",
+    "sha256": "11f7ed3f12a359b3353bd0bfd113e012bc34cbce8e89501db4ff0403f65bb77d"
+  },
+  {
+    "path": "packages/smithers/build/targets/PACKAGE.ts",
+    "sha256": "a0671c232c9d9d630d79266c8e62c3291d3547d4b2c0ec20b94bf87d2eba19f3"
+  },
+  {
+    "path": "packages/smithers/build/targets/README.md",
+    "sha256": "f5bc9397b628442b7bddbaa58b0f785b6d06fd344d623ea11d5cca3a55576a3b"
+  },
+  {
+    "path": "packages/smithers/build/targets/scripts/build.mjs",
+    "sha256": "8275ff027bc60a812a0531ba7e8028ca622dfd712b20816d7e7325c3e0df1099"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/AgentTarget.ts",
+    "sha256": "69897a4c0cce3a5f28cea53c2c7fa16c919bd66882e2ea0b8de04c78f6ffa747"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Anvil.ts",
+    "sha256": "ce447c6237bcb01ea714966d18cb2a4542f65dfff46fcf4f582366d7c3ad7378"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Attr.ts",
+    "sha256": "3d45f88394aeb51005cc0c770e2e8aa2deff8f0b515c409b3b3be7c08b6899a5"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/BiomeCheck.ts",
+    "sha256": "792a52f52ad3908d62d4b122099da77af7926015241ff6a72c1da78a9d036723"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/BundlerTarget.ts",
+    "sha256": "5704f4333c5becadb0de8c655d7360f432862dd44a0cab847e4783af41425cd4"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/BunSuite.ts",
+    "sha256": "165ae7b4c40cea202389d8f32d607ffceb551ede76d7022b98169efc1eb796bd"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Cargo.ts",
+    "sha256": "fa8a5bc80a1f82bbd3380c8c88883d7b605d3bfd3c148e702698bdf41a5f99b4"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Changesets.ts",
+    "sha256": "3c9804d4b31825cd125091ea6bc3ff646bd64e53a27d54fd36111b001b26ab6f"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/ChangesetsTarget.ts",
+    "sha256": "96e1330fe49b8c1a4c0a0bb1b1d8d4a18a6921f24d7b9c2d9a396e50f84bb39d"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/CiToolchain.ts",
+    "sha256": "a2a48b4bb3b03d94fc8ba855001c357c91ec47f1fd54eed0099f1638e606ac36"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Compose.ts",
+    "sha256": "86c594acc4a2bba72645803a562223aa40ff4fd38059258ce0159c09dac246cc"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Config.ts",
+    "sha256": "d12a144f56284a2676e0288537de300d3d5047ee1d510f94646e50302fa5771e"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/CronTarget.ts",
+    "sha256": "0c88be6a5a8658eb2cc6d8fad113738272c84ae79ad860614513e824b02262cb"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/DependencyDocs.ts",
+    "sha256": "590896458da9c06a70a8ad28effd7dda2419a979fdac71efc4b593238d9de986"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/DepsLint.ts",
+    "sha256": "ec96bf738f27a13db676ffd8dfc1d3efeffa366002565fc9b3255619bdbbec71"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Dev.ts",
+    "sha256": "aca4866ef82f9c4b9b46637cfa5d102d8cd8cd067e3d6e7f7d7401482dd6d52d"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Docker.ts",
+    "sha256": "5739104aa8b7ffb0f1f61adad9e362dadd0d76c6432161ad948022514631d451"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/DocsCheck.ts",
+    "sha256": "15564759ec6e2658bd19f489736df3b69d0b51a73d02ae5a7debca9cee6ea1c1"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/DocsPage.ts",
+    "sha256": "8c337ae2f39a6b1b2d652e9e41e92a9dc78428ae58f590645c96c9e47f0a696c"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/DocsParity.ts",
+    "sha256": "e8491082f86443d22cbc044ebe4c403b04df1a1cf814a68d926f5d6b42fa55a5"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Dprint.ts",
+    "sha256": "52a2e31434d8bd57964fc5022e3aacb004108bbcc4061ce385f6236a9cc38bac"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/DtsBuild.ts",
+    "sha256": "8e2bb11260041adf8fa100df30a2626c8d8fc6127a2f9329502348a139443af6"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Environment.ts",
+    "sha256": "b3724900fb5914c1191a3596fd4e0d95ad864be7b6b88673146b403874f36c47"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/EsLint.ts",
+    "sha256": "e84460b152111fe95a70cbb7d5445a9c9db6a33b0d842b520c9a8e856835eb9b"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Exec.ts",
+    "sha256": "156bdba0ce5e234e3b1ffc8a1aa86dbaebdcf9a075de2099ea6ca84f3dbb5211"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/ExecSandbox.ts",
+    "sha256": "e0d70589d474d956023af7dd3ef9407b4d646ab374fd53edc2ec37ca43f91e36"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Factory.ts",
+    "sha256": "3dcbc45361e8f8b34735dfebb792570910048cecba7a5147eef5b2b661dc603d"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/FaultSuite.ts",
+    "sha256": "5df2b5b6df2f94a04131b3664a8048b542c80b034247183a2c5445c6c1e1c5e6"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Fetch.ts",
+    "sha256": "3ff875fd535c338f5894a72f1f48b5937e335b5c5c86fc1c2ac34dd95e612202"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Filegroup.ts",
+    "sha256": "6a3194f15202d5a2deb3ea645bcf13f5b507441cbed88a9524b17e799f285879"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Flow.ts",
+    "sha256": "35bf77002651d871167ebc3417dd45730fa69fb0413ece4786e68898f44e4222"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/FlowCatalog.ts",
+    "sha256": "c9049410b25950061d8602664a2500fe94ae6b7880d1ffa932b1b1efbac19488"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Foundry.ts",
+    "sha256": "013bbd6064badc78d08dbe68e90b685cfe22712db7c359a1cd486ef4a100c5ba"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/GeneratedFile.ts",
+    "sha256": "90740db35341263d68318640825086158f4f3d0f1b51c107ccd5ab6de1d9e629"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/GithubCiGen.ts",
+    "sha256": "3a59746fc2f1a9fab0641df5c12c98f73e0980b969877c6603a0987d7623f5d8"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/GithubTarget.ts",
+    "sha256": "9a9dc1e5572aee634705cd112c0657d72bbbe682556b9ab38dece150e77cb0da"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/GithubWorkflow.ts",
+    "sha256": "4f441d8a7c4044686ebc81e73af30a03ca6e4adb155d36f1b41abff80fb4ce8e"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/GitTarget.ts",
+    "sha256": "2f45cd1b8fc05978b5f05c893cf79d16ca73e490994cece956c5021c1fd9be8c"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Go.ts",
+    "sha256": "eda042ebfa0f20477356966967a32d1cc3c76013021fee713b23fc54e960cc94"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Home.ts",
+    "sha256": "20a73ccaee9ae55cabecfd054bb23b7d1405d4ec8322c90974174c57de32b9df"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/index.ts",
+    "sha256": "a0c52d34070c830ef14733b23b8f966126332fec7bc48c6cb39671dc58b57ed6"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Input.ts",
+    "sha256": "80f5bb6048d0979c2687a4318c8a84dcdcbfbef50927901f877af0eb56adeb15"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Install.ts",
+    "sha256": "1a7999d42dd849a6bbde39e2f7fee919ced6259b5ec4cfaa96585271cc849d02"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/internal/PrivateStore.ts",
+    "sha256": "b47a3baec0faaf127f06f9d389bb78665621056dd43ca337b75a630bf958cd6b"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/internal/Process.ts",
+    "sha256": "df113054afb61b67ad9dbb1ed7d2691df34e6ac938bad388528d04af99a6df58"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/internal/PublicationFileSystem.ts",
+    "sha256": "c02e94a8522aab2758c808850a225dfeba8fe9d3ce692a7340f02124a927cc7e"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/internal/ReviewBatches.ts",
+    "sha256": "d9c387491c5b390d206b59ff4d61046849f55f2c8e5c89bc2d40325842b05db7"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/internal/ReviewModel.ts",
+    "sha256": "4a0351b9ee23f7c5b80a5ccfc4f8674e4e056278c83eb2ab44280f66e4664954"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/JevLint.ts",
+    "sha256": "43de749459f80e943e6ea472673faa9437c1f0152b34a40cadd6a30e3a2cafab"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/JsrPublish.ts",
+    "sha256": "10093a1f699ba281656358fa6c6b6c7fc7bcc85c9be8ec85aac6c6e1eceb619e"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/LlmLint.ts",
+    "sha256": "7f9435ad07240bc06228f693a419266c9b3643775a7c2b15c0f71b30aadc4303"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/LocalRepository.ts",
+    "sha256": "51706a7fbeba1b656e3baad879a25652d10894d23fed57c83fae9a95abb29aaf"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Lockfile.ts",
+    "sha256": "5d518bb52976a979fcc7b0a6b611670ed9f57f2e26b205815e5e680cb03361ee"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/ManifestJson.ts",
+    "sha256": "bc39616c2091a8dbd120b9932f0bfe6be51f6ad11447453f8692fcba65247ad4"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/MemoryTarget.ts",
+    "sha256": "c993fe15f4fbc86d0b495590c81dc6826c256116df4328422121ae875f90c070"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Mise.ts",
+    "sha256": "869e2ae83588f38d6c796b0acc354e918eedb7e315ec10187912ebc7307fd09f"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/ModelEngine.ts",
+    "sha256": "1a66fb5547ec78314b2d74c2cec079be6e5373a67e3aa2d894cbe78da496a1e1"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Mount.ts",
+    "sha256": "66d3950144a745ddf7faa0605f01ad1a4cee3bb2ab539e1e692396d5f0e47173"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/NewPackage.ts",
+    "sha256": "e069d3a62ab17d83a6bb86304ca28d63e7b61cc78bfa05775eccfcc19203911d"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Nix.ts",
+    "sha256": "c65d45d74f1598adf0159329c0a0bf70d0a9419cfc4def87dedaebb16d7fc21d"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/NodeArtifact.ts",
+    "sha256": "01c1f2562b96460858fa27efd24bceff1a100816ec038edbc0328d077d4e1663"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/NodeBinary.ts",
+    "sha256": "27016cc6b31edffd1d90316fd53e9947caec7063cbe046694a6fcbd054b08906"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/NodeTest.ts",
+    "sha256": "eee38d831ea606db98e3f86f00ca115ed4a83894f78b3a61ac8cc86ae4230e13"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/NpmPublish.ts",
+    "sha256": "b791e450ff4859bb9be5cb0ca1af3aefbeda5a0b0ea014c6b7cbd6d66ac2db98"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/NpmTarget.ts",
+    "sha256": "1d5d4f2166ba3511dd0058ea79bfdad333a5c4b601f170d00ca8e96ed9a7110c"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Outward.ts",
+    "sha256": "16968ba25f312c2afd8207f2fa0b718e962a1142c86ae1503aab793cc3345407"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Owners.ts",
+    "sha256": "9f6ae2f288c1e347a8abe62037b007663a78b94506925048ddb45b827e12186c"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Package.ts",
+    "sha256": "fc8cc48ac7427a00ae52ff0bd52e7b638eecc098e472061df93ede55a8cbc639"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/PackageDefaults.ts",
+    "sha256": "c39b0f06f98887d0ba310387316451e7e87e082a3153bbe8e51d97f42b3ab095"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/PackageJson.ts",
+    "sha256": "c77dd4e8572c9d175cb43829111f4fbadca1594bc599bc5d345124574e5c0828"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/PackageJsonTemplate.ts",
+    "sha256": "dd27194e093af13e423fb9247414953de0c148b36597f073219ea78105f1bf20"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/PackageLint.ts",
+    "sha256": "d7756996efcaf24519329b713231e552286a3a1cf168c4202181b1e6a448fe75"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/PackageManager.ts",
+    "sha256": "f4191894c402b0356bea26fec0b0a5e0da8d48fb6309d474cb387379f139509d"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/PnpmWorkspaceFile.ts",
+    "sha256": "0240407eef384324b80686bf647f79ce4707771b0be1d921c3b4823fa912ea21"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Reference.ts",
+    "sha256": "887bb0ef4ce4beba8d82bc3b8eceee83073fe67e36735912b1a2b354fd8459d0"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/RemoteCache.ts",
+    "sha256": "2abbb6299f9bd5919a7f6d068209576085c0e796ce3383bb31c3fef5f22d78b3"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/RepoTarget.ts",
+    "sha256": "65fa983b7b43d1648eaf72cda45edea6fa6abdbc9fce6f9f35a0c2761a2fc545"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Runtime.ts",
+    "sha256": "946a56bc901af7dd200fe507d9ce2d4ed07a926ee40f890bafebdf5ad9447615"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/RustToolchain.ts",
+    "sha256": "5814659b1912c967e38bf6f8ceade1c9f73a5ffb10b94710bd8a82098f1f78f9"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/SafeFs.ts",
+    "sha256": "7290ab60aa38d4f7b9921ae884435529fb1f6947fa3843b0b01cfdc5ea71a2d4"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Secret.ts",
+    "sha256": "368fef18009d81fd61d815a81cf1279d4bff21f59f59d05b7f2e784544714ab4"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/SecretProxy.ts",
+    "sha256": "64ceded0e971f24168ef510cfc7604dda7f0dbb2fa511fd6b9c67161bd94dcd3"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/SecurityReview.ts",
+    "sha256": "c67d8d4b48983cca5924d61cc363c6e840d84ec2eb151c098f2aa217e01b7aed"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Shell.ts",
+    "sha256": "099861aa431af28dd13f6d715a24057b51827ccf7787c008dc71e02bcb8a16b3"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Smithers.ts",
+    "sha256": "77a0e9767505d45e0db5f51f1a8293c65de5d3d33c873e51950b7cad21de890b"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/SortPackageJson.ts",
+    "sha256": "79532c4873f5ba18b60903a610932930ae76ccbe5c327461f4aea9fe554b742d"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Stamp.ts",
+    "sha256": "15f1b42afeffb123fe9927ad5195ed11c2761a05b8e63127cd29094b4e9d3fbc"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Target.ts",
+    "sha256": "2ff8cf31cf253d30a024aebe8625108113e2fd06e8182e63b6ea41ea77732661"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/TargetIndex.ts",
+    "sha256": "7e066c28499be7fc863ed314c5a436150f86c47c0a2da0d87c2bd40f56ebb8f1"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/ToolBuild.ts",
+    "sha256": "9f2fa4f6d317959d0bdceecc93960ae6dbb075ab27d79663a39130df40a61359"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Toolchain.ts",
+    "sha256": "0210fa11c3ab181237ed44e727925ec5502d209c3e4ba086cfe16428116dd631"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/ToolRun.ts",
+    "sha256": "c35cc3f624910f7cdfe1b2e3773b3a5dc43d07c8457484469dc62dc2c6fcb9f6"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/TsBuild.ts",
+    "sha256": "b7d3982e8728f3f1f95cfaed0cc6519571802fb4435d8efaf3773a62acfd2e14"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Tsconfig.ts",
+    "sha256": "fa402044bcd6f9f62c024710b5f2dda171995b53bc0bed4eaf22eff5348d7e92"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Typecheck.ts",
+    "sha256": "1a8ff735b9b8e00bde1051c65f5d58f1b87b9cc84143c64aa31c05ffa3696df6"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/TypedocDocumentation.ts",
+    "sha256": "afbb4b1fcb0d1c9235fa89751c8398a657117ae8d00d71f1736a7af2a1c251e4"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Verb.ts",
+    "sha256": "1948ab0c2b32a3a4f494922537e9ceaf0c9ecedeb656aadfe96c79c80506c431"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/Vitest.ts",
+    "sha256": "35e9fc3ee4df67890eb71a07b94259879f4db97f51d40aa8f83655030b744353"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/VitestCoverage.ts",
+    "sha256": "ebe3ba90c356a665dc7291b4e303c3d3bc708492637a1442be7fac30f8a1e46d"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/VitestWatch.ts",
+    "sha256": "46a217168cbf13d6f2ed3d80bebcf5310019a6a6787d3e42f9843f229d39c88c"
+  },
+  {
+    "path": "packages/smithers/build/targets/src/WorkspaceDeclaration.ts",
+    "sha256": "dd2c5765a62cd59523e82c9f40955fb39fb7cf9d371eb9e307fce944d90e7830"
+  },
+  {
+    "path": "packages/smithers/build/targets/test-support/plan.ts",
+    "sha256": "6042fb1c13f852cc7d761f4c6833dccf10848f2289ab65b855eb7d8709bfec25"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/AgentTarget.test.ts",
+    "sha256": "91f2508071d018dbbadfe1ac2ab48f67336258ebbc762d43ca68e27300f37a85"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/AlchemyRegister.test.ts",
+    "sha256": "e4b281e0adc967ba8d31b6b73609845f401532aaab5ea06ad8c5574100c7ee82"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/BiomeCheck.test.ts",
+    "sha256": "eb7a9e335485bac05f2253e4af4030ed74324ed10c732cc3c22abb913d8ce9ee"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/BundlerTarget.test.ts",
+    "sha256": "22ce7dc25fe684cd2992aff244fdcba16c42d7b2b3291db172ea330647cc6668"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/BunSuite.test.ts",
+    "sha256": "281113cb2da93995067cb432119db5080b5d277bfa87eaf80a75d41e101a7462"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/CargoHardening.test.ts",
+    "sha256": "493a445c2344c67491a46922546dc345ee133bde0e462e07b8f1aca57212fb84"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/CargoPackage.test.ts",
+    "sha256": "47a3aa84cacff6f7c1bf4d07ea705e59967e328c995e959a6c22f38c06684290"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/CatalogShape.test.ts",
+    "sha256": "f989af509858d241ae8adb5ee664d779f62313568ab334f89c2cfc892a77baf6"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/ChainTargets.test.ts",
+    "sha256": "cc0fa39faae95ba3c4045e90b491fa3b36765cffeca922f37872f90d04cb293c"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/CheatSheet.docs.test.ts",
+    "sha256": "713c6f5c870ec5d8322938dbdaeb089e00ada8c6cdef692220889559facae59e"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Compose.test.ts",
+    "sha256": "ae8614a91e954706a49c0c32098b8d20aa34ccc78c0fa8ab4660f86a9c9f1874"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/ComposeRollback.test.ts",
+    "sha256": "0130bf2bbd68a898056d4c914b872f253a9e9a399780932319d43c6e2038c9c3"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Config.test.ts",
+    "sha256": "5c0d9d9cb0e54f6f2bb7095a78f412d5ef25a29f47859c4fb1d9c5208d4b4f6f"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/DeclarationVocabulary.test.ts",
+    "sha256": "11a5a7ac7b5620da8e8fe4b9e7245acd6a4700ef1f5ee0913af13497e26b6e46"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/DeclaredInputBoundary.test.ts",
+    "sha256": "ace3f02e2a7718c16700d889c2f0e71c07b8fe2078afd1b6951fc3ed88612837"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/DependencyDocs.test.ts",
+    "sha256": "16c6e4ad9d4dad307b1b7ccb58e9e587a17200c0d7c029b41356f218755ebca6"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/DepsLint.test.ts",
+    "sha256": "987a881483f6b9025eb0e665856efa5753d002c7dbcca98ddcec7abe2c6e9497"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Dev.test.ts",
+    "sha256": "bffdbdb1a6677effc2bf69a088038aa90205f9f6e4895d726d541f9a2e3b2eb6"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/DocsCheck.test.ts",
+    "sha256": "a34996f52918c9a8c39365ef0520085cdc9670c6ce10e534d7cdbec798e56246"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/DocsPage.test.ts",
+    "sha256": "e4e75a45269540acb8dadd3ec7607f1b1d8d0d7fa09eec1e8344e244604f3926"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/DocsParity.test.ts",
+    "sha256": "c9d3d179e069f973308b1bba39d31870c19b95d440315d5f8cf3c17f505704c1"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Dprint.test.ts",
+    "sha256": "a1cc07379bee6cf78cc02b4b500abbbbf49e67e44d96887294c666037832e7e8"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Environment.test.ts",
+    "sha256": "dff51d373ecc91c8ca0bc3928e714bedec6e5b0da77d9ade6e69deb4aca371fd"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/EsLint.test.ts",
+    "sha256": "c3aa97cdf8d6962f3e58f778d2347bbbe4ac113b8ed8c67594f765503f71dc80"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/examples.test.ts",
+    "sha256": "8a7e46affd0f56b1bae42df3140b41c21146e0a11109d68a8d4eca560412b1d8"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Exec.test.ts",
+    "sha256": "1d93ec9b60e8c15cd836d83f9d36ec1961bb05fa8e3d277aec74bf0aa3e8f1bb"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/ExecBounds.test.ts",
+    "sha256": "b75406cccde83d510e8605dc5eee3c98bff5288cda101b764e6272bff809259a"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/ExecContainment.test.ts",
+    "sha256": "7259a207f04a2503ed3adc1acf4621de33278d3560a51f9e438bfef3a41cc9f7"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/ExecSandbox.test.ts",
+    "sha256": "e1a6a20744b3fb7b98a65c2d1091f20b545f259fcdd6e362c6efba1955dd269c"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/ExecStreams.test.ts",
+    "sha256": "8d979f4031ecd413dd073e90c02f805d60579b8c2d36fd78c834e189623c2250"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Factory.test.ts",
+    "sha256": "3459a66e97898b310b49df6af4074780a038331d28d7efaaeee3c5bca45a273c"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/FailureCodes.test.ts",
+    "sha256": "074d8a670f0af1879606227b749903b8ef3e44f5cd11f8343a05d1808712d07d"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/FaultSuite.test.ts",
+    "sha256": "e0159d1c6906d02caf70229980233859035deff754178885f0204a901a86495f"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Fetch.test.ts",
+    "sha256": "2352e0f7875f8989f57a88286481694ddc12ebb16d274069041e94aca7e1071e"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Filegroup.test.ts",
+    "sha256": "1ec841b902820067d778d9429551128dd074e889b5c596c0de8c9fd59c753c66"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/FindingStore.test.ts",
+    "sha256": "8fcfb1b551cbb301216ffe1e1b273eaa872448485811e3a19ff9551cc07d9ed2"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Flow.test.ts",
+    "sha256": "189139a1bbd04b99787c1aadce11dfce5e15a4453f90db3fcdfe8223e895d301"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/GeneratedFile.test.ts",
+    "sha256": "4cbac914d5f43defec6b6e49339c3dd1dac2948f000e721cf1cc6344b0389e36"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/GeneratedFileSync.test.ts",
+    "sha256": "55834831f87fb4e557d18cfec5b3d38fd94893393f6f2a918e0d805f9283e34a"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/GeneratedRootFiles.test.ts",
+    "sha256": "51e7f99bc6b0b473079fe1600a7b1167083ff70aeb502a526816fb5ab6730ffa"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/GeneratedSymlink.test.ts",
+    "sha256": "6fd1f4bb0e24e8a28ec6a8e54987024412eeca48dd92c942faae255ada20cbef"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/GithubCiGen.test.ts",
+    "sha256": "ec8329a470edacde149e22e45898c7edc8e19ae1436382d872d7cef82d1400e2"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/GithubPr.test.ts",
+    "sha256": "5f72dbae063234969e9346e761a9eb3b3c1886bb3aa2945dda04bfdcab6af32d"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/GithubTarget.test.ts",
+    "sha256": "f42c6b4adc5724cb34074c67ba41e02c43449278c898c9a3fbb2d7e45181a539"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/GithubWorkflow.test.ts",
+    "sha256": "6af5e54184c0be30b9016dc946354f7ebe5e74996551f921b812d69198dcd133"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Go.test.ts",
+    "sha256": "fa35be7465b8376b67bacb5c1b61a499409486f3603d8b1b275ed18f53c03221"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Home.test.ts",
+    "sha256": "9518d9b6345694057a1802a706064206a78961f5ef91a0312d3c8f258c3672f8"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/HonestBoundaries.test.ts",
+    "sha256": "c032272c7af605ca9682121877e4fffc0e26513519de290d0303e0c81905ad9b"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/HonestDeclarations.test.ts",
+    "sha256": "7afd7003ca7ece0890b695d58a7ee97e7324c04bf8e022e7c26e7fd178b8bba5"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/HonestDeclarationSite.test.ts",
+    "sha256": "487f06e1240f0cb8f640fa7754e6088be945a5f92397f5448138d87eb039d0ae"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/HonestGeneratorFailures.test.ts",
+    "sha256": "25db08894f6375b490e275e8db78fd8556450bcfe368df85637e1bf194e5f9bd"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/HonestInputScans.test.ts",
+    "sha256": "ead9d362ccf50ebab9e5ffa635c1cc525e1422a07f136a9c8b1e215c85edf87d"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/HonestLiveActions.test.ts",
+    "sha256": "938a6b32d76ab374ab317d051cfe4ab352ab748841c4b1875f218fbc48e1f396"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/HonestManifestFailures.test.ts",
+    "sha256": "fbb13f05666bd49228483d6c63aa4b2a84d41d7aa5c1afd476155d5fcbdaceb6"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/HonestMetadataGuards.test.ts",
+    "sha256": "0e44fb2d9b06b40142299fdbf3c43729a36245b89aac1d6bc39cb5e397458fd0"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/HonestNamespaceErrors.test.ts",
+    "sha256": "65c80e731c4dae759f38fb40847f6370df50d9f1798f7512a110e1c91ec8a788"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/HonestOutputFailures.test.ts",
+    "sha256": "ad07fb413728f21a5a6cbb7c7d99548e5e005d3dd891ca12cb4fa870965deda6"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/HonestParserBoundaries.test.ts",
+    "sha256": "f21f44e2685e79ba9b31af8325901de3b3de875d541cb686e5fd2373f1f80432"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/HonestProcessFailures.test.ts",
+    "sha256": "46c9381da757564360dd60489d39e7356aa49e506e289ff179263cccfb12cac4"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/HonestProxyBoundaries.test.ts",
+    "sha256": "85b07cbc1db402f1fcd8ddc0b8d4898bb67b8f7e800d06dc9f21a2f45eee27cb"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/HonestPublicationFailures.test.ts",
+    "sha256": "58ebd904e3018d86dd7ebbb7ed842af1304938faeea99683bbeae35d5d6c2c26"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/HonestReviewFailures.test.ts",
+    "sha256": "64e47f965c7fd3243a902f9127c383997c2f5bae8f4ad9d92a188bd49dc5f472"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/HonestReviewLimits.test.ts",
+    "sha256": "c0f19c86bec34899d6ce87f28aa7aa618733238913377f66b8f7af42044c872a"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/HonestRuleBodies.test.ts",
+    "sha256": "8314dde7b2d50e9d4f673eabffad785bebea75830f8e1cbf91575f444aa1017d"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/HonestSafeFsFailures.test.ts",
+    "sha256": "53efaa235ebf5fc4f942623707192858be5d1d31b1fa31f523fc9d0bce3c09c0"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/HonestTargetDefaults.test.ts",
+    "sha256": "38fa4d85f4d144c7322eb9f92d96485944c1e4edefb1057c651c2db42889f1b1"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/HostPortDefaults.test.ts",
+    "sha256": "ce925ae69f48bac9ab4373525a1fdb22ca643816444f6e830b181c04ea4387c9"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Input.test.ts",
+    "sha256": "c5169b3ed308011b1e85209d3101755ca150be7c5677a439ac1de92ee67a8926"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/InputOutput.test.ts",
+    "sha256": "79e017ec3ae09ea1b4d909c0ce87c7a358f1d44d992ee2096ae683a1283aadff"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/InputWalkerEdges.test.ts",
+    "sha256": "2223e3a923bff55e294963f767f23008ca79eddf01262de4231abf16e7d0db6c"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/JevLint.test.ts",
+    "sha256": "f15351f5c29fd5fac89d16cb4663ab5812d30e3801cb1c1556c9d357b84c1d74"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/LlmLint.test.ts",
+    "sha256": "a2fcfd4e5aa6fd6848b60a1136ee1468d0d99172c77fa69863fd8b90f4765b37"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/LlmLintCredentialDelivery.test.ts",
+    "sha256": "759699b0af0aa9918d5e78353b84aed094a5cb4eea32e35fbcf83f0dcc2ea722"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/LlmLintCredentials.test.ts",
+    "sha256": "cc03029c0f99a691d744b434ae6e8bcf611a0598189f26743be34938e9a177d9"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/ManifestJson.test.ts",
+    "sha256": "2af39770506797c4cf4305d6fe3e8c178fe22b9d7c65039b2332d9498f44d7c9"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/MemoryTarget.test.ts",
+    "sha256": "ac33a51d949be79f3e9c790a6d4657be0b4bcc0fb42c75fe2618472587b54dd9"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Mount.test.ts",
+    "sha256": "ce2d4cf9eba5a0d3bdfbaab9795d09ee362f05d0343e83f30b17773b56128866"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/NewPackage.test.ts",
+    "sha256": "59ac19758e65fb90cb739e0597e775801cbd59b0348989a36dd520ebf55c15d4"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/NixEnvironment.test.ts",
+    "sha256": "5548ae6b9956c6f8f313715a343e95fab2e6206caec0c77da2cda6c469de6bd1"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/NodeApi.test.ts",
+    "sha256": "8244b239b4ed0e6e971b1cd404d6510fb042286899cf750a04a8cdbc9d7a9766"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/NodeTest.test.ts",
+    "sha256": "c3ba43c338de2e65c602d6719a9869620861f5115ff3b493b63ee817b9d724f5"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Outward.test.ts",
+    "sha256": "749984cbde5ba6cab9cc192d01fc3d78777b387647ee04a954069071331307a9"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Owners.test.ts",
+    "sha256": "0e22e1e83ccf991810f00c57b2e3529402459cab1ad15f11ea0721ae803147bd"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/PackageApi.test.ts",
+    "sha256": "48ae48d5d3098b60dc29bbec91e18c4490d0db257bb87dc50414534e4afa4603"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/PackageJson.test.ts",
+    "sha256": "d0c29c56c507e45846dee2ad5e20187ff8a266e977aa9ccd523c70c0b73e726e"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/plan.ts",
+    "sha256": "c2e65995477158a47c76a2723fc2304bad64e8660a7eb7ec9cec0bc4a5232696"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Platforms.test.ts",
+    "sha256": "94dda0edab7fca0bdd017df085374e6f47781d4021dc193dcc4bcf269e19676e"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/PublicSurface.test.ts",
+    "sha256": "51a9fc1ed129381ef16cd001061caaf1bb2bb0de8f45a20bdafe7ce28cfbf1cb"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/PublicSurfaceDocs.test.ts",
+    "sha256": "18df6efe198f82d6a59f0434539deb771b14b9265c7c931483bf52a70337f949"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/RawErrorSites.test.ts",
+    "sha256": "1feb95d3b8c01f071df059735b47cb22a46dfa95069fe71663d66f903a673064"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Reference.test.ts",
+    "sha256": "5d1b82e12bb35482db3871ef7bb8f4e1267479f7216519ec79363bd93df21f48"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/RemoteCache.test.ts",
+    "sha256": "cbf5d907912d2413d7f15529526c76a6e1ffddcf92ea15527326ae270f0d179f"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/RepositoryPatches.test.ts",
+    "sha256": "76223fd7413081f59d7bc0188f4eec78fa9e11415fb433b0b4d067bf3449e2d7"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/RepoTarget.test.ts",
+    "sha256": "04a1ca33d5738d83358f4269a08f77b4be65d53e20ebfd42e81d7919ce9fb117"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/RequiredReview.test.ts",
+    "sha256": "378420c84f45c0bdbf25178accf6f306571f88829136c3016ee7a7b9b877f00d"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/ReviewBatches.test.ts",
+    "sha256": "0e3ba76da7b97050fe8a3b8368b6c3017bbb1316d437bb5081d42c6d2873ad64"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/ReviewBatching.test.ts",
+    "sha256": "52a050b084ae646bf95e0de79f2ae2055191689eac6eb1e271308dc36ed24d1e"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/ReviewContainment.test.ts",
+    "sha256": "43c2c0d5f731de120018a1ff7c9d5c6d7f1959b19ac480aa5ab8e91ff7db1d94"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/ReviewModel.test.ts",
+    "sha256": "a1087f494e3761d58d74a310dbbc5169f93662e6f3b03bea9275d8107fc4ab8c"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/ReviewTransport.test.ts",
+    "sha256": "5d321ac28907bc27cca9bfd292f6de6a790a26cc0cd70a9471a3f21e3a4d7557"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/RootRelative.test.ts",
+    "sha256": "164d90941f4013c451e1c29da00b1c4b40b95f53eb1975b5dc2a28fd66046db8"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/RuleArgv.test.ts",
+    "sha256": "faf42611e30fb34e038335eb02883aad795a52775595b2bf4c4bb1b433d29a5f"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/RuleBodies.test.ts",
+    "sha256": "9d52828b7ef20955ef9adf31e312125bcc74a0fce51c1ef3620bbb4605b103a5"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Runtime.test.ts",
+    "sha256": "3c415dfcb2c8c43a74d614fef6e3f9b018e712c4e6ec283e68a254452e085655"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/RustToolchainDeclaration.test.ts",
+    "sha256": "070f6e2b8319e8b9d96dac4a9f7a0eb105a6e78bbc4e8fe19fc5912481fbb293"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/SafeFs.syncDirectory.test.ts",
+    "sha256": "2b75d53b1cd4af0a494109677b65e2876631b79b30590b87836d720fa5558776"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/SafeFs.test.ts",
+    "sha256": "75f2f0465ee78c80e0afdd68115d3f34c885d91983bf42e447f79d1046ac8ce9"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Secret.test.ts",
+    "sha256": "8d91f297c7480329b8a72a20c81a4b3de800bc2a5124a0952568ba63b1143e19"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/SecretProxyRedaction.test.ts",
+    "sha256": "550c05a8ab937b62d0556471dd0adaf5e03b4a1ecb33a7b6418878a9980f5aa8"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/SecurityBoundaryExecution.test.ts",
+    "sha256": "b48121fc5c137147fb08bfb9d26cad8080b49bece42eca17b88298ab4cacad2c"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/SecurityCompletion.test.ts",
+    "sha256": "6510e76048674a0a75240ca25269e7a6aa3873d95c26d3357e4e5996a0dad4ed"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/SecurityFinding.test.ts",
+    "sha256": "43bc370f36e72029feffdd0d946e263c0b6a46ee63a3804b30d2fbec0791a8d5"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/SecurityReview.test.ts",
+    "sha256": "6476eff17b001ef5db7233097e4f90e42986220cede4514e889cb35a47a35d56"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Smithers.test.ts",
+    "sha256": "8e2c5eeabe313200505c9717dbf300d95ec36566ff23e54a47a360f61597b585"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/TaggedErrors.test.ts",
+    "sha256": "9a42d184a1e1a9a5ac969b62a9fe3fb48fbe4e8a4b8f3241ee90fd9a4030fbce"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Target.test.ts",
+    "sha256": "b57134f04e099693f951502aa4ff8edca19ffa122f28d9ce141e49dbe3f08821"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/TargetConstruction.test.ts",
+    "sha256": "b9aa23c4c29199de39e03968f6aa0d4355b80a7507a5774de2237e754b01b179"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/TargetIndex.test.ts",
+    "sha256": "97a535fab7508711899a7af89f6b96dccd52efd3652c45f4a32cb6d95fa2e10c"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/TargetLayering.test.ts",
+    "sha256": "46d05bd040feabcb65f80171a686183b028f50626c3ca83578d321ebaa36e1b9"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/ToolBuild.test.ts",
+    "sha256": "c6ad7705b8cad2d0b2dbb8f3687709c59e233cecfa63e651ddf090b7b49c6fd4"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/ToolBuildCapture.test.ts",
+    "sha256": "11b07aa00a0ba713696b091f03f6404b5daf6416d989408a6e81543b57d94986"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Toolchain.test.ts",
+    "sha256": "df158af4b6e049407760c3bebe3ffb6e877b041a04bd9545efbb37dd95a6f4b6"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/toolchain.ts",
+    "sha256": "d1e3cee184cf587a879f6d47f3c8787bbca24db4c16162cbb87e35e28945aef1"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/ToolRun.test.ts",
+    "sha256": "8eb5ad4429c76c33475b3c0dcb4fa283584920cc29610ff83ff4267e4fb85762"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/TsBuild.test.ts",
+    "sha256": "2884beb0283aab8234204e2560843e664f473564f16964598ac120753f96f396"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/Tsconfig.test.ts",
+    "sha256": "90f6a006be0ba3b186167da0194fcd9c9f85d035a9a388c0db06c57a6e60626f"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/TypedFileAttrs.test.ts",
+    "sha256": "3118f5a0eaf40bf056b1cd37bb573d5b4305dcd707c61f6e6fbeb28bd285b2be"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/UnknownAttr.test.ts",
+    "sha256": "3453ae183dbf11632a2bb62908920b1163b007c677c8719e9b0529b9541b98d5"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/UnsupportedRules.test.ts",
+    "sha256": "24ae15afc50d430a391f8b8a9deaaff7a397f8ecbd97e7b49af5b0f39c7f602a"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/verification/issue-2851.txt",
+    "sha256": "b557f57245865732f9256bda40b06042b630d779e496f0cebd1386e1edce7ce4"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/VitestCoverage.test.ts",
+    "sha256": "0fca2de3ebfadf09a03be8fcdda37dd593215b0e8a07c2b7bec5d60f4f23ed8e"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/WorkspaceAttrs.test.ts",
+    "sha256": "2ba4902ac6065635e22744c3d12f7af2989a7e4218fcd74189ee5e4e02994de3"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/WorkspaceDeclaration.test.ts",
+    "sha256": "4e08b92decc5189f061617cbfd291e2d948f330ce76ff86050004ba386594ff7"
+  },
+  {
+    "path": "packages/smithers/build/targets/test/WorkspaceToolchains.test.ts",
+    "sha256": "31b32a4ab7eddbfefc688e86f5a4aa5627be3b347ba9f2cc58d13fb755cfdce5"
+  },
+  {
+    "path": "packages/smithers/build/targets/tsconfig.json",
+    "sha256": "834521e11fe5570a7204e625ddd835544bf7eaa4713414b15ad668fdd1fab0e9"
+  },
+  {
+    "path": "packages/smithers/build/targets/tsconfig.test.json",
+    "sha256": "54906696d22fe567ae9b8b9cd2c56c6aaff41ba499e70dc6767530609e8668ed"
+  },
+  {
+    "path": "packages/smithers/build/targets/vitest.config.ts",
+    "sha256": "2da9dc11242f86251d61ca0bd882d388519f4847a041229dd2f3393bdd41a822"
+  },
+  {
+    "path": "packages/smithers/build/terraform/examples/docker/.terraform.lock.hcl",
+    "sha256": "6c82ce65772a048c21a00e84eb11486af1bfd8ce7aa5b65d1ea33a75aaca29fa"
+  },
+  {
+    "path": "packages/smithers/build/terraform/examples/docker/main.tf",
+    "sha256": "eedff288e2eb62e1878ed3e58f45100a01ccf4d493d4b0d6e719c6746909da96"
+  },
+  {
+    "path": "packages/smithers/build/terraform/examples/docker/outputs.tf",
+    "sha256": "f04c7bb40fc6761d9b4bea2a6575d822468923986f67af08634376a2987bb500"
+  },
+  {
+    "path": "packages/smithers/build/terraform/examples/docker/versions.tf",
+    "sha256": "65145c7933725dfc3138abcc57e5c50050449418a484d5bf1865edd9031a3745"
+  },
+  {
+    "path": "packages/smithers/build/terraform/modules/cache/.terraform.lock.hcl",
+    "sha256": "6c82ce65772a048c21a00e84eb11486af1bfd8ce7aa5b65d1ea33a75aaca29fa"
+  },
+  {
+    "path": "packages/smithers/build/terraform/modules/cache/main.tf",
+    "sha256": "256671e785eebd1147bfb336fe011b4b77b6f6b4e2e51acf4e2dec9ec6682e18"
+  },
+  {
+    "path": "packages/smithers/build/terraform/modules/cache/migrations/0001_initial.sql",
+    "sha256": "8ed0801ece025e0451b19fd793a43c697167a77e84cd0f6958a5e2ea3bded99c"
+  },
+  {
+    "path": "packages/smithers/build/terraform/modules/cache/outputs.tf",
+    "sha256": "5498467572b7109cfc5dab908f75f0ab61ddee297f71bc35a74685992ea3b0d5"
+  },
+  {
+    "path": "packages/smithers/build/terraform/modules/cache/service/config.js",
+    "sha256": "08b5c2ad8669fb094461508f0249b01116a640c94267b9a6689a47e57e470e19"
+  },
+  {
+    "path": "packages/smithers/build/terraform/modules/cache/service/Dockerfile",
+    "sha256": "7d817470680cb710aa3997693470a5604f4b932d8337c908e3f4d4204f0a33b7"
+  },
+  {
+    "path": "packages/smithers/build/terraform/modules/cache/service/protocol.js",
+    "sha256": "07c9273b9dffa114769f999678249d8f886fe0ceb13d41c395568ab39be2b7bd"
+  },
+  {
+    "path": "packages/smithers/build/terraform/modules/cache/service/server.js",
+    "sha256": "7b3a901fe436248dfa5ee3ef7338dbfed071f08905be067a22d9810b6e61771b"
+  },
+  {
+    "path": "packages/smithers/build/terraform/modules/cache/service/storage.js",
+    "sha256": "ac6562397bdd94b8e3f1a3d4c450ec2d795dedd7616427826ef58f3a9753d7b7"
+  },
+  {
+    "path": "packages/smithers/build/terraform/modules/cache/service/test/config_test.js",
+    "sha256": "66ef21421e92e5a564ca828dc71032f3ff1a936d063b1b4f487f7d08284c4f49"
+  },
+  {
+    "path": "packages/smithers/build/terraform/modules/cache/service/test/conformance_test.js",
+    "sha256": "6ae0656883e8e55029277fab46820c0d0c4c549aa93eea1f3208e5daa0ffc5d7"
+  },
+  {
+    "path": "packages/smithers/build/terraform/modules/cache/service/test/postgres_test.js",
+    "sha256": "dc19148c59fd5d458411cfb035dcc5062861a177c60cba0b3c5abb95dc4995eb"
+  },
+  {
+    "path": "packages/smithers/build/terraform/modules/cache/service/test/protocol_test.js",
+    "sha256": "2a5bc7eb0644eaad24c5df66157f271e1d15aa753e37e6e6be8f73027b7da411"
+  },
+  {
+    "path": "packages/smithers/build/terraform/modules/cache/service/test/server_test.js",
+    "sha256": "fbb65a7cc106722735a9c2c2b80eac3001fd981767cf7a53bcb5087d5ea2af17"
+  }
+]

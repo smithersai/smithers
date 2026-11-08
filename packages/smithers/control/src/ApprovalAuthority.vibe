@@ -28,7 +28,31 @@ export interface Request {
  * @since 1.0.0
  */
 export interface Service {
-  readonly authorize: (request: Request) => void!(Unauthorized | PersistenceError)
+  readonly authorize: (
+    request: Request,
+    context?: TargetContext
+  ) => void!(Unauthorized | PersistenceError)
+}
+
+/** Trusted, lazily read target identity; never supplied by a command caller.
+ * @category models
+ * @since 1.0.0
+ */
+export interface TargetContext {
+  readonly flowId: (string | undefined)!PersistenceError
+}
+
+/** Host-owned proof verification. The verifier binds proof to the principal
+ * and the exact target (including its wait token), and checks expiry/replay.
+ * Only the requirement's name is configuration; no credential is a delegation.
+ * @category models
+ * @since 1.0.0
+ */
+export interface Options {
+  readonly verifyProof?: (
+    requirement: string,
+    request: Request
+  ) => void!(Unauthorized | PersistenceError)
 }
 
 const IdentityPart = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024))
@@ -46,7 +70,10 @@ const IdentityPart = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLeng
 export const Delegation = Schema.Struct({
   principal: Schema.Struct({ id: IdentityPart, kind: IdentityPart }),
   scopes: Schema.Array(GrantScope).check(Schema.isMinLength(1), Schema.isMaxLength(3)),
-  targets: Schema.Array(Schema.Literals(["Plan", "Node"])).check(Schema.isMinLength(1), Schema.isMaxLength(2))
+  targets: Schema.Array(Schema.Literals(["Plan", "Node"])).check(Schema.isMinLength(1), Schema.isMaxLength(2)),
+  flowId: Schema.optional(IdentityPart),
+  waitName: Schema.optional(IdentityPart),
+  requiredProof: Schema.optional(IdentityPart)
 })
 
 /**
@@ -58,27 +85,40 @@ export type Delegation = typeof Delegation.Type
 
 const identity = (principal: Pick<Principal, "id" | "kind">): string => JSON.stringify([principal.id, principal.kind])
 
-const compile = (delegations: ReadonlyArray<Delegation>): Service => {
-  // Separate target keys preserve each delegation's target/scope pairing;
-  // unioning both dimensions independently would grant a cross product.
-  const permissions = new Map<string, Set<GrantScope>>()
-  for (const delegation of delegations) {
-    for (const target of delegation.targets) {
-      const key = JSON.stringify([identity(delegation.principal), target])
-      const scopes = permissions.get(key) ?? new Set<GrantScope>()
-      for (const scope of delegation.scopes) scopes.add(scope)
-      permissions.set(key, scopes)
-    }
-  }
+const compile = (delegations: ReadonlyArray<Delegation>, options: Options = {}): Service => {
+  const entries = delegations.map((entry) => ({
+    ...entry,
+    principal: identity(entry.principal),
+    scopes: [...entry.scopes],
+    targets: [...entry.targets]
+  }))
+  const verifyProof = options.verifyProof
+  const refused = () => new Unauthorized({ message: "This caller has no authority to make this approval decision" })
   return Object.freeze({
-    authorize: (request: Request) =>
-      Effect.suspend(() => {
-        const scopes = permissions.get(JSON.stringify([identity(request.principal), request.target._tag]))
-        return scopes !== undefined &&
-            (request.decision === "denied" || (request.decision === "approved" && scopes.has(request.scope)))
-          ? Effect.void
-          : Effect.fail(new Unauthorized({ message: "This caller has no authority to make this approval decision" }))
-      })
+    authorize: (request: Request, context?: TargetContext) =>
+      effect {
+        // Check identity and scope before reading target metadata. Keep every
+        // entry intact: combining dimensions would grant their cross product.
+        const candidates = entries.filter((entry) =>
+          entry.principal === identity(request.principal) && entry.targets.includes(request.target._tag) &&
+          (request.decision === "denied" || entry.scopes.includes(request.scope)) &&
+          (entry.waitName === undefined ||
+            (request.target._tag === "Node" && entry.waitName === request.target.requestId))
+        )
+        if (candidates.length === 0) throw refused()
+        const flowId = candidates.some((entry) => entry.flowId !== undefined)
+          ? try (context?.flowId ?? Effect.succeed(undefined))
+          : undefined
+        for (const entry of candidates) {
+          if (entry.flowId !== undefined && entry.flowId !== flowId) continue
+          if (entry.requiredProof !== undefined) {
+            if (verifyProof === undefined) continue
+            try verifyProof(entry.requiredProof, request)
+          }
+          return
+        }
+        throw refused()
+      }
   })
 }
 
@@ -90,13 +130,14 @@ const compile = (delegations: ReadonlyArray<Delegation>): Service => {
  * @since 1.0.0
  */
 export const make = (
-  delegations: ReadonlyArray<Delegation>
+  delegations: ReadonlyArray<Delegation>,
+  options: Options = {}
 ): Service!InvalidInput =>
   Schema.decodeUnknownEffect(Schema.Array(Delegation).check(Schema.isMaxLength(1024)))(delegations, {
     onExcessProperty: "error"
   })
   |> Effect.mapError(%, () => new InvalidInput({ issue: "Invalid approval-authority delegation configuration" }))
-  |> Effect.map(%, compile)
+  |> Effect.map(%, (entries) => compile(entries, options))
 
 /**
  * Default trusted-local policy. Only the local operator identity is an

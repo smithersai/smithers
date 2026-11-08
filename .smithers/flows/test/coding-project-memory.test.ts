@@ -1,5 +1,4 @@
 import { NodeCrypto } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action } from "@smthrs/flow"
 import { Effect, Layer, Schema } from "effect"
@@ -202,7 +201,7 @@ test("the implementation flow hands the plan's block to every edit step", async 
           Layer.mergeAll(stubs, atomFlows).pipe(
             Layer.provideMerge(Action.layerImplementations),
             Layer.provideMerge(FlowEngine.layerMemory),
-            Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+            Layer.provideMerge(NodeCrypto.layer)
           )
         )
       )

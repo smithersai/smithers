@@ -1,0 +1,58 @@
+// @vitest-environment node
+// Compile the actual fenced examples, including every branch and the fallback (decision 0004).
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, layer } from "@effect/vitest"
+import { scriptedReplies } from "../src/core/mockReplies.vibe"
+import { run } from "./support/processes.vibe"
+
+const examples = scriptedReplies.flatMap((reply, script) =>
+  Array.from(reply.matchAll(/```vibe\s*\n([\s\S]*?)```/g), (match, block) => ({
+    name: `script-${script + 1}-block-${block + 1}.vibe`,
+    source: match[1]!,
+  })),
+)
+
+/** Where the examples are written: inside the app, so the compiler resolves `effect` from its node_modules. */
+service Scratch {
+  readonly directory: string
+}
+
+/** A fresh scratch directory under `node_modules/.cache`, removed when the suite ends. */
+const ScratchLive = Layer.effect(Scratch, effect {
+  const fs = try FileSystem.FileSystem
+  const cache = (try Path.Path).resolve("node_modules/.cache")
+  try fs.makeDirectory(cache, { recursive: true })
+  return { directory: try fs.makeTempDirectoryScoped({ directory: cache, prefix: "scripted-replies-" }) }
+}).pipe(Layer.provideMerge(NodeServices.layer))
+
+/** The full compiler's verdict on `source`, written as `name` in the scratch directory. */
+effect function compile(name: string, source: string) {
+  const { directory } = try Scratch
+  const path = try Path.Path
+  const file = path.join(directory, name)
+  try (try FileSystem.FileSystem).writeFileString(file, source)
+  const compiler = try path.fromFileUrl(new URL("../node_modules/vibelang/bin/vibelang", import.meta.url))
+  return try run(compiler, ["--ignoreConfig", "--noEmit", "--skipLibCheck", "--target", "es2022", "--module", "esnext", "--moduleResolution", "bundler", file])
+}
+
+layer(ScratchLive)("scripted VibeLang examples", (it) => {
+  it("contains examples to compile", () => expect(examples.length).toBeGreaterThan(0))
+  it.effect("rejects malformed syntax and invalid types through the full compiler", () => effect {
+    for (const [name, source] of [["bad-syntax.vibe", "effect function broken( {"], ["bad-types.vibe", 'const x: number = "wrong"']] as const) {
+      const checked = try compile(name, source)
+      try Effect.try(() => {
+        expect(checked.status).not.toBe(0)
+        expect(checked.stdout + checked.stderr).toContain("error")
+      })
+    }
+  }, 60_000)
+  for (const { name, source } of examples) {
+    it.effect(`compiles ${name} without diagnostics`, () => effect {
+      const checked = try compile(name, source)
+      try Effect.try(() => {
+        expect(checked.stdout + checked.stderr).toBe("")
+        expect(checked.status).toBe(0)
+      })
+    }, 60_000)
+  }
+})

@@ -13,9 +13,9 @@
  * @since 0.1.0
  */
 
-import { Crypto } from "@smthrs/crypto"
 import type { OwnerId } from "@smthrs/journal/OwnerId"
 import * as Context from "effect/Context"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Random from "effect/Random"
@@ -84,7 +84,7 @@ const hostProcessId = (): number | undefined =>
  * @category constructors
  * @since 0.1.0
  */
-export const makeIncarnation = (pid: number | undefined, crypto: Crypto.Crypto): Service => {
+export const makeIncarnation = (pid: number | undefined, random: typeof SecureRandom.SecureRandom.Service): Service => {
   const incarnationId: Effect.Effect<number> = pid === undefined
     ? Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER, { halfOpen: true })
     : Effect.succeed(pid)
@@ -94,7 +94,7 @@ export const makeIncarnation = (pid: number | undefined, crypto: Crypto.Crypto):
       return {
         hostId,
         pid: yield* incarnationId,
-        nonce: yield* crypto.randomUUIDv4().pipe(Effect.orDie)
+        nonce: yield* random.uuidV4().pipe(Effect.orDie)
       } satisfies OwnerId
     })
   })
@@ -108,9 +108,9 @@ export const makeIncarnation = (pid: number | undefined, crypto: Crypto.Crypto):
  * @category layers
  * @since 0.1.0
  */
-export const layer: Layer.Layer<OwnerIdentity, never, Crypto.Crypto> = Layer.effect(
+export const layer: Layer.Layer<OwnerIdentity, never, SecureRandom.SecureRandom> = Layer.effect(
   OwnerIdentity,
-  Effect.map(Crypto.Crypto, (crypto) => makeIncarnation(hostProcessId(), crypto))
+  Effect.map(SecureRandom.SecureRandom, (random) => makeIncarnation(hostProcessId(), random))
 )
 
 /**
@@ -127,9 +127,9 @@ export const layer: Layer.Layer<OwnerIdentity, never, Crypto.Crypto> = Layer.eff
  * @category layers
  * @since 1.0.0
  */
-export const layerWithoutPid: Layer.Layer<OwnerIdentity, never, Crypto.Crypto> = Layer.effect(
+export const layerWithoutPid: Layer.Layer<OwnerIdentity, never, SecureRandom.SecureRandom> = Layer.effect(
   OwnerIdentity,
-  Effect.map(Crypto.Crypto, (crypto) => makeIncarnation(undefined, crypto))
+  Effect.map(SecureRandom.SecureRandom, (random) => makeIncarnation(undefined, random))
 )
 
 /**

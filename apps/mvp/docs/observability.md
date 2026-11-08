@@ -16,7 +16,6 @@ Status (2026-10-19): every record below exists and is tested.
   W3C trace context (`traceparent` on `POST /api/questions`) parents ChatApi's `chat.question` span when it is well formed: version `00`, 55 characters of lowercase hex, neither id all zeros. Its sampled flag is ignored, and `b3` headers parent nothing. ChatApi doesn't answer: the browser's agent does, in a run of its own, whose model calls and answer writes are requests of their own ([agent.md](features/agent.md#observability)).
 - **Every log line names its trace.** ChatApi's log lines carry the current span's `trace_id` and `span_id` among their annotations (`Logger.layerStructuredJson` in `@smthrs/observability`), the same names as the browser records ChatApi relays, so a log search joins them by trace.
 - **Every outcome is recorded, not just success.** Completion, failure, refusals, database errors and defects each have a log line, span attributes and a metric. Every Warn or Error line of ChatApi's own carries an `errorCode` or an `outcome` that says why.
-- **Failure frames survive the Effect upgrade.** Effect `4.1.0` adds `Cause.StackTrace` to failures raised inside named `Effect.fn` calls. Refusal tests retain exact error fields and also check the frame name, parent and captured stack function; failures created outside those calls retain their empty annotation maps.
 - **Effect does the recording.** Logs are `Effect.log*` with annotations, spans are `Effect.withSpan`, metrics are `Metric`. The host decides where they go, so the same code records in a browser, a Worker and a test.
 
 ## Where it goes
@@ -69,6 +68,7 @@ Logs:
 | `unsent question handled` | Edit, Discard or Retry on an unsent question | Info | `questionId`, `action` (`edit`, `discard`, `retry`) |
 | `queued question taken back` | the tab's side of Edit on a queued question (`chat/edit`) | Info, Warn for `failed` | `questionId`, `outcome` (`edited`, `sent`, `failed`) |
 | `chat draft restored` | a reload put the kept draft back into the composer | Info | `draft.length` |
+| `chat.writes.ready` | draft restoration settled and outbox initialized, before repository display stores start; `smithers_web_chat_writes_ready_ms` records elapsed startup time | Info | `feature`, `durationMs`, `drafts` (`restored`, `failed`); no row content |
 | `chat draft saving`, `chat draft stored`, `chat draft failed` | a private draft write waits for the device, commits or fails; `chat.draft.save` spans the wait and `smithers_web_draft_writes{stage}` counts each stage (`waiting`, `stored`, `failed`) | Info / Warn on failure | `transactionId`, `conversation` (`home`, `branch`); never text or an error message |
 | `chat prompt shared` | the owner shared the branch shown, or took its last share away: the draft became the branch's prompt, or theirs again ([co-editing](features/coedit.md#the-prompt)) | Info | `shared` |
 | `outbox write withdrawn` | `Outbox.withdraw` took a write back (`@smthrs/effect-tanstack-db`) | Info | none of the write's contents |
@@ -112,7 +112,7 @@ Spans:
 | Span | Kind | Attributes |
 |---|---|---|
 | `chat.ask` | internal: `ask` putting the question into the outbox, synchronously | `questionId`, `answerId`, `question.length` |
-| `outbox.send` | internal: one send of one write (`@smthrs/effect-tanstack-db`), linked to the span the write was made in (`chat.ask`) | `name` (`ask`), `attempt` (1 for the first send), `outcome` (`sent`, `retry`, `refused`, `defect`, `withdrawn`) |
+| `outbox.send` | internal: one send of one write (`@smthrs/effect-tanstack-db`), linked to the span the write was made in (`chat.ask`) | `name` (`ask`), `attempt` (1 for the first send), `outcome` (`sent`, `retry`, `held`, `refused`, `defect`, `withdrawn`) |
 | `outbox.withdraw` | internal: Edit taking a queued question back out of the outbox (`Outbox.withdraw`) | `outcome` |
 | `chat.copy`, `chat.edit` | internal, in the engine worker: `chat/copy`'s and `chat/edit`'s steps asking the tab that started the run ([chat](features/chat.md#message-controls)); each is also a log line of the same name, Info when copied or edited, Warn for `not_found` or `sent`, Error for `failed` or `gone` | `smithers.chat.door`, `smithers.chat.outcome`; the log line's `door`, `outcome`, `executionId`, `durationMs` |
 | `chat.ask.send` | internal, child of `outbox.send`: from asking ChatApi, through this device's engine recording the answer's run, to Electric delivering the question | `questionId`, `answerId`, `taken` |
@@ -143,7 +143,7 @@ Metrics (`src/features/chat/metrics.ts`, `src/boot.ts`, `src/page.ts`, and `@smt
 | `smithers_web_repo_alias_checks` | counter | tree-to-file alias checks by `outcome`: `file`, `unconfirmed`, `timed_out` |
 | `smithers_slash_choices` | counter | rows chosen from the command menu: `kind` = `commands` or `values`, `how` = `accept` (Enter or a click) or `complete` (Tab) |
 | `smithers_slash_submits` | counter | command lines submitted: `outcome` = `run`, `unknown`, `missing` or `invalid`, and `command` for a command the app offers |
-| `outbox_attempts` | counter | `name`, `outcome` = `sent`, `retry`, `refused`, `defect`, or `sent_elsewhere` (a write this tab queued that the tab which took the lead sent meanwhile; settled here without a second send) |
+| `outbox_attempts` | counter | `name`, `outcome` = `sent`, `retry`, `held`, `refused`, `defect`, or `sent_elsewhere` (a write this tab queued that the tab which took the lead sent meanwhile; settled here without a second send) |
 | `outbox_refused` | counter | `name`, `status` |
 | `outbox_queued_ms` | histogram | `name`: from the write to its mutation succeeding |
 | `outbox_leader_changes` | counter | `leader` = `true` or `false` |
@@ -231,7 +231,7 @@ A sync or promise runner's typed failure is its caller's to handle; an interrupt
 |---|---|---|---|---|
 | `flow.step.failed` | log | `@smthrs/flow` `RunMetrics.recordStep`, for each step attempt whose body failed, in the engine worker and on Cloudflare | Warn | `flow`, `attempt`, `code` (the failure's code: a typed failure's `code` or tag, a defect's tag or name), `runId` |
 | `flows_step_failures` | counter | the same | | `flow`, `code` |
-| `outbox write retrying` | log | `@smthrs/effect-tanstack-db` `Outbox`: a write's first send that will be sent again | Warn | `name`, `status` (or `none`), `outcome: retry`; later retries only count in `outbox_attempts` |
+| `outbox write retrying` | log | `@smthrs/effect-tanstack-db` `Outbox`: a write's first send that will be sent again | Warn | `name`, `status` (or `none`), `outcome: retry` or `held`; later retries only count in `outbox_attempts` |
 | `outbox write refused` | log | the same: the server refused a write for good; its rows roll back | Warn | `name`, `status` (or `none`), `outcome: refused` |
 | `outbox write parked` | log | the same: a write an older build stored that this build can't send (`stage: upgrade`), and again on each load while no feature takes it (`stage: load`) | Warn | `name`, `reason`, `stage` |
 | `outbox couldn't upgrade its writes`, `outbox couldn't read its parked writes`, `outbox couldn't discard a parked write` | log | the same: the outbox's storage failed | Warn | `error`: the storage error's name |
@@ -428,8 +428,11 @@ ChatApi's sign-in routes and sessions ([sign-in.md](features/sign-in.md), `worke
 | `auth.callback` | every callback | Info `signed_in`, Warn `failed` | `outcome`, `durationMs`; `personId` and `role` (`none` for no role) when signed in; `reason` when it failed (below), and `errorCode` for `database`, `sign_out_not_started` and `error` |
 | `auth.sign_out` | every `POST /api/auth/sign-out` | Info `signed_out` and `no_session`, Warn `refused` and `failed` | `outcome`; `reason: cross_site` when refused, `local_developer` for the dev fallback, `alias` for an alias session, `not_started` when the host didn't record the sign-out flow's start and `error` for any other failure; `errorCode` when it failed (the host's code, or `conflict`, for `not_started`) |
 | `auth.session` | Postgres failed reading a session | Error | `outcome: error`, `errorCode` (`sql:<reason>`) |
+| `auth.role_unavailable` | an admitted request's cookie no longer has session authority at its role check | Warn | `reason: session_authority`; `auth.role` span records `auth.role.available: false` and `auth.role.reason: session_authority`; the write route and client send counters record retryable failure, never confirmed permission denial |
+| `write.authority_unavailable` | a delayed write's locked session or alias no longer supplies its admitted authority | Warn | `reason: session_authority`; `write.authority` span records `write.authority.live` and `write.authority.alias` booleans, with `write.authority.stage: commit` for the final deadline check; the stack request counter records `unavailable` for retryable refusal. No identity, key, cookie or content is recorded. |
+| `protected.authority` | a protected write's authority check completes without held authority | Warn | `outcome: unavailable` or `denied`; the `protected.authority` span and `smithers_protected_authority_checks` counter record `held`, `unavailable` or `denied` for each completed check. `smithers_protected_authority_commit_checks{outcome=held|unavailable}` and `protected.authority.stage=commit` record the final combined role/session deadline check after all mutations and receipt folds; expiry logs `stage=commit` and rolls back. `TriageRoleDeadline.test.ts` asserts the check/commit counters separately across real database lock waits and recovery. Unavailable triage writes stay pending under the durable retry policy; confirmed denial settles `not_allowed`. No identity, key, cookie or content is recorded. |
 | `auth.config` | SESSION_SECRET is shorter than 32 characters, so sign-in is off | Error | `errorCode: session_secret_too_short` |
-| `auth.role_check` | every role check step that ended, or a check ChatApi couldn't start | Info for each step's outcome: `redeem` (`none`, `unusable`, `refused`, `redeemed`), `store` (`stored`, `changed`, `none`), `check` (`checked`, `revoked`, `ended`) and `keep` (`kept`); Warn `failed` (one attempt) and `not_started` | `sessionId`, `step` (absent for `not_started`), `outcome`; `role` (`none` for no role) for `check` and `keep`; `errorCode` (GitHub's refusal or `sql:<reason>`) when it failed |
+| `auth.role_check` | every role check step that ended, or a check ChatApi couldn't start | Info for each step's outcome: `redeem` (`none`, `unusable`, `refused`, `redeemed`), `store` (`stored`, `installed_replay`, `abandoned_enqueued`, `none`), `check` (`checked`, `revoked`, `ended`) and `keep` (`kept`); Warn `failed` (one attempt) and `not_started` | `sessionId`, `step` (absent for `not_started`), `outcome`; `role` (`none` for no role) for `check` and `keep`; `errorCode` (GitHub's refusal or `sql:<reason>`) when it failed |
 | `auth.revoke_token` | every sign-out step that ended | Info for each step's outcome: `end` (`ended`, `over`), `revoke` (`revoked`, `unreadable`, `none`, `live`) and `forget` (`forgotten`); Warn `failed` (one attempt) | `sessionId`, `step`, `outcome`; `errorCode` (GitHub's refusal or `sql:<reason>`) when it failed |
 
 A callback's `reason`: `not_configured`, `method`, `state_mismatch` (the state isn't this browser's), `replayed` (its sign-in already finished), `expired` (over 10 minutes), `denied` (the person declined on GitHub), `invalid` (no code), `unreadable` (the sealed verifier didn't open), `sign_out_not_started` (the host didn't record the sign-out of the session this browser held, so GitHub's code was never redeemed), `<step>_<reason>` for GitHub (`exchange_rejected`, `user_unavailable`, `permission_misconfigured`, …), `database`, or `error` (a defect, by its name).
@@ -610,6 +613,8 @@ The git loop's routes, flows and tokens, triage, and the browser's issue writes,
 |---|---|---|
 | `github.webhook`, `github.write.request`, `github.shape.<table>`, `github.reconcile.start` | log, span | ChatApi |
 | `github.write`, `github.write.give_up`, `github.apply`, `github.reconcile`, `github.token.mint`, `github.config` | log, span | the `FlowExecution` Durable Object |
+| `github.machine_write.refused` | Warn log | the `FlowExecution` Durable Object: `writeId`, `outcome: refused`, the published `failure`, `cause` (`allow_list`, `installation`, `github_status:<code>`, `lane`, `revoked`, `invalid`, `has_parent`, `superseded`) and `githubStatus` (null when no GitHub answer). Every refusal settlement records its check; installation lookup/mint carries its upstream status when available. No API failure value changes, response messages or payloads. `worker/github/MachineWrite.test.ts` distinguishes a permission 403 from an allow-list miss. |
+| `github.machine_write.done` | Info log | the shared machine-write settlement path, once after a pending write becomes done: `writeId`, `op`, `number` (the issue number), `agent` and `lane` only. Covers create, update, comment and relate, including recovered writes. No title, body, label text or token. `worker/github/MachineWrite.test.ts` checks create and relate for exactly one record with the exact annotations and no private content. |
 | `github_webhooks`, `github_delivery_lag_ms`, `github_write_requests`, `github_writes`, `github_write_ms`, `github_write_unknown`, `github_applies`, `github_reconciles`, `github_reconcile_starts`, `github_reconcile_changed`, `github_sync_age_seconds`, `github_token_mints`, `github_shape_requests` | counters, histograms, gauge | ChatApi and the Durable Object |
 | `triage.read`, `triage.decide`, `triage.apply`, `triage.comment` | log, span | the `FlowExecution` Durable Object ([triage](features/issues.md#triage)); `triage.apply` with `dropped: enabler_demoted` is an Error |
 | `triage_runs{outcome}`, `triage_decisions{decision,via}`, `triage_dropped{reason}`, `triage_overrides{from,to}`, `triage_tokens` | counters | the Durable Object; a person's override is counted by `github/Write`. Overrides of the flow are its error rate |
@@ -676,7 +681,10 @@ The personal feed: a run's state routed to its people, GitHub's `main` and relea
 | `notifications.watch`, `notifications.ack` | log | ChatApi | `conversationId` or `subject`, `act`, `version`, `status`, `durationMs`, `bytes`, `existing`, `errorCode` |
 | `notifications.request` | span | ChatApi | `smithers.route`, `http.response.status_code` |
 | `smithers_notification_requests` | counter | ChatApi | `route` (`watch`, `ack`), `status` |
-| `smithers_notification_shape_requests` | counter | ChatApi | `status`, `live` |
+| `smithers_notification_shape_requests` | counter | ChatApi | `status`, `live`; `reason` on 503 |
+| `notifications.access.refused` | Warn log | ChatApi, buffered validation | `reason` (`cursor_unstable`, `denial_sequence_moved`, `read_failed`), `subjects`, `repositories`, `correlationId` |
+| `notifications.access` | log, span | ChatApi | `repositories`, `reused`, `permitted`, `unavailable`, `retryAfterSeconds`, `durationMs` |
+| `smithers_notification_repository_checks` | counter | ChatApi | `outcome` (`allowed`, `denied`, `unavailable`), `reused` (`true`, `false`) |
 | `notifications.watch`, `notifications.ack` | log, span | engine worker | `subject`, `act`, `version`, `outcome` (`sent`, `refused`, `unsent`), `status` |
 | `smithers_notification_watches`, `smithers_notification_acks` | counter | engine worker | `outcome`; `act`, `outcome` |
 | `notifications.shown` | log | tab | `subject`, `version`, `state`, `kind` |
@@ -692,8 +700,9 @@ Tracking a branch, its conversation, its terminals, its machine, sharing it and 
 |---|---|---|---|
 | `branch.track` | log, span | ChatApi | `repoId`, `outcome` (`tracked`, `existing`, or the refusal), `mode`, `forge`, `status`, `bytes`, `durationMs`, `errorCode` |
 | `smithers_branch_tracks` | counter | ChatApi | `outcome` |
-| `terminal.open`, `terminal.connect` | log, span | ChatApi | `terminalId`, `branchId`, `access`, `outcome`, `code`, `status`, `durationMs`, `errorCode` |
+| `terminal.open`, `terminal.connect` | log, span | ChatApi | `terminalId`, `branchId`, `access`, `outcome`, `code`, `status`, `durationMs`, `errorCode`; a recovered missing shell adds `recoveredTerminalId` to the log and `smithers.terminal.recovered` to the span |
 | `smithers_terminal_requests` | counter | ChatApi | `route` (`open`, `connect`), `outcome` |
+| `smithers_terminal_recoveries` | counter | ChatApi | a new open recovered the person's stale row after its shell ended; no labels |
 | `terminal.shape` | log, span | ChatApi | `status`, `live`, `durationMs`, `bytes`, `outcome` |
 | `terminal.show` | log, span | browser | `preloadMs`, `rowCount`, `outcome` (`ready`, `failed`, `cancelled`); no identifiers or content |
 | `terminal.show.failed` | log | browser | background selection or presence completion failed; no error contents |
@@ -701,7 +710,7 @@ Tracking a branch, its conversation, its terminals, its machine, sharing it and 
 | `terminal.open.wake`, `terminal.open` | log | the `FlowExecution` Durable Object | `branchId`, `generation`, `terminalId`, `outcome`, `recorded`, `errorCode` |
 | `sandbox.wake`, `terminal.session`, `terminal.open` | span | the `FlowExecution` Durable Object | `smithers.branch.id`, `smithers.terminal.id` |
 | `smithers_terminal_opens` | counter | the `FlowExecution` Durable Object | `outcome` (`open`, `unavailable`, `checkout`) |
-| `sandbox.object.wake` (span), `sandbox.checkout`, `sandbox.wake`, `sandbox.forge`, `sandbox.object.session` (logs, JSON) | | `SandboxObject` | `smithers.branch.id`, `branchId`, `stage` (`start`, `checkout`, `restore`, `placeholders`), `exitCode`, `failure` (`forge`, `branch`, `clone`, `other`), `status`, `outcome`, `errorCode` |
+| `sandbox.object.wake` (span), `sandbox.checkout`, `sandbox.wake`, `sandbox.forge`, `sandbox.object.session` (logs, JSON) | | `SandboxObject` | `smithers.branch.id`, `branchId`, `stage` (`start`, `checkout`, `restore`, `placeholders`), `exitCode`, `failure` (`forge`, `branch`, `clone`, `other`), `namespace`, `forge`, `generation`, per-stage `*Ms` including failed stages, `status`, `outcome`, `errorCode` |
 | `sandbox.box_request` (log) | | ChatApi | `errorCode`: a box's request that couldn't reach its object (502) |
 | `smithers_cloudflare_terminal_connects`, `_sessions_open`, `_bytes`, `_sessions`, `smithers_cloudflare_sandbox_wakes`, `smithers_cloudflare_sandbox_rearms` | counters | `SandboxObject` (`@smthrs/platform-cloudflare`) | `access`, `outcome`, `direction` |
 | `git.proxy` (log), `GitProxy.uploadPack` (span), `git_proxy_requests` | | `SandboxObject` (`@smthrs/effect-code-storage`) | `service`, `outcome`, `status`, `durationMs` |
@@ -749,7 +758,7 @@ A branch machine's tools and its sleep and wake ([sandbox-tools.md](features/san
 |---|---|---|---|
 | `sandbox.call`, `sandbox.result` | log, span | ChatApi | `callId`, `tool`, `door` (`person`, `agent`), `branchId`, `outcome` (`running`, `existing`, a status, or the refusal), `code`, `status`, `durationMs`, `errorCode` |
 | `smithers_sandbox_call_requests` | counter | ChatApi | `route` (`call`, `result`), `outcome` |
-| `sandbox.tool`, `sandbox.call` | log | the `FlowExecution` Durable Object | `callId`, `branchId`, `tool`, `outcome`, `settled`, `exitCode`, `timedOut`, `errorCode` |
+| `sandbox.tool`, `sandbox.call` | log | the `FlowExecution` Durable Object | `callId`, `branchId`, `tool`, `outcome`, `settled`, `exitCode`, `timedOut`, `errorCode`; checkout failures retain `exitCode` and `checkoutFailure` in `sandbox.tool` and the durable error receipt |
 | `sandbox.call.tool`, `sandbox.call.settle` | span | the `FlowExecution` Durable Object | `smithers.branch.id`, `smithers.sandbox.tool`, `smithers.sandbox.call.id` |
 | `smithers_sandbox_calls` | counter | the `FlowExecution` Durable Object | `tool`, `outcome` (`done`, or the failure) |
 | `sandbox.keep`, `sandbox.slept` | log, span | the `FlowExecution` Durable Object | `branchId`, `generation`, `ended`, `terminals`, `errorCode` |
@@ -895,7 +904,7 @@ The stack's route, its one writer, its shapes and the browser's TODO steps and s
 | `stack.shape.todos`, `stack.shape.todo_requests`; `smithers_todo_shape_requests`, `smithers_todo_request_shape_requests` | log, span; counters | ChatApi | `status`, `live` |
 | `todos.draft`, `todos.queue`, `smithers_todo_drafts`, `smithers_todo_queued` | browser | the engine worker | `draftId` or `opId`, `op`, `via`, `door`, `outcome` (`kept`, `not_kept`, `issue_not_found`, `tab_gone`, `agent`), `fromIssue`, `durationMs` |
 | `keys.press`, `smithers_web_shortcut_presses` | browser | the tab | `key`: a one-key shortcut pressed the button that declares it, such as Make TODO's `t` |
-| `todos.send`, `todos.pending`, `smithers_todo_sends`, `smithers_todo_pending_actions` | browser | the tab | `opId`, `op`, `outcome` (`taken`, `existing`, `retry`, `refused`), `status`, `code`; `action` (`edit`, `discard`, `discard_draft`) |
+| `todos.send`, `todos.pending`, `smithers_todo_sends`, `smithers_todo_pending_actions` | browser | the tab | `opId`, `op`, `outcome` (`taken`, `existing`, `held`, `retry`, `refused`), `status`, `code`; `action` (`edit`, `discard`, `discard_draft`) |
 
 A refused commit or drop of the agent's (`outcome: agent`) is the defense the catalog already holds; a nonzero count means a flow call reached the step that the catalog should have refused.
 
@@ -911,7 +920,7 @@ Watching a TODO's run ([runs.md](features/runs.md#a-run-on-cloudflare)): ChatApi
 | `repo.run.record` | log, span | ChatApi or a remote flow, each repository run recorded | `runId`, `repoId`, `flow`, `event`, `outcome` (`recorded`, `existing`) |
 | `run.steer`; `smithers_run_steers` | log, span; counter | ChatApi, each `POST /api/remote-runs/<run id>/steers` | `host` (`remote`), `runId`, `steerId`, `via`, `outcome` (`taken`, `existing`, or the refusal's code), `bytes`, `status`, `durationMs`, `errorCode` |
 | `runs.steer.queue`; `smithers_run_steers_queued` | log, span; counter | the engine worker | `steerId`, `runId`, `via`, `door`, `outcome` (`kept`, `not_kept`, `tab_gone`, `no_credential`) |
-| `run.steer.send`; `smithers_run_steer_sends` | log, span; counter | the tab | `steerId`, `runId`, `outcome` (`taken`, `existing`, `retry`, `refused`), `status`, `code` |
+| `run.steer.send`; `smithers_run_steer_sends` | log, span; counter | the tab | `steerId`, `runId`, `outcome` (`taken`, `existing`, `held`, `retry`, `refused`), `status`, `code` |
 
 Steering a TODO's agent ([runs.md](features/runs.md#steering)) records ids, sizes and outcomes; a message's words reach only the run's queue and its model, never a record. `worker/RemoteRuns.test.ts` asserts a sentinel message in no record.
 
@@ -960,7 +969,6 @@ sockets at once (`enforce`).
 | `socket.lease` | log, span | the same | host, sockets, checks, a count per outcome; never a person |
 | `socket.verdict` | span | the same | none |
 | `run_content.renew`, `room.renew`, `sandbox.renew` | log (warn) | the same | `errorCode`, when a renewal failed |
-| `sandbox.expire` | log | `SandboxObject` | closed: sockets its timer closed at their session's end |
 | `socket.loop` | log (error) | `SandboxObject` | host, loop (`renewal`, `expiry`), outcome `died`, `errorCode`; a loop that died, which the next attach starts again; never the failure's text |
 
 ### Flow usage
@@ -1215,3 +1223,120 @@ API errors echo a valid incoming `cf-ray` as `x-smithers-ray`, following the app
 The e2e problem log appends `code=<body code> x-smithers-ray=<ray>` to every 5xx, declared, retried or not, using Cloudflare's `cf-ray` when the app's header is absent. Each line also goes to the run's output as `server error: <line>`, passing or not, and the deploy smoke prints it under its spec. Separate rays remain separate lines, so a repeated stack failure retains each correlation identifier. Missing or unreadable JSON uses `code=unknown`; a missing ray uses `x-smithers-ray=none`. Only a bounded machine-readable top-level code and a valid ray are retained: no response bodies, arbitrary headers, query values, tokens, cookies, logins or additional person identifiers. Declared matches and allowed shape retries keep their existing text and counts. Error-body collection waits at most two seconds at teardown; status failures are recorded immediately even when their bodies never complete.
 
 Tests: `worker/home/Api.test.ts` verifies one existing role outcome line per fresh failure and held cooldown, fields, correlation, unchanged responses and metric counts, and absence of private person, login, cookie and token sentinels. `worker/RequestRay.test.ts` checks error-header propagation, validation and unchanged successes. `e2e/problems.test.ts` checks per-ray undeclared output, each declared 5xx's code and ray, missing and malformed diagnostics, and private-content exclusion. `e2e/watch.test.ts` uses real HTTP and browser events to verify error-body collection during teardown and a body that never finishes.
+
+Every ShapeProxy 503 completion line and both its per-route counter and
+`electric_shape_responses` include a closed `reason`: `sse_refused`,
+`shape_refused`, `electric_unavailable`, `electric_503`, `validate_failed`,
+`validate_superseded`, or `replay_required` ([paths](../../../packages/effect-electric/docs/shape-proxy.md)).
+Other statuses omit it. The existing generated `correlationId` remains on the
+line and response's `x-request-id`; it is never a metric attribute.
+
+Notifications validation emits exactly one `notifications.access.refused` line
+when it returns false or fails. `cursor_unstable` means the access-row count
+differs from the requested repository count; `denial_sequence_moved` means a
+same-sized snapshot has a changed denial sequence. `read_failed` means the
+validation database Effect failed. It records only the reason, subject and
+repository counts, correlation ID and tracing identifiers. Successful snapshots
+count permitted subjects and repositories; failed reads count the subjects
+prepared so far and requested repositories. No URL, parameter, row, body,
+header value, token or error message is included. The shared proxy completion
+then records `validate_superseded` or `validate_failed` with the same correlation.
+
+
+`repo.refusals.unavailable` records a failed refusal-store restoration with only `feature: repo`. The data gate remains closed; this is distinct from `repo.refusals.known`, which is emitted only after successful restoration and application of its marks.
+
+`repo.refusal.unstored` reports a refusal mark that failed to persist or timed out, with `feature: repo`; cancellation adds `reason: interrupted`. The in-memory refusal remains closed. `repo.refusal.wipe_failed` reports a failed cache cleanup with `feature: repo` and the registered collection `family`. Both pass through the browser exporter and server relay; neither includes a repository identifier or the failure payload.
+
+
+### Pending sign-out and durable holds
+
+`device.lifecycle` is a host record, an Info log, and `smithers_device_lifecycle{outcome}`. Outcomes are `sign_out_pending` after the exclusive lock is granted and before the request, `sign_out_answered` while the successful request awaits its wipe, `sign_out_failed`, `sign_out_released`, and `reopen_held` when that lock prevents a reopen. They contain no identities, payloads or credentials. `src/wipe.test.ts` asserts lock ownership and release records; `src/boot.test.ts` checks the exported log and counter.
+
+`outbox.send` and `outbox_attempts` distinguish `held` from ordinary `retry`. Held status is read from owned persisted rows, not the last attempt in a tab. The SDK logs `outbox couldn't read held status` or `outbox couldn't publish its change` with only an error name. An unreadable status read preserves the last known state; invalidations carry no data and receivers reread storage. The package outbox tests verify held attempt counts, follower status, reload, key ordering and leadership handoff; co-edit's integration tests use the real page wipe and real text routes.
+
+### Session renewal
+
+A successful sliding renewal records `auth.session` with `outcome: renewed` and
+increments `smithers_auth_requests{route: session, outcome: renewed, reason: none}`.
+Daily throttling and the absolute cap produce no write and no renewal record.
+The record carries no token, cookie, sealed value or user content. The following
+lookup samples database time beside the effective expiry and deadline.
+
+The session response's opaque tag identifies the presented home or alias row to
+the caller. Auth diagnostics do not record that tag or add it to metric labels.
+
+### Session signing keys
+
+`smithers_auth_issue{outcome: issuer_unconfigured}` and `auth.issue` count and
+record an issuer missing from this Worker's configuration. Its transaction rolls
+back. `smithers_auth_session{outcome: credential_stale}` and `auth.session` record
+a configured-key cookie for a live row re-keyed before that cookie arrived. The
+answer contains no identity; no renewal is recorded.
+
+`smithers_auth_key_rotations` and `auth.key_rotation` carry `step` (`stage`,
+`promote`, `cease`, `retire`, `gate`) and `outcome` (`completed`, `failed`). The
+`auth.key_rotation` span uses the same step. The operator records `auth.key_tool`
+with `step` and `outcome`. Operator admission also records `mode` (`new`,
+`resumed`, `retried`), counts `smithers_auth_key_tool_requests{step,mode}`, and
+annotates the `auth.key_tool` span with that mode. These records carry no cookie, token, secret map, sealed
+value, connection string, key material, person or session tag. The deploy gate
+queries database time afresh for each publication and checks retired labels too.
+
+### Session privacy detection
+
+`smithers_auth_session{outcome: cookie_rejected}` and `auth.session` record a
+present session cookie that fails verification or live-row resolution. The
+request guard shares that lookup with route authorization. Missing cookies and
+database failures do not count. A stale cookie counts as rejected and also
+records `credential_stale`; neither record carries a credential or identity.
+
+`smithers_device_principal_refusals{outcome: anonymous}` and
+`auth.device_principal` record `@anonymous` before cookie or bearer resolution.
+The actor span attribute is `none`. No subject, run, person, cookie or bearer is
+recorded.
+
+
+The current Worker keeps its counters in the isolate and mirrors them to logs;
+it has no metrics exporter. The `cookie_rejected` alert is inert and counts as
+neither alerting nor a safety control. Device-end emission comes
+with step 3. This change deploys no exporter, rule or receiver.
+
+A socket’s cached session end triggers one authoritative renewal check, with
+no checks in the last seconds of a capped lease. `socket.lease` records that
+check and its verdict in the existing `smithers_socket_leases` counter. Kept
+admissions advance to the measured session end; pending checks admit no frames
+past the old end. No additional metric names or identity labels are introduced.
+
+
+Re-authentication records `auth.reauth` with `outcome` (`renewed_in_place` or
+`new_row`) and `reason` (`eligible`, `ineligible`, `eligible_alias`,
+`ineligible_alias`), counted by `smithers_auth_reauth` with the same fields.
+`auth.token_store` and `smithers_auth_token_store` carry only `outcome`:
+`stored`, `installed_replay` or `abandoned_enqueued`.
+
+`auth.token_cleanup` is a span and a log. Its counter,
+`smithers_auth_token_cleanup`, has `outcome`: `revoked`, `retried` for a deferred
+launch, or `failed` for a failed durable attempt. `auth.token_cleanup.failure`
+adds only `errorCode`. Tokens, sealed tokens, digests, logins and key material
+never appear in these records. The existing alarm admits a five-minute durable
+sweep, which restarts aged unfinished requests and removes finished tombstones
+older than 30 days. Metrics and relay privacy assertions cover the new names.
+
+
+Session-end confirmation records `auth.session_prior` and
+`smithers_auth_session_prior` with only `outcome`: `ended`, `live`, `absent` or
+`failed`. `auth.session_end` and `smithers_auth_session_ends` carry `reason` and
+`kind` (`home` or `alias`). `auth.session_retention` records completed sweeps.
+The existing five-minute durable sweep handles unread expiry, 30-day session
+erasure and 400-day anonymous receipt retention, preserving the newest role
+receipt before erasure. Rotation records also include the fixed steps
+`pin_legacy`, `pin_seal`, `reset_seal`, `emergency_prepare` and `compromise`, with completed or failed
+outcomes. No session tag, token, ciphertext, cookie, fingerprint, key secret,
+login or person enters these diagnostics. Relay and raw-diagnostic privacy
+checks live in `src/telemetry-privacy.test.ts`.
+
+### Pending triage reauthorization
+
+`github.write.request` and `github_write_requests` record `outcome=reauthorized` only after a fresh same-ID pending triage admission commits. The existing `op` and `repository` labels remain bounded. Failed/contended admissions retain the existing unavailable outcome. An executing attempt superseded while resolving a role records `github.write.authority` with `outcome=superseded`, the `github.write.authority` span attribute, and `github_write_authority{op,outcome}`. No key, cookie, token, identity or payload is added. `TriageReauthorization.test.ts` checks the route count, stale-attempt count, real reauthentication, bounded contention and execution ordering.
+
+Credential read-lock refusal carries only `stage=credential_lock` and `wait=deadline|cancelled` on `DeviceIdentityRefused`, alongside the existing `credential_stale` reason. The native lock request is cancelled, so the abandoned request cannot later acquire it or send. Tests assert the bounded cause, no remaining waiter, unchanged network write count and usable session reads under rejected/stalled publication. Role-window tests exercise actual production-host flows with a five-minute construction setting and empty runtime configuration, including pending-write recovery and the request service.

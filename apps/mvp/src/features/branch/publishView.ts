@@ -1,3 +1,4 @@
+import { comparisonKey } from "../pulls/contract"
 import type { WriteFailure, WriteOp, WriteStatus } from "../issues/contract"
 import type { ChangedFile, ComparedCommit, FilesRow } from "../pulls/schema"
 import type { Access, Mode } from "./contract"
@@ -261,7 +262,7 @@ export const compareCommitsOf = (commits: ReadonlyArray<ComparedCommit>): Readon
 export const compareOf = (publication: PublicationRow | undefined, comparisons: ReadonlyArray<FilesRow>): CompareView => {
   const row = publication === undefined
     ? undefined
-    : comparisons.find((comparison) => comparison.id === `${publication.baseSha}...${publication.headSha}`)
+    : comparisons.find((comparison) => comparison.id === comparisonKey(publication.repoId, publication.baseSha, publication.headSha))
   if (row === undefined || row.status === "loading") return { kind: "loading" }
   if (row.status === "failed") return { kind: "failed", title: COULDNT_LOAD }
   if (row.commits.length === 0 && row.files.length === 0) return { kind: "empty", title: NO_CHANGES }

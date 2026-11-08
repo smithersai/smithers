@@ -34,6 +34,7 @@ export const itemsOf = (repo: string, document: string, body: unknown): Effect.E
       items.push({
         key: `${repo}:${document}:${item}`,
         repo,
+        repoId: `github/${repo}`,
         owner,
         name,
         document,

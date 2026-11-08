@@ -1,0 +1,206 @@
+// The live Factory end to end in local workerd (wiki/decisions/0010-live-agent.md, 0008-testing.md): Miniflare runs
+// the API Worker's Durable Objects over the real sequencer, the real `vibelang/Reply` flow on the engine in each
+// conversation's own SQLite, and the real HTTP protocol (test/workerd/worker.vibe), and `LiveFactory` talks to it over
+// HTTP from this process, as the CLI and the browser do. No model is scripted: without a key the agent's real
+// configuration has no model, so every reply fails saying so, and a spent budget refuses before any model call. The
+// opt-in case asks the real model when `CEREBRAS_API_KEY` is set. Run with `pnpm test:workerd`.
+import { describe, expect, it } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http"
+import { afterAll, beforeAll } from "vitest"
+import { apply, empty, type Event } from "../src/core/conversation.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { health, LiveFactory } from "../src/core/LiveFactory.vibe"
+import { REASONS } from "../worker/Reply.vibe"
+import { modelKey, room, serveApi, type Served } from "./support/workerd.vibe"
+
+/** The live Factory at `origin`, over this process's fetch. */
+function live(origin: string) {
+  return LiveFactory(origin).pipe(Layer.provide(FetchHttpClient.layer))
+}
+
+/** What `origin`'s `/api/health` says, over this process's fetch. */
+effect function healthOf(origin: string) {
+  provide FetchHttpClient.layer {
+    return try health(origin)
+  }
+}
+
+/** The runs of `conversation`'s engine, oldest first, from the test host's window into its SQLite. */
+effect function runsOf(origin: string, conversation: string) {
+  provide FetchHttpClient.layer {
+    const response = try HttpClient.get(`${origin}/runs/${encodeURIComponent(conversation)}`)
+    return try HttpClientResponse.schemaBodyJson(Schema.Array(Run))(response)
+  }
+}
+
+schema Run { readonly run_id: string; readonly status: string }
+
+/** Every event of `conversation` after `after`, up to the one that settles its `replies`-th reply. */
+effect function untilSettled(conversation: string, replies: number, after = 0) {
+  const factory = try Factory
+  let settled = 0
+  const events = try Stream.runCollect(
+    factory.events(conversation, after) |> Stream.takeUntil(%, (event: Event) =>
+      (event.type === "ReplyFinished" || event.type === "ReplyFailed") && ++settled === replies),
+  )
+  return Array.from(events)
+}
+
+describe("the live Factory in local workerd, with no model key", () => {
+  let api: Served | undefined
+  beforeAll(async () => { api = await runPromise(serveApi()) }, 120_000)
+  afterAll(async () => { await api?.dispose() })
+
+  it.live("says it is live, and a post's reply runs as a durable flow that fails, saying the agent has no model", () => effect {
+    const origin = api!.origin
+    const answer = try healthOf(origin)
+    provide live(origin) {
+      const factory = try Factory
+      const conversation = try room("unconfigured")
+      try factory.post(conversation, "a", "Ada", "  How do services work?  ")
+      const events = try untilSettled(conversation, 1)
+      const snapshot = try factory.read(conversation, 0)
+      try Effect.try(() => {
+        expect(answer).toEqual({ ok: true, agent: "live" })
+        expect(factory.mode).toBe("live")
+        expect(events).toEqual([
+          { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "How do services work?" },
+          { type: "ReplyStarted", seq: 2, id: "r1", inReplyTo: "m1" },
+          { type: "ReplyFailed", seq: 3, id: "r1", reason: REASONS.unconfigured },
+        ])
+        expect(snapshot).toEqual({ seq: 3, entries: events.reduce(apply, empty).entries })
+      })
+    }
+  })
+
+  it.live("runs every post as a vibelang/Post flow in the conversation's engine, refused ones included", () => effect {
+    const origin = api!.origin
+    provide live(origin) {
+      const factory = try Factory
+      const conversation = try room("post-flows")
+      try factory.post(conversation, "a", "Ada", "first")
+      const refused = factory.post(conversation, "a", "Ada", "again") catch (error) => error._tag === "Refused" ? error.refusal : error.reason
+      try untilSettled(conversation, 1)
+      const runs = try runsOf(origin, conversation)
+      const posts = runs.filter((run) => run.run_id.startsWith("post/"))
+      try Effect.try(() => {
+        expect(refused).toBe("duplicate")
+        expect(posts.map((run) => run.status)).toEqual(["completed", "completed"])
+        expect(runs.map((run) => run.run_id)).toContain("reply/m1")
+      })
+    }
+  })
+
+  it.live("answers posts one at a time in order, two followers see the same events, and a cursor resumes", () => effect {
+    provide live(api!.origin) {
+      const factory = try Factory
+      const conversation = try room("queue")
+      try factory.post(conversation, "a", "Ada", "first")
+      try factory.post(conversation, "b", "Grace", "second")
+      const [first, second] = try.all [untilSettled(conversation, 2), untilSettled(conversation, 2)]
+      const resumed = try untilSettled(conversation, 1, 3)
+      try Effect.try(() => {
+        expect(first).toEqual(second)
+        expect(first.map((event) => event.seq)).toEqual(first.map((_, index) => index + 1))
+        const state = first.reduce(apply, empty)
+        const posts = state.entries.filter((entry) => entry.author === "person").map((entry) => entry.id)
+        const replies = state.entries.filter((entry) => entry.author === "agent")
+        expect(state.entries.filter((entry) => entry.author === "person").map((entry) => entry.text)).toEqual(["first", "second"])
+        expect(replies.map((reply) => [reply.inReplyTo, reply.error])).toEqual(posts.map((post) => [post, REASONS.unconfigured]))
+        // The second reply starts only after the first settles.
+        const settledFirst = first.findIndex((event) => event.type === "ReplyFailed")
+        const startedSecond = first.findIndex((event) => event.type === "ReplyStarted" && event.inReplyTo === posts[1])
+        expect(settledFirst).toBeLessThan(startedSecond)
+        expect(state.agent).toBe("failed")
+        expect(resumed.map((event) => event.seq)).toEqual(first.filter((event) => event.seq > 3).map((event) => event.seq))
+      })
+    }
+  })
+
+  it.live("refuses blank, repeated and oversized posts with the sequencer's reasons", () => effect {
+    provide live(api!.origin) {
+      const factory = try Factory
+      const conversation = try room("refusals")
+      const refusal = effect (clientId: string, text: string) => {
+        return factory.post(conversation, clientId, "Ada", text) catch (error) => error._tag === "Refused" ? error.refusal : error.reason
+      }
+      const blank = try refusal("a", "   ")
+      try factory.post(conversation, "b", "Ada", "hi")
+      const repeated = try refusal("b", "hi again")
+      const long = try refusal("c", "x".repeat(8001))
+      try Effect.try(() => {
+        expect(blank).toBe("empty")
+        expect(repeated).toBe("duplicate")
+        expect(long).toBe("too-long")
+      })
+    }
+  })
+})
+
+describe("the live Factory in local workerd, with the day's budget spent", () => {
+  let api: Served | undefined
+  beforeAll(async () => { api = await runPromise(serveApi({ CHAT_DAILY_TOKENS: "0", CEREBRAS_API_KEY: "unused-key" })) }, 120_000)
+  afterAll(async () => { await api?.dispose() })
+
+  it.live("refuses the reply before any model call, saying the budget is spent", () => effect {
+    provide live(api!.origin) {
+      const factory = try Factory
+      const conversation = try room("budget")
+      try factory.post(conversation, "a", "Ada", "hi")
+      const events = try untilSettled(conversation, 1)
+      try Effect.try(() => {
+        expect(events.at(-1)).toEqual({ type: "ReplyFailed", seq: 3, id: "r1", reason: REASONS.budget })
+      })
+    }
+  })
+})
+
+// A model nobody answers: a host under `.invalid`, which never resolves (RFC 2606). The reply reaches smithers.sh's agent (its host, its seat and its workerd
+// sandbox build), whose model call fails as a real connection fails; no model is scripted.
+const UNREACHABLE_MODEL = JSON.stringify({
+  protocol: "openai-chat", baseUrl: "https://model.invalid", modelId: "qwen-3.8-27b", credential: "UNANSWERED",
+})
+
+/** The unanswered model's key and the one origin it may reach, as @smthrs/model-host reads a custom credential. */
+const UNANSWERED = { SMITHERS_MODEL_KEY_UNANSWERED: "unused-key", SMITHERS_MODEL_KEY_UNANSWERED_ORIGIN: "https://model.invalid" }
+
+describe("the live Factory in local workerd, with a model nobody answers", () => {
+  let api: Served | undefined
+  beforeAll(async () => { api = await runPromise(serveApi({ CHAT_MODEL: UNREACHABLE_MODEL, ...UNANSWERED })) }, 120_000)
+  afterAll(async () => { await api?.dispose() })
+
+  it.live("runs the reply on smithers.sh's agent, which fails saying the model is unavailable", () => effect {
+    provide live(api!.origin) {
+      const factory = try Factory
+      const conversation = try room("agent")
+      try factory.post(conversation, "a", "Ada", "How do services work?")
+      const events = try untilSettled(conversation, 1)
+      const runs = try runsOf(api!.origin, conversation)
+      try Effect.try(() => {
+        expect(events.at(-1)).toEqual({ type: "ReplyFailed", seq: 3, id: "r1", reason: REASONS.unavailable })
+        expect(runs.map((run) => run.run_id)).toContain("reply/m1")
+      })
+    }
+  }, 300_000)
+})
+
+describe.skipIf(modelKey === undefined)("the live Factory with the real model (opt in: CEREBRAS_API_KEY)", () => {
+  let api: Served | undefined
+  beforeAll(async () => { api = await runPromise(serveApi({ CEREBRAS_API_KEY: modelKey ?? "" })) }, 120_000)
+  afterAll(async () => { await api?.dispose() })
+
+  it.live("streams an answer that finishes with VibeLang in it", () => effect {
+    provide live(api!.origin) {
+      const factory = try Factory
+      const conversation = try room("model")
+      try factory.post(conversation, "a", "Ada", "Show me a VibeLang service with one effect method.")
+      const events = try untilSettled(conversation, 1)
+      const reply = events.reduce(apply, empty).entries[1]!
+      try Effect.try(() => {
+        expect(events.at(-1)!.type).toBe("ReplyFinished")
+        expect(events.some((event) => event.type === "ReplyDelta")).toBe(true)
+        expect(reply.text).toContain("service")
+      })
+    }
+  }, 180_000)
+})

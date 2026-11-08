@@ -53,7 +53,7 @@ npm install @smthrs/database@next @effect/sql-sqlite-node effect
 ```
 
 It needs Node.js 22.19.0 or later for the built-in `node:sqlite` module, and
-one `effect` at exactly `4.1.0` with `@effect/sql-sqlite-node` at the
+one `effect` at exactly `4.1.1` with `@effect/sql-sqlite-node` at the
 same version: two copies of `effect` in one tree split the `SqlClient` service
 identity, and a writer built against one cannot see a client provided from the
 other. For those versions, the import subpaths, and the packages a real

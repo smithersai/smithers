@@ -1,5 +1,7 @@
 import { reloadAfter } from "../../test/reloadTiming"
 import { ModelError } from "@smthrs/model"
+import { browserSession } from "../../test/browserSession"
+import { CONNECTION } from "./schema"
 import { outboxPrincipal } from "../../device/identity"
 import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
 import { Outbox } from "@smthrs/effect-tanstack-db"
@@ -48,6 +50,10 @@ import { followNotice } from "../timeline/notice"
 import { AttentionStore } from "../attention/store"
 import { chatShortcuts } from "./shortcuts"
 import { ChatStore } from "./store"
+import { Status } from "../status/status"
+import { ConversationOwners } from "../conversations/owners"
+import { AuthStore, SESSION } from "../auth/store"
+import { replaceRole, RepoStore } from "../repo/store"
 import { PLACE } from "./schema"
 import { SharedPrompt } from "./sharedPrompt"
 import { ask as askAction } from "./actions"
@@ -273,6 +279,48 @@ describe("asking", () => {
     asked((await a.actions.ask("hello")))
     await until(() => expect(b.shown()).toEqual(["user done hello", "assistant streaming "]))
     expect(b.queued()).toBe(0)
+  })
+})
+
+// The data gate (decision 0110; the coordinator's ruling 3): the home conversation shows only while ConversationOwners
+// attributes it to this person (their my-conversations row, which asking writes) and its repository may show.
+describe("the home conversation through the data gate", () => {
+  // Ruling 3a (decision 0110): the home conversation is the person's own, named by the session answer. It shows by that
+  // id alone, with no my-conversations row and no repository's say; a device whose session names no home shows none of it.
+  test("shows by the session's home id alone: with no my-conversations row, under its repository's refusal, and never without the id", async () => {
+    const a = await openChat()
+    asked((await a.actions.ask("private question")))
+    await until(() => expect(a.shown()).toContain("user done private question"))
+    const conversationId = a.store.messages.tanstack.toArray.find((row) => row.conversationId !== undefined)!.conversationId!
+    const auth = await a.runtime.runPromise(Effect.service(AuthStore))
+    const status = (await a.runtime.runPromise(Effect.service(Status))).queries.of(null)
+    status.statuses.startSyncImmediate()
+    status.latest.startSyncImmediate()
+    await until(() => expect(status.statuses.toArray).toHaveLength(1))
+    expect(status.latest.toArray).toHaveLength(1)
+    expect(auth.session.tanstack.get(SESSION)?.homeConversationId).toBe(conversationId)
+    // The asker's my-conversations row goes: the conversation still shows, as theirs.
+    await a.onApi(a.api.github.run(Effect.flatMap(SqlClient.SqlClient, (sql) =>
+      sql`DELETE FROM conversation_people WHERE conversation_id = ${conversationId}`)))
+    const owners = await a.runtime.runPromise(Effect.service(ConversationOwners))
+    await until(() => expect(owners.mine.tanstack.has(conversationId)).toBe(false))
+    expect(a.shown()).toContain("user done private question")
+    // The home repository refusing this person hides nothing of their own conversation.
+    const repos = await a.runtime.runPromise(Effect.service(RepoStore))
+    const shownUnderRefusal = await a.runtime.runPromise(Effect.andThen(
+      replaceRole(repos, { id: "github/smithersai/smithers", role: null, own: false, refused: "forbidden" }),
+      Effect.sync(() => a.shown()),
+    ))
+    expect(shownUnderRefusal).toContain("user done private question")
+    // A session that names no home: the conversation is unattributed, and hides in the same change.
+    const unnamed = await a.runtime.runPromise(Effect.andThen(
+      Effect.orDie(auth.session.update(SESSION, (row) => void delete row.homeConversationId)),
+      Effect.sync(() => ({ messages: a.shown(), statuses: status.statuses.toArray, latest: status.latest.toArray })),
+    ))
+    expect(unnamed.messages.filter((line) => line.includes("private question"))).toEqual([])
+    expect(unnamed.statuses).toEqual([])
+    expect(unnamed.latest).toEqual([])
+    expect(a.store.messages.tanstack.toArray.some((row) => row.text === "private question")).toBe(true)
   })
 })
 
@@ -639,10 +687,12 @@ describe("admission", () => {
     const real = device.outbox.storage
     const refusing = { now: false }
     const storage: Outbox.Options<never>["storage"] = {
+      withLock: (name, action) => real.withLock(name, action),
       get: (key) => real.get(key),
       keys: () => real.keys(),
       delete: (key) => real.delete(key),
       clear: () => real.clear(),
+      setMany: (rows) => refusing.now ? Promise.reject(new Error("quota")) : real.setMany(rows),
       set: (key, value) => (refusing.now ? Promise.reject(new Error("quota")) : real.set(key, value)),
     }
     return { device: { ...device, outbox: { ...device.outbox, storage } }, refusing }
@@ -794,7 +844,7 @@ describe("the device store", () => {
     await until(() => expect(ann.sentQuestions()).toHaveLength(1))
     ann.failNext("unreachable")
     await ann.close()
-    const kept = [...outboxEntries.keys()]
+    const kept = [...outboxEntries.keys()].filter((key) => key.startsWith("tx:"))
     expect(kept).toHaveLength(1)
 
     const ben = await tabOn(openTab(api, { ...quick, host: as("ben") }))
@@ -803,7 +853,7 @@ describe("the device store", () => {
     expect((await onApi(api.rows)).map(({ text }) => text)).not.toContain("ann's question")
     expect(ben.shown().filter((line) => line.includes("ann's question"))).toEqual([])
     // Ben's own write leaves the outbox once Postgres has it; Ann's stays.
-    await until(() => expect([...outboxEntries.keys()]).toEqual(kept), agentWithin)
+    await until(() => expect([...outboxEntries.keys()].filter((key) => key.startsWith("tx:"))).toEqual(kept), agentWithin)
     expect((await onApi(api.rows)).map(({ text }) => text)).not.toContain("ann's question")
   })
 
@@ -1328,7 +1378,7 @@ for (const later of ["typing", "navigation"] as const) {
     const entered = new Promise<void>((resolve) => { enter = resolve })
     const held = new Promise<void>((resolve) => { release = resolve })
     const host = { ...base, outbox: { ...base.outbox, online: { ...base.outbox.online, isOnline: () => false }, storage: { ...base.outbox.storage,
-      set: async (key: string, value: string) => { enter(); await held; return base.outbox.storage.set(key, value) },
+      setMany: async (rows: ReadonlyArray<readonly [string, string]>) => { enter(); await held; return base.outbox.storage.setMany(rows) },
     } } }
     const tab = await tabOn(openTab(opened.api, { host, answers: false }))
     await tab.actions.setDraft("Earlier question")
@@ -1349,7 +1399,7 @@ for (const later of ["typing", "navigation"] as const) {
 test("a refused question waits for its recovery row before returning or clearing the draft", async () => {
   const base = nodeDevice()
   const tab = await openChat({ answers: false, host: { ...base, outbox: { ...base.outbox, storage: { ...base.outbox.storage,
-    set: () => Promise.reject(new Error("quota")),
+    setMany: () => Promise.reject(new Error("quota")),
   } } } })
   const release = Effect.runSync(Deferred.make<void>())
   const unsent = { ...tab.store.unsent, insert: (row: Parameters<typeof tab.store.unsent.insert>[0]) => tab.store.unsent.insert(row).pipe(Effect.map((kept) => ({
@@ -1374,7 +1424,7 @@ for (const accepts of [true, false]) {
     const entered = new Promise<void>((resolve) => { enter = resolve })
     const held = new Promise<void>((resolve) => { release = resolve })
     const host = { ...base, outbox: { ...base.outbox, online: { ...base.outbox.online, isOnline: () => false }, storage: { ...base.outbox.storage,
-      set: async (key: string, value: string) => { enter(); await held; if (!accepts) throw new Error("quota"); return base.outbox.storage.set(key, value) },
+      setMany: async (rows: ReadonlyArray<readonly [string, string]>) => { enter(); await held; if (!accepts) throw new Error("quota"); return base.outbox.storage.setMany(rows) },
     } } }
     const tab = await tabOn(openTab(opened.api, { host, answers: false }))
     await tab.actions.setDraft("First question")
@@ -1402,7 +1452,7 @@ test("cancelling an admitting Send wakes joined callers and releases its reserva
   const entered = new Promise<void>((resolve) => { enter = resolve })
   const held = new Promise<void>((resolve) => { release = resolve })
   const host = { ...base, outbox: { ...base.outbox, online: { ...base.outbox.online, isOnline: () => false }, storage: { ...base.outbox.storage,
-    set: async (key: string, value: string) => { enter(); await held; return base.outbox.storage.set(key, value) },
+    setMany: async (rows: ReadonlyArray<readonly [string, string]>) => { enter(); await held; return base.outbox.storage.setMany(rows) },
   } } }
   const tab = await tabOn(openTab(opened.api, { host, answers: false }))
   await tab.actions.setDraft("Cancel admission")
@@ -1429,3 +1479,30 @@ test("a summary lane that cannot proceed reaches the real chat rail and the shar
   await until(() => expect(tab.queries.timelineNotice.toArray).toMatchObject([{ code: "credit", text: "The summary model is out of credit" }]))
   expect((await tab.runtime.runPromise(attention.launches.toArray)).map((row) => row.subject)).toContain("timeline-summaries:credit")
 })
+
+
+test("a chat question refused 401 is held through reload with sign-in and delivered once after sign-in", async () => {
+  const { api } = await openApi()
+  const browser = browserSession("person-member", (request) => request.method === "POST" && new URL(request.url).pathname === "/api/questions")
+  const device = nodeDevice({ agent: api })
+  const open = () => tabOn(openTab(api, { ...quick, host: device, transport: browser.transport }))
+  const first = await open()
+  const { questionId } = asked(await first.actions.ask("Keep this held question"))
+  const signIn = (tab: Awaited<ReturnType<typeof open>>) => tab.store.connection.tanstack.get(CONNECTION)?.signIn === true
+  await until(() => expect(browser.state.refusals).toBeGreaterThan(0))
+  await until(() => expect(signIn(first)).toBe(true))
+  expect(first.store.unsent.tanstack.has(questionId)).toBe(false)
+  expect(first.queued()).toBe(1)
+  await first.close()
+  const second = await open()
+  await until(() => expect(signIn(second)).toBe(true))
+  expect(second.store.unsent.tanstack.has(questionId)).toBe(false)
+  await second.close()
+  browser.state.cookie = "read"
+  const third = await open()
+  await until(() => expect(third.synced(questionId)).toBe(true))
+  await until(() => expect(third.queued()).toBe(0))
+  expect(browser.state.delivered).toBe(1)
+  // The queue and connection pill have separate subscriptions; delivery settles before the pill consumes held=false.
+  await until(() => expect(signIn(third)).toBe(false), agentWithin)
+}, 120_000)

@@ -141,6 +141,7 @@
       "vibelang-source": "./src/QuickJSSandbox.ts",
       "default": "./.vibelang/js/src/QuickJSSandbox.js"
     },
+    "./QuickJSWorkerd": "./src/QuickJSWorkerd.ts",
     "./Relevance": {
       "types": "./.vibe/declarations/src/Relevance.d.vibe.ts",
       "vibelang-source": "./src/Relevance.vibe",
@@ -216,6 +217,9 @@
       "vibelang-source": "./src/index.ts",
       "default": "./.vibelang/js/src/index.js"
     }
+  },
+  "imports": {
+    "#quickjs.wasm": "@jitl/quickjs-wasmfile-release-sync/wasm"
   },
   "files": [
     "src/**/*.ts",
@@ -448,6 +452,16 @@
           "default": "./dist/cjs/QuickJSSandbox.js"
         }
       },
+      "./QuickJSWorkerd": {
+        "import": {
+          "types": "./dist/esm/QuickJSWorkerd.d.ts",
+          "default": "./dist/esm/QuickJSWorkerd.js"
+        },
+        "require": {
+          "types": "./dist/cjs/QuickJSWorkerd.d.ts",
+          "default": "./dist/cjs/QuickJSWorkerd.js"
+        }
+      },
       "./Relevance": {
         "import": {
           "types": "./dist/esm/Relevance.d.ts",
@@ -626,14 +640,14 @@
     "@smthrs/canonical": "1.0.0-rc.16",
     "@smthrs/crypto": "workspace:*",
     "@smthrs/plan": "workspace:*",
-    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
+    "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
+    "vibelang-runtime": "0.0.12"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
     "@effect/platform-node": "4.1.1",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
-    "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
@@ -645,11 +659,12 @@
     "eslint-plugin-jsdoc": "64.3.4",
     "eslint-plugin-unicorn": "65.0.0",
     "madge": "8.0.0",
+    "miniflare": "5.20261019.0-beta",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
-    "vibelang-unplugin": "file:../../../../.vibelang-toolchain/vibelang-unplugin-0.0.11-45a3600458c6.tgz",
-    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz",
+    "vibelang": "0.0.12",
+    "vibelang-unplugin": "0.0.12",
+    "vibelang-vite": "0.0.12",
     "vitest": "5.0.0"
   },
   "peerDependencies": {

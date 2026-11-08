@@ -14,7 +14,7 @@ npm install @smthrs/testing@next effect
 The `next` tag carries the 1.0 release candidates.
 
 [`effect`](https://effect.website) is a required peer dependency in the version
-`4.1.0`. Two copies of `effect` in one program are two sets of service
+`4.1.1`. Two copies of `effect` in one program are two sets of service
 tags, so the package takes `effect` from your project and never installs its
 own.
 
@@ -35,7 +35,7 @@ in production.
 `Vitest` module imports them. The adapter peer selects the tested release:
 
 ```bash
-npm install --save-dev vitest@5.0.0 @effect/vitest@4.1.0
+npm install --save-dev vitest@5.0.0 @effect/vitest@4.1.1
 ```
 
 Every other module works under any runner, because an assertion is an ordinary
@@ -49,10 +49,12 @@ The root entry point re-exports every module as a namespace:
 import { Conformance, EngineSubject, JournalAssertions, TestLayers } from "@smthrs/testing"
 ```
 
-Each module is also importable from its own subpath, which is the form the
-[API reference](./api.md) uses:
+Many modules are also importable from a declared subpath, which is the form
+the [API reference](./api.md) uses. Import `RealCliDriver` and
+`TerminalRecording` from the root:
 
 ```ts
+import { RealCliDriver, TerminalRecording } from "@smthrs/testing"
 import * as JournalAssertions from "@smthrs/testing/JournalAssertions"
 import * as TestLayers from "@smthrs/testing/TestLayers"
 ```

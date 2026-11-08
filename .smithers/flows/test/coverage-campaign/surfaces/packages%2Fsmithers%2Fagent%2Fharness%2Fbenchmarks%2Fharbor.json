@@ -1,0 +1,170 @@
+{
+  "id": "packages/smithers/agent/harness/benchmarks/harbor",
+  "name": "packages/smithers/agent/harness/benchmarks/harbor",
+  "owner": {
+    "declaration": "packages/smithers/agent/harness/benchmarks/harbor/PACKAGE.ts",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {},
+  "exports": null,
+  "production": [],
+  "tests": [
+    "packages/smithers/agent/harness/benchmarks/harbor/fixtures/check_agent.py",
+    "packages/smithers/agent/harness/benchmarks/harbor/fixtures/check_budget.py",
+    "packages/smithers/agent/harness/benchmarks/harbor/fixtures/check_calls.py",
+    "packages/smithers/agent/harness/benchmarks/harbor/fixtures/check_health.py",
+    "packages/smithers/agent/harness/benchmarks/harbor/fixtures/check_infra.py",
+    "packages/smithers/agent/harness/benchmarks/harbor/fixtures/check_ownership.py",
+    "packages/smithers/agent/harness/benchmarks/harbor/fixtures/check_report.py",
+    "packages/smithers/agent/harness/benchmarks/harbor/fixtures/check_seal.py",
+    "packages/smithers/agent/harness/benchmarks/harbor/fixtures/check_tb4_resources.py"
+  ],
+  "benchmarks": [],
+  "platformPaths": [],
+  "ignoredCases": [],
+  "configurations": [
+    {
+      "path": "packages/smithers/agent/harness/benchmarks/harbor/image_config.py",
+      "sha256": "8db4920ecaa90794c5bdc8be67a18c5f2695222871483af63fbc9f0b257db75a",
+      "source": "",
+      "coverageDirectives": []
+    },
+    {
+      "path": "packages/smithers/agent/harness/benchmarks/harbor/PACKAGE.ts",
+      "sha256": "513e82182f70e328b364320a32e5edc78481d2d4ae0ec24c90275c64226976ec",
+      "source": "/**\n * Targets for the Harbor and Pier benchmark adapter.\n *\n * The offline fixture gates CI after the workspace install. Docker, a model\n * seat and a Harbor or Pier install remain documented operator commands: a\n * gate that needs a funded seat and a warm docker cache cannot hold a tree.\n */\nimport { Smithers } from \"@smthrs/targets\"\n\nconst pythonInputs = Smithers.Filegroup({ cwd: \"packages/smithers/agent/harness/benchmarks/harbor\", srcs: [Smithers.glob(\"*.py\")] })\n\nconst offline = Smithers.Shell.Test({\n  summary: \"Check the Harbor adapter's prompt, environment, journal fold and trajectory without docker or a model.\",\n  script: Smithers.file(\"verify.sh\"),\n  data: [\n    Smithers.glob(\"//packages/smithers/agent/harness/benchmarks/harbor/*.{py,md,sh}\"),\n    Smithers.glob(\"//packages/smithers/agent/harness/benchmarks/harbor/fixtures/**\")\n  ],\n  timeout: \"5m\"\n})\n\nconst securityReview = Smithers.SecurityReview({\n  cwd: \"packages/smithers/agent/harness/benchmarks/harbor\",\n  include: [\"*.py\", \"*.sh\", \"prompt.md\", \"fixtures/**\"],\n  checks: [\n    {\n      id: \"task-copy-stays-in-environment-dir\",\n      title: \"Dockerfile COPY sources resolve inside the task's environment directory\",\n      threat: \"A malicious benchmark task uploads the operator's host files (Codex auth.json, SMITHERS_TOKEN config) into a workspace the model controls.\",\n      lookFor: [\n        \"`Path(self.environment_dir) / src` in _plue_start with src taken from a task Dockerfile COPY line and no resolve()+prefix check against environment_dir.\",\n        \"An absolute COPY source (`/home/...`) or `..` segments accepted by _COPY_RE and parse_trivial_dockerfile.\",\n        \"A symlink inside the environment directory followed by `workspace cp` to a host path outside it.\"\n      ],\n      paths: [\"plue_env.py\"]\n    },\n    {\n      id: \"task-dockerfile-shell-injection\",\n      title: \"Task Dockerfile and task.toml values reach guest shells only as quoted data\",\n      threat: \"A malicious task runs arbitrary root commands in the workspace before the trial starts, or tampers with grading.\",\n      lookFor: [\n        \"`chmod {mode_bits} {target}` built from a RUN chmod line without shlex.quote on either field.\",\n        \"Workdir, cwd, env keys or COPY destinations from the task interpolated into a guest command string rather than passed as separate CLI arguments.\",\n        \"Harbor exec env values merged into `--env KEY=VALUE` without rejecting a key containing `=` or a newline.\"\n      ],\n      paths: [\"plue_env.py\", \"plue_docker.py\"]\n    },\n    {\n      id: \"operator-token-confinement\",\n      title: \"SMITHERS_TOKEN and Codex auth.json never reach the task container, logs or the model\",\n      threat: \"A model under test or anyone reading published trial logs obtains the operator's plue token or ChatGPT subscription credentials.\",\n      lookFor: [\n        \"plue-docker.json written with a mode other than 0600, or the shim directory placed under logs_dir or the kept workspace.\",\n        \"The full host os.environ passed by cli_environment to the CLI while the bash flow can run a host command without SMITHERS_BASH_CONTAINER set.\",\n        \"smithers-run.json, codex-account.json, requeue.log or trajectory.json recording an email, token, auth.json content or the CLI env.\",\n        \"logger.debug of the full plue argv, which carries `--env KEY=VALUE` pairs, at a level that reaches Harbor's job logs.\",\n        \"PooledCodex uploading auth.json into the container and not deleting it before the verifier or trajectory download runs.\",\n        \"plue_docker.translate copying a bare `-e KEY` from the host environ (SMITHERS_TOKEN, OPENAI_API_KEY) into a guest `--env` pair without an allowlist.\"\n      ],\n      paths: [\"smithers_agent.py\", \"plue_docker.py\", \"plue_env.py\", \"codex_pool.py\", \"accounts.py\"]\n    },\n    {\n      id: \"prompt-template-injection\",\n      title: \"The task instruction is inserted into flow.mdx as inert text\",\n      threat: \"A malicious task instruction rewrites the flow's frontmatter (model, flows, effort) or evaluates MDX expressions on the harness host.\",\n      lookFor: [\n        \"render_prompt replacing {{instruction}} into flow.mdx without escaping `{`, `<`, or a leading `---` that the MDX loader would parse.\",\n        \"A replacement order in render_prompt that lets a substituted value introduce a later placeholder (for example {{commit}} or {{container}}).\",\n        \"prompt.md granting a flow that reaches the harness host, or omitting the container seal.\"\n      ],\n      paths: [\"smithers_agent.py\", \"prompt.md\"]\n    },\n    {\n      id: \"container-seal-and-host-audit\",\n      title: \"The agent's commands run only in the task container and host calls are detected\",\n      threat: \"The model under test reads tests/ or solution/ on the harness host and reward-hacks a benchmark score.\",\n      lookFor: [\n        \"A run path where SMITHERS_BASH_CONTAINER is unset or names a container other than the trial's.\",\n        \"container_of trusting SMITHERS_BENCH_CONTAINER or a docker ps result that could match another trial's compose project.\",\n        \"audit_host_calls.py classifying a host call as benign when its command or cwd names tests/, solution/ or the dataset cache through a variable or relative path.\",\n        \"audit_host_calls.py counting a file-flow call as a container call in a trial whose smithers-run.json names no container.\",\n        \"The plue docker shim accepting a docker verb other than exec, or an exec flag it passes through unparsed.\"\n      ],\n      paths: [\"smithers_agent.py\", \"audit_host_calls.py\", \"plue_docker.py\", \"codex_pool.py\"]\n    },\n    {\n      id: \"registry-fetch-ssrf\",\n      title: \"Image config fetches reach only the image's registry over HTTPS\",\n      threat: \"A task FROM line or a hostile registry makes the harness host request internal URLs or local files.\",\n      lookFor: [\n        \"urlopen of the WWW-Authenticate realm without requiring an https scheme (urllib also opens file:// and http://).\",\n        \"A registry host parsed from the FROM reference (localhost, 169.254.169.254, a private IP) fetched without an allowlist.\",\n        \"A cached image config keyed by a mutable tag and trusted as if digest-pinned.\"\n      ],\n      paths: [\"image_config.py\"]\n    },\n    {\n      id: \"workspace-reap-scope\",\n      title: \"Cleanup deletes only workspaces this job created\",\n      threat: \"An operator running requeue.py deletes another concurrent job's or user's workspaces in PLUE_REPO.\",\n      lookFor: [\n        \"reap matching workspace names with startswith(prefix) and no separator, so trial `x-1` also matches `x-10`.\",\n        \"reap_dead deleting every `-env` or `-verifier-*` workspace in the repo regardless of which job created it.\",\n        \"keep_retried_attempts or requeue moving a directory chosen from untrusted trial names outside `<job>.infra`.\"\n      ],\n      paths: [\"requeue.py\", \"plue_env.py\"]\n    },\n    {\n      id: \"score-classification-integrity\",\n      title: \"Only real infrastructure faults turn a failed trial into a re-run\",\n      threat: \"A model under test prints a fake SSH or gateway error so its failed trial is classified infra and re-run, inflating the published score.\",\n      lookFor: [\n        \"outcome.classify matching _TRANSPORT against exception_message text the agent's own output can write.\",\n        \"health.py or requeue.py trusting result.json or smithers-run.json fields from inside the trial directory to pick trials to discard or re-run.\",\n        \"audit_host_calls.py reading container or command fields from trial files the agent can write.\",\n        \"report.py printing a pass rate while any refusal stands, or scoring a trial its seal or token checks refused.\"\n      ],\n      paths: [\"outcome.py\", \"health.py\", \"requeue.py\", \"audit_host_calls.py\", \"report.py\"]\n    },\n    {\n      id: \"shared-state-files\",\n      title: \"Pool and slot ledger state files cannot be abused by another local user\",\n      threat: \"Another user on the harness host redirects account leases or corrupts the slot ledger to stall or misattribute trials.\",\n      lookFor: [\n        \"pool.json, plue-slots.json or plue-leaks.log created world-writable or under a shared /tmp path.\",\n        \"A lock file opened by path without O_NOFOLLOW where the directory is writable by others.\"\n      ],\n      paths: [\"accounts.py\", \"plue_env.py\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: {\n    pythonInputs, offline, ...securityReview }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 24,
+          "text": "include: [\"*.py\", \"*.sh\", \"prompt.md\", \"fixtures/**\"],"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/agent/harness/benchmarks/harbor",
+      "label": "//packages/smithers/agent/harness/benchmarks/harbor:offline",
+      "rule": "Shell.Test",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/benchmarks/harbor/verify.sh"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/harbor/*.{py,md,sh}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/harbor/fixtures/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness/benchmarks/harbor",
+      "label": "//packages/smithers/agent/harness/benchmarks/harbor:pythonInputs",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/harbor/*.py",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness/benchmarks/harbor",
+      "label": "//packages/smithers/agent/harness/benchmarks/harbor:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/agent/harness/benchmarks/harbor/*.py",
+            "packages/smithers/agent/harness/benchmarks/harbor/*.sh",
+            "packages/smithers/agent/harness/benchmarks/harbor/prompt.md",
+            "packages/smithers/agent/harness/benchmarks/harbor/fixtures/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/harbor/*.py",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/harbor/*.sh",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/benchmarks/harbor/prompt.md"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/harbor/fixtures/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness/benchmarks/harbor",
+      "label": "//packages/smithers/agent/harness/benchmarks/harbor:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/agent/harness/benchmarks/harbor/*.py",
+            "packages/smithers/agent/harness/benchmarks/harbor/*.sh",
+            "packages/smithers/agent/harness/benchmarks/harbor/prompt.md",
+            "packages/smithers/agent/harness/benchmarks/harbor/fixtures/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/harbor/*.py",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/harbor/*.sh",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/benchmarks/harbor/prompt.md"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/harbor/fixtures/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    }
+  ],
+  "areas": [],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

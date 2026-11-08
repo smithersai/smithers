@@ -1,6 +1,6 @@
-import { Crypto } from "@smthrs/crypto"
 import * as Sha256 from "@smthrs/crypto/Sha256"
 import { Deferred, Effect, Fiber, Layer, Redacted, Schema, Stream } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import { describe, expect, it, vi } from "vitest"
 import * as Channels from "../src/Channels.vibe"
@@ -14,7 +14,7 @@ import * as WebhookChannel from "../src/WebhookChannel.vibe"
 const accepted = { _tag: "Accepted" as const, receiptId: "receipt" }
 
 const runtime = ControlRuntime.layerMemory().pipe(
-  Layer.provide(Layer.succeed(Crypto.Crypto, Sha256.syncCrypto))
+  Layer.provide(Layer.succeed(EffectDigest.Digest, Sha256.syncCrypto))
 )
 
 const channelsLayer = (control: Layer.Layer<Control.Control>) => Channels.layer.pipe(Layer.provide([control, runtime]))

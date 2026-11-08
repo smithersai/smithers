@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Retry from a step (`FlowRuntime.retryFrom`) on the durable engine, over
  * whichever store the matrix selects: SQLite, or PostgreSQL under
@@ -8,13 +9,13 @@
  * answers with its own invocation number, and a replayed step's answer is the
  * number the source run recorded.
  */
-import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { Node, type Planned } from "@smthrs/plan"
 import { RunStore } from "@smthrs/run-store"
 import { Cause, Deferred, Effect, Exit, Layer, Schema } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -193,7 +194,7 @@ type Services =
   | RunStore.RunStore
   | DurableEngineState.DurableEngineState
   | Action.Implementations
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
 
 interface Process {
   readonly counts: Counts
@@ -234,7 +235,7 @@ const process = <A, E>(filename: string, options: Process, body: Effect.Effect<A
     Effect.provide(RunInspection.layerWith({ flows: [...flows] })),
     Effect.provide(TestStores.layerAt(filename))
     // The registrations erase their layers' types; what is left to provide is `Crypto`.
-  ) as unknown as Effect.Effect<A, E, Crypto.Crypto>
+  ) as unknown as Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom)>
 
 const databases: Array<string> = []
 afterEach(async () => {
@@ -396,7 +397,7 @@ describe("retryFrom replays the steps before the selected one", () => {
         const retryFrom = Chain.retryFrom.bind(Chain) as (
           source: string,
           options: { readonly step: string; readonly executionId: string }
-        ) => Effect.Effect<string, unknown, FlowRuntime.FlowRuntime | Crypto.Crypto>
+        ) => Effect.Effect<string, unknown, FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)>
         const conflict = yield* Effect.flip(
           retryFrom("chain-3", { step: yield* nodeOf("chain-3", Prompt.name), executionId: "chain-3/retry" })
         )
@@ -486,7 +487,7 @@ describe("retryFrom and child boundaries", () => {
         const childRetry = Child.retryFrom.bind(Child) as (
           source: string,
           options: { readonly step: string; readonly executionId: string }
-        ) => Effect.Effect<string, unknown, FlowRuntime.FlowRuntime | Crypto.Crypto>
+        ) => Effect.Effect<string, unknown, FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)>
         const taken = yield* Effect.flip(
           childRetry(firstChild, { step: yield* nodeOf(firstChild, Inner.name), executionId: carried })
         )

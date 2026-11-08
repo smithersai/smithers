@@ -1,0 +1,918 @@
+{
+  "id": "packages/smithers/agent/std",
+  "name": "@smthrs/std",
+  "owner": {
+    "declaration": "packages/smithers/agent/std/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
+    "circular": "node ../../../repo-targets/scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./ApplyPatch": "./src/ApplyPatch.ts",
+    "./Bash": "./src/Bash.ts",
+    "./Checkpoints": "./src/Checkpoints.ts",
+    "./Container": "./src/Container.ts",
+    "./Edit": "./src/Edit.ts",
+    "./ExaWebSearch": "./src/ExaWebSearch.ts",
+    "./Explore": "./src/Explore.ts",
+    "./Fetch": "./src/Fetch.ts",
+    "./Glob": "./src/Glob.ts",
+    "./Grep": "./src/Grep.ts",
+    "./HttpPost": "./src/HttpPost.ts",
+    "./LanguageServer": "./src/LanguageServer.ts",
+    "./Ls": "./src/Ls.ts",
+    "./Lsp": "./src/Lsp.ts",
+    "./Manifest": "./src/Manifest.ts",
+    "./NativeSearch": "./src/NativeSearch.ts",
+    "./PortableSearch": "./src/PortableSearch.ts",
+    "./Probe": "./src/Probe.ts",
+    "./Read": "./src/Read.ts",
+    "./Relocate": "./src/Relocate.ts",
+    "./RemoteSearch": "./src/RemoteSearch.ts",
+    "./Search": "./src/Search.ts",
+    "./SearchConformance": "./src/SearchConformance.ts",
+    "./SearchContract": "./src/SearchContract.ts",
+    "./ShellCommand": "./src/ShellCommand.ts",
+    "./StdError": "./src/StdError.ts",
+    "./TestRun": "./src/TestRun.ts",
+    "./TestRunner": "./src/TestRunner.ts",
+    "./TreeFingerprint": "./src/TreeFingerprint.ts",
+    "./UpdatePlan": "./src/UpdatePlan.ts",
+    "./WebFetch": "./src/WebFetch.ts",
+    "./WebSearch": "./src/WebSearch.ts",
+    "./Write": "./src/Write.ts",
+    "./index": "./src/index.ts",
+    "./NodeLanguageServer": null
+  },
+  "production": [
+    "eslint.config.js",
+    "examples/32-intervene.ts",
+    "PACKAGE.ts",
+    "scripts/build.mjs",
+    "scripts/search-bench.ts",
+    "src/ApplyPatch.ts",
+    "src/Bash.ts",
+    "src/Checkpoints.ts",
+    "src/Container.ts",
+    "src/Edit.ts",
+    "src/ExaWebSearch.ts",
+    "src/Explore.ts",
+    "src/Fetch.ts",
+    "src/Glob.ts",
+    "src/Grep.ts",
+    "src/HttpPost.ts",
+    "src/index.ts",
+    "src/internal/ApplyPatch.ts",
+    "src/internal/CodexText.ts",
+    "src/internal/Declaration.ts",
+    "src/internal/Diagnostics.ts",
+    "src/internal/EnvelopePrecheck.ts",
+    "src/internal/Exec.ts",
+    "src/internal/FileMutation.ts",
+    "src/internal/FsFailure.ts",
+    "src/internal/GitWorktree.ts",
+    "src/internal/Grouping.ts",
+    "src/internal/Html.ts",
+    "src/internal/Http.ts",
+    "src/internal/HttpNetwork.ts",
+    "src/internal/Ignore.ts",
+    "src/internal/IpAddress.ts",
+    "src/internal/LinearRegex.ts",
+    "src/internal/Match.ts",
+    "src/internal/Paths.ts",
+    "src/internal/Preserve.ts",
+    "src/internal/Prune.ts",
+    "src/internal/RemoteTree.ts",
+    "src/internal/SearchContract.ts",
+    "src/internal/Symbols.ts",
+    "src/internal/Tar.ts",
+    "src/internal/TestReport.ts",
+    "src/internal/Text.ts",
+    "src/internal/Url.ts",
+    "src/internal/Walk.ts",
+    "src/LanguageServer.ts",
+    "src/Ls.ts",
+    "src/Lsp.ts",
+    "src/Manifest.ts",
+    "src/NativeSearch.ts",
+    "src/PortableSearch.ts",
+    "src/Probe.ts",
+    "src/Read.ts",
+    "src/Relocate.ts",
+    "src/RemoteSearch.ts",
+    "src/Search.ts",
+    "src/SearchConformance.ts",
+    "src/SearchContract.ts",
+    "src/ShellCommand.ts",
+    "src/StdError.ts",
+    "src/TestRun.ts",
+    "src/TestRunner.ts",
+    "src/TreeFingerprint.ts",
+    "src/UpdatePlan.ts",
+    "src/WebFetch.ts",
+    "src/WebSearch.ts",
+    "src/Write.ts",
+    "test/fixtures/mutation-process.ts",
+    "test/TestLayers.ts",
+    "vitest.config.ts"
+  ],
+  "tests": [
+    "packages/smithers/agent/std/test/ApplyPatch.test.ts",
+    "packages/smithers/agent/std/test/ApplyPatchParserBoundaries.test.ts",
+    "packages/smithers/agent/std/test/ApplyPatchUnknownFailure.test.ts",
+    "packages/smithers/agent/std/test/AttributionDocs.test.ts",
+    "packages/smithers/agent/std/test/Bash.test.ts",
+    "packages/smithers/agent/std/test/BashConfined.integration.test.ts",
+    "packages/smithers/agent/std/test/Checkpoints.test.ts",
+    "packages/smithers/agent/std/test/CheckpointsContainer.test.ts",
+    "packages/smithers/agent/std/test/CheckpointsFixture.test.ts",
+    "packages/smithers/agent/std/test/CodexText.test.ts",
+    "packages/smithers/agent/std/test/ConcurrentMutation.test.ts",
+    "packages/smithers/agent/std/test/Container.test.ts",
+    "packages/smithers/agent/std/test/ContainerArgumentSnapshot.test.ts",
+    "packages/smithers/agent/std/test/ContainerEnvironmentSnapshot.test.ts",
+    "packages/smithers/agent/std/test/ContainerSparseArguments.test.ts",
+    "packages/smithers/agent/std/test/Edit.test.ts",
+    "packages/smithers/agent/std/test/EnvelopePrecheck.test.ts",
+    "packages/smithers/agent/std/test/examples/32-intervene.test.ts",
+    "packages/smithers/agent/std/test/ExaResponseReadFailure.test.ts",
+    "packages/smithers/agent/std/test/ExaTransportFailure.test.ts",
+    "packages/smithers/agent/std/test/ExaWebSearchEdges.test.ts",
+    "packages/smithers/agent/std/test/Exec.test.ts",
+    "packages/smithers/agent/std/test/ExecContainment.test.ts",
+    "packages/smithers/agent/std/test/ExecSpawnGrant.test.ts",
+    "packages/smithers/agent/std/test/Explore.test.ts",
+    "packages/smithers/agent/std/test/Fetch.test.ts",
+    "packages/smithers/agent/std/test/FileFailureBoundaries.test.ts",
+    "packages/smithers/agent/std/test/FileMutation.test.ts",
+    "packages/smithers/agent/std/test/FileOperationBoundaries.test.ts",
+    "packages/smithers/agent/std/test/FilePreconditions.test.ts",
+    "packages/smithers/agent/std/test/fixtures/mutation-process.ts",
+    "packages/smithers/agent/std/test/fixtures/webfetch/article.html",
+    "packages/smithers/agent/std/test/fixtures/websearch/exa-success.json",
+    "packages/smithers/agent/std/test/FsFailure.test.ts",
+    "packages/smithers/agent/std/test/GitWorktreeStartupFailure.test.ts",
+    "packages/smithers/agent/std/test/Glob.test.ts",
+    "packages/smithers/agent/std/test/Grep.test.ts",
+    "packages/smithers/agent/std/test/Grouping.test.ts",
+    "packages/smithers/agent/std/test/HostGitRepositoryPrograms.test.ts",
+    "packages/smithers/agent/std/test/HostServiceBoundaries.test.ts",
+    "packages/smithers/agent/std/test/Html.test.ts",
+    "packages/smithers/agent/std/test/HttpCoverage.test.ts",
+    "packages/smithers/agent/std/test/HttpPinning.integration.test.ts",
+    "packages/smithers/agent/std/test/HttpPinningProxy.integration.test.ts",
+    "packages/smithers/agent/std/test/HttpPost.test.ts",
+    "packages/smithers/agent/std/test/HttpPrivate.integration.test.ts",
+    "packages/smithers/agent/std/test/HttpPrivate.test.ts",
+    "packages/smithers/agent/std/test/IgnoreFiles.test.ts",
+    "packages/smithers/agent/std/test/IgnoreParser.test.ts",
+    "packages/smithers/agent/std/test/IpAddress.test.ts",
+    "packages/smithers/agent/std/test/LanguageServerSync.test.ts",
+    "packages/smithers/agent/std/test/Ls.test.ts",
+    "packages/smithers/agent/std/test/Lsp.test.ts",
+    "packages/smithers/agent/std/test/Manifest.test.ts",
+    "packages/smithers/agent/std/test/Match.test.ts",
+    "packages/smithers/agent/std/test/ModuleIdentity.test.ts",
+    "packages/smithers/agent/std/test/MutationHosts.integration.test.ts",
+    "packages/smithers/agent/std/test/NativeSearch.test.ts",
+    "packages/smithers/agent/std/test/Paths.test.ts",
+    "packages/smithers/agent/std/test/PortableSearch.test.ts",
+    "packages/smithers/agent/std/test/Preserve.test.ts",
+    "packages/smithers/agent/std/test/Probe.test.ts",
+    "packages/smithers/agent/std/test/PublicEffectDeclarations.test.ts",
+    "packages/smithers/agent/std/test/Read.test.ts",
+    "packages/smithers/agent/std/test/Readme.test.ts",
+    "packages/smithers/agent/std/test/Relocate.test.ts",
+    "packages/smithers/agent/std/test/RemoteSearch.test.ts",
+    "packages/smithers/agent/std/test/RemoteTree.test.ts",
+    "packages/smithers/agent/std/test/SearchConformance.test.ts",
+    "packages/smithers/agent/std/test/SearchContract.test.ts",
+    "packages/smithers/agent/std/test/SearchContractBoundaries.test.ts",
+    "packages/smithers/agent/std/test/SearchSymbolReadFailure.test.ts",
+    "packages/smithers/agent/std/test/SearchWindowsPaths.test.ts",
+    "packages/smithers/agent/std/test/ShellCommand.test.ts",
+    "packages/smithers/agent/std/test/StaleRead.integration.test.ts",
+    "packages/smithers/agent/std/test/StdError.test.ts",
+    "packages/smithers/agent/std/test/StdSearchCoverage.test.ts",
+    "packages/smithers/agent/std/test/Symbols.test.ts",
+    "packages/smithers/agent/std/test/SymlinkEscape.test.ts",
+    "packages/smithers/agent/std/test/Tar.test.ts",
+    "packages/smithers/agent/std/test/TestLayers.ts",
+    "packages/smithers/agent/std/test/TestReport.test.ts",
+    "packages/smithers/agent/std/test/TestRun.test.ts",
+    "packages/smithers/agent/std/test/TestRunFixture.test.ts",
+    "packages/smithers/agent/std/test/Text.test.ts",
+    "packages/smithers/agent/std/test/Tiers.test.ts",
+    "packages/smithers/agent/std/test/TreeFingerprint.test.ts",
+    "packages/smithers/agent/std/test/UpdatePlan.test.ts",
+    "packages/smithers/agent/std/test/VersionedMutation.test.ts",
+    "packages/smithers/agent/std/test/Walk.test.ts",
+    "packages/smithers/agent/std/test/WebFetch.test.ts",
+    "packages/smithers/agent/std/test/WebSearch.test.ts",
+    "packages/smithers/agent/std/test/Write.test.ts",
+    "packages/smithers/agent/std/tsconfig.test.json"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    "packages/smithers/agent/std/src/NativeSearch.ts",
+    "packages/smithers/agent/std/test/fixtures/mutation-process.ts",
+    "packages/smithers/agent/std/test/NativeSearch.test.ts",
+    "packages/smithers/agent/std/test/SearchWindowsPaths.test.ts"
+  ],
+  "ignoredCases": [
+    {
+      "path": "packages/smithers/agent/std/test/Bash.test.ts",
+      "line": 216,
+      "text": "describe.skipIf(process.platform === \"win32\")(\"long output from a real process\", () => {"
+    },
+    {
+      "path": "packages/smithers/agent/std/test/BashConfined.integration.test.ts",
+      "line": 98,
+      "text": "describe.skipIf(!available)(\"native mechanism (skipped when seatbelt/bubblewrap is unavailable)\", () => {"
+    },
+    {
+      "path": "packages/smithers/agent/std/test/BashConfined.integration.test.ts",
+      "line": 309,
+      "text": "it.skipIf(process.platform === \"win32\")("
+    },
+    {
+      "path": "packages/smithers/agent/std/test/BashConfined.integration.test.ts",
+      "line": 334,
+      "text": "describe.skipIf(!available)(\"Bash.run stdin-fed interpreter confinement\", () => {"
+    },
+    {
+      "path": "packages/smithers/agent/std/test/Exec.test.ts",
+      "line": 32,
+      "text": "describe.skipIf(process.platform === \"win32\")(\"Exec capture\", () => {"
+    },
+    {
+      "path": "packages/smithers/agent/std/test/Exec.test.ts",
+      "line": 329,
+      "text": "describe.skipIf(process.platform === \"win32\")(\"Exec.exec over the raw Node spawner\", () => {"
+    },
+    {
+      "path": "packages/smithers/agent/std/test/ExecContainment.test.ts",
+      "line": 133,
+      "text": "describe.skipIf(process.platform === \"win32\")(\"a cancelled Exec\", () => {"
+    },
+    {
+      "path": "packages/smithers/agent/std/test/IgnoreFiles.test.ts",
+      "line": 131,
+      "text": "it.skipIf(process.platform === \"win32\" && \"posixNames\" in scenario)(scenario.name, async () => {"
+    },
+    {
+      "path": "packages/smithers/agent/std/test/MutationHosts.integration.test.ts",
+      "line": 257,
+      "text": "it.skipIf(process.platform === \"win32\")(\"creates and edits POSIX names containing a literal backslash\", async () => {"
+    },
+    {
+      "path": "packages/smithers/agent/std/test/NativeSearch.test.ts",
+      "line": 14,
+      "text": "describe.skipIf(process.platform === \"win32\")(\"NativeSearch environment\", () => {"
+    },
+    {
+      "path": "packages/smithers/agent/std/test/RemoteSearch.test.ts",
+      "line": 159,
+      "text": "it.skipIf(isRoot)(\"skips an unreadable file and reports an unreadable root as the walk does\", async () => {"
+    },
+    {
+      "path": "packages/smithers/agent/std/test/SearchConformance.test.ts",
+      "line": 296,
+      "text": "it.skip(\"streams a file larger than available memory (skipped: a hermetic test cannot exhaust its runner)\", () => {})"
+    },
+    {
+      "path": "packages/smithers/agent/std/test/SearchConformance.test.ts",
+      "line": 510,
+      "text": "it.skipIf(!modeEnforced)(\"walks past a directory it may not list\", async () => {"
+    },
+    {
+      "path": "packages/smithers/agent/std/test/ShellCommand.test.ts",
+      "line": 136,
+      "text": "it.skipIf(process.platform === \"win32\")(\"reports a timed-out process as exit code 124\", async () => {"
+    },
+    {
+      "path": "packages/smithers/agent/std/test/ShellCommand.test.ts",
+      "line": 150,
+      "text": "it.skipIf(process.platform === \"win32\")(\"runs in the requested working directory\", async () => {"
+    },
+    {
+      "path": "packages/smithers/agent/std/test/StaleRead.integration.test.ts",
+      "line": 25,
+      "text": "test.skipIf(available && !installed)("
+    },
+    {
+      "path": "packages/smithers/agent/std/test/StaleRead.integration.test.ts",
+      "line": 352,
+      "text": "test.skipIf(existsSync(\"/opt/smithers/bin/smithers-machined\"))("
+    },
+    {
+      "path": "packages/smithers/agent/std/test/TreeFingerprint.test.ts",
+      "line": 46,
+      "text": "it.skipIf(!hostCanMeasure)(\"moves for a write, holds still for a re-read, and ignores derived output\", () => {"
+    }
+  ],
+  "configurations": [
+    {
+      "path": "packages/smithers/agent/std/eslint.config.js",
+      "sha256": "b9056e86c56d923ffe686cca4890f4d89ef90e1f101122fab92d296092eb6ee2",
+      "source": "import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  {\n    ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]\n  },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: {\n      parserOptions: {\n        projectService: true,\n        tsconfigRootDir: import.meta.dirname\n      }\n    },\n    settings: {\n      \"import/resolver\": {\n        typescript: {\n          project: [\"./tsconfig.json\"]\n        }\n      }\n    },\n    plugins: {\n      unicorn\n    },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n",
+      "coverageDirectives": [
+        {
+          "line": 10,
+          "text": "ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]"
+        },
+        {
+          "line": 41,
+          "text": "\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/std/package.json",
+      "sha256": "fe8d579619466ae56a943b2a25bdd982e1d5e6084cf167a35f61745ac79ed411",
+      "source": "{\n  \"name\": \"@smthrs/std\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"agent\"\n  },\n  \"description\": \"The flows standard tool library: filesystem, search, HTTP, web-search, shell, and language-server flows\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/agent/std\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"keywords\": [\n    \"typescript\",\n    \"effect\",\n    \"agent-tools\",\n    \"ripgrep\",\n    \"lsp\",\n    \"shell\"\n  ],\n  \"engines\": {\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [],\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./internal/*\": null,\n    \"./*/index\": null,\n    \"./ApplyPatch\": \"./src/ApplyPatch.ts\",\n    \"./Bash\": \"./src/Bash.ts\",\n    \"./Checkpoints\": \"./src/Checkpoints.ts\",\n    \"./Container\": \"./src/Container.ts\",\n    \"./Edit\": \"./src/Edit.ts\",\n    \"./ExaWebSearch\": \"./src/ExaWebSearch.ts\",\n    \"./Explore\": \"./src/Explore.ts\",\n    \"./Fetch\": \"./src/Fetch.ts\",\n    \"./Glob\": \"./src/Glob.ts\",\n    \"./Grep\": \"./src/Grep.ts\",\n    \"./HttpPost\": \"./src/HttpPost.ts\",\n    \"./LanguageServer\": \"./src/LanguageServer.ts\",\n    \"./Ls\": \"./src/Ls.ts\",\n    \"./Lsp\": \"./src/Lsp.ts\",\n    \"./Manifest\": \"./src/Manifest.ts\",\n    \"./NativeSearch\": \"./src/NativeSearch.ts\",\n    \"./PortableSearch\": \"./src/PortableSearch.ts\",\n    \"./Probe\": \"./src/Probe.ts\",\n    \"./Read\": \"./src/Read.ts\",\n    \"./Relocate\": \"./src/Relocate.ts\",\n    \"./RemoteSearch\": \"./src/RemoteSearch.ts\",\n    \"./Search\": \"./src/Search.ts\",\n    \"./SearchConformance\": \"./src/SearchConformance.ts\",\n    \"./SearchContract\": \"./src/SearchContract.ts\",\n    \"./ShellCommand\": \"./src/ShellCommand.ts\",\n    \"./StdError\": \"./src/StdError.ts\",\n    \"./TestRun\": \"./src/TestRun.ts\",\n    \"./TestRunner\": \"./src/TestRunner.ts\",\n    \"./TreeFingerprint\": \"./src/TreeFingerprint.ts\",\n    \"./UpdatePlan\": \"./src/UpdatePlan.ts\",\n    \"./WebFetch\": \"./src/WebFetch.ts\",\n    \"./WebSearch\": \"./src/WebSearch.ts\",\n    \"./Write\": \"./src/Write.ts\",\n    \"./index\": \"./src/index.ts\",\n    \"./NodeLanguageServer\": null\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"docs/\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./internal/*\": null,\n      \"./*/index\": null,\n      \"./ApplyPatch\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ApplyPatch.d.ts\",\n          \"default\": \"./dist/esm/ApplyPatch.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ApplyPatch.d.ts\",\n          \"default\": \"./dist/cjs/ApplyPatch.js\"\n        }\n      },\n      \"./Bash\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Bash.d.ts\",\n          \"default\": \"./dist/esm/Bash.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Bash.d.ts\",\n          \"default\": \"./dist/cjs/Bash.js\"\n        }\n      },\n      \"./Checkpoints\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Checkpoints.d.ts\",\n          \"default\": \"./dist/esm/Checkpoints.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Checkpoints.d.ts\",\n          \"default\": \"./dist/cjs/Checkpoints.js\"\n        }\n      },\n      \"./Container\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Container.d.ts\",\n          \"default\": \"./dist/esm/Container.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Container.d.ts\",\n          \"default\": \"./dist/cjs/Container.js\"\n        }\n      },\n      \"./Edit\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Edit.d.ts\",\n          \"default\": \"./dist/esm/Edit.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Edit.d.ts\",\n          \"default\": \"./dist/cjs/Edit.js\"\n        }\n      },\n      \"./ExaWebSearch\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ExaWebSearch.d.ts\",\n          \"default\": \"./dist/esm/ExaWebSearch.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ExaWebSearch.d.ts\",\n          \"default\": \"./dist/cjs/ExaWebSearch.js\"\n        }\n      },\n      \"./Explore\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Explore.d.ts\",\n          \"default\": \"./dist/esm/Explore.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Explore.d.ts\",\n          \"default\": \"./dist/cjs/Explore.js\"\n        }\n      },\n      \"./Fetch\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Fetch.d.ts\",\n          \"default\": \"./dist/esm/Fetch.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Fetch.d.ts\",\n          \"default\": \"./dist/cjs/Fetch.js\"\n        }\n      },\n      \"./Glob\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Glob.d.ts\",\n          \"default\": \"./dist/esm/Glob.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Glob.d.ts\",\n          \"default\": \"./dist/cjs/Glob.js\"\n        }\n      },\n      \"./Grep\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Grep.d.ts\",\n          \"default\": \"./dist/esm/Grep.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Grep.d.ts\",\n          \"default\": \"./dist/cjs/Grep.js\"\n        }\n      },\n      \"./HttpPost\": {\n        \"import\": {\n          \"types\": \"./dist/esm/HttpPost.d.ts\",\n          \"default\": \"./dist/esm/HttpPost.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/HttpPost.d.ts\",\n          \"default\": \"./dist/cjs/HttpPost.js\"\n        }\n      },\n      \"./LanguageServer\": {\n        \"import\": {\n          \"types\": \"./dist/esm/LanguageServer.d.ts\",\n          \"default\": \"./dist/esm/LanguageServer.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/LanguageServer.d.ts\",\n          \"default\": \"./dist/cjs/LanguageServer.js\"\n        }\n      },\n      \"./Ls\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Ls.d.ts\",\n          \"default\": \"./dist/esm/Ls.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Ls.d.ts\",\n          \"default\": \"./dist/cjs/Ls.js\"\n        }\n      },\n      \"./Lsp\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Lsp.d.ts\",\n          \"default\": \"./dist/esm/Lsp.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Lsp.d.ts\",\n          \"default\": \"./dist/cjs/Lsp.js\"\n        }\n      },\n      \"./Manifest\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Manifest.d.ts\",\n          \"default\": \"./dist/esm/Manifest.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Manifest.d.ts\",\n          \"default\": \"./dist/cjs/Manifest.js\"\n        }\n      },\n      \"./NativeSearch\": {\n        \"import\": {\n          \"types\": \"./dist/esm/NativeSearch.d.ts\",\n          \"default\": \"./dist/esm/NativeSearch.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/NativeSearch.d.ts\",\n          \"default\": \"./dist/cjs/NativeSearch.js\"\n        }\n      },\n      \"./PortableSearch\": {\n        \"import\": {\n          \"types\": \"./dist/esm/PortableSearch.d.ts\",\n          \"default\": \"./dist/esm/PortableSearch.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/PortableSearch.d.ts\",\n          \"default\": \"./dist/cjs/PortableSearch.js\"\n        }\n      },\n      \"./Probe\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Probe.d.ts\",\n          \"default\": \"./dist/esm/Probe.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Probe.d.ts\",\n          \"default\": \"./dist/cjs/Probe.js\"\n        }\n      },\n      \"./Read\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Read.d.ts\",\n          \"default\": \"./dist/esm/Read.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Read.d.ts\",\n          \"default\": \"./dist/cjs/Read.js\"\n        }\n      },\n      \"./Relocate\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Relocate.d.ts\",\n          \"default\": \"./dist/esm/Relocate.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Relocate.d.ts\",\n          \"default\": \"./dist/cjs/Relocate.js\"\n        }\n      },\n      \"./RemoteSearch\": {\n        \"import\": {\n          \"types\": \"./dist/esm/RemoteSearch.d.ts\",\n          \"default\": \"./dist/esm/RemoteSearch.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/RemoteSearch.d.ts\",\n          \"default\": \"./dist/cjs/RemoteSearch.js\"\n        }\n      },\n      \"./Search\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Search.d.ts\",\n          \"default\": \"./dist/esm/Search.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Search.d.ts\",\n          \"default\": \"./dist/cjs/Search.js\"\n        }\n      },\n      \"./SearchConformance\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SearchConformance.d.ts\",\n          \"default\": \"./dist/esm/SearchConformance.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SearchConformance.d.ts\",\n          \"default\": \"./dist/cjs/SearchConformance.js\"\n        }\n      },\n      \"./SearchContract\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SearchContract.d.ts\",\n          \"default\": \"./dist/esm/SearchContract.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SearchContract.d.ts\",\n          \"default\": \"./dist/cjs/SearchContract.js\"\n        }\n      },\n      \"./ShellCommand\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ShellCommand.d.ts\",\n          \"default\": \"./dist/esm/ShellCommand.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ShellCommand.d.ts\",\n          \"default\": \"./dist/cjs/ShellCommand.js\"\n        }\n      },\n      \"./StdError\": {\n        \"import\": {\n          \"types\": \"./dist/esm/StdError.d.ts\",\n          \"default\": \"./dist/esm/StdError.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/StdError.d.ts\",\n          \"default\": \"./dist/cjs/StdError.js\"\n        }\n      },\n      \"./TestRun\": {\n        \"import\": {\n          \"types\": \"./dist/esm/TestRun.d.ts\",\n          \"default\": \"./dist/esm/TestRun.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/TestRun.d.ts\",\n          \"default\": \"./dist/cjs/TestRun.js\"\n        }\n      },\n      \"./TestRunner\": {\n        \"import\": {\n          \"types\": \"./dist/esm/TestRunner.d.ts\",\n          \"default\": \"./dist/esm/TestRunner.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/TestRunner.d.ts\",\n          \"default\": \"./dist/cjs/TestRunner.js\"\n        }\n      },\n      \"./TreeFingerprint\": {\n        \"import\": {\n          \"types\": \"./dist/esm/TreeFingerprint.d.ts\",\n          \"default\": \"./dist/esm/TreeFingerprint.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/TreeFingerprint.d.ts\",\n          \"default\": \"./dist/cjs/TreeFingerprint.js\"\n        }\n      },\n      \"./UpdatePlan\": {\n        \"import\": {\n          \"types\": \"./dist/esm/UpdatePlan.d.ts\",\n          \"default\": \"./dist/esm/UpdatePlan.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/UpdatePlan.d.ts\",\n          \"default\": \"./dist/cjs/UpdatePlan.js\"\n        }\n      },\n      \"./WebFetch\": {\n        \"import\": {\n          \"types\": \"./dist/esm/WebFetch.d.ts\",\n          \"default\": \"./dist/esm/WebFetch.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/WebFetch.d.ts\",\n          \"default\": \"./dist/cjs/WebFetch.js\"\n        }\n      },\n      \"./WebSearch\": {\n        \"import\": {\n          \"types\": \"./dist/esm/WebSearch.d.ts\",\n          \"default\": \"./dist/esm/WebSearch.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/WebSearch.d.ts\",\n          \"default\": \"./dist/cjs/WebSearch.js\"\n        }\n      },\n      \"./Write\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Write.d.ts\",\n          \"default\": \"./dist/esm/Write.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Write.d.ts\",\n          \"default\": \"./dist/cjs/Write.js\"\n        }\n      },\n      \"./index\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./NodeLanguageServer\": null\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"check\": \"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"vitest --coverage\"\n  },\n  \"dependencies\": {\n    \"@smthrs/capability\": \"1.0.0-rc.16\",\n    \"@smthrs/control\": \"1.0.0-rc.16\",\n    \"@smthrs/core\": \"1.0.0-rc.16\",\n    \"@smthrs/kernel\": \"1.0.0-rc.16\",\n    \"@smthrs/model\": \"1.0.0-rc.16\"\n  },\n  \"devDependencies\": {\n    \"@effect/language-service\": \"0.87.2\",\n    \"@effect/platform-node\": \"4.0.5\",\n    \"@effect/vitest\": \"4.0.5\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@smthrs/flow\": \"1.0.0-rc.16\",\n    \"@smthrs/patterns\": \"1.0.0-rc.16\",\n    \"@smthrs/plan\": \"1.0.0-rc.16\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"effect\": \"4.0.5\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\"\n  },\n  \"peerDependencies\": {\n    \"effect\": \"4.0.5\"\n  }\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 452,
+          "text": "\"coverage\": \"vitest --coverage\""
+        },
+        {
+          "line": 470,
+          "text": "\"@vitest/coverage-v8\": \"5.0.0\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/std/PACKAGE.ts",
+      "sha256": "6b1f1212d22bb26da77483783b8699ac1bd6f579c4896d63062ba4c475dac18b",
+      "source": "import {\n  BuildAndCheckTypeScriptPackage,\n  ReviewDocsAgainstCode,\n  ReviewJsdocAgainstCode,\n  ReviewTagsMigrationsAndKeys\n} from \"@smthrs/repo-targets\"\n/**\n * Standard package targets.\n *\n * `cwd` anchors every emitted tool run in this package directory. The targets\n * declared here are what `smthrs ci '//packages/...'` plans for this package;\n * the generated `.github/workflows/ci.yml` runs that label and names no\n * package, so a package with no `PACKAGE.ts` has no typecheck, suite, or lint\n * in CI.\n */\nimport { Smithers } from \"@smthrs/targets\"\n\nconst { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({\n  deps: [],\n  cwd: \"packages/smithers/agent/std\",\n  // examples/ is type-checked and formatted with the tests, and run by\n  // test/examples/; each example is documentation users copy, so it is not\n  // held to the library lint rules.\n  testSources: Smithers.glob(\"{test,examples}/**/*.ts\")\n})\n\n/**\n * Identity strings and durable keys, read out of this package's own changed\n * sources: `StdError` tags, flow names, and the digest material a call\n * identity hashes.\n *\n * @since 1.0.0\n * @category lint\n */\nconst reviewTagsMigrationsAndKeys = ReviewTagsMigrationsAndKeys({ cwd: \"packages/smithers/agent/std\" })\n\n/**\n * Changed public APIs against the package README, every docs page (concepts,\n * guides, and reference included), and the site API reference page.\n *\n * @since 1.0.0\n * @category lint\n */\nconst reviewDocsAgainstCode = ReviewDocsAgainstCode({\n  cwd: \"packages/smithers/agent/std\",\n  context: [\n    Smithers.file(\"README.md\"),\n    Smithers.glob(\"docs/**/*.md\"),\n    Smithers.file(\"//apps/site/src/content/docs/docs/reference/api/std.mdx\")\n  ]\n})\n\n/**\n * Changed exports against their own JSDoc.\n *\n * @since 1.0.0\n * @category lint\n */\nconst reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: \"packages/smithers/agent/std\" })\n\nconst securityReview = Smithers.SecurityReview({\n  cwd: \"packages/smithers/agent/std\",\n  include: [\"src/**\"],\n  checks: [\n    {\n      id: \"hermetic-precheck-bypass\",\n      title: \"A hermetic bash call cannot touch a path outside its declared reads and writes\",\n      threat:\n        \"A prompt-injected agent declares a narrow envelope yet reads secrets or deletes files outside it on the host running the flow.\",\n      lookFor: [\n        \"Shell text the tokenizer splits so a write command (rm, mv, cp, tee, >) is classified as a read or not seen at all.\",\n        \"A path hidden behind quoting, globbing, ~, $VAR, $(...), backticks, or an interpreter other than a shell that the lexical scan misses while still admitting the call.\",\n        \"A cwd, relative path, or dot-dot segment that resolves outside the envelope after path.resolve yet passes withinEnvelope.\",\n        \"The /dev/ exemption or the cwd === base shortcut admitting a path that is not process plumbing or the workspace root.\"\n      ],\n      paths: [\"src/Bash.ts\", \"src/internal/EnvelopePrecheck.ts\", \"src/internal/Paths.ts\"]\n    },\n    {\n      id: \"effect-envelope-honesty\",\n      title: \"effectsFor and ApplyPatch.paths name every path the handler actually reads or writes\",\n      threat:\n        \"An agent gets a write approved for one path while the handler writes another, bypassing the permission prompt for the user's files.\",\n      lookFor: [\n        \"A handler that writes, removes, or creates directories for a path absent from effectsFor(input) or ApplyPatch.paths(patch), such as a move destination or parent directory.\",\n        \"A static envelope declared sealed or hermetic for a flow that mutates or spawns (Fetch, WebFetch, TestRun, ShellCommand).\",\n        \"A path normalized differently in the envelope than in the handler, so the approved name and the written name diverge.\"\n      ],\n      paths: [\"src/*.ts\", \"src/Manifest.ts\", \"src/internal/Declaration.ts\"]\n    },\n    {\n      id: \"symlink-write-escape\",\n      title: \"Atomic replacement never writes outside the workspace by following a symlink\",\n      threat:\n        \"An agent plants a symlink in the workspace so a later write, edit, or patch overwrites a host file such as ~/.ssh/authorized_keys or a shell rc file.\",\n      lookFor: [\n        \"Preserve.replace calling realPath on the target and writing the resolved destination without re-checking it against the guarded filesystem's roots.\",\n        \"A temporary sibling or chown/chmod applied to the resolved path outside the workspace, or set-id bits preserved onto a replaced file.\",\n        \"ApplyPatch or Edit creating parent directories through a symlinked directory.\"\n      ],\n      paths: [\n        \"src/internal/Preserve.ts\",\n        \"src/Write.ts\",\n        \"src/Edit.ts\",\n        \"src/ApplyPatch.ts\",\n        \"src/internal/ApplyPatch.ts\"\n      ]\n    },\n    {\n      id: \"subprocess-argv-injection\",\n      title: \"Model-supplied strings reach child processes only as argv data, never as shell text or option flags\",\n      threat:\n        \"A prompt-injected agent turns a container name, env key, test selection, checkpoint id, git ref, or search pattern into an extra flag or shell command on the host.\",\n      lookFor: [\n        \"Container.makeCommand forwarding an env key, cwd, or container name that begins with '-' or contains '=' into docker exec argv.\",\n        \"A git, rg, or docker invocation where a caller string precedes '--' and could parse as an option (for example rev-parse on a ref starting with '-').\",\n        \"TestRun or Bash building a 'bash -lc' string that interpolates caller text rather than passing it after \\\"$@\\\".\",\n        \"Exec.exec called without args so the command string is parsed by the platform shell for a value the caller did not intend as shell.\"\n      ],\n      paths: [\n        \"src/Container.ts\",\n        \"src/Bash.ts\",\n        \"src/TestRun.ts\",\n        \"src/internal/Exec.ts\",\n        \"src/internal/GitWorktree.ts\",\n        \"src/Checkpoints.ts\",\n        \"src/NativeSearch.ts\",\n        \"src/PortableSearch.ts\"\n      ]\n    },\n    {\n      id: \"host-git-on-agent-repo\",\n      title: \"Host-side git on the agent's workspace cannot run agent-authored code\",\n      threat:\n        \"An agent restricted to file writes edits .git/config or .git/hooks so the host's checkpoint capture or worktree add executes its program outside the sandbox.\",\n      lookFor: [\n        \"git worktree add, stash create, or rev-parse run with -C on an agent-writable repository without -c core.hooksPath=/dev/null, core.fsmonitor=false, and a sanitized GIT_* environment.\",\n        \"Checkpoint ids or config keys written with git config that could alter keys outside the checkpoint section.\",\n        \"A scratch checkout path built from caller text that could land outside the repository root.\"\n      ],\n      paths: [\"src/Checkpoints.ts\", \"src/internal/GitWorktree.ts\", \"src/Relocate.ts\"]\n    },\n    {\n      id: \"child-env-secret-leak\",\n      title: \"Child processes and containers receive only the environment the call needs\",\n      threat:\n        \"A command the agent runs reads host API keys or tokens inherited from the harness process and exfiltrates them.\",\n      lookFor: [\n        \"ChildProcessEnvironment.make(process.env, ...) passing the whole host environment to bash, shell_command, test runners, rg, git, or the language server.\",\n        \"docker exec -e KEY forwarding a host value the caller named rather than one it supplied.\",\n        \"Error or diagnostic text (quoted invocation, StdError message) that includes env values or transport credentials.\"\n      ],\n      paths: [\n        \"src/internal/Exec.ts\",\n        \"src/Container.ts\",\n        \"src/NativeSearch.ts\",\n        \"src/TestRun.ts\",\n        \"src/Bash.ts\"\n      ]\n    },\n    {\n      id: \"outbound-http-ssrf\",\n      title: \"fetch, http-post, and webfetch reach only hosts the capability guard admits on every hop\",\n      threat:\n        \"A prompt-injected agent reads cloud metadata or internal services, or posts workspace data to an attacker host, through a redirect or a URL the guard does not re-check.\",\n      lookFor: [\n        \"Fetch or HttpPost executing without redirect: manual so the transport follows a redirect to a host the kernel HttpClient never checked.\",\n        \"parseHttpUrl admitting a loopback, link-local, or metadata address, or a URL whose host differs after WHATWG normalization.\",\n        \"Caller-supplied Authorization or Cookie headers forwarded to a cross-origin redirect target.\"\n      ],\n      paths: [\"src/Fetch.ts\", \"src/HttpPost.ts\", \"src/WebFetch.ts\", \"src/internal/Http.ts\", \"src/internal/Url.ts\"]\n    },\n    {\n      id: \"exa-credential-handling\",\n      title: \"The Exa API key is sent only to api.exa.ai and never appears in output or errors\",\n      threat: \"An agent or a hostile search result obtains the operator's Exa key from a log, error, or search output.\",\n      lookFor: [\n        \"Redacted.value(secret) used anywhere but the authorization header for the fixed https://api.exa.ai URL.\",\n        \"Error messages or logs that include the request, headers, or credential reference.\",\n        \"An unbounded response.json read that a hostile or compromised endpoint can use to exhaust memory.\"\n      ],\n      paths: [\"src/ExaWebSearch.ts\", \"src/WebSearch.ts\"]\n    },\n    {\n      id: \"untrusted-output-bounds\",\n      title: \"Process, HTTP, and language-server output is bounded before it is buffered or parsed\",\n      threat: \"A command, web page, or language server the agent reaches exhausts the host's memory or wedges the run.\",\n      lookFor: [\n        \"Exec.exec called without maxCaptureBytes on a process the agent influences.\",\n        \"An LSP frame Content-Length or queued frame count accepted without an upper bound.\",\n        \"A regex over untrusted text (grep pattern, HTML conversion, test report parsing) with catastrophic backtracking outside LinearRegex.\"\n      ],\n      paths: [\n        \"src/internal/Exec.ts\",\n        \"src/internal/Html.ts\",\n        \"src/internal/TestReport.ts\",\n        \"src/internal/LinearRegex.ts\",\n        \"src/Grep.ts\",\n        \"src/PortableSearch.ts\"\n      ]\n    },\n    {\n      id: \"out-of-process-reads\",\n      title: \"Subprocess readers (rg, the language server) see no file the guarded filesystem would refuse\",\n      threat:\n        \"A prompt-injected agent uses grep, glob, or lsp to read host files outside the workspace, such as ~/.ssh keys, because the child process opens them directly.\",\n      lookFor: [\n        \"NativeSearch resolveRoot passing a caller root or explicit file to rg without checking it against the guarded filesystem's roots first.\",\n        \"An rg argv that follows symlinks (--follow, -L) or honors RIPGREP_CONFIG_PATH from the inherited environment.\",\n        \"Lsp.run forwarding any absolute path to the language server with only an isAbsolutePath check, so documentSymbols, hover, or diagnostics reveal an out-of-workspace file.\",\n        \"The host language server loading workspace-controlled code (tsconfig plugins, a workspace-local typescript or node_modules binary) outside any sandbox.\"\n      ],\n      paths: [\"src/NativeSearch.ts\", \"src/Grep.ts\", \"src/Glob.ts\", \"src/Lsp.ts\"]\n    },\n    {\n      id: \"container-seal\",\n      title: \"A host sealed to one container runs nothing on the host itself\",\n      threat:\n        \"An agent confined to a benchmark or tenant container runs a command on the host by omitting or spoofing the container name.\",\n      lookFor: [\n        \"Bash.sealed or TestRun admitting a call whose container is undefined, empty, or a different name.\",\n        \"Relocate rewriting a containerised cwd to a host path, or a host path to a container path outside the materialized checkout.\"\n      ],\n      paths: [\"src/Bash.ts\", \"src/TestRun.ts\", \"src/Relocate.ts\", \"src/Container.ts\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: {\n    check,\n    circular,\n    docs,\n    docsFiles,\n    fmt,\n    lib,\n    lint,\n    reviewDocsAgainstCode,\n    reviewJsdocAgainstCode,\n    reviewTagsMigrationsAndKeys,\n    test,\n    ...securityReview\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 39,
+          "text": "* guides, and reference included), and the site API reference page."
+        },
+        {
+          "line": 63,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 150,
+          "text": "\"Error or diagnostic text (quoted invocation, StdError message) that includes env values or transport credentials.\""
+        },
+        {
+          "line": 178,
+          "text": "\"Error messages or logs that include the request, headers, or credential reference.\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/std/tsconfig.json",
+      "sha256": "0064dce36d22143039105eb068be99456971e6caf6e7cebac24633514a2009b8",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [\n      {\n        \"name\": \"@effect/language-service\",\n        \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n        \"includeSuggestionsInTsc\": false,\n        \"ignoreEffectWarningsInTscExitCode\": true,\n        \"ignoreEffectErrorsInTscExitCode\": true,\n        \"diagnosticSeverity\": {\n          \"globalErrorInEffectFailure\": \"off\"\n        }\n      }\n    ]\n  },\n  \"include\": [\"src/**/*\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 17,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 30,
+          "text": "\"includeSuggestionsInTsc\": false,"
+        },
+        {
+          "line": 31,
+          "text": "\"ignoreEffectWarningsInTscExitCode\": true,"
+        },
+        {
+          "line": 32,
+          "text": "\"ignoreEffectErrorsInTscExitCode\": true,"
+        },
+        {
+          "line": 39,
+          "text": "\"include\": [\"src/**/*\"]"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/std/vitest.config.ts",
+      "sha256": "6e046e5a8e60cf27a47fc6a124a96fd10e8c41bc5468a1cafaf457be754874bc",
+      "source": "import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],\n    environment: \"node\",\n    // House convention (see packages/smithers/flows/journal/vitest.config.ts): a finite 30 s\n    // wall-clock budget so correct suites survive coverage-instrumented load\n    // while a genuine hang still fails the run.\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      enabled: true,\n      provider: \"v8\",\n      reportOnFailure: true,\n      // Per-process report directory so concurrent vitest runs do not destroy\n      // each other's coverage scratch state (issues #115/#121).\n      reportsDirectory: join(tmpdir(), `flows-std-coverage-${process.pid}`),\n      include: [\"src/**\"],\n      // Aggregate floors apply across the supported host lanes, which differ\n      // in native-process and filesystem tests. Per-file completion gates\n      // enforce the coverage campaign without narrowing the source inventory.\n      thresholds: {\n        // macOS executed 99.78 / 98.88 / 99.59 / 99.78 on 2026-10-03 (#3480).\n        // Floors keep a margin for the Linux lane, which skips different\n        // platform tests. Per-file gates cover files that reached 100% on\n        // macOS; the rest are listed in #3480 with their dead branches.\n        branches: 97,\n        functions: 99,\n        lines: 99,\n        statements: 99,\n        \"src/Write.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/ApplyPatch.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/Read.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/Edit.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/StdError.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/internal/FileMutation.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/internal/ApplyPatch.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/ExaWebSearch.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/Ls.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/NativeSearch.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/internal/HttpNetwork.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/internal/IpAddress.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/SearchConformance.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/SearchContract.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/internal/CodexText.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/internal/Html.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/internal/Walk.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/internal/TestReport.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/internal/Symbols.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/internal/Text.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/TreeFingerprint.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/internal/Preserve.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/Container.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        // T-TRM-05 edits Bash.ts: its terminal handler shares this per-file gate.\n        \"src/Bash.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/Glob.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/Grep.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/internal/EnvelopePrecheck.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/internal/Grouping.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/internal/Http.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/internal/Ignore.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/internal/Match.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },\n        \"src/internal/SearchContract.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 }\n      }\n    }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 11,
+          "text": "fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"
+        },
+        {
+          "line": 14,
+          "text": "include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],"
+        },
+        {
+          "line": 17,
+          "text": "// wall-clock budget so correct suites survive coverage-instrumented load"
+        },
+        {
+          "line": 21,
+          "text": "coverage: {"
+        },
+        {
+          "line": 23,
+          "text": "provider: \"v8\","
+        },
+        {
+          "line": 26,
+          "text": "// each other's coverage scratch state (issues #115/#121)."
+        },
+        {
+          "line": 27,
+          "text": "reportsDirectory: join(tmpdir(), `flows-std-coverage-${process.pid}`),"
+        },
+        {
+          "line": 28,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 31,
+          "text": "// enforce the coverage campaign without narrowing the source inventory."
+        },
+        {
+          "line": 32,
+          "text": "thresholds: {"
+        },
+        {
+          "line": 34,
+          "text": "// Floors keep a margin for the Linux lane, which skips different"
+        },
+        {
+          "line": 71,
+          "text": "\"src/internal/Ignore.ts\": { branches: 100, functions: 100, lines: 100, statements: 100 },"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/agent/std",
+      "label": "//packages/smithers/agent/std:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/std/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/std/{test,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/std/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/std/tsconfig.test.json"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/agent/std:lib"
+      ]
+    },
+    {
+      "package": "packages/smithers/agent/std",
+      "label": "//packages/smithers/agent/std:circular",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/circular.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/std/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/std/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/std",
+      "label": "//packages/smithers/agent/std:docs",
+      "rule": "DocsParity",
+      "kinds": [
+        "docs"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/std/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/std",
+      "label": "//packages/smithers/agent/std:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/std/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/std/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/std/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/std",
+      "label": "//packages/smithers/agent/std:fmt",
+      "rule": "Dprint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/std/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/std/{test,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/std/dprint.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/std",
+      "label": "//packages/smithers/agent/std:lib",
+      "rule": "TsBuild",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/std/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/build-library.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/scripts/compile-commonjs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-single-effect-version.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/std/src/index.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/std/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/std/scripts/build.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/std",
+      "label": "//packages/smithers/agent/std:lint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/std/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/std/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.jsdoc.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/std",
+      "label": "//packages/smithers/agent/std:reviewDocsAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/agent/std/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/std/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/std/README.md"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/std/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/content/docs/docs/reference/api/std.mdx"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/std",
+      "label": "//packages/smithers/agent/std:reviewJsdocAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/agent/std/src/**/*.{ts,vibe}"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/std/src/**/*.{ts,vibe}",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/std",
+      "label": "//packages/smithers/agent/std:reviewTagsMigrationsAndKeys",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/agent/std/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/std/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/std",
+      "label": "//packages/smithers/agent/std:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/agent/std/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/std/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/std",
+      "label": "//packages/smithers/agent/std:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/agent/std/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/std/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/std",
+      "label": "//packages/smithers/agent/std:test",
+      "rule": "Vitest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/std/test/**/*.test.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/std/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/std/{test,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/std/vitest.config.ts"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/agent/std:lib"
+      ]
+    }
+  ],
+  "areas": [
+    "PACKAGE.ts",
+    "eslint.config.js",
+    "examples/32-intervene.ts",
+    "scripts/build.mjs",
+    "scripts/search-bench.ts",
+    "src/ApplyPatch.ts",
+    "src/Bash.ts",
+    "src/Checkpoints.ts",
+    "src/Container.ts",
+    "src/Edit.ts",
+    "src/ExaWebSearch.ts",
+    "src/Explore.ts",
+    "src/Fetch.ts",
+    "src/Glob.ts",
+    "src/Grep.ts",
+    "src/HttpPost.ts",
+    "src/LanguageServer.ts",
+    "src/Ls.ts",
+    "src/Lsp.ts",
+    "src/Manifest.ts",
+    "src/NativeSearch.ts",
+    "src/PortableSearch.ts",
+    "src/Probe.ts",
+    "src/Read.ts",
+    "src/Relocate.ts",
+    "src/RemoteSearch.ts",
+    "src/Search.ts",
+    "src/SearchConformance.ts",
+    "src/SearchContract.ts",
+    "src/ShellCommand.ts",
+    "src/StdError.ts",
+    "src/TestRun.ts",
+    "src/TestRunner.ts",
+    "src/TreeFingerprint.ts",
+    "src/UpdatePlan.ts",
+    "src/WebFetch.ts",
+    "src/WebSearch.ts",
+    "src/Write.ts",
+    "src/index.ts",
+    "src/internal",
+    "test/TestLayers.ts",
+    "test/fixtures",
+    "vitest.config.ts"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The agent loop's model step retries a transient provider failure as the
  * durable engine's next attempt.
@@ -11,7 +12,6 @@
  * the attempt rows, and the budget's durable usage records.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
@@ -27,6 +27,7 @@ import * as ModelRequest from "@smthrs/model/ModelRequest"
 import type * as Route from "@smthrs/model/Route"
 import { Node } from "@smthrs/plan"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Schema, Scope, Stream } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { SqlClient } from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import * as Budget from "../src/Budget.ts"
@@ -121,7 +122,11 @@ const stores = Layer.mergeAll(StepBoundary.layerTest(), Layer.succeed(Jj.Jj)(jj)
 type Port = Effect.Effect<
   unknown,
   unknown,
-  Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Budget.Budget | QuotaPolicy.QuotaClassifier
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
+  | FlowRuntime.FlowRuntime
+  | FlowRuntime.FlowInstance
+  | Budget.Budget
+  | QuotaPolicy.QuotaClassifier
 >
 
 /**
@@ -181,13 +186,15 @@ const modelRows = (executionId: string) =>
     return rows.filter((row) => `${row.outcome_json ?? ""}${row.error_json ?? ""}`.match(/approved|socket|overloaded/))
   })
 
-const durable = <A, E>(body: Effect.Effect<A, E, Crypto.Crypto | Scope.Scope | Layer.Success<typeof stores>>) =>
+const durable = <A, E>(
+  body: Effect.Effect<
+    A,
+    E,
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | Scope.Scope | Layer.Success<typeof stores>
+  >
+) =>
   Effect.runPromise(
-    Effect.scoped(body).pipe(
-      Effect.provide(stores),
-      Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
-      Effect.orDie
-    )
+    Effect.scoped(body).pipe(Effect.provide(stores), Effect.provide(NodeCrypto.layer), Effect.orDie)
   )
 
 const failed = (exit: Exit.Exit<unknown, unknown>): unknown => {

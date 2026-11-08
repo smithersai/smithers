@@ -1,5 +1,6 @@
 // The counter is test instrumentation; sealed actions use the existing boundary
 // test adapter because no checkout files are read or produced by this fixture.
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Action, Flow } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { Ownership } from "@smthrs/run-store"
@@ -12,8 +13,6 @@ import * as EngineStore from "../../src/EngineStore.ts"
 import * as StepBoundary from "../../src/StepBoundary.ts"
 import * as StepSandbox from "../../src/StepSandbox.ts"
 import * as TestStores from "../../src/test/TestStores.ts"
-import { Crypto } from "@smthrs/crypto"
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 
 // Preserve the permit failure before the dispatcher turns a lost fence into
 // self-interruption, so a failed process leaves its renewal cause in stderr.
@@ -63,8 +62,8 @@ try {
     process.stdout.write("ready\n")
     return yield* engine.execute(flow, { executionId: runId, payload: {}, discard: false })
   })).pipe(
-    Effect.provide(Layer.mergeAll(TestStores.layerAt(filename, { consensus }).pipe(Layer.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))), StepBoundary.layerTest(), StepSandbox.layerTest(), jj,
-      Crypto.layerFromDigest(NodeCrypto.layerDigest), Action.layerCacheEnvironment({ layers: [], capabilities: {} }))),
+    Effect.provide(Layer.mergeAll(TestStores.layerAt(filename, { consensus }).pipe(Layer.provide(NodeCrypto.layer)), StepBoundary.layerTest(), StepSandbox.layerTest(), jj,
+      NodeCrypto.layer, Action.layerCacheEnvironment({ layers: [], capabilities: {} }))),
     Effect.provideService(Clock.Clock, clock)
   ))
   process.stdout.write(`result:${result}\n`)

@@ -10,6 +10,7 @@ import {
  * `cwd` anchors every emitted tool run in this package directory.
  */
 import { Smithers } from "@smthrs/targets"
+import { Package as flows } from "../../../../.smithers/flows/PACKAGE.ts"
 
 const cwd = "packages/smithers/flows/platform-cloudflare"
 
@@ -33,6 +34,17 @@ const postgres = Smithers.Docker.Service({
   stop: { signal: "SIGTERM", grace: "10s" }
 })
 
+/** The production image's CLI input, built before the container integration starts. */
+const sandboxCli = Smithers.NodeBinary({
+  entry: Smithers.file("//apps/mvp/infra/sandbox/pack-cli.mjs"),
+  args: ["--built"],
+  srcs: [],
+  // As with releasePack, library builds are explicit graph dependencies.
+  // NodeBinary always assembles the current manifests, bins and other published assets.
+  deps: [flows.automationModules, Smithers.Target.subtree("//packages/...", "lib")],
+  timeout: "5m"
+})
+
 /**
  * The package suite at its 100% coverage threshold, over the declared
  * PostgreSQL. The PgBouncer cases run where `SMITHERS_TEST_PGBOUNCER_URL`, or
@@ -42,6 +54,10 @@ const test = Smithers.Shell.Test({
   shell: "cd packages/smithers/flows/platform-cloudflare && npx vitest run",
   data: [
     lib,
+    sandboxCli,
+    Smithers.file("//apps/mvp/infra/sandbox/Dockerfile"),
+    Smithers.file("//apps/mvp/infra/sandbox/tmux.conf"),
+    Smithers.file("//apps/mvp/infra/sandbox/.dockerignore"),
     Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.glob("test/**/*.ts"),
     Smithers.file("package.json"),
@@ -158,6 +174,7 @@ export const Package = Smithers.Package({
     lint,
     reviewDocsAgainstCode,
     reviewJsdocAgainstCode,
+    sandboxCli,
     test,
     ...securityReview
   }

@@ -1,7 +1,6 @@
 import { NodeCrypto } from "@effect/platform-node"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as MemoryCalibration from "@smthrs/agent/MemoryCalibration"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Interpreter } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -839,7 +838,7 @@ const runFlow = async (root: string, payload: typeof CalibrateFlow.default.paylo
     ).pipe(
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+      Layer.provideMerge(NodeCrypto.layer)
     )
   )
   try {

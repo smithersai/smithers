@@ -1,12 +1,14 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { KeyMaterial, Plan, StepKey } from "@smthrs/plan"
 import { PlanStore } from "@smthrs/plan-store"
 import { RunStore } from "@smthrs/run-store"
-import { Array as Arr, Effect, Exit, Option } from "effect"
+import { Effect, Exit, Option } from "effect"
+import * as Arr from "effect/Array"
+import * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as PlanMerges from "../src/internal/PlanMerges.ts"
 import * as Migrations from "../src/Migrations.ts"
@@ -14,12 +16,6 @@ import * as PlanInputStore from "../src/PlanInputStore.ts"
 import * as PlanMergeStore from "../src/PlanMergeStore.ts"
 import * as TestStores from "../src/test/TestStores.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
-
-// Effect 4.1's sql.insert takes a non-empty array; every batch here has rows.
-const nonEmpty = <A>(rows: ReadonlyArray<A>): Arr.NonEmptyReadonlyArray<A> => {
-  if (!Arr.isReadonlyArrayNonEmpty(rows)) throw new Error("expected at least one row")
-  return rows
-}
 
 const owner = { hostId: "merge-store", pid: 71, nonce: "merge-store" }
 const runId = "merge-store-run"
@@ -33,7 +29,7 @@ const fixture = <A, E>(
     | PlanMergeStore.PlanMergeStore
     | SqlClient.SqlClient
     | DurableWriter
-    | Crypto.Crypto
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
   >
 ) => withCrypto(effect.pipe(Effect.provide(TestStores.layerAt(":memory:"))))
 const activate = Effect.gen(function*() {
@@ -131,7 +127,7 @@ describe("PlanMergeStore", () => {
       const sql = yield* SqlClient.SqlClient
       yield* merges.intend(identity, intent, owner)
       yield* writer.write(append)
-      const crypto = yield* Crypto.Crypto
+      const crypto = yield* EffectDigest.Digest
       let hashes = 0
       let statements = 0
       const instrumented = new Proxy(sql, {
@@ -142,7 +138,7 @@ describe("PlanMergeStore", () => {
       })
       const measured = yield* PlanMergeStore.make.pipe(
         Effect.provideService(SqlClient.SqlClient, instrumented),
-        Effect.provideService(Crypto.Crypto, {
+        Effect.provideService(EffectDigest.Digest, {
           ...crypto,
           digest: (algorithm, data) => {
             hashes++
@@ -366,7 +362,9 @@ describe("PlanMergeStore", () => {
         })
         yield* writer.write(Effect.gen(function*() {
           for (let offset = 0; offset < rows.length; offset += 500) {
-            yield* sql`INSERT INTO flows_plan_merge_intents ${sql.insert(nonEmpty(rows.slice(offset, offset + 500)))}`
+            yield* sql`INSERT INTO flows_plan_merge_intents ${
+              sql.insert(Arr.makeBy(Math.min(500, rows.length - offset), (index) => rows[offset + index]!))
+            }`
           }
         }))
         expect(yield* merges.intend(identity, intent, owner)).toEqual(intent)

@@ -49,7 +49,7 @@ npm install @smthrs/keys@next effect
 ```
 
 Node.js 22.19.0 or later. Hashing is host access, so
-derivation runs through Effect's `Crypto` service and you choose the
+derivation runs through Effect's `Digest` service and you choose the
 implementation: [Installation](./installation.md) covers the layer to provide
 on Node.js, on Bun, and in a browser.
 
@@ -57,7 +57,6 @@ on Node.js, on Bun, and in a browser.
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { deriveKey } from "@smthrs/keys"
 import * as Effect from "effect/Effect"
 
@@ -65,7 +64,7 @@ const program = Effect.gen(function*() {
   const key = yield* deriveKey({ domain: "cache/compile", version: 1, target: "web", flags: ["--minify"] })
   const reordered = yield* deriveKey({ flags: ["--minify"], target: "web", version: 1, domain: "cache/compile" })
   return { key, same: key === reordered }
-}).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+}).pipe(Effect.provide(NodeCrypto.layer))
 
 console.log(await Effect.runPromise(program))
 ```
@@ -85,7 +84,7 @@ out of every other namespace in your system.
 ## Validate a key you read back
 
 When the key comes back to you, decode it. Validation returns the same text,
-performs no hashing, and requires no `Crypto` service:
+performs no hashing, and requires no `Digest` service:
 
 ```ts
 import { digest, StoredKey } from "@smthrs/keys"
@@ -136,7 +135,7 @@ key that tool prints was derived here.
 
 ## Where to go next
 
-- [Installation](./installation.md): the runtime requirement, the `Crypto`
+- [Installation](./installation.md): the runtime requirement, the `Digest`
   layer to provide, and the import forms.
 - [Quickstart](./quickstart.md): a cache that recognizes work it has already
   done, end to end, including the read-back path.
@@ -146,7 +145,7 @@ key that tool prints was derived here.
   what it refuses, and why a `Redacted` value must never be key material.
 - [The wire format](./concepts/wire-format.md): the `key1_` representation, and
   why an unknown version prefix is rejected rather than guessed.
-- [Testing](./testing.md): the `Crypto` layer to provide in a unit test, and
+- [Testing](./testing.md): the `Digest` layer to provide in a unit test, and
   how to assert on a key.
 - [API reference](./api.md): every export, with signatures, requirements, and
   failures.

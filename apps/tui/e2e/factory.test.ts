@@ -53,8 +53,11 @@ it("reads the repository's stack from Cloud and lists its issues by group under 
     hostname: "127.0.0.1",
     fetch: (request) => {
       seen.push(request.headers.get("authorization"))
-      return new URL(request.url).pathname === "/api/repos/o/r/mythical"
+      const path = new URL(request.url).pathname
+      return path === "/api/repos/o/r/mythical"
         ? Response.json(stack)
+        : path === "/api/user"
+        ? Response.json({ login: "factory-person", email: null })
         : new Response("{}", { status: 404 })
     }
   })
@@ -79,6 +82,11 @@ it("reads the repository's stack from Cloud and lists its issues by group under 
     await tui.until((screen) => screen.includes("Ask Smithers"), 20_000, "first draw")
     await tui.type("/smithers")
     await tui.press(key.enter)
+    // The connection row adds one item; navigate to keep the issue groups in view.
+    await tui.until((screen) =>
+      screen.includes("#2412 Resume loses prompt cache") && screen.includes("Connected · @factory-person")
+    )
+    for (let index = 0; index < 4; index++) await tui.press(key.down)
     await tui.until(
       (screen) =>
         screen.includes(
@@ -131,7 +139,7 @@ for (const status of [401, 403]) {
       await tui.type("/smithers")
       await tui.press(key.enter)
       await tui.until(
-        (screen) => screen.includes("Sign in to see the factory: smthrs auth login"),
+        (screen) => screen.includes("Sign in to see the factory: smthrs auth login") && screen.includes("Signed out"),
         10_000,
         "the sign-in row"
       )

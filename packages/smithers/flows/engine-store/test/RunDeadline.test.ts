@@ -1,4 +1,5 @@
 import { TestSchemas } from "@smthrs/database"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * A flow's `deadline` survives a restart on the durable engine: the start it
  * counts from is journaled, so the engine that resumes the run honors the
@@ -6,13 +7,13 @@ import { TestSchemas } from "@smthrs/database"
  * elapsed while no engine was up settles as soon as one comes back.
  */
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { RunStore } from "@smthrs/run-store"
 import * as Ownership from "@smthrs/run-store/Ownership"
 import * as Clock from "effect/Clock"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -47,7 +48,7 @@ type Services =
   | DurableEngineState.DurableEngineState
   | Jj.Jj
   | TestClock.TestClock
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | Scope.Scope
 
 const run = <A, E>(body: Effect.Effect<A, E, Services>) =>
@@ -191,7 +192,11 @@ const gatedRound = sha256(JSON.stringify(["flow-round/v2", "opening", 1]))
 const lineageIncarnation = <A, E>(
   filename: string,
   hostId: string,
-  body: Effect.Effect<A, E, RunStore.RunStore | FlowRuntime.FlowRuntime | Crypto.Crypto>
+  body: Effect.Effect<
+    A,
+    E,
+    RunStore.RunStore | FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)
+  >
 ) =>
   Effect.scoped(
     Effect.gen(function*() {

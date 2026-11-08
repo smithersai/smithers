@@ -1,23 +1,14 @@
-/**
- * Scan a flows tree, list its commands, and run one agent command string and
- * one HTTP request against the same routes.
- */
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
-import * as NodePath from "@effect/platform-node/NodePath"
+/** Scan a flows tree and run command text or an HTTP request against it. */
+import { NodeFileSystem, NodePath } from "@effect/platform-node"
 import { Command, FileRouter, FlowInvoker, Incur } from "../src/index.ts"
-
-/** The flows tree that ships beside this example. */
-export { flowsRoot } from "./agent-command-root.ts"
+export { flowsRoot } from "./agent-command.platform.ts"
 
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
-
-// A host normally runs the flow durably. This boundary answers directly so the
-// example shows only routing, decoding, and encoding.
 const invoker = FlowInvoker.make({
   invoke: effect ({ input }) => ({ accepted: true, number: (input as { number: number }).number })
 })
 
-/** Lists the agent commands under `root` and executes `commandString`. */
+/** Lists the commands under root and executes one command string. */
 export effect function runAgentCommand(root: string, commandString: string) {
   provide platform, FlowInvoker.FlowInvoker = invoker {
     const { routes } = try FileRouter.scan({ root })
@@ -27,15 +18,14 @@ export effect function runAgentCommand(root: string, commandString: string) {
   }
 }
 
-/** Serves the routes under `root` over HTTP for one request, then closes. */
+/** Serves one HTTP request and closes its CLI. */
 export effect function fetchCommand(root: string, request: Request) {
   provide platform, FlowInvoker.FlowInvoker = invoker {
     const { routes } = try FileRouter.scan({ root })
     const cli = try Incur.createCli("flows", routes)
-    try {
-      return try sync(async (cli, request): Promise<unknown> => (await cli.fetch(request)).json(), cli, request)
-    } finally {
-      try sync(async (cli) => cli.close(), cli)
-    }
+    return try ensuring(
+      promise(async () => (await cli.fetch(request)).json()),
+      promise(() => cli.close())
+    )
   }
 }

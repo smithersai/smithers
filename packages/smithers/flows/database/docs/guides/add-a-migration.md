@@ -147,6 +147,27 @@ An interrupted pass behaves the same way. Only the id-zero migration has a
 reporting quirk: `run` reports it, a hand-wired `loader` applies it without
 reporting it.
 
+## Deferred triggers
+
+PostgreSQL refuses DDL on a table with trigger events still queued in the
+transaction (`55006`, "pending trigger events"). A set that owns a deferred
+constraint trigger names it in `immediateTriggers`, as `[table, triggerName]`
+pairs. Before each migration of every set, zero included, the runner sets those
+triggers `IMMEDIATE`, and after it `DEFERRED`, so a migration may write the
+table and then alter or index it. Only the named triggers change: deferred
+foreign keys and unique constraints keep their own mode.
+
+The switch runs before the migration's body, so it covers only triggers that
+already exist when that migration starts. A migration that creates a declared
+trigger and then writes and alters its table in one body still fails with
+`55006`: split it in two, or call `Dialect.setTriggerMode` after creating the
+trigger. A pass nested in a caller's transaction overwrites an `IMMEDIATE` that
+caller set on these triggers.
+
+`Dialect.flushDeferredTriggers` fires a transaction's queued events early, in
+the order they were queued. Any lock those triggers take stays held until the
+transaction ends.
+
 ## Reserving a new block
 
 A package that owns tables and has no set yet declares one. Pick the next

@@ -1,0 +1,54 @@
+{
+  "cell": {
+    "attempts": 1,
+    "answered": 0,
+    "correct": 0,
+    "successInterval95": [
+      0,
+      0.7934506856227626
+    ],
+    "failures": {
+      "wrong": 0,
+      "turn_limit": 0,
+      "access_failure": 0,
+      "model_failure": 1,
+      "cell_failure": 0,
+      "tool_failure": 0,
+      "harness_failure": 0
+    },
+    "turns": 1,
+    "pricedTurns": 0,
+    "costUsd": null,
+    "inputTokensReported": 0,
+    "outputTokensReported": 0,
+    "usageReportingTurns": 0,
+    "elapsedMeanMs": 783
+  },
+  "tool": {
+    "attempts": 1,
+    "answered": 0,
+    "correct": 0,
+    "successInterval95": [
+      0,
+      0.7934506856227626
+    ],
+    "failures": {
+      "wrong": 0,
+      "turn_limit": 0,
+      "access_failure": 0,
+      "model_failure": 1,
+      "cell_failure": 0,
+      "tool_failure": 0,
+      "harness_failure": 0
+    },
+    "turns": 1,
+    "pricedTurns": 0,
+    "costUsd": null,
+    "inputTokensReported": 0,
+    "outputTokensReported": 0,
+    "usageReportingTurns": 0,
+    "elapsedMeanMs": 303
+  },
+  "completedPairs": 0,
+  "qualityDifference": null
+}

@@ -10,7 +10,7 @@ import { HttpUrlSchema } from "./WebUrl.ts"
 
 /*
  * The Smithers Cloud seam on the local origin: `/api/cloud/*` proxies to
- * the cloud API (SMITHERS_CLOUD_API, default https://api.jjhub.tech) with the
+ * the cloud API (SMITHERS_CLOUD_API, configured by the host) with the
  * Bun-held bearer attached, and the `/api/cloud-auth/*` routes run the CLI's
  * browser login. The token NEVER reaches the renderer: the session answer
  * carries only what a person sees.

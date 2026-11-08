@@ -8,7 +8,7 @@ import { TestChatApi, TEST_REPOSITORY, openTestApp } from "../../test/chatApi"
 import type { Session } from "../auth/schema"
 import { SESSION } from "../auth/store"
 import { Pulls } from "../pulls/pulls"
-import { repositoryAccess, syncStatusAfter } from "./source"
+import { repositoryAccess, syncStatusAfter, wipeStatusOf } from "./source"
 import { IssuesStore } from "./store"
 
 const runtimes: Array<{ dispose: () => Promise<void> }> = []
@@ -99,4 +99,34 @@ test("a failed authority read stays unavailable even after a previous public or 
   for (const who of [session("signed_out"), session("signed_in", "admin")]) {
     expect(repositoryAccess(who, [{ id: "repo", own: true, role: "admin", readable: true, synced: true, failure: "rate_limited" }], "repo")).toBe("unavailable")
   }
+})
+
+test("a wipe waits for a session confirmed ended; a 403 needs no session", () => {
+  expect(wipeStatusOf("sign_in", session("signed_in"))).toBe("held")
+  expect(wipeStatusOf("sign_in", session("unreachable"))).toBe("held")
+  expect(wipeStatusOf("sign_in", session("loading"))).toBe("held")
+  expect(wipeStatusOf("sign_in", session("signed_out"))).toBe("sign_in")
+  expect(wipeStatusOf("forbidden", session("unreachable"))).toBe("forbidden")
+})
+
+test("only a server that answered and couldn't verify hides private rows; a failed network doesn't", () => {
+  const own = { id: "own", own: true, role: null } as const
+  const member = { id: "own", own: false, role: "member" } as const
+  const down = session("unreachable")
+  const reached = { ...down, unverifiable: true }
+  for (const row of [own, member]) {
+    expect(repositoryAccess(down, [row], "own")).toBe("unknown")
+    expect(repositoryAccess(reached, [row], "own")).toBe("unverified")
+  }
+  expect(repositoryAccess(down, [], "own")).toBe("unknown")
+  expect(repositoryAccess(reached, [], "own")).toBe("unverified")
+  // A role read that failed gives no authority to paint under once a server couldn't verify; on a network failure it does.
+  const failed = { id: "own", own: false, role: null, failure: "unavailable" } as const
+  expect(repositoryAccess(reached, [failed], "own")).toBe("unverified")
+  expect(repositoryAccess(down, [failed], "own")).toBe("unavailable")
+  // A role holder reading offline keeps what the device has (Astra's P2): the network says nothing of them.
+  expect(repositoryAccess(down, [{ id: "own", own: false, role: "member", readable: true }], "own")).toBe("unknown")
+  // A public-read receipt carries nothing private, whatever the session.
+  const open = { id: "own", own: false, role: null, readable: true } as const
+  expect(repositoryAccess(reached, [open], "own")).toBe("allowed")
 })

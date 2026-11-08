@@ -6,7 +6,6 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Capability, Permission } from "@smthrs/capability"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Model, ModelError, ModelEvent, ModelProxy, ModelRequest, RequestExecutor, Route } from "@smthrs/model"
@@ -162,7 +161,7 @@ const memory = <A, E>(handler: Handler, program: Effect.Effect<A, E, FlowRuntime
     Effect.provide(
       Layer.effectDiscard(Effect.flatMap(FlowRuntime.FlowRuntime, (engine) => engine.register(Probe, handler))).pipe(
         Layer.provideMerge(FlowEngine.layerMemory),
-        Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+        Layer.provideMerge(NodeCrypto.layer)
       )
     ),
     Effect.scoped
@@ -274,7 +273,7 @@ describe("ModelStep.defaultRetryPolicy", () => {
       .toEqual({ _tag: "RetryAfter", delayMs: 16_000 })
     expect(RetryPolicy.decide(policy, { attempt: 6, error: rateLimited(), random: 1, elapsedMs: 31_000 }))
       .toEqual({ _tag: "GiveUp", reason: "exhausted" })
-    const denied = new Permission.PermissionDenied({
+    const denied = Permission.PermissionDenied.new({
       capability: Capability.make("net:post", "https://provider.invalid/v1/chat/completions"),
       reason: "denied"
     })
@@ -685,7 +684,7 @@ describe("ModelStep on the durable engine", () => {
   )
 
   it("fails the step on a permission refusal without retrying it", async () => {
-    const denied = new Permission.PermissionDenied({
+    const denied = Permission.PermissionDenied.new({
       capability: Capability.make("net:post", "https://provider.invalid/v1/chat/completions"),
       reason: "the host refused the provider"
     })

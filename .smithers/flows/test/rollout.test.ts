@@ -125,17 +125,17 @@ test("a moved deployment is refused without overwriting another rollout", async 
 })
 
 test("the public Smithers flow fails with the deterministic recovery receipt", async () => {
-  const [{ default: Flow }, { executionLayer }, { FlowEngine }, { WebCrypto }, { Effect, Layer }] = await Promise.all([
+  const [{ default: Flow }, { executionLayer }, { FlowEngine }, NodeCrypto, { Effect, Layer }] = await Promise.all([
     import("../rollout/flow.ts"),
     import("../rollout/host.ts"),
     import("@smthrs/engine"),
-    import("@smthrs/crypto"),
+    import("@effect/platform-node/NodeCrypto"),
     import("effect")
   ])
   const f = fixture({ fail: "candidate:site" })
   const layer = executionLayer(f.host).pipe(
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(WebCrypto.layer)
+    Layer.provideMerge(NodeCrypto.layer)
   )
   const result = await Effect.runPromise(
     Flow.execute({}, { executionId: "rollout-failing-probe" }).pipe(

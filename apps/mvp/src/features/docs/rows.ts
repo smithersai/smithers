@@ -20,6 +20,8 @@ const Code = Schema.NullOr(Schema.String)
 /** A repository's docs index: `loading`, `ready` with its title, summary and pages, or `refused` with why. */
 export const IndexRow = Schema.Struct({
   key: Schema.String,
+  /** Its repository's id (`github/owner/name`): what the data gate joins (repo/gate.ts). */
+  repoId: Schema.String,
   state: Schema.Literals(["loading", "ready", "refused"]),
   title: Schema.String,
   summary: Schema.NullOr(Schema.String),
@@ -31,6 +33,8 @@ export type IndexRow = typeof IndexRow.Type
 /** One search of a repository's docs, keyed by repository and query: its matches, best first. */
 export const SearchRow = Schema.Struct({
   key: Schema.String,
+  /** Its repository's id (`github/owner/name`): what the data gate joins (repo/gate.ts). */
+  repoId: Schema.String,
   state: Schema.Literals(["loading", "ready", "refused"]),
   pages: Schema.Array(ListedPage),
   code: Code,
@@ -40,6 +44,8 @@ export type SearchRow = typeof SearchRow.Type
 /** One page of a repository's docs, keyed by repository and path: its title, URL and Markdown, or why not. */
 export const PageRow = Schema.Struct({
   key: Schema.String,
+  /** Its repository's id (`github/owner/name`): what the data gate joins (repo/gate.ts). */
+  repoId: Schema.String,
   state: Schema.Literals(["loading", "text", "refused"]),
   title: Schema.String,
   url: Schema.String,

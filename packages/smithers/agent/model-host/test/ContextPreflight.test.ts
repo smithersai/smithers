@@ -2,8 +2,8 @@ import { Model, type ModelEvent, type ModelRequest } from "@smthrs/model"
 import { ContextPreflight } from "@smthrs/rpc"
 import { Effect, Stream } from "effect"
 import { expect, test } from "vitest"
-import { runContextPreflight } from "../src/ContextPreflight.ts"
-import { providerRequest } from "../src/ModelTurnHost.vibe"
+import { runContextPreflight } from "./fixtures/durable.ts"
+import { providerRequest } from "./fixtures/durable.ts"
 
 const input: ContextPreflight.ContextPreflightInput = {
   prompt: "where do we retry webhooks?",

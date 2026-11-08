@@ -12,7 +12,6 @@
  * and converges on the winner's receipt instead.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { Effect, Layer, type Scope } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -37,9 +36,7 @@ const flows: ReadonlyArray<SqlControlRuntime.DurableFlow> = [
 /** A fresh durable runtime over the rows at `filename`, with its own connection. */
 const makeOver = (filename: string): Effect.Effect<ControlRuntimeService, PersistenceError, Scope.Scope> =>
   Effect.gen(function*() {
-    const services = yield* Layer.build(
-      Layer.merge(fileBundle(filename), Crypto.layerFromDigest(NodeCrypto.layerDigest))
-    )
+    const services = yield* Layer.build(Layer.merge(fileBundle(filename), NodeCrypto.layer))
     return yield* SqlControlRuntime.make({ flows }).pipe(Effect.provide(services))
   })
 

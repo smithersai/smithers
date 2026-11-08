@@ -1,15 +1,16 @@
+import * as Hex from "effect/encoding/Hex"
 // Deep reviewed and polished by a human on 2026-08-31.
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, PlatformError, Schema, SchemaIssue } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import { inspect } from "node:util"
 import { describe, expect, it } from "vitest"
 import * as Keys from "../src/index.ts"
 
 const provideCrypto = <A, E>(
-  effect: Effect.Effect<A, E, Crypto.Crypto>
-): Effect.Effect<A, E> => Effect.provide(effect, Crypto.layerFromDigest(NodeCrypto.layerDigest))
+  effect: Effect.Effect<A, E, EffectDigest.Digest>
+): Effect.Effect<A, E> => Effect.provide(effect, NodeCrypto.layer)
 
 const derive = (input: unknown): Keys.KeyV1 => Effect.runSync(provideCrypto(Keys.deriveKey(input)))
 
@@ -17,22 +18,24 @@ const decodeDerivedKey = (input: unknown): Keys.StoredKey =>
   Effect.runSync(provideCrypto(Schema.decodeUnknownEffect(Keys.DerivedKey)(input)))
 
 const derivations: ReadonlyArray<
-  readonly [string, (input: unknown) => Effect.Effect<Keys.KeyV1, unknown, Crypto.Crypto>]
+  readonly [string, (input: unknown) => Effect.Effect<Keys.KeyV1, unknown, EffectDigest.Digest>]
 > = [
   ["deriveKey", Keys.deriveKey],
   ["DerivedKey", Schema.decodeUnknownEffect(Keys.DerivedKey)]
 ]
 
 const failingCrypto = Layer.succeed(
-  Crypto.Crypto,
-  Crypto.make({
-    randomBytes: (size) => new Uint8Array(size),
+  EffectDigest.Digest,
+  EffectDigest.Digest.of({
     digest: () =>
-      Effect.fail(PlatformError.systemError({
+      Effect.die(PlatformError.systemError({
         _tag: "Unknown",
         module: "test-host",
         method: "digest"
-      }))
+      })),
+    digestHex(algorithm, data) {
+      return Effect.map(this.digest(algorithm, data), Hex.encode)
+    }
   })
 )
 
@@ -261,15 +264,17 @@ describe("key derivation", () => {
   it("does not invoke Crypto for input that cannot be canonicalized", () => {
     let calls = 0
     // An instrumented host proves ordering without invoking any external service.
-    const host = Crypto.make({
-      randomBytes: (size) => new Uint8Array(size),
+    const host = EffectDigest.Digest.of({
       digest: () => {
         calls++
         return Effect.succeed(new Uint8Array(32))
+      },
+      digestHex(algorithm, data) {
+        return Effect.map(this.digest(algorithm, data), Hex.encode)
       }
     })
     const error = Effect.runSync(Effect.flip(
-      Keys.deriveKey(1n).pipe(Effect.provideService(Crypto.Crypto, host))
+      Keys.deriveKey(1n).pipe(Effect.provideService(EffectDigest.Digest, host))
     ))
     expect(error.code).toBe("canonicalization_failed")
     expect(calls).toBe(0)
@@ -280,8 +285,7 @@ describe("key derivation", () => {
       let calls = 0
       const failure = new Error("host diagnostic")
       // Deliberately broken hosts exercise failures a real platform should never produce.
-      const host = Crypto.make({
-        randomBytes: (size) => new Uint8Array(size),
+      const host = EffectDigest.Digest.of({
         digest: () => {
           calls++
           if (calls === 1) {
@@ -289,10 +293,13 @@ describe("key derivation", () => {
             return Effect.die(failure)
           }
           return Effect.succeed(new Uint8Array(32))
+        },
+        digestHex(algorithm, data) {
+          return Effect.map(this.digest(algorithm, data), Hex.encode)
         }
       })
       const operation = decode({ domain: "test/host-recovery", version: 1 }).pipe(
-        Effect.provideService(Crypto.Crypto, host)
+        Effect.provideService(EffectDigest.Digest, host)
       )
       const error = Effect.runSync(Effect.flip(operation))
       expect(error).toMatchObject(
@@ -307,13 +314,15 @@ describe("key derivation", () => {
 
   it.each([0, 31, 33, 64])("rejects a host digest of %i bytes and allows a subsequent valid derivation", (size) => {
     // Malformed host output cannot be produced by a conforming platform service.
-    const host = Crypto.make({
-      randomBytes: (length) => new Uint8Array(length),
-      digest: () => Effect.succeed(new Uint8Array(size))
+    const host = EffectDigest.Digest.of({
+      digest: () => Effect.succeed(new Uint8Array(size)),
+      digestHex(algorithm, data) {
+        return Effect.map(this.digest(algorithm, data), Hex.encode)
+      }
     })
     const error = Effect.runSync(Effect.flip(
       Keys.deriveKey({ domain: "test/host-output", version: 1 }).pipe(
-        Effect.provideService(Crypto.Crypto, host)
+        Effect.provideService(EffectDigest.Digest, host)
       )
     ))
     expect(error).toBeInstanceOf(Keys.KeyDerivationError)
@@ -330,19 +339,21 @@ describe("key derivation", () => {
       const exit = await Effect.runPromise(Effect.gen(function*() {
         const started = yield* Deferred.make<void>()
         // A suspended host gives deterministic cancellation with no wall-clock sleeps.
-        const host = Crypto.make({
-          randomBytes: (size) => new Uint8Array(size),
+        const host = EffectDigest.Digest.of({
           digest: () =>
             Deferred.succeed(started, undefined).pipe(
               Effect.andThen(Effect.never),
               Effect.ensuring(Effect.sync(() => {
                 cleaned = true
               }))
-            )
+            ),
+          digestHex(algorithm, data) {
+            return Effect.map(this.digest(algorithm, data), Hex.encode)
+          }
         })
         const fiber = yield* Effect.forkChild(
           decode({ domain: "test/cancellation", version: 1 }).pipe(
-            Effect.provideService(Crypto.Crypto, host)
+            Effect.provideService(EffectDigest.Digest, host)
           )
         )
         yield* Deferred.await(started)
@@ -383,7 +394,7 @@ describe("key derivation", () => {
     const exit = Effect.runSyncExit(Keys.deriveKey({ operation: "compile" }) as Effect.Effect<never, never>)
     expect(Exit.isFailure(exit)).toBe(true)
     if (Exit.isFailure(exit)) {
-      expect(Cause.pretty(exit.cause)).toContain("Service not found: effect/Crypto")
+      expect(Cause.pretty(exit.cause)).toContain("Service not found: effect/crypto/Digest")
     }
   })
 

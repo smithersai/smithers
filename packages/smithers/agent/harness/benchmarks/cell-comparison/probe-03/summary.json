@@ -1,0 +1,61 @@
+{
+  "cell": {
+    "attempts": 1,
+    "answered": 1,
+    "correct": 1,
+    "successInterval95": [
+      0.20654931437723745,
+      1
+    ],
+    "failures": {
+      "wrong": 0,
+      "turn_limit": 0,
+      "access_failure": 0,
+      "model_failure": 0,
+      "cell_failure": 0,
+      "tool_failure": 0,
+      "harness_failure": 0
+    },
+    "turns": 3,
+    "pricedTurns": 3,
+    "costUsd": 0.0003051,
+    "inputTokensReported": 1371,
+    "outputTokensReported": 336,
+    "usageReportingTurns": 3,
+    "elapsedMeanMs": 27399
+  },
+  "tool": {
+    "attempts": 1,
+    "answered": 1,
+    "correct": 1,
+    "successInterval95": [
+      0.20654931437723745,
+      1
+    ],
+    "failures": {
+      "wrong": 0,
+      "turn_limit": 0,
+      "access_failure": 0,
+      "model_failure": 0,
+      "cell_failure": 0,
+      "tool_failure": 0,
+      "harness_failure": 0
+    },
+    "turns": 2,
+    "pricedTurns": 2,
+    "costUsd": 0.00010800000000000001,
+    "inputTokensReported": 880,
+    "outputTokensReported": 40,
+    "usageReportingTurns": 2,
+    "elapsedMeanMs": 6486
+  },
+  "completedPairs": 1,
+  "qualityDifference": {
+    "estimate": 0,
+    "low": -1,
+    "high": 1,
+    "confidence": 0.95,
+    "method": "paired Hoeffding bound",
+    "n": 1
+  }
+}

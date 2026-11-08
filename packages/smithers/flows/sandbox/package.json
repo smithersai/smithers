@@ -461,7 +461,7 @@
     "@smthrs/jj": "1.0.0-rc.16",
     "@smthrs/kernel": "1.0.0-rc.16",
     "@smthrs/plan": "workspace:*",
-    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
+    "vibelang-runtime": "0.0.12"
   },
   "devDependencies": {
     "@smthrs/engine": "1.0.0-rc.16",
@@ -484,12 +484,11 @@
     "microsandbox": "0.6.16",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
-    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz",
+    "vibelang": "0.0.12",
+    "vibelang-vite": "0.0.12",
     "vitest": "5.0.0",
     "@smthrs/platform-node": "1.0.0-rc.16",
-    "@smthrs/platform-bun": "1.0.0-rc.16",
-    "@smthrs/crypto": "1.0.0-rc.16"
+    "@smthrs/platform-bun": "1.0.0-rc.16"
   },
   "peerDependencies": {
     "effect": "4.1.1"

@@ -1,3 +1,4 @@
+import { withUserAgent } from "./github/Http.ts"
 import { GitRemote } from "@smthrs/effect-code-storage"
 import { GitHub } from "@smthrs/integrations"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
@@ -39,7 +40,7 @@ export class RepoUpstream extends Context.Service<
     Layer.effect(
       RepoUpstream,
       effect {
-        const http = try Effect.context<HttpClient.HttpClient>()
+        const http = try withUserAgent(Effect.context<HttpClient.HttpClient>())
         // An explicit, empty environment: no ambient GITHUB_TOKEN chooses the account.
         const github = effect {
           return try Effect.flatMap(options.token, (token) =>

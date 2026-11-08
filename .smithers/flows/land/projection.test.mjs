@@ -18,7 +18,14 @@ test("refuses missing, duplicate, malformed and duplicate-label receipts", () =>
 
 function fixture(t, miniBody, boxBody) {
   const root = mkdtempSync(join(tmpdir(), "land-projection-"))
-  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const keys = ["SMITHERS_CFBOX_VIA", "SMITHERS_CFBOX_RELAY", "SMITHERS_LAT_RUN"]
+  const saved = Object.fromEntries(keys.map((key) => [key, process.env[key]]))
+  for (const key of keys) delete process.env[key]
+  process.env.SMITHERS_LAT_RUN = join(root, "lat-run")
+  t.after(() => {
+    for (const [key, value] of Object.entries(saved)) value === undefined ? delete process.env[key] : process.env[key] = value
+    rmSync(root, { recursive: true, force: true })
+  })
   jj(root, ["git", "init", "."])
   mkdirSync(join(root, ".smithers"))
   writeFileSync(join(root, ".smithers/target-index.json"), "[]\n")
@@ -38,6 +45,9 @@ function fixture(t, miniBody, boxBody) {
 
 for (const [name, body] of [
   ["exit 7", "process.exit(7)"],
+  ["exit 73", "process.exit(73)"],
+  ["stderr disk full", 'console.error("FARM_HEALTH DISK_FULL"); process.exit(1)'],
+  ["stdout disk full", 'console.log("FARM_HEALTH DISK_FULL"); process.exit(1)'],
   ["stderr capacity timeout", 'console.error("CAPACITY_TIMEOUT: all slots reserved"); process.exit(1)'],
   ["stdout capacity timeout", 'console.log("CAPACITY_TIMEOUT: all slots reserved"); process.exit(1)']
 ]) test(`mini ${name} falls back to cfbox and accepts the same checked receipt`, async (t) => {
@@ -53,7 +63,7 @@ for (const [name, body] of [
     assert.equal(fs.existsSync(tree + "/.env"), false)
     assert.equal(fs.readFileSync(tree + "/.smithers/target-index.json", "utf8"), "[]\\n")
     fs.writeFileSync(".jj/box-tree", tree)
-    assert.deepEqual(args.slice(args.indexOf("--") + 1), ["node", ".smithers/flows/land/index-projection.mjs", "--cloud"])
+    assert.deepEqual(args.slice(-3), ["node", ".smithers/flows/land/index-projection.mjs", "--cloud"])
     console.log(${JSON.stringify(receipt(expected).trim())})
   `)
   await regenerateIndex(root, mini, undefined, box)
@@ -97,4 +107,98 @@ test("source edits during cfbox execution refuse the projection and clean its st
   await assert.rejects(regenerateIndex(root, mini, undefined, box), /Source changed/)
   assert.equal(readFileSync(join(root, ".smithers/target-index.json"), "utf8"), "[]\n")
   assert.equal(existsSync(readFileSync(join(root, ".jj/box-tree"), "utf8")), false)
+})
+
+test("direct cfbox upload failure retries once via configured relay without cache and cleans staging", async (t) => {
+  const expected = [{ label: "//:relay" }]
+  const { root, mini, box } = fixture(t, "process.exit(7)", `
+    const assert = require("node:assert/strict"), fs = require("node:fs")
+    const args = process.argv.slice(2), record = ".jj/box-attempts"
+    const previous = fs.existsSync(record) ? JSON.parse(fs.readFileSync(record)) : []
+    previous.push(args); fs.writeFileSync(record, JSON.stringify(previous))
+    if (previous.length === 1) {
+      assert.ok(args.includes("--cache"))
+      console.error("cfbox: TypeError: fetch failed"); process.exit(125)
+    }
+    assert.equal(previous.length, 2)
+    assert.equal(args[args.indexOf("--via") + 1], "relay.example.invalid")
+    assert.equal(args.includes("--cache"), false)
+    assert.equal(args.includes("--cache-key"), false)
+    console.log(${JSON.stringify(receipt(expected).trim())})
+  `)
+  process.env.SMITHERS_LAT_RUN = join(root, "lat-run")
+  writeFileSync(join(root, "farm-config.json"), JSON.stringify({ latEndpoints: { lane: "relay.example.invalid" } }))
+  // Private farm configuration must never join the staged source.
+  writeFileSync(join(root, ".gitignore"), ".env\nnode_modules/\nfarm-config.json\n")
+  await regenerateIndex(root, mini, undefined, box)
+  const attempts = JSON.parse(readFileSync(join(root, ".jj/box-attempts"), "utf8"))
+  assert.equal(attempts.length, 2)
+  for (const args of attempts) assert.equal(existsSync(args[args.indexOf("--") - 1]), false)
+  assert.equal(readFileSync(join(root, ".smithers/target-index.json"), "utf8"), JSON.stringify(expected))
+})
+
+test("an explicit cfbox via overrides the relay default and disables cache immediately", async (t) => {
+  const { root, mini, box } = fixture(t, "process.exit(7)", `
+    const args = process.argv.slice(2), assert = require("node:assert/strict")
+    assert.equal(args[args.indexOf("--via") + 1], "explicit.example.invalid")
+    assert.equal(args.includes("--cache"), false)
+    assert.equal(args.includes("--cache-key"), false)
+    console.log(${JSON.stringify(receipt([{ label: "//:explicit" }]).trim())})
+  `)
+  process.env.SMITHERS_CFBOX_VIA = "explicit.example.invalid"
+  process.env.SMITHERS_CFBOX_RELAY = "default.example.invalid"
+  await regenerateIndex(root, mini, undefined, box)
+})
+
+test("a failed execution POST without start markers is ambiguous and never retried", async (t) => {
+  const { root, mini, box } = fixture(t, "process.exit(7)", `
+    const fs = require("node:fs"), args = process.argv.slice(2), record = ".jj/box-attempts"
+    const attempts = fs.existsSync(record) ? JSON.parse(fs.readFileSync(record)) : []
+    attempts.push(args); fs.writeFileSync(record, JSON.stringify(attempts))
+    console.error("cfbox: upload failed: fetch failed"); process.exit(125)
+  `)
+  process.env.SMITHERS_CFBOX_RELAY = "relay.example.invalid"
+  await assert.rejects(regenerateIndex(root, mini, undefined, box), /Remote target index failed/)
+  const attempts = JSON.parse(readFileSync(join(root, ".jj/box-attempts"), "utf8"))
+  assert.equal(attempts.length, 1, "the POST might already have executed the command")
+  assert.equal(existsSync(attempts[0][attempts[0].indexOf("--") - 1]), false)
+})
+
+test("a safely retryable R2 fetch failure forces a fresh relay pack without copying the tree", async (t) => {
+  const { root, mini, box } = fixture(t, "process.exit(7)", `
+    const fs = require("node:fs"), assert = require("node:assert/strict"), args = process.argv.slice(2)
+    const tree = args[args.indexOf("--") - 1], record = ".jj/box-attempts"
+    const attempts = fs.existsSync(record) ? JSON.parse(fs.readFileSync(record)) : []
+    attempts.push({ tree, inode: fs.statSync(tree).ino }); fs.writeFileSync(record, JSON.stringify(attempts))
+    if (attempts.length === 1) {
+      console.error("cfbox: TypeError: fetch failed\\n    at async uploadTree (file:///client/cfbox.mjs:322:16)")
+      process.exit(125)
+    }
+    assert.notEqual(tree, attempts[0].tree, "cfbox's pack manifest includes the absolute tree path")
+    assert.equal(fs.statSync(tree).ino, attempts[0].inode, "rename the tree rather than copying its bytes")
+    console.log(${JSON.stringify(receipt([{ label: "//:fresh-pack" }]).trim())})
+  `)
+  process.env.SMITHERS_CFBOX_RELAY = "relay.example.invalid"
+  await regenerateIndex(root, mini, undefined, box)
+  for (const { tree } of JSON.parse(readFileSync(join(root, ".jj/box-attempts"), "utf8"))) assert.equal(existsSync(tree), false)
+})
+
+for (const [name, body, count] of [
+  ["relay fails", 'console.error("cfbox: R2 upload failed: 503"); process.exit(125)', 2],
+  ["command already started", 'console.error("SMITHERS_CFBOX_COMMAND_STARTED\\nTypeError: fetch failed"); process.exit(125)', 1],
+  ["stream interrupted", 'console.error("cfbox: stream broke: fetch failed"); process.exit(255)', 1],
+  ["ordinary command failure", 'console.error("TypeError: fetch failed"); process.exit(2)', 1],
+  ["client configuration failure", 'console.error("cfbox: invalid configuration"); process.exit(125)', 1]
+]) test(`cfbox ${name} refuses without an unsafe or repeated retry and cleans staging`, async (t) => {
+  const { root, mini, box } = fixture(t, "process.exit(7)", `
+    const fs = require("node:fs"), args = process.argv.slice(2), record = ".jj/box-attempts"
+    const attempts = fs.existsSync(record) ? JSON.parse(fs.readFileSync(record)) : []
+    attempts.push(args); fs.writeFileSync(record, JSON.stringify(attempts))
+    ${body}
+  `)
+  process.env.SMITHERS_CFBOX_RELAY = "relay.example.invalid"
+  await assert.rejects(regenerateIndex(root, mini, undefined, box), /Remote target index failed/)
+  const attempts = JSON.parse(readFileSync(join(root, ".jj/box-attempts"), "utf8"))
+  assert.equal(attempts.length, count)
+  for (const args of attempts) assert.equal(existsSync(args[args.indexOf("--") - 1]), false)
 })

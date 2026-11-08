@@ -11,7 +11,6 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
@@ -107,7 +106,7 @@ const engineLayer = Layer.mergeAll(
       StepBoundary.layerTest(),
       Layer.succeed(Jj.Jj, jj),
       OwnerIdentity.layer
-    ).pipe(Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+    ).pipe(Layer.provideMerge(NodeCrypto.layer))
   ),
   Layer.provideMerge(TestDatabase.layer)
 )

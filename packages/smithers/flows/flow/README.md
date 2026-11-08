@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.1.0` peer dependency. Install one
+This package declares `effect` as an exact `4.1.1` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -48,7 +48,7 @@ none of which the flow's author arranges.
 npm install @smthrs/flow@next effect
 ```
 
-Node.js 22.19.0 or later. `effect` is a peer at exactly `4.1.0`: two copies of
+Node.js 22.19.0 or later. `effect` is a peer at exactly `4.1.1`: two copies of
 `effect` in one program are two sets of service tags.
 
 Running a flow adds an engine and a platform crypto service.
@@ -60,7 +60,6 @@ the flow on the in-memory engine.
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
@@ -94,7 +93,7 @@ const layer = Interpreter.layerWithImplementations(
   )
 ).pipe(
   Layer.provideMerge(FlowEngine.layerMemory),
-  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+  Layer.provideMerge(NodeCrypto.layer)
 )
 
 const main = Digest.execute(

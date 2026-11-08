@@ -34,7 +34,7 @@ describe("atomic budget reservations", () => {
       const fiber = yield* Effect.scoped(Effect.gen(function*() {
         expect((yield* budget.reserve("first"))._tag).toBe("proceed")
         yield* Deferred.succeed(entered, undefined)
-        yield* Effect.never
+        return yield* Effect.never
       })).pipe(Effect.forkChild)
       yield* Deferred.await(entered)
       expect((yield* Effect.scoped(budget.reserve("second")))._tag).toBe("refuse")

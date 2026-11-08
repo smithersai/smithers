@@ -1,5 +1,6 @@
 import { type Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db"
 import type { Comment, Item, ItemSummary, WriteRow } from "../issues/schema"
+import type { Source } from "../repo/gate"
 import type { CheckRow, FilesRow, PullCommitRow, PullRow, PullsView, ReviewRow } from "./schema"
 
 // What every frontend reads of pull requests (decision 0012 §6). Each is a live query over this device's collections,
@@ -9,7 +10,8 @@ import type { CheckRow, FilesRow, PullCommitRow, PullRow, PullsView, ReviewRow }
 
 type View = Collection.Collection<PullsView, string>
 /** A repository's synced rows, or the empty local rows of a repository nobody opened. */
-type Synced<A extends object> = Collection.Collection<A, any, any>
+/** What a query reads: a repository's rows through the data gate (repo/gate.ts). */
+type Synced<A extends object> = Source<A>
 
 /** The routed repository's pull requests, newest first, with their head, draft and merge state. */
 export const listQuery = (view: View, items: Synced<ItemSummary>, pulls: Synced<PullRow>) =>
@@ -148,7 +150,7 @@ export const checksQuery = (view: View, items: Synced<ItemSummary>, pulls: Synce
   )
 
 /** Every comparison this tab read: the page picks the one for its pull request's base and head. */
-export const filesQuery = (files: Collection.Collection<FilesRow, string>) =>
+export const filesQuery = (files: Source<FilesRow>) =>
   LiveQuery.make((q) => q.from({ files: files.tanstack }).select(({ files }) => files))
 
 /** What the route shows, and this person's merge of it, with its write's status once the server has it. */

@@ -1,4 +1,4 @@
-import { NodeServices } from "@effect/platform-node"
+import { NodeCrypto, NodeServices } from "@effect/platform-node"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Graph, HumanTask } from "@smthrs/flow"
 import * as DurableDeferred from "@smthrs/flow/DurableDeferred"
@@ -133,7 +133,9 @@ export const main = async (argv: ReadonlyArray<string>) => {
     if (command === "status") {
       const status = await Effect.runPromise(Effect.scoped(
         statusEffect(id).pipe(Effect.provide(
-          NodeRuntime.storage(path.filename, root).pipe(Layer.provide(NodeServices.layer))
+          NodeRuntime.storage(path.filename, root).pipe(
+            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))
+          )
         ))
       ))
       await report(id, status)

@@ -2,7 +2,8 @@
 // channel through ChatApi's real handler over this file's schema of the compose Postgres, the setting and the receipts
 // sync through the compose Electric to Admins only, and the deployment's providers come from its configuration.
 import { Channels } from "@smthrs/notifications"
-import { ConfigProvider, Data, Effect, Layer, Option } from "effect"
+import { ElectricCollection } from "@smthrs/effect-electric"
+import { ConfigProvider, Data, Effect, Layer, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
@@ -60,6 +61,23 @@ const values = async (response: Response) =>
   ((await response.json()) as Array<{ readonly value?: Record<string, unknown> }>).flatMap((row) =>
     row.value === undefined ? [] : [row.value]
   )
+
+/** Wait for the exact shape's committed fixture before asserting its raw HTTP snapshot. */
+const delivered = (table: "alert_channels" | "alert_deliveries", txid: number) =>
+  runtime.runPromise(Effect.gen(function* () {
+    const { name } = yield* TestDatabase.Scratch
+    const url = new URL(`${yield* TestDatabase.electricUrl}/v1/shape`)
+    url.searchParams.set("table", `${name}.${table}`)
+    url.searchParams.set("where", "audience = $1")
+    url.searchParams.set("params[1]", "admin")
+    url.searchParams.set("columns", (table === "alert_channels" ? ALERT_CHANNEL_COLUMNS : ALERT_DELIVERY_COLUMNS).join(","))
+    const rows = yield* ElectricCollection.make({
+      id: `alert-fixture-${table}-${txid}`, schema: Schema.Struct({ channel: Schema.String }),
+      getKey: row => row.channel, shape: { url: url.href },
+    })
+    yield* rows.preload.pipe(Effect.andThen(rows.awaitTxId(txid, "15 seconds")), Effect.timeout("20 seconds"),
+      Effect.tapError(() => Effect.logWarning("alerts.fixture.delivery").pipe(Effect.annotateLogs({ table, stage: "transaction" }))))
+  }).pipe(Effect.scoped))
 
 describe("POST /api/alert-channels", () => {
   test("a local or preview request persists the configured alert link", async () => {
@@ -180,10 +198,15 @@ describe("POST /api/alert-channels", () => {
 describe("the channels' and receipts' shapes", () => {
   test("an Admin syncs the setting and the receipts, without their audience", async () => {
     const { h, upstream } = await open(admin)
-    await set(h, { channel: "email", destinations: ["will@example.com"] })
-    await sql(`
+    const saved = await set(h, { channel: "email", destinations: ["will@example.com"] })
+    expect(saved.status).toBe(200)
+    const { txid } = await saved.json() as { txid: number }
+    const [receipt] = await sql<{ txid: string }>(`
       INSERT INTO alert_deliveries (alert_id, channel, status, code, reason, http_status)
-      VALUES ('spend-alert-900000-0', 'telegram', 'refused', 'rejected', 'Bad Request: chat not found', 400)`)
+      VALUES ('spend-alert-900000-0', 'telegram', 'refused', 'rejected', 'Bad Request: chat not found', 400)
+      RETURNING pg_current_xact_id()::xid::text AS txid`)
+    await delivered("alert_channels", txid)
+    await delivered("alert_deliveries", Number(receipt!.txid))
 
     const channels = await values(await h.fetch("/api/shapes/alert-channels?offset=-1"))
     const receipts = await values(await h.fetch("/api/shapes/alert-deliveries?offset=-1"))
@@ -223,9 +246,13 @@ describe("the channels' and receipts' shapes", () => {
 
   test("a Member, an agent acting for an Admin, and a signed-out request are refused without calling Electric", async () => {
     const { h: adminHandler } = await open(admin)
-    expect((await set(adminHandler, { channel: "email", destinations: ["hidden@example.com"] })).status).toBe(200)
-    await sql(`INSERT INTO alert_deliveries (alert_id, channel, status)
-      VALUES ('hidden-alert', 'email', 'sent')`)
+    const saved = await set(adminHandler, { channel: "email", destinations: ["hidden@example.com"] })
+    expect(saved.status).toBe(200)
+    const { txid } = await saved.json() as { txid: number }
+    const [receipt] = await sql<{ txid: string }>(`INSERT INTO alert_deliveries (alert_id, channel, status)
+      VALUES ('hidden-alert', 'email', 'sent') RETURNING pg_current_xact_id()::xid::text AS txid`)
+    await delivered("alert_channels", txid)
+    await delivered("alert_deliveries", Number(receipt!.txid))
     expect(await values(await adminHandler.fetch("/api/shapes/alert-channels?offset=-1"))).toHaveLength(1)
     expect(await values(await adminHandler.fetch("/api/shapes/alert-deliveries?offset=-1"))).toHaveLength(1)
     for (const actor of [member, agentForAdmin, null]) {

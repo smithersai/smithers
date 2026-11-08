@@ -2,9 +2,9 @@ import { Clock, Context, Effect, Exit, Scope } from "effect"
 import { createServer, type RequestListener } from "node:http"
 import type { AddressInfo } from "node:net"
 import { expect, test } from "vitest"
-import { type DurableChatGrant, DurableChatProducer } from "../src/DurableChatProducer.ts"
 import { createHostDiagnostics } from "../src/HostDiagnostics.vibe"
-import { sourceLister, sourceReader } from "../src/HostTools.ts"
+import { type DurableChatGrant, DurableChatProducer } from "./fixtures/durable.ts"
+import { sourceLister, sourceReader } from "./fixtures/durable.ts"
 
 const grant: DurableChatGrant = {
   turnId: "turn",

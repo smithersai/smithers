@@ -5,7 +5,6 @@
  */
 
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
-import type { Crypto } from "@smthrs/crypto"
 import { DatabaseError, DurableWriter } from "@smthrs/database/DurableWriter"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
@@ -14,9 +13,13 @@ import { Ownership, RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
+import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
+import type * as Fiber from "effect/Fiber"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Result from "effect/Result"
@@ -31,6 +34,7 @@ import * as WakeBus from "../WakeBus.ts"
 import * as ActionPersistence from "./ActionPersistence.ts"
 import * as EffectRecords from "./EffectRecords.ts"
 import * as ExitEncoding from "./ExitEncoding.ts"
+import * as FailureDiagnostic from "./FailureDiagnostic.ts"
 import * as JournalRecords from "./JournalRecords.ts"
 import * as RetrySource from "./RetrySource.ts"
 import * as RunCoordinator from "./RunCoordinator.ts"
@@ -296,6 +300,7 @@ export interface Service {
 }
 
 interface Registration {
+  readonly drives: Set<Drive>
   readonly flow: Flow.Any
   readonly execute: (
     payload: object,
@@ -545,7 +550,7 @@ interface Driver {
   /** Which registered flow the pending-admission sweep starts from next tick. */
   pendingFlowOffset: number
   /** The driver's own `Crypto`, which a child's admission derives boundary ids with. */
-  readonly crypto: Context.Context<Crypto.Crypto>
+  readonly crypto: Context.Context<(EffectDigest.Digest | SecureRandom.SecureRandom)>
   /**
    * Each running round's retry seed, read once when the round first admits
    * a child: `null` for a round of a run that is no retry. A child opened at a
@@ -2241,6 +2246,11 @@ const continueLineage = (driver: Driver, seam: HandoffSeam, advanced: Successor)
     const target = driver.registrations.get(seam.handoff.flow)?.at(-1)
     const payload = yield* successorPayload(seam, target)
     const nextCeilings = successorCeilings(seam, target)
+    yield* Effect.annotateCurrentSpan({
+      "handoff.round": advanced.round.ordinal,
+      "handoff.authorityGroups.before": seam.state.capabilityCeilings!.length,
+      "handoff.authorityGroups.after": nextCeilings.length
+    })
     const nextStateJson = yield* encodeState(successorState(seam, payload, nextCeilings))
     const settledStateJson = yield* encodeState({
       ...seam.state,
@@ -2283,23 +2293,28 @@ const successorPayload = (seam: HandoffSeam, target: Registration | undefined): 
     ? Effect.succeed(seam.handoff.payload)
     : normalizePayload(target.flow, seam.handoff.payload)
 
-/** The authority the next round runs under: this round's, narrowed by the handoff and the target's declaration. */
+/**
+ * The next round's authority, narrowed by the handoff and target declaration.
+ * Normalize before persistence: duplicate groups otherwise enlarge every later
+ * state read, validation, redaction and write without changing authority.
+ */
 const successorCeilings = (
   seam: HandoffSeam,
   target: Registration | undefined
-): NonNullable<RunState["capabilityCeilings"]> => [
-  // The execution guard rejects missing persisted authority before a handler can hand off.
-  ...seam.state.capabilityCeilings!,
-  ...(seam.handoff.capabilityCeilings ?? [[]]),
-  // The successor records its own declaration, as admission would, so
-  // a later join compares against the authority it actually runs
-  // under. A target this process does not run has none here; the root
-  // caller's re-entry then carries a declaration the row lacks and is
-  // refused rather than trusted.
-  ...(target === undefined
-    ? []
-    : Flow.parseCapabilityCeilings(Flow.capabilityCeilings(target.flow.annotations)))
-]
+): NonNullable<RunState["capabilityCeilings"]> =>
+  CapabilitySet.fromGroups([
+    // The execution guard rejects missing persisted authority before a handler can hand off.
+    ...seam.state.capabilityCeilings!,
+    ...(seam.handoff.capabilityCeilings ?? [[]]),
+    // The successor records its own declaration, as admission would, so
+    // a later join compares against the authority it actually runs
+    // under. A target this process does not run has none here; the root
+    // caller's re-entry then carries a declaration the row lacks and is
+    // refused rather than trusted.
+    ...(target === undefined
+      ? []
+      : Flow.parseCapabilityCeilings(Flow.capabilityCeilings(target.flow.annotations)))
+  ]).groups
 
 /** The next round's opening state: the lineage's settings, carried forward. */
 const successorState = (
@@ -2380,6 +2395,8 @@ const commitHandoff = (driver: Driver, seam: HandoffSeam, advanced: Successor, w
           lineageId: advanced.round.rootExecutionId,
           roundOrdinal: advanced.round.ordinal,
           nextExecutionId: advanced.executionId,
+          previousAuthorityGroups: seam.state.capabilityCeilings!.length,
+          authorityGroups: write.nextCeilings.length,
           owner: driver.dependencies.owner
         },
         { cancelRequested: "absent" }
@@ -2564,7 +2581,10 @@ const refuseChangedPayload = (
  * The handoff seam: the one place a round's terminal settlement and its
  * successor are decided together.
  */
-const handOff = (driver: Driver, seam: HandoffSeam): Effect.Effect<void, never, Crypto.Crypto> =>
+const handOff = (
+  driver: Driver,
+  seam: HandoffSeam
+): Effect.Effect<void, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   FlowEngine.Round.next(
     {
       // The row's lineage_id was written from a round's rootExecutionId,
@@ -2595,6 +2615,9 @@ interface DrivenRound {
  * handlers act on.
  */
 interface Drive {
+  readonly owner: Fiber.Fiber<unknown, unknown>
+  readonly done: Deferred.Deferred<void>
+  registration: Registration | undefined
   readonly executionId: string
   /** The state the run was read with; an interruption settles against it. */
   state: RunState | undefined
@@ -2611,6 +2634,12 @@ interface Drive {
   lapsedMs: number | undefined
 }
 
+// Inherited by the round's body and its children. A registration closed from
+// its own drive must interrupt itself without waiting on its ancestor.
+const CurrentDrive = Context.Reference<Drive | undefined>("@smthrs/engine-store/RunDriver/CurrentDrive", {
+  defaultValue: () => undefined
+})
+
 /**
  * Drives one run: reads it, takes it, and executes and settles one round.
  *
@@ -2618,9 +2647,15 @@ interface Drive {
  * drive, an interruption included, goes through the cleanup it installs
  * before the claim.
  */
-const drive = (driver: Driver, executionId: string): Effect.Effect<void, never, Crypto.Crypto> =>
-  Effect.suspend(() => {
+const drive = (
+  driver: Driver,
+  executionId: string
+): Effect.Effect<void, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
+  Effect.withFiber((owner) => {
     const attempt: Drive = {
+      owner,
+      done: Deferred.makeUnsafe<void>(),
+      registration: undefined,
       executionId,
       state: undefined,
       round: undefined,
@@ -2634,11 +2669,21 @@ const drive = (driver: Driver, executionId: string): Effect.Effect<void, never, 
       // correctly refuses to steal from the still-live PID forever.
       Effect.onInterrupt(() => releaseInterrupted(driver, attempt)),
       Effect.onExit(() => endDrive(driver, attempt)),
+      // Release this registration only after ownership and retained scopes have
+      // been cleaned up. A coordinator fiber can serve another drive afterward.
+      Effect.ensuring(Effect.sync(() => {
+        attempt.registration?.drives.delete(attempt)
+        Deferred.doneUnsafe(attempt.done, Exit.void)
+      })),
+      Effect.provideService(CurrentDrive, attempt),
       Effect.annotateLogs({ runId: executionId })
     )
   })
 
-const driveRun = (driver: Driver, attempt: Drive): Effect.Effect<void, never, Crypto.Crypto> =>
+const driveRun = (
+  driver: Driver,
+  attempt: Drive
+): Effect.Effect<void, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Effect.gen(function*() {
     const executionId = attempt.executionId
     const initial = yield* findRun(driver, executionId)
@@ -2647,6 +2692,10 @@ const driveRun = (driver: Driver, attempt: Drive): Effect.Effect<void, never, Cr
     attempt.state = state
     const registration = driver.registrations.get(state.flowName)?.at(-1)
     if (registration === undefined) return yield* driveUnregistered(driver, executionId, initial, state)
+    // Selection and ownership are one synchronous operation, before claim can
+    // yield to registration teardown.
+    attempt.registration = registration
+    registration.drives.add(attempt)
     if (!(yield* claimAndActivate(driver, initial))) return
     yield* Effect.logDebug("run activated", { flowName: state.flowName })
     const activeState = yield* enterRunning(driver, executionId, initial, state)
@@ -2809,7 +2858,7 @@ const runRound = (
   registration: Registration,
   activeState: RunState,
   payload: unknown
-): Effect.Effect<void, never, Crypto.Crypto> =>
+): Effect.Effect<void, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Effect.gen(function*() {
     const executionId = attempt.executionId
     // A previous round of this run may have parked and retained its flow
@@ -2998,7 +3047,7 @@ const settleRound = (
   activeState: RunState,
   instance: FlowRuntime.FlowInstance["Service"],
   result: Flow.Result<unknown, unknown> | CancelRequested
-): Effect.Effect<void, never, Crypto.Crypto> =>
+): Effect.Effect<void, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Effect.gen(function*() {
     const executionId = attempt.executionId
     if (result._tag === "CancelRequested") return yield* cancelOwned(driver, executionId, activeState)
@@ -3112,8 +3161,8 @@ const defectRecord = (exit: Exit.Exit<unknown, unknown>): Interpreter.Defect | u
   if (Exit.isSuccess(exit) || Option.isSome(Interpreter.refusalCode(exit.cause))) return undefined
   const defect = Interpreter.defectOf(exit.cause)
   if (defect === undefined) return undefined
-  const message = Redaction.redact(defect.message)
-  return { ...defect, message: typeof message === "string" ? message : "" }
+  // Interpreter defects have a string message; string redaction preserves that type.
+  return { ...defect, message: String(Redaction.redact(defect.message)) }
 }
 
 /** Writes a round's own settlement: a terminal status, or a park. */
@@ -3128,6 +3177,13 @@ const settleResult = (
   Effect.gen(function*() {
     const executionId = attempt.executionId
     const encodedResult = yield* encodeResult(flow, result)
+    const failure = result._tag === "Complete" ? FailureDiagnostic.record(result.exit, executionId) : undefined
+    const failureSites = result._tag === "Complete" && Exit.isFailure(result.exit)
+      ? result.exit.cause.reasons.map((reason) => {
+        const site = Context.getOrUndefined(Cause.reasonAnnotations(reason), FlowEngine.FailureSite)
+        return FailureDiagnostic.site(site) ?? null
+      }) :
+      undefined
     const nextState: RunState = { ...activeState, result: encodedResult.encoded }
     const status = settledStatus(encodedResult, result)
     const waiting = status === "suspended" ? yield* parkReason(driver, executionId, instance) : null
@@ -3151,12 +3207,17 @@ const settleResult = (
       driver,
       executionId,
       status,
-      yield* encodeState(parked === undefined ? nextState : { ...nextState, parked }),
+      FailureDiagnostic.withinState(
+        yield* encodeState(parked === undefined ? nextState : { ...nextState, parked }),
+        failure,
+        failureSites
+      ),
       {
         decision: "transitioned",
         status,
         owner: driver.dependencies.owner,
-        ...(defect === undefined ? {} : { defect })
+        ...(defect === undefined ? {} : { defect }),
+        ...(failure === undefined ? {} : { failure })
       },
       { cancelRequested: "absent" },
       // A suspension is not an exit: the run is parked and will settle
@@ -4142,6 +4203,23 @@ const decodeSettlement = (
     }))
   )(state.result).pipe(
     Effect.orDie,
+    Effect.map((result) => {
+      if (result._tag !== "Complete" || Exit.isSuccess(result.exit)) return result
+      const primary = result.exit.cause.reasons.findIndex((reason) =>
+        Cause.isFailReason(reason) || Cause.isDieReason(reason)
+      )
+      return new Flow.Complete({
+        exit: Exit.failCause(Cause.fromReasons(result.exit.cause.reasons.map((reason, index) => {
+          // An old primary diagnostic describes only its first failure, never every reason.
+          const site = state.failureSites?.[index] ??
+            (state.failureSites === undefined && index === primary && state.failure !== undefined
+              ? { ...state.failure, executionId: state.failure.executionId ?? executionId } :
+              undefined)
+          const coordinates = FailureDiagnostic.site(site)
+          return coordinates === undefined ? reason : reason.annotate(Context.make(FlowEngine.FailureSite, coordinates))
+        })))
+      })
+    }),
     Effect.map(Option.some)
   ) as Effect.Effect<Option.Option<Flow.Result<unknown, unknown>>>
 }
@@ -4467,29 +4545,41 @@ const register = Effect.fn("FlowEngine.register")((
   flow: Flow.Any,
   handler: Registration["execute"]
 ) =>
-  Effect.acquireRelease(
-    Effect.sync(() => {
-      const registration = { flow, execute: handler }
-      const entries = driver.registrations.get(flow._tag) ?? []
-      entries.push(registration)
-      driver.registrations.set(flow._tag, entries)
-      driver.pendingCycles.delete(flow._tag)
-      driver.warnedUnregistered.clear()
-      return { registration, entries }
-    }),
-    ({ registration, entries }) =>
-      Effect.sync(() => {
-        const wasLatest = entries.at(-1) === registration
-        entries.splice(entries.indexOf(registration), 1)
-        if (entries.length === 0) driver.registrations.delete(flow._tag)
-        if (wasLatest) {
-          driver.pendingCycles.delete(flow._tag)
-          // Restoring a live predecessor changes which handler may
-          // drive pending work, just like a fresh registration does.
-          if (entries.length > 0) driver.warnedUnregistered.clear()
-        }
-      })
-  ).pipe(Effect.asVoid)
+  Effect.uninterruptible(Effect.gen(function*() {
+    const scope = yield* Scope.Scope
+    const registration: Registration = { flow, execute: handler, drives: new Set() }
+    const entries = driver.registrations.get(flow._tag) ?? []
+    entries.push(registration)
+    driver.registrations.set(flow._tag, entries)
+    driver.pendingCycles.delete(flow._tag)
+    driver.warnedUnregistered.clear()
+    // The closing fiber's CurrentDrive identifies self-close. acquireRelease
+    // captures the registering fiber's context, which can be another drive.
+    yield* Scope.addFinalizerExit(scope, () =>
+      Effect.withFiber((closer) =>
+        Effect.gen(function*() {
+          const wasLatest = entries.at(-1) === registration
+          entries.splice(entries.indexOf(registration), 1)
+          if (entries.length === 0) driver.registrations.delete(flow._tag)
+          if (wasLatest) {
+            driver.pendingCycles.delete(flow._tag)
+            // Restoring a live predecessor changes which handler may
+            // drive pending work, just like a fresh registration does.
+            if (entries.length > 0) driver.warnedUnregistered.clear()
+          }
+          const drives = [...registration.drives]
+          const current = closer.getRef(CurrentDrive)
+          for (const attempt of drives) attempt.owner.interruptUnsafe(closer.id)
+          if (current !== undefined && registration.drives.has(current)) closer.interruptUnsafe(closer.id)
+          // Teardown owns these exact drives, never a successor using a restored
+          // registration. Self-close cannot await the ancestor driving this body.
+          for (const attempt of drives) {
+            if (attempt !== current) yield* Deferred.await(attempt.done)
+          }
+          yield* Effect.logDebug("flow.registration.released", { flowName: flow._tag, activeDrives: drives.length })
+        })
+      ))
+  }))
 )
 
 /**
@@ -4624,7 +4714,7 @@ export const make = (
 ): Effect.Effect<
   Service,
   never,
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | DurableEngineState.DurableEngineState
   | DurableWriter
   | Journal.Journal
@@ -4637,10 +4727,10 @@ export const make = (
     const store = yield* RunStore.RunStore
     const engineState = yield* DurableEngineState.DurableEngineState
     const lineLevel = yield* RunMetrics.LineLevel
-    const crypto = yield* Effect.context<Crypto.Crypto>()
+    const crypto = yield* Effect.context<(EffectDigest.Digest | SecureRandom.SecureRandom)>()
     const retainedScopes = new Map<string, Scope.Closeable>()
     yield* Effect.addFinalizer(() => releaseRetainedScopes(retainedScopes))
-    const coordinator = yield* RunCoordinator.make<string, never, Crypto.Crypto>({
+    const coordinator = yield* RunCoordinator.make<string, never, (EffectDigest.Digest | SecureRandom.SecureRandom)>({
       drain: (executionId) => drive(driver, executionId),
       resumeConcurrency: dependencies.resumeConcurrency
     })

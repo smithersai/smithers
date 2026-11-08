@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.1.0` peer dependency. Install one
+This package declares `effect` as an exact `4.1.1` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -42,14 +42,11 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
-import { Crypto } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 
 const layer = ArtifactStore.layerFileSystem({ directory: ".flows/objects" }).pipe(
-  Layer.provideMerge(
-    Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
-  )
+  Layer.provideMerge(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer))
 )
 
 const program = Effect.gen(function*() {

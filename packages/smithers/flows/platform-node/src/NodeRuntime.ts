@@ -9,18 +9,43 @@
  * @since 1.0.0
  */
 
-import { Crypto } from "@smthrs/crypto"
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as Database from "@smthrs/database/node/NodeDatabase"
+import * as Runtime from "@smthrs/flows/Runtime"
+import { Layer } from "effect"
+import type { SqlClient } from "effect/sql/SqlClient"
+import { publishFreshDatabaseLayer } from "./internal/DatabasePublication.ts"
 import * as NativeRuntime from "./NativeRuntime.ts"
 import * as Host from "./NodeHost.ts"
 
 export type { HostOptions, Options } from "./NativeRuntime.ts"
 
+/**
+ * Builds a fresh SQLite store privately, closes its driver (checkpointing the
+ * WAL), then publishes the complete file with an exclusive hard link. A
+ * concurrent creator never replaces the winner's inode. Interrupted private
+ * directories are inert; subsequent creators use a new private directory.
+ *
+ * The initializer includes store-owned DDL after migrations, such as journal
+ * generations. PostgreSQL and special SQLite names stay on their native
+ * adapter; their complete initialization runs in one writer transaction.
+ * Existing stores retain their identity and use the normal migration ladder.
+ *
+ * @since 1.0.0
+ * @category layers
+ */
+export const publishFreshDatabase = <A, E>(
+  filename: string,
+  database: (filename: string) => Layer.Layer<SqlClient>,
+  initialize: Layer.Layer<A, E, SqlClient>
+): Layer.Layer<SqlClient> =>
+  publishFreshDatabaseLayer(filename, database, initialize, process.platform).pipe(Layer.provide(NodeFileSystem.layer))
+
 const runtime = NativeRuntime.make({
   name: "NodeRuntime",
-  database: (filename) => Database.layer({ filename }),
+  database: (filename) => publishFreshDatabase(filename, (file) => Database.layer({ filename: file }), Runtime.storage),
   host: Host,
-  crypto: Crypto.layerFromDigest(Host.NodeCrypto.layerDigest)
+  crypto: Host.NodeCrypto.layer
 })
 
 /** Provides the migrated stores over the native SQL driver.

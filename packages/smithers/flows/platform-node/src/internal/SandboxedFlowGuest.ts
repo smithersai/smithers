@@ -212,7 +212,7 @@ const deniedBy = (failure: unknown): PermissionDenied | undefined => {
     : failure
   if (!isPermissionError(candidate) || candidate._tag !== "@smthrs/capability/PermissionDenied") return undefined
   try {
-    return new PermissionDenied({
+    return PermissionDenied.new({
       capability: new Capability({
         action: candidate.capability.action,
         resource: String(redact(candidate.capability.resource))

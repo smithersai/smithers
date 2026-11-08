@@ -1,0 +1,150 @@
+name: Declared filesystem confinement
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/windows-confinement.yml
+      - .github/scripts/windows-confinement.test.mjs
+      - "packages/smithers/flows/platform-node/**"
+      - "packages/smithers/build/build-cli/**"
+      - "packages/smithers/build/targets/**"
+      - pnpm-lock.yaml
+      - .node-version
+  pull_request:
+    paths:
+      - .github/workflows/windows-confinement.yml
+      - .github/scripts/windows-confinement.test.mjs
+      - "packages/smithers/flows/platform-node/**"
+      - "packages/smithers/build/build-cli/**"
+      - "packages/smithers/build/targets/**"
+      - pnpm-lock.yaml
+      - .node-version
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: declared-filesystem-confinement-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  native:
+    name: Declared traversal (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b
+        with:
+          tool: jj-cli@0.39.0
+      - name: Install Linux confinement
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Verify native directory listing and confinement coverage
+        run: pnpm --dir packages/smithers/flows/platform-node exec vitest run test/DeclaredDirectoryListing.test.ts test/ProcessSandbox.test.ts --coverage.include=src/ProcessSandbox.ts
+      - name: Verify CLI outputs, cache, comparison, and denials
+        run: pnpm --dir packages/smithers/build/build-cli exec vitest run test/WindowsConfinement.test.ts --coverage.enabled=false
+  windows-wsl2:
+    name: Windows WSL2 confined CLI
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - name: Verify WSL2 provisioning contract
+        run: node --test .github/scripts/windows-confinement.test.mjs
+      - name: Install the native Windows test launcher
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      # Docker Desktop is unsupported on Windows Server. WSL2 supplies the
+      # supported Linux kernel/bubblewrap backend; this is explicitly a WSL2
+      # run, not evidence of native win32 Docker confinement. WSL1 cannot pass.
+      # https://learn.microsoft.com/windows/wsl/install-on-server
+      # windows-2025 already enables WSL2; installing the distribution needs no reboot.
+      # https://github.com/actions/runner-images/blob/main/images/windows/Windows2025-Readme.md
+      - name: Provision WSL2
+        shell: pwsh
+        run: |
+          function Assert-Wsl2Kernel([string] $Kernel) {
+            if ($Kernel.Trim() -notmatch '^[0-9]+\.[0-9]+\.[0-9]+[\w.+-]*-microsoft-standard-WSL2\z') {
+              throw "Expected a running WSL2 kernel, received: $Kernel"
+            }
+            Write-Host "WSL2 kernel: $($Kernel.Trim())"
+          }
+          wsl --update --web-download
+          if ($LASTEXITCODE -ne 0) { throw 'WSL update failed' }
+          wsl --set-default-version 2
+          if ($LASTEXITCODE -ne 0) { throw 'WSL2 is unavailable' }
+          wsl --install --distribution Ubuntu-24.04 --no-launch --web-download
+          if ($LASTEXITCODE -ne 0) { throw 'Ubuntu installation failed' }
+          # Converting an already-WSL2 distro returns WSL_E_VM_MODE_INVALID_STATE.
+          # Launch it and verify the running kernel instead of converting it again.
+          $kernel = wsl --distribution Ubuntu-24.04 --user root --exec uname -r
+          if ($LASTEXITCODE -ne 0) { throw 'WSL2 launch failed' }
+          Assert-Wsl2Kernel (($kernel -join "`n").Trim())
+          wsl --list --verbose
+          if ($LASTEXITCODE -ne 0) { throw 'WSL inspection failed' }
+      - name: Install the WSL2 toolchain and checkout
+        shell: pwsh
+        run: |
+          $script = @'
+          set -euo pipefail
+          source_root="$(wslpath -u "$1")"
+          apt-get update
+          apt-get install -y bubblewrap ca-certificates curl git libatomic1 xz-utils
+          bwrap --version
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          useradd --create-home --shell /bin/bash confinement
+          mkdir -p /home/confinement/workspace
+          tar -C "$source_root" --exclude=.git --exclude=node_modules -cf - . | tar -C /home/confinement/workspace -xf -
+          cd /home/confinement/workspace
+          node_version="$(tr -d '\r\n' < .node-version)"
+          archive="node-v${node_version}-linux-x64.tar.xz"
+          curl --fail --location --output "/tmp/$archive" "https://nodejs.org/dist/v${node_version}/$archive"
+          curl --fail --location --output /tmp/node-checksums "https://nodejs.org/dist/v${node_version}/SHASUMS256.txt"
+          (cd /tmp && grep "  $archive\$" node-checksums | sha256sum --check --strict -)
+          tar -xJf "/tmp/$archive" --strip-components=1 -C /usr/local
+          node --version
+          package_manager="$(node -p 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).packageManager')"
+          npm install --global "$package_manager"
+          curl --fail --location --output /tmp/jj.tar.gz https://github.com/jj-vcs/jj/releases/download/v0.39.0/jj-v0.39.0-x86_64-unknown-linux-musl.tar.gz
+          echo '8da8d96e9c8696c21ad47847a63d533e249acb0449d9af0f0562b5ea7b024f04  /tmp/jj.tar.gz' | sha256sum --check --strict -
+          tar -xzf /tmp/jj.tar.gz -C /usr/local/bin ./jj
+          jj --version
+          chown -R confinement:confinement /home/confinement/workspace
+          runuser -u confinement -- bash -c 'cd /home/confinement/workspace && pnpm install --frozen-lockfile --ignore-scripts'
+          '@
+          $path = Join-Path $env:RUNNER_TEMP 'windows-confinement-setup.sh'
+          [System.IO.File]::WriteAllText($path, $script.Replace("`r", ''), [System.Text.UTF8Encoding]::new($false))
+          wsl --distribution Ubuntu-24.04 --user root --cd $env:RUNNER_TEMP --exec bash windows-confinement-setup.sh $env:GITHUB_WORKSPACE
+          if ($LASTEXITCODE -ne 0) { throw 'WSL2 toolchain provisioning failed' }
+      - name: Execute confined fixtures from native Windows through WSL2
+        env:
+          SMITHERS_WSL_WORKSPACE: /home/confinement/workspace
+        run: pnpm --dir packages/smithers/build/build-cli exec vitest run test/WindowsConfinement.test.ts --coverage.enabled=false
+      - name: Verify declared directory traversal and coverage in WSL2
+        shell: pwsh
+        run: |
+          wsl --distribution Ubuntu-24.04 --user confinement --cd /home/confinement/workspace --exec pnpm --dir packages/smithers/flows/platform-node exec vitest run test/DeclaredDirectoryListing.test.ts test/ProcessSandbox.test.ts --coverage.include=src/ProcessSandbox.ts
+          if ($LASTEXITCODE -ne 0) { throw 'WSL2 declared traversal failed' }

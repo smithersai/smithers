@@ -6,9 +6,12 @@ import { FlowDispatch } from "../../flows/dispatch"
 import { signedInShapeSource } from "../auth/source"
 import { AuthStore } from "../auth/store"
 import { ChatStore } from "../chat/store"
+import { ConversationOwners } from "../conversations/owners"
 import { RUNS_SHAPE_ROUTE } from "./contract"
-import { deliveriesQuery, latestQuery, statusesQuery, waitsQuery } from "./queries"
+import { deliveriesQuery, latestQuery, shownRunsQuery, statusesQuery, waitsQuery } from "./queries"
 import { Local, Run } from "./schema"
+import type { Message } from "../chat/schema"
+import type { Source } from "../repo/gate"
 
 // Agent status on this tab (decision 0015, docs/features/agent-status.md#the-browser): the person's `runs`, synced by
 // Electric and kept on the device; this tab's own rows about each question; the live queries the views read, each
@@ -53,14 +56,22 @@ export interface ConversationStatus {
 export class StatusStore extends Context.Service<
   StatusStore,
   {
+    /** The person's runs as they sync: the feature's own followers', never shown as they are. */
     readonly runs: ElectricCollection.ElectricCollection<Run>
     readonly local: Collection.Collection<Local, string>
     /** The home conversation's statuses. */
     readonly statuses: Success<typeof statusesQuery>
     /** The home conversation's latest answer. */
     readonly latest: Success<typeof latestQuery>
-    /** `core/waits`: the open waits addressed to the person, in every conversation, oldest first (decision 0017); the title counts these. */
+    /**
+     * `core/waits`: the open waits addressed to the person, oldest first (decision 0017), of the home conversation and of
+     * each conversation whose repository may show (the data gate, `shownRunsQuery`); the title counts these.
+     */
     readonly waits: Success<typeof waitsQuery>
+    /** The person's runs whose conversation may show (`shownRunsQuery`): what a page lists of them, never `runs`. */
+    readonly shownRuns: Success<typeof shownRunsQuery>
+    /** The home conversation's messages: a wait whose run is one of them is the person's own (the plugin host's gate). */
+    readonly homeMessages: ChatStore["Service"]["messages"]
     /** A branch conversation's status, once chat has opened it; kept for as long as the store lives. */
     readonly opened: (conversationId: string) => ConversationStatus | undefined
     /** Where the background work an action starts runs. */
@@ -82,15 +93,19 @@ export class StatusStore extends Context.Service<
           schema: Run,
           getKey: (row) => row.id,
           syncMode: "eager",
-          persist: { schemaVersion: 2 },
+          // Version 3: a run names its conversation (`conversationId`), what its wait shows through.
+          persist: { schemaVersion: 3 },
           shape: {
             url: `${config.origin}${RUNS_SHAPE_ROUTE}`,
             columnMapper: ElectricCollection.snakeCamelMapper(),
           },
         }).pipe(Effect.provideService(ShapeSource.ShapeSource, signedInShapeSource(yield* ShapeSource.ShapeSource, yield* AuthStore)))
         const local = yield* Collection.local<Local, string>({ id: "status-local", schema: Local, getKey: (row) => row.id })
-        const statuses = yield* statusesQuery(messages, runs, local)
-        const waits = yield* waitsQuery(messages, runs)
+        const statuses = yield* statusesQuery(chat.shownMessages as unknown as Source<Message>, runs, local)
+        // A wait shows only through its run's conversation (decision 0110, the data gate): the home conversation's, or one
+        // whose repository may show now. A run of a conversation this device has no row of shows no wait.
+        const shownRuns = yield* shownRunsQuery(chat.shownMessages as unknown as Source<Message>, runs, (yield* ConversationOwners).shown as unknown as Source<{ readonly conversationId: string }>)
+        const waits = yield* waitsQuery(messages, shownRuns as unknown as Source<Run>)
         const latest = yield* latestQuery(statuses)
         const deliveries = yield* deliveriesQuery(runs)
 
@@ -99,7 +114,8 @@ export class StatusStore extends Context.Service<
         const branches = new Map<string, ConversationStatus>()
         yield* chat.forEachOpened((opened) =>
           Effect.gen(function* () {
-            const branchStatuses = yield* statusesQuery(opened.messages, runs, local)
+            // Through the data gate: a branch's statuses carry its waits' prompts, options and answers (Astra on 0c7b9f01).
+            const branchStatuses = yield* statusesQuery(opened.shownMessages as unknown as Source<Message>, runs, local)
             branches.set(opened.conversationId, { statuses: branchStatuses, latest: yield* latestQuery(branchStatuses) })
           }).pipe(
             Scope.provide(scope),
@@ -145,6 +161,8 @@ export class StatusStore extends Context.Service<
           statuses,
           latest,
           waits,
+          shownRuns,
+          homeMessages: messages,
           opened: (conversationId) => branches.get(conversationId),
           scope,
         })

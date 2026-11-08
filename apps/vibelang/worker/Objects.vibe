@@ -1,0 +1,165 @@
+// What each Durable Object runs, whoever hosts it: the Alchemy objects the API Worker deploys (Api.vibe) and the plain
+// ones the workerd test runs (test/workerd/worker.vibe). Both hosts hand it the object's own storage and the budget's
+// caller, so they run the same code.
+//
+//   Conversation (one per conversation)   the sequencer; each post's flow, run in the request that posts it; and the
+//                                         reply flow of the post it answers now: its intent and alarm
+//                                         (`ExecutionObject`). Every journal lives in the object's SQLite.
+//   Budget (one per UTC day)              the day's token ledger
+//
+// A conversation answers one post at a time, so one execution per object is enough, and the flow's steps reach the
+// sequencer in the same object. When a reply settles its execution is forgotten at the next alarm, which then starts
+// the next unanswered post's.
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowRuntime } from "@smthrs/flow"
+import { CloudflareRuntime, ExecutionObject, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { SecureRandom } from "effect/crypto"
+import { Post, postRegistration, Posts, Reply } from "../src/core/flows.vibe"
+import * as Budget from "./Budget.vibe"
+import { ledgerOver, logOver, type KeyValue } from "./ObjectStorage.vibe"
+import { ChatModel, registration, Replies, Spend } from "./Reply.vibe"
+import * as Sequencer from "./Sequencer.vibe"
+
+/** A conversation object's storage: key-value for the log and the execution's intent, SQLite for the engine. */
+export type Storage = KeyValue & ObjectDatabase.Storage
+
+/** The reply flow's execution for `post`. Its object is the conversation's, so the post alone names it. */
+export function executionIdOf(post: string): string {
+  return `reply/${post}`
+}
+
+const dispatchedKey = (post: string) => `dispatched/${post}`
+
+/** `ExecutionObject.Storage` over the object's own key-value storage and alarm. */
+export function executionStorage(storage: KeyValue): ExecutionObject.Storage {
+  return {
+    get: <A>(key: string) => promise(() => storage.get(key) as Promise<A | undefined>),
+    put: (key, value) => promise(() => storage.put(key, value)),
+    delete: (key) => promise(() => storage.delete(key)),
+    setAlarm: (scheduledTime) => promise(() => storage.setAlarm(scheduledTime)),
+    deleteAlarm: () => promise(() => storage.deleteAlarm()),
+  }
+}
+
+/**
+ * Starts the reply flow of the first unanswered post this object never started one for. While another execution
+ * is held (running, or settled and not yet forgotten) the start is refused and waits for the next dispatch; a post
+ * whose flow settled without answering it is not started again, so it can't loop.
+ */
+function dispatcher(storage: KeyValue): Sequencer.Dispatch {
+  const executions = executionStorage(storage)
+  return {
+    start: effect (posts: ReadonlyArray<string>) => {
+      for (const post of posts) {
+        if ((try promise(() => storage.get(dispatchedKey(post)))) !== undefined) continue
+        const intent = try Effect.orDie(ExecutionObject.intent(Reply, { executionId: executionIdOf(post), payload: { post } }))
+        const started = try Effect.match(ExecutionObject.start(executions, intent, Effect.void), {
+          onFailure: () => false,
+          onSuccess: () => true,
+        })
+        try Effect.logInfo("vibelang.dispatch").pipe(Effect.annotateLogs({ outcome: started ? "started" : "waiting", post }))
+        if (started) try promise(() => storage.put(dispatchedKey(post), true))
+        return
+      }
+    },
+  }
+}
+
+/** The conversation's sequencer over its object's storage. */
+export function conversation(storage: KeyValue) {
+  return Sequencer.make(logOver(storage), dispatcher(storage))
+}
+
+/** The day's budget over its object's storage. */
+export function budget(storage: KeyValue, limit: number) {
+  return Budget.make(ledgerOver(storage), limit)
+}
+
+/** The sequencer as a post flow's steps reach it: record the post, then dispatch its reply. */
+export function postsOf(sequencer: Sequencer.Sequencer): Posts.Shape {
+  return { record: sequencer.post, dispatch: sequencer.ensureDispatched }
+}
+
+/** A post flow's execution: one per request, so a repeated client id meets the sequencer's `duplicate` as before. */
+export effect function postExecutionId() {
+  provide WebCrypto.layer {
+    return `post/${try (try SecureRandom.SecureRandom).uuidV4()}`
+  }
+}
+
+/**
+ * Runs a person's post as a `vibelang/Post` execution on the engine in the object's SQLite, in the request that
+ * posts it (0011): it answers once the post is recorded and its reply dispatched, never after the model. `null` once
+ * recorded, else the sequencer's refusal.
+ */
+export effect function post(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, clientId: string, name: string, text: string) {
+  const executionId = try postExecutionId()
+  const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: Post._tag }, postRegistration).pipe(
+    Layer.provide(ObjectDatabase.layer(storage)),
+    Layer.provide(Layer.succeed(Posts, postsOf(sequencer))),
+  )
+  // The engine's store failing to open is a defect, as the log failing to write is: the post was not answered.
+  return try Effect.orDie(execute(runtime, executionId, { clientId, name, text }))
+}
+
+effect function execute<E>(
+  runtime: Layer.Layer<FlowRuntime.FlowRuntime, E>,
+  executionId: string,
+  payload: { readonly clientId: string; readonly name: string; readonly text: string },
+) {
+  provide runtime {
+    const engine = try FlowRuntime.FlowRuntime
+    return try engine.execute(Post, { executionId, payload })
+  }
+}
+
+/** The sequencer as the reply flow's steps reach it. */
+export function repliesOf(sequencer: Sequencer.Sequencer): Replies.Shape {
+  return {
+    start: sequencer.start,
+    history: sequencer.history,
+    append: sequencer.append,
+    restart: sequencer.restart,
+    finish: sequencer.finish,
+    fail: sequencer.fail,
+  }
+}
+
+/** A reply execution starts no child flow and hands off to no round, so routing anything is a defect. */
+export const unrouted: ExecutionObject.Router = {
+  start: (intent) => die(new Error(`vibelang/Reply routed a start of ${intent.executionId}`)),
+  wake: (executionId) => die(new Error(`vibelang/Reply routed a wake of ${executionId}`)),
+}
+
+/** A settled reply's execution is forgotten at its next alarm, so the next post's can start. */
+export const SETTLED_RETENTION_MS = 0
+
+/**
+ * One alarm of a conversation's object: drives its reply execution in the engine over the object's SQLite, then
+ * dispatches the next post. `hostId` is the object's id, the same for every incarnation.
+ */
+export effect function alarm(
+  hostId: string,
+  storage: Storage,
+  sequencer: Sequencer.Sequencer,
+  spend: Spend.Shape,
+  model: ChatModel.Shape,
+) {
+  const services = Layer.mergeAll(
+    Layer.succeed(Replies, repliesOf(sequencer)),
+    Layer.succeed(Spend, spend),
+    Layer.succeed(ChatModel, model),
+  )
+  const outcome = try ExecutionObject.alarm(executionStorage(storage), {
+    flows: [Reply],
+    runtime: (intent) =>
+      CloudflareRuntime.layer({ hostId, executionId: intent.executionId, flow: intent.flow }, registration).pipe(
+        Layer.provide(ObjectDatabase.layer(storage)),
+        Layer.provide(services),
+      ),
+    router: unrouted,
+    settledRetentionMs: SETTLED_RETENTION_MS,
+  })
+  try sequencer.ensureDispatched()
+  return outcome
+}

@@ -1,0 +1,110 @@
+import { chromium, expect } from "@playwright/test"
+import { homedir } from "node:os"
+import { join } from "node:path"
+import { leaseProfile } from "./deployment/lease"
+import { github, pollGitHub } from "./github"
+import { redactRequestErrors } from "./redact"
+import { me } from "./target"
+
+export interface ReviewPull {
+  readonly number: number
+  readonly state: string
+  readonly draft: boolean
+  readonly user: { readonly login: string }
+  readonly head: { readonly sha: string; readonly ref: string }
+  readonly base: { readonly ref: string }
+}
+
+/** Fixture setup only: the test account's GitHub profile, leased and never recorded, as in deployment sign-in. */
+const onGitHub = async <A>(repository: string, use: (page: import("@playwright/test").Page) => Promise<A>): Promise<A> => {
+  const stage = (value: string) => console.info("pull-review.fixture", { repository, stage: value })
+  stage("lease")
+  const lease = await leaseProfile(process.env.E2E_GITHUB_PROFILE ?? join(homedir(), ".multi-e2e-profile"))
+  try {
+    stage("launch")
+    const browser = await chromium.launchPersistentContext(lease.path, { headless: true, timeout: 30_000 })
+    try {
+      redactRequestErrors(browser.request)
+      browser.setDefaultTimeout(30_000)
+      browser.setDefaultNavigationTimeout(60_000)
+      stage("new-page")
+      const page = await browser.newPage()
+      page.setDefaultTimeout(30_000)
+      page.setDefaultNavigationTimeout(60_000)
+      stage("sign-in")
+      const response = await page.goto("https://github.com/", { waitUntil: "domcontentloaded" })
+      const path = new URL(page.url()).pathname
+      console.info("pull-review.fixture.auth", {
+        repository,
+        status: response?.status(),
+        page: path === "/" ? "home" : path === "/login" ? "login" : path.startsWith("/sessions/") ? "session-challenge" : "other",
+        loginMeta: await page.locator('meta[name="user-login"]').count(),
+      })
+      expect(await page.locator('meta[name="user-login"]').getAttribute("content"), "fixture writes use only the test account").toBe(me().login)
+      return await use(page)
+    } finally {
+      stage("close")
+      await browser.close()
+    }
+  } finally {
+    stage("release")
+    await lease.release()
+  }
+}
+
+/** Reuses a valid fixture; `fresh` advances its head so this run must execute a new review. Never merges. */
+export const prepareReviewPull = (repository: string, fresh = false): Promise<ReviewPull> => onGitHub(repository, async (page) => {
+  expect(repository).toMatch(/^[\w.-]+\/[\w.-]+$/)
+  expect(repository).not.toMatch(/^smithersai\//i)
+  const read = <A>(path: string): Promise<A> => github<A>(page, `/repos/${repository}${path}`)
+  const stage = (value: string) => console.info("pull-review.fixture", { repository, stage: value })
+  stage("read")
+  const prefix = "smithers-e2e-pull-review-"
+  const open = await read<ReadonlyArray<ReviewPull>>("/pulls?state=open&per_page=100")
+  const candidates = open.filter((pull) => !pull.draft && pull.user.login === me().login && pull.head.ref.startsWith(prefix))
+  const content = `Pull request review production proof.\nA person merges this fixture.\nProof run: ${crypto.randomUUID()}\n`
+  for (const existing of candidates) {
+    const file = `e2e/${existing.head.ref}.txt`
+    const files = await read<ReadonlyArray<{ filename: string; status: string }>>(`/pulls/${existing.number}/files?per_page=100`)
+    if (!files.some((entry) => entry.filename === file && entry.status !== "removed")) continue
+    if (!fresh) return existing
+    stage("refresh")
+    await page.goto(`https://github.com/${repository}/edit/${existing.head.ref}/${file}`, { waitUntil: "domcontentloaded" })
+    await page.getByRole("textbox", { name: /file content/i }).or(page.locator('[contenteditable="true"]')).filter({ visible: true }).first().fill(content)
+    await page.getByRole("button", { name: /^Commit changes/ }).click()
+    const dialog = page.getByRole("dialog")
+    await expect(dialog).toBeVisible()
+    const direct = dialog.getByRole("radio", { name: /commit directly/i })
+    if (await direct.count() > 0) await direct.check()
+    else await expect(dialog.getByRole("radio", { name: /create a new branch/i })).toHaveCount(0)
+    await dialog.getByRole("button", { name: "Commit changes", exact: true }).click()
+    await expect(dialog).not.toBeVisible()
+    const current = await pollGitHub(() => read<ReviewPull>(`/pulls/${existing.number}`), (pull) => pull.head.sha !== existing.head.sha)
+    return current
+  }
+  const facts = await read<{ default_branch: string }>("")
+  const branch = `${prefix}${Date.now()}`
+  const file = `e2e/${branch}.txt`
+  stage("new-file")
+  await page.goto(`https://github.com/${repository}/new/${facts.default_branch}?filename=${file}`, { waitUntil: "domcontentloaded" })
+  // `filename` in the URL supplies the path; GitHub's editor label varies between layouts.
+  await page.getByRole("textbox", { name: /file content/i }).or(page.locator('[contenteditable="true"]')).filter({ visible: true }).first().fill(content)
+  await page.getByRole("button", { name: /^Commit changes/ }).click()
+  stage("propose")
+  const dialog = page.getByRole("dialog")
+  await dialog.getByRole("radio", { name: /create a new branch/i }).check()
+  await dialog.getByRole("textbox", { name: "PR target branch", exact: true }).fill(branch)
+  await dialog.getByRole("button", { name: /^(Propose changes|Commit changes)$/ }).click()
+  await expect(dialog).not.toBeVisible()
+  stage("open-pull")
+  await page.goto(`https://github.com/${repository}/compare/${facts.default_branch}...${branch}?quick_pull=1`, { waitUntil: "domcontentloaded" })
+  await page.getByRole("textbox", { name: /title/i }).fill("Smithers e2e: pull request review")
+  await page.getByRole("button", { name: "Create pull request", exact: true }).last().click()
+  await page.waitForURL((url) => url.pathname.startsWith(`/${repository}/pull/`) && /^\d+$/.test(url.pathname.slice(`/${repository}/pull/`.length)), { waitUntil: "domcontentloaded" })
+  const number = Number(new URL(page.url()).pathname.split("/").at(-1))
+  const pull = await read<ReviewPull>(`/pulls/${number}`)
+  expect(pull.state).toBe("open")
+  expect(pull.user.login).toBe(me().login)
+  expect(pull.head.ref).toBe(branch)
+  return pull
+})

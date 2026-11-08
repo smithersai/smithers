@@ -283,7 +283,11 @@ const trackGroup = (
 
 /** What `ps` says of process `pid`: gone, its command and seconds since it started, or `uncertain` if `ps` couldn't tell. */
 const processOf = (pid: number) => {
-  const ran = spawnSync("ps", ["-o", "etime=,comm=", "-p", String(pid)], { encoding: "utf8" })
+  const ran = spawnSync("ps", ["-o", "etime=,comm=", "-p", String(pid)], {
+    encoding: "utf8",
+    timeout: 5000,
+    maxBuffer: 64 * 1024
+  })
   const line = (ran.stdout ?? "").trim()
   // `ps` exits 1 and prints nothing for a process that isn't there; anything else says nothing about it.
   if (ran.error !== undefined || ran.status === null || ran.status > 1) return { _tag: "uncertain" } as const

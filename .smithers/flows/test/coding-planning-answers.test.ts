@@ -1,5 +1,4 @@
 import { NodeCrypto } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, HumanTask, Interpreter } from "@smthrs/flow"
 import { Effect, Layer, ManagedRuntime } from "effect"
@@ -126,7 +125,7 @@ const host = (clarification: string, gather = () => context, onAnswer: () => voi
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Layer.provideMerge(NodeCrypto.layer)
   )
   return { runtime: ManagedRuntime.make(layer), seen }
 }

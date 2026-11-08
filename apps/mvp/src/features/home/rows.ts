@@ -39,6 +39,8 @@ export type CuratedRow = typeof CuratedRow.Type
 /** One Markdown block's file, keyed `<homeKey>:<path>`: loading, its text, or failed (missing, binary, too large). */
 export const FileRow = Schema.Struct({
   key: Schema.String,
+  /** The repository it was read from (`github/owner/name`): what the data gate joins (repo/gate.ts). */
+  repoId: Schema.String,
   home: Schema.String,
   path: Schema.String,
   state: Schema.Literals(["loading", "text", "failed"]),

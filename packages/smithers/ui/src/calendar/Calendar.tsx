@@ -10,11 +10,11 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { safeHref } from "../internal/safeHref";
 import { Button } from "../button";
 import { EmptyState } from "../empty-state";
-import { statusColor } from "../status";
+import { statusColor } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { RelativeTime } from "../time/RelativeTime";
 import {

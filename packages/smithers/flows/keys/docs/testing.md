@@ -5,7 +5,7 @@ description: "Test code that derives keys: provide a deterministic Crypto layer,
 
 Derivation reads no clock, opens no socket, and touches no disk. The same input
 produces the same key every time, so a test that derives one is an ordinary
-unit test. The only thing it needs is a `Crypto` service.
+unit test. The only thing it needs is a `Digest` service.
 
 ## Provide a Crypto layer
 
@@ -15,18 +15,18 @@ package, and because it does not suspend you can drive the whole test with
 
 ```ts
 import { syncCrypto } from "@smthrs/crypto"
-import { Crypto } from "@smthrs/crypto"
 import { deriveKey } from "@smthrs/keys"
+import * as Crypto from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 
-const crypto = Layer.succeed(Crypto.Crypto)(syncCrypto)
+const crypto = Layer.succeed(EffectDigest.Digest)(syncCrypto)
 
 const key = (material: unknown) => Effect.runSync(deriveKey(material).pipe(Effect.provide(crypto)))
 ```
 
 A platform layer works the same way and produces the same keys: SHA-256 is
-SHA-256. Use `Crypto.layerFromDigest(NodeCrypto.layerDigest)` from `@effect/platform-node` when the code under
+SHA-256. Use `NodeCrypto.layer` from `@effect/platform-node` when the code under
 test already composes one.
 
 ## Assert on the key itself
@@ -70,14 +70,14 @@ it("refuses material with no canonical form", () => {
 })
 ```
 
-The other code belongs to the host, so reach it with a `Crypto` service that
+The other code belongs to the host, so reach it with a `Digest` service that
 refuses to hash:
 
 ```ts
 import * as PlatformError from "effect/PlatformError"
 
 const brokenCrypto = Layer.succeed(
-  Crypto.Crypto,
+  EffectDigest.Digest,
   Crypto.make({
     randomBytes: (size) => new Uint8Array(size),
     digest: () => Effect.fail(PlatformError.systemError({ _tag: "Unknown", module: "test-host", method: "digest" }))

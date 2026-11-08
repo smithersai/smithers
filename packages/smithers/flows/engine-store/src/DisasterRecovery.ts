@@ -38,9 +38,11 @@
  */
 
 import * as ArtifactBackupLease from "@smthrs/artifacts/ArtifactBackupLease"
-import { type Crypto, Sha256 } from "@smthrs/crypto"
+import { Sha256 } from "@smthrs/crypto"
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import * as Clock from "effect/Clock"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import type * as Layer from "effect/Layer"
@@ -343,7 +345,9 @@ const sqlFailure = (method: string, subject: string) => (cause: unknown): Disast
   error(method, "sql", `the database refused ${subject}`, cause)
 
 /** Hashes bytes with the injected crypto service; a broken host is a defect. */
-const measure = (bytes: Uint8Array): Effect.Effect<typeof Sha256.Digest.Type, never, Crypto.Crypto> =>
+const measure = (
+  bytes: Uint8Array
+): Effect.Effect<typeof Sha256.Digest.Type, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Schema.decodeUnknownEffect(Sha256)(bytes).pipe(Effect.orDie)
 
 /** Resolves and validates the shared whole-file buffering ceiling. */
@@ -504,7 +508,7 @@ const readManifest = (
   method: string,
   backupDirectory: string,
   maxFileSizeBytes: number
-): Effect.Effect<BackupManifest, DisasterRecoveryError, Crypto.Crypto> =>
+): Effect.Effect<BackupManifest, DisasterRecoveryError, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Effect.gen(function*() {
     const path = `${backupDirectory}/${manifestFileName}`
     const present = yield* fs.exists(path).pipe(Effect.mapError(ioFailure(method, `probing ${path}`)))
@@ -529,7 +533,7 @@ const checkedFile = (
   path: string,
   expected: string,
   maxFileSizeBytes: number
-): Effect.Effect<Uint8Array, DisasterRecoveryError, Crypto.Crypto> =>
+): Effect.Effect<Uint8Array, DisasterRecoveryError, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Effect.gen(function*() {
     const present = yield* fs.exists(path).pipe(Effect.mapError(ioFailure(method, `probing ${path}`)))
     if (!present) {
@@ -573,7 +577,7 @@ export const backup = <R = never, E = never>(
 ): Effect.Effect<
   BackupManifest,
   DisasterRecoveryError | E,
-  SqlClient.SqlClient | FileSystem.FileSystem | Crypto.Crypto | R
+  SqlClient.SqlClient | FileSystem.FileSystem | (EffectDigest.Digest | SecureRandom.SecureRandom) | R
 > =>
   Effect.gen(function*() {
     const limit = fileSizeLimit("backup", options)
@@ -731,7 +735,7 @@ const writeRestoredStore = (
   options: RestoreOptions,
   manifest: BackupManifest,
   maxFileSizeBytes: number
-): Effect.Effect<RestoredStore, DisasterRecoveryError, Crypto.Crypto> =>
+): Effect.Effect<RestoredStore, DisasterRecoveryError, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Effect.gen(function*() {
     const databaseBytes = yield* checkedFile(
       fs,
@@ -904,7 +908,11 @@ export const fence = Effect.fn("DisasterRecovery.fence")(function*(manifest: Bac
  */
 export const restoreAndFence = <R = never, E = never>(
   options: RestoreAndFenceOptions<R, E>
-): Effect.Effect<FencedRestoredStore, DisasterRecoveryError | E, FileSystem.FileSystem | Crypto.Crypto | R> =>
+): Effect.Effect<
+  FencedRestoredStore,
+  DisasterRecoveryError | E,
+  FileSystem.FileSystem | (EffectDigest.Digest | SecureRandom.SecureRandom) | R
+> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const restored = yield* restore(options)

@@ -24,7 +24,7 @@ complete bounded admission, health checks, and interruption receipts.
 
 ## Chosen design
 
-1. Allocate/repair new numeric identities against fetched main at landing.
+1. Allocate/repair new numeric identities against fetched main during explicit sync.
    Preserve every identity already on main; refuse edits to historical
    migration identities. Rewrite only the incoming lane's references and
    validate duplicate numbers and registry membership. Existing numbered
@@ -37,7 +37,7 @@ complete bounded admission, health checks, and interruption receipts.
    sync only the invoking workspace; preserve files before stale recovery;
    never update another workspace. Serialize landing with the existing mkdir
    lock and bounded waits, owner diagnostics, and guaranteed cleanup.
-4. Land a named change after fetch/rebase, conflict checks and preparation;
+4. Gate a named commit without changing the workspace; land after conflict checks;
    advance main only by ancestry, push, verify remote ancestry, print its id.
    Readiness is established by file/content predicates, never mutable commit ids.
 5. Version the farm scripts, diagnose hosts read-only, and add bounded health,
@@ -190,9 +190,10 @@ be written the override refuses, and the tool never creates it. So the override
 works only on the host that has the inbox, the Mac. On nyc-01, which has no
 `~/.vibe-orch`, it refuses; get a receipt there, or land on the Mac.
 
-**One lock.** `commit.mjs` moves main under `main-push.lock`, as `land` does, so
-neither can move main between the other's gate and push, and both re-read main
-before pushing. The lock is per host. A land from another host doesn't serialize
+**One queue.** `commit.mjs`, `workspace.mjs land` and issue-sweep take the same FIFO lease
+after the full affected gate. Workspace landing first syncs and regenerates the
+target index under the lease, then inspects the receipt, typechecks, validates
+and pushes. Both entrypoints retain their final main/source checks. The lock is per host. A land from another host doesn't serialize
 with the Mac's; a moved main then fails the push.
 
 **The required list** names the areas where most files decide who may act or what
@@ -210,31 +211,253 @@ gate, because the list is itself on it.
 worker, infra and evals projects, and `--validated` doesn't skip it. `vibelang -p
 tsconfig.json` alone skips worker tests, which let a type error reach main twice
 in two days (7ee5a29a, ab1b52fd). It runs on the farm with no local install and
-before `main-push.lock` is held: `SMITHERS_MINI_RUN` with five seconds of admission, then
-`SMITHERS_LAT_RUN` if the mini has no slot or doesn't answer. A type error refuses
+while its FIFO lease is held: `SMITHERS_MINI_RUN` with five seconds of admission, then
+`SMITHERS_LAT_RUN` if the mini has no slot or doesn't answer, then cfbox if neither answers.
+Cfbox stages only `jj file list` source and sources the Cloud CI bootstrap
+helpers to install verified supported Node and pinned pnpm. It runs
+`pnpm install --frozen-lockfile` with install scripts at the root after the shared
+CI bootstrap, then `pnpm typecheck` in `apps/mvp` with the same receipt, and removes
+its staging tree after success, failure or cancellation. A failed install emits
+no typecheck receipt. All three clients failing refuses the land. A type error refuses
 the land. So does a farm that can't answer: the check counts only if the command's
 own `SMITHERS_TYPECHECK_EXIT` line comes back, because a client that skips a
 package also exits 0. Rerun when the farm has capacity. `commit.mjs --push` also
 binds publication to the tree its checks saw: an edit made after they ran, such as
-while it waits for the lock, refuses the push. Latitude classifies the command as
+during validation, refuses the push. Latitude classifies the command as
 light, so it needs no heavy-test permit. `mini-run` starts its admission clock after
 its health check and sweeps the slots once even with no wait; the target index
 also gets five seconds, because an older `mini-run` read 0 as already expired and
 sent every land to cfbox.
 
+## The land's affected tests
+
+`workspace.mjs land` and `commit.mjs --push` test the exact stored commit
+against its fork point with the observed main, before taking a FIFO ticket or
+lease (`.smithers/flows/land/affected.mjs`). A change behind main is valid input.
+The gate never syncs, rebases, regenerates files or snapshots the working copy.
+Workspace landing syncs and regenerates the index only after admission, before
+inspecting the receipt. A rebased head with a newer main proceeds as
+`gate: incomplete, stage=main-advanced`. Waiting for the affected gate's farm
+capacity holds no publication lease.
+
+A completed run writes a mode-600 receipt under `.jj/affected-receipts/`
+(the legacy adapter uses its Git directory), recording the observed main,
+immutable head and exact diff hash, including entry types, executable bits and
+symlink targets. The gate exports that commit's stored bytes for execution.
+
+After FIFO admission, receipt inspection has three outcomes:
+
+- A refused receipt or proven regression refuses, even if main has since moved:
+  the failure was proven on this change's own diff.
+- Passed evidence for the same diff and main prints `gate: passed`.
+- Everything else proceeds with `gate: incomplete, stage=<stage>`:
+  `main-advanced` when main moved, `source-changed` when the diff changed,
+  `receipt-unreadable` for missing, unreadable or malformed evidence, or the
+  incomplete gate's own stage.
+
+Only proven failure blocks the affected gate. Over 72 h, 67 percent of gaps
+between apps/mvp lands were under 12 minutes, so a receipt is often stale by the
+time it is read. Stale evidence proceeds with completed proof counts and the
+same `land-log.jsonl` and proxy inbox audit used for other incomplete outcomes.
+`--validated` remains an annotation; it cannot create a passing receipt.
+The existing typecheck, explicit validation and publication protections remain.
+Publication requires remote main to be an ancestor of the candidate under the
+FIFO lease; a divergent change can still be gated at its fork point.
+
+
+The affected set is every test target in
+`.smithers/target-index.json` whose declared inputs read a changed path, every test target of a workspace package that depends on a
+changed executable input by `package.json` (membership as `pnpm-workspace.yaml` declares it; a
+version range counts, since `linkWorkspacePackages` links it), and every target depending on one of those, transitively; plus all of
+apps/mvp's Vitest files, which no index target declares, when the change reaches
+apps/mvp: its files, a package it depends on, an `//apps/mvp` target the index reaches,
+or `packages/repo-targets/test-utils`. A shared file (`package.json`,
+`pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.npmrc`, `.pnpmfile.mjs`, the Node version files, a root
+`tsconfig*.json`, `patches/`, `.smithers/WORKSPACE.ts` or `.smithers/environment.nix`)
+owes every package's tests. `--test` adds commands to
+the set and `--validated` records a receipt; neither shrinks it. A change that deletes
+or breaks the index or `apps/mvp/vitest.config.ts`, or a config whose `test.include`
+isn't one list of plain string literals using `**`, `*` and `{a,b}` in the default
+export, each object the whole value and every member `name: value`, set once with no
+spread, merge, computed key, getter, method or
+projects that could replace it,
+leaves the affected gate incomplete. So does a change to a path the farm clients
+never copy to a host (`.npmrc`, `.env*`, keys, build output, media): no test there
+could see it. These are missing proof, not proven regressions.
+
+Documentation directories, conventional documentation filenames and the generated
+target index do not change their enclosing package's runtime. Markdown and text
+fixtures/templates remain runtime inputs, including fixture README files.
+Their explicitly declared readers still run, including readers declared in apps/mvp,
+without activating the full Vitest suite. Whole-tree inventory globs do not spread
+these edits to unrelated tests. An index-only edit runs its index contract, without
+apps/mvp Vitest; a work-note-only edit selects no tests.
+App reach is computed from executable paths separately, so an unrelated code edit
+does not promote a documentation reader into the full app suite.
+
+The gate reports `incomplete` when its suites are fewer than the affected set, naming each
+missing one; a target smthrs skipped or cancelled didn't run and counts as missing.
+Synthetic zero/skip classifications require the runner's flags. Real named
+assertions, including marker-text names, always compare normally with the parent. A
+failure's identity includes its kind as well as its file and name: a synthetic
+parent marker cannot excuse an ordinary assertion with the same title. The runner
+tags reserved-looking assertion titles explicitly and retains a separate module
+error even when its displayed name matches an assertion.
+A Vitest file with zero executed tests blocks only if the change touched it or it ran
+tests on the parent. Unchanged files also zero on the parent are listed in
+`unchangedZeroTestFiles`. Skip reasons and collection errors retain their separate
+identities, so a new collection error is still a regression. A run killed, interrupted, exiting nonzero with no failed test, or with
+an error outside any test (the land's own Vitest reporter records those), and a farm
+client that fails after printing its `SMITHERS_AFFECTED` receipt or prints none, are
+`incomplete` too. A recognized missing-browser error also makes its derived
+zero-test, skipped-file and unnamed-file markers inconclusive; independently named
+failed assertions remain proof. A proven added failure blocks; INCOMPLETE permits the land to
+proceed. It prints the stage and completed target/file/shared-failure counts,
+retains incomplete evidence when writable, and records
+`gate: incomplete, stage=<stage>` in `land-log.jsonl` and the existing proxy
+`[land-override]` inbox line before publication. It never creates a PASS receipt.
+The error retains a stage and retry instruction. Both audit destinations must
+succeed before publication; an incomplete gate cannot hide a failed land-log write.
+A proven regression takes precedence over missing suites or incomplete cleanup.
+Completed head and parent proof survives an incomplete sibling or one that ignores
+cancellation; partial completed counts remain visible. Parent files that finished
+retain their comparison proof when another file lacks a browser. Confirmed shared
+failures count immediately. Every acknowledged cfbox outcome is inspected before
+an incomplete one propagates; interim output cannot cancel later completed proof.
+A parent process that failed without a completed failure identity proves no pass. A failed test
+reruns on a base tree, the fork point's paths with each changed one at its bytes,
+type and mode, on the client that saw it fail (and the same named Latitude server); a test that fails there too is reported and
+doesn't block, and any other failure refuses the land by name. A test is named by its
+file and full title, with its place among tests sharing that title; a file's own error,
+from collection or a suite hook at any depth (the land's Vitest reporter reads each
+module's and suite's errors, which the JSON report drops once a test in the file fails),
+is a failure beside any failed test, named by a hash of its text, and a failed file with
+neither is never excused. The runner starts Vitest and smthrs by node from their bins,
+not through `pnpm exec`, so a test process killed after it reported shows as killed. A failed index target
+counts as one failure for all its tests. It is excused only when that same target
+fails on the base; failure digests need not match. Parent requests use each target's
+declared verb, including `build` for build-only dependencies. A base rerun that crashes
+or skips a suite excuses nothing, and a failing file or target main doesn't have is the
+change's failure. 38ae4a3b landed with 148
+apps/mvp tests red because the lane's validation ran a partial suite list and the land
+ran only the typecheck; this gate, applied to it on 4738de93, refuses it.
+
+The land writes the head commit's blobs (`workspace.mjs`: the tested `@`; `commit.mjs`:
+its validated tree) into one private snapshot, with their modes and
+no export or line-ending filter, and takes the changed paths, both sides of a rename, from that tree and the
+fork point with the observed main, selects from it,
+sends it to every farm run and builds the base tree from it, so an edit made while a
+run waits for capacity can't change what was tested. A jj source exports the full right side of a diff from the empty root,
+without creating a workspace, and reads both rename endpoints with `jj diff`.
+The legacy Git checkout adapter retains its existing store reader. The snapshot has no `.jj` or
+`.git`, so the runner hands `smthrs test` the snapshot's `.smithers` inventory as
+`SMITHERS_TEST_TRACKED_SOURCE_FILE`, with `SMITHERS_TEST_SOURCE_MIRROR=1`, and
+`packages/smithers`' fresh-clone tests run rather than skip. The farm's slot Postgres comes
+as URLs holding the fixture's password, which the workspace's declarations refuse
+(`packages/smithers/flows/engine-store/PACKAGE.ts`), so `smthrs test` runs without those
+and the targets start their own servers. The index targets run as one farm run per declared `hosts` set
+and Docker requirement (including transitive dependencies),
+each only on a client of that platform, and apps/mvp's suite as six Vitest shards, all at
+once.
+
+Boxable runs use `cfbox parallel`, at most seven jobs per batch. App runs use the pg
+image (Postgres, PgBouncer and Electric); metadata-only runs use the base image.
+Both install from the lockfile. `SMITHERS_CFBOX_VIA` chooses the relay. Docker-dependent
+and explicitly platform-specific targets use Latitude, retaining the same server
+and image for parent comparison. The mini fallback has been removed from this gate.
+
+A separate FIFO admission lock (`~/.smithers-lead/affected-pg.lock`, override
+`SMITHERS_AFFECTED_LOCK` for independent fixtures) spans an app gate and its parent
+comparisons. A waiting gate owns no pg boxes. The **whole gate** has a thirty-minute
+wall bound, beginning before selection and content hashing, including admission,
+export, upload, install, parent comparison and cleanup. Execution stops with time
+reserved for child termination. Admission waits at most fifteen minutes within
+that bound; a second gate that cannot get boxes reports INCOMPLETE and proceeds.
+No queue wait can extend the whole-gate bound. Both entrypoints pin the stored
+commit and observed main before testing at their fork point. Synchronous jj
+metadata reads and exports use the remaining timeout alongside the farm clients'
+cancellation signal. If hashing times out before the diff is known, incomplete
+evidence retains the pinned head. Neither entrypoint prepares source.
+
+Pg admission records each local farm client's PID and process start time in
+`external-work.json`. Client exit, including failure or interruption, marks it
+stopped; after every client exits, `external-work-stopped` is written before
+release. Remote boxes have their own lifetime. If a gate is killed, a waiter
+on the same host reclaims it only after the owner and all recorded client
+processes are dead, checking recorded start times against PID reuse. Recovery
+writes the stop receipt and logs owner PID, client count and proof. A live owner,
+a surviving client, an unknown process identity or a remote host retains admission.
+
+
 ## Implemented: workspace and landing lifecycle
 
 `workspace.mjs` creates a private child of fetched immutable main, without
-installing dependencies. Sync and publication coordinate through the legacy
-mkdir lock; target-index preparation and tests run outside it. Publication
-fetches main again and refuses changed source or a changed base, requiring fresh
-sync and validation. Waits are bounded; an unknown owner is never assumed dead. It refuses
+installing dependencies. Admission uses `~/smithers-builders/main-push.lock.queue/`
+(or `${SMITHERS_LAND_LOCK}.queue/`). An atomic numeric `mkdir` claim allocates
+each ticket; permanent claim directories make the sequence monotonic across
+empty queues and crashes. Ticket order never uses mtime. Waiters print their
+position and hold no farm slot. The head also takes the legacy `main-push.lock`
+directory through validation and push, excluding existing bare-mkdir scripts.
+Its owner marker is prepared inside the ticket, then the complete directory is
+published by an exclusive rename that never replaces even an empty legacy lock.
+This requires Python 3's standard-library FFI for macOS `RENAME_EXCL` or Linux
+`RENAME_NOREPLACE`; Node does not expose those flags. Missing support refuses
+acquisition. There is no mkdir-to-owner crash gap or ordinary-rename fallback.
+
+`SMITHERS_LOCK_TIMEOUT_MS` bounds queue admission (default one hour), including
+validation by landers ahead of us. Both bootstrap entry points use the exported
+`defaultLockTimeoutMs` in `lock.mjs`; a healthy validation lasting six minutes
+keeps its waiting ticket through publication.
+`SMITHERS_LOCK_MAX_HOLD_MS` bounds the holder (default fifteen minutes).
+`SMITHERS_LOCK_STALE_MS` is the heartbeat threshold (default one minute), and
+`SMITHERS_LOCK_HEARTBEAT_MS` is the refresh interval (default five seconds; it
+must be shorter than the threshold). Tickets record host, pid, start time,
+hold start and heartbeat. A separate Node heartbeat writer stays responsive
+through synchronous checks and exits when the lander's IPC channel closes.
+
+A waiter reclaims a ticket after heartbeat expiry, max hold, or proof its pid
+is gone on this host, logging its ticket, host, pid and reason. Remote pids
+are never probed. An interrupted ticket initializer is reclaimed after the
+heartbeat threshold. Legacy directories without a queue ticket remain untouched;
+a file, symlink or other non-directory at the legacy path refuses immediately.
+Only this ticket's unique marker can release its legacy lock.
+
+Publication competes atomically with revocation by renaming a prepared, nonempty
+decision directory into place. A decision never appears without its contents.
+An independent supervisor records the publication process group before granting
+permission to execute, and the launcher rechecks ownership and expiry. A lost or
+overrun land refuses publication. The supervisor and launcher enforce the
+remaining lease, capped at one minute, even if the lander is killed. Recovery
+confirms the publication process group has stopped before admitting a successor.
+Process observations without arguments or group members are inconclusive;
+they retain exclusion and record `publisher-probe`, never prove PID reuse or death.
+Stop receipts record their producer, time and proof. The supervisor also closes
+its launcher's own IPC endpoint so it can kill its group without a PID probe.
+On cancellation or deadline the parent also kills its own supervisor directly,
+including a suspended one, then independently confirms the publication group
+stopped. `publisher-stop-requested` records the reason code, producer, supervisor
+pid and time without command arguments or environment values. Unconfirmed
+termination returns an error and retains the ticket and legacy exclusion.
+For a remote publication, only its supervisor's stop receipt confirms termination;
+a local clock passing the remote deadline cannot reclaim it. A missing receipt
+retains exclusion, logs `RETAIN` and leaves waiters subject to their admission bound.
+Cleanup atomically retires the legacy directory with its ownership marker before
+marking the ticket done, so interrupted cleanup remains recoverable. It first
+retires any prepared acquisition source so a surviving helper cannot publish late.
+Initialization and retirement contend on the same immutable, nonempty directory:
+cleanup either sees the complete source and owner or prevents them from appearing.
+This also fences a stalled initializer before the ticket is marked done.
+Issue-sweep retries failed publication with a fresh ticket and fresh validation.
+Publication also fetches
+main again and refuses changed source or a changed base, catching pushers outside
+this queue. Explicit sync refuses
 shared mutable ancestry, so a rebase cannot rewrite another workspace's commits.
 A failed fetch/test/push or cancellation releases only this invocation's lock.
 Pushing checks local and remote ancestry and emits the full landed commit id.
 
-Target-index preparation tries mini admission with `MINI_RUN_WAIT_SECONDS=0`.
-Exit 7 or `CAPACITY_TIMEOUT` on a failed attempt routes to
+The explicit target-index generation command tries mini admission with `MINI_RUN_WAIT_SECONDS=5`.
+Exit 7 or `CAPACITY_TIMEOUT`, and exit 73 or `FARM_HEALTH DISK_FULL`, on a failed
+attempt route to
 `~/.vibe-orch/bin/cfbox` (`SMITHERS_CFBOX` overrides the client). Both hosts
 generate and drift-check before returning the same single base64 receipt; only
 a valid receipt and unchanged source permit writing the local projection.
@@ -244,8 +467,22 @@ Node and pnpm through the existing Cloud CI target-index gate and runs the
 projection helper. The Mac installs nothing. A temporary tree from `jj file
 list`, plus cfbox's `--with-deps` directory walker, avoids Git discovery and
 excludes VCS storage and ignored files. Staging is removed on success or failure.
-`SMITHERS_CFBOX_VIA` selects cfbox's upload relay where large direct uploads
-fail; relay mode omits dependency caching because cfbox does not support both.
+Both index generation and typecheck try a cached direct cfbox upload first.
+A confirmed pre-dispatch R2 upload failure (cfbox exit 125 with an R2 failure
+diagnostic, or cfbox's uncaught `TypeError: fetch failed`) retries
+once through `SMITHERS_CFBOX_RELAY`, or the first SSH destination in
+`latEndpoints` from the private `farm-config.json` beside `SMITHERS_LAT_RUN`
+(default `~/.smithers-lead/lat-run`). With no relay configured, the failure
+remains a failure. `SMITHERS_CFBOX_VIA` explicitly selects relay mode from the
+first attempt. Relay attempts omit both `--cache` and `--cache-key`, which cfbox
+cannot combine with `--via`. The retry renames the disposable staging directory
+to bypass cfbox's packing cache without copying source. A generic `upload failed`
+is ambiguous: the execution POST may already have run, so it never retries.
+The client's execution POST wraps fetch errors as `upload failed`; its uncaught
+fetch diagnostic identifies a failure before dispatch. Command-start markers,
+command failures and interrupted streams also prevent retries. Disk-full fallback
+and relay retries log their stage and reason
+without printing private configuration. No host alias is hardcoded here.
 The native `smithers-jj-export` helper is unnecessary for this path:
 `TargetIndex` uses `GeneratedFile` write/check actions on the build engine's
 Node filesystem, and its inventory prerequisite only reads declarations.
@@ -321,3 +558,14 @@ They refuse symlink ancestors/leaves, preserve executable mode and do not mutate
 another tree through a hard link. Temporary writes stay outside jj snapshots.
 Renumbering skips source scans when no identities move. Projection logs separate
 generation from checking and record each stage's elapsed time.
+
+
+The incomplete policy is a temporary response to the relay's **serialized box
+streams** (Node 26.5.0 / Undici 8.7.0), separate from the pg cap of eight. Two
+cold-issue shards measured 429.1 s and 382.6 s; a file-tree shard measured
+392.0 s. Seven jobs at roughly 400 s each run one at a time (about 46m 40s,
+before parent comparison). Both app-reaching gates ended INCOMPLETE at pg
+admission; blocking that outcome stops every apps/mvp land, while docs and
+index controls pass. Tighten this rule once relay streaming is fixed and the
+complete comparison fits the bound. Will will file the relay issue; measurements
+are observations, not a throughput guarantee.

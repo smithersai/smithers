@@ -474,7 +474,7 @@ describe("RunCoordinator", () => {
           Effect.gen(function*() {
             runs++
             yield* Deferred.succeed(started, undefined)
-            yield* Effect.never
+            return yield* Effect.never
           }).pipe(Effect.onInterrupt(() =>
             Deferred.succeed(cleaning, undefined).pipe(
               Effect.andThen(Deferred.await(release))
@@ -513,7 +513,7 @@ describe("RunCoordinator", () => {
                 yield* Deferred.await(release)
               } else {
                 yield* Deferred.succeed(secondStarted, undefined)
-                yield* Effect.never
+                return yield* Effect.never
               }
             }).pipe(Effect.onInterrupt(() =>
               Deferred.succeed(cleaning, undefined).pipe(
@@ -550,7 +550,7 @@ describe("RunCoordinator", () => {
           Effect.gen(function*() {
             runs++
             yield* Deferred.succeed(started, undefined)
-            yield* Effect.never
+            return yield* Effect.never
           }).pipe(Effect.onInterrupt(() =>
             Deferred.succeed(cleaning, undefined).pipe(
               Effect.andThen(Deferred.await(release)),

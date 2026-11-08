@@ -617,9 +617,8 @@ describe("serving a flow is executing it", () => {
     // Never invoked: the assertion is that this expression does not compile.
     // `Effect.runPromise` is the point — the Promise boundary is what refuses
     // an Effect whose requirements are unmet.
-    // @ts-expect-error -- the served bodies name two actions, and nothing in
-    // this composition implements either.
-    const unimplemented = () => Effect.runPromise(unmet)
+    expectTypeOf<typeof unmet>().not.toExtend<Parameters<typeof Effect.runPromise>[0]>()
+    const unimplemented = () => unmet
 
     expectTypeOf(unimplemented).toBeFunction()
   })
@@ -1058,9 +1057,10 @@ describe("FlowProxyServer.layerHttpApi", () => {
   /** Never called; tsc checks it (#2704). */
   const unprovidedServiceProbe = () => {
     const { layer } = makeLayer((value) => Effect.succeed(value))
-    // @ts-expect-error the proxy layer and HTTP test services do not provide Unprovided
-    provide(layer)(Effect.map(Unprovided, (service) => service.value))
-    provide(layer)(Effect.map(Path.Path, (path) => path.sep))
+    const provision = provide(layer)
+    const unmet = Effect.map(Unprovided, (service) => service.value)
+    expectTypeOf<typeof unmet>().not.toExtend<Parameters<typeof provision>[0]>()
+    const _provided = provision(Effect.map(Path.Path, (path) => path.sep))
   }
 
   it("rejects a body that needs a service its layer does not provide (#2704)", () => {

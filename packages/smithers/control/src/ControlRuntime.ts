@@ -11,10 +11,10 @@
  * @since 0.1.0
  */
 
-import { Crypto } from "@smthrs/crypto"
 import * as Fault from "@smthrs/flow/Fault"
 import type * as PersistedPlan from "@smthrs/plan/Plan"
 import { Context, Effect, Fiber, Layer, Option, Schema } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as ApprovalAuthority from "./ApprovalAuthority.vibe"
 import type { ApprovalTarget, PlanInput } from "./Control.vibe"
 import {
@@ -57,6 +57,7 @@ import {
   canonical,
   codeDriftOf,
   emptyEnvelope,
+  mutationKey,
   planCard,
   planFingerprint,
   sameEnvelope,
@@ -189,6 +190,50 @@ export interface SignalCommand {
    */
   readonly principal?: Principal | undefined
 }
+
+/** Bounded signal metadata, without answer content or private wait tokens.
+ * @category models
+ * @since 1.0.0
+ */
+export interface SignalReceipt {
+  readonly sequence: number
+  readonly commandId: string
+  readonly receiptId: string
+  readonly runId: string
+  readonly name: string
+  readonly state: SignalCommand["state"]
+  readonly rejection?: "unauthorized" | undefined
+}
+/** Select a bounded page of signal receipts for one run, after an optional sequence.
+ * @category models
+ * @since 1.0.0
+ */
+export interface SignalQuery {
+  readonly runId: string
+  readonly limit: number
+  readonly after?: number | undefined
+  readonly commandId?: string | undefined
+}
+/** Signal receipts and the optional sequence cursor for the following page.
+ * @category models
+ * @since 1.0.0
+ */
+export interface SignalPage {
+  readonly items: ReadonlyArray<SignalReceipt>
+  readonly next?: number | undefined
+}
+/** The public receipt is the suffix of the actor-scoped durable identity.
+ * Legacy command identities are retained unchanged.
+ * @category utilities
+ * @since 1.0.0
+ */
+export const signalReceiptId = (commandId: string): string => commandId.replace(/^signal:actor:[a-f0-9]{64}:/, "")
+/** Actor-scoped lookup identity for a public signal receipt.
+ * @category utilities
+ * @since 1.0.0
+ */
+export const signalCommandId = (receiptId: string, principal: Pick<Principal, "id" | "kind">): string =>
+  mutationKey("signal", receiptId, principal)
 
 /**
  * A stored-plan page request: plans oldest first, after the insertion position
@@ -573,6 +618,9 @@ export interface Service {
     principal?: Principal | undefined
   ) => Effect.Effect<void, RunNotFound | InvalidInput | PersistenceError>
   readonly signalCommand: (commandId: string) => Effect.Effect<SignalCommand | undefined, PersistenceError>
+  readonly querySignals: (
+    request: SignalQuery
+  ) => Effect.Effect<SignalPage, RunNotFound | InvalidInput | PersistenceError>
   readonly pendingSignals: Effect.Effect<ReadonlyArray<SignalCommand>, PersistenceError>
   readonly bindSignal: (commandId: string, token: string) => Effect.Effect<string | null, PersistenceError>
   readonly settleSignal: (
@@ -759,6 +807,17 @@ export class ControlRuntime extends Context.Service<ControlRuntime, Service>()(
 ) {}
 
 /**
+ * The operator-visible run owning the current native flow/action. Hosts restore
+ * it from persisted ancestry on every handler entry, including resumed children.
+ * Undefined outside a control-owned execution; attribution is never authority.
+ * @category context
+ * @since 1.0.0
+ */
+export const CurrentRunId = Context.Reference<string | undefined>("/control/CurrentRunId", {
+  defaultValue: () => undefined
+})
+
+/**
  * Constructs a runtime service from an implementation record.
  *
  * @category constructors
@@ -864,11 +923,11 @@ const approvalToken = (token: MutableToken): ApprovalToken => ({
  * @category layers
  * @since 0.1.0
  */
-export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRuntime, never, Crypto.Crypto> =>
+export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRuntime, never, EffectDigest.Digest> =>
   Layer.effect(
     ControlRuntime,
     Effect.gen(function*() {
-      const crypto = yield* Crypto.Crypto
+      const crypto = yield* EffectDigest.Digest
       const now = options.now ?? Date.now
       // The in-memory adapter stamps `memory`/`test` on a caller that names no
       // principal, so its default policy delegates that identity as well as
@@ -881,7 +940,6 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
         },
         { principal: { id: "memory", kind: "test" }, scopes: ["once", "run", "remembered"], targets: ["Plan", "Node"] }
       ]).pipe(Effect.orDie))
-      const authorizeApproval = approvalAuthority.authorize.bind(approvalAuthority)
       const configuredFlows = options.flows ?? plannable.map((entry): MemoryFlow => ({
         flowId: entry.flowId,
         description: `Reserved ${entry.verb} system flow`,
@@ -901,6 +959,14 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
       }>()
       const tokens = new Map<string, MutableToken>()
       const runs = new Map<RunId, MutableRun>()
+      const authorizeApproval: Service["authorizeApproval"] = (request) =>
+        approvalAuthority.authorize(request, {
+          flowId: Effect.sync(() =>
+            request.target._tag === "Plan"
+              ? plans.get(request.target.planId)?.card.flowId
+              : runs.get(request.target.runId)?.summary.flowId
+          )
+        })
       const mutations = new Map<IdempotencyKey, MutationRecord>()
       const runKeys = new Map<IdempotencyKey, { readonly fingerprint: string }>()
       const installedGrants: Array<BulkGrant> = []
@@ -1012,7 +1078,7 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
               executionDigest: flow.executionDigest,
               handoff,
               idempotencyKey: submitted.idempotencyKey
-            }).pipe(Effect.provideService(Crypto.Crypto, crypto))
+            }).pipe(Effect.provideService(EffectDigest.Digest, crypto))
           )
           // Decoding, planning and hashing may yield to another keyed plan.
           // Recheck immediately before publication, with no yield between a
@@ -1370,6 +1436,35 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
           }
         }),
         signalCommand: (commandId) => Effect.sync(() => snapshot(signalCommands.get(commandId))),
+        querySignals: (request) =>
+          Effect.gen(function*() {
+            yield* idPageLimit(request.limit)
+            if (request.after !== undefined && (!Number.isSafeInteger(request.after) || request.after < 0)) {
+              return yield* new InvalidInput({ issue: "after: must be a nonnegative safe integer" })
+            }
+            yield* requireRun(request.runId)
+            const items: Array<SignalReceipt> = []
+            let sequence = 0
+            for (const command of signalCommands.values()) {
+              sequence++
+              if (
+                sequence <= (request.after ?? 0) || command.runId !== request.runId ||
+                (request.commandId !== undefined && command.commandId !== request.commandId)
+              ) continue
+              items.push({
+                sequence,
+                commandId: command.commandId,
+                receiptId: signalReceiptId(command.commandId),
+                runId: command.runId,
+                name: command.signal.name.slice(0, 1024),
+                state: command.state,
+                ...(command.rejection === undefined ? {} : { rejection: command.rejection })
+              })
+              if (items.length > request.limit) break
+            }
+            const selected = items.slice(0, request.limit)
+            return { items: selected, ...(items.length > request.limit ? { next: selected.at(-1)!.sequence } : {}) }
+          }),
         pendingSignals: Effect.sync(() => {
           const pending = Array.from(signalCommands.values()).filter((command) => command.state === "pending")
           if (pendingSignalOffset >= pending.length) pendingSignalOffset = 0

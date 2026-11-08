@@ -16,9 +16,9 @@
  * and a different body under the same key is a conflict rather than a silent
  * second execution.
  */
-import { Crypto } from "@smthrs/crypto"
 import * as Sha256 from "@smthrs/crypto/Sha256"
 import { Effect, Layer, Schema, Stream } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -85,7 +85,7 @@ const controlAnswering = (receipt: Receipt) =>
 const memoryChannels = (receipt: Receipt = { _tag: "Accepted", receiptId: "receipt", runId: "run-1" }) =>
   Channels.layerMemory.pipe(
     Layer.provide(controlAnswering(receipt)),
-    Layer.provide(Layer.succeed(Crypto.Crypto, Sha256.syncCrypto))
+    Layer.provide(Layer.succeed(EffectDigest.Digest, Sha256.syncCrypto))
   )
 
 const withChannels = <A, E>(

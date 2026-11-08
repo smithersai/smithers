@@ -3,6 +3,7 @@ import { Channels } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
 import { Clock, Duration, Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
+import { sessionLive } from "../SessionStore.ts"
 import * as Budget from "../branch/Budget.ts"
 import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import * as Flows from "#vibelang/emitted/worker/Flows"
@@ -249,7 +250,7 @@ export const bell = (alert: typeof Bell.payloadSchema.Type) =>
     const rows = yield* sql`
       INSERT INTO notifications (recipient, subject, kind, state, title, href)
       SELECT DISTINCT person_id::text, ${subject}, 'spend', 'update', ${detailOf(alert)}, ${SETTINGS_HREF}
-      FROM sessions WHERE role = 'admin' AND revoked_at IS NULL AND expires_at > now()
+      FROM sessions s WHERE role = 'admin' AND ${yield* sessionLive(sql, sql`s`)}
       ON CONFLICT (recipient, subject) DO NOTHING
       RETURNING recipient`
     return { admins: rows.length }

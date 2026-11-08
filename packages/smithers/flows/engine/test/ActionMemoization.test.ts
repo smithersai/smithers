@@ -7,10 +7,10 @@
  * the settled result.
  */
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableDeferred, Flow, FlowRuntime, HumanTask, Interpreter, Sleep, WaitFor } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
 import { Effect, Exit, Layer, Option, Result, Schema } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
 import { effect, pollUntil } from "./Harness.ts"

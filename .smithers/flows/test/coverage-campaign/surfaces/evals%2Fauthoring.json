@@ -1,0 +1,291 @@
+{
+  "id": "evals/authoring",
+  "name": "@smthrs/eval-authoring",
+  "owner": {
+    "declaration": "evals/authoring/package.json",
+    "assignedLane": null
+  },
+  "kind": "retained-tooling",
+  "scripts": {
+    "check": "vibelang -p tsconfig.json --noEmit",
+    "test": "bun validate.ts && bun test validate.test.ts"
+  },
+  "exports": null,
+  "production": [
+    "validate.ts"
+  ],
+  "tests": [
+    "evals/authoring/validate.test.ts"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    "evals/authoring/bunfig.toml"
+  ],
+  "ignoredCases": [],
+  "configurations": [
+    {
+      "path": "evals/authoring/package.json",
+      "sha256": "7480766438662db32bd2f325c369949325088bafa0753f8260707fe51d60e580",
+      "source": "{\n  \"name\": \"@smthrs/eval-authoring\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"version\": \"0.0.0\",\n  \"description\": \"Supervised fine-tuning dataset for Smithers flow authoring, and the validator that gates it\",\n  \"scripts\": {\n    \"check\": \"vibelang -p tsconfig.json --noEmit\",\n    \"test\": \"bun validate.ts && bun test validate.test.ts\"\n  },\n  \"devDependencies\": {\n    \"@smthrs/targets\": \"workspace:*\",\n    \"@types/node\": \"26.4.1\",\n    \"typescript\": \"5.9.3\",\n    \"vibelang\": \"0.0.8\"\n  }\n}\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "evals/authoring/PACKAGE.ts",
+      "sha256": "c8773733a4ead1aa4ec1be3f64de07f9a2db9ee72a4826d0e446bbf23cdf18d2",
+      "source": "/**\n * Targets for the Smithers authoring fine-tune.\n *\n * The deterministic work is graph-owned and cache-eligible: `test` gates the\n * SFT dataset on a program whose exit code is the verdict, and `check`\n * typechecks the validator. Both run from this directory, which is a workspace\n * member (`@smthrs/eval-authoring`), so `bun` and `tsc` read the toolchain the\n * manifest pins.\n *\n * The Fireworks operations are irreversible side effects with no file output,\n * so they are `ToolRun` targets: never cached, gated to the `run` verb, and\n * never pulled into a `ci` graph. Each reads its credential from the\n * `FIREWORKS_API_KEY` secret, never from a literal, so no key enters the plan.\n * Run one explicitly, for example:\n *\n *   pnpm exec smithers-build run '//evals/authoring:sftLaunch'\n *\n * There is no `lint` or `fmt` target: `data/pilot-sft.jsonl` is the training\n * corpus, one JSON object per line, and a formatter would rewrite it.\n */\nimport { Smithers } from \"@smthrs/targets\"\n\nconst cwd = \"evals/authoring\"\n\n/** The Fireworks API token, read from the environment at execution time. */\nconst fireworksKey = Smithers.Secret(\"FIREWORKS_API_KEY\")\nconst fireworksCredential = Smithers.HttpSecret(fireworksKey, [\"https://api.fireworks.ai\"])\n\n/** The validator and the dataset it gates. */\nconst validator = Smithers.file(\"//evals/authoring/validate.ts\")\nconst validatorTests = Smithers.file(\"//evals/authoring/validate.test.ts\")\nconst dataset = Smithers.file(\"//evals/authoring/data/pilot-sft.jsonl\")\nconst workspaceManifests = [\n  Smithers.file(\"//package.json\"),\n  Smithers.pnpmWorkspace(\"//pnpm-workspace.yaml\"),\n  Smithers.file(\"//.smithers/flows/package.json\")\n]\n\n/**\n * Proves every row of the SFT dataset is a well-formed chat example before it\n * is uploaded or trained on. Offline and deterministic: it reads only the\n * committed dataset and workspace package manifests, so its verdict is\n * reproducible and it belongs in `ci`.\n *\n * @since 0.1.0\n * @category test\n */\nconst test = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.entrypoint(validator),\n  srcs: [validator, dataset, ...workspaceManifests],\n  deps: [],\n  cwd\n})\n\n/**\n * Proves the validator rejects the rows it must: non-object rows and messages,\n * top-level metadata, rows with no user turn, host paths, and credential\n * shapes.\n *\n * @since 0.1.0\n * @category test\n */\nconst validatorTest = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.testRunner([validatorTests]),\n  srcs: [validator, validatorTests, dataset, ...workspaceManifests],\n  deps: [],\n  cwd\n})\n\n/**\n * Checks the validator and its tests against their tsconfig.\n *\n * @since 0.1.0\n * @category build\n */\nconst check = Smithers.Typecheck({\n  srcs: [validator, validatorTests],\n  deps: [],\n  tsconfig: Smithers.file(\"tsconfig.json\"),\n  buildMode: false,\n  incremental: false,\n  cwd\n})\n\n/**\n * Uploads the SFT dataset to Fireworks. Irreversible: a second run fails\n * because the dataset name already exists, so it is gated to the `run` verb and\n * never cached. It depends on {@link test}, so a malformed dataset\n * never reaches the account.\n *\n * @since 0.1.0\n * @category run\n */\nconst datasetUpload = Smithers.ToolRun({\n  command: \"firectl\",\n  args: [\"dataset\", \"create\", \"pilot-sft-v0\", \"data/pilot-sft.jsonl\"],\n  inputs: [dataset],\n  deps: [test],\n  secrets: [fireworksCredential],\n  cwd\n})\n\n/**\n * Launches the supervised fine-tuning job on Kimi K3. Irreversible: every run\n * starts a new billed job, so it is gated to the `run` verb and never cached.\n *\n * @since 0.1.0\n * @category run\n */\nconst sftLaunch = Smithers.ToolRun({\n  command: \"firectl\",\n  args: [\n    \"supervised-fine-tuning-job\",\n    \"create\",\n    \"--base-model\",\n    \"accounts/fireworks/models/kimi-k3\",\n    \"--dataset\",\n    \"pilot-sft-v0\",\n    \"--output-model\",\n    \"smithers-authoring-pilot-v0\",\n    \"--lora-rank\",\n    \"8\",\n    \"--epochs\",\n    \"3\",\n    \"--display-name\",\n    \"smithers-authoring pilot v0\"\n  ],\n  inputs: [],\n  deps: [],\n  secrets: [fireworksCredential],\n  cwd\n})\n\n/**\n * Plumbing-proof variant of {@link sftLaunch} on a small base model.\n *\n * Kimi K3 (2.8T) needs 32 GPUs of fine-tuning quota; the pilot account tier\n * allows 16. This target trains the same dataset on Llama 3.1 8B, which fits\n * that quota, so it validates the whole dataset to checkpoint path for cents\n * without a tier upgrade. Swap back to {@link sftLaunch} for the real run.\n *\n * @since 0.1.0\n * @category run\n */\nconst sftLaunchPilot = Smithers.ToolRun({\n  command: \"firectl\",\n  args: [\n    \"supervised-fine-tuning-job\",\n    \"create\",\n    \"--base-model\",\n    \"accounts/fireworks/models/llama-v3p1-8b-instruct\",\n    \"--dataset\",\n    \"pilot-sft-v0\",\n    \"--output-model\",\n    \"smithers-authoring-pilot-llama8b-v0\",\n    \"--lora-rank\",\n    \"8\",\n    \"--epochs\",\n    \"3\",\n    \"--display-name\",\n    \"smithers-authoring pilot llama8b v0\"\n  ],\n  inputs: [],\n  deps: [],\n  secrets: [fireworksCredential],\n  cwd\n})\n\n/**\n * Security review of the fine-tune assets. `security` reviews the diff against\n * `origin/main`; `securityAudit` audits every reviewed file.\n *\n * @since 0.1.0\n * @category test\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"validate.ts\", \"validate.test.ts\", \"PACKAGE.ts\", \"README.md\", \"data/**\"],\n  checks: [\n    {\n      id: \"fireworks-key-scoping\",\n      title: \"The Fireworks key reaches only firectl targets and only api.fireworks.ai\",\n      threat: \"Anyone reading the plan, logs, or a new target exfiltrates the owner's billed Fireworks API key.\",\n      lookFor: [\n        \"A FIREWORKS_API_KEY or fw_ literal in PACKAGE.ts, README.md, or data/ instead of Smithers.Secret.\",\n        \"Smithers.HttpSecret allowlisting any origin other than https://api.fireworks.ai.\",\n        \"fireworksCredential passed to a target other than a firectl ToolRun, or to a cached or ci-reachable target.\"\n      ],\n      paths: [\"PACKAGE.ts\", \"README.md\"]\n    },\n    {\n      id: \"irreversible-ops-gated\",\n      title: \"Billed Fireworks operations run only from the run verb and after the validator\",\n      threat: \"A CI run or agent triggers billed fine-tuning jobs or uploads an unvalidated dataset to the owner's Fireworks account.\",\n      lookFor: [\n        \"A firectl upload or fine-tuning target declared with something other than Smithers.ToolRun, making it cacheable or ci-reachable.\",\n        \"datasetUpload losing its deps on test, so an invalid dataset ships.\",\n        \"A target wired into Package targets that runs firectl on commit or in ci.\"\n      ],\n      paths: [\"PACKAGE.ts\"]\n    },\n    {\n      id: \"training-data-leak\",\n      title: \"The SFT corpus carries no secrets, private paths, or private code\",\n      threat: \"Fireworks, or anyone with access to the trained model, extracts credentials, home paths, or private repository code the owner uploaded as training data.\",\n      lookFor: [\n        \"An API key, token, cookie, or password string inside any message content in data/pilot-sft.jsonl.\",\n        \"Absolute host paths such as /Users/<name> or internal hostnames in message content or in top-level row metadata such as source_path.\",\n        \"Top-level row fields besides messages (role, source_path) that firectl uploads alongside the training examples.\",\n        \"Code copied from private repositories (plue, deployment repo) rather than public Smithers sources.\"\n      ],\n      paths: [\"data/**\"]\n    },\n    {\n      id: \"training-data-poisoning\",\n      title: \"Assistant turns teach safe flow authoring, and the validator rejects rows it cannot prove\",\n      threat: \"A contributor who edits the dataset trains the authoring model to emit flows that run unsandboxed shell, disable approvals, or leak secrets for every downstream user.\",\n      lookFor: [\n        \"An assistant message whose code runs shell with request-derived strings, bypasses approvals, or reads secrets into prompts.\",\n        \"Instruction-like text in system or user turns that tells the model to ignore safety controls.\",\n        \"validate.ts accepting rows it should reject: extra top-level keys, a message with extra keys, or no user turn before the final assistant turn.\",\n        \"validate.ts exiting 0 on an input it failed to read or parse, so the datasetUpload gate passes an unchecked file.\"\n      ],\n      paths: [\"data/**\", \"validate.ts\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: { check, datasetUpload, sftLaunch, sftLaunchPilot, test, validatorTest, ...securityReview }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 180,
+          "text": "include: [\"validate.ts\", \"validate.test.ts\", \"PACKAGE.ts\", \"README.md\", \"data/**\"],"
+        },
+        {
+          "line": 222,
+          "text": "\"Instruction-like text in system or user turns that tells the model to ignore safety controls.\","
+        }
+      ]
+    },
+    {
+      "path": "evals/authoring/tsconfig.json",
+      "sha256": "376294ed5636c8adaee6155bdce98b65c1893534299acfcada7f5482be705711",
+      "source": "{\n  \"extends\": \"../../tsconfig.base.json\",\n  \"compilerOptions\": {\n    \"noEmit\": true,\n    \"composite\": false,\n    \"declaration\": false,\n    \"declarationMap\": false,\n    \"inlineSources\": false,\n    \"sourceMap\": false,\n    \"types\": [\"node\"]\n  },\n  \"include\": [\"*.ts\"],\n  \"exclude\": [\"PACKAGE.ts\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 12,
+          "text": "\"include\": [\"*.ts\"],"
+        },
+        {
+          "line": 13,
+          "text": "\"exclude\": [\"PACKAGE.ts\"]"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "evals/authoring",
+      "label": "//evals/authoring:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "evals/authoring/validate.ts"
+        },
+        {
+          "kind": "file",
+          "path": "evals/authoring/validate.test.ts"
+        },
+        {
+          "kind": "file",
+          "path": "evals/authoring/tsconfig.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "evals/authoring",
+      "label": "//evals/authoring:datasetUpload",
+      "rule": "ToolRun",
+      "kinds": [
+        "run"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "evals/authoring/data/pilot-sft.jsonl"
+        }
+      ],
+      "dependencies": [
+        "//evals/authoring:test"
+      ]
+    },
+    {
+      "package": "evals/authoring",
+      "label": "//evals/authoring:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "evals/authoring/validate.ts",
+            "evals/authoring/validate.test.ts",
+            "evals/authoring/PACKAGE.ts",
+            "evals/authoring/README.md",
+            "evals/authoring/data/**"
+          ]
+        },
+        {
+          "kind": "file",
+          "path": "evals/authoring/validate.ts"
+        },
+        {
+          "kind": "file",
+          "path": "evals/authoring/validate.test.ts"
+        },
+        {
+          "kind": "file",
+          "path": "evals/authoring/PACKAGE.ts"
+        },
+        {
+          "kind": "file",
+          "path": "evals/authoring/README.md"
+        },
+        {
+          "kind": "glob",
+          "pattern": "evals/authoring/data/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "evals/authoring",
+      "label": "//evals/authoring:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "evals/authoring/validate.ts",
+            "evals/authoring/validate.test.ts",
+            "evals/authoring/PACKAGE.ts",
+            "evals/authoring/README.md",
+            "evals/authoring/data/**"
+          ]
+        },
+        {
+          "kind": "file",
+          "path": "evals/authoring/validate.ts"
+        },
+        {
+          "kind": "file",
+          "path": "evals/authoring/validate.test.ts"
+        },
+        {
+          "kind": "file",
+          "path": "evals/authoring/PACKAGE.ts"
+        },
+        {
+          "kind": "file",
+          "path": "evals/authoring/README.md"
+        },
+        {
+          "kind": "glob",
+          "pattern": "evals/authoring/data/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "evals/authoring",
+      "label": "//evals/authoring:sftLaunch",
+      "rule": "ToolRun",
+      "kinds": [
+        "run"
+      ],
+      "inputs": [],
+      "dependencies": []
+    },
+    {
+      "package": "evals/authoring",
+      "label": "//evals/authoring:sftLaunchPilot",
+      "rule": "ToolRun",
+      "kinds": [
+        "run"
+      ],
+      "inputs": [],
+      "dependencies": []
+    },
+    {
+      "package": "evals/authoring",
+      "label": "//evals/authoring:test",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "evals/authoring/validate.ts"
+        },
+        {
+          "kind": "file",
+          "path": "evals/authoring/validate.ts"
+        },
+        {
+          "kind": "file",
+          "path": "evals/authoring/data/pilot-sft.jsonl"
+        },
+        {
+          "kind": "file",
+          "path": "package.json"
+        },
+        {
+          "kind": "pnpm-workspace",
+          "path": "pnpm-workspace.yaml"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "evals/authoring",
+      "label": "//evals/authoring:validatorTest",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "evals/authoring/validate.test.ts"
+        },
+        {
+          "kind": "file",
+          "path": "evals/authoring/validate.ts"
+        },
+        {
+          "kind": "file",
+          "path": "evals/authoring/validate.test.ts"
+        },
+        {
+          "kind": "file",
+          "path": "evals/authoring/data/pilot-sft.jsonl"
+        },
+        {
+          "kind": "file",
+          "path": "package.json"
+        },
+        {
+          "kind": "pnpm-workspace",
+          "path": "pnpm-workspace.yaml"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/package.json"
+        }
+      ],
+      "dependencies": []
+    }
+  ],
+  "areas": [
+    "validate.ts"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

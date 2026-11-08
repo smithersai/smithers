@@ -97,7 +97,40 @@ SECRETS_KEY is a Worker secret Alchemy generates once (`infra/Secrets.ts`, 32 ra
 - `worker/secrets/Secrets.test.ts`, on the compose Postgres and Electric, with the flows on the Node host's engine: an Admin's set, replace and delete, and every refusal; a sentinel search of every table, the flow journal and everything recorded; the shape's columns; the egress end to end with a scripted upstream, including another host, an earlier generation and a redirect.
 - `src/features/secrets/` (100% coverage), on the app's layer against ChatApi's real handler: Add, Rotate and Delete as an Admin, read-only for a Member, nothing for anyone else, every refusal and a network failure; and a sentinel search, after Add and Rotate, of every collection row, the outbox, the device's SQLite files, ChatApi's spans and everything the tab exported.
 
-- `e2e/secrets.spec.ts`, under `alchemy dev` with `SANDBOX_SECRETS=true` and `GITHUB_REPOSITORY=octocat/Spoon-Knife` (need `sandboxSecrets`): an Admin adds and rotates `DEMO_TOKEN` on the Secrets page, bound to httpbingo.org; in the branch's terminal, a real container, the variable is a placeholder; a Node `fetch` with it as a bearer token gets httpbingo.org's 200 with the token echoed back as the placeholder, and httpbin.org's request is refused 403 `host_not_allowed`; from outside the box, `docker export` of its filesystem, every process environment and every ChatApi log line hold neither value, and the egress logged one substitution forwarded and the refusal; deleted, the placeholder gets 403. Its trace is off, since a trace keeps what was typed.
+- `e2e/secrets.spec.ts`, under `alchemy dev` with `SANDBOX_SECRETS=true` and `GITHUB_REPOSITORY=octocat/Spoon-Knife` (need `sandboxSecrets`): an Admin adds and rotates a unique `DEMO_…` name on the Secrets page, bound to httpbingo.org; in the branch's terminal, a real container, the variable is a placeholder; a Node `fetch` with it as a bearer token gets httpbingo.org's 200 with the token echoed back as the placeholder, and httpbin.org's request is refused 403 `host_not_allowed`; from outside the box, `docker export` of its filesystem, every process environment and every ChatApi log line hold neither value, and the egress logged one substitution forwarded and the refusal; deleted, the placeholder gets 403. Its trace is off, since a trace keeps what was typed.
+
+### Controlled receiver proof
+
+`e2e/secrets-egress.spec.ts` adds, uses, rotates, uses again and deletes a unique secret through the real Secrets page
+and branch terminal. A run-owned receiver accepts only the expected bearer token and responds with its version and
+SHA-256, never its header. It records both uses; the deleted placeholder must receive 403 without another receiver
+receipt. Random test tokens are generated in the test process and never passed in process arguments or environment.
+The scratch terminal is reopened through the UI before use: opening invokes wake and refreshes the placeholder file;
+reconnecting a shell that predates a new name cannot change that shell's environment.
+The HTTPS edge uses a credential-free, temporary [localhost.run tunnel](https://localhost.run/docs/http-tunnels),
+which terminates TLS and forwards over SSH to the test's loopback HTTP handler. This proves public HTTPS egress,
+not TLS passthrough or control of the tunnel provider. Only disposable synthetic test tokens use this receiver.
+
+The public-boundary scan checks readable files in the checkout, environment directory and user's home, plus readable
+process environments and arguments. It sends only a public marker pattern into the box and returns counts. Root-owned
+unreadable process environments are outside that scan; `secrets.spec.ts` retains the independent root Docker scan of
+all exported files, process environments and process arguments. The browser proof checks the rendered transcript,
+console, all three outgoing telemetry signals and nonempty server logs. Failure assertions retain counts instead of
+secret values; tracing and screenshots are off for the controlled-receiver journey.
+
+Run the local pair on an admitted machine from `apps/mvp` with `node scripts/prove-secrets.mjs`. It owns a fresh
+Compose database, a unique Alchemy dev stage and its server process group, enables egress only there, and runs both
+specs serially. The public receiver and tunnel are closed on completion or failure. No model credential is needed.
+The runner leaves private Alchemy diagnostics under `.alchemy/log` and JSON count/hash receipts under
+`test-results`; it performs no deploy or GitHub mutation.
+
+A deployment needs an authorized enabled egress, an Admin's scratch repository and an existing scratch branch:
+`E2E_SECRETS_EGRESS=true`, `E2E_SECRETS_REPOSITORY=owner/scratch`, `E2E_SECRETS_BRANCH=proof`. Setup verifies the role.
+The current deployment-repository write fence still applies; these test settings grant no permission. Production
+log capture also needs authorized Cloudflare tails, which create and delete a provider tail. If any prerequisite is
+missing, the controlled-receiver spec records **blocked**, and the summary fails rather than reporting a successful
+local-only skip. The local Docker companion still declares its local-only need. No production egress pass is claimed
+by a local receipt or a blocked deployment run.
 
 ## What's not built
 

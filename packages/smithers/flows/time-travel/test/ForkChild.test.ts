@@ -5,7 +5,6 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
 import { DurableWriter } from "@smthrs/database"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
@@ -53,9 +52,7 @@ const Outer = Flow.make("TimeTravel/ForkChild/Outer", {
 /** The node id the boundary in `Outer`'s body is recorded under. */
 const boundary = "root.flow.map"
 const childOf = (parentRunId: string) =>
-  Interpreter.childExecutionId(parentRunId, boundary, Inner._tag, {}).pipe(
-    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
-  )
+  Interpreter.childExecutionId(parentRunId, boundary, Inner._tag, {}).pipe(Effect.provide(NodeCrypto.layer))
 
 const kernelJj = Jj.make({
   snapshot: () => Effect.succeed({ commitId: "fork-child" as never, changeId: "fork-child" as never }),
@@ -90,7 +87,7 @@ const environment = Layer.mergeAll(
   OwnerIdentity.layer,
   Layer.succeed(Jj.Jj, kernelJj),
   Layer.succeed(TimeTravelJj.Jj, TimeTravelJj.makeNoop({ workspaceAdd: () => Effect.void }))
-).pipe(Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+).pipe(Layer.provideMerge(NodeCrypto.layer))
 
 /** Runs `runId` to completion under a fresh engine, counting each body. */
 const execute = (runId: string, dispatched: Array<string>) =>

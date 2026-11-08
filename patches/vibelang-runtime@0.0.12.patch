@@ -1,0 +1,14 @@
+diff --git a/dist/prelude-core.js b/dist/prelude-core.js
+index 1047c063ad43d155481390d1e96860dbc5853dad..f0f021856382f6d7c863e90342a9dce5814552c7 100644
+--- a/dist/prelude-core.js
++++ b/dist/prelude-core.js
+@@ -89,7 +89,8 @@ export const $schemaErrorMatcher = (error, tag, privateFactoryBase = false) => {
+         Reflect.deleteProperty(Object.getPrototypeOf(error), customMatcher);
+     const matcher = {
+         match(subject, _hint) {
+-            return subject?._tag === tag ? [subject] : false;
++            // A family's base also matches its real subclasses, whose own tag differs.
++            return subject instanceof error || subject?._tag === tag ? [subject] : false;
+         }
+     }.match;
+     Object.defineProperty(error, customMatcher, { value: matcher, configurable: true, writable: true });

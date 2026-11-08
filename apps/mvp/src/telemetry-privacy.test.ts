@@ -1,5 +1,9 @@
 import { Otlp } from "@smthrs/observability"
-import { Effect, Metric } from "effect"
+import { Effect, Metric, Result } from "effect"
+import * as RunCredentials from "../worker/RunCredentials.ts"
+import { testFile, recorded } from "../worker/test/harness.ts"
+import { signInHarness } from "../worker/test/signIn.ts"
+import { SqlClient } from "effect/sql"
 import { expect, test } from "vitest"
 import { dropped } from "./features/attention/actions"
 import { BROWSER_TELEMETRY, EXPORTED_SPANS, WITHHELD } from "./telemetry"
@@ -65,4 +69,50 @@ test("the relay preserves pending-act failures, silent doors and report refusal 
   }))
   expect(fields("auth.run_credential")).toContainEqual(expect.objectContaining({ flow: "notification/ack", outcome: "door_timeout" }))
   expect(fields("agent.status.report").map((line) => line.reason)).toEqual(["settled", "other_launcher", "no_row"])
+})
+
+test("session key diagnostics retain only outcome and step, never credentials or key material", async () => {
+  const exported = captured(Otlp.layerFetch({ baseUrl: `${ORIGIN}/api/telemetry`, serviceName: "auth-contract" }))
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    for (const name of ["smithers_auth_session", "smithers_auth_issue", "smithers_auth_key_rotations", "smithers_auth_session_prior", "smithers_auth_session_ends", "smithers_device_principal_refusals", "smithers_auth_reauth", "smithers_auth_token_cleanup", "smithers_auth_token_store"]) {
+      yield* Metric.update(Metric.withAttributes(Metric.counter(name, { incremental: true }), { outcome: "credential_stale" }), 1)
+    }
+    for (const name of ["auth.session", "auth.issue", "auth.key_rotation", "auth.session_prior", "auth.session_end", "auth.session_retention", "auth.device_principal", "auth.reauth", "auth.token_store", "auth.token_cleanup", "auth.token_cleanup.failure"]) {
+      yield* Effect.logInfo(name).pipe(Effect.annotateLogs({ outcome: "completed", step: "cease", cookie: "credential-sentinel", secret: "secret-sentinel" }))
+    }
+  }).pipe(Effect.provide(exported.layer), Effect.provideService(Metric.MetricRegistry, new Map()))))
+  const { kept } = await Effect.runPromise(relayed(exported.exports, BROWSER_TELEMETRY))
+  for (const name of ["smithers_auth_session", "smithers_auth_issue", "smithers_auth_key_rotations", "smithers_auth_session_prior", "smithers_auth_session_ends", "smithers_device_principal_refusals", "smithers_auth_reauth", "smithers_auth_token_cleanup", "smithers_auth_token_store", "auth.session", "auth.issue", "auth.key_rotation", "auth.session_prior", "auth.session_end", "auth.session_retention", "auth.device_principal", "auth.reauth", "auth.token_store", "auth.token_cleanup", "auth.token_cleanup.failure"]) {
+    expect(kept.some(line => line.name === name), name).toBe(true)
+  }
+  expect(JSON.stringify(kept)).not.toContain("credential-sentinel")
+  expect(JSON.stringify(kept)).not.toContain("secret-sentinel")
+})
+
+// The response tag is a correlation credential, so it must never become an exported attribute.
+test("session tags are stripped from logs, traces, metrics and URL attributes", async () => {
+  const tag = "8bcf97586ae0484686ce3750ac941946"
+  const exported = captured(Otlp.layerFetch({ baseUrl: `${ORIGIN}/api/telemetry`, serviceName: "tag-privacy" }))
+  await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    yield* Effect.logInfo("auth.session").pipe(Effect.annotateLogs({ outcome: "signed_in", session_tag: tag, sessionTag: tag, session: tag }))
+    yield* Effect.void.pipe(Effect.withSpan("auth.session", { attributes: { session_tag: tag, sessionTag: tag, session: tag, "url.full": `https://example.com/${tag}?tag=${tag}` } }))
+    yield* Metric.update(Metric.withAttributes(Metric.counter("smithers_auth_session", { incremental: true }), { outcome: "signed_in", session_tag: tag, sessionTag: tag, session: tag }), 1)
+  }).pipe(Effect.provide(exported.layer), Effect.provideService(Metric.MetricRegistry, new Map()))))
+  const { kept } = await Effect.runPromise(relayed(exported.exports, BROWSER_TELEMETRY))
+  expect(kept.length).toBeGreaterThan(0)
+  expect(JSON.stringify(kept)).not.toContain(tag)
+})
+
+const tagRuntime = testFile("session_tag_privacy")
+test("a real session tag stays out of run credentials, route URLs and raw diagnostics", async () => {
+  const h = await signInHarness(tagRuntime)
+  const signed = await h.signInAs()
+  const answer = await h.session(signed.cookies) as { session: string }
+  const [row] = await tagRuntime.runPromise(Effect.flatMap(SqlClient.SqlClient, sql =>
+    sql<{ id: string; person: string }>`SELECT id, person_id AS person FROM sessions`))
+  const claims = RunCredentials.claimsFor({ subject: { kind: "person", id: row!.person }, role: "member", session: row!.id }, "tag-privacy", { flow: "repo/Clone" }, Date.now())
+  expect(Result.isSuccess(claims)).toBe(true)
+  expect(JSON.stringify(claims)).not.toContain(answer.session)
+  expect(recorded(h)).not.toContain(answer.session)
+  expect(signed.response.url + signed.started.location + signed.response.headers.get("location")).not.toContain(answer.session)
 })

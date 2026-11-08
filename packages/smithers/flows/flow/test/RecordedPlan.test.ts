@@ -1,5 +1,4 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { Node, Plan, StepKey } from "@smthrs/plan"
 import { Effect, Schema } from "effect"
 import * as SchemaAST from "effect/SchemaAST"
@@ -21,7 +20,7 @@ const key = (body: unknown) =>
       inputs: {},
       layers: [],
       capabilities: {}
-    }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+    }).pipe(Effect.provide(NodeCrypto.layer))
   )
 
 it("compares callback shape while retaining entropy in step key material", async () => {
@@ -46,7 +45,7 @@ it("compares callback shape while retaining entropy in step key material", async
         planId: "recorded-plan",
         flow: "recorded-plan/flow",
         nodes: Graph.drafts(graph)
-      }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+      }).pipe(Effect.provide(NodeCrypto.layer))
     )
   const original = await compile(first)
   const rebuilt = await compile(second)

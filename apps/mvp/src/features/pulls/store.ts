@@ -3,9 +3,10 @@ import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { Cache, Context, Effect, Exit, Layer, Option, Ref, Scope, Stream } from "effect"
 import type { Comment, Item, ItemSummary } from "../issues/schema"
 import { AuthStore } from "../auth/store"
-import { repositoryAccessChanges, repositoryShapeSource, syncStatusAfter } from "../issues/source"
+import { evictOnRefusal, repositoryAccessChanges, repositoryShapeSource, revokingSource, syncStatusAfter, wipeAuthority } from "../issues/source"
 import { IssuesStore, syncStatusOf } from "../issues/store"
 import { RepoStore } from "../repo/store"
+import type { Gated, Source } from "../repo/gate"
 import { CHECKS_SHAPE_ROUTE, PULL_COMMITS_SHAPE_ROUTE, PULLS_SHAPE_ROUTE, REVIEWS_SHAPE_ROUTE } from "./contract"
 import {
   checksQuery,
@@ -33,8 +34,10 @@ export interface PullsConfig {
 
 type Query<F extends (...args: never) => unknown> = Effect.Success<ReturnType<F>>
 
-/** A collection of `A` rows, synced or local: what the queries read. */
+/** A collection of `A` rows, synced or local: the store's own, never exposed. */
 type Rows<A extends object> = Collection.Collection<A, any, any>
+/** What the queries read: a repository's rows through the data gate (repo/gate.ts). */
+type Shown<A extends object> = Source<A>
 
 /** What the pull requests shape last said of access to a repository: the view's `pullStatus` and `installed`. */
 interface PullStatus {
@@ -48,10 +51,11 @@ interface PullStatus {
  */
 export interface RepoPulls {
   readonly id: string
-  readonly pulls: Rows<PullRow>
-  readonly commits: Rows<PullCommitRow>
-  readonly reviews: Rows<ReviewRow>
-  readonly checks: Rows<CheckRow>
+  /** Its rows through the data gate (repo/gate.ts): none while the repository may not show. */
+  readonly pulls: Gated<PullRow>
+  readonly commits: Gated<PullCommitRow>
+  readonly reviews: Gated<ReviewRow>
+  readonly checks: Gated<CheckRow>
   readonly list: Query<typeof listQuery>
   readonly pull: Query<typeof pullQuery>
   readonly comments: Query<typeof commentsQuery>
@@ -70,7 +74,10 @@ export interface RepoPulls {
 export class PullsStore extends Context.Service<
   PullsStore,
   {
+    /** The comparisons this tab read, for the feature's actions; what shows reads `fileList`, through the data gate. */
     readonly files: Collection.Collection<FilesRow, string>
+    /** Records that a comparison of a repository was read into `files` (`readComparison`), for its refusal's wipe. */
+    readonly compared: (repository: string, comparison: string) => void
     readonly view: Collection.Collection<PullsView, string>
     readonly fileList: Query<typeof filesQuery>
     readonly viewState: Query<typeof viewQuery>
@@ -126,21 +133,35 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
 
   /** The live queries over one repository's rows and its issues, for the routed page. */
   const queriesOf = (
-    items: Rows<ItemSummary>,
-    details: Rows<Item>,
-    comments: Rows<Comment>,
-    pulls: Rows<PullRow>,
-    commits: Rows<PullCommitRow>,
-    reviews: Rows<ReviewRow>,
-    checks: Rows<CheckRow>,
+    items: Shown<ItemSummary>,
+    details: Shown<Item>,
+    comments: Shown<Comment>,
+    rawPulls: Rows<PullRow>,
+    rawCommits: Rows<PullCommitRow>,
+    rawReviews: Rows<ReviewRow>,
+    rawChecks: Rows<CheckRow>,
   ) =>
-    Effect.all({
-      list: listQuery(view, items, pulls),
-      pull: pullQuery(view, details, pulls),
-      comments: commentsQuery(view, items, comments),
-      reviewList: reviewsQuery(view, items, reviews),
-      commitList: commitsQuery(view, items, commits),
-      checkList: checksQuery(view, items, pulls, checks),
+    Effect.gen(function* () {
+      // The data gate (repo/gate.ts): every query reads the repository's rows only through these, and its issues'
+      // through the issues' store's own.
+      const pulls = yield* repos.gate(rawPulls)
+      const commits = yield* repos.gate(rawCommits)
+      const reviews = yield* repos.gate(rawReviews)
+      const checks = yield* repos.gate(rawChecks)
+      return {
+        pulls,
+        commits,
+        reviews,
+        checks,
+        ...(yield* Effect.all({
+          list: listQuery(view, items, pulls),
+          pull: pullQuery(view, details, pulls),
+          comments: commentsQuery(view, items, comments),
+          reviewList: reviewsQuery(view, items, reviews),
+          commitList: commitsQuery(view, items, commits),
+          checkList: checksQuery(view, items, pulls, checks),
+        })),
+      }
     })
 
   // A repository nobody opened: no rows, never a request.
@@ -150,10 +171,6 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
   const emptyChecks = yield* Collection.local<CheckRow, string>({ id: "pull-checks-none", schema: CheckRow, getKey: byId })
   const empty: RepoPulls = {
     id: "",
-    pulls: emptyPulls,
-    commits: emptyCommits,
-    reviews: emptyReviews,
-    checks: emptyChecks,
     ...(yield* queriesOf(issues.empty.items, issues.empty.details, issues.empty.comments, emptyPulls, emptyCommits, emptyReviews, emptyChecks)),
     status: Effect.succeed({ pullStatus: "unknown", installed: false }),
     reconnect: Effect.void,
@@ -175,15 +192,18 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
    * Opens repository `id`'s shapes, with its issues, and the followers of its authority and its pull requests shape, in
    * the store's scope. Each request waits for the device's authority on `id` (decision 0110), never another repository's.
    */
+  const shapesOf = new Map<string, ReadonlyArray<{ readonly evict: Effect.Effect<void> }>>()
   const open = (id: string) =>
     Effect.gen(function* () {
+      yield* repos.refusalsKnown
       const repoIssues = yield* issues.forRepo(id)
       const authority = repositoryAccessChanges(auth, repos, id)
-      const guarded = repositoryShapeSource(source, authority)
+      const revoking = revokingSource(source, auth, repos, id)
+      const guarded = repositoryShapeSource(revoking, authority)
       // A pull request's commits, reviews and checks open only while the route shows one (decision 0112): the
       // repository's pages and its list of pull requests never ask for them.
       const detail = ShapeSource.gated(
-        refreshingSource(source, view, id),
+        refreshingSource(revoking, view, id),
         Stream.zipLatestWith(authority, detailShown(view), (status, shown) => status === "allowed" && shown),
       )
       const pulls = yield* ElectricCollection.make<PullRow>({
@@ -215,6 +235,8 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
         shape: shape(CHECKS_SHAPE_ROUTE, id),
         ...kept,
       }).pipe(Effect.provideService(ShapeSource.ShapeSource, detail))
+      shapesOf.set(id, [pulls, commits, reviews, checks])
+      yield* evictOnRefusal(wipeAuthority(auth, authority), [pulls, commits, reviews, checks]).pipe(Effect.forkIn(scope, { startImmediately: true }))
       const status = yield* Ref.make<PullStatus>({ pullStatus: "unknown", installed: false })
       // The session and the repository's role decide whether this person may read its pull requests at all.
       yield* authority.pipe(
@@ -247,12 +269,9 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
         Effect.flatMap(() => showStatus(id, (row) => ({ ...row, installed: row.pullStatus === "allowed" }))(status)),
         Effect.forkIn(scope, { startImmediately: true }),
       )
+      repos.track(id)
       const repo: RepoPulls = {
         id,
-        pulls,
-        commits,
-        reviews,
-        checks,
         ...(yield* queriesOf(repoIssues.items, repoIssues.details, repoIssues.comments, pulls, commits, reviews, checks)),
         status: Ref.get(status),
         reconnect: Effect.all([pulls.reconnect, commits.reconnect, reviews.reconnect, checks.reconnect], { discard: true }),
@@ -290,12 +309,23 @@ const make = Effect.fnUntraced(function* (config: PullsConfig) {
   const forRepo = (id: string, number?: number) => number === undefined
     ? Cache.get(opening, id) : Cache.get(itemOpening, `${id}#${number}`)
   let routedRepo = empty
+  // Comparisons this tab read, by repository: `pull-files` is keyed by repository and both SHAs.
+  const comparisons = new Map<string, Set<string>>()
+  const compared = (repository: string, comparison: string) => {
+    comparisons.set(repository, (comparisons.get(repository) ?? new Set()).add(comparison))
+  }
+  yield* repos.registerCache(["pull-rows", "pull-commits", "pull-reviews", "pull-checks", "pull-files"], (id) =>
+    Effect.andThen(forRepo(id), Effect.suspend(() => Effect.all([
+      Effect.forEach(shapesOf.get(id) ?? [], (shape) => shape.evict, { discard: true }),
+      Effect.forEach(comparisons.get(id) ?? [], (comparison) => Effect.ignore(files.delete(comparison)), { discard: true }),
+    ], { discard: true }))))
 
   return PullsStore.of({
     files,
+    compared,
     view,
-    fileList: yield* filesQuery(files),
-    viewState: yield* viewQuery(view, issues.writes),
+    fileList: yield* filesQuery(yield* repos.gate(files)),
+    viewState: yield* viewQuery(view, issues.writeRows),
     forRepo,
     routed: () => routedRepo,
     route: (id, number) =>

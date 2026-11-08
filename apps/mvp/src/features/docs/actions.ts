@@ -4,6 +4,8 @@ import { type DocsRefused, DocsClient } from "./api"
 import { type LoadKind, recordLoad } from "./records"
 import { CURRENT, type CurrentRow, pageKeyOf, repoKeyOf, searchKeyOf } from "./rows"
 import { DocsStore } from "./store"
+import { repoId } from "../repo/contract"
+import { RepoStore } from "../repo/store"
 
 // What the Docs tab does (docs/features/docs.md#the-docs-tab). A route opens a repository's docs: its index, and the
 // page it names; the searchbox searches as the person types. Each is one read of ChatApi's docs routes, kept in this
@@ -38,17 +40,24 @@ const load = <A, Row extends { readonly key: string; readonly state: string }>(
     const collection = rows(yield* DocsStore)
     const kept = yield* collection.get(key)
     if (Option.isSome(kept) && kept.value.state !== "refused") return
+    // Whose repository: every key starts `owner/name`. One that refused this person reads nothing more, and a read
+    // already on its way when it did writes nothing after.
+    const repos = Option.getOrUndefined(yield* Effect.serviceOption(RepoStore))
+    const id = `github/${key.split(/[:?]/, 1)[0]}`
+    if (repos?.isRefused(id) === true) return
+    const fence = repos?.fenceOf(id) ?? 0
+    const fenced = (write: Effect.Effect<void>) => repos === undefined ? write : repos.fenced(id, fence, write)
     yield* put(collection, key, loading)
     const startedAt = yield* Clock.currentTimeMillis
     const result = yield* Effect.result(read)
     const durationMs = (yield* Clock.currentTimeMillis) - startedAt
     if (result._tag === "Failure") {
       const code = codeOf(result.failure)
-      yield* put(collection, key, refused(code))
+      yield* fenced(put(collection, key, refused(code)))
       return yield* recordLoad(kind, code, durationMs, { status: result.failure.status })
     }
     const answered = done(result.success)
-    yield* put(collection, key, answered.row)
+    yield* fenced(put(collection, key, answered.row))
     yield* recordLoad(kind, "ok", durationMs, { results: answered.results })
   }).pipe(
     Effect.onInterrupt(() =>
@@ -60,48 +69,51 @@ const load = <A, Row extends { readonly key: string; readonly state: string }>(
 /** `owner/name`'s docs index. */
 const loadIndex = (owner: string, name: string) =>
   Effect.flatMap(DocsClient, (client) => {
+    const id = repoId(owner, name)
     const key = repoKeyOf(owner, name)
     return load(
       "index",
       (store) => store.indexes,
       key,
-      { key, state: "loading" as const, title: "", summary: null, pages: [], code: null },
+      { key, repoId: id, state: "loading" as const, title: "", summary: null, pages: [], code: null },
       client.search(owner, name, ""),
       (listing) => ({
-        row: { key, state: "ready" as const, title: listing.title, summary: listing.summary ?? null, pages: listing.pages, code: null },
+        row: { key, repoId: id, state: "ready" as const, title: listing.title, summary: listing.summary ?? null, pages: listing.pages, code: null },
         results: listing.pages.length,
       }),
-      (code) => ({ key, state: "refused" as const, title: "", summary: null, pages: [], code }),
+      (code) => ({ key, repoId: id, state: "refused" as const, title: "", summary: null, pages: [], code }),
     )
   })
 
 /** One page of `owner/name`'s docs. */
 const loadPage = (owner: string, name: string, path: string) =>
   Effect.flatMap(DocsClient, (client) => {
+    const id = repoId(owner, name)
     const key = pageKeyOf(repoKeyOf(owner, name), path)
     return load(
       "page",
       (store) => store.pages,
       key,
-      { key, state: "loading" as const, title: "", url: "", text: "", code: null },
+      { key, repoId: id, state: "loading" as const, title: "", url: "", text: "", code: null },
       client.page(owner, name, path),
-      (page) => ({ row: { key, state: "text" as const, title: page.title, url: page.url, text: page.text, code: null } }),
-      (code) => ({ key, state: "refused" as const, title: "", url: "", text: "", code }),
+      (page) => ({ row: { key, repoId: id, state: "text" as const, title: page.title, url: page.url, text: page.text, code: null } }),
+      (code) => ({ key, repoId: id, state: "refused" as const, title: "", url: "", text: "", code }),
     )
   })
 
 /** A search of `owner/name`'s docs for `query`'s words. */
 const loadSearch = (owner: string, name: string, query: string) =>
   Effect.flatMap(DocsClient, (client) => {
+    const id = repoId(owner, name)
     const key = searchKeyOf(repoKeyOf(owner, name), query)
     return load(
       "search",
       (store) => store.searches,
       key,
-      { key, state: "loading" as const, pages: [], code: null },
+      { key, repoId: id, state: "loading" as const, pages: [], code: null },
       client.search(owner, name, query.trim()),
-      (listing) => ({ row: { key, state: "ready" as const, pages: listing.pages, code: null }, results: listing.pages.length }),
-      (code) => ({ key, state: "refused" as const, pages: [], code }),
+      (listing) => ({ row: { key, repoId: id, state: "ready" as const, pages: listing.pages, code: null }, results: listing.pages.length }),
+      (code) => ({ key, repoId: id, state: "refused" as const, pages: [], code }),
     )
   })
 

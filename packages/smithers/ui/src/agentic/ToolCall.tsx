@@ -9,7 +9,7 @@ import {
   type ComponentProps,
   type ReactNode,
 } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { safeImageSrc } from "../internal/safeImageSrc";
 import { CodeBlock } from "../primitives/CodeBlock";
 import { StatusPill } from "../status-pill";

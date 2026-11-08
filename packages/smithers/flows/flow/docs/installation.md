@@ -13,7 +13,7 @@ npm install @smthrs/flow@next effect
 
 The `next` tag carries the 1.0 release candidates.
 
-`effect` is a peer dependency of this package, at exactly `4.1.0`. Add one
+`effect` is a peer dependency of this package, at exactly `4.1.1`. Add one
 `effect` at that version to your own dependencies: your declarations import
 `effect/Schema` and your implementations import `effect/Effect` directly, and two
 copies of `effect` in one program are two sets of service tags.
@@ -28,7 +28,7 @@ from, and the canonical JSON checks applied to values.
 ## Use the libraries
 
 Every `@smthrs` library installs from npm the same way. Name each package your
-code imports with the `next` tag, and add one `effect` in the `4.1.0` range
+code imports with the `next` tag, and add one `effect` in the `4.1.1` range
 the libraries peer. The [Quickstart](./quickstart.md) program needs these:
 
 ```bash
@@ -73,7 +73,7 @@ composition that runs a flow adds an engine and a platform crypto service.
 - [`@smthrs/engine`](/api/engine) implements `FlowRuntime`. Its
   `FlowEngine.layerMemory` keeps every recorded step in the process, which is
   what the [Quickstart](./quickstart.md) and most tests use.
-- `@effect/platform-node` supplies `Crypto.layerFromDigest(NodeCrypto.layerDigest)`. An action dispatch is
+- `@effect/platform-node` supplies `NodeCrypto.layer`. An action dispatch is
   recorded under a derived step identity, so the engine needs a `Crypto` service
   even in memory. A browser host supplies its own, such as `BrowserCrypto` from
   `@effect/platform-browser`; nothing in this package imports a Node built-in.

@@ -1,6 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
 import * as Sha256 from "@smthrs/crypto/Sha256"
 import { DurableDeferred, Flow, FlowRuntime, WaitFor } from "@smthrs/flow"
 import { ExecutionFact, Journal, JournalEvent, SqlJournal } from "@smthrs/journal"
@@ -100,7 +99,7 @@ const suspendedPointOnReopen = (token: string, point: string | null) =>
                 Effect.andThen(Effect.flatMap(FlowRuntime.FlowInstance, Flow.suspend))
               ))
             yield* executeAndDrain(driver, TestFlow, { executionId, payload: {}, discard: true })
-          }).pipe(Effect.provide(services), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+          }).pipe(Effect.provide(services), Effect.provide(NodeCrypto.layer))
         )
       )
       yield* onFile(
@@ -191,7 +190,7 @@ describe("native facts over file SQLite", () => {
               expect((yield* runs.get("driver")).status).toBe("completed")
               const events = yield* history(journal, "driver")
               expect(events.map((event) => (event.payload as { decision?: string }).decision)).toContain("resumed")
-            }).pipe(Effect.provide(services), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+            }).pipe(Effect.provide(services), Effect.provide(NodeCrypto.layer))
           )
         )
         yield* onFile(file, verified("driver", "detach").pipe(Effect.provide(services)))
@@ -219,7 +218,7 @@ describe("native facts over file SQLite", () => {
                   request: JSON.stringify(request)
                 }).pipe(Effect.andThen(Effect.flatMap(FlowRuntime.FlowInstance, Flow.suspend))))
               yield* executeAndDrain(driver, TestFlow, { executionId: "question", payload: {}, discard: true })
-            }).pipe(Effect.provide(services), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+            }).pipe(Effect.provide(services), Effect.provide(NodeCrypto.layer))
           )
         )
         yield* onFile(
@@ -312,7 +311,7 @@ describe("native facts over file SQLite", () => {
               { count: number }
             >`SELECT count(*) AS count FROM flows_runs WHERE run_id = 'broken' AND waiting_reason IS NOT NULL`
             expect(records[0]?.count).toBe(0)
-          }).pipe(Effect.provide(services), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+          }).pipe(Effect.provide(services), Effect.provide(NodeCrypto.layer))
         )
       )
     ))

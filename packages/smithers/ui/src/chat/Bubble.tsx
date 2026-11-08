@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { cva } from "class-variance-authority";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 
 const bubbleVariantClasses = cva("sui-bubble", {

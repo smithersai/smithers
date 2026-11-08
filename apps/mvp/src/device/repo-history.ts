@@ -34,3 +34,6 @@ export const RepositoryV3 = Schema.Struct({
    */
   reclaimable: Schema.optional(Schema.Boolean),
 })
+
+/** Refusal v1 used the repository itself as the mark key. */
+export const RepoRefusalV1 = Schema.Struct({ id: Schema.String, at: Schema.Number })

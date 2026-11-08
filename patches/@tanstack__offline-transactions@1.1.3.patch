@@ -1,0 +1,292 @@
+diff --git a/dist/esm/types.d.ts b/dist/esm/types.d.ts
+--- a/dist/esm/types.d.ts
++++ b/dist/esm/types.d.ts
+@@ -65,6 +65,13 @@
+     error?: Error;
+ }
+ export interface OfflineConfig {
++  /** Opt-in retry isolation. Keys order dependent writes; undefined conflicts with every key. */
++  retryScheduling?: {
++    compare?: (left: OfflineTransaction, right: OfflineTransaction) => number
++    keys: (transaction: OfflineTransaction) => ReadonlyArray<string> | undefined
++    bypass: (transaction: OfflineTransaction) => boolean
++  }
++
+     collections: Record<string, Collection<any, any, any, any, any>>;
+     mutationFns: Record<string, OfflineMutationFn>;
+     storage?: StorageAdapter;
+diff --git a/dist/esm/OfflineExecutor.js b/dist/esm/OfflineExecutor.js
+--- a/dist/esm/OfflineExecutor.js
++++ b/dist/esm/OfflineExecutor.js
+@@ -21,7 +21,7 @@
+     this.settledTransactions = /* @__PURE__ */ new Set();
+     this.restorationTransactions = /* @__PURE__ */ new Map();
+     this.config = config;
+-    this.scheduler = new KeyScheduler();
++    this.scheduler = new KeyScheduler(config.retryScheduling);
+     this.onlineDetector = config.onlineDetector ?? new WebOnlineDetector();
+     this.storage = null;
+     this.outbox = null;
+diff --git a/dist/esm/executor/KeyScheduler.js b/dist/esm/executor/KeyScheduler.js
+--- a/dist/esm/executor/KeyScheduler.js
++++ b/dist/esm/executor/KeyScheduler.js
+@@ -1,6 +1,24 @@
+ class KeyScheduler {
+-  constructor() {
++  constructor(retryScheduling) {
++    this.retryScheduling = retryScheduling;
+     this.pendingTransactions = [];
++  }
++  getEligible() {
++    if (!this.retryScheduling) return this.pendingTransactions.slice(0, 1);
++    if (this.retryScheduling.compare) this.pendingTransactions.sort(this.retryScheduling.compare);
++    const eligible = [];
++    const blocked = new Set();
++    let global = false;
++    for (const transaction of this.pendingTransactions) {
++      const selected = this.retryScheduling.keys(transaction);
++      const keys = selected?.length ? selected : void 0;
++      const conflict = global || (keys === void 0 ? blocked.size > 0 : keys.some((key) => blocked.has(key)));
++      if (!conflict) eligible.push(transaction);
++      if (!conflict && !this.retryScheduling.bypass(transaction)) break;
++      if (keys === void 0) global = true;
++      else for (const key of keys) blocked.add(key);
++    }
++    return eligible;
+   }
+   schedule(transaction) {
+     if (this.pendingTransactions.some((pending) => pending.id === transaction.id)) {
+@@ -16,8 +32,7 @@
+     if (this.activeTransactionId !== void 0 || this.pendingTransactions.length === 0) {
+       return void 0;
+     }
+-    const firstTransaction = this.pendingTransactions[0];
+-    return this.isReadyToRun(firstTransaction) ? firstTransaction : void 0;
++    return this.getEligible().find((transaction) => this.isReadyToRun(transaction));
+   }
+   isReadyToRun(transaction) {
+     return Date.now() >= transaction.nextAttemptAt;
+diff --git a/dist/esm/executor/KeyScheduler.d.ts b/dist/esm/executor/KeyScheduler.d.ts
+--- a/dist/esm/executor/KeyScheduler.d.ts
++++ b/dist/esm/executor/KeyScheduler.d.ts
+@@ -1,5 +1,8 @@
+-import { OfflineTransaction } from '../types.js';
++import { OfflineConfig, OfflineTransaction } from '../types.js';
+ export declare class KeyScheduler {
++    private readonly retryScheduling?;
++    constructor(retryScheduling?: OfflineConfig['retryScheduling']);
++    getEligible(): Array<OfflineTransaction>;
+     private pendingTransactions;
+     private activeTransactionId;
+     schedule(transaction: OfflineTransaction): boolean;
+diff --git a/dist/esm/executor/TransactionExecutor.js b/dist/esm/executor/TransactionExecutor.js
+--- a/dist/esm/executor/TransactionExecutor.js
++++ b/dist/esm/executor/TransactionExecutor.js
+@@ -340,11 +340,11 @@
+     }, delay);
+   }
+   getNextRetryTime() {
+-    const allTransactions = this.scheduler.getAllPendingTransactions();
++    const allTransactions = this.scheduler.getEligible();
+     if (allTransactions.length === 0) {
+       return null;
+     }
+-    return allTransactions[0].nextAttemptAt;
++    return Math.min(...allTransactions.map((transaction) => transaction.nextAttemptAt));
+   }
+   clearRetryTimer() {
+     if (this.retryTimer) {
+diff --git a/dist/cjs/OfflineExecutor.cjs b/dist/cjs/OfflineExecutor.cjs
+--- a/dist/cjs/OfflineExecutor.cjs
++++ b/dist/cjs/OfflineExecutor.cjs
+@@ -23,7 +23,7 @@
+     this.settledTransactions = /* @__PURE__ */ new Set();
+     this.restorationTransactions = /* @__PURE__ */ new Map();
+     this.config = config;
+-    this.scheduler = new KeyScheduler.KeyScheduler();
++    this.scheduler = new KeyScheduler.KeyScheduler(config.retryScheduling);
+     this.onlineDetector = config.onlineDetector ?? new OnlineDetector.WebOnlineDetector();
+     this.storage = null;
+     this.outbox = null;
+diff --git a/dist/cjs/types.d.cts b/dist/cjs/types.d.cts
+--- a/dist/cjs/types.d.cts
++++ b/dist/cjs/types.d.cts
+@@ -65,6 +65,13 @@
+     error?: Error;
+ }
+ export interface OfflineConfig {
++  /** Opt-in retry isolation. Keys order dependent writes; undefined conflicts with every key. */
++  retryScheduling?: {
++    compare?: (left: OfflineTransaction, right: OfflineTransaction) => number
++    keys: (transaction: OfflineTransaction) => ReadonlyArray<string> | undefined
++    bypass: (transaction: OfflineTransaction) => boolean
++  }
++
+     collections: Record<string, Collection<any, any, any, any, any>>;
+     mutationFns: Record<string, OfflineMutationFn>;
+     storage?: StorageAdapter;
+diff --git a/dist/cjs/executor/KeyScheduler.d.cts b/dist/cjs/executor/KeyScheduler.d.cts
+--- a/dist/cjs/executor/KeyScheduler.d.cts
++++ b/dist/cjs/executor/KeyScheduler.d.cts
+@@ -1,5 +1,8 @@
+-import { OfflineTransaction } from '../types.cjs';
++import { OfflineConfig, OfflineTransaction } from '../types.cjs';
+ export declare class KeyScheduler {
++    private readonly retryScheduling?;
++    constructor(retryScheduling?: OfflineConfig['retryScheduling']);
++    getEligible(): Array<OfflineTransaction>;
+     private pendingTransactions;
+     private activeTransactionId;
+     schedule(transaction: OfflineTransaction): boolean;
+diff --git a/dist/cjs/executor/TransactionExecutor.cjs b/dist/cjs/executor/TransactionExecutor.cjs
+--- a/dist/cjs/executor/TransactionExecutor.cjs
++++ b/dist/cjs/executor/TransactionExecutor.cjs
+@@ -342,11 +342,11 @@
+     }, delay);
+   }
+   getNextRetryTime() {
+-    const allTransactions = this.scheduler.getAllPendingTransactions();
++    const allTransactions = this.scheduler.getEligible();
+     if (allTransactions.length === 0) {
+       return null;
+     }
+-    return allTransactions[0].nextAttemptAt;
++    return Math.min(...allTransactions.map((transaction) => transaction.nextAttemptAt));
+   }
+   clearRetryTimer() {
+     if (this.retryTimer) {
+diff --git a/dist/cjs/executor/KeyScheduler.cjs b/dist/cjs/executor/KeyScheduler.cjs
+--- a/dist/cjs/executor/KeyScheduler.cjs
++++ b/dist/cjs/executor/KeyScheduler.cjs
+@@ -1,8 +1,26 @@
+ "use strict";
+ Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
+ class KeyScheduler {
+-  constructor() {
++  constructor(retryScheduling) {
++    this.retryScheduling = retryScheduling;
+     this.pendingTransactions = [];
++  }
++  getEligible() {
++    if (!this.retryScheduling) return this.pendingTransactions.slice(0, 1);
++    if (this.retryScheduling.compare) this.pendingTransactions.sort(this.retryScheduling.compare);
++    const eligible = [];
++    const blocked = new Set();
++    let global = false;
++    for (const transaction of this.pendingTransactions) {
++      const selected = this.retryScheduling.keys(transaction);
++      const keys = selected?.length ? selected : void 0;
++      const conflict = global || (keys === void 0 ? blocked.size > 0 : keys.some((key) => blocked.has(key)));
++      if (!conflict) eligible.push(transaction);
++      if (!conflict && !this.retryScheduling.bypass(transaction)) break;
++      if (keys === void 0) global = true;
++      else for (const key of keys) blocked.add(key);
++    }
++    return eligible;
+   }
+   schedule(transaction) {
+     if (this.pendingTransactions.some((pending) => pending.id === transaction.id)) {
+@@ -18,8 +34,7 @@
+     if (this.activeTransactionId !== void 0 || this.pendingTransactions.length === 0) {
+       return void 0;
+     }
+-    const firstTransaction = this.pendingTransactions[0];
+-    return this.isReadyToRun(firstTransaction) ? firstTransaction : void 0;
++    return this.getEligible().find((transaction) => this.isReadyToRun(transaction));
+   }
+   isReadyToRun(transaction) {
+     return Date.now() >= transaction.nextAttemptAt;
+diff --git a/src/OfflineExecutor.ts b/src/OfflineExecutor.ts
+--- a/src/OfflineExecutor.ts
++++ b/src/OfflineExecutor.ts
+@@ -88,7 +88,7 @@
+ 
+   constructor(config: OfflineConfig) {
+     this.config = config
+-    this.scheduler = new KeyScheduler()
++    this.scheduler = new KeyScheduler(config.retryScheduling)
+     this.onlineDetector = config.onlineDetector ?? new WebOnlineDetector()
+ 
+     // Initialize as pending - will be set by async initialization
+diff --git a/src/types.ts b/src/types.ts
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -96,6 +96,13 @@
+ }
+ 
+ export interface OfflineConfig {
++  /** Opt-in retry isolation. Keys order dependent writes; undefined conflicts with every key. */
++  retryScheduling?: {
++    compare?: (left: OfflineTransaction, right: OfflineTransaction) => number
++    keys: (transaction: OfflineTransaction) => ReadonlyArray<string> | undefined
++    bypass: (transaction: OfflineTransaction) => boolean
++  }
++
+   collections: Record<string, Collection<any, any, any, any, any>>
+   mutationFns: Record<string, OfflineMutationFn>
+   storage?: StorageAdapter
+diff --git a/src/executor/TransactionExecutor.ts b/src/executor/TransactionExecutor.ts
+--- a/src/executor/TransactionExecutor.ts
++++ b/src/executor/TransactionExecutor.ts
+@@ -466,14 +466,14 @@
+   }
+ 
+   private getNextRetryTime(): number | null {
+-    const allTransactions = this.scheduler.getAllPendingTransactions()
++    const allTransactions = this.scheduler.getEligible()
+ 
+     if (allTransactions.length === 0) {
+       return null
+     }
+ 
+-    // Later transactions cannot overtake the FIFO head, even if they are ready.
+-    return allTransactions[0]!.nextAttemptAt
++    // Only independent heads can overtake a bypassed write.
++    return Math.min(...allTransactions.map((transaction) => transaction.nextAttemptAt))
+   }
+ 
+   private clearRetryTimer(): void {
+diff --git a/src/executor/KeyScheduler.ts b/src/executor/KeyScheduler.ts
+--- a/src/executor/KeyScheduler.ts
++++ b/src/executor/KeyScheduler.ts
+@@ -1,8 +1,29 @@
+-import type { OfflineTransaction } from '../types'
++import type { OfflineConfig, OfflineTransaction } from '../types'
+ 
+ export class KeyScheduler {
+   private pendingTransactions: Array<OfflineTransaction> = []
+   private activeTransactionId: string | undefined
++
++  constructor(private readonly retryScheduling?: OfflineConfig['retryScheduling']) {}
++
++  /** Eligible heads exclude dependencies of bypassed writes, including transitive dependencies. */
++  getEligible(): Array<OfflineTransaction> {
++    if (!this.retryScheduling) return this.pendingTransactions.slice(0, 1)
++    if (this.retryScheduling.compare) this.pendingTransactions.sort(this.retryScheduling.compare)
++    const eligible: Array<OfflineTransaction> = []
++    const blocked = new Set<string>()
++    let global = false
++    for (const transaction of this.pendingTransactions) {
++      const selected = this.retryScheduling.keys(transaction)
++      const keys = selected?.length ? selected : undefined
++      const conflict = global || (keys === undefined ? blocked.size > 0 : keys.some((key) => blocked.has(key)))
++      if (!conflict) eligible.push(transaction)
++      if (!conflict && !this.retryScheduling.bypass(transaction)) break
++      if (keys === undefined) global = true
++      else for (const key of keys) blocked.add(key)
++    }
++    return eligible
++  }
+ 
+   schedule(transaction: OfflineTransaction): boolean {
+     if (
+@@ -25,8 +44,7 @@
+     ) {
+       return undefined
+     }
+-    const firstTransaction = this.pendingTransactions[0]!
+-    return this.isReadyToRun(firstTransaction) ? firstTransaction : undefined
++    return this.getEligible().find((transaction) => this.isReadyToRun(transaction))
+   }
+ 
+   private isReadyToRun(transaction: OfflineTransaction): boolean {

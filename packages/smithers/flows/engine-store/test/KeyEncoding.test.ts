@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * A keyed sealed action's outcome replays under the key encoding it was written in.
  *
@@ -7,12 +8,12 @@
  * the step's body never runs again. Before encodings were versioned, a change to the derivation re-keyed every
  * recorded step, so a run parked across an upgrade ran its sealed work again.
  */
-import type { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import * as Node from "@smthrs/plan/Node"
 import { Ownership } from "@smthrs/run-store"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -65,8 +66,9 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true })
 })
 
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope | TestClock.TestClock | Crypto.Crypto>) =>
-  Effect.runPromise(withCrypto(Effect.scoped(effect).pipe(Effect.provide(TestClock.layer()))))
+const run = <A, E>(
+  effect: Effect.Effect<A, E, Scope.Scope | TestClock.TestClock | (EffectDigest.Digest | SecureRandom.SecureRandom)>
+) => Effect.runPromise(withCrypto(Effect.scoped(effect).pipe(Effect.provide(TestClock.layer()))))
 
 /** The sealed step under test: keyed by a declared string, so its key is a cache key the encoding shapes. */
 const Measure = Action.make("KeyEncoding/Measure", {

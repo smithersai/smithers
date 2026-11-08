@@ -1,0 +1,658 @@
+{
+  "id": "packages/smithers/flows/kernel",
+  "name": "@smthrs/kernel",
+  "owner": {
+    "declaration": "packages/smithers/flows/kernel/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "lint": "eslint src examples --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
+    "circular": "node ../../../repo-targets/scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./test/contract": "./src/test/HostContract.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./CapabilitySet": "./src/CapabilitySet.ts",
+    "./ChildProcessSpawner": "./src/ChildProcessSpawner.ts",
+    "./CommandLine": "./src/CommandLine.ts",
+    "./ContainedSpawner": "./src/ContainedSpawner.ts",
+    "./FileSystem": "./src/FileSystem.ts",
+    "./GrantEvent": "./src/GrantEvent.ts",
+    "./GrantStore": "./src/GrantStore.ts",
+    "./HostError": "./src/HostError.ts",
+    "./HostServices": "./src/HostServices.ts",
+    "./HttpClient": "./src/HttpClient.ts",
+    "./Jj": "./src/Jj.ts",
+    "./JournalGrantStore": "./src/JournalGrantStore.ts",
+    "./Path": "./src/Path.ts",
+    "./ProcessLedger": "./src/ProcessLedger.ts",
+    "./Rooted": "./src/Rooted.ts",
+    "./Workspace": "./src/Workspace.ts",
+    "./index": "./src/index.ts",
+    "./test/HostContract": "./src/test/HostContract.ts",
+    "./test/TestGrantStore": "./src/test/TestGrantStore.ts",
+    "./ChildProcessEnvironment": "./src/ChildProcessEnvironment.ts",
+    "./ProcessConfinement": "./src/ProcessConfinement.ts",
+    "./Unreachable": "./src/Unreachable.ts"
+  },
+  "production": [
+    "eslint.config.js",
+    "examples/check-a-policy.ts",
+    "PACKAGE.ts",
+    "scripts/build.mjs",
+    "src/CapabilitySet.ts",
+    "src/ChildProcessEnvironment.ts",
+    "src/ChildProcessSpawner.ts",
+    "src/CommandLine.ts",
+    "src/ContainedSpawner.ts",
+    "src/FileSystem.ts",
+    "src/FileSystemBatch.ts",
+    "src/GrantEvent.ts",
+    "src/GrantStore.ts",
+    "src/HostError.ts",
+    "src/HostServices.ts",
+    "src/HttpClient.ts",
+    "src/index.ts",
+    "src/internal/Containment.ts",
+    "src/internal/makeCapability.ts",
+    "src/internal/Pipeline.ts",
+    "src/Jj.ts",
+    "src/JournalGrantStore.ts",
+    "src/Path.ts",
+    "src/ProcessConfinement.ts",
+    "src/ProcessLedger.ts",
+    "src/Rooted.ts",
+    "src/test/FileSystemBatchContract.ts",
+    "src/test/HostContract.ts",
+    "src/test/TestGrantStore.ts",
+    "src/Unreachable.ts",
+    "src/Workspace.ts",
+    "test/contract/HostContract.ts",
+    "vitest.config.ts"
+  ],
+  "tests": [
+    "packages/smithers/flows/kernel/src/test/FileSystemBatchContract.ts",
+    "packages/smithers/flows/kernel/src/test/HostContract.ts",
+    "packages/smithers/flows/kernel/src/test/TestGrantStore.ts",
+    "packages/smithers/flows/kernel/test/BrowserBundle.test.ts",
+    "packages/smithers/flows/kernel/test/CanonicalResource.test.ts",
+    "packages/smithers/flows/kernel/test/CapabilitySetEquality.test.ts",
+    "packages/smithers/flows/kernel/test/ChildProcessEnvironment.test.ts",
+    "packages/smithers/flows/kernel/test/ChildProcessSpawner.integration.test.ts",
+    "packages/smithers/flows/kernel/test/ChildProcessSpawner.test.ts",
+    "packages/smithers/flows/kernel/test/CommandLine.test.ts",
+    "packages/smithers/flows/kernel/test/ContainedSpawner.test.ts",
+    "packages/smithers/flows/kernel/test/ContainedSpawnerMarker.test.ts",
+    "packages/smithers/flows/kernel/test/contract/HostContract.ts",
+    "packages/smithers/flows/kernel/test/contract/HostContractHelpers.test.ts",
+    "packages/smithers/flows/kernel/test/contract/UnsupportedHost.contract.test.ts",
+    "packages/smithers/flows/kernel/test/Docs.test.ts",
+    "packages/smithers/flows/kernel/test/EntryPoints.test.ts",
+    "packages/smithers/flows/kernel/test/examples.test.ts",
+    "packages/smithers/flows/kernel/test/FileSystem.integration.test.ts",
+    "packages/smithers/flows/kernel/test/FileSystem.test.ts",
+    "packages/smithers/flows/kernel/test/FileSystemBatch.test.ts",
+    "packages/smithers/flows/kernel/test/FileSystemConfined.test.ts",
+    "packages/smithers/flows/kernel/test/FileSystemGlobAuthorization.test.ts",
+    "packages/smithers/flows/kernel/test/FileSystemOperations.test.ts",
+    "packages/smithers/flows/kernel/test/GrantEvent.test.ts",
+    "packages/smithers/flows/kernel/test/GrantStore.test.ts",
+    "packages/smithers/flows/kernel/test/GrantStoreAtomicity.test.ts",
+    "packages/smithers/flows/kernel/test/GrantStoreEnvelope.test.ts",
+    "packages/smithers/flows/kernel/test/GrantStoreHardening.test.ts",
+    "packages/smithers/flows/kernel/test/GrantStoreValidation.test.ts",
+    "packages/smithers/flows/kernel/test/HostServices.test.ts",
+    "packages/smithers/flows/kernel/test/HttpClient.integration.test.ts",
+    "packages/smithers/flows/kernel/test/HttpClient.test.ts",
+    "packages/smithers/flows/kernel/test/HttpClientGrantStore.test.ts",
+    "packages/smithers/flows/kernel/test/HttpClientPreflight.test.ts",
+    "packages/smithers/flows/kernel/test/HttpClientUrls.test.ts",
+    "packages/smithers/flows/kernel/test/index.test.ts",
+    "packages/smithers/flows/kernel/test/Jj.test.ts",
+    "packages/smithers/flows/kernel/test/JjResources.test.ts",
+    "packages/smithers/flows/kernel/test/JournalGrantStore.integration.test.ts",
+    "packages/smithers/flows/kernel/test/JournalGrantStore.test.ts",
+    "packages/smithers/flows/kernel/test/JournalGrantStoreCapacity.integration.test.ts",
+    "packages/smithers/flows/kernel/test/JournalGrantStoreReplay.test.ts",
+    "packages/smithers/flows/kernel/test/KernelStubs.test.ts",
+    "packages/smithers/flows/kernel/test/Pipeline.test.ts",
+    "packages/smithers/flows/kernel/test/ProcessConfinement.test.ts",
+    "packages/smithers/flows/kernel/test/ProcessLedger.test.ts",
+    "packages/smithers/flows/kernel/test/Rooted.test.ts",
+    "packages/smithers/flows/kernel/test/SpawnGrantIdentity.test.ts",
+    "packages/smithers/flows/kernel/test/TestGrantStore.test.ts",
+    "packages/smithers/flows/kernel/test/Unreachable.test.ts",
+    "packages/smithers/flows/kernel/test/Workspace.test.ts",
+    "packages/smithers/flows/kernel/tsconfig.test.json"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    "packages/smithers/flows/kernel/docs/concepts/process-containment.md",
+    "packages/smithers/flows/kernel/docs/guides/contain-spawned-processes.md",
+    "packages/smithers/flows/kernel/docs/guides/guard-a-host-bundle.md",
+    "packages/smithers/flows/kernel/src/ChildProcessEnvironment.ts",
+    "packages/smithers/flows/kernel/src/ChildProcessSpawner.ts",
+    "packages/smithers/flows/kernel/src/ProcessConfinement.ts",
+    "packages/smithers/flows/kernel/src/ProcessLedger.ts",
+    "packages/smithers/flows/kernel/test/BrowserBundle.test.ts",
+    "packages/smithers/flows/kernel/test/ChildProcessEnvironment.test.ts",
+    "packages/smithers/flows/kernel/test/ChildProcessSpawner.integration.test.ts",
+    "packages/smithers/flows/kernel/test/ChildProcessSpawner.test.ts",
+    "packages/smithers/flows/kernel/test/ProcessConfinement.test.ts",
+    "packages/smithers/flows/kernel/test/ProcessLedger.test.ts"
+  ],
+  "ignoredCases": [],
+  "configurations": [
+    {
+      "path": "packages/smithers/flows/kernel/eslint.config.js",
+      "sha256": "e7d6176c9d675e3d558d7b050ea74b1a57780647114fad8b8af9ddcd90a31e26",
+      "source": "import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  {\n    ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]\n  },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\", \"examples/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: {\n      parserOptions: {\n        // The test project covers src and examples; examples are outside the\n        // build project, so the project service would not find them.\n        project: \"./tsconfig.test.json\",\n        tsconfigRootDir: import.meta.dirname\n      }\n    },\n    settings: {\n      \"import/resolver\": {\n        typescript: {\n          project: [\"./tsconfig.json\"]\n        }\n      }\n    },\n    plugins: {\n      unicorn\n    },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n",
+      "coverageDirectives": [
+        {
+          "line": 10,
+          "text": "ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]"
+        },
+        {
+          "line": 43,
+          "text": "\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/kernel/package.json",
+      "sha256": "dc5102838aeb33ec4dc579325d89c54c64ce22f57d7c2e11f4e42979acfb94ad",
+      "source": "{\n  \"name\": \"@smthrs/kernel\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"engine\"\n  },\n  \"description\": \"Capability kernel: effect tiers, monotone capability sets, grant store, and permission-decorating layers over the Host services\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/flows/kernel\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"effect\",\n    \"flow\",\n    \"capabilities\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"effect\",\n    \"flow\",\n    \"capabilities\"\n  ],\n  \"engines\": {\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [],\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./test/contract\": \"./src/test/HostContract.ts\",\n    \"./internal/*\": null,\n    \"./*/index\": null,\n    \"./CapabilitySet\": \"./src/CapabilitySet.ts\",\n    \"./ChildProcessSpawner\": \"./src/ChildProcessSpawner.ts\",\n    \"./CommandLine\": \"./src/CommandLine.ts\",\n    \"./ContainedSpawner\": \"./src/ContainedSpawner.ts\",\n    \"./FileSystem\": \"./src/FileSystem.ts\",\n    \"./GrantEvent\": \"./src/GrantEvent.ts\",\n    \"./GrantStore\": \"./src/GrantStore.ts\",\n    \"./HostError\": \"./src/HostError.ts\",\n    \"./HostServices\": \"./src/HostServices.ts\",\n    \"./HttpClient\": \"./src/HttpClient.ts\",\n    \"./Jj\": \"./src/Jj.ts\",\n    \"./JournalGrantStore\": \"./src/JournalGrantStore.ts\",\n    \"./Path\": \"./src/Path.ts\",\n    \"./ProcessLedger\": \"./src/ProcessLedger.ts\",\n    \"./Rooted\": \"./src/Rooted.ts\",\n    \"./Workspace\": \"./src/Workspace.ts\",\n    \"./index\": \"./src/index.ts\",\n    \"./test/HostContract\": \"./src/test/HostContract.ts\",\n    \"./test/TestGrantStore\": \"./src/test/TestGrantStore.ts\",\n    \"./ChildProcessEnvironment\": \"./src/ChildProcessEnvironment.ts\",\n    \"./ProcessConfinement\": \"./src/ProcessConfinement.ts\",\n    \"./Unreachable\": \"./src/Unreachable.ts\"\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"docs/\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./test/contract\": {\n        \"import\": {\n          \"types\": \"./dist/esm/test/HostContract.d.ts\",\n          \"default\": \"./dist/esm/test/HostContract.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/test/HostContract.d.ts\",\n          \"default\": \"./dist/cjs/test/HostContract.js\"\n        }\n      },\n      \"./internal/*\": null,\n      \"./*/index\": null,\n      \"./CapabilitySet\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CapabilitySet.d.ts\",\n          \"default\": \"./dist/esm/CapabilitySet.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CapabilitySet.d.ts\",\n          \"default\": \"./dist/cjs/CapabilitySet.js\"\n        }\n      },\n      \"./ChildProcessSpawner\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ChildProcessSpawner.d.ts\",\n          \"default\": \"./dist/esm/ChildProcessSpawner.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ChildProcessSpawner.d.ts\",\n          \"default\": \"./dist/cjs/ChildProcessSpawner.js\"\n        }\n      },\n      \"./CommandLine\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CommandLine.d.ts\",\n          \"default\": \"./dist/esm/CommandLine.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CommandLine.d.ts\",\n          \"default\": \"./dist/cjs/CommandLine.js\"\n        }\n      },\n      \"./ContainedSpawner\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ContainedSpawner.d.ts\",\n          \"default\": \"./dist/esm/ContainedSpawner.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ContainedSpawner.d.ts\",\n          \"default\": \"./dist/cjs/ContainedSpawner.js\"\n        }\n      },\n      \"./FileSystem\": {\n        \"import\": {\n          \"types\": \"./dist/esm/FileSystem.d.ts\",\n          \"default\": \"./dist/esm/FileSystem.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/FileSystem.d.ts\",\n          \"default\": \"./dist/cjs/FileSystem.js\"\n        }\n      },\n      \"./GrantEvent\": {\n        \"import\": {\n          \"types\": \"./dist/esm/GrantEvent.d.ts\",\n          \"default\": \"./dist/esm/GrantEvent.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/GrantEvent.d.ts\",\n          \"default\": \"./dist/cjs/GrantEvent.js\"\n        }\n      },\n      \"./GrantStore\": {\n        \"import\": {\n          \"types\": \"./dist/esm/GrantStore.d.ts\",\n          \"default\": \"./dist/esm/GrantStore.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/GrantStore.d.ts\",\n          \"default\": \"./dist/cjs/GrantStore.js\"\n        }\n      },\n      \"./HostError\": {\n        \"import\": {\n          \"types\": \"./dist/esm/HostError.d.ts\",\n          \"default\": \"./dist/esm/HostError.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/HostError.d.ts\",\n          \"default\": \"./dist/cjs/HostError.js\"\n        }\n      },\n      \"./HostServices\": {\n        \"import\": {\n          \"types\": \"./dist/esm/HostServices.d.ts\",\n          \"default\": \"./dist/esm/HostServices.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/HostServices.d.ts\",\n          \"default\": \"./dist/cjs/HostServices.js\"\n        }\n      },\n      \"./HttpClient\": {\n        \"import\": {\n          \"types\": \"./dist/esm/HttpClient.d.ts\",\n          \"default\": \"./dist/esm/HttpClient.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/HttpClient.d.ts\",\n          \"default\": \"./dist/cjs/HttpClient.js\"\n        }\n      },\n      \"./Jj\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Jj.d.ts\",\n          \"default\": \"./dist/esm/Jj.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Jj.d.ts\",\n          \"default\": \"./dist/cjs/Jj.js\"\n        }\n      },\n      \"./JournalGrantStore\": {\n        \"import\": {\n          \"types\": \"./dist/esm/JournalGrantStore.d.ts\",\n          \"default\": \"./dist/esm/JournalGrantStore.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/JournalGrantStore.d.ts\",\n          \"default\": \"./dist/cjs/JournalGrantStore.js\"\n        }\n      },\n      \"./Path\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Path.d.ts\",\n          \"default\": \"./dist/esm/Path.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Path.d.ts\",\n          \"default\": \"./dist/cjs/Path.js\"\n        }\n      },\n      \"./ProcessLedger\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ProcessLedger.d.ts\",\n          \"default\": \"./dist/esm/ProcessLedger.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ProcessLedger.d.ts\",\n          \"default\": \"./dist/cjs/ProcessLedger.js\"\n        }\n      },\n      \"./Rooted\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Rooted.d.ts\",\n          \"default\": \"./dist/esm/Rooted.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Rooted.d.ts\",\n          \"default\": \"./dist/cjs/Rooted.js\"\n        }\n      },\n      \"./Workspace\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Workspace.d.ts\",\n          \"default\": \"./dist/esm/Workspace.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Workspace.d.ts\",\n          \"default\": \"./dist/cjs/Workspace.js\"\n        }\n      },\n      \"./index\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./test/HostContract\": {\n        \"import\": {\n          \"types\": \"./dist/esm/test/HostContract.d.ts\",\n          \"default\": \"./dist/esm/test/HostContract.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/test/HostContract.d.ts\",\n          \"default\": \"./dist/cjs/test/HostContract.js\"\n        }\n      },\n      \"./test/TestGrantStore\": {\n        \"import\": {\n          \"types\": \"./dist/esm/test/TestGrantStore.d.ts\",\n          \"default\": \"./dist/esm/test/TestGrantStore.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/test/TestGrantStore.d.ts\",\n          \"default\": \"./dist/cjs/test/TestGrantStore.js\"\n        }\n      },\n      \"./ChildProcessEnvironment\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ChildProcessEnvironment.d.ts\",\n          \"default\": \"./dist/esm/ChildProcessEnvironment.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ChildProcessEnvironment.d.ts\",\n          \"default\": \"./dist/cjs/ChildProcessEnvironment.js\"\n        }\n      },\n      \"./ProcessConfinement\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ProcessConfinement.d.ts\",\n          \"default\": \"./dist/esm/ProcessConfinement.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ProcessConfinement.d.ts\",\n          \"default\": \"./dist/cjs/ProcessConfinement.js\"\n        }\n      },\n      \"./Unreachable\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Unreachable.d.ts\",\n          \"default\": \"./dist/esm/Unreachable.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Unreachable.d.ts\",\n          \"default\": \"./dist/cjs/Unreachable.js\"\n        }\n      }\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src examples --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"check\": \"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"vitest --coverage\"\n  },\n  \"dependencies\": {\n    \"@smthrs/capability\": \"1.0.0-rc.16\",\n    \"@smthrs/crypto\": \"1.0.0-rc.16\",\n    \"@smthrs/jj\": \"1.0.0-rc.16\",\n    \"@smthrs/journal\": \"1.0.0-rc.16\"\n  },\n  \"peerDependencies\": {\n    \"effect\": \"4.0.5\",\n    \"vitest\": \"^5.0.0\"\n  },\n  \"peerDependenciesMeta\": {\n    \"@effect/vitest\": {\n      \"optional\": true\n    },\n    \"vitest\": {\n      \"optional\": true\n    }\n  },\n  \"devDependencies\": {\n    \"@effect/language-service\": \"0.87.2\",\n    \"@effect/platform-node\": \"4.0.5\",\n    \"@effect/vitest\": \"4.0.5\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@smthrs/database\": \"1.0.0-rc.16\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"effect\": \"4.0.5\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\",\n    \"fast-check\": \"4.9.0\"\n  }\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 333,
+          "text": "\"coverage\": \"vitest --coverage\""
+        },
+        {
+          "line": 360,
+          "text": "\"@vitest/coverage-v8\": \"5.0.0\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/kernel/PACKAGE.ts",
+      "sha256": "d47477d0b2ecbf05f583a13bb14059b16737b344af4c4c30795c08f210bb2781",
+      "source": "import { BuildAndCheckTypeScriptPackage } from \"@smthrs/repo-targets\"\n/** Standard package targets plus package-owned documentation generation. */\nimport { Smithers } from \"@smthrs/targets\"\nimport * as Input from \"@smthrs/targets/Input\"\n\nconst cwd = \"packages/smithers/flows/kernel\"\n\nconst { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({\n  deps: [],\n  // Examples are type-checked, linted and run by test/examples.test.ts.\n  sources: Input.glob(\"{src,examples}/**/*.ts\"),\n  cwd\n})\n\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"src/**\"],\n  checks: [\n    {\n      id: \"spawn-grant-matches-execution\",\n      title: \"The proc:spawn resource describes exactly the process that runs\",\n      threat: \"A flow granted one command line runs a different program, arguments, or shell on the host.\",\n      lookFor: [\n        \"A command field read for the capability check and read again (getter, proxy, mutation) for the actual spawn instead of from one frozen snapshot.\",\n        \"CommandLine.resource producing the same resource for two commands that execute differently (shell: true vs argv, custom shell), a chained shell line that a prefix grant still matches, or a pipeline checked as one joined resource instead of once per CommandLine.stages entry.\",\n        \"A spawner method (string, lines, exitCode, stream*) or pipeline leg that reaches the host spawner without passing the guarded spawn.\",\n        \"An env override the child would not inherit (a name outside ChildProcessEnvironment.isInheritedName such as LD_PRELOAD, GIT_*, NODE_OPTIONS, or a PATH/HOME value that differs from the ambient one) missing from the CommandLine.resource env prefix, or a cwd outside Workspace.root missing its cwd prefix, so it changes what a granted line executes while staying outside the grant.\"\n      ],\n      paths: [\"src/ChildProcessSpawner.ts\", \"src/CommandLine.ts\", \"src/Rooted.ts\", \"src/internal/Pipeline.ts\"]\n    },\n    {\n      id: \"child-env-least-authority\",\n      title: \"Children inherit no host credentials unless the caller declares them\",\n      threat: \"A spawned tool or agent reads the host's API keys, tokens, or cookies from its environment.\",\n      lookFor: [\n        \"A credential-shaped ambient name (e.g. GITHUB_TOKEN, AWS_SECRET_ACCESS_KEY, OPENAI_API_KEY) that credentialNamePattern fails to match.\",\n        \"A path that passes extendEnv or merges process.env instead of the null-prototype record from ChildProcessEnvironment.make.\",\n        \"Case-variant or duplicate names letting an ambient value survive a declared undefined removal.\"\n      ],\n      paths: [\"src/ChildProcessEnvironment.ts\", \"src/ChildProcessSpawner.ts\", \"src/ContainedSpawner.ts\"]\n    },\n    {\n      id: \"fs-confinement\",\n      title: \"Confined filesystem access never escapes the workspace root\",\n      threat:\n        \"A flow granted workspace file access reads or writes host files outside the workspace via symlinks, hard links, or '..'.\",\n      lookFor: [\n        \"canonicalResource or isInside accepting a path whose realpath leaves the root (prefix match without separator, symlink loop past depth 40, missing ancestor).\",\n        \"A check-then-use window where the path is authorized by name and then opened by name, letting a symlink be swapped in between.\",\n        \"An operation in confined() (glob root, temp directory, rename/copy destination, open flags) that is not refused or not routed through the atomic host.\",\n        \"Rooted.fileSystem mistaken for confinement: absolute paths and symlink targets pass through it unchanged.\"\n      ],\n      paths: [\"src/FileSystem.ts\", \"src/FileSystemBatch.ts\", \"src/Rooted.ts\", \"src/Path.ts\", \"src/Workspace.ts\"]\n    },\n    {\n      id: \"http-grant-per-hop\",\n      title: \"Every HTTP hop is authorized for its own scheme, host, and model\",\n      threat:\n        \"A flow granted one origin or model reaches another host, cleartext transport, or a different model through redirects or URL tricks.\",\n      lookFor: [\n        \"A redirect followed by the underlying client (redirect not forced to manual) or a hop that skips the guarded postprocess.\",\n        \"capabilityFor collapsing distinct targets to one resource (userinfo, port, IDN or case, non-https scheme mapped to a bare host).\",\n        \"A request mutated after the check (body, url, urlParams) because the snapshot does not deep-copy it.\",\n        \"ModelCall intent that lets a model:call grant for one model id authorize another.\"\n      ],\n      paths: [\"src/HttpClient.ts\"]\n    },\n    {\n      id: \"grant-store-authority\",\n      title: \"Grants never widen past the ambient ceiling or the approved pattern\",\n      threat: \"A flow or a forged reply escalates its own capabilities or reuses another run's approval.\",\n      lookFor: [\n        \"reply accepting a supplied pattern broader than the pending capability or outside the entry's captured ceiling.\",\n        \"A run or remembered rule evaluated without intersecting the CapabilitySet current at request time.\",\n        \"An envelope grant whose planDigest or scope is not bound to the run that replays it.\",\n        \"Request ids that are guessable across runs, or a double reply that activates two rules.\"\n      ],\n      paths: [\"src/GrantStore.ts\", \"src/CapabilitySet.ts\", \"src/GrantEvent.ts\", \"src/internal/makeCapability.ts\"]\n    },\n    {\n      id: \"grant-journal-replay\",\n      title: \"Replayed grant journals cannot inject or reshape authority\",\n      threat:\n        \"Anyone able to append to the run journal forges remembered or envelope grants that activate on the next start.\",\n      lookFor: [\n        \"decodeTrustedEntry trusting an entry by sourceId and eventType alone without binding it to the policy run and plan digest.\",\n        \"Payload schema allowing excess properties, oversized patterns, or rule counts past maximumRules on replay.\",\n        \"A replayed run grant activated without its captured ceiling.\"\n      ],\n      paths: [\"src/JournalGrantStore.ts\", \"src/GrantEvent.ts\"]\n    },\n    {\n      id: \"process-ledger-reaping\",\n      title: \"The process ledger never leads a reaper to signal an unrelated process\",\n      threat: \"A stale or forged ledger record makes a later host kill another user's or the host's own process group.\",\n      lookFor: [\n        \"A record whose pgid is the host's own group (non-detached child) or a Windows record carrying a pgid.\",\n        \"Records keyed by pid alone so pid reuse retires or signals the wrong process.\",\n        \"commandDigest storing arguments (credentials) instead of CommandLine.executable.\"\n      ],\n      paths: [\"src/ProcessLedger.ts\", \"src/ContainedSpawner.ts\", \"src/internal/Containment.ts\", \"src/CommandLine.ts\"]\n    },\n    {\n      id: \"jj-capability-resource\",\n      title: \"jj operations are checked against a canonical workspace resource\",\n      threat:\n        \"A flow granted jj access to its workspace mutates another repository or writes through an unchecked jj path.\",\n      lookFor: [\n        \"A Jj method that reaches @smthrs/jj without a GrantStore check, or a write operation checked as a read.\",\n        \"A repository path passed to makeCapability without canonicalResource.\"\n      ],\n      paths: [\"src/Jj.ts\"]\n    },\n    {\n      id: \"allow-all-layers-not-production\",\n      title: \"Allow-all grant stores and noop host layers never reach production wiring\",\n      threat: \"A host that wires GrantStore.layerNoop or a test helper allows every capability to every flow.\",\n      lookFor: [\n        \"GrantStore.layerNoop (allow-all, exported from the main entry) or test/TestGrantStore layerAllow selected by a non-test code path.\",\n        \"A noop layer (ChildProcessSpawner, HttpClient, Workspace, Jj layerNoop) that skips GrantStore.check while providing the guarded tag.\",\n        \"An allow-all default in a helper that production HostServices.layer could select.\"\n      ],\n      paths: [\n        \"src/test/**\",\n        \"src/GrantStore.ts\",\n        \"src/HostServices.ts\",\n        \"src/index.ts\",\n        \"src/ChildProcessSpawner.ts\",\n        \"src/HttpClient.ts\",\n        \"src/Workspace.ts\",\n        \"src/Jj.ts\"\n      ]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: { check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 17,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 61,
+          "text": "\"A redirect followed by the underlying client (redirect not forced to manual) or a hop that skips the guarded postprocess.\","
+        },
+        {
+          "line": 120,
+          "text": "\"A noop layer (ChildProcessSpawner, HttpClient, Workspace, Jj layerNoop) that skips GrantStore.check while providing the guarded tag.\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/kernel/tsconfig.json",
+      "sha256": "0064dce36d22143039105eb068be99456971e6caf6e7cebac24633514a2009b8",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [\n      {\n        \"name\": \"@effect/language-service\",\n        \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n        \"includeSuggestionsInTsc\": false,\n        \"ignoreEffectWarningsInTscExitCode\": true,\n        \"ignoreEffectErrorsInTscExitCode\": true,\n        \"diagnosticSeverity\": {\n          \"globalErrorInEffectFailure\": \"off\"\n        }\n      }\n    ]\n  },\n  \"include\": [\"src/**/*\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 17,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 30,
+          "text": "\"includeSuggestionsInTsc\": false,"
+        },
+        {
+          "line": 31,
+          "text": "\"ignoreEffectWarningsInTscExitCode\": true,"
+        },
+        {
+          "line": 32,
+          "text": "\"ignoreEffectErrorsInTscExitCode\": true,"
+        },
+        {
+          "line": 39,
+          "text": "\"include\": [\"src/**/*\"]"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/kernel/vitest.config.ts",
+      "sha256": "9904fb9bd4e197a54d6fc8928537b90b2eaaac881beb445dbd0feabb3cd0a4ac",
+      "source": "import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],\n    environment: \"node\",\n    // Vitest's 5 s default is a wall-clock budget, but no suite in this repo\n    // asserts on elapsed time — each is bounded by an explicit iteration,\n    // cycle, or completion count. The real gate runs those counts under v8\n    // coverage instrumentation across parallel workers, where cases that\n    // finish in well under a second in isolation have been measured 6-12x\n    // slower; that machine-load multiplier, not the workload, is what put\n    // correct suites over the default wall. Raise the budget instead of\n    // trimming the workload, and keep it FINITE so a genuine hang still\n    // fails the run rather than hanging the gate forever.\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      // `enabled: true` makes every `vitest` run compute and ENFORCE these\n      // thresholds — a red gate fails the run (issues #20/#32).\n      enabled: true,\n      provider: \"v8\",\n      // Scope the report directory — and the `.tmp` scratch dir the v8\n      // provider clears at run start and reads at run end — to this process.\n      // The default `./coverage` is shared, so two concurrent `vitest run`\n      // invocations destroy each other: one aborts with a removed-coverage-\n      // directory error and the other enforces 100% against a partial\n      // profile with every test passing (issues #115/#121).\n      reportsDirectory: join(tmpdir(), `flows-kernel-coverage-${process.pid}`),\n      include: [\"src/**/*.{ts,vibe}\"],\n      // The published host-contract runner is exercised by the concrete host\n      // suites in @smthrs/testing, which owns its cross-platform coverage.\n      exclude: [\"src/test/HostContract.ts\"],\n      // Accurate, enforceable floors measured against the committed suite.\n      // Ratchet upward as tests land; never lower without a written\n      // justification.\n      thresholds: {\n        branches: 100,\n        functions: 100,\n        lines: 100,\n        statements: 100\n      }\n    }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 11,
+          "text": "fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"
+        },
+        {
+          "line": 14,
+          "text": "include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],"
+        },
+        {
+          "line": 18,
+          "text": "// cycle, or completion count. The real gate runs those counts under v8"
+        },
+        {
+          "line": 19,
+          "text": "// coverage instrumentation across parallel workers, where cases that"
+        },
+        {
+          "line": 27,
+          "text": "coverage: {"
+        },
+        {
+          "line": 29,
+          "text": "// thresholds — a red gate fails the run (issues #20/#32)."
+        },
+        {
+          "line": 31,
+          "text": "provider: \"v8\","
+        },
+        {
+          "line": 32,
+          "text": "// Scope the report directory — and the `.tmp` scratch dir the v8"
+        },
+        {
+          "line": 34,
+          "text": "// The default `./coverage` is shared, so two concurrent `vitest run`"
+        },
+        {
+          "line": 35,
+          "text": "// invocations destroy each other: one aborts with a removed-coverage-"
+        },
+        {
+          "line": 38,
+          "text": "reportsDirectory: join(tmpdir(), `flows-kernel-coverage-${process.pid}`),"
+        },
+        {
+          "line": 39,
+          "text": "include: [\"src/**/*.{ts,vibe}\"],"
+        },
+        {
+          "line": 41,
+          "text": "// suites in @smthrs/testing, which owns its cross-platform coverage."
+        },
+        {
+          "line": 42,
+          "text": "exclude: [\"src/test/HostContract.ts\"],"
+        },
+        {
+          "line": 46,
+          "text": "thresholds: {"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/flows/kernel",
+      "label": "//packages/smithers/flows/kernel:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/kernel/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/kernel/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/kernel/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/kernel/tsconfig.test.json"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows/kernel:lib"
+      ]
+    },
+    {
+      "package": "packages/smithers/flows/kernel",
+      "label": "//packages/smithers/flows/kernel:circular",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/circular.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/kernel/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/kernel/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/kernel",
+      "label": "//packages/smithers/flows/kernel:docs",
+      "rule": "DocsParity",
+      "kinds": [
+        "docs"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/kernel/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/kernel",
+      "label": "//packages/smithers/flows/kernel:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/kernel/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/kernel/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/kernel/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/kernel",
+      "label": "//packages/smithers/flows/kernel:fmt",
+      "rule": "Dprint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/kernel/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/kernel/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/kernel/dprint.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/kernel",
+      "label": "//packages/smithers/flows/kernel:lib",
+      "rule": "TsBuild",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/kernel/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/build-library.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/scripts/compile-commonjs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-single-effect-version.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/kernel/src/index.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/kernel/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/kernel/scripts/build.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/kernel",
+      "label": "//packages/smithers/flows/kernel:lint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/kernel/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/kernel/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.jsdoc.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/kernel",
+      "label": "//packages/smithers/flows/kernel:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/flows/kernel/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/kernel/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/kernel",
+      "label": "//packages/smithers/flows/kernel:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/flows/kernel/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/kernel/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/kernel",
+      "label": "//packages/smithers/flows/kernel:test",
+      "rule": "Vitest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/kernel/test/**/*.test.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/kernel/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/kernel/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/kernel/vitest.config.ts"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows/kernel:lib"
+      ]
+    }
+  ],
+  "areas": [
+    "PACKAGE.ts",
+    "eslint.config.js",
+    "examples/check-a-policy.ts",
+    "scripts/build.mjs",
+    "src/CapabilitySet.ts",
+    "src/ChildProcessEnvironment.ts",
+    "src/ChildProcessSpawner.ts",
+    "src/CommandLine.ts",
+    "src/ContainedSpawner.ts",
+    "src/FileSystem.ts",
+    "src/FileSystemBatch.ts",
+    "src/GrantEvent.ts",
+    "src/GrantStore.ts",
+    "src/HostError.ts",
+    "src/HostServices.ts",
+    "src/HttpClient.ts",
+    "src/Jj.ts",
+    "src/JournalGrantStore.ts",
+    "src/Path.ts",
+    "src/ProcessConfinement.ts",
+    "src/ProcessLedger.ts",
+    "src/Rooted.ts",
+    "src/Unreachable.ts",
+    "src/Workspace.ts",
+    "src/index.ts",
+    "src/internal",
+    "src/test",
+    "test/contract",
+    "vitest.config.ts"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

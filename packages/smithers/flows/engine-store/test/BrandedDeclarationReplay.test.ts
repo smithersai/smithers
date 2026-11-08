@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * A keyed sealed action whose declaration carries `Schema.brand` replays the
  * outcome an engine recorded before the `effect@4.0.4` upgrade.
@@ -13,12 +14,12 @@
  * encoding and takes the run over: it must find the record under encoding 1
  * and replay it, never running the step's body again.
  */
-import type { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import * as Node from "@smthrs/plan/Node"
 import { Ownership } from "@smthrs/run-store"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -71,8 +72,9 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true })
 })
 
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope | TestClock.TestClock | Crypto.Crypto>) =>
-  Effect.runPromise(withCrypto(Effect.scoped(effect).pipe(Effect.provide(TestClock.layer()))))
+const run = <A, E>(
+  effect: Effect.Effect<A, E, Scope.Scope | TestClock.TestClock | (EffectDigest.Digest | SecureRandom.SecureRandom)>
+) => Effect.runPromise(withCrypto(Effect.scoped(effect).pipe(Effect.provide(TestClock.layer()))))
 
 /** A branded count, as a declaration written before the upgrade spelled it. */
 const Count = Schema.Int.pipe(Schema.brand("BrandedDeclarationReplay/Count"))

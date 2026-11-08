@@ -5,16 +5,15 @@
  * A host that must know an identifier before it can ask anyone, such as a
  * device offline that names the conversation of a branch it already knows,
  * derives it from names both sides share. The digest is SHA-1 through the
- * injected `effect/Crypto` service, as the RFC defines version 5; SHA-1's
+ * injected `effect/crypto/Digest` service, as the RFC defines version 5; SHA-1's
  * weakness doesn't matter here, because a name-based UUID is an identifier,
  * never a secret or a proof.
  *
  * @since 1.0.0-rc.17
  */
 
+import * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
-import type * as PlatformError from "effect/PlatformError"
-import * as Crypto from "./Crypto.ts"
 
 const pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const encoder = new TextEncoder()
@@ -51,14 +50,14 @@ const format = (bytes: Uint8Array): string => {
 export const v5 = (
   namespace: string,
   name: string
-): Effect.Effect<string, PlatformError.PlatformError, Crypto.Crypto> =>
+): Effect.Effect<string, never, EffectDigest.Digest> =>
   Effect.gen(function*() {
     if (!isUuid(namespace)) return yield* Effect.die(new TypeError("Uuid.v5: namespace is not a UUID"))
     const nameBytes = encoder.encode(name)
     const input = new Uint8Array(16 + nameBytes.length)
     input.set(bytesOf(namespace), 0)
     input.set(nameBytes, 16)
-    const digest = yield* (yield* Crypto.Crypto).digest("SHA-1", input)
+    const digest = yield* (yield* EffectDigest.Digest).digest(EffectDigest.sha1, input)
     const bytes = digest.slice(0, 16)
     bytes[6] = (bytes[6]! & 0x0f) | 0x50
     bytes[8] = (bytes[8]! & 0x3f) | 0x80

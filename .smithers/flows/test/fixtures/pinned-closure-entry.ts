@@ -10,7 +10,6 @@ import * as Snapshot from "@smthrs/registry/ExecutionSnapshot"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Layer } from "effect"
 import { bindRepositoryRegistry } from "../../repository/registry.ts"
-import { Crypto } from "@smthrs/crypto"
 
 const [root, selected] = process.argv.slice(2)
 const draft = selected === "draft"
@@ -37,7 +36,7 @@ const result = await Effect.runPromise(Effect.gen(function*() {
   return { digest, output }
 }).pipe(
   Effect.provide(Discovery.layer),
-  Effect.provide(Layer.mergeAll(Crypto.layerFromDigest(NodeCrypto.layerDigest), NodeFileSystem.layer, NodePath.layer)),
+  Effect.provide(Layer.mergeAll(NodeCrypto.layer, NodeFileSystem.layer, NodePath.layer)),
   Effect.scoped
 ) as Effect.Effect<{ digest: string; output: unknown }, unknown>)
 process.stdout.write(JSON.stringify(result))

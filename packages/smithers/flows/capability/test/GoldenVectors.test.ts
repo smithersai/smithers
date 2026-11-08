@@ -28,7 +28,7 @@ describe("capability journal golden vectors", () => {
     expect(Schema.encodeUnknownSync(Rule)(rule)).toEqual(rulePayload)
     expect(Equal.equals(Schema.decodeUnknownSync(Rule)(rulePayload), rule)).toBe(true)
 
-    const required = new PermissionRequired({
+    const required = PermissionRequired.new({
       requestId: "r1",
       runId: "run1",
       capability,
@@ -47,7 +47,7 @@ describe("capability journal golden vectors", () => {
     expect(Schema.encodeUnknownSync(PermissionRequired)(required)).toEqual(requiredPayload)
     expect(Equal.equals(Schema.decodeUnknownSync(PermissionRequired)(requiredPayload), required)).toBe(true)
 
-    const denied = new PermissionDenied({ capability, reason: "configured policy" })
+    const denied = PermissionDenied.new({ capability, reason: "configured policy" })
     const deniedPayload = {
       _tag: "@smthrs/capability/PermissionDenied",
       code: "permission_denied",
@@ -72,7 +72,7 @@ describe("capability journal golden vectors", () => {
   })
 
   it("round trips an attended permission request through PlatformError", () => {
-    const required = new PermissionRequired({
+    const required = PermissionRequired.new({
       requestId: "r1",
       capability,
       tier: "sealed",

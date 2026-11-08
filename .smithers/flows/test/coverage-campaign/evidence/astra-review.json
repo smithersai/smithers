@@ -1,0 +1,19 @@
+{
+  "reviewer": "Codex Astra (gpt-6-astra)",
+  "agent": "/root/review_b31",
+  "initialVerdict": "two findings",
+  "findings": [
+    "Published test-support APIs missing from denominator",
+    "Non-root manifest executables missing CLI and installed-consumer E2E"
+  ],
+  "followupVerdict": "PASS",
+  "metadataFollowup": "PASS remains intact; sourceBaseCommit is provenance and sourceSha256 still binds actual bytes. Source review, not a fresh test run.",
+  "implementationSha256": {
+    "campaign.mjs": "fde2868b55354a57131cc56f94d951bda0903b645e065031e5535c3b5f9a177e",
+    "io.mjs": "7cb57ff1b06586563c453a52672a7eb89bb7c2810107d74025a01edac49116c2",
+    "main.mjs": "121fce542eb1ddaad2888d12d41086f44ba90c63328f3b0b3e1b71be0778d983",
+    "flow.ts": "adaf427299e4f4de993476eea3b89db3f76362168b4ed2c05458807a61831121",
+    "report.mjs": "39789339836833eb326621ec36445a949d4f3d45134161da567fdb3e45f1112a"
+  },
+  "fable": "Unavailable: remote Claude CLI is not logged in; no Fable verdict claimed."
+}

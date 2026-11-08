@@ -524,7 +524,14 @@ describe("a TODO's page as GitHub's issue page", () => {
     expect(todoScreenOf(undefined, 4, todos, "allowed", "octo", "hello")).toEqual({ kind: "waiting" })
     // A role ChatApi couldn't answer shows no cached TODO, as a refusal shows none.
     expect(todoScreenOf(card(), 4, todos, "unavailable", "octo", "hello")).toEqual({ kind: "unavailable" })
-    expect(todoScreenOf(undefined, 9, [], "unknown", "octo", "hello")).toEqual({ kind: "waiting" })
+    // A pending check paints what the device kept.
+    // A pending check paints what the device kept (the cold path); a reached server that couldn't verify shows none.
+    expect(todoScreenOf(card(), 4, todos, "unknown", "octo", "hello").kind).toBe("page")
+    // A reached server that couldn't verify: the route's gate hides the page (`RepoGate`), not this.
+    expect(todoScreenOf(card(), 4, todos, "unverified", "octo", "hello").kind).toBe("page")
+    // Authority answered, and the first sync hasn't: what the device kept shows, and nothing is called missing yet.
+    expect(todoScreenOf(card(), 4, todos, "syncing", "octo", "hello").kind).toBe("page")
+    expect(todoScreenOf(undefined, 9, todos, "syncing", "octo", "hello")).toEqual({ kind: "waiting" })
   })
 })
 

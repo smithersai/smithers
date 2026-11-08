@@ -43,9 +43,8 @@ const importedPackages = (): ReadonlySet<string> => {
 // `@smthrs/plan` carries the shared vocabularies the case below pins, starting
 // with `@smthrs/plan/Effects`, the single effect envelope model `@smthrs/flow`
 // enforces. `@smthrs/plan` brings no database: its store lives in
-// `@smthrs/plan-store`. `@smthrs/crypto` carries the `Crypto` service Effect
-// 4.0 shipped and 4.1 removed, which `Burndown` reads its run identities from.
-const declared = ["@smthrs/crypto", "@smthrs/flow", "@smthrs/plan"]
+// `@smthrs/plan-store`.
+const declared = ["@smthrs/flow", "@smthrs/plan"]
 
 describe("package manifest", () => {
   it("declares exactly the workspace packages it composes", () => {

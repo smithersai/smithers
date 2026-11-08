@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { useEffect, useId, useRef, useState, type ComponentProps, type ReactNode } from "react";
-import { cn } from "../cn";
-import { formatStatus, statusClass } from "../status";
+import { cn } from "@smthrs/ui-css";
+import { formatStatus, statusClass } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 
 export type ChainOfThoughtStepStatus = "pending" | "active" | "done";

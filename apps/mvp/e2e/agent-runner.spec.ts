@@ -11,6 +11,7 @@ import { cleanUp, type Runner, startRunner } from "./runner"
 import { configureStack, dropTodo, dropWord } from "./stackWrites"
 import { baseURL, onThisMachine, requires } from "./target"
 import { expectServerError } from "./watch"
+import { chooseIssue } from "./todoDraft"
 
 // A TODO coded by an external agent on a runner (decision 0136, docs/features/agent-runners.md): an Admin registers a
 // runner and names the repository's coding agent, the spec starts that runner itself (`smthrs runner serve`) with the
@@ -130,6 +131,7 @@ test("agent runner: an external agent's TODO publishes a pull request, watched l
       await draft.getByLabel("Title", { exact: true }).fill(title)
       // The test agent talks for two minutes, a chunk every 250 ms, then makes its change.
       await draft.getByLabel("Prompt", { exact: true }).fill(`talk for 120 seconds\nadd the line \`alpha ${word}\` to \`NOTES.md\``)
+      await chooseIssue(draft)
       await draft.getByRole("button", { name: "Commit", exact: true }).click()
       committedAt = Date.now()
     })
@@ -233,6 +235,7 @@ const commitTodo = async (page: Page, title: string, prompt: string) => {
     const draft = page.getByRole("form", { name: "TODO draft" })
     await draft.getByLabel("Title", { exact: true }).fill(title)
     await draft.getByLabel("Prompt", { exact: true }).fill(prompt)
+    await chooseIssue(draft)
     await draft.getByRole("button", { name: "Commit", exact: true }).click()
   })
   return page.getByRole("region", { name: `${repo} stack` }).locator("[data-slot=issues-row]", { hasText: title })

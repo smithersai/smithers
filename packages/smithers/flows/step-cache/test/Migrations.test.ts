@@ -107,11 +107,19 @@ describe("step-cache migrations", () => {
 
   it.effect("creates the head table, the recorded ledger, their expiry indexes, and nothing else", () =>
     Effect.gen(function*() {
-      const master = yield* migrated(Effect.gen(function*() {
+      const { master, qualifier } = yield* migrated(Effect.gen(function*() {
         const sql = yield* Effect.service(SqlClient.SqlClient)
-        return yield* sql<SqliteMasterRow>`SELECT name, type, sql FROM ${
+        const qualifier = yield* sql.onDialectOrElse({
+          pg: () =>
+            sql<{ qualifier: string }>`SELECT quote_ident(current_schema()) || '.' AS qualifier`.pipe(
+              Effect.map((rows) => rows[0]!.qualifier)
+            ),
+          orElse: () => Effect.succeed("")
+        })
+        const master = yield* sql<SqliteMasterRow>`SELECT name, type, sql FROM ${
           TestDatabase.catalog(sql)
         } WHERE name LIKE 'flows_%'`
+        return { master, qualifier }
       }))
 
       expect(master.filter((row) => row.type === "table").map((row) => row.name).sort()).toEqual([
@@ -132,7 +140,7 @@ describe("step-cache migrations", () => {
       expect(ledgerSql).toContain("PRIMARY KEY (key_digest, recorded_run_id, recorded_event_seq)")
       expect(
         master.filter((row) => row.type === "index" && row.sql !== null).map((row) =>
-          row.sql?.replace(/\s+/g, " ").replace(/test_[a-z0-9]+\./g, "").replace(" USING btree", "")
+          row.sql?.replace(/\s+/g, " ").replace(` ON ${qualifier}`, " ON ").replace(" USING btree", "")
         )
           .sort()
       ).toEqual([

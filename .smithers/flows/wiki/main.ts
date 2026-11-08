@@ -1,6 +1,5 @@
 /** Executable boundary only: Node-compatible process APIs also run under Bun. */
-import { NodeCrypto, NodeServices } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
+import { NodeCrypto as NativeCrypto, NodeServices } from "@effect/platform-node"
 import { Effect, Layer, Schema } from "effect"
 import { readFile, realpath } from "node:fs/promises"
 import { basename, resolve, sep } from "node:path"
@@ -8,9 +7,6 @@ import { parseArgs } from "node:util"
 import { containedWikiOutput } from "../coding/wiki-output.ts"
 import { operations } from "./operations.ts"
 import { type Input, PageSpec } from "./schema.ts"
-
-// The wiki operations digest with Crypto, which Effect 4.1's NodeServices.layer no longer provides.
-const platform = Layer.merge(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 
 const { values } = parseArgs({
   options: {
@@ -46,7 +42,7 @@ if (values.help) {
       JSON.stringify(
         await Effect.runPromise(
           operations({ root, output: requestedOutput }).check(pages, values.verified).pipe(
-            Effect.provide(platform)
+            Effect.provide(Layer.mergeAll(NodeServices.layer, NativeCrypto.layer))
           )
         ),
         null,
@@ -65,7 +61,7 @@ if (values.help) {
     }
     const [output, database] = await Effect.runPromise(
       Effect.all([publicationRoot, containedWikiOutput(root, requestedDatabase)]).pipe(
-        Effect.provide(platform)
+        Effect.provide(Layer.mergeAll(NodeServices.layer, NativeCrypto.layer))
       )
     )
     const [{ Action, Interpreter }, { Capability }, { default: Wiki }, { actionLayers, agentLayers, hostEvaluator }] =
@@ -102,7 +98,7 @@ if (values.help) {
       .pipe(Layer.provideMerge(Action.layerImplementations))
     await Effect.runPromise(
       Effect.forEach(pages, (page) => operations({ root, output }).collect(page)).pipe(
-        Effect.provide(platform)
+        Effect.provide(Layer.mergeAll(NodeServices.layer, NativeCrypto.layer))
       )
     )
     // The verified-snapshot seal key lives beside the output (operations.ts).

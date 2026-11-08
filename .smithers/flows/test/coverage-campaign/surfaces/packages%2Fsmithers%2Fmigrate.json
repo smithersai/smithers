@@ -1,0 +1,1140 @@
+{
+  "id": "packages/smithers/migrate",
+  "name": "@smthrs/migrate",
+  "owner": {
+    "declaration": "packages/smithers/migrate/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "lint": "eslint src examples --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
+    "circular": "node ../../repo-targets/scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./flow/internal/*": null,
+    "./*/index": null,
+    "./Checks": "./src/Checks.ts",
+    "./Constructs": "./src/Constructs.ts",
+    "./Detect": "./src/Detect.ts",
+    "./Inventory": "./src/Inventory.ts",
+    "./Mapping": "./src/Mapping.ts",
+    "./MigrateError": "./src/MigrateError.ts",
+    "./PromptHints": "./src/PromptHints.ts",
+    "./Report": "./src/Report.ts",
+    "./RunState": "./src/RunState.ts",
+    "./Scan": "./src/Scan.ts",
+    "./Units": "./src/Units.ts",
+    "./ZodSchemaHints": "./src/ZodSchemaHints.ts",
+    "./flow/Archive": "./src/flow/Archive.ts",
+    "./flow/Checkpoint": "./src/flow/Checkpoint.ts",
+    "./flow/Cli": "./src/flow/Cli.ts",
+    "./flow/Command": "./src/flow/Command.ts",
+    "./flow/Contract": "./src/flow/Contract.ts",
+    "./flow/Gate": "./src/flow/Gate.ts",
+    "./flow/Layers": "./src/flow/Layers.ts",
+    "./flow/Lock": "./src/flow/Lock.ts",
+    "./flow/MigrateFlow": "./src/flow/MigrateFlow.ts",
+    "./flow/Options": "./src/flow/Options.ts",
+    "./flow/Repair": "./src/flow/Repair.ts",
+    "./flow/Transform": "./src/flow/Transform.ts",
+    "./flow/Verify": "./src/flow/Verify.ts",
+    "./flow/bin": "./src/flow/bin.ts",
+    "./index": "./src/index.ts"
+  },
+  "production": [
+    "eslint.config.js",
+    "examples/scan-project.ts",
+    "PACKAGE.ts",
+    "scripts/build.mjs",
+    "scripts/generate-facade-exports.mjs",
+    "src/Checks.ts",
+    "src/Constructs.ts",
+    "src/Detect.ts",
+    "src/flow/Archive.ts",
+    "src/flow/bin.ts",
+    "src/flow/Checkpoint.ts",
+    "src/flow/Cli.ts",
+    "src/flow/Command.ts",
+    "src/flow/Contract.ts",
+    "src/flow/Gate.ts",
+    "src/flow/internal/Canonical.ts",
+    "src/flow/internal/Exec.ts",
+    "src/flow/internal/Pending.ts",
+    "src/flow/internal/Vcs.ts",
+    "src/flow/Layers.ts",
+    "src/flow/Lock.ts",
+    "src/flow/MigrateFlow.ts",
+    "src/flow/Options.ts",
+    "src/flow/Repair.ts",
+    "src/flow/Transform.ts",
+    "src/flow/Verify.ts",
+    "src/index.ts",
+    "src/internal/CliScripts.ts",
+    "src/internal/CommandLine.ts",
+    "src/internal/FacadeExports.ts",
+    "src/internal/FlowNames.ts",
+    "src/internal/Fs.ts",
+    "src/internal/Jsonc.ts",
+    "src/internal/Semver.ts",
+    "src/internal/Sort.ts",
+    "src/internal/Ts.ts",
+    "src/internal/Tsconfig.ts",
+    "src/internal/Versions.ts",
+    "src/Inventory.ts",
+    "src/Mapping.ts",
+    "src/MigrateError.ts",
+    "src/PromptHints.ts",
+    "src/Report.ts",
+    "src/RunState.ts",
+    "src/Scan.ts",
+    "src/Units.ts",
+    "src/ZodSchemaHints.ts",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/agents.ts",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/BatchLoop.tsx",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/FetchIssues.tsx",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/GeminiContext.tsx",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/Implement.tsx",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/index.ts",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/IssuePipeline.tsx",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/MergeToMain.tsx",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/PlanBacklog.tsx",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/Report.tsx",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/Research.tsx",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/Review.tsx",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/ReviewFix.tsx",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/RunCI.tsx",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/Validate.tsx",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/config.ts",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/preload.ts",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/ci.ts",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/geminiContext.ts",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/implement.ts",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/index.ts",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/issue.ts",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/merge.ts",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/plan.ts",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/report.ts",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/research.ts",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/review.ts",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/reviewFix.ts",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/validate.ts",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/smithers.ts",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/system-prompt.ts",
+    "test/fixtures/batch-issues/.smithers/workflows/batch-issues/workflow.tsx",
+    "test/fixtures/helpers.ts",
+    "test/fixtures/jsx-single.migrated/.smithers/flows/simple-workflow/flow.ts",
+    "test/fixtures/jsx-single/_example-kit.js",
+    "test/fixtures/jsx-single/mdx-assets.d.ts",
+    "test/fixtures/jsx-single/preload.js",
+    "test/fixtures/jsx-single/simple-workflow.jsx",
+    "test/fixtures/jsx-single/tests/_setup.ts",
+    "test/fixtures/lock/worker.ts",
+    "test/fixtures/mixed-api/.smithers/workflows/issue-pipeline.tsx",
+    "test/fixtures/persisted-db/_example-kit.js",
+    "test/fixtures/persisted-db/.smithers/smithers.config.ts",
+    "test/fixtures/persisted-db/make-db.mjs",
+    "test/fixtures/persisted-db/simple-workflow.jsx",
+    "test/fixtures/plue-pack/.smithers/agents.ts",
+    "test/fixtures/plue-pack/.smithers/agents/claude-code.ts",
+    "test/fixtures/plue-pack/.smithers/agents/codex.ts",
+    "test/fixtures/plue-pack/.smithers/agents/index.ts",
+    "test/fixtures/plue-pack/.smithers/agents/opencode.ts",
+    "test/fixtures/plue-pack/.smithers/components/Review.tsx",
+    "test/fixtures/plue-pack/.smithers/components/roles.ts",
+    "test/fixtures/plue-pack/.smithers/components/ValidationLoop.tsx",
+    "test/fixtures/plue-pack/.smithers/preload.ts",
+    "test/fixtures/plue-pack/.smithers/smithers.config.ts",
+    "test/fixtures/plue-pack/.smithers/ui/pipelines-ci-fast.tsx",
+    "test/fixtures/plue-pack/.smithers/workflows/implement.tsx",
+    "test/fixtures/plue-pack/.smithers/workflows/pipelines/ci-fast.tsx",
+    "test/fixtures/plue-pack/.smithers/workflows/pipelines/lib.ts",
+    "test/fixtures/plue-pack/.smithers/workflows/ralph.tsx",
+    "test/fixtures/plue-pack/.smithers/workflows/release.tsx",
+    "test/fixtures/plue-pack/.smithers/workflows/review.tsx",
+    "vitest.config.ts"
+  ],
+  "tests": [
+    "packages/smithers/migrate/test/BinBundle.test.ts",
+    "packages/smithers/migrate/test/Checks.test.ts",
+    "packages/smithers/migrate/test/CurrentUi.test.ts",
+    "packages/smithers/migrate/test/Dependencies.test.ts",
+    "packages/smithers/migrate/test/Detect.test.ts",
+    "packages/smithers/migrate/test/Docs.test.ts",
+    "packages/smithers/migrate/test/examples.test.ts",
+    "packages/smithers/migrate/test/fixtures/.gitignore",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/agents.ts",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/bunfig.toml",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/BatchLoop.tsx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/FetchIssues.tsx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/GeminiContext.tsx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/Implement.tsx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/index.ts",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/IssuePipeline.tsx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/MergeToMain.tsx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/PlanBacklog.tsx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/Report.tsx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/Research.tsx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/Review.tsx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/ReviewFix.tsx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/RunCI.tsx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/Validate.tsx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/config.ts",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/package.json",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/preload.ts",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/prompts/gemini-context.mdx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/prompts/implement.mdx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/prompts/plan.mdx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/prompts/research.mdx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/prompts/review-fix.mdx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/prompts/review.mdx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/prompts/system-prompt.mdx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/prompts/validate.mdx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/run.sh",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/ci.ts",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/geminiContext.ts",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/implement.ts",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/index.ts",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/issue.ts",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/merge.ts",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/plan.ts",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/report.ts",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/research.ts",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/review.ts",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/reviewFix.ts",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/schemas/validate.ts",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/smithers.ts",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/system-prompt.ts",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/tsconfig.json",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/workflow.tsx",
+    "packages/smithers/migrate/test/fixtures/batch-issues/FIXTURE.md",
+    "packages/smithers/migrate/test/fixtures/batch-issues/package.json",
+    "packages/smithers/migrate/test/fixtures/helpers.ts",
+    "packages/smithers/migrate/test/fixtures/jsx-single.migrated/.smithers/flows/simple-workflow/flow.ts",
+    "packages/smithers/migrate/test/fixtures/jsx-single.migrated/FIXTURE.md",
+    "packages/smithers/migrate/test/fixtures/jsx-single.migrated/package.json",
+    "packages/smithers/migrate/test/fixtures/jsx-single.migrated/tsconfig.json",
+    "packages/smithers/migrate/test/fixtures/jsx-single/_example-kit.js",
+    "packages/smithers/migrate/test/fixtures/jsx-single/bunfig.toml",
+    "packages/smithers/migrate/test/fixtures/jsx-single/FIXTURE.md",
+    "packages/smithers/migrate/test/fixtures/jsx-single/mdx-assets.d.ts",
+    "packages/smithers/migrate/test/fixtures/jsx-single/package.json",
+    "packages/smithers/migrate/test/fixtures/jsx-single/preload.js",
+    "packages/smithers/migrate/test/fixtures/jsx-single/prompts/simple-workflow/research.mdx",
+    "packages/smithers/migrate/test/fixtures/jsx-single/prompts/simple-workflow/write.mdx",
+    "packages/smithers/migrate/test/fixtures/jsx-single/simple-workflow.jsx",
+    "packages/smithers/migrate/test/fixtures/jsx-single/tests/_setup.ts",
+    "packages/smithers/migrate/test/fixtures/jsx-single/tests/simple-workflow.test.ts",
+    "packages/smithers/migrate/test/fixtures/jsx-single/tsconfig.json",
+    "packages/smithers/migrate/test/fixtures/lock/worker.ts",
+    "packages/smithers/migrate/test/fixtures/mixed-api/.smithers/package.json",
+    "packages/smithers/migrate/test/fixtures/mixed-api/.smithers/workflows/issue-pipeline.tsx",
+    "packages/smithers/migrate/test/fixtures/mixed-api/FIXTURE.md",
+    "packages/smithers/migrate/test/fixtures/persisted-db/_example-kit.js",
+    "packages/smithers/migrate/test/fixtures/persisted-db/.smithers/claude-mirror-subscriptions.json",
+    "packages/smithers/migrate/test/fixtures/persisted-db/.smithers/executions/run-1783757199651/stdout.log",
+    "packages/smithers/migrate/test/fixtures/persisted-db/.smithers/smithers.config.ts",
+    "packages/smithers/migrate/test/fixtures/persisted-db/.smithers/workflows/run-1783757199651.log",
+    "packages/smithers/migrate/test/fixtures/persisted-db/FIXTURE.md",
+    "packages/smithers/migrate/test/fixtures/persisted-db/make-db.mjs",
+    "packages/smithers/migrate/test/fixtures/persisted-db/old-schema.sql",
+    "packages/smithers/migrate/test/fixtures/persisted-db/package.json",
+    "packages/smithers/migrate/test/fixtures/persisted-db/prompts/simple-workflow/research.mdx",
+    "packages/smithers/migrate/test/fixtures/persisted-db/prompts/simple-workflow/write.mdx",
+    "packages/smithers/migrate/test/fixtures/persisted-db/simple-workflow.jsx",
+    "packages/smithers/migrate/test/fixtures/persisted-db/tsconfig.json",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/.gitignore",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/agents.ts",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/agents/claude-code.ts",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/agents/codex.ts",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/agents/index.ts",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/agents/opencode.ts",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/agents/README.md",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/bunfig.toml",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/components/Review.tsx",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/components/roles.ts",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/components/ValidationLoop.tsx",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/package.json",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/preload.ts",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/prompts/implement.mdx",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/prompts/plan.mdx",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/prompts/research.mdx",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/prompts/review.mdx",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/prompts/validate.mdx",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/smithers.config.ts",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/tsconfig.json",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/ui/pipelines-ci-fast.tsx",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/workflows/implement.tsx",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/workflows/pipelines/ci-fast.tsx",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/workflows/pipelines/lib.ts",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/workflows/ralph.tsx",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/workflows/release.tsx",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/workflows/review.tsx",
+    "packages/smithers/migrate/test/fixtures/plue-pack/CLAUDE.md",
+    "packages/smithers/migrate/test/fixtures/plue-pack/FIXTURE.md",
+    "packages/smithers/migrate/test/fixtures/plue-pack/package.json",
+    "packages/smithers/migrate/test/flow/Archive.test.ts",
+    "packages/smithers/migrate/test/flow/Bin.test.ts",
+    "packages/smithers/migrate/test/flow/Checkpoint.test.ts",
+    "packages/smithers/migrate/test/flow/Cli.test.ts",
+    "packages/smithers/migrate/test/flow/Command.test.ts",
+    "packages/smithers/migrate/test/flow/Contract.test.ts",
+    "packages/smithers/migrate/test/flow/Dependencies.test.ts",
+    "packages/smithers/migrate/test/flow/DerivedCommands.test.ts",
+    "packages/smithers/migrate/test/flow/Exec.test.ts",
+    "packages/smithers/migrate/test/flow/Finish.test.ts",
+    "packages/smithers/migrate/test/flow/Gate.test.ts",
+    "packages/smithers/migrate/test/flow/Layers.test.ts",
+    "packages/smithers/migrate/test/flow/Lock.test.ts",
+    "packages/smithers/migrate/test/flow/MigrateFlow.dryrun.test.ts",
+    "packages/smithers/migrate/test/flow/MigrateFlow.live.e2e.test.ts",
+    "packages/smithers/migrate/test/flow/MigrateFlow.scripted.test.ts",
+    "packages/smithers/migrate/test/flow/MissingCredentials.test.ts",
+    "packages/smithers/migrate/test/flow/Options.test.ts",
+    "packages/smithers/migrate/test/flow/OptionsIO.test.ts",
+    "packages/smithers/migrate/test/flow/OptionsWindows.test.ts",
+    "packages/smithers/migrate/test/flow/ScriptRewrite.test.ts",
+    "packages/smithers/migrate/test/flow/Seal.test.ts",
+    "packages/smithers/migrate/test/flow/SeatResolver.test.ts",
+    "packages/smithers/migrate/test/flow/Transform.test.ts",
+    "packages/smithers/migrate/test/flow/Verify.test.ts",
+    "packages/smithers/migrate/test/Fs.test.ts",
+    "packages/smithers/migrate/test/Generated.test.ts",
+    "packages/smithers/migrate/test/internal/Ts.test.ts",
+    "packages/smithers/migrate/test/Inventory.test.ts",
+    "packages/smithers/migrate/test/Jsonc.test.ts",
+    "packages/smithers/migrate/test/Mapping.test.ts",
+    "packages/smithers/migrate/test/MigratedFixture.test.ts",
+    "packages/smithers/migrate/test/NativeCompiler.test.ts",
+    "packages/smithers/migrate/test/NativeCompilerFailures.test.ts",
+    "packages/smithers/migrate/test/PlueGolden.test.ts",
+    "packages/smithers/migrate/test/PromptHints.test.ts",
+    "packages/smithers/migrate/test/ReactJsx.test.ts",
+    "packages/smithers/migrate/test/Report.test.ts",
+    "packages/smithers/migrate/test/RunState.test.ts",
+    "packages/smithers/migrate/test/Scan.test.ts",
+    "packages/smithers/migrate/test/Semver.test.ts",
+    "packages/smithers/migrate/test/Units.test.ts",
+    "packages/smithers/migrate/test/ZodDefaultDomains.test.ts",
+    "packages/smithers/migrate/test/ZodDefaultPresence.test.ts",
+    "packages/smithers/migrate/test/ZodDefaultShapes.test.ts",
+    "packages/smithers/migrate/test/ZodGeneratedTypecheck.test.ts",
+    "packages/smithers/migrate/test/ZodSchemaHints.test.ts",
+    "packages/smithers/migrate/test/ZodSchemaHintsBoundaries.test.ts",
+    "packages/smithers/migrate/tsconfig.test.json"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    "packages/smithers/migrate/test/BinBundle.test.ts",
+    "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/bunfig.toml",
+    "packages/smithers/migrate/test/fixtures/jsx-single/bunfig.toml",
+    "packages/smithers/migrate/test/fixtures/lock/worker.ts",
+    "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/bunfig.toml",
+    "packages/smithers/migrate/test/flow/OptionsWindows.test.ts",
+    "packages/smithers/migrate/test/NativeCompiler.test.ts",
+    "packages/smithers/migrate/test/NativeCompilerFailures.test.ts"
+  ],
+  "ignoredCases": [
+    {
+      "path": "packages/smithers/migrate/test/Detect.test.ts",
+      "line": 368,
+      "text": "it.effect.skipIf(userInfo().uid === 0)("
+    },
+    {
+      "path": "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/components/BatchLoop.tsx",
+      "line": 26,
+      "text": ".filter((p) => !p.skip)"
+    },
+    {
+      "path": "packages/smithers/migrate/test/flow/Checkpoint.test.ts",
+      "line": 565,
+      "text": "it.effect.skipIf(userInfo().uid === 0)("
+    },
+    {
+      "path": "packages/smithers/migrate/test/flow/Checkpoint.test.ts",
+      "line": 676,
+      "text": "it.effect.skipIf(!jjAvailable)("
+    },
+    {
+      "path": "packages/smithers/migrate/test/flow/Checkpoint.test.ts",
+      "line": 706,
+      "text": "it.skipIf(jjAvailable)(\"is skipped because `jj` is not on PATH\", () => {"
+    },
+    {
+      "path": "packages/smithers/migrate/test/flow/MigrateFlow.live.e2e.test.ts",
+      "line": 83,
+      "text": "it.skip(`migrates a single-file JSX project through the bin (${reason})`, () => {})"
+    },
+    {
+      "path": "packages/smithers/migrate/test/flow/MigrateFlow.live.e2e.test.ts",
+      "line": 84,
+      "text": "it.skip(`records what a single-file project could not settle (${reason})`, () => {})"
+    },
+    {
+      "path": "packages/smithers/migrate/test/flow/MigrateFlow.live.e2e.test.ts",
+      "line": 85,
+      "text": "it.skip(`refuses what it cannot translate in a multi-workflow pack (${reason})`, () => {})"
+    },
+    {
+      "path": "packages/smithers/migrate/test/flow/MigrateFlow.scripted.test.ts",
+      "line": 128,
+      "text": "const guarded = it.effect.skipIf(!nativeHelperAvailable)"
+    },
+    {
+      "path": "packages/smithers/migrate/test/flow/MigrateFlow.scripted.test.ts",
+      "line": 133,
+      "text": "it.skipIf(process.env.CI === undefined)(\"is present wherever CI runs this suite\", () => {"
+    },
+    {
+      "path": "packages/smithers/migrate/test/flow/ScriptRewrite.test.ts",
+      "line": 8,
+      "text": "it.skipIf(process.platform === \"win32\").each(["
+    },
+    {
+      "path": "packages/smithers/migrate/test/flow/Seal.test.ts",
+      "line": 84,
+      "text": "const guarded = it.effect.skipIf(!nativeHelperAvailable)"
+    },
+    {
+      "path": "packages/smithers/migrate/test/PlueGolden.test.ts",
+      "line": 46,
+      "text": "describe.skipIf(!present)(\"golden inventory over the real Plue pack\", () => {"
+    },
+    {
+      "path": "packages/smithers/migrate/test/PlueGolden.test.ts",
+      "line": 126,
+      "text": "describe.skipIf(present)(\"golden inventory over the real Plue pack\", () => {"
+    },
+    {
+      "path": "packages/smithers/migrate/test/PlueGolden.test.ts",
+      "line": 128,
+      "text": "// The suite has to stay green off this machine. `describe.skipIf` above"
+    }
+  ],
+  "configurations": [
+    {
+      "path": "packages/smithers/migrate/eslint.config.js",
+      "sha256": "1b73260a599d7dc21ed03d28435494d3bfeea0b4b93b1ca207fef0fbb98465dd",
+      "source": "import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause } from \"../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  {\n    ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]\n  },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\", \"examples/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: {\n      parserOptions: {\n        project: \"./tsconfig.test.json\",\n        tsconfigRootDir: import.meta.dirname\n      }\n    },\n    settings: {\n      \"import/resolver\": {\n        typescript: {\n          project: [\"./tsconfig.json\"]\n        }\n      }\n    },\n    plugins: {\n      unicorn\n    },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  // `uninstalledSafety` is not wired yet: src/flow/Layers.ts:321 composes the\n  // request executor with `GrantStore.layerNoop`, so migration HTTP runs unguarded.\n  ...invariants(swallowedCause, ambientAuthority)\n)\n",
+      "coverageDirectives": [
+        {
+          "line": 10,
+          "text": "ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]"
+        },
+        {
+          "line": 40,
+          "text": "\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/migrate/package.json",
+      "sha256": "5d963fd4b2d4477b8200e1128741ce00f91dddfbec04ee6b8bf70c673c36fd84",
+      "source": "{\n  \"name\": \"@smthrs/migrate\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"agent\",\n    \"privateEffectAdapters\": [\n      \"@effect/platform-node\",\n      \"@effect/platform-node-shared\"\n    ]\n  },\n  \"description\": \"Upgrades Smithers 0.x projects to Smithers 1.0 flows and writes an auditable migration report\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/migrate\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"effect\",\n    \"flow\",\n    \"migration\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"effect\",\n    \"flow\",\n    \"migration\"\n  ],\n  \"engines\": {\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [\n    \"./src/flow/bin.ts\",\n    \"./dist/esm/flow/bin.js\",\n    \"./dist/cjs/flow/bin.js\"\n  ],\n  \"bin\": {\n    \"smithers-migrate\": \"./dist/esm/flow/bin.js\"\n  },\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./internal/*\": null,\n    \"./flow/internal/*\": null,\n    \"./*/index\": null,\n    \"./Checks\": \"./src/Checks.ts\",\n    \"./Constructs\": \"./src/Constructs.ts\",\n    \"./Detect\": \"./src/Detect.ts\",\n    \"./Inventory\": \"./src/Inventory.ts\",\n    \"./Mapping\": \"./src/Mapping.ts\",\n    \"./MigrateError\": \"./src/MigrateError.ts\",\n    \"./PromptHints\": \"./src/PromptHints.ts\",\n    \"./Report\": \"./src/Report.ts\",\n    \"./RunState\": \"./src/RunState.ts\",\n    \"./Scan\": \"./src/Scan.ts\",\n    \"./Units\": \"./src/Units.ts\",\n    \"./ZodSchemaHints\": \"./src/ZodSchemaHints.ts\",\n    \"./flow/Archive\": \"./src/flow/Archive.ts\",\n    \"./flow/Checkpoint\": \"./src/flow/Checkpoint.ts\",\n    \"./flow/Cli\": \"./src/flow/Cli.ts\",\n    \"./flow/Command\": \"./src/flow/Command.ts\",\n    \"./flow/Contract\": \"./src/flow/Contract.ts\",\n    \"./flow/Gate\": \"./src/flow/Gate.ts\",\n    \"./flow/Layers\": \"./src/flow/Layers.ts\",\n    \"./flow/Lock\": \"./src/flow/Lock.ts\",\n    \"./flow/MigrateFlow\": \"./src/flow/MigrateFlow.ts\",\n    \"./flow/Options\": \"./src/flow/Options.ts\",\n    \"./flow/Repair\": \"./src/flow/Repair.ts\",\n    \"./flow/Transform\": \"./src/flow/Transform.ts\",\n    \"./flow/Verify\": \"./src/flow/Verify.ts\",\n    \"./flow/bin\": \"./src/flow/bin.ts\",\n    \"./index\": \"./src/index.ts\"\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"dist/vendor/**\",\n    \"docs/\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./internal/*\": null,\n      \"./flow/internal/*\": null,\n      \"./*/index\": null,\n      \"./Checks\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Checks.d.ts\",\n          \"default\": \"./dist/esm/Checks.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Checks.d.ts\",\n          \"default\": \"./dist/cjs/Checks.js\"\n        }\n      },\n      \"./Constructs\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Constructs.d.ts\",\n          \"default\": \"./dist/esm/Constructs.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Constructs.d.ts\",\n          \"default\": \"./dist/cjs/Constructs.js\"\n        }\n      },\n      \"./Detect\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Detect.d.ts\",\n          \"default\": \"./dist/esm/Detect.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Detect.d.ts\",\n          \"default\": \"./dist/cjs/Detect.js\"\n        }\n      },\n      \"./Inventory\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Inventory.d.ts\",\n          \"default\": \"./dist/esm/Inventory.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Inventory.d.ts\",\n          \"default\": \"./dist/cjs/Inventory.js\"\n        }\n      },\n      \"./Mapping\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Mapping.d.ts\",\n          \"default\": \"./dist/esm/Mapping.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Mapping.d.ts\",\n          \"default\": \"./dist/cjs/Mapping.js\"\n        }\n      },\n      \"./MigrateError\": {\n        \"import\": {\n          \"types\": \"./dist/esm/MigrateError.d.ts\",\n          \"default\": \"./dist/esm/MigrateError.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/MigrateError.d.ts\",\n          \"default\": \"./dist/cjs/MigrateError.js\"\n        }\n      },\n      \"./PromptHints\": {\n        \"import\": {\n          \"types\": \"./dist/esm/PromptHints.d.ts\",\n          \"default\": \"./dist/esm/PromptHints.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/PromptHints.d.ts\",\n          \"default\": \"./dist/cjs/PromptHints.js\"\n        }\n      },\n      \"./Report\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Report.d.ts\",\n          \"default\": \"./dist/esm/Report.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Report.d.ts\",\n          \"default\": \"./dist/cjs/Report.js\"\n        }\n      },\n      \"./RunState\": {\n        \"import\": {\n          \"types\": \"./dist/esm/RunState.d.ts\",\n          \"default\": \"./dist/esm/RunState.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/RunState.d.ts\",\n          \"default\": \"./dist/cjs/RunState.js\"\n        }\n      },\n      \"./Scan\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Scan.d.ts\",\n          \"default\": \"./dist/esm/Scan.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Scan.d.ts\",\n          \"default\": \"./dist/cjs/Scan.js\"\n        }\n      },\n      \"./Units\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Units.d.ts\",\n          \"default\": \"./dist/esm/Units.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Units.d.ts\",\n          \"default\": \"./dist/cjs/Units.js\"\n        }\n      },\n      \"./ZodSchemaHints\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ZodSchemaHints.d.ts\",\n          \"default\": \"./dist/esm/ZodSchemaHints.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ZodSchemaHints.d.ts\",\n          \"default\": \"./dist/cjs/ZodSchemaHints.js\"\n        }\n      },\n      \"./flow/Archive\": {\n        \"import\": {\n          \"types\": \"./dist/esm/flow/Archive.d.ts\",\n          \"default\": \"./dist/esm/flow/Archive.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/flow/Archive.d.ts\",\n          \"default\": \"./dist/cjs/flow/Archive.js\"\n        }\n      },\n      \"./flow/Checkpoint\": {\n        \"import\": {\n          \"types\": \"./dist/esm/flow/Checkpoint.d.ts\",\n          \"default\": \"./dist/esm/flow/Checkpoint.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/flow/Checkpoint.d.ts\",\n          \"default\": \"./dist/cjs/flow/Checkpoint.js\"\n        }\n      },\n      \"./flow/Cli\": {\n        \"import\": {\n          \"types\": \"./dist/esm/flow/Cli.d.ts\",\n          \"default\": \"./dist/esm/flow/Cli.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/flow/Cli.d.ts\",\n          \"default\": \"./dist/cjs/flow/Cli.js\"\n        }\n      },\n      \"./flow/Command\": {\n        \"import\": {\n          \"types\": \"./dist/esm/flow/Command.d.ts\",\n          \"default\": \"./dist/esm/flow/Command.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/flow/Command.d.ts\",\n          \"default\": \"./dist/cjs/flow/Command.js\"\n        }\n      },\n      \"./flow/Contract\": {\n        \"import\": {\n          \"types\": \"./dist/esm/flow/Contract.d.ts\",\n          \"default\": \"./dist/esm/flow/Contract.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/flow/Contract.d.ts\",\n          \"default\": \"./dist/cjs/flow/Contract.js\"\n        }\n      },\n      \"./flow/Gate\": {\n        \"import\": {\n          \"types\": \"./dist/esm/flow/Gate.d.ts\",\n          \"default\": \"./dist/esm/flow/Gate.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/flow/Gate.d.ts\",\n          \"default\": \"./dist/cjs/flow/Gate.js\"\n        }\n      },\n      \"./flow/Layers\": {\n        \"import\": {\n          \"types\": \"./dist/esm/flow/Layers.d.ts\",\n          \"default\": \"./dist/esm/flow/Layers.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/flow/Layers.d.ts\",\n          \"default\": \"./dist/cjs/flow/Layers.js\"\n        }\n      },\n      \"./flow/Lock\": {\n        \"import\": {\n          \"types\": \"./dist/esm/flow/Lock.d.ts\",\n          \"default\": \"./dist/esm/flow/Lock.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/flow/Lock.d.ts\",\n          \"default\": \"./dist/cjs/flow/Lock.js\"\n        }\n      },\n      \"./flow/MigrateFlow\": {\n        \"import\": {\n          \"types\": \"./dist/esm/flow/MigrateFlow.d.ts\",\n          \"default\": \"./dist/esm/flow/MigrateFlow.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/flow/MigrateFlow.d.ts\",\n          \"default\": \"./dist/cjs/flow/MigrateFlow.js\"\n        }\n      },\n      \"./flow/Options\": {\n        \"import\": {\n          \"types\": \"./dist/esm/flow/Options.d.ts\",\n          \"default\": \"./dist/esm/flow/Options.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/flow/Options.d.ts\",\n          \"default\": \"./dist/cjs/flow/Options.js\"\n        }\n      },\n      \"./flow/Repair\": {\n        \"import\": {\n          \"types\": \"./dist/esm/flow/Repair.d.ts\",\n          \"default\": \"./dist/esm/flow/Repair.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/flow/Repair.d.ts\",\n          \"default\": \"./dist/cjs/flow/Repair.js\"\n        }\n      },\n      \"./flow/Transform\": {\n        \"import\": {\n          \"types\": \"./dist/esm/flow/Transform.d.ts\",\n          \"default\": \"./dist/esm/flow/Transform.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/flow/Transform.d.ts\",\n          \"default\": \"./dist/cjs/flow/Transform.js\"\n        }\n      },\n      \"./flow/Verify\": {\n        \"import\": {\n          \"types\": \"./dist/esm/flow/Verify.d.ts\",\n          \"default\": \"./dist/esm/flow/Verify.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/flow/Verify.d.ts\",\n          \"default\": \"./dist/cjs/flow/Verify.js\"\n        }\n      },\n      \"./flow/bin\": {\n        \"import\": {\n          \"types\": \"./dist/esm/flow/bin.d.ts\",\n          \"default\": \"./dist/esm/flow/bin.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/flow/bin.d.ts\",\n          \"default\": \"./dist/cjs/flow/bin.js\"\n        }\n      },\n      \"./index\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      }\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src examples --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"check\": \"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"vitest --coverage\"\n  },\n  \"dependencies\": {\n    \"typescript\": \"7.0.2\",\n    \"undici\": \"8.11.2\",\n    \"redis\": \"6.2.1\",\n    \"@types/ws\": \"8.18.2\",\n    \"ws\": \"8.22.0\"\n  },\n  \"optionalDependencies\": {\n    \"@smthrs/agent\": \"1.0.0-rc.16\",\n    \"@smthrs/core\": \"1.0.0-rc.16\",\n    \"@smthrs/engine\": \"1.0.0-rc.16\",\n    \"@smthrs/flow\": \"1.0.0-rc.16\",\n    \"@smthrs/harness\": \"1.0.0-rc.16\",\n    \"@smthrs/journal\": \"1.0.0-rc.16\",\n    \"@smthrs/kernel\": \"1.0.0-rc.16\",\n    \"@smthrs/model\": \"1.0.0-rc.16\",\n    \"@smthrs/plan\": \"1.0.0-rc.16\",\n    \"@smthrs/platform-node\": \"1.0.0-rc.16\",\n    \"@smthrs/registry\": \"1.0.0-rc.16\",\n    \"@smthrs/canonical\": \"1.0.0-rc.16\"\n  },\n  \"devDependencies\": {\n    \"@effect/language-service\": \"0.87.2\",\n    \"@effect/vitest\": \"4.0.5\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@types/node\": \"26.4.1\",\n    \"@typescript/typescript6\": \"6.0.2\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\",\n    \"@effect/platform-node\": \"4.0.5\",\n    \"@effect/platform-node-shared\": \"4.0.5\",\n    \"effect\": \"4.0.5\"\n  },\n  \"peerDependencies\": {\n    \"effect\": \"4.0.5\"\n  }\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 391,
+          "text": "\"coverage\": \"vitest --coverage\""
+        },
+        {
+          "line": 420,
+          "text": "\"@vitest/coverage-v8\": \"5.0.0\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/migrate/PACKAGE.ts",
+      "sha256": "eea27d5f6c72d980732a605ac14e7853819b6acb19ff533f2bbd0a051b305b30",
+      "source": "import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from \"@smthrs/repo-targets\"\n/**\n * Standard package targets.\n *\n * `cwd` anchors every emitted tool run in this package directory.\n */\nimport { Smithers } from \"@smthrs/targets\"\nimport * as Input from \"@smthrs/targets/Input\"\n\nconst { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({\n  deps: [],\n  sources: Input.glob(\"{src,examples}/**/*.ts\"),\n  // The shared builder declares the private Effect adapter validator as an\n  // exact lib input; the test's lib dependency already keys its identity.\n  cwd: \"packages/smithers/migrate\"\n})\n\n/**\n * Changed public APIs against the package README, every docs page, and the\n * site API reference page.\n *\n * @since 1.0.0\n * @category lint\n */\nconst reviewDocsAgainstCode = ReviewDocsAgainstCode({\n  cwd: \"packages/smithers/migrate\",\n  context: [\n    Smithers.file(\"README.md\"),\n    Smithers.glob(\"docs/**/*.md\"),\n    Smithers.file(\"//apps/site/src/content/docs/docs/reference/api/migrate.mdx\")\n  ]\n})\n\n/**\n * Changed exports against their own JSDoc.\n *\n * @since 1.0.0\n * @category lint\n */\nconst reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: \"packages/smithers/migrate\" })\n\nconst securityReview = Smithers.SecurityReview({\n  cwd: \"packages/smithers/migrate\",\n  include: [\"src/**\"],\n  checks: [\n    {\n      id: \"agent-confinement-rules\",\n      title: \"The rewrite agent's grant rules confine it to the project and away from run state\",\n      threat:\n        \"Instructions planted in a migrated 0.x source file steer the rewrite agent into reading run-state databases or writing outside the project root.\",\n      lookFor: [\n        \"A `rules` allow pattern built from a root that is not the branded absolute MigrationRoot, or a trailing-slash root that matches nothing.\",\n        \"A run-state path, gateway state file, or custom `--report-dir` that gets no `fs:*` deny rule, or a deny placed where a later allow can override it.\",\n        \"An `envelope()` or `hostLayer` change that grants the agent a flow or capability the grant store does not also check.\"\n      ],\n      paths: [\"src/flow/Layers.ts\", \"src/flow/Transform.ts\", \"src/flow/Options.ts\"]\n    },\n    {\n      id: \"agent-proc-spawn-grants\",\n      title: \"The agent may spawn only the project's exact verification command lines\",\n      threat:\n        \"A prompt-injected rewrite agent runs an arbitrary shell command, or edits package.json or .git hooks so the unsandboxed verification run executes its code on the operator's machine.\",\n      lookFor: [\n        \"A `proc:spawn` allow derived from anything but `verificationCommands`, or a wildcard pattern produced from a command line containing `*` or `?`.\",\n        \"A verification command resolved from a package.json script the agent can rewrite during the same unit before `Verify.run` executes it.\",\n        \"Agent write access to `.git/`, `.jj/`, or package manager config that a later host-run jj, git, or install command would execute.\"\n      ],\n      paths: [\n        \"src/flow/Layers.ts\",\n        \"src/flow/Verify.ts\",\n        \"src/flow/Transform.ts\",\n        \"src/Units.ts\",\n        \"src/internal/CliScripts.ts\"\n      ]\n    },\n    {\n      id: \"exec-shell-quoting\",\n      title: \"Commands with untrusted tokens run as argv or are POSIX-quoted, never interpolated into a shell line\",\n      threat:\n        \"A project path, unit id, or checkpoint ref containing shell metacharacters runs extra commands with the operator's privileges.\",\n      lookFor: [\n        \"An `Exec.run` call without `args`, so `shell: true`, whose command string includes a path, unit name, or change id.\",\n        \"`CommandLine.quote` leaving a token with `'`, `$`, backtick, or newline unquoted.\",\n        \"A git ref or jj revset built from a unit id without the `[^A-Za-z0-9._-]` sanitizer in `gitRef`.\"\n      ],\n      paths: [\n        \"src/flow/internal/Exec.ts\",\n        \"src/internal/CommandLine.ts\",\n        \"src/flow/Checkpoint.ts\",\n        \"src/flow/Verify.ts\",\n        \"src/flow/Contract.ts\"\n      ]\n    },\n    {\n      id: \"checkpoint-path-containment\",\n      title: \"Backup, restore, and removal paths stay inside the project and never follow symlinks\",\n      threat:\n        \"A symlink or `..` path in the migrated project makes checkpoint restore or rollback overwrite or recursively delete the operator's files outside the project.\",\n      lookFor: [\n        \"`restore` or `backup` joining a manifest path to the root without rejecting `..` segments or absolute paths.\",\n        \"A check-then-use gap between `refuseLink` and `fs.remove(..., { recursive: true })` or `fs.writeFile` on the same path.\",\n        \"`privateDirectory` or `writeBackup` creating a component without `O_NOFOLLOW` or the 0700 mode.\"\n      ],\n      paths: [\"src/flow/Checkpoint.ts\", \"src/internal/Fs.ts\", \"src/flow/internal/Pending.ts\", \"src/flow/Archive.ts\"]\n    },\n    {\n      id: \"secret-redaction-to-model-and-report\",\n      title: \"Dotenv values and credential-shaped command output never reach the model or report.json\",\n      threat:\n        \"A migration sends the operator's API keys from `.env*` files or verification output to the model provider or commits them in the report.\",\n      lookFor: [\n        \"A `.env*` file path the `sourceView` regex misses, such as `.envrc`, `env/.env.local`, or a Windows separator, so its raw text enters the brief.\",\n        \"A command stdout or stderr tail written to the report or returned to the agent without `Redaction.redact`.\",\n        \"Scan or Detect output that copies dotenv values, rather than assignment names, into warnings, hints, or the report.\",\n        \"`rules` in `Layers.ts` granting `fs:*` on the whole root with no `fs:*` deny for `.env*` paths, so the agent's own `read` returns raw dotenv bytes that the Contract prompt only asks it not to open.\",\n        \"A Repair round prompt that embeds verification stdout or stderr before `Redaction.redact` runs on it.\"\n      ],\n      paths: [\n        \"src/flow/Transform.ts\",\n        \"src/flow/Layers.ts\",\n        \"src/flow/Repair.ts\",\n        \"src/flow/Verify.ts\",\n        \"src/Report.ts\",\n        \"src/Detect.ts\",\n        \"src/flow/Contract.ts\"\n      ]\n    },\n    {\n      id: \"scan-walk-bounds\",\n      title: \"The project walk stays in the project and is bounded on hostile trees\",\n      threat:\n        \"A migrated repository with symlink loops, links to `~/.ssh`, or deep directories makes the scanner read files outside the project into a prompt or hang the operator's run.\",\n      lookFor: [\n        \"A walk in `Fs.ts`, `Scan.ts`, or `Checkpoint.tree` that follows a symlink or reads a linked target's bytes instead of recording `symlink:<target>`.\",\n        \"A recursion with no depth cap or no visited-set on real paths.\",\n        \"A run-state reader in `RunState.ts` that opens a database or file outside the project without the operator's acknowledgement.\"\n      ],\n      paths: [\"src/internal/Fs.ts\", \"src/Scan.ts\", \"src/flow/Checkpoint.ts\", \"src/RunState.ts\", \"src/Inventory.ts\"]\n    },\n    {\n      id: \"operator-gates\",\n      title: \"Run-state and unsafe-construct gates refuse before any write\",\n      threat:\n        \"A migration edits a project with live 0.x runs or untranslatable constructs without the operator passing `--acknowledge-run-state` or `--allow-unsafe`, corrupting their run state.\",\n      lookFor: [\n        \"A code path in `MigrateFlow.ts` or `Command.ts` that checkpoints, transforms, or archives before `Gate` returns clear.\",\n        \"A lock in `Lock.ts` released on a token mismatch, or a stale lock taken over while its holder is alive.\",\n        \"A missing `pending-unit.json` check letting a second run overwrite backups still needed for recovery.\"\n      ],\n      paths: [\n        \"src/flow/Gate.ts\",\n        \"src/flow/MigrateFlow.ts\",\n        \"src/flow/Command.ts\",\n        \"src/flow/Lock.ts\",\n        \"src/flow/internal/Pending.ts\"\n      ]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: {\n    check,\n    circular,\n    docs,\n    docsFiles,\n    fmt,\n    lib,\n    lint,\n    reviewDocsAgainstCode,\n    reviewJsdocAgainstCode,\n    test,\n    ...securityReview\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 44,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 82,
+          "text": "\"An `Exec.run` call without `args`, so `shell: true`, whose command string includes a path, unit name, or change id.\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/migrate/src/internal/Tsconfig.ts",
+      "sha256": "798bac3171dca9afaa60c09168fc4a146b5ca2b30ecf3c2c2e22959f17f78d2f",
+      "source": "/**\n * The TypeScript configuration filename rule shared by detection, archiving,\n * and postconditions.\n *\n * @since 1.0.0-rc.0\n * @private\n */\n\n/**\n * Whether a project path names a TypeScript configuration.\n *\n * @since 1.0.0-rc.0\n * @private\n */\nexport const isTsconfig = (file: string): boolean => /(^|\\/)tsconfig[^/]*\\.json$/.test(file)\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/config.ts",
+      "sha256": "8c1e9b32d14cf920c96d04294ffdde035dea84720d363c22d1e0bca18d51a2b4",
+      "source": "/** Max concurrency for parallel issue processing within a batch. */\nexport const CONCURRENCY = parseInt(process.env.BATCH_CONCURRENCY ?? \"8\", 10);\n\n/** Number of issues to process in each batch. */\nexport const BATCH_SIZE = parseInt(process.env.BATCH_SIZE ?? \"10\", 10);\n\n/** Maximum review-fix rounds before the validation loop gives up. */\nexport const MAX_REVIEW_ROUNDS = 3;\n\n/** Linear team key for Smithers (resolved to UUID at runtime). */\nexport const SMITHERS_TEAM_KEY = process.env.SMITHERS_LINEAR_TEAM_KEY ?? \"JJH\";\n\n/** Blocked issue labels/tags that indicate 3rd-party dependency blockers. */\nexport const BLOCKED_LABELS = [\"blocked\", \"blocked-by-sdk\", \"waiting-on-upstream\"];\n\n/** SDK bug issues that block other work — skip these during batch processing. */\nexport const BLOCKED_ISSUE_IDS = [\n  \"JJH-357\", // Binary file roundtrip broken (double base64)\n  \"JJH-358\", // watchFiles() relative URL bug\n  \"JJH-359\", // Empty file creation silently fails\n  \"JJH-360\", // readTextFile through symlink fails\n];\n",
+      "coverageDirectives": [
+        {
+          "line": 16,
+          "text": "/** SDK bug issues that block other work — skip these during batch processing. */"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/package.json",
+      "sha256": "60c9ec2b6ace60fd702d4b2c3314153aa23539ced5446076156d401d18712abb",
+      "source": "{\n  \"name\": \"batch-issues-workflow\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"start\": \"bun run workflow.tsx\",\n    \"resume\": \"smithers resume workflow.tsx\",\n    \"typecheck\": \"tsc --noEmit\"\n  },\n  \"dependencies\": {\n    \"@ai-sdk/anthropic\": \"4.0.55\",\n    \"@ai-sdk/openai\": \"^4.0.51\",\n    \"@linear/sdk\": \"^92.0.0\",\n    \"@mdx-js/esbuild\": \"^3.1.1\",\n    \"@mdx-js/mdx\": \"^3.1.1\",\n    \"@types/mdx\": \"^2.0.14\",\n    \"ai\": \"^7.0.84\",\n    \"react-dom\": \"19.2.8\",\n    \"smithers\": \"file:../../../../smithers\",\n    \"zod\": \"^4.5.2\"\n  },\n  \"devDependencies\": {\n    \"@types/bun\": \"1.4.4\",\n    \"@types/node\": \"^26.4.0\",\n    \"@types/react\": \"^19.2.18\",\n    \"@types/react-dom\": \"^19.2.5\",\n    \"typescript\": \"^7.0.2\"\n  }\n}\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "packages/smithers/migrate/test/fixtures/batch-issues/.smithers/workflows/batch-issues/tsconfig.json",
+      "sha256": "89d72e1f2e4001646fa959d1922a2aa50b3821166024c97aef8e97f7cf5bf7ff",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"module\": \"ESNext\",\n    \"lib\": [\"ES2022\"],\n    \"jsx\": \"react-jsx\",\n    \"moduleResolution\": \"bundler\",\n    \"allowImportingTsExtensions\": true,\n    \"resolveJsonModule\": true,\n    \"allowJs\": true,\n    \"noEmit\": true,\n    \"isolatedModules\": true,\n    \"esModuleInterop\": true,\n    \"forceConsistentCasingInFileNames\": true,\n    \"strict\": true,\n    \"skipLibCheck\": true,\n    \"types\": [\"bun-types\", \"@types/mdx\", \"@types/react-dom\", \"@types/node\"]\n  },\n  \"include\": [\n    \"**/*.ts\",\n    \"**/*.tsx\",\n    \"**/*.mdx\"\n  ],\n  \"exclude\": [\n    \"node_modules\"\n  ]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 16,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 19,
+          "text": "\"include\": ["
+        },
+        {
+          "line": 24,
+          "text": "\"exclude\": ["
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/migrate/test/fixtures/batch-issues/package.json",
+      "sha256": "201a69eb851729c10395297fc42cdf9d033ef9c1f0994e726f2d72ede0814f4f",
+      "source": "{\n  \"private\": true,\n  \"packageManager\": \"pnpm@11.24.0\",\n  \"scripts\": {\n    \"smithers:fix-all\": \".smithers/node_modules/.bin/smithers up .smithers/workflows/fix-all-issues.tsx -d --max-concurrency 32\"\n  },\n  \"devDependencies\": {\n    \"smithers-orchestrator\": \"^0.32.0\",\n    \"typescript\": \"^7.0.2\"\n  }\n}\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "packages/smithers/migrate/test/fixtures/jsx-single.migrated/package.json",
+      "sha256": "7bf8a55284e7cd36da9e229d604064aead1efdb58573941d36a842f7faee757e",
+      "source": "{\n  \"name\": \"jsx-single-example\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"version\": \"0.0.0\",\n  \"scripts\": {\n    \"start\": \"smthrs flow start simple-workflow --data '{\\\"topic\\\":\\\"x\\\"}'\",\n    \"test\": \"vitest\"\n  },\n  \"dependencies\": {\n    \"@smthrs/agent\": \"1.0.0-rc.0\",\n    \"@smthrs/core\": \"1.0.0-rc.0\",\n    \"@smthrs/engine\": \"1.0.0-rc.0\",\n    \"@smthrs/flow\": \"1.0.0-rc.0\",\n    \"@smthrs/plan\": \"1.0.0-rc.0\",\n    \"effect\": \"4.0.5\"\n  }\n}\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "packages/smithers/migrate/test/fixtures/jsx-single.migrated/tsconfig.json",
+      "sha256": "9c5c831b23383b942daf35d9a24f7855c8c80146dfa139f27cf826ede7b1fecb",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"erasableSyntaxOnly\": true,\n    \"allowImportingTsExtensions\": true,\n    \"verbatimModuleSyntax\": true,\n    \"noEmit\": true,\n    \"skipLibCheck\": true\n  },\n  \"include\": [\"flows/**/*\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 13,
+          "text": "\"skipLibCheck\": true"
+        },
+        {
+          "line": 15,
+          "text": "\"include\": [\"flows/**/*\"]"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/migrate/test/fixtures/jsx-single/package.json",
+      "sha256": "6037d2bf48df0ab7c283f822e3ef4850922193f6f1817b73e242e1d137c88b8f",
+      "source": "{\n  \"name\": \"jsx-single-example\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"version\": \"0.0.0\",\n  \"scripts\": {\n    \"start\": \"smithers up simple-workflow.jsx --input '{\\\"topic\\\":\\\"x\\\"}'\",\n    \"test\": \"bun test tests\"\n  },\n  \"dependencies\": {\n    \"@ai-sdk/anthropic\": \"2.0.51\",\n    \"ai\": \"6.0.16\",\n    \"effect\": \"4.0.0-beta.105\",\n    \"smthrs\": \"0.35.0\",\n    \"zod\": \"4.4.3\"\n  }\n}\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "packages/smithers/migrate/test/fixtures/jsx-single/tsconfig.json",
+      "sha256": "1e2344c918e3d37fcb4272380dbdb31fefbc64c69efb7ea6c2b8c0d16549fb4a",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"module\": \"Preserve\",\n    \"moduleResolution\": \"bundler\",\n    \"strict\": true,\n    \"allowJs\": true,\n    \"checkJs\": false,\n    \"skipLibCheck\": true,\n    \"noEmit\": true,\n    \"jsx\": \"react-jsx\",\n    \"jsxImportSource\": \"smthrs\",\n    \"types\": [\"bun\"]\n  },\n  \"include\": [\"**/*.ts\", \"**/*.jsx\", \"**/*.tsx\", \"**/*.js\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 9,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 15,
+          "text": "\"include\": [\"**/*.ts\", \"**/*.jsx\", \"**/*.tsx\", \"**/*.js\"]"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/migrate/test/fixtures/mixed-api/.smithers/package.json",
+      "sha256": "eb57d52038a371a0d4f22a75bb7ee72f0faa50ab88965b4fac4a5c0cdd5080e0",
+      "source": "{\n  \"name\": \"smithers-workflows\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"typecheck\": \"tsc --noEmit\",\n    \"test\": \"bun test workflows/alpha-plue.test.ts\",\n    \"workflow:list\": \"smithers workflow list\",\n    \"workflow:run\": \"smithers workflow run\",\n    \"workflow:implement\": \"smithers workflow implement\"\n  },\n  \"dependencies\": {\n    \"smithers-orchestrator\": \"0.32.0\",\n    \"zod\": \"4.5.2\"\n  },\n  \"devDependencies\": {\n    \"@types/bun\": \"1.4.4\",\n    \"typescript\": \"7.0.2\",\n    \"@types/react\": \"19.2.18\",\n    \"@types/react-dom\": \"19.2.5\",\n    \"@types/mdx\": \"2.0.14\"\n  }\n}\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "packages/smithers/migrate/test/fixtures/persisted-db/.smithers/smithers.config.ts",
+      "sha256": "ee94a67d1c6d5bc423e65429bd77256a91afae3ca63ae4a966b15d8e9cbb386c",
+      "source": "export const backend = \"sqlite\";\n\nexport const repoCommands = {\n  test: \"bun test tests\",\n} as const;\n\nexport default { backend, repoCommands };\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "packages/smithers/migrate/test/fixtures/persisted-db/package.json",
+      "sha256": "6037d2bf48df0ab7c283f822e3ef4850922193f6f1817b73e242e1d137c88b8f",
+      "source": "{\n  \"name\": \"jsx-single-example\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"version\": \"0.0.0\",\n  \"scripts\": {\n    \"start\": \"smithers up simple-workflow.jsx --input '{\\\"topic\\\":\\\"x\\\"}'\",\n    \"test\": \"bun test tests\"\n  },\n  \"dependencies\": {\n    \"@ai-sdk/anthropic\": \"2.0.51\",\n    \"ai\": \"6.0.16\",\n    \"effect\": \"4.0.0-beta.105\",\n    \"smthrs\": \"0.35.0\",\n    \"zod\": \"4.4.3\"\n  }\n}\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "packages/smithers/migrate/test/fixtures/persisted-db/tsconfig.json",
+      "sha256": "1e2344c918e3d37fcb4272380dbdb31fefbc64c69efb7ea6c2b8c0d16549fb4a",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"module\": \"Preserve\",\n    \"moduleResolution\": \"bundler\",\n    \"strict\": true,\n    \"allowJs\": true,\n    \"checkJs\": false,\n    \"skipLibCheck\": true,\n    \"noEmit\": true,\n    \"jsx\": \"react-jsx\",\n    \"jsxImportSource\": \"smthrs\",\n    \"types\": [\"bun\"]\n  },\n  \"include\": [\"**/*.ts\", \"**/*.jsx\", \"**/*.tsx\", \"**/*.js\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 9,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 15,
+          "text": "\"include\": [\"**/*.ts\", \"**/*.jsx\", \"**/*.tsx\", \"**/*.js\"]"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/package.json",
+      "sha256": "eb57d52038a371a0d4f22a75bb7ee72f0faa50ab88965b4fac4a5c0cdd5080e0",
+      "source": "{\n  \"name\": \"smithers-workflows\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"scripts\": {\n    \"typecheck\": \"tsc --noEmit\",\n    \"test\": \"bun test workflows/alpha-plue.test.ts\",\n    \"workflow:list\": \"smithers workflow list\",\n    \"workflow:run\": \"smithers workflow run\",\n    \"workflow:implement\": \"smithers workflow implement\"\n  },\n  \"dependencies\": {\n    \"smithers-orchestrator\": \"0.32.0\",\n    \"zod\": \"4.5.2\"\n  },\n  \"devDependencies\": {\n    \"@types/bun\": \"1.4.4\",\n    \"typescript\": \"7.0.2\",\n    \"@types/react\": \"19.2.18\",\n    \"@types/react-dom\": \"19.2.5\",\n    \"@types/mdx\": \"2.0.14\"\n  }\n}\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/smithers.config.ts",
+      "sha256": "8dc9c2b72d9aae2aadea728e33a5f6dd1c7b767738e631188794a0fa76598464",
+      "source": "export const repoCommands = {\n  lint: null,\n  test: null,\n  coverage: null,\n} as const;\n\nexport default { repoCommands };\n",
+      "coverageDirectives": [
+        {
+          "line": 4,
+          "text": "coverage: null,"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/migrate/test/fixtures/plue-pack/.smithers/tsconfig.json",
+      "sha256": "6e80e4a6eb698dbaef06a6025779afc5d9dc1c867803df755df670913a5e78f0",
+      "source": "{\n  \"compilerOptions\": {\n    \"lib\": [\n      \"ESNext\",\n      \"DOM\",\n      \"DOM.Iterable\"\n    ],\n    \"target\": \"ESNext\",\n    \"module\": \"ESNext\",\n    \"moduleDetection\": \"force\",\n    \"jsx\": \"react-jsx\",\n    \"jsxImportSource\": \"smithers-orchestrator\",\n    \"moduleResolution\": \"bundler\",\n    \"types\": [\n      \"bun\"\n    ],\n    \"allowImportingTsExtensions\": true,\n    \"verbatimModuleSyntax\": true,\n    \"noEmit\": true,\n    \"strict\": true,\n    \"skipLibCheck\": true\n  },\n  \"include\": [\n    \"./**/*\"\n  ],\n  \"exclude\": [\n    \"./executions/**/*\"\n  ]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 21,
+          "text": "\"skipLibCheck\": true"
+        },
+        {
+          "line": 23,
+          "text": "\"include\": ["
+        },
+        {
+          "line": 26,
+          "text": "\"exclude\": ["
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/migrate/test/fixtures/plue-pack/package.json",
+      "sha256": "b03fa78762d6f21dac2803ff9e7152de75699be6f43ad286c96e2bc3ba09e113",
+      "source": "{\n  \"name\": \"plue\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"version\": \"0.0.0\",\n  \"workspaces\": [\n    \".smithers\"\n  ],\n  \"scripts\": {\n    \"wf\": \"smithers workflow run\",\n    \"ci\": \"bunx smthrs up .smithers/workflows/pipelines/ci-fast.tsx -d\"\n  }\n}\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "packages/smithers/migrate/tsconfig.json",
+      "sha256": "0064dce36d22143039105eb068be99456971e6caf6e7cebac24633514a2009b8",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [\n      {\n        \"name\": \"@effect/language-service\",\n        \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n        \"includeSuggestionsInTsc\": false,\n        \"ignoreEffectWarningsInTscExitCode\": true,\n        \"ignoreEffectErrorsInTscExitCode\": true,\n        \"diagnosticSeverity\": {\n          \"globalErrorInEffectFailure\": \"off\"\n        }\n      }\n    ]\n  },\n  \"include\": [\"src/**/*\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 17,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 30,
+          "text": "\"includeSuggestionsInTsc\": false,"
+        },
+        {
+          "line": 31,
+          "text": "\"ignoreEffectWarningsInTscExitCode\": true,"
+        },
+        {
+          "line": 32,
+          "text": "\"ignoreEffectErrorsInTscExitCode\": true,"
+        },
+        {
+          "line": 39,
+          "text": "\"include\": [\"src/**/*\"]"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/migrate/vitest.config.ts",
+      "sha256": "e43764276af6a0a22f496f55144136f5d7863f166b4459128ee34723d74fda43",
+      "source": "import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],\n    environment: \"node\",\n    // Migration journeys start real verification processes and checkpoint\n    // whole fixture trees. Run files serially to bound their process and disk\n    // contention without extending any migration's execution budget.\n    fileParallelism: false,\n    // House convention (see packages/smithers/flows/patterns/vitest.config.ts): a finite\n    // wall-clock budget so correct suites survive coverage-instrumented load\n    // while a genuine hang still fails the run. Scanner tests copy fixture\n    // trees and open SQLite databases, so the budget is 60 s rather than 30 s.\n    testTimeout: 60_000,\n    hookTimeout: 60_000,\n    // Fixtures are byte-for-byte copies of real Smithers 0.x projects. They\n    // carry their own `*.test.ts` files, which are inputs to the scanner and\n    // must never be collected as this package's tests.\n    exclude: [\"**/node_modules/**\", \"**/dist/**\", \"test/fixtures/**\"],\n    coverage: {\n      enabled: true,\n      provider: \"v8\",\n      // Per-process report directory so concurrent vitest runs do not destroy\n      // each other's coverage scratch state.\n      reportsDirectory: join(tmpdir(), `flows-migrate-coverage-${process.pid}`),\n      include: [\"src/**\"],\n      // `src/flow/bin.ts` is the one statement `NodeRuntime.runMain(main)` and\n      // stays in the denominator uncovered: a test can only reach it by\n      // spawning a process, which `test/flow/Bin.test.ts` does against the\n      // built binary, and the command it runs is `flow/Cli.ts`, covered in\n      // process. The floor below allows for it.\n      // A ratchet, not the goal. The 1.0 command contract's baseline is 100 on every\n      // default run. On a checkout with no `SMITHERS_MIGRATE_PLUE_PACK` beside\n      // it, which is every checkout but the maintainer's, the package measures\n      // 94.4 statements, 86.0 branches, 95.3 functions, and 96.9 lines. The\n      // floor sits under that so a change that lowers coverage fails here\n      // rather than passing under a threshold nobody meets. Raise both\n      // together: `packages/smithers/flows/test/vitestCoverageIsolation.test.ts`\n      // carries the comment justifying this package's place in\n      // `coverageFloorDeferred`, and it has to state the same numbers these\n      // thresholds do.\n      thresholds: {\n        branches: 83,\n        functions: 93,\n        lines: 95,\n        statements: 92\n      }\n    }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 11,
+          "text": "fileURLToPath(new URL(\"../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"
+        },
+        {
+          "line": 14,
+          "text": "include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],"
+        },
+        {
+          "line": 21,
+          "text": "// wall-clock budget so correct suites survive coverage-instrumented load"
+        },
+        {
+          "line": 29,
+          "text": "exclude: [\"**/node_modules/**\", \"**/dist/**\", \"test/fixtures/**\"],"
+        },
+        {
+          "line": 30,
+          "text": "coverage: {"
+        },
+        {
+          "line": 32,
+          "text": "provider: \"v8\","
+        },
+        {
+          "line": 34,
+          "text": "// each other's coverage scratch state."
+        },
+        {
+          "line": 35,
+          "text": "reportsDirectory: join(tmpdir(), `flows-migrate-coverage-${process.pid}`),"
+        },
+        {
+          "line": 36,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 46,
+          "text": "// floor sits under that so a change that lowers coverage fails here"
+        },
+        {
+          "line": 47,
+          "text": "// rather than passing under a threshold nobody meets. Raise both"
+        },
+        {
+          "line": 48,
+          "text": "// together: `packages/smithers/flows/test/vitestCoverageIsolation.test.ts`"
+        },
+        {
+          "line": 50,
+          "text": "// `coverageFloorDeferred`, and it has to state the same numbers these"
+        },
+        {
+          "line": 51,
+          "text": "// thresholds do."
+        },
+        {
+          "line": 52,
+          "text": "thresholds: {"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/migrate",
+      "label": "//packages/smithers/migrate:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/migrate/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/migrate/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/migrate/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/migrate/tsconfig.test.json"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/migrate:lib"
+      ]
+    },
+    {
+      "package": "packages/smithers/migrate",
+      "label": "//packages/smithers/migrate:circular",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/circular.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/migrate/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/migrate/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/migrate",
+      "label": "//packages/smithers/migrate:docs",
+      "rule": "DocsParity",
+      "kinds": [
+        "docs"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/migrate/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/migrate",
+      "label": "//packages/smithers/migrate:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/migrate/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/migrate/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/migrate/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/migrate",
+      "label": "//packages/smithers/migrate:fmt",
+      "rule": "Dprint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/migrate/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/migrate/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/migrate/dprint.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/migrate",
+      "label": "//packages/smithers/migrate:lib",
+      "rule": "TsBuild",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/migrate/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/build-library.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/scripts/compile-commonjs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-single-effect-version.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/migrate/src/index.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/migrate/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/migrate/scripts/build.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/migrate",
+      "label": "//packages/smithers/migrate:lint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/migrate/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/migrate/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.jsdoc.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/migrate",
+      "label": "//packages/smithers/migrate:reviewDocsAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/migrate/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/migrate/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/migrate/README.md"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/migrate/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/content/docs/docs/reference/api/migrate.mdx"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/migrate",
+      "label": "//packages/smithers/migrate:reviewJsdocAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/migrate/src/**/*.{ts,vibe}"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/migrate/src/**/*.{ts,vibe}",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/migrate",
+      "label": "//packages/smithers/migrate:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/migrate/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/migrate/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/migrate",
+      "label": "//packages/smithers/migrate:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/migrate/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/migrate/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/migrate",
+      "label": "//packages/smithers/migrate:test",
+      "rule": "Vitest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/migrate/test/**/*.test.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/migrate/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/migrate/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/migrate/vitest.config.ts"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/migrate:lib"
+      ]
+    }
+  ],
+  "areas": [
+    "PACKAGE.ts",
+    "eslint.config.js",
+    "examples/scan-project.ts",
+    "scripts/build.mjs",
+    "scripts/generate-facade-exports.mjs",
+    "src/Checks.ts",
+    "src/Constructs.ts",
+    "src/Detect.ts",
+    "src/Inventory.ts",
+    "src/Mapping.ts",
+    "src/MigrateError.ts",
+    "src/PromptHints.ts",
+    "src/Report.ts",
+    "src/RunState.ts",
+    "src/Scan.ts",
+    "src/Units.ts",
+    "src/ZodSchemaHints.ts",
+    "src/flow",
+    "src/index.ts",
+    "src/internal",
+    "test/fixtures",
+    "vitest.config.ts"
+  ],
+  "boundaries": [
+    "cli",
+    "installed-consumer",
+    "public-authoring"
+  ]
+}

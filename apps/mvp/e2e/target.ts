@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url"
 import { DEV_URL } from "../dev/https"
 import { DEVICE_PERSON_HEADER, type Role, ROLES } from "../src/features/auth/contract"
 import { sessionDirOf } from "./settings"
+import { personSettings } from "./people"
+import { shipAcceptance, shipFeaturesOf } from "./ship"
 
 // What the e2e tests run against, and what each test needs from it (docs/rules.md, test.e2e-declared-needs). One suite
 // runs locally against `alchemy dev` and against a deployment (docs/rulings.md TEST-4). A test that needs something a
@@ -48,15 +50,15 @@ export const LOCAL_DEVELOPER: Identity = { origin: new URL(baseURL).origin, logi
  * Where a deployment's stored session lives: one folder per host, outside the repository so every workspace shares one
  * session and no copy of the checkout carries it. `E2E_SESSION_DIR` moves the root.
  */
-export const sessionFiles = (url: string, env: { readonly E2E_SESSION_DIR?: string | undefined } = process.env) => {
-  const dir = sessionDirOf(url, env)
+export const sessionFiles = (url: string, env: { readonly E2E_SESSION_DIR?: string | undefined; readonly E2E_RUN_DIR?: string | undefined } = process.env) => {
+  const dir = env.E2E_RUN_DIR ?? sessionDirOf(url, env)
   return {
     dir,
     session: join(dir, "session.json"),
     identity: join(dir, "identity.json"),
     conversation: join(dir, "conversation.json"),
     repositories: join(dir, "repositories.json"),
-    settings: join(dir, "e2e.env"),
+    settings: join(sessionDirOf(url, env), "e2e.env"),
   }
 }
 
@@ -67,7 +69,7 @@ export type Place = { readonly path: string; readonly conversationId: string }
  * The branch a deployment run asks in, so its questions never reach the team's home conversation that every Member
  * reads: tracked first by the test account, it stays the account's own until shared (docs/features/branch-workspace.md).
  */
-export const OWN_BRANCH = { owner: "roninjin10", name: "smithers-github-tests", ref: "smithers-e2e" } as const
+export const OWN_BRANCH = { owner: "roninjin10", name: "smithers-github-tests", ref: process.env.E2E_RUN_ID ? `smithers-e2e-${process.env.E2E_RUN_ID}` : "smithers-e2e" } as const
 
 /** Reads the place the setup tracked; undefined when it couldn't track one (e2e/deployment/sign-in.setup.ts). */
 export const readPlace = (path: string): Place | undefined => {
@@ -126,10 +128,10 @@ export const readRepositories = (path: string): Readonly<Record<string, Reposito
   return answers
 }
 
-/** The scratch repositories a deployment run names, which the setup asks about: issues, stack, factory and VibeLang. */
+/** The scratch repositories a deployment run names, which the setup asks about: issues, stack, factory, VibeLang and secrets. */
 export const scratchRepositoriesOf = (env: Readonly<Record<string, string | undefined>>): ReadonlyArray<string> => [
   ...new Set(
-    [env.E2E_ISSUES_REPOSITORY, env.E2E_STACK_REPOSITORY, env.E2E_FACTORY_REPOSITORY, env.E2E_VIBELANG_REPOSITORY]
+    [env.E2E_ISSUES_REPOSITORY, env.E2E_STACK_REPOSITORY, env.E2E_FACTORY_REPOSITORY, env.E2E_VIBELANG_REPOSITORY, env.E2E_SECRETS_REPOSITORY]
       .filter((name): name is string => /^[\w.-]+\/[\w.-]+$/.test(name ?? "") && !/^smithersai\//i.test(name!))
       .map((name) => name.toLowerCase()),
   ),
@@ -236,6 +238,21 @@ const needs = {
     met: (run) => run.target === "local" && !githubAppLocally(run),
     reason: "local development's second and third people (the smithers_dev_person cookie) exist only without GitHub sign-in; a deployment needs another real test account",
   },
+  sharingPeople: {
+    met: (run) => run.target === "local" ? !githubAppLocally(run) : personSettings("teammate", run.env) !== undefined,
+    reason: "two real people are required: set E2E_TEAMMATE_LOGIN and E2E_TEAMMATE_SESSION (an absolute path to that test account's private app session); its live identity must differ from the owner and have Member access on the scratch repository",
+    blocked: true,
+  },
+  sharingGuest: {
+    met: (run) => run.target === "local" ? !githubAppLocally(run) : personSettings("guest", run.env) !== undefined,
+    reason: "the role ceiling needs a real Guest: set E2E_GUEST_LOGIN and E2E_GUEST_SESSION (an absolute private app-session path); the deployment must confirm Guest access on the scratch repository",
+    blocked: true,
+  },
+  sharingModels: {
+    met: (run) => run.target === "local",
+    reason: "both sharing participants need an active saved model that can answer Fast; the sharing helper verifies each account's live model shape before the composer journey (provision and Test each account's own model in Settings)",
+    blocked: true,
+  },
   outsideRoles: {
     met: (run) => run.target === "deployment",
     reason: "it proves the test account's role on the deployment's repository counts for nothing where the GitHub App isn't installed (decision 0079); local development without the App keeps its people's roles on every repository",
@@ -249,11 +266,6 @@ const needs = {
     met: (run) => run.target === "deployment",
     reason: "it reads smithersai/vibelang's live factory feed, which only VibeLang's collector pushes, and only to a deployment (docs/features/factory.md); local development has no such feed",
   },
-  vibelangOpenPull: {
-    met: (run) => run.target === "local",
-    reason: "it needs an open pull request on smithersai/vibelang, and its synced list has none: VibeLang lands changes through its own merge queue, not GitHub pull requests",
-    blocked: true,
-  },
   vibelangContributor: {
     met: (run) => run.target === "local",
     reason: "it needs the test account below Maintainer on smithersai/vibelang, to see what a contributor sees there; the deployment says it is a Maintainer or Admin",
@@ -261,6 +273,19 @@ const needs = {
   devSignIn: {
     met: (run) => run.target === "local" && !githubAppLocally(run),
     reason: "it signs out and in as local development's person, who exists only without GitHub sign-in; in a deployment that would end the run's shared session",
+  },
+  secretEgressDeployment: {
+    met: (run) => run.target === "local" || (
+      run.env.E2E_SECRETS_EGRESS === "true" &&
+      /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_SECRETS_REPOSITORY ?? "") &&
+      !/^smithersai\//i.test(run.env.E2E_SECRETS_REPOSITORY!) &&
+      !!run.env.E2E_SECRETS_BRANCH && adminOf(run, "E2E_SECRETS_REPOSITORY")
+    ),
+    reason: "production secret egress is off by default and secret writes are fenced to GITHUB_REPOSITORY; " +
+      "an authorized deployment must enable SANDBOX_SECRETS and admit an Admin's scratch repository before " +
+      "E2E_SECRETS_EGRESS=true, E2E_SECRETS_REPOSITORY and E2E_SECRETS_BRANCH can select this proof; " +
+      "server-log capture also requires explicit Cloudflare-tail authorization",
+    blocked: true,
   },
   sandboxSecrets: {
     met: (run) =>
@@ -308,8 +333,10 @@ const needs = {
     reason: "it commits and drops TODOs: locally on octocat/Spoon-Knife; a deployment needs E2E_STACK_REPOSITORY naming a writable scratch repository with stack shapes and repository membership, never a smithersai one",
   },
   absentRepository: {
-    met: (run) => /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_ABSENT_REPOSITORY ?? ""),
-    reason: "it needs an authoritative absent public repository: set E2E_ABSENT_REPOSITORY and prime About through an authenticated Member with a working read token; an anonymous GitHub quota is not a fixture",
+    met: (run) => run.env.E2E_ABSENT_REPOSITORY
+      ? /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_ABSENT_REPOSITORY)
+      : run.target === "deployment",
+    reason: "it verifies a fresh unique repository name on GitHub and through authenticated About; E2E_ABSENT_REPOSITORY optionally selects a name, which must also be verified absent at test time",
     blocked: true,
   },
   unsyncedRepository: {
@@ -318,8 +345,8 @@ const needs = {
     blocked: true,
   },
   failedRun: {
-    met: (run) => (run.env.E2E_FAILED_RUN ?? "") !== "",
-    reason: "it needs a retained real failed run with failure attempts and undispatched steps, visible to this account: E2E_FAILED_RUN names its execution; never insert fabricated history",
+    met: (run) => run.target === "deployment" || (run.env.E2E_FAILED_RUN ?? "") !== "",
+    reason: "it selects and inspects real failed history through this person's Cloud runs API; E2E_FAILED_RUN optionally pins an execution with recorded failure attempts and skipped steps; never insert fabricated history",
     blocked: true,
   },
   repositoryRun: {
@@ -334,7 +361,7 @@ const needs = {
   },
   syncedRepository: {
     met: (run) => /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_SYNCED_REPOSITORY ?? ""),
-    reason: "it needs existing synced issues and pull requests: set E2E_SYNCED_REPOSITORY to the deployment's synced public owner/name; an empty or unfinished sync fails the fixture check",
+    reason: "it needs existing synced issues and pull requests, at least one issue open: set E2E_SYNCED_REPOSITORY to the deployment's synced public owner/name; an empty or unfinished sync fails the fixture check",
     blocked: true,
   },
   modelQuotaRefusal: {
@@ -453,6 +480,10 @@ const needs = {
     met: (run) => set(run, "E2E_GITHUB_TOKEN"),
     reason: "local development pushes as a person: set E2E_GITHUB_TOKEN to a token with Contents write on the scratch repository",
   },
+  machineToken: {
+    met: (run) => set(run, "E2E_MACHINE_TOKEN_FILE") && existsSync(run.env.E2E_MACHINE_TOKEN_FILE!),
+    reason: "it files an issue using a real machine token: E2E_MACHINE_TOKEN_FILE must name the private token file issued for the scratch repository by ops/machine-token/issue.ts",
+  },
   githubApp: {
     met: (run) => run.target === "deployment",
     reason: "it syncs the deployment's GitHub repository through its GitHub App and webhook, which local development runs without",
@@ -554,6 +585,15 @@ const thisRun: Run = {
 /** Whether this run meets `name`. */
 export const meets = (name: NeedName, run: Run = thisRun) => NEEDS[name].met(run)
 
+/** Missing needs remain developer skips; a ship-required spec must fail instead of leaving out its feature. */
+export const unmetNeed = (name: NeedName, file: string, run: Run = thisRun): boolean => {
+  const unmet = !meets(name, run)
+  if (unmet && shipAcceptance(run.env) && shipFeaturesOf(file).length > 0) {
+    throw new Error(`Ship acceptance requires ${name}: ${NEEDS[name].reason}`)
+  }
+  return unmet
+}
+
 const inTest = () => {
   try {
     base.info()
@@ -571,13 +611,23 @@ export const requires = (...names: ReadonlyArray<NeedName>) => {
   for (const name of names) {
     if (inTest()) {
       record(name)
-      base.skip(!meets(name), describeNeed(name))
+      base.skip(unmetNeed(name, base.info().file), describeNeed(name))
     } else {
-      // A modifier's condition may be read once per worker, so a hook records the need for each test of the scope.
-      base.beforeEach(() => record(name))
-      base.skip(({ browserName }) => !meets(name, { ...thisRun, browserName: () => browserName }), describeNeed(name))
+      // Worker-scoped modifiers have no TestInfo. Acceptance checks the file in the per-test hook instead.
+      base.beforeEach(() => {
+        record(name)
+        base.skip(unmetNeed(name, base.info().file), describeNeed(name))
+      })
+      base.skip(({ browserName }) => !shipAcceptance(thisRun.env) && !meets(name, { ...thisRun, browserName: () => browserName }), describeNeed(name))
     }
   }
+}
+
+/** A blocked prerequisite established from live per-account data rather than run-wide configuration. */
+export const requiresVerified = (name: NeedName, available: boolean) => {
+  if (!inTest() || !NEEDS[name].blocked) throw new Error("A live prerequisite must be a declared blocked need inside a test")
+  record(name)
+  base.skip(!available, describeNeed(name))
 }
 
 /** The needs each running test declared, by its TestInfo: helpers such as `devices.open` adapt to them. */

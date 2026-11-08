@@ -279,14 +279,14 @@ admitted it. A memory engine loses every execution when its layer scope closes.
 
 ## A missing Crypto service
 
-**Symptom.** A type error naming `Crypto.Crypto` as an unmet requirement of a
+**Symptom.** A type error naming `(EffectDigest.Digest | SecureRandom.SecureRandom)` as an unmet requirement of a
 program that executes a flow.
 
 **Cause.** Every action dispatch is recorded under a derived step identity, and
 deriving it is a SHA-256. The in-memory engine needs crypto for the same reason
 the durable one does.
 
-**Fix.** Provide a platform crypto layer, such as `Crypto.layerFromDigest(NodeCrypto.layerDigest)` from
+**Fix.** Provide a platform crypto layer, such as `NodeCrypto.layer` from
 `@effect/platform-node`, or the browser equivalent.
 
 ## Cancellation and discarded executions

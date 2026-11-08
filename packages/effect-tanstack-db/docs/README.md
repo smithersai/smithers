@@ -95,7 +95,23 @@ service.
 
 ## Peers
 
-`effect` 4.1.0, `@tanstack/db` 0.15.1 and
+`effect` 4.1.1, `@tanstack/db` 0.15.1 and
 `@tanstack/db-sqlite-persistence-core` 0.4.11 are required.
 `@tanstack/offline-transactions` 1.1.3 is optional: the package imports only
 its types, and the host passes `startOfflineExecutor` to `Outbox.layer`.
+
+## Durable holds and independent keys
+
+`new Outbox.Retry({ status: 401, held: true })` retains the write and reports `Status.held` until settlement. `held` is generic: the package does not interpret HTTP statuses. A subsequent network retry preserves the persisted hold. Owned rows alone contribute to status, and a storage read failure keeps the last known state.
+
+Supply `Options.orderingKeys` as a map from mutation names to functions of their rows. Each function returns stable dependency keys, captured in the existing transaction metadata before admission. Each admission reads the shared durable counter and atomically commits its increment with the new row, while holding the non-stealable admission fence. It never allocates from a leader-local counter, including after A→B→A leadership reacquisition. Startup and leadership recovery journal a stable repair plan for missing or duplicate sequences, placing a held member before ambiguous peers before replay. Recovery scans the retained backlog once; ordinary admission reads only the counter, and held-status invalidations remain bounded by indexed and dirty keys. Writes with overlapping keys remain ordered across reload and leadership handoff, including equal timestamps and transitive dependencies spanning several keys. Earlier rows without metadata derive keys from their persisted payloads on load. A mutation without a key declaration, or with an empty key array, conservatively conflicts with every key. A held head waiting out backoff lets independent keys pass. Ordinary retries preserve FIFO behavior. Writes keep their original settlement, withdrawal and idempotency boundaries.
+
+For live follower status, supply `Options.changes` with `publish()` and `subscribe(listener)`, backed by a host channel. Notifications carry no rows. Admissions update held status incrementally. Dirty local membership survives an incomplete index read, and index repair rereads the indexed and dirty rows before publication, so a delayed invalidation cannot erase an unpublished hold. Followers coalesce invalidations, read a small persisted index of held transaction keys, and validate the referenced rows and their ownership. Startup and leadership change reconcile against retained rows, repairing an index missed by a crash. Storage completion never scans the backlog for status. A failed index write or notification remains dirty and is repaired by the next existing storage, retry or settlement step; notification follows successful index persistence. Until storage recovers, followers retain their last known status. Cached owner stamps are re-evaluated when the current principal or unstamped-ownership policy changes. Every instance reads held status before starting the executor, so an offline reload needs no notification or send. Notification failures are logged without changing admission.
+
+The pinned offline-transactions 1.1.3 dependency needs this workspace's `retryScheduling` patch. It exposes eligible heads to the existing executor and retry timer; it adds no executor, retry loop or parallel send. The default dependency behavior remains FIFO. Tests exercise the real patched executor through this package's public API.
+
+The default election keeps its Web Lock while shutdown drains persistence already in flight. Closing refuses new and late admissions before releasing leadership, so an older executor cannot overwrite a reopened executor's counter. Settlement still persists a response that outlives disposal, preventing its replay. Custom elections that transfer leadership during persistence must supply `Leader.withAdmission`; `Outbox.lockLeader` supplies that fence. These fenced elections can dispose immediately while a pending admission retains its separate lock until storage completes; successor recovery waits on that lock.
+
+Storage supplies `withLock(name, action)` as cross-context exclusion for the held index. Publication holds it across reading, validating rows and replacing the index, including late settlements after disposal. All contexts using a database must share the same lock name and hold it until the action settles.
+
+Late retry snapshots merge with the current row under that row's shared lock. Persisted holds and admission order survive a handoff; terminal or deleted writes stay settled. Different rows remain independent. Row changes release their lock before index publication.

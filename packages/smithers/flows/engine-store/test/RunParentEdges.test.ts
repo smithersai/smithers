@@ -39,6 +39,21 @@ const memoryHarness: Harness = {
 
 const describeContract = (harness: Harness) => {
   describe(`run parent edges (${harness.label})`, () => {
+    it.effect("accepts an acyclic edge after traversing shared ancestors once", () =>
+      harness.run((state) =>
+        Effect.gen(function*() {
+          yield* state.recordRunParent("left", "ancestor")
+          yield* state.recordRunParent("right", "ancestor")
+          yield* state.recordRunParent("parent", "left")
+          yield* state.recordRunParent("parent", "right")
+          // Keep child non-leaf so SQL uses the same full cycle walk as memory.
+          yield* state.recordRunParent("grandchild", "child")
+          const result = yield* state.recordRunParent("child", "parent")
+          expect(result._tag).toBe("Recorded")
+          expect((yield* state.runParents("child")).map((edge) => edge.parentId)).toEqual(["parent"])
+        })
+      ))
+
     it.effect("records each distinct edge once with a monotonic store-global sequence", () =>
       Effect.gen(function*() {
         const result = yield* harness.run((state) =>
@@ -234,32 +249,41 @@ describe("run parent edges (sql fault injection)", () => {
       )
     }))
 
-  it.effect("dies (not a typed failure) when the write transaction itself fails", () =>
-    Effect.gen(function*() {
-      const exit = yield* withCrypto(
-        Effect.gen(function*() {
-          const writer = yield* DurableWriter.DurableWriter
-          // Writes succeed during `make` (table/index bootstrap), then fail.
-          let breakWrites = false
-          const broken = yield* DurableEngineState.make.pipe(
-            Effect.provideService(
-              DurableWriter.DurableWriter,
-              DurableWriter.DurableWriter.of({
-                write: (effect) =>
-                  breakWrites
-                    ? Effect.fail(new DurableWriter.DatabaseError({ code: "busy" })) as never
-                    : writer.write(effect)
-              })
+  for (const childHasChildren of [false, true]) {
+    it.effect(`dies when a ${childHasChildren ? "non-leaf" : "leaf"} parent-edge write fails`, () =>
+      Effect.gen(function*() {
+        const exit = yield* withCrypto(
+          Effect.gen(function*() {
+            const writer = yield* DurableWriter.DurableWriter
+            // Writes succeed during `make` (table/index bootstrap), then fail.
+            let breakWrites = false
+            const broken = yield* DurableEngineState.make.pipe(
+              Effect.provideService(
+                DurableWriter.DurableWriter,
+                DurableWriter.DurableWriter.of({
+                  write: (effect, options) =>
+                    breakWrites && (!childHasChildren || options?.partition === undefined)
+                      ? Effect.fail(
+                        new DurableWriter.DatabaseError({ code: childHasChildren ? "constraint" : "busy" })
+                      ) as never
+                      : writer.write(effect, options)
+                })
+              )
             )
-          )
-          breakWrites = true
-          // Only a cycle is a typed failure on this surface; a storage error
-          // must escape as a defect exactly like every other store mutation.
-          return yield* Effect.exit(broken.recordRunParent("child", "parent"))
-        }).pipe(Effect.provide(migratedDatabase))
-      )
+            // A non-leaf reaches the checked schema write inside its two
+            // partition writes; let those real outer writes execute first.
+            // The nested fault is permanent: a busy fault belongs to the real
+            // outer writer's retry policy instead of this defect boundary.
+            if (childHasChildren) yield* broken.recordRunParent("grandchild", "child")
+            breakWrites = true
+            // Only a cycle is a typed failure on this surface; a storage error
+            // must escape as a defect exactly like every other store mutation.
+            return yield* Effect.exit(broken.recordRunParent("child", "parent"))
+          }).pipe(Effect.provide(migratedDatabase))
+        )
 
-      expect(Exit.isFailure(exit)).toBe(true)
-      expect(Exit.isFailure(exit) && Exit.hasDies(exit)).toBe(true)
-    }))
+        expect(Exit.isFailure(exit)).toBe(true)
+        expect(Exit.isFailure(exit) && Exit.hasDies(exit)).toBe(true)
+      }))
+  }
 })

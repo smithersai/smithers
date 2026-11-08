@@ -25,8 +25,9 @@
  * @since 0.1.0
  */
 
-import { type Crypto, Sha256 } from "@smthrs/crypto"
+import { Sha256 } from "@smthrs/crypto"
 import * as Context from "effect/Context"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
@@ -335,9 +336,9 @@ export interface Service {
    */
   readonly verify: Effect.Effect<string, PackageManagerError>
   /**
-   * Populates the content-addressed store from the lockfile alone. pnpm also
-   * writes its virtual store (`node_modules/.pnpm`) and `.modules.yaml`, but
-   * links no package into the project's `node_modules`.
+   * Populates the content-addressed store from the lockfile alone. pnpm's
+   * staging virtual store and metadata stay beneath the store directory;
+   * fetch never rewrites the project's linked `node_modules`.
    */
   readonly fetch: Effect.Effect<void, PackageManagerError>
   /**
@@ -349,7 +350,7 @@ export interface Service {
    * Digests the evidence this manager leaves behind describing the linked
    * tree. This is the node_modules manifest digest: never the tree itself.
    */
-  readonly linkManifest: Effect.Effect<Digest, PackageManagerError, Crypto.Crypto>
+  readonly linkManifest: Effect.Effect<Digest, PackageManagerError, EffectDigest.Digest>
 }
 
 /**
@@ -1095,7 +1096,7 @@ const capture = (
  *
  * @private
  */
-const digestText = (text: string): Effect.Effect<Digest, never, Crypto.Crypto> =>
+const digestText = (text: string): Effect.Effect<Digest, never, EffectDigest.Digest> =>
   Effect.orDie(Schema.decodeUnknownEffect(Sha256)(text))
 
 /**
@@ -1110,7 +1111,7 @@ const digestFile = (
   projectRoot: string,
   path: string,
   limit: number
-): Effect.Effect<Digest, PackageManagerError, Crypto.Crypto> =>
+): Effect.Effect<Digest, PackageManagerError, EffectDigest.Digest> =>
   boundedBytes(fs, code, projectRoot, path, limit).pipe(
     Effect.flatMap((bytes) => Effect.orDie(Schema.decodeUnknownEffect(Sha256)(bytes)))
   )
@@ -1252,15 +1253,22 @@ export const makePnpm = (options: Options): Effect.Effect<
     // against the project root, so the store the fetch boundary declares and
     // the store the child writes are the same tree.
     const storeDirectory = normalized.storeDirectory ?? `${storeRoot}/pnpm`
-    const storeArgs = [
-      "--store-dir",
-      normalized.storeDirectory ?? `${projectRoot}/${storeDirectory}`
-    ]
-    const command = (args: ReadonlyArray<string>, output: "capture" | "inherit") =>
+    const absoluteStoreDirectory = normalized.storeDirectory ?? `${projectRoot}/${storeDirectory}`
+    const storeArgs = ["--store-dir", absoluteStoreDirectory]
+    // Fetch deliberately empties pnpm's hoisting metadata. Sharing its modules
+    // directory with install therefore purges the linked tree on every fetch.
+    // Stage under the declared store instead; install still reconciles the
+    // real tree offline against the same content-addressed store and settings.
+    const fetchModules = `${absoluteStoreDirectory}/fetch/node_modules`
+    const command = (
+      args: ReadonlyArray<string>,
+      output: "capture" | "inherit",
+      settings: Readonly<Record<string, string>> = {}
+    ) =>
       Effect.gen(function*() {
         const { env } = yield* environment
         const { executable, prefix } = yield* invocation
-        return managerCommand(executable, [...prefix, ...args], projectRoot, env, output)
+        return managerCommand(executable, [...prefix, ...args], projectRoot, { ...env, ...settings }, output)
       })
     const version = yield* Effect.cached(
       Effect.flatMap(command(["--version"], "capture"), (child) => capture(spawner, "pnpm --version", child, timeoutMs))
@@ -1275,11 +1283,19 @@ export const makePnpm = (options: Options): Effect.Effect<
         name === null ? ["--ignore-pnpmfile"] : ["--pnpmfile", `${projectRoot}/${name}`, "--global-pnpmfile="]
       )
     )
-    const execute = (label: string, args: ReadonlyArray<string>) =>
+    const execute = (
+      label: string,
+      args: ReadonlyArray<string>,
+      settings: Readonly<Record<string, string>> = {}
+    ) =>
       Effect.gen(function*() {
         yield* verify
         const { transportArgs } = yield* environment
-        const child = yield* command([...args, ...transportArgs, ...(yield* hookArgs), ...storeArgs], "inherit")
+        const child = yield* command(
+          [...args, ...transportArgs, ...(yield* hookArgs), ...storeArgs],
+          "inherit",
+          settings
+        )
         yield* run(spawner, label, child, timeoutMs)
       })
     return Object.freeze(
@@ -1294,7 +1310,11 @@ export const makePnpm = (options: Options): Effect.Effect<
         verify,
         fetch: execute(
           "pnpm fetch",
-          ["fetch", "--frozen-lockfile", "--ignore-scripts", "--reporter=append-only"]
+          ["fetch", "--frozen-lockfile", "--ignore-scripts", "--reporter=append-only"],
+          {
+            pnpm_config_modules_dir: fetchModules,
+            pnpm_config_virtual_store_dir: `${fetchModules}/.pnpm`
+          }
         ),
         link: execute(
           "pnpm install --offline",
@@ -1583,7 +1603,7 @@ export const storeManifest = (input: {
   readonly npmrcDigest: string | null
   readonly pnpmfileDigest?: string | null
   readonly workspaceDigest?: string | null
-}): Effect.Effect<StoreManifest, never, Crypto.Crypto> =>
+}): Effect.Effect<StoreManifest, never, EffectDigest.Digest> =>
   Effect.sync(() => normalizeStoreManifestInput(input)).pipe(
     Effect.flatMap((normalized) =>
       Effect.map(digestText(renderStoreManifestText(normalized)), (digest) =>
@@ -1610,7 +1630,7 @@ export const linkedTreeManifest = (input: {
   readonly storeDigest: Digest
   readonly packageJsonDigest: Digest
   readonly managerEvidence: Digest
-}): Effect.Effect<Digest, never, Crypto.Crypto> =>
+}): Effect.Effect<Digest, never, EffectDigest.Digest> =>
   Effect.sync(() => {
     const record = Validate.plainRecord(input, "linked tree manifest input")
     Validate.exactKeys(
@@ -1775,7 +1795,7 @@ const refuseUnsafeNpmrc = (
  */
 export const npmrcDigest = (
   projectRoot: string
-): Effect.Effect<Digest | null, PackageManagerError, FileSystem.FileSystem | Crypto.Crypto> =>
+): Effect.Effect<Digest | null, PackageManagerError, FileSystem.FileSystem | EffectDigest.Digest> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = `${projectRoot}/.npmrc`
@@ -1797,7 +1817,7 @@ export const npmrcDigest = (
 export const lockfileDigest = (
   projectRoot: string,
   lockfileName: string
-): Effect.Effect<Digest, PackageManagerError, FileSystem.FileSystem | Crypto.Crypto> =>
+): Effect.Effect<Digest, PackageManagerError, FileSystem.FileSystem | EffectDigest.Digest> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     return yield* digestFile(
@@ -1817,7 +1837,7 @@ export const lockfileDigest = (
  */
 export const packageJsonDigest = (
   projectRoot: string
-): Effect.Effect<Digest, PackageManagerError, FileSystem.FileSystem | Crypto.Crypto> =>
+): Effect.Effect<Digest, PackageManagerError, FileSystem.FileSystem | EffectDigest.Digest> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     return yield* digestFile(

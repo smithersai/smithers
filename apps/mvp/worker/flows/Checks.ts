@@ -396,6 +396,7 @@ export const steps = <E, R>(
 
   const review = ({ request }: typeof Review.payloadSchema.Type) =>
     Effect.gen(function* () {
+      const failure: { stage?: string; errorCode?: string; providerStatus?: number } = {}
       const id = yield* checkRunIdOf(request, REVIEW_CHECK)
       yield* started(request, id, REVIEW_CHECK)
       yield* pending(request, REVIEW_CHECK)
@@ -408,10 +409,17 @@ export const steps = <E, R>(
           // The judge's findings come from a durable model step, so a step run again after a lost answer replays them.
           const compared = yield* GitHub.Commits.compare(repository.owner, repository.name, request.baseSha, request.sha)
           const result = yield* ModelStep.run({ name: "checks/Review/model", ...services.reviewerFor(request.ownerId), request: reviewRequest(compared.files) })
-          if (result.error !== undefined) return "failed" as const
+          if (result.error !== undefined) {
+            Object.assign(failure, { stage: "model", errorCode: result.error.code,
+              ...(result.error.httpStatus === undefined ? {} : { providerStatus: result.error.httpStatus }) })
+            return "failed" as const
+          }
           const message = ModelEvent.settledMessage(result.events).message
           const findings = message.content.filter((part) => part.type === "text").map((part) => part.text).join("")
-          if (findings.trim() === "") return "failed" as const
+          if (findings.trim() === "") {
+            Object.assign(failure, { stage: "model", errorCode: "empty_answer" })
+            return "failed" as const
+          }
           // One review, keyed by this run's check: a step run again after a lost answer finds it by that key.
           yield* Action.once(
             "review",
@@ -445,8 +453,12 @@ export const steps = <E, R>(
       )
       yield* ended(id, reviewed)
       yield* Metric.update(Metric.withAttributes(checks, { check: "review", outcome: reviewed }), 1)
-      yield* Effect.logInfo("checks.review").pipe(
-        Effect.annotateLogs({ repoId: request.repoId, sha: request.sha, prNumber: request.prNumber, outcome: reviewed }),
+      yield* Effect.annotateCurrentSpan({
+        "smithers.review.outcome": reviewed,
+        ...(failure.errorCode === undefined ? {} : { "smithers.review.error_code": failure.errorCode }),
+      })
+      yield* Effect.logWithLevel(reviewed === "failed" ? "Warn" : "Info")("checks.review").pipe(
+        Effect.annotateLogs({ repoId: request.repoId, sha: request.sha, prNumber: request.prNumber, outcome: reviewed, ...failure }),
       )
       return { checks: [{ name: REVIEW_CHECK, status: reviewed }] } satisfies Checked
     }).pipe(

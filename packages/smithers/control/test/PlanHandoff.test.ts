@@ -9,7 +9,6 @@
  * builder checks a declaration against.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, Graph } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import * as PersistedPlan from "@smthrs/plan/Plan"
@@ -38,7 +37,7 @@ const compile = (value: Graph.Graph, planId: string) =>
     nodes: Graph.drafts(value)
   }).pipe(
     Effect.mapError((cause) => new InvalidInput({ issue: String(cause) })),
-    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Effect.provide(NodeCrypto.layer)
   )
 
 const flow = (

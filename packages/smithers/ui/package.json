@@ -283,11 +283,11 @@
     "test": "bun test tests"
   },
   "dependencies": {
+    "@smthrs/ui-css": "workspace:*",
     "@smthrs/ui-styleguide": "workspace:*",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
     "d3-force": "3.0.0",
     "effect": "4.1.1",
     "radix-ui": "^1.6.7",
@@ -307,7 +307,7 @@
     "@lezer/highlight": "1.2.3",
     "y-protocols": "1.0.6",
     "@smthrs/views": "workspace:*",
-    "vibelang-runtime": "file:../../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
+    "vibelang-runtime": "0.0.12"
   },
   "peerDependencies": {
     "react": "^19.2.8",
@@ -329,8 +329,8 @@
     "playwright": "1.62.1",
     "quickjs-emscripten-core": "0.32.0",
     "happy-dom": "20.13.2",
-    "vibelang": "file:../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
-    "vibelang-unplugin": "file:../../../.vibelang-toolchain/vibelang-unplugin-0.0.11-45a3600458c6.tgz"
+    "vibelang": "0.0.12",
+    "vibelang-unplugin": "0.0.12"
   },
   "imports": {
     "#vibelang/emitted/src/app-operations/index": {

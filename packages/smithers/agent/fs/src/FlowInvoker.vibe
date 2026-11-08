@@ -29,8 +29,7 @@ export interface Invocation {
  * @since 0.1.0
  */
 export service FlowInvoker {
-  static readonly key = "/fs/FlowInvoker"
-  invoke(invocation: Invocation): Effect<unknown, FsError>
+  invoke(invocation: Invocation): unknown!FsError
 }
 
 /**
@@ -51,17 +50,13 @@ export const make = (implementation: FlowInvoker.Shape): FlowInvoker.Shape => {
  */
 export const makeNoop = (overrides: Partial<FlowInvoker.Shape> = {}): FlowInvoker.Shape => {
   return make({
-    invoke: overrides.invoke ?? (effect (_invocation) =>
-      try withSpan(
-        effect {
-          throw new FsError({
-            code: "invocation_unavailable",
-            method: "FlowInvoker.invoke",
-            description: "No flow invoker is installed"
-          })
-        },
-        "FlowInvoker.invoke"
-      ))
+    invoke: overrides.invoke ?? (effect (_invocation) => {
+      throw new FsError({
+        code: "invocation_unavailable",
+        method: "FlowInvoker.invoke",
+        description: "No flow invoker is installed"
+      })
+    })
   })
 }
 
@@ -71,5 +66,5 @@ export const makeNoop = (overrides: Partial<FlowInvoker.Shape> = {}): FlowInvoke
  * @category layers
  * @since 0.1.0
  */
-export const layerNoop = (overrides: Partial<FlowInvoker.Shape> = {}): Layer<FlowInvoker> =>
+export const layerNoop = (overrides: Partial<FlowInvoker.Shape> = {}): Layer.Layer<FlowInvoker> =>
   Layer.succeed(FlowInvoker, makeNoop(overrides))

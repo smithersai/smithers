@@ -4,13 +4,14 @@
  */
 
 import * as Digest from "@smthrs/core/Digest"
-import { Crypto } from "@smthrs/crypto"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import { HarnessError } from "@smthrs/harness/HarnessError"
 import { type Journal, JournalEvent, StepFact } from "@smthrs/journal"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
+import * as EffectDigest from "effect/crypto/Digest"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import type * as Schema from "effect/Schema"
 import { maxTracedBytes, traceIdentity, tracer } from "../AgentSession.ts"
@@ -48,7 +49,8 @@ export const make = (journal: Journal.Service) =>
   Effect.gen(function*() {
     const runtime = yield* FlowRuntime.FlowRuntime
     const instance = yield* FlowRuntime.FlowInstance
-    const crypto = yield* Crypto.Crypto
+    const crypto = yield* EffectDigest.Digest
+    const random = yield* SecureRandom.SecureRandom
     const cursors = new WeakMap<StepFact.Step, Cursor>()
     const emit = (event: AgentEvent.AgentEvent, step?: StepFact.Step): Effect.Effect<void> =>
       Effect.gen(function*() {
@@ -127,7 +129,8 @@ export const make = (journal: Journal.Service) =>
           Effect.provideService(Action.CurrentAttempt, 1),
           Effect.provideService(FlowRuntime.FlowRuntime, runtime),
           Effect.provideService(FlowRuntime.FlowInstance, instance),
-          Effect.provideService(Crypto.Crypto, crypto)
+          Effect.provideService(EffectDigest.Digest, crypto),
+          Effect.provideService(SecureRandom.SecureRandom, random)
         )
       })
     return { emit, atSource: true } satisfies EventSink.Service

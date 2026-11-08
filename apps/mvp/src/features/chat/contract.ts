@@ -129,6 +129,8 @@ export const CHAT_TELEMETRY = {
     "smithers_web_question_edits",
     "queued question taken back",
     // The composer's draft: restored from the device, and whether the shown conversation's prompt is shared.
+    "chat.writes.ready",
+    "smithers_web_chat_writes_ready_ms",
     "chat draft restored",
     "chat draft saving",
     "chat draft stored",
@@ -200,6 +202,7 @@ export const CHAT_TELEMETRY = {
     "which",
     "executionId",
     "durationMs",
+    "drafts",
     "smithers.chat.door",
     "smithers.chat.outcome",
     "draft.length",

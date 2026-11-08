@@ -1,3 +1,4 @@
+import * as Redacted from "effect/Redacted"
 /**
  * `NodeJj.layerSpawner`, driven against a stand-in `jj` at an explicit path.
  *
@@ -23,7 +24,6 @@ import {
   makeHandle,
   ProcessId
 } from "effect/process/ChildProcessSpawner"
-import * as Redacted from "effect/Redacted"
 import * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"
 import * as TestClock from "effect/testing/TestClock"

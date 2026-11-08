@@ -1,0 +1,374 @@
+{
+  "id": ".smithers/flows/review",
+  "name": ".smithers/flows/review",
+  "owner": {
+    "declaration": ".smithers/flows/review/PACKAGE.ts",
+    "assignedLane": null
+  },
+  "kind": "retained-tooling",
+  "scripts": {},
+  "exports": null,
+  "production": [
+    "flow.ts",
+    "scripts/generate-mermaid-runtime.mjs",
+    "src/diffs/extractDiffAssets.ts",
+    "src/diffs/index.ts",
+    "src/diffs/renderFallbackDiffHtml.ts",
+    "src/diffs/renderPierreFileDiff.ts",
+    "src/git/diffRecord.ts",
+    "src/git/diffStatus.ts",
+    "src/git/effectivePath.ts",
+    "src/git/loadDiffs.ts",
+    "src/git/mergeBase.ts",
+    "src/git/parseGitDiff.ts",
+    "src/git/runCommand.ts",
+    "src/git/runGit.ts",
+    "src/github/buildPullRequestReview.ts",
+    "src/github/listPullRequestFiles.ts",
+    "src/github/parsePatchCommentableLines.ts",
+    "src/github/postPullRequestReview.ts",
+    "src/github/postReviewSupersedingPrior.ts",
+    "src/github/resolvePullRequest.ts",
+    "src/github/runGh.ts",
+    "src/github/supersedePriorReviews.ts",
+    "src/io.ts",
+    "src/review/anchorFinding.ts",
+    "src/review/buildFileFilter.ts",
+    "src/review/buildFileReviewPrompt.ts",
+    "src/review/dedupeFindings.ts",
+    "src/review/fileFilter.ts",
+    "src/review/finalizeNativeReview.ts",
+    "src/review/globMatch.ts",
+    "src/review/loadReviewSnapshot.ts",
+    "src/review/nativeReviewFileResult.ts",
+    "src/review/nativeReviewPromptFromSnapshot.ts",
+    "src/review/previewFromSnapshot.ts",
+    "src/review/rankSeverity.ts",
+    "src/review/resolveReviewTarget.ts",
+    "src/review/reviewChecklistForPath.ts",
+    "src/review/reviewFileTaskId.ts",
+    "src/review/reviewMode.ts",
+    "src/review/reviewOwnPaths.ts",
+    "src/review/reviewSnapshot.ts",
+    "src/review/validateReviewInput.ts",
+    "src/review/whyExcluded.ts",
+    "src/schema/withDefault.ts",
+    "src/text/fenceFor.ts",
+    "src/text/isTestPath.ts",
+    "src/text/pluralize.ts",
+    "src/text/trimDiff.ts",
+    "src/walkthrough/buildNarratePrompt.ts",
+    "src/walkthrough/changedFileSchema.ts",
+    "src/walkthrough/changesFromDiffs.ts",
+    "src/walkthrough/changesSchema.ts",
+    "src/walkthrough/classifyChangeRole.ts",
+    "src/walkthrough/describeChange.ts",
+    "src/walkthrough/escapeHtml.ts",
+    "src/walkthrough/fallbackStory.ts",
+    "src/walkthrough/formatUtcTimestamp.ts",
+    "src/walkthrough/humanizeExcludeReason.ts",
+    "src/walkthrough/mermaidLoaderScript.ts",
+    "src/walkthrough/mermaidRuntimeGzipBase64.ts",
+    "src/walkthrough/normalizeStory.ts",
+    "src/walkthrough/perFileExcerptLimit.ts",
+    "src/walkthrough/renderOverviewChart.ts",
+    "src/walkthrough/renderProse.ts",
+    "src/walkthrough/renderWalkthroughHtml.ts",
+    "src/walkthrough/reviewOutcome.ts",
+    "src/walkthrough/storySchema.ts",
+    "src/walkthrough/walkthroughArtifactsDir.ts",
+    "src/walkthrough/walkthroughCss.ts",
+    "src/walkthrough/walkthroughPath.ts",
+    "src/walkthrough/walkthroughScript.ts",
+    "src/walkthrough/writeWalkthroughArtifact.ts",
+    "src/workflow/applyFindingVerdicts.ts",
+    "src/workflow/nativeReviewAgentOutputSchema.ts",
+    "src/workflow/nativeReviewFileSchema.ts",
+    "src/workflow/nativeReviewPromptSchema.ts",
+    "src/workflow/normalizeOpenCodeReviewInput.ts",
+    "src/workflow/openCodeReviewInputSchema.ts",
+    "src/workflow/previewEntrySchema.ts",
+    "src/workflow/previewOutputSchema.ts",
+    "src/workflow/reviewActions.ts",
+    "src/workflow/reviewAgentActions.ts",
+    "src/workflow/reviewCommentCategorySchema.ts",
+    "src/workflow/reviewCommentSchema.ts",
+    "src/workflow/reviewCommentSeveritySchema.ts",
+    "src/workflow/reviewFailureSchema.ts",
+    "src/workflow/reviewFlow.ts",
+    "src/workflow/reviewInputSchema.ts",
+    "src/workflow/reviewLayer.ts",
+    "src/workflow/reviewModeSchema.ts",
+    "src/workflow/reviewRunOutputSchema.ts",
+    "src/workflow/reviewRunStatusSchema.ts",
+    "src/workflow/reviewSchemas.ts",
+    "src/workflow/reviewSeats.ts",
+    "src/workflow/reviewSummarySchema.ts",
+    "src/workflow/reviewTargetSchema.ts",
+    "src/workflow/reviewWarningSchema.ts",
+    "src/workflow/verifyFindings.ts",
+    "src/workflow/verifyVerdictsSchema.ts",
+    "src/workflow/workflowSummarySchema.ts"
+  ],
+  "tests": [
+    ".smithers/flows/review/tests/buildPullRequestReview.test.ts",
+    ".smithers/flows/review/tests/collectChanges.test.ts",
+    ".smithers/flows/review/tests/diffsBarrelImport.test.ts",
+    ".smithers/flows/review/tests/extractDiffAssets.test.ts",
+    ".smithers/flows/review/tests/fallbackStory.test.ts",
+    ".smithers/flows/review/tests/git/diffRecordPaths.test.ts",
+    ".smithers/flows/review/tests/git/loadDiffs.test.ts",
+    ".smithers/flows/review/tests/git/parseGitDiff.test.ts",
+    ".smithers/flows/review/tests/git/untrackedBinary.test.ts",
+    ".smithers/flows/review/tests/github/fixtures/fake-gh",
+    ".smithers/flows/review/tests/github/parsePatchCommentableLines.test.ts",
+    ".smithers/flows/review/tests/github/postReviewSupersedingPrior.test.ts",
+    ".smithers/flows/review/tests/github/prPosting.test.ts",
+    ".smithers/flows/review/tests/github/runGh.test.ts",
+    ".smithers/flows/review/tests/github/runGhGaps.test.ts",
+    ".smithers/flows/review/tests/github/supersedeOverlap.test.ts",
+    ".smithers/flows/review/tests/github/supersedePriorReviews.test.ts",
+    ".smithers/flows/review/tests/host.ts",
+    ".smithers/flows/review/tests/io.ts",
+    ".smithers/flows/review/tests/normalizeStory.test.ts",
+    ".smithers/flows/review/tests/renderFallbackDiffHtml.test.ts",
+    ".smithers/flows/review/tests/renderOverviewChart.test.ts",
+    ".smithers/flows/review/tests/renderPierreFileDiff.test.ts",
+    ".smithers/flows/review/tests/renderProse.test.ts",
+    ".smithers/flows/review/tests/renderWalkthroughHtml.test.ts",
+    ".smithers/flows/review/tests/review/dedupeFindings.test.ts",
+    ".smithers/flows/review/tests/review/deletedSuggestions.test.ts",
+    ".smithers/flows/review/tests/review/finalizeNativeReview.test.ts",
+    ".smithers/flows/review/tests/review/globMatch.test.ts",
+    ".smithers/flows/review/tests/review/previewAndPrompt.test.ts",
+    ".smithers/flows/review/tests/review/pullRequestScope.test.ts",
+    ".smithers/flows/review/tests/review/reviewInput.test.ts",
+    ".smithers/flows/review/tests/review/snapshotBuilders.test.ts",
+    ".smithers/flows/review/tests/severityVocabulary.test.ts",
+    ".smithers/flows/review/tests/support/diffRecordFixture.ts",
+    ".smithers/flows/review/tests/support/liveSuite.ts",
+    ".smithers/flows/review/tests/support/tempRepos.ts",
+    ".smithers/flows/review/tests/text/isTestPath.test.ts",
+    ".smithers/flows/review/tests/verifyFindings.test.ts",
+    ".smithers/flows/review/tests/walkthrough/renderGaps.test.ts",
+    ".smithers/flows/review/tests/walkthrough/walkthroughBrowser.test.ts",
+    ".smithers/flows/review/tests/walkthroughCss.test.ts",
+    ".smithers/flows/review/tests/walkthroughHelpers.test.ts",
+    ".smithers/flows/review/tests/workflow/registryHost.test.ts",
+    ".smithers/flows/review/tests/workflow/reviewActions.test.ts",
+    ".smithers/flows/review/tests/workflow/reviewFlow.test.ts",
+    ".smithers/flows/review/tests/workflow/scriptedSeats.ts",
+    ".smithers/flows/review/tsconfig.test.json"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    ".smithers/flows/review/bunfig.toml",
+    ".smithers/flows/review/src/review/finalizeNativeReview.ts",
+    ".smithers/flows/review/src/review/nativeReviewFileResult.ts",
+    ".smithers/flows/review/src/review/nativeReviewPromptFromSnapshot.ts",
+    ".smithers/flows/review/src/workflow/nativeReviewAgentOutputSchema.ts",
+    ".smithers/flows/review/src/workflow/nativeReviewFileSchema.ts",
+    ".smithers/flows/review/src/workflow/nativeReviewPromptSchema.ts",
+    ".smithers/flows/review/tests/review/finalizeNativeReview.test.ts",
+    ".smithers/flows/review/tests/walkthrough/walkthroughBrowser.test.ts"
+  ],
+  "ignoredCases": [
+    {
+      "path": ".smithers/flows/review/tests/support/liveSuite.ts",
+      "line": 17,
+      "text": "* @returns `args.enabled`, for `describe.skipIf(!gate)`."
+    }
+  ],
+  "configurations": [
+    {
+      "path": ".smithers/flows/review/PACKAGE.ts",
+      "sha256": "ac064c9e55f047af5627942d8cef25463c840a79982f19f269f02397dfac9c5a",
+      "source": "/** Review is a normal file flow; no standalone runtime or deployment target. */\nimport { Smithers } from \"@smthrs/targets\"\nconst cwd = \".smithers/flows/review\"\nconst sources = [\n  Smithers.file(\"//.smithers/flows/review/flow.ts\"),\n  Smithers.glob(\"//.smithers/flows/review/src/**/*.ts\")\n]\nconst tests = Smithers.glob(\"//.smithers/flows/review/tests/**/*.ts\")\nconst check = Smithers.Typecheck({\n  srcs: sources,\n  deps: [],\n  tsconfig: Smithers.file(\"tsconfig.json\"),\n  buildMode: false,\n  incremental: false,\n  cwd\n})\nconst checkTests = Smithers.Typecheck({\n  srcs: [...sources, tests],\n  deps: [],\n  tsconfig: Smithers.file(\"tsconfig.test.json\"),\n  buildMode: false,\n  incremental: false,\n  cwd\n})\n// Coverage policy: assertion-only for the retained behavioral unit gate.\n// #2290 tracks measured whole-source coverage.\nconst unitTests = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.testSuite([\"tests\"]),\n  srcs: [...sources, tests, Smithers.file(\"//.smithers/flows/review/tests/github/fixtures/fake-gh\")],\n  deps: [],\n  cwd\n})\n// Keep the retained code's security ownership local after deleting the service.\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"flow.ts\", \"src/**\"],\n  checks: [\n    {\n      id: \"review-output-injection\",\n      title: \"Findings remain anchored to the reviewed source and cannot control GitHub actions\",\n      threat:\n        \"Prompt-injected findings post flags, change review events, or address files outside the reviewed change.\",\n      lookFor: [\n        \"Model findings bypassing changed-file/line anchoring or independent verification before output.\",\n        \"buildPullRequestReview or postPullRequestReview using model text as gh flags or a review event.\",\n        \"supersedePriorReviews changing reviews it did not author.\"\n      ],\n      paths: [\"src/github/**\", \"src/review/anchorFinding.ts\", \"src/workflow/applyFindingVerdicts.ts\"]\n    },\n    {\n      id: \"checkout-path-confinement\",\n      title: \"Snapshot reads and artifact writes obey the caller's filesystem and process policy\",\n      threat: \"A reviewed symlink or option-shaped ref reads host secrets or overwrites files outside permitted paths.\",\n      lookFor: [\n        \"Snapshot or artifact IO using native filesystem/process access instead of the host-supplied services.\",\n        \"Artifact writes following a symlink or escaping the permitted artifact directory.\",\n        \"Git/jj refs and paths reaching argv without validation or option terminators.\",\n        \"Reviewed configuration controlling filters that should be pinned to trusted source.\"\n      ],\n      paths: [\n        \"src/git/**\",\n        \"src/walkthrough/writeWalkthroughArtifact.ts\",\n        \"src/walkthrough/walkthroughPath.ts\",\n        \"src/review/buildFileFilter.ts\",\n        \"src/io.ts\",\n        \"src/workflow/reviewActions.ts\"\n      ]\n    },\n    {\n      id: \"review-agent-authority\",\n      title: \"Review seats use the shared host's model, auth, tools, budget and cancellation policy\",\n      threat:\n        \"A review creates its own model credentials, tool authority, budget or runtime to bypass the caller's limits.\",\n      lookFor: [\n        \"reviewLayer constructing a second engine, resolver, agent host, implementation table or provider credential source.\",\n        \"Review, verification or narration acquiring tools or choosing model endpoints from reviewed text.\",\n        \"AgentAction calls bypassing the shared budget, timeout or cancellation scope.\",\n        \"Model output becoming executable HTML without escaping, strict Mermaid rendering and isolated result presentation.\"\n      ],\n      paths: [\"flow.ts\", \"src/workflow/**\", \"src/walkthrough/**\", \"src/diffs/**\"]\n    }\n  ]\n})\nexport const Package = Smithers.Package({ targets: { check, checkTests, unitTests, ...securityReview } })\n",
+      "coverageDirectives": [
+        {
+          "line": 25,
+          "text": "// Coverage policy: assertion-only for the retained behavioral unit gate."
+        },
+        {
+          "line": 26,
+          "text": "// #2290 tracks measured whole-source coverage."
+        },
+        {
+          "line": 37,
+          "text": "include: [\"flow.ts\", \"src/**\"],"
+        }
+      ]
+    },
+    {
+      "path": ".smithers/flows/review/tsconfig.json",
+      "sha256": "b3f8ff5b3f70da3cccc6fe526ef21c84192d90daee30110b06a4bb1b7e77bbd2",
+      "source": "{\n  \"extends\": \"../tsconfig.json\",\n  \"include\": [\"flow.ts\", \"src/**/*.ts\", \"tests/**/*.ts\"],\n  \"exclude\": [\"node_modules\"],\n  \"compilerOptions\": { \"types\": [\"node\", \"bun\"] }\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 3,
+          "text": "\"include\": [\"flow.ts\", \"src/**/*.ts\", \"tests/**/*.ts\"],"
+        },
+        {
+          "line": 4,
+          "text": "\"exclude\": [\"node_modules\"],"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": ".smithers/flows/review",
+      "label": "//.smithers/flows/review:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": ".smithers/flows/review/flow.ts"
+        },
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/review/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/review/tsconfig.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": ".smithers/flows/review",
+      "label": "//.smithers/flows/review:checkTests",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": ".smithers/flows/review/flow.ts"
+        },
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/review/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/review/tests/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/review/tsconfig.test.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": ".smithers/flows/review",
+      "label": "//.smithers/flows/review:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            ".smithers/flows/review/flow.ts",
+            ".smithers/flows/review/src/**"
+          ]
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/review/flow.ts"
+        },
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/review/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": ".smithers/flows/review",
+      "label": "//.smithers/flows/review:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            ".smithers/flows/review/flow.ts",
+            ".smithers/flows/review/src/**"
+          ]
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/review/flow.ts"
+        },
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/review/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": ".smithers/flows/review",
+      "label": "//.smithers/flows/review:unitTests",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": ".smithers/flows/review/flow.ts"
+        },
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/review/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/review/tests/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/review/tests/github/fixtures/fake-gh"
+        }
+      ],
+      "dependencies": []
+    }
+  ],
+  "areas": [
+    "flow.ts",
+    "scripts/generate-mermaid-runtime.mjs",
+    "src/diffs",
+    "src/git",
+    "src/github",
+    "src/io.ts",
+    "src/review",
+    "src/schema",
+    "src/text",
+    "src/walkthrough",
+    "src/workflow"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

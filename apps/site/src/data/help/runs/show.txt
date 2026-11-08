@@ -11,6 +11,9 @@ Options:
   --remote <string>      Remote control plane URL; defaults to SMITHERS_REMOTE
   --mcp-config <string>  Path to the configured MCP servers
   --quiet                Suppress progress messages
+  --field <string>       Read one bounded event field by JSON pointer: /events/<sequence>/payload/<field>
+  --offset <number>      Character offset in a string --field
+  --length <number>      Characters per string field page (default 4096)
   --timing               Report where the run's time and tokens went
   --verbose              Show redacted diagnostic details
   --cloud                Use repository flows and runs on the backend

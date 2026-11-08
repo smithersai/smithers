@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import type { ComponentProps } from "react";
 import { Badge, type BadgeProps } from "./badge";
-import { formatStatus, statusClass, type StatusClass } from "./status";
+import { formatStatus, statusClass, type StatusClass } from "@smthrs/ui-css";
 
 const STATUS_VARIANT: Record<StatusClass, NonNullable<BadgeProps["variant"]>> = {
   ok: "success",

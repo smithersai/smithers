@@ -1,0 +1,135 @@
+// The mock agent's answers (wiki/decisions/0004-mock-mode.md): a script chosen by the prompt's words, so the app runs
+// with no backend and no model. Every code sample is current VibeLang 0.0.12 syntax, from the language's skill and the
+// launch kit's verified snippets.
+
+interface Script {
+  readonly words: ReadonlyArray<string>
+  readonly reply: string
+}
+
+const INSTALL = `Start a project with the starter:
+
+\`\`\`sh
+npm create vibelang@latest my-app
+cd my-app
+npm run start
+\`\`\`
+
+VibeLang pins Effect to exactly 4.1.1. Check mixed \`.vibe\` and \`.ts\` source with \`vibelang\`; stock \`tsc\` can't resolve \`.vibe\` imports.`
+
+const FUNCTIONS = `\`effect\` goes where \`async\` goes. Calling an effect function returns its Effect unrun, and \`try\` runs one:
+
+\`\`\`vibe
+error UserNotFound { id: string }
+service Users {
+  find(id: string): string!UserNotFound
+}
+
+effect function greet(id: string) {
+  const users = try Users
+  const name = users.find(id) catch () => "guest"
+  return \`Hello, \${name}\`
+}
+\`\`\`
+
+\`A!E!R\` is \`Effect.Effect<A, E, R>\`: \`User!NotFound!Users\` returns a \`User\`, can fail with \`NotFound\` and needs \`Users\`.`
+
+const ERRORS = `Declare a failure with \`error\`, fail with \`throw\`, and recover with \`catch\`:
+
+\`\`\`vibe
+error UserNotFound { id: string }
+
+effect function find(id: string) {
+  if (id !== "42") throw new UserNotFound({ id })
+  return "Ada"
+}
+
+effect function main() {
+  return find("7") catch () => "Guest"
+}
+\`\`\`
+
+A \`throw\` in a plain function is a compile error (EK0401): synchronous VibeLang code never throws.`
+
+const SERVICES = `A \`service\` declares a dependency and \`provide\` supplies it:
+
+\`\`\`vibe
+error UserNotFound { id: string }
+service Users {
+  find(id: string): string!UserNotFound
+}
+
+const UsersLive = Layer.succeed(Users, {
+  effect find(id: string) {
+    if (id !== "42") throw new UserNotFound({ id })
+    return "Ada"
+  }
+})
+
+export effect function main() {
+  provide UsersLive {
+    const users = try Users
+    try Console.log(try users.find("42"))
+  }
+}
+\`\`\``
+
+const VIPS = `A change to the language starts as a VIP, a VibeLang Improvement Proposal, in \`docs/design/vips/\`. One VIP covers one feature: the decision in one sentence, examples, the Effect TypeScript it compiles to, prior art and the alternatives rejected. A maintainer moves it from open to accepted or denied.
+
+Open VIPs today include handlers (VIP-35), the manifest (VIP-36), VibeLang in \`.ts\` files (VIP-42) and theorems (VIP-43).`
+
+const DEFAULT = `VibeLang is Effect as its own language, written in TypeScript syntax. Its compiler, a fork of TypeScript 7 written in Go, builds the same Effect program you would write by hand.
+
+\`\`\`vibe
+error UserNotFound { id: string }
+service Users {
+  find(id: string): string!UserNotFound
+}
+
+const UsersLive = Layer.succeed(Users, {
+  effect find(id: string) {
+    if (id !== "42") throw new UserNotFound({ id })
+    return "Ada"
+  }
+})
+
+export effect function main() {
+  provide UsersLive {
+    const users = try Users
+    const [name, fallback] = try.all [
+      users.find("42"),
+      effect { return users.find("7") catch () => "Guest" }
+    ]
+    try Console.log(name, fallback)
+  }
+}
+\`\`\`
+
+It is an early alpha: the language will change in major, breaking ways. Ask me how to install it, how effect functions, errors or services work, or how to propose a change.`
+
+const SCRIPTS: ReadonlyArray<Script> = [
+  { words: ["install", "start", "setup", "set up", "create", "npm", "bun"], reply: INSTALL },
+  { words: ["vip", "propose", "proposal", "contribute", "change the language", "rfc"], reply: VIPS },
+  { words: ["error", "throw", "catch", "fail"], reply: ERRORS },
+  { words: ["service", "provide", "layer", "dependency", "dependencies"], reply: SERVICES },
+  { words: ["effect function", "function", "try", "async", "await"], reply: FUNCTIONS },
+]
+
+/** Every answer the scripted agent can choose, including the fallback; each fenced example is compiler checked. */
+export const scriptedReplies: ReadonlyArray<string> = [...SCRIPTS.map((script) => script.reply), DEFAULT]
+
+/** The mock agent's whole answer to `prompt`. */
+export function mockReply(prompt: string): string {
+  const words = prompt.toLowerCase()
+  for (const script of SCRIPTS) {
+    for (const word of script.words) if (words.includes(word)) return script.reply
+  }
+  return DEFAULT
+}
+
+/** `text` in the pieces the mock agent streams, a few words at a time; joined, they are `text`. */
+export function chunks(text: string, size = 24): ReadonlyArray<string> {
+  const pieces: Array<string> = []
+  for (let start = 0; start < text.length; start += size) pieces.push(text.slice(start, start + size))
+  return pieces
+}

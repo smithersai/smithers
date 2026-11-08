@@ -12,11 +12,12 @@
  * @since 0.1.0
  */
 
-import type { Crypto } from "@smthrs/crypto"
 import * as Arr from "effect/Array"
 import type { NonEmptyReadonlyArray } from "effect/Array"
 import type * as Brand from "effect/Brand"
 import * as Cause from "effect/Cause"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import { dual } from "effect/Function"
@@ -536,7 +537,7 @@ export const tokenFromPayload: {
     readonly payload: Flow.PayloadSchema<W>["~type.make.in"]
   }): <Success extends Schema.Constraint, Error extends Schema.Constraint>(
     self: DurableDeferred<Success, Error>
-  ) => Token!never!(Crypto.Crypto | Flow.PayloadSchema<W>["EncodingServices"])
+  ) => Token!never!((EffectDigest.Digest | SecureRandom.SecureRandom) | Flow.PayloadSchema<W>["EncodingServices"])
   <
     Success extends Schema.Constraint,
     Error extends Schema.Constraint,
@@ -547,7 +548,7 @@ export const tokenFromPayload: {
       readonly flow: W
       readonly payload: Flow.PayloadSchema<W>["~type.make.in"]
     }
-  ): Token!never!(Crypto.Crypto | Flow.PayloadSchema<W>["EncodingServices"])
+  ): Token!never!((EffectDigest.Digest | SecureRandom.SecureRandom) | Flow.PayloadSchema<W>["EncodingServices"])
 } = dual(
   2,
   <
@@ -560,7 +561,7 @@ export const tokenFromPayload: {
       readonly flow: W
       readonly payload: Flow.PayloadSchema<W>["~type.make.in"]
     }
-  ): Token!never!(Crypto.Crypto | Flow.PayloadSchema<W>["EncodingServices"]) =>
+  ): Token!never!((EffectDigest.Digest | SecureRandom.SecureRandom) | Flow.PayloadSchema<W>["EncodingServices"]) =>
     Effect.map(options.flow.executionId(options.payload), (executionId) =>
       tokenFromExecutionId(self, {
         flow: options.flow,

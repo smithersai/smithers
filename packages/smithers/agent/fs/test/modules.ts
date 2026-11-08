@@ -1,9 +1,4 @@
-import { execFileSync } from "node:child_process"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { vi } from "vitest"
 
 /** Absolute paths of the command fixtures that routes point at. */
 export const visibleModule = fileURLToPath(new URL("./fixtures/command/visible.ts", import.meta.url))
@@ -12,32 +7,50 @@ export const invalidModule = fileURLToPath(new URL("./fixtures/command/invalid.t
 export const recordedModule = fileURLToPath(new URL("./fixtures/command/recorded.ts", import.meta.url))
 export const refinedModule = fileURLToPath(new URL("./fixtures/command/refined.ts", import.meta.url))
 
-/** Runs an ES module script in a fresh Node process with VibeLang's loader and returns what it prints. */
-export const runModuleScript = (script: string): string =>
-  execFileSync(process.execPath, [
+/** Native HTTP request constructor at the test host boundary. */
+export const Request = globalThis.Request
+/** The import counter maintained by the real fixture module. */
+export const recordedImports = (): number => (globalThis as { fsRecordedImports?: number }).fsRecordedImports ?? 0
+
+/** Native metadata-import fixture state. */
+export const metadataGlobals = globalThis as { fsMetadataGate?: Promise<void> }
+export const nativeConsole = console
+export const createMetadataFixture = async () => {
+  const { mkdtemp, writeFile } = await import("node:fs/promises")
+  const { tmpdir } = await import("node:os")
+  const { join } = await import("node:path")
+  const directory = await mkdtemp(join(tmpdir(), "fs-metadata-"))
+  const source = join(directory, "stuck.mjs")
+  await writeFile(source, "await globalThis.fsMetadataGate; export default null\n")
+  return { directory, source }
+}
+export const removeMetadataFixture = async (directory: string) => {
+  const { rm } = await import("node:fs/promises")
+  await rm(directory, { recursive: true, force: true })
+}
+/** Foreign reflection failure used by the existing boundary tests. */
+export const throwingProxy = <A extends object>(target: A): A =>
+  new Proxy(target, {
+    ownKeys: () => {
+      throw new Error("trap")
+    }
+  })
+/** Runs the real source-loader process used by the structural-path test. */
+export const executeSource = async (script: string): Promise<string> => {
+  const { execFileSync } = await import("node:child_process")
+  return execFileSync(process.execPath, [
     "--import",
     "vibelang/register",
     "--experimental-strip-types",
     "--input-type=module",
     "-e",
     script
-  ], {
-    encoding: "utf8"
-  })
-
-/** Writes, in a fresh temporary directory, a module whose top-level await waits on `globalThis.fsMetadataGate`. */
-export const writeStuckModule = async (): Promise<{ directory: string; source: string }> => {
-  const directory = await mkdtemp(join(tmpdir(), "fs-metadata-"))
-  const source = join(directory, "stuck.mjs")
-  await writeFile(source, "await globalThis.fsMetadataGate; export default null\n")
-  return { directory, source }
+  ], { encoding: "utf8" })
 }
 
-/** Removes a temporary directory and everything under it. */
-export const removeDirectory = (directory: string): Promise<void> => rm(directory, { recursive: true, force: true })
-
-/** Silences and records `console.log` and `console.error` until each spy is restored. */
-export const spyOnConsole = () => ({
-  stdout: vi.spyOn(console, "log").mockImplementation(() => undefined),
-  stderr: vi.spyOn(console, "error").mockImplementation(() => undefined)
+/** An accessor that throws before a foreign decoder can inspect its input. */
+export const throwingAssembly = () => ({
+  get value(): unknown {
+    throw new Error("private assembly getter")
+  }
 })

@@ -1,17 +1,15 @@
-import { NodeCrypto, NodeServices } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
+import { NodeServices } from "@effect/platform-node"
 import { FlowEngine } from "@smthrs/engine"
 import { Action } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Layer, ManagedRuntime, Schema } from "effect"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { evaluationLayers, ScoreCase, ScoreExecution, SeatScore } from "../repository/evaluation.ts"
 import { caseClassifier, SCORE_CONFIDENCE, scoreState, verdicts } from "../repository/jev-score.ts"
 import type { EvalCase, EvalResult, JobResult, RepositoryEvidence } from "../repository/schema.ts"
-
-// Effect 4.1 removed effect/Crypto, and NodeServices.layer no longer provides it.
-const nodeServices = Layer.merge(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 
 const sourceRevision = "a".repeat(40)
 const event = {
@@ -89,7 +87,7 @@ const score = async (evaluator: Layer.Layer<Evaluator.Evaluator>) => {
       .pipe(
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(FlowEngine.layerMemory),
-        Layer.provideMerge(nodeServices)
+        Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
       )
   )
   try {

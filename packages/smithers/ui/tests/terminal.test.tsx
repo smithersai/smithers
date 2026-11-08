@@ -269,7 +269,7 @@ describe("<Terminal> store independence", () => {
       expect(source).not.toContain(banned);
     }
     // Positive sanity: it really is the xterm port wired to the ui tokens.
-    expect(source).toContain('from "../tokens"');
+    expect(source).toContain('import { tokens as t } from "@smthrs/ui-css"');
     expect(source).toContain('import("@xterm/xterm")');
   });
 });

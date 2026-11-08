@@ -17,6 +17,6 @@ const shell = startShell({
     observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: [SETTLED_ATTRIBUTE] })
     return observer
   },
-  mark: (name) => void performance.mark(name),
+  mark: (name, detail) => void performance.mark(name, { detail }),
 })
 if (shell !== undefined) (window as unknown as Record<string, unknown>)[FIRST_PAINT_GLOBAL] = shell

@@ -40,6 +40,7 @@ import * as CachePublication from "./CachePublication.ts"
 import * as CallFacts from "./CallFacts.ts"
 import * as CopiedRecord from "./CopiedRecord.ts"
 import * as EffectRecords from "./EffectRecords.ts"
+import * as FailureDiagnostic from "./FailureDiagnostic.ts"
 import * as HostReflection from "./HostReflection.ts"
 import * as JournalRecords from "./JournalRecords.ts"
 import * as ProvenanceSlot from "./ProvenanceSlot.ts"
@@ -454,13 +455,21 @@ export const earliestBoundarySnapshot = (
     return Option.none()
   })
 
+const FailureSiteJson = Schema.Struct({
+  executionId: Schema.String,
+  action: Schema.optionalKey(Schema.String),
+  attempts: Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+  nodeId: Schema.optionalKey(Schema.String)
+})
+const reasonSite = { failureSite: Schema.optionalKey(FailureSiteJson) }
 const CauseJson = Schema.Struct({
   reasons: Schema.Array(Schema.Union([
-    Schema.Struct({ _tag: Schema.Literal("Fail"), error: Schema.Unknown }),
-    Schema.Struct({ _tag: Schema.Literal("Die"), defect: Schema.Unknown }),
+    Schema.Struct({ _tag: Schema.Literal("Fail"), error: Schema.Unknown, ...reasonSite }),
+    Schema.Struct({ _tag: Schema.Literal("Die"), defect: Schema.Unknown, ...reasonSite }),
     Schema.Struct({
       _tag: Schema.Literal("Interrupt"),
-      fiberId: Schema.optional(Schema.NullOr(Schema.Number))
+      fiberId: Schema.optional(Schema.NullOr(Schema.Number)),
+      ...reasonSite
     })
   ]))
 })
@@ -591,7 +600,7 @@ const spendEnumeratedKey = (budget: InertJsonBudget, key: PropertyKey): boolean 
  * failure path neither executes user code nor leaves an attempt running because
  * its error was too large for the store.
  */
-const inertJson = (value: unknown, budget: InertJsonBudget): unknown => {
+const inertJson = (value: unknown, budget: InertJsonBudget, redactText = true): unknown => {
   const active = new WeakSet<object>()
 
   const reduce = (current: unknown, depth: number): InertJsonReduction => {
@@ -653,11 +662,10 @@ const inertJson = (value: unknown, budget: InertJsonBudget): unknown => {
             if ((!descriptor.enumerable && !(key === "message" && preserveMessage)) || !("value" in descriptor)) {
               continue
             }
-            // `message` and `stack` are observability text, never a field replay
-            // classifies on, and a git or HTTP failure embeds its remote URL,
-            // credentials included. They meet the journal's own rules; every
-            // other member, `_tag` included, stays byte-exact for replay.
-            const member = (key === "message" || key === "stack") && typeof descriptor.value === "string"
+            // Declared Fail values are executable schema-encoded data, including
+            // message/stack literals and refinements. Only defect diagnostics use
+            // textual redaction here; their diagnostic copies are not typed errors.
+            const member = redactText && (key === "message" || key === "stack") && typeof descriptor.value === "string"
               ? Redaction.redact(descriptor.value)
               : descriptor.value
             const reduced = reduce(member, depth + 1)
@@ -710,12 +718,26 @@ const persistCause = (cause: Cause.Cause<unknown>): typeof CauseJson.Type => {
       return { reasons: [{ _tag: "Die", defect: null }] }
     }
     if (Cause.isFailReason(reason)) {
-      reasons.push({ _tag: "Fail", error: inertJson(reason.error, budget) })
+      reasons.push({ _tag: "Fail", error: inertJson(reason.error, budget, false) })
     } else if (Cause.isDieReason(reason)) {
       reasons.push({ _tag: "Die", defect: inertJson(reason.defect, budget) })
     } else {
       reasons.push({ _tag: "Interrupt", fiberId: reason.fiberId ?? null })
     }
+  }
+  // Optional diagnostics cannot consume the budget needed to replay typed errors.
+  // Project the allowlist before charging it, then admit only what still fits.
+  for (let index = 0; index < reasons.length; index++) {
+    const site = FailureDiagnostic.site(
+      Context.getOrUndefined(Cause.reasonAnnotations(cause.reasons[index]!), FlowEngine.FailureSite)
+    )
+    if (site === undefined) continue
+    const candidate = { ...budget }
+    if (!spendNodes(candidate, 1)) continue
+    const decoded = Schema.decodeUnknownResult(FailureSiteJson)(inertJson(site, candidate))
+    if (decoded._tag !== "Success") continue
+    reasons[index] = { ...reasons[index]!, failureSite: decoded.success }
+    Object.assign(budget, candidate)
   }
   return { reasons }
 }
@@ -753,14 +775,14 @@ const rehydrateCause = (error: unknown): Cause.Cause<unknown> => {
   const decoded = Schema.decodeUnknownResult(CauseJson)(error)
   if (decoded._tag === "Success" && decoded.success.reasons.length > 0) {
     return Cause.fromReasons(decoded.success.reasons.map((reason) => {
-      switch (reason._tag) {
-        case "Fail":
-          return Cause.makeFailReason(reason.error)
-        case "Die":
-          return Cause.makeDieReason(reason.defect)
-        case "Interrupt":
-          return Cause.makeInterruptReason(reason.fiberId ?? undefined)
-      }
+      const rebuilt = reason._tag === "Fail" ?
+        Cause.makeFailReason(reason.error)
+        : reason._tag === "Die" ?
+        Cause.makeDieReason(reason.defect)
+        : Cause.makeInterruptReason(reason.fiberId ?? undefined)
+      return reason.failureSite === undefined
+        ? rebuilt
+        : rebuilt.annotate(Context.make(FlowEngine.FailureSite, reason.failureSite))
     }))
   }
   return Cause.die(error)
@@ -1422,10 +1444,11 @@ const holdCacheAddress = <A, E, R>(
       deps.isAlive ?? Ownership.leaseLiveness(),
       effect
     ).pipe(
-      Effect.catch((error) =>
-        error instanceof ConsensusError && error.code === "fence_lost"
-          ? Effect.interrupt
-          : Effect.fail(error)
+      // Only lease loss changes the cause. Rebuilding every typed failure
+      // discarded its diagnostic annotations, including on durable replay.
+      Effect.catchIf(
+        (error) => error instanceof ConsensusError && error.code === "fence_lost",
+        () => Effect.interrupt
       )
     )
   )

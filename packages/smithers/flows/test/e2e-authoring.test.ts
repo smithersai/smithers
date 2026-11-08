@@ -1,3 +1,6 @@
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import * as Hex from "effect/encoding/Hex"
+import { expectTypeOf } from "vitest"
 /**
  * The authoring model of `docs/specs/Concepts/Unified Flow Authoring.md` and
  * `docs/specs/Concepts/Trampoline Loops.md`, end to end, through the barrel
@@ -20,9 +23,9 @@
  * store binds to.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -66,16 +69,18 @@ const { CacheStore } = StepCache
 const { Jj } = Kernel
 
 /** SHA-256 over `node:crypto`, the way a Node program supplies the seam. */
-const hostCrypto: Layer.Layer<Crypto.Crypto> = Layer.succeed(
-  Crypto.Crypto,
-  Crypto.make({
-    randomBytes: (size) => webcrypto.getRandomValues(new Uint8Array(size)),
+const hostCrypto: Layer.Layer<EffectDigest.Digest | SecureRandom.SecureRandom> = Layer.succeed(
+  EffectDigest.Digest,
+  EffectDigest.Digest.of({
     digest: (algorithm, data) =>
       Effect.succeed(
-        new Uint8Array(createHash(algorithm.replace("-", "").toLowerCase()).update(data).digest())
-      )
+        new Uint8Array(createHash(algorithm.name.replace("-", "").toLowerCase()).update(data).digest())
+      ),
+    digestHex(algorithm, data) {
+      return Effect.map(this.digest(algorithm, data), Hex.encode)
+    }
   })
-)
+).pipe(Layer.merge(SecureRandom.layerWebCrypto))
 
 /** The same digest, synchronously, so a test can name a derived round id. */
 const sha256 = (input: string): string => createHash("sha256").update(input).digest("hex")
@@ -113,17 +118,22 @@ type DurableServices = Layer.Success<typeof services>
 
 /** Runs one body against a fresh database and the given durable stores. */
 const durableWith = <A, E, ROut>(
-  body: Effect.Effect<A, E, NoInfer<ROut> | Crypto.Crypto | Scope.Scope>,
-  layer: Layer.Layer<ROut, unknown, Crypto.Crypto>
+  body: Effect.Effect<A, E, NoInfer<ROut> | EffectDigest.Digest | SecureRandom.SecureRandom | Scope.Scope>,
+  layer: Layer.Layer<ROut, unknown, EffectDigest.Digest | SecureRandom.SecureRandom>
 ) => Effect.scoped(body.pipe(Effect.provide(layer), Effect.provide(hostCrypto)))
 
 /** Runs one body against a fresh database and the real durable stores. */
-const durable = <A, E>(body: Effect.Effect<A, E, DurableServices | Crypto.Crypto | Scope.Scope>) =>
-  durableWith(body, services)
+const durable = <A, E>(
+  body: Effect.Effect<A, E, DurableServices | EffectDigest.Digest | SecureRandom.SecureRandom | Scope.Scope>
+) => durableWith(body, services)
 
 /** The same, with time under the test's control so a durable timer can fire. */
 const durableTimed = <A, E>(
-  body: Effect.Effect<A, E, DurableServices | Crypto.Crypto | TestClock.TestClock | Scope.Scope>
+  body: Effect.Effect<
+    A,
+    E,
+    DurableServices | EffectDigest.Digest | SecureRandom.SecureRandom | TestClock.TestClock | Scope.Scope
+  >
 ) =>
   Effect.scoped(
     body.pipe(Effect.provide(services), Effect.provide(hostCrypto), Effect.provide(TestClock.layer()))
@@ -1403,23 +1413,18 @@ declare const probeEngine: FlowRuntime.FlowRuntime["Service"]
  * from a working `CountTo` composition must stop it compiling.
  */
 const missingImplementationProbe = () => {
-  durable(
-    CountTo.execute({ value: 0, target: 1 }, { executionId: "probe" }).pipe(
-      Effect.provide(wiringFor(probeEngine, [CountTo], [incrementing([])]))
-    )
+  const complete = CountTo.execute({ value: 0, target: 1 }, { executionId: "probe" }).pipe(
+    Effect.provide(wiringFor(probeEngine, [CountTo], [incrementing([])]))
   )
-  durable(
-    // @ts-expect-error without Increment's implementation nothing provides its requirement
-    CountTo.execute({ value: 0, target: 1 }, { executionId: "probe" }).pipe(
-      Effect.provide(wiringFor(probeEngine, [CountTo], []))
-    )
+  const missing = CountTo.execute({ value: 0, target: 1 }, { executionId: "probe" }).pipe(
+    Effect.provide(wiringFor(probeEngine, [CountTo], []))
   )
-  // Every implementation in a mixed list keeps its own requirement.
-  durable(
-    CountTo.execute({ value: 0, target: 1 }, { executionId: "probe" }).pipe(
-      Effect.provide(wiringFor(probeEngine, [CountTo], [marking([]), incrementing([])]))
-    )
+  const mixed = CountTo.execute({ value: 0, target: 1 }, { executionId: "probe" }).pipe(
+    Effect.provide(wiringFor(probeEngine, [CountTo], [marking([]), incrementing([])]))
   )
+  expectTypeOf<typeof missing>().not.toExtend<Parameters<typeof durable>[0]>()
+  const _complete = durable(complete)
+  const _mixed = durable(mixed)
 }
 
 describe("missing implementation compile probe", () => {

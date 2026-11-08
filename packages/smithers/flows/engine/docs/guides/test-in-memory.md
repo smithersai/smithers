@@ -14,7 +14,6 @@ The composition is the production one with the store swapped:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
@@ -39,15 +38,15 @@ const testLayer = (send: (to: string) => Effect.Effect<string>) =>
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Layer.provideMerge(NodeCrypto.layer)
   )
 ```
 
 Two services are easy to forget:
 
-- `Crypto.Crypto`. Every action dispatch is recorded under a derived step
+- `(EffectDigest.Digest | SecureRandom.SecureRandom)`. Every action dispatch is recorded under a derived step
   identity, and deriving it is a SHA-256, so the memory engine needs crypto
-  too. In Node, provide `Crypto.layerFromDigest(NodeCrypto.layerDigest)`.
+  too. In Node, provide `NodeCrypto.layer`.
 - The clock, when the flow retries or parks. Retry delays and the suspended
   resume loop sleep on the injected clock, so a test that provides Effect's
   `TestClock` sees the schedule it declared instead of a wall-clock wait.

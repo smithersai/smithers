@@ -15,6 +15,9 @@ import { beforeEach, describe, expect, test } from "vitest"
 import * as MigrationReauthorization from "../../db/migrations/0095_runner_reauthorization.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as Actor from "../Actor.vibe"
+import { codeOf } from "../ErrorCode.ts"
+import * as SessionStore from "../SessionStore.ts"
+import * as WriteAuthority from "../WriteAuthority.ts"
 import { afterBody } from "../WriteAdmission.ts"
 import { BranchRoles } from "../branch/Access.ts"
 import type * as RepoRoles from "../github/RepoRoles.ts"
@@ -567,11 +570,13 @@ describe("the repository's runners and agents", () => {
     readonly repo?: string
     readonly gate?: () => Promise<void>
     readonly starting?: () => void
+    readonly signingKeys?: ReadonlyArray<string>
   } = {}) => {
     const actor = options.actor ?? admin
     const db = await database()
     const scope = Effect.runSync(Scope.make())
-    const built = await Effect.runPromise(Scope.provide(FlowHost.build(AdminFlows.registration(db)), scope))
+    const keys = Layer.succeed(SessionStore.SigningKeyIds, options.signingKeys ?? ["legacy"])
+    const built = await Effect.runPromise(Scope.provide(FlowHost.build(AdminFlows.registration(db).pipe(Layer.provideMerge(keys))), scope))
     const flows = Context.get(built.context, FlowRuntime.FlowRuntime)
     const starter = Flows.FlowStarter.of({
       start: (flow: Flow.Any, { executionId, payload }) =>
@@ -602,6 +607,7 @@ describe("the repository's runners and agents", () => {
       Effect.provideService(Flows.FlowStarter, starter),
       Effect.provide(signedIn(actor)),
       Effect.provide(roles),
+      Effect.provide(keys),
     ))
     const send = async (path: string, method: string, body?: BodyInit) => {
       const response = await handler(new Request(`http://localhost/api/repos/${options.repo ?? "acme/private"}/${path}`, {
@@ -865,6 +871,45 @@ describe("the repository's runners and agents", () => {
       return { person, session, alias, actor }
     }
 
+    test.each((["deployment", "repository"] as const).flatMap(basis =>
+      (["home absolute", "alias absolute", "home rekey", "alias rekey", "parent key removal", "parent rekey"] as const)
+        .map(boundary => ({ basis, boundary }))))("a delayed write rechecks $basis authority after $boundary", async ({ basis, boundary }) => {
+      const who = await signedInAdmin()
+      const home = boundary.startsWith("home")
+      const actor: Actor.Actor = { subject: who.actor.subject, role: "admin", session: who.session,
+        ...(home ? {} : { alias: who.alias }), cookieKey: "legacy" }
+      const repo = basis === "deployment" ? "acme/widgets" : "acme/private"
+      const repoId = `github/${repo}`
+      await recordInstallation(repoId)
+      if (basis === "repository") await sql`INSERT INTO github_repo_roles (repo_id, person_id, role, checked_at)
+        VALUES (${repoId}, ${who.person}, 'admin', clock_timestamp())`
+      const gate = gated()
+      const routes = await fencedRoutes({ ...gate, actor, repo, signingKeys: ["legacy", "next"] })
+      try {
+        const pending = routes.send("runners/nyc-delayed", "PUT", RUNNER_BODY)
+        await gate.asked
+        if (boundary === "home absolute") {
+          await sql`UPDATE sessions SET started_at = clock_timestamp() - interval '400 days' WHERE id = ${who.session}::uuid`
+        } else if (boundary === "alias absolute") {
+          await sql`UPDATE host_sessions SET started_at = clock_timestamp() - interval '400 days' WHERE id = ${who.alias}::uuid`
+        } else if (boundary === "alias rekey") {
+          await sql`UPDATE host_sessions SET cookie_key = 'next' WHERE id = ${who.alias}::uuid`
+        } else {
+          await sql`UPDATE sessions SET cookie_key = ${boundary === "parent key removal" ? "retired" : "next"}
+            WHERE id = ${who.session}::uuid`
+        }
+        gate.release()
+        const answer = await pending
+        expect(answer.status).toBe(202)
+        const allowed = boundary === "parent rekey"
+        expect((await routes.receipt(answer.body!.execution!)).body).toMatchObject({ outcome: allowed ? "set" : "authorization_expired" })
+        expect(await sql`SELECT name FROM runners WHERE name = 'nyc-delayed'`).toEqual(allowed ? [{ name: "nyc-delayed" }] : [])
+      } finally {
+        gate.release()
+        await routes.close()
+      }
+    })
+
     test.each(["session", "alias"] as const)("a repository Admin registration queued before %s revocation writes nothing", async (end) => {
       await recordInstallation("github/acme/private")
       const who = await signedInAdmin()
@@ -1012,6 +1057,7 @@ describe("the repository's runners and agents", () => {
 
     /** Holds the rows `lock` locks in another connection until `release`: a write that needs them waits. */
     const holdRows = async (lock: (client: SqlClient.SqlClient) => Effect.Effect<unknown, unknown>) => {
+      let pid = 0
       let release = (_abort: boolean) => {}
       const released = new Promise<boolean>((done) => (release = done))
       let locked = () => {}
@@ -1019,6 +1065,8 @@ describe("the repository's runners and agents", () => {
       const holder = query(Effect.flatMap(SqlClient.SqlClient, (client) =>
         client.withTransaction(Effect.gen(function* () {
           yield* lock(client)
+          const [connection] = yield* client<{ pid: number }>`SELECT pg_backend_pid() AS pid`
+          pid = connection!.pid
           yield* Effect.sync(locked)
           // Aborted, the transaction rolls back: what it wrote was never there.
           if (yield* Effect.promise(() => released)) return yield* Effect.fail("abort")
@@ -1026,25 +1074,53 @@ describe("the repository's runners and agents", () => {
           if (error !== "abort" && !String(error).includes("abort")) throw error
         })
       await locking
-      return { release: async () => (release(false), await holder), abort: async () => (release(true), await holder) }
+      return { pid, release: async () => (release(false), await holder), abort: async () => (release(true), await holder) }
     }
 
     // Astra's review of 6b13eb85: the session's expiry was judged in the statement that locked it, before the write
     // waited on the alias's lock, so a session that expired during that wait still admitted the write.
-    test("a session that expires while the write waits on its alias's lock writes nothing", async () => {
+    test("a session that expires while the write waits on its alias's lock writes nothing", async ({ onTestFailed }) => {
+      const started = Date.now()
+      const phases: Record<string, number> = {}
+      let errorCode: string | undefined
+      onTestFailed(() => console.error("runner.alias_wait", JSON.stringify({ phases, errorCode })))
       const who = await signedInAdmin()
-      await sql`UPDATE sessions SET expires_at = clock_timestamp() + interval '400 milliseconds' WHERE id = ${who.session}::uuid`
       const held = await holdRows((client) => client`SELECT 1 FROM host_sessions WHERE id = ${who.alias}::uuid FOR UPDATE`)
+      phases.alias_locked = Date.now() - started
+      await sql`UPDATE sessions SET expires_at = clock_timestamp() + interval '400 milliseconds' WHERE id = ${who.session}::uuid`
+      phases.expiry_set = Date.now() - started
       const writing = query(Store.addRunner(
         { repoId: REPO, name: "nyc-alias-wait", tokenSha256: "a".repeat(64), labels: [], capacity: 1, repoAuthorized: true },
         fencedBy({
           execution: "runners-put:alias-wait",
           authority: { _tag: "Session", personId: who.person, sessionId: who.session, alias: who.alias },
         }),
-      ))
-      await new Promise((done) => setTimeout(done, 800))
-      // Released unchanged: only the clock ended the session.
-      await held.release()
+      ).pipe(Effect.tapError(error => Effect.sync(() => {
+        errorCode = codeOf(error)
+        phases.write_failed = Date.now() - started
+      }))))
+      // Observe failure immediately while the test holds the lock; the original promise still rejects below.
+      void writing.catch(() => {})
+      try {
+        // Prove this write is waiting on this alias while its session was live. Release as soon as the database's
+        // clock reaches expiry; a fixed host sleep could overrun the production one-second lock timeout.
+        await expect.poll(async () => {
+          const [waiting] = await sql<{ beganLive: boolean }>`
+            SELECT a.xact_start < s.expires_at AS "beganLive" FROM pg_stat_activity a, sessions s
+            WHERE ${held.pid} = ANY(pg_blocking_pids(a.pid)) AND s.id = ${who.session}::uuid`
+          return waiting?.beganLive
+        }, { timeout: 5_000, interval: 10 }).toBe(true)
+        phases.write_blocked = Date.now() - started
+        await sql`SELECT pg_sleep(greatest(0, extract(epoch FROM expires_at - clock_timestamp())) + 0.01)
+          FROM sessions WHERE id = ${who.session}::uuid`
+        expect(await sql`SELECT clock_timestamp() >= expires_at AS ended FROM sessions WHERE id = ${who.session}::uuid`)
+          .toEqual([{ ended: true }])
+        phases.expiry_observed = Date.now() - started
+      } finally {
+        phases.release_started = Date.now() - started
+        await held.release()
+        phases.alias_released = Date.now() - started
+      }
       expect(await writing).toBe("authorization_expired")
       expect(await sql`SELECT count(*)::int AS n FROM runners WHERE name = 'nyc-alias-wait'`).toEqual([{ n: 0 }])
     })
@@ -1095,6 +1171,37 @@ describe("the repository's runners and agents", () => {
       const exit = await writing
       expect(Exit.isSuccess(exit) ? exit.value : "failed").not.toBe("set")
       expect(await sql`SELECT count(*)::int AS n FROM runners WHERE name = 'nyc-token-wait'`).toEqual([{ n: 0 }])
+    })
+
+    test.each(["home", "alias"] as const)("a final runner commit rechecks the %s absolute deadline after its token wait", async boundary => {
+      const who = await signedInAdmin()
+      const token = "d".repeat(64)
+      const held = await holdRows(client => client`INSERT INTO runners (repo_id, name, labels, capacity, token_sha256, added_by)
+        VALUES (${REPO}, 'nyc-absolute-holder', '{}', 1, ${token}, 'person-admin')`)
+      const [row] = boundary === "home"
+        ? await sql<{ deadline: string }>`UPDATE sessions SET started_at = clock_timestamp() - interval '400 days' + interval '600 milliseconds'
+            WHERE id = ${who.session}::uuid RETURNING (started_at + interval '400 days')::text AS deadline`
+        : await sql<{ deadline: string }>`UPDATE host_sessions SET started_at = clock_timestamp() - interval '400 days' + interval '600 milliseconds'
+            WHERE id = ${who.alias}::uuid RETURNING (started_at + interval '400 days')::text AS deadline`
+      const authority = WriteAuthority.sessionOf({ ...who.actor, cookieKey: "legacy" })!
+      const writing = query(Store.addRunner(
+        { repoId: REPO, name: "nyc-absolute-wait", tokenSha256: token, labels: [], capacity: 1, repoAuthorized: true },
+        fencedBy({ execution: "runners-put:absolute-wait", authority: { _tag: "Session", ...authority } }),
+      ))
+      void writing.catch(() => {})
+      try {
+        await expect.poll(async () => {
+          const [waiting] = await sql<{ beganLive: boolean }>`SELECT xact_start < ${row!.deadline}::timestamptz AS "beganLive"
+            FROM pg_stat_activity WHERE ${held.pid} = ANY(pg_blocking_pids(pid))`
+          return waiting?.beganLive
+        }, { timeout: 5_000, interval: 10 }).toBe(true)
+        await sql`SELECT pg_sleep(greatest(0, extract(epoch FROM ${row!.deadline}::timestamptz - clock_timestamp())) + 0.01)`
+        expect(await sql`SELECT clock_timestamp() >= ${row!.deadline}::timestamptz AS ended`).toEqual([{ ended: true }])
+      } finally { await held.abort() }
+      expect(await writing).toBe("authorization_expired")
+      expect(await sql`SELECT name FROM runners WHERE name = 'nyc-absolute-wait'`).toEqual([])
+      expect(await sql`SELECT outcome FROM admin_receipts WHERE execution = 'runners-put:absolute-wait'`)
+        .toEqual([{ outcome: "authorization_expired" }])
     })
 
     test("waits after admission that add up past the fence's expiry, each shorter than it, write nothing", async () => {

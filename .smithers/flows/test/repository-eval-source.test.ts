@@ -1,9 +1,10 @@
-import { NodeCrypto, NodeServices } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
+import { NodeServices } from "@effect/platform-node"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, FileSystem, Layer, ManagedRuntime, Schema } from "effect"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
@@ -19,9 +20,6 @@ import { CaptureRepository, captureRepository } from "../repository/inspection.t
 import { FinishJob, Investigate, RunSteps } from "../repository/jobs.ts"
 import { type Draft, EvalCase, type JobResult, type RepositoryEvidence, SetupInput } from "../repository/schema.ts"
 import { suggestedSetupDraft } from "../repository/setup.ts"
-
-// Effect 4.1 removed effect/Crypto, and NodeServices.layer no longer provides it.
-const nodeServices = Layer.merge(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 
 const exporter = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
 const gate = {
@@ -88,7 +86,9 @@ async function fixture(t: TestContext, mode: "snapshot" | "immutable") {
       parentCommitIds: value.parents
     }
   }
-  const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(nodeServices)))
+  const fs = await Effect.runPromise(
+    FileSystem.FileSystem.pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
+  )
   const options = {
     repositoryPath: root,
     fs,
@@ -122,7 +122,7 @@ async function fixture(t: TestContext, mode: "snapshot" | "immutable") {
         })
     })
   )
-    .pipe(Layer.provideMerge(nodeServices))
+    .pipe(Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
   return {
     root,
     pinned,
@@ -339,7 +339,7 @@ async function harness(t: TestContext, mode: "snapshot" | "immutable") {
       Layer.provide(f.owned),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(nodeServices)
+      Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
     )
   )
   t.after(() => runtime.dispose())

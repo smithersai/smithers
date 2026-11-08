@@ -148,7 +148,7 @@ export const makePair = (): Effect.Effect<Pair, never, Scope.Scope> =>
           yield* Effect.addFinalizer(() => Deferred.fail(closed, transportError()))
           return {
             pull: Effect.raceFirst(
-              Effect.map(delivery.whenOpen(Queue.take(incoming)), (bytes) => [bytes] as const),
+              Effect.flatMap(Queue.take(incoming), (bytes) => delivery.whenOpen(Effect.succeed([bytes] as const))),
               Deferred.await(closed)
             ),
             upgrade: Socket.SocketUpgradeError.unsupported

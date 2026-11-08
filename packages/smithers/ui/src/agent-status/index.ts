@@ -6,7 +6,7 @@ export {
   isAgentState,
   type AgentState,
 } from "./agentStatus";
-export { agentStatusCss } from "./agentStatusCss";
+export { agentStatusCss } from "@smthrs/ui-css";
 export { AgentStatusPill, type AgentStatusPillProps } from "./AgentStatusPill";
 export {
   answerText,

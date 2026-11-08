@@ -168,7 +168,10 @@ export interface EncodedResult {
   readonly note: string | undefined
 }
 
-const truncate = (value: string, limit: number): string => value.length <= limit ? value : `${value.slice(0, limit)}…`
+const truncate = (value: string, limit: number): string => {
+  const safe = value.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD")
+  return safe.length <= limit ? safe : `${safe.slice(0, limit).replace(/[\uD800-\uDBFF]$/, "")}…`
+}
 
 /**
  * Bounds one projected message or stack after the journal's redaction rules.
@@ -178,7 +181,7 @@ const truncate = (value: string, limit: number): string => value.length <= limit
  * runs before truncation so a cut cannot leave half a credential the rules no
  * longer match.
  */
-const redactedText = (value: string): string => truncate(Redaction.redact(value) as string, maxTextLength)
+const redactedText = (value: string): string => truncate(Redaction.redactDiagnostic(value) as string, maxTextLength)
 
 /**
  * Renders any value as a bounded string without raising.
@@ -191,7 +194,8 @@ const redactedText = (value: string): string => truncate(Redaction.redact(value)
 const text = (value: unknown): string => {
   switch (typeof value) {
     case "string":
-      return JSON.stringify(value)
+      // Escape only after redaction: a literal \n can hide a header-line boundary.
+      return JSON.stringify(Redaction.redactDiagnostic(value))
     case "number":
       return Number.isFinite(value) ? `${value}` : `[number]`
     case "boolean":
@@ -255,7 +259,7 @@ export const projectValue = (value: unknown, depth = 0, seen = new WeakSet<objec
       cause?: ValueProjection
     } = {
       type: typeof tag === "string" && tag.length > 0
-        ? truncate(tag, maxTextLength)
+        ? redactedText(tag)
         : isNativeError(value)
         ? "Error"
         : Array.isArray(value)
@@ -263,8 +267,8 @@ export const projectValue = (value: unknown, depth = 0, seen = new WeakSet<objec
         : "object",
       message: redactedText(typeof message === "string" ? message : text(value))
     }
-    if (typeof tag === "string") projection.tag = truncate(tag, maxTextLength)
-    if (typeof code === "string") projection.code = truncate(code, maxTextLength)
+    if (typeof tag === "string") projection.tag = redactedText(tag)
+    if (typeof code === "string") projection.code = redactedText(code)
     // Native Error stacks are commonly accessors. They remain deliberately
     // unread; only an already-materialized own data string is retained.
     if (typeof stack === "string") {

@@ -34,25 +34,16 @@
  * ```
  */
 
-export { cn } from "./cn";
-export { tokens, type SmithersUiTokens } from "./tokens";
+export { cn } from "@smthrs/ui-css";
+export { tokens, type SmithersUiTokens } from "@smthrs/ui-css";
 export { resolveTheme, subscribeTheme, type ResolvedTheme } from "./internal/resolveTheme";
 export { resolvePalette, subscribePalette, type ResolvedPalette } from "./internal/resolvePalette";
 export { useResolvedPalette } from "./internal/useResolvedPalette";
 export { useResolvedTheme } from "./internal/useResolvedTheme";
 export { isPlainNavigationClick } from "./internal/navigationClick";
 export { newNonce, useNearScreen } from "./internal/frameMount";
-export { xtermBaseCss } from "./adapters/xtermCss";
-export {
-  normalizeStatus,
-  statusClass,
-  statusColor,
-  statusColors,
-  hasStatusTone,
-  formatStatus,
-  isTerminalRunStatus,
-  type StatusClass,
-} from "./status";
+export { xtermBaseCss } from "@smthrs/ui-css";
+export { normalizeStatus, statusClass, statusColor, statusColors, hasStatusTone, formatStatus, isTerminalRunStatus, type StatusClass } from "@smthrs/ui-css";
 export {
   SmithersUiStyles,
   composeSmithersUiStyles,
@@ -268,7 +259,7 @@ export { CopyButton, type CopyButtonProps } from "./copy-button";
 export { Kbd, type KbdProps } from "./kbd";
 export { SegmentedControl, type SegmentedControlOption, type SegmentedControlProps } from "./segmented-control";
 export { CommandPalette, type CommandPaletteItem, type CommandPaletteProps } from "./command-palette";
-export { commandPaletteCss, kbdCss, segmentedControlCss } from "./commandCss";
+export { commandPaletteCss, kbdCss, segmentedControlCss } from "@smthrs/ui-css";
 // Branch sharing: presence avatars and the share dialog.
 export { AvatarStack, type AvatarStackPerson, type AvatarStackProps } from "./avatar-stack";
 export {
@@ -279,7 +270,7 @@ export {
   selectionOf,
   useSharedSelection,
 } from "./collaborators";
-export { collaboratorsCss } from "./collaboratorsCss";
+export { collaboratorsCss } from "@smthrs/ui-css";
 export { PERSON_LANES, personLane } from "./internal/person";
 export {
   ShareDialog,
@@ -288,7 +279,7 @@ export {
   type ShareGeneral,
   type SharePerson,
 } from "./share-dialog";
-export { avatarStackCss, shareDialogCss } from "./sharingCss";
+export { avatarStackCss, shareDialogCss } from "@smthrs/ui-css";
 export {
   DirectoryListing,
   type DirectoryEntry,
@@ -325,7 +316,7 @@ export {
   PAGINATE_VISIBLE,
   type ParseUnifiedFileOverrides,
 } from "./diff-paginate";
-export type { DataAttributes } from "./data-attributes";
+export type { DataAttributes } from "@smthrs/ui-css";
 export {
   FileTree,
   type FileTreeDirectoryProps,
@@ -688,7 +679,7 @@ export {
 // lane. `tests/barrel-weight.test.ts` measures the result.
 export { Calendar, type CalendarProps } from "./calendar/Calendar";
 export type { CalendarEvent, CalendarView } from "./calendar/types";
-export { CALENDAR_CSS_ID, calendarCss } from "./calendar/calendarCss";
+export { CALENDAR_CSS_ID, calendarCss } from "@smthrs/ui-css";
 export {
   DAY_MS,
   HOUR_MS,
@@ -749,7 +740,7 @@ export {
   type VaultGraphEdge,
   type VaultGraphNode,
 } from "./vault/graphModel";
-export { VAULT_CSS_ID, vaultCss } from "./vault/vaultCss";
+export { VAULT_CSS_ID, vaultCss } from "@smthrs/ui-css";
 export { useVaultCss } from "./vault/useVaultCss";
 export { BacklinksPanel, type BacklinksPanelProps } from "./vault/BacklinksPanel";
 export { OutlineView, parseOutline, type OutlineHeading, type OutlineViewProps } from "./vault/OutlineView";

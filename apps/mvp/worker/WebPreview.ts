@@ -1,3 +1,4 @@
+import { withUserAgent } from "./github/Http.ts"
 import { ImmutableCache } from "@smthrs/artifacts"
 import { WebPage } from "@smthrs/views"
 import { Cause, Clock, Config, Duration, Effect, Metric, Option, Schema } from "effect"
@@ -89,7 +90,7 @@ export const make = (options: { readonly localHttp?: boolean } = {}) =>
         let asked = false
         const load = Effect.gen(function* () {
           asked = true
-          const checked = yield* WebPage.check(page.page.href, { ancestors: [appOrigin], privateHosts })
+          const checked = yield* WebPage.check(page.page.href, { ancestors: [appOrigin], privateHosts }).pipe((effect) => withUserAgent(effect, true))
           return { bytes: encoder.encode(JSON.stringify(checked)), metadata: {} }
         })
         // Zero disables caching: dividing by zero otherwise gives every request the same Infinity bucket.

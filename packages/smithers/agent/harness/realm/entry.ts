@@ -1,8 +1,10 @@
 import { canonicalize } from "@smthrs/canonical"
-import { Crypto, digestSync } from "@smthrs/crypto"
+import { digestSync } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Context, Effect, Exit, Latch, Option, Schema, Scope } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
+import * as Hex from "effect/encoding/Hex"
 
 // This entry is bundled, never imported in the host. The SDK keeps its own
 // deterministic intrinsics; repository code receives only public authoring APIs.
@@ -13,12 +15,14 @@ declare const __refuse: (code: "forbidden_import" | "action_not_allowed") => voi
 const unavailable = () => {
   throw new Error("unsupported_runtime_operation")
 }
-const crypto = Crypto.make({
-  randomBytes: unavailable,
+const crypto = EffectDigest.Digest.of({
   digest: (algorithm, bytes) =>
-    algorithm === "SHA-256"
+    algorithm.name === "SHA-256"
       ? Effect.sync(() => Uint8Array.from(digestSync(bytes).match(/../g)!, (h) => parseInt(h, 16)))
-      : Effect.die("unsupported_digest")
+      : Effect.die("unsupported_digest"),
+  digestHex(algorithm, data) {
+    return Effect.map(this.digest(algorithm, data), Hex.encode)
+  }
 })
 
 /** The host action every agent step is requested as. RealmFlow.agentAction names it too. */
@@ -156,7 +160,7 @@ __publish({
       Effect.provideService(Action.Implementations, table),
       Effect.provideService(FlowRuntime.FlowRuntime, runtime),
       Effect.provideService(FlowRuntime.FlowInstance, instance),
-      Effect.provideService(Crypto.Crypto, crypto)
+      Effect.provideService(EffectDigest.Digest, crypto)
     )
   )
   for (const key of receipts.keys()) if (!visited.has(key as string)) throw new Error("unused_receipt")

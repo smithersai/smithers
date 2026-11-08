@@ -234,7 +234,7 @@ than one job. Coverage and known-red handling remain the package's own gates.
 
 `ci/timings.json` records the maximum completed per-target duration from run
 40929998769's `smthrs-results-test-0-1/__run_8.json` and run 41088937554's
-Ubuntu/macOS package logs. Download the artifact with `gh run download` and
+Ubuntu/macOS package logs. The cell-comparison offline target also has a local Linux/Node 26.5.0 observation; `sources` retains its revision, exact command, elapsed milliseconds and successful exit. Download the artifact with `gh run download` and
 read the named jobs' logs with `gh api repos/smithersai/smithers/actions/jobs/<id>/logs`.
 For each label retain the maximum `durationMs`, logged `ran`/`failed` elapsed
 value, or an unfinished target's observed elapsed time at cancellation. The

@@ -10,19 +10,19 @@
  * @since 0.1.0
  */
 
-import { Deadline, type DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
+import { type DurableDeferred, type Flow, FlowRuntime } from "@smthrs/flow"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
-import * as Semaphore from "effect/Semaphore"
-import { renderDiagnostic } from "../internal/Diagnostic.ts"
 import { toJsonExit } from "../internal/JsonExit.vibe"
-import { makeActionExecute, resetActionContext } from "./Dispatch.ts"
+import { declaredHandler } from "./DeclaredHandler.ts"
+import { makeActionExecute } from "./Dispatch.ts"
 import type { Encoded } from "./Encoded.vibe"
 import { placeExecute, placeInterrupt, placeResume, placeRetryFrom } from "./Placed.ts"
+import { CurrentRegistrations, makeRegistrationGate } from "./RegistrationGate.ts"
 import { type Declarations, makeExecute } from "./Trampoline.ts"
 
 /** The typed port this module adapts the driver into. */
@@ -30,56 +30,6 @@ type Port = FlowRuntime.FlowRuntime["Service"]
 
 /** The handler a driver runs for one registered flow. */
 type Handler = Parameters<Encoded["register"]>[1]
-
-/** Recursive admission violates the registration ownership invariant. */
-class RegistrationFault extends Schema.TaggedError<RegistrationFault>()("@smthrs/engine/RegistrationFault", {
-  flowName: Schema.String,
-  message: Schema.String
-}) {}
-
-const CurrentRegistrations = Context.Reference<ReadonlyArray<{ readonly owner: object; readonly name: string }>>(
-  "@smthrs/engine/CurrentRegistrations",
-  { defaultValue: () => [] }
-)
-
-interface Gate {
-  readonly semaphore: Semaphore.Semaphore
-  users: number
-}
-
-/**
- * Admits one registration per flow name at a time. A registration that
- * re-enters its own name's admission would wait on itself, so it dies.
- */
-const makeRegistrationGate = () => {
-  const gates = new Map<string, Gate>()
-  const enter = (name: string) =>
-    Effect.sync(() => {
-      const gate = gates.get(name) ?? { semaphore: Semaphore.makeUnsafe(1), users: 0 }
-      gates.set(name, gate)
-      gate.users++
-      return gate
-    })
-  // Waiters count as users, so cancellation cannot replace the lock while
-  // another admission still owns or awaits it.
-  const leave = (name: string, gate: Gate) =>
-    Effect.sync(() => {
-      if (--gate.users === 0) gates.delete(name)
-    })
-  return <A, E, R>(name: string, admission: Effect.Effect<A, E, R>) =>
-    Effect.flatMap(CurrentRegistrations, (ancestors) => {
-      if (ancestors.some((entry) => entry.owner === gates && entry.name === name)) {
-        const message = `Flow ${name} cannot recursively register itself while admission is in progress`
-        return Effect.die(new RegistrationFault({ flowName: name, message }))
-      }
-      const admitting = [...ancestors, { owner: gates, name }]
-      return Effect.acquireUseRelease(
-        enter(name),
-        (gate) => gate.semaphore.withPermit(admission).pipe(Effect.provideService(CurrentRegistrations, admitting)),
-        (gate) => leave(name, gate)
-      )
-    })
-}
 
 /**
  * Lists the registration under its flow's tag until its scope closes. A
@@ -100,54 +50,6 @@ const declare = (declarations: Declarations, flow: Flow.Any, scope: Scope.Closea
       })
     )
   })
-
-/**
- * Fails with a body error the flow declares, and dies with any other. The
- * defect is the error itself, not the schema issue about it, so the message
- * survives; and a defect, unlike an undeclared failure, can be encoded into
- * the settled run. `FlowProxyServer` redacts it before it leaves the process.
- */
-const failDeclared = (flow: Flow.Any, error: unknown) =>
-  Effect.matchEffect(flow.errorSchema.makeEffect(error), {
-    onFailure: () =>
-      Effect.logError("A flow body failed with an error outside its declared error schema").pipe(
-        Effect.annotateLogs({ flow: flow._tag, error: renderDiagnostic(error) }),
-        Effect.andThen(Effect.die(error))
-      ),
-    onSuccess: () => Effect.fail(error)
-  })
-
-/** Checks a round's success against the declared schema. A handoff round has none of its own. */
-const succeedDeclared = (flow: Flow.Any, value: unknown) =>
-  Effect.flatMap(FlowRuntime.FlowInstance, (instance) =>
-    instance.handoff === undefined
-      ? Effect.as(Effect.orDie(flow.successSchema.makeEffect(value)), value)
-      : Effect.succeed(value))
-
-/**
- * Wraps a registered body for the driver: bounded by the flow's deadline,
- * held to its declared schemas and capability ceilings, and run with the
- * registration's services under the caller's, in a fresh dispatch context.
- */
-const declaredHandler = (
-  flow: Flow.Any,
-  services: Context.Context<FlowRuntime.FlowRuntime>,
-  execute: (payload: object, executionId: string) => Effect.Effect<unknown, unknown, unknown>
-): Handler => {
-  const bounded = Deadline.bound({ flowName: flow._tag, deadline: flow.deadline })
-  return (payload, executionId) =>
-    Effect.suspend(() => bounded(execute(payload, executionId))).pipe(
-      Effect.matchEffect({
-        onFailure: (error) => failDeclared(flow, error),
-        onSuccess: (value) => succeedDeclared(flow, value)
-      }),
-      Flow.attenuateCapabilities(Flow.capabilityCeilings(flow.annotations)),
-      Effect.updateContext((input) => {
-        const caller = input.pipe(Context.omit(CurrentRegistrations))
-        return resetActionContext(Context.merge(services, caller)) as Context.Context<any>
-      })
-    )
-}
 
 const makeRegister = (options: Encoded, declarations: Declarations): Port["register"] => {
   const withRegistrationGate = makeRegistrationGate()

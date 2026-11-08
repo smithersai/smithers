@@ -1,3 +1,4 @@
+import { withUserAgent } from "../github/Http.ts"
 import { Binding, Egress } from "@smthrs/secrets"
 import { Config, Effect, Layer, Option } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -172,7 +173,7 @@ export const forwardSubscription = (
             ),
       }),
     )
-    const response = yield* Egress.forward(request, policy).pipe(Effect.provide(Layer.merge(opened, audit(guest, sql))))
+    const response = yield* Egress.forward(request, policy).pipe((effect) => withUserAgent(effect, true), Effect.provide(Layer.merge(opened, audit(guest, sql))))
     const refused = KEY_REFUSALS.includes(response.status) && response.status !== 429
     if (usedIt && (refused || (response.status >= 200 && response.status < 300))) {
       yield* Store_.markConnection(subscription.personId, subscription.connectionId, refused ? response.status : undefined).pipe(
@@ -243,7 +244,7 @@ export const forwardOverflow = (guest: Guest, overflow: OverflowCredentials, all
             ),
       }),
     )
-    return yield* Egress.forward(request, policy).pipe(Effect.provide(Layer.merge(vault, audit(guest, sql))))
+    return yield* Egress.forward(request, policy).pipe((effect) => withUserAgent(effect, true), Effect.provide(Layer.merge(vault, audit(guest, sql))))
   }).pipe(Effect.withSpan("secrets.egress.overflow", { attributes: { "smithers.branch.id": guest.branchId } }))
 
 /** Opens one of a guest's values from its sealed row, through `sql`. */
@@ -297,6 +298,7 @@ export const forward = (guest: Guest, allow: ReadonlyArray<string>) =>
     const request = yield* HttpServerRequest.HttpServerRequest
     const sql = yield* SqlClient.SqlClient
     return yield* Egress.forward(request, policy.value).pipe(
+      (effect) => withUserAgent(effect, true),
       Effect.provide(Layer.merge(vault(guest, keys.value, sql), audit(guest, sql))),
     )
   }).pipe(

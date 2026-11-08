@@ -1,0 +1,33 @@
+// @vitest-environment node
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { expect, it } from "@effect/vitest"
+
+const Manifest = Schema.fromJsonString(Schema.Struct({ dependencies: Schema.Record(Schema.String, Schema.String) }))
+
+/** The text of `path`, relative to this file. */
+effect function read(path: string) {
+  const file = try (try Path.Path).fromFileUrl(new URL(path, import.meta.url))
+  return try (try FileSystem.FileSystem).readFileString(file)
+}
+
+it.effect("script examples rely on the full compiler, without a nonexistent projection diagnostics channel", () => effect {
+  provide NodeServices.layer {
+    const suite = try read("./scriptedReplies.test.vibe")
+    const decision = try read("../wiki/decisions/0004-mock-mode.md")
+    try Effect.try(() => {
+      expect(suite).not.toContain("--ts-projection")
+      expect(decision).not.toContain("Both projection diagnostics")
+    })
+  }
+})
+
+it.effect("does not install the unused browser platform adapter", () => effect {
+  provide NodeServices.layer {
+    const pkg = try Schema.decodeUnknownEffect(Manifest)(try read("../package.json"))
+    const decision = try read("../wiki/decisions/0001-app-and-stack.md")
+    try Effect.try(() => {
+      expect(pkg.dependencies).not.toHaveProperty("@effect/platform-browser")
+      expect(decision).not.toContain("@effect/platform-browser")
+    })
+  }
+})

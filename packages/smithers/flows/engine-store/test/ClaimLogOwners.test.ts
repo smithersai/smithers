@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The `flow.run.claimed` line names the incarnation that took the run and,
  * for a steal, the owner it took the run from and the evidence that let it.
@@ -10,7 +11,7 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { SqlJournal } from "@smthrs/journal"
 import { Ownership, RunStore } from "@smthrs/run-store"
-import type { Crypto } from "@smthrs/crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
@@ -42,7 +43,11 @@ const services = Layer.mergeAll(
   DurableEngineState.layer
 ).pipe(Layer.provideMerge(Layer.provideMerge(Migrations.layer, TestDatabase.layer)))
 
-type Services = Layer.Success<typeof services> | TestClock.TestClock | Crypto.Crypto | Scope.Scope
+type Services =
+  | Layer.Success<typeof services>
+  | TestClock.TestClock
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
+  | Scope.Scope
 
 const run = <A, E>(effect: Effect.Effect<A, E, Services>) =>
   withCrypto(Effect.scoped(effect).pipe(Effect.provide(services), Effect.provide(TestClock.layer())))

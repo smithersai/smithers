@@ -10,7 +10,7 @@ import {
   Sessions,
   type SessionsUnavailable,
 } from "#vibelang/emitted/worker/Actor"
-import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA } from "../src/features/auth/contract.ts"
+import { ANONYMOUS_DEVICE_PERSON, DEVICE_PERSON_HEADER, NO_DEVICE_DATA } from "../src/features/auth/contract.ts"
 import { CREDENTIAL_TTL_MS } from "../src/flows/contract.ts"
 import type { SessionKeys } from "./SessionKeys.ts"
 
@@ -141,7 +141,7 @@ export class RunCredentials extends Context.Service<
 /**
  * Requests read as nobody because of whose device data they come from (`x-smithers-device-person`), by `outcome`:
  * `mismatch`, another person's; `unbound`, a cookie-authenticated write that names no one, as an earlier build's tab
- * sends.
+ * sends; `anonymous`, a page whose viewer is nobody.
  */
 export const devicePrincipalRefusals = Metric.counter("smithers_device_principal_refusals", { incremental: true })
 
@@ -166,7 +166,7 @@ export const make = (options: {
   const read = (token: string) => Effect.gen(function* () {
     const value = yield* options.keys.verify("run", token)
     if (Option.isNone(value)) return Option.none<Claims>()
-    const text = Base64Url.decodeString(value.value)
+    const text = Base64Url.decodeString(value.value.value)
     return Result.isSuccess(text) ? decodeClaims(text.success) : Option.none<Claims>()
   })
   return RunCredentials.of({
@@ -184,7 +184,7 @@ export const make = (options: {
       Effect.gen(function* () {
         const value = yield* options.keys.verify("run", token)
         if (Option.isNone(value)) return yield* failed("forged")
-        const text = Base64Url.decodeString(value.value)
+        const text = Base64Url.decodeString(value.value.value)
         const claims = Result.isSuccess(text) ? decodeClaims(text.success) : Option.none()
         // Signed by us yet not claims: a key reused for another purpose would be a bug; it reads as forged.
         if (Option.isNone(claims)) return yield* failed("forged")
@@ -221,6 +221,7 @@ export const resolveWith = <R>(
 ): Effect.Effect<Option.Option<Actor>, SessionsUnavailable, R | HttpServerRequest.HttpServerRequest> =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest
+    if (request.headers[DEVICE_PERSON_HEADER] === ANONYMOUS_DEVICE_PERSON) return yield* refuseAnonymous
     const bearer = bearerOf(request)
     const actor = Option.isSome(bearer) ? yield* credentials.verify(bearer.value) : yield* session
     return yield* bound(request, actor, Option.isSome(bearer))
@@ -235,8 +236,17 @@ export const resolveCookieWith = <R>(
 ): Effect.Effect<Option.Option<Actor>, SessionsUnavailable, R | HttpServerRequest.HttpServerRequest> =>
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest
+    if (request.headers[DEVICE_PERSON_HEADER] === ANONYMOUS_DEVICE_PERSON) return yield* refuseAnonymous
     return yield* bound(request, yield* session, false)
   })
+
+/** Anonymous device viewers resolve neither proof, even if another tab signed in first. */
+const refuseAnonymous = Effect.gen(function* () {
+  yield* Metric.update(Metric.withAttributes(devicePrincipalRefusals, { outcome: "anonymous" }), 1)
+  yield* Effect.logWarning("auth.device_principal").pipe(Effect.annotateLogs({ outcome: "anonymous" }))
+  yield* Effect.annotateCurrentSpan({ "smithers.actor.act": "none" })
+  return Option.none<Actor>()
+})
 
 /** `actor`, or nobody where the request's device header names someone else, or a cookie write names no one. */
 const bound = (request: HttpServerRequest.HttpServerRequest, actor: Option.Option<Actor>, viaBearer: boolean) =>

@@ -9,7 +9,7 @@ import * as TestDatabase from "../../../db/TestDatabase.ts"
 import { digestSync } from "@smthrs/crypto"
 import * as SessionKeys from "../../SessionKeys.ts"
 import * as SessionStore from "../../SessionStore.ts"
-import type { Role } from "../../Actor.vibe"
+import type { Actor, Role } from "../../Actor.vibe"
 import type { testFile } from "../../test/harness.ts"
 import { SECRET } from "../../test/signIn.ts"
 import type * as Apply from "../Apply.vibe"
@@ -35,7 +35,7 @@ export const reset = (runtime: Runtime) =>
       (sql) =>
         sql`TRUNCATE repo_about, github_projection_fences, items, comments, github_writes, github_sync, github_deliveries, github_repositories, sessions,
           sign_in_attempts, people, triage_settings, triage_decisions, model_usage, model_budget_days, model_roles,
-          github_repo_roles, work_links, runners, machine_tokens, machine_writes, machine_dispatch CASCADE`,
+          github_repo_roles, work_links, runners, machine_tokens, machine_writes, machine_dispatch, issue_relations, issue_child_counts, issue_parent_checks, issue_relation_seen CASCADE`,
     ),
   )
 
@@ -83,6 +83,40 @@ export const signedIn = async (
     return personId
   }))
   return { personId, sessionId }
+}
+
+/**
+ * `actor`'s session as sign-in records it, confirmed now with `actor.role`, unless its row is already recorded: the
+ * deployment repository's role is that confirmed receipt (`SessionStore.freshRole`), so a request signed in as an
+ * unrecorded session has no role there. An actor without a session needs no row.
+ */
+export const confirmedSession = async (runtime: Runtime, actor: Actor) => {
+  const session = actor.session
+  if (session === undefined) return
+  const sessionKeys = await keys()
+  const access = await Effect.runPromise(
+    sessionKeys.seal(Redacted.make("harness-person-access"), { id: session, name: "github_access", version: 1 }),
+  )
+  await runtime.runPromise(Effect.gen(function* () {
+    const client = yield* SqlClient.SqlClient
+    const [recorded] = yield* client`SELECT 1 FROM sessions WHERE id = ${session}`
+    if (recorded !== undefined) return
+    yield* client`INSERT INTO people (id, github_id, github_login)
+      VALUES (${actor.subject.id}, ${Math.floor(Math.random() * 2_000_000_000)}, ${actor.login ?? `person-${actor.subject.id}`})
+      ON CONFLICT (id) DO NOTHING`
+    yield* SessionStore.createSession({
+      id: session,
+      tokenDigest: digestSync(session),
+      personId: actor.subject.id,
+      role: actor.role,
+      roleGeneration: yield* SessionStore.roleObservation,
+      access,
+      accessExpiresAt: null,
+      refresh: null,
+      refreshDigest: null,
+      maxAgeSeconds: 3600,
+    })
+  }).pipe(Effect.orDie))
 }
 
 /** Admits a write as the route does, and returns its id. */
@@ -219,6 +253,8 @@ export const services = async (
     readonly signIn?: boolean
     readonly database?: Apply.Services["database"]
     readonly judge?: ModelEndpoint.Seat
+    readonly mayAct?: (id: string) => boolean
+    readonly allowedRepositories?: ReadonlyArray<string>
   } = {},
 ) => {
   const refreshes: Refreshes = []
@@ -228,14 +264,15 @@ export const services = async (
     database: options.database ?? (await database(runtime)),
     http: github.http,
     apiBaseUrl: SCRIPTED_API,
-    mayAct: () => true,
     appLogin: BOT_LOGIN,
+    allowedRepositories: [REPOSITORY.id, ...(options.allowedRepositories ?? [])],
     tokens: Tokens.make({
       app,
       keys: options.signIn === false ? Option.none() : Option.some(await keys()),
       refresh: (sessionId, generation) => Effect.sync(() => void refreshes.push({ sessionId, generation })),
     }),
     judge: () => judge,
+    mayAct: options.mayAct ?? (() => true),
   }
   return { services: value, refreshes }
 }

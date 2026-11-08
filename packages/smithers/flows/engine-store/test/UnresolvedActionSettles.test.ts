@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * N-06 on the real SQLite engine-store: a plan action with no implementation
  * settles its run instead of stranding the row.
@@ -19,11 +20,11 @@
  * `Flow.Result` objects in a `Map` and never runs the flow codec.
  */
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
@@ -47,7 +48,7 @@ type Services =
   | Layer.Success<ReturnType<typeof TestStores.layerAt>>
   | StepBoundary.Service
   | Jj.Jj
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
 
 const provide = <A, E>(effect: Effect.Effect<A, E, Services>) =>
   withCrypto(

@@ -52,7 +52,6 @@ import * as Annotations from "@smthrs/core/Annotations"
 import * as CoreFlow from "@smthrs/core/Flow"
 import * as CoreMarkdown from "@smthrs/core/Markdown"
 import * as CorePlacement from "@smthrs/core/Placement"
-import type { Crypto } from "@smthrs/crypto"
 import * as Action from "@smthrs/flow/Action"
 import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
 import * as RuntimeFlow from "@smthrs/flow/Flow"
@@ -65,6 +64,7 @@ import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Config from "effect/Config"
 import * as Context from "effect/Context"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
@@ -327,7 +327,7 @@ export interface Lowered {
  * @category models
  * @since 1.0.0-rc.0
  */
-export type Registration = FlowRuntime | Action.Implementations | Crypto.Crypto
+export type Registration = FlowRuntime | Action.Implementations | EffectDigest.Digest
 
 /** Source bytes and static links verified before module evaluation.
  * @category models
@@ -433,6 +433,8 @@ export type ClosureModule = ModuleClosure.Module
  * @since 1.0.0-rc.0
  */
 export interface Options {
+  /** Load these names and declared collaborators at startup; retain other measured descriptors for first use. */
+  readonly initialFlows?: ReadonlyArray<string> | undefined
   readonly snapshots?: ExecutionSnapshot.Service | undefined
   /** Keeps an admitted adapter's registration identity stable during explicit code adoption. */
   readonly adapterExecutionDigest?: ((descriptor: Descriptor.FlowDescriptor) => string | undefined) | undefined
@@ -1796,6 +1798,8 @@ export const fromRegistry = (
  * @since 1.0.0-rc.0
  */
 export interface Catalog {
+  /** Measured entries deliberately deferred by initialFlows, never newly discovered code. */
+  readonly deferred?: ReadonlyArray<Descriptor.FlowDescriptor> | undefined
   readonly executables: ReadonlyArray<Executable>
   readonly refused: ReadonlyArray<ExecutableError>
   /**
@@ -1874,12 +1878,28 @@ export const catalog = (
     const descriptors = yield* registry.list()
     const executables: Array<Executable> = []
     const refused: Array<ExecutableError> = []
+    const deferred: Array<Descriptor.FlowDescriptor> = []
+    const eager = options.initialFlows === undefined ? undefined : new Set(options.initialFlows)
+    if (eager !== undefined) {
+      // Set iteration also visits added names; cycles and repeated collaborators terminate.
+      for (const name of eager) {
+        for (const descriptor of descriptors.filter((entry) => entry.name === name)) {
+          for (const collaborator of descriptor.flows) eager.add(collaborator)
+        }
+      }
+    }
     const configured = options.loadTimeoutMs ?? (yield* Config.String("SMITHERS_FLOW_LOAD_TIMEOUT_MS").pipe(
       Effect.map(Number),
       Effect.catch(() => Effect.succeed(30_000))
     ))
     const loadTimeoutMs = Number.isFinite(configured) && configured > 0 ? configured : 30_000
     for (const descriptor of descriptors) {
+      if (eager !== undefined && !eager.has(descriptor.name)) {
+        deferred.push(descriptor)
+        continue
+      }
+      const startedAt = yield* Clock.currentTimeMillis
+      yield* Effect.logDebug("Loading flow body", { flow: descriptor.name })
       const result = yield* Effect.result(
         fromDescriptor(descriptor, options).pipe(
           Effect.timeoutOrElse({
@@ -1895,6 +1915,11 @@ export const catalog = (
           })
         )
       )
+      yield* Effect.logDebug("Flow body load finished", {
+        flow: descriptor.name,
+        outcome: result._tag,
+        elapsedMs: (yield* Clock.currentTimeMillis) - startedAt
+      })
       if (result._tag === "Success") {
         executables.push(result.success)
         continue
@@ -1915,8 +1940,14 @@ export const catalog = (
         cause: causeLine(failure.cause)
       })
     }
-    return { executables, refused }
-  })
+    yield* Effect.logDebug("Flow catalog ready", {
+      loaded: executables.length,
+      refused: refused.length,
+      deferred: deferred.length
+    })
+    // Preserve the eager catalog's public shape for callers that did not opt into deferral.
+    return eager === undefined ? { executables, refused } : { executables, refused, deferred }
+  }).pipe(Effect.withSpan("smithers.registry.catalog"))
 
 /**
  * What rebuilding one catalog entry did.
@@ -2083,6 +2114,9 @@ export const layerRefreshable = (
       get refused() {
         return snapshot.refused
       },
+      get deferred() {
+        return snapshot.deferred
+      },
       load: refresh.load
     }
     return Layer.merge(
@@ -2128,7 +2162,11 @@ const makeRefresh = (
         ? current.executables.map((entry) => entry.descriptor.name === name ? executable : entry)
         : [...current.executables, executable]
       const without = current.refused.filter((entry) => entry.flow !== name)
-      swap({ executables, refused: failure === undefined ? without : [...without, failure] })
+      swap({
+        executables,
+        refused: failure === undefined ? without : [...without, failure],
+        deferred: current.deferred?.filter((entry) => entry.name !== name)
+      })
     }
     const register = (descriptor: Descriptor.FlowDescriptor) => {
       const name = descriptor.name
@@ -2200,8 +2238,9 @@ const makeRefresh = (
         const registry = yield* Registry.Registry
         // No refresh: first use retries the already measured descriptor, never
         // adopts edited bytes or imports a newly authored entry implicitly.
-        const descriptor = yield* registry.get(name)
-        if (refusal === undefined) {
+        const deferred = snapshot.deferred?.find((entry) => entry.name === name)
+        const descriptor = deferred ?? (yield* registry.get(name))
+        if (refusal === undefined && deferred === undefined) {
           return yield* Effect.fail(refuse({
             code: "body_unavailable",
             flow: name,

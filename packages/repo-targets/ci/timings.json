@@ -24,6 +24,16 @@
       "run": 41153509069,
       "job": 124395125097,
       "platform": "macos-latest"
+    },
+    {
+      "revision": "00be4898844efc07b74cc5c955feb2630689d378",
+      "platform": "linux",
+      "node": "26.5.0",
+      "date": "2026-11-05",
+      "command": "sh packages/smithers/agent/harness/benchmarks/cell-comparison/verify.sh",
+      "label": "//packages/smithers/agent/harness/benchmarks/cell-comparison:offline",
+      "durationMs": 2264,
+      "exitCode": 0
     }
   ],
   "method": "Maximum completed elapsed milliseconds per target, including failures, or an unfinished target's observed elapsed lower bound at cancellation. Service lifetimes are excluded from censored target costs. These observations are workload estimates, not upper wall-time bounds; no cache hits assumed.",
@@ -248,6 +258,7 @@
     "//packages/smithers/agent/harness-detect:lint": 3594,
     "//packages/smithers/agent/harness-detect:test": 1800,
     "//packages/smithers/agent/harness/benchmarks/ale:offline": 2300,
+    "//packages/smithers/agent/harness/benchmarks/cell-comparison:offline": 2264,
     "//packages/smithers/agent/harness/benchmarks/harbor:offline": 21827,
     "//packages/smithers/agent/harness/benchmarks/harbor:pythonInputs": 1,
     "//packages/smithers/agent/harness/benchmarks/swebench:__private_ImportClosure_2": 1,

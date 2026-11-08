@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it } from "vitest"
 import { type Ended, outcomeOf, render, summarize } from "./summary"
 import { type Broken, describeBroken, describeNeed, KNOWN_BROKEN } from "./target"
+import { SHIP_FEATURES, SHIP_TARGETS } from "./ship"
 
 // A known-broken entry, as one is added when a target breaks (TEST-5); none is known today.
 const registry = KNOWN_BROKEN as Record<string, Broken>
@@ -140,5 +141,86 @@ describe("the run's summary", () => {
     expect(text).toMatch(/^total\s+1\s+0\s+1\s+0\s+2\s+1\s+0$/m)
     expect(text).toContain("   2 × needs faults: the app's faulty services")
     expect(text).toContain("Run failed:\n  - 1 tests blocked")
+  })
+})
+
+describe("ship acceptance summary", () => {
+  const complete = () => [...new Set(SHIP_FEATURES.flatMap((feature) => feature.specs))].flatMap((spec) =>
+    SHIP_TARGETS.map((project) => ended({ file: `/e/${spec}`, project })))
+  const accept = (tests: ReadonlyArray<Ended>) => summarize(tests, { shipAcceptance: true, inventory: complete() })
+
+  it("requires an executed success for every spec of every feature on every required target", () => {
+    const summary = accept(complete())
+    expect(summary.passed).toBe(true)
+    expect(summary.acceptance!.length).toBe(SHIP_FEATURES.reduce((sum, feature) => sum + feature.specs.length * SHIP_TARGETS.length, 0))
+    expect(summary.acceptance!.every((receipt) => receipt.executed === 1)).toBe(true)
+    expect(render(summary)).toContain("Run passed.")
+    expect(summarize([], { shipAcceptance: false }).acceptance).toBeUndefined()
+  })
+
+  it("rejects empty and filtered runs, including a missing browser project", () => {
+    expect(accept([]).passed).toBe(false)
+    const missing = accept(complete().filter((test) => test.project !== "webkit"))
+    expect(missing.passed).toBe(false)
+    expect(missing.failing).toContain("Ship acceptance: SCOPE-6/1 Flows and the agent: agent.spec.ts [webkit]: no executed success")
+    const missingSpec = accept(complete().filter((test) => !test.file.endsWith("flows.spec.ts")))
+    expect(missingSpec.passed).toBe(false)
+    expect(missingSpec.failing.some((line) => line.includes("flows.spec.ts [deployment]: no executed success"))).toBe(true)
+  })
+
+  it("rejects a missing journey even when its spec and target have another executed success", () => {
+    const omitted = ended({ file: "/e/agent.spec.ts", project: "deployment", title: "agent really responds", line: 90 })
+    const summary = summarize(complete(), { shipAcceptance: true, inventory: [...complete(), omitted] })
+    expect(summary.passed).toBe(false)
+    expect(summary.failing).toEqual(["Ship acceptance: agent.spec.ts [deployment]: agent really responds: collected journey has no executed success"])
+    expect(summarize([...complete(), omitted], { shipAcceptance: true, inventory: [...complete(), omitted] }).passed).toBe(true)
+    expect(summarize(complete(), { shipAcceptance: true }).failing).toContain("Ship acceptance: no unfiltered test inventory")
+    expect(summarize(complete(), { shipAcceptance: true, inventory: [] }).passed).toBe(false)
+    const unknown = { ...omitted, project: undefined }
+    expect(summarize(complete(), { shipAcceptance: true, inventory: [...complete(), unknown] }).failing)
+      .toContain("Ship acceptance: agent.spec.ts [unknown target]: agent really responds: collected journey has no executed success")
+  })
+
+  it("rejects any skip in a required spec even alongside a passed test on that same target", () => {
+    for (const name of ["personalModel", "liveModel", "faults", "member"] as const) {
+      const test = ended({ file: "/e/agent.spec.ts", project: "deployment", title: "skipped journey", outcome: "skipped", status: "skipped", annotations: [skip(describeNeed(name))] })
+      expect(summarize([test]).passed).toBe(name !== "member")
+      const summary = accept([...complete(), test])
+      expect(summary.passed).toBe(false)
+      expect(summary.failing).toContain("Ship acceptance: agent.spec.ts [deployment]: skipped journey: requires executed success (skipped)")
+    }
+  })
+
+  it("does not substitute a broken mark, missing result, partial execution, or another target for success", () => {
+    const withoutAgent = complete().filter((test) => !test.file.endsWith("agent.spec.ts"))
+    for (const fields of [
+      { expectedStatus: "failed", status: "failed", annotations: [{ type: "fail", description: describeBroken("clones") }] },
+      { status: "skipped" },
+      { outcome: "flaky" as const },
+      { status: "timedOut", outcome: "unexpected" as const },
+      { annotations: [{ type: "partly", description: describeNeed("localLogs") }] },
+      { annotations: [{ type: "partly", description: "undeclared part" }] },
+      { project: "other" },
+      { project: undefined },
+    ]) {
+      const test = ended({ file: "/e/agent.spec.ts", project: "deployment", ...fields })
+      const summary = accept([...withoutAgent, test])
+      expect(summary.passed).toBe(false)
+      expect(summary.failing).toContain("Ship acceptance: SCOPE-6/1 Flows and the agent: agent.spec.ts [deployment]: no executed success")
+    }
+  })
+
+  it("keeps legitimate non-required platform skips and setup skips out of the ship matrix", () => {
+    const summary = accept([...complete(),
+      ended({ file: "/e/non-required.spec.ts", outcome: "skipped", status: "skipped", annotations: [skip(describeNeed("chromium"))] }),
+      ended({ file: "/e/deployment/sign-in.setup.ts", outcome: "skipped", status: "skipped", annotations: [skip(describeNeed("personalModelKey"))] }),
+    ])
+    expect(summary.passed).toBe(true)
+    expect(summary.total.skipped).toBe(2)
+  })
+
+  it("names the missing target when Playwright never assigned a skipped required test to a project", () => {
+    const summary = accept([...complete(), ended({ file: "/e/agent.spec.ts", outcome: "skipped", status: "skipped" })])
+    expect(summary.failing).toContain("Ship acceptance: agent.spec.ts [unknown target]: ask: requires executed success (skipped)")
   })
 })

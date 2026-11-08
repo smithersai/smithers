@@ -1,11 +1,12 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /** Fork replay requires surviving attempts copied into the child. */
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, RetryPolicy } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { RunStore } from "@smthrs/run-store"
 import { Effect, Exit, Layer, Schema, Scope } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { SqlClient } from "effect/sql"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
@@ -13,7 +14,10 @@ import * as TestStores from "../src/test/TestStores.ts"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
 import { withCrypto } from "./Sha256.ts"
 
-type Services = Layer.Success<ReturnType<typeof TestStores.layerAt>> | Scope.Scope | Crypto.Crypto
+type Services =
+  | Layer.Success<ReturnType<typeof TestStores.layerAt>>
+  | Scope.Scope
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
 const run = <A, E>(body: Effect.Effect<A, E, Services>) =>
   withCrypto(body.pipe(Effect.scoped, Effect.provide(TestStores.layerAt(":memory:"))))
 const makePublicEngine = () =>

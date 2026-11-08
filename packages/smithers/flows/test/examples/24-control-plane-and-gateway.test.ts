@@ -1,4 +1,4 @@
-import * as NodeWS from "@effect/platform-node/NodeWS"
+import { NodeWS } from "@effect/platform-node"
 import { afterAll, expect, it } from "@effect/vitest"
 import * as Control from "@smthrs/control/Control"
 import type * as ControlSchema from "@smthrs/control/ControlSchema"

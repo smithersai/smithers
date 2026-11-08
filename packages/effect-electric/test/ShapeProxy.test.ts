@@ -53,7 +53,7 @@ const postgresUp = electricUp &&
 type Fault =
   | { readonly _tag: "down" }
   | { readonly _tag: "empty"; readonly status: number }
-  | { readonly _tag: "answer"; readonly headers: Record<string, string> }
+  | { readonly _tag: "answer"; readonly headers: Record<string, string>; readonly body?: string }
   | { readonly _tag: "hold" }
   | { readonly _tag: "breakBody" }
   | { readonly _tag: "endlessBody" }
@@ -97,7 +97,7 @@ const harness = (options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServe
           { status: 200, headers: { "content-type": "application/json" } }
         )
       case "answer":
-        return new Response("[]", { status: 200, headers: fault.headers })
+        return new Response(fault.body ?? "[]", { status: 200, headers: fault.headers })
       case "endlessBody":
         return new Response(
           new ReadableStream({ start: (controller) => controller.enqueue(new TextEncoder().encode("[")) }),
@@ -173,6 +173,119 @@ const harness = (options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServe
 const until = (assertion: () => void) => vi.waitFor(assertion, { timeout: 5_000, interval: 10 })
 
 describe("refusals: no Electric needed", () => {
+  test.each(
+    [
+      [
+        "sse_refused",
+        {
+          rowAccess: {
+            keyColumns: ["id"],
+            allows: (): boolean => true
+          }
+        },
+        "?live_sse=true",
+        undefined,
+        "5"
+      ],
+      [
+        "shape_refused",
+        { shape: Effect.fail(new ShapeProxy.Refused({ status: 503, retryAfter: 17 })) },
+        "",
+        undefined,
+        "17"
+      ],
+      ["electric_unavailable", {}, "", 401, "5"],
+      ["electric_503", {}, "", 503, "5"],
+      [
+        "validate_failed",
+        {
+          rowAccess: {
+            keyColumns: ["id"],
+            allows: (): boolean => true,
+            validate: Effect.fail(new ShapeProxy.Refused({ status: 503 }))
+          }
+        },
+        "",
+        200,
+        "1"
+      ],
+      [
+        "validate_superseded",
+        { rowAccess: { keyColumns: ["id"], allows: (): boolean => true, validate: Effect.succeed(false) } },
+        "",
+        200,
+        "1"
+      ]
+    ] as const
+  )("503 records %s in its log and both counters", async (reason, options, search, status, retryAfter) => {
+    const h = harness(options)
+    if (status !== undefined) h.fault(status === 200 ? { _tag: "answer", headers: {} } : { _tag: "empty", status })
+    const response = await h.request(search)
+    expect(response.status).toBe(503)
+    expect(response.headers.get("retry-after")).toBe(retryAfter)
+    await response.text()
+    await until(() => expect(h.logs).toHaveLength(1))
+    expect(h.line()?.annotations).toMatchObject({ reason, correlationId: response.headers.get("x-request-id") })
+    expect(h.count(ShapeProxy.defaultMetric, { status: "503", live: "false", reason })).toBe(1)
+    expect(h.count(ShapeProxy.responses, { name: "electric.shape", statusClass: "5xx", reason })).toBe(1)
+    expect(JSON.stringify(h.logs)).not.toContain(ELECTRIC_URL)
+  })
+
+  test.each(
+    [
+      ["invalid JSON", "not JSON", ["id"]],
+      ["an object instead of a batch", "{}", ["id"]],
+      ["no declared keys", "[]", []],
+      ["a null message", "[null]", ["id"]],
+      ["a primitive message", "[1]", ["id"]],
+      ["a null value", "[{\"value\":null}]", ["id"]],
+      ["a primitive value", "[{\"value\":1}]", ["id"]],
+      ["a missing key", "[{\"value\":{\"text\":\"SENTINEL\"}}]", ["id"]]
+    ] as const
+  )("a faulty upstream with %s never publishes protected rows or a cursor", async (_, body, keyColumns) => {
+    let authorized = 0
+    const h = harness({
+      rowAccess: {
+        keyColumns,
+        allows: () => {
+          authorized++
+          return true
+        }
+      }
+    })
+    h.fault({ _tag: "answer", headers: { "electric-offset": "123_0" }, body })
+    const response = await h.request("")
+    expect(response.status).toBe(502)
+    expect(authorized).toBe(0)
+    expect(response.headers.get("electric-offset")).toBeNull()
+    expect(await response.text()).toBe("")
+    expect(h.line()?.annotations).toMatchObject({ status: 502, outcome: "failed", bytes: 0 })
+    expect(JSON.stringify(h.logs)).not.toContain("SENTINEL")
+  })
+
+  test("a faulty upstream cannot leak extra delete fields or a denied value with no headers", async () => {
+    const h = harness({ rowAccess: { keyColumns: ["id"], allows: () => false } })
+    h.fault({
+      _tag: "answer",
+      headers: {},
+      body: JSON.stringify([
+        { headers: { operation: "delete" }, value: { id: "☕", text: "SENTINEL" } },
+        { value: { id: "b", text: "SENTINEL" } },
+        { headers: { control: "up-to-date" } }
+      ])
+    })
+    const response = await h.request("")
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("application/json")
+    const body = await response.text()
+    expect(JSON.parse(body)).toEqual([
+      { headers: { operation: "delete" }, value: { id: "☕" } },
+      { headers: { control: "up-to-date" } }
+    ])
+    expect(h.line()?.annotations).toMatchObject({ status: 200, bytes: new TextEncoder().encode(body).byteLength })
+    expect(JSON.stringify(h.logs)).not.toContain("SENTINEL")
+  })
+
   test("a bodyless upstream answer preserves its status and completes once with zero bytes", async () => {
     for (const status of [200, 204, 205, 304, 503]) {
       const h = harness()
@@ -184,9 +297,51 @@ describe("refusals: no Electric needed", () => {
       expect((await response.arrayBuffer()).byteLength).toBe(0)
       await until(() => expect(h.logs).toHaveLength(1))
       expect(h.line()?.annotations).toMatchObject({ status, bytes: 0, outcome: "complete" })
-      expect(h.count(ShapeProxy.defaultMetric, { status: String(status), live: "false" })).toBe(1)
+      expect(h.line()?.annotations["reason"]).toBe(status === 503 ? "electric_503" : undefined)
+      expect(
+        h.count(ShapeProxy.defaultMetric, {
+          status: String(status),
+          live: "false",
+          ...(status === 503 ? { reason: "electric_503" } : {})
+        })
+      ).toBe(1)
     }
   })
+
+  test.each([204, 205, 304])(
+    "an unexpected bodyless %i upstream response still reconciles and fences authority",
+    async (status) => {
+      for (const outcome of ["pass", "superseded", "failed"] as const) {
+        let snapshots = 0
+        const h = harness({
+          rowAccess: {
+            keyColumns: ["id"],
+            allows: () => {
+              throw new Error("No payload expected")
+            },
+            validate: Effect.suspend(() => {
+              snapshots++
+              return outcome === "failed"
+                ? Effect.fail(new ShapeProxy.Refused({ status: 503 }))
+                : Effect.succeed(outcome === "pass")
+            })
+          }
+        })
+        // Fault injection at the HTTP service boundary: actual Electric may use JSON heartbeats when idle.
+        h.fault({ _tag: "empty", status })
+        const response = await h.request("?handle=idle&offset=0_0&live=true")
+        expect(snapshots).toBe(1)
+        expect(response.status).toBe(outcome === "pass" ? status : 503)
+        expect(await response.text()).toBe("")
+        if (outcome !== "pass") {
+          expect(response.headers.get("electric-offset")).toBeNull()
+          expect(response.headers.get("retry-after")).toBe("1")
+          expect(h.line()?.annotations.reason).toBe(outcome === "failed" ? "validate_failed" : "validate_superseded")
+        }
+        expect(h.logs).toHaveLength(1)
+      }
+    }
+  )
 
   // Astra on the 403 wipe: a client now wipes a repository on a shape's 403. Electric refusing the proxy's own credentials
   // is a bad deploy, not a person's refusal, and must never read as one.
@@ -204,15 +359,18 @@ describe("refusals: no Electric needed", () => {
 
   // Astra on 0d916150: an upstream redirect passed to the browser, whose fetch follows it by default, so a 403 at its
   // target reached the shape client without this guard.
-  test.each([301, 302, 303, 307, 308])("an upstream %i is a retryable 503, with nothing for the browser's fetch to follow", async (status) => {
-    const h = harness()
-    h.fault({ _tag: "redirect", status, location: "http://elsewhere.test/v1/shape" })
-    // As a browser's fetch would see it, which follows a redirect unless told otherwise.
-    const response = await h.fetch("http://app.test/api/shape?offset=-1", { redirect: "manual" })
-    expect(response.status).toBe(503)
-    expect(response.headers.get("location")).toBeNull()
-    expect(response.headers.get("retry-after")).toBe("5")
-  })
+  test.each([301, 302, 303, 307, 308])(
+    "an upstream %i is a retryable 503, with nothing for the browser's fetch to follow",
+    async (status) => {
+      const h = harness()
+      h.fault({ _tag: "redirect", status, location: "http://elsewhere.test/v1/shape" })
+      // As a browser's fetch would see it, which follows a redirect unless told otherwise.
+      const response = await h.fetch("http://app.test/api/shape?offset=-1", { redirect: "manual" })
+      expect(response.status).toBe(503)
+      expect(response.headers.get("location")).toBeNull()
+      expect(response.headers.get("retry-after")).toBe("5")
+    }
+  )
 
   // Astra on 0d916150: the 503 for a public shape carried no cache-control.
   test.each([401, 403])("Electric's own %i is a no-store 503 on a public shape, SSE included", async (status) => {
@@ -220,7 +378,11 @@ describe("refusals: no Electric needed", () => {
       const h = harness({ cache: "public" })
       h.fault({ _tag: "empty", status })
       const response = await h.request(search)
-      expect([search, response.status, response.headers.get("cache-control")]).toEqual([search, 503, "private, no-store"])
+      expect([search, response.status, response.headers.get("cache-control")]).toEqual([
+        search,
+        503,
+        "private, no-store"
+      ])
     }
   })
 
@@ -303,9 +465,11 @@ describe("refusals: no Electric needed", () => {
     expect(h.upstream).toEqual([])
     expect(h.logs.map((line) => line.annotations.upstream)).toEqual(["access", "access", "database"])
     expect(h.count(ShapeProxy.responses, { name: "electric.shape", statusClass: "4xx" })).toBe(2)
-    expect(h.count(ShapeProxy.responses, { name: "electric.shape", statusClass: "5xx" })).toBe(1)
+    expect(h.count(ShapeProxy.responses, { name: "electric.shape", statusClass: "5xx", reason: "shape_refused" })).toBe(
+      1
+    )
     expect(new Set(h.logs.map((line) => line.annotations.correlationId)).size).toBe(3)
-    expect(h.count(ShapeProxy.defaultMetric, { status: "503", live: "false" })).toBe(1)
+    expect(h.count(ShapeProxy.defaultMetric, { status: "503", live: "false", reason: "shape_refused" })).toBe(1)
     const servers = h.spans.filter(({ kind }) => kind === "server")
     expect(servers.map(({ attributes }) => attributes.get("http.response.status_code"))).toEqual([401, 403, 503])
 
@@ -626,10 +790,17 @@ describe.skipIf(!electricUp)("through Electric", () => {
 
     test.each([false, true])("denied values preserve their original cursor when replay=%s", async (replay) => {
       let decisions = 0
-      const h = harness({ shape: { table }, rowAccess: {
-        keyColumns: ["id"], allows: () => false,
-        retryIfDenied: () => { decisions++; return replay },
-      } })
+      const h = harness({
+        shape: { table },
+        rowAccess: {
+          keyColumns: ["id"],
+          allows: () => false,
+          retryIfDenied: () => {
+            decisions++
+            return replay
+          }
+        }
+      })
       const response = await h.request("?offset=-1")
       expect(response.status).toBe(replay ? 503 : 200)
       expect(decisions).toBe(4)
@@ -637,54 +808,138 @@ describe.skipIf(!electricUp)("through Electric", () => {
         expect(response.headers.get("electric-offset")).toBeNull()
         expect(response.headers.get("electric-handle")).toBeNull()
         expect(await response.text()).toBe("")
-        expect(h.line()?.annotations).toMatchObject({ upstream: "access", outcome: "superseded" })
+        expect(h.line()?.annotations).toMatchObject({
+          upstream: "access",
+          outcome: "superseded",
+          reason: "replay_required",
+          correlationId: response.headers.get("x-request-id")
+        })
+        expect(h.count(ShapeProxy.defaultMetric, { status: "503", live: "false", reason: "replay_required" })).toBe(1)
+        expect(h.count(ShapeProxy.responses, { name: "electric.shape", statusClass: "5xx", reason: "replay_required" }))
+          .toBe(1)
       } else {
         expect(response.headers.get("electric-offset")).not.toBeNull()
-        expect((await response.json() as Array<{ value?: unknown }>).filter(row => row.value)).toEqual([])
+        expect((await response.json() as Array<{ value?: unknown }>).filter((row) => row.value)).toEqual([])
       }
     })
+
+    test.each(["pass", "superseded", "failed"] as const)(
+      "a real idle live poll validates once before answering %s",
+      async (outcome) => {
+        const initial = harness({ shape: { table } })
+        let cursor = new URLSearchParams({ offset: "-1" })
+        for (;;) {
+          const response = await initial.request(`?${cursor}`)
+          expect(response.status).toBe(200)
+          cursor = new URLSearchParams({
+            handle: response.headers.get("electric-handle")!,
+            offset: response.headers.get("electric-offset")!
+          })
+          const rows = await response.json() as Array<{ headers?: { control?: string } }>
+          if (rows.some((row) => row.headers?.control === "up-to-date")) break
+        }
+        let snapshots = 0
+        const h = harness({
+          shape: { table },
+          rowAccess: {
+            keyColumns: ["id"],
+            allows: () => {
+              throw new Error("An idle response has no payload to authorize")
+            },
+            validate: Effect.suspend(() => {
+              snapshots++
+              return outcome === "failed"
+                ? Effect.fail(new ShapeProxy.Refused({ status: 503 }))
+                : Effect.succeed(outcome === "pass")
+            })
+          }
+        })
+        const response = await h.request(`?${cursor}&live=true`)
+        expect(snapshots).toBe(1)
+        if (outcome === "pass") {
+          expect([200, 204]).toContain(response.status)
+          if (response.status === 200) {
+            expect((await response.json() as Array<{ value?: unknown }>).filter((row) => row.value)).toEqual([])
+          } else expect(await response.text()).toBe("")
+        } else {
+          expect(response.status).toBe(503)
+          expect(await response.text()).toBe("")
+          expect(response.headers.get("electric-offset")).toBeNull()
+          expect(response.headers.get("retry-after")).toBe("1")
+          expect(h.line()?.annotations).toMatchObject({
+            reason: outcome === "failed" ? "validate_failed" : "validate_superseded",
+            correlationId: response.headers.get("x-request-id")
+          })
+        }
+        expect(h.logs).toHaveLength(1)
+      }
+    )
 
     test("row access takes one buffered snapshot before evaluating emitted values", async () => {
       let snapshots = 0
       let ready = false
-      const h = harness({ shape: { table }, rowAccess: {
-        keyColumns: ["id"],
-        validate: Effect.sync(() => { snapshots++; ready = true; return true }),
-        allows: () => ready,
-      } })
+      const h = harness({
+        shape: { table },
+        rowAccess: {
+          keyColumns: ["id"],
+          validate: Effect.sync(() => {
+            snapshots++
+            ready = true
+            return true
+          }),
+          allows: () => ready
+        }
+      })
       const response = await h.request("?offset=-1")
       expect(response.status).toBe(200)
-      expect((await response.json() as Array<{ value?: unknown }>).filter(message => message.value)).toHaveLength(4)
+      expect((await response.json() as Array<{ value?: unknown }>).filter((message) => message.value)).toHaveLength(4)
       expect(snapshots).toBe(1)
     })
 
-    test.each(["changed", "unavailable", "stable"] as const)("row access %s is checked before publishing an Electric cursor", async (outcome) => {
-      let stable = outcome === "stable"
-      const h = harness({ shape: { table }, cache: "public", rowAccess: {
-        keyColumns: ["id"], allows: () => true,
-        validate: Effect.suspend(() => stable ? Effect.succeed(true) : outcome === "unavailable"
-          ? Effect.fail(new ShapeProxy.Refused({ status: 503 })) : Effect.succeed(false))
-      } })
-      const response = await h.request("?offset=-1")
-      expect(response.status).toBe(stable ? 200 : 503)
-      if (!stable) {
-        for (const header of ["electric-handle", "electric-offset", "electric-cursor", "etag"]) {
-          expect(response.headers.get(header)).toBeNull()
+    test.each(["changed", "unavailable", "stable"] as const)(
+      "row access %s is checked before publishing an Electric cursor",
+      async (outcome) => {
+        let stable = outcome === "stable"
+        const h = harness({
+          shape: { table },
+          cache: "public",
+          rowAccess: {
+            keyColumns: ["id"],
+            allows: () => true,
+            validate: Effect.suspend(() =>
+              stable ? Effect.succeed(true) : outcome === "unavailable"
+                ? Effect.fail(new ShapeProxy.Refused({ status: 503 })) :
+                Effect.succeed(false)
+            )
+          }
+        })
+        const response = await h.request("?offset=-1")
+        expect(response.status).toBe(stable ? 200 : 503)
+        if (!stable) {
+          for (const header of ["electric-handle", "electric-offset", "electric-cursor", "etag"]) {
+            expect(response.headers.get(header)).toBeNull()
+          }
+          expect(response.headers.get("retry-after")).toBe("1")
+          expect(response.headers.get("cache-control")).toBe("private, no-store")
+          expect(await response.text()).toBe("")
+          expect(h.line()?.annotations).toMatchObject({
+            status: 503,
+            upstream: "access",
+            bytes: 0,
+            outcome: outcome === "changed" ? "superseded" : "failed"
+          })
+          stable = true
+          const replay = await h.request("?offset=-1")
+          expect(replay.status).toBe(200)
+          expect((await replay.json() as Array<{ value?: unknown }>).filter((message) => message.value)).toHaveLength(4)
+        } else {
+          expect(response.headers.get("electric-offset")).not.toBeNull()
+          expect((await response.json() as Array<{ value?: unknown }>).filter((message) => message.value)).toHaveLength(
+            4
+          )
         }
-        expect(response.headers.get("retry-after")).toBe("1")
-        expect(response.headers.get("cache-control")).toBe("private, no-store")
-        expect(await response.text()).toBe("")
-        expect(h.line()?.annotations).toMatchObject({ status: 503, upstream: "access", bytes: 0,
-          outcome: outcome === "changed" ? "superseded" : "failed" })
-        stable = true
-        const replay = await h.request("?offset=-1")
-        expect(replay.status).toBe(200)
-        expect((await replay.json() as Array<{ value?: unknown }>).filter((message) => message.value)).toHaveLength(4)
-      } else {
-        expect(response.headers.get("electric-offset")).not.toBeNull()
-        expect((await response.json() as Array<{ value?: unknown }>).filter((message) => message.value)).toHaveLength(4)
       }
-    })
+    )
 
     test("a public shape, opted in, keeps Electric's own caching", async () => {
       const h = harness({ shape: { table }, cache: "public" })

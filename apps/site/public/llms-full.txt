@@ -659,6 +659,7 @@ The composer is available to Members and above. Minimum roles below describe eac
 | `/clone` | `repo` | Guest | Clone a repository. |
 | `/flow.new` | `name request` | Member | Draft or edit a personal flow. |
 | `/flow.run` | `name [input]` | Member | Run the latest saved revision. |
+| `/repo.run` | `repo flow ref` | Member | Run a repository flow at a branch's head. |
 | `/branch.new` | `repo branch` | Member | Create and track a branch. |
 | `/publish` | `title` | Member | Publish this branch's changes as a pull request. |
 | `/branch.update` | none | Member | Update the current branch. |
@@ -1108,7 +1109,7 @@ The Bazel-style file glob vocabulary. `Glob` is a `Schema.TaggedStruct` of `incl
 
 ### `Action.idempotencyKey`
 
-- **Signature:** `idempotencyKey(name: string, options?: { readonly includeAttempt?: boolean | undefined; readonly parentScope?: string | undefined }): Effect.Effect<string, never, FlowInstance | Crypto.Crypto>`
+- **Signature:** `idempotencyKey(name: string, options?: { readonly includeAttempt?: boolean | undefined; readonly parentScope?: string | undefined }): Effect.Effect<string, never, FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `0.1.0`
 
 Computes the run-local invocation key of an internal durable operation. The key is scoped by the caller's declaration name and declared `parentScope`.
@@ -1209,14 +1210,14 @@ Reports one dispatch to the node that drove it, and does nothing where no node d
 
 ### `Action.allocationScope`
 
-- **Signature:** `allocationScope(identity: AllocationIdentity): Effect.Effect<string, Schema.SchemaError, Crypto.Crypto>`
+- **Signature:** `allocationScope(identity: AllocationIdentity): Effect.Effect<string, Schema.SchemaError, (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `0.1.0`
 
 Derives the ordinal allocation scope of a durable operation from its declaration material.
 
 ### `Action.invocationKey`
 
-- **Signature:** `invocationKey(input: { readonly runId: string; readonly parentScope?: string | undefined; readonly ordinal: number; readonly tier: "unsealed" | "compensable" | "irreversible" }): Effect.Effect<StoredKey, Schema.SchemaError, Crypto.Crypto>`
+- **Signature:** `invocationKey(input: { readonly runId: string; readonly parentScope?: string | undefined; readonly ordinal: number; readonly tier: "unsealed" | "compensable" | "irreversible" }): Effect.Effect<StoredKey, Schema.SchemaError, (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `0.1.0`
 
 Derives an invocation key from engine-generated input.
@@ -1232,7 +1233,7 @@ A directory output captured and replayed as one tree artifact.
 
 ### `Deadline.start`
 
-- **Signature:** `start(options: { readonly flowName: string; readonly deadline?: Duration.Input | undefined; readonly startedAtMs?: number | undefined }): Effect.Effect<LineageDeadline | undefined, never, FlowRuntime | FlowInstance | Crypto.Crypto>`
+- **Signature:** `start(options: { readonly flowName: string; readonly deadline?: Duration.Input | undefined; readonly startedAtMs?: number | undefined }): Effect.Effect<LineageDeadline | undefined, never, FlowRuntime | FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `1.0.0`
 
 Starts the current execution's deadline: the lineage deadline the round inherited from a handoff, or `deadline` counted from the execution's journaled first start (or from `startedAtMs`, when the host holds a durable start of its own), with a durable clock armed at it. Answers `undefined` when neither applies. Dies with a `RangeError` when `deadline` is not a positive finite duration, `startedAtMs` is not finite, or the deadline would expire after epoch millisecond `Number.MAX_SAFE_INTEGER`. Start at most one deadline per execution.
@@ -1253,7 +1254,7 @@ Races `body` against a started deadline and settles it with `Flow.DeadlineExceed
 
 ### `Deadline.bound`
 
-- **Signature:** `bound(options: { readonly flowName: string; readonly deadline?: Duration.Input | undefined; readonly startedAtMs?: number | undefined }): <A, E, R>(body: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R | FlowRuntime | FlowInstance | Crypto.Crypto>`
+- **Signature:** `bound(options: { readonly flowName: string; readonly deadline?: Duration.Input | undefined; readonly startedAtMs?: number | undefined }): <A, E, R>(body: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R | FlowRuntime | FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `1.0.0`
 
 `start`, then `within`. The engine applies it to every execution of a flow that declares `deadline`.
@@ -1276,7 +1277,7 @@ Declares one durable clock. Throws a `RangeError` when the duration is malformed
 
 ### `DurableClock.sleep`
 
-- **Signature:** `sleep(options: { readonly name: string; readonly duration: Duration.Input; readonly inMemoryThreshold?: Duration.Input | undefined }): Effect.Effect<void, never, Crypto.Crypto | FlowRuntime | FlowInstance>`
+- **Signature:** `sleep(options: { readonly name: string; readonly duration: Duration.Input; readonly inMemoryThreshold?: Duration.Input | undefined }): Effect.Effect<void, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime | FlowInstance>`
 - **Default:** `inMemoryThreshold` is 60 seconds
 - **Since:** `0.1.0`
 
@@ -1383,7 +1384,7 @@ Creates a token from an explicit flow and execution id, for a resolver outside t
 
 ### `DurableDeferred.tokenFromPayload`
 
-- **Signature:** `tokenFromPayload(self: DurableDeferred<Success, Error>, options: { readonly flow: W; readonly payload: Flow.PayloadSchema<W>["~type.make.in"] }): Effect.Effect<Token, never, Crypto.Crypto | Flow.PayloadSchema<W>["EncodingServices"]>`
+- **Signature:** `tokenFromPayload(self: DurableDeferred<Success, Error>, options: { readonly flow: W; readonly payload: Flow.PayloadSchema<W>["~type.make.in"] }): Effect.Effect<Token, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | Flow.PayloadSchema<W>["EncodingServices"]>`
 - **Since:** `0.1.0`
 
 Creates a token by deriving the execution id from the flow payload. Declare an `idempotencyKey` or install the opt-in derived source for stable payload identity. The default fresh source mints a new id on each call; use `tokenFromExecutionId` with a saved id to address an existing execution.
@@ -1442,7 +1443,7 @@ Creates a durable queue that waits for persisted items to finish processing thro
 
 ### `DurableQueue.process`
 
-- **Signature:** `process(self: DurableQueue<Payload, Success, Error>, payload: Payload["~type.make.in"], options?: { readonly retrySchedule?: Schedule.Schedule<any, PersistedQueue.PersistedQueueError> | undefined }): Effect.Effect<Success["Type"], Error["Type"], FlowRuntime | FlowInstance | Crypto.Crypto | PersistedQueue.PersistedQueueFactory | Payload["EncodingServices"] | Payload["DecodingServices"] | Success["DecodingServices"] | Error["DecodingServices"]>`
+- **Signature:** `process(self: DurableQueue<Payload, Success, Error>, payload: Payload["~type.make.in"], options?: { readonly retrySchedule?: Schedule.Schedule<any, PersistedQueue.PersistedQueueError> | undefined }): Effect.Effect<Success["Type"], Error["Type"], FlowRuntime | FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom) | PersistedQueue.PersistedQueueFactory | Payload["EncodingServices"] | Payload["DecodingServices"] | Success["DecodingServices"] | Error["DecodingServices"]>`
 - **Default:** `retrySchedule` is unbounded, with exponential delays capped at one minute
 - **Since:** `0.1.0`
 
@@ -2273,7 +2274,7 @@ The declared `system/human-task` step. `name` addresses the question, so two cal
 
 ### `HumanTask.layer`
 
-- **Type:** `Layer.Layer<never, never, Crypto.Crypto | FlowRuntime>`
+- **Type:** `Layer.Layer<never, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime>`
 - **Since:** `0.1.0`
 
 The human-task implementation: park, validate, re-ask, settle. Provide it beside the other action implementation layers, over `Action.layerImplementations`.
@@ -2343,7 +2344,7 @@ What one interpretation produced: the root's value, every node that settled with
 
 ### `Interpreter.childExecutionId`
 
-- **Signature:** `childExecutionId(parentExecutionId: string, nodeId: string, calleeTag: string, payload: unknown): Effect.Effect<string, never, Crypto.Crypto>`
+- **Signature:** `childExecutionId(parentExecutionId: string, nodeId: string, calleeTag: string, payload: unknown): Effect.Effect<string, never, (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `0.1.0`
 
 The execution id a `child` boundary runs its child under, derived from the parent execution id, the node id, the callee tag, and the payload digest.
@@ -2475,7 +2476,7 @@ Declares a durable poller and returns an ordinary flow. Its body is one attempt:
 
 ### `Poll.layer`
 
-- **Type:** `Layer.Layer<never, never, Crypto.Crypto | FlowRuntime>`
+- **Type:** `Layer.Layer<never, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime>`
 - **Since:** `0.1.0`
 
 The exhaustion implementation, provided beside the other action layers a poll's rounds call.
@@ -2652,7 +2653,7 @@ The declared `system/sleep` step: a relative `millis` from now, or an absolute `
 
 ### `Sleep.layer`
 
-- **Type:** `Layer.Layer<never, never, Crypto.Crypto | FlowRuntime>`
+- **Type:** `Layer.Layer<never, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime>`
 - **Since:** `0.1.0`
 
 The sleep implementation: arm the durable clock, park under `timer`, wake. Provide it beside the other action implementation layers, over `Action.layerImplementations`.
@@ -2760,14 +2761,14 @@ The declaration material an allocation scope is derived from. `kind` is `"action
 
 ### `StepIdentity.allocationScope`
 
-- **Signature:** `allocationScope(identity: AllocationIdentity): Effect.Effect<string, Schema.SchemaError, Crypto.Crypto>`
+- **Signature:** `allocationScope(identity: AllocationIdentity): Effect.Effect<string, Schema.SchemaError, (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `0.1.0`
 
 Derives the ordinal allocation scope of a durable operation.
 
 ### `StepIdentity.invocationKey`
 
-- **Signature:** `invocationKey(input: { readonly runId: string; readonly parentScope?: string | undefined; readonly ordinal: number; readonly tier: "unsealed" | "compensable" | "irreversible" }): Effect.Effect<StoredKey, Schema.SchemaError, Crypto.Crypto>`
+- **Signature:** `invocationKey(input: { readonly runId: string; readonly parentScope?: string | undefined; readonly ordinal: number; readonly tier: "unsealed" | "compensable" | "irreversible" }): Effect.Effect<StoredKey, Schema.SchemaError, (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `0.1.0`
 
 Derives an invocation key from engine-generated input.
@@ -2804,7 +2805,7 @@ The declared `system/wait-for` step: a rendezvous with something outside the run
 
 ### `WaitFor.layer`
 
-- **Type:** `Layer.Layer<never, never, Crypto.Crypto | FlowRuntime>`
+- **Type:** `Layer.Layer<never, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime>`
 - **Since:** `0.1.0`
 
 The wait implementation: park under `event` with the wake token, and settle with the value that resolved the wait. Provide it beside the other action implementation layers, over `Action.layerImplementations`.
@@ -3174,14 +3175,14 @@ Returns the round a lineage starts at: ordinal zero, under the caller's executio
 
 #### `FlowEngine.Round.executionId`
 
-- **Signature:** `executionId(round: Round): Effect.Effect<string, InvalidRound, Crypto.Crypto>`
+- **Signature:** `executionId(round: Round): Effect.Effect<string, InvalidRound, EffectDigest.Digest>`
 - **Since:** `0.1.0`
 
 Returns `rootExecutionId` unchanged for ordinal zero after validation, so `executionId(initial(id))` returns `id`. For later rounds, derives the execution id from `(rootExecutionId, ordinal)` alone through the injected SHA-256. It is therefore the same id in every process and after every restart, which is what makes a handoff at-most-once. The preimage is `["flow-round/v2", rootExecutionId, ordinal]`, and it is part of the package's durable contract: a lineage opened under one release derives the same round ids under the next.
 
 #### `FlowEngine.Round.next`
 
-- **Signature:** `next(round: Round, options: { readonly flowName: string; readonly maxRounds: number \| undefined }): Effect.Effect<{ readonly round: Round; readonly executionId: string }, Flow.MaxRoundsExceeded \| InvalidRound, Crypto.Crypto>`
+- **Signature:** `next(round: Round, options: { readonly flowName: string; readonly maxRounds: number \| undefined }): Effect.Effect<{ readonly round: Round; readonly executionId: string }, Flow.MaxRoundsExceeded \| InvalidRound, EffectDigest.Digest>`
 - **Since:** `0.1.0`
 
 Advances a round and derives the execution id the next one runs under. The budget counts rounds, not handoffs: a lineage bounded at `n` may open ordinals `0` through `n - 1`, and the request for ordinal `n` fails with `Flow.MaxRoundsExceeded`. An absent `maxRounds` is unbounded. A `maxRounds` that is not a positive safe integer, and an ordinal already at `Number.MAX_SAFE_INTEGER`, fail with `InvalidRound`.
@@ -3338,7 +3339,6 @@ This program runs one flow on the in-memory engine, with the action implementati
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
@@ -3364,7 +3364,7 @@ const layer = Layer.mergeAll(
 ).pipe(
   Layer.provideMerge(Action.layerImplementations),
   Layer.provideMerge(FlowEngine.layerMemory),
-  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+  Layer.provideMerge(NodeCrypto.layer)
 )
 
 // A repeated executionId joins the run that already owns it.
@@ -4735,7 +4735,7 @@ directly. Both packages are on npm under the `next` tag.
   "devDependencies": {
     "@smthrs/build-cli": "1.0.0-rc.16",
     "@smthrs/targets": "1.0.0-rc.16",
-    "effect": "4.1.0"
+    "effect": "4.1.1"
   }
 }
 ```
@@ -4752,7 +4752,7 @@ The `exports` map publishes the index, every module under `src` through the `./*
 
 The second row stands for every public module. The subpaths `./internal/*` and
 `./index` map to `null`, so neither resolves. Registry installs use the built
-ESM/CommonJS distribution, and `effect` is a peer at exactly `4.1.0`.
+ESM/CommonJS distribution, and `effect` is a peer at exactly `4.1.1`.
 
 ## Artifact test lifecycle
 
@@ -5354,7 +5354,7 @@ https://smithers.sh/docs/reference/api/agent/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/docs)
 
-> **Related APIs:** [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/memory`](/docs/reference/api/memory/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/observability`](/docs/reference/api/observability/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/plugin`](/docs/reference/api/plugin/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/std`](/docs/reference/api/std/)
+> **Related APIs:** [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/memory`](/docs/reference/api/memory/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/observability`](/docs/reference/api/observability/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/plugin`](/docs/reference/api/plugin/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/std`](/docs/reference/api/std/)
 
 `@smthrs/agent` exports thirty-one modules from its root entry point, and each is
 also importable from `@smthrs/agent/<Module>`:
@@ -5639,7 +5639,7 @@ const make: (
 Constructs the production executor. It must be built in a scope: the scope owns
 the registered agent flow, every forked run driver, and the resume bridge that
 follows the journal. Its requirements are `Agent`, `ControlRuntime`,
-`Crypto.Crypto`, `DurableEngineState`, `FlowRuntime`, `Journal`,
+`(EffectDigest.Digest | SecureRandom.SecureRandom)`, `DurableEngineState`, `FlowRuntime`, `Journal`,
 `NotificationQueue`, `Registry`, `RunStore`, and `SeatResolver`.
 
 ### AgentSession.layer
@@ -5990,7 +5990,7 @@ interface AgentAction<Tag, Payload, Output> extends Action.Declared<Tag, Payload
 
 A declared model-backed action, plus the layer that implements it. The layer's
 requirements are `Agent`, `FlowRuntime`, `Host`, `Sandbox.Sandbox`,
-`SeatResolver`, `Steering.Source`, `Crypto.Crypto`, `Budget.Budget`, and
+`SeatResolver`, `Steering.Source`, `(EffectDigest.Digest | SecureRandom.SecureRandom)`, `Budget.Budget`, and
 `QuotaPolicy.QuotaClassifier`.
 
 ### AgentAction.Host
@@ -7238,7 +7238,9 @@ the catalog fails with `assembly_failed`.
 
 ```ts
 const clock: (
-  services: Context.Context<Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>,
+  services: Context.Context<
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+  >,
   options?: { readonly maxSeconds?: number | undefined }
 ) => FlowBinding.Source
 ```
@@ -7420,11 +7422,19 @@ runs. It touches three services and no more: `FlowRuntime`, `RunStore`, and
 ```ts
 const make: (
   options: Options
-) => Effect.Effect<ChildFlows.Children, never, Control | Crypto.Crypto | FlowRuntime.FlowRuntime | RunStore.RunStore>
+) => Effect.Effect<
+  ChildFlows.Children,
+  never,
+  Control | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | RunStore.RunStore
+>
 
 const layer: (
   options: Options
-) => Layer.Layer<ChildFlows.Children, never, Control | Crypto.Crypto | FlowRuntime.FlowRuntime | RunStore.RunStore>
+) => Layer.Layer<
+  ChildFlows.Children,
+  never,
+  Control | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | RunStore.RunStore
+>
 ```
 
 Builds or provides the durable child port:
@@ -7814,7 +7824,7 @@ const make: (
 ) => Effect.Effect<
   EngineLike.EngineLike,
   never,
-  Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Budget.Budget | QuotaPolicy.QuotaClassifier
+  (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Budget.Budget | QuotaPolicy.QuotaClassifier
 >
 
 const layer: (options: Options) => Layer.Layer<EngineLike.EngineLike, never, ...>
@@ -7914,7 +7924,7 @@ const sandboxed: (
   sandbox: WorkspaceSandbox.Service,
   runner: WorkspaceCallRunner,
   options?: { readonly layers?: ReadonlyArray<string> | undefined }
-) => Effect.Effect<CallRunner, never, Crypto.Crypto>
+) => Effect.Effect<CallRunner, never, (EffectDigest.Digest | SecureRandom.SecureRandom)>
 ```
 
 Runs every cell call inside an outer workspace transaction. A call's declared
@@ -8004,7 +8014,11 @@ the walkthrough, see [A durable model call](https://github.com/smithersai/smithe
 ```ts
 const run: (
   options: Options
-) => Effect.Effect<Result, Failure, Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
+) => Effect.Effect<
+  Result,
+  Failure,
+  (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+>
 ```
 
 Calls the model once, as one step of the running flow.
@@ -8043,7 +8057,11 @@ failure, with the route's `prepare` error, or with an `engine_failed`
 ```ts
 const model: (
   options: Omit<Options, "request" | "onEvent">
-) => Effect.Effect<Model.Model, never, Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
+) => Effect.Effect<
+  Model.Model,
+  never,
+  (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+>
 ```
 
 A `Model` whose every call is one `run` of the running flow, keyed, sealed and
@@ -8483,14 +8501,14 @@ reads, `maxHours` (1 to `MAX_HOURS`, 12) and `restarts` (0 to `MAX_RESTARTS`, 5)
 - `Job`: `{ key, claim, generation, task, deadline, leaseSeconds, reclaimed }`,
   what a runner claims. `reclaimed` marks a job handed back to a runner that
   restarted while holding it.
-- `ClaimRequest` `{ profiles, free, running, waitSeconds, machine? }`,
+- `ClaimRequest` `{ profiles, free, running, waitSeconds, machine?, minQueuedSeconds? }` (`minQueuedSeconds`: an overflow runner takes only a job claimable that long),
   `ClaimResponse`, `HeartbeatRequest` `{ key, claim, delivered?, account?,
   cpuSeconds?, usage? }` (`delivered`: the steers the agent read),
   `HeartbeatResponse` `{ held, cancel, leaseSeconds, steers? }` (the steers it
   hasn't, oldest first, each a `Steer` `{ id, text }`),
   `SettleRequest` `{ key, claim, outcome, delivered? }`, `SettleResponse`, and `ROUTES` (`/api/runners/claim`,
-  `/heartbeat`, `/settle`, `/events`). `Machine` `{ version?, load1?, diskFreeGb? }` is
-  what a claim says about the runner's machine; a heartbeat's `account` is the
+  `/heartbeat`, `/settle`, `/events`). `Machine` `{ version?, load1?, diskFreeGb?, held? }` is
+  what a claim says about the runner's machine (`held`, why it takes no job by its own admission rule); a heartbeat's `account` is the
   opaque label the runner's hook chose (written as a profile is), `cpuSeconds`
   the agent's process tree's CPU time, and `usage` what it reported so far. A
   host reads them for its fleet view and stall alerts.
@@ -9264,31 +9282,31 @@ const layer = PackageManager.layerPnpm({
 })
 ```
 
-| Export                                                                                                                       | What it is                                                                                                                                                                                             |
-| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `PackageManager`                                                                                                             | The service tag, `smithers-build/PackageManager`.                                                                                                                                                      |
-| `Service`                                                                                                                    | The contract: `name`, `projectRoot`, `storeDirectory`, `lockfileName`, `platformSensitive`, `requirement`, `version`, `verify`, `fetch`, `link`, `linkManifest`.                                       |
-| `Options`                                                                                                                    | Layer options: `projectRoot`, `requirement`, and optional `environment`, `timeoutMs`, `executable`.                                                                                                    |
-| `makePnpm`, `layerPnpm`                                                                                                      | The live pnpm implementation.                                                                                                                                                                          |
-| `makeBun`, `layerBun`                                                                                                        | The Bun seam for tool-running targets. It resolves, then refuses with `code: "unsupported"`.                                                                                                           |
-| `bunInstallUnsupportedMessage`, `bunInstallUnsupported`                                                                      | The refusal text, and the typed `unsupported` error, every install entry point returns for a Bun manager.                                                                                              |
-| `makeNoop`, `layerNoop`                                                                                                      | A service that satisfies the tag without touching a host, for tests.                                                                                                                                   |
-| `PackageManagerError`, `ErrorCode`                                                                                           | The tagged error and its code union.                                                                                                                                                                   |
-| `Name`                                                                                                                       | The manager union, `"pnpm"` or `"bun"`.                                                                                                                                                                |
-| `storeRoot`                                                                                                                  | `".flows/store"`, the fixed store parent.                                                                                                                                                              |
-| `maximumNpmrcBytes`, `maximumLockfileBytes`, `maximumPackageJsonBytes`, `defaultCommandTimeoutMs`, `maximumCommandTimeoutMs` | The bounds every read and every child process is held to.                                                                                                                                              |
-| `Diagnostic`                                                                                                                 | Schema/type alias of `Runtime.Diagnostic`, a bounded serializable host-failure description.                                                                                                            |
-| `Digest`                                                                                                                     | SHA-256 content digest schema/type.                                                                                                                                                                    |
-| `StoreManifest`                                                                                                              | Schema/type: manager name, exact managerVersion, nullable platform and digest; describes fetch inputs, never package bytes.                                                                            |
-| `pnpmfileNames`                                                                                                              | Readonly default hook order: `.pnpmfile.mjs`, `.pnpmfile.cjs`; only the first present is selected.                                                                                                     |
-| `pnpmfileOf`                                                                                                                 | `(projectRoot: string) => Effect<(typeof pnpmfileNames)[number] \| null, PackageManagerError, FileSystem.FileSystem>`; locates the first supported hook.                                               |
-| `defaultCredentialHosts`                                                                                                     | Readonly registry-host allowlist, default `["registry.npmjs.org"]`, used when `Options.credentialHosts` is absent.                                                                                     |
-| `storeManifestText`                                                                                                          | `(input) => string`; canonical versioned tuple text. Input: manager, managerVersion, nullable platform, lockfileDigest, nullable npmrcDigest, optional nullable pnpmfileDigest/workspaceDigest.        |
-| `storeManifest`                                                                                                              | Same input as storeManifestText; returns `Effect<StoreManifest, never, Crypto>`, hashing that canonical text.                                                                                          |
-| `linkedTreeManifest`                                                                                                         | `({ storeDigest, packageJsonDigest, managerEvidence }: digest fields) => Effect<Digest, never, Crypto>`; hashes metadata identity, not installed bytes.                                                |
-| `npmrcDigest`                                                                                                                | `(projectRoot: string) => Effect<Digest \| null, PackageManagerError, FileSystem.FileSystem \| Crypto.Crypto>`; hashes the complete project .npmrc, refusing literal credentials. No file yields null. |
-| `lockfileDigest`                                                                                                             | `(projectRoot: string, lockfileName: string) => Effect<Digest, PackageManagerError, FileSystem.FileSystem \| Crypto.Crypto>`; bounded lockfile read and digest.                                        |
-| `packageJsonDigest`                                                                                                          | `(projectRoot: string) => Effect<Digest, PackageManagerError, FileSystem.FileSystem \| Crypto.Crypto>`; bounded root package.json read and digest.                                                     |
+| Export                                                                                                                       | What it is                                                                                                                                                                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PackageManager`                                                                                                             | The service tag, `smithers-build/PackageManager`.                                                                                                                                                            |
+| `Service`                                                                                                                    | The contract: `name`, `projectRoot`, `storeDirectory`, `lockfileName`, `platformSensitive`, `requirement`, `version`, `verify`, `fetch`, `link`, `linkManifest`.                                             |
+| `Options`                                                                                                                    | Layer options: `projectRoot`, `requirement`, and optional `environment`, `timeoutMs`, `executable`.                                                                                                          |
+| `makePnpm`, `layerPnpm`                                                                                                      | The live pnpm implementation.                                                                                                                                                                                |
+| `makeBun`, `layerBun`                                                                                                        | The Bun seam for tool-running targets. It resolves, then refuses with `code: "unsupported"`.                                                                                                                 |
+| `bunInstallUnsupportedMessage`, `bunInstallUnsupported`                                                                      | The refusal text, and the typed `unsupported` error, every install entry point returns for a Bun manager.                                                                                                    |
+| `makeNoop`, `layerNoop`                                                                                                      | A service that satisfies the tag without touching a host, for tests.                                                                                                                                         |
+| `PackageManagerError`, `ErrorCode`                                                                                           | The tagged error and its code union.                                                                                                                                                                         |
+| `Name`                                                                                                                       | The manager union, `"pnpm"` or `"bun"`.                                                                                                                                                                      |
+| `storeRoot`                                                                                                                  | `".flows/store"`, the fixed store parent.                                                                                                                                                                    |
+| `maximumNpmrcBytes`, `maximumLockfileBytes`, `maximumPackageJsonBytes`, `defaultCommandTimeoutMs`, `maximumCommandTimeoutMs` | The bounds every read and every child process is held to.                                                                                                                                                    |
+| `Diagnostic`                                                                                                                 | Schema/type alias of `Runtime.Diagnostic`, a bounded serializable host-failure description.                                                                                                                  |
+| `Digest`                                                                                                                     | SHA-256 content digest schema/type.                                                                                                                                                                          |
+| `StoreManifest`                                                                                                              | Schema/type: manager name, exact managerVersion, nullable platform and digest; describes fetch inputs, never package bytes.                                                                                  |
+| `pnpmfileNames`                                                                                                              | Readonly default hook order: `.pnpmfile.mjs`, `.pnpmfile.cjs`; only the first present is selected.                                                                                                           |
+| `pnpmfileOf`                                                                                                                 | `(projectRoot: string) => Effect<(typeof pnpmfileNames)[number] \| null, PackageManagerError, FileSystem.FileSystem>`; locates the first supported hook.                                                     |
+| `defaultCredentialHosts`                                                                                                     | Readonly registry-host allowlist, default `["registry.npmjs.org"]`, used when `Options.credentialHosts` is absent.                                                                                           |
+| `storeManifestText`                                                                                                          | `(input) => string`; canonical versioned tuple text. Input: manager, managerVersion, nullable platform, lockfileDigest, nullable npmrcDigest, optional nullable pnpmfileDigest/workspaceDigest.              |
+| `storeManifest`                                                                                                              | Same input as storeManifestText; returns `Effect<StoreManifest, never, Crypto>`, hashing that canonical text.                                                                                                |
+| `linkedTreeManifest`                                                                                                         | `({ storeDigest, packageJsonDigest, managerEvidence }: digest fields) => Effect<Digest, never, Crypto>`; hashes metadata identity, not installed bytes.                                                      |
+| `npmrcDigest`                                                                                                                | `(projectRoot: string) => Effect<Digest \| null, PackageManagerError, FileSystem.FileSystem \| EffectDigest.Digest>`; hashes the complete project .npmrc, refusing literal credentials. No file yields null. |
+| `lockfileDigest`                                                                                                             | `(projectRoot: string, lockfileName: string) => Effect<Digest, PackageManagerError, FileSystem.FileSystem \| EffectDigest.Digest>`; bounded lockfile read and digest.                                        |
+| `packageJsonDigest`                                                                                                          | `(projectRoot: string) => Effect<Digest, PackageManagerError, FileSystem.FileSystem \| EffectDigest.Digest>`; bounded root package.json read and digest.                                                     |
 
 The Bun refusal is deliberate. Bun has no fetch-only or offline install
 command, so no install accepts it: the `Install` target, the planner,
@@ -10335,7 +10353,7 @@ const Canonical: Schema.decodeTo<
 ```
 
 The same serialization as an [`effect/Schema`](https://effect.website) codec,
-built against Effect 4: the package declares `effect@4.1.0` as a peer
+built against Effect 4: the package declares `effect@4.1.1` as a peer
 dependency.
 
 **Decoding** takes any value, canonicalizes it, and returns the document
@@ -10633,7 +10651,7 @@ Every export is a value, a schema, or a pure function. Enforcement, the
 `GrantStore`, the decorating layers, and the journal live in
 [`@smthrs/kernel`](/docs/reference/api/kernel/). This package's one runtime dependency is
 [`@smthrs/canonical`](/docs/reference/api/canonical/), which itself depends only on the shared
-`effect@4.1.0` peer. Both the kernel and [`@smthrs/jj`](/docs/reference/api/jj/) can
+`effect@4.1.1` peer. Both the kernel and [`@smthrs/jj`](/docs/reference/api/jj/) can
 therefore depend on it without a cycle, and a protected service names
 permission failures in its own interface.
 
@@ -12335,6 +12353,11 @@ redacted before they cross the protocol boundary. Stored and projected values
 are rendered through `Output.renderValue`, so only a validated control receipt
 can set a nonzero process status.
 
+When embedding, reuse one `engineDurable` value across `layerControl`, its
+runtime and its journal. Materialization shares the caller's layer memo map,
+so nested writes join the same SQL transaction regardless of acquisition order.
+A failed outer transaction rolls back the plan and its journal entry together.
+
 ## Cli
 
 `Cli.makeCli(config?)` builds the unified Incur command tree. Its Zod schemas
@@ -13071,6 +13094,10 @@ port. A host without one refuses both with `InvalidInput` whose issue is
 
 ### Receipts
 
+An observed approval wait retains its native wake address and answer target
+when legacy journal history names the same request. Only a verified current
+grant fact may replace that target; matching decisions still close the wait.
+
 `Receipt` is the union every mutation answers:
 
 | Member           | Fields                                                              |
@@ -13257,6 +13284,14 @@ A running engine-created run outside the launch index also fails with
 `ClaimLost` when its owner is dead; its persisted execution state is preserved.
 Node-approval decisions use the durable resume delegation instead.
 
+Debug records named `control.resume.progress` carry only `runId` and `stage`.
+They distinguish reading the run, entering its mutation, verifying its code,
+claiming it, recording the request and committing the receipt. A stalled resume's
+last stage identifies the boundary still waiting; inputs and credentials are
+never included.
+`control.resume.storage` uses the same fields for state, launch-index and
+ownership-claim boundaries inside the SQL runtime.
+
 `registerApproval` is idempotent and returns the token with its current
 tagged decision. `Pending` parks, `Approved` opens a gate, and `Denied` fails it.
 Use `requireApproved` to enforce this distinction. A registration that disagrees
@@ -13383,16 +13418,23 @@ engine observations. Mutation methods remain refused.
 
 ### Models
 
-| Type                             | Shape                                                                                                                                |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `Launch`                         | `{ plan: StoredPlan; run: RunSummary }`. `run.runId` is the execution id the executor must start.                                    |
-| `Acceptance`                     | `"accepted"` (taken now) or `"pending"` (queued).                                                                                    |
-| `CancelRequest`, `ResumeRequest` | `{ runId: RunId }`                                                                                                                   |
-| `CancelTerminal`                 | `{ _tag: "Terminal"; status: "completed" \| "failed" \| "cancelled" }`. The engine's own status, which the plane cannot read itself. |
-| `CancelRecord`                   | `"recorded" \| "already-requested" \| "unknown" \| CancelTerminal`                                                                   |
-| `ResumeUptake`                   | `"resuming" \| "unknown"`                                                                                                            |
-| `Signal`                         | `{ runId: RunId; signal: SignalPayload }`                                                                                            |
-| `SignalDelivery`                 | `"delivered" \| "no-match" \| "unknown"`                                                                                             |
+| Type             | Shape                                                                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `Launch`         | `{ plan: StoredPlan; run: RunSummary }`. `run.runId` is the execution id the executor must start.                                    |
+| `Acceptance`     | `"accepted"` (taken now) or `"pending"` (queued).                                                                                    |
+| `CancelRequest`  | `{ runId: RunId }`                                                                                                                   |
+| `ResumeRequest`  | `{ runId: RunId, delegationSequence?: number }`                                                                                      |
+| `CancelTerminal` | `{ _tag: "Terminal"; status: "completed" \| "failed" \| "cancelled" }`. The engine's own status, which the plane cannot read itself. |
+| `CancelRecord`   | `"recorded" \| "already-requested" \| "unknown" \| CancelTerminal`                                                                   |
+| `ResumeUptake`   | `"resuming" \| "unknown"`                                                                                                            |
+| `Signal`         | `{ runId: RunId; signal: SignalPayload }`                                                                                            |
+| `SignalDelivery` | `"delivered" \| "no-match" \| "unknown"`                                                                                             |
+
+An approval offers `resumeRun` its durable `delegationSequence`. The executor
+checks that sequence again before admission; consumed or superseded offers
+answer `unknown` and cannot start another round. Omitting the sequence preserves
+direct host recovery and engine wake behavior. The `control.run.resumed` journal
+event carries the same sequence, correlating every delivery with one durable request.
 
 `settleCancelledPark` is called after the cancel mutation commits, never inside
 it: driving a run re-enters the engine, whose writes would wait on the writer
@@ -14482,7 +14524,7 @@ the bytes match the `Canonical` schema's decode.
 ### Digest.provideSync
 
 ```ts
-const provideSync: <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>) => Effect.Effect<A, E>
+const provideSync: <A, E>(effect: Effect.Effect<A, E, EffectDigest.Digest>) => Effect.Effect<A, E>
 ```
 
 Provides the synchronous SHA-256 service to an Effect. The caller runs the
@@ -14496,14 +14538,12 @@ https://smithers.sh/docs/reference/api/crypto/
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/crypto/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/crypto/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/crypto/docs)
 
 Every hashing, schema, error, and service name below is exported from the root
-entry point and from `@smthrs/crypto/Sha256`. Three other public modules are
-namespaces of the root: `Crypto`, the randomness and digest service Effect 4.0
-shipped as `effect/Crypto`, `WebCrypto`, that service over the global
+entry point and from `@smthrs/crypto/Sha256`. Two other public modules are
+namespaces of the root: `WebCrypto`, Effect's `Crypto` over the global
 WebCrypto, and `Identity`, function identity.
 
 ```ts
 import {
-  Crypto,
   Digest,
   digest,
   digestSync,
@@ -14519,10 +14559,10 @@ import {
 ## Example
 
 ```ts
-import { Crypto, digest, digestSync } from "@smthrs/crypto"
+import { digest, digestSync } from "@smthrs/crypto"
 
 const address = await Effect.runPromise(
-  digest("hello").pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+  digest("hello").pipe(Effect.provide(NodeCrypto.layer))
 )
 const sameAddress = digestSync("hello")
 ```
@@ -14532,7 +14572,7 @@ const sameAddress = digestSync("hello")
 ### digest
 
 ```ts
-const digest: (input: string | Uint8Array) => Effect.Effect<Digest, Sha256Error, Crypto.Crypto>
+const digest: (input: string | Uint8Array) => Effect.Effect<Digest, Sha256Error, EffectDigest.Digest>
 ```
 
 Hashes text or bytes through the injected Effect `Crypto` service. This is the
@@ -14541,8 +14581,8 @@ normal operational API.
 - `input`: a well-formed JavaScript string, or a `Uint8Array`. The string is
   encoded as UTF-8; the array is copied and hashed exactly as viewed.
 - Returns the digest as 64 lowercase hexadecimal characters, branded as `Digest`.
-- Requires `Crypto.Crypto`. A missing service stays an unsatisfied Effect
-  requirement and surfaces as `Service not found: effect/Crypto`, which is a
+- Requires `EffectDigest.Digest`. A missing service stays an unsatisfied Effect
+  requirement and surfaces as `Service not found: effect/crypto/Digest`, which is a
   composition defect rather than a `Sha256Error`.
 - Fails with [`Sha256Error`](#sha256error) under any of the five codes.
 
@@ -14595,7 +14635,7 @@ The expected-value message is
 ### Sha256
 
 ```ts
-const Sha256: Schema.Codec<Digest, string | Uint8Array, Crypto.Crypto> & {
+const Sha256: Schema.Codec<Digest, string | Uint8Array, EffectDigest.Digest> & {
   readonly Digest: typeof Digest
   readonly digest: typeof digest
   readonly digestSync: typeof digestSync
@@ -14605,7 +14645,7 @@ const Sha256: Schema.Codec<Digest, string | Uint8Array, Crypto.Crypto> & {
 The one-way schema transformation from text or bytes to a `Digest`: the
 schema-composition face of [`digest`](#digest).
 
-- Decoding runs `digest`, so `Crypto.Crypto` is the codec's decoding
+- Decoding runs `digest`, so `EffectDigest.Digest` is the codec's decoding
   requirement, the third type argument above. Decode with
   `Schema.decodeUnknownEffect` and provide the service. There is no
   synchronous decode.
@@ -14692,58 +14732,10 @@ accept, are ordinary `SchemaError` validation failures rather than
 
 ## Services
 
-### Crypto.Crypto
-
-```ts
-const Crypto: Context.Service<Crypto, Crypto>
-```
-
-The randomness and digest service Effect 4.0 shipped as `effect/Crypto`, with
-the same key, `"effect/Crypto"`, and the same members: `randomBytes`, `digest`,
-`random`, `randomBoolean`, `randomInt`, `randomBetween`, `randomIntBetween`,
-`randomShuffle`, `randomUUIDv4`, `randomUUIDv7`, `randomULID`,
-`nextIntUnsafe` and `nextDoubleUnsafe`. Effect 4.1 removed that module in
-favor of `effect/crypto`'s `Digest` and `SecureRandom`; every Smithers program
-that digests or draws randomness still requires this one service.
-
-### Crypto.DigestAlgorithm
-
-```ts
-type DigestAlgorithm = "SHA-1" | "SHA-256" | "SHA-384" | "SHA-512"
-```
-
-The algorithms `digest` accepts.
-
-### Crypto.make
-
-```ts
-const make: (impl: {
-  readonly randomBytes: (size: number) => Uint8Array
-  readonly digest: (algorithm: DigestAlgorithm, data: Uint8Array) => Effect.Effect<Uint8Array, PlatformError>
-}) => Crypto
-```
-
-Builds the service from a source of random bytes and a digest, as Effect 4.0's
-`Crypto.make` did. Every random member reads `randomBytes`; UUIDv7 and ULID
-stamp the `Clock`'s time. `randomBytes(size)` fails with `BadArgument` when
-`size` is not a non-negative safe integer.
-
-### Crypto.layerFromDigest
-
-```ts
-const layerFromDigest: <E, R>(digest: Layer.Layer<Digest.Digest, E, R>) => Layer.Layer<Crypto, E, R>
-```
-
-The service over a host's Effect 4.1 `Digest` layer, with randomness from the
-global WebCrypto object. What Effect 4.0's `Crypto.layerFromDigest(NodeCrypto.layerDigest)` provided is
-`Crypto.layerFromDigest(NodeCrypto.layerDigest)`, whose digests run
-synchronously on `node:crypto`, so `Effect.runSync` can run them. An algorithm
-outside `DigestAlgorithm` fails with `BadArgument`.
-
 ### syncCrypto
 
 ```ts
-const syncCrypto: Crypto.Crypto
+const syncCrypto: typeof EffectDigest.Digest.Service
 ```
 
 A synchronous, SHA-256-only Effect `Crypto` service backed by the same
@@ -14751,18 +14743,15 @@ package-owned implementation as `digestSync`. It exists for synchronous code
 that already consumes a `Crypto` service, and for tests that want real hashing
 with no platform layer.
 
-- `digest("SHA-256", input)` snapshots the input and returns the 32 raw bytes.
-- Every other algorithm fails with a `PlatformError.badArgument` whose
+- `digest(EffectDigest.sha256, input)` snapshots the input and returns the 32 raw bytes.
+- Every other algorithm dies with a `PlatformError.badArgument` whose
   description is `syncCrypto supports only SHA-256, not <algorithm>`, with
   `module: "@smthrs/crypto"` and `method: "digest"`.
-- An input whose buffer cannot be copied fails with a `badArgument` described
+- An input whose buffer cannot be copied dies with a `badArgument` described
   as `syncCrypto could not snapshot SHA-256 input`, with the original
   `TypeError` as `cause`.
-- `randomBytes` throws a `PlatformError.badArgument` with
-  `module: "@smthrs/crypto"` and `method: "randomBytes"`, described as
-  `@smthrs/crypto syncCrypto provides SHA-256 only; supply a platform Crypto layer for randomness`.
-  Because `Crypto.make` derives random numbers, UUIDs, and shuffling from
-  `randomBytes`, every random operation fails the same way.
+- `digestHex(EffectDigest.sha256, input)` returns lowercase hexadecimal.
+- Randomness belongs to the separate `SecureRandom` service; this adapter exposes only digest operations.
 
 Normal application code should provide its platform `Crypto` layer, or
 [`WebCrypto.layer`](#webcryptolayer), instead.
@@ -14770,35 +14759,22 @@ Normal application code should provide its platform `Crypto` layer, or
 ### WebCrypto.make
 
 ```ts
-const make: () => Crypto.Crypto
+const make: () => Layer.Layer<EffectDigest.Digest | SecureRandom.SecureRandom>
 ```
 
-Effect's `Crypto` over the global WebCrypto object, `globalThis.crypto`, which
-Node, Bun, browsers, and Cloudflare Workers all provide. It is the one
-WebCrypto-backed `Crypto` in Smithers: `@smthrs/platform-cloudflare`'s host
-bundle and `@smthrs/platform-node`'s sandboxed-flow guest both provide it.
-
-- `randomBytes(size)` fills any size, at most 65,536 bytes per
-  `crypto.getRandomValues` call. That is the Web Crypto limit; one larger call
-  throws `QuotaExceededError`. Effect derives random numbers, UUIDs, ULIDs, and
-  shuffling from it.
-- `digest(algorithm, data)` copies `data` and calls `crypto.subtle.digest`. A
-  rejection fails with a `PlatformError` whose reason is `Unknown`, with
-  `module: "Crypto"`, `method: "digest"`, the description
-  `WebCrypto could not compute <algorithm>`, and WebCrypto's own error as
-  `cause`.
-- Randomness is read only when a caller asks for it, never while the module
-  evaluates or while `make` builds the service. Cloudflare refuses to deploy a
-  script that calls `crypto.getRandomValues` at module scope (upload error
-  10021).
+Constructs Effect 4.1's standard WebCrypto layers for message digests and secure
+randomness. Hosts provide both services independently. Randomness is drawn only
+when a program runs, so constructing the layers is safe at Cloudflare module scope.
+Digest algorithms are values such as `EffectDigest.sha256`; WebCrypto rejections
+are defects. MD5 uses Effect's pure implementation.
 
 ### WebCrypto.layer
 
 ```ts
-const layer: Layer.Layer<Crypto.Crypto>
+const layer: Layer.Layer<EffectDigest.Digest | SecureRandom.SecureRandom>
 ```
 
-[`WebCrypto.make()`](#webcryptomake) as a layer.
+The standard layers constructed by [`WebCrypto.make()`](#webcryptomake).
 
 ```ts
 import { digest, WebCrypto } from "@smthrs/crypto"
@@ -14812,7 +14788,7 @@ const address = await Effect.runPromise(digest("hello").pipe(Effect.provide(WebC
 ### Uuid.v5
 
 ```ts
-const v5: (namespace: string, name: string) => Effect.Effect<string, PlatformError, Crypto.Crypto>
+const v5: (namespace: string, name: string) => Effect.Effect<string, never, EffectDigest.Digest>
 ```
 
 The RFC 9562 version 5 UUID of `name` in `namespace`, in lowercase: SHA-1 of
@@ -15775,10 +15751,20 @@ client opens the read transaction itself; any other PostgreSQL client reads at
 `REPEATABLE READ READ ONLY` on a reserved connection. Keep writes out of
 `effect`: PostgreSQL refuses them, and on SQLite one takes the write lock.
 
+`registerReadTransaction(sql, open)` is for a driver whose SQL cannot say
+`BEGIN`: `readTransaction` on that client runs `open(effect)` instead. A
+Durable Object's SQLite storage is one; `@smthrs/platform-cloudflare`'s
+`ObjectDatabase` registers `storage.transaction()` there.
+
 `trigger` rejects a row with `reject` as its message (a constraint failure on
 both backends), skips it with `ignore: true`, or runs `body`; `when` limits it
 to rows where the condition holds. `query` does not parse SQL, so its template
 must not contain `?` anywhere but a placeholder.
+
+A native SQL defect before a write body starts is a typed `DatabaseError`,
+including failed transaction acquisition and its rollback. Intentional SQL
+defects raised by the write body keep their original channel. A lost PostgreSQL
+connection therefore leaves the engine’s attempt available for recovery.
 
 ---
 
@@ -15884,19 +15870,19 @@ polls. Completed predecessor history remains unchanged. On normal parent exit,
 `onParentExit` belongs to the child's creating round and is retained through its
 handoffs; explicit cancellation still cascades to linked children.
 
-| Export                  | Signature                                                                                                                           | Meaning                                                                                                                    |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `Options`               | interface                                                                                                                           | Construction options. See below.                                                                                           |
-| `make`                  | `(options: Options) => Effect<FlowRuntime["Service"], never, Requirements>`                                                         | Builds the `FlowRuntime` service the port in [`@smthrs/flow`](/docs/reference/api/flow/) declares.                                         |
-| `layer`                 | `(options: Options) => Layer<SnapshotBoundary \| FlowRuntime, never, Requirements>`                                                 | Provides both, using the ambient `Jj` for action bodies and engine bookkeeping.                                            |
-| `layerWithPrivilegedJj` | `(options: Options, privilegedJj: Layer<Jj, E, R>) => Layer<SnapshotBoundary \| FlowRuntime, E, Requirements \| R>`                 | The same, with a private repository for engine bookkeeping while ambient `Jj` stays for action bodies.                     |
-| `Sweep`                 | `"process" \| { readonly host: string }`                                                                                            | Who wakes the store's runs. See `Options.sweep`.                                                                           |
-| `nextWake`              | `(executionId: string) => Effect<Option<number>, RunStoreError, RunStore \| DurableEngineState>`                                    | When a host must next drive the execution, in epoch milliseconds. See [Hosted executions](#hosted-executions).             |
-| `Driven`                | `{ _tag: "Settled"; status } \| { _tag: "Parked"; wakeAtMs: number \| undefined } \| { _tag: "Unfinished" } \| { _tag: "Yielded" }` | What one `drive` left an execution as.                                                                                     |
-| `DriveOptions`          | `{ executionId: string; payload: object; budgetMs?: number; holdMs?: number }`                                                      | What `drive` drives, with an optional budget and hold. See [Drive budget](#drive-budget).                                  |
-| `Driver`                | `Context.Service<{ admit, drive, reportRecovery }>`                                                                                 | Provided by `layer` and `layerWithPrivilegedJj` beside `FlowRuntime`. See [Registration recovery](#registration-recovery). |
-| `drive`                 | `(flow: Flow.Any, options: DriveOptions) => Effect<Driven, FlowCycleDetected \| RunStoreError, Driver>`                             | Drives one execution once, for its host. See [Hosted executions](#hosted-executions).                                      |
-| `Recovery`              | `{ registrations: number; durationMs: number }`                                                                                     | What `Driver.reportRecovery` reports and answers. See [Registration recovery](#registration-recovery).                     |
+| Export                  | Signature                                                                                                                           | Meaning                                                                                                                      |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `Options`               | interface                                                                                                                           | Construction options. See below.                                                                                             |
+| `make`                  | `(options: Options) => Effect<FlowRuntime["Service"], never, Requirements>`                                                         | Builds the `FlowRuntime` service the port in [`@smthrs/flow`](/docs/reference/api/flow/) declares.                                           |
+| `layer`                 | `(options: Options) => Layer<SnapshotBoundary \| FlowRuntime, never, Requirements>`                                                 | Provides both, using the ambient `Jj` for action bodies and engine bookkeeping.                                              |
+| `layerWithPrivilegedJj` | `(options: Options, privilegedJj: Layer<Jj, E, R>) => Layer<SnapshotBoundary \| FlowRuntime, E, Requirements \| R>`                 | The same, with a private repository for engine bookkeeping while ambient `Jj` stays for action bodies.                       |
+| `Sweep`                 | `"process" \| { readonly host: string }`                                                                                            | Who wakes the store's runs. See `Options.sweep`.                                                                             |
+| `nextWake`              | `(executionId: string) => Effect<Option<number>, RunStoreError, RunStore \| DurableEngineState>`                                    | When a host must next drive the execution, in epoch milliseconds. See [Hosted executions](#hosted-executions).               |
+| `Driven`                | `{ _tag: "Settled"; status } \| { _tag: "Parked"; wakeAtMs: number \| undefined } \| { _tag: "Unfinished" } \| { _tag: "Yielded" }` | What one `drive` left an execution as.                                                                                       |
+| `DriveOptions`          | `{ executionId: string; payload: object; budgetMs?: number; holdMs?: number; row?: RunRow }`                                        | What `drive` drives, with an optional budget and hold, and the row the host already read. See [Drive budget](#drive-budget). |
+| `Driver`                | `Context.Service<{ admit, drive, reportRecovery }>`                                                                                 | Provided by `layer` and `layerWithPrivilegedJj` beside `FlowRuntime`. See [Registration recovery](#registration-recovery).   |
+| `drive`                 | `(flow: Flow.Any, options: DriveOptions) => Effect<Driven, FlowCycleDetected \| RunStoreError, Driver>`                             | Drives one execution once, for its host. See [Hosted executions](#hosted-executions).                                        |
+| `Recovery`              | `{ registrations: number; durationMs: number }`                                                                                     | What `Driver.reportRecovery` reports and answers. See [Registration recovery](#registration-recovery).                       |
 
 ### EngineStore.Options
 
@@ -16099,6 +16085,11 @@ Set the budget at the invocation's limit less the longest step it may start.
 Each yield counts on `EngineStoreMetrics.driveYields` and logs
 `engine-store: drive yielded its budget at a step boundary` with the budget and
 the elapsed time.
+
+`row` is the run's row as the host read it at the start of the drive. The
+drive takes the run's existence, flow and capability ceilings from it, which
+never change, instead of reading the row again for each; its status and claim
+are still read fresh before the claim.
 
 A run its own flow parks on a wake due within `holdMs` (`defaultHoldMs`, five
 seconds, unless set), such as a durable sleep of a second or a clock that came
@@ -17376,15 +17367,26 @@ nonce is a UUIDv4 from the injected `Crypto` service.
 Edge-triggered in-process wakes, with durable polling as the miss-tolerant
 fallback.
 
-| Export       | Signature                                          | Meaning                                     |
-| ------------ | -------------------------------------------------- | ------------------------------------------- |
-| `WakeBus`    | `Context.Service<Service>`                         | Service tag.                                |
-| `Service`    | `{ wake, awaitWake, waiters }`                     | See below.                                  |
-| `makeUnsafe` | `() => Service`                                    | Constructs a bus. Nothing is durable.       |
-| `make`       | `Effect<Service>`                                  | The same, as an effect.                     |
-| `layer`      | `Layer<WakeBus>`                                   | Provides a fresh bus.                       |
-| `makeNoop`   | `(overrides?: Partial<Service>) => Service`        | Wakes are dropped and waiters park forever. |
-| `layerNoop`  | `(overrides?: Partial<Service>) => Layer<WakeBus>` | Provides it.                                |
+| Export       | Signature                                                   | Meaning                                     |
+| ------------ | ----------------------------------------------------------- | ------------------------------------------- |
+| `WakeBus`    | `Context.Service<Service>`                                  | Service tag.                                |
+| `Service`    | `{ wake, awaitWake, waiters }`                              | See below.                                  |
+| `makeUnsafe` | `() => Service`                                             | Constructs a bus. Nothing is durable.       |
+| `make`       | `Effect<Service>`                                           | The same, as an effect.                     |
+| `layer`      | `Layer<WakeBus>`                                            | Provides a fresh bus.                       |
+| `makeNoop`   | `(overrides?: Partial<Service>) => Service`                 | Wakes are dropped and waiters park forever. |
+| `layerNoop`  | `(overrides?: Partial<Service>) => Layer<WakeBus>`          | Provides it.                                |
+| `Admitted`   | `Context.Reference<(admission: Admission) => Effect<void>>` | Called once a child's admission commits.    |
+| `Admission`  | `{ flow, executionId, payload }`                            | The child, its payload encoded as stored.   |
+
+`Admitted` is what the engine calls once a child run it admitted has
+committed, its row and parent edge durable; the default does nothing. A host
+that drives each execution in its own place provides it to start the child
+there at once, while the parent's drive goes on. It is a shortcut, never the
+record: the host must still start children from what the store holds after
+the drive, so a lost or refused announcement only delays the child. A child
+admitted inside a transaction whose commit the journal cannot observe is not
+announced.
 
 `wake(executionId)` resumes every waiter parked on that execution; with no
 waiters the wake is dropped. `awaitWake(executionId)` parks until the next one,
@@ -17613,6 +17615,10 @@ values remain in their existing protected rows; the journal carries digests.
 Use `checkpointState` when compacting: a compacted run without its fold checkpoint
 fails with `checkpoint_missing`. `capture` and `rebuild` read the existing
 migrated database and journal; neither creates another store or executes a flow.
+
+The runtime’s optional `recordNode(record, { flush: true })` commits a progress
+record before returning. Burndown uses it for per-item landing and release so
+a slow neighboring item cannot keep completed progress buffered.
 
 ---
 
@@ -19383,7 +19389,7 @@ https://smithers.sh/docs/reference/api/gateway/
 
 > **Related APIs:** [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/sync`](/docs/reference/api/sync/)
 
-The gateway requires `effect` at exactly `4.1.0` as its only peer. Node and Bun adapters are bundled privately, built from 4.1.0; hosts need no separate adapter install.
+The gateway requires `effect` at exactly `4.1.1` as its only peer. Node and Bun adapters are bundled privately, built from 4.1.1; hosts need no separate adapter install.
 
 The root entry point exports one namespace per module, and every local module is
 also importable from `@smthrs/gateway/<Module>`.
@@ -22198,7 +22204,7 @@ https://smithers.sh/docs/reference/api/integrations/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/integrations/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/integrations/docs)
 
-> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/errors`](/docs/reference/api/errors/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/plan`](/docs/reference/api/plan/)
+> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/errors`](/docs/reference/api/errors/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/plan`](/docs/reference/api/plan/)
 
 The package exports `Core` and `GitHub` from `@smthrs/integrations`,
 `@smthrs/integrations/core`, and `@smthrs/integrations/github`.
@@ -24033,9 +24039,12 @@ See [Test against a real journal](https://github.com/smithersai/smithers/blob/ma
 
 ## Sequence allocation
 
-`emitDurable` allocates both sequences inside the writer's transaction
-(`MAX(seq) + 1`, taking the in-memory clock as a floor) and inserts the row
-before returning, so the returned `seq` is already committed. Use it wherever a
+`emitDurable` allocates both sequences inside the writer's transaction and
+inserts the row before returning, so the returned `seq` is already committed.
+The `INSERT` itself takes `seq` as the greater of the in-memory floor and the
+run's `MAX(seq) + 1`, in the same statement, so the write costs one round trip
+for the sequence and the row; the producer sequence, when the input names
+none, is read first (`MAX(source_seq) + 1`). Use it wherever a
 caller acts on the returned sequence: lifecycle finalization, cross-process
 supervisors, or any deployment where a second writer may open the same run. A
 durable boundary must not advance the run or expose its result until this
@@ -25827,7 +25836,7 @@ import { DerivedKey, deriveKey, digest, KeyDerivationError, KeyV1, StoredKey } f
 
 Both entry points perform the same three steps: canonicalize with
 [`@smthrs/canonical`](/docs/reference/api/canonical/), hash the canonical UTF-8 document with
-SHA-256 through the injected Effect `Crypto` service that
+SHA-256 through the injected Effect `Digest` service that
 [`@smthrs/crypto`](/docs/reference/api/crypto/) wraps, and prefix the lowercase digest with
 `key1_`. Neither validates an existing key. See
 [Key derivation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/keys/docs/concepts/key-derivation.md).
@@ -25835,7 +25844,7 @@ SHA-256 through the injected Effect `Crypto` service that
 ### deriveKey
 
 ```ts
-const deriveKey: (input: unknown) => Effect.Effect<KeyV1, KeyDerivationError, Crypto.Crypto>
+const deriveKey: (input: unknown) => Effect.Effect<KeyV1, KeyDerivationError, EffectDigest.Digest>
 ```
 
 Derives the current key format from structured input.
@@ -25843,20 +25852,19 @@ Derives the current key format from structured input.
 - `input`: any value with a canonical form. Values without one fail; see
   [Key material](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/keys/docs/concepts/key-material.md).
 - Returns a branded `KeyV1`, always 69 characters.
-- Requires `Crypto.Crypto` from `effect/Crypto`. A missing service is an
+- Requires `EffectDigest.Digest` from `effect/crypto/Digest`. A missing service is an
   unsatisfied Effect requirement and therefore a configuration defect, not a
   `KeyDerivationError`.
 - Fails with `KeyDerivationError`.
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { deriveKey } from "@smthrs/keys"
 import * as Effect from "effect/Effect"
 
 const key = await Effect.runPromise(
   deriveKey({ domain: "example/compile", version: 1, source: "main.ts" }).pipe(
-    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Effect.provide(NodeCrypto.layer)
   )
 )
 // key1_74a286a394e4b0619c05801dd4e7315deeb83b8203cd3c3ee7cd6033ec55c683
@@ -25865,11 +25873,11 @@ const key = await Effect.runPromise(
 ### DerivedKey
 
 ```ts
-const DerivedKey: Schema.Codec<KeyV1, unknown, Crypto.Crypto, never>
+const DerivedKey: Schema.Codec<KeyV1, unknown, EffectDigest.Digest, never>
 ```
 
 The same derivation as a schema transformation, for composing inside a decode.
-Decoding requires the `Crypto` service; encoding requires none.
+Decoding requires the `Digest` service; encoding requires none.
 
 - Decoding derives a fresh key from whatever it is given. Decoding the text
   `key1_...` hashes that text into a different key; it does not parse it. Use
@@ -25900,7 +25908,7 @@ See [Derive a key inside a schema](https://github.com/smithersai/smithers/blob/m
 ## Validation
 
 Validation returns the input text unchanged, performs no hashing, and requires
-no `Crypto` service.
+no `Digest` service.
 
 ### StoredKey
 
@@ -26010,7 +26018,7 @@ type KeyDerivationErrorCode = typeof KeyDerivationErrorCode.Type
 | `canonicalization_failed` | The input has no accepted canonical form.                            |
 | `digest_failed`           | The injected SHA-256 operation failed or returned an invalid digest. |
 
-A missing `Crypto.Crypto` service is deliberately not a member. It remains an
+A missing `EffectDigest.Digest` service is deliberately not a member. It remains an
 unsatisfied Effect requirement, which is a configuration defect rather than a
 provided host failing an operation.
 
@@ -26517,7 +26525,7 @@ https://smithers.sh/docs/reference/api/memory/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/memory/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/memory/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/memory/docs)
 
-> **Related APIs:** [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/patterns`](/docs/reference/api/patterns/)
+> **Related APIs:** [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/patterns`](/docs/reference/api/patterns/)
 
 This page covers the parts a flow author touches: the two callable flows, the memory policy that decides which namespace a flow tree reads and writes, and the store behaviors that are easy to get wrong. The [module reference](#module-reference) at the end lists every export; the sections before it explain how those exports behave.
 
@@ -26845,12 +26853,12 @@ The service tag is `MemoryStore`, `Context.Service` tag `flows/memory/MemoryStor
 
 `compactMessages` captures the full `sourceMessages` rows and verifies them inside the write transaction before inserting or deleting. Missing or changed sources fail with `compaction_conflict`. An existing summary id fails with `idempotency_conflict`, including identical retries.
 
-| Export      | Signature                                                                      | Behavior                                                                                                                                                                                                                                                                                                    |
-| ----------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `make`      | `Effect<Service, MemoryError, Crypto.Crypto \| DurableWriter \| SqlClient>`    | Builds the SQL-backed service and applies the package's idempotent migrations. Every operation runs in a span named `MemoryStore.<method>` carrying shape attributes only (namespace kind, limit, row count), and counts its outcome on the `smithers_memory_operations` counter by `method` and `outcome`. |
-| `makeNoop`  | `(overrides?: Partial<Service>) => Service`                                    | An unavailable stub: every operation fails `store`, optionally overridden per method.                                                                                                                                                                                                                       |
-| `layerNoop` | `(overrides?: Partial<Service>) => Layer<MemoryStore>`                         | Provides the unavailable stub.                                                                                                                                                                                                                                                                              |
-| `layer`     | `Layer<MemoryStore, MemoryError, Crypto.Crypto \| DurableWriter \| SqlClient>` | Provides the authoritative SQL store over the SQL client and the durable writer.                                                                                                                                                                                                                            |
+| Export      | Signature                                                                                  | Behavior                                                                                                                                                                                                                                                                                                    |
+| ----------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `make`      | `Effect<Service, MemoryError, SecureRandom.SecureRandom \| DurableWriter \| SqlClient>`    | Builds the SQL-backed service and applies the package's idempotent migrations. Every operation runs in a span named `MemoryStore.<method>` carrying shape attributes only (namespace kind, limit, row count), and counts its outcome on the `smithers_memory_operations` counter by `method` and `outcome`. |
+| `makeNoop`  | `(overrides?: Partial<Service>) => Service`                                                | An unavailable stub: every operation fails `store`, optionally overridden per method.                                                                                                                                                                                                                       |
+| `layerNoop` | `(overrides?: Partial<Service>) => Layer<MemoryStore>`                                     | Provides the unavailable stub.                                                                                                                                                                                                                                                                              |
+| `layer`     | `Layer<MemoryStore, MemoryError, SecureRandom.SecureRandom \| DurableWriter \| SqlClient>` | Provides the authoritative SQL store over the SQL client and the durable writer.                                                                                                                                                                                                                            |
 
 ### `@smthrs/memory/MemoryTrellis`
 
@@ -27510,7 +27518,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `openSmithersBackend`                    | none                                                                                         | none                                                                            | unsafe    |
 | `openSmithersStore`                      | none                                                                                         | none                                                                            | unsafe    |
 | `outputs.<key>`                          | `The planned value in scope`                                                                 | `@smthrs/plan/Node`                                                             | automatic |
-| `package.json`                           | `@smthrs/* at the migrator's own version and effect at 4.1.0`                                | none                                                                            | automatic |
+| `package.json`                           | `@smthrs/* at the migrator's own version and effect at 4.1.1`                                | none                                                                            | automatic |
 | `parseNamespace`                         | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
 | `partitionDelegationV2AuthorFuel`        | none                                                                                         | none                                                                            | unsafe    |
 | `prometheusContentType`                  | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
@@ -27697,9 +27705,9 @@ refuses to `apply` a plan built over one (`scan` and `plan` still report it).
   Every `effect` declaration in every manifest is kept in `effectDeclarations`
   with its file and field, and each one that is not what a migrated project
   declares raises `effect-pin-conflict` naming it. A field that installs
-  `effect` ends on exactly `4.1.0`, the version this release is tested on: a
+  `effect` ends on exactly `4.1.1`, the version this release is tested on: a
   range resolves to whatever is newest on install day, and two manifests that
-  disagree install two Effects. A `peerDependencies` entry ends on `4.1.0`,
+  disagree install two Effects. A `peerDependencies` entry ends on `4.1.1`,
   the exact version the published libraries require. `Detect.resolvedEffectVersions(lock)` reads what a pnpm, bun, npm,
   or yarn lockfile resolved `effect` to, and a resolution other than the pin
   raises the same warning against the lockfile.
@@ -28516,7 +28524,7 @@ drives its implementation.
 | `withoutComments`                                       | `(text: string) => string`                                                                                    | JSONC without its comments, for parsing.                                                                              |
 | `pinFor`                                                | `(name: string) => string \| undefined`                                                                       | The version this release pins a package to.                                                                           |
 | `dependencyFields`                                      | `["dependencies", "devDependencies", "peerDependencies", "optionalDependencies", "overrides", "resolutions"]` | The six fields a postcondition checks.                                                                                |
-| `effectVersion`                                         | `"4.1.0"`                                                                                                     | The `effect` version this release was built against.                                                                  |
+| `effectVersion`                                         | `"4.1.1"`                                                                                                     | The `effect` version this release was built against.                                                                  |
 | `smithersVersion`                                       | the package's own version                                                                                     | The `@smthrs/*` version it adds: the release that ran the migration.                                                  |
 | `ManifestRewrite`, `ScriptRewrite`, `UnsupportedScript` | `interface` or `Schema.Struct`                                                                                | The rewrite inputs and what could not be rewritten.                                                                   |
 
@@ -29770,13 +29778,13 @@ interface DrainInput {
 }
 ```
 
-| Field             | Meaning                                                                                                                                                                                                                                     |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `runId`           | The run whose journal holds the notifications.                                                                                                                                                                                              |
-| `targetLineageId` | The lineage this boundary belongs to. Notifications for other lineages are left pending.                                                                                                                                                    |
-| `boundary`        | The name of this safe point. With `runId` and `targetLineageId` it is the drain identity.                                                                                                                                                   |
-| `wouldIdle`       | Whether the run would have nothing to do if this boundary delivered nothing. When true and no steer was promoted, one queued notification is promoted.                                                                                      |
-| `cutoffSeq`       | The journal sequence that opened this turn. Steers admitted after it are held for the next boundary. Omitting it delivers everything pending for the lineage. A value that is not a non-negative integer fails with `notification_invalid`. |
+| Field             | Meaning                                                                                                                                                                                                                                                                                              |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runId`           | The run whose journal holds the notifications.                                                                                                                                                                                                                                                       |
+| `targetLineageId` | The lineage this boundary belongs to. Notifications for other lineages are left pending.                                                                                                                                                                                                             |
+| `boundary`        | The name of this safe point. With `runId` and `targetLineageId` it is the drain identity.                                                                                                                                                                                                            |
+| `wouldIdle`       | Whether the run would have nothing to do if this boundary delivered nothing. When true and no steer was promoted, one queued notification is promoted.                                                                                                                                               |
+| `cutoffSeq`       | The journal sequence that opened this turn. Steers admitted after it are held for the next boundary. Omitting it delivers everything pending for the lineage. A value that is not a non-negative integer fails with `notification_invalid`.                                                          |
 | `ids`             | The pending steers this boundary delivers, by id, for a consumer that confirms each one it took, such as an agent outside the run that answered after each. Ids not pending for the lineage are ignored; nothing else is promoted, queued notifications included. It takes the place of `cutoffSeq`. |
 
 ### DrainReceipt
@@ -29937,7 +29945,7 @@ The pure bounded queue: the same rules with no I/O and no journal. Import from
 | `applyAdmission` | `(state: State, notification: Notification, seq: number, decision: AdmissionDecision) => State`     | Applies a decision already committed in a journal record. Replay never re-decides.                                                                                                             |
 | `pending`        | `(state: State, admission: "steer" \| "queue", targetLineageId?: string) => ReadonlyArray<Pending>` | Still-pending notifications of one admission class, in durable journal order, for one lineage or for every lineage.                                                                            |
 | `promoteSteers`  | `(state: State, cutoffSeq: number, targetLineageId?: string) => Promotion`                          | Promotes every steer admitted at or before the cutoff. Notifications admitted after it remain pending.                                                                                         |
-| `promoteIds`     | `(state: State, ids: ReadonlyArray<string>, targetLineageId?: string) => Promotion`                 | Promotes the pending steers named in `ids`, in admission order, whatever their sequences. Ids not pending for the lineage are ignored.                                                          |
+| `promoteIds`     | `(state: State, ids: ReadonlyArray<string>, targetLineageId?: string) => Promotion`                 | Promotes the pending steers named in `ids`, in admission order, whatever their sequences. Ids not pending for the lineage are ignored.                                                         |
 | `promoteQueued`  | `(state: State, targetLineageId?: string) => Promotion`                                             | Promotes exactly the oldest pending queued notification, or nothing.                                                                                                                           |
 | `applyPromoted`  | `(state: State, ids: ReadonlyArray<string>) => State`                                               | Removes the ids a durable promotion record names, while replaying history.                                                                                                                     |
 
@@ -30265,7 +30273,7 @@ OpenTelemetry SDK. `@smthrs/observability/package.json` is exported.
 | `@smthrs/observability/NodeOtel`    | [src/NodeOtel.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/src/NodeOtel.ts)       | Node     |
 | `@smthrs/observability/BrowserOtel` | [src/BrowserOtel.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/src/BrowserOtel.ts) | browser  |
 
-The package is tested with `effect@4.1.0` and accepts `4.1.0`. Layers, services, and schemas
+The package is tested with `effect@4.1.1` and accepts `4.1.1`. Layers, services, and schemas
 are Effect constructs: a `Layer` provides services, a scoped layer releases on
 scope close, and a schema decodes to an `Effect`.
 
@@ -31319,7 +31327,7 @@ https://smithers.sh/docs/reference/api/patterns/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/patterns/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/patterns/docs)
 
-> **Related APIs:** [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/plan`](/docs/reference/api/plan/)
+> **Related APIs:** [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/plan`](/docs/reference/api/plan/)
 
 This page is the API reference for the higher-order flow patterns: decorators
 that wrap one flow, and containers that compose several. The package composes
@@ -31854,6 +31862,10 @@ modules with their specifiers.
 graph means, and [`@smthrs/plan`](/docs/reference/api/plan/) for the persisted form a graph
 compiles into.
 
+The runtime’s optional `recordNode(record, { flush: true })` commits a progress
+record before returning. Burndown uses it for per-item landing and release so
+a slow neighboring item cannot keep completed progress buffered.
+
 ---
 
 # @smthrs/plan
@@ -31895,7 +31907,6 @@ The shortest composition that reaches every layer:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { Plan, PlanDiff } from "@smthrs/plan"
 import * as Effect from "effect/Effect"
 
@@ -31932,7 +31943,7 @@ const program = Effect.gen(function*() {
   })
 
   return PlanDiff.diff(plan, plan)
-}).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+}).pipe(Effect.provide(NodeCrypto.layer))
 ```
 
 Compiling needs Effect's `Crypto` service and nothing else. The package depends on [`@smthrs/crypto`](/docs/reference/api/crypto/), [`@smthrs/canonical`](/docs/reference/api/canonical/), [`@smthrs/keys`](/docs/reference/api/keys/), and `effect`, performs no I/O, and is browser-safe. Persisting a compiled plan is [`@smthrs/plan-store`](/docs/reference/api/plan-store/), which is where the database dependency lives.
@@ -32113,7 +32124,7 @@ validate the entire shape, reject unknown fields, and return typed
 ```ts
 const environmentIdentity: (
   environment?: EnvironmentIdentity
-) => Effect.Effect<StoredKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StoredKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 A fingerprint for binding a durable execution to its runtime environment,
@@ -32170,8 +32181,8 @@ interface DigestMemo {
   readonly digest: (
     from: string,
     path: ReadonlyArray<string>,
-    compute: Effect.Effect<StepKey, Schema.SchemaError, Crypto.Crypto>
-  ) => Effect.Effect<StepKey, Schema.SchemaError, Crypto.Crypto>
+    compute: Effect.Effect<StepKey, Schema.SchemaError, EffectDigest.Digest>
+  ) => Effect.Effect<StepKey, Schema.SchemaError, EffectDigest.Digest>
 }
 ```
 
@@ -32190,7 +32201,7 @@ Creates an empty memo.
 ```ts
 const content: (
   identity: ContentIdentity
-) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 Produces a cross-run reusable key. Set-like declarations are normalized before serialization; write declarations remain part of the identity even when the step writes nothing.
@@ -32200,7 +32211,7 @@ Produces a cross-run reusable key. Set-like declarations are normalized before s
 ```ts
 const ordinal: (
   identity: OrdinalIdentity
-) => Effect.Effect<StepKey, Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StepKey, Schema.SchemaError, EffectDigest.Digest>
 ```
 
 Produces a run-local key for compensable, irreversible, or unsealed work. These keys intentionally cannot be reused across runs.
@@ -32211,7 +32222,7 @@ Produces a run-local key for compensable, irreversible, or unsealed work. These 
 const planIdentity: (
   material: KeyMaterial.KeyMaterial,
   dependencyDigests: Readonly<Record<string, string>>
-) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 The declaration fingerprint used by `Plan.compile`, `append`, and `verify`.
@@ -32225,7 +32236,7 @@ to own string-valued properties, as with `fromKeyMaterial`.
 const fromKeyMaterial: (
   material: KeyMaterial.KeyMaterial,
   dependencyDigests: Readonly<Record<string, string>>
-) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 The sealed plan key: resolves graph-local references against `dependencyDigests`, which must hold an own string-valued property for every node the material names, then builds a content key. Fails `non_content_material` unless `material.kind` is `sealed`. Use `planIdentity` for a tier-independent compiler.
@@ -32239,7 +32250,7 @@ const dispatchIdentity: (options: {
   readonly hermetic: NonNullable<ContentIdentity["hermetic"]>
   readonly environment?: EnvironmentIdentity | undefined
   readonly digestMemo?: DigestMemo | undefined
-}) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+}) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 The key a dispatch is _cached_ under, as distinct from the plan key a node is _identified_ by.
@@ -32387,7 +32398,7 @@ const compile: (options: {
   readonly planId: string
   readonly flow: string
   readonly nodes: ReadonlyArray<NodeDraft>
-}) => Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+}) => Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 Compiles drafts into a plan: topological order of material dependencies, dependency-digest substitution, overlap annotation, reader-after-writer ordering, and the plan digest. No I/O. The options are snapshotted before anything else happens, and the result is deep-frozen at generation 0 with `baseDigest` equal to `digest`. Array order follows material dependencies; scheduling follows the complete `dependsOn` graph.
@@ -32400,7 +32411,7 @@ Traversal uses explicit stacks. Because the conflict and reader-after-writer pas
 const append: (
   plan: Plan,
   drafts: ReadonlyArray<NodeDraft>
-) => Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 Appends an elaborated subgraph at the next generation. Nodes already in the plan keep their id, key, edges, and generation byte for byte, and the new nodes arrive pre-keyed against them. `baseDigest` does not move; `digest` does. New nodes retain material-dependency order after the recorded prefix, including when inferred edges point to later entries. An append with no drafts fails as `invalid_node`.
@@ -32411,7 +32422,7 @@ Appends an elaborated subgraph at the next generation. Nodes already in the plan
 const verify: (input: unknown) => Effect.Effect<
   Plan,
   PlanError | StepKey.KeyMaterialError | Schema.SchemaError,
-  Crypto.Crypto
+  EffectDigest.Digest
 >
 ```
 
@@ -32430,7 +32441,7 @@ Whether a value is a compiler-owned immutable snapshot that already passed `veri
 ```ts
 const prefixDigest: (
   plan: Plan
-) => Effect.Effect<StepKey.StepKey, StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StepKey.StepKey, StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 The approval digest of every generation before the newest: the digest the plan carried before its last append. `PlanStore.append` matches it against the stored envelope, so an append proves the recorded prefix is the caller's from the already-verified prefix instead of decoding and re-verifying every stored row.
@@ -32835,9 +32846,9 @@ type RepresentationIdentityVersion = 2 | 1
 
 `flowCall` and `actionCall` validate nothing: an unknown tag becomes a call node the graph keeps as a leaf. `declaration`, `continuation`, `mapper`, `predicate`, and `catchFilter` answer `undefined` for the wrong variant and for an AST rehydrated from JSON, whose side tables did not survive serialization. `functionIdentity` throws a `TypeError` when handed anything but a function.
 
-`schemaIdentity` returns the document a schema contributes to a step key: what the callee of a call accepts and produces, and what a `catch` filters on. The document has the shape of `Schema.toJsonSchemaDocument(schema, options)`, and this package prints it. `onExcessProperty` has the meaning and the default it has there; a step key takes the identity under `"error"`, which closes every object over the keys it declares. The installed `effect` does not, because a later Effect release can print a different document for the same schema: for a string, `effect@4.1.0` prints `minLength: 3` for `isMinLength(5)` where `effect@4.0.0-rc.115` printed `minLength: 5`, adds a `minimum` and a `maximum` to `Schema.Int`, and prints an `isPattern` pattern only when the expression has the `u` flag. A document that moved with the dependency would re-key every recorded step. `schemaIdentity` prints what `effect@4.0.0-rc.115` printed, under every release this package supports. Use it for identity only. A JSON Schema you show to a model or a person comes from `Schema.toJsonSchemaDocument`.
+`schemaIdentity` returns the document a schema contributes to a step key: what the callee of a call accepts and produces, and what a `catch` filters on. The document has the shape of `Schema.toJsonSchemaDocument(schema, options)`, and this package prints it. `onExcessProperty` has the meaning and the default it has there; a step key takes the identity under `"error"`, which closes every object over the keys it declares. The installed `effect` does not, because a later Effect release can print a different document for the same schema: for a string, `effect@4.1.1` prints `minLength: 3` for `isMinLength(5)` where `effect@4.0.0-rc.115` printed `minLength: 5`, adds a `minimum` and a `maximum` to `Schema.Int`, and prints an `isPattern` pattern only when the expression has the `u` flag. A document that moved with the dependency would re-key every recorded step. `schemaIdentity` prints what `effect@4.0.0-rc.115` printed, under every release this package supports. Use it for identity only. A JSON Schema you show to a model or a person comes from `Schema.toJsonSchemaDocument`.
 
-The identity has three limits. A built-in check such as `Schema.isMinLength` contributes the constraint its name and arguments state, so a `toJsonSchema` annotation passed to a built-in check is not read; one on a `Schema.makeFilter` check is. `Schema.brand` contributes nothing, because a brand is not part of the schema in `effect@4.1.0`: a declaration that uses one schema with an `identifier`, or one recursive schema, both with and without a brand got two definitions under `effect@4.0.0-rc.115` and gets one now, so it re-keys once. And a codec's behavior contributes nothing, so an author who changes what a transformation does renames the declaration to re-key its calls. `schemaIdentity` throws `Node.SchemaIdentityError`, tagged `@smthrs/plan/SchemaIdentityError`, for a schema that has no JSON Schema form, such as a record keyed by a number.
+The identity has three limits. A built-in check such as `Schema.isMinLength` contributes the constraint its name and arguments state, so a `toJsonSchema` annotation passed to a built-in check is not read; one on a `Schema.makeFilter` check is. `Schema.brand` contributes nothing, because a brand is not part of the schema in `effect@4.1.1`: a declaration that uses one schema with an `identifier`, or one recursive schema, both with and without a brand got two definitions under `effect@4.0.0-rc.115` and gets one now, so it re-keys once. And a codec's behavior contributes nothing, so an author who changes what a transformation does renames the declaration to re-key its calls. `schemaIdentity` throws `Node.SchemaIdentityError`, tagged `@smthrs/plan/SchemaIdentityError`, for a schema that has no JSON Schema form, such as a record keyed by a number.
 
 `representationIdentity` returns what a sealed action's step key folds in for its success and error schemas: `SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(schema.ast))` as `effect@4.0.0-rc.115` wrote it. A later release renamed six built-in checks, `isStartsWith`, `isEndsWith`, `isIncludes`, `isLengthBetween`, `isSizeBetween` and `isPropertiesLengthBetween`; the identity writes their rc.115 ids back. `representationIdentity` throws for a schema that has no representation, such as one with a `Schema.makeFilter` check.
 
@@ -33375,7 +33386,7 @@ https://smithers.sh/docs/reference/api/plan-store/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan-store/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan-store/docs)
 
-> **Related APIs:** [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/keys`](/docs/reference/api/keys/) · [`@smthrs/plan`](/docs/reference/api/plan/)
+> **Related APIs:** [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/keys`](/docs/reference/api/keys/) · [`@smthrs/plan`](/docs/reference/api/plan/)
 
 `@smthrs/plan-store` exports two modules from its root entry point, and each is
 also importable from `@smthrs/plan-store/<Module>`:
@@ -33398,7 +33409,6 @@ The shortest composition that records a compiled plan:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Migrations from "@smthrs/plan-store/Migrations"
 import * as PlanStore from "@smthrs/plan-store/PlanStore"
@@ -33408,7 +33418,7 @@ import * as Layer from "effect/Layer"
 
 const layer = PlanStore.layer.pipe(
   Layer.provideMerge(Migrations.layer.pipe(Layer.provideMerge(TestDatabase.layer))),
-  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+  Layer.provideMerge(NodeCrypto.layer)
 )
 
 const program = Effect.gen(function*() {
@@ -33471,7 +33481,7 @@ interface Service {
 }
 ```
 
-`createdAtMs` comes from the caller's clock. Constructing the store requires `Crypto.Crypto` alongside SQL and the durable writer; individual operations use that captured implementation.
+`createdAtMs` comes from the caller's clock. Constructing the store requires `EffectDigest.Digest` alongside SQL and the durable writer; individual operations use that captured implementation.
 
 ### PlanStore.RecordResult
 
@@ -33495,7 +33505,7 @@ The service tag.
 ### PlanStore.make
 
 ```ts
-const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlClient | Crypto.Crypto>
+const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlClient | EffectDigest.Digest>
 ```
 
 Builds the SQL-backed store.
@@ -33503,7 +33513,7 @@ Builds the SQL-backed store.
 ### PlanStore.layer
 
 ```ts
-const layer: Layer.Layer<PlanStore, never, DurableWriter | SqlClient.SqlClient | Crypto.Crypto>
+const layer: Layer.Layer<PlanStore, never, DurableWriter | SqlClient.SqlClient | EffectDigest.Digest>
 ```
 
 Provides `make`.
@@ -34039,7 +34049,7 @@ https://smithers.sh/docs/reference/api/platform-bun/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-bun/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-bun/docs)
 
-> **Related APIs:** [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/)
+> **Related APIs:** [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/)
 
 ```ts
 import { BunHost } from "@smthrs/platform-bun"
@@ -34055,7 +34065,7 @@ const program = Effect.gen(function*() {
 
 This barrel and `BunHost` import `@effect/platform-bun` at module load. It
 and the Effect Node platform packages are bundled privately, built from
-`effect@4.1.0`. `effect` is a required peer at exactly `4.1.0`.
+`effect@4.1.1`. `effect` is a required peer at exactly `4.1.1`.
 
 :::warning
 This entry point is Node-only in the browser-bundle sense: it falls back to the
@@ -34096,13 +34106,13 @@ implementation identities, and platform module re-exports.
 
 ### Layers
 
-| Export             | Signature                                                                                                   |
-| ------------------ | ----------------------------------------------------------------------------------------------------------- |
-| `layer`            | `Layer.Layer<BunHost \| Crypto.Crypto>`                                                                     |
-| `layerAt`          | `(root: string) => Layer.Layer<BunHost \| Crypto.Crypto>`                                                   |
-| `layerContained`   | `(options?: ContainedOptions) => Layer.Layer<BunHost \| Crypto.Crypto, never, ProcessLedger>`               |
-| `layerContainedAt` | `(root: string, options?: ContainedOptions) => Layer.Layer<BunHost \| Crypto.Crypto, never, ProcessLedger>` |
-| `layerHttpClient`  | `Layer.Layer<HttpClient>`                                                                                   |
+| Export             | Signature                                                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `layer`            | `Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom)>`                                                                     |
+| `layerAt`          | `(root: string) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom)>`                                                   |
+| `layerContained`   | `(options?: ContainedOptions) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom), never, ProcessLedger>`               |
+| `layerContainedAt` | `(root: string, options?: ContainedOptions) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom), never, ProcessLedger>` |
+| `layerHttpClient`  | `Layer.Layer<HttpClient>`                                                                                                                        |
 
 `layer` provides all five Host services, including the runtime-independent
 `Path`. `Jj` is bound to the process working directory.
@@ -34387,8 +34397,8 @@ const layer: Layer.Layer<CloudflareHost>
 ```
 
 Provides `FileSystem`, `Path`, `ChildProcessSpawner`, `Jj`, `HttpClient`,
-`Crypto` and `OwnerIdentity`. `Crypto` is `WebCrypto.layer` from
-`@smthrs/crypto`. See [the Cloudflare Host surface](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-cloudflare/docs/concepts/host-surface.md) for what each one does.
+`Digest`, `SecureRandom` and `OwnerIdentity`. `Digest` and `SecureRandom` are
+`WebCrypto.layer` from `@smthrs/crypto`. See [the Cloudflare Host surface](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-cloudflare/docs/concepts/host-surface.md) for what each one does.
 
 A Worker's `fetch` goes through Cloudflare's network, which a Worker cannot pin
 to checked addresses, and a Worker has no name resolver. So the web tools in
@@ -34405,7 +34415,7 @@ type CloudflareHost =
   | ChildProcessSpawner
   | Jj.Jj
   | HttpClient
-  | Crypto.Crypto
+  | (EffectDigest.Digest \| SecureRandom.SecureRandom)
   | OwnerIdentity.OwnerIdentity
 ```
 
@@ -34626,15 +34636,16 @@ class IntentConflict extends Schema.TaggedError<IntentConflict>()(
 
 ### Constants
 
-| Export                                 | Value                                                               | Meaning                                                                  |
-| -------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `ExecutionObject.intentKey`            | `"smithers/intent"`                                                 | The storage key the intent lives under.                                  |
-| `ExecutionObject.failuresKey`          | `"smithers/failures"`                                               | The storage key the count of alarms without progress lives under.        |
-| `ExecutionObject.settledKey`           | `"smithers/settled"`                                                | The storage key when the execution settled, in epoch ms, lives under.    |
-| `ExecutionObject.settledRetentionMs`   | `86_400_000`                                                        | How long a settled object keeps its intent before it forgets it.         |
-| `ExecutionObject.startGraceMs`         | `5_000`                                                             | How long after `start` stores an intent its alarm fires if `start` dies. |
-| `ExecutionObject.retryPolicy`          | `RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 300_000 })` | The backoff between alarms without progress. Never gives up.             |
-| `ExecutionObject.defaultDriveBudgetMs` | `600_000`                                                           | How long a drive keeps starting steps unless `alarm` is given another.   |
+| Export                                   | Value                                                               | Meaning                                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `ExecutionObject.intentKey`              | `"smithers/intent"`                                                 | The storage key the intent lives under.                                          |
+| `ExecutionObject.failuresKey`            | `"smithers/failures"`                                               | The storage key the count of alarms without progress lives under.                |
+| `ExecutionObject.settledKey`             | `"smithers/settled"`                                                | The storage key when the execution settled, in epoch ms, lives under.            |
+| `ExecutionObject.settledRetentionMs`     | `86_400_000`                                                        | How long a settled object keeps its intent before it forgets it.                 |
+| `ExecutionObject.startGraceMs`           | `5_000`                                                             | How long after `start` stores an intent its alarm fires if `start` dies.         |
+| `ExecutionObject.retryPolicy`            | `RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 300_000 })` | The backoff between alarms without progress. Never gives up.                     |
+| `ExecutionObject.defaultDriveBudgetMs`   | `600_000`                                                           | How long a drive keeps starting steps unless `alarm` is given another.           |
+| `ExecutionObject.admittedStartTimeoutMs` | `2_000`                                                             | How long a child's start during its parent's drive waits before routing does it. |
 
 `ExecutionObject.driveBudget` is a `Config.Config<number>`: the setting
 `EXECUTION_DRIVE_BUDGET_SECONDS`, whole seconds from 1 to 899, as
@@ -34649,7 +34660,7 @@ a `ConfigError`. The Durable Object class reads it once and passes it to every
 | `ExecutionObject.starts`        | `smithers_cloudflare_execution_starts`                                          | `outcome`: `accepted`, `duplicate`, `conflict` or `failed`                   |
 | `ExecutionObject.alarms`        | `smithers_cloudflare_execution_alarms`                                          | `outcome`: `idle`, `settled`, `parked`, `yielded`, `retrying` or `forgotten` |
 | `ExecutionObject.driveDuration` | `smithers_cloudflare_execution_drive_duration` (ms histogram, buckets to 900 s) | `outcome`: `settled`, `parked`, `yielded`, `unfinished` or `failed`          |
-| `ExecutionObject.routed`        | `smithers_cloudflare_execution_routed`                                          | `route`: `start` or `wake`, counted per successful call                      |
+| `ExecutionObject.routed`        | `smithers_cloudflare_execution_routed`                                          | `route`: `start`, `wake` or `admitted`, counted per successful call          |
 | `ExecutionObject.wakes`         | `smithers_cloudflare_execution_wakes`                                           | `outcome`: `armed` or `idle`                                                 |
 
 Each `alarm` span carries `smithers.execution.started` and
@@ -34667,6 +34678,52 @@ Each `cloudflare.execution.alarm` line and span also says what the alarm cost:
 | `schemaWide`    | How many of those held the whole schema's lock, so committed alone.                                                           |
 | `lockWaitMs`    | How long those transactions waited for the lock in total, in whole milliseconds.                                              |
 | `maxLockWaitMs` | Longest individual client-side acquisition, including transaction open, retries and network time.                             |
+
+## ObjectDatabase
+
+The durable engine's `SqlClient` in a SQLite-backed Durable Object's own
+storage, through Effect's `@effect/sql-sqlite-do` client: a host whose
+executions each run on one object needs no database server.
+
+### `ObjectDatabase.layer`
+
+```ts
+layer(storage: ObjectDatabase.Storage): Layer.Layer<SqlClient.SqlClient>
+```
+
+Pass the object's `ctx.storage`, and provide the layer to
+`CloudflareRuntime.layer` in the alarm that drives the execution:
+
+```ts
+ExecutionObject.alarm(storage, {
+  flows: [Reply],
+  runtime: (intent) =>
+    CloudflareRuntime.layer({ hostId: ctx.id.toString(), executionId: intent.executionId }, registration).pipe(
+      Layer.provide(ObjectDatabase.layer(ctx.storage))
+    ),
+  router
+})
+```
+
+- Statements run one at a time, as the object's storage does.
+- SQLite in a Durable Object refuses `BEGIN` and `SAVEPOINT`, so every
+  transaction runs in `storage.transaction()`, which holds the object's input
+  gate until it ends. The engine's read transactions run there too, registered
+  with `@smthrs/database`'s `Dialect.registerReadTransaction`; unlike SQLite's
+  deferred `BEGIN`, one excludes writers, so never wait inside one for a
+  write.
+- Each execution's journal stays on its own object. A child flow or a handoff
+  round runs on an object of its own, whose store its parent cannot read: use
+  the shared Postgres for flows that start children.
+
+`test/ObjectDatabaseWorkerd.test.ts` (with `FLOWS_WORKERD_SMOKE=1`) runs a
+flow from real alarms on the real storage, including a reset inside a step
+that a new incarnation finishes.
+
+### `ObjectDatabase.Storage`
+
+`ctx.storage` of a SQLite-backed Durable Object: its `sql` and its
+`transaction`.
 
 ## EdgeCache
 
@@ -36390,6 +36447,11 @@ policy and closes Unix sockets; build tools retain their declared policy. Build
 output files may open a parent directory; agent permission profiles never use
 that build-specific option.
 
+A launcher mounts its named package root so scripts can load sibling modules.
+Module-format-only manifests under `bin/` do not narrow that root. Custom host
+probes can implement `Host.packageDirectory`; omitted, manifest existence is
+used. The search stays bounded and never grants the host home or filesystem root.
+
 ---
 
 # @smthrs/plugin
@@ -37084,7 +37146,7 @@ https://smithers.sh/docs/reference/api/registry/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/registry/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/registry/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/registry/docs)
 
-> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/plan`](/docs/reference/api/plan/)
+> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/plan`](/docs/reference/api/plan/)
 
 `@smthrs/registry` exports nine modules from its root entry point, and each is
 also importable from `@smthrs/registry/<Module>`:
@@ -38452,7 +38514,7 @@ without registering anything twice.
 ### Executable.Registration
 
 ```ts
-type Registration = FlowRuntime | Action.Implementations | Crypto.Crypto
+type Registration = FlowRuntime | Action.Implementations | (EffectDigest.Digest | SecureRandom.SecureRandom)
 ```
 
 What a registration layer still needs from its host: the flow runtime it
@@ -42822,10 +42884,10 @@ https://smithers.sh/docs/reference/api/testing/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/testing/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/testing/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/testing/docs)
 
-> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/platform-browser`](/docs/reference/api/platform-browser/) · [`@smthrs/scorers`](/docs/reference/api/scorers/)
+> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/platform-browser`](/docs/reference/api/platform-browser/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/scorers`](/docs/reference/api/scorers/)
 
-`@smthrs/testing` exports twenty-four modules from its root entry point, and each is
-also importable from `@smthrs/testing/<Module>`:
+`@smthrs/testing` exports module namespaces from its root entry point.
+Import a namespace from the root or use a declared package subpath:
 
 ```ts
 import { Conformance, EngineSubject, TestLayers } from "@smthrs/testing"
@@ -43649,7 +43711,11 @@ could not run a single interrupt pin against the engine that ships.
 ### FlowEngineLike.make
 
 ```ts
-const make: () => Effect.Effect<EngineSubject, never, Scope.Scope | FlowRuntime.FlowRuntime | Crypto.Crypto>
+const make: () => Effect.Effect<
+  EngineSubject,
+  never,
+  Scope.Scope | FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)
+>
 ```
 
 Constructs an `EngineSubject` over the flow engine in the ambient
@@ -43660,7 +43726,11 @@ it settles as completed, aborted, failed, or suspended.
 ### FlowEngineLike.layer
 
 ```ts
-const layer: () => Layer.Layer<EngineSubject, never, FlowRuntime.FlowRuntime | Crypto.Crypto>
+const layer: () => Layer.Layer<
+  EngineSubject,
+  never,
+  FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)
+>
 ```
 
 ### FlowEngineLike.layerOver
@@ -43668,7 +43738,7 @@ const layer: () => Layer.Layer<EngineSubject, never, FlowRuntime.FlowRuntime | C
 ```ts
 const layerOver: <E, R>(
   runtime: Layer.Layer<FlowRuntime.FlowRuntime, E, R>
-) => Layer.Layer<EngineSubject | Crypto.Crypto, E, R>
+) => Layer.Layer<EngineSubject | (EffectDigest.Digest | SecureRandom.SecureRandom), E, R>
 ```
 
 Provides an `EngineSubject` over any `FlowRuntime` implementation, and supplies
@@ -43684,7 +43754,7 @@ on and must not. Supplying that layer is the whole connection.
 ### FlowEngineLike.layerMemory
 
 ```ts
-const layerMemory: Layer.Layer<EngineSubject | Crypto.Crypto>
+const layerMemory: Layer.Layer<EngineSubject | (EffectDigest.Digest | SecureRandom.SecureRandom)>
 ```
 
 `layerOver(FlowEngine.layerMemory)`: the engine's in-memory implementation,
@@ -44938,6 +45008,52 @@ SIGTERM and exits `1` with the message on a parse or startup failure.
 | `FlowEngineLike` scheduler passes awaiting a published result: 1000     | Fails typed rather than spinning                                        |
 | Conformance pin wait: a bounded live-clock schedule, roughly one second | Fails rather than hanging                                               |
 | `ScoreGate` sample count                                                | No limit; the minimum is an iterative reduction, not an argument spread |
+
+## RealCliDriver
+
+Import `{ RealCliDriver }` from `@smthrs/testing`. `make(options)` allocates a
+scoped temporary project and fresh HOME, XDG, auth, session and temporary roots.
+`run(args, input?)` executes literal arguments and optional piped input, returning
+`{ code, stdout, stderr }`. `execute({ executable, args?, cwd, env?, input?,
+timeoutMs?, maxBytes? })` runs one command without allocating state.
+
+Provide the library catalog's injected filesystem, path and supervised process
+services, such as `NodeHost.layer` from `@smthrs/platform-node`. No ambient
+environment is inherited; explicitly supply PATH and required configuration.
+State roots override caller-supplied values. Both output pipes drain concurrently
+with UTF-8 decoding. The default deadline is 30 seconds and the combined byte
+budget is 1 MiB. `DriverError.reason` distinguishes invalid bounds, timeout and
+output overflow; platform failures retain their typed errors. Scope closure
+terminates the owned process group and removes temporary state.
+
+## TerminalRecording
+
+Import `{ TerminalRecording }` from `@smthrs/testing`. `make({ title, columns?,
+rows?, frameDurationMs?, maxFrames?, renderer?, env? })` creates a bounded
+recording. `capture(label, screen)` accepts public, settled plain-text screens;
+never pass credentials, private input or ANSI escapes. `write(newDirectory)`
+returns `{ gif, cast, manifest }` after successful conversion through real
+FFmpeg 7+ with drawtext, fontconfig and palette filters.
+
+Defaults are 110 columns, 40 rows, 800 ms per frame and 64 frames. Durations
+use GIF's 10 ms precision. Frames must fit the row count and terminal display
+width, including wide and combining glyphs, checked with the TUI's existing
+`string-width` library inside the Effect capture boundary. Fixed geometry,
+explicit row positioning and an asciinema v2 timeline make replay independent of
+process latency. Replaying identical saved frames in the same renderer/font
+environment produces identical GIF bytes. Each new destination retains text
+frames, row files, `terminal.filter`, `terminal.cast` and renderer diagnostics;
+`manifest.json` is created only after a successful GIF conversion. A failed
+conversion preserves evidence without a success manifest; stale destinations
+are refused.
+
+The CLI journey in `packages/smithers/test/e2e/cli-journey.test.ts` covers fresh
+signed-out state, credential refusal and current repository URLs. The
+`terminal recording evidence` case in `apps/tui/e2e/tui.test.ts` uses the
+production TUI in a real PTY for session commands and keyboard navigation.
+`SMITHERS_TERMINAL_ARTIFACTS` selects the parent evidence directory; each run
+creates a fresh child. The CLI additionally accepts `SMITHERS_TERMINAL_PATH`
+for a native executable PATH when a host shim depends on its original HOME.
 
 ---
 
@@ -47180,7 +47296,9 @@ the page's messages.
 ## `Home`
 
 A repository's own home: the sections and blocks `.smithers/home.json` declares, and who sees each section. See
-[Read a repository's home](https://github.com/smithersai/smithers/blob/main/packages/smithers/ui/views/docs/read-a-home.md).
+[Read a repository's home](https://github.com/smithersai/smithers/blob/main/packages/smithers/ui/views/docs/read-a-home.md). `Home.Url` accepts safe absolute
+HTTP(S) URLs and origin-relative paths starting with one `/`; `Home.DocsUrl`
+requires absolute HTTPS URLs without credentials.
 
 | Export                                                                                                                       | What it is                                                                                                                                                                                                          |
 | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -47275,7 +47393,7 @@ npm install -g smthrs@next
 | [`monitor`](#monitor) | Every run, with its debug view |
 | [`pr`](#pr) | Open a pull request's card |
 | [`review`](#review) | Review a change, return findings; waits for the person's confirmation |
-| [`run`](#run) | Advanced |
+| [`run`](#run) | Execute run targets selected by a pattern |
 | [`runs`](#runs) | Inspect and control durable execution records |
 | [`search`](#search) | Search code, wiki and runs |
 | [`shell`](#shell) | Open an interactive terminal in a workspace via the WebSocket terminal endpoint |
@@ -48018,6 +48136,25 @@ smthrs issue comment <number> [options]
 | `--repo` | string |  | no | Repository (OWNER/REPO) |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
+### `issue list`
+
+List issues
+
+```text
+smthrs issue list [options]
+```
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--all` | boolean | `false` | no | Fetch all pages automatically |
+| `--cursor` | string |  | no | Pagination cursor (from previous response) |
+| `--limit` | number | `30` | no | Results per page |
+| `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
+| `--search` | string |  | no | Search titles, or #number |
+| `--state` | one of `open`, `closed`, `fixed`, `verified`, `all` | `open` | no | Filter by state |
+| `--view` | string |  | no | Saved issue view id from issue views; replaces `--state` |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
 ### `issue new`
 
 Open a GitHub issue; waits for the person's confirmation
@@ -48157,11 +48294,32 @@ smthrs review <patterns...> [options]
 
 ## `run`
 
-Advanced
+Execute run targets selected by a pattern
 
 ```text
-smthrs run <command>
+smthrs run <patterns...> [options] | <command>
 ```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `patterns` | array of string, min items 1 |  | yes | Bazel labels or recursive patterns; the verb runs their union |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--workspace`, `-w` | string | `<cwd>` | no | Directory inside a workspace containing WORKSPACE.ts |
+| `--cache-dir` | string |  | no | Workspace-relative cache directory; overrides the WORKSPACE.ts declaration |
+| `--verbose` | boolean | `false` | no | Show plain progress for agent and pipe consumers |
+| `--plan` | boolean | `false` | no | Print the inert plan instead of executing |
+| `--jobs`, `-j` | integer, minimum 1 |  | no | Maximum concurrent targets; defaults to host parallelism. Exclusive targets run alone after ready ordinary work |
+| `--include-exclusive` | boolean | `false` | no | Include exclusive targets in wildcard ci/test selections; explicit labels already include them |
+| `--cache` | boolean | `true` | no | Consult the result cache before running; `--no-cache` bypasses reads |
+| `--known-red` | string |  | no | JSON list of targets already red, with owner and expiry; their failures are reported but fail only when newly red |
+| `--fail-fast` | boolean | `false` | no | Stop at the first failure that fails the run: start nothing new, cancel running targets, report, exit 1 |
+| `--results-file` | string |  | no | Also write the run's summary, one status per label, as JSON to this new file; human output is unchanged |
+| `--name`, `-n` | string |  | no | Package name supplied to scaffold targets |
+| `--message`, `-m` | string |  | no | Commit message for a Git.Commit target; wins over the declared message |
+| `--sweep` | boolean | `false` | no | Let a Git.Commit target with no declared path scope commit the whole working tree |
+| `--input`, `-i` | array of string |  | no | Payload input for agent targets as name=value; repeatable |
 
 ### `run inspect`
 
@@ -48254,6 +48412,9 @@ smthrs runs show <run> [options]
 | `--remote` | string |  | no | Remote control plane URL; defaults to SMITHERS_REMOTE |
 | `--mcp-config` | string |  | no | Path to the configured MCP servers |
 | `--quiet` | boolean | `false` | no | Suppress progress messages |
+| `--field` | string |  | no | Read one bounded event field by JSON pointer: /events/\<sequence>/payload/\<field> |
+| `--offset` | integer, minimum 0 |  | no | Character offset in a string `--field` |
+| `--length` | integer, minimum 1, maximum 65536 |  | no | Characters per string field page (default 4096) |
 | `--timing` | boolean | `false` | no | Report where the run's time and tokens went |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 | `--cloud` | boolean | `false` | no | Use repository flows and runs on the backend |

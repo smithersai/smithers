@@ -13,16 +13,16 @@
   },
   "dependencies": {
     "zod": "4.6.7",
-    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
+    "vibelang-runtime": "0.0.12"
   },
   "devDependencies": {
     "@smthrs/control": "workspace:*",
     "@types/node": "26.4.1",
-    "@alchemy.run/cloudflare": "2.0.0-beta.84",
-    "alchemy": "2.0.0-beta.84",
+    "alchemy": "2.0.0-beta.85",
     "bun-types": "^1.4.0",
     "effect": "4.1.1",
     "typescript": "~5.9.3",
-    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz"
+    "vibelang": "0.0.12",
+    "@alchemy.run/cloudflare": "2.0.0-beta.85"
   }
 }

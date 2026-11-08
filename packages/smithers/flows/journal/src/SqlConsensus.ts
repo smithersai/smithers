@@ -84,6 +84,9 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
       cause
     })
 
+  const preserveConsensusError = (cause: unknown): ConsensusError =>
+    cause instanceof ConsensusError ? cause : strategyError(cause)
+
   // The original cause is preserved through the wrapper so an enclosing
   // `DurableWriter.write`'s retry classification still sees a transient
   // conflict raised by a savepoint-nested lease statement. Every operation
@@ -95,7 +98,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     body: Effect.Effect<A, unknown>
   ): Effect.Effect<A, ConsensusError> =>
     writer.write(body, { partition: key }).pipe(
-      Effect.mapError((cause) => cause instanceof ConsensusError ? cause : strategyError(cause))
+      Effect.mapError(preserveConsensusError)
     )
 
   /** `write` for a body that only reads: it serializes the same, with no savepoint around it. */
@@ -104,7 +107,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     body: Effect.Effect<A, unknown>
   ): Effect.Effect<A, ConsensusError> =>
     writer.write(body, { partition: key, readOnly: true }).pipe(
-      Effect.mapError((cause) => cause instanceof ConsensusError ? cause : strategyError(cause))
+      Effect.mapError(preserveConsensusError)
     )
 
   const leaseOf = (runId: string) =>

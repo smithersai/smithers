@@ -1,6 +1,8 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
+import { readWorkspaceManifests } from "../../../.smithers/flows/release/pack-release.mjs"
+import { repoRoot } from "../scripts/workspace-packages.mjs"
 import {
   assertEffectPins,
   assertNodeSharedPins,
@@ -13,8 +15,6 @@ import {
   SUPPORTED_EFFECT_RANGE,
   UNSUPPORTED_EFFECT_VERSION
 } from "./check-single-effect-version.mjs"
-import { readWorkspaceManifests } from "../../../.smithers/flows/release/pack-release.mjs"
-import { repoRoot } from "../scripts/workspace-packages.mjs"
 
 const pin = EXPECTED_EFFECT_VERSION
 const range = "^" + pin
@@ -44,7 +44,10 @@ test("published libraries and executables require the tested release", () => {
   // Executables' private adapters are built on the tested release. Their
   // peer must select it even when npm publishes a newer Effect.
   assert.equal(expectedEffectDeclaration({ ...library, bin: { cli: "bin.js" } }, "peerDependencies"), pin)
-  assert.throws(() => assertEffectPins(effectDeclarations({ ...library, bin: { cli: "bin.js" } }, "fixture")), /effect@.* must be 4\.1\.0/)
+  assert.throws(
+    () => assertEffectPins(effectDeclarations({ ...library, bin: { cli: "bin.js" } }, "fixture")),
+    /effect@.* must be 4\.1\.1/
+  )
   // A private package is never installed by an application.
   assert.equal(expectedEffectDeclaration({ ...library, private: true }, "peerDependencies"), pin)
 })
@@ -53,7 +56,17 @@ test("the checker requires exact published library peers and refuses ranges", ()
   for (const name of ["effect", "@effect/sql-pg", "@effect/vitest", "@effect/new-adapter"]) {
     const peers = (version) => ({ peerDependencies: { effect: pin, [name]: version } })
     assert.doesNotThrow(() => assertEffectPins(effectDeclarations(peers(pin), "fixture")), name)
-    for (const version of [range, "~" + pin, ">=" + pin, "^4.0.0", "*", UNSUPPORTED_EFFECT_VERSION, "^" + UNSUPPORTED_EFFECT_VERSION]) {
+    for (
+      const version of [
+        range,
+        "~" + pin,
+        ">=" + pin,
+        "^4.0.0",
+        "*",
+        UNSUPPORTED_EFFECT_VERSION,
+        "^" + UNSUPPORTED_EFFECT_VERSION
+      ]
+    ) {
       const records = effectDeclarations(peers(version), "fixture").filter((record) => record.name === name)
       assert.equal(records.length, 1, `${name}@${version} is read`)
       assert.throws(
@@ -69,7 +82,15 @@ test("the checker requires the tested release everywhere else and refuses a rang
   const owners = [{ peerDependencies: { effect: pin } }, { dependencies: { effect: pin } }, { private: true }]
   for (const owner of owners) {
     for (const section of ["dependencies", "devDependencies", "optionalDependencies"]) {
-      for (const name of ["effect", "@effect/platform-node", "@effect/sql-sqlite-node", "@effect/sql-pg", "@effect/new-adapter"]) {
+      for (
+        const name of [
+          "effect",
+          "@effect/platform-node",
+          "@effect/sql-sqlite-node",
+          "@effect/sql-pg",
+          "@effect/new-adapter"
+        ]
+      ) {
         const manifest = (version) => ({ ...owner, [section]: { ...owner[section], [name]: version } })
         assert.doesNotThrow(() => assertEffectPins(effectDeclarations(manifest(pin), "fixture")), `${section} ${name}`)
         for (const version of [range, "~" + pin, "4.0.3", "4.0.4", UNSUPPORTED_EFFECT_VERSION, "latest"]) {
@@ -92,13 +113,22 @@ test("the checker requires the tested release everywhere else and refuses a rang
 test("every Effect package is in the family on a stable version, and tooling off the release line is not", () => {
   // The family used to be seven names plus anything carrying `-rc.`, so a
   // stable `@effect/sql-pg` at the wrong version passed unread.
-  const adapters = ["@effect/sql-pg", "@effect/sql-d1", "@effect/sql-sqlite-bun", "@effect/sql-sqlite-do", "@effect/future"]
+  const adapters = [
+    "@effect/sql-pg",
+    "@effect/sql-d1",
+    "@effect/sql-sqlite-bun",
+    "@effect/sql-sqlite-do",
+    "@effect/future"
+  ]
   const manifest = { devDependencies: Object.fromEntries(adapters.map((name) => [name, "4.0.3"])) }
   assert.deepEqual(effectDeclarations(manifest, "fixture").map((record) => record.name), adapters)
   assert.throws(() => assertEffectPins(effectDeclarations(manifest, "fixture")), /@effect\/sql-pg@4\.0\.3 must be/)
   const lock = adapters.map((name) => `  '${name}@4.0.3':\n`).join("")
   assert.deepEqual(effectLockVersions("packages:\n" + lock, "pnpm").map((record) => record.name), adapters)
-  assert.throws(() => assertEffectPins(effectLockVersions("packages:\n" + lock, "pnpm")), /pnpm-lock\.yaml: @effect\/sql-d1@4\.0\.3/)
+  assert.throws(
+    () => assertEffectPins(effectLockVersions("packages:\n" + lock, "pnpm")),
+    /pnpm-lock\.yaml: @effect\/sql-d1@4\.0\.3/
+  )
   // The TypeScript plugin has its own version line.
   assert.deepEqual(effectDeclarations({ devDependencies: { "@effect/language-service": "0.87.2" } }, "fixture"), [])
   assert.deepEqual(effectLockVersions("packages:\n  '@effect/language-service@0.87.2':\n", "pnpm"), [])
@@ -112,7 +142,10 @@ test("rejects a platform dependency without an exact node-shared dependency", ()
       const manifest of [
         { dependencies: { [platform]: pin, effect: pin } },
         { dependencies: { [platform]: pin, effect: pin }, peerDependencies: { "@effect/platform-node-shared": pin } },
-        { dependencies: { [platform]: pin }, peerDependencies: { effect: range, "@effect/platform-node-shared": range } },
+        {
+          dependencies: { [platform]: pin },
+          peerDependencies: { effect: range, "@effect/platform-node-shared": range }
+        },
         { dependencies: { [platform]: pin, effect: pin }, devDependencies: { "@effect/platform-node-shared": pin } },
         { dependencies: { [platform]: pin, "@effect/platform-node-shared": range } },
         { optionalDependencies: { [platform]: pin } }
@@ -165,8 +198,14 @@ test("accepts the pinned shapes and packages without a platform", () => {
       dependencies: { "@effect/platform-bun": pin, "@effect/platform-node": pin, "@effect/platform-node-shared": pin }
     },
     { peerDependencies: { "@effect/platform-node": pin, "@effect/platform-node-shared": pin, effect: pin } },
-    { peerDependencies: { "@effect/platform-bun": range, effect: range }, dependencies: { "@effect/platform-node-shared": pin } },
-    { dependencies: { effect: pin }, peerDependencies: { "@effect/platform-node": pin, "@effect/platform-node-shared": pin } },
+    {
+      peerDependencies: { "@effect/platform-bun": range, effect: range },
+      dependencies: { "@effect/platform-node-shared": pin }
+    },
+    {
+      dependencies: { effect: pin },
+      peerDependencies: { "@effect/platform-node": pin, "@effect/platform-node-shared": pin }
+    },
     { dependencies: { effect: pin }, devDependencies: { "@effect/platform-node": pin } },
     {}
   ])

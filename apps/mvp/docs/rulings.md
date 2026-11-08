@@ -297,6 +297,8 @@ This rule governs every spec and design. Until the panel's design is reviewed by
 - **PROC-25** Will handles credential rotation and leak response himself, with his own agent; agents don't chase it. Will, 2026-10-20 23:14 (queue, option 3, "Not yet", of "Rotate the credentials exposed in agent diagnostics"): "I'll handle this don't worry about it"; 2026-10-21 21:05 (queue, on "Did anything besides the GitHub token leak?"): "don't worry about this I have a comletely different agent and myself handling it".
 - **PROC-26** No commit is left stranded. Work that exists only outside `main` (a lane's head, a bookmark, a working copy, a side repository such as `w12-hold`) is landed, or recorded as superseded with the main commit that replaced it, or as scaffold; nothing is dropped without a recorded reason. Judge by content, not subject: landers squash and rebase. Will, 2026-11-01 about 11:00 PST: "Land them fuck you are never allowed to leave stranded commits that's how we lose the work!!!" Checks: `.smithers/flows/land/workspace.mjs remove` refuses a lane with unlanded work under `@`, on a bookmark named for the lane, or as a bare head committed since the lane began; `.smithers/flows/land/stranded-audit.sh` classifies every commit outside main by content. The 2026-11-01 inventory and its landing ledger: [stranded commits](work/stranded-commits.md).
 
+- **PROC-27** VibeLang design work is driven by documentation and specifications. Research all relevant context up front, including the Effect TypeScript implementation, and specify the generated code. Will, 2026-11-06: "we are doing documentation driven development here and spec driven development" and "This time do a better job of researching all context like what the effect.ts code looks like up front and specifiy what we compile to".
+
 ## 14. Agents and delegation
 
 - **AGENT-1** Spread Codex work across the round-robin accounts. Will, 2026-10-19 14:55: "Yea use a roudn robin codex account".
@@ -367,3 +369,10 @@ Settled since this table was first written (updated 2026-10-25):
 - **Cerebras capacity at real traffic:** load-tested, then the capacity request sent on 2026-10-21, as Will chose in the queue; a backup source of very fast inference is required (ARCH-17 addenda; work note [cerebras-rate-limits](work/cerebras-rate-limits.md)). Since 2026-10-25 13:28, hosted inference is flagged off until after the initial release (ARCH-20).
 
 - **FE-23** “Add your model” is one dismissable call to action on the shared toast stack, titled “Add your model” with “Open settings”. It overlays the page, persists until a usable model is added, and resolves automatically. It never takes conversation or timeline space (FE-21). Empty signed-out `/app` onboarding remains separate. Will, 2026-10-31 about 20:25 PDT, on smithers.sh: "Another problem is this add your model ui is taking up so much space that the timeline and the chat could be using. It should be a toast notification using that UI like any other call to action would be using that UI like needing approvals and stuff".
+
+## 19. vibelang.smithers.sh (Will, 2026-11-07)
+
+vibelang.smithers.sh, the VibeLang factory, is its own app, `apps/vibelang`: a Foldkit app written in VibeLang on
+Effect, on Cloudflare by Alchemy. Its rulings, VL-1 to VL-26, live in its wiki,
+[apps/vibelang/wiki/rulings.md](../../vibelang/wiki/rulings.md), which is the source of truth for that app (VL-23).
+VL-22 brings back the mythical history for it, which TODO-2 deferred for apps/mvp.

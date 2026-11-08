@@ -74,10 +74,10 @@ const reasonOf = (exit: Exit.Exit<unknown, RevokeGitHubToken.RevocationFailed>) 
   Exit.isFailure(exit) ? (Cause.squash(exit.cause) as RevokeGitHubToken.RevocationFailed).reason : "succeeded"
 
 describe("auth/RevokeGitHubToken", () => {
-  test("sign-out keeps the sealed tokens and starts the flow once; on the Node host it revokes the token and forgets them", async () => {
+  test("sign-out moves the sealed tokens to cleanup and starts the flow once; on the Node host it revokes the token and forgets them", async () => {
     const s = await signedOut()
-    // Signed out, the session holds its sealed tokens until the flow forgets them.
-    expect(await tokens(s.id)).toMatchObject({ accessGone: false, refreshGone: false, revokedReason: "sign_out" })
+    // The cleanup request owns the sealed pair before the response returns.
+    expect(await tokens(s.id)).toMatchObject({ accessGone: true, refreshGone: true, revokedReason: "sign_out" })
     expect(s.h.revocations).toEqual([s.id])
     // Signing out again before the flow ran starts the same execution again, a no-op on the host.
     const signOut = () =>
@@ -118,7 +118,7 @@ describe("auth/RevokeGitHubToken", () => {
     expect(await h.session(cookies)).toEqual({ signedIn: false, available: true, hostedModel: false })
   })
 
-  test("signing in again in the same browser starts the revocation of the session it ended", async () => {
+  test("an eligible sign-in starts replacement cleanup and never starts session termination", async () => {
     const github = scriptedGitHub()
     const h = await signInHarness(runtime, { github })
     const first = await h.signInAs()
@@ -126,8 +126,10 @@ describe("auth/RevokeGitHubToken", () => {
     const started = await h.start()
     const { code, state } = github.approve(started.location)
     await h.callback({ code, state }, { smithers_sign_in: started.cookies["smithers_sign_in"]!.value, ...first.cookies })
-    expect(h.revocations).toEqual([id])
-    expect(await tokens(id)).toMatchObject({ accessGone: false, revokedReason: "sign_out" })
+    expect(h.revocations).toEqual([])
+    expect(h.cleanupStarts).toHaveLength(1)
+    expect(await tokens(id)).toMatchObject({ accessGone: false, revokedReason: null })
+    expect(await h.session(first.cookies)).toMatchObject({ signedIn: true })
   })
 
   test("a token GitHub no longer has counts as revoked", async () => {
@@ -167,13 +169,14 @@ describe("auth/RevokeGitHubToken", () => {
     expect(reasonOf(await Effect.runPromiseExit(RevokeGitHubToken.observed(s.id, s.services, down)))).toBe("database")
     expect(reasonOf(await Effect.runPromiseExit(RevokeGitHubToken.forget(s.id, down)))).toBe("database")
     expect(reasonOf(await Effect.runPromiseExit(RevokeGitHubToken.end(s.id, down)))).toBe("database")
-    expect(await tokens(s.id)).toMatchObject({ accessGone: false, refreshGone: false })
+    expect(await tokens(s.id)).toMatchObject({ accessGone: true, refreshGone: true })
   })
 
-  test("a sealed token that no longer opens (SESSION_SECRET changed) is forgotten without reaching GitHub", async () => {
+  test("an unreadable cleanup stays pending without reaching GitHub", async () => {
     const s = await signedOut()
-    await sql(`UPDATE sessions SET github_access = '{"ciphertext":"AAAA","nonce":"AAAAAAAAAAAAAAAA"}'`)
-    expect(await once(s)).toEqual(Exit.succeed({ outcome: "unreadable" }))
+    await sql(`UPDATE github_token_cleanups SET sealed_access = '{"ciphertext":"AAAA","nonce":"AAAAAAAAAAAAAAAA"}'`)
+    expect(reasonOf(await once(s))).toBe("unreadable")
+    expect(await sql(`SELECT id FROM github_token_cleanups WHERE session_id = '${s.id}' AND finished_at IS NULL`)).toHaveLength(1)
     expect(s.github.calls).not.toContain("revoke")
     expect(await tokens(s.id)).toMatchObject(forgotten)
   })
@@ -221,7 +224,7 @@ describe("auth/RevokeGitHubToken", () => {
     await record(RevokeGitHubToken.end(s.id, s.database))
     await record(RevokeGitHubToken.observed(s.id, s.services, s.database))
     await record(RevokeGitHubToken.observed(s.id, s.services, s.database))
-    expect(logs.map((log) => log.annotations)).toEqual([
+    expect(logs.filter(log => log.message === "auth.revoke_token").map((log) => log.annotations)).toEqual([
       expect.objectContaining({ sessionId: s.id, step: "end", outcome: "over" }),
       expect.objectContaining({
         sessionId: s.id,

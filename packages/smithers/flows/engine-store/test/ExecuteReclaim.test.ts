@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * N-07: `execute` against a hard-killed run reclaims the lease itself.
  *
@@ -18,13 +19,13 @@
  * `heartbeat_at_ms` and no waiting row — lives in `flows_runs` and its consensus lease.
  */
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { DurableWriter } from "@smthrs/database"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { SqlJournal } from "@smthrs/journal"
 import { Node } from "@smthrs/plan"
 import { Ownership, RunStore } from "@smthrs/run-store"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -104,7 +105,11 @@ const insertHardKilledRun = (runId: string, heartbeatAtMs: number) =>
     )).pipe(Effect.orDie)
   })
 
-type Services = Layer.Success<typeof services> | TestClock.TestClock | Crypto.Crypto | Scope.Scope
+type Services =
+  | Layer.Success<typeof services>
+  | TestClock.TestClock
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
+  | Scope.Scope
 
 const run = <A, E>(effect: Effect.Effect<A, E, Services>) =>
   withCrypto(Effect.scoped(effect).pipe(Effect.provide(services), Effect.provide(TestClock.layer())))

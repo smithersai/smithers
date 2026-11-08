@@ -1,6 +1,6 @@
-import { OfflineFallback } from "../../features/navigation/components/OfflineFallback"
+import { IssueHeading } from "../../features/issues/components/IssueHeading"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
-import { Button, Card, CardContent, EmptyState, NotFound, ItemAsideSection, ItemConversation, Kbd, PageBody, Skeleton, TriageControl } from "@smthrs/ui"
+import { Button, Card, CardContent, NotFound, ItemAsideSection, ItemConversation, Kbd, PageBody, TriageControl } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
@@ -10,9 +10,10 @@ import { useIssues } from "../../features/issues/components/IssuesContext"
 import { useTodos } from "../../features/todos/components/TodosContext"
 import { MAKE_TODO, MAKE_TODO_KEY, TODO } from "../../features/todos/contract"
 import { mayChange, mayMakeTodo, todosByIssue } from "../../features/todos/view"
-import { DISCARD, EDIT, githubIssueUrl } from "../../features/issues/contract"
+import { DISCARD, EDIT } from "../../features/issues/contract"
 import {
   conversationProps,
+  earlySummaryOf,
   draftOf,
   mayManageTriage,
   mayStartTriage,
@@ -25,7 +26,8 @@ import { workByIssue, workSections } from "../../features/issues/workView"
 import { WORK_STATUS_LABELS } from "../../features/issues/work"
 import "./issues-screen.css"
 import { useRepoAnswer } from "../../features/repo/components/RepoContext"
-import { SETTLED, SLOT } from "../../firstPaint/settled"
+import { SETTLED } from "../../firstPaint/settled"
+import { repoId } from "../../features/repo/contract"
 import { usePersonalModel } from "../../features/personal-model/components/PersonalModelContext"
 
 // /$owner/$repo/issues/$number: one issue and its comments, this device's own last with their chip, "Open on GitHub ↗",
@@ -34,14 +36,16 @@ import { usePersonalModel } from "../../features/personal-model/components/Perso
 // and Discard. A side column shows the TODOs made from it and, for a Member while none is open, Make TODO, which its
 // key `t` also presses (docs/features/todos.md#from-an-issue). An answered shape with no first complete sync shows
 // the GitHub link instead of waiting forever; only a complete sync establishes Not found.
-// A repository whose issues this person may not read shows sign-in, or Not found. A cold item query remains loading
-// until the eager shape finishes, even if its first 2xx already granted access.
+// A repository whose issues this person may not read shows sign-in, or Not found. While Electric is cold, the early
+// exact-number read supplies its heading through the data gate; unanswered reads show only the requested number.
 export function IssueScreen() {
   const { owner, repo, number } = useParams({ from: "/$owner/$repo/issues/$number" })
   const { queries, actions } = useIssues()
   const auth = useAuth()
   const { data: item, isReady: itemReady } = useLiveQuery(queries.item)
-  const { data: summary } = useLiveQuery(queries.summary)
+  const { data: syncedSummary } = useLiveQuery(queries.summary)
+  const { data: read } = useLiveQuery(queries.searched)
+  const summary = syncedSummary ?? earlySummaryOf(read?.[0], repoId(owner, repo), number)
   const { data: rows } = useLiveQuery(queries.conversation)
   const { data: synced, isReady: syncedReady } = useLiveQuery(queries.synced)
   const { data: view } = useLiveQuery(queries.view)
@@ -81,40 +85,12 @@ export function IssueScreen() {
     )
   }
 
-  if (page === "unknown") {
-    return (
-      <main className="issues-screen" {...SETTLED}><RepoHeader />
-        <PageBody width="wide">
-          {back}
-          <Card><CardContent>
-            <EmptyState title="Issue unavailable here" action={
-              <>
-                {access?.status === "unavailable" ? <Button variant="outline" onClick={actions.retry}>Try again</Button> : null}
-                {" "}<Button asChild variant="outline"><a href={githubIssueUrl(owner, repo, number)} target="_blank" rel="noopener noreferrer">Open on GitHub ↗</a></Button>
-              </>
-            } />
-          </CardContent></Card>
-        </PageBody>
-      </main>
-    )
-  }
   if (item === undefined) {
     return (
       <main className="issues-screen" {...(summary === undefined ? {} : SETTLED)}><RepoHeader />
         <PageBody width="wide">
           {back}
-          {/* The repository's warm summaries name the issue before its own shape brings the body and comments. */}
-          {summary === undefined ? <div {...SLOT} /> : <ItemConversation {...conversationProps({ ...summary, body: "" }, [], { owner, name: repo })} />}
-          <OfflineFallback>
-            <Card><CardContent>
-              <p role="status">Syncing issue…</p>
-              <div className="issues-loading" aria-hidden>
-                {summary === undefined ? <Skeleton className="issues-loading-title" /> : null}
-                <Skeleton className="issues-loading-body" />
-                <Skeleton className="issues-loading-body" />
-              </div>
-            </CardContent></Card>
-          </OfflineFallback>
+          <IssueHeading owner={owner} repo={repo} number={number} summary={summary} unavailable={page === "unknown"} onRetry={access?.status === "unavailable" ? actions.retry : undefined} />
         </PageBody>
       </main>
     )

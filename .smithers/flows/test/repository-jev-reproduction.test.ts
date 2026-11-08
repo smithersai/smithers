@@ -1,9 +1,10 @@
-import { NodeCrypto, NodeServices } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
+import { NodeServices } from "@effect/platform-node"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Interpreter } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, FileSystem, Layer, ManagedRuntime } from "effect"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
@@ -26,9 +27,6 @@ import {
   type Work
 } from "../repository/jobs.ts"
 import type { StepResult } from "../repository/schema.ts"
-
-// Effect 4.1 removed effect/Crypto, and NodeServices.layer no longer provides it.
-const nodeServices = Layer.merge(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 
 const source = {
   changeId: "change",
@@ -124,7 +122,9 @@ const scripted = (choice: string, confidence: number): Layer.Layer<Evaluator.Eva
 }
 
 const review = async (evaluator: Layer.Layer<Evaluator.Evaluator>, observed = true) => {
-  const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(nodeServices)))
+  const fs = await Effect.runPromise(
+    FileSystem.FileSystem.pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
+  )
   const options = { repositoryPath: "/nonexistent", fs, environment: { PATH: process.env.PATH! }, evaluator }
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(Interpreter.layer(ReviewReproduction), executionLayers(options))
@@ -132,7 +132,7 @@ const review = async (evaluator: Layer.Layer<Evaluator.Evaluator>, observed = tr
         Layer.provide([Jj.layerNoop({}), Layer.succeed(NativeCoding, undefined as never)]),
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(FlowEngine.layerMemory),
-        Layer.provideMerge(nodeServices)
+        Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
       )
   )
   try {

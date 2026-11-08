@@ -1,0 +1,10 @@
+// The page's one stylesheet: the Smithers theme, @smthrs/ui's component styles (the same CSS smithers.sh's React chat
+// uses) and this app's frame.
+import { smithersUiCss } from "@smthrs/ui-css"
+import { themeCss } from "@smthrs/ui-styleguide"
+import appCss from "./styles.css?raw"
+
+/** The stylesheet's text. `themeCss` throws only for an unregistered palette, and this page names none. */
+export effect function stylesheet() {
+  return try Effect.try(() => [themeCss(), smithersUiCss(), appCss].join("\n"))
+}

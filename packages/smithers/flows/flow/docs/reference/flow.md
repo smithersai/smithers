@@ -254,7 +254,7 @@ The Bazel-style file glob vocabulary. `Glob` is a `Schema.TaggedStruct` of `incl
 
 ### `Action.idempotencyKey`
 
-- **Signature:** `idempotencyKey(name: string, options?: { readonly includeAttempt?: boolean | undefined; readonly parentScope?: string | undefined }): Effect.Effect<string, never, FlowInstance | Crypto.Crypto>`
+- **Signature:** `idempotencyKey(name: string, options?: { readonly includeAttempt?: boolean | undefined; readonly parentScope?: string | undefined }): Effect.Effect<string, never, FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `0.1.0`
 
 Computes the run-local invocation key of an internal durable operation. The key is scoped by the caller's declaration name and declared `parentScope`.
@@ -355,14 +355,14 @@ Reports one dispatch to the node that drove it, and does nothing where no node d
 
 ### `Action.allocationScope`
 
-- **Signature:** `allocationScope(identity: AllocationIdentity): Effect.Effect<string, Schema.SchemaError, Crypto.Crypto>`
+- **Signature:** `allocationScope(identity: AllocationIdentity): Effect.Effect<string, Schema.SchemaError, (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `0.1.0`
 
 Derives the ordinal allocation scope of a durable operation from its declaration material.
 
 ### `Action.invocationKey`
 
-- **Signature:** `invocationKey(input: { readonly runId: string; readonly parentScope?: string | undefined; readonly ordinal: number; readonly tier: "unsealed" | "compensable" | "irreversible" }): Effect.Effect<StoredKey, Schema.SchemaError, Crypto.Crypto>`
+- **Signature:** `invocationKey(input: { readonly runId: string; readonly parentScope?: string | undefined; readonly ordinal: number; readonly tier: "unsealed" | "compensable" | "irreversible" }): Effect.Effect<StoredKey, Schema.SchemaError, (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `0.1.0`
 
 Derives an invocation key from engine-generated input.
@@ -378,7 +378,7 @@ A directory output captured and replayed as one tree artifact.
 
 ### `Deadline.start`
 
-- **Signature:** `start(options: { readonly flowName: string; readonly deadline?: Duration.Input | undefined; readonly startedAtMs?: number | undefined }): Effect.Effect<LineageDeadline | undefined, never, FlowRuntime | FlowInstance | Crypto.Crypto>`
+- **Signature:** `start(options: { readonly flowName: string; readonly deadline?: Duration.Input | undefined; readonly startedAtMs?: number | undefined }): Effect.Effect<LineageDeadline | undefined, never, FlowRuntime | FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `1.0.0`
 
 Starts the current execution's deadline: the lineage deadline the round inherited from a handoff, or `deadline` counted from the execution's journaled first start (or from `startedAtMs`, when the host holds a durable start of its own), with a durable clock armed at it. Answers `undefined` when neither applies. Dies with a `RangeError` when `deadline` is not a positive finite duration, `startedAtMs` is not finite, or the deadline would expire after epoch millisecond `Number.MAX_SAFE_INTEGER`. Start at most one deadline per execution.
@@ -399,7 +399,7 @@ Races `body` against a started deadline and settles it with `Flow.DeadlineExceed
 
 ### `Deadline.bound`
 
-- **Signature:** `bound(options: { readonly flowName: string; readonly deadline?: Duration.Input | undefined; readonly startedAtMs?: number | undefined }): <A, E, R>(body: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R | FlowRuntime | FlowInstance | Crypto.Crypto>`
+- **Signature:** `bound(options: { readonly flowName: string; readonly deadline?: Duration.Input | undefined; readonly startedAtMs?: number | undefined }): <A, E, R>(body: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R | FlowRuntime | FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `1.0.0`
 
 `start`, then `within`. The engine applies it to every execution of a flow that declares `deadline`.
@@ -422,7 +422,7 @@ Declares one durable clock. Throws a `RangeError` when the duration is malformed
 
 ### `DurableClock.sleep`
 
-- **Signature:** `sleep(options: { readonly name: string; readonly duration: Duration.Input; readonly inMemoryThreshold?: Duration.Input | undefined }): Effect.Effect<void, never, Crypto.Crypto | FlowRuntime | FlowInstance>`
+- **Signature:** `sleep(options: { readonly name: string; readonly duration: Duration.Input; readonly inMemoryThreshold?: Duration.Input | undefined }): Effect.Effect<void, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime | FlowInstance>`
 - **Default:** `inMemoryThreshold` is 60 seconds
 - **Since:** `0.1.0`
 
@@ -529,7 +529,7 @@ Creates a token from an explicit flow and execution id, for a resolver outside t
 
 ### `DurableDeferred.tokenFromPayload`
 
-- **Signature:** `tokenFromPayload(self: DurableDeferred<Success, Error>, options: { readonly flow: W; readonly payload: Flow.PayloadSchema<W>["~type.make.in"] }): Effect.Effect<Token, never, Crypto.Crypto | Flow.PayloadSchema<W>["EncodingServices"]>`
+- **Signature:** `tokenFromPayload(self: DurableDeferred<Success, Error>, options: { readonly flow: W; readonly payload: Flow.PayloadSchema<W>["~type.make.in"] }): Effect.Effect<Token, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | Flow.PayloadSchema<W>["EncodingServices"]>`
 - **Since:** `0.1.0`
 
 Creates a token by deriving the execution id from the flow payload. Declare an `idempotencyKey` or install the opt-in derived source for stable payload identity. The default fresh source mints a new id on each call; use `tokenFromExecutionId` with a saved id to address an existing execution.
@@ -588,7 +588,7 @@ Creates a durable queue that waits for persisted items to finish processing thro
 
 ### `DurableQueue.process`
 
-- **Signature:** `process(self: DurableQueue<Payload, Success, Error>, payload: Payload["~type.make.in"], options?: { readonly retrySchedule?: Schedule.Schedule<any, PersistedQueue.PersistedQueueError> | undefined }): Effect.Effect<Success["Type"], Error["Type"], FlowRuntime | FlowInstance | Crypto.Crypto | PersistedQueue.PersistedQueueFactory | Payload["EncodingServices"] | Payload["DecodingServices"] | Success["DecodingServices"] | Error["DecodingServices"]>`
+- **Signature:** `process(self: DurableQueue<Payload, Success, Error>, payload: Payload["~type.make.in"], options?: { readonly retrySchedule?: Schedule.Schedule<any, PersistedQueue.PersistedQueueError> | undefined }): Effect.Effect<Success["Type"], Error["Type"], FlowRuntime | FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom) | PersistedQueue.PersistedQueueFactory | Payload["EncodingServices"] | Payload["DecodingServices"] | Success["DecodingServices"] | Error["DecodingServices"]>`
 - **Default:** `retrySchedule` is unbounded, with exponential delays capped at one minute
 - **Since:** `0.1.0`
 
@@ -1419,7 +1419,7 @@ The declared `system/human-task` step. `name` addresses the question, so two cal
 
 ### `HumanTask.layer`
 
-- **Type:** `Layer.Layer<never, never, Crypto.Crypto | FlowRuntime>`
+- **Type:** `Layer.Layer<never, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime>`
 - **Since:** `0.1.0`
 
 The human-task implementation: park, validate, re-ask, settle. Provide it beside the other action implementation layers, over `Action.layerImplementations`.
@@ -1489,7 +1489,7 @@ What one interpretation produced: the root's value, every node that settled with
 
 ### `Interpreter.childExecutionId`
 
-- **Signature:** `childExecutionId(parentExecutionId: string, nodeId: string, calleeTag: string, payload: unknown): Effect.Effect<string, never, Crypto.Crypto>`
+- **Signature:** `childExecutionId(parentExecutionId: string, nodeId: string, calleeTag: string, payload: unknown): Effect.Effect<string, never, (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `0.1.0`
 
 The execution id a `child` boundary runs its child under, derived from the parent execution id, the node id, the callee tag, and the payload digest.
@@ -1621,7 +1621,7 @@ Declares a durable poller and returns an ordinary flow. Its body is one attempt:
 
 ### `Poll.layer`
 
-- **Type:** `Layer.Layer<never, never, Crypto.Crypto | FlowRuntime>`
+- **Type:** `Layer.Layer<never, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime>`
 - **Since:** `0.1.0`
 
 The exhaustion implementation, provided beside the other action layers a poll's rounds call.
@@ -1798,7 +1798,7 @@ The declared `system/sleep` step: a relative `millis` from now, or an absolute `
 
 ### `Sleep.layer`
 
-- **Type:** `Layer.Layer<never, never, Crypto.Crypto | FlowRuntime>`
+- **Type:** `Layer.Layer<never, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime>`
 - **Since:** `0.1.0`
 
 The sleep implementation: arm the durable clock, park under `timer`, wake. Provide it beside the other action implementation layers, over `Action.layerImplementations`.
@@ -1906,14 +1906,14 @@ The declaration material an allocation scope is derived from. `kind` is `"action
 
 ### `StepIdentity.allocationScope`
 
-- **Signature:** `allocationScope(identity: AllocationIdentity): Effect.Effect<string, Schema.SchemaError, Crypto.Crypto>`
+- **Signature:** `allocationScope(identity: AllocationIdentity): Effect.Effect<string, Schema.SchemaError, (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `0.1.0`
 
 Derives the ordinal allocation scope of a durable operation.
 
 ### `StepIdentity.invocationKey`
 
-- **Signature:** `invocationKey(input: { readonly runId: string; readonly parentScope?: string | undefined; readonly ordinal: number; readonly tier: "unsealed" | "compensable" | "irreversible" }): Effect.Effect<StoredKey, Schema.SchemaError, Crypto.Crypto>`
+- **Signature:** `invocationKey(input: { readonly runId: string; readonly parentScope?: string | undefined; readonly ordinal: number; readonly tier: "unsealed" | "compensable" | "irreversible" }): Effect.Effect<StoredKey, Schema.SchemaError, (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `0.1.0`
 
 Derives an invocation key from engine-generated input.
@@ -1950,7 +1950,7 @@ The declared `system/wait-for` step: a rendezvous with something outside the run
 
 ### `WaitFor.layer`
 
-- **Type:** `Layer.Layer<never, never, Crypto.Crypto | FlowRuntime>`
+- **Type:** `Layer.Layer<never, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime>`
 - **Since:** `0.1.0`
 
 The wait implementation: park under `event` with the wake token, and settle with the value that resolved the wait. Provide it beside the other action implementation layers, over `Action.layerImplementations`.

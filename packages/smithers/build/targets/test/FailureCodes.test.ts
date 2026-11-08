@@ -28,11 +28,8 @@ const failureOf = async (value: Exec.Payload): Promise<Exec.ExecError> => {
   const exit = await Effect.runPromiseExit(Exec.run({ workspaceRoot: root }, value))
   if (Exit.isSuccess(exit)) throw new Error("expected the run to fail")
   const rendered = JSON.stringify(exit.cause)
-  // Effect 4.1 renders a cause as its reasons, each tagged; a failure is `Fail`.
-  const parsed = JSON.parse(rendered) as {
-    readonly reasons?: ReadonlyArray<{ readonly _tag: string; readonly error?: Exec.ExecError }>
-  }
-  const error = parsed.reasons?.find((reason) => reason._tag === "Fail")?.error
+  const parsed = JSON.parse(rendered) as { readonly reasons?: ReadonlyArray<{ readonly error: Exec.ExecError }> }
+  const error = parsed.reasons?.[0]?.error
   if (error === undefined) throw new Error(`expected an ExecError: ${rendered}`)
   return error
 }
@@ -143,12 +140,11 @@ describe("Exec failure codes", () => {
 const driftOf = (exit: Exit.Exit<unknown, GeneratedFile.DriftError>): GeneratedFile.DriftError => {
   if (Exit.isSuccess(exit)) throw new Error("expected the check to fail")
   const rendered = JSON.stringify(exit.cause)
-  // Effect 4.1 renders a cause as its reasons, each tagged; a failure is `Fail`.
   const parsed = JSON.parse(rendered) as {
-    readonly reasons?: ReadonlyArray<{ readonly _tag: string; readonly error?: GeneratedFile.DriftError }>
+    readonly reasons?: ReadonlyArray<{ readonly error: GeneratedFile.DriftError }>
     readonly error?: GeneratedFile.DriftError
   }
-  const error = parsed.reasons?.find((reason) => reason._tag === "Fail")?.error ?? parsed.error
+  const error = parsed.reasons?.[0]?.error ?? parsed.error
   if (error === undefined) throw new Error(`expected a DriftError: ${rendered}`)
   return error
 }

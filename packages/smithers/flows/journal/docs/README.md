@@ -17,7 +17,7 @@ own: no other Smithers package is required.
 npm install @smthrs/journal@next effect
 ```
 
-`effect` is a peer dependency at exactly `4.1.0`. Two copies of `effect`
+`effect` is a peer dependency at exactly `4.1.1`. Two copies of `effect`
 in one program are two sets of service tags, so a journal layer built against
 one copy cannot be provided to a program holding the other.
 

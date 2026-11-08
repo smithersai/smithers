@@ -7,6 +7,7 @@ import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserEngine } from "@smthrs/platform-browser"
 import { Deferred, Effect, Layer, ManagedRuntime, Logger, Metric, Option, PubSub, Stream } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
+import { repoAuthority } from "../../test/repoAuthority"
 import { RemoteReadFailed, RemoteRunsClient } from "./api"
 import type { CloudRun, Inspection } from "./schema"
 import { VIEW } from "./schema"
@@ -89,7 +90,7 @@ const open = (answers: Answers, withAuth = false) => {
   }))
   const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
   const runtime = ManagedRuntime.make(
-    RunsStore.layer({ origin: "http://chat.test" }).pipe(Layer.provideMerge(withAuth ? AuthStore.layer : Layer.empty), Layer.provide(Layer.mergeAll(engine, remote, Persistence.memory, Logger.layer([Logger.make((options) => void logs.push(Logger.formatStructured.log(options)))])))),
+    RunsStore.layer({ origin: "http://chat.test" }).pipe(Layer.provide(repoAuthority), Layer.provideMerge(withAuth ? AuthStore.layer : Layer.empty), Layer.provide(Layer.mergeAll(engine, remote, Persistence.memory, Logger.layer([Logger.make((options) => void logs.push(Logger.formatStructured.log(options)))])))),
   )
   runtimes.push(runtime as never)
   const store = runtime.runSync(Effect.service(RunsStore))

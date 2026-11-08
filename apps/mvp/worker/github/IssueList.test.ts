@@ -1,6 +1,13 @@
 // `GET /api/repos/<owner>/<name>/issues` (worker/github/IssueList.ts, docs/features/issues.md#routes): a repository's
 // issues one page at a time, through the real handler over this file's schema of the compose Postgres.
-import { Effect, Redacted } from "effect"
+import { Collection } from "@smthrs/effect-tanstack-db"
+import { Deferred, Effect, Redacted, Stream } from "effect"
+import { FetchHttpClient } from "effect/http"
+import { getSearch } from "../../src/features/issues/api.ts"
+import { readIssue } from "../../src/features/issues/actions.ts"
+import { accessQuery } from "../../src/features/issues/queries.ts"
+import { ACCESS, Access, SEARCHED, Searched } from "../../src/features/issues/schema.ts"
+import { IssuesStore } from "../../src/features/issues/store.ts"
 import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import { issuesRoute } from "../../src/features/issues/contract.ts"
@@ -45,6 +52,43 @@ const route = issuesRoute(REPOSITORY.owner, REPOSITORY.name)
 const nextOf = (response: Response) => /<([^>]+)>;\s*rel="next"/.exec(response.headers.get("link") ?? "")?.[1]
 
 describe("the issues list", () => {
+  test.each(["allowed", "forbidden"] as const)("the direct action retains only an authorized HTTP answer when summaries fail before delivery: %s", async (authority) => {
+    await seed(7)
+    const h = await githubHarness(runtime)
+    await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+      const answered = yield* Deferred.make<void>()
+      const deliver = yield* Deferred.make<void>()
+      const searched = yield* Collection.local<Searched, string>({ id: "direct-answer", schema: Searched, getKey: (row) => row.id })
+      const access = yield* Collection.local<Access, string>({ id: "failed-summaries", schema: Access, getKey: (row) => row.id,
+        initialData: [{ id: ACCESS, status: "unknown", installed: false }] })
+      const accessState = yield* accessQuery(access)
+      const searches = { latest: 0, repoId: "", issue: false }
+      // Inject failed summary transport through the store service. The early route and collections are real;
+      // this fixture's signed-in repository reader remains authorized independently of that transport.
+      const faulty = {
+        searched, searches,
+        forgetSearch: Effect.sync(() => { searches.latest++ }),
+        opened: () => undefined,
+        forRepo: () => Effect.succeed({ accessState }),
+        authority: () => Stream.make(authority),
+        search: (owner: string, name: string, q: string, number?: number) =>
+          getSearch("http://github.test", { owner, name }, q, "5 seconds", number).pipe(
+            Effect.provide(FetchHttpClient.layer), Effect.provideService(FetchHttpClient.Fetch, h.fetch),
+            Effect.tap(() => Deferred.succeed(answered, undefined)), Effect.tap(() => Deferred.await(deliver)),
+          ),
+      } as unknown as IssuesStore["Service"]
+      yield* Effect.all([
+        readIssue(REPOSITORY.owner, REPOSITORY.name, 7).pipe(Effect.provideService(IssuesStore, faulty)),
+        Effect.gen(function* () {
+          yield* Deferred.await(answered)
+          yield* access.update(ACCESS, (row) => { row.status = "unavailable" })
+          yield* Deferred.succeed(deliver, undefined)
+        }),
+      ], { concurrency: "unbounded" })
+      expect(yield* searched.toArray).toMatchObject(authority === "allowed" ? [{ id: SEARCHED, issues: [{ number: 7, title: "Issue 7 flaky webkit" }] }] : [])
+    })))
+  })
+
   test("is the issues route, and nothing else under the repository", () => {
     expect(handles(route)).toBe(true)
     expect(handles(`${route}/7`)).toBe(false)
@@ -77,6 +121,20 @@ describe("the issues list", () => {
     }
     const open = Array.from({ length: 75 }, (_, i) => 75 - i).filter((n) => n % 5 !== 0)
     expect(seen).toEqual(open)
+  })
+
+  test("a direct read finds an older issue behind more than thirty newer title matches", async () => {
+    await seed(40)
+    await sql(runtime, `UPDATE items SET title = 'Mentions #7' WHERE repo_id = '${REPOSITORY.id}' AND number > 7`)
+    const h = await githubHarness(runtime)
+    const read = (number: number) => Effect.runPromise(getSearch("http://github.test", REPOSITORY, `#${number}`, "5 seconds", number).pipe(
+      Effect.provide(FetchHttpClient.layer), Effect.provideService(FetchHttpClient.Fetch, h.fetch),
+    ))
+    const first = await (await h.fetch(`${route}?state=all&q=%237`)).json() as Array<Listed>
+    expect(first).toHaveLength(30)
+    expect(first.some((issue) => issue.number === 7)).toBe(false)
+    expect(await read(7)).toMatchObject([{ number: 7, title: "Issue 7 flaky webkit" }])
+    expect(await read(999)).toEqual([])
   })
 
   test("filters by state, and searches titles and numbers", async () => {

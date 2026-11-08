@@ -13,7 +13,6 @@ import { SqlClient } from "effect/sql"
 import type { Connection } from "effect/sql/SqlConnection"
 import { ConnectionError, SqlError } from "effect/sql/SqlError"
 import * as TestDatabase from "../../db/TestDatabase.ts"
-import { Crypto } from "@smthrs/crypto"
 
 /** Where a Node-host runtime keeps its engine: a fresh schema of the compose Postgres, dropped with the runtime. */
 export interface Engine {
@@ -107,7 +106,7 @@ export const build = <ROut, RE, RR>(registration: Layer.Layer<ROut, RE, RR>, opt
       // Every durable composition needs `Crypto` where its executions run, not only where the runtime is built: a
       // `.to()` handoff mints the next round's id with it. The deployed host merges it in the same way
       // (`CloudflareHost.layer` in @smthrs/platform-cloudflare).
-      Layer.provideMerge(Crypto.layerFromDigest(NodeHost.NodeCrypto.layerDigest)),
+      Layer.provideMerge(NodeHost.NodeCrypto.layer),
       Layer.provide(
         PostgresDatabase.layer({
           url: server.toString(),

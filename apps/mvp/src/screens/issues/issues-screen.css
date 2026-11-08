@@ -21,13 +21,13 @@
 @media (max-width: 960px) {
   .issues-status-line > a { display: inline-flex; align-items: center; min-height: 32px; }
 }
-.issues-syncing { margin: 0; }
 
 .issues-sign-in [data-slot="card-content"] { display: flex; justify-content: center; }
 
 .issues-loading { display: grid; gap: 10px; }
 .issues-loading-title { height: 24px; max-width: 24rem; }
 .issues-loading-body { height: 16px; }
+.issues-screen [data-first-paint-slot]:has(#first-paint) > .issue-unread-heading { display: none; }
 
 /* The new-issue form's description starts tall enough for a report. */
 .issues-screen .sui-issue-form textarea { min-height: 9rem; }

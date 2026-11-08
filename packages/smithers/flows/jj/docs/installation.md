@@ -16,7 +16,7 @@ The `next` tag carries the 1.0 release candidates.
 ## Requirements
 
 - Node.js 22.19.0 or later.
-- [`effect`](https://effect.website) `4.1.0`. It is a peer dependency, so
+- [`effect`](https://effect.website) `4.1.1`. It is a peer dependency, so
   the application owns the single copy every layer resolves against.
 - [`@smthrs/capability`](/api/capability) and
   [`@smthrs/canonical`](/api/canonical), the two packages `@smthrs/jj` depends

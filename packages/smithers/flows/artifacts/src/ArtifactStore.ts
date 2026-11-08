@@ -17,8 +17,9 @@
  * @since 1.0.0-rc.0
  */
 
-import { type Crypto, Sha256 } from "@smthrs/crypto"
+import { Sha256 } from "@smthrs/crypto"
 import * as Context from "effect/Context"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
@@ -87,13 +88,13 @@ export interface Service {
    * Stores `bytes` under their own SHA-256 digest and returns that address.
    * Storing the same bytes twice is idempotent.
    */
-  readonly put: (bytes: Uint8Array) => Effect.Effect<Digest, ArtifactStoreError, Crypto.Crypto>
+  readonly put: (bytes: Uint8Array) => Effect.Effect<Digest, ArtifactStoreError, EffectDigest.Digest>
   /**
    * Reads the bytes stored at `digest`, verifying that they still hash to it.
    */
   readonly get: (
     digest: string
-  ) => Effect.Effect<Uint8Array, ArtifactMissing | ArtifactCorruption | ArtifactStoreError, Crypto.Crypto>
+  ) => Effect.Effect<Uint8Array, ArtifactMissing | ArtifactCorruption | ArtifactStoreError, EffectDigest.Digest>
   /** Whether this tier holds an artifact at `digest`. */
   readonly has: (digest: string) => Effect.Effect<boolean, ArtifactStoreError>
   /**

@@ -10,4 +10,4 @@ export {
   questionValue,
 } from "./flowDraft";
 export { FlowDraftView, type FlowDraftViewProps } from "./FlowDraftView";
-export { flowDraftViewCss } from "./flowDraftViewCss";
+export { flowDraftViewCss } from "@smthrs/ui-css";

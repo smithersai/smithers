@@ -12,6 +12,7 @@ import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
 import {
   applyExecutionId,
   issueNumberOf,
+  itemId,
   COMMENT_COLUMNS,
   COMMENTS_SHAPE_ROUTE,
   COMMENTS_TABLE,
@@ -22,6 +23,10 @@ import {
   ITEM_SUMMARIES_SHAPE_ROUTE,
   ITEM_SUMMARY_COLUMNS,
   ITEMS_TABLE,
+  ISSUE_EDGE_COLUMNS,
+  ISSUE_EDGES_SHAPE_ROUTE,
+  ISSUE_RELATIONS_TABLE,
+  relationsExecutionId,
   MAX_BODY_LENGTH,
   MAX_REASON_LENGTH,
   MAX_TITLE_LENGTH,
@@ -78,7 +83,7 @@ import {
   UPDATE_METHODS,
   updateExecutionId,
 } from "../../src/features/branch/contract.ts"
-import { branchAccess, canEdit } from "../branch/Access.ts"
+import { branchAccess, branchAccessAs, canEdit } from "../branch/Access.ts"
 import { Publish, publishBlocked, Resync, Update } from "../branch/Publish.ts"
 import { type Actor, canAsk, refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor"
 import { readBounded } from "#vibelang/emitted/worker/Body"
@@ -99,6 +104,8 @@ import * as Metrics from "#vibelang/emitted/worker/github/Metrics"
 import * as MachineWrite from "./MachineWrite.ts"
 import * as WorkLinks from "./WorkLinks.ts"
 import { Reconcile } from "./Reconcile.ts"
+import { Relations } from "./Relations.ts"
+import * as TreeScope from "./TreeScope.ts"
 import * as PullRefresh from "./PullRefresh.ts"
 import * as ReadToken from "./ReadToken.ts"
 import * as Visibility from "./Visibility.ts"
@@ -318,6 +325,7 @@ const SHAPES: ReadonlySet<string> = new Set([
   CHECKS_SHAPE_ROUTE,
   ACTIONS_SHAPE_ROUTE,
   WORK_LINKS_SHAPE_ROUTE,
+  ISSUE_EDGES_SHAPE_ROUTE,
   TODO_LEAVES_SHAPE_ROUTE,
 ])
 
@@ -339,7 +347,7 @@ export const handles = (path: string): boolean =>
   path === GITHUB_WEBHOOK_ROUTE || SHAPES.has(path) || parseWritesPath(path) !== undefined || parseMachineWritePath(path) !== undefined ||
   Compare.parseComparePath(path) !== undefined || Review.parseReviewPath(path) !== undefined ||
   IssueList.parseIssuesPath(path) !== undefined || WorkLinks.parseLinksPath(path) !== undefined ||
-  FirstPaint.parseFirstPaintPath(path) !== undefined
+  FirstPaint.parseFirstPaintPath(path) !== undefined || TreeScope.parseTreeScopePath(path) !== undefined
 
 /**
  * How long a stale read of the issues waits for `github/Reconcile`'s start to be admitted: one idempotent Durable Object
@@ -365,20 +373,58 @@ const PullSubject = Schema.Struct({
 })
 const decodePullSubject = Schema.decodeUnknownOption(PullSubject)
 
+/**
+ * A `sub_issues` delivery (https://docs.github.com/en/webhooks/webhook-events-and-payloads#sub_issues). `parent_issue_*`
+ * events are about `sub_issue`, in `repository`, and may name its parent and the parent's repository; `sub_issue_*`
+ * events are about `parent_issue`, in `repository`, and may name its child. GitHub leaves the far side out when the App
+ * can't see it.
+ */
+const SubIssues = Schema.Struct({
+  action: Schema.Literals(["sub_issue_added", "sub_issue_removed", "parent_issue_added", "parent_issue_removed"]),
+  repository: Schema.Struct({ full_name: Schema.String }),
+  sub_issue: Schema.optional(Schema.NullOr(Schema.Struct({ number: Schema.Int }))),
+  sub_issue_repo: Schema.optional(Schema.NullOr(Schema.Struct({ full_name: Schema.String }))),
+  parent_issue: Schema.optional(Schema.NullOr(Schema.Struct({ number: Schema.Int }))),
+  parent_issue_repo: Schema.optional(Schema.NullOr(Schema.Struct({ full_name: Schema.String }))),
+})
+const decodeSubIssues = Schema.decodeUnknownOption(SubIssues)
+
 /** The events whose subject is an issue. */
 const ISSUE_EVENTS: ReadonlySet<string> = new Set(["issues", "issue_comment"])
 
+/** A subject a delivery names: a repository and an issue or pull request. */
+interface NamedSubject {
+  readonly repository: { readonly full_name: string }
+  readonly issue: { readonly number: number }
+}
 
-/** The issue or pull request a delivery of `event` names, as one shape. */
-const subjectOf = (event: string, payload: unknown) =>
-  ISSUE_EVENTS.has(event)
-    ? decodeSubject(payload)
-    : PULL_EVENTS.has(event)
-    ? Option.map(decodePullSubject(payload), (found) => ({
+/**
+ * The issues a delivery of `event` names, the one it is about first. A `sub_issues` delivery can name two: each side whose
+ * issue and repository the payload says, never a guess at a far side it leaves out.
+ */
+const subjectsOf = (event: string, payload: unknown): ReadonlyArray<NamedSubject> => {
+  if (ISSUE_EVENTS.has(event)) return Option.toArray(decodeSubject(payload))
+  if (PULL_EVENTS.has(event)) {
+    return Option.toArray(Option.map(decodePullSubject(payload), (found) => ({
       repository: found.repository,
       issue: { number: found.pull_request.number },
-    }))
-    : Option.none()
+    })))
+  }
+  if (event !== "sub_issues") return []
+  const decoded = decodeSubIssues(payload)
+  if (Option.isNone(decoded)) return []
+  const { action, repository, sub_issue, sub_issue_repo, parent_issue, parent_issue_repo } = decoded.value
+  const parentSide = action.startsWith("sub_issue")
+  const near = parentSide ? parent_issue : sub_issue
+  const far = parentSide ? sub_issue : parent_issue
+  const farRepository = parentSide ? sub_issue_repo : parent_issue_repo
+  return [
+    ...(near === undefined || near === null ? [] : [{ repository, issue: { number: near.number } }]),
+    ...(far === undefined || far === null || farRepository === undefined || farRepository === null
+      ? []
+      : [{ repository: farRepository, issue: { number: far.number } }]),
+  ]
+}
 
 /**
  * What the routes need besides Postgres: the deployment's own repository, the GitHub App when it is configured, and
@@ -399,6 +445,19 @@ export interface Options<R = never> {
    * watchers may read it besides those whose sessions say so (`Notifications.recordRepoEvent`). A deployment passes none.
    */
   readonly localPeople?: ReadonlyArray<Notifications.LocalPerson>
+  /**
+   * Local development without the App only (worker/DevChatApi.ts): a public repository it syncs beside its own, and the
+   * open issue it keeps there, so a draft on that repository's stack has an issue to hang under (decision 0153) and the
+   * end-to-end tests commit TODOs on a laptop. Reconcile never runs without the App, so the issues' shapes would
+   * otherwise be empty. A deployment never sets it, and with the App it is ignored.
+   */
+  readonly localSynced?: LocalSynced
+}
+
+/** Local development's synced repository and its one open issue (`Options.localSynced`). */
+export interface LocalSynced {
+  readonly repository: Repository
+  readonly issue: GitHub.Issues.Issue
 }
 
 /**
@@ -411,12 +470,18 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
     const { repository } = options
     const allowed = options.allowed ?? Option.none<ReadonlySet<string>>()
+    // Local development's synced repository counts only where there is no App: a deployment with the App decides by
+    // its installations and allowed list alone.
+    const localSynced = Option.isNone(options.app) ? options.localSynced : undefined
     /**
      * Whether the deployment syncs and acts on repository `id` (decision 0079 §4): its own, or, with the App, any other
-     * the allowed list doesn't leave out. Whether the App is installed there is Reconcile's to find out.
+     * the allowed list doesn't leave out; without it, local development's synced repository too. Whether the App is
+     * installed there is Reconcile's to find out.
      */
     const mayAct = (id: string) =>
-      Option.isSome(options.app) ? RepoRoles.actsOn(repository, allowed)(id) : id === repository.id
+      Option.isSome(options.app)
+        ? RepoRoles.actsOn(repository, allowed)(id)
+        : id === repository.id || id === localSynced?.repository.id
     // Check current metadata for anonymous readers, using the shared metadata token policy.
     const readToken = yield* ReadToken.fromConfig.pipe(
       options.http === undefined ? Effect.provide(FetchHttpClient.layer) : Effect.provideService(HttpClient.HttpClient, options.http),
@@ -465,7 +530,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       const request = yield* HttpServerRequest.HttpServerRequest
       const event = request.headers["x-github-event"] ?? "unknown"
       const metricEvent = new Set(["issues", "issue_comment", "pull_request", "pull_request_review", "pull_request_review_comment",
-        "push", "release", "ping", "installation", "installation_repositories", "repository"]).has(event) ? event : "unknown"
+        "sub_issues", "push", "release", "ping", "installation", "installation_repositories", "repository"]).has(event) ? event : "unknown"
       const fields: Record<string, string | number> = { event: metricEvent }
       const answer = (status: number, outcome: string, code?: "not_configured" | "invalid_signature" | WriteRefusal) =>
         Effect.gen(function* () {
@@ -499,33 +564,47 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         // `Core.Channel` checked the decoder's output as an `ExternalEvent`.
         const delivered = decoded.success as Core.ExternalEvent.ExternalEvent
         const action = (delivered.payload as { readonly action?: unknown }).action
-        const subject = subjectOf(event, delivered.payload)
-        // An issue or pull request event of a repository the deployment acts on (decision 0079, slice 1b).
-        const named = Option.flatMap(subject, (found) => {
+        // Every issue the delivery names in a repository the deployment acts on (decision 0079, slice 1b).
+        let named = subjectsOf(event, delivered.payload).flatMap((found) => {
           const [owner = "", name = ""] = found.repository.full_name.split("/")
           return isRepository(owner, name) && mayAct(repoId(owner, name))
-            ? Option.some({ ...found, target: repositoryOf(`${owner}/${name}`) })
-            : Option.none()
+            ? [{ ...found, target: repositoryOf(`${owner}/${name}`) }]
+            : []
         })
+        if (event === "sub_issues") {
+          // A relation cannot introduce an authorization candidate by naming its hidden far side.
+          const configured = [repository.id, ...Option.match(allowed, { onNone: () => [], onSome: (ids) => [...ids] })]
+          const independent: typeof named = []
+          for (const subject of named) {
+            const known = yield* TreeScope.candidates(subject.target.owner, configured).pipe(Effect.provide(database))
+            if (known.includes(subject.target.id)) independent.push(subject)
+          }
+          named = independent
+        }
+        const [firstNamed] = named
         const first = yield* Store.recordDelivery({
           deliveryId,
           event,
           action: typeof action === "string" ? action.slice(0, 64) : null,
-          repoId: Option.isSome(named) ? named.value.target.id : null,
-          subject: Option.isSome(named) ? named.value.issue.number : null,
+          repoId: firstNamed === undefined ? null : firstNamed.target.id,
+          subject: firstNamed === undefined ? null : firstNamed.issue.number,
         }).pipe(Effect.provide(database))
         // Only issue and pull request events of a repository the deployment acts on name a subject; the rest (ping,
         // installation, repositories it doesn't act on) are recorded and answered.
-        if (Option.isSome(named)) {
-          const number = named.value.issue.number
-          const target = named.value.target
+        for (const [index, subject] of named.entries()) {
+          // A second side of a delivery runs as a parent's refresh does, named by the delivery and the issue.
+          const refreshed = index === 0 ? deliveryId : `${deliveryId}:${itemId(subject.target.id, subject.issue.number)}`
+          yield* (yield* FlowStarter).start(Apply, {
+            executionId: applyExecutionId(refreshed),
+            payload: { deliveryId: refreshed, repo: `${subject.target.owner}/${subject.target.name}`, number: subject.issue.number, event },
+          })
+        }
+        if (firstNamed !== undefined) {
+          const number = firstNamed.issue.number
+          const target = firstNamed.target
           fields.number = number
           fields.repoId = target.id
           const repo = `${target.owner}/${target.name}`
-          yield* (yield* FlowStarter).start(Apply, {
-            executionId: applyExecutionId(deliveryId),
-            payload: { deliveryId, repo, number, event },
-          })
           // A new issue, while triage is on: the repository's triage flow decides it (decision 0012 §5).
           if (event === "issues" && action === "opened" && (yield* TriageStore.isOn(target.id).pipe(Effect.provide(database)))) {
             fields.triage = "started"
@@ -559,7 +638,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           )
         }
         if (!first) return yield* answer(200, "duplicate")
-        return yield* answer(200, Option.isSome(named) || Option.isSome(repoEvent) || Option.isSome(dispatch) || Option.isSome(mirror) ? "applied" : "ignored")
+        return yield* answer(200, firstNamed !== undefined || Option.isSome(repoEvent) || Option.isSome(dispatch) || Option.isSome(mirror) ? "applied" : "ignored")
       }).pipe(
         Effect.catchCause((cause) =>
           Effect.gen(function* () {
@@ -605,6 +684,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         if (Option.isNone(body)) return refuse(400, "invalid")
         const write = body.value
         if (!machine.value.scope.includes(write.op)) return refuse(403, "forbidden")
+        // The body is filed escaped, with the server's attribution and marker: it must still fit GitHub's limit.
+        if ("body" in write && typeof write.body === "string" && !MachineWrite.fitsGitHub(write.body, machine.value.agent, machine.value.lane)) return refuse(413, "too_large")
         // What a machine posts is public, and a `smithers:` label is a person's or a flow's: refused whatever sent it.
         const content = MachineWrite.refusalOf(write)
         if (content !== undefined) {
@@ -733,6 +814,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
             if (!canAsk(signed)) return refused(403, "forbidden")
             const branchId = write.branchId.toLowerCase()
             fields.branchId = branchId
+            // A branch of another repository is not found here before anyone's role there is asked: its repository's
+            // GitHub metadata never decides this route's answer.
+            const located = yield* branchAccessAs(Option.none(), branchId).pipe(Effect.provide(database))
+            if (located === undefined || located.repoId !== repo.id) return refused(404, "not_found")
             const branch = yield* branchAccess(Option.some(who), branchId).pipe(Effect.provide(database))
             if (branch === undefined || branch.repoId !== repo.id) return refused(404, "not_found")
             if (!canEdit(branch.access)) return refused(403, "forbidden")
@@ -756,6 +841,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               payload: plain.op === "triage/enable" || plain.op === "triage/pause"
                 ? { ...plain, authority: WriteAuthority.protectedOf(who, held) } : plain,
               payloadHash,
+              reauthorize: plain.op === "triage/enable" || plain.op === "triage/pause",
             }, Option.isSome(held) ? RepoRoles.holds(held.value) : undefined).pipe(Effect.provide(database))
           let inserted = yield* insert(resolved.success.held)
           // The row the request read expired, or changed, before the write's transaction: GitHub decides again, once,
@@ -824,7 +910,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
               })
           }
           if (inserted.kind === "existing") {
-            fields.outcome = "existing"
+            fields.outcome = inserted.reauthorized === true ? "reauthorized" : "existing"
             return HttpServerResponse.jsonUnsafe(
               { txid: null, writeId: write.writeId, status: inserted.status },
               { status: 200, headers: noStore },
@@ -878,7 +964,17 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
      * `github_reconcile_starts` by outcome (`started`, `timed_out`, `not_started` with its error code).
      */
     const reconcileIfStale = (target: Repository) => Effect.gen(function* () {
-      if (Option.isNone(options.app)) return
+      if (Option.isNone(options.app)) {
+        // Local development's synced repository keeps its one issue, read as of its own `updated_at`: an upsert that
+        // changes nothing once the row is there, and puts it back if the dev database was reset.
+        if (localSynced !== undefined && target.id === localSynced.repository.id) {
+          yield* Store.upsertIssue(target.id, localSynced.issue, Date.parse(localSynced.issue.updated_at)).pipe(
+            Effect.provide(database),
+            Effect.catchCause(() => Effect.logWarning("github.local_synced.seed").pipe(Effect.annotateLogs({ repoId: target.id, outcome: "failed" }))),
+          )
+        }
+        return
+      }
       const now = yield* Clock.currentTimeMillis
       const state = yield* Store.syncState(target.id, ISSUES_STREAM).pipe(Effect.provide(database))
       if (state.syncedAt !== null) yield* Metric.update(Metrics.syncAge, Math.round((now - state.syncedAt) / 1000))
@@ -951,6 +1047,111 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     const access = Access.make({ repository, mayAct, roles: options.roles, visibility, database })
     /** A refused proof as the readers answer it: the refusal's status and code, and how long to wait when known. */
     const refusalOf = (proof: Access.Proof & { readonly _tag: "Refused" }) => refuse(proof.status, proof.refusal, proof.retryAfterSeconds)
+
+    /**
+     * What the reader may read among `target`'s owner's repositories, `target` first asked and always among them: the
+     * ids, sorted, or the refusal to answer. Nothing here depends on a relation row, so hidden relations change no read
+     * and no call. A repository whose role can't be read now refuses the whole answer rather than shrink the tree.
+     */
+    const readableSet = (target: Repository) =>
+      Effect.gen(function* () {
+        const listed = Option.match(allowed, { onNone: () => [] as ReadonlyArray<string>, onSome: (ids) => [...ids] })
+        const known = yield* TreeScope.candidates(target.owner, listed).pipe(
+          Effect.provide(database), Effect.result,
+          Effect.tap((read) => Effect.annotateCurrentSpan({ "smithers.github.outcome": read._tag === "Failure" ? "unavailable" : "read" })),
+          Effect.withSpan("github.tree_candidates"),
+        )
+        const outcome = known._tag === "Failure" ? "unavailable" : "read"
+        yield* Metric.update(Metric.withAttributes(Metrics.treeCandidateReads, { outcome }), 1)
+        if (known._tag === "Failure") {
+          yield* Effect.logWarning("github.tree_candidates").pipe(
+            Effect.annotateLogs({ repoId: target.id, outcome, errorCode: codeOf(known.failure) }),
+          )
+          return { _tag: "Refused", proof: {
+            _tag: "Refused", target, stage: "viewer", refusal: "unavailable", status: 503,
+          } } as const
+        }
+        const others = known.success.filter((id) => id !== target.id && mayAct(id)).map((id) => repositoryOf(TreeScope.nameOf(id)))
+        const [own, ...rest] = yield* access.readableAmong([target, ...others])
+        if (own!._tag === "Refused") return { _tag: "Refused", proof: own! } as const
+        const down = rest.find((proof) => proof._tag === "Refused" && proof.refusal === "unavailable")
+        if (down !== undefined && down._tag === "Refused") return { _tag: "Refused", proof: down } as const
+        const ids = [own!, ...rest].filter((proof) => proof._tag === "Readable").map((proof) => proof.target.id)
+        return { _tag: "Readable", ids: [...new Set(ids)].sort() } as const
+      })
+
+    const relationsAdmitted = yield* Ref.make<ReadonlyMap<string, number>>(new Map())
+
+    /** Starts `github/Relations` for `target`, once per repository and 5-minute bucket; it never fails the read. */
+    const startRelations = (target: Repository) => Effect.gen(function* () {
+      if (Option.isNone(options.app)) return
+      const now = yield* Clock.currentTimeMillis
+      const bucket = reconcileBucketStart(now)
+      if ((yield* Ref.get(relationsAdmitted)).get(target.id) === bucket) return
+      const started = yield* (yield* FlowStarter).start(Relations, {
+        executionId: relationsExecutionId(target.id, now),
+        payload: { repo: `${target.owner}/${target.name}`, requestedAtMs: bucket },
+      }).pipe(Effect.timeoutOption(RECONCILE_START_TIMEOUT))
+      if (Option.isSome(started)) yield* Ref.update(relationsAdmitted, (buckets) => new Map(buckets).set(target.id, bucket))
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("github.relations.start").pipe(
+          Effect.annotateLogs({ repoId: target.id, errorCode: codeOf(Cause.squash(cause)) }),
+        )
+      ),
+    )
+
+    /**
+     * `GET /api/repos/<owner>/<name>/issues/tree-scope` (worker/github/TreeScope.ts): the repositories the tree reaches,
+     * for this reader alone, `private, no-store`. One span and log line and one count by outcome; never an issue, a name
+     * or who asks. A repository in scope whose relations aren't current starts its walk here.
+     */
+    const treeScope = (named: { readonly owner: string; readonly name: string }) =>
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        const fields: Record<string, string | number> = {}
+        const response = yield* Effect.gen(function* () {
+          if (request.method !== "GET") {
+            fields.outcome = "method"
+            return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
+          }
+          const target = repositoryOf(`${named.owner}/${named.name}`)
+          fields.repoId = target.id
+          const readable = yield* readableSet(target)
+          if (readable._tag === "Refused") {
+            fields.outcome = readable.proof.stage === "viewer" ? "refused" : readable.proof.refusal
+            return refusalOf(readable.proof as Access.Proof & { readonly _tag: "Refused" })
+          }
+          const now = yield* Clock.currentTimeMillis
+          const found = yield* Effect.gen(function* () {
+            const pairs = yield* TreeScope.reachedPairs(target.id, readable.ids)
+            const ordered = TreeScope.byDistance(target.id, pairs)
+            const synced = yield* TreeScope.currentRelations(ordered, now)
+            return { ordered, synced }
+          }).pipe(Effect.provide(database), Effect.result)
+          if (found._tag === "Failure") {
+            fields.outcome = "unavailable"
+            fields.errorCode = codeOf(found.failure)
+            return refuse(503, "unavailable")
+          }
+          const scope = TreeScope.answer(found.success.ordered, found.success.synced)
+          yield* Effect.forEach(
+            found.success.ordered.slice(0, scope.repos.length).filter((id) => !found.success.synced.has(id)),
+            (id) => startRelations(repositoryOf(TreeScope.nameOf(id))),
+            { concurrency: 4, discard: true },
+          )
+          fields.outcome = "answered"
+          fields.repos = scope.repos.length
+          fields.omitted = scope.omitted.length
+          return HttpServerResponse.jsonUnsafe(scope, { headers: { "cache-control": "private, no-store" } })
+        })
+        yield* Metric.update(Metric.withAttributes(Metrics.treeScopes, { outcome: String(fields.outcome) }), 1)
+        yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+        yield* Effect.logWithLevel(response.status >= 500 ? "Warn" : "Info")("github.tree_scope").pipe(
+          Effect.annotateLogs({ ...fields, status: response.status }),
+        )
+        return response
+      }).pipe(Effect.withSpan("github.tree_scope", { kind: "server" }))
 
     /**
      * `GET /api/shapes/github-writes`: the signed-in person's own writes; signed out, none; sessions unreadable, 503
@@ -1163,6 +1364,17 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       const path = request.url.split("?")[0]!
       if (path === GITHUB_WEBHOOK_ROUTE) return yield* webhook
       if (path === WRITES_SHAPE_ROUTE) return yield* ownWrites
+      // A repository's edges whose parent the reader may also read, recomputed per request (decision 0153 rule 9).
+      if (path === ISSUE_EDGES_SHAPE_ROUTE) {
+        const named = shapeTarget(request.url)
+        if (Result.isFailure(named)) return named.failure
+        const readable = yield* readableSet(named.success)
+        if (readable._tag === "Refused") return refusalOf(readable.proof as Access.Proof & { readonly _tag: "Refused" })
+        const params: Record<string, string> = { "1": named.success.id }
+        readable.ids.forEach((id, index) => void (params[String(index + 2)] = id))
+        const list = readable.ids.map((_, index) => `$${index + 2}`).join(", ")
+        return yield* shape(ISSUE_RELATIONS_TABLE, ISSUE_EDGE_COLUMNS, `child_repo_id = $1 AND parent_repo_id IN (${list})`, params)
+      }
       // A repository's issues, comments, sync and triage, its pull requests and a head's checks (the runs on a
       // commit): the repository `?repo=` names, its own unless it names one (decision 0079, slice 1b).
       const repositoryShape = REPOSITORY_SHAPES[path]
@@ -1252,6 +1464,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       if (reviewed !== undefined) return yield* review(reviewed)
       const listed = IssueList.parseIssuesPath(path)
       if (listed !== undefined) return yield* issues(listed)
+      const scoped = TreeScope.parseTreeScopePath(path)
+      if (scoped !== undefined) return yield* treeScope(scoped)
       const painting = FirstPaint.parseFirstPaintPath(path)
       if (painting !== undefined) return yield* firstPaint(painting)
       const linked = WorkLinks.parseLinksPath(path)
@@ -1281,10 +1495,15 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     /**
      * The role route's `readable` (worker/home/Api.ts): whether the request may read `target`'s content by the shapes'
      * predicate (devpriv FINAL step 5), the deployment's checks included, so it never says a repository the deployment
-     * doesn't act on, or where the App is absent, is readable.
+     * doesn't act on, or where the App is absent, is readable. A check that couldn't decide (Postgres or GitHub not
+     * answering) is `unavailable`, never `false`. A metadata 404 is a definite denial, identical for absent and
+     * inaccessible repositories, so the client's data gate receives `false`.
      */
     const mayRead = (target: Repository) =>
-      Effect.map(access.repositoryReadable(target, "session"), ({ proof }) => proof._tag === "Readable")
+      Effect.map(access.repositoryReadable(target, "session"), ({ proof }) =>
+        proof._tag === "Readable" ? true
+        : proof.status === 503 ? { unavailable: true as const, retryAfterSeconds: proof.retryAfterSeconds }
+        : false)
 
     return { fetch, mayRead, maySync }
   })

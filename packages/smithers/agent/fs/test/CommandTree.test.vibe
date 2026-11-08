@@ -1,3 +1,4 @@
+import { throwingProxy } from "./modules.ts"
 import { describe, expect, it } from "@effect/vitest"
 import * as CommandTree from "../src/CommandTree.vibe"
 import * as CommandLine from "../src/internal/CommandLine.vibe"
@@ -51,7 +52,7 @@ describe("CommandTree", () => {
   })
 
   it.effect("detaches route metadata and exposes immutable maps", effect () => {
-    const source = makeRoute("mutable") as Route.Route & { mutable name: string; mutable segments: Array<string> }
+    const source = makeRoute("mutable") as Route.Route & { name: string; segments: Array<string> }
     const tree = try CommandTree.make([source])
     source.name = "changed"
     source.segments[0] = "changed"
@@ -78,12 +79,7 @@ describe("CommandTree", () => {
     const accessor = Object.defineProperty([], "0", { enumerable: true, get: () => makeRoute("bad") })
     Object.defineProperty(accessor, "length", { value: 1 })
     expect((try failureOf(CommandTree.make(accessor as Array<Route.Route>))).code).toBe("invalid_route")
-    const hostile = try sync((target) =>
-      new Proxy(target, {
-        ownKeys: () => {
-          throw new Error("trap")
-        }
-      }), [makeRoute("bad")])
+    const hostile = try sync(() => throwingProxy([makeRoute("bad")]))
     expect((try failureOf(CommandTree.make(hostile))).code).toBe("invalid_route")
   })
 
@@ -121,3 +117,8 @@ describe("CommandTree", () => {
     expect(JSON.stringify(error)).not.toContain("TOP-SECRET")
   })
 })
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

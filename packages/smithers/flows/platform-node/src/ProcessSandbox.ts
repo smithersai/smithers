@@ -1088,6 +1088,14 @@ export const seatbelt = (confinement: Plan, hostFacts: Host = host()): string =>
   } else {
     lines.push(`(allow file-read-metadata (subpath ${sbpl(confinement.workspaceRoot)}))`)
   }
+  // File discovery (tsc include, Vitest, glob walkers) needs directory data,
+  // not just stat access. Open only each declared read's ancestor literal:
+  // listing sibling names does not grant their bytes or their subdirectories.
+  // The cwd's metadata grant above is not a declaration of readable inputs.
+  if (confinement.strict === true && confinement.reads.length > 0) {
+    const directories = ancestors(confinement.workspaceRoot, confinement.reads)
+    lines.push(`(allow file-read-data ${directories.map((path) => `(literal ${sbpl(path)})`).join(" ")})`)
+  }
   lines.push(
     `(allow file-read* ${
       [

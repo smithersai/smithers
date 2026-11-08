@@ -1,4 +1,5 @@
 import * as Cloudflare from "@alchemy.run/cloudflare"
+import { GitHub } from "@smthrs/integrations"
 import type * as Actor from "./Actor.vibe"
 import { program, props } from "./ChatApi.ts"
 import { DEV_FEED_KEY } from "./feeds/dev.ts"
@@ -22,7 +23,7 @@ import type { Signed } from "./SignIn.ts"
 export const localDeveloper: Actor.Actor = {
   subject: { kind: "person", id: "local-developer" },
   role: "admin",
-  login: "local-developer",
+  login: "local-developer"
 }
 
 const fallback: Signed = { actor: localDeveloper, login: "local-developer" }
@@ -34,7 +35,7 @@ const fallback: Signed = { actor: localDeveloper, login: "local-developer" }
 export const localTeammate: Actor.Actor = {
   subject: { kind: "person", id: "local-teammate" },
   role: "member",
-  login: "local-teammate",
+  login: "local-teammate"
 }
 
 /**
@@ -44,7 +45,7 @@ export const localTeammate: Actor.Actor = {
 export const localGuest: Actor.Actor = {
   subject: { kind: "person", id: "local-guest" },
   role: "guest",
-  login: "local-guest",
+  login: "local-guest"
 }
 
 /**
@@ -55,7 +56,7 @@ export const localGuest: Actor.Actor = {
 export const localMaintainer: Actor.Actor = {
   subject: { kind: "person", id: "local-maintainer" },
   role: "maintainer",
-  login: "local-maintainer",
+  login: "local-maintainer"
 }
 
 /**
@@ -74,7 +75,10 @@ export const STRANGERS_REPOSITORY = "octocat/Spoon-Knife"
 export const newcomer = (name: string): Signed | undefined => {
   const kind = /^(newcomer|owner|reader)-[a-z0-9]{1,32}$/.exec(name)?.[1]
   if (kind === undefined) return undefined
-  return { actor: { subject: { kind: "person", id: name }, role: kind === "newcomer" ? "member" : null, login: name }, login: name }
+  return {
+    actor: { subject: { kind: "person", id: name }, role: kind === "newcomer" ? "member" : null, login: name },
+    login: name
+  }
 }
 
 /**
@@ -89,10 +93,31 @@ export const devRoles: RepoRoles.LocalRoles = (actor, repository) => {
   return kind === "owner" ? "admin" : "guest"
 }
 
+/**
+ * The one open issue local development keeps on `STRANGERS_REPOSITORY`, which it syncs beside its own repository
+ * (`localSynced`, worker/github/Api.ts): without the App nothing reconciles its issues, and a draft's Commit waits for
+ * an issue to hang the TODO under (decision 0153). Specs choose it through the draft's Issue picker (e2e/todoDraft.ts).
+ */
+export const LOCAL_ISSUE: GitHub.Issues.Issue = {
+  id: 1,
+  node_id: "I_local_1",
+  number: 1,
+  title: "Local development's issue for TODOs",
+  body: "Local development keeps this issue so a TODO drafted on this repository's stack has one to hang under.",
+  state: "open",
+  state_reason: null,
+  user: null,
+  comments: 0,
+  created_at: "2026-11-01T00:00:00Z",
+  updated_at: "2026-11-01T00:00:00Z",
+  closed_at: null,
+  labels: []
+}
+
 const teammates: Readonly<Record<string, Signed>> = {
   teammate: { actor: localTeammate, login: "local-teammate" },
   guest: { actor: localGuest, login: "local-guest" },
-  maintainer: { actor: localMaintainer, login: "local-maintainer" },
+  maintainer: { actor: localMaintainer, login: "local-maintainer" }
 }
 
 export default class DevChatApi extends Cloudflare.Worker<DevChatApi>()(
@@ -110,5 +135,6 @@ export default class DevChatApi extends Cloudflare.Worker<DevChatApi>()(
     // One person here is every parallel spec and a laptop's whole day; a deploy's people keep the 200 a day.
     summaryDailyCap: 100_000,
     feedKey: DEV_FEED_KEY,
-  }),
+    localSynced: { repository: repositoryOf(STRANGERS_REPOSITORY), issue: LOCAL_ISSUE }
+  })
 ) {}

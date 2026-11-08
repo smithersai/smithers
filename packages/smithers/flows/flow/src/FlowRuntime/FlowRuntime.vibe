@@ -22,8 +22,9 @@
  * @since 0.1.0
  */
 
-import type { Crypto } from "@smthrs/crypto"
 import * as Context from "effect/Context"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import type * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"
 import type * as Option from "effect/Option"
@@ -249,7 +250,7 @@ export class FlowRuntime extends Context.Service<
     ) => Flow.Result<Success["Type"], Error["Type"]>!never!(| Success["DecodingServices"]
       | Error["DecodingServices"]
       | R
-      | Crypto.Crypto
+      | (EffectDigest.Digest | SecureRandom.SecureRandom)
       | FlowInstance)
 
     /**

@@ -1,3 +1,4 @@
+import { expectTypeOf } from "vitest"
 /**
  * `SandboxedFlow` against `DirectorySandbox`: a real bundle, a real guest
  * process, real files, and every failure the host can name.
@@ -16,7 +17,6 @@ import { afterAll, describe, expect, it } from "@effect/vitest"
 import { Capability, CapabilityPattern } from "@smthrs/capability/Capability"
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import { PermissionDenied, permissionDenied, toPlatformError } from "@smthrs/capability/Permission"
-import { Crypto } from "@smthrs/crypto"
 import { Action, Engine, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flows"
 import * as Redaction from "@smthrs/journal/Redaction"
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
@@ -1309,7 +1309,7 @@ describe("SandboxedFlow.action on an engine", () => {
     Layer.mergeAll(implementation, Interpreter.layer(Parent)).pipe(
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(Engine.FlowEngine.layerMemory),
-      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+      Layer.provideMerge(NodeCrypto.layer)
     )
 
   it("declares the action over the child's schemas under a derived tag", () => {
@@ -1332,16 +1332,16 @@ describe("SandboxedFlow.action on an engine", () => {
     const partial = Layer.mergeAll(first, Interpreter.layer(Both)).pipe(
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(Engine.FlowEngine.layerMemory),
-      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+      Layer.provideMerge(NodeCrypto.layer)
     )
     const complete = Layer.mergeAll(first, second, Interpreter.layer(Both)).pipe(
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(Engine.FlowEngine.layerMemory),
-      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+      Layer.provideMerge(NodeCrypto.layer)
     )
     const requiresNoServices = <A, E>(_effect: Effect.Effect<A, E>) => {}
-    // @ts-expect-error implementing RunSum must not discharge Other's requirement
-    requiresNoServices(Both.execute({ n: 1 }).pipe(Effect.provide(partial)))
+    const unmet = Both.execute({ n: 1 }).pipe(Effect.provide(partial))
+    expectTypeOf<typeof unmet>().not.toExtend<Parameters<typeof requiresNoServices>[0]>()
     requiresNoServices(Both.execute({ n: 1 }).pipe(Effect.provide(complete)))
     const defaultName: "flows/SandboxedFlow/fixtures/Sum/sandboxed" = RunSum.name
     const customName: "custom/OtherSum" = Other.name
@@ -1396,7 +1396,7 @@ describe("SandboxedFlow.action on an engine", () => {
         const layers = Layer.mergeAll(implementation, Interpreter.layer(Parallel)).pipe(
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(Engine.FlowEngine.layerMemory),
-          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+          Layer.provideMerge(NodeCrypto.layer)
         )
         const exit = yield* Parallel.execute({ n: 5 }, { executionId: "parent-parallel" }).pipe(
           Effect.provide(layers),
@@ -1455,7 +1455,7 @@ describe("SandboxedFlow.action on an engine", () => {
         const layers = Layer.mergeAll(implementation, Interpreter.layer(Recovering)).pipe(
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(Engine.FlowEngine.layerMemory),
-          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+          Layer.provideMerge(NodeCrypto.layer)
         )
         const executionId = `parent-${recovery}`
         const result = yield* Effect.gen(function*() {

@@ -39,6 +39,13 @@ it.each(["smithers", "smithers/agent", "smithers/build", "smithers/flows"])(
       // The copied config runs the package's setup file before every test file.
       const setup = join(packagesDir, name, "test/setup.ts")
       if (existsSync(setup)) copyFileSync(setup, join(root, "test/setup.ts"))
+      // The CLI config imports its real sequencer; the fixture must supply
+      // that declaration dependency before Vite can load the coverage rules.
+      const sequencer = join(packagesDir, name, "test/support/cli-sequencer.ts")
+      if (existsSync(sequencer)) {
+        mkdirSync(join(root, "test/support"), { recursive: true })
+        copyFileSync(sequencer, join(root, "test/support/cli-sequencer.ts"))
+      }
       writeFileSync(
         join(root, "test/fixture.test.ts"),
         "import { expect, it } from \"vitest\"\n"
@@ -56,7 +63,9 @@ it.each(["smithers", "smithers/agent", "smithers/build", "smithers/flows"])(
         "--maxWorkers=1"
       ], { cwd: root, encoding: "utf8", timeout: 60_000 })
       expect(result.error).toBeUndefined()
-      const report = JSON.parse(readFileSync(join(root, "coverage/coverage-summary.json"), "utf8")) as Record<
+      const reportPath = join(root, "coverage/coverage-summary.json")
+      expect(existsSync(reportPath), result.stdout + result.stderr).toBe(true)
+      const report = JSON.parse(readFileSync(reportPath, "utf8")) as Record<
         string,
         { statements: { total: number; pct: number } }
       >

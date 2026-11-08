@@ -37,7 +37,7 @@ declaration.
 npm install @smthrs/registry@next effect
 ```
 
-`effect` is a peer dependency at exactly `4.1.0`. `@effect/platform-node`
+`effect` is a peer dependency at exactly `4.1.1`. `@effect/platform-node`
 supplies the `FileSystem` and `Path` implementations the scan walks with; the
 package itself has no platform bindings. For the import forms and what a
 runnable composition adds, see [Installation](./installation.md).

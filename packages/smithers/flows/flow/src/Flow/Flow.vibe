@@ -17,11 +17,12 @@
  * @since 0.1.0
  */
 
-import type { Crypto } from "@smthrs/crypto"
 import type * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
 import type * as Cause from "effect/Cause"
 import type * as Context from "effect/Context"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import type * as Duration from "effect/Duration"
 import type * as Effect from "effect/Effect"
 import type * as Option from "effect/Option"
@@ -277,7 +278,7 @@ export interface Flow<
     }
   ) =>
     (Discard extends true ? string : Success["Type"])!(Schema.SchemaError | FlowCycleDetected | ExecutionIdentityConflict | (Discard extends true ? never : Error["Type"]))!(| FlowRuntime
-      | Crypto.Crypto
+      | (EffectDigest.Digest | SecureRandom.SecureRandom)
       | Requires
       | Payload["EncodingServices"]
       | Success["DecodingServices"]
@@ -289,7 +290,7 @@ export interface Flow<
    * Observe the execution with `poll`, or await it using `execute` with this id.
    */
   readonly start: (payload: Payload["~type.make.in"]) => string!(Schema.SchemaError | FlowCycleDetected)!(| FlowRuntime
-    | Crypto.Crypto
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
     | Requires
     | Payload["EncodingServices"]
     | Success["DecodingServices"]
@@ -324,7 +325,7 @@ export interface Flow<
   readonly retryFrom: (
     source: string,
     options: { readonly step: string; readonly executionId?: string | undefined }
-  ) => string!(RetryFromRefused | ExecutionIdentityConflict)!(FlowRuntime | Crypto.Crypto | Requires)
+  ) => string!(RetryFromRefused | ExecutionIdentityConflict)!(FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom) | Requires)
 
   /**
    * Poll the current status of a flow execution.
@@ -390,7 +391,7 @@ export interface Flow<
    */
   readonly executionId: (
     payload: Payload["~type.make.in"]
-  ) => string!never!(Crypto.Crypto | Payload["EncodingServices"])
+  ) => string!never!((EffectDigest.Digest | SecureRandom.SecureRandom) | Payload["EncodingServices"])
 
   /**
    * Runs an effect and registers how to undo its successful result if the

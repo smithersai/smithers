@@ -112,7 +112,7 @@ export const normalizePublicReadToken = (value: string): string => {
  * @category constants
  * @since 0.1.0
  */
-export const defaultSmithersCloudApiBase = "https://api.jjhub.tech"
+export const defaultSmithersCloudApiBase = "https://smithers.sh"
 
 /**
  * Options accepted by {@link make}.

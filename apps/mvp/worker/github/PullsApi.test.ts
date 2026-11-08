@@ -118,7 +118,7 @@ describe("a merge through the writes route", () => {
     const baseSha = github.refs.get("main")!
     const headSha = github.push("smithers/t1", { "README.md": "# Widgets\n\nA line\n" })
     const pull = github.openPull("smithers/t1", "T1", BOT_LOGIN)
-    const person = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
+    const person = await signedIn(runtime, { login: "maya", token: github.userToken("maya"), role: "maintainer" })
     const actor: Actor.Actor = {
       subject: { kind: "person", id: person.personId },
       role: "maintainer",
@@ -326,14 +326,15 @@ describe("GET .../compare/<base>...<head>", () => {
 
 describe("the repository's runs", () => {
   test("the actions shape selects the requested repository and its role, never the deployment's rows", async () => {
-    const actor = member("second-repo-reader")
+    const reader = crypto.randomUUID()
+    const actor = member(reader)
     const h = await githubHarness(runtime, { actor })
     await runtime.runPromise(RepoRuns.record({
       execution: "ci:second-delivery", repoId: "github/elsewhere/project", flow: "ci",
       sha: "d".repeat(40), ref: "main", event: "push", launchedBy: "github",
     }))
     await sql(runtime, `INSERT INTO github_repo_roles (repo_id, person_id, role)
-      VALUES ('github/elsewhere/project', 'second-repo-reader', 'member')`)
+      VALUES ('github/elsewhere/project', '${reader}', 'member')`)
     const response = await h.fetch(`${ACTIONS_SHAPE_ROUTE}?repo=elsewhere%2Fproject&offset=-1`)
     expect(response.status).toBe(200)
     const messages = await response.json() as Array<{ value?: { execution: string; repo_id: string } }>

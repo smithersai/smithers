@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import type { ComponentProps } from "react";
-import { cn } from "./cn";
+import { cn } from "@smthrs/ui-css";
 import { personInitial, personLane } from "./internal/person";
 import { useInjectUiCss } from "./styles";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./tooltip";

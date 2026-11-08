@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { createContext, useContext, useId, useState, type ComponentProps, type ReactNode } from "react";
-import { cn } from "../cn";
-import { formatStatus, normalizeStatus, statusClass } from "../status";
+import { cn } from "@smthrs/ui-css";
+import { formatStatus, normalizeStatus, statusClass } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 
 function useQueueCss(): void {

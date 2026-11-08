@@ -12,9 +12,38 @@ over bytes fails at runtime, and the only module a worker can instantiate is
 one its toolchain bundled and handed over as an import. `QuickJSSandbox.Variant`
 is the seam for that host.
 
-## Name the build
+## Use the packaged build
 
-A worker names its build with the `.wasm` module its bundler compiled:
+`@smthrs/harness/QuickJSWorkerd` names the build for you:
+
+```ts
+import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"
+import * as QuickJSWorkerd from "@smthrs/harness/QuickJSWorkerd"
+import { Layer } from "effect"
+
+const layer = QuickJSSandbox.layerWithVariant.pipe(Layer.provide(QuickJSWorkerd.variant))
+```
+
+- `variant` imports `#quickjs.wasm`, which this package's `imports` map to
+  the separate-file build's `.wasm`. Alchemy's rolldown plugin and wrangler
+  upload that file as a CompiledWasm module and hand the Worker its
+  `WebAssembly.Module`; the Worker's own `package.json` names no QuickJS
+  package.
+- The import is dynamic and runs when the layer is built, inside the Worker,
+  so a deploy tool that imports the Worker's modules in Node never loads it.
+- `variantFrom(load)` takes another source of the compiled module. A load
+  that fails is `SandboxError` with code `runtime_failed`.
+- It is a subpath of its own, not part of the root entry, so a browser or
+  Node bundle never meets the `.wasm` import.
+
+`test/QuickJSWorkerd.workerd.test.ts` bundles `test/workerd/worker.ts` with
+esbuild, keeps `#quickjs.wasm` a module of its own, and runs one cell in local
+workerd through Miniflare.
+
+## Name the build by hand
+
+A worker can name its build itself, with the `.wasm` module its bundler
+compiled:
 
 ```ts
 import wasmfile from "@jitl/quickjs-wasmfile-release-sync"

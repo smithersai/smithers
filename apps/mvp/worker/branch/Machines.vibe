@@ -1,6 +1,13 @@
 import { type SandboxCommand, SandboxTools } from "@smthrs/sandbox"
 import { Context, Effect, Schema } from "effect"
-import { CheckoutFailed, type SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "./Sandboxes.vibe"
+import {
+  checkoutDetails,
+  CheckoutFailed,
+  CheckoutOutcome,
+  type SandboxBranch,
+  SandboxStartTimedOut,
+  SandboxUnavailable,
+} from "./Sandboxes.vibe"
 
 // What a branch's machine does for the sandbox tools and its own lifecycle (decision 0005 §2-§3,
 // docs/features/sandbox-tools.md): run one tool call as the person who asked, and go to sleep when nothing happens in
@@ -12,7 +19,7 @@ export const ToolOutcome = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("Done"), result: SandboxTools.Result, generation: Schema.Number }),
   Schema.Struct({ _tag: Schema.Literal("Refused"), reason: SandboxTools.ToolRefused.fields.reason }),
   Schema.Struct({ _tag: Schema.Literal("Lost") }),
-  Schema.Struct({ _tag: Schema.Literal("CheckoutFailed") }),
+  CheckoutOutcome,
   // `start_timeout` when the machine didn't finish starting within SANDBOX_START_TIMEOUT_SECONDS.
   Schema.Struct({ _tag: Schema.Literal("Unavailable"), reason: Schema.optional(Schema.Literal("start_timeout")) }),
   // The sandbox limits leave no machine free (worker/branch/Budget.ts).
@@ -50,7 +57,7 @@ export const CommandOutcome = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("Cancelled") }),
   Schema.Struct({ _tag: Schema.Literal("Refused"), reason: SandboxTools.ToolRefused.fields.reason }),
   Schema.Struct({ _tag: Schema.Literal("Lost") }),
-  Schema.Struct({ _tag: Schema.Literal("CheckoutFailed") }),
+  CheckoutOutcome,
   Schema.Struct({ _tag: Schema.Literal("Unavailable"), reason: Schema.optional(Schema.Literal("start_timeout")) }),
   Schema.Struct({ _tag: Schema.Literal("Waiting") }),
   // The box's own session or script failed: the provider's code, and a script step's exit code.
@@ -127,7 +134,7 @@ export const ranOf = (
     : outcome._tag === "Lost"
     ? Effect.fail(new SandboxTools.ToolLost())
     : outcome._tag === "CheckoutFailed"
-    ? Effect.fail(new CheckoutFailed())
+    ? Effect.fail(new CheckoutFailed(checkoutDetails(outcome)))
     : outcome._tag === "Waiting"
     ? Effect.fail(new SandboxUnavailable({ reason: "waiting" }))
     : Effect.fail(
@@ -144,7 +151,7 @@ const commandFailure = (outcome: CommandOutcome) =>
     : outcome._tag === "Lost"
     ? new SandboxTools.ToolLost()
     : outcome._tag === "CheckoutFailed"
-    ? new CheckoutFailed()
+    ? new CheckoutFailed(checkoutDetails(outcome))
     : outcome._tag === "ToolUnavailable"
     ? new SandboxTools.ToolUnavailable({
       code: outcome.code,

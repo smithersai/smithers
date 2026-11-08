@@ -1,10 +1,9 @@
 import * as BunCrypto from "@effect/platform-bun/BunCrypto"
-import * as NodeWS from "@effect/platform-node/NodeWS"
+import { NodeWS } from "@effect/platform-node"
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import * as ControlLive from "@smthrs/control/ControlLive"
 import * as ScopedToken from "@smthrs/control/ScopedToken"
 import * as SqlControlRuntime from "@smthrs/control/SqlControlRuntime"
-import { Crypto } from "@smthrs/crypto"
 import * as Database from "@smthrs/database/bun/BunDatabase"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
@@ -42,7 +41,7 @@ const stack = Layer.mergeAll(Projections.layer, SyncServer.layer, SyncAuth.layer
       Registry.layerNoop()
     )
   ),
-  Layer.provideMerge(Layer.merge(storage, Crypto.layerFromDigest(BunCrypto.layerDigest)))
+  Layer.provideMerge(Layer.merge(storage, BunCrypto.layer))
 )
 const served = (options: BunGateway.ServerOptions) => BunGateway.layer(health, options).pipe(Layer.provideMerge(stack))
 const request = JSON.stringify({ _tag: "Request", id: 1, tag: "List", payload: { _tag: "runs" }, headers: [] }) + "\n"

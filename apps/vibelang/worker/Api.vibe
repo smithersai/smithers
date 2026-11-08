@@ -1,0 +1,135 @@
+// The API Worker (wiki/decisions/0006-hosting.md, 0010-live-agent.md): an Effect-native Alchemy Worker that answers
+// /api/* for the site Worker and hosts the two Durable Object classes Objects.vibe describes, one per conversation
+// and one per UTC day. Alchemy runs every handler; nothing here runs an Effect itself.
+import * as Cloudflare from "@alchemy.run/cloudflare"
+import { RuntimeContext } from "alchemy"
+import { HttpServerRequest } from "effect/http"
+import type { ReadSnapshot } from "../src/core/schemas.vibe"
+import { workerBuild } from "../infra/WorkerBuild.vibe"
+import { chatModel, dailyTokens } from "./AgentModel.vibe"
+import { afterOf, eventStream, handle, type Conversations } from "./Http.vibe"
+import * as Objects from "./Objects.vibe"
+import type { Spend } from "./Reply.vibe"
+import { Unreachable } from "./Unreachable.vibe"
+
+export interface ConversationShape {
+  readonly post: (clientId: string, name: string, text: string) => (string | null)!!RuntimeContext
+  readonly read: (after: number) => ReadSnapshot!!RuntimeContext
+  readonly alarm: () => void!!RuntimeContext
+}
+
+export interface BudgetShape {
+  readonly admit: () => boolean!!RuntimeContext
+  readonly spend: (reply: string, tokens: number) => void!!RuntimeContext
+}
+
+/** One conversation's sequencer and current reply, named by the conversation's id. */
+export class Conversation extends Cloudflare.DurableObject<Conversation, ConversationShape>()("Conversation") {}
+/** One UTC day's token budget, named by the day. */
+export class Budget extends Cloudflare.DurableObject<Budget, BudgetShape>()("Budget") {}
+
+type Namespace<Shape> = Cloudflare.DurableObject<Shape>
+
+/** The stub of `name`'s object; a call that fails to reach it is `Unreachable`. */
+function objectOf<Shape>(namespace: Namespace<Shape>, name: string, what: string) {
+  return Effect.try({ try: () => namespace.getByName(name), catch: () => new Unreachable({ what }) })
+}
+
+/** `call` with the request's runtime, its failures `Unreachable`. */
+function reached<A, E>(runtime: RuntimeContext["Service"], what: string, call: A!E!RuntimeContext) {
+  return Effect.mapError(Effect.provideService(call, RuntimeContext, runtime), () => new Unreachable({ what }))
+}
+
+const BudgetLive = Budget.make(effect {
+  const state = try Cloudflare.DurableObjectState
+  const limit = try Effect.orDie(dailyTokens)
+  return effect {
+    const budget = try Objects.budget(state.raw.storage, limit)
+    return { admit: () => budget.admit(), spend: budget.spend }
+  }
+})
+
+const ConversationLive = Conversation.make(effect {
+  const state = try Cloudflare.DurableObjectState
+  const budgets = (try Budget) as Namespace<BudgetShape>
+  // Read when the Worker deploys and when an object starts, so the deployment's model and key are bound.
+  const model = try Effect.orDie(chatModel())
+  return effect {
+    // The object's id, the same for every incarnation: the engine's host id (it has none when Alchemy plans).
+    const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
+    const sequencer = try Objects.conversation(state.raw.storage)
+    return {
+      post: (clientId: string, name: string, text: string) =>
+        Objects.post(hostId, state.raw.storage, sequencer, clientId, name, text),
+      read: sequencer.read,
+      // The event stream of the request the API Worker forwarded, from its `after` cursor.
+      fetch: effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        try sequencer.ensureDispatched()
+        return eventStream(sequencer.follow(afterOf(new URL(request.url, "http://conversation.invalid")) ?? 0))
+      },
+      alarm: () => effect {
+        const runtime = try RuntimeContext
+        const spend: Spend.Shape = {
+          admit: (day) => effect {
+            const object = try objectOf(budgets, day, "budget")
+            return try reached(runtime, "budget", object.admit())
+          },
+          spend: (day, reply, tokens) => effect {
+            const object = try objectOf(budgets, day, "budget")
+            try reached(runtime, "budget", object.spend(reply, tokens))
+          },
+        }
+        try Objects.alarm(hostId, state.raw.storage, sequencer, spend, model)
+      },
+    }
+  }
+})
+
+/** The Worker's settings. */
+export const props = {
+  main: "worker/Api.vibe",
+  compatibility: { date: "2026-10-01" },
+  observability: { enabled: true, logs: { enabled: true, invocationLogs: true, persist: true } },
+  // An alarm drives a reply, its model call included; waiting on the model costs no CPU.
+  limits: { cpuMs: 300_000 },
+  // The site reaches it by service binding, so locally it takes any free port.
+  dev: { port: 0 },
+  // Its import graph reaches `.vibe` modules, which vibelang-unplugin compiles.
+  build: workerBuild,
+}
+
+const program = effect {
+  const conversations = (try Conversation) as Namespace<ConversationShape>
+  // Bound when the Worker deploys, as its objects read them.
+  try Effect.orDie(chatModel())
+  try Effect.orDie(dailyTokens)
+  return {
+    fetch: effect {
+      const runtime = try RuntimeContext
+      const api: Conversations = {
+        post: (conversation, body) => effect {
+          const object = try objectOf(conversations, conversation, "conversation")
+          return try reached(runtime, "conversation", object.post(body.clientId, body.name, body.text))
+        },
+        read: (conversation, after) => effect {
+          const object = try objectOf(conversations, conversation, "conversation")
+          return try reached(runtime, "conversation", object.read(after))
+        },
+        events: (conversation) => effect {
+          const request = try HttpServerRequest.HttpServerRequest
+          const object = try objectOf(conversations, conversation, "conversation")
+          return try reached(runtime, "conversation", object.fetch(request))
+        },
+      }
+      return try handle(api)
+    },
+  }
+}
+
+export default class Api extends Cloudflare.Worker<Api>()(
+  "VibelangApi",
+  props,
+  program.pipe(Effect.provide(ConversationLive), Effect.provide(BudgetLive)),
+) {}
+

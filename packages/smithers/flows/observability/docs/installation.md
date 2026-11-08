@@ -20,14 +20,14 @@ CommonJS with TypeScript declarations.
 
 Effect services are identified by module identity, so a composition that
 resolves two copies of `effect` splits its context and a provided layer stops
-satisfying a requirement. Install one `effect` at exactly `4.1.0`.
+satisfying a requirement. Install one `effect` at exactly `4.1.1`.
 
 `Otlp` is written entirely against `effect`, including its HTTP client and its
-`effect/observability/Otlp` exporters. The `@effect/opentelemetry@4.1.0`
+`effect/observability/Otlp` exporters. The `@effect/opentelemetry@4.1.1`
 dependency, the required `@opentelemetry/api@1.9.1` peer, and the logs and
 metrics dependencies support the root `Otel` and `Resource` modules. They
 install with ordinary peer-aware package managers. `@effect/opentelemetry`
-4.1.0 accepts any `effect` in `4.1.0`. The API peer stays below 1.10 to match
+4.1.1 accepts any `effect` in `4.1.1`. The API peer stays below 1.10 to match
 the SDK dependencies. The default install includes no HTTP exporters or trace SDK.
 
 `NodeOtel` selects the optional Node trace SDK and three HTTP exporters:

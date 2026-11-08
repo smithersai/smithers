@@ -591,5 +591,334 @@
       "definitions": {}
     },
     "fingerprint": "6b0b693cff33debb"
+  },
+  {
+    "kind": "enum",
+    "style": "bare",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "a"
+                ],
+                "title": "A"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "b"
+                ],
+                "title": "B"
+              }
+            ]
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "b17036c0670e2ade"
+  },
+  {
+    "kind": "enum",
+    "style": "nullable",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "a"
+                    ],
+                    "title": "A"
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "b"
+                    ],
+                    "title": "B"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "7aba3975223da5ce"
+  },
+  {
+    "kind": "enum",
+    "style": "nested-nullable",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "a"
+                        ],
+                        "title": "A"
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "b"
+                        ],
+                        "title": "B"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "9b9a968e50b52726"
+  },
+  {
+    "kind": "enum",
+    "style": "optional-nullable",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "a"
+                    ],
+                    "title": "A"
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "b"
+                    ],
+                    "title": "B"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "f51767bfbeffe761"
+  },
+  {
+    "kind": "string",
+    "style": "nested-nullable",
+    "identifier": "annotations",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "$ref": "#/$defs/annotations"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "additionalProperties": true
+      },
+      "definitions": {
+        "annotations": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "fingerprint": "723a55a1ddb3016a"
+  },
+  {
+    "kind": "string",
+    "style": "nested-nullable",
+    "identifier": "payload",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "$ref": "#/$defs/payload"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "additionalProperties": true
+      },
+      "definitions": {
+        "payload": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "fingerprint": "3a913d4b26ddd3ea"
+  },
+  {
+    "kind": "string",
+    "style": "nested-nullable",
+    "identifier": "__proto__",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "$ref": "#/$defs/__proto__"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "additionalProperties": true
+      },
+      "definitions": {
+        "__proto__": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "fingerprint": "c6ab9406ec6770fe"
+  },
+  {
+    "kind": "string",
+    "style": "nested-nullable",
+    "identifier": "constructor",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "$ref": "#/$defs/constructor"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "additionalProperties": true
+      },
+      "definitions": {
+        "constructor": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "fingerprint": "f59d94d831f55e1a"
   }
 ]

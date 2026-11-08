@@ -13,7 +13,7 @@ const pages = [
 ]
 
 const current = { ...emptyCurrent, owner: "acme", name: "widgets", repoKey: "acme/widgets" }
-const ready: IndexRow = { key: "acme/widgets", state: "ready", title: "Example", summary: null, pages, code: null }
+const ready: IndexRow = { key: "acme/widgets", repoId: "github/acme/widgets", state: "ready", title: "Example", summary: null, pages, code: null }
 
 describe("groupsOf", () => {
   test("groups pages by section, each where its first page is, in the index's order", () => {
@@ -53,7 +53,7 @@ describe("docsPageOf", () => {
       list: { kind: "results", pages: [], notice: null },
     })
     expect(
-      docsPageOf({ current: searching, index: ready, search: { key: "acme/widgets?x", state: "refused", pages: [], code: "unavailable" } }),
+      docsPageOf({ current: searching, index: ready, search: { key: "acme/widgets?x", repoId: "github/acme/widgets", state: "refused", pages: [], code: "unavailable" } }),
     ).toMatchObject({ list: { kind: "results", notice: DOCS_UNREADABLE } })
   })
 })
@@ -89,6 +89,6 @@ test("a refused page offers the index as recovery", () => {
   expect(docsPageOf({
     current: { ...current, path: "/absent", pageKey: "acme/widgets:/absent" },
     index: ready,
-    page: { key: "acme/widgets:/absent", state: "refused", title: "", url: "", text: "", code: "not_found" },
+    page: { key: "acme/widgets:/absent", repoId: "github/acme/widgets", state: "refused", title: "", url: "", text: "", code: "not_found" },
   })).toMatchObject({ page: { kind: "refused", notice: PAGE_UNREADABLE }, list: { kind: "index" } })
 })

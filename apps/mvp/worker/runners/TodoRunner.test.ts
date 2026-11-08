@@ -709,10 +709,68 @@ describe("steering and stopping a TODO's external agent", { timeout: 240_000 }, 
   })
 })
 
+/** The fleet fixture's execution host, shared by every probe in one test. */
+const alertHostFor = async (registration: ReturnType<typeof FleetAlert.registration>) => {
+  const host = await FlowHost.incarnation(registration)
+  return {
+    raise: (alert: Fleet.Alert): Effect.Effect<void, unknown> =>
+      host.execute(FleetAlert.FleetAlert, alert.alertId, alert).pipe(
+        Effect.flatMap(exit => Exit.isFailure(exit) ? Effect.failCause(exit.cause) : Effect.void),
+      ),
+    close: host.close,
+  }
+}
+
 describe("the fleet over a real runner", { timeout: 300_000 }, () => {
   let providers: AlertProviders
+  let alertHost: Awaited<ReturnType<typeof alertHostFor>> | undefined
   afterEach(async () => {
+    await alertHost?.close()
+    alertHost = undefined
     await providers?.close()
+  })
+
+  test("concurrent starts of one fleet alert share its in-flight delivery", async () => {
+    providers = await startAlertProviders()
+    await sql(runtime, `INSERT INTO alert_channels (channel, destinations, app_url, updated_by)
+      VALUES ('telegram', '["-1001234500002"]'::jsonb, 'https://smithers.test/app', 'person-admin')`)
+    const [runner] = await sql(runtime, `INSERT INTO runners (repo_id, name, capacity, token_sha256, added_by)
+      VALUES ('${REPOSITORY.id}', 'race-runner', 1, '${digestSync("race-token")}', 'person-admin') RETURNING id::text`) as Array<{ id: string }>
+    let release!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
+    let first!: () => void
+    const reading = new Promise<void>(resolve => { first = resolve })
+    let second!: () => void
+    const duplicated = new Promise<void>(resolve => { second = resolve })
+    let entered = 0
+    // Faulty Effect service holds the network send; after release, it uses the real HTTP channel implementation.
+    const channels = Layer.effect(Channels.Channels, Effect.map(Channels.Channels, actual => Channels.Channels.of({
+      ...actual,
+      send: (destination, message) => Effect.gen(function* () {
+        entered++
+        first()
+        if (entered === 2) second()
+        yield* Effect.promise(() => held)
+        return yield* actual.send(destination, message)
+      }),
+    }))).pipe(Layer.provide(Channels.layer({ telegram: { token: Redacted.make("123456:SYNTHETIC_FLEET_BOT"), url: providers.url } })))
+    alertHost = await alertHostFor(FleetAlert.registration(await database(), "github/smithersai/smithers", channels))
+    const alert: Fleet.Alert = { alertId: "fleet-concurrent", kind: "offline", repoId: REPOSITORY.id, subject: runner!.id }
+    const sends = [Effect.runPromise(alertHost.raise(alert)), Effect.runPromise(alertHost.raise(alert))]
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      await reading
+      await Promise.race([duplicated, new Promise<void>(resolve => { timer = setTimeout(resolve, 5_000) })])
+      expect(entered, "one durable execution may enter the held channel send").toBe(1)
+    } finally {
+      if (timer !== undefined) clearTimeout(timer)
+      release()
+      const settled = await Promise.allSettled(sends)
+      expect(settled.map(each => each.status)).toEqual(["fulfilled", "fulfilled"])
+    }
+    expect(providers.received.filter(each => each.provider === "telegram")).toHaveLength(1)
+    await Effect.runPromise(alertHost.raise(alert))
+    expect(providers.received.filter(each => each.provider === "telegram")).toHaveLength(1)
   })
 
   test("a silent agent reads Stalled and its committer hears it; a quiet CPU-bound build does not; a refused run's failure and a killed runner's outage reach the bell and Telegram once", async () => {
@@ -725,13 +783,16 @@ describe("the fleet over a real runner", { timeout: 300_000 }, () => {
     const alerts = FleetAlert.registration(db, "github/smithersai/smithers", Channels.layer({
       telegram: { token: Redacted.make("123456:SYNTHETIC_FLEET_BOT"), url: providers.url },
     }))
-    // Each alert the probe or `todo/Fail` raises runs `ops/FleetAlert` on the Node host, as its own execution.
+    alertHost = await alertHostFor(alerts)
+    // Every probe shares one durable execution for an alert id.
     const fleet: Jobs.Alerts = {
       // Fifteen seconds of quiet is a stall here (longer than an agent takes to start its first command and use 5 CPU
       // seconds); a runner unseen for 20 s is offline.
       settings: { ...Fleet.DEFAULTS, stallMinutes: 0.25, offlineSeconds: 20 },
-      raise: (alert) =>
-        Effect.promise(() => runFlow(FleetAlert.FleetAlert, alert, alerts, { executionId: alert.alertId })).pipe(Effect.asVoid),
+      // Two job probes can report the same runner outage concurrently. Force that admission race for every alert.
+      raise: (alert) => Effect.all([0, 1].map(() =>
+        alertHost!.raise(alert)),
+        { concurrency: 2, discard: true }),
     }
     const ctx = await setup({ fleet, capacity: 3, heartbeatSeconds: 2 })
     const runner = startRunner(ctx.config)
@@ -793,7 +854,8 @@ describe("the fleet over a real runner", { timeout: 300_000 }, () => {
           .map((each) => (each.body as { text: string }).text.split("\n\n").join(" "))
           .filter((text) => !text.endsWith("/stack/2"))
           .sort()
-      await eventually(() => texts().length === 3, 30_000)
+      // An extra delivery must fail with its actual messages, rather than timing out behind an equality predicate.
+      await eventually(() => texts().length >= 3, 30_000)
       expect(texts()).toEqual([
         `Agent run failed · ${repo} https://smithers.test/${repo}/stack/3`,
         `Agent run stalled · ${repo} https://smithers.test/${repo}/stack/1`,

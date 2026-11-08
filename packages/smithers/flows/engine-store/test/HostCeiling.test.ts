@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * A durable engine built under a restricted capability ceiling records that
  * host ceiling with every run it admits and compares joins, polls, and
@@ -9,13 +10,13 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Capability, CapabilityPattern } from "@smthrs/capability/Capability"
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
-import type { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
 import { DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { RunStore } from "@smthrs/run-store"
 import { Cause, Effect, Exit, Option, Schema, Scope } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
@@ -68,7 +69,7 @@ const Gated = Flow.make("host-ceiling/gated", {
 const withRestarts = <A, E>(
   body: (
     start: (host?: ReadonlyArray<CapabilityPattern>) => Effect.Effect<FlowRuntime.FlowRuntime["Service"]>
-  ) => Effect.Effect<A, E, Crypto.Crypto | RunStore.RunStore | SqlClient.SqlClient>
+  ) => Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom) | RunStore.RunStore | SqlClient.SqlClient>
 ) => {
   const filename = PersistentDatabase.filename(":memory:")
   return Effect.gen(function*() {

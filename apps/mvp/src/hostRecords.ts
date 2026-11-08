@@ -1,3 +1,4 @@
+import type { LifecycleOutcome } from "./wipe"
 import type { UpdateTrigger } from "./pwa"
 import type { ReloadReason } from "./reloadReason"
 
@@ -8,6 +9,7 @@ import type { ReloadReason } from "./reloadReason"
 
 /** One thing the host saw. */
 export type HostRecord =
+  | { readonly _tag: "device.lifecycle"; readonly outcome: LifecycleOutcome }
   /** React caught a render error in a boundary (`caught`), or nothing caught it and the root unmounted (`uncaught`). */
   | { readonly _tag: "render"; readonly boundary: "caught" | "uncaught"; readonly name: string }
   /** The service worker couldn't be registered. */

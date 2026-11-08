@@ -69,7 +69,7 @@ failures for both halves:
 import { deriveKey } from "@smthrs/keys"
 
 deriveKey({ domain: "step", flow: "build", attempt: 1 })
-// Effect<KeyV1, KeyDerivationError, Crypto.Crypto>
+// Effect<KeyV1, KeyDerivationError, EffectDigest.Digest>
 ```
 
 [`@smthrs/artifacts`](/api/artifacts) is the same idea for bytes: an address
@@ -82,7 +82,7 @@ is the transformation from `string | Uint8Array` to `Digest`:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto, Sha256 } from "@smthrs/crypto"
+import { Sha256 } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 
@@ -96,7 +96,7 @@ Effect.runPromise(
     { name: "server.js", contents: "hello" },
     { reportInput: false }
   ).pipe(
-    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Effect.provide(NodeCrypto.layer)
   )
 )
 // {

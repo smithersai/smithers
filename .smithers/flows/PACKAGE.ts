@@ -1,6 +1,7 @@
 /** Repository flows, release workflows, and the retained migration fixtures. */
 import { Smithers } from "@smthrs/targets"
 import { existsSync, readdirSync } from "node:fs"
+import { Package as mvpPackage } from "../../apps/mvp/PACKAGE.ts"
 import { Package as repoTargetsPackage } from "../../packages/repo-targets/PACKAGE.ts"
 import { libraryPackages, repoRoot } from "../../packages/repo-targets/scripts/workspace-packages.mjs"
 import { Package as testingPackage } from "../../packages/testing/PACKAGE.ts"
@@ -340,6 +341,7 @@ const codingRuntime = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/test/coding-source-publication.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-dispatch.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-hosted-tools.test.ts"),
+    Smithers.file("//.smithers/flows/test/coding-binding-refusal.test.ts"),
     Smithers.file("//.smithers/flows/test/coding-metered-steps.test.ts"),
     Smithers.file("//.smithers/flows/test/moved-off-agent-dispatch.test.ts")
   ]),
@@ -411,6 +413,13 @@ const testCoverage = Smithers.NodeTest({
     Smithers.file("//.smithers/flows/PACKAGE.ts"),
     Smithers.file("//.smithers/flows/test/coding-native-gate.mjs")
   ],
+  deps: [],
+  cwd
+})
+// Snapshot regeneration must preserve the formatting gate it feeds.
+const coverageSnapshotFormat = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//.smithers/flows/test/coverage-campaign/format.test.mjs")]),
+  srcs: [Smithers.glob("test/coverage-campaign/*.mjs"), Smithers.file("dprint.json"), Smithers.file("package.json")],
   deps: [],
   cwd
 })
@@ -615,6 +624,34 @@ const fixtures = Smithers.NodeTest({
 // Security review over the files this package owns. `wiki/` is a nested
 // package with its own review; suites, fixtures and installs are excluded.
 /**
+ * The `issues/file-tree` flow that files an issue import plan as a tree of GitHub sub-issues. `flow.test.ts` drives
+ * its real graph on the in-memory engine against a fake smithers.sh (what it files, whom it refuses, exact-identity
+ * recovery); `resume.test.mjs` runs it through this checkout's CLI, kills it between a create and its attach and right
+ * after a send, and resumes it each time.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const issuesFileTree = Smithers.NodeTest({
+  summary: "Filing an issue plan as GitHub sub-issues recovers by exact key and survives a kill.",
+  runner: Smithers.testRunner([
+    Smithers.file("//.smithers/flows/issues/file-tree/flow.test.ts"),
+    Smithers.file("//packages/smithers/test/roundbytes.test.mjs"),
+    Smithers.file("//.smithers/flows/issues/file-tree/resume.test.mjs")
+  ]),
+  timeout: "30m",
+  cache: false,
+  srcs: [
+    sources,
+    Smithers.file("//.smithers/flows/issues/file-tree/steps.mjs"),
+    Smithers.file("//.smithers/flows/issues/file-tree/fake-smithers.mjs"),
+    Smithers.file("//packages/smithers/test/roundbytes.mjs")
+  ],
+  deps: [mvpPackage.issueFileTreeSources],
+  cwd
+})
+
+/**
  * The untrusted-report boundary for issue and pull-request triage.
  *
  * The model never receives a GitHub token; this suite holds the deterministic
@@ -772,10 +809,13 @@ const land = Smithers.NodeTest({
   runner: Smithers.testRunner([
     Smithers.file("//.smithers/flows/land/flow.test.ts"),
     Smithers.file("//.smithers/flows/land/lane-gates/flow.test.ts"),
+    Smithers.file("//.smithers/flows/land/projection-drift.test.mjs"),
     Smithers.file("//.smithers/flows/land/lane-gates.test.mjs"),
     Smithers.file("//.smithers/flows/land/lane-prerequisites.test.mjs"),
     Smithers.file("//.smithers/flows/land/review.test.mjs"),
-    Smithers.file("//.smithers/flows/land/typecheck.test.mjs")
+    Smithers.file("//.smithers/flows/land/typecheck.test.mjs"),
+    Smithers.file("//.smithers/flows/land/affected.test.mjs"),
+    Smithers.file("//.smithers/flows/land/affected-policy.test.mjs")
   ]),
   srcs: [sources, ...landSources],
   deps: [repoTargetsPackage.repositoryInputs],
@@ -1584,6 +1624,7 @@ export const Package = Smithers.Package({
     codingConfigBun,
     codingNative,
     testCoverage,
+    coverageSnapshotFormat,
     codingNativeBun,
     codingBundle,
     codingBundleBun,
@@ -1604,6 +1645,7 @@ export const Package = Smithers.Package({
     provider,
     wiki,
     triagePublish,
+    issuesFileTree,
     automation,
     packManifest,
     changelog,

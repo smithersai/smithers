@@ -41,7 +41,8 @@
     "@milkdown/crepe": "7.22.1",
     "@milkdown/kit": "7.22.1",
     "@pierre/diffs": "1.5.2",
-    "@smthrs/ui": "workspace:*"
+    "@smthrs/ui": "workspace:*",
+    "@smthrs/ui-css": "workspace:*"
   },
   "peerDependencies": {
     "react": "^19.2.8",
@@ -56,6 +57,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "typescript": "~5.9.3",
-    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz"
+    "vibelang-runtime": "0.0.12",
+    "vibelang": "0.0.12"
   }
 }

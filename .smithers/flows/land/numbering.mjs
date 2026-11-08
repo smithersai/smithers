@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /** Allocate only incoming identities against main; published migration IDs never change. */
-import { spawnSync } from "node:child_process"
+import { boundedSpawnSync as spawnSync } from "./process.mjs"
 import { existsSync, readFileSync, readdirSync, renameSync } from "node:fs"
 import { join, basename } from "node:path"
 import { sourcePath, writeSource } from "./files.mjs"

@@ -1,7 +1,8 @@
-import { type Crypto, WebCrypto } from "@smthrs/crypto"
-import { RetryPolicy, FlowRuntime } from "@smthrs/flow"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
 import { Cause, Effect, Exit, Layer, Metric, Option } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import { describe, expect, test } from "vitest"
 import { ASK_RETRY, TodoStepRefused } from "./flows"
 import { drafts, queued } from "./metrics"
@@ -17,10 +18,10 @@ const AGENT = "answer-1/chat/Respond@abc:1/call/1.0"
 
 /** Runs `step` as execution `executionId`, its tabs reached through `tabs`, counting into `registry`. */
 const run = <A, E>(
-  step: Effect.Effect<A, E, FlowRuntime.FlowInstance | TabTodos | Crypto.Crypto>,
+  step: Effect.Effect<A, E, FlowRuntime.FlowInstance | TabTodos | EffectDigest.Digest>,
   executionId: string,
   tabs: Layer.Layer<TabTodos>,
-  registry: Metric.MetricRegistry,
+  registry: Metric.MetricRegistry
 ) =>
   Effect.runPromise(
     Effect.exit(
@@ -29,14 +30,14 @@ const run = <A, E>(
         Effect.provideService(FlowRuntime.FlowInstance, { executionId } as FlowRuntime.FlowInstance["Service"]),
         Effect.provide(tabs),
         Effect.provide(WebCrypto.layer),
-        Effect.provideService(Metric.MetricRegistry, registry),
-      ),
-    ),
+        Effect.provideService(Metric.MetricRegistry, registry)
+      )
+    )
   )
 
 /** No tab listens on this engine's channel (Node's own `BroadcastChannel`): the tab that asked is gone. */
 const noTab = TabTodos.layerChannel({ name: `none-${crypto.randomUUID()}`, within: "100 millis" }).pipe(
-  Layer.provide(TabChannel.layer),
+  Layer.provide(TabChannel.layer)
 )
 
 /** A tab that answers every call with `kept`, through a button, recording what it was asked; `missing` its issue. */
@@ -51,9 +52,9 @@ const recordingTab = (kept: boolean, missing = false) => {
           Effect.sync(() => {
             asked.push(call)
             return Option.some({ door: "button" as const, kept, missing })
-          }),
-      }),
-    ),
+          })
+      })
+    )
   }
 }
 
@@ -62,7 +63,7 @@ const failure = (exit: Exit.Exit<unknown, unknown>) =>
 
 const count = (registry: Metric.MetricRegistry, metric: typeof queued, attributes: Record<string, string>) =>
   Effect.runSync(
-    Metric.value(Metric.withAttributes(metric, attributes)).pipe(Effect.provideService(Metric.MetricRegistry, registry)),
+    Metric.value(Metric.withAttributes(metric, attributes)).pipe(Effect.provideService(Metric.MetricRegistry, registry))
   ).count
 
 const commit = queueChange({ op: "commit", repo: "octo/hello", title: " T ", prompt: "P" })
@@ -90,8 +91,16 @@ describe("the agent's door", () => {
       requester: PERSON,
       call: {
         kind: "queue",
-        op: { id: expect.any(String), repo: "octo/hello", op: "commit", title: "T", prompt: "P", acceptance: [], number: 0 },
-      },
+        op: {
+          id: expect.any(String),
+          repo: "octo/hello",
+          op: "commit",
+          title: "T",
+          prompt: "P",
+          acceptance: [],
+          number: 0
+        }
+      }
     })
     expect(count(registry, queued, { op: "commit", door: "button", outcome: "kept" })).toBe(2)
   })
@@ -99,11 +108,25 @@ describe("the agent's door", () => {
   test("the agent drafts: its draft remembers the answer it belongs to", async () => {
     const registry: Metric.MetricRegistry = new Map()
     const tab = recordingTab(true)
-    const exit = await run(keepDraft({ repo: "octo/hello", prompt: "Do it", title: " Short " }), AGENT, tab.layer, registry)
-    expect(Exit.isSuccess(exit) && exit.value).toEqual({ draftId: expect.any(String), status: "drafted", path: "/octo/hello/stack" })
+    const exit = await run(
+      keepDraft({ repo: "octo/hello", prompt: "Do it", title: " Short " }),
+      AGENT,
+      tab.layer,
+      registry
+    )
+    expect(Exit.isSuccess(exit) && exit.value).toEqual({
+      draftId: expect.any(String),
+      status: "drafted",
+      path: "/octo/hello/stack"
+    })
     expect(tab.asked[0]!.call).toEqual({
       kind: "draft",
-      draft: expect.objectContaining({ title: "Short", answerId: "answer-1", repoId: "github/octo/hello", acceptance: [] }),
+      draft: expect.objectContaining({
+        title: "Short",
+        answerId: "answer-1",
+        repoId: "github/octo/hello",
+        acceptance: []
+      })
     })
     expect(count(registry, drafts, { door: "agent", outcome: "kept" })).toBe(1)
   })
@@ -131,15 +154,24 @@ describe("a draft from an issue", () => {
     const registry: Metric.MetricRegistry = new Map()
     const tab = recordingTab(true)
     const exit = await run(keepDraft({ repo: "octo/hello", issue: 7 }), PERSON, tab.layer, registry)
-    expect(Exit.isSuccess(exit) && exit.value).toEqual({ draftId: expect.any(String), status: "drafted", path: "/octo/hello/stack" })
+    expect(Exit.isSuccess(exit) && exit.value).toEqual({
+      draftId: expect.any(String),
+      status: "drafted",
+      path: "/octo/hello/stack"
+    })
     expect(tab.asked[0]!.call).toEqual({
       kind: "draft",
-      draft: expect.objectContaining({ title: "", prompt: "", issue: 7, answerId: null, repoId: "github/octo/hello" }),
+      draft: expect.objectContaining({ title: "", prompt: "", issue: 7, answerId: null, repoId: "github/octo/hello" })
     })
     await run(keepDraft({ repo: "octo/hello", issue: 7, prompt: "## Better\n\nRefined." }), AGENT, tab.layer, registry)
     expect(tab.asked[1]!.call).toEqual({
       kind: "draft",
-      draft: expect.objectContaining({ title: "Better", prompt: "## Better\n\nRefined.", issue: 7, answerId: "answer-1" }),
+      draft: expect.objectContaining({
+        title: "Better",
+        prompt: "## Better\n\nRefined.",
+        issue: 7,
+        answerId: "answer-1"
+      })
     })
     expect(count(registry, drafts, { door: "button", outcome: "kept" })).toBe(1)
     expect(count(registry, drafts, { door: "agent", outcome: "kept" })).toBe(1)
@@ -161,18 +193,28 @@ describe("a draft from an issue", () => {
 
   test("a commit carries the issue it was made from; one without names none", async () => {
     const tab = recordingTab(true)
-    await run(queueChange({ op: "commit", repo: "octo/hello", title: "T", prompt: "P", issue: 7 }), PERSON, tab.layer, new Map())
+    await run(
+      queueChange({ op: "commit", repo: "octo/hello", title: "T", prompt: "P", issue: 7 }),
+      PERSON,
+      tab.layer,
+      new Map()
+    )
     await run(commit, `${PERSON}-2`, tab.layer, new Map())
     expect(tab.asked.map(({ call }) => call.kind === "queue" && call.op.issue)).toEqual([7, undefined])
   })
 })
 
-
 test("permanent TODO refusals stop on the first attempt; transport failures retry", () => {
   for (const reason of ["agent", "issue_not_found", "not_kept", "tab_gone"] as const) {
-    expect(RetryPolicy.decide(ASK_RETRY, { attempt: 1, error: new TodoStepRefused({ reason }) })).toEqual({ _tag: "GiveUp", reason: "nonRetryable" })
+    expect(RetryPolicy.decide(ASK_RETRY, { attempt: 1, error: new TodoStepRefused({ reason }) })).toEqual({
+      _tag: "GiveUp",
+      reason: "nonRetryable"
+    })
   }
-  expect(RetryPolicy.decide(ASK_RETRY, { attempt: 1, error: { _tag: "TransportUnavailable" } })).toEqual({ _tag: "RetryAfter", delayMs: 1000 })
+  expect(RetryPolicy.decide(ASK_RETRY, { attempt: 1, error: { _tag: "TransportUnavailable" } })).toEqual({
+    _tag: "RetryAfter",
+    delayMs: 1000
+  })
 })
 
 test("the agent retries through the same durable queue and replays the same press id", async () => {

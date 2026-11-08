@@ -4,7 +4,7 @@
  * `SMITHERS_TEST_PG_URL`).
  */
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-import { Action, Flow, FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
+import { Action, Fault, Flow, FlowRuntime, Interpreter, RetryPolicy, RunMetrics } from "@smthrs/flow"
 import { Journal, SqlJournal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
@@ -40,6 +40,20 @@ const Echo = Action.make("inspection/Echo", {
 })
 const Big = Action.make("inspection/Big", { payload: { size: Schema.Number }, success: Schema.String })
 const Fails = Action.make("inspection/Fails", { payload: {}, success: Schema.String, error: Refused })
+class Retryable extends Schema.TaggedError<Retryable>()("inspection/Unavailable", { message: Schema.String }) {}
+Fault.register("inspection/Unavailable", "infra")
+const Retried = Action.make("inspection/Retried", {
+  payload: {},
+  success: Schema.String,
+  error: Retryable,
+  retryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 2 })
+})
+const Retrying = Flow.make("inspection/Retrying", {
+  payload: {},
+  success: Schema.String,
+  error: Retryable,
+  body: Node.capture({}, () => Retried.call({}))
+})
 const Gate = Action.make("inspection/Gate", { payload: { label: Schema.String }, success: Schema.String })
 const Crash = Action.make("inspection/Crash", { payload: {}, success: Schema.String })
 
@@ -181,6 +195,7 @@ const runtime = (gate: (label: string) => Effect.Effect<string>) => {
     Echo.toLayer(({ token }) => Effect.succeed({ token, length: token.length })),
     Big.toLayer(({ size }) => Effect.succeed("é".repeat(size / 2))),
     Fails.toLayer(() => Effect.fail(new Refused({ message: PROVIDER_TEXT }))),
+    Retried.toLayer(() => Effect.fail(new Retryable({ message: `temporarily unavailable ${CREDENTIAL}` }))),
     Gate.toLayer(({ label }) => gate(label)),
     Crash.toLayer(() => Effect.die(new ConnectionClosed(`Connection closed while holding ${CREDENTIAL}`))),
     Vault.toLayer(() =>
@@ -194,6 +209,7 @@ const runtime = (gate: (label: string) => Effect.Effect<string>) => {
     Interpreter.layerWithImplementations(Root, steps),
     Interpreter.layerWithImplementations(Child, steps),
     Interpreter.layerWithImplementations(Failing, steps),
+    Interpreter.layerWithImplementations(Retrying, steps),
     Interpreter.layerWithImplementations(Crashing, steps),
     Interpreter.layerWithImplementations(Gated, steps),
     Interpreter.layerWithImplementations(Sealed, steps),
@@ -201,7 +217,9 @@ const runtime = (gate: (label: string) => Effect.Effect<string>) => {
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(
-      RunInspection.layerWith({ flows: [Root, Child, Failing, Crashing, Gated, Sealed, Explosive, Unplannable] })
+      RunInspection.layerWith({
+        flows: [Root, Child, Failing, Retrying, Crashing, Gated, Sealed, Explosive, Unplannable]
+      })
     ),
     Layer.provideMerge(engine)
   )
@@ -502,23 +520,107 @@ describe("RunInspection.inspect", () => {
       expect(event(19).state.payload).toBe(RunInspection.withheldMarker)
     })))
 
-  it("reduces a failure to its closed code: no message, no provider text", () =>
+  it("keeps raw failure payloads reduced to codes and exposes only the bounded diagnostic", () =>
     run(Effect.gen(function*() {
       const exit = yield* Effect.exit(
-        Effect.flatMap(FlowRuntime.FlowRuntime, (engine) =>
-          engine.execute(Failing, { executionId: "failing-1", payload: {} }))
+        Effect.flatMap(
+          FlowRuntime.FlowRuntime,
+          (engine) => engine.execute(Failing, { executionId: "failing-1", payload: {} })
+        )
       )
       expect(Exit.isFailure(exit)).toBe(true)
       yield* flushed
       const inspection = yield* (yield* RunInspection.RunInspection).inspect("failing-1")
-      expect(JSON.stringify(inspection)).not.toContain(PROVIDER_TEXT)
+      expect(inspection.run.failure).toMatchObject({ tag: "inspection/Refused", message: PROVIDER_TEXT })
       expect(inspection.run.status).toBe("failed")
       expect(JSON.parse(inspection.run.result!.text)).toEqual({ failure: "inspection/Refused" })
-      const failed = inspection.steps.find((step) =>
-        step.action === Fails.name
-      )!
+      const failed = inspection.steps.find((step) => step.action === Fails.name)!
       expect(failed.status).toBe("failed")
       expect(failed.attempts.map((attempt) => attempt.error)).toContain("inspection/Refused")
+    })))
+
+  it("persists a redacted named action failure with its node and attempts across terminal replay", () =>
+    run(Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      yield* Effect.exit(engine.execute(Failing, { executionId: "failure-diagnostic", payload: {} }))
+      yield* flushed
+      const sql = yield* SqlClient.SqlClient
+      const rows = yield* sql<
+        { state_json: string }
+      >`SELECT state_json FROM flows_runs WHERE run_id = 'failure-diagnostic'`
+      const stored = JSON.parse(rows[0]!.state_json)
+      expect(stored.failure).toMatchObject({
+        tag: "inspection/Refused",
+        message: PROVIDER_TEXT,
+        action: Fails.name,
+        attempts: 1,
+        retryable: false
+      })
+      expect(stored.failure.nodeId).toEqual(expect.any(String))
+      const reads = yield* RunInspection.RunInspection
+      const first = yield* reads.inspect("failure-diagnostic")
+      expect(first.run).toMatchObject({ failure: stored.failure })
+      yield* Effect.exit(engine.execute(Failing, { executionId: "failure-diagnostic", payload: {} }))
+      const second = yield* reads.inspect("failure-diagnostic")
+      expect(second.run).toMatchObject({ failure: stored.failure })
+    })))
+
+  it("records actual retry attempts and redacts before persistence; reads legacy terminal records without inventing a cause", () =>
+    run(Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      yield* Effect.exit(engine.execute(Retrying, { executionId: "failure-retried", payload: {} }))
+      yield* flushed
+      const sql = yield* SqlClient.SqlClient
+      const rows = yield* sql<
+        { state_json: string }
+      >`SELECT state_json FROM flows_runs WHERE run_id = 'failure-retried'`
+      const stored = JSON.parse(rows[0]!.state_json)
+      expect(stored.failure).toMatchObject({
+        tag: "inspection/Unavailable",
+        action: Retried.name,
+        attempts: 2,
+        retryable: true
+      })
+      expect(stored.failure.message).toContain("temporarily unavailable")
+      expect(JSON.stringify(stored.failure)).not.toContain(CREDENTIAL)
+      const reads = yield* RunInspection.RunInspection
+      const inspection = yield* reads.inspect("failure-retried")
+      expect(inspection.run).toMatchObject({ failure: stored.failure })
+      const { failure: _, ...legacy } = stored
+      yield* sql`UPDATE flows_runs SET state_json = ${JSON.stringify(legacy)} WHERE run_id = 'failure-retried'`
+      expect((yield* reads.inspect("failure-retried")).run.failure).toBeUndefined()
+      const replayed = yield* Effect.exit(engine.execute(Retrying, { executionId: "failure-retried", payload: {} }))
+      expect(Exit.isFailure(replayed)).toBe(true)
+      expect((yield* reads.inspect("failure-retried")).run.failure).toBeUndefined()
+    })))
+
+  it("bounds an oversized historical terminal diagnostic as one display value", () =>
+    run(Effect.gen(function*() {
+      yield* Effect.exit(
+        (yield* FlowRuntime.FlowRuntime).execute(Failing, { executionId: "oversized-diagnostic", payload: {} })
+      )
+      yield* flushed
+      const sql = yield* SqlClient.SqlClient
+      const rows = yield* sql<
+        { state_json: string }
+      >`SELECT state_json FROM flows_runs WHERE run_id = 'oversized-diagnostic'`
+      const state = JSON.parse(rows[0]!.state_json)
+      const huge = CREDENTIAL + "\n" + "🔥".repeat(20_000)
+      state.failure = {
+        executionId: huge,
+        tag: huge,
+        message: huge,
+        action: huge,
+        nodeId: huge,
+        attempts: 1,
+        retryable: false
+      }
+      yield* sql`UPDATE flows_runs SET state_json = ${JSON.stringify(state)} WHERE run_id = 'oversized-diagnostic'`
+      const inspection = yield* (yield* RunInspection.RunInspection).inspect("oversized-diagnostic")
+      const shown = JSON.stringify(inspection.run.failure)
+      expect(shown).not.toContain(CREDENTIAL)
+      expect(new TextEncoder().encode(shown).length).toBeLessThanOrEqual(RunInspection.valueLimitBytes)
+      expect(inspection.run.failure!.message).toContain("…")
     })))
 
   it("pages the journal by sequence without gaps or repeats while the run appends", () => {

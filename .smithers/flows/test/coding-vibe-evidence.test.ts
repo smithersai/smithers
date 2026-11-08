@@ -1,11 +1,12 @@
-import { NodeCrypto, NodeServices } from "@effect/platform-node"
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
+import { NodeServices } from "@effect/platform-node"
 import * as ControlRuntime from "@smthrs/control/ControlRuntime"
-import { Crypto } from "@smthrs/crypto"
 import { DurableEngineState } from "@smthrs/engine-store"
 import * as RunCatalogRead from "@smthrs/engine-store/RunCatalogRead"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import { Effect, Exit, Layer, Schema } from "effect"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
@@ -23,9 +24,6 @@ import {
 } from "../coding/schema.ts"
 import { leafFeedback } from "../coding/todo-route.ts"
 import { readTodoDelivery, readVibeRequest } from "../coding/vibe-evidence.ts"
-
-// Effect 4.1 removed effect/Crypto, and NodeServices.layer no longer provides it.
-const nodeServices = Layer.merge(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 
 const revision = (name: string, parent?: string): Revision => ({
   changeId: `jj-${name}`,
@@ -354,7 +352,7 @@ for (const mode of modes) {
               deployClass: false,
               envelope: { capabilities: [], flows: [], budget: {} }
             }))
-          }).pipe(Layer.provide(nodeServices))
+          }).pipe(Layer.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
         )
       )
     )
@@ -513,7 +511,7 @@ for (const mode of stackModes) {
               deployClass: false,
               envelope: { capabilities: [], flows: [], budget: {} }
             }]
-          }).pipe(Layer.provide(nodeServices))
+          }).pipe(Layer.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
         )
       )
     )
@@ -891,7 +889,7 @@ for (const inlinedRequest of [false, true]) {
             deployClass: false,
             envelope: { capabilities: [], flows: [], budget: {} }
           }]
-        }).pipe(Layer.provide(nodeServices))
+        }).pipe(Layer.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
       )))
       const outcome = await Effect.runPromise(program)
       if (

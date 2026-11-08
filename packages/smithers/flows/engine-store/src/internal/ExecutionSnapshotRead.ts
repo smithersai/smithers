@@ -5,12 +5,13 @@
  */
 
 import * as Sha256 from "@smthrs/crypto/Sha256"
+import * as Dialect from "@smthrs/database/Dialect"
 import { OwnerId } from "@smthrs/journal/OwnerId"
+import { revisionTriggers } from "@smthrs/run-store/Migrations"
 import { RunStatus, RunStoreError } from "@smthrs/run-store/RunStore"
-import { Cause, Effect, Schema } from "effect"
+import { Cause, Effect, Option, Schema } from "effect"
 import type * as SqlClient from "effect/sql/SqlClient"
 import type { Batch } from "../ExecutionSnapshot.ts"
-import { RunState } from "../RunState.ts"
 
 /**
  * Non-negative safe integer for timestamps and revisions.
@@ -90,6 +91,24 @@ export const decode = <S extends Schema.Top>(schema: S, input: unknown) =>
   ))
 
 /**
+ * Runs `effect` as one read, in its own read transaction or, inside a
+ * caller's transaction, in that one. Once run-store migration 1006 has run,
+ * PostgreSQL bumps run revisions at COMMIT, so a read that joins a writer's
+ * transaction first fires the bumps that writer has queued: its own inserts,
+ * updates and deletes then read back with their new revision, as they do when
+ * the bump runs with each write. On a schema without 1006 the flush finds no
+ * deferrable trigger and changes nothing.
+ *
+ * @private
+ * @since 1.0.0
+ */
+export const transaction = <A, E, R>(sql: SqlClient.SqlClient, effect: Effect.Effect<A, E, R>) =>
+  Effect.flatMap(Effect.serviceOption(sql.transactionService), (joined) =>
+    Option.isSome(joined)
+      ? Effect.andThen(Dialect.flushDeferredTriggers(sql, revisionTriggers), effect)
+      : Dialect.readTransaction(sql, effect))
+
+/**
  * Reads the engine database identity and revision.
  *
  * @private
@@ -110,7 +129,8 @@ const Row = Schema.Struct({
   owner_pid: Schema.NullOr(Natural),
   owner_nonce: Schema.NullOr(Identifier),
   heartbeat_at_ms: Schema.NullOr(Natural),
-  state_json: Schema.fromJsonString(RunState),
+  state_version: Schema.Literal(1),
+  flow_name: Schema.NonEmptyString,
   parent_run_id: Schema.NullOr(Identifier),
   spawn_parent_id: Schema.NullOr(Identifier),
   spawn_seq: Schema.NullOr(Natural),
@@ -177,9 +197,24 @@ export const waitingKind = (reason: string): Waiting["kind"] => {
  * @private
  * @since 1.0.0
  */
-export const selectColumns = `r.*, c.revision, c.deleted,
-  (SELECT parent_id FROM flows_run_parents WHERE child_id = r.run_id ORDER BY seq, parent_id LIMIT 1) AS spawn_parent_id,
-  (SELECT seq FROM flows_run_parents WHERE child_id = r.run_id ORDER BY seq, parent_id LIMIT 1) AS spawn_seq`
+export const selectColumns = (sql: SqlClient.SqlClient, hasWaitingRequest = true): string => {
+  const version = Dialect.isPostgres(sql)
+    ? "CASE WHEN r.state_json::jsonb->'version' = '1'::jsonb THEN 1 ELSE 0 END"
+    : "CASE WHEN json_type(r.state_json, '$.version') IN ('integer', 'real') AND json_extract(r.state_json, '$.version') = 1 THEN 1 ELSE 0 END"
+  const flow = Dialect.isPostgres(sql)
+    ? "CASE WHEN jsonb_typeof(r.state_json::jsonb->'flowName') = 'string' THEN r.state_json::jsonb->>'flowName' END"
+    : "CASE WHEN json_type(r.state_json, '$.flowName') = 'text' THEN json_extract(r.state_json, '$.flowName') END"
+  return `r.run_id, r.status, r.created_at_ms, r.started_at_ms, r.finished_at_ms,
+    r.owner_host_id, r.owner_pid, r.owner_nonce, r.heartbeat_at_ms,
+    r.parent_run_id, r.execution_parent_id, r.lineage_id, r.round_ordinal,
+    r.cancel_requested_at_ms, r.cancel_acknowledgement_json,
+    r.waiting_reason, r.waiting_wake_at_ms, r.waiting_token, ${
+    hasWaitingRequest ? "r.waiting_request" : "NULL AS waiting_request"
+  },
+    ${version} AS state_version, ${flow} AS flow_name, c.revision, c.deleted,
+    (SELECT parent_id FROM flows_run_parents WHERE child_id = r.run_id ORDER BY seq, parent_id LIMIT 1) AS spawn_parent_id,
+    (SELECT seq FROM flows_run_parents WHERE child_id = r.run_id ORDER BY seq, parent_id LIMIT 1) AS spawn_seq`
+}
 
 /**
  * Decodes a run row and validates observation invariants.
@@ -218,7 +253,7 @@ export const observed = (input: unknown, at: Position) =>
       source: at.source,
       revision: row.revision,
       status: row.status,
-      flowName: row.state_json.flowName,
+      flowName: row.flow_name,
       createdAtMs: row.created_at_ms,
       startedAtMs: row.started_at_ms,
       finishedAtMs: row.finished_at_ms,

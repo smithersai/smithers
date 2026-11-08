@@ -375,7 +375,7 @@ A dependency an agent cannot debug from its records is not used: errors must sur
 A feature works only when a real e2e test passes against it, and is broken when one fails. When something is broken and no test fails, write the failing e2e test first.
 
 - **Will:** "If something is broken by definition it being broken is having an e2e test failing. If something is working by definition it means there should be an e2e passing" (12:11). "Ok so not having a failing e2e test is absolutely unacceptable." (12:10).
-- **Enforced:** process only. It defines what a status claim means; a file cannot show it.
+- **Enforced:** `E2E_SHIP_ACCEPTANCE=1 pnpm e2e:prod` checks the SCOPE-6/SCOPE-7 feature/spec manifest in `e2e/ship.ts`, refuses missing credentials/fixtures before sign-in, and requires executed success on both browser targets. `e2e/summary.ts` rejects skips, expected failures, partial results and missing receipts for required specs. `e2e/target.test.ts`, `e2e/summary.test.ts` and `e2e/ship-harness.test.ts` cover the policy and real Playwright reporting. Status claims outside this gate remain a process rule.
 
 ### test.e2e-local-and-live
 
@@ -663,3 +663,15 @@ reading any body lost one under a loaded host's collection ("Body has already
 been read"); the guard makes such a read fail every run.
 
 Timed reload regressions use `src/test/reloadTiming.ts` and the Effect clock to unload at 0, 100 or 300 ms (Will, 2026-10-27 bug bash 4 brief). This injects the requested failure timing; it is not permission to sleep while waiting for readiness.
+
+
+### auth.session-end-writers
+
+`worker/SessionEndWriters.test.ts`, included by PACKAGE.ts's worker unit-test
+target, inventories lifetime-writing SQL in every Worker and migration.
+Each named statement needs an allowlist reason; new migrations, sweepers and
+raw or dynamic SQL fail until classified. Behavioral tests cover each end
+path, live rows under failed authentication, migrated live rows, migrated end
+cleanup, erasure and anonymous receipts through person deletion. The check
+cannot catch an allowed writer firing wrongly. Such a false recorded end
+still wipes the device.

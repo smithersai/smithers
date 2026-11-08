@@ -7,11 +7,27 @@
 import * as DocsCheck from "@smthrs/targets/DocsCheck"
 import * as GeneratedFile from "@smthrs/targets/GeneratedFile"
 import * as Input from "@smthrs/targets/Input"
+import * as SafeFs from "@smthrs/targets/SafeFs"
+import * as Target from "@smthrs/targets/Target"
+import * as Clock from "effect/Clock"
+import * as Data from "effect/Data"
 import * as Effect from "effect/Effect"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import * as Diagnostic from "../../Diagnostic.ts"
 import type * as Rule from "../RuleContract.ts"
+
+/**
+ * Evidence that cannot support the planned documentation check.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export class DocsEvidenceError extends Data.TaggedError("smithers-build/DocsEvidenceError")<{
+  readonly code: "unavailable" | "unplanned"
+  readonly path: string
+  readonly message: string
+}> {}
 
 type Selection = Extract<Rule.Selection, { readonly rule: "Docs.Check" }> & {
   readonly writeSet: ReadonlyArray<string>
@@ -31,13 +47,26 @@ export const contract: Rule.Contract<Selection, Request, { readonly output?: unk
     const check = attrs as DocsCheck.Attrs
     const stamp = Input.resolvePath(packagePath, check.stamp.path)
     const output = Input.resolvePath(packagePath, check.output.path)
-    const files = docsFiles(check)
+    const files = docsFiles({
+      ...check,
+      inputs: [...check.inputs, ...(check.evidence ?? []).map((input) => input.file)]
+    })
     if (typeof files === "string") return { ok: false, refusal: files }
     if (files.some((file) => file.path === output)) {
       return { ok: false, refusal: "Docs.Check inputs must not include the page it checks" }
     }
     if (files.some((file) => file.path === stamp)) {
       return { ok: false, refusal: "Docs.Check inputs must not include the stamp it writes" }
+    }
+    const evidencePaths = (check.evidence ?? []).map((input) => Input.resolvePath(packagePath, input.file.path))
+    if (
+      new Set(evidencePaths).size !== evidencePaths.length ||
+      evidencePaths.some((path) => path === stamp || path === output)
+    ) {
+      return {
+        ok: false,
+        refusal: "Docs.Check evidence files must be distinct from one another, the page and the stamp"
+      }
     }
     return {
       ok: true,
@@ -51,16 +80,55 @@ export const contract: Rule.Contract<Selection, Request, { readonly output?: unk
   },
   execute: async (node, { root, signal }) => {
     const lane = node.lane
+    const attrs = Target.metadata(node.declaration).attrs as DocsCheck.Attrs
+    const files = [...lane.files]
+    const evidence = attrs.evidence ?? []
+    const observations = await Promise.all(evidence.map(async (input) => {
+      const path = Input.resolvePath(node.packagePath, input.file.path)
+      const text = await SafeFs.readText(NodePath.join(root, ...path.split("/")), { root, signal })
+      return { input, path, text }
+    }))
+    const now = await Effect.runPromise(Clock.currentTimeMillis)
+    for (const { input, path, text } of observations) {
+      const digest = DocsCheck.evidenceDigest(text, input, now)
+      if (digest === undefined) {
+        throw new DocsEvidenceError({
+          code: "unavailable",
+          path,
+          message:
+            `unknown: ${lane.output} needs current evidence at ${path}; collect the dependency observation before re-verifying`
+        })
+      }
+      const index = files.findIndex((file) => file.path === path)
+      if (index < 0) {
+        throw new DocsEvidenceError({
+          code: "unplanned",
+          path,
+          message: `unknown: evidence ${path} was not included in the planned closure`
+        })
+      }
+      files[index] = { path, digest }
+    }
     const stampPath = NodePath.join(root, ...lane.stamp.split("/"))
+    const outputPath = NodePath.join(root, ...lane.output.split("/"))
+    const text = attrs.ignore === undefined ? undefined : await SafeFs.readText(outputPath, { root, signal })
     const output: Input.FileDigest = {
       path: lane.output,
-      digest: await Input.digestFile(NodePath.join(root, ...lane.output.split("/")), { workspaceRoot: root, signal })
+      digest: attrs.ignore === undefined
+        ? await Input.digestFile(outputPath, { workspaceRoot: root, signal })
+        : text === undefined
+        ? undefined
+        : Input.digestText(DocsCheck.normalize(text, attrs.ignore))
     }
     if (node.mode === "write") {
       if (output.digest === undefined) {
-        throw new Error(`${lane.output} is missing, so there is nothing to stamp; regenerate the page first`)
+        throw new Error(
+          `${lane.output} is missing, so there is nothing to stamp; ${
+            attrs.authored === true ? "re-verify the doc first" : "regenerate the page first"
+          }`
+        )
       }
-      const stamp = DocsCheck.makeStamp({ producer: lane.producer, output, inputs: lane.files })
+      const stamp = DocsCheck.makeStamp({ producer: lane.producer, output, inputs: files, ignore: attrs.ignore })
       try {
         await Effect.runPromise(
           GeneratedFile.writeGeneratedFile(root, { path: lane.stamp, contents: DocsCheck.renderStamp(stamp) })
@@ -83,10 +151,12 @@ export const contract: Rule.Contract<Selection, Request, { readonly output?: unk
       stampPath: lane.stamp,
       stamp: stampText === undefined ? undefined : DocsCheck.parseStamp(stampText),
       output,
-      inputs: lane.files
+      inputs: files,
+      ignore: attrs.ignore,
+      authored: attrs.authored
     })
-    if (verdict !== undefined) throw new Error(`${verdict.reason}: ${verdict.message}`)
-    return { output: { kind: "docs-check", closure: DocsCheck.closureDigest(lane.files) } }
+    if (verdict !== undefined) throw new Error(`${verdict.reason}: ${verdict.message.replace("<label>", node.label)}`)
+    return { output: { kind: "docs-check", closure: DocsCheck.closureDigest(files) } }
   }
 }
 

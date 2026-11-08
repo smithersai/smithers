@@ -90,10 +90,11 @@ engine journals and the row the plane projects name one run.
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import * as ControlRuntime from "@smthrs/control/ControlRuntime"
 import type * as ControlSchema from "@smthrs/control/ControlSchema"
-import type { Crypto } from "@smthrs/crypto"
 import type { FlowRuntime } from "@smthrs/flow"
 import { Executable, Registry } from "@smthrs/registry"
 import { RunStore } from "@smthrs/run-store"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
@@ -106,7 +107,7 @@ const executorLayer = Layer.effect(ControlExecutor.ControlExecutor)(
   Effect.gen(function*() {
     const plane = yield* ControlRuntime.ControlRuntime
     const services = yield* Effect.context<
-      | Crypto.Crypto
+      | (EffectDigest.Digest \| SecureRandom.SecureRandom)
       | FileSystem.FileSystem
       | FlowRuntime.FlowRuntime
       | Path.Path

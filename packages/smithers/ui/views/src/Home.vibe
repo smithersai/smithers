@@ -152,14 +152,29 @@ export const Title = Schema.NonEmptyString.check(
 export const Prose = Schema.NonEmptyString.check(Schema.isMaxLength(maximumTextLength), noHtml)
 
 /**
- * A link target: an absolute `http` or `https` URL.
+ * A link target: an absolute `http` or `https` URL, or an origin-relative
+ * path starting with one `/`. Protocol-relative links, backslashes, control
+ * characters and malformed URLs are refused.
  *
  * @category schemas
  * @since 0.1.0
  */
 export const Url = Schema.NonEmptyString.check(
   Schema.isMaxLength(maximumUrlLength),
-  Schema.isPattern(/^https?:\/\/[^\s<>"']+$/i)
+  Schema.isPattern(/^(?:https?:\/\/(?![/?#])|\/(?!\/))/i),
+  Schema.makeFilter<string>((value) => {
+    // Browsers normalize backslashes and controls; reject them before parsing.
+    // eslint-disable-next-line no-control-regex
+    if (/[\s\u0000-\u001f\u007f<>"'\\]/.test(value) || /%(?![0-9a-f]{2})/i.test(value)) {
+      return "must not contain unsafe characters or malformed escapes"
+    }
+    try {
+      new URL(value, "https://home.invalid")
+      return true
+    } catch {
+      return "must be an HTTP(S) URL or an origin-relative path"
+    }
+  })
 )
 
 /**
@@ -170,8 +185,7 @@ export const Url = Schema.NonEmptyString.check(
  * @category schemas
  * @since 0.1.0
  */
-export const DocsUrl = Schema.NonEmptyString.check(
-  Schema.isMaxLength(maximumUrlLength),
+export const DocsUrl = Url.check(
   Schema.isPattern(/^https:\/\/[^\s<>"'@]+$/i)
 )
 
@@ -272,7 +286,7 @@ export const IsoDate = Schema.String.check(
 )
 
 /**
- * A link: a label and the absolute `http` or `https` URL it opens.
+ * A link: a label and the safe absolute or origin-relative URL it opens.
  *
  * @category schemas
  * @since 0.1.0
@@ -699,7 +713,7 @@ export interface Section {
  *   unknown kinds included;
  * - `block`: a block of a known kind breaks its bounds, such as a title over
  *   {@link maximumTitleLength} characters, HTML in a string or a link that
- *   isn't `http` or `https`.
+ *   isn't an absolute `http` or `https` URL or a safe origin-relative path.
  *
  * @category models
  * @since 0.1.0

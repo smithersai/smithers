@@ -1,10 +1,11 @@
+import { ChatWrites } from "./features/chat/writes"
 import { WriteIntents } from "./writeAdmission"
 import { resumeAdmissions } from "./resumeAdmissions"
 import type { PendingSnapshot } from "@smthrs/platform-browser"
 import { telemetryExport } from "./telemetryExport"
 import { FlowRegistry } from "./flows/registry"
 import { FetchFailures, LogFailures, Otlp } from "@smthrs/observability"
-import { Persistence } from "@smthrs/effect-tanstack-db"
+import { LiveQuery, Persistence } from "@smthrs/effect-tanstack-db"
 import {
   type BrowserEngine,
   type BrowserLanguageServer,
@@ -48,6 +49,8 @@ import { Home, type HomeView } from "./features/home/home"
 import { HomeClient } from "./features/home/api"
 import { HomeStore } from "./features/home/store"
 import { CommandsStore } from "./features/commands/store"
+import type { EarlySearchHost } from "./features/issues/earlySearch"
+import { earlySearchPaint } from "./features/issues/earlyPaint"
 import { IssuesClient } from "./features/issues/api"
 import { Issues, type IssuesLayer } from "./features/issues/issues"
 import { IssuesStore } from "./features/issues/store"
@@ -74,6 +77,7 @@ import { tabDoors } from "./flows/doors"
 import { RepoClient, REQUEST_WITHIN } from "./features/repo/api"
 import { tabClipboard } from "./features/repo/tab"
 import { Repo, type RepoView } from "./features/repo/repo"
+import { ConversationOwners } from "./features/conversations/owners"
 import { RepoStore } from "./features/repo/store"
 import { RunsNavigation } from "./features/runs/actions"
 import { Runs, type RunsView } from "./features/runs/runs"
@@ -114,6 +118,7 @@ import { TabErrors } from "./flows/errors"
 import { failFastOnEngine, tabAnswers, tabEngine } from "./flows/engine"
 import type { Endpoint } from "./flows/tabPort"
 import { deviceRegistry } from "./device/registry"
+import { deviceLifecycle } from "./features/auth/metrics"
 import { Page, pageReloads } from "./page"
 import type { AppReloadReason } from "./reloadReason"
 import { apiRoute } from "./apiRoutes"
@@ -136,6 +141,8 @@ export const bootTime = Metric.histogram("smithers_web_boot_ms", {
  * theme paints, the clipboard, and this tab's engine worker. main.tsx gives the browser's; a test gives Node's.
  */
 export interface Host extends ChatHost {
+  /** The first-paint input, bound before the store opens; publication follows the repository data gate. */
+  readonly earlyIssueSearch?: EarlySearchHost
   readonly formSnapshot?: PendingSnapshot.Service
   readonly writeSnapshot?: PendingSnapshot.Service
 
@@ -182,6 +189,8 @@ export interface Host extends ChatHost {
    * (decision 0008 §4.6). Sign-out calls it once ChatApi has ended the session (src/features/auth/device.ts).
    */
   readonly wipe: () => Promise<void>
+  /** Releases a host-owned sign-out guard after all local cleanup, including failures. */
+  readonly finishSignOut?: () => Promise<void>
 }
 
 /**
@@ -233,7 +242,7 @@ export const appLayer = <S = never>(
     Auth.layer,
     tabSession({ name: host.engineName }).pipe(Layer.provide(TabChannel.layer)),
     tabDoors({ name: host.engineName, signedOut: anonymousRun }).pipe(Layer.provide(TabChannel.layer)),
-  ).pipe(Layer.provideMerge(DeviceWipe.layer(host.wipe)))
+  ).pipe(Layer.provideMerge(DeviceWipe.layer(host.wipe, host.finishSignOut)))
   const app = Layer.mergeAll(
     Chat.layer,
     auth,
@@ -276,8 +285,6 @@ export const appLayer = <S = never>(
     // and its terminal.
     Branch.layer({ origin, reopenRoute: host.reopenRoute }),
     Terminal.layer({ origin }),
-    // A run's external agent's transcript, live on its run page (docs/features/agent-transcripts.md).
-    Transcript.layer({ origin }),
     // Git issues (decision 0012): the issue pages, and this tab's answers to the issue writes' steps it started.
     Issues.layer,
     // Pull requests (decision 0012 §6): the list and one pull request's tabs, over the issues' store, and a person's
@@ -310,7 +317,9 @@ export const appLayer = <S = never>(
     // put the message in the device's outbox.
     tabRuns({ name: host.engineName }).pipe(Layer.provideMerge(RunSteers.layer), Layer.provide(TabChannel.layer)),
     // Your own flows and this device's runs (decision 0014): their pages, and the router's navigate their acts open.
-    Layer.merge(Runs.layer.pipe(Layer.provide(RunSteers.layer), Layer.provide(RunsStore.layer({ origin }))), FlowsUi.layer.pipe(Layer.provide(FlowsUiStore.layer({
+    // A run's external agent's transcript, live on its run page (docs/features/agent-transcripts.md), shown only while
+    // the run's page may show (the data gate), so over the runs' store.
+    Layer.merge(Layer.merge(Runs.layer.pipe(Layer.provide(RunSteers.layer)), Transcript.layer({ origin })).pipe(Layer.provideMerge(RunsStore.layer({ origin }))), FlowsUi.layer.pipe(Layer.provide(FlowsUiStore.layer({
       origin,
       editorTabId: host.editorTabId,
       ...(host.formSnapshot === undefined ? {} : { formSnapshot: host.formSnapshot }),
@@ -361,20 +370,29 @@ export const appLayer = <S = never>(
     Layer.provideMerge(
       Layer.merge(IssuesStore.layer({ origin }), TodosStore.layer({ origin })).pipe(
         Layer.provideMerge(ChatStore.layer(chatConfig(origin, chat), host)),
-        Layer.provideMerge(StackWrites.layer),
-        Layer.provideMerge(SteerWrites.layer),
-        Layer.provideMerge(IssueWrites.layer),
-        Layer.provideMerge(TextWrites.layer),
       ),
     ),
     // Below chat's store, whose conversation shows the views among the messages.
     Layer.provideMerge(ViewsStore.layer({ origin })),
-    Layer.provideMerge(Layer.succeed(WebTab, host.web)),
-    Layer.provideMerge(RepoStore.layer({ origin })),
-    // Below the repository store, which shows the sign-in link in Clone's place from sign-in's row; beside it, the
-    // branch this tab's route shows: the branch layer's, and the composer's, whose `/new` starts a conversation in its
-    // repository (src/features/commands/actions.ts).
-    Layer.provideMerge(Layer.merge(AuthStore.layer, BranchStore.layer)),
+    // Which repository each of the person's conversations is of: what a conversation's rows show through (the data gate).
+    Layer.provideMerge(ConversationOwners.layer({ origin }).pipe(
+      Layer.provideMerge(Layer.succeed(WebTab, host.web)),
+    )),
+    // Publish through repository authority before branch conversations and the remaining feature services.
+    Layer.provideMerge(BranchStore.layer.pipe(
+      Layer.provideMerge(earlySearchPaint(host.earlyIssueSearch).pipe(
+        Layer.provideMerge(RepoStore.layer({ origin })),
+        Layer.provideMerge(AuthStore.layer),
+      )),
+    )),
+    // Drafts and the outbox retain their independent startup before repository restoration. Search's HTTP read
+    // already runs below storage; its publisher alone waits for the gate's own restoration.
+    Layer.provideMerge(ChatWrites.layer(host).pipe(
+      Layer.provideMerge(StackWrites.layer),
+      Layer.provideMerge(SteerWrites.layer),
+      Layer.provideMerge(IssueWrites.layer),
+      Layer.provideMerge(TextWrites.layer),
+    )),
     // Above dispatch, which remembers this tab's requests and runs: `app/navigate` moves only the tab that asked,
     // `repo/copy` writes only its clipboard, and a bug report reads only its page and runs. The door each run came
     // through is answered with sign-in, above (`auth`).
@@ -400,7 +418,6 @@ export const appLayer = <S = never>(
     // `SecretsClient` or `PersonalModelClient` in its place.
     Layer.provideMerge(
       Layer.mergeAll(
-        IssuesClient.layer({ origin, within: REQUEST_WITHIN }),
         PullsClient.layer({ origin, within: REQUEST_WITHIN }),
         SecretsClient.layer({ origin, within: REQUEST_WITHIN }),
         PersonalModelClient.layer({ origin, within: REQUEST_WITHIN }),
@@ -425,7 +442,13 @@ export const appLayer = <S = never>(
     ),
     // Built before the device store: the leading tab's engine worker serves the store's SQLite, so this tab starts
     // its worker first.
-    Layer.provideMerge(tabEngine(host.engineWorker, host.engineName)),
+    // Search input and its authorized HTTP read need no store, drafts or global services. Publication still uses
+    // the repository data gate, and the ordinary action reuses the answer. Build below the startup dependency chain.
+    Layer.provideMerge(tabEngine(host.engineWorker, host.engineName).pipe(
+      Layer.provideMerge(IssuesClient.layer({ origin, within: REQUEST_WITHIN,
+        ...(host.earlyIssueSearch === undefined ? {} : { early: host.earlyIssueSearch }),
+      })),
+    )),
     Layer.provideMerge(Page.layer(reload)),
     Layer.provide(FetchHttpClient.layer),
     // What went wrong in this tab lately, which a bug report carries (src/flows/errors.ts): the error records the
@@ -459,7 +482,7 @@ export const appLayer = <S = never>(
   )
   // The first run (decision 0121), above everything: its follower reads sign-in's, your model's, your conversations'
   // and chat's stores, which the layers below build once.
-  return Layer.merge(FirstRun.layer, modelNotices).pipe(Layer.provideMerge(app))
+  return Layer.merge(FirstRun.layer, modelNotices).pipe(Layer.provideMerge(app), Layer.provide(LiveQuery.incremental))
 }
 
 /**
@@ -496,6 +519,11 @@ export const logPageErrors = Effect.fnUntraced(function* (target: EventTarget) {
 /** One record of the host's as a log line: never an error's message or a component's props. */
 const logHostRecord = (record: HostRecord): Effect.Effect<void> => {
   switch (record._tag) {
+    case "device.lifecycle":
+      return Effect.andThen(
+        Metric.update(Metric.withAttributes(deviceLifecycle, { outcome: record.outcome }), 1),
+        Effect.logInfo("device.lifecycle").pipe(Effect.annotateLogs({ outcome: record.outcome })),
+      )
     case "render":
       return Effect.logError("render error").pipe(Effect.annotateLogs({ boundary: record.boundary, name: record.name }))
     case "pwa.register":

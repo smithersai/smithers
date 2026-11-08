@@ -28,17 +28,12 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
-import type { Word } from "effect/process/CommandLine"
 import * as Redacted from "effect/Redacted"
 import type * as Scope from "effect/Scope"
 import * as NodeFs from "node:fs"
 import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
 import * as ProcessSandbox from "./ProcessSandbox.ts"
-
-// Effect 4.1 lets an argument or an environment value be Redacted; the
-// process receives its value, as Effect's own spawners pass it.
-const word = (value: Word): string => Redacted.isRedacted(value) ? Redacted.value(value) : value
 
 /**
  * How the confinement is built.
@@ -60,8 +55,7 @@ export interface Options {
   readonly temporaryDirectory?: string | undefined
 }
 
-const shellLine = (command: ChildProcess.StandardCommand): string =>
-  [command.command, ...command.args.map(word)].join(" ")
+const shellLine = (command: ChildProcess.StandardCommand): string => [command.command, ...command.args].join(" ")
 
 /**
  * The argv a stage executes, with a shell request made explicit.
@@ -72,9 +66,10 @@ const shellLine = (command: ChildProcess.StandardCommand): string =>
  * spawned stage no longer asks for one.
  */
 const argvOf = (command: ChildProcess.StandardCommand): ReadonlyArray<string> => {
+  const args = command.args.map((arg) => Redacted.isRedacted(arg) ? Redacted.value(arg) : arg)
   const shell = command.options.shell
-  if (shell === undefined || shell === false) return [command.command, ...command.args.map(word)]
-  return [shell === true ? "/bin/sh" : shell, "-c", shellLine(command)]
+  if (shell === undefined || shell === false) return [command.command, ...args]
+  return [shell === true ? "/bin/sh" : shell, "-c", [command.command, ...args].join(" ")]
 }
 
 const failure = (

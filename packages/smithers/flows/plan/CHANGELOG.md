@@ -8,8 +8,6 @@
 
 ### Fixed
 
-- The Effect `4.1.0` schema identity port passes strict lint without redundant type assertions; its persisted identity bytes stay unchanged.
-
 - `Node.representationIdentity` writes the representation a sealed action's step key hashes as `effect@4.0.0-rc.115` wrote it, with the six built-in check ids `effect@4.0.4` renamed written back. A schema with `Schema.brand` re-keys once, because the brand is no longer part of the AST. ([#3839](https://github.com/smithersai/smithers/issues/3839)).
 - A schema's identity no longer depends on the installed `effect` release. `Node.schemaIdentity` prints the document a call or a `catch` filter contributes to a step key, as `effect@4.0.0-rc.115` printed it, so moving to `effect@4.0.4` or later does not re-key recorded steps. A declaration that uses one identified or recursive schema both with and without `Schema.brand` re-keys once. ([#3839](https://github.com/smithersai/smithers/issues/3839)).
 - Keep live executable bindings and planned-reference ownership across compatible package copies; serialized ASTs remain inert. ([#1991](https://github.com/smithersai/smithers/issues/1991)).

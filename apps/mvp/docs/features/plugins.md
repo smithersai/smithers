@@ -63,6 +63,8 @@ Compiled UI plugin chunks run with the app's full power: the import rules are hy
 
 `PluginHost` (`@smthrs/plugin`) is the one contract a plugin's tab reads and acts through; the app implements it per plugin (`src/plugins/plugins.ts`, `hostFor`):
 
+Live query snapshots retain the same array reference while their rows and order are unchanged, so plugins can pass `current` directly to React's `useSyncExternalStore`. Every read checks the current gated collection synchronously; a role or session change hides refused rows before the next asynchronous notification. Hidden repository queries share one frozen empty array. `src/plugins/liveQuerySnapshots.test.ts` holds this contract with real collections and same-stack revocation checks.
+
 | Member | What it does here |
 |---|---|
 | `query(name, params?)` | The rows of a declared query, live: `core/waits` is the viewer's open waits, oldest first (from the synced `runs`, [agent status](agent-status.md)); `core/feeds`, `core/feed` and `core/feed-items` take `params` ([below](#repository-feeds)), as do `core/agent-runs` and `core/machines` ([the fleet](#the-fleet)). |
@@ -71,6 +73,13 @@ Compiled UI plugin chunks run with the app's full power: the import rules are hy
 | `dispatch(event, fields)` | Runs an event whose flow isn't person-only, door `view`. Answers the run's id and `settled`, which waits for its end: `Done`, or `Failed` with the failure's stable code (a refusal's `code`, else its kind, dispatch's refusal, `interrupted`), never a message. |
 | `open(view)` | Navigates to one of the plugin's views (`app/navigate`). |
 | `events(view)` | The view's local events the keymap delivered (`j`, `k`). |
+
+Live query snapshots retain their array identity while row references and order
+are unchanged, including hidden empty snapshots, so React subscribers do not
+render indefinitely. Each read still consults the repository gate synchronously;
+a permission refusal hides rows before the asynchronous stream catches up.
+The real-collection regression is `src/plugins/liveQuery.test.ts`; see
+[decision 0160](../decisions/0160-plugin-live-snapshots.md).
 
 ## The action strip
 

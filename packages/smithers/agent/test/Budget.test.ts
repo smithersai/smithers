@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Token and latency budgets across a run's model calls.
  *
@@ -17,7 +18,6 @@
  * describes are one key, so a call is never counted twice.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
@@ -36,6 +36,7 @@ import type * as Route from "@smthrs/model/Route"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
 import { Cause, Clock, Effect, Exit, Fiber, Latch, Layer, Option, Schema, Stream } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
@@ -207,7 +208,7 @@ const memory = <ROut, RIn>(
     Layer.provideMerge(QuotaPolicy.layerUnclassified()),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    Layer.provideMerge(NodeCrypto.layer)
   )
 
 const failureOf = (exit: Exit.Exit<unknown, unknown>): unknown =>
@@ -882,10 +883,9 @@ const stores = Layer.mergeAll(
   TestStores.layer()
 )
 
-const durable = <A, E>(body: Effect.Effect<A, E, Crypto.Crypto | Scope.Scope>): Promise<A> =>
-  Effect.runPromise(
-    Effect.scoped(Effect.provide(body, Crypto.layerFromDigest(NodeCrypto.layerDigest))).pipe(Effect.orDie)
-  )
+const durable = <A, E>(
+  body: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom) | Scope.Scope>
+): Promise<A> => Effect.runPromise(Effect.scoped(Effect.provide(body, NodeCrypto.layer)).pipe(Effect.orDie))
 
 const warnings = (entries: ReadonlyArray<{ readonly eventType: string; readonly payload: unknown }>) =>
   entries.filter((entry) => entry.eventType === Budget.budgetWarningEvent).map((entry) => entry.payload)
@@ -1177,10 +1177,11 @@ describe("a budget across an engine boundary", () => {
  * suite no wall-clock time, and so the resumed run's wake is something the
  * case performs rather than waits for.
  */
-const onTestClock = <A, E>(body: Effect.Effect<A, E, Crypto.Crypto | Scope.Scope>): Promise<A> =>
+const onTestClock = <A, E>(
+  body: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom) | Scope.Scope>
+): Promise<A> =>
   Effect.runPromise(
-    Effect.scoped(Effect.provide(body, Layer.merge(Crypto.layerFromDigest(NodeCrypto.layerDigest), TestClock.layer())))
-      .pipe(Effect.orDie)
+    Effect.scoped(Effect.provide(body, Layer.merge(NodeCrypto.layer, TestClock.layer()))).pipe(Effect.orDie)
   )
 
 /** Advances the test clock until one forked run settles, then joins it. */
@@ -2868,7 +2869,7 @@ describe("a budget shared by every run of one composition", () => {
             spending(600, [answering(`{"approved":true}`)], calls)
           ).pipe(
             Layer.provideMerge(FlowEngine.layerMemory),
-            Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+            Layer.provideMerge(NodeCrypto.layer)
           )
         )
         yield* OneStep.execute({ diff: "-  a\n+  b" }, { executionId: "budget-lru-a" }).pipe(
@@ -2941,7 +2942,7 @@ describe("a skipped step", () => {
         Layer.mergeAll(declaration.toLayer(() => action), Interpreter.layer(flow)).pipe(
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(FlowEngine.layerMemory),
-          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+          Layer.provideMerge(NodeCrypto.layer)
         )
       )
     )

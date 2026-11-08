@@ -1,0 +1,44 @@
+// The agent's daily token budget (wiki/decisions/0010-live-agent.md): one ledger
+// per UTC day, in that day's Durable Object. A reply is admitted while the day has spent less than its budget, then
+// adds what its model call used, once per reply however often its step runs. Live for everyone until sign-in
+// (roadmap brick 2), so the budget is the only bound on spend. Nothing here records what anyone asked.
+
+/** The ledger's storage: numbers under keys, several written at once. */
+export interface Ledger {
+  read(key: string): (number | undefined)!!
+  write(entries: Readonly<Record<string, number>>): void!!
+}
+
+export const SPENT = "spent"
+const replyKey = (reply: string) => `reply/${reply}`
+
+/** Tokens the agent's replies used today, as `vibelang.budget.spend` lines and a counter. */
+export const tokens = Metric.counter("vibelang_agent_tokens", {
+  description: "Tokens the VibeLang agent's model calls used",
+  incremental: true,
+})
+
+/** The day's budget of `limit` tokens over `ledger`. */
+export effect function make(ledger: Ledger, limit: number) {
+  const lock = try Semaphore.make(1)
+  return {
+    /** Whether the day has budget left: some spent below `limit`. */
+    admit: effect () => {
+      const spent = (try ledger.read(SPENT)) ?? 0
+      const admitted = spent < limit
+      try Effect.logInfo("vibelang.budget.admit").pipe(Effect.annotateLogs({ admitted, spent, limit }))
+      return admitted
+    },
+    /** Adds `used` tokens for `reply`, once: the same reply again adds nothing. */
+    spend: effect (reply: string, used: number) => {
+      try Semaphore.withPermits(lock, 1)(effect {
+        if ((try ledger.read(replyKey(reply))) !== undefined) return
+        const spent = (try ledger.read(SPENT)) ?? 0
+        const added = Math.max(0, Math.round(used))
+        try ledger.write({ [SPENT]: spent + added, [replyKey(reply)]: added })
+        try Metric.update(tokens, added)
+        try Effect.logInfo("vibelang.budget.spend").pipe(Effect.annotateLogs({ tokens: added, spent: spent + added, limit }))
+      })
+    },
+  }
+}

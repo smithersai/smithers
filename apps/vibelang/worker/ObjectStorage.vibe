@@ -1,0 +1,49 @@
+// A Durable Object's own storage, as the conversation's log and the budget's ledger read and write it. Both Durable
+// Object hosts hand it `ctx.storage`: the Alchemy objects (Api.vibe) and the workerd test's (test/workerd/worker.vibe).
+import type { Event } from "../src/core/conversation.vibe"
+import type { Ledger } from "./Budget.vibe"
+import type { Log } from "./Sequencer.vibe"
+
+/** The slice of `ctx.storage` the log, the ledger and the reply's execution use: its key-value API and alarm. */
+export interface KeyValue {
+  get(key: string): Promise<unknown>
+  put(key: string, value: unknown): Promise<void>
+  put(entries: Record<string, unknown>): Promise<void>
+  delete(key: string): Promise<boolean>
+  list(options: { readonly prefix: string }): Promise<Map<string, unknown>>
+  setAlarm(scheduledTime: number): Promise<void>
+  deleteAlarm(): Promise<void>
+}
+
+const EVENT = "event/"
+
+/** An event's key: its seq, zero-padded so keys sort as the events do. */
+export function eventKey(seq: number): string {
+  return EVENT + String(seq).padStart(16, "0")
+}
+
+/** The conversation's log in `storage`: one key per event, listed in order. */
+export function logOver(storage: KeyValue): Log {
+  return {
+    read: effect () => {
+      const stored = try promise(() => storage.list({ prefix: EVENT }))
+      return [...stored.values()] as ReadonlyArray<Event>
+    },
+    write: effect (event: Event) => {
+      try promise(() => storage.put({ [eventKey(event.seq)]: event }))
+    },
+  }
+}
+
+/** The budget's ledger in `storage`. */
+export function ledgerOver(storage: KeyValue): Ledger {
+  return {
+    read: effect (key: string) => {
+      const value = try promise(() => storage.get(key))
+      return typeof value === "number" ? value : undefined
+    },
+    write: effect (entries: Readonly<Record<string, number>>) => {
+      try promise(() => storage.put({ ...entries }))
+    },
+  }
+}

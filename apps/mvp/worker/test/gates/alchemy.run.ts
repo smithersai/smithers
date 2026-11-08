@@ -8,9 +8,9 @@
  * no GitHub App, Code Storage organization or GITHUB_REPOSITORY. Its state stays on the deploying machine
  * (worker/test/gates/.alchemy). `alchemy destroy` keeps the Neon project, as production's does: delete it in Neon.
  */
-import * as Alchemy from "alchemy"
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import * as Neon from "alchemy/Neon"
+import * as Neon from "@alchemy.run/neon"
+import * as Alchemy from "alchemy"
 import { Effect, Layer } from "effect"
 import { Databases } from "../../../infra/ChatDatabase.ts"
 import * as Electric from "../../../infra/Electric.ts"
@@ -24,9 +24,11 @@ import GateHarness from "./Harness.ts"
 export default Alchemy.Stack(
   "smithers-gates",
   { providers: Layer.mergeAll(Cloudflare.providers(), Neon.providers()), state: Alchemy.localState() },
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const stage = (yield* Alchemy.Stage).toString()
-    if (!stage.startsWith("smithers-gates-")) return yield* Effect.die(new Error(`the gate harness deploys only to smithers-gates-*, not ${stage}`))
+    if (!stage.startsWith("smithers-gates-")) {
+      return yield* Effect.die(new Error(`the gate harness deploys only to smithers-gates-*, not ${stage}`))
+    }
     yield* Databases
     const databaseUrl = ElectricDatabaseUrl.of({ value: directUrl(yield* Postgres) })
     const gateway = yield* ElectricGateway.pipe(Effect.provideService(ElectricDatabaseUrl, databaseUrl))
@@ -35,8 +37,8 @@ export default Alchemy.Stack(
     const harness = yield* GateHarness.pipe(
       Effect.provideService(Electric.Endpoint, Electric.Endpoint.of({ service: gateway.workerName })),
       Effect.provideService(SignIn.Secret, sessionSecret),
-      Effect.provideService(Secrets.Secret, secretsKey),
+      Effect.provideService(Secrets.Secret, secretsKey)
     )
     return { url: harness.url }
-  }),
+  })
 )

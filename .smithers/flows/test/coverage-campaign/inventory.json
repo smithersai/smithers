@@ -1,0 +1,482 @@
+{
+  "inventory": {
+    "schemaVersion": 1,
+    "sourceSha256": "7643f9ce5bfa47c87fc35546dfe5009c290ed0b1f7108e38d9d508b6173f6720",
+    "surfaces": [
+      {
+        "id": ".smithers/flows",
+        "name": "@smithers/release-workflows",
+        "artifact": "surfaces/.smithers%2Fflows.json"
+      },
+      {
+        "id": ".smithers/flows/coding",
+        "name": "@smthrs/coding",
+        "artifact": "surfaces/.smithers%2Fflows%2Fcoding.json"
+      },
+      {
+        "id": ".smithers/flows/review",
+        "name": ".smithers/flows/review",
+        "artifact": "surfaces/.smithers%2Fflows%2Freview.json"
+      },
+      {
+        "id": ".smithers/flows/review/seeded-bugs",
+        "name": "@smthrs/eval-review-seeded-bugs",
+        "artifact": "surfaces/.smithers%2Fflows%2Freview%2Fseeded-bugs.json"
+      },
+      {
+        "id": ".smithers/flows/wiki",
+        "name": ".smithers/flows/wiki",
+        "artifact": "surfaces/.smithers%2Fflows%2Fwiki.json"
+      },
+      {
+        "id": "apps/bug-worker",
+        "name": "@smthrs/bug-worker",
+        "artifact": "surfaces/apps%2Fbug-worker.json"
+      },
+      {
+        "id": "apps/maintainer-site",
+        "name": "@smthrs/maintainer-site",
+        "artifact": "surfaces/apps%2Fmaintainer-site.json"
+      },
+      {
+        "id": "apps/mvp",
+        "name": "@smthrs/mvp",
+        "artifact": "surfaces/apps%2Fmvp.json"
+      },
+      {
+        "id": "apps/patterns-site",
+        "name": "apps/patterns-site",
+        "artifact": "surfaces/apps%2Fpatterns-site.json"
+      },
+      {
+        "id": "apps/site",
+        "name": "@smithers/site",
+        "artifact": "surfaces/apps%2Fsite.json"
+      },
+      {
+        "id": "apps/tui",
+        "name": "smithers-tui",
+        "artifact": "surfaces/apps%2Ftui.json"
+      },
+      {
+        "id": "evals/authoring",
+        "name": "@smthrs/eval-authoring",
+        "artifact": "surfaces/evals%2Fauthoring.json"
+      },
+      {
+        "id": "packages/effect-code-storage",
+        "name": "@smthrs/effect-code-storage",
+        "artifact": "surfaces/packages%2Feffect-code-storage.json"
+      },
+      {
+        "id": "packages/effect-electric",
+        "name": "@smthrs/effect-electric",
+        "artifact": "surfaces/packages%2Feffect-electric.json"
+      },
+      {
+        "id": "packages/effect-tanstack-db",
+        "name": "@smthrs/effect-tanstack-db",
+        "artifact": "surfaces/packages%2Feffect-tanstack-db.json"
+      },
+      {
+        "id": "packages/errors",
+        "name": "@smthrs/errors",
+        "artifact": "surfaces/packages%2Ferrors.json"
+      },
+      {
+        "id": "packages/repo-targets",
+        "name": "@smthrs/repo-targets",
+        "artifact": "surfaces/packages%2Frepo-targets.json"
+      },
+      {
+        "id": "packages/rpc",
+        "name": "@smthrs/rpc",
+        "artifact": "surfaces/packages%2Frpc.json"
+      },
+      {
+        "id": "packages/smithers",
+        "name": "@smthrs/cli",
+        "artifact": "surfaces/packages%2Fsmithers.json"
+      },
+      {
+        "id": "packages/smithers-ffi",
+        "name": "packages/smithers-ffi",
+        "artifact": "surfaces/packages%2Fsmithers-ffi.json"
+      },
+      {
+        "id": "packages/smithers/agent",
+        "name": "@smthrs/agent",
+        "artifact": "surfaces/packages%2Fsmithers%2Fagent.json"
+      },
+      {
+        "id": "packages/smithers/agent/chain",
+        "name": "@smthrs/chain",
+        "artifact": "surfaces/packages%2Fsmithers%2Fagent%2Fchain.json"
+      },
+      {
+        "id": "packages/smithers/agent/evals",
+        "name": "@smthrs/evals",
+        "artifact": "surfaces/packages%2Fsmithers%2Fagent%2Fevals.json"
+      },
+      {
+        "id": "packages/smithers/agent/fs",
+        "name": "@smthrs/fs",
+        "artifact": "surfaces/packages%2Fsmithers%2Fagent%2Ffs.json"
+      },
+      {
+        "id": "packages/smithers/agent/harness",
+        "name": "@smthrs/harness",
+        "artifact": "surfaces/packages%2Fsmithers%2Fagent%2Fharness.json"
+      },
+      {
+        "id": "packages/smithers/agent/harness-detect",
+        "name": "@smthrs/harness-detect",
+        "artifact": "surfaces/packages%2Fsmithers%2Fagent%2Fharness-detect.json"
+      },
+      {
+        "id": "packages/smithers/agent/harness/benchmarks/ale",
+        "name": "packages/smithers/agent/harness/benchmarks/ale",
+        "artifact": "surfaces/packages%2Fsmithers%2Fagent%2Fharness%2Fbenchmarks%2Fale.json"
+      },
+      {
+        "id": "packages/smithers/agent/harness/benchmarks/harbor",
+        "name": "packages/smithers/agent/harness/benchmarks/harbor",
+        "artifact": "surfaces/packages%2Fsmithers%2Fagent%2Fharness%2Fbenchmarks%2Fharbor.json"
+      },
+      {
+        "id": "packages/smithers/agent/harness/benchmarks/swebench",
+        "name": "@smthrs/eval-swebench",
+        "artifact": "surfaces/packages%2Fsmithers%2Fagent%2Fharness%2Fbenchmarks%2Fswebench.json"
+      },
+      {
+        "id": "packages/smithers/agent/integrations",
+        "name": "@smthrs/integrations",
+        "artifact": "surfaces/packages%2Fsmithers%2Fagent%2Fintegrations.json"
+      },
+      {
+        "id": "packages/smithers/agent/memory",
+        "name": "@smthrs/memory",
+        "artifact": "surfaces/packages%2Fsmithers%2Fagent%2Fmemory.json"
+      },
+      {
+        "id": "packages/smithers/agent/model",
+        "name": "@smthrs/model",
+        "artifact": "surfaces/packages%2Fsmithers%2Fagent%2Fmodel.json"
+      },
+      {
+        "id": "packages/smithers/agent/model-host",
+        "name": "@smthrs/model-host",
+        "artifact": "surfaces/packages%2Fsmithers%2Fagent%2Fmodel-host.json"
+      },
+      {
+        "id": "packages/smithers/agent/plugin",
+        "name": "@smthrs/plugin",
+        "artifact": "surfaces/packages%2Fsmithers%2Fagent%2Fplugin.json"
+      },
+      {
+        "id": "packages/smithers/agent/registry",
+        "name": "@smthrs/registry",
+        "artifact": "surfaces/packages%2Fsmithers%2Fagent%2Fregistry.json"
+      },
+      {
+        "id": "packages/smithers/agent/regression",
+        "name": "@smthrs/eval-agent",
+        "artifact": "surfaces/packages%2Fsmithers%2Fagent%2Fregression.json"
+      },
+      {
+        "id": "packages/smithers/agent/scorers",
+        "name": "@smthrs/scorers",
+        "artifact": "surfaces/packages%2Fsmithers%2Fagent%2Fscorers.json"
+      },
+      {
+        "id": "packages/smithers/agent/std",
+        "name": "@smthrs/std",
+        "artifact": "surfaces/packages%2Fsmithers%2Fagent%2Fstd.json"
+      },
+      {
+        "id": "packages/smithers/agent/triggers",
+        "name": "@smthrs/triggers",
+        "artifact": "surfaces/packages%2Fsmithers%2Fagent%2Ftriggers.json"
+      },
+      {
+        "id": "packages/smithers/build",
+        "name": "@smthrs/build",
+        "artifact": "surfaces/packages%2Fsmithers%2Fbuild.json"
+      },
+      {
+        "id": "packages/smithers/build/build-cli",
+        "name": "@smthrs/build-cli",
+        "artifact": "surfaces/packages%2Fsmithers%2Fbuild%2Fbuild-cli.json"
+      },
+      {
+        "id": "packages/smithers/build/infra",
+        "name": "@smthrs/build-infra",
+        "artifact": "surfaces/packages%2Fsmithers%2Fbuild%2Finfra.json"
+      },
+      {
+        "id": "packages/smithers/build/targets",
+        "name": "@smthrs/targets",
+        "artifact": "surfaces/packages%2Fsmithers%2Fbuild%2Ftargets.json"
+      },
+      {
+        "id": "packages/smithers/control",
+        "name": "@smthrs/control",
+        "artifact": "surfaces/packages%2Fsmithers%2Fcontrol.json"
+      },
+      {
+        "id": "packages/smithers/flows",
+        "name": "@smthrs/flows",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows.json"
+      },
+      {
+        "id": "packages/smithers/flows/artifacts",
+        "name": "@smthrs/artifacts",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fartifacts.json"
+      },
+      {
+        "id": "packages/smithers/flows/canonical",
+        "name": "@smthrs/canonical",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fcanonical.json"
+      },
+      {
+        "id": "packages/smithers/flows/capability",
+        "name": "@smthrs/capability",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fcapability.json"
+      },
+      {
+        "id": "packages/smithers/flows/core",
+        "name": "@smthrs/core",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fcore.json"
+      },
+      {
+        "id": "packages/smithers/flows/crypto",
+        "name": "@smthrs/crypto",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fcrypto.json"
+      },
+      {
+        "id": "packages/smithers/flows/database",
+        "name": "@smthrs/database",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fdatabase.json"
+      },
+      {
+        "id": "packages/smithers/flows/engine",
+        "name": "@smthrs/engine",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fengine.json"
+      },
+      {
+        "id": "packages/smithers/flows/engine-store",
+        "name": "@smthrs/engine-store",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fengine-store.json"
+      },
+      {
+        "id": "packages/smithers/flows/flow",
+        "name": "@smthrs/flow",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fflow.json"
+      },
+      {
+        "id": "packages/smithers/flows/jj",
+        "name": "@smthrs/jj",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fjj.json"
+      },
+      {
+        "id": "packages/smithers/flows/jj-wasm",
+        "name": "packages/smithers/flows/jj-wasm",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fjj-wasm.json"
+      },
+      {
+        "id": "packages/smithers/flows/journal",
+        "name": "@smthrs/journal",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fjournal.json"
+      },
+      {
+        "id": "packages/smithers/flows/kernel",
+        "name": "@smthrs/kernel",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fkernel.json"
+      },
+      {
+        "id": "packages/smithers/flows/keys",
+        "name": "@smthrs/keys",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fkeys.json"
+      },
+      {
+        "id": "packages/smithers/flows/observability",
+        "name": "@smthrs/observability",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fobservability.json"
+      },
+      {
+        "id": "packages/smithers/flows/patterns",
+        "name": "@smthrs/patterns",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fpatterns.json"
+      },
+      {
+        "id": "packages/smithers/flows/plan",
+        "name": "@smthrs/plan",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fplan.json"
+      },
+      {
+        "id": "packages/smithers/flows/plan-store",
+        "name": "@smthrs/plan-store",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fplan-store.json"
+      },
+      {
+        "id": "packages/smithers/flows/platform-browser",
+        "name": "@smthrs/platform-browser",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fplatform-browser.json"
+      },
+      {
+        "id": "packages/smithers/flows/platform-bun",
+        "name": "@smthrs/platform-bun",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fplatform-bun.json"
+      },
+      {
+        "id": "packages/smithers/flows/platform-cloudflare",
+        "name": "@smthrs/platform-cloudflare",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fplatform-cloudflare.json"
+      },
+      {
+        "id": "packages/smithers/flows/platform-node",
+        "name": "@smthrs/platform-node",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fplatform-node.json"
+      },
+      {
+        "id": "packages/smithers/flows/run-store",
+        "name": "@smthrs/run-store",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Frun-store.json"
+      },
+      {
+        "id": "packages/smithers/flows/sandbox",
+        "name": "@smthrs/sandbox",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fsandbox.json"
+      },
+      {
+        "id": "packages/smithers/flows/secrets",
+        "name": "@smthrs/secrets",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fsecrets.json"
+      },
+      {
+        "id": "packages/smithers/flows/step-cache",
+        "name": "@smthrs/step-cache",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fstep-cache.json"
+      },
+      {
+        "id": "packages/smithers/flows/sync",
+        "name": "@smthrs/sync",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Fsync.json"
+      },
+      {
+        "id": "packages/smithers/flows/time-travel",
+        "name": "@smthrs/time-travel",
+        "artifact": "surfaces/packages%2Fsmithers%2Fflows%2Ftime-travel.json"
+      },
+      {
+        "id": "packages/smithers/gateway",
+        "name": "@smthrs/gateway",
+        "artifact": "surfaces/packages%2Fsmithers%2Fgateway.json"
+      },
+      {
+        "id": "packages/smithers/mcp",
+        "name": "@smthrs/mcp",
+        "artifact": "surfaces/packages%2Fsmithers%2Fmcp.json"
+      },
+      {
+        "id": "packages/smithers/migrate",
+        "name": "@smthrs/migrate",
+        "artifact": "surfaces/packages%2Fsmithers%2Fmigrate.json"
+      },
+      {
+        "id": "packages/smithers/notifications",
+        "name": "@smthrs/notifications",
+        "artifact": "surfaces/packages%2Fsmithers%2Fnotifications.json"
+      },
+      {
+        "id": "packages/smithers/ui",
+        "name": "@smthrs/ui",
+        "artifact": "surfaces/packages%2Fsmithers%2Fui.json"
+      },
+      {
+        "id": "packages/smithers/ui/repo-view",
+        "name": "@smthrs/repo-view",
+        "artifact": "surfaces/packages%2Fsmithers%2Fui%2Frepo-view.json"
+      },
+      {
+        "id": "packages/smithers/ui/terminal-frame",
+        "name": "@smthrs/terminal-frame",
+        "artifact": "surfaces/packages%2Fsmithers%2Fui%2Fterminal-frame.json"
+      },
+      {
+        "id": "packages/smithers/ui/ui-styleguide",
+        "name": "@smthrs/ui-styleguide",
+        "artifact": "surfaces/packages%2Fsmithers%2Fui%2Fui-styleguide.json"
+      },
+      {
+        "id": "packages/smithers/ui/views",
+        "name": "@smthrs/views",
+        "artifact": "surfaces/packages%2Fsmithers%2Fui%2Fviews.json"
+      },
+      {
+        "id": "packages/smthrs-deprecation",
+        "name": "smthrs",
+        "artifact": "surfaces/packages%2Fsmthrs-deprecation.json"
+      },
+      {
+        "id": "packages/testing",
+        "name": "@smthrs/testing",
+        "artifact": "surfaces/packages%2Ftesting.json"
+      }
+    ],
+    "inputFiles": [
+      {
+        "artifact": "inputs/0.json"
+      },
+      {
+        "artifact": "inputs/1000.json"
+      },
+      {
+        "artifact": "inputs/2000.json"
+      },
+      {
+        "artifact": "inputs/3000.json"
+      },
+      {
+        "artifact": "inputs/4000.json"
+      },
+      {
+        "artifact": "inputs/5000.json"
+      },
+      {
+        "artifact": "inputs/6000.json"
+      },
+      {
+        "artifact": "inputs/7000.json"
+      },
+      {
+        "artifact": "inputs/8000.json"
+      },
+      {
+        "artifact": "inputs/9000.json"
+      },
+      {
+        "artifact": "inputs/10000.json"
+      },
+      {
+        "artifact": "inputs/11000.json"
+      },
+      {
+        "artifact": "inputs/12000.json"
+      },
+      {
+        "artifact": "inputs/13000.json"
+      },
+      {
+        "artifact": "inputs/14000.json"
+      },
+      {
+        "artifact": "inputs/15000.json"
+      },
+      {
+        "artifact": "inputs/16000.json"
+      }
+    ]
+  },
+  "sourceBaseCommit": "965a4b232380e0dc440a4792518d2bce706a4782"
+}

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Clock, Deferred, Effect, Exit, Fiber, Schema } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
 import { FlowEngine } from "../src/index.ts"
@@ -19,7 +20,7 @@ const effect = (
   body: () => Effect.Effect<
     void,
     unknown,
-    Crypto.Crypto | Scope.Scope | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | Scope.Scope | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
   >
 ) =>
   it.effect(name, () =>

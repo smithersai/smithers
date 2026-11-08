@@ -343,6 +343,8 @@ describe("GET /api/shapes/runs", () => {
     const row = values.find((value) => value.id === mine)!
     expect(row).not.toHaveProperty("launched_by")
     expect(row).toMatchObject({ status: "needs_you", waiting: "input", version: "1" })
+    // The conversation the run works in: what a device attributes its wait by (decision 0110, the data gate).
+    expect(row.conversation_id).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/))
     expect(Object.fromEntries(upstream[0]!.searchParams)).toEqual({
       offset: "-1",
       table: "runs",

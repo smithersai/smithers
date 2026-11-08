@@ -95,7 +95,6 @@ create without the two migration sets colliding.
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 
@@ -120,9 +119,7 @@ const program = Effect.gen(function*() {
   console.log(stored.generation, stored.baseDigest === plan.digest)
 })
 
-await Effect.runPromise(
-  program.pipe(Effect.provide(store), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)), Effect.orDie)
-)
+await Effect.runPromise(program.pipe(Effect.provide(store), Effect.provide(NodeCrypto.layer), Effect.orDie))
 ```
 
 Run the file with your TypeScript runner. The digests on your machine match

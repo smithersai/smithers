@@ -561,12 +561,15 @@ const spawnScript = (
       // The first marker check handles a cancellation planted before start. A
       // kill can also plant the marker after this guard, then read an empty
       // pidfile between `cmd & p=$!` and `echo`. Rechecking immediately after
-      // the pid write signals that now-recorded command and closes that window.
+      // the pid write signals that now-recorded command and its descendants.
+      // Killing only the shell can orphan a child that still holds the output
+      // pipe, even before the concurrent kill has collected the process tree.
+      // The subshell keeps killScript's exit from bypassing our status frame.
       environment.script + `if [ -e ${cancelMarker(pidfile)} ]; then c=${cancelledStatus}; ` +
         `elif cd ${CommandLine.quote(cwd)}; then ${environment.prefix}/bin/sh -c ${
           CommandLine.quote(command)
         } & p=$!; ` +
-        `echo "$p" > ${pidfile}; if [ -e ${cancelMarker(pidfile)} ]; then kill -s TERM "$p" 2>/dev/null; fi; ` +
+        `echo "$p" > ${pidfile}; if [ -e ${cancelMarker(pidfile)} ]; then ( ${killScript(pidfile, "TERM")} ); fi; ` +
         `wait "$p"; c=$?; else c=127; fi; printf '\\n${sentinel(nonce)}%s__\\n' "$c"`
     )
   }`

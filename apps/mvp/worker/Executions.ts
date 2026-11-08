@@ -1,56 +1,58 @@
-import * as GitHubCreation from "./branch/GitHubCreation.ts"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Logger } from "@smthrs/observability"
 import { EdgeCache, type ExecutionObject } from "@smthrs/platform-cloudflare"
 import { RuntimeContext } from "alchemy"
-import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Cause, Effect, Layer, Option, Predicate, Redacted } from "effect"
-import type { SqlClient } from "effect/sql"
 import { FetchHttpClient } from "effect/http"
+import type { SqlClient } from "effect/sql"
 import * as Database from "../db/Database.ts"
+import { applyExecutionId } from "../src/features/issues/contract.ts"
+import { todoExecutionId } from "../src/features/pulls/contract.ts"
+import { repoId } from "../src/features/repo/contract.ts"
+import { commandMaxSeconds } from "../src/features/sandbox/config.ts"
+import { keepExecutionId } from "../src/features/sandbox/contract.ts"
+import * as AgentSandbox from "./AgentSandbox.ts"
 import * as AlertChannels from "./AlertChannels.ts"
 import * as Conversations from "./branch/Conversations.ts"
-import * as BranchSandboxes from "./BranchSandboxes.ts"
-import * as Overflow from "./runners/Overflow.ts"
+import { Forge } from "./branch/Forge.ts"
+import * as GitHubCreation from "./branch/GitHubCreation.ts"
 import * as JobMachines from "./branch/JobMachines.ts"
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
-import * as AgentSandbox from "./AgentSandbox.ts"
+import * as BranchSandboxes from "./BranchSandboxes.ts"
+import * as RepoFlow from "./ci/RepoFlow.ts"
 import * as DomainsConfig from "#vibelang/emitted/worker/domains/Config"
 import { DomainProvider } from "#vibelang/emitted/worker/domains/Provider"
-import * as HyperdrivePool from "./HyperdrivePool.ts"
+import { recorded } from "./DurableObjectFailure.ts"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Flows from "#vibelang/emitted/worker/Flows"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
-import { recorded } from "./DurableObjectFailure.ts"
-import * as FleetAlert from "./flows/FleetAlert.ts"
-import * as RedactFeed from "./flows/RedactFeed.ts"
-import * as Fleet from "./runners/Fleet.ts"
-import { repoId } from "../src/features/repo/contract.ts"
-import * as SandboxSpend from "./flows/SandboxSpend.ts"
 import * as Expire from "./flows/Expire.ts"
-import * as TodoAgent from "./flows/TodoAgent.ts"
-import * as Todo from "./flows/Todo.ts"
+import * as FleetAlert from "./flows/FleetAlert.ts"
+import { recheckExecutionId, RecheckRole } from "./flows/RecheckRole.ts"
+import * as RedactFeed from "./flows/RedactFeed.ts"
 import * as SandboxCommand from "./flows/SandboxCommand.ts"
-import { pullClosed } from "./flows/TodoWait.ts"
+import * as SandboxKeep from "./flows/SandboxKeep.ts"
+import * as SandboxSpend from "./flows/SandboxSpend.ts"
+import * as Todo from "./flows/Todo.ts"
+import * as TodoAgent from "./flows/TodoAgent.ts"
 import * as TodoBaseClosed from "./flows/TodoBaseClosed.ts"
-import * as TodoRuns from "./stack/TodoRuns.ts"
-import * as SandboxKeep from "#vibelang/emitted/worker/flows/SandboxKeep"
-import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
+import * as TodoMachine from "./flows/TodoMachine.ts"
+import { pullClosed } from "./flows/TodoWait.ts"
+import * as GitHubApply from "./github/Apply.ts"
 import * as GitHubHost from "./github/Host.ts"
+import * as HyperdrivePool from "./HyperdrivePool.ts"
 import * as ModelEndpoint from "./ModelEndpoint.ts"
 import * as ModelFlows from "./personal/ModelFlows.ts"
 import { PersonalModels } from "./personal/Models.ts"
-import { SecretKeys } from "./secrets/Keys.ts"
-import * as TodoMachine from "./flows/TodoMachine.ts"
-import * as SessionStore from "./SessionStore.ts"
 import * as Placement from "./Placement.ts"
-import * as RepoRuns from "./RepoRuns.ts"
-import * as RepoFlow from "#vibelang/emitted/worker/ci/RepoFlow"
 import * as RepoConfig from "./RepoConfig.ts"
-import { Forge } from "./branch/Forge.ts"
+import * as RepoRuns from "./RepoRuns.ts"
+import * as Fleet from "./runners/Fleet.ts"
+import * as Overflow from "./runners/Overflow.ts"
+import { SecretKeys } from "./secrets/Keys.ts"
+import * as SessionStore from "./SessionStore.ts"
 import * as SignIn from "./SignIn.ts"
-import { commandMaxSeconds } from "../src/features/sandbox/config.ts"
-import { keepExecutionId } from "../src/features/sandbox/contract.ts"
-import { todoExecutionId } from "../src/features/pulls/contract.ts"
+import * as TodoRuns from "./stack/TodoRuns.ts"
 
 // The Durable Object that runs remote flows on Cloudflare (docs/features/remote-flows.md): one object per execution,
 // named by its execution id, hosted by ChatApi. Alchemy runs its handlers; they delegate to worker/ExecutionHost.ts,
@@ -62,7 +64,7 @@ import { todoExecutionId } from "../src/features/pulls/contract.ts"
  */
 export interface FlowExecutionShape {
   readonly start: (
-    intent: ExecutionObject.Intent,
+    intent: ExecutionObject.Intent
   ) => Effect.Effect<void, ExecutionObject.IntentConflict, RuntimeContext>
   readonly repositoryRun: () => Effect.Effect<RepoRuns.Admitted | null, never, RuntimeContext>
   readonly signal: (deferredName: string) => Effect.Effect<void, never, RuntimeContext>
@@ -90,7 +92,7 @@ export interface Objects {
  * `StartUnavailable` with its code.
  */
 export const starter = (objects: Objects) =>
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const runtime = yield* RuntimeContext
     return Flows.FlowStarter.of({
       // The caller built `payload` as this flow's own schema types it; `Flow.Any` can't say so in its type.
@@ -103,10 +105,10 @@ export const starter = (objects: Objects) =>
             return Effect.fail(
               Predicate.isTagged(error, "@smthrs/platform-cloudflare/IntentConflict")
                 ? new Flows.StartConflict()
-                : new Flows.StartUnavailable({ errorCode: codeOf(error) }),
+                : new Flows.StartUnavailable({ errorCode: codeOf(error) })
             )
-          }),
-        ),
+          })
+        )
     })
   })
 
@@ -130,42 +132,44 @@ interface ProgramOptions {
 
 export const live = <E, R>(
   connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
-  options: ProgramOptions,
-) => Layer.unwrap(Effect.map(
-  Effect.all([DatabaseLoad.sampler, SandboxSpend.sampler, FleetAlert.sampler, RedactFeed.launcher]),
-  // Each alarm starts its window's database sample, then its window's sandbox spend (docs/features/sandbox-budgets.md),
-  // then its window's look at the runners (docs/features/fleet.md#alerts), then each confirmed feed barrier's pass not
-  // yet completed (docs/features/notifications.md#rows-written-before).
-  ([sampleLoad, sampleSpend, sampleRunners, redactFeed]) =>
-    object(connection, options, Effect.andThen(Effect.andThen(sampleLoad, sampleSpend), sampleRunners), redactFeed),
-))
+  options: ProgramOptions
+) =>
+  Layer.unwrap(Effect.map(
+    Effect.all([DatabaseLoad.sampler, SandboxSpend.sampler, FleetAlert.sampler, RedactFeed.launcher]),
+    // Each alarm starts its window's database sample, then its window's sandbox spend (docs/features/sandbox-budgets.md),
+    // then its window's look at the runners (docs/features/fleet.md#alerts), then each confirmed feed barrier's pass not
+    // yet completed (docs/features/notifications.md#rows-written-before).
+    ([sampleLoad, sampleSpend, sampleRunners, redactFeed]) =>
+      object(connection, options, Effect.andThen(Effect.andThen(sampleLoad, sampleSpend), sampleRunners), redactFeed)
+  ))
 
 /** One object, whose alarms start the window's `ops/DatabaseLoad` through `sampleLoad`. */
 const object = <E, R>(
   connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
   options: ProgramOptions,
   sampleLoad: Effect.Effect<void, never, Flows.FlowStarter>,
-  redactFeed: Effect.Effect<void, never, Flows.FlowStarter | SqlClient.SqlClient>,
+  redactFeed: Effect.Effect<void, never, Flows.FlowStarter | SqlClient.SqlClient>
 ) =>
   FlowExecution.make(
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const state = yield* Cloudflare.DurableObjectState
       // This class's own namespace: the router reaches any other execution's object through it, creating each one where
       // the deployment places them (`FLOW_EXECUTION_LOCATION`, worker/Placement.ts).
       const executions = Placement.placed(
         (yield* Cloudflare.DurableObject) as Cloudflare.DurableObject<FlowExecutionShape>,
-        yield* Placement.location.pipe(Effect.orDie),
+        yield* Placement.location.pipe(Effect.orDie)
       )
       const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(connection)
       const database = Layer.unwrap(
         Effect.map(
           hyperdrive.connectionString,
-          (url) => ExecutionHost.database(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA),
-        ),
+          (url) => ExecutionHost.database(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA)
+        )
       )
       // Sign-in's role checks (`auth/RecheckRole`) run here too when sign-in is configured. They write the app's own
       // tables, so they reach Postgres through the app's client, not the engine's schema.
       const signIn = yield* SignIn.configured().pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
+      const roleFreshMs = yield* SessionStore.roleFreshMs.pipe(Effect.orDie)
       const appDatabase = Database.layer(hyperdrive.connectionString)
       // `chat/Expire` settles answers their devices left streaming (docs/features/agent.md#settling).
       const app = { database: appDatabase, expiry: yield* Expire.expiry.pipe(Effect.orDie) }
@@ -180,14 +184,17 @@ const object = <E, R>(
       const stepWaitSeconds = yield* SandboxCommand.stepWaitSeconds.pipe(Effect.orDie)
       // `repo/Clone` runs here when this deployment has a Code Storage organization (docs/features/repo.md#the-clone).
       // Its Index reads the file list into the same immutable cache RepoApi reads from.
-      const repoClone = yield* RepoConfig.cloneServices(appDatabase, EdgeCache.layer({ name: "repo" }).pipe(Layer.orDie)).pipe(
+      const repoClone = yield* RepoConfig.cloneServices(
+        appDatabase,
+        EdgeCache.layer({ name: "repo" }).pipe(Layer.orDie)
+      ).pipe(
         Effect.provide(FetchHttpClient.layer),
-        Effect.orDie,
+        Effect.orDie
       )
       // Resync moves a published branch's Smithers branch on the deployment's forge (docs/features/branch-publish.md#resync).
       const forge = Layer.succeed(
         Forge,
-        yield* Effect.service(Forge).pipe(Effect.provide(Forge.layerConfig), Effect.provide(FetchHttpClient.layer)),
+        yield* Effect.service(Forge).pipe(Effect.provide(Forge.layerConfig), Effect.provide(FetchHttpClient.layer))
       )
       // The git loop's flows (`github/Apply`, `github/Reconcile`, `github/Write`, `triage/Run`) run here when the GitHub
       // App is configured (docs/features/issues.md#remote-flows). Triage decides with the `judge` model role, admitted
@@ -204,20 +211,23 @@ const object = <E, R>(
       const credentials = yield* ModelFlows.captureCredentials.pipe(Effect.orDie)
       const seats = yield* ModelEndpoint.local(appDatabase, {
         ...(options.spendAlerts === undefined ? {} : { alerts: options.spendAlerts }),
-        ...(options.hostedModel === undefined ? {} : { hosted: options.hostedModel }),
+        ...(options.hostedModel === undefined ? {} : { hosted: options.hostedModel })
       }).pipe(
         Effect.provide(PersonalModels.layer(appDatabase).pipe(Layer.provide(SecretKeys.layerConfig))),
-        Effect.orDie,
+        Effect.orDie
       )
       // A run's person, and whether the deployment pays for the calls their own model doesn't answer: only its own
       // Members' (ruling AUTH-8).
       const ownedBy = (personId: string) =>
-        Effect.map(SessionStore.deploymentMember(personId), (deploymentPays) => Option.some({ personId, deploymentPays }))
+        Effect.map(
+          SessionStore.deploymentMember(personId),
+          (deploymentPays) => Option.some({ personId, deploymentPays })
+        )
       // A `todo` run's committer.
       const todoOwner = (executionId: string) =>
         TodoMachine.ownerOf(executionId).pipe(
           Effect.flatMap(Option.match({ onNone: () => Effect.succeedNone, onSome: ownedBy })),
-          Effect.provide(appDatabase),
+          Effect.provide(appDatabase)
         )
       // `ops/SpendAlert` sends by email and Telegram through the deployment's providers, from its secrets
       // (docs/features/spend-alerts.md#channels).
@@ -226,9 +236,9 @@ const object = <E, R>(
       const pool = yield* HyperdrivePool.fromConfig.pipe(
         Effect.flatMap(Option.match({
           onNone: () => Effect.succeed(undefined),
-          onSome: (poolOptions) => HyperdrivePool.make(poolOptions).pipe(Effect.provide(FetchHttpClient.layer)),
+          onSome: (poolOptions) => HyperdrivePool.make(poolOptions).pipe(Effect.provide(FetchHttpClient.layer))
         })),
-        Effect.orDie,
+        Effect.orDie
       )
       // `domain/Verify` and `domain/Remove` reach the deployment's domain provider (docs/features/domains.md).
       const domains = yield* DomainsConfig.provider(options).pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
@@ -243,7 +253,7 @@ const object = <E, R>(
         sandboxObjects,
         declaredMachines.includes(JobMachines.GATE)
           ? (yield* BranchSandboxes.GateObject) as Cloudflare.DurableObject<BranchSandboxes.SandboxObjectShape>
-          : undefined,
+          : undefined
       )
       // Workers Logs keeps every JSON line, as it does ChatApi's.
       const logs = Logger.layerStructuredJson()
@@ -256,23 +266,33 @@ const object = <E, R>(
           ExecutionHost.make(state.storage, {
             hostId: state.id.toString(),
             database,
+            signingKeyIds: Option.match(signIn, {
+              onNone: () => ["legacy"],
+              onSome: (configured) => configured.keys.keyIds
+            }),
+            roleFreshMs,
             flows: {
               ...flows,
-              registration: flows.registration.pipe(
-                Layer.provide(Layer.succeed(GitHubCreation.Settings, creationSettings)),
-                Layer.provide(Layer.succeed(Conversations.homeRepositoryNames, options.homeRepository)),
-              ),
+              registration: Layer.unwrap(Effect.map(flowStarter, (started) =>
+                flows.registration.pipe(
+                  Layer.provide(Layer.succeed(Flows.FlowStarter, started)),
+                  Layer.provide(Layer.succeed(GitHubCreation.Settings, creationSettings)),
+                  Layer.provide(Layer.succeed(Conversations.homeRepositoryNames, options.homeRepository))
+                )))
             },
             driveBudgetMs,
             canStart: (intent) => TodoRuns.canStart(intent).pipe(Effect.provide(appDatabase), Effect.orDie),
             router: {
               // A feed redaction round's handoff is recorded on its barrier, where a claim wakes a stalled pass.
-              start: RedactFeed.recordingHandoffs((intent) => executions.getByName(intent.executionId).start(intent), appDatabase),
-              wake: (executionId) => Effect.asVoid(executions.getByName(executionId).wake()),
+              start: RedactFeed.recordingHandoffs(
+                (intent) => executions.getByName(intent.executionId).start(intent),
+                appDatabase
+              ),
+              wake: (executionId) => Effect.asVoid(executions.getByName(executionId).wake())
             },
             afterAlarm: Effect.flatMap(flowStarter, (started) =>
               Effect.andThen(sampleLoad, redactFeed.pipe(Effect.provide(appDatabase), Effect.orDie)).pipe(
-                Effect.provideService(Flows.FlowStarter, started),
+                Effect.provideService(Flows.FlowStarter, started)
               )),
             // A repository's run settles its row from the engine's status and its reported result (docs/features/actions.md), and a `todo` run
             // that ended in a defect fails its TODO `crashed` and starts the TODOs that frees (docs/features/todos.md).
@@ -284,29 +304,41 @@ const object = <E, R>(
                   // The alarm that forgets the run a day later tries once more.
                   Effect.catchCause((cause) =>
                     Effect.logWarning("repo.run.settle").pipe(
-                      Effect.annotateLogs({ runId: executionId, outcome: "failed", errorCode: codeOf(Cause.squash(cause)) }),
+                      Effect.annotateLogs({
+                        runId: executionId,
+                        outcome: "failed",
+                        errorCode: codeOf(Cause.squash(cause))
+                      })
                     )
-                  ),
+                  )
                 ),
-                Effect.flatMap(flowStarter, (started) =>
-                  TodoRuns.settleCrashed(executionId, database, FleetAlert.startWith(started))).pipe(
+                Effect.flatMap(
+                  flowStarter,
+                  (started) => TodoRuns.settleCrashed(executionId, database, FleetAlert.startWith(started))
+                ).pipe(
                   Effect.provide(appDatabase),
                   Effect.flatMap((starts) =>
                     Effect.flatMap(flowStarter, (started) =>
                       Effect.forEach(starts, (start) =>
-                        started.start(Todo.Todo, { executionId: todoExecutionId(start.attemptId), payload: start }).pipe(
-                          Effect.catchTag("@smthrs/mvp/flows/StartConflict", () => Effect.void),
-                        ), { discard: true }))
+                        started.start(Todo.Todo, { executionId: todoExecutionId(start.attemptId), payload: start })
+                          .pipe(
+                            Effect.catchTag("@smthrs/mvp/flows/StartConflict", () =>
+                              Effect.void)
+                          ), { discard: true }))
                   ),
                   // The alarm that forgets the run a day later reports again: the writer answers the same report with
                   // the same starts (`repeated`), and starting one again changes nothing.
                   Effect.catchCause((cause) =>
                     Effect.logWarning("todo.crashed").pipe(
-                      Effect.annotateLogs({ runId: executionId, outcome: "failed", errorCode: codeOf(Cause.squash(cause)) }),
+                      Effect.annotateLogs({
+                        runId: executionId,
+                        outcome: "failed",
+                        errorCode: codeOf(Cause.squash(cause))
+                      })
                     )
-                  ),
-                ),
-              ], { discard: true }),
+                  )
+                )
+              ], { discard: true })
           })
         // Each wake of a branch's machine starts that generation's `sandbox/Keep` on its own object, once
         // (docs/features/sandbox-tools.md#sleep-and-wake); a job machine's keep names it, so it asks that machine.
@@ -317,9 +349,9 @@ const object = <E, R>(
             Effect.flatMap((intent) => executions.getByName(executionId).start(intent)),
             Effect.catchCause((cause) =>
               Effect.logWarning("sandbox.keep.start").pipe(
-                Effect.annotateLogs({ branchId, generation, errorCode: codeOf(Cause.squash(cause)) }),
+                Effect.annotateLogs({ branchId, generation, errorCode: codeOf(Cause.squash(cause)) })
               )
-            ),
+            )
           )
         }
         // `secret/Put` and `secret/Delete` write an Admin's sealed secrets (docs/features/secrets.md#writing), and
@@ -329,32 +361,55 @@ const object = <E, R>(
         // The fleet's alerts (docs/features/fleet.md#alerts): an incident's `ops/FleetAlert` runs on its own object,
         // started through this alarm's runtime.
         const raiser = Effect.map(flowStarter, FleetAlert.startWith)
-        const base = ExecutionHost.withFeedRedaction(ExecutionHost.withFleet(ExecutionHost.withRunners(ExecutionHost.withCiJobs(ExecutionHost.withDomains(ExecutionHost.withPersonalModels(ExecutionHost.withSecrets(
-          ExecutionHost.withSandboxTools(
-            ExecutionHost.withTerminals(
-              Option.isSome(signIn)
-                ? ExecutionHost.remoteWithSignIn(app, signIn.value, alertChannels, pool)
-                : ExecutionHost.remote(app, alertChannels, pool),
-              appDatabase,
-              BranchSandboxes.sandboxesLayer(sandboxObjects, keep),
+        const base = ExecutionHost.withFeedRedaction(
+          ExecutionHost.withFleet(
+            ExecutionHost.withRunners(
+              ExecutionHost.withCiJobs(
+                ExecutionHost.withDomains(
+                  ExecutionHost.withPersonalModels(
+                    ExecutionHost.withSecrets(
+                      ExecutionHost.withSandboxTools(
+                        ExecutionHost.withTerminals(
+                          Option.isSome(signIn)
+                            ? ExecutionHost.remoteWithSignIn(app, signIn.value, alertChannels, pool)
+                            : ExecutionHost.remote(app, alertChannels, pool),
+                          appDatabase,
+                          BranchSandboxes.sandboxesLayer(sandboxObjects, keep)
+                        ),
+                        appDatabase,
+                        BranchSandboxes.machinesLayer(machineObjects, keep),
+                        idleMs
+                      ),
+                      appDatabase
+                    ),
+                    appDatabase,
+                    credentials
+                  ),
+                  appDatabase,
+                  Layer.succeed(DomainProvider, domains)
+                ),
+                BranchSandboxes.machinesLayer(machineObjects, keep)
+              ),
+              appDatabase
             ),
             appDatabase,
-            BranchSandboxes.machinesLayer(machineObjects, keep),
-            idleMs,
+            repoId(options.homeRepository.owner, options.homeRepository.name),
+            fleet,
+            raiser,
+            alertChannels
           ),
-          appDatabase,
-        ), appDatabase, credentials), appDatabase, Layer.succeed(DomainProvider, domains)), BranchSandboxes.machinesLayer(machineObjects, keep)),
-          appDatabase), appDatabase, repoId(options.homeRepository.owner, options.homeRepository.name), fleet, raiser, alertChannels),
-          appDatabase)
+          appDatabase
+        )
         // A person's write whose GitHub token is about to expire starts the session's `auth/RecheckRole` on its own
         // object, the one redeemer of the refresh token, with the execution's own runtime context. Triage and a head's
         // review run on the `judge` and `review` roles, admitted and metered as the endpoint's calls are: triage's on
         // the model of the person who enabled it, a review on its TODO owner's (ruling AUTH-8).
         const githubServices = <GE, GR>(ready: GitHubHost.Ready<GE, GR>) =>
-          Effect.gen(function* () {
+          Effect.gen(function*() {
             const runtime = yield* RuntimeContext
             const started = yield* flowStarter
-            const judge = (enabledBy: string) => seats("judge", started, () => ownedBy(enabledBy).pipe(Effect.provide(appDatabase)))
+            const judge = (enabledBy: string) =>
+              seats("judge", started, () => ownedBy(enabledBy).pipe(Effect.provide(appDatabase)))
             const services = GitHubHost.services(ready, {
               keys: Option.map(signIn, (configured) => configured.keys),
               refresh: (sessionId, generation) => {
@@ -364,25 +419,37 @@ const object = <E, R>(
                   Effect.provideService(RuntimeContext, runtime),
                   Effect.catchCause((cause) =>
                     Effect.logWarning("auth.role_check").pipe(
-                      Effect.annotateLogs({ sessionId, outcome: "not_started", errorCode: codeOf(Cause.squash(cause)) }),
+                      Effect.annotateLogs({ sessionId, outcome: "not_started", errorCode: codeOf(Cause.squash(cause)) })
                     )
-                  ),
+                  )
                 )
-              },
+              }
             }, judge)
             return {
               ...services,
               // A head's review is its TODO owner's, on the `review` role (`hard` tier, decision 0107): their own model
               // reviews it when they saved one (decision 0099).
-              reviewerFor: (ownerId: string) => seats("review", started, () => ownedBy(ownerId).pipe(Effect.provide(appDatabase))),
-              invalidateTodo: (stop: typeof TodoBaseClosed.Request.Type) => ExecutionHost.intent(TodoBaseClosed.Invalidate, {
-                executionId: `todo-closed:${stop.attemptId}`, payload: stop,
-              }).pipe(Effect.flatMap((intent) => executions.getByName(intent.executionId).start(intent)),
-                Effect.provideService(RuntimeContext, runtime)),
+              reviewerFor: (ownerId: string) =>
+                seats("review", started, () => ownedBy(ownerId).pipe(Effect.provide(appDatabase))),
+              invalidateTodo: (stop: typeof TodoBaseClosed.Request.Type) =>
+                ExecutionHost.intent(TodoBaseClosed.Invalidate, {
+                  executionId: `todo-closed:${stop.attemptId}`,
+                  payload: stop
+                }).pipe(
+                  Effect.flatMap((intent) => executions.getByName(intent.executionId).start(intent)),
+                  Effect.provideService(RuntimeContext, runtime)
+                ),
+              startApply: (request: Parameters<NonNullable<GitHubApply.Services["startApply"]>>[0]) => {
+                const executionId = applyExecutionId(request.deliveryId)
+                return ExecutionHost.intent(GitHubApply.Apply, { executionId, payload: request }).pipe(
+                  Effect.flatMap((intent) => executions.getByName(executionId).start(intent)),
+                  Effect.provideService(RuntimeContext, runtime)
+                )
+              },
               signalTodo: (executionId: string, number: number) =>
                 executions.getByName(executionId).signal(pullClosed(number).name).pipe(
-                  Effect.provideService(RuntimeContext, runtime),
-                ),
+                  Effect.provideService(RuntimeContext, runtime)
+                )
             }
           })
         // The coding factory's `todo` run and a head's checks (docs/features/todos.md#the-run) need the App: they make
@@ -390,7 +457,7 @@ const object = <E, R>(
         // their own objects, and the agent writes on the branches' machines.
         const machines = BranchSandboxes.machinesLayer(machineObjects, keep)
         const todoServices = <GE, GR>(ready: GitHubHost.Ready<GE, GR>) =>
-          Effect.gen(function* () {
+          Effect.gen(function*() {
             const runtime = yield* RuntimeContext
             const built = yield* githubServices(ready)
             const raise = yield* raiser
@@ -402,13 +469,15 @@ const object = <E, R>(
               credentials,
               fleet: { settings: fleet, raise },
               overflow: (due: Overflow.Due) => Effect.asVoid(sandboxes.wake(Overflow.boxBranch(due.repoId))),
-              cancel: (executionId: string) => executions.getByName(executionId).cancel().pipe(Effect.provideService(RuntimeContext, runtime)),
+              cancel: (executionId: string) =>
+                executions.getByName(executionId).cancel().pipe(Effect.provideService(RuntimeContext, runtime)),
               start: Todo.admission((flow, options) =>
-                ExecutionHost.intent(flow, { executionId: options.executionId, payload: options.payload as never }).pipe(
-                  Effect.flatMap((intent) => executions.getByName(options.executionId).start(intent)),
-                  Effect.provideService(RuntimeContext, runtime),
-                ),
-              ),
+                ExecutionHost.intent(flow, { executionId: options.executionId, payload: options.payload as never })
+                  .pipe(
+                    Effect.flatMap((intent) => executions.getByName(options.executionId).start(intent)),
+                    Effect.provideService(RuntimeContext, runtime)
+                  )
+              )
             }
           })
         const dispatchServices = <GE, GR>(ready: GitHubHost.Ready<GE, GR>) =>
@@ -419,30 +488,36 @@ const object = <E, R>(
               // A repository's own flows (docs/features/ci.md#repository-flows) read their flow.ts and report their
               // status as the App, and plan in the QuickJS build the agent's cells run on. GitHub's pushes and pull
               // requests start them through `triggers/Dispatch`, on each run's own object.
-              ExecutionHost.withTriggers(ExecutionHost.withRepoFlows(ExecutionHost.withTodos(
-                // Publish and Update branch (docs/features/branch-publish.md) read a branch's working copy on its
-                // machine and write GitHub as the person who pressed; Resync moves the working copy to GitHub's head.
-                ExecutionHost.withBranchPublish(
-                  ExecutionHost.withGitHub(flows, githubServices(github.value)),
-                  githubServices(github.value),
-                  machines,
-                  forge,
-                ),
-                todoServices(github.value),
-                machines,
-                // The `todo` run's agent writes with the `coding` role, admitted and metered as the endpoint's calls are.
-                Layer.unwrap(Effect.map(flowStarter, (started) =>
-                  TodoAgent.registration(
-                    seats("coding", started, todoOwner),
-                    appDatabase,
-                    AgentSandbox.layer,
+              ExecutionHost.withTriggers(
+                ExecutionHost.withRepoFlows(
+                  ExecutionHost.withTodos(
+                    // Publish and Update branch (docs/features/branch-publish.md) read a branch's working copy on its
+                    // machine and write GitHub as the person who pressed; Resync moves the working copy to GitHub's head.
+                    ExecutionHost.withBranchPublish(
+                      ExecutionHost.withGitHub(flows, githubServices(github.value)),
+                      githubServices(github.value),
+                      machines,
+                      forge
+                    ),
+                    todoServices(github.value),
+                    machines,
+                    // The `todo` run's agent writes with the `coding` role, admitted and metered as the endpoint's calls are.
+                    Layer.unwrap(Effect.map(flowStarter, (started) =>
+                      TodoAgent.registration(
+                        seats("coding", started, todoOwner),
+                        appDatabase,
+                        AgentSandbox.layer,
+                        commandSeconds,
+                        stepWaitSeconds
+                      ))),
                     commandSeconds,
-                    stepWaitSeconds,
-                  ))),
-                commandSeconds,
-                stepWaitSeconds,
-              ), Effect.map(githubServices(github.value), (services) => ({ ...services, machines: declaredMachines })),
-              AgentSandbox.variant), dispatchServices(github.value)),
+                    stepWaitSeconds
+                  ),
+                  Effect.map(githubServices(github.value), (services) => ({ ...services, machines: declaredMachines })),
+                  AgentSandbox.variant
+                ),
+                dispatchServices(github.value)
+              )
             )
             : hostFor(flows)
         const host = Option.isSome(repoClone)
@@ -457,8 +532,8 @@ const object = <E, R>(
           // A failure still throws, so Cloudflare retries the alarm, and is recorded by its flags and category first
           // (worker/DurableObjectFailure.ts): an instance Cloudflare replaced mid-alarm fails its I/O.
           advance: () => host.alarm().pipe(Effect.asVoid, recorded("FlowExecution", "advance"), Effect.provide(logs)),
-          alarm: () => host.alarm().pipe(Effect.asVoid, recorded("FlowExecution", "alarm"), Effect.provide(logs)),
+          alarm: () => host.alarm().pipe(Effect.asVoid, recorded("FlowExecution", "alarm"), Effect.provide(logs))
         }
       })
-    }),
+    })
   )

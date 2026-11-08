@@ -1,8 +1,9 @@
+import { $platform } from "./CommandSurface.test.platform.js";
+import { executeSource } from "./modules.ts"
 import { describe, expect, it } from "@effect/vitest"
 import * as Command from "../src/Command.vibe"
 import * as FlowInvoker from "../src/FlowInvoker.vibe"
 import { failureOf, invalidModule, makeRoute, specialModule } from "./helpers.vibe"
-import { runModuleScript } from "./modules.ts"
 
 describe("Command surface", () => {
   it.effect("advertises only executable model-visible modules in stable order", effect () => {
@@ -60,10 +61,10 @@ describe("Command surface", () => {
       }
     })
     provide FlowInvoker.FlowInvoker = invoker {
-      const source: { mutable number: number } = { number: 1 }
+      const source: { number: number } = { number: 1 }
       // Start the call before mutating its source, as runPromise would: the
       // fiber runs until route loading suspends it.
-      const pending = try Effect.forkChild (surface.call("nested/visible", source), { startImmediately: true })
+      const pending = try Effect.forkChild(surface.call("nested/visible", source), { startImmediately: true })
       source.number = 2
 
       expect(try surface.call("nested/visible", { number: 1 })).toEqual({ accepted: true, number: 1 })
@@ -113,6 +114,8 @@ describe("Command surface", () => {
       const flow = await Effect.runPromise(Route.load(route))
       process.stdout.write(flow.description)
     `
-    expect(try sync((script) => runModuleScript(script), script)).toBe("Special path fixture.")
+    expect(
+      try promise(() => executeSource(script))
+    ).toBe("Special path fixture.")
   })
 })

@@ -14,5 +14,5 @@ export const DocsSite = (domain: string) =>
     cwd: "../site",
     outdir: "dist",
     routes: docsRoutes(domain),
-    assets: { htmlHandling: "auto-trailing-slash", notFoundHandling: "404-page" },
+    assets: { htmlHandling: "auto-trailing-slash", notFoundHandling: "404-page" }
   })

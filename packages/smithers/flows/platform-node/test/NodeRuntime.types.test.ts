@@ -1,5 +1,6 @@
-import type { Crypto } from "@smthrs/crypto"
 import type * as KernelJj from "@smthrs/kernel/Jj"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import type * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import type * as Layer from "effect/Layer"
@@ -45,13 +46,13 @@ type _NodeCompositionRootsAreComplete = [
   Expect<
     EffectRequirementsAre<
       ReturnType<typeof NodeRuntime.make<never, never, never, never, never, never, never>>,
-      Crypto.Crypto | FileSystem.FileSystem | KernelJj.Jj | Scope.Scope
+      (EffectDigest.Digest | SecureRandom.SecureRandom) | FileSystem.FileSystem | KernelJj.Jj | Scope.Scope
     >
   >,
   Expect<
     LayerRequirementsAre<
       ReturnType<typeof NodeRuntime.layer<never, never, never, never, never, never, never>>,
-      Crypto.Crypto | FileSystem.FileSystem | KernelJj.Jj
+      (EffectDigest.Digest | SecureRandom.SecureRandom) | FileSystem.FileSystem | KernelJj.Jj
     >
   >,
   Expect<Complete<ReturnType<typeof NodeRuntime.layerHost<never, never, never>>>>
@@ -82,7 +83,7 @@ type _NativeRegistryRequirements = Expect<
         ExternalService | Scope.Scope
       >
     >,
-    Crypto.Crypto | FileSystem.FileSystem | KernelJj.Jj | ExternalService
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | FileSystem.FileSystem | KernelJj.Jj | ExternalService
   >
 >
 

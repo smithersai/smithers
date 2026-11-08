@@ -96,7 +96,7 @@ your code.
 `@smthrs/kernel/ProcessLedger`.
 
 **Cause.** Both contained factories return
-`Layer.Layer<BunHost | Crypto.Crypto, never, ProcessLedger.ProcessLedger>`.
+`Layer.Layer<BunHost | (EffectDigest.Digest | SecureRandom.SecureRandom), never, ProcessLedger.ProcessLedger>`.
 The ledger is a
 requirement rather than a built-in default, because the durable half is only as
 good as the journal underneath it, and only your program knows whether it has

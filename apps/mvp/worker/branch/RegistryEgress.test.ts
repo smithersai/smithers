@@ -8,13 +8,15 @@ import * as RegistryEgress from "./RegistryEgress.vibe"
 
 /** An upstream that answers every request with `body` and records each one it got. */
 const upstream = (body: string) => {
+  const userAgents: Array<string | null> = []
   const got: Array<{ readonly method: string; readonly url: string }> = []
   const fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const request = new Request(input, init)
+    userAgents.push(request.headers.get("user-agent"))
     got.push({ method: request.method, url: request.url })
     return Promise.resolve(new Response(body, { status: 200, headers: { "content-type": "application/json" } }))
   }) as typeof globalThis.fetch
-  return { got, layer: Layer.provide(FetchHttpClient.layer, Layer.succeed(FetchHttpClient.Fetch, fetch)) }
+  return { got, userAgents, layer: Layer.provide(FetchHttpClient.layer, Layer.succeed(FetchHttpClient.Fetch, fetch)) }
 }
 
 /** A box's request through the registry egress, and what the box gets back. */
@@ -48,6 +50,12 @@ const INSTALLS = [
 ]
 
 describe("a box's registry egress", () => {
+  test("GitHub egress identifies Smithers when the guest omits User-Agent", async () => {
+    const github = upstream("ok")
+    expect((await through(new Request("https://github.com/acme/widgets"), github.layer)).status).toBe(200)
+    expect(github.userAgents).toEqual(["smithers-integrations"])
+  })
+
   test("forwards an install's requests to every registry host, counted", async () => {
     const registries = upstream(`{"name":"effect"}`)
     const before = counted("forwarded")

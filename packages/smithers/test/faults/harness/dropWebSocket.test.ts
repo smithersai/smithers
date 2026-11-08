@@ -1,4 +1,4 @@
-import * as NodeWS from "@effect/platform-node/NodeWS"
+import { NodeWS } from "@effect/platform-node"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { dropWebSocket, SocketState, trackingWebSocketConstructor } from "./dropWebSocket.ts"
 

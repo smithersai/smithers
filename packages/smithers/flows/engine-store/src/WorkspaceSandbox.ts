@@ -39,7 +39,7 @@
 
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import * as FileLease from "@smthrs/artifacts/FileLease"
-import { type Crypto, Sha256 } from "@smthrs/crypto"
+import { Sha256 } from "@smthrs/crypto"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import { Workspace as KernelWorkspace } from "@smthrs/kernel/Workspace"
@@ -47,6 +47,8 @@ import { DerivedKey } from "@smthrs/keys"
 import * as FileSet from "@smthrs/plan/FileSet"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as FileSystem from "effect/FileSystem"
@@ -430,7 +432,7 @@ export const isMaterializationConflict = (error: unknown): boolean => {
 export interface Service {
   readonly execute: <Output, Error>(
     execution: Execution<Output, Error>
-  ) => Effect.Effect<ExecutionResult<Output>, Error | WorkspaceError, Crypto.Crypto>
+  ) => Effect.Effect<ExecutionResult<Output>, Error | WorkspaceError, (EffectDigest.Digest | SecureRandom.SecureRandom)>
   /**
    * Checks all copy-back preconditions before applying any file change.
    * The filesystem host serializes cooperating commits through confinement,
@@ -450,7 +452,7 @@ export interface Service {
    */
   readonly materialize: <Output>(
     accepted: Accepted<Output>
-  ) => Effect.Effect<void, MaterializationConflict | WorkspaceError, Crypto.Crypto>
+  ) => Effect.Effect<void, MaterializationConflict | WorkspaceError, (EffectDigest.Digest | SecureRandom.SecureRandom)>
 }
 
 /**
@@ -633,7 +635,7 @@ const workspaceRelative = (root: string, descriptor: FileBoundary): FileBoundary
   }
 }
 
-const digestOf = (bytes: Uint8Array): Effect.Effect<string, never, Crypto.Crypto> =>
+const digestOf = (bytes: Uint8Array): Effect.Effect<string, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Schema.decodeUnknownEffect(Sha256)(bytes).pipe(Effect.orDie)
 
 const parentDirectory = (path: string): string | undefined => {
@@ -667,7 +669,7 @@ export interface Host {
    */
   readonly snapshot: (
     descriptor: FileBoundary
-  ) => Effect.Effect<ReadonlyMap<string, Uint8Array>, WorkspaceError, Crypto.Crypto>
+  ) => Effect.Effect<ReadonlyMap<string, Uint8Array>, WorkspaceError, (EffectDigest.Digest | SecureRandom.SecureRandom)>
   /**
    * The host's current digest for a path the transaction never observed, or
    * `undefined` when the host holds nothing there.
@@ -688,7 +690,7 @@ export interface Host {
    */
   readonly baseline: (
     path: string
-  ) => Effect.Effect<string | undefined, WorkspaceError, Crypto.Crypto>
+  ) => Effect.Effect<string | undefined, WorkspaceError, (EffectDigest.Digest | SecureRandom.SecureRandom)>
   /**
    * Decides whether a produced file's bytes travel inline in its
    * {@link FileChange} or by content address. Returning `undefined` means the
@@ -697,7 +699,7 @@ export interface Host {
    */
   readonly retain: (
     bytes: Uint8Array
-  ) => Effect.Effect<Uint8Array | undefined, WorkspaceError, Crypto.Crypto>
+  ) => Effect.Effect<Uint8Array | undefined, WorkspaceError, (EffectDigest.Digest | SecureRandom.SecureRandom)>
   /**
    * Applies the diff as a compare-and-set on every `beforeDigest`. Hosts must
    * serialize preflight through apply and rollback with competing commits.
@@ -707,7 +709,7 @@ export interface Host {
    */
   readonly commit: (
     changes: ReadonlyArray<FileChange>
-  ) => Effect.Effect<void, MaterializationConflict | WorkspaceError, Crypto.Crypto>
+  ) => Effect.Effect<void, MaterializationConflict | WorkspaceError, (EffectDigest.Digest | SecureRandom.SecureRandom)>
   /** The absolute root absolute host paths are interpreted against. */
   readonly root: string
 }
@@ -878,7 +880,9 @@ const changes = Effect.fn("WorkspaceSandbox.changes")(function*(
  */
 const preflight = Effect.fn("WorkspaceSandbox.preflight")(function*(
   changes: ReadonlyArray<FileChange>,
-  current: (path: string) => Effect.Effect<Uint8Array | undefined, WorkspaceError, Crypto.Crypto>
+  current: (
+    path: string
+  ) => Effect.Effect<Uint8Array | undefined, WorkspaceError, (EffectDigest.Digest | SecureRandom.SecureRandom)>
 ) {
   const conflicting: Array<string> = []
   const before = new Map<string, Uint8Array | undefined>()
@@ -1134,7 +1138,7 @@ export interface MemorySandbox {
  */
 export const makeMemory = (
   initialFiles: InitialFiles = {}
-): Effect.Effect<MemorySandbox, WorkspaceError, Crypto.Crypto> =>
+): Effect.Effect<MemorySandbox, WorkspaceError, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Effect.gen(function*() {
     const entries: Array<readonly [string, Uint8Array]> = []
     for (const [path, content] of Object.entries(initialFiles)) {

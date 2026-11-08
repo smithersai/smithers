@@ -144,15 +144,6 @@ describe("CommandLine.cwd and CommandLine.env", () => {
     expect(CommandLine.env(ChildProcess.make("ls"))).toBeUndefined()
   })
 
-  it("reads a Redacted argument or environment value as the text the process receives", () => {
-    const command = ChildProcess.make("curl", ["-H", Redacted.make("authorization: token")], {
-      env: { TOKEN: Redacted.make("secret"), PLAIN: "x", UNSET: undefined }
-    })
-
-    expect(CommandLine.render(command)).toBe("curl -H 'authorization: token'")
-    expect(CommandLine.env(command)).toEqual({ TOKEN: "secret", PLAIN: "x", UNSET: undefined })
-  })
-
   it("takes the leftmost stage of a pipeline", () => {
     const pipeline = ChildProcess.make("ls", [], { cwd: "/left", env: { SIDE: "left" } }).pipe(
       ChildProcess.pipeTo(ChildProcess.make("wc", [], { cwd: "/right", env: { SIDE: "right" } }))
@@ -252,4 +243,18 @@ describe("CommandLine.resource", () => {
       third
     ])
   })
+})
+
+it("reveals protected arguments only when rendering for an interpreter", () => {
+  const standard = ChildProcess.make("printf", [Redacted.make("secret value")])
+  expect(CommandLine.render(standard)).toBe("printf '<redacted>'")
+  expect(CommandLine.renderForExecution(standard)).toBe("printf 'secret value'")
+  expect(CommandLine.renderForExecution(ChildProcess.make("printf", ["plain value"]))).toBe("printf 'plain value'")
+  expect(CommandLine.renderForExecution(ChildProcess.make("echo", [Redacted.make("a b")], { shell: true })))
+    .toBe("echo a b")
+  expect(CommandLine.renderForExecution(ChildProcess.make("echo", [Redacted.make("a b")], { shell: "/bin/sh" })))
+    .toBe("/bin/sh -c 'echo a b'")
+  const pipeline = standard.pipe(ChildProcess.pipeTo(ChildProcess.make("grep", [Redacted.make("value")])))
+  expect(CommandLine.renderForExecution(pipeline)).toBe("printf 'secret value' | grep value")
+  expect(CommandLine.render(pipeline)).not.toContain("secret")
 })

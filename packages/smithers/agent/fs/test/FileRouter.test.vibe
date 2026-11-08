@@ -32,9 +32,7 @@ layer(platformLayer)("FileRouter", (it) => {
     ])
     expect(result.routes.find((route) => route.name === "review")?.segments).toEqual(["review"])
     expect(result.routes.find((route) => route.name === "domains/list")?.segments).toEqual(["domains", "list"])
-    expect(result.routes.find((route) => route.name === "review")?.sourcePath).toBe(
-      path.join(root, "review", "flow.ts")
-    )
+    expect(result.routes.find((route) => route.name === "review")?.sourcePath).toBe(path.join(root, "review", "flow.ts"))
   })
 
   it.effect("preserves registry entry precedence and diagnostics", effect () => {
@@ -68,18 +66,18 @@ layer(platformLayer)("FileRouter", (it) => {
   })
 
   it.effect("is deterministic", effect () => {
-    const first = try scan()
-    const second = try scan()
+    const first = scan()
+    const second = scan()
 
-    expect(second).toEqual(first)
+    expect(try second).toEqual(try first)
   })
 
   it.effect("resolves a relative root once and returns absolute immutable routes", effect () => {
     const path = try Path.Path
-    const config: { mutable root: string } = { root: path.relative(path.resolve(), root) }
+    const config: { root: string } = { root: path.relative(path.resolve(), root) }
     // The scan starts at once, as runPromise would start it, so the root is
     // read before the caller rewrites its config.
-    const pending = try Effect.forkChild (FileRouter.scan(config), { startImmediately: true })
+    const pending = try Effect.forkChild(FileRouter.scan(config), { startImmediately: true })
     config.root = "/"
     const result = join pending
 
@@ -106,14 +104,14 @@ layer(platformLayer)("FileRouter", (it) => {
     const fs = try FileSystem.FileSystem
     const path = try Path.Path
     const temporary = try fs.makeTempDirectoryScoped({ prefix: "smithers-fs-empty-description-" })
-    const source = effect (description: string) =>
+    const source = (description: string) =>
       `import * as Schema from "effect/Schema"
 export default ({ input: Schema.Void, output: Schema.Unknown, description: ${JSON.stringify(description)} })
 `
     try fs.makeDirectory(path.join(temporary, "blank"), { recursive: true })
     try fs.makeDirectory(path.join(temporary, "named"), { recursive: true })
-    try fs.writeFileString(path.join(temporary, "blank", "flow.ts"), try source(""))
-    try fs.writeFileString(path.join(temporary, "named", "flow.ts"), try source("A named flow"))
+    try fs.writeFileString(path.join(temporary, "blank", "flow.ts"), source(""))
+    try fs.writeFileString(path.join(temporary, "named", "flow.ts"), source("A named flow"))
     const result = try FileRouter.scan({ root: temporary })
     // Discovery accepts an empty literal, so one blank description must not
     // fail the scan for every sibling route.

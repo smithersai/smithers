@@ -25,6 +25,17 @@ const deploymentSources = Smithers.Filegroup({
   cwd
 })
 
+/** App-owned helpers imported by the issues/file-tree flow suite. */
+const issueFileTreeSources = Smithers.Filegroup({
+  srcs: [
+    Smithers.glob("ops/issues/*.mjs"),
+    Smithers.file("ops/tls.mjs"),
+    Smithers.file("src/features/issues/publicContent.mjs"),
+    Smithers.file("ops/issue-tracking/records.mjs")
+  ],
+  cwd
+})
+
 /**
  * Server code: every Worker source at any depth (worker/github, worker/branch, worker/flows), tests and test support
  * (worker/test/ and a folder's own test/) left out. `!(*.test)` and `!(test)` each match one path segment, so the
@@ -749,6 +760,7 @@ const failureLintTests = Smithers.NodeTest({
 export const Package = Smithers.Package({
   targets: {
     deploymentSources,
+    issueFileTreeSources,
     workerIoLintTests,
     failureLintTests,
     importRules: importRulesTarget,

@@ -27,6 +27,7 @@ import {
   makeHandle,
   ProcessId
 } from "effect/process/ChildProcessSpawner"
+import * as Redacted from "effect/Redacted"
 import type * as Scope from "effect/Scope"
 import * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"
@@ -71,7 +72,7 @@ const ambient = new Set(ChildProcessEnvironment.inheritedNames)
  * every other name cross unchanged.
  */
 const guestEnvironment = (
-  env: Readonly<Record<string, string | undefined>> | undefined
+  env: Readonly<Record<string, string | Redacted.Redacted<string> | undefined>> | undefined
 ): Record<string, string | undefined> | undefined => {
   if (env === undefined) return undefined
   const host = globalThis.process?.env
@@ -80,7 +81,7 @@ const guestEnvironment = (
     const upper = name.toUpperCase()
     const hostAmbient = host !== undefined && (ambient.has(upper) || upper.startsWith("LC_"))
       && value !== undefined && host[name] === value
-    if (!hostAmbient) guest[name] = value
+    if (!hostAmbient) guest[name] = Redacted.isRedacted(value) ? Redacted.value(value) : value
   }
   return guest
 }

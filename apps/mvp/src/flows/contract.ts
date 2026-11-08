@@ -201,3 +201,6 @@ export const FLOWS_TELEMETRY = {
     "method",
   ],
 } as const
+
+/** The durable outbox and owner-bound transport state, deleted together on sign-out. */
+export const OUTBOX_DATABASE = "smithers-outbox"

@@ -68,7 +68,7 @@ contributor.
 | `stats`    | `stats: [{ value, label }]` (1 to 6), `title?`                                                                   | declared facts, a value over its label; never counted by the page                                                                                   |
 | `releases` | `releases: [{ name, url, date, summary? }]` (1 to 12), `title?`, `more?`                                         | releases as declared, each with its `YYYY-MM-DD` date                                                                                               |
 | `text`     | `title?`, `text`                                                                                                 | a paragraph of plain text                                                                                                                           |
-| `links`    | `title?`, `links: [{ label, url }]`                                                                              | links to absolute `http` or `https` URLs                                                                                                            |
+| `links`    | `title?`, `links: [{ label, url }]`                                                                              | links to safe absolute `http` or `https` URLs or origin-relative paths                                                                              |
 | `markdown` | `path`, `title?`                                                                                                 | a Markdown file of the repository, read at the home's commit                                                                                        |
 | `prompt`   | `flow?`, `title?`, `placeholder?`                                                                                | the way to ask, with the flow that takes the question                                                                                               |
 | `app`      | `flow`, `title`, `picture`                                                                                       | one flow's button, when the page has that flow                                                                                                      |
@@ -127,9 +127,14 @@ else showTheTree(home.reason)
 | A code block            | 4,096 characters, no NUL; `<` allowed, since source code holds it                                           |
 | A title or a link label | 1 to 120 characters, one line (`maximumTitleLength`)                                                        |
 | A text block            | 1 to 4,096 characters (`maximumTextLength`)                                                                 |
-| A link                  | `http://` or `https://`, no spaces or quotes, 2,048 characters (`maximumUrlLength`)                         |
+| A link                  | absolute `http://` or `https://`, or a path starting with one `/`; 2,048 characters (`maximumUrlLength`)    |
 | A Markdown path         | relative, no empty, `.` or `..` segment, no `\`, `%`, `:`, `?`, `#` or control character, 1,024 characters  |
 | Every string            | no HTML: no tag, closing tag, comment or processing instruction (`htmlPattern`); `a < b` is fine            |
+
+Link targets reject protocol-relative URLs (`//example.com`), script schemes,
+backslashes, control characters, spaces, quotes and malformed URL escapes. A
+path such as `/docs?language=ts#intro` stays on the page's origin. The top-level
+`docs` field still requires an absolute HTTPS URL without credentials.
 
 ## Who writes the file
 

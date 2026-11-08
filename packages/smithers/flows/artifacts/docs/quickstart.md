@@ -29,7 +29,6 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
-import { Crypto } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
@@ -37,7 +36,7 @@ import * as Layer from "effect/Layer"
 const directory = ".flows/objects"
 const payload = new TextEncoder().encode("the bytes a step produced")
 
-const host = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
+const host = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)
 const layer = ArtifactStore.layerFileSystem({ directory }).pipe(Layer.provideMerge(host))
 ```
 

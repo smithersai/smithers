@@ -66,55 +66,55 @@ const clone = (status: CloneRow["status"]): CloneRow => ({ id: "github/o/n", own
 describe("treeProps and fileProps", () => {
   test("no row and a loading row are loading", () => {
     expect(treeProps(undefined)).toEqual({ state: "loading" })
-    expect(treeProps({ key: "k", state: "loading", paths: [], truncated: false, message: null })).toEqual({
+    expect(treeProps({ key: "k", repoId: "github/o/n", state: "loading", paths: [], truncated: false, message: null })).toEqual({
       state: "loading",
     })
     expect(fileProps(undefined)).toEqual({ state: "loading" })
-    expect(fileProps({ key: "k", state: "loading", contents: null, size: null, message: null })).toEqual({
+    expect(fileProps({ key: "k", repoId: "github/o/n", state: "loading", contents: null, size: null, message: null })).toEqual({
       state: "loading",
     })
   })
 
   test("a ready list, and a file as text, binary or too large", () => {
-    expect(treeProps({ key: "k", state: "ready", paths: ["a"], truncated: true, message: null })).toEqual({
+    expect(treeProps({ key: "k", repoId: "github/o/n", state: "ready", paths: ["a"], truncated: true, message: null })).toEqual({
       state: "ready",
       paths: ["a"],
       truncated: true,
     })
-    expect(fileProps({ key: "k", state: "text", contents: "hi", size: 2, message: null })).toEqual({
+    expect(fileProps({ key: "k", repoId: "github/o/n", state: "text", contents: "hi", size: 2, message: null })).toEqual({
       state: "text",
       contents: "hi",
       size: 2,
     })
-    expect(fileProps({ key: "k", state: "text", contents: null, size: null, message: null })).toEqual({
+    expect(fileProps({ key: "k", repoId: "github/o/n", state: "text", contents: null, size: null, message: null })).toEqual({
       state: "text",
       contents: "",
       size: 0,
     })
-    expect(fileProps({ key: "k", state: "binary", contents: null, size: 9, message: null })).toEqual({
+    expect(fileProps({ key: "k", repoId: "github/o/n", state: "binary", contents: null, size: 9, message: null })).toEqual({
       state: "binary",
       size: 9,
     })
-    expect(fileProps({ key: "k", state: "too-large", contents: null, size: null, message: null })).toEqual({
+    expect(fileProps({ key: "k", repoId: "github/o/n", state: "too-large", contents: null, size: null, message: null })).toEqual({
       state: "too-large",
       size: 0,
     })
   })
 
   test("a failed load carries its message", () => {
-    expect(treeProps({ key: "k", state: "failed", paths: [], truncated: false, message: "Busy" })).toEqual({
+    expect(treeProps({ key: "k", repoId: "github/o/n", state: "failed", paths: [], truncated: false, message: "Busy" })).toEqual({
       state: "failed",
       message: "Busy",
     })
-    expect(treeProps({ key: "k", state: "failed", paths: [], truncated: false, message: null })).toEqual({
+    expect(treeProps({ key: "k", repoId: "github/o/n", state: "failed", paths: [], truncated: false, message: null })).toEqual({
       state: "failed",
       message: "",
     })
-    expect(fileProps({ key: "k", state: "failed", contents: null, size: null, message: "Gone" })).toEqual({
+    expect(fileProps({ key: "k", repoId: "github/o/n", state: "failed", contents: null, size: null, message: "Gone" })).toEqual({
       state: "failed",
       message: "Gone",
     })
-    expect(fileProps({ key: "k", state: "failed", contents: null, size: null, message: null })).toEqual({
+    expect(fileProps({ key: "k", repoId: "github/o/n", state: "failed", contents: null, size: null, message: null })).toEqual({
       state: "failed",
       message: "",
     })
@@ -143,7 +143,7 @@ describe("codeEmptyOf", () => {
 
 describe("headerOf", () => {
   test("About missing offers no clone or sign-in action, even before the repositories shape answers", () => {
-    const about: AboutRow = { key: "github/o/n", state: "missing", about: null, message: "Not found" }
+    const about: AboutRow = { key: "github/o/n", repoId: "github/o/n", state: "missing", about: null, message: "Not found" }
     for (const answered of [false, true]) {
       for (const signedIn of [true, false, null]) {
         expect(headerOf(undefined, undefined, signedIn, answered, about)).toEqual({ kind: "missing" })
@@ -255,7 +255,7 @@ describe("commitOf", () => {
 
 describe("the picker", () => {
   test("refs as the picker takes them: loading, ready or failed", () => {
-    const row = { key: "k", branches: [{ name: "main", sha: SHA }], tags: [], truncated: true, message: null }
+    const row = { key: "k", repoId: "github/o/n", branches: [{ name: "main", sha: SHA }], tags: [], truncated: true, message: null }
     expect(refsProps(undefined)).toEqual({ state: "loading" })
     expect(refsProps({ ...row, state: "loading" })).toEqual({ state: "loading" })
     expect(refsProps({ ...row, state: "ready" })).toEqual({
@@ -281,6 +281,7 @@ describe("fileLinksOf", () => {
   const view = { owner: "octocat", name: "Spoon-Knife", sha: SHA, path: "docs/a b.md" }
   const blob = (fields: Partial<BlobRow>): BlobRow => ({
     key: "k",
+    repoId: "github/octocat/spoon-knife",
     state: "text",
     contents: "x",
     size: 1,
@@ -339,6 +340,7 @@ const about = (fields: Partial<About> = {}): About => ({
 
 const aboutRow = (state: AboutRow["state"], value: About | null = null): AboutRow => ({
   key: "github/octocat/spoon-knife",
+  repoId: "github/octocat/spoon-knife",
   state,
   about: value,
   message: null,
@@ -415,6 +417,7 @@ describe("the first visit: what GitHub says, before and after a clone", () => {
   test("branch and tag counts: the clone's own once its refs loaded whole, else GitHub's; commits only GitHub's", () => {
     const refs = (fields: Partial<RefsRow> = {}): RefsRow => ({
       key: "k",
+      repoId: "github/o/n",
       state: "ready",
       branches: [{ name: "main", sha: "a".repeat(40) }],
       tags: [],
@@ -443,9 +446,10 @@ describe("the first visit: what GitHub says, before and after a clone", () => {
 })
 
 describe("generated files", () => {
-  const text = (contents: string): BlobRow => ({ key: "k", state: "text", contents, size: contents.length, message: null })
+  const text = (contents: string): BlobRow => ({ key: "k", repoId: "github/o/n", state: "text", contents, size: contents.length, message: null })
   const tree: TreeRow = {
     key: "t",
+    repoId: "github/o/n",
     state: "ready",
     paths: ["docs/api.md", "src/api.ts", ".smithers/flows/docs/build/flow.ts"],
     truncated: false,
@@ -475,7 +479,7 @@ describe("generated files", () => {
     expect(generatedLinksFor({ ...view, revision: null }, repository({ defaultBranch: null }), "x", "@generated", undefined, tree))
       .toEqual({ sources: [] })
     // A manifest still loading, or read without its text, marks nothing yet.
-    const loading: BlobRow = { key: "k", state: "loading", contents: null, size: null, message: null }
+    const loading: BlobRow = { key: "k", repoId: "github/o/n", state: "loading", contents: null, size: null, message: null }
     expect(generatedLinksFor(view, repository(), "docs/api.md", "# API", loading, tree)).toBeUndefined()
     expect(generatedLinksFor(view, repository(), "docs/api.md", "# API", { ...manifest, contents: null }, tree)).toBeUndefined()
   })
@@ -598,7 +602,7 @@ describe("what the page shows", () => {
 })
 
  test("only a confirmed absent file shows the missing-file recovery", () => {
-  const row: BlobRow = { key: "file", state: "failed", contents: null, size: null, message: "Not found" }
+  const row: BlobRow = { key: "file", repoId: "github/o/n", state: "failed", contents: null, size: null, message: "Not found" }
   expect(missingFileOf("blob", row)).toBe(true)
   expect(missingFileOf("tree", row)).toBe(false)
   expect(missingFileOf("blob", undefined)).toBe(false)
@@ -615,7 +619,7 @@ describe("what the page shows", () => {
 })
 
  test("a tree URL naming a confirmed file redirects without guessing absent paths", () => {
-  const tree: TreeRow = { key: "tree", state: "ready", paths: ["README.md", "docs/a b.md"], truncated: false, message: null }
+  const tree: TreeRow = { key: "tree", repoId: "github/o/n", state: "ready", paths: ["README.md", "docs/a b.md"], truncated: false, message: null }
   expect(directoryFileOf("tree", "README.md", tree)).toBe(true)
   expect(directoryFileOf("tree", "docs/a b.md", { ...tree, truncated: true })).toBe(true)
   expect(directoryFileOf("tree", "docs", tree)).toBe(false)

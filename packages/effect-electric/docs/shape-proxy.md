@@ -204,7 +204,7 @@ clause or a parameter value.
   Electric, with `secret=REDACTED` in `url.full`.
 - **Log line.** One line per request, once its body has ended, with the message
   `name` and the annotations `route` (the fixed shape name), `upstream`, `correlationId`, `statusClass`, `status`, `live`, `durationMs`, `bytes` and
-  `outcome`. `outcome` is `complete`, `aborted`
+  `outcome`, plus `reason` on 503 responses. `outcome` is `complete`, `aborted`
   (the browser went away: status 499 before Electric answered, else mid-body)
   or `failed` (Electric's body broke off). The level is Error for a 5xx or a
   failed body, Warn for another 4xx, and Info otherwise, an aborted request
@@ -212,6 +212,7 @@ clause or a parameter value.
 - **Count.** One count on `metric`, by `status` and `live` as strings. The
   default is `ShapeProxy.defaultMetric`, `electric_shape_requests`. `ShapeProxy.responses`
   also counts every response as `electric_shape_responses{name,statusClass}`.
+  Both counters add `reason` on 503 responses; other statuses have no reason attribute.
 
 The proxy generates `correlationId` from its server span id and returns it as `x-request-id`; it never trusts a browser-supplied id. `upstream` identifies the boundary that answered: `electric`, `database` for a host-declared dependency failure, `access` for other access outcomes, or `proxy` for a method refusal. It does not guess which internal Electric dependency failed.
 
@@ -240,7 +241,23 @@ The proxy sends its generated span id as `x-request-id` to its upstream, matchin
 
 Bodyless upstream answers retain their status and headers and record a complete response with zero bytes. A bodyless 503 remains a retryable HTTP refusal; a stream that breaks while reading still records a failure.
 
-For a JSON `rowAccess` guard whose authorization can change during a poll, provide `rowAccess.validate` to prepare one current authorization snapshot after the upstream body is buffered and before `allows` evaluates any value. The snapshot can populate the subject set used by `allows`; validation runs once per buffered poll. A false result or failed check returns 503 with Retry-After: 1 and no upstream handle, offset, cursor or body. The client retries its original cursor instead of acknowledging inserts the stale guard withheld. A superseded decision records `upstream: access`, `outcome: superseded`; a failed check records `outcome: failed`. Repeated confirmations of the same decision should validate successfully.
-
+For a JSON `rowAccess` guard whose authorization can change during a poll, provide `rowAccess.validate` to prepare one current authorization snapshot after the upstream body is buffered and before `allows` evaluates any value. The snapshot can populate the subject set used by `allows`; validation runs once per buffered poll, including bodyless 204/205/304 responses. In particular, an idle 204 live response must still let a host reconcile suppressed membership; otherwise restored authority cannot produce the insert needed to wake the subscriber. Bodyless polls apply the same failure and cursor fences, without calling `allows`. A false result or failed check returns 503 with Retry-After: 1 and no upstream handle, offset, cursor or body. The client retries its original cursor instead of acknowledging inserts the stale guard withheld. A superseded decision records `upstream: access`, `outcome: superseded`; a failed check records `outcome: failed`. Repeated confirmations of the same decision should validate successfully.
 
 When a denied value remains stored without a projection transition that will replay it, provide `retryIfDenied(value)`. It runs only for denied insert/update values, against the snapshot prepared by `validate`. If any returns true, the proxy answers private no-store 503 with Retry-After: 1 and no body or Electric cursor headers, preserving the caller's original cursor. Deletes still reduce to keys and never request replay. Ordinary skips retain cursor progress. This callback performs no extra authority read.
+
+Every 503 has one closed `reason` in its completion log and both counters:
+
+| Reason                 | Existing refusal path                                                                 |
+| ---------------------- | ------------------------------------------------------------------------------------- |
+| `sse_refused`          | A row-access guard refuses live SSE.                                                  |
+| `shape_refused`        | The host's shape Effect fails with `Refused` status 503; its retry-after is retained. |
+| `electric_unavailable` | Electric returns 401, 403, or a redirect other than 304.                              |
+| `electric_503`         | Electric itself returns 503, including a bodyless response.                           |
+| `validate_failed`      | The buffered row-access validation Effect fails.                                      |
+| `validate_superseded`  | That validation returns false.                                                        |
+| `replay_required`      | A denied row's `retryIfDenied` requires replay.                                       |
+
+Other statuses carry no reason. Validation logs inherit the proxy's `correlationId`,
+so the host can join its refusal details to the completion line and `x-request-id`.
+Reasons never contain URLs, parameters, rows, bodies, header values or tokens;
+correlation IDs remain log fields, never metric attributes.

@@ -82,3 +82,9 @@ export * as HostSuite from "./HostSuite.ts"
 
 /** @since 0.0.0 @category assertions */
 export * as ScoreGate from "./ScoreGate.ts"
+
+/** @since 1.0.0 @category testing */
+export * as RealCliDriver from "./RealCliDriver.ts"
+
+/** @since 1.0.0 @category testing */
+export * as TerminalRecording from "./TerminalRecording.ts"

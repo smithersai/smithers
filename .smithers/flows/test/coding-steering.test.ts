@@ -3,7 +3,6 @@ import * as Control from "@smthrs/control/Control"
 import { RunNotFound } from "@smthrs/control/ControlError"
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import * as ControlRuntime from "@smthrs/control/ControlRuntime"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, HumanTask, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
@@ -58,7 +57,7 @@ const controlLayer = ControlRuntime.layerMemory({
     executionDigest: "sha256:fixture",
     envelope: { capabilities: [], flows: [], budget: {} }
   }))
-}).pipe(Layer.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+}).pipe(Layer.provide(NodeCrypto.layer))
 
 const launch = (control: ControlRuntime.Service, flowId = "coding/request") =>
   Effect.gen(function*() {
@@ -611,7 +610,7 @@ test("actual feedback action needs a proved owner and retains attributed overflo
         Layer.provideMerge(FlowEngine.layerMemory),
         Layer.provide(Layer.succeed(NotificationQueue.NotificationQueue, queue)),
         Layer.provide(identity === undefined ? Layer.empty : Layer.succeed(ModuleOwner, identity)),
-        Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+        Layer.provideMerge(NodeCrypto.layer)
       )
     )
   for (const identity of [undefined, { rootId: owner.runId, flowId: "other" }]) {
@@ -819,7 +818,7 @@ test("TODO feedback actions consume messages admitted through the control door",
       Layer.provideMerge(FlowEngine.layerMemory),
       Layer.provide(Layer.succeed(NotificationQueue.NotificationQueue, queue)),
       Layer.provide(Layer.succeed(ModuleOwner, { rootId: owner.runId, flowId: "todo" })),
-      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+      Layer.provideMerge(NodeCrypto.layer)
     )
   )
   t.after(() => runtime.dispose())
@@ -946,7 +945,7 @@ test("a TODO steer sent during one atom's model turn reaches the next atom's fir
         Layer.provideMerge(FlowEngine.layerMemory),
         Layer.provide(Layer.succeed(NotificationQueue.NotificationQueue, routed!)),
         Layer.provide(Layer.succeed(ModuleOwner, { rootId: owner.runId, flowId })),
-        Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+        Layer.provideMerge(NodeCrypto.layer)
       )
     )
     t.after(() => runtime.dispose())
@@ -1110,7 +1109,7 @@ test(
           Layer.provideMerge(FlowEngine.layerMemory),
           Layer.provide(Layer.succeed(NotificationQueue.NotificationQueue, routed!)),
           Layer.provide(Layer.succeed(ModuleOwner, { rootId: owner.runId, flowId })),
-          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+          Layer.provideMerge(NodeCrypto.layer)
         )
       )
       t.after(() => runtime.dispose())
@@ -1201,7 +1200,7 @@ test(
         Layer.provideMerge(FlowEngine.layerMemory),
         Layer.provide(Layer.succeed(NotificationQueue.NotificationQueue, queue!)),
         Layer.provide(Layer.succeed(ModuleOwner, { rootId: owner.runId, flowId: "todo" })),
-        Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+        Layer.provideMerge(NodeCrypto.layer)
       )
     )
     t.after(() => runtime.dispose())

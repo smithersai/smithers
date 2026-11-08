@@ -3,7 +3,7 @@ title: "The Smithers Cloud-hosted cache"
 description: "Zero-configuration cache discovery from a Smithers Cloud remote, the committed public read token, and how publishing stays credentialed."
 ---
 
-> **Coming soon.** Smithers Cloud has not been released yet. This page describes the interface ahead of general availability; nothing here is reachable on a public account today.
+> **Coming soon.** This is a planned cache interface, not evidence of a deployed cache route. The current default origin is `https://smithers.sh`; the retired `api.jjhub.tech` origin is no longer the default. A healthy app on that origin does not imply its build-cache routes are available. Set `apiBase` or `SMITHERS_CLOUD_API_URL` for a deployment that implements this interface.
 
 Smithers Cloud hosts a build cache for every repository it serves. It
 speaks the same `/ac` and `/cas` protocol as `build.smithers.sh` and the

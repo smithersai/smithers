@@ -1,5 +1,6 @@
 import { Context, type Duration, Effect, Layer } from "effect"
 import { HttpClient } from "effect/http"
+import { CONFIRM_401_HEADER, sessionCheckOf } from "../auth/contract"
 
 /** A question for `POST /api/questions` (docs/features/chat.md#post-apiquestions). */
 export type Question = {
@@ -32,6 +33,7 @@ schema Existing { readonly txid: null; readonly existing: true }
 export class QuestionNotTaken extends Data.TaggedError("QuestionNotTaken")<{
   readonly reason: "unreachable" | "refused" | "invalid_response"
   readonly status?: number
+  readonly sessionCheck?: "same_person"
 }> {}
 
 /**
@@ -48,7 +50,7 @@ export const postQuestion = effect (
       const client = try HttpClient.HttpClient
       return try (effect {
         const response = try (client
-          .execute(HttpClientRequest.post(url).pipe(HttpClientRequest.bodyJsonUnsafe(question)))
+          .execute(HttpClientRequest.post(url).pipe(HttpClientRequest.bodyJsonUnsafe(question), HttpClientRequest.setHeader(CONFIRM_401_HEADER, "1")))
           |> Effect.mapError(%, () => new QuestionNotTaken({ reason: "unreachable" })))
         try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
         if (response.status === 200) {
@@ -58,7 +60,8 @@ export const postQuestion = effect (
           return { _tag: "existing" } satisfies Taken
         }
         if (response.status !== 202) {
-          throw new QuestionNotTaken({ reason: "refused", status: response.status })
+          const sessionCheck = try Effect.orDie(Effect.try({ try: () => sessionCheckOf(response.headers), catch: (e) => e }))
+          throw new QuestionNotTaken({ reason: "refused", status: response.status, ...sessionCheck })
         }
         HttpClientResponse.schemaBodyJson(Inserted)(response) catch effect () => {
           throw new QuestionNotTaken({ reason: "invalid_response", status: 202 })

@@ -558,10 +558,13 @@ export const make = <
       // Inside the job's own execution it also clears the generation its rollback would stop; in `cancel:<key>` there
       // is no rollback to clear.
       Cancel.toLayer((job) =>
-        Effect.tap(operations.cancel(job.handle, keyOf(job)), () =>
-          Effect.map(Effect.serviceOption(active), (value) => {
-            if (Option.isSome(value)) value.value.current = undefined
-          }))
+        Effect.tap(
+          operations.cancel(job.handle, keyOf(job)),
+          () =>
+            Effect.map(Effect.serviceOption(active), (value) => {
+              if (Option.isSome(value)) value.value.current = undefined
+            })
+        )
       ),
       Fail.toLayer(({ job, timedOut }) =>
         Effect.fail(

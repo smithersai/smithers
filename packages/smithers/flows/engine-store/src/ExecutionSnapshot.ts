@@ -125,14 +125,17 @@ export const make = (): Effect.Effect<Service, never, SqlClient.SqlClient> =>
             Schema.Array(Read.Identifier).check(Schema.isMaxLength(maximumBatchSize)),
             runIds
           )
-          const batch = yield* Dialect.readTransaction(
+          const batch = yield* Read.transaction(
             sql,
             Effect.gen(function*() {
               const at = yield* Read.position(sql)
               if (ids.length === 0) return { ...at, snapshots: [] }
+              const columns = yield* Dialect.columns(sql, "flows_runs")
               const rows = yield* Dialect.query(
                 sql,
-                `SELECT ${Read.selectColumns} FROM flows_runs r
+                `SELECT ${
+                  Read.selectColumns(sql, columns.some((column) => column.name === "waiting_request"))
+                } FROM flows_runs r
             LEFT JOIN flows_run_changes c ON c.run_id = r.run_id
             WHERE r.run_id IN (${ids.map(() => "?").join(",")})`,
                 ids

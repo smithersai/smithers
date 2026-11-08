@@ -22,8 +22,8 @@ const session = async () => {
   const session = crypto.randomUUID()
   const alias = crypto.randomUUID()
   await sql(`INSERT INTO people (id, github_id, github_login) VALUES ('${person}', 1234, 'stack-person')`)
-  await sql(`INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, expires_at)
-    VALUES ('${session}', 'digest-${session}', '${person}', 'admin', now(), now() + interval '1 day')`)
+  await sql(`INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, role_verified_at, expires_at)
+    VALUES ('${session}', 'digest-${session}', '${person}', 'admin', now(), now(), now() + interval '1 day')`)
   await sql(`INSERT INTO host_sessions (id, token_digest, parent_id, host)
     VALUES ('${alias}', 'digest-${alias}', '${session}', 'alias.example.test')`)
   const actor: Actor = { subject: { kind: "person", id: person }, role: "admin", session, alias }
@@ -43,8 +43,10 @@ test("the final stack transaction checks session authority without adding read q
     expect((await h.fetch(todoStatusRoute("octo", "hello", 1))).status).toBe(404)
     reads.push(clients() - before)
   }
-  expect(counts.map((count) => count - counts[0]!)).toEqual([0, 2, 3])
-  expect(reads).toEqual([reads[0], reads[0], reads[0]])
+  // Main's request-time role revalidation is one query. Writes additionally lock/check the session (and alias)
+  // and check the final deadline; none of those transaction checks runs on a read.
+  expect(counts.map((count) => count - counts[0]!)).toEqual([0, 4, 5])
+  expect(reads.map(count => count - reads[0]!)).toEqual([0, 1, 1])
 })
 
 const endings = ["session", "alias", "expiry"] as const
@@ -102,8 +104,7 @@ test.each(cases)("$op refuses $ending ending during $stage, including receipt di
   const response = await send(h, body)
   expect(ended).toBe(true)
   expect(refreshed).toBe(stage === "refresh")
-  expect([response.status, await response.json()]).toEqual(stage === "refresh"
-    ? [503, { code: "unavailable" }] : [403, { code: "forbidden" }])
+  expect([response.status, await response.json()]).toEqual([503, { code: "unavailable" }])
   expect(await snapshot()).toEqual(before)
   expect(host.started).toEqual(starts)
   expect(host.stopped).toEqual(stops)
@@ -124,7 +125,7 @@ test.each(endings)("retry refuses $ending ending during the remote status wait",
   }) } })
   const response = await send(h, { opId: crypto.randomUUID(), op: "retry", number: 1 })
   expect(probed).toBe(true)
-  expect([response.status, await response.json()]).toEqual([403, { code: "forbidden" }])
+  expect([response.status, await response.json()]).toEqual([503, { code: "unavailable" }])
   expect(await snapshot()).toEqual(before)
   expect(host.started).toHaveLength(1)
   expect(host.stopped).toEqual([])

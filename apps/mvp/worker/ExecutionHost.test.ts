@@ -6,10 +6,10 @@ import * as Pg from "@effect/sql-pg"
 import { Action, Flow, Interpreter, WaitFor } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { Context, Deferred, Duration, Effect, Fiber, Layer, Logger, Metric, Redacted, Schema } from "effect"
+import { ConfigProvider, Context, Deferred, Duration, Effect, Fiber, Layer, Logger, Metric, Redacted, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
-import { describe, expect, test } from "vitest"
+import { describe, expect, onTestFailed, onTestFinished, test } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import * as ExecutionHost from "./ExecutionHost.ts"
 import * as Flows from "./Flows.vibe"
@@ -23,9 +23,11 @@ import { awaitPullClosed } from "./flows/TodoWait.ts"
 import * as RecheckRole from "./flows/RecheckRole.ts"
 import * as RepoClone from "./flows/RepoClone.vibe"
 import * as RepoRefresh from "./flows/RepoRefresh.ts"
+import * as ReplacedTokens from "./flows/RevokeReplacedGitHubToken.ts"
 import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.ts"
 import * as SpendAlert from "./flows/SpendAlert.ts"
 import * as SessionKeys from "./SessionKeys.ts"
+import * as RunnerAdmin from "./runners/AdminFlows.ts"
 import { DEVICE_PERSON_HEADER, type SessionState } from "../src/features/auth/contract.ts"
 import { cloneExecutionId } from "../src/features/repo/contract.ts"
 import * as Repos from "./Repos.ts"
@@ -46,7 +48,16 @@ import * as ModelFlows from "./personal/ModelFlows.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
 import * as TerminalOpen from "./flows/TerminalOpen.ts"
 import { openExecutionId } from "../src/features/terminal/contract.ts"
-import { cookie, SECRET, signInHarness } from "./test/signIn.ts"
+import { configured, cookie, SECRET, signInHarness } from "./test/signIn.ts"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import { digestSync } from "@smthrs/crypto"
+import * as SessionStore from "./SessionStore.ts"
+import * as GitHubWrite from "./github/Write.ts"
+import * as GitHubStore from "./github/Store.ts"
+import * as TriageStore from "./github/TriageStore.ts"
+import * as SecretStore from "./secrets/Store.ts"
+import { TokenUnavailable } from "./github/Tokens.ts"
+import * as ProtectedAuthority from "./ProtectedAuthority.ts"
 
 // The app's own tables, for sign-in's role check (`auth/RecheckRole`) and `chat/Expire`, on a schema of this file's.
 const app = testFile("execution_host")
@@ -109,6 +120,160 @@ const status = (sql: SqlClient.SqlClient, schema: string, executionId: string) =
   ).pipe(Effect.map((rows) => rows[0]?.status))
 
 describe("ExecutionHost over the compose Postgres", () => {
+  test("configured role window reaches request authorization without runtime Config", async () => {
+    const auth = await signInHarness(app, { config: { ...configured, ROLE_RECHECK_MINUTES: "5" } })
+    auth.github.permission = "admin"
+    const signed = await auth.signInAs()
+    expect(signed.response.status).toBe(303)
+    const state = await auth.session(signed.cookies) as SessionState
+    expect(state.signedIn).toBe(true)
+    if (!state.signedIn || typeof state.personId !== "string") throw new Error("sign-in did not produce an owned session")
+    onTestFinished(async () => { await app.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql`DELETE FROM sessions WHERE person_id = ${state.personId}`)) })
+    const [session] = await app.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql<{ id: string }>`UPDATE sessions
+      SET role_verified_at = clock_timestamp() - interval '10 minutes' WHERE person_id = ${state.personId} RETURNING id`))
+    const authority = { personId: state.personId, sessionId: session!.id, cookieKey: "legacy", scope: { _tag: "Deployment" as const } }
+    const check = () => app.runPromise(ProtectedAuthority.check(authority, ["admin"]).pipe(Effect.provide(auth.sessions),
+      Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({}))))
+    expect(await check()).toBe("unavailable")
+    await app.runPromise(Effect.gen(function* () {
+      yield* SessionStore.setRole(session!.id, "admin", yield* SessionStore.roleObservation, 0)
+    }))
+    expect(await check()).toBe("held")
+  })
+
+  test.each(["triage/enable", "triage/pause"].flatMap(op => ["admin", "member"].map(role => ({ op, role }))))(
+    "configured role window keeps $op with expired $role authority pending without runtime Config", async ({ op, role }) => {
+      let phase = "setup"
+      onTestFailed(() => { console.error("configured-role-window", { op, role, phase }) })
+      const services = await appServices()
+      const person = crypto.randomUUID(), session = crypto.randomUUID(), writeId = crypto.randomUUID()
+      onTestFinished(async () => { await app.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql`DELETE FROM sessions WHERE id = ${session}`)) })
+      const repoId = `github/host-window/${crypto.randomUUID()}`
+      const authority = { personId: person, sessionId: session, cookieKey: "legacy", scope: { _tag: "Deployment" as const } }
+      const payload = op === "triage/enable" ? { op: "triage/enable" as const, dailyTokens: 20, authority }
+        : { op: "triage/pause" as const, authority }
+      await app.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => Effect.gen(function* () {
+        yield* sql`INSERT INTO people (id, github_id, github_login) VALUES (${person}, ${Math.floor(Math.random() * 1e9)}, 'window-person')`
+        yield* sql`INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, role_verified_at, expires_at)
+          VALUES (${session}, ${session}, ${person}, ${role}, clock_timestamp(), clock_timestamp() - interval '10 minutes', clock_timestamp() + interval '1 day')`
+        yield* TriageStore.enable(repoId, { actorId: person, login: null, dailyTokens: 10 })
+        yield* GitHubStore.insertWrite({ id: writeId, repoId, actorId: person, sessionId: session, via: "person", payload,
+          payloadHash: digestSync(JSON.stringify(payload)) })
+      })))
+      const roleFreshMs = await Effect.runPromise(SessionStore.roleFreshMs.pipe(
+        Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({ ROLE_RECHECK_MINUTES: "5" }))))
+      expect(roleFreshMs).toBe(300_000)
+      const http = await Effect.runPromise(HttpClient.HttpClient.pipe(Effect.provide(FetchHttpClient.layer)))
+      let tokenCalls = 0
+      const unavailable = () => Effect.andThen(Effect.sync(() => tokenCalls++), new TokenUnavailable({ reason: "unavailable" }))
+      await withSchema(({ name, url }) => Effect.gen(function* () {
+        const object = memory()
+        const options = { hostId: `window-${writeId}`, database: ExecutionHost.database(url, name), signingKeyIds: ["legacy"],
+          roleFreshMs, router: recording().router, driveBudgetMs: 5_000,
+          flows: { flows: [GitHubWrite.Write], registration: GitHubWrite.registration({ database: services.database, http,
+            tokens: { forSession: unavailable, forInstallation: unavailable }, apiBaseUrl: "http://127.0.0.1:1", appLogin: "unavailable", mayAct: () => true }) } }
+        const host = ExecutionHost.make(object.storage, options)
+        yield* host.start(yield* ExecutionHost.intent(GitHubWrite.Write, { executionId: writeId, payload: { writeId } }))
+        phase = "expired authority drive"
+        expect(["Yielded", "Parked"]).toContain((yield* host.alarm())._tag)
+        phase = "pending state and fresh role"
+        yield* Effect.promise(() => app.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => Effect.gen(function* () {
+          expect(yield* sql`SELECT status, failure, settled_at FROM github_writes WHERE id = ${writeId}`)
+            .toEqual([{ status: "pending", failure: null, settled_at: null }])
+          expect(yield* sql`SELECT paused, daily_tokens::int FROM triage_settings WHERE repo_id = ${repoId}`)
+            .toEqual([{ paused: false, daily_tokens: 10 }])
+          yield* SessionStore.setRole(session, "admin", yield* SessionStore.roleObservation, 0)
+        }))))
+        // Retried actions use database time. Keep the host clock live while those durable retry deadlines elapse.
+        phase = "fresh authority recovery"
+        let outcome = yield* host.alarm()
+        for (let drives = 1; outcome._tag !== "Settled" && drives < 3; drives++) outcome = yield* host.alarm()
+        expect(outcome._tag).toBe("Settled")
+        phase = "recovered"
+      }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({}))))
+      expect(await app.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql`SELECT status FROM github_writes WHERE id = ${writeId}`)))
+        .toEqual([{ status: "done" }])
+      expect(tokenCalls).toBe(0)
+    }, 30_000,
+  )
+
+  test.each(["put", "delete"] as const)("configured role window refuses secret %s without runtime Config", async op => {
+    const services = await appServices()
+    const person = crypto.randomUUID(), session = crypto.randomUUID(), executionId = crypto.randomUUID()
+    onTestFinished(async () => { await app.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql`DELETE FROM sessions WHERE id = ${session}`)) })
+    const repoId = `github/host-window/${crypto.randomUUID()}`
+    const authority = { personId: person, sessionId: session, cookieKey: "legacy", scope: { _tag: "Deployment" as const } }
+    await app.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => Effect.gen(function* () {
+      yield* sql`INSERT INTO people (id, github_id, github_login) VALUES (${person}, ${Math.floor(Math.random() * 1e9)}, 'window-person')`
+      yield* sql`INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, role_verified_at, expires_at)
+        VALUES (${session}, ${session}, ${person}, 'admin', clock_timestamp(), clock_timestamp() - interval '10 minutes', clock_timestamp() + interval '1 day')`
+      yield* SecretStore.put({ repoId, name: "EXAMPLE", ciphertext: "sealed-fixture", nonce: "fixture", keyVersion: 1,
+        hosts: ["before.test"], methods: undefined, actorId: person, invocationKey: crypto.randomUUID() })
+    })))
+    const roleFreshMs = await Effect.runPromise(SessionStore.roleFreshMs.pipe(
+      Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({ ROLE_RECHECK_MINUTES: "5" }))))
+    await withSchema(({ name, url }) => Effect.gen(function* () {
+      const options = { hostId: `window-${executionId}`, database: ExecutionHost.database(url, name), signingKeyIds: ["legacy"],
+        roleFreshMs, router: recording().router, driveBudgetMs: 5_000,
+        flows: ExecutionHost.withSecrets(ExecutionHost.remote(services), services.database) }
+      const host = ExecutionHost.make(memory().storage, options)
+      const payload = { repoId, name: "EXAMPLE", actorId: person, authority }
+      yield* host.start(op === "delete"
+        ? yield* ExecutionHost.intent(SecretFlows.Delete, { executionId, payload })
+        : yield* ExecutionHost.intent(SecretFlows.Put, { executionId, payload: { ...payload,
+          sealed: { ciphertext: "sealed-fixture", nonce: "fixture" }, keyVersion: 1, hosts: ["after.test"] } }))
+      expect((yield* host.alarm())._tag).toBe("Settled")
+    }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({}))))
+    expect(await app.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql`SELECT hosts FROM secrets WHERE repo_id = ${repoId}`)))
+      .toEqual([{ hosts: ["before.test"] }])
+    expect(await app.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => sql`SELECT action FROM secret_events WHERE repo_id = ${repoId}`)))
+      .toEqual([{ action: "set" }])
+  })
+
+  test.each(["home", "alias", "removed key"] as const)("the production host retains captured signing keys for %s writes without ambient Config", async boundary => {
+    const services = await appServices()
+    const person = crypto.randomUUID(), session = crypto.randomUUID(), alias = boundary === "alias" ? crypto.randomUUID() : undefined
+    const executionId = crypto.randomUUID()
+    let stage = "seed"
+    onTestFailed(() => console.error("execution.signing_keys", { boundary, stage }))
+    try {
+      await app.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => Effect.gen(function* () {
+        yield* sql`INSERT INTO people (id, github_id, github_login) VALUES (${person}, ${Math.floor(Math.random() * 1e9)}, 'host-person')`
+        yield* sql`INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, role_verified_at, expires_at, cookie_key)
+          VALUES (${session}, ${session}, ${person}, 'admin', clock_timestamp(), clock_timestamp(), clock_timestamp() + interval '1 day', 'next')`
+        if (alias !== undefined) yield* sql`INSERT INTO host_sessions (id, token_digest, parent_id, host, cookie_key)
+          VALUES (${alias}, ${alias}, ${session}, 'chat.test', 'next')`
+      })))
+      stage = "host"
+      await withSchema(({ name, url }) => Effect.gen(function* () {
+        const options = { hostId: `keys-${executionId}`, database: ExecutionHost.database(url, name), driveBudgetMs: 5_000,
+          flows: ExecutionHost.withRunners(ExecutionHost.remote(services), services.database),
+          signingKeyIds: boundary === "removed key" ? ["legacy"] : ["next"], router: recording().router }
+        const host = ExecutionHost.make(memory().storage, options)
+        yield* host.start(yield* ExecutionHost.intent(RunnerAdmin.AddRunner, { executionId, payload: {
+          repoId: "github/host/keys", name: `key-${boundary.replaceAll(" ", "-")}`, tokenSha256: SessionKeys.digest(executionId),
+          labels: [], capacity: 1, actorId: person, repoAuthorized: true,
+          fence: { execution: executionId, expiresAt: Date.now() + 60_000, generation: 0,
+            authority: { _tag: "Session", personId: person, sessionId: session, ...(alias === undefined ? {} : { alias }), cookieKey: "next" } },
+        } }))
+        stage = "alarm"
+        expect((yield* host.alarm())._tag).toBe("Settled")
+      }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({}))))
+      stage = "receipt"
+      expect(await app.runPromise(Effect.flatMap(SqlClient.SqlClient, sql =>
+        sql`SELECT outcome FROM admin_receipts WHERE execution = ${executionId}`)))
+        .toEqual([{ outcome: boundary === "removed key" ? "authorization_expired" : "set" }])
+    } finally {
+      await app.runPromise(Effect.flatMap(SqlClient.SqlClient, sql => Effect.gen(function* () {
+        yield* sql`DELETE FROM runners WHERE added_by = ${person}`
+        yield* sql`DELETE FROM runner_changes WHERE changed_by = ${person}`
+        yield* sql`DELETE FROM admin_receipts WHERE actor_id = ${person}`
+        yield* sql`DELETE FROM sessions WHERE person_id = ${person}`
+        yield* sql`DELETE FROM people WHERE id = ${person}`
+      })))
+    }
+  })
+
   test("a durable sleep that comes due within the drive's hold finishes in the same alarm, never Undriven", () =>
     withSchema(({ name, sql, url }) =>
       Effect.gen(function* () {
@@ -759,6 +924,9 @@ describe("ExecutionHost over the compose Postgres", () => {
       BugReport.BugReport,
       RecheckRole.RecheckRole,
       RevokeGitHubToken.RevokeGitHubToken,
+      ReplacedTokens.RevokeReplacedGitHubToken,
+      ReplacedTokens.SweepReplacedGitHubTokens,
+      ReplacedTokens.MaintainSessions,
     ])
     await withSchema(({ name, sql, url }) =>
       Effect.gen(function* () {

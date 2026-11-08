@@ -23,6 +23,6 @@ await Effect.runPromise(
       writeFileSync(join(root, "run-id"), receipt.runId)
     }
     writeFileSync(join(root, `host-${process.argv[2]}-ready`), String(process.pid))
-    yield* Effect.never
+    return yield* Effect.never
   }).pipe(Effect.provide(NodeControl.layerControl({ root, evaluator: ScriptedJudge.layer })), Effect.scoped)
 )

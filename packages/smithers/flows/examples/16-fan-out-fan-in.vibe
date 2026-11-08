@@ -12,11 +12,11 @@
  */
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
-import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, type FlowRuntime, Graph, Interpreter } from "@smthrs/flow"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import { Executable, Registry } from "@smthrs/registry"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { Check, Collect, gateBody } from "./16-gate-topology.vibe"
@@ -76,10 +76,10 @@ const start = (
   executable: Executable.Executable,
   target: string,
   executionId: string
-): string!never!(FlowRuntime.FlowRuntime | Crypto.Crypto) =>
+): string!never!(FlowRuntime.FlowRuntime | EffectDigest.Digest) =>
   (executable.flow.execute({ input: { target } }, {
     executionId
-  }) as string!unknown!(FlowRuntime.FlowRuntime | Crypto.Crypto)) |> Effect.orDie(%)
+  }) as string!unknown!(FlowRuntime.FlowRuntime | EffectDigest.Digest)) |> Effect.orDie(%)
 /** What one run of the gate the project declared observed. */
 export interface DiscoveredSummary {
   /** The descriptor name discovery derived from the directory. */

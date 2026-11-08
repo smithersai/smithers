@@ -1,7 +1,7 @@
 import { reloadAfter } from "../../test/reloadTiming"
 import { deviceFrom, type Fixture, prepare } from "../../test/deviceFixture"
 import { deviceRegistry } from "../../device/registry"
-import { RepoStore } from "../repo/store"
+import { replaceRole, RepoStore } from "../repo/store"
 import { RepoClient } from "../repo/api"
 import { role as readRepositoryRole } from "../repo/actions"
 // TODOs on the tab (decision 0016 slice 1, Track A; docs/features/todos.md), driven as React drives them: the TODOs
@@ -27,18 +27,21 @@ import {
   TestChatApi,
 } from "../../test/chatApi"
 import { persistenceFailingOnce } from "../../test/faults"
-import { AuthStore } from "../auth/store"
+import { AuthStore, SESSION } from "../auth/store"
 import { Chat } from "../chat/chat"
 import { ChatStore } from "../chat/store"
 import { Commands } from "../commands/commands"
 import { repoId } from "../repo/contract"
 import { ChangeNotTaken, StackClient } from "./api"
-import { stackPath } from "./contract"
+import { stackPath, stackRoute } from "./contract"
+import { browserSession } from "../../test/browserSession"
+import { CONNECTION } from "../chat/schema"
 import { FlowDispatch } from "../../flows/dispatch"
 import { TodoStatusUnavailable, TodoStepRefused } from "./flows"
 import { pendingActions, sends } from "./metrics"
 import type { Draft, Requested, Sending, Todo, TodoRequest } from "./schema"
 import { IssuesStore } from "../issues/store"
+import { AuthClient } from "../auth/api"
 import { TodosStore } from "./store"
 import { issuesSynced } from "./tab"
 import { Todos } from "./todos"
@@ -129,6 +132,7 @@ const tabOf = async (runtime: App) => {
   const requested = () => queries.requested.toArray as ReadonlyArray<Requested>
   const drafts = () => queries.drafts.toArray as ReadonlyArray<Draft>
   const rows = () => stackRows(REPO_ID, stack().todos, sending(), requested())
+  const { connection } = await runtime.runPromise(Effect.service(ChatStore))
   return {
     runtime,
     todos,
@@ -143,6 +147,8 @@ const tabOf = async (runtime: App) => {
     notSent: () => notSentRows(REPO_ID, requested()),
     access: () => accessFor(REPO_ID, queries.access.toArray),
     view: () => queries.view.toArray[0],
+    /** Whether the page asks its person to sign in to send what it holds. */
+    signIn: () => connection.tanstack.get(CONNECTION)?.signIn === true,
     count: (metric: Metric.Metric<number, Metric.CounterState<number>>, attributes: Record<string, string>) =>
       runtime.runSync(Metric.value(Metric.withAttributes(metric, attributes))).count,
   }
@@ -334,6 +340,37 @@ describe("a commit", () => {
     await tab.runtime.runPromise(Effect.flatMap(ChatStore, (chat) => chat.outbox.retryNow))
     await until(() => expect(tab.rows()).toEqual([expect.objectContaining({ number: 1, title: "Offline commit" })]))
     expect(await sql(tab.api, `SELECT count(*)::int AS n FROM todos`)).toEqual([{ n: 1 }])
+  }, WITHIN)
+
+  test("a commit refused 401 while its person is still signed in is held through a reload, with a sign-in prompt, and numbered once after sign-in", async () => {
+    const opened = await open()
+    const browser = browserSession(maya.subject.id, (request) =>
+      request.method === "POST" && new URL(request.url).pathname === stackRoute(OWNER, NAME))
+    const device = nodeDevice({ agent: opened.api })
+    const first = await another(opened.api, { host: device, transport: browser.transport })
+    await first.actions.open(OWNER, NAME)
+    await first.actions.commit(drafted(first, "Held commit", "Made while the cookie went unread."))
+    // Held: sent again, never Not sent, and the page asks its person to sign in.
+    await until(() => expect(browser.state.refusals).toBeGreaterThan(1))
+    await until(() => expect(first.signIn()).toBe(true))
+    expect(first.count(sends, { op: "commit", outcome: "refused" })).toBe(0)
+    expect(first.rows()).toEqual([expect.objectContaining({ number: null, pending: "requested" })])
+    expect(first.notSent()).toEqual([])
+    // A reload keeps it held.
+    await first.runtime.dispose()
+    const second = await another(opened.api, { host: device, transport: browser.transport })
+    await second.actions.open(OWNER, NAME)
+    await until(() => expect(second.signIn()).toBe(true))
+    expect(second.notSent()).toEqual([])
+    // Signing in again comes back to the page: the commit is sent once, numbered, and the prompt goes.
+    await second.runtime.dispose()
+    browser.state.cookie = "read"
+    const third = await another(opened.api, { host: device, transport: browser.transport })
+    await third.actions.open(OWNER, NAME)
+    await until(() => expect(third.rows()).toEqual([expect.objectContaining({ number: 1, title: "Held commit" })]))
+    expect(await sql(opened.api, `SELECT count(*)::int AS n FROM todos`)).toEqual([{ n: 1 }])
+    expect(browser.state.delivered).toBe(1)
+    expect(third.signIn()).toBe(false)
   }, WITHIN)
 
   test("an answer lost after ChatApi took it: the resend answers the same, and the stack keeps one TODO", async () => {
@@ -562,6 +599,51 @@ describe("from an issue", () => {
     })
   }, WITHIN)
 
+  // The data gate (decision 0110, 2026-11-03): a refused repository's TODOs, prompts, drafts and the issue titles a
+  // draft's picker lists (DraftCard reads `Issues.queries.summariesOf`, the issues' `itemRows`; Astra on b978c783 found it
+  // read them ungated) leave every query the stores expose in the change that hides the repository, before any wipe.
+  test("every query the TODOs expose, and a draft's issue picker, drop a repository's rows in the change that hides it", async () => {
+    const tab = await open()
+    await issue(tab.api, 7, "Private issue", "Private body.")
+    await tab.actions.open(OWNER, NAME)
+    await tab.actions.commit(drafted(tab, "Private title", "Private prompt"))
+    await until(() => expect(tab.stack().todos).toEqual([expect.objectContaining({ number: 1 })]))
+    tab.actions.fromIssue(OWNER, NAME, 7)
+    await until(() => expect(draftsOfRepo(REPO_ID, tab.drafts())).toEqual([expect.objectContaining({ issue: 7 })]))
+    await tab.runtime.runPromise(Effect.flatMap(IssuesStore, (issues) => issues.forRepo(REPO_ID)))
+    const { queries } = tab.todos
+    /** How many rows each exposed query holds, read in the same Effect as `change`, with nothing run between. */
+    const countsAfter = (change: Effect.Effect<unknown>) => tab.runtime.runPromise(Effect.gen(function* () {
+      const picker = (yield* IssuesStore).opened(REPO_ID)!.itemRows.tanstack
+      const exposed = {
+        drafts: queries.drafts, sending: queries.sending, requested: queries.requested,
+        todos: queries.stack(REPO_ID).todos, requests: queries.stack(REPO_ID).requests, picker,
+      }
+      for (const query of Object.values(exposed)) query.startSyncImmediate()
+      yield* change
+      return Object.fromEntries(Object.entries(exposed).map(([name, query]) => [name, query.toArray.length]))
+    }))
+    let shown: Record<string, number> = {}
+    await until(async () => {
+      shown = await countsAfter(Effect.void)
+      expect([shown.drafts, shown.todos, shown.picker].map((count) => count! > 0)).toEqual([true, true, true])
+    })
+    const nothing = Object.fromEntries(Object.keys(shown).map((name) => [name, 0]))
+    const auth = await tab.runtime.runPromise(Effect.service(AuthStore))
+    // A reached server couldn't verify the session: nothing wipes, and nothing shows.
+    expect(await countsAfter(Effect.orDie(auth.session.update(SESSION, (row) => {
+      row.status = "unreachable"
+      row.unverifiable = true
+    })))).toEqual(nothing)
+    expect(await countsAfter(Effect.orDie(auth.session.update(SESSION, (row) => {
+      row.status = "signed_in"
+      delete row.unverifiable
+    })))).toEqual(shown)
+    // The refusal mark alone, before any wipe: nothing shows.
+    const repos = await tab.runtime.runPromise(Effect.service(RepoStore))
+    expect(await countsAfter(replaceRole(repos, { id: REPO_ID, role: null, own: false, refused: "forbidden" }))).toEqual(nothing)
+  }, WITHIN)
+
   test("a TODO from an issue that a full stack refuses keeps its link when Edit brings it back as a draft", async () => {
     const tab = await open()
     await issue(tab.api, 9, "Fix the footer", "The footer is wrong.")
@@ -579,6 +661,33 @@ describe("from an issue", () => {
     expect(tab.drafts()).toEqual([
       expect.objectContaining({ title: "Fix the footer", prompt: "The footer is wrong.", issue: 9 }),
     ])
+  }, WITHIN)
+
+  // The coordinator's ruling 4 on the data gate: the person's own not-sent changes and drafts of a refused repository are
+  // hidden, never dropped. They show again once access returns.
+  test("a refused repository's not-sent change and draft are hidden, kept on the device, and back when access returns", async () => {
+    const tab = await open()
+    await tab.actions.open(OWNER, NAME)
+    await committed(tab, "Fills it", 1)
+    await sql(tab.api, `UPDATE stacks SET max_open = 1`)
+    await tab.actions.commit(drafted(tab, "Refused change", "Its prompt"))
+    await until(() => expect(tab.notSent()).toEqual([expect.objectContaining({ op: "commit", reason: "Stack full" })]))
+    const change = tab.notSent()[0]!.id
+    drafted(tab, "Kept draft", "Its prompt")
+    await until(() => expect(draftsOfRepo(REPO_ID, tab.drafts()).map((draft) => draft.title)).toContain("Kept draft"))
+    const repos = await tab.runtime.runPromise(Effect.service(RepoStore))
+    const member = Option.getOrThrow(await tab.runtime.runPromise(repos.roles.get(REPO_ID)))
+    await tab.runtime.runPromise(repos.refuse(REPO_ID))
+    expect(tab.notSent()).toEqual([])
+    expect(draftsOfRepo(REPO_ID, tab.drafts())).toEqual([])
+    // The refusal's cleanup has run its course: the rows are still on the device.
+    await tab.runtime.runPromise(repos.wiped(REPO_ID))
+    expect(tab.store.requested.tanstack.has(change)).toBe(true)
+    expect(tab.store.drafts.tanstack.toArray.map((draft) => draft.title)).toContain("Kept draft")
+    // An affirmative grant clears the mark, and both show again.
+    await tab.runtime.runPromise(Effect.andThen(repos.clearRefusal(REPO_ID), replaceRole(repos, member)))
+    await until(() => expect(tab.notSent().map((row) => row.id)).toEqual([change]))
+    expect(draftsOfRepo(REPO_ID, tab.drafts()).map((draft) => draft.title)).toContain("Kept draft")
   }, WITHIN)
 
   test("the agent makes one from an issue with its own title and prompt, under its answer; the issue stays linked", async () => {
@@ -769,10 +878,12 @@ describe("the device", () => {
     const real = device.outbox.storage
     let full = true
     const storage: Outbox.Options<never>["storage"] = {
+      withLock: (name, action) => real.withLock(name, action),
       get: (key) => real.get(key),
       keys: () => real.keys(),
       delete: (key) => real.delete(key),
       clear: () => real.clear(),
+      setMany: (rows) => full ? Promise.reject(new Error("quota")) : real.setMany(rows),
       set: (key, value) => full ? Promise.reject(new Error("quota")) : real.set(key, value),
     }
     const tab = await another(opened.api, { host: { ...device, outbox: { ...device.outbox, storage } } })
@@ -827,27 +938,127 @@ describe("the device", () => {
 
 
 describe("stack initialization regressions", () => {
-  test.each([[401, "allowed"], [403, "allowed"]] as const)("a prompt shape refused %s cannot change session authority (%s)", async (status, expected) => {
-    const runtime = openTestApp()
-    runtimes.push(runtime)
-    const api = await runtime.runPromise(Effect.service(TestChatApi))
-    await runtime.runPromise(readRepositoryRole(OWNER, NAME))
-    await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
-      const built = yield* Layer.build(TodosStore.layer({ origin: api.origin }).pipe(
-        Layer.provide(Layer.succeed(ShapeSource.ShapeSource, {
-          request: (url, init) => url.includes("/api/shapes/todo-requests")
-            ? Effect.succeed(new Response(null, { status }))
-            : ShapeSource.fetchSource.request(url, init),
-        })),
-        Layer.provide(Layer.succeed(FetchHttpClient.Fetch, api.fetch)),
-      ))
-      const store = Context.get(built, TodosStore)
-      yield* store.stackOf(REPO_ID)
-      yield* Effect.promise(() => until(async () => {
-        const row = await runtime.runPromise(store.access.get(REPO_ID))
-        expect(Option.isSome(row) && row.value.status).toBe(expected)
-      }, 5000))
-    })))
+  // Astra on 11855d97: a stack needs Member, so its 403 can be a tier refusal of someone who still reads the repository
+  // (a Member made a Guest). It refuses the stack and drops its rows, never the repository: the issues stay, and the
+  // next route reads the role again.
+  test.each(["/api/shapes/todos", "/api/shapes/todo-requests"])("%s's 403 refuses the stack, not the repository", async (route) => {
+    const refusing = { now: false, roles: 0 }
+    const server = await open()
+    const tab = await another({
+      ...server.api,
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = new Request(input, init)
+        if (new URL(request.url).pathname.endsWith("/role")) refusing.roles += 1
+        return server.api.fetch(request)
+      }) as typeof fetch,
+    }, {
+      replace: Layer.succeed(ShapeSource.ShapeSource, {
+        request: (url, init) => Effect.suspend(() => refusing.now && new URL(url).pathname === route
+          ? Effect.succeed(new Response(null, { status: 403 }))
+          : ShapeSource.fetchSource.request(url, init)),
+      }),
+    })
+    await tab.actions.open(OWNER, NAME)
+    await committed(tab, "Private title", 1)
+    const kept = drafted(tab, "My draft", "Still mine")
+    const asked = refusing.roles
+    refusing.now = true
+    await tab.actions.commit(drafted(tab, "Second", "Wakes the shapes."))
+    const repos = await tab.runtime.runPromise(Effect.service(RepoStore))
+    const store = await tab.runtime.runPromise(Effect.service(TodosStore))
+    await until(async () => {
+      expect(Option.getOrThrow(await tab.runtime.runPromise(store.access.get(REPO_ID))).status).toBe("forbidden")
+      expect(tab.stack().todos).toEqual([])
+      expect(tab.stack().requests).toEqual([])
+    }, 20_000)
+    expect(Option.getOrThrow(await tab.runtime.runPromise(repos.roles.get(REPO_ID))).refused).toBeUndefined()
+    expect(repos.isRefused(REPO_ID)).toBe(false)
+    // The repository's other rows still show (ruling #3).
+    expect(repos.visible.tanstack.get(REPO_ID)?.show).toBe(true)
+    expect(tab.drafts().map((draft) => draft.id)).toContain(kept)
+    // The next route reads the role again, as the stack refused under it, and the stack syncs once it answers.
+    refusing.now = false
+    await tab.runtime.runPromise(readRepositoryRole(OWNER, NAME, true))
+    expect(refusing.roles).toBeGreaterThan(asked)
+    await until(() => expect(tab.stack().todos.map((todo) => todo.number)).toContain(1), 20_000)
+  }, WITHIN)
+
+  // effectscript-11's ruling: a bad deploy answering 401 everywhere must not clear every device. A shape's 401 asks the
+  // session; only a session confirmed ended wipes.
+  test.each([[false, 1], [true, 0]] as const)("a shape's 401 sends the tab to the session check (ended: %s), which decides: %i rows stay", async (ended, kept) => {
+    const refusing = { now: false, checks: 0 }
+    const session = Layer.effect(AuthClient, Effect.map(AuthClient, (real) => AuthClient.of({
+      ...real,
+      session: Effect.suspend(() => {
+        if (!refusing.now) return real.session
+        refusing.checks += 1
+        return ended ? Effect.succeed({ signedIn: false, available: true } as never) : real.session
+      }),
+    }))).pipe(Layer.provide(AuthClient.layer({ origin: CHATAPI_ORIGIN, within: "10 seconds" })))
+    const tab = await open({
+      replace: Layer.merge(session, Layer.succeed(ShapeSource.ShapeSource, {
+        request: (url, init) => Effect.suspend(() => refusing.now && new URL(url).pathname === "/api/shapes/todos"
+          ? Effect.succeed(new Response(null, { status: 401 }))
+          : ShapeSource.fetchSource.request(url, init)),
+      })),
+    })
+    await tab.actions.open(OWNER, NAME)
+    await committed(tab, "Private title", 1)
+    refusing.now = true
+    await tab.actions.commit(drafted(tab, "Second", "Wakes the shapes."))
+    await until(() => expect(refusing.checks).toBeGreaterThan(0), 20_000)
+    const repos = await tab.runtime.runPromise(Effect.service(RepoStore))
+    await until(() => expect(tab.stack().todos.length >= kept && (kept > 0 || tab.stack().todos.length === 0)).toBe(true), 20_000)
+    await tab.runtime.runPromise(Effect.sleep("1 second"))
+    expect(tab.stack().todos.length > 0).toBe(kept > 0)
+    expect(Option.getOrThrow(await tab.runtime.runPromise(repos.roles.get(REPO_ID))).refused).toBeUndefined()
+  }, WITHIN)
+
+  // Astra on d3cd07db: a role read already on its way could overwrite a refusal. It is fenced: an answer sent before the
+  // refusal says nothing after it.
+  test("a role read in flight can't undo a refusal", async () => {
+    const refusing = { now: false, holdRole: false }
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const server = await open()
+    const tab = await another({
+      ...server.api,
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = new Request(input, init)
+        if (refusing.holdRole && new URL(request.url).pathname.endsWith("/role")) await held
+        return server.api.fetch(request)
+      }) as typeof fetch,
+    }, {
+      replace: Layer.succeed(ShapeSource.ShapeSource, {
+        request: (url, init) => Effect.suspend(() => refusing.now && new URL(url).pathname === "/api/shapes/item-summaries"
+          ? Effect.succeed(new Response(null, { status: 403 }))
+          : ShapeSource.fetchSource.request(url, init)),
+      }),
+    })
+    await tab.actions.open(OWNER, NAME)
+    await committed(tab, "Private title", 1)
+    const store = await tab.runtime.runPromise(Effect.service(TodosStore))
+    // The role read leaves, and waits on the network.
+    refusing.holdRole = true
+    const reading = tab.runtime.runPromise(readRepositoryRole(OWNER, NAME))
+    // A repository shape refuses: the issues', which this tab opens now.
+    refusing.now = true
+    await tab.runtime.runPromise(Effect.flatMap(IssuesStore, (issues) => issues.forRepo(REPO_ID)))
+    await until(async () => {
+      expect(Option.getOrThrow(await tab.runtime.runPromise(store.access.get(REPO_ID))).status).toBe("forbidden")
+      expect(tab.stack().todos).toEqual([])
+    }, 20_000)
+    // It answers Member, and was sent before the refusal, so it says nothing: no gap opens at all.
+    const seen: Array<string> = []
+    const watching = setInterval(() => {
+      void tab.runtime.runPromise(store.access.get(REPO_ID)).then((row) => seen.push(Option.getOrThrow(row).status))
+      expect(tab.stack().todos).toEqual([])
+    }, 5)
+    release()
+    await reading
+    await tab.runtime.runPromise(Effect.sleep("500 millis"))
+    clearInterval(watching)
+    expect(new Set(seen)).toEqual(new Set(["forbidden"]))
   }, WITHIN)
 
   test("a failed initialization can be opened again after persistence recovers", async () => {

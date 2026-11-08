@@ -30,9 +30,10 @@
  * @since 0.1.0
  */
 
-import type { Crypto } from "@smthrs/crypto"
 import * as Node from "@smthrs/plan/Node"
 import type * as Repetition from "@smthrs/plan/Repetition"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as Action from "./Action/index.ts"
@@ -407,13 +408,14 @@ export const make = <
  * @category layers
  * @since 0.1.0
  */
-export const layer: Layer.Layer<never, never, Crypto.Crypto | FlowRuntime> = exhausted.toLayer(
-  ({ attempts, poll }) =>
-    Effect.fail(
-      new PollExhausted({
-        poll,
-        attempts,
-        message: `Poll "${poll}" used all ${attempts} attempts without a satisfied check.`
-      })
-    )
-)
+export const layer: Layer.Layer<never, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime> =
+  exhausted.toLayer(
+    ({ attempts, poll }) =>
+      Effect.fail(
+        new PollExhausted({
+          poll,
+          attempts,
+          message: `Poll "${poll}" used all ${attempts} attempts without a satisfied check.`
+        })
+      )
+  )

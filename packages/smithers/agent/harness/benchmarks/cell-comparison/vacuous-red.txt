@@ -1,0 +1,19 @@
+Selected failure evidence (full local transcript retained outside publication):
+✔ refuses incomplete, duplicate and confounded observations (3.112561ms)
+✔ access failures are attempts with unknown cost, never measured task quality (1.080625ms)
+✔ paired uncertainty uses task differences; unknown cost cannot silently become zero (1.455561ms)
+✔ HTML embeds all raw data safely and cannot execute model output (0.528452ms)
+✔ rejects malformed costs, rosters and turns at the report boundary (0.792343ms)
+✔ renders large observed separation and measured ties with explicit uncertainty (2.551297ms)
+✖ cannot publish a vacuous or duplicated task roster as completed measurements (0.680819ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 6
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 92.033463
+✖ failing tests:
+✖ cannot publish a vacuous or duplicated task roster as completed measurements (0.680819ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception.

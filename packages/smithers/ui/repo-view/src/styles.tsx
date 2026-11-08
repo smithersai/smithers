@@ -10,7 +10,7 @@
  * (`container-type: inline-size`), so the same view lays out right as a page
  * and inside a conversation: below 720px it drops the tree and stacks.
  */
-import { tokens as t } from "@smthrs/ui";
+import { tokens as t } from "@smthrs/ui-css";
 import { useInsertionEffect } from "react";
 
 const focusRing = `outline:none; border-color:${t.ringBorder}; box-shadow:0 0 0 3px ${t.ring};`;

@@ -12,7 +12,7 @@
  * this file opens no database, process, or fixture.
  */
 import { Context, Effect, type Layer, type Scope } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, expectTypeOf, it } from "vitest"
 
 type TimeTravel = typeof import("../flows/time-travel/test/RealTimeTravelHarness.ts")
 type Bridged = typeof import("./BridgedEngineRun.ts")
@@ -32,23 +32,14 @@ declare const needsMissing: Effect.Effect<string, never, Missing>
 
 /** Never called; tsc checks it. */
 const probe = () => {
-  // A body that needs a service the harness does not provide is rejected.
-  // @ts-expect-error realLayer does not provide Missing
-  runReal(":memory:", needsMissing)
-  // @ts-expect-error realEngineLayer does not provide Missing
-  runRealEngine(":memory:", "layer-guard", needsMissing)
-  // @ts-expect-error the served control client provides only Control
-  servedSuite("layer-guard").remote(needsMissing)
-
-  // Removing one provided service makes the same body fail to compile.
-  runOn(stackWithMissing, needsMissing)
-  // @ts-expect-error the stack without Missing no longer provides it
-  runOn(stack, needsMissing)
-
-  // Service-free bodies still compile.
-  runReal(":memory:", Effect.succeed(1))
-  runRealEngine(":memory:", "layer-guard", Effect.succeed(1))
-  runOn(stack, Effect.succeed(1))
+  expectTypeOf<typeof needsMissing>().not.toExtend<Parameters<typeof runReal>[1]>()
+  expectTypeOf<typeof needsMissing>().not.toExtend<Parameters<typeof runRealEngine>[2]>()
+  const remote = servedSuite("layer-guard").remote
+  expectTypeOf<typeof needsMissing>().not.toExtend<Parameters<typeof remote>[0]>()
+  const withMissing = runOn<Layer.Success<typeof stackWithMissing>, never, string, never>
+  const withoutMissing = runOn<Layer.Success<typeof stack>, never, string, never>
+  expectTypeOf<typeof needsMissing>().toExtend<Parameters<typeof withMissing>[1]>()
+  expectTypeOf<typeof needsMissing>().not.toExtend<Parameters<typeof withoutMissing>[1]>()
 }
 
 describe("missing service compile probe", () => {

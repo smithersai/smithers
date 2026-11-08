@@ -1,21 +1,26 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The scaffolding every flow suite shares: the Effect test wrappers and the
  * bounded poll loop that waits for an execution to settle.
  */
 import { it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import type { Flow, FlowRuntime } from "@smthrs/flow"
 import { type Duration, Effect, Option } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { TestClock } from "effect/testing"
 import { withCrypto } from "./Crypto.ts"
 
 /** Registers an Effect test that runs with concrete Node cryptography. */
-export const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body()))
+export const effect = (
+  name: string,
+  body: () => Effect.Effect<void, unknown, (EffectDigest.Digest | SecureRandom.SecureRandom)>
+) => it.effect(name, () => withCrypto(body()))
 
 /** Registers an Effect test that runs with concrete cryptography over a fresh `TestClock`. */
-export const effectOnTestClock = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body().pipe(Effect.provide(TestClock.layer()))))
+export const effectOnTestClock = (
+  name: string,
+  body: () => Effect.Effect<void, unknown, (EffectDigest.Digest | SecureRandom.SecureRandom)>
+) => it.effect(name, () => withCrypto(body().pipe(Effect.provide(TestClock.layer()))))
 
 /** Whether a polled result is the execution's completion. */
 export const isComplete = <A, E>(result: Flow.Result<A, E>): boolean => result._tag === "Complete"

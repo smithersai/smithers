@@ -41,8 +41,8 @@ const compileKey = (request: CompileRequest) =>
   })
 ```
 
-`compileKey` returns an `Effect<KeyV1, KeyDerivationError, Crypto.Crypto>`. The
-`Crypto` requirement is the hashing host: nothing is computed until you provide
+`compileKey` returns an `Effect<KeyV1, KeyDerivationError, EffectDigest.Digest>`. The
+`Digest` requirement is the hashing host: nothing is computed until you provide
 one.
 
 ## Use the key as a cache key
@@ -67,14 +67,13 @@ const compile = Effect.fn("compile")(function*(request: CompileRequest) {
 ## Run it
 
 ```ts
-import { Crypto } from "@smthrs/crypto"
 const main = Effect.gen(function*() {
   const first = yield* compile({ target: "web", flags: ["--minify", "--sourcemap"] })
   const second = yield* compile({ target: "web", flags: ["--minify", "--sourcemap"] })
 
   console.log(first.key)
   console.log(first.hit, second.hit)
-}).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)), Effect.orDie)
+}).pipe(Effect.provide(NodeCrypto.layer), Effect.orDie)
 
 await Effect.runPromise(main)
 ```
@@ -96,12 +95,11 @@ objects that differ only in property order are the same document, so they are
 the same key:
 
 ```ts
-import { Crypto } from "@smthrs/crypto"
 const equivalent = Effect.gen(function*() {
   const a = yield* deriveKey({ domain: "quickstart/compile", version: 1, target: "web" })
   const b = yield* deriveKey({ target: "web", version: 1, domain: "quickstart/compile" })
   console.log(a === b) // true
-}).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+}).pipe(Effect.provide(NodeCrypto.layer))
 ```
 
 This is the guarantee the whole package exists to make, and it has edges worth
@@ -112,7 +110,7 @@ knowing before you feed it real data. See
 
 Persist the key as text. When it comes back from a database, an RPC, or a file,
 decode it through `StoredKey` before you trust it. Validation returns the same
-text and needs no `Crypto` service:
+text and needs no `Digest` service:
 
 ```ts
 import { digest, StoredKey } from "@smthrs/keys"

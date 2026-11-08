@@ -1,7 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { expect, it } from "@effect/vitest"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
-import { Crypto } from "@smthrs/crypto"
 import { Effect, FileSystem, Path } from "effect"
 import * as fs from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -34,7 +33,7 @@ it.effect("refuses filesystem publication without trusted handles and uses memor
           bash: { exec: async () => ({ stdout: "", stderr: "", exitCode: 0 }) },
           jj: { wasm: new Uint8Array(), fs: {} as never }
         })),
-        Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+        Effect.provide(NodeCrypto.layer)
       )
     } finally {
       yield* Effect.promise(() => fs.rm(root, { recursive: true, force: true }))

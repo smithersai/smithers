@@ -1,10 +1,11 @@
-import { NodeCrypto, NodeServices } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
+import { NodeServices } from "@effect/platform-node"
 import { FlowEngine } from "@smthrs/engine"
 import { DurableEngineState } from "@smthrs/engine-store"
 import { Action } from "@smthrs/flow"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import { Cause, Effect, FileSystem, Layer } from "effect"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -16,9 +17,6 @@ import { correctionLayers, CorrectPlan } from "../coding/correction.ts"
 import { NativeCoding } from "../coding/native.ts"
 import { CodingError } from "../coding/schema.ts"
 import { Implement, policyLayers, RunCheck } from "../coding/workflow.ts"
-
-// Effect 4.1 removed effect/Crypto, and NodeServices.layer no longer provides it.
-const nodeServices = Layer.merge(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 
 const engineLayer = <A, E, R>(layer: Layer.Layer<A, E, R>) =>
   layer.pipe(
@@ -121,7 +119,9 @@ printf '{"commitId":"${revision.commitId}","changeId":"${revision.changeId}","tr
       }
     }
     const sourceDirectory = mode.startsWith("external-cache-") ? join(temporary, "install-source") : undefined
-    const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(nodeServices)))
+    const fs = await Effect.runPromise(
+      FileSystem.FileSystem.pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
+    )
     const outcome = await Effect.runPromise(
       checkDelegate.execute(invocation, { executionId: `equality-${mode}` }).pipe(
         Effect.result,
@@ -129,8 +129,8 @@ printf '{"commitId":"${revision.commitId}","changeId":"${revision.changeId}","tr
         Effect.provide(
           engineLayer(
             checkLayers({ repositoryPath, exporterPath, sourceDirectory, fs, environment: { PATH: "/usr/bin:/bin" } })
-              .pipe(Layer.provide(nodeServices))
-          ).pipe(Layer.provideMerge(nodeServices))
+              .pipe(Layer.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
+          ).pipe(Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
         )
       )
     )
@@ -246,12 +246,12 @@ test("tree-writing check stops the correction flow before a repair or another ch
               apply: () => Effect.die("no repair"),
               publishOriginalSource: () => Effect.die("no publication")
             })),
-            Layer.provide(nodeServices),
+            Layer.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
             Layer.provideMerge(
               Layer.mergeAll(MemoryStore.layerNoop(), RunStore.layerNoop(), DurableEngineState.layerMemory)
             )
           )
-        ).pipe(Layer.provideMerge(nodeServices))
+        ).pipe(Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
       )
     )
   )

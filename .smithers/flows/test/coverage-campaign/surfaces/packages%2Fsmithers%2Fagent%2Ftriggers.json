@@ -1,0 +1,578 @@
+{
+  "id": "packages/smithers/agent/triggers",
+  "name": "@smthrs/triggers",
+  "owner": {
+    "declaration": "packages/smithers/agent/triggers/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "lint": "eslint src examples --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
+    "circular": "node ../../../repo-targets/scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "node ../../flows/database/scripts/test-matrix.mjs",
+    "test:matrix": "node ../../flows/database/scripts/test-matrix.mjs"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./migrations/*": null,
+    "./internal/*": null,
+    "./*/index": null,
+    "./CatchUp": "./src/CatchUp.ts",
+    "./Channel": "./src/Channel.ts",
+    "./Cron": "./src/Cron.ts",
+    "./DispatchReader": "./src/DispatchReader.ts",
+    "./Overlap": "./src/Overlap.ts",
+    "./Schedule": "./src/Schedule.ts",
+    "./Scheduler": "./src/Scheduler.ts",
+    "./SqlTriggerStore": "./src/SqlTriggerStore.ts",
+    "./Trigger": "./src/Trigger.ts",
+    "./TriggerError": "./src/TriggerError.ts",
+    "./TriggerStore": "./src/TriggerStore.ts",
+    "./Webhook": "./src/Webhook.ts",
+    "./index": "./src/index.ts",
+    "./test/TestTriggers": "./src/test/TestTriggers.ts"
+  },
+  "production": [
+    "eslint.config.js",
+    "examples/quickstart.ts",
+    "PACKAGE.ts",
+    "scripts/build.mjs",
+    "src/CatchUp.ts",
+    "src/Channel.ts",
+    "src/ClaimDecision.ts",
+    "src/Cron.ts",
+    "src/DispatchReader.ts",
+    "src/index.ts",
+    "src/internal/ActiveRuns.ts",
+    "src/internal/DueOccurrences.ts",
+    "src/internal/WallClock.ts",
+    "src/migrations/0001_triggers.ts",
+    "src/migrations/0002_reservation_lease.ts",
+    "src/migrations/0003_heartbeat.ts",
+    "src/migrations/0004_fire_run_index.ts",
+    "src/migrations/index.ts",
+    "src/Overlap.ts",
+    "src/Schedule.ts",
+    "src/Scheduler.ts",
+    "src/SqlTriggerStore.ts",
+    "src/test/TestTriggers.ts",
+    "src/Trigger.ts",
+    "src/TriggerError.ts",
+    "src/TriggerStore.ts",
+    "src/Webhook.ts",
+    "test/StoreConformance.ts",
+    "vitest.config.ts"
+  ],
+  "tests": [
+    "packages/smithers/agent/triggers/src/test/TestTriggers.ts",
+    "packages/smithers/agent/triggers/test/ActiveRuns.test.ts",
+    "packages/smithers/agent/triggers/test/CatchUp.test.ts",
+    "packages/smithers/agent/triggers/test/Channel.test.ts",
+    "packages/smithers/agent/triggers/test/Cron.test.ts",
+    "packages/smithers/agent/triggers/test/CronDst.test.ts",
+    "packages/smithers/agent/triggers/test/DispatchReader.test.ts",
+    "packages/smithers/agent/triggers/test/Docs.test.ts",
+    "packages/smithers/agent/triggers/test/DueOccurrences.test.ts",
+    "packages/smithers/agent/triggers/test/examples.test.ts",
+    "packages/smithers/agent/triggers/test/InvalidDates.test.ts",
+    "packages/smithers/agent/triggers/test/InvalidIntervalDates.test.ts",
+    "packages/smithers/agent/triggers/test/Migrations.test.ts",
+    "packages/smithers/agent/triggers/test/Overlap.test.ts",
+    "packages/smithers/agent/triggers/test/PackageInputs.test.ts",
+    "packages/smithers/agent/triggers/test/Scheduler.test.ts",
+    "packages/smithers/agent/triggers/test/SchedulerRecovery.test.ts",
+    "packages/smithers/agent/triggers/test/StoreConformance.ts",
+    "packages/smithers/agent/triggers/test/TestTriggers.test.ts",
+    "packages/smithers/agent/triggers/test/Trigger.test.ts",
+    "packages/smithers/agent/triggers/test/TriggerError.test.ts",
+    "packages/smithers/agent/triggers/test/TriggerStore.test.ts",
+    "packages/smithers/agent/triggers/test/TriggerStoreNoop.test.ts",
+    "packages/smithers/agent/triggers/test/Webhook.test.ts",
+    "packages/smithers/agent/triggers/tsconfig.test.json"
+  ],
+  "benchmarks": [],
+  "platformPaths": [],
+  "ignoredCases": [],
+  "configurations": [
+    {
+      "path": "packages/smithers/agent/triggers/eslint.config.js",
+      "sha256": "22e5634f82cfa20363df8538178cb9f64bdd01a0bfdf746f13d0771ed2a7a044",
+      "source": "import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  {\n    ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]\n  },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\", \"examples/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: {\n      parserOptions: {\n        project: \"./tsconfig.test.json\",\n        tsconfigRootDir: import.meta.dirname\n      }\n    },\n    settings: {\n      \"import/resolver\": {\n        typescript: {\n          project: [\"./tsconfig.json\"]\n        }\n      }\n    },\n    plugins: {\n      unicorn\n    },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-restricted-imports\": [\n        \"error\",\n        {\n          paths: [{\n            name: \"effect\",\n            message: \"Import effect modules by subpath: import * as Effect from \\\"effect/Effect\\\".\"\n          }]\n        }\n      ],\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n",
+      "coverageDirectives": [
+        {
+          "line": 10,
+          "text": "ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]"
+        },
+        {
+          "line": 41,
+          "text": "\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/triggers/package.json",
+      "sha256": "a297dafaa2a6f1276e0ea2633deafcb7a44125a65622c790391b685c5fc9a210",
+      "source": "{\n  \"name\": \"@smthrs/triggers\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"agent\"\n  },\n  \"description\": \"Durable cron triggers and channel contracts for flows\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/agent/triggers\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"effect\",\n    \"flow\",\n    \"triggers\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"effect\",\n    \"flow\",\n    \"triggers\"\n  ],\n  \"engines\": {\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [],\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./migrations/*\": null,\n    \"./internal/*\": null,\n    \"./*/index\": null,\n    \"./CatchUp\": \"./src/CatchUp.ts\",\n    \"./Channel\": \"./src/Channel.ts\",\n    \"./Cron\": \"./src/Cron.ts\",\n    \"./DispatchReader\": \"./src/DispatchReader.ts\",\n    \"./Overlap\": \"./src/Overlap.ts\",\n    \"./Schedule\": \"./src/Schedule.ts\",\n    \"./Scheduler\": \"./src/Scheduler.ts\",\n    \"./SqlTriggerStore\": \"./src/SqlTriggerStore.ts\",\n    \"./Trigger\": \"./src/Trigger.ts\",\n    \"./TriggerError\": \"./src/TriggerError.ts\",\n    \"./TriggerStore\": \"./src/TriggerStore.ts\",\n    \"./Webhook\": \"./src/Webhook.ts\",\n    \"./index\": \"./src/index.ts\",\n    \"./test/TestTriggers\": \"./src/test/TestTriggers.ts\"\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"docs/\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./migrations/*\": null,\n      \"./internal/*\": null,\n      \"./*/index\": null,\n      \"./CatchUp\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CatchUp.d.ts\",\n          \"default\": \"./dist/esm/CatchUp.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CatchUp.d.ts\",\n          \"default\": \"./dist/cjs/CatchUp.js\"\n        }\n      },\n      \"./Channel\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Channel.d.ts\",\n          \"default\": \"./dist/esm/Channel.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Channel.d.ts\",\n          \"default\": \"./dist/cjs/Channel.js\"\n        }\n      },\n      \"./Cron\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Cron.d.ts\",\n          \"default\": \"./dist/esm/Cron.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Cron.d.ts\",\n          \"default\": \"./dist/cjs/Cron.js\"\n        }\n      },\n      \"./DispatchReader\": {\n        \"import\": {\n          \"types\": \"./dist/esm/DispatchReader.d.ts\",\n          \"default\": \"./dist/esm/DispatchReader.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/DispatchReader.d.ts\",\n          \"default\": \"./dist/cjs/DispatchReader.js\"\n        }\n      },\n      \"./Overlap\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Overlap.d.ts\",\n          \"default\": \"./dist/esm/Overlap.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Overlap.d.ts\",\n          \"default\": \"./dist/cjs/Overlap.js\"\n        }\n      },\n      \"./Schedule\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Schedule.d.ts\",\n          \"default\": \"./dist/esm/Schedule.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Schedule.d.ts\",\n          \"default\": \"./dist/cjs/Schedule.js\"\n        }\n      },\n      \"./Scheduler\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Scheduler.d.ts\",\n          \"default\": \"./dist/esm/Scheduler.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Scheduler.d.ts\",\n          \"default\": \"./dist/cjs/Scheduler.js\"\n        }\n      },\n      \"./SqlTriggerStore\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SqlTriggerStore.d.ts\",\n          \"default\": \"./dist/esm/SqlTriggerStore.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SqlTriggerStore.d.ts\",\n          \"default\": \"./dist/cjs/SqlTriggerStore.js\"\n        }\n      },\n      \"./Trigger\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Trigger.d.ts\",\n          \"default\": \"./dist/esm/Trigger.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Trigger.d.ts\",\n          \"default\": \"./dist/cjs/Trigger.js\"\n        }\n      },\n      \"./TriggerError\": {\n        \"import\": {\n          \"types\": \"./dist/esm/TriggerError.d.ts\",\n          \"default\": \"./dist/esm/TriggerError.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/TriggerError.d.ts\",\n          \"default\": \"./dist/cjs/TriggerError.js\"\n        }\n      },\n      \"./TriggerStore\": {\n        \"import\": {\n          \"types\": \"./dist/esm/TriggerStore.d.ts\",\n          \"default\": \"./dist/esm/TriggerStore.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/TriggerStore.d.ts\",\n          \"default\": \"./dist/cjs/TriggerStore.js\"\n        }\n      },\n      \"./Webhook\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Webhook.d.ts\",\n          \"default\": \"./dist/esm/Webhook.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Webhook.d.ts\",\n          \"default\": \"./dist/cjs/Webhook.js\"\n        }\n      },\n      \"./index\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./test/TestTriggers\": {\n        \"import\": {\n          \"types\": \"./dist/esm/test/TestTriggers.d.ts\",\n          \"default\": \"./dist/esm/test/TestTriggers.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/test/TestTriggers.d.ts\",\n          \"default\": \"./dist/cjs/test/TestTriggers.js\"\n        }\n      }\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src examples --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"check\": \"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"node ../../flows/database/scripts/test-matrix.mjs\",\n    \"test:matrix\": \"node ../../flows/database/scripts/test-matrix.mjs\"\n  },\n  \"dependencies\": {\n    \"@smthrs/control\": \"1.0.0-rc.16\",\n    \"@smthrs/database\": \"1.0.0-rc.16\"\n  },\n  \"peerDependencies\": {\n    \"effect\": \"4.0.5\"\n  },\n  \"devDependencies\": {\n    \"@effect/language-service\": \"0.87.2\",\n    \"@effect/vitest\": \"4.0.5\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"effect\": \"4.0.5\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\"\n  }\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 236,
+          "text": "\"coverage\": \"node ../../flows/database/scripts/test-matrix.mjs\","
+        },
+        {
+          "line": 251,
+          "text": "\"@vitest/coverage-v8\": \"5.0.0\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/triggers/PACKAGE.ts",
+      "sha256": "1a47a5107ea5ee443e6b90233b9f0e3c26cd433bf870b0badb04f43b7ec1d122",
+      "source": "import { BuildAndCheckTypeScriptPackage } from \"@smthrs/repo-targets\"\n/** Standard package targets plus package-owned documentation generation. */\nimport { Smithers } from \"@smthrs/targets\"\nimport * as Input from \"@smthrs/targets/Input\"\n\nconst { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({\n  testProgram: Smithers.file(\"//packages/smithers/flows/database/scripts/test-matrix.mjs\"),\n  deps: [],\n  sources: Input.glob(\"{src,examples}/**/*.ts\"),\n  tests: Smithers.glob(\"test/**/*.ts\"),\n  cwd: \"packages/smithers/agent/triggers\"\n})\n\nconst securityReview = Smithers.SecurityReview({\n  cwd: \"packages/smithers/agent/triggers\",\n  include: [\"src/**\"],\n  checks: [\n    {\n      id: \"webhook-signature-verification\",\n      title: \"Every webhook request is authenticated over its raw bytes before any decode or dispatch\",\n      threat:\n        \"An unauthenticated internet sender starts flows or signals runs on the host by forging or omitting the webhook signature.\",\n      lookFor: [\n        \"A path in makeSignatureVerifier that returns Effect.void when the header is absent, empty, or the expected signature has zero bytes.\",\n        \"A comparison of signature bytes that exits early or loops over the supplied length instead of constantTimeEqual over the expected length.\",\n        \"A verifier or ingest path that reads raw.body or headers after the snapshot is taken, so verified and decoded bytes can differ.\",\n        \"Webhook.ingest reaching Channels.ingest without verify running first, or self-registering an unregistered channel.\"\n      ],\n      paths: [\"src/Webhook.ts\", \"src/Channel.ts\"]\n    },\n    {\n      id: \"webhook-refusal-leak\",\n      title: \"Webhook refusals reveal nothing about the credential or resolver to the sender\",\n      threat:\n        \"An unauthenticated sender learns credential reference names, resolver errors, or signature lengths from refusal messages or timing.\",\n      lookFor: [\n        \"A refusal message that forwards a custom verify or expected() error text instead of the fixed 'did not verify' message.\",\n        \"An Unauthorized or TriggerError returned to the caller whose message or cause includes the CredentialRef or the resolved secret.\"\n      ],\n      paths: [\"src/Webhook.ts\", \"src/TriggerError.ts\"]\n    },\n    {\n      id: \"channel-no-authority\",\n      title: \"A channel's inbound mapping can only request a start or a signal, never grants or an execution envelope\",\n      threat:\n        \"A verified webhook sender escalates a start into a run with extra capabilities or signals a run and step that the channel author never intended.\",\n      lookFor: [\n        \"Inbound or Start/Signal shapes, or the map in toControlChannel, carrying capabilities, envelope, grants, or approval fields into Control.\",\n        \"Signal payload values forwarded to Control without Schema.Json decoding.\"\n      ],\n      paths: [\"src/Webhook.ts\", \"src/Channel.ts\"]\n    },\n    {\n      id: \"scheduler-no-self-approval\",\n      title: \"Scheduled launches never approve their own parked plans or build their own envelope\",\n      threat: \"Whoever registers a trigger runs a flow that requires human approval without that approval.\",\n      lookFor: [\n        \"layerControlRunner or runApprovedPlan calling an approve operation, or constructing an envelope other than plan.envelope from control.plan.\",\n        \"An unbounded retry of a parked plan instead of the parkedAttempts limit.\"\n      ],\n      paths: [\"src/Scheduler.ts\"]\n    },\n    {\n      id: \"trigger-sql-parameterized\",\n      title: \"Every trigger store query binds values as parameters\",\n      threat:\n        \"A trigger author or webhook-derived id injects SQL that reads or rewrites other triggers' rows or fire ledgers.\",\n      lookFor: [\n        \"sql.unsafe, sql.literal, or string concatenation building SQL from trigger ids, flow ids, cron text, run ids, or error text.\",\n        \"Dialect-specific fragments interpolated from anything other than a fixed internal choice.\"\n      ],\n      paths: [\"src/SqlTriggerStore.ts\", \"src/migrations/**\"]\n    },\n    {\n      id: \"trigger-row-decode\",\n      title: \"Stored trigger rows are decoded through a schema before use\",\n      threat:\n        \"Anyone able to write the triggers table makes the scheduler launch arbitrary flow input or crash every listing with one corrupt row.\",\n      lookFor: [\n        \"JSON.parse of input_json or a cast of an overlap/catch_up column that is not followed by schema validation.\",\n        \"A decode failure that fails the whole listing or scheduler loop instead of the single row.\"\n      ],\n      paths: [\"src/SqlTriggerStore.ts\", \"src/TriggerStore.ts\", \"src/Trigger.ts\"]\n    },\n    {\n      id: \"schedule-resource-bounds\",\n      title: \"Cron and catch-up work is bounded regardless of the declared expression\",\n      threat:\n        \"A trigger author exhausts scheduler CPU and memory for every tenant with a dense or unsatisfiable cron or a huge catch-up window.\",\n      lookFor: [\n        \"An occurrence search in Cron.ts, CatchUp.ts, DueOccurrences.ts, or DispatchReader.ts that runs without the maxOccurrences or maxCatchUp cap.\",\n        \"An unsatisfiable cron that throws a defect instead of unsatisfiable_cron.\",\n        \"A fires page size or cursor from Control that is not range-checked before the store read.\"\n      ],\n      paths: [\"src/Cron.ts\", \"src/CatchUp.ts\", \"src/internal/**\", \"src/DispatchReader.ts\"]\n    },\n    {\n      id: \"fire-claim-exactly-once\",\n      title: \"One occurrence launches at most one run across racing schedulers\",\n      threat:\n        \"Two scheduler processes double-launch a flow occurrence, duplicating side effects such as payments or deploys.\",\n      lookFor: [\n        \"A claim path in SqlTriggerStore.ts or ClaimDecision.ts whose UPDATE lacks the active_run_id or reservation guard, or ignores affectedRows.\",\n        \"An idempotency key for Control that is not derived from trigger id and occurrence.\"\n      ],\n      paths: [\"src/SqlTriggerStore.ts\", \"src/ClaimDecision.ts\", \"src/Scheduler.ts\", \"src/Overlap.ts\"]\n    },\n    {\n      id: \"cancel-own-runs-only\",\n      title: \"The scheduler cancels only runs its own trigger launched\",\n      threat:\n        \"A trigger's cancel overlap policy or losing-reservation cleanup cancels another user's unrelated run through Control.\",\n      lookFor: [\n        \"A runner.cancel call in cancelActive or the stale_owner path whose run id is not the trigger's own recorded active_run_id or launch result.\",\n        \"A run id read from the store or a fire record passed to cancel without checking it belongs to that trigger id.\",\n        \"A reservation id (isReservation) passed to Control.cancel as if it were a run id.\"\n      ],\n      paths: [\"src/Scheduler.ts\", \"src/internal/ActiveRuns.ts\", \"src/SqlTriggerStore.ts\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: { check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 16,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 38,
+          "text": "\"An Unauthorized or TriggerError returned to the caller whose message or cause includes the CredentialRef or the resolved secret.\""
+        },
+        {
+          "line": 103,
+          "text": "\"A claim path in SqlTriggerStore.ts or ClaimDecision.ts whose UPDATE lacks the active_run_id or reservation guard, or ignores affectedRows.\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/triggers/tsconfig.json",
+      "sha256": "0064dce36d22143039105eb068be99456971e6caf6e7cebac24633514a2009b8",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [\n      {\n        \"name\": \"@effect/language-service\",\n        \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n        \"includeSuggestionsInTsc\": false,\n        \"ignoreEffectWarningsInTscExitCode\": true,\n        \"ignoreEffectErrorsInTscExitCode\": true,\n        \"diagnosticSeverity\": {\n          \"globalErrorInEffectFailure\": \"off\"\n        }\n      }\n    ]\n  },\n  \"include\": [\"src/**/*\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 17,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 30,
+          "text": "\"includeSuggestionsInTsc\": false,"
+        },
+        {
+          "line": 31,
+          "text": "\"ignoreEffectWarningsInTscExitCode\": true,"
+        },
+        {
+          "line": 32,
+          "text": "\"ignoreEffectErrorsInTscExitCode\": true,"
+        },
+        {
+          "line": 39,
+          "text": "\"include\": [\"src/**/*\"]"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/triggers/vitest.config.ts",
+      "sha256": "134d173817363da9af28158857939ed00364f0b8cab905b6bfb26cbc4e1e1df8",
+      "source": "import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-schemas.ts\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],\n    environment: \"node\",\n    // House convention (see packages/smithers/flows/journal/vitest.config.ts): a finite 30 s\n    // wall-clock budget so correct suites survive coverage-instrumented load\n    // while a genuine hang still fails the run.\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      enabled: true,\n      provider: \"v8\",\n      // Per-process report directory so concurrent vitest runs do not destroy\n      // each other's coverage scratch state (issues #115/#121).\n      reportsDirectory: join(tmpdir(), `flows-triggers-coverage-${process.pid}`),\n      include: [\"src/**\"],\n      // The release policy specifies 100. The ratchet that sat here at\n      // 68/67/81/80 is what let an untested scheduler ship: every durable\n      // bookkeeping defect the review found lived in a branch no test entered.\n      thresholds: {\n        branches: 100,\n        functions: 100,\n        lines: 100,\n        statements: 100\n      }\n    }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 12,
+          "text": "fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"
+        },
+        {
+          "line": 15,
+          "text": "include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],"
+        },
+        {
+          "line": 18,
+          "text": "// wall-clock budget so correct suites survive coverage-instrumented load"
+        },
+        {
+          "line": 22,
+          "text": "coverage: {"
+        },
+        {
+          "line": 24,
+          "text": "provider: \"v8\","
+        },
+        {
+          "line": 26,
+          "text": "// each other's coverage scratch state (issues #115/#121)."
+        },
+        {
+          "line": 27,
+          "text": "reportsDirectory: join(tmpdir(), `flows-triggers-coverage-${process.pid}`),"
+        },
+        {
+          "line": 28,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 32,
+          "text": "thresholds: {"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/agent/triggers",
+      "label": "//packages/smithers/agent/triggers:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/triggers/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/triggers/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/triggers/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/triggers/tsconfig.test.json"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/agent/triggers:lib"
+      ]
+    },
+    {
+      "package": "packages/smithers/agent/triggers",
+      "label": "//packages/smithers/agent/triggers:circular",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/circular.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/triggers/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/triggers/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/triggers",
+      "label": "//packages/smithers/agent/triggers:docs",
+      "rule": "DocsParity",
+      "kinds": [
+        "docs"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/triggers/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/triggers",
+      "label": "//packages/smithers/agent/triggers:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/triggers/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/triggers/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/triggers/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/triggers",
+      "label": "//packages/smithers/agent/triggers:fmt",
+      "rule": "Dprint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/triggers/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/triggers/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/triggers/dprint.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/triggers",
+      "label": "//packages/smithers/agent/triggers:lib",
+      "rule": "TsBuild",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/triggers/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/build-library.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/scripts/compile-commonjs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-single-effect-version.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/triggers/src/index.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/triggers/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/triggers/scripts/build.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/triggers",
+      "label": "//packages/smithers/agent/triggers:lint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/triggers/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/triggers/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.jsdoc.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/triggers",
+      "label": "//packages/smithers/agent/triggers:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/agent/triggers/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/triggers/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/triggers",
+      "label": "//packages/smithers/agent/triggers:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/agent/triggers/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/triggers/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/triggers",
+      "label": "//packages/smithers/agent/triggers:test",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/scripts/test-matrix.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/triggers/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/triggers/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/triggers/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/triggers/vitest.config.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/agent/triggers:lib"
+      ]
+    }
+  ],
+  "areas": [
+    "PACKAGE.ts",
+    "eslint.config.js",
+    "examples/quickstart.ts",
+    "scripts/build.mjs",
+    "src/CatchUp.ts",
+    "src/Channel.ts",
+    "src/ClaimDecision.ts",
+    "src/Cron.ts",
+    "src/DispatchReader.ts",
+    "src/Overlap.ts",
+    "src/Schedule.ts",
+    "src/Scheduler.ts",
+    "src/SqlTriggerStore.ts",
+    "src/Trigger.ts",
+    "src/TriggerError.ts",
+    "src/TriggerStore.ts",
+    "src/Webhook.ts",
+    "src/index.ts",
+    "src/internal",
+    "src/migrations",
+    "src/test",
+    "test/StoreConformance.ts",
+    "vitest.config.ts"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

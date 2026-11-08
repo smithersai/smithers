@@ -2,7 +2,7 @@ import { Model, type ModelEvent } from "@smthrs/model"
 import { Deferred, Effect, Stream } from "effect"
 import { HttpEffect } from "effect/http"
 import { environmentModelResolver } from "../../src/EnvironmentResolver.ts"
-import { createModelTurnHandler, MODEL_HOST_PROTOCOL } from "../../src/HostServer.ts"
+import { createModelTurnHandler, MODEL_HOST_PROTOCOL } from "./durable.ts"
 
 const authorization = process.env.SMITHERS_CHAT_HOST_TOKEN ?? ""
 const callbackBaseUrl = process.env.SMITHERS_CHAT_CALLBACK_URL ?? ""

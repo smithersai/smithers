@@ -5,7 +5,6 @@
  * target itself; this suite proves the refusal path.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Interpreter } from "@smthrs/flow"
 import { Effect, Exit, Layer } from "effect"
@@ -22,7 +21,7 @@ const run = (executionId: string) =>
       Effect.provide(
         Interpreter.layerWithImplementations(Mutations, layer).pipe(
           Layer.provideMerge(FlowEngine.layerMemory),
-          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+          Layer.provideMerge(NodeCrypto.layer)
         )
       )
     )

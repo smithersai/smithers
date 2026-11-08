@@ -18,7 +18,6 @@ import { OpeningFailed, OpeningRefused, Prepare, PreparedTurn } from "./flows"
 import { catalogUnavailable, layer, openingSkipped, prepare, recall, remembered, rememberRegistration } from "./memory"
 
 import { MEMORY_BANK, Remember } from "./memoryFlows"
-import { Crypto } from "@smthrs/crypto"
 
 const runtime = testFile("memory_sources")
 // The memory banks' own schema on the compose Postgres, dropped when each test's scope closes.
@@ -35,7 +34,7 @@ test("production sources read the real saved-flow catalog and durable memory dat
     yield* Flows.runRemember({ bank: "agent-chat", key: "launch", text: "launch mascot is cobalt" })
     return yield* (yield* Opening.Sources).recall("launch")
   }).pipe(
-    Effect.provide(layer(ORIGIN).pipe(Layer.provideMerge(MemoryStore.layer))), Effect.provide(database), Effect.provide(Crypto.layerFromDigest(NodeHost.NodeCrypto.layerDigest)),
+    Effect.provide(layer(ORIGIN).pipe(Layer.provideMerge(MemoryStore.layer))), Effect.provide(database), Effect.provide(NodeHost.NodeCrypto.layer),
     Effect.provide(http(agent.fetch)),
   )))
   expect(result.some((row) => row.kind === "memory" && row.text.includes("cobalt"))).toBe(true)
@@ -52,7 +51,7 @@ test("recall preserves history and maps faulty source codes without exposing the
   const sources = Opening.layerSources(["agent-chat"]).pipe(
     Layer.provide(RecallKeyword.layer),
     Layer.provide(MemoryStore.layer),
-    Layer.provide(database), Layer.provide(Crypto.layerFromDigest(NodeHost.NodeCrypto.layerDigest)),
+    Layer.provide(database), Layer.provide(NodeHost.NodeCrypto.layer),
   )
   expect(await Effect.runPromise(Effect.scoped(recall(turn).pipe(Effect.provide(sources))))).toEqual({ ...turn, candidates: [] })
 })
@@ -83,7 +82,7 @@ test("production sources preserve a real signed-out refusal", async () => {
   }) as typeof globalThis.fetch
   for (const [fetch, code] of [[deniedFetch, "invalid_namespace"]] as const) {
     const exit = await Effect.runPromiseExit(Effect.scoped(Effect.flatMap(Opening.Sources, (sources) => sources.recall("launch")).pipe(
-      Effect.provide(layer(ORIGIN)), Effect.provide(database), Effect.provide(Crypto.layerFromDigest(NodeHost.NodeCrypto.layerDigest)),
+      Effect.provide(layer(ORIGIN)), Effect.provide(database), Effect.provide(NodeHost.NodeCrypto.layer),
       Effect.provide(http(fetch)),
     )))
     expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({ code, message: "Skill catalog unavailable" })
@@ -102,7 +101,7 @@ test.each([
     return yield* recall(turn)
   }).pipe(
     Effect.provide(layer(ORIGIN).pipe(Layer.provideMerge(MemoryStore.layer))),
-    Effect.provide(database), Effect.provide(Crypto.layerFromDigest(NodeHost.NodeCrypto.layerDigest)), Effect.provide(http(brokenFetch)),
+    Effect.provide(database), Effect.provide(NodeHost.NodeCrypto.layer), Effect.provide(http(brokenFetch)),
     Effect.provideService(Logger.CurrentLoggers, new Set([Logger.make((options) => { logs.push(JSON.stringify(Logger.formatStructured.log(options))) })])),
   )))
   expect(Effect.runSync(Metric.value(catalogUnavailable)).count - before).toBe(1)
@@ -133,7 +132,7 @@ test.each([
 test("remember returns a save receipt, stores in the host-owned bank and replaces the same key", async () => {
   const before = Effect.runSync(Metric.value(remembered)).count
   await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-    const context = yield* Layer.build(MemoryStore.layer.pipe(Layer.provideMerge(database), Layer.provideMerge(Crypto.layerFromDigest(NodeHost.NodeCrypto.layerDigest))))
+    const context = yield* Layer.build(MemoryStore.layer.pipe(Layer.provideMerge(database), Layer.provideMerge(NodeHost.NodeCrypto.layer)))
     for (const text of ["launch mascot is cobalt", "launch mascot is amber"]) {
       const result = yield* Effect.promise(() => runFlow(Remember, { key: "mascot", text }, rememberRegistration.pipe(Layer.provide(Layer.succeedContext(context)))))
       expect(result.exit).toEqual(Exit.succeed({ key: "mascot" }))

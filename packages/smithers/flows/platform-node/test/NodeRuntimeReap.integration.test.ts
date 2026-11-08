@@ -20,7 +20,6 @@
  * subject is precisely what is left when no code of ours got to run.
  */
 import { afterAll, describe, expect, it } from "@effect/vitest"
-import { Crypto } from "@smthrs/crypto"
 import { ProcessLedger } from "@smthrs/kernel"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -111,7 +110,7 @@ const killHost = (filename: string, hostId: string, frozen = false): Promise<num
 const ledgerOver = (filename: string, hostId: string) =>
   ProcessLedger.layer({ hostId, ownerPid: process.pid }).pipe(
     Layer.provide(NodeRuntime.storage(filename)),
-    Layer.provide(Layer.merge(NodeHost.layer, Crypto.layerFromDigest(NodeHost.NodeCrypto.layerDigest)))
+    Layer.provide(Layer.merge(NodeHost.layer, NodeHost.NodeCrypto.layer))
   )
 
 const readBack = <A>(filename: string, query: (database: DatabaseSync) => A): A => {

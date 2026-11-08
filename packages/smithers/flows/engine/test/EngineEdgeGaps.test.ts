@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, RetryPolicy, StepIdentity } from "@smthrs/flow"
 import { Cause, Effect, Exit, Layer, Option, Result, Schema } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { FlowEngine } from "../src/index.ts"
 import { runSync, withCrypto } from "./Crypto.ts"
 import { effect, liveEffect } from "./Harness.ts"

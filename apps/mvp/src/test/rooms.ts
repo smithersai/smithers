@@ -1,4 +1,4 @@
-import * as NodeWS from "@effect/platform-node/NodeWS"
+import { NodeWS } from "@effect/platform-node"
 import { PresenceRoom } from "@smthrs/sync"
 import { Effect } from "effect"
 import type * as Socket from "effect/socket/Socket"
@@ -32,11 +32,13 @@ export const roomHost = async () => {
       serializeAttachment: (value) => {
         attachment = structuredClone(value)
       },
-      deserializeAttachment: <T>() => structuredClone(attachment) as T | null,
+      deserializeAttachment: <T>() => structuredClone(attachment) as T | null
     }
     sockets.add(room)
-    socket.on("message", (data, binary) =>
-      Effect.runSync(PresenceRoom.receive(host, room, binary ? new Uint8Array(data as Buffer) : String(data)))
+    socket.on(
+      "message",
+      (data, binary) =>
+        Effect.runSync(PresenceRoom.receive(host, room, binary ? new Uint8Array(data as Buffer) : String(data)))
     )
     socket.on("close", () => {
       Effect.runSync(PresenceRoom.leave(host, room))
@@ -45,7 +47,7 @@ export const roomHost = async () => {
     Effect.runSync(PresenceRoom.join(host, room, {
       principal: url.searchParams.get("principal") ?? "",
       name: url.searchParams.get("name") ?? "",
-      access: url.searchParams.get("access") === "read" ? "read" : "write",
+      access: url.searchParams.get("access") === "read" ? "read" : "write"
     }))
   })
   const { port } = server.address() as { readonly port: number }
@@ -57,7 +59,7 @@ export const roomHost = async () => {
       new Promise<void>((resolve) => {
         for (const client of server.clients) client.terminate()
         server.close(() => resolve())
-      }),
+      })
   }
 }
 

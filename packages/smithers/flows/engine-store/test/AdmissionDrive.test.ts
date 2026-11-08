@@ -1,12 +1,13 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /** Admission joins an active drive; only new work requests another drive. */
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
 import { RunStore } from "@smthrs/run-store"
 import { Deferred, Effect, Exit, Fiber, Layer, Option, Schema, Scope } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as RunDriver from "../src/internal/RunDriver.ts"
@@ -26,7 +27,10 @@ const Parent = Flow.make("AdmissionDrive/Parent", {
   success: Schema.String,
   body: opaqueHandlerBody
 })
-type Services = Layer.Success<ReturnType<typeof TestStores.layerAt>> | Scope.Scope | Crypto.Crypto
+type Services =
+  | Layer.Success<ReturnType<typeof TestStores.layerAt>>
+  | Scope.Scope
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
 const run = <A, E>(body: Effect.Effect<A, E, Services>) =>
   withCrypto(body.pipe(Effect.scoped, Effect.provide(TestStores.layerAt(":memory:"))))
 const makeDriver = () =>

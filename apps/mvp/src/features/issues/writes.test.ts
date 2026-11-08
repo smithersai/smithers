@@ -1,7 +1,10 @@
 import { Collection, Persistence } from "@smthrs/effect-tanstack-db"
-import { Effect, Layer, Logger } from "effect"
+import { Effect, Layer, Logger, Option } from "effect"
+import { FetchHttpClient } from "effect/http"
 import { expect, test } from "vitest"
+import { boundFetch } from "../../device/identity"
 import { OutboxWrites } from "../../outbox"
+import { SESSION_ROUTE } from "../auth/contract"
 import { IssuesClient } from "./api"
 import { Requested, type Sending } from "./schema"
 import { ISSUE_WRITE, IssueWrites, keep, keepParked } from "./writes"
@@ -58,4 +61,35 @@ test("an opaque restored credential keeps its forbidden refusal without transpor
     expect(yield* issues.requested.get(row.id)).toMatchObject({ value: { status: "not_sent", reason: "forbidden" } })
   }).pipe(Effect.provide(IssueWrites.layer.pipe(Layer.provide(client), Layer.provide(Persistence.memory))))))
   expect(sent).toBe(0)
+})
+
+test("a 401 holds a write sent in the person's session, never one sent with its run's credential", async () => {
+  const origin = "http://issues.test"
+  // ChatApi can't tell who asked: every write is refused 401, while the session still names Alice.
+  const next: typeof fetch = async (input, init) => {
+    const path = new URL(new Request(input, init).url).pathname
+    if (path === SESSION_ROUTE) return Response.json({ signedIn: true, personId: "alice", login: "alice", role: "member" })
+    if (path.endsWith("/credential")) return Response.json({ token: "renewed-proof" })
+    return Response.json({ code: "authentication" }, { status: 401 })
+  }
+  const transport = boundFetch(next, { origin, principal: () => "alice", reauthorize: async () => true })
+  const client = IssuesClient.layer({ origin, within: "5 seconds" }).pipe(
+    Layer.provide(FetchHttpClient.layer),
+    Layer.provide(Layer.succeed(FetchHttpClient.Fetch, transport)),
+  )
+  const credential = `${Buffer.from(JSON.stringify({ run: "answer-1", chain: ["issue/create"] })).toString("base64url")}.sig`
+  const [session, run, kept] = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+    const writes = yield* OutboxWrites
+    const { requested } = yield* IssueWrites
+    const send = (sent: Sending) => Effect.result(writes.mutations[ISSUE_WRITE]!({ rows: [sent], idempotencyKey: sent.id }))
+    const session = yield* send({ ...row, id: "session" })
+    const run = yield* send({ ...row, id: "run", credential })
+    return [session, run, [yield* requested.get("session"), yield* requested.get("run")]] as const
+  }).pipe(Effect.provide(IssueWrites.layer.pipe(Layer.provide(client), Layer.provide(Persistence.memory))))))
+  // The person's write is held for their sign-in: sent again, and not Not sent.
+  expect(session).toMatchObject({ _tag: "Failure", failure: { _tag: "Retry", status: 401 } })
+  expect(kept[0]).toEqual(Option.none())
+  // The run's 401 is about the run: Not sent, as before.
+  expect(run).toMatchObject({ _tag: "Failure", failure: { _tag: "Refused", status: 401 } })
+  expect(kept[1]).toEqual(Option.some(expect.objectContaining({ status: "not_sent", reason: "authentication" })))
 })

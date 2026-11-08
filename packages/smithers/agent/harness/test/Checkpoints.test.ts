@@ -40,14 +40,14 @@ const flows = { probe: projection("probe") }
 const recording = (observed: Array<Sandbox.Invocation>): Sandbox.Handler => (invocation) =>
   Effect.sync(() => {
     observed.push(invocation)
-    return new Cell.CallResult({ outcome: "success", value: { seen: invocation.flow } })
+    return Cell.CallResult.new({ outcome: "success", value: { seen: invocation.flow } })
   })
 
 /** A minter that pins whatever it is asked, naming the ordinal it was asked at. */
 const pinning = (minted: Array<number>): Sandbox.Minter => (mint) =>
   Effect.sync(() => {
     minted.push(mint.ordinal)
-    return new Cell.CallResult({ outcome: "success", value: Cell.checkpoint(`cp-${mint.ordinal}`) })
+    return Cell.CallResult.new({ outcome: "success", value: Cell.checkpoint(`cp-${mint.ordinal}`) })
   })
 
 /** Evaluates one cell in a realm of its own, which is what one frame does. */

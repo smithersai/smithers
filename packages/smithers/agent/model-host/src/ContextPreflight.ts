@@ -4,11 +4,13 @@
  * @since 1.0.0
  */
 
+import type { ModelStep } from "@smthrs/agent"
 import { Recall, RecallKeyword, Source } from "@smthrs/memory"
 import { type Model, ModelError, ModelRequest } from "@smthrs/model"
 import { ContextPreflight, type NativeAgent } from "@smthrs/rpc"
 import { Effect, Stream } from "effect"
 import { z } from "zod"
+import { fastModelFallback } from "./FastModelFallback.ts"
 import { type ModelTurnOptions, StreamingCredentialCutter } from "./ModelTurnHost.vibe"
 
 const Choices = z.array(z.object({ index: z.number().int().nonnegative(), reason: z.string().min(1) }).strict())
@@ -40,12 +42,13 @@ export const runContextPreflight = (
   raw: ContextPreflight.ContextPreflightInput,
   model: Model.Model,
   options: ModelTurnOptions
-): Effect.Effect<ContextPreflightAnswer, Model.ModelFailure | ModelError.ModelError> =>
+): Effect.Effect<ContextPreflightAnswer, Model.ModelFailure | ModelError.ModelError, ModelStep.Requirements> =>
   Effect.gen(function*() {
     const decoded = ContextPreflight.ContextPreflightInputSchema.safeParse(raw)
     if (!decoded.success) return yield* Effect.fail(invalid())
     const input = decoded.data
     const started = performance.now()
+    const durableContext = yield* Effect.context<ModelStep.Requirements>()
     const candidates = input.candidates.filter(({ item }) => !input.wikiOnly || item.kind === "page")
     const terms = RecallKeyword.normalizeQueryTerms(input.prompt)
     const bank = `flow-context:${input.branch}`
@@ -95,23 +98,30 @@ export const runContextPreflight = (
           let output = ""
           const cutter = new StreamingCredentialCutter(options.credential, options.additionalCredentials)
           let settled = false
-          yield* Stream.runForEach(model.stream(request), (event) => {
-            // A selector has no tools, and settlement ends its one response.
-            // Usage may arrive after settlement (OpenAI include_usage). It
-            // carries accounting, never another selector response.
-            if (event.type === "usage") return Effect.void
-            // Never turn a malformed stream into a durable context selection.
-            if (settled || event.type.startsWith("tool-")) return Effect.fail(invalid())
-            if (event.type === "text-delta") {
-              output += cutter.push(event.text)
+          yield* Stream.runForEach(
+            fastModelFallback(
+              [{ model, ...options }, ...(options.fallbacks ?? [])],
+              options.onFallback,
+              "model-host/context"
+            ).stream(request),
+            (event) => {
+              // A selector has no tools, and settlement ends its one response.
+              // Usage may arrive after settlement (OpenAI include_usage). It
+              // carries accounting, never another selector response.
+              if (event.type === "usage") return Effect.void
+              // Never turn a malformed stream into a durable context selection.
+              if (settled || event.type.startsWith("tool-")) return Effect.fail(invalid())
+              if (event.type === "text-delta") {
+                output += cutter.push(event.text)
+              }
+              if (event.type === "settle") {
+                if (event.stopReason !== "stop") return Effect.fail(invalid())
+                output += cutter.finish()
+                settled = true
+              }
+              return bytes(output) > 65536 ? Effect.fail(invalid()) : Effect.void
             }
-            if (event.type === "settle") {
-              if (event.stopReason !== "stop") return Effect.fail(invalid())
-              output += cutter.finish()
-              settled = true
-            }
-            return bytes(output) > 65536 ? Effect.fail(invalid()) : Effect.void
-          })
+          )
           const choices = yield* Effect.try({ try: () => Choices.parse(JSON.parse(output)), catch: invalid })
           if (!settled || choices.some((choice) => choice.index >= recalled.length)) {
             return yield* Effect.fail(invalid())
@@ -119,7 +129,7 @@ export const runContextPreflight = (
           reasons = new Map()
           for (const choice of choices) if (!reasons.has(choice.index)) reasons.set(choice.index, choice.reason)
           return choices.map((choice) => choice.index)
-        }),
+        }).pipe(Effect.provideContext(durableContext)),
       (row) => {
         const index = recalledRows.findIndex((candidate) => candidate.key === row.key)
         // Recall may shorten its preview to its public byte ceiling. The answer

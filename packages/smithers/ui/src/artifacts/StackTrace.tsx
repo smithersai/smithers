@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { useId, useState, type ComponentProps, type ReactNode } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 
 export type StackFrameData = {

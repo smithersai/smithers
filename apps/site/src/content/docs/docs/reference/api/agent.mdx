@@ -8,7 +8,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/age
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/docs)
 
-> **Related APIs:** [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/memory`](/docs/reference/api/memory/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/observability`](/docs/reference/api/observability/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/plugin`](/docs/reference/api/plugin/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/std`](/docs/reference/api/std/)
+> **Related APIs:** [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/memory`](/docs/reference/api/memory/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/observability`](/docs/reference/api/observability/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/plugin`](/docs/reference/api/plugin/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/std`](/docs/reference/api/std/)
 
 `@smthrs/agent` exports thirty-one modules from its root entry point, and each is
 also importable from `@smthrs/agent/<Module>`:
@@ -293,7 +293,7 @@ const make: (
 Constructs the production executor. It must be built in a scope: the scope owns
 the registered agent flow, every forked run driver, and the resume bridge that
 follows the journal. Its requirements are `Agent`, `ControlRuntime`,
-`Crypto.Crypto`, `DurableEngineState`, `FlowRuntime`, `Journal`,
+`(EffectDigest.Digest | SecureRandom.SecureRandom)`, `DurableEngineState`, `FlowRuntime`, `Journal`,
 `NotificationQueue`, `Registry`, `RunStore`, and `SeatResolver`.
 
 ### AgentSession.layer
@@ -644,7 +644,7 @@ interface AgentAction<Tag, Payload, Output> extends Action.Declared<Tag, Payload
 
 A declared model-backed action, plus the layer that implements it. The layer's
 requirements are `Agent`, `FlowRuntime`, `Host`, `Sandbox.Sandbox`,
-`SeatResolver`, `Steering.Source`, `Crypto.Crypto`, `Budget.Budget`, and
+`SeatResolver`, `Steering.Source`, `(EffectDigest.Digest | SecureRandom.SecureRandom)`, `Budget.Budget`, and
 `QuotaPolicy.QuotaClassifier`.
 
 ### AgentAction.Host
@@ -1892,7 +1892,9 @@ the catalog fails with `assembly_failed`.
 
 ```ts
 const clock: (
-  services: Context.Context<Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>,
+  services: Context.Context<
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+  >,
   options?: { readonly maxSeconds?: number | undefined }
 ) => FlowBinding.Source
 ```
@@ -2074,11 +2076,19 @@ runs. It touches three services and no more: `FlowRuntime`, `RunStore`, and
 ```ts
 const make: (
   options: Options
-) => Effect.Effect<ChildFlows.Children, never, Control | Crypto.Crypto | FlowRuntime.FlowRuntime | RunStore.RunStore>
+) => Effect.Effect<
+  ChildFlows.Children,
+  never,
+  Control | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | RunStore.RunStore
+>
 
 const layer: (
   options: Options
-) => Layer.Layer<ChildFlows.Children, never, Control | Crypto.Crypto | FlowRuntime.FlowRuntime | RunStore.RunStore>
+) => Layer.Layer<
+  ChildFlows.Children,
+  never,
+  Control | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | RunStore.RunStore
+>
 ```
 
 Builds or provides the durable child port:
@@ -2468,7 +2478,7 @@ const make: (
 ) => Effect.Effect<
   EngineLike.EngineLike,
   never,
-  Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Budget.Budget | QuotaPolicy.QuotaClassifier
+  (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Budget.Budget | QuotaPolicy.QuotaClassifier
 >
 
 const layer: (options: Options) => Layer.Layer<EngineLike.EngineLike, never, ...>
@@ -2568,7 +2578,7 @@ const sandboxed: (
   sandbox: WorkspaceSandbox.Service,
   runner: WorkspaceCallRunner,
   options?: { readonly layers?: ReadonlyArray<string> | undefined }
-) => Effect.Effect<CallRunner, never, Crypto.Crypto>
+) => Effect.Effect<CallRunner, never, (EffectDigest.Digest | SecureRandom.SecureRandom)>
 ```
 
 Runs every cell call inside an outer workspace transaction. A call's declared
@@ -2658,7 +2668,11 @@ the walkthrough, see [A durable model call](https://github.com/smithersai/smithe
 ```ts
 const run: (
   options: Options
-) => Effect.Effect<Result, Failure, Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
+) => Effect.Effect<
+  Result,
+  Failure,
+  (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+>
 ```
 
 Calls the model once, as one step of the running flow.
@@ -2697,7 +2711,11 @@ failure, with the route's `prepare` error, or with an `engine_failed`
 ```ts
 const model: (
   options: Omit<Options, "request" | "onEvent">
-) => Effect.Effect<Model.Model, never, Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
+) => Effect.Effect<
+  Model.Model,
+  never,
+  (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+>
 ```
 
 A `Model` whose every call is one `run` of the running flow, keyed, sealed and
@@ -3137,14 +3155,14 @@ reads, `maxHours` (1 to `MAX_HOURS`, 12) and `restarts` (0 to `MAX_RESTARTS`, 5)
 - `Job`: `{ key, claim, generation, task, deadline, leaseSeconds, reclaimed }`,
   what a runner claims. `reclaimed` marks a job handed back to a runner that
   restarted while holding it.
-- `ClaimRequest` `{ profiles, free, running, waitSeconds, machine? }`,
+- `ClaimRequest` `{ profiles, free, running, waitSeconds, machine?, minQueuedSeconds? }` (`minQueuedSeconds`: an overflow runner takes only a job claimable that long),
   `ClaimResponse`, `HeartbeatRequest` `{ key, claim, delivered?, account?,
   cpuSeconds?, usage? }` (`delivered`: the steers the agent read),
   `HeartbeatResponse` `{ held, cancel, leaseSeconds, steers? }` (the steers it
   hasn't, oldest first, each a `Steer` `{ id, text }`),
   `SettleRequest` `{ key, claim, outcome, delivered? }`, `SettleResponse`, and `ROUTES` (`/api/runners/claim`,
-  `/heartbeat`, `/settle`, `/events`). `Machine` `{ version?, load1?, diskFreeGb? }` is
-  what a claim says about the runner's machine; a heartbeat's `account` is the
+  `/heartbeat`, `/settle`, `/events`). `Machine` `{ version?, load1?, diskFreeGb?, held? }` is
+  what a claim says about the runner's machine (`held`, why it takes no job by its own admission rule); a heartbeat's `account` is the
   opaque label the runner's hook chose (written as a profile is), `cpuSeconds`
   the agent's process tree's CPU time, and `usage` what it reported so far. A
   host reads them for its fleet view and stall alerts.

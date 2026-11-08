@@ -1,5 +1,6 @@
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect, Layer } from "effect"
+import { expectTypeOf } from "vitest"
 import * as Migrations from "../src/core/Migrations.ts"
 import type { SourceRecord } from "../src/core/SourceRecord.vibe"
 import * as SourceStore from "../src/core/SourceStore.vibe"
@@ -55,7 +56,7 @@ export const runWith = <R>(layer: Layer.Layer<R>) => <A, E>(effect: Effect.Effec
  * {@link sqlLayer} must surface as an unmet `SqlClient`, not compile.
  */
 export const unprovidedServiceProbe = () => {
-  // @ts-expect-error without TestDatabase.layer nothing provides the SqlClient the store and migrations need
-  runWith(Layer.orDie(Layer.provideMerge(SourceStore.layerSql, Migrations.layer)))
+  const missing = Layer.orDie(Layer.provideMerge(SourceStore.layerSql, Migrations.layer))
+  expectTypeOf<typeof missing>().not.toExtend<Parameters<typeof runWith>[0]>()
   runWith(sqlLayer)
 }

@@ -5,9 +5,32 @@ import { createHash, randomUUID } from "node:crypto"
 import { promises as fs } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 
-const receiptName = (key: string) => `${createHash("sha256").update(key).digest("hex")}.json`
-const isReceipt = (name: string) => /^[a-f0-9]{64}\.json$/.test(name)
+const legacyName = (key: string) => `${createHash("sha256").update(key).digest("hex")}.json`
+const receiptName = (key: string) => legacyName(key).replace(/\.json$/, ".receipt.json")
+const isReceipt = (name: string) => /^[a-f0-9]{64}(?:\.receipt)?\.json$/.test(name)
 const missing = (cause: unknown) => (cause as NodeJS.ErrnoException).code === "ENOENT"
+
+// Effect 4.1 enumerates original keys. Keep them atomically with each value;
+// legacy raw values remain readable through get and the value-only recovery API.
+const Receipt = Schema.Struct({ receiptVersion: Schema.Literal(1), key: Schema.String, value: Schema.String })
+const decodeReceipt = Schema.decodeUnknownOption(Schema.fromJsonString(Receipt))
+const receiptValue = (text: string): string => {
+  const decoded = decodeReceipt(text)
+  if (decoded._tag === "None") throw new Error("Invalid versioned receipt")
+  return decoded.value.value
+}
+
+// Distinct filenames make the format unambiguous even when a legacy raw value
+// happens to look exactly like the new envelope. Prefer a published new value
+// if a crash left its old filename beside it.
+const receiptFiles = (names: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const found = new Map<string, string>()
+  for (const name of names.filter(isReceipt)) {
+    const digest = name.slice(0, 64)
+    if (!found.has(digest) || name.endsWith(".receipt.json")) found.set(digest, name)
+  }
+  return [...found.values()].sort()
+}
 
 /** Fsync both file contents and the directory entry that publishes or removes them. */
 const syncDirectory = async (directory: string) => {
@@ -47,10 +70,15 @@ export const make = (directory: string) =>
       get: (key) =>
         operation("get", key, async () => {
           try {
-            return await fs.readFile(join(directory, receiptName(key)), "utf8")
+            return receiptValue(await fs.readFile(join(directory, receiptName(key)), "utf8"))
           } catch (cause) {
-            if (missing(cause)) return undefined
-            throw cause
+            if (!missing(cause)) throw cause
+            try {
+              return await fs.readFile(join(directory, legacyName(key)), "utf8")
+            } catch (legacyCause) {
+              if (missing(legacyCause)) return undefined
+              throw legacyCause
+            }
           }
         }),
       set: (key, value) =>
@@ -59,12 +87,15 @@ export const make = (directory: string) =>
           try {
             const file = await fs.open(temporary, "wx", 0o600)
             try {
-              await file.writeFile(value, "utf8")
+              await file.writeFile(JSON.stringify({ receiptVersion: 1, key, value }), "utf8")
               await file.sync()
             } finally {
               await file.close()
             }
             await fs.rename(temporary, join(directory, receiptName(key)))
+            await fs.unlink(join(directory, legacyName(key))).catch((cause: unknown) => {
+              if (!missing(cause)) throw cause
+            })
             await syncDirectory(directory)
           } finally {
             await fs.unlink(temporary).catch((cause: unknown) => {
@@ -74,9 +105,11 @@ export const make = (directory: string) =>
         }).pipe(Effect.uninterruptible),
       remove: (key) =>
         operation("remove", key, async () => {
-          await fs.unlink(join(directory, receiptName(key))).catch((cause: unknown) => {
-            if (!missing(cause)) throw cause
-          })
+          for (const name of [receiptName(key), legacyName(key)]) {
+            await fs.unlink(join(directory, name)).catch((cause: unknown) => {
+              if (!missing(cause)) throw cause
+            })
+          }
           await syncDirectory(directory)
         }).pipe(Effect.uninterruptible),
       clear: operation("clear", undefined, async () => {
@@ -85,7 +118,20 @@ export const make = (directory: string) =>
         }
         await syncDirectory(directory)
       }).pipe(Effect.uninterruptible),
-      size: operation("size", undefined, async () => (await fs.readdir(directory)).filter(isReceipt).length)
+      keys: operation("keys", undefined, async () => {
+        const names = receiptFiles(await fs.readdir(directory))
+        const keys: Array<string> = []
+        for (const name of names) {
+          if (!name.endsWith(".receipt.json")) {
+            throw new Error("Legacy receipt keys cannot be recovered from hashed filenames")
+          }
+          const decoded = decodeReceipt(await fs.readFile(join(directory, name), "utf8"))
+          if (decoded._tag === "None") throw new Error("Legacy receipt keys cannot be recovered from hashed filenames")
+          keys.push(decoded.value.key)
+        }
+        return keys
+      }),
+      size: operation("size", undefined, async () => receiptFiles(await fs.readdir(directory)).length)
     })
   })
 
@@ -106,9 +152,10 @@ export const values = (repository: string) =>
         throw cause
       }
       const values: Array<string> = []
-      for (const name of names.filter(isReceipt).sort()) {
+      for (const name of receiptFiles(names)) {
         try {
-          values.push(await fs.readFile(join(directory, name), "utf8"))
+          const text = await fs.readFile(join(directory, name), "utf8")
+          values.push(name.endsWith(".receipt.json") ? receiptValue(text) : text)
         } catch (cause) {
           // Another host can finish and remove a receipt after the listing.
           if (!missing(cause)) throw cause

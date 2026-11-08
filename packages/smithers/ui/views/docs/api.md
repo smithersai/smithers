@@ -344,7 +344,9 @@ the page's messages.
 ## `Home`
 
 A repository's own home: the sections and blocks `.smithers/home.json` declares, and who sees each section. See
-[Read a repository's home](read-a-home.md).
+[Read a repository's home](read-a-home.md). `Home.Url` accepts safe absolute
+HTTP(S) URLs and origin-relative paths starting with one `/`; `Home.DocsUrl`
+requires absolute HTTPS URLs without credentials.
 
 | Export                                                                                                                       | What it is                                                                                                                                                                                                          |
 | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

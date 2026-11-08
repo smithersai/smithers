@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * A cell that waits on the durable clock has to be woken by it.
  *
@@ -25,7 +26,6 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as Capability from "@smthrs/capability/Capability"
-import { Crypto } from "@smthrs/crypto"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
@@ -39,6 +39,7 @@ import type * as Route from "@smthrs/model/Route"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
 import { Deferred, Effect, Layer, Option, Schema, Scope, Stream } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
@@ -122,7 +123,7 @@ const durableEngine = EngineStore.layer({
   Layer.provide(Layer.sync(DurableEngineState.DurableEngineState)(promptClocks)),
   Layer.provide(StepBoundary.layerTest()),
   Layer.provide(TestStores.layer()),
-  Layer.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+  Layer.provide(NodeCrypto.layer)
 )
 
 /**
@@ -156,7 +157,7 @@ const driveDurable = (
   body: Effect.Effect<
     ReadonlyArray<AgentEvent.AgentEvent>,
     unknown,
-    Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
   >
 ): Promise<Outcome> =>
   Effect.gen(function*() {
@@ -178,7 +179,7 @@ const driveDurable = (
     )
   }).pipe(
     Effect.provide(durableEngine),
-    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
+    Effect.provide(NodeCrypto.layer),
     Effect.scoped,
     Effect.runPromise
   )
@@ -223,7 +224,7 @@ describe("a cell that waits on the durable clock", () => {
     const outcome = await driveDurable(
       Effect.gen(function*() {
         const services = yield* Effect.context<
-          Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+          (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
         >()
         return yield* collect({
           flows: [StandardFlows.clock(services)],
@@ -252,7 +253,7 @@ ctx.done("waited " + waited.waitedSeconds)`
     const outcome = await driveDurable(
       Effect.gen(function*() {
         const services = yield* Effect.context<
-          Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+          (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
         >()
         return yield* collect({
           flows: [StandardFlows.clock(services)],

@@ -8,6 +8,11 @@ packages/*/dist/
 packages/*/dist-chrome/
 packages/*/dist-firefox/
 *.tsbuildinfo
+# VibeLang compatibility declarations are generated beside their source.
+*.d.vibe.ts
+*.d.vibex.ts
+*.vibe.text.d.ts
+*.vibex.text.d.ts
 *.tgz
 
 # Cargo build output (every Cargo workspace member)
@@ -252,8 +257,6 @@ __pycache__/
 
 # Backend SSH host keys from a dev run at the repository root (ssh.host_key_dir defaults to ./data/ssh).
 /data/ssh/
-.vibelang-toolchain/
-
 # Portable loader records are derived compile caches, regenerated on demand.
 **/.vibelang/js/.loader/
 

@@ -2134,3 +2134,34 @@ describe("0099 and 0100 pending together", () => {
         .toEqual([{ number: 1, validation: "none" }])
     }), 60_000)
 })
+
+describe("0106_machine_write_diagnostics", () => {
+  test("upgrades existing writes with nullable diagnostics, preserves receipts, and applies once", () =>
+    emptySchema(async (url, schema) => {
+      const database = Database.layer(Effect.succeed(Redacted.make(url)))
+      const on = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
+        runtime.runPromise(Effect.provide(effect, database))
+      await on(through("0105"))
+      const insert = Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        INSERT INTO machine_writes (id, repo_id, owner, token_sha256, agent, lane, op, payload, payload_hash, status, failure, item_number)
+        SELECT gen_random_uuid(), 'github/acme/widgets', 'acme', repeat('a', 64), 'fixer', 'lane-1', 'issue/create', '{}'::jsonb,
+          repeat('b', 64), status, CASE WHEN status IN ('refused', 'failed') THEN 'not_allowed' ELSE NULL END,
+          CASE WHEN status = 'done' THEN 7 ELSE NULL END
+        FROM unnest(ARRAY['pending', 'done', 'refused', 'failed']) AS status`)
+      await on(insert)
+      const before = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`SELECT * FROM machine_writes ORDER BY id`))
+      expect((await on(through("0106"))).map(([id, name]) => `${id}_${name}`)).toEqual(["106_machine_write_diagnostics"])
+      const after = await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`SELECT * FROM machine_writes ORDER BY id`))
+      expect(after).toEqual(before.map((row) => ({ ...row, cause: null, github_status: null })))
+      const columns = await sql(`SELECT column_name, data_type, is_nullable FROM information_schema.columns
+        WHERE table_schema = '${schema}' AND table_name = 'machine_writes' AND column_name IN ('cause', 'github_status') ORDER BY column_name`)
+      expect(columns).toEqual([
+        { column_name: "cause", data_type: "text", is_nullable: "YES" },
+        { column_name: "github_status", data_type: "integer", is_nullable: "YES" },
+      ])
+      await on(insert)
+      expect(await on(Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
+        SELECT count(*)::int AS count FROM machine_writes WHERE cause IS NULL AND github_status IS NULL`))).toEqual([{ count: 8 }])
+      expect(await on(through("0106"))).toEqual([])
+    }))
+})

@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import type { ComponentProps } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
-import { cn } from "./cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "./styles";
 
 export const alertVariants = cva("sui-alert", {

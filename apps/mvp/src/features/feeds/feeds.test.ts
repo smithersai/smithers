@@ -2,7 +2,8 @@
 // compose Postgres and Electric, reach a plugin through the host's `core/feeds` and `core/feed`; a Maintainer's
 // `feed/answer` runs on the device's engine and reaches the collector's read. Only the model is scripted.
 import { type Host } from "@smthrs/plugin"
-import { Deferred, Effect, Metric } from "effect"
+import { ShapeSource } from "@smthrs/effect-electric"
+import { Deferred, Effect, Layer, Metric, Option } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import queue from "../../../plugins/queue/plugin.json" with { type: "json" }
 import { FlowDispatch } from "../../flows/dispatch"
@@ -10,9 +11,12 @@ import type { BuiltIn } from "../../plugins/builtin"
 import { hostFor, Plugins, queryOf, readable, selectedOf, stateOf } from "../../plugins/plugins"
 import { PluginsUi } from "../../plugins/ui"
 import { member, nodeDevice, openTab, openTestApp, TEST_FEED_KEY, TestChatApi } from "../../test/chatApi"
-import { feedAnswersRoute, feedsRoute } from "./contract"
+import { FEEDS_SHAPE_ROUTE, feedAnswersRoute, feedsRoute } from "./contract"
 import type { FeedDocument, FeedItem } from "./schema"
-import { documents } from "./store"
+import { documents, FeedsStore } from "./store"
+import { AuthStore, SESSION } from "../auth/store"
+import { repoId } from "../repo/contract"
+import { replaceRole, RepoStore } from "../repo/store"
 
 const WITHIN = 60_000
 const VIEW = "probe/feeds"
@@ -52,8 +56,11 @@ const probe: BuiltIn = {
   components: () => Promise.reject(new Error("never loaded")),
 }
 
-/** ChatApi signed in as a Maintainer of its repository, and a device whose engine leads. */
-const open = async () => {
+/**
+ * ChatApi signed in as a Maintainer of its repository, and a device whose engine leads. A shape request to a path in
+ * `refusing` answers 403, as a proxy refusing it would.
+ */
+const open = async (refusing: ReadonlySet<string> = new Set()) => {
   const root = openTestApp({ answers: false }, { actor: { ...member, role: "maintainer", login: "maya" } })
   runtimes.push(root)
   const api = await root.runPromise(Effect.service(TestChatApi))
@@ -66,7 +73,14 @@ const open = async () => {
     receipt.status = response.status
     return response
   } }
-  const tab = openTab(observed, { host: nodeDevice({ agent: observed }) })
+  const tab = openTab(observed, {
+    host: nodeDevice({ agent: observed }),
+    replace: Layer.succeed(ShapeSource.ShapeSource, {
+      request: (url, init) => Effect.suspend(() => refusing.has(new URL(url).pathname)
+        ? Effect.succeed(new Response(null, { status: 403 }))
+        : ShapeSource.fetchSource.request(url, init)),
+    }),
+  })
   runtimes.push(tab)
   /** A request as the collector sends it, with its feed key. */
   const collector = (path: string, init: RequestInit = {}) =>
@@ -277,5 +291,82 @@ describe("repository feeds on a tab", { timeout: WITHIN * 2 }, () => {
       expect.objectContaining({ id, item: "decision-1", choice: "approve", text: "ship it", login: "maya" }),
     ])
     expect(body.next).toBe(body.answers[0]!.seq)
+  })
+
+  // The data gate (decision 0110, 2026-11-03): a repository's index holds nothing of it from the change that hides it, a
+  // refusal mark or a session a reached server couldn't verify, before any eviction; a document follows.
+  test("a repository's index drops its documents in the change that hides it, and shows them again", async ({ onTestFailed }) => {
+    const { tab, collector } = await open()
+    expect((await collector(feedsRoute(REPO.owner, REPO.name), {
+      method: "POST", body: JSON.stringify({ set: { lanes: { visibility: "public", body: [] }, "transcript/a": { visibility: "public", body: 1 } } }),
+    })).status).toBe(200)
+    const store = await tab.runPromise(Effect.service(FeedsStore))
+    const auth = await tab.runPromise(Effect.service(AuthStore))
+    const repos = await tab.runPromise(Effect.service(RepoStore))
+    // Startup checks run in the background. Finish that real check before this test owns the session transitions;
+    // otherwise its late successful answer can restore visibility during the deliberately unverifiable interval.
+    await until(() => expect(auth.session.tanstack.get(SESSION)?.status).toBe("signed_in"))
+    const index = await tab.runPromise(store.index("octo/hello"))
+    const document = store.document("octo/hello", "transcript/a")
+    const stop = document.subscribe(() => {})
+    const started = Date.now()
+    const observations: Array<{ stage: string; elapsedMs: number; status: string; unverifiable: boolean; documents: number }> = []
+    const record = (stage: string) => {
+      const row = auth.session.tanstack.get(SESSION)
+      const next = { stage, elapsedMs: Date.now() - started, status: row?.status ?? "absent",
+        unverifiable: row?.unverifiable === true, documents: document.current().length }
+      const last = observations.at(-1)
+      if (last === undefined || last.stage !== next.stage || last.status !== next.status ||
+        last.unverifiable !== next.unverifiable || last.documents !== next.documents) observations.push(next)
+    }
+    onTestFailed(() => console.error("feed.visibility", JSON.stringify({ observations })))
+    try {
+      // The index's query starts on its first read, as a page's `useLiveQuery` starts it.
+      index.byName.tanstack.startSyncImmediate()
+      await until(async () => {
+        expect((await tab.runPromise(index.byName.toArray)).map((row) => row.name)).toEqual(["lanes"])
+        expect(document.current()).toHaveLength(1)
+      })
+      const id = repoId(REPO.owner, REPO.name)
+      const held = Option.getOrUndefined(await tab.runPromise(repos.roles.get(id)))
+      /** The index's names, read in the same Effect as `change`, with nothing run between. */
+      const namesAfter = (change: Effect.Effect<unknown, unknown>) => tab.runPromise(Effect.gen(function* () {
+        yield* change
+        return (yield* index.byName.toArray).map((row) => row.name)
+      }))
+      expect(await namesAfter(Effect.orDie(auth.session.update(SESSION, (row) => { row.status = "unreachable"; row.unverifiable = true })))).toEqual([])
+      record("index_hidden")
+      await until(() => { record("document_hide"); expect(document.current()).toEqual([]) })
+      expect(await namesAfter(Effect.orDie(auth.session.update(SESSION, (row) => { row.status = "signed_in"; delete row.unverifiable })))).toEqual(["lanes"])
+      expect(await namesAfter(replaceRole(repos, { id, role: null, own: false, refused: "forbidden" }))).toEqual([])
+      await namesAfter(held === undefined ? Effect.orDie(repos.roles.delete(id)) : replaceRole(repos, held))
+      await until(async () => expect((await tab.runPromise(index.byName.toArray)).map((row) => row.name)).toEqual(["lanes"]))
+    } finally { record("cleanup"); stop() }
+  })
+
+  // Astra on 0c7b9f01, ruling #3: a feed shape's 403 is that shape's refusal, a tier the repository's readers may lack.
+  // Its documents go; the repository is not refused, and its other rows still show.
+  test("a feed shape's 403 drops the repository's feeds and leaves the repository shown", async () => {
+    const refusing = new Set<string>()
+    const { tab, collector } = await open(refusing)
+    expect((await collector(feedsRoute(REPO.owner, REPO.name), {
+      method: "POST", body: JSON.stringify({ set: { lanes: { visibility: "public", body: [] } } }),
+    })).status).toBe(200)
+    const store = await tab.runPromise(Effect.service(FeedsStore))
+    const repos = await tab.runPromise(Effect.service(RepoStore))
+    const index = await tab.runPromise(store.index("octo/hello"))
+    index.byName.tanstack.startSyncImmediate()
+    const names = () => index.byName.tanstack.toArray.map((row) => row.name)
+    await until(() => expect(names()).toEqual(["lanes"]))
+    refusing.add(FEEDS_SHAPE_ROUTE)
+    // A change wakes the shape's live request; the one after it is refused.
+    expect((await collector(feedsRoute(REPO.owner, REPO.name), {
+      method: "POST", body: JSON.stringify({ set: { roads: { visibility: "public", body: [] } } }),
+    })).status).toBe(200)
+    await until(() => expect(names()).toEqual([]))
+    const id = repoId(REPO.owner, REPO.name)
+    expect(repos.isRefused(id)).toBe(false)
+    expect(Option.getOrUndefined(await tab.runPromise(repos.roles.get(id)))?.refused).toBeUndefined()
+    expect(repos.visible.tanstack.get(id)?.show).toBe(true)
   })
 })

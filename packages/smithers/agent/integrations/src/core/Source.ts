@@ -5,9 +5,10 @@
  * @since 1.0.0
  */
 
-import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableClock, FlowRuntime } from "@smthrs/flow"
 import { Effect, Schema } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { Failure, fromIntegrationError, toIntegrationError } from "./ActionFailure.vibe"
 import { CursorStore } from "./CursorStore.vibe"
 import { ExternalEvent } from "./ExternalEvent.vibe"
@@ -51,7 +52,11 @@ export interface RunOptions {
  * @category models
  * @since 1.0.0
  */
-export type RunContext = CursorStore | Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+export type RunContext =
+  | CursorStore
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
+  | FlowRuntime.FlowRuntime
+  | FlowRuntime.FlowInstance
 
 /**
  * A polling source bound to one cursor. A source must have only one active driver.

@@ -27,7 +27,7 @@ with its peer dependencies at these exact versions:
     "@smthrs/effect-tanstack-db": "workspace:*",
     "@tanstack/db": "0.15.1",
     "@tanstack/db-sqlite-persistence-core": "0.4.11",
-    "effect": "4.1.0"
+    "effect": "4.1.1"
   }
 }
 ```

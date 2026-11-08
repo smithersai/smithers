@@ -2,12 +2,11 @@
 // WorkerBundle, with the props WorkerProvider.diff hands hasChanged. Alchemy's Diff.stripEffects turns a Worker's build
 // plugins (functions, class instances) into undefined, so on 2026-10-24 `alchemy plan` bundled ChatApi and
 // ElectricGateway without vibelang-unplugin and failed on @smthrs/errors' .vibe source, while every hand-made bundle
-// in the tests passed. patches/@alchemy.run__cloudflare@2.0.0-beta.84.patch hands hasChanged the Worker's own build
-// options. Since beta.84 the Worker provider and bundler live in @alchemy.run/cloudflare, Diff and Local in alchemy.
+// in the tests passed. the beta.85 Alchemy and Cloudflare patches hands hasChanged the Worker's own build options.
 import { NodeServices } from "@effect/platform-node"
 import { Effect, Exit, Stream } from "effect"
-import { readFileSync, realpathSync, writeFileSync } from "node:fs"
 import { spawnSync } from "node:child_process"
+import { readFileSync, realpathSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { describe, expect, test } from "vitest"
@@ -35,13 +34,13 @@ interface Bundler {
 const internals = async () => ({
   WorkerBundle: (await import(pathToFileURL(join(CLOUDFLARE, "lib", "Workers", "Sources", "Rolldown.js")).href))
     .WorkerBundle as Effect.Effect<Bundler>,
-  stripEffects: (await import(pathToFileURL(join(ALCHEMY, "lib", "Diff.js")).href)).stripEffects as <A>(value: A) => A,
+  stripEffects: (await import(pathToFileURL(join(ALCHEMY, "lib", "Diff.js")).href)).stripEffects as <A>(value: A) => A
 })
 
 /** Bundles `props` as WorkerProvider.prepareBundle does, with `build` as the bundle's extra options. */
 const bundle = async (id: string, props: WorkerProps, build: unknown) => {
   const { WorkerBundle } = await internals()
-  const program = Effect.gen(function* () {
+  const program = Effect.gen(function*() {
     const bundler = yield* WorkerBundle
     return yield* bundler.build({
       id,
@@ -49,7 +48,7 @@ const bundle = async (id: string, props: WorkerProps, build: unknown) => {
       compatibility: props.compatibility,
       entry: { kind: "effect", exports: id === "ElectricRuntime" ? { ElectricObject: { kind: "durableObject" } } : {} },
       stack: { name: "smithers-mvp", stage: "test" },
-      extraOptions: build,
+      extraOptions: build
     })
   })
   return Effect.runPromiseExit(program.pipe(Effect.provide(NodeServices.layer)))
@@ -58,7 +57,7 @@ const bundle = async (id: string, props: WorkerProps, build: unknown) => {
 const WORKERS: ReadonlyArray<readonly [string, WorkerProps]> = [
   ["ChatApi", ChatApi.props],
   ["ElectricGateway", ElectricGateway.props],
-  ["ElectricRuntime", ElectricRuntime.props],
+  ["ElectricRuntime", ElectricRuntime.props]
 ]
 
 describe("the Workers alchemy plan bundles", () => {
@@ -72,35 +71,41 @@ describe("the Workers alchemy plan bundles", () => {
     expect(Exit.isSuccess(exit), Exit.isFailure(exit) ? String(exit.cause) : "").toBe(true)
   }, 120_000)
 
-  test("local diff and reconcile preserve build plugins before the developer Worker watcher compiles .vibe", async () => {
-    const localProvider = readFileSync(join(ALCHEMY, "lib", "Local", "LocalProvider.js"), "utf8")
-    expect(localProvider).toContain("news: { ...news, build: rawNews.build }")
-    expect(localProvider).toContain("news: { ...stripEffects(news), build: news.build }")
-    const { WorkerBundle } = await internals()
-    const rpc = await import(pathToFileURL(join(ALCHEMY, "lib", "Local", "RpcSerialization.js")).href)
-    const echo = rpc.unwrapRpcHandlers(rpc.wrapRpcHandlers({ echo: (value: unknown) => Effect.succeed(value) }))
-    const build = await Effect.runPromise(echo.echo(ChatApi.props.build))
-    const props = { ...ChatApi.props, main: "worker/DevChatApi.ts", build }
-    const program = Effect.gen(function* () {
-      const bundler = yield* WorkerBundle
-      return yield* bundler.watch({
-        id: "ChatApi",
-        main: props.main,
-        compatibility: props.compatibility,
-        entry: { kind: "effect", exports: {} },
-        stack: { name: "smithers-mvp", stage: "test" },
-        extraOptions: props.build,
-      }).pipe(Stream.filter((event) => event._tag !== "Start"), Stream.take(1), Stream.runCollect)
-    })
-    const events = await Effect.runPromise(program.pipe(Effect.provide(NodeServices.layer)))
-    expect(events).toHaveLength(1)
-    expect(events[0]._tag).toBe("Success")
-  }, 120_000)
+  test(
+    "local diff and reconcile preserve build plugins before the developer Worker watcher compiles .vibe",
+    async () => {
+      const localProvider = readFileSync(join(ALCHEMY, "lib", "Local", "LocalProvider.js"), "utf8")
+      expect(localProvider).toContain("news: { ...news, build: rawNews.build }")
+      expect(localProvider).toContain("news: { ...stripEffects(news), build: news.build }")
+      const { WorkerBundle } = await internals()
+      const rpc = await import(pathToFileURL(join(ALCHEMY, "lib", "Local", "RpcSerialization.js")).href)
+      const echo = rpc.unwrapRpcHandlers(rpc.wrapRpcHandlers({ echo: (value: unknown) => Effect.succeed(value) }))
+      const build = await Effect.runPromise(echo.echo(ChatApi.props.build))
+      const props = { ...ChatApi.props, main: "worker/DevChatApi.ts", build }
+      const program = Effect.gen(function*() {
+        const bundler = yield* WorkerBundle
+        return yield* bundler.watch({
+          id: "ChatApi",
+          main: props.main,
+          compatibility: props.compatibility,
+          entry: { kind: "effect", exports: {} },
+          stack: { name: "smithers-mvp", stage: "test" },
+          extraOptions: props.build
+        }).pipe(Stream.filter((event) => event._tag !== "Start"), Stream.take(1), Stream.runCollect)
+      })
+      const events = await Effect.runPromise(program.pipe(Effect.provide(NodeServices.layer)))
+      expect(events).toHaveLength(1)
+      expect(events[0]._tag).toBe("Success")
+    },
+    120_000
+  )
 
   test("Playwright lists browser tests with VibeLang's loader and source maps", () => {
     const result = spawnSync(process.execPath, [
       join(MVP, "node_modules", "@playwright", "test", "cli.js"),
-      "test", "slash-commands.spec.ts", "--list",
+      "test",
+      "slash-commands.spec.ts",
+      "--list"
     ], { cwd: MVP, encoding: "utf8", env: { ...process.env, BASE_URL: "https://localhost:1443", E2E_TARGET: "local" } })
     expect(result.status, result.stdout + result.stderr).toBe(0)
     expect(result.stdout).toContain("slash-commands.spec.ts")
@@ -122,7 +127,6 @@ test("the gateway cache is private and versioned, with Electric's measured ten-s
   expect(ElectricRuntime.containerProps.env.ELECTRIC_LONG_POLL_TIMEOUT).toBe("10000")
 })
 
-
 test("ChatApi and gateway edits leave Electric's actual bundle and props byte-identical", async () => {
   const originalProps = JSON.stringify({ worker: ElectricRuntime.props, container: ElectricRuntime.containerProps })
   const before = await bundle("ElectricRuntime", ElectricRuntime.props, undefined)
@@ -131,14 +135,16 @@ test("ChatApi and gateway edits leave Electric's actual bundle and props byte-id
   const originals = paths.map((path) => readFileSync(path, "utf8"))
   try {
     // A real default Worker's identity changes, rather than a tree-shaken comment or unused export.
-    expect(originals[0]).toContain('"ChatApi"')
-    writeFileSync(paths[0], originals[0].replace('"ChatApi"', '"ChatApiIsolationProbe"'))
+    expect(originals[0]).toContain("\"ChatApi\"")
+    writeFileSync(paths[0], originals[0].replace("\"ChatApi\"", "\"ChatApiIsolationProbe\""))
     const chatOnly = await bundle("ElectricRuntime", ElectricRuntime.props, undefined)
     expect(chatOnly).toEqual(before)
     writeFileSync(paths[1], originals[1].replace("crossVersionCache: false", "crossVersionCache: true"))
     const gatewayToo = await bundle("ElectricRuntime", ElectricRuntime.props, undefined)
     expect(gatewayToo).toEqual(before)
-    expect(JSON.stringify({ worker: ElectricRuntime.props, container: ElectricRuntime.containerProps })).toBe(originalProps)
+    expect(JSON.stringify({ worker: ElectricRuntime.props, container: ElectricRuntime.containerProps })).toBe(
+      originalProps
+    )
     // Positive control: an Electric configuration change must invalidate the owner's content hash.
     const configPath = join(MVP, "infra/ElectricConfig.ts")
     const config = readFileSync(configPath, "utf8")
@@ -147,6 +153,10 @@ test("ChatApi and gateway edits leave Electric's actual bundle and props byte-id
       const electricChanged = await bundle("ElectricRuntime", ElectricRuntime.props, undefined)
       expect(Exit.isSuccess(electricChanged), String(electricChanged)).toBe(true)
       expect(electricChanged).not.toEqual(before)
-    } finally { writeFileSync(configPath, config) }
-  } finally { paths.forEach((path, i) => writeFileSync(path, originals[i])) }
+    } finally {
+      writeFileSync(configPath, config)
+    }
+  } finally {
+    paths.forEach((path, i) => writeFileSync(path, originals[i]))
+  }
 }, 120_000)

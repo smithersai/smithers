@@ -315,8 +315,10 @@ const needReason = (override) => {
 
 // An override nobody can see is refused. The file must already exist: creating one on a host where
 // nobody reads it would hide the use, so off the host that has the inbox the override refuses.
+// It opens the inbox the way the writer below does, for append and never creating it: an inbox may be append-only
+// (macOS uappnd, Linux chattr +a), where access(W_OK) and a write-or-truncate open fail but O_APPEND succeeds.
 const assertInbox = () => {
-  try { accessSync(overrideInbox.path, constants.W_OK) }
+  try { closeSync(openSync(overrideInbox.path, constants.O_WRONLY | constants.O_APPEND)) }
   catch { throw new Error(`--no-review-needed refused: cannot write ${overrideInbox.path}, and a use must never go unseen. Get a review receipt, or land on the host that has this inbox.`) }
 }
 
@@ -362,12 +364,14 @@ export const requireReviewsGit = (paths, listText, override) => {
 }
 
 /** Appends who landed what on whose say-so. Written before the push, so an override can't go unrecorded. */
-export const logLanding = (root, tip, { reviewed, overridden }) => {
-  if (!reviewed.length && !overridden.length) return
+export const logLanding = (root, tip, { reviewed, overridden, gate }) => {
+  const incomplete = gate?.status === "incomplete"
+  if (!reviewed.length && !overridden.length && !incomplete) return
   const who = `${process.env.SMITHERS_CO_AUTHOR ?? userInfo().username}@${hostname()}`
   // The inbox line is the record that must exist: every override writes it first, or the land refuses.
   // No O_CREAT: see assertInbox.
-  for (const entry of overridden) {
+  const audit = [...overridden, ...incomplete ? [{ commitId: tip, reason: `gate: incomplete, stage=${gate.stage}` }] : []]
+  for (const entry of audit) {
     const inbox = openSync(overrideInbox.path, constants.O_WRONLY | constants.O_APPEND)
     const stamp = new Date().toISOString().slice(11, 16)
     try { writeSync(inbox, `${stamp}Z [land-override] who=${who.replace(/[\r\n]/g, " ")} commit=${entry.commitId ?? tip} reason=${entry.reason}\n`) } finally { closeSync(inbox) }
@@ -379,10 +383,12 @@ export const logLanding = (root, tip, { reviewed, overridden }) => {
     const directory = reviewsDirectory()
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     const file = join(directory, "land-log.jsonl")
+    if (incomplete) appendFileSync(file, line({ outcome: "gate", gate: "incomplete", stage: gate.stage, proven: gate.proven }), { mode: 0o600 })
     for (const entry of reviewed) appendFileSync(file, line({ outcome: "receipt", commitId: entry.commitId, changeId: entry.changeId, diffHash: entry.diffHash, sessionId: entry.receipt.sessionId }), { mode: 0o600 })
     for (const entry of overridden) appendFileSync(file, line({ outcome: "override", commitId: entry.commitId, changeId: entry.changeId, paths: entry.paths, reason: entry.reason, instead: entry.problem }), { mode: 0o600 })
     chmodSync(file, 0o600)
   } catch (error) {
+    if (incomplete) throw new Error("Incomplete gate audit could not be written to land-log.jsonl; nothing published", { cause: error })
     console.error(`LAND LOG not written (${error.message}); any override is recorded in ${overrideInbox.path}`)
   }
 }

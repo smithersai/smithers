@@ -12,6 +12,7 @@
  * @since 0.1.0
  */
 
+import { Markdown as CoreMarkdown } from "@smthrs/core"
 import * as Digest from "@smthrs/core/Digest"
 import * as ByteSize from "effect/ByteSize"
 import * as Context from "effect/Context"
@@ -49,7 +50,7 @@ import { discoveryError } from "./RegistryError.vibe"
  * @since 0.1.0
  */
 export interface Discovery {
-  readonly scan: (source: Source) => Effect.Effect<SourceScan, DiscoveryError>
+  readonly scan: (source: Source | SkillSource) => Effect.Effect<SourceScan, DiscoveryError>
 }
 
 /**
@@ -59,6 +60,14 @@ export interface Discovery {
  * @since 0.1.0
  */
 export const Discovery: Context.Service<Discovery, Discovery> = Context.Service("flows/registry/Discovery")
+
+/** A declared skill library reads only validated SKILL.md entries.
+ * @category models
+ * @since 1.0.0
+ */
+export interface SkillSource extends Source {
+  readonly skills: true
+}
 
 const entryPrecedence = ["flow.ts", "flow.mdx", "SKILL.md"] as const
 
@@ -266,6 +275,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
   Discovery.of({
     scan: Effect.fn("Discovery.scan")((source) =>
       Effect.gen(function*() {
+        const skills = "skills" in source && source.skills === true
         const provenance = new Provenance({ source: source.source, root: source.root })
         // Sibling flows in one project share most of their imports, so the
         // closure walk reads and tokenizes each reached module once per scan.
@@ -416,6 +426,23 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
         } => {
           const pathName = Names.deriveFromPath(segments)
           if (selected !== "flow.ts") {
+            if (skills) {
+              const parsed = CoreMarkdown.parseSkill(contents.text)
+              if (Result.isFailure(parsed) || parsed.success.name !== path.basename(directory)) {
+                return {
+                  descriptor: Option.none(),
+                  warnings: [
+                    warning(
+                      "frontmatter_parse_error",
+                      location,
+                      Result.isFailure(parsed)
+                        ? `SKILL.md frontmatter is invalid (${parsed.failure.code})`
+                        : "SKILL.md name must equal its directory name"
+                    )
+                  ]
+                }
+              }
+            }
             return MarkdownFlow.fromMarkdown({
               text: contents.text,
               contentDigest: contents.contentDigest,
@@ -525,7 +552,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
               directories.push({ name: entry, location, identity: directoryIdentity(info.success, location) })
             }
 
-            const candidates = entryPrecedence.filter((entry) => files.has(entry))
+            const candidates = entryPrecedence.filter((entry) => files.has(entry) && (!skills || entry === "SKILL.md"))
             const selected = candidates[0]
             if (selected !== undefined && (yield* withinRoot(path.join(directory, selected)))) {
               const location = path.join(directory, selected)

@@ -134,3 +134,65 @@ export const make = (snapshots: Pick<Snapshot.Service, "read">) =>
       cause
     })
   ))
+
+/** Resolve immutable native ancestry without reading state or result payloads.
+ * All branches must resolve to one visible control root; cycles, missing rows,
+ * ambiguity and traversal exhaustion refuse correlation. No authority is granted.
+ * @category queries
+ * @since 1.0.0
+ */
+export const controlRunId = (
+  executionId: string,
+  isControlRun: (id: string) => Effect.Effect<boolean, unknown>
+) =>
+  Effect.gen(function*() {
+    const sql = yield* SqlClient.SqlClient
+    return yield* ExecutionSnapshot.withReadTransaction(
+      sql,
+      Effect.gen(function*() {
+        const roots = new Set<string>()
+        const resolved = new Set<string>()
+        const visiting = new Set<string>()
+        let count = 0
+        const visit = (id: string): Effect.Effect<boolean, unknown> =>
+          Effect.gen(function*() {
+            if (visiting.has(id)) return false
+            if (resolved.has(id)) return true
+            if (++count > 128) return false
+            if (yield* isControlRun(id)) {
+              roots.add(id)
+              resolved.add(id)
+              return roots.size === 1
+            }
+            const rows = yield* sql<{ parent: string | null; lineage: string | null; round: number }>`
+        SELECT parent_run_id AS parent, lineage_id AS lineage, round_ordinal AS round
+        FROM flows_runs WHERE run_id = ${id}
+      `
+            const row = rows[0]
+            if (row === undefined) return false
+            const edges = yield* sql<{ parent: string }>`
+        SELECT parent_id AS parent FROM flows_run_parents WHERE child_id = ${id} LIMIT 129
+      `
+            if (edges.length > 128) return false
+            const parents = new Set(edges.map((edge) => edge.parent))
+            if (row.parent !== null) parents.add(row.parent)
+            if (parents.size === 0 && row.round > 0 && row.lineage !== null && row.lineage !== id) {
+              parents.add(row.lineage)
+            }
+            if (parents.size === 0) return false
+            visiting.add(id)
+            for (const parent of parents) if (!(yield* visit(parent))) return false
+            visiting.delete(id)
+            resolved.add(id)
+            return true
+          })
+        return (yield* visit(executionId)) && roots.size === 1 ? [...roots][0] : undefined
+      })
+    )
+  }).pipe(Effect.mapError((cause) =>
+    cause instanceof PersistenceError ? cause : new PersistenceError({
+      operation: "resolve control run",
+      message: "Cannot resolve native execution ancestry",
+      cause
+    })
+  ))

@@ -3,11 +3,18 @@ import { Persistence } from "@smthrs/effect-tanstack-db"
 import { Deferred, Effect, Fiber, Layer, References } from "effect"
 import ts from "typescript"
 import { expect, test } from "vitest"
+import { ConversationOwners } from "../conversations/owners"
 import { SHOWING } from "./schema"
 import { ViewsStore } from "./store"
 import { show } from "./views"
 
-const storeLayer = ViewsStore.layer({ origin: "http://localhost:1" }).pipe(Layer.provide(Persistence.memory))
+// Every conversation's rows show: what concerns these tests is opening, never the data gate (owners.ts).
+const everyConversation = Layer.succeed(ConversationOwners, ConversationOwners.of({
+  mine: undefined as never,
+  shown: undefined as never,
+  ofShown: (rows) => Effect.succeed(rows as never),
+}))
+const storeLayer = ViewsStore.layer({ origin: "http://localhost:1" }).pipe(Layer.provide(Layer.merge(Persistence.memory, everyConversation)))
 
 test("concurrent first opens share their collection and shown query", async () => {
   await Effect.runPromise(Effect.scoped(Effect.gen(function* () {

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Exit, Result, Schedule, Schema, Scope } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
 import { effect } from "./Harness.ts"
@@ -17,9 +18,9 @@ const provideHost = <A, E>(
   self: Effect.Effect<
     A,
     E,
-    Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Scope.Scope
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Scope.Scope
   >
-): Effect.Effect<A, E, Crypto.Crypto> =>
+): Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   self.pipe(
     Effect.scoped,
     Effect.provideService(

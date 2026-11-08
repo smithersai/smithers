@@ -13,7 +13,7 @@ npm install @smthrs/plugin@next effect
 
 The `next` tag carries the 1.0 release candidates.
 
-Install `effect` explicitly, at exactly `4.1.0`. The kernel depends on it, but your
+Install `effect` explicitly, at exactly `4.1.1`. The kernel depends on it, but your
 plugins import `Effect`, `Layer`, and `Option` directly, so `effect` belongs in
 your own dependency list, inside the range the kernel accepts. A different
 `effect` major gives you two copies of the runtime and two sets of service tags.

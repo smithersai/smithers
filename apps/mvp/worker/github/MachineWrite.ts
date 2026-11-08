@@ -1,3 +1,4 @@
+import { withUserAgent } from "./Http.ts"
 import { digestSync } from "@smthrs/crypto"
 import { Action, Flow, Interpreter, RetryPolicy, Sleep } from "@smthrs/flow"
 import { Core, GitHub } from "@smthrs/integrations"
@@ -11,6 +12,7 @@ import type { Services } from "./Apply.vibe"
 import { withToken } from "#vibelang/emitted/worker/github/Calls"
 import { repositoryOf } from "#vibelang/emitted/worker/github/Config"
 import { fetchIssue, project } from "./Project.ts"
+import { attribution, contentProblem, escapeMarkdown, fitsGitHub, titleProblem } from "../../src/features/issues/publicContent.mjs"
 
 // Machine writes (docs/features/machine-tokens.md): an agent, with a machine token and no person, opens or updates an
 // issue, comments or files a sub-issue. The route records the write in `machine_writes` and starts the owner's one
@@ -72,7 +74,28 @@ const Title = Schema.String.check(Schema.makeFilter((value: string) => value.tri
 const Text = Schema.String.check(Schema.isMaxLength(65_000))
 const Number_ = Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 2_147_483_647 }))
 const WriteId = Schema.String.check(Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i))
-const Label = Schema.String.check(Schema.makeFilter((value: string) => value.length >= 1 && value.length <= 50))
+const LabelName = Schema.String.check(Schema.makeFilter((value: string) => value.trim().length >= 1 && value.length <= 50))
+const Label = Schema.Union([
+  LabelName,
+  Schema.Struct({
+    name: LabelName,
+    color: Schema.optional(Schema.String.check(Schema.isPattern(/^[0-9a-fA-F]{6}$/))),
+    description: Schema.optional(Schema.String.check(Schema.isMaxLength(100))),
+  }),
+])
+type Label = typeof Label.Type
+// GitHub stores a label's name trimmed, so every GitHub call and comparison uses the trimmed name. The stored payload,
+// and the hash a resubmission is matched by, keep the name as sent, so a write admitted before this still finishes and
+// an identical resubmission is still the same write.
+const labelName = (label: Label) => (typeof label === "string" ? label : label.name).trim()
+
+/** A concurrent creator won the same label: no other 422 validation error is a success. */
+const labelAlreadyExists = (status: number, json: unknown) => {
+  if (status !== 422 || typeof json !== "object" || json === null || !("errors" in json)) return false
+  const errors: unknown = json.errors
+  return Array.isArray(errors) && errors.length > 0 && errors.every((error: unknown) =>
+    typeof error === "object" && error !== null && "code" in error && error.code === "already_exists")
+}
 
 /** What a machine may ask. */
 export const MachineBody = Schema.Union([
@@ -97,60 +120,32 @@ export const decodeBody = (text: string) => Option.map(decodeRaw(text), (body): 
  */
 export const isReservedLabel = (label: string) => label.trim().toLowerCase().startsWith("smithers:")
 
-// No leading `\\b`: Markdown's `_smm_…_` puts a word character right before a token.
-const CREDENTIAL_SHAPES: ReadonlyArray<RegExp> = [
-  /smm_[A-Za-z0-9_-]{8,}/i,
-  /(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}/,
-  /sk-[A-Za-z0-9_-]{16,}/,
-  /AKIA[0-9A-Z]{16}/,
-  /(?:xox[abpr]-|glpat-)[A-Za-z0-9-]{10,}/,
-  /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/,
-  /-----BEGIN [A-Z ]*PRIVATE KEY/,
-  /[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:[^\s/@]+@/i,
-  /(?:authorization|bearer|token|secret|password|api[_-]?key)(?:\s*[:=]\s*|\s+)["']?[A-Za-z0-9_./+=-]{12,}/i,
-]
-const HOME_PATH = /(?<![\w.~/-])(?:\/(?:Users|home)\/[A-Za-z0-9._-]+|~\/[A-Za-z0-9._-])/
-
-/** `text` with percent escapes and numeric HTML entities decoded, as a link or a page renders it. Never throws. */
-export const renderedForms = (text: string): ReadonlyArray<string> => {
-  const forms = [text]
-  let current = text
-  for (let round = 0; round < 3; round++) {
-    const next = current
-      .replace(/%[0-9a-f]{2}/gi, (escape) => String.fromCharCode(Number.parseInt(escape.slice(1), 16)))
-      .replace(/&#(x[0-9a-f]+|\d+);?/gi, (_, code: string) => {
-        const point = code[0]!.toLowerCase() === "x" ? Number.parseInt(code.slice(1), 16) : Number(code)
-        return point <= 0x10ffff ? String.fromCodePoint(point) : ""
-      })
-    if (next === current) break
-    forms.push(next)
-    current = next
-  }
-  return forms
-}
-
 /**
- * The public-content rule at the server: what a machine posts is public, so credential-shaped text and home paths are
- * refused, as written and as rendered, whatever client sent them. Names the kind, never the text.
+ * The public-content rule at the server, shared with the lane helper (src/features/issues/publicContent.mjs): what a
+ * machine posts is public, so credentials and home paths are refused, as written and decoded, whatever client sent
+ * them. A body is filed escaped, so that is what a page shows. Names the kind, never the text.
  */
 export const publicContentProblem = (texts: ReadonlyArray<string | null | undefined>): "credential" | "home_path" | undefined => {
   for (const text of texts) {
     if (text === null || text === undefined) continue
-    for (const form of renderedForms(text)) {
-      if (CREDENTIAL_SHAPES.some((shape) => shape.test(form))) return "credential"
-      if (HOME_PATH.test(form)) return "home_path"
-    }
+    const problem = contentProblem(text)
+    if (problem !== undefined) return problem
   }
   return undefined
 }
 
+/** Markdown's escaping, for what the dispatcher files: every ASCII punctuation character backslash-escaped. */
+export { escapeMarkdown, fitsGitHub }
+
 /** The refusal a body earns before it reaches the database, or nothing. */
-export const refusalOf = (body: MachineBody): "reserved_label" | "credential" | "home_path" | undefined => {
-  if (body.op === "issue/create" && (body.labels ?? []).some(isReservedLabel)) return "reserved_label"
+export const refusalOf = (body: MachineBody): "reserved_label" | "markup" | "credential" | "home_path" | undefined => {
+  if (body.op === "issue/create" && (body.labels ?? []).some((label) => isReservedLabel(labelName(label)))) return "reserved_label"
+  // A title is filed as written, and shows code spans: a backtick there is refused.
+  if ("title" in body && body.title !== undefined && titleProblem(body.title) !== undefined) return "markup"
   return publicContentProblem([
     "title" in body ? body.title : undefined,
     "body" in body ? body.body : undefined,
-    ...(body.op === "issue/create" ? body.labels ?? [] : []),
+    ...(body.op === "issue/create" ? (body.labels ?? []).flatMap((label) => typeof label === "string" ? [label] : [label.name, label.description]) : []),
   ])
 }
 
@@ -213,8 +208,8 @@ export const admit = (write: { readonly repoId: string; readonly owner: string; 
 export const statusOf = (id: string, repoId: string, machine: Machine) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly status: string; readonly failure: string | null; readonly number: number | null }>`
-      SELECT status, failure, item_number AS number FROM machine_writes
+    const [row] = yield* sql<{ readonly status: string; readonly failure: string | null; readonly cause: string | null; readonly githubStatus: number | null; readonly number: number | null }>`
+      SELECT status, failure, cause, github_status AS "githubStatus", item_number AS number FROM machine_writes
       WHERE id = ${id}::uuid AND repo_id = ${repoId} AND agent = ${machine.agent} AND lane = ${machine.lane}`
     return Option.fromNullishOr(row)
   })
@@ -240,7 +235,7 @@ export const retry = (id: string, repoId: string, machine: Machine, mayAct: (id:
       if (write.status === "pending") return "pending" as const
       if (!(yield* hasRoom(machine.tokenSha256))) return "backlog" as const
       yield* sql`
-        UPDATE machine_writes SET status = 'pending', failure = NULL, settled_at = NULL, tries = 0, queued_at = clock_timestamp(),
+        UPDATE machine_writes SET status = 'pending', failure = NULL, cause = NULL, github_status = NULL, settled_at = NULL, tries = 0, queued_at = clock_timestamp(),
           token_sha256 = ${machine.tokenSha256}
         WHERE id = ${id}::uuid`
       return "pending" as const
@@ -329,7 +324,7 @@ const call = <E, R>(services: Services<E, R>, http: HttpClient.HttpClient, token
     const response = yield* HttpClient.execute(request)
     const json: unknown = yield* response.json.pipe(Effect.orElseSucceed(() => undefined))
     return { status: response.status, headers: new Headers(response.headers as Record<string, string>), json }
-  }).pipe(Effect.provideService(HttpClient.HttpClient, http))
+  }).pipe(withUserAgent, Effect.provideService(HttpClient.HttpClient, http))
 
 // ── The flow ────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -420,10 +415,34 @@ export const steps = <E, R>(services: Services<E, R>) => {
   /** Whether GitHub names this App as the author. */
   const byThisApp = (user: { readonly login?: string | null | undefined } | null | undefined) => user?.login === appLogin
 
-  const settle = (id: string, status: "done" | "refused" | "failed", failure: string | null, number: number | null) =>
-    Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
-      UPDATE machine_writes SET status = ${status}, failure = ${failure}, item_number = COALESCE(${number}, item_number), settled_at = now()
-      WHERE id = ${id}::uuid AND status = 'pending'`)
+  const settle = (
+    id: string,
+    status: "done" | "refused" | "failed",
+    failure: string | null,
+    number: number | null,
+    cause: string | null = failure,
+    githubStatus: number | null = null,
+  ) =>
+    Effect.flatMap(SqlClient.SqlClient, (sql) => sql<{ readonly writeId: string; readonly op: string; readonly number: number | null; readonly agent: string; readonly lane: string }>`
+      UPDATE machine_writes SET status = ${status}, failure = ${failure}, cause = ${cause}, github_status = ${githubStatus}, item_number = COALESCE(${number}, item_number), settled_at = now()
+      WHERE id = ${id}::uuid AND status = 'pending'
+      RETURNING id::text AS "writeId", op, item_number AS number, agent, lane`.pipe(
+      Effect.tap((rows) => status === "done" && rows[0] !== undefined
+        ? Effect.logInfo("github.machine_write.done").pipe(Effect.annotateLogs(rows[0]))
+        : Effect.void),
+    ))
+
+  /** A settled refusal names the check, with no GitHub message, payload or credentials. */
+  const refuse = (
+    id: string,
+    failure: string,
+    cause: "allow_list" | "installation" | `github_status:${number}` | "lane" | "revoked" | "invalid" | "has_parent" | "superseded",
+    githubStatus: number | null = null,
+  ) => settle(id, "refused", failure, null, cause, githubStatus).pipe(
+    Effect.andThen(Effect.logWarning("github.machine_write.refused").pipe(
+      Effect.annotateLogs({ writeId: id, outcome: "refused", failure, cause, githubStatus }),
+    )),
+  )
 
   /** The one write this tick handles. Every GitHub answer passes `observed`, so a limit on any call is heard. */
   const work = (write: Row, owner: string) =>
@@ -446,6 +465,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
       /** A token GitHub wouldn't give: a refusal only when it says so, else this write waits. */
       const notMinted = (failure: {
         readonly reason: string
+        readonly upstreamStatus?: number | undefined
         readonly retryAfterMillis?: number | undefined
         readonly rateLimited?: boolean | undefined
         readonly headerLimited?: boolean | undefined
@@ -455,7 +475,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
         failure.rateLimited === true || failure.headerLimited === true
           ? limited(failure.fullWaitMillis ?? failure.retryAfterMillis ?? null)
           : failure.reason === "app_not_installed" || failure.reason === "not_allowed"
-          ? settle(write.id, "refused", failure.reason, null)
+          ? refuse(write.id, failure.reason, "installation", failure.upstreamStatus ?? null)
           : failure.retryAfterMillis !== undefined
           ? noteLimited(owner, failure.retryAfterMillis)
           : holdFor(owner, READ_RETRY_MS)
@@ -464,7 +484,9 @@ export const steps = <E, R>(services: Services<E, R>) => {
       const token = minted.success
       const path = `/repos/${repository.owner}/${repository.name}`
       const payload = write.payload
-      const attributed = (text: string) => `${text}\n\nFiled by the agent ${write.agent}, lane ${write.lane}.`
+      // Every ASCII punctuation character escaped, so GitHub shows exactly what was written (publicContent.mjs): no
+      // emphasis, link, entity, HTML or mention can change what a reader sees, and the scan reads what the page shows.
+      const attributed = (text: string) => `${escapeMarkdown(text)}${attribution(write.agent, write.lane)}`
       const get = (url: string, as = token) => call(services, observed, as, "GET", url)
       /** A read that didn't answer. A limit `observed` heard holds on its own; this goes to the back of the line. */
       const notNow = Effect.gen(function* () {
@@ -478,6 +500,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
         body: unknown,
         onOk: (json: unknown) => Effect.Effect<A, unknown, SqlClient.SqlClient>,
         as = token,
+        accepts?: (status: number, json: unknown) => boolean,
       ) =>
         Effect.gen(function* () {
           yield* holdFor(owner, SPACING_MS)
@@ -488,7 +511,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
           const answer = readAnswer(sent.success.status, sent.success.headers, sent.success.json, Date.now())
           if (answer.kind === "limited") return undefined
           if (answer.kind === "outage") return yield* noteLimited(owner, null)
-          if (answer.kind === "refused") return yield* settle(write.id, "refused", answer.failure, null)
+          if (answer.kind === "refused" && !accepts?.(sent.success.status, sent.success.json)) return yield* refuse(write.id, answer.failure, `github_status:${sent.success.status}`, sent.success.status)
           yield* sql`UPDATE machine_dispatch SET penalty_ms = 60000 WHERE owner = ${owner}`
           return yield* onOk(sent.success.json)
         })
@@ -513,19 +536,23 @@ export const steps = <E, R>(services: Services<E, R>) => {
           const number = payload.number as number
           const parent = payload.parent as { readonly repo: string; readonly number: number }
           const target = repositoryOf(parent.repo)
-          if (target.owner.toLowerCase() !== repository.owner.toLowerCase()) return yield* settle(write.id, "refused", "invalid", null)
+          if (target.owner.toLowerCase() !== repository.owner.toLowerCase()) return yield* refuse(write.id, "invalid", "invalid")
           const now = yield* get(`${path}/issues/${number}/parent`)
           if (now.status === 200) {
             const url = String((now.json as { url?: unknown } | undefined)?.url ?? "")
             const same = url.toLowerCase().endsWith(`/repos/${parent.repo}/issues/${parent.number}`.toLowerCase())
-            return yield* settle(write.id, same ? "done" : "refused", same ? null : "has_parent", same ? number : null)
+            return yield* (same ? settle(write.id, "done", null, number) : refuse(write.id, "has_parent", "has_parent", now.status))
           }
           if (now.status !== 404) return yield* notNow
           const child = yield* get(`${path}/issues/${number}`)
           const id = (child.json as { id?: unknown } | undefined)?.id
-          if (child.status === 404 || child.status === 410) return yield* settle(write.id, "refused", "not_found", null)
+          if (child.status === 404 || child.status === 410) return yield* refuse(write.id, "not_found", `github_status:${child.status}`, child.status)
           if (child.status !== 200 || typeof id !== "number") return yield* notNow
-          const parentToken = yield* services.tokens.forInstallation(target, "write").pipe(Effect.result)
+          // A parent in another repository: GitHub reads `sub_issue_id` with the parent's token, so that token must reach
+          // the child's repository too. One token covers both, with Issues: write only. The same repository is one name.
+          const parentToken = yield* (target.id === repository.id
+            ? services.tokens.forInstallation(target, "write")
+            : services.tokens.forInstallation(target, "write", [repository])).pipe(Effect.result)
           if (parentToken._tag === "Failure") return yield* notMinted(parentToken.failure)
           return yield* send("POST", `/repos/${target.owner}/${target.name}/issues/${parent.number}/sub_issues`, { sub_issue_id: id }, () =>
             settle(write.id, "done", null, number), parentToken.success)
@@ -552,7 +579,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
             SELECT 1 FROM machine_writes
             WHERE repo_id = ${write.repoId} AND op = 'issue/create' AND status = 'done' AND item_number = ${number}
               AND agent = ${write.agent} AND lane = ${write.lane} LIMIT 1`
-          if (own === undefined) return yield* settle(write.id, "refused", "not_allowed", null)
+          if (own === undefined) return yield* refuse(write.id, "not_allowed", "lane")
           // Updates to one issue land in admission order, field by field: a field a newer done update set is that
           // update's, and the rest of this one still goes. With nothing left, it is superseded and sends nothing.
           const newer = yield* sql<{ readonly payload: Record<string, unknown> }>`
@@ -560,13 +587,13 @@ export const steps = <E, R>(services: Services<E, R>) => {
             WHERE repo_id = ${write.repoId} AND op = 'issue/update' AND status = 'done' AND item_number = ${number} AND seq > ${write.seq}::bigint`
           const taken = new Set(newer.flatMap((row) => UPDATE_FIELDS.filter((field) => row.payload[field] !== undefined)))
           const wanted = UPDATE_FIELDS.filter((field) => payload[field] !== undefined && !taken.has(field))
-          if (wanted.length === 0) return yield* settle(write.id, "refused", "superseded", null)
+          if (wanted.length === 0) return yield* refuse(write.id, "superseded", "superseded")
           const asked = (field: (typeof UPDATE_FIELDS)[number]) => wanted.includes(field) ? payload[field] : undefined
           const issue = yield* get(`${path}/issues/${number}`)
-          if (issue.status === 404 || issue.status === 410) return yield* settle(write.id, "refused", "not_found", null)
+          if (issue.status === 404 || issue.status === 410) return yield* refuse(write.id, "not_found", `github_status:${issue.status}`, issue.status)
           if (issue.status !== 200) return yield* notNow
           const found = issue.json as { readonly body?: string | null; readonly user?: { readonly login?: string } | null }
-          if (!byThisApp(found.user)) return yield* settle(write.id, "refused", "not_allowed", null)
+          if (!byThisApp(found.user)) return yield* refuse(write.id, "not_allowed", "lane", issue.status)
           const marker = GitHub.Issues.writeIdOf(found.body ?? "")
           const fields = {
             ...(asked("title") === undefined ? {} : { title: payload.title }),
@@ -584,7 +611,30 @@ export const steps = <E, R>(services: Services<E, R>) => {
         }
 
         // issue/create. The number goes on the row the moment GitHub gives it, so a later tick goes on to the labels.
-        const labels = (payload.labels ?? []) as ReadonlyArray<string>
+        const requestedLabels = (payload.labels ?? []) as ReadonlyArray<Label>
+        const labels = requestedLabels.map(labelName)
+        /** One missing label consumes this tick's mutation; the next tick GETs again, even after a lost answer. */
+        const ensureLabels = Effect.gen(function* () {
+          for (const label of requestedLabels) {
+            const name = labelName(label)
+            const found = yield* get(`${path}/labels/${encodeURIComponent(name)}`)
+            const answer = readAnswer(found.status, found.headers, found.json, Date.now())
+            if (answer.kind === "ok") continue
+            if (found.status !== 404) {
+              if (answer.kind === "refused") yield* refuse(write.id, answer.failure, `github_status:${found.status}`, found.status)
+              else if (answer.kind !== "limited") yield* notNow
+              return false
+            }
+            const metadata: Exclude<Label, string> = typeof label === "string" ? { name } : label
+            yield* send("POST", `${path}/labels`, { name, color: metadata.color ?? "ededed", description: metadata.description ?? "" }, () =>
+              // Provisioning progress is not a failed issue attempt: all twenty requested labels must fit.
+              sql`UPDATE machine_writes SET tries = GREATEST(tries - 1, 0) WHERE id = ${write.id}::uuid`.pipe(
+                Effect.andThen(Effect.logInfo("github.machine_write").pipe(Effect.annotateLogs({ writeId: write.id, outcome: "label_ready" }))),
+              ), token, labelAlreadyExists)
+            return false
+          }
+          return true
+        })
         const settleOrLabels = (made: number, issue: unknown) =>
           Effect.gen(function* () {
             const has = new Set(((issue as { labels?: ReadonlyArray<{ name: string }> }).labels ?? []).map((label) => label.name.toLowerCase()))
@@ -602,13 +652,16 @@ export const steps = <E, R>(services: Services<E, R>) => {
           const marked = GitHub.Once.issue(repository.owner, repository.name, { title: String(payload.title), body: text, since, author: appLogin })
           const sent = yield* once("issue", {
             find: (key) => Effect.map(onGitHub(marked.find(key)), Option.map((issue): Sent => ({ made: true, number: issue.number, json: issue }))),
-            perform: (key) => made(send("POST", `${path}/issues`, { title: payload.title, body: GitHub.Issues.withWriteMarker(text, key), ...(labels.length === 0 ? {} : { labels }) }, (json) =>
-              Effect.gen(function* () {
-                const number = (json as { number?: unknown } | undefined)?.number
-                // Done but unreadable: the next tick finds it by its marker.
-                if (typeof number !== "number") return yield* Effect.as(notNow, { made: false } as Sent)
-                return { made: true, number, json } as Sent
-              }))),
+            perform: (key) => Effect.gen(function* () {
+              if (!(yield* ensureLabels)) return { made: false } as Sent
+              return yield* made(send("POST", `${path}/issues`, { title: payload.title, body: GitHub.Issues.withWriteMarker(text, key), ...(labels.length === 0 ? {} : { labels }) }, (json) =>
+                Effect.gen(function* () {
+                  const number = (json as { number?: unknown } | undefined)?.number
+                  // Done but unreadable: the next tick finds it by its marker.
+                  if (typeof number !== "number") return yield* Effect.as(notNow, { made: false } as Sent)
+                  return { made: true, number, json } as Sent
+                })))
+            }),
           })
           if (!sent.made) return
           yield* sql`UPDATE machine_writes SET item_number = ${sent.number} WHERE id = ${write.id}::uuid`
@@ -668,12 +721,12 @@ export const steps = <E, R>(services: Services<E, R>) => {
       const parent = write.op === "issue/relate" ? (write.payload.parent as { readonly repo: string }).repo : undefined
       const authorized = (yield* tokenHeld(write.tokenSha256, write.repoId, write.op)) && (yield* parentHeld(write.agent, write.lane, write.repoId, parent))
       if (!authorized) {
-        yield* settle(write.id, "refused", "revoked", null)
+        yield* refuse(write.id, "revoked", "revoked")
         return yield* wake(0)
       }
       // So does the deployment's list, which may have changed since: this repository and the parent's.
       if (!services.mayAct(write.repoId) || (parent !== undefined && !services.mayAct(repositoryOf(parent).id))) {
-        yield* settle(write.id, "refused", "not_allowed", null)
+        yield* refuse(write.id, "not_allowed", "allow_list")
         return yield* wake(0)
       }
       yield* work(write, owner).pipe(

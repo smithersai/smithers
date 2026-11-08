@@ -21,7 +21,6 @@
  * shrunk history are written to `run-lifecycle-<seed>.json`.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { Flow, type FlowRuntime } from "@smthrs/flow"
 import { heartbeatStaleAfter } from "@smthrs/run-store/Heartbeat"
 import type { OwnerId } from "@smthrs/run-store/Ownership"
@@ -466,10 +465,7 @@ const transition = (model: Model, op: Op): Outcome => {
 // ---------------------------------------------------------------------------
 
 const layerAt = (filename: string) =>
-  RunChangeFeed.layer.pipe(
-    Layer.provideMerge(TestStores.layerAt(filename)),
-    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
-  )
+  RunChangeFeed.layer.pipe(Layer.provideMerge(TestStores.layerAt(filename)), Layer.provideMerge(NodeCrypto.layer))
 
 type Runtime = ReturnType<typeof ManagedRuntime.make<Layer.Success<ReturnType<typeof layerAt>>, unknown>>
 type Services = Layer.Success<ReturnType<typeof layerAt>>

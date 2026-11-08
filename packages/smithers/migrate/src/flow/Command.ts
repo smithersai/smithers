@@ -10,11 +10,12 @@
  * @since 1.0.0-rc.0
  */
 
-import type { Crypto } from "@smthrs/crypto"
 import type { Action } from "@smthrs/flow"
 import type * as FlowRuntime from "@smthrs/flow/FlowRuntime"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Clock from "effect/Clock"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import type * as Layer from "effect/Layer"
@@ -70,7 +71,7 @@ export const flowId = "system/migrate"
 export type Requirements =
   | FileSystem.FileSystem
   | Path.Path
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | FlowRuntime.FlowRuntime
   | Action.Implementations
   | MigrateFlow.Requires

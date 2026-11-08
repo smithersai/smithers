@@ -6,7 +6,6 @@ import * as IssueSync from "../src/core/IssueSync.ts"
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
-import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { EngineStore, Kernel } from "@smthrs/flows"
 import { NodeRuntime } from "@smthrs/platform-node"
@@ -44,7 +43,7 @@ it("reopens the durable store and replays a lapsed delivery without sending twic
   // External irreversible actions do not snapshot a checkout. SQL/journal/attempt
   // storage are the real production composition; only the workspace ports are inert.
   const host = Layer.mergeAll(
-    Crypto.layerFromDigest(NodeCrypto.layerDigest),
+    NodeCrypto.layer,
     NodeFileSystem.layer,
     Layer.succeed(
       Kernel.Jj.Jj,

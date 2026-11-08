@@ -4,26 +4,17 @@
  * @since 0.1.0
  */
 
-import { Crypto } from "@smthrs/crypto"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
-import { Effect, Layer } from "effect"
+import { Layer } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as ControlExecutor from "../ControlExecutor.vibe"
 import * as ControlLive from "../ControlLive.ts"
 import * as ControlRuntime from "../ControlRuntime.ts"
 
-const browserCrypto = Layer.succeed(
-  Crypto.Crypto,
-  Crypto.make({
-    /* v8 ignore next -- `Crypto.make` requires a random-byte primitive, and the deterministic runtime this bundle composes derives every identifier from a counter, so only `digest` is ever called here */
-    randomBytes: (size) => globalThis.crypto.getRandomValues(new Uint8Array(size)),
-    digest: (algorithm, data) =>
-      Effect.promise(() => globalThis.crypto.subtle.digest(algorithm, data.slice().buffer)).pipe(
-        Effect.map((buffer) => new Uint8Array(buffer))
-      )
-  })
-)
+const browserCrypto = Layer.merge(EffectDigest.layerWebCrypto, SecureRandom.layerWebCrypto)
 
 /**
  * Provides Control, ControlRuntime, the in-memory journal bundle, and an empty

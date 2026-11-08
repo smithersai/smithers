@@ -61,6 +61,14 @@ import * as Environment from "../Environment.ts"
 import { type GitHubConfig, resolve } from "./Config.vibe"
 
 /**
+ * The identity every host uses for GitHub HTTP requests, including outside the REST client.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const USER_AGENT = "smithers-integrations"
+
+/**
  * The response header in which the GitHub proxy names the instant a refused
  * request may be retried. A 429 that carries it was never sent to GitHub.
  *
@@ -173,6 +181,8 @@ export interface Page {
    * outstanding, so `items` is a prefix of the resource rather than all of it.
    */
   readonly truncated: boolean
+  /** Included only with `withNext`: the outstanding cursor URL, or `null` at the end. */
+  readonly next?: string | null | undefined
 }
 
 /**
@@ -212,10 +222,15 @@ export interface GitHubClient {
    * thousand items. Hitting the ceiling is reported as `truncated`, never as a
    * short but complete answer, because a caller that reconciles against a
    * truncated list plans work for resources it simply did not see.
+   * `withNext: true` includes the outstanding cursor URL as `next`, or `null` at the end.
    */
   readonly paginate: (
     path: string,
-    options?: { readonly perPage?: number | undefined; readonly maxPages?: number | undefined }
+    options?: {
+      readonly perPage?: number | undefined
+      readonly maxPages?: number | undefined
+      readonly withNext?: boolean | undefined
+    }
   ) => Effect.Effect<Page, IntegrationError>
   /**
    * How many items a list resource holds, and its first item, in one request.
@@ -299,7 +314,9 @@ export const retryAfterMs = (headers: Headers, nowMs: number = Date.now()): numb
  */
 const retryAfterUncapped = (headers: Headers): { readonly retryAfterUncappedMillis?: number } => {
   const retryAfter = headers.get("retry-after")?.trim()
-  return retryAfter !== undefined && /^\d+$/.test(retryAfter) ? { retryAfterUncappedMillis: Number(retryAfter) * 1000 } : {}
+  return retryAfter !== undefined && /^\d+$/.test(retryAfter)
+    ? { retryAfterUncappedMillis: Number(retryAfter) * 1000 }
+    : {}
 }
 
 /**
@@ -457,7 +474,7 @@ const build = (
 
   const headers: Record<string, string> = {
     accept: "application/vnd.github+json",
-    "user-agent": "smithers-integrations",
+    "user-agent": USER_AGENT,
     "x-github-api-version": "2022-11-28"
   }
   if (basic !== undefined) headers["authorization"] = `Basic ${basic}`
@@ -732,7 +749,7 @@ const build = (
         pages += 1
       }
       yield* Effect.annotateCurrentSpan({ "github.pages": pages, "github.truncated": url !== null })
-      return { items, truncated: url !== null }
+      return { items, truncated: url !== null, ...(options?.withNext === true ? { next: url } : {}) }
     }).pipe(Effect.withSpan("GitHubClient.paginate"))
 
   const count: GitHubClient["count"] = (path, options) =>

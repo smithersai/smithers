@@ -23,7 +23,7 @@ runner. Runtime evaluation code imports scorers directly.
 Prereleases are published to npm under the `next` tag:
 
 ```bash
-pnpm add @smthrs/evals@next effect@4.1.0
+pnpm add @smthrs/evals@next effect@4.1.1
 ```
 
 Requirements and entry points are at

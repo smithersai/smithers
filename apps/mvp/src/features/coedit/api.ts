@@ -1,5 +1,6 @@
 import { Context, Data, type Duration, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
+import { CONFIRM_401_HEADER, sessionCheckOf } from "../auth/contract"
 import { type TextScope, textRoute } from "./contract"
 
 // ChatApi's text route as the browser calls it (docs/features/coedit.md#routes), through Effect's HttpClient, with one
@@ -7,11 +8,13 @@ import { type TextScope, textRoute } from "./contract"
 
 /**
  * ChatApi didn't take the update: no whole answer within the deadline, or no network (`status` absent), or any status
- * but 200 (`status`, and the refusal's `code` when its body names one), or a 200 whose body isn't the contract's.
+ * but 200 (`status`, and the refusal's `code` when its body names one), or a 200 whose body isn't the contract's. A
+ * `401` the page's transport checked against the session carries what it found (`sessionCheck`).
  */
 export class UpdateNotTaken extends Data.TaggedError("UpdateNotTaken")<{
   readonly status?: number
   readonly code?: string
+  readonly sessionCheck?: "same_person"
 }> {}
 
 /** One update as the route takes it. */
@@ -31,19 +34,26 @@ export const postUpdate = (origin: string, textId: string, request: UpdateReques
   Effect.gen(function* () {
     const client = yield* HttpClient.HttpClient
     const response = yield* client
-      .execute(HttpClientRequest.post(`${origin}${textRoute(textId)}`).pipe(HttpClientRequest.bodyJsonUnsafe(request)))
-      .pipe(Effect.mapError(() => new UpdateNotTaken({})))
+      .execute(
+        HttpClientRequest.post(`${origin}${textRoute(textId)}`).pipe(
+          HttpClientRequest.bodyJsonUnsafe(request),
+          // A 401 is checked against the session first: an update is queued, so it can be held (writes.ts).
+          HttpClientRequest.setHeader(CONFIRM_401_HEADER, "1"),
+        ),
+      )
+      .pipe(Effect.catch(() => Effect.fail(new UpdateNotTaken({}))))
     yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
     if (response.status !== 200) {
       const refused = yield* response.json.pipe(Effect.option, Effect.map(Option.flatMap(decodeRefusal)))
       return yield* new UpdateNotTaken({
         status: response.status,
         ...(Option.isSome(refused) ? { code: refused.value.code } : {}),
+        ...sessionCheckOf(response.headers),
       })
     }
     return yield* response.json.pipe(
       Effect.flatMap(decodeTaken),
-      Effect.mapError(() => new UpdateNotTaken({ status: response.status })),
+      Effect.catch(() => Effect.fail(new UpdateNotTaken({ status: response.status }))),
     )
   }).pipe(
     // Interrupting the request aborts its fetch, so a stalled body stops too.

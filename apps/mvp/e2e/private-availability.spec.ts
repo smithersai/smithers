@@ -3,6 +3,7 @@ import { writeFile } from "node:fs/promises"
 import { strictTest as test } from "./watch"
 import { BRANCH_UNAVAILABLE, COMMIT_UNAVAILABLE, COMPARE_UNAVAILABLE, COPY_DRAFT, FILE_UNAVAILABLE, FLOW_UNAVAILABLE, TERMINAL_UNAVAILABLE } from "../src/features/chat/engineAvailability"
 import { requires, syncedRepository, target } from "./target"
+import { chooseIssue } from "./todoDraft"
 
 // These are ordinary browser.newContext pages: WebKit uses private storage here.
 // No fixture writes. Ordinary app startup can register watches and credentials;
@@ -41,7 +42,10 @@ for (const width of [390, 768, 1280]) {
       const draft = page.getByRole("form", { name: "TODO draft" }).first()
       await draft.getByLabel("Title", { exact: true }).fill("Private availability check")
       await draft.getByLabel("Prompt", { exact: true }).fill("Keep this draft local.")
-      if (storage.available) await expect(draft.getByRole("button", { name: "Commit", exact: true })).toBeEnabled()
+      if (storage.available) {
+        await chooseIssue(draft)
+        await expect(draft.getByRole("button", { name: "Commit", exact: true })).toBeEnabled()
+      }
       else {
         await expect(draft.getByRole("button", { name: "Commit", exact: true })).toBeDisabled()
         await expect(page.getByText(`${COMMIT_UNAVAILABLE} ${COPY_DRAFT}`, { exact: true })).toBeVisible()

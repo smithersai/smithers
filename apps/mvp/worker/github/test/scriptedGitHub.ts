@@ -44,6 +44,8 @@ export interface ScriptedIssue {
   readonly comments: Array<ScriptedComment>
   /** Its labels' names, in the order they were added. */
   labels: Array<string>
+  /** Its parent on GitHub, in this repository or another of the owner's: GitHub's API URL for it says which. */
+  parent?: { readonly owner: string; readonly name: string; readonly number: number }
 }
 
 /** One comment as the scripted GitHub keeps it. */
@@ -119,6 +121,7 @@ export interface Fault {
 
 /** One request GitHub saw: its method, path, and which kind of token made it. */
 export interface Call {
+  readonly userAgent: string | undefined
   readonly method: string
   readonly path: string
   readonly token: "jwt" | "installation" | "user" | "none"
@@ -130,8 +133,6 @@ export interface ScriptedGitHub {
   readonly owner: string
   readonly name: string
   readonly issues: Map<number, ScriptedIssue>
-  /** Each sub-issue's parent, by number. */
-  readonly subIssueParents: Map<number, number>
   readonly calls: Array<Call>
   readonly faults: Array<Fault>
   /** Whether the App is installed on the repository. */
@@ -141,7 +142,7 @@ export interface ScriptedGitHub {
   /** Whether the App was granted Contents: read; without it, a token asking for it is refused 422. */
   contentsGranted: boolean
   /** The repository's labels, by name without case. */
-  readonly labels: Map<string, { readonly name: string; readonly color: string }>
+  readonly labels: Map<string, { readonly name: string; readonly color: string; readonly description?: string }>
   /**
    * The repository's files on its default branch, by path, as the contents API reads them without a `ref`; with one,
    * it reads that branch's or commit's files.
@@ -169,6 +170,13 @@ export interface ScriptedGitHub {
   readonly userToken: (login: string) => Redacted.Redacted<string>
   /** Revokes a user token: GitHub answers 401 for it from now on. */
   readonly revoke: (token: Redacted.Redacted<string>) => void
+  /**
+   * Children of an issue that live in another repository, as GitHub lists them: an unknown repository's child shows up
+   * only in `sub_issues_summary` and this listing.
+   */
+  readonly foreignChildren: Map<number, ReadonlyArray<unknown>>
+  /** Someone on github.com sets an issue's parent, or takes it away. GitHub's own `updated_at` doesn't move unless `bump`. */
+  readonly setParent: (number: number, parent: ScriptedIssue["parent"] | null, bump?: boolean) => void
   /** Someone on github.com opens an issue; a null body is one with no description, a null login a deleted account. */
   readonly open: (title: string, body: string | null, login?: string | null) => ScriptedIssue
   /** Someone on github.com comments. */
@@ -238,7 +246,31 @@ export const scriptedGitHub = (owner = "acme", name = "widgets", botLogin = BOT_
 
   const user = (login: string | null) => (login === null ? null : { id: login.length * 1000, login })
 
-  const issueJson = (issue: ScriptedIssue) => ({
+  /** GitHub's `sub_issues_summary` for `issue`: its children here, and those another repository holds. */
+  const summaryOf = (issue: ScriptedIssue) => {
+    const here = [...github.issues.values()].filter((each) => !each.gone && each.parent?.number === issue.number &&
+      each.parent.owner === owner && each.parent.name === name)
+    const foreign = github.foreignChildren.get(issue.number) ?? []
+    const total = here.length + foreign.length
+    const completed = here.filter((each) => each.state === "closed").length
+    return { total, completed, percent_completed: total === 0 ? 0 : Math.round((100 * completed) / total) }
+  }
+
+  /**
+   * What GitHub says of an issue's parent. Live facts under the SDK's `2022-11-28` (FINAL.md §0.1): one issue always has
+   * `parent_issue_url`, a listing leaves it out when there is none, and a pull request has neither field's value.
+   */
+  const relationJson = (issue: ScriptedIssue, listing: boolean) => {
+    if (issue.pull) return { parent_issue_url: null, sub_issues_summary: null }
+    const url = issue.parent === undefined
+      ? null
+      : `https://api.github.test/repos/${issue.parent.owner}/${issue.parent.name}/issues/${issue.parent.number}`
+    return { ...(listing && url === null ? {} : { parent_issue_url: url }), sub_issues_summary: summaryOf(issue) }
+  }
+
+  const issueJson = (issue: ScriptedIssue, listing = false) => ({
+    ...relationJson(issue, listing),
+    repository_url: `https://api.github.test/repos/${owner}/${name}`,
     labels: issue.labels.map((label) => ({ id: label.length, name: label, color: "ededed" })),
     id: issue.id,
     ...(issue.malformed === true ? {} : { node_id: `I_${issue.id}` }),
@@ -376,12 +408,16 @@ export const scriptedGitHub = (owner = "acme", name = "widgets", botLogin = BOT_
         apply: () => void github.statuses.set(sha, [...(github.statuses.get(sha) ?? []), status]),
       }
     }
+    if (rest.startsWith("/labels/") && method === "GET") {
+      const label = github.labels.get(decodeURIComponent(rest.slice("/labels/".length)).toLowerCase())
+      return { response: label === undefined ? json({ message: "Not Found" }, 404) : json(label) }
+    }
     if (rest === "/labels" && method === "POST") {
-      const input = body as { readonly name: string; readonly color: string }
+      const input = body as { readonly name: string; readonly color: string; readonly description?: string }
       if (github.labels.has(input.name.toLowerCase())) {
         return { response: json({ message: "Validation Failed", errors: [{ code: "already_exists" }] }, 422) }
       }
-      const label = { name: input.name, color: input.color }
+      const label = { name: input.name, color: input.color, description: input.description }
       return { response: json(label, 201), apply: () => void github.labels.set(input.name.toLowerCase(), label) }
     }
     const contentsMatch = /^\/contents\/(.+)$/.exec(url.pathname.slice(apiPath.length))
@@ -422,7 +458,15 @@ export const scriptedGitHub = (owner = "acme", name = "widgets", botLogin = BOT_
     }
     if (rest === "/issues" && method === "GET") {
       const listed = sorted(url, live.filter((issue) => issue.updatedAt >= since(url)))
-      return { response: paged(url, listed.map(issueJson)) }
+      return { response: paged(url, listed.map((issue) => issueJson(issue, true))) }
+    }
+    const subIssues = /^\/issues\/(\d+)\/sub_issues$/.exec(rest)
+    if (subIssues !== null && method === "GET") {
+      const number = Number(subIssues[1])
+      const parent = github.issues.get(number)
+      if (parent === undefined || parent.gone || parent.pull) return { response: json({ message: "Not Found" }, 404) }
+      const here = live.filter((issue) => issue.parent?.number === number && issue.parent.owner === owner && issue.parent.name === name)
+      return { response: paged(url, [...here.map((issue) => issueJson(issue, true)), ...(github.foreignChildren.get(number) ?? [])]) }
     }
     if (rest === "/issues" && method === "POST") {
       const input = body as { readonly title: string; readonly body: string }
@@ -458,16 +502,16 @@ export const scriptedGitHub = (owner = "acme", name = "widgets", botLogin = BOT_
     // Sub-issues (docs.github.com, REST "Sub-issues"): one parent per issue, by the child's id, in this repository.
     const parentMatch = /^\/issues\/(\d+)\/parent$/.exec(url.pathname.slice(apiPath.length))
     if (parentMatch !== null && method === "GET") {
-      const parent = github.subIssueParents.get(Number(parentMatch[1]))
+      const parent = github.issues.get(Number(parentMatch[1]))?.parent
       return { response: parent === undefined
         ? json({ message: "Not Found" }, 404)
-        : json({ number: parent, url: `https://api.github.com/repos/${owner}/${name}/issues/${parent}` }) }
+        : json({ number: parent.number, url: `https://api.github.test/repos/${parent.owner}/${parent.name}/issues/${parent.number}` }) }
     }
     const subIssuesMatch = /^\/issues\/(\d+)\/sub_issues$/.exec(url.pathname.slice(apiPath.length))
     if (subIssuesMatch !== null && method === "POST") {
       const child = [...github.issues.values()].find((issue) => issue.id === (body as { sub_issue_id?: unknown }).sub_issue_id)
-      if (child === undefined || github.subIssueParents.has(child.number)) return { response: json({ message: "Validation Failed" }, 422) }
-      github.subIssueParents.set(child.number, Number(subIssuesMatch[1]))
+      if (child === undefined || child.parent !== undefined) return { response: json({ message: "Validation Failed" }, 422) }
+      github.setParent(child.number, { owner, name, number: Number(subIssuesMatch[1]) })
       return { response: json({ number: Number(subIssuesMatch[1]) }, 201) }
     }
     const labelsMatch = /^\/issues\/(\d+)\/labels(?:\/([^/]+))?$/.exec(url.pathname.slice(apiPath.length))
@@ -1018,7 +1062,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets", botLogin = BOT_
     Effect.suspend(() => {
       const method = request.method
       const who = caller(request.headers["authorization"])
-      github.calls.push({ method, path: url.pathname, token: who.token === "installation-contents" ? "installation" : who.token })
+      github.calls.push({ userAgent: request.headers["user-agent"], method, path: url.pathname, token: who.token === "installation-contents" ? "installation" : who.token })
       const raw = request.body._tag === "Uint8Array" ? decoder.decode(request.body.body) : undefined
       const body: unknown = raw === undefined || raw === "" ? undefined : JSON.parse(raw)
       const fault = github.faults.findIndex((candidate) => candidate.match(method, url.pathname))
@@ -1091,7 +1135,13 @@ export const scriptedGitHub = (owner = "acme", name = "widgets", botLogin = BOT_
     owner,
     name,
     issues: new Map(),
-    subIssueParents: new Map(),
+    foreignChildren: new Map(),
+    setParent: (number, parent, bump = false) => {
+      const issue = github.issues.get(number)!
+      if (parent === null) delete issue.parent
+      else issue.parent = parent
+      if (bump) issue.updatedAt = tick()
+    },
     calls: [],
     faults: [],
     installed: true,

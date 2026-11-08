@@ -1,10 +1,11 @@
 import { assert, describe, it } from "@effect/vitest"
-import type { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { RunStore } from "@smthrs/run-store"
 import { Cause, Effect, Exit, Layer, Schema, Scope } from "effect"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -29,7 +30,10 @@ const Next = Flow.make("Diamond/next", { payload: {}, success: Schema.String, bo
 const NumberNext = Flow.make("Diamond/number-next", { payload: {}, success: Schema.Number, body: opaqueHandlerBody })
 const Parent = Flow.make("Diamond/parent", { payload: {}, success: Schema.String, body: opaqueHandlerBody })
 
-type TestServices = Layer.Success<ReturnType<typeof TestStores.layerAt>> | Scope.Scope | Crypto.Crypto
+type TestServices =
+  | Layer.Success<ReturnType<typeof TestStores.layerAt>>
+  | Scope.Scope
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
 
 /** A real file-backed SQLite store, removed after the body. */
 const onDisk = <A, E>(body: Effect.Effect<A, E, TestServices>) =>

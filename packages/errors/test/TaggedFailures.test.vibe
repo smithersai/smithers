@@ -1,14 +1,26 @@
+import { $errorSubclass } from "vibelang-runtime"
+import { $schemaErrorMatcher } from "vibelang-runtime"
 import { describe, expect, it } from "@effect/vitest"
-import { hasSmithersErrorShape, isSmithersError, SmithersError } from "../src/SmithersError.ts"
+import { hasSmithersErrorShape, isSmithersError, SmithersError } from "../src/SmithersError.vibe"
 import { failureOf } from "./helpers.vibe"
 
 // An adapter's subclass, tagged with its own name (D278).
-error AdapterError extends SmithersError
+class AdapterError extends $errorSubclass(SmithersError, "AdapterError") {
+static {
+    $schemaErrorMatcher(this, "AdapterError", true);
+}
+declare readonly _tag: "AdapterError";
+}
 
 // A subclass with a field and its own constructor, as @smthrs/integrations'
 // IntegrationError is.
-error IntegrationError extends SmithersError {
-  reason: string
+class IntegrationError extends $errorSubclass(SmithersError, "IntegrationError") {
+static {
+    $schemaErrorMatcher(this, "IntegrationError", true);
+}
+declare readonly _tag: "IntegrationError";
+readonly declare reason: string;
+
 
   constructor(reason: string, options?: { readonly cause?: unknown }) {
     super("INTEGRATION_ERROR", "poll failed", { reason }, { cause: options?.cause })
@@ -16,7 +28,7 @@ error IntegrationError extends SmithersError {
   }
 }
 
-function raise<E>(error: E): Effect<never, E, infer R> {
+effect function raise<E>(error: E): never!E {
   throw error
 }
 
@@ -24,18 +36,18 @@ function raise<E>(error: E): Effect<never, E, infer R> {
 // rather than a catch that matches by class. A SmithersError may be a
 // subclass, so its tag type is string and catching "SmithersError" leaves
 // SmithersError in the failure type.
-function recover(error: SmithersError | AdapterError): Effect<string, SmithersError, infer R> {
-  return raise(error)
+effect function recover(error: SmithersError | AdapterError): string!SmithersError {
+  return try (raise(error)
     // @vibelang-diagnostics-next-line EK4835:off — tag routing is the behavior under test.
-    |> Effect.catchTag(%, "AdapterError", (caught) => `adapter:${caught.summary}`)
+    |> Effect.catchTag(%, "AdapterError", effect (caught) => `adapter:${caught.summary}`)
     // @vibelang-diagnostics-next-line EK4835:off — tag routing is the behavior under test.
-    |> Effect.catchTag(%, "SmithersError", (caught) => `base:${caught.code}`)
+    |> Effect.catchTag(%, "SmithersError", effect (caught) => `base:${caught.code}`))
 }
 
 describe("tagged failures", () => {
   it.effect("routes a base instance and a subclass to their own catchTag handler", effect () => {
-    expect(recover(new SmithersError("INVALID_INPUT", "x"))).toBe("base:INVALID_INPUT")
-    expect(recover(new AdapterError("INTEGRATION_ERROR", "adapter failed"))).toBe("adapter:adapter failed")
+    expect(try recover(new SmithersError("INVALID_INPUT", "x"))).toBe("base:INVALID_INPUT")
+    expect(try recover(new AdapterError("INTEGRATION_ERROR", "adapter failed"))).toBe("adapter:adapter failed")
   })
 
   it.effect("matches a subclass by class in a catch", effect () => {
@@ -46,7 +58,7 @@ describe("tagged failures", () => {
   })
 
   it.effect("fails the surrounding effect with the instance when thrown", effect () => {
-    expect(failureOf(raise(new AdapterError("INTEGRATION_ERROR", "adapter failed")))).toBeInstanceOf(AdapterError)
+    expect(try failureOf(raise(new AdapterError("INTEGRATION_ERROR", "adapter failed")))).toBeInstanceOf(AdapterError)
   })
 
   it("tags each subclass with its own name, which it reports and its stack starts with", () => {
@@ -60,7 +72,7 @@ describe("tagged failures", () => {
   it("keeps the tag enumerable and in JSON, as Data.TaggedError does", () => {
     const error = new AdapterError("UNSUPPORTED", "x")
     expect(Object.keys(error)).toEqual(["code", "summary", "docsUrl", "_tag"])
-    expect(JSON.parse(JSON.stringify(error))).toEqual({
+    expect($invoke(JSON,() => (JSON.stringify(error)))).toEqual({
       code: "UNSUPPORTED",
       summary: "x",
       docsUrl: error.docsUrl,
@@ -89,3 +101,8 @@ describe("tagged failures", () => {
     expect(isSmithersError(new Error("plain"))).toBe(false)
   })
 })
+
+module $call$ts {
+export function invoke<T extends {"parse":Function}>(target:T,arg0:()=>Parameters<Extract<T["parse"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["parse"],(...args:any[])=>any>> { return target["parse"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts

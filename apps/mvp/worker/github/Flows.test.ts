@@ -5,7 +5,7 @@
 import { Journal } from "@smthrs/flows"
 import { GitHub } from "@smthrs/integrations"
 import { Logger as StructuredLogger } from "@smthrs/observability"
-import { Cause, Deferred, Effect, Exit, Layer, Logger, Metric, Option, Redacted } from "effect"
+import { Cause, ConfigProvider, Deferred, Effect, Exit, Layer, Logger, Metric, Option, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import { HttpClient } from "effect/http"
 import { beforeEach, describe, expect, test } from "vitest"
@@ -776,9 +776,10 @@ describe("github/Reconcile", () => {
     github.private = false
     const person = await maya(github)
     const { services: value } = await services(runtime, github)
+    // Its metadata reads are authenticated, so GitHub answers private explicitly: a 404 would prove nothing.
     const observer = await Effect.runPromise(RepoRoles.make(value.database, {
       repository: repositoryOf("acme/home"), app: Option.none(), http: github.http,
-    }))
+    }).pipe(Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({ GITHUB_TOKEN: Redacted.value(person.token) }))))
     const actor = { subject: { kind: "person" as const, id: person.personId }, role: "member" as const, login: "maya" }
     const entered = Deferred.makeUnsafe<void>()
     const release = Deferred.makeUnsafe<void>()

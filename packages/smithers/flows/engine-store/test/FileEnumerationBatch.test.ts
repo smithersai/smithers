@@ -1,6 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
-import { Crypto } from "@smthrs/crypto"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import { Effect, FileSystem, PlatformError, Result } from "effect"
 import { createHash } from "node:crypto"
@@ -72,7 +71,7 @@ describe("filesystem batch fallback", () => {
     const boundary = StepBoundary.makeFileSystem(fs, hostPath, ArtifactStore.makeMemory())
     const prepared = await Effect.runPromise(
       boundary.prepare({ readSet: paths.map((path) => ({ path, digest: "old" })), writeSet: [], boundaryMode: "hard" })
-        .pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+        .pipe(Effect.provide(NodeCrypto.layer))
     )
     expect(prepared.readSnapshot).toEqual(
       [...paths].sort().map((path) => ({ path, digest: createHash("sha256").update(Uint8Array.of(42)).digest("hex") }))

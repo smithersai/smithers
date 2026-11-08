@@ -144,7 +144,7 @@ export const make = <E>(
       Effect.tap((queued) => (queued ? projected("queue", key, Fleet.queue(key)) : Effect.void)),
       Effect.provide(database),
       recorded("start", key, (queued) => (queued ? "queued" : "existing")),
-      Effect.mapError(() => new AgentRunner.AgentJobsUnavailable()),
+      Effect.catch(() => Effect.fail(new AgentRunner.AgentJobsUnavailable())),
     )
 
   const status = (key: string) =>
@@ -170,7 +170,7 @@ export const make = <E>(
       Effect.tap(() => projected("probe", key, probe(key))),
       recorded("status", key, (standing) =>
         (standing._tag === "Ended" ? standing.outcome._tag : standing._tag).toLowerCase()),
-      Effect.mapError(() => new AgentRunner.AgentJobsUnavailable()),
+      Effect.catch(() => Effect.fail(new AgentRunner.AgentJobsUnavailable())),
     )
 
   const cancel = (key: string) =>
@@ -196,7 +196,7 @@ export const make = <E>(
       Effect.tap((status) => projected("stop", key, Fleet.stopping(key, status))),
       recorded("cancel", key, (status) => status),
       Effect.asVoid,
-      Effect.mapError(() => new AgentRunner.AgentJobsUnavailable()),
+      Effect.catch(() => Effect.fail(new AgentRunner.AgentJobsUnavailable())),
     )
 
   return AgentRunner.AgentJobs.of({ start: (task, key) => Effect.asVoid(start(task, key)), status, cancel })

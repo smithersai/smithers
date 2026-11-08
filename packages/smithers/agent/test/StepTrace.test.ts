@@ -1,5 +1,4 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Journal } from "@smthrs/journal"
@@ -15,6 +14,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
+import { expectTypeOf } from "vitest"
 import { describe, expect, it } from "vitest"
 import * as SqlTimeTravelStore from "../../flows/time-travel/src/SqlTimeTravelStore.ts"
 import * as TimeTravel from "../../flows/time-travel/src/TimeTravel.ts"
@@ -33,23 +33,20 @@ import {
 /** What `run` provides: the SQLite stores, crypto, and a scope. */
 type Provided =
   | Layer.Success<ReturnType<typeof stores>>
-  | Crypto.Crypto
+  | Layer.Success<typeof NodeCrypto.layer>
   | Scope.Scope
 
 const run = <A, E>(effect: Effect.Effect<A, E, Provided>) =>
   Effect.runPromise(
-    Effect.scoped(effect).pipe(
-      Effect.provide(stores(":memory:")),
-      Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
-    )
+    Effect.scoped(effect).pipe(Effect.provide(stores(":memory:")), Effect.provide(NodeCrypto.layer))
   )
 
 class Unprovided extends Context.Service<Unprovided, { readonly value: string }>()("test/agent/StepTrace/Unprovided") {}
 
 /** Never called; tsc checks it (#2704). */
 const unprovidedServiceProbe = () => {
-  // @ts-expect-error run provides the stores and crypto, not Unprovided
-  run(Effect.map(Unprovided, (service) => service.value))
+  const unmet = Effect.map(Unprovided, (service) => service.value)
+  expectTypeOf<typeof unmet>().not.toExtend<Parameters<typeof run>[0]>()
   run(Effect.map(Journal.Journal, (journal) => journal))
 }
 
@@ -270,11 +267,7 @@ describe("agent checkpoint process recovery", () => {
           const decisions = after.filter((row) => row.payload.eventType === "control.agent.decision-settled")
           expect(decisions.map((row) => row.payload.payload)).toMatchObject([{ frame: 1 }])
           expect((yield* runs.get(runId)).status).toBe("completed")
-        })).pipe(
-          Effect.provide(stores(filename)),
-          Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
-          Effect.provide(TestClock.layer())
-        )
+        })).pipe(Effect.provide(stores(filename)), Effect.provide(NodeCrypto.layer), Effect.provide(TestClock.layer()))
       )
     } finally {
       if (child.exitCode === null && child.signalCode === null) {

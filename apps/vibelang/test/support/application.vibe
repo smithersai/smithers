@@ -1,0 +1,15 @@
+// The test host supplies only the resource layer and an observation of the actual rendered model.
+import { Runtime } from "foldkit"
+import type { Factory } from "../../src/core/Factory.vibe"
+import { Flags, init, Model, subscriptions, update, viewTransition } from "../../src/web/main.vibe"
+import { view } from "../../src/web/view.vibe"
+
+/** The app in `node`, listening to the keyboard and scrolling of the document that owns it. */
+export function application(node: HTMLElement, resources: Layer.Layer<Factory>, observe: (model: Model) => void) {
+  return Runtime.makeApplication({
+    Model, Flags, init, update,
+    view: (model, h) => { observe(model); return view(model, h) },
+    subscriptions: subscriptions(node.ownerDocument, node.ownerDocument), viewTransition,
+    resources, container: node,
+  })
+}

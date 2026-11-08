@@ -13,7 +13,7 @@ import { reset, sql } from "../github/test/fixtures.ts"
 import { app } from "../github/test/harness.ts"
 import { accountIdOf, appKey, type ScriptedGitHub, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { signedIn, testFile } from "../test/harness.ts"
-import { handles, make, parseHomePath, parseRolePath, requests, roleRequests } from "./Api.ts"
+import { handles, make, parseHomePath, parseRolePath, type Readable, requests, roleRequests } from "./Api.ts"
 import * as Curated from "./Curated.ts"
 
 // `GET /api/repos/<owner>/<name>/home`: who the asker is and the curated home, with only the sections their audience
@@ -60,7 +60,7 @@ interface RouteOptions {
   readonly refreshCooldownSeconds?: number
   /** Which repositories the deployment syncs (worker/github/Api.ts `maySync`); unset, the answer doesn't say. */
   readonly maySync?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<boolean>
-  readonly mayRead?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<boolean>
+  readonly mayRead?: (target: ReturnType<typeof repositoryOf>) => Effect.Effect<Readable>
 }
 
 /**
@@ -535,6 +535,16 @@ describe("the curated homes", () => {
   })
 })
 
+
+// Astra on the data gate after 499b1e44: a shapes' check that couldn't decide is a retryable 503, never
+// `readable: false`, which the client's data gate shows as "You don't have access" with no Try again.
+test("a readable check that couldn't decide answers 503 unavailable with its wait, never readable false", async () => {
+  const r = await route({ sessions: signedIn(person("member")), mayRead: () => Effect.succeed({ unavailable: true, retryAfterSeconds: 7 } as const) })
+  const response = await r.get("/api/repos/acme/widgets/role")
+  expect([response.status, response.headers.get("retry-after"), await response.json()]).toEqual([503, "7", { code: "unavailable" }])
+  const fallback = await route({ sessions: signedIn(person("member")), mayRead: () => Effect.succeed({ unavailable: true } as const) })
+  expect((await fallback.get("/api/repos/acme/widgets/role")).headers.get("retry-after")).toBe("5")
+})
 
 test("a public-read receipt stays separate from GitHub authority and the workspace-copy role", async () => {
   const r = await route({ sessions: signedIn(person("member")), mayRead: () => Effect.succeed(true) })

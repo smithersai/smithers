@@ -163,13 +163,13 @@ export const make = (
           case "Success":
             if (step.tree !== undefined) workspace.value = step.tree
             step.taking?.()
-            return Effect.succeed(new Cell.CallResult({ outcome: "success", value: step.value }))
+            return Effect.succeed(Cell.CallResult.new({ outcome: "success", value: step.value }))
           case "Failure":
             return Effect.as(
               step.kind === undefined
                 ? Effect.void
                 : Effect.flatMap(Cell.Failures, (report) => report(step.kind!)),
-              new Cell.CallResult({ outcome: "failure", value: null, message: step.message })
+              Cell.CallResult.new({ outcome: "failure", value: null, message: step.message })
             )
           case "PermissionRequired":
             return Effect.fail(

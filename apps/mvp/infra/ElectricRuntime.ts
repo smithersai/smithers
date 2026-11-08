@@ -1,6 +1,6 @@
 // Electric owns a script independent of app and gateway deployments (decision 0118).
-import type { RuntimeContext } from "alchemy"
 import * as Cloudflare from "@alchemy.run/cloudflare"
+import type { RuntimeContext } from "alchemy"
 import * as Output from "alchemy/Output"
 import { Config, Context, Effect, Option, Redacted } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -51,7 +51,11 @@ export const containerProps = {
   instanceType: "basic",
   maxInstances: 1,
   // Its query pool is its share of the compute's connections (infra/Connections.ts `CONNECTION_BUDGET`).
-  env: { ELECTRIC_INSECURE: "true", ELECTRIC_DB_POOL_SIZE: String(ELECTRIC_POOL_SIZE), ELECTRIC_LONG_POLL_TIMEOUT: String(LONG_POLL_TIMEOUT_MS) },
+  env: {
+    ELECTRIC_INSECURE: "true",
+    ELECTRIC_DB_POOL_SIZE: String(ELECTRIC_POOL_SIZE),
+    ELECTRIC_LONG_POLL_TIMEOUT: String(LONG_POLL_TIMEOUT_MS)
+  }
 } as const
 
 class Electric extends Cloudflare.Container<Electric>()("Electric", containerProps) {}
@@ -64,28 +68,34 @@ class Electric extends Cloudflare.Container<Electric>()("Electric", containerPro
  * while a deploy replaces it, is answered 503 with `retry-after` (`serveObject`).
  */
 export class ElectricObject extends Cloudflare.DurableObject<ElectricObject, {}>()(
-  "ElectricObject", { transferredFrom: "ElectricGateway" },
+  "ElectricObject",
+  { transferredFrom: "ElectricGateway" }
 ) {}
 
 const ElectricObjectLive = ElectricObject.make(
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const electric = yield* Electric
     // Once per object instance: its waker remembers whether this instance has held the container.
-    return Effect.gen(function* () {
+    return Effect.gen(function*() {
       const state = yield* Cloudflare.DurableObjectState
       const port = yield* electric.getTcpPort(PORT)
       const inFlight = makeInFlight()
       const databaseUrl = yield* Config.Redacted(DATABASE_URL_BINDING).pipe(Effect.orDie)
-      const wake = makeAwake({
-        running: electric.running,
-        // Electric reaches Postgres over the internet.
-        start: recordStart(electric.start({ enableInternet: true, env: { DATABASE_URL: Redacted.value(databaseUrl) } }), state.id.toString()),
-        setInactivityTimeout: (ms) => electric.setInactivityTimeout(ms),
-      } satisfies Host<unknown, RuntimeContext>)
+      const wake = makeAwake(
+        {
+          running: electric.running,
+          // Electric reaches Postgres over the internet.
+          start: recordStart(
+            electric.start({ enableInternet: true, env: { DATABASE_URL: Redacted.value(databaseUrl) } }),
+            state.id.toString()
+          ),
+          setInactivityTimeout: (ms) => electric.setInactivityTimeout(ms)
+        } satisfies Host<unknown, RuntimeContext>
+      )
       return {
-        fetch: logged(Effect.gen(function* () {
+        fetch: logged(Effect.gen(function*() {
           const request = yield* HttpServerRequest.HttpServerRequest
-          const direct = Effect.gen(function* () {
+          const direct = Effect.gen(function*() {
             const web = yield* HttpServerRequest.toWeb(request)
             const url = new URL(web.url)
             url.protocol = "http:"
@@ -101,12 +111,12 @@ const ElectricObjectLive = ElectricObject.make(
             waited: port.fetch(request),
             url: request.url,
             requestId: request.headers["x-request-id"],
-            inFlight,
+            inFlight
           })
-        })),
+        }))
       }
     })
-  }),
+  })
 )
 
 /** This owner has no request cache, public route, app imports or shared app build plugins. */
@@ -117,18 +127,18 @@ export const props = {
   observability: {
     enabled: true,
     logs: { enabled: true, invocationLogs: true, persist: true },
-    traces: { enabled: true, persist: true },
-  },
+    traces: { enabled: true, persist: true }
+  }
 }
 
 export class ElectricRuntime extends Cloudflare.Worker<ElectricRuntime, {}, ElectricObject>()("ElectricRuntime") {}
 
 export default ElectricRuntime.pipe(Effect.provide(ElectricRuntime.make(
   props,
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const databaseUrl = yield* Effect.serviceOption(DatabaseUrl)
     if (Option.isSome(databaseUrl)) yield* Output.named(databaseUrl.value.value, DATABASE_URL_BINDING)
     yield* ElectricObject.pipe(Effect.provide(ElectricObjectLive))
     return { fetch: Effect.succeed(HttpServerResponse.empty({ status: 404 })) }
-  }),
+  })
 )))

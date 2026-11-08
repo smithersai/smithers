@@ -83,6 +83,6 @@ await Effect.runPromise(Effect.scoped(
       if (receipt.deleted !== 2 || receipt.checkpointSeq !== 2) return yield* Effect.die("unexpected compact receipt")
     }
     yield* signal("post-ack")
-    yield* Effect.never
+    return yield* Effect.never
   }).pipe(Effect.provide(layer))
 ))

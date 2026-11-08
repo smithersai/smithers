@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.1.0` peer dependency. Install one
+This package declares `effect` as an exact `4.1.1` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -24,7 +24,7 @@ commands to a branch's journal run after verifying a write-scoped
 npm install @smthrs/sync@next effect
 ```
 
-`effect` is a peer dependency at exactly `4.1.0`. Two copies of `effect`
+`effect` is a peer dependency at exactly `4.1.1`. Two copies of `effect`
 in one program are two sets of service tags, so a client built against one copy
 cannot be provided to a program holding the other.
 

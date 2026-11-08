@@ -1,0 +1,1012 @@
+{
+  "task": "filter-06",
+  "seed": 184606,
+  "family": "filter",
+  "arm": "cell",
+  "taskHash": "9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2",
+  "model": "gpt-6-luna",
+  "cohort": "codex-proton",
+  "maxTurns": 6,
+  "executionId": "cell-comparison/9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2/6/cell/2026-11-05T14:22:23.672Z",
+  "startedAt": "2026-11-05T14:24:54.299Z",
+  "elapsedMs": 10734,
+  "outcome": "correct",
+  "turns": [
+    {
+      "turn": 0,
+      "request": {
+        "modelId": "gpt-6-luna",
+        "system": [
+          {
+            "type": "text",
+            "text": "Solve the task using JavaScript in a persistent QuickJS realm. Reply only with executable JavaScript, without Markdown. No filesystem, imports, Date or Math.random. Read the input with await ctx.call(\"records\", {}). It returns {records, owners}. Print intermediate data with console.log for the next turn. Submit the requested JSON object with ctx.done(object). Top-level declarations persist across turns. You have at most six turns."
+          }
+        ],
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Return {\"ids\":[...]}: ids of active records with value >= 40, sorted lexicographically."
+              }
+            ]
+          }
+        ],
+        "tools": [],
+        "params": {
+          "reasoningEffort": "low"
+        },
+        "cacheKey": "cell-comparison/9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2/6/cell/2026-11-05T14:22:23.672Z"
+      },
+      "events": [
+        {
+          "type": "thinking-start",
+          "id": "rs_071060073622eb04016aec91b73adc87d28bce45db8f4a91f8"
+        },
+        {
+          "type": "thinking-delta",
+          "id": "rs_071060073622eb04016aec91b73adc87d28bce45db8f4a91f8",
+          "text": "**Inspecting call records**"
+        },
+        {
+          "type": "thinking-end",
+          "id": "rs_071060073622eb04016aec91b73adc87d28bce45db8f4a91f8"
+        },
+        {
+          "type": "thinking-start",
+          "id": "rs_071060073622eb04016aec91b73adc87d28bce45db8f4a91f8:encrypted",
+          "signature": "{\"encrypted_content\":\"gAAAAABq7JG5qKohqlBytIXnXtni-ggOhgx8NQtPcm23qaRjGz6jCTkRjo7nRGBWb-SFBE5CttJM4jr9XTIBjoJezKz8sm3KO6g46QpqGWN3z0FSEgzIxa3FsYqqKiNesTe3Dj_BTeMkBDLMVI-U03WXACIc2ZN_S0kZTZ3dwJ0uh6QnVmfMfzyUrVNMdro41Opw0JqFAB--e-mUVXdqVKYKB_zvF5XYavlvBGrkn_tzs-u_aAXax_cqVksQlwIdlIBIdgFLuLeK2APq5Xg5YfEyJVPf2pqHlgTVIJD93uDO6LMQ8YJssqsubhSTGXrDJ-4EpRzQ-QlrDRfi12OrNqefFlyj3kYyFZ5jYoGuLntUWMDmXMWT2YmJPhd9ZQPpYB8OIKaa3O2InEoBYoJ_TNzmuk-6HU1W_Vxl9CHW2CZpjqUTcRsNjT2yRuOqg_X1v73TQ750jGkOM1TV9WQdJ-QVH5q3x7NC1TWgCVfmeG0441GY-spMDgyaQFK55p2wqANzpoQoJQUKMqjA0BLvgDfhmWBGGyITef8NqozwXOitMKrQfILcQUS5utUYMBEh4oBCVbMBpu6GDtKlLjDouRzxhtPjy0u2nqhXZqKMaHuhppgBSYNF3L4QTKvx_Fa227JwiZ1bAugS_7PU4o2z0_Q_wHzE1iTYrwBMIrIM18Rx1rLEX2eIWyipVs82-lnpl7segzfzXDPL4_1yJO5SF45JZOl6mXmj1MN0nqYg52KA0eR7ma0mfhJVJXKXnpvdjfucPchPF7yfs3oP7cSNexXQcucEnjRkGUoITu91ibwYBp8nk7w78sNVgACpdJFrENApDVZNxAmj_GRi-LF7I08CsQ9rHgO_77FWvUNGSyUNj-likjNXSj0itNvoZTj1GKWU23OFsnqnzjkRSjN8hKEr3_3y2BMOSdd_UhQ9zGkBAOFEVYzWzNXYYXm_MXnImg3Sww6U_XCQ2uj66dpqvnoe71fGPjpom-tkBuDb0EZgMh7enA_zYvugwoc8IIKlNmdLUbjRhHycW_CiI2fS_LSl613KCEMjxjqmARXK8NmCjVLJwzhMlgnJ9ZSXI4Hu06Dxub0ymFuztUIALukKxvO3OHFiWAIV3cZXVOS2osGECxGXcyLEBcBOc5zxPA_YNs-v67nwnOt0b3MIVU-MSn-LXU2hnrhgfX5BZuSg4ITkNciBcdjiNv-_bQCzWO0GOwwf4wN_qOOW-l2JsJMpI-3cEw9f39LdA0OsJBtr3I1_Im1h9dOFrXuh076OPu3ewpwDcRl1AiL-Q_2cXtJwZoLUK5gB8vzzCRHAYN9x_gY-TBlscSEe9M6KXXr0DVJxGI6fdGSS9gA3g8ekpKvxF0PMzdVaLn4_Ldmn5NvmjSm9NqnxR76MQiH6obqI2juauDmydyt2DCJVIz9g6p7Q6Yzf-V7Xs_P3eQ-dl3IoQLSoF5GmOPHXpd6fn-w14eraCwTOBk3lrK-thWThzkrhN8JAjHBPLvO5z0t4GAHrVJdUfhGdFAtM12jZzbWeN2gDxrbxZn_806o7VUNBTzwzNNG7ScpwUG8vsO_hppmbRATJDckZKB9oxYZbk9Fhr15uh_vkoF_k9YdS_INEona5CghaLk_JjYvPRoO9sZ4OhIq4EWiJh0zYqhk=\",\"id\":\"rs_071060073622eb04016aec91b73adc87d28bce45db8f4a91f8\",\"summary\":[{\"text\":\"**Inspecting call records**\",\"type\":\"summary_text\"}],\"type\":\"reasoning\"}"
+        },
+        {
+          "type": "thinking-end",
+          "id": "rs_071060073622eb04016aec91b73adc87d28bce45db8f4a91f8:encrypted"
+        },
+        {
+          "type": "text-start",
+          "id": "msg_071060073622eb04016aec91b92e6087d2a8e259cd1df5cc4b"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91b92e6087d2a8e259cd1df5cc4b",
+          "text": "const"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91b92e6087d2a8e259cd1df5cc4b",
+          "text": " data"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91b92e6087d2a8e259cd1df5cc4b",
+          "text": " ="
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91b92e6087d2a8e259cd1df5cc4b",
+          "text": " await"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91b92e6087d2a8e259cd1df5cc4b",
+          "text": " ctx"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91b92e6087d2a8e259cd1df5cc4b",
+          "text": ".call"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91b92e6087d2a8e259cd1df5cc4b",
+          "text": "(\""
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91b92e6087d2a8e259cd1df5cc4b",
+          "text": "records"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91b92e6087d2a8e259cd1df5cc4b",
+          "text": "\","
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91b92e6087d2a8e259cd1df5cc4b",
+          "text": " {});\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91b92e6087d2a8e259cd1df5cc4b",
+          "text": "console"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91b92e6087d2a8e259cd1df5cc4b",
+          "text": ".log"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91b92e6087d2a8e259cd1df5cc4b",
+          "text": "(data"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91b92e6087d2a8e259cd1df5cc4b",
+          "text": ");\n"
+        },
+        {
+          "type": "text-end",
+          "id": "msg_071060073622eb04016aec91b92e6087d2a8e259cd1df5cc4b"
+        },
+        {
+          "type": "thinking-start",
+          "id": "rs_071060073622eb04016aec91b92ff487d285cdbbfeb0f3e77a:encrypted",
+          "signature": "{\"encrypted_content\":\"gAAAAABq7JG6fDus6_4XP3P2HtIWS2-C_7fwo5yTmS8AkIaHwiOdSTm9Pv4FtP0CZ1t6D97mTsK5mrpHe5BShIqzaXDOCBv994ST6JnAO2AhTQqNGaTCjgu6l9kQb2KWxxOtl-tQK0eQCF6ppxGRwIm5wFuNASgoGApnLd2CDfk5g_OfBEViVy4WsH-ED_cEaXdBq78wK5C2WZlwKZtW5Z8A6u0l5YO7wQgMw_D_0G4-UoyKrtDtgOuv1pMfmus6k6bML_HDqyy1XMCjYZxz2fCN6myb7G06yGVQXHSvlv-js9ovZMZDX16MjAvNefHquSyGzuuuB0Wj9Ou2WFvET6rkFLB-LBCzOZthNwqw0YTEUz4NuKTv_pu16mRJ_I6t9Llw1gthwjX-nVKiJXzw7f2I7MPbZkmJ6tr29psXOAccqeou3dsBk9Pud_wGvM3HrYRVJgvK3KZ9K18EY7qqER3THSA2UIV33XA8uNsWdOD3tpvXzLfwO-ElxFZHmevUX4q-EbrKUUPhzHzX_9JtAWqpNEZ7LJdqGSR_KU3y7O9SXL8HKiOaXkaWoRPm6C6-G5QJoNEKrYkefL8tn0h_R2Uer64MEFf_neUa_Y481bZwu2nVQL5uvABXFR37mLTaq1RYsoFIjo2h5RAfLZdxquQ8In1MNbpGt8BpLh2eb2Vgz2V8tufRpbMx1eC0cbpvmVcpw1hqF8EMwhCj_hxKqzswTy4lK17D5pda1sNI8nxxl5QH9d0dqtyri7Wj0Wk4IuH0pi_k0PLc71pNATtGykAvAlYPa3iDH_zGmUUmWtxChgV_Z5pymND_l_Db5akY9mecByS4EweSWV4kBq8C9gN7reGRIV3rWGzhbgcia47EuhnUEoDUwqSVPxoCfiruXPxCjY2H1PAoDsx4JYwXgtNnJoZRPxFydU0QZyDVKOxkQkharxTA6oPjyz3uCeFXXr4Lrr485fdSbt4PxYWtQ89nA5l6H8sXZ8S7VQeRGRPB1_JY-DDubeD6kT1c60t_pQ8Efctv2_dNaMGTRMuABu4nlslkG9azmXI6NOQt7_Aykv7een_IaRp2ZKlVd9AnniTY53-u0utwMjVhBBZ9_IH_s_pG_IhcJwyNEvbxfBCgMNpcqKagn9tQq5DxRv2EfVS8lpfj8NWD0ukCmwTzJ-bkvgNCsF9VjMp877HdNylKPyJJgbxLmf_12Y-HZmUHgNZQ4BBwxSyRx9d_MGXL8fzJoL5FzfiK7SvAQutWlZv7jviwyLC9DdjUan8euZnUzbB2ZGPXw7QfVYbtvckIp4CtOvth_THYnPWqXR-I4DfuOCAqT3_dq1o1LonAasn8lVP-nwJi_ZRTZR1GBhHICqg9_-kDjNJUlkjcshQ-RhIqE2niWqzFIHBpjIwX4R7Umco0CgIC5TcqfEVoMo9-XU-pLTXtk9BaMbfFSdx8GS48DI12mjG5Kj_uKHImpAti4brv_raUGW2tVIYBYFI3N-QNyGfuEg1PSnjPFk18FicFSYI9bfDa1DK1SwBufqKigmQZUwFbPDoRGzpyuMaWYI6FMq9_C4i5L41P_M6BnfHZr1YTy_1MTSor6T4ixXiGnwyY3ppLCtLLZtoveN3HlLhpQFlSScitnBygDBLsa7EUzQtDe9tzO8M=\",\"id\":\"rs_071060073622eb04016aec91b92ff487d285cdbbfeb0f3e77a\",\"summary\":[],\"type\":\"reasoning\"}"
+        },
+        {
+          "type": "thinking-end",
+          "id": "rs_071060073622eb04016aec91b92ff487d285cdbbfeb0f3e77a:encrypted"
+        },
+        {
+          "type": "text-start",
+          "id": "msg_071060073622eb04016aec91ba5b3087d2b9cb6eb904584f22"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91ba5b3087d2b9cb6eb904584f22",
+          "text": "console"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91ba5b3087d2b9cb6eb904584f22",
+          "text": ".log"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91ba5b3087d2b9cb6eb904584f22",
+          "text": "(data"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91ba5b3087d2b9cb6eb904584f22",
+          "text": ");"
+        },
+        {
+          "type": "text-end",
+          "id": "msg_071060073622eb04016aec91ba5b3087d2b9cb6eb904584f22"
+        },
+        {
+          "type": "usage",
+          "inputTokens": 118,
+          "outputTokens": 54,
+          "reasoningTokens": 23,
+          "cachedInputTokens": 0,
+          "totalTokens": 172
+        },
+        {
+          "type": "settle",
+          "stopReason": "stop",
+          "responseId": "resp_071060073622eb04016aec91b6aa6887d2955eb2710e20d8d1",
+          "servedTier": "default",
+          "timing": {
+            "startedAt": 1793888694307,
+            "attempts": 1,
+            "requestBytes": 885,
+            "preparedMs": 0,
+            "signedMs": 1,
+            "sentMs": 2,
+            "headersMs": 587,
+            "firstEventMs": 588,
+            "firstThinkingMs": 2890,
+            "firstOutputMs": 2891,
+            "lastOutputMs": 4185,
+            "completedMs": 4215,
+            "closedMs": 4215
+          }
+        }
+      ],
+      "usage": {
+        "inputTokens": 118,
+        "outputTokens": 54,
+        "reasoningTokens": 23,
+        "cachedInputTokens": 0,
+        "totalTokens": 172
+      },
+      "cost": {
+        "costUsd": 0.0000388,
+        "costSource": "estimated"
+      },
+      "elapsedMs": 4224,
+      "replayed": false,
+      "frame": {
+        "outcome": {
+          "_tag": "settled",
+          "transition": {
+            "_tag": "continue"
+          }
+        },
+        "prints": "{\"owners\":{\"a\":\"Ada\",\"b\":\"Bo\",\"c\":\"Cy\"}}\nrecords (18):\nid | sku | revision | group | value | active | tags\nr00 | s0 | 0 | a | 92 | true |  green, yellow\nr01 | s1 | 0 | a | 97 | false | Red, blue\nr02 | s2 | 0 | a | 61 | false |  green, yellow\nr03 | s3 | 0 | a | 96 | false |  green, yellow\nr04 | s4 | 0 | c | 32 | false | \nr05 | s5 | 0 | c | 7 | false |  BLUE,green \nr06 | s0 | 1 | c | 82 | false | \nr07 | s1 | 1 | a | 1 | true | \nr08 | s2 | 1 | a | 32 | true | Red, blue\nr09 | s3 | 1 | a | 55 | true | \nr10 | s4 | 1 | a | 43 | false |  BLUE,green \nr11 | s5 | 1 | b | 64 | false | Red, blue\nr12 | s0 | 2 | c | -2 | false |  green, yellow\nr13 | s1 | 2 | a | 81 | true | red,RED\nr14 | s2 | 2 | b | 44 | true | red,RED\nr15 | s3 | 2 | c | 53 | false | Red, blue\nr16 | s4 | 2 | c | 76 | true | Red, blue\nr17 | s5 | 2 | a | 93 | true |  green, yellow\n{\"owners\":{\"a\":\"Ada\",\"b\":\"Bo\",\"c\":\"Cy\"}}\nrecords (18):\nid | sku | revision | group | value | active | tags\nr00 | s0 | 0 | a | 92 | true |  green, yellow\nr01 | s1 | 0 | a | 97 | false | Red, blue\nr02 | s2 | 0 | a | 61 | false |  green, yellow\nr03 | s3 | 0 | a | 96 | false |  green, yellow\nr04 | s4 | 0 | c | 32 | false | \nr05 | s5 | 0 | c | 7 | false |  BLUE,green \nr06 | s0 | 1 | c | 82 | false | \nr07 | s1 | 1 | a | 1 | true | \nr08 | s2 | 1 | a | 32 | true | Red, blue\nr09 | s3 | 1 | a | 55 | true | \nr10 | s4 | 1 | a | 43 | false |  BLUE,green \nr11 | s5 | 1 | b | 64 | false | Red, blue\nr12 | s0 | 2 | c | -2 | false |  green, yellow\nr13 | s1 | 2 | a | 81 | true | red,RED\nr14 | s2 | 2 | b | 44 | true | red,RED\nr15 | s3 | 2 | c | 53 | false | Red, blue\nr16 | s4 | 2 | c | 76 | true | Red, blue\nr17 | s5 | 2 | a | 93 | true |  green, yellow",
+        "bindings": [
+          {
+            "name": "data",
+            "type": "object",
+            "size": "2 keys"
+          }
+        ]
+      }
+    },
+    {
+      "turn": 1,
+      "request": {
+        "modelId": "gpt-6-luna",
+        "system": [
+          {
+            "type": "text",
+            "text": "Solve the task using JavaScript in a persistent QuickJS realm. Reply only with executable JavaScript, without Markdown. No filesystem, imports, Date or Math.random. Read the input with await ctx.call(\"records\", {}). It returns {records, owners}. Print intermediate data with console.log for the next turn. Submit the requested JSON object with ctx.done(object). Top-level declarations persist across turns. You have at most six turns."
+          }
+        ],
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Return {\"ids\":[...]}: ids of active records with value >= 40, sorted lexicographically."
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "text": "**Inspecting call records**"
+              },
+              {
+                "type": "thinking",
+                "text": "",
+                "signature": "{\"encrypted_content\":\"gAAAAABq7JG5qKohqlBytIXnXtni-ggOhgx8NQtPcm23qaRjGz6jCTkRjo7nRGBWb-SFBE5CttJM4jr9XTIBjoJezKz8sm3KO6g46QpqGWN3z0FSEgzIxa3FsYqqKiNesTe3Dj_BTeMkBDLMVI-U03WXACIc2ZN_S0kZTZ3dwJ0uh6QnVmfMfzyUrVNMdro41Opw0JqFAB--e-mUVXdqVKYKB_zvF5XYavlvBGrkn_tzs-u_aAXax_cqVksQlwIdlIBIdgFLuLeK2APq5Xg5YfEyJVPf2pqHlgTVIJD93uDO6LMQ8YJssqsubhSTGXrDJ-4EpRzQ-QlrDRfi12OrNqefFlyj3kYyFZ5jYoGuLntUWMDmXMWT2YmJPhd9ZQPpYB8OIKaa3O2InEoBYoJ_TNzmuk-6HU1W_Vxl9CHW2CZpjqUTcRsNjT2yRuOqg_X1v73TQ750jGkOM1TV9WQdJ-QVH5q3x7NC1TWgCVfmeG0441GY-spMDgyaQFK55p2wqANzpoQoJQUKMqjA0BLvgDfhmWBGGyITef8NqozwXOitMKrQfILcQUS5utUYMBEh4oBCVbMBpu6GDtKlLjDouRzxhtPjy0u2nqhXZqKMaHuhppgBSYNF3L4QTKvx_Fa227JwiZ1bAugS_7PU4o2z0_Q_wHzE1iTYrwBMIrIM18Rx1rLEX2eIWyipVs82-lnpl7segzfzXDPL4_1yJO5SF45JZOl6mXmj1MN0nqYg52KA0eR7ma0mfhJVJXKXnpvdjfucPchPF7yfs3oP7cSNexXQcucEnjRkGUoITu91ibwYBp8nk7w78sNVgACpdJFrENApDVZNxAmj_GRi-LF7I08CsQ9rHgO_77FWvUNGSyUNj-likjNXSj0itNvoZTj1GKWU23OFsnqnzjkRSjN8hKEr3_3y2BMOSdd_UhQ9zGkBAOFEVYzWzNXYYXm_MXnImg3Sww6U_XCQ2uj66dpqvnoe71fGPjpom-tkBuDb0EZgMh7enA_zYvugwoc8IIKlNmdLUbjRhHycW_CiI2fS_LSl613KCEMjxjqmARXK8NmCjVLJwzhMlgnJ9ZSXI4Hu06Dxub0ymFuztUIALukKxvO3OHFiWAIV3cZXVOS2osGECxGXcyLEBcBOc5zxPA_YNs-v67nwnOt0b3MIVU-MSn-LXU2hnrhgfX5BZuSg4ITkNciBcdjiNv-_bQCzWO0GOwwf4wN_qOOW-l2JsJMpI-3cEw9f39LdA0OsJBtr3I1_Im1h9dOFrXuh076OPu3ewpwDcRl1AiL-Q_2cXtJwZoLUK5gB8vzzCRHAYN9x_gY-TBlscSEe9M6KXXr0DVJxGI6fdGSS9gA3g8ekpKvxF0PMzdVaLn4_Ldmn5NvmjSm9NqnxR76MQiH6obqI2juauDmydyt2DCJVIz9g6p7Q6Yzf-V7Xs_P3eQ-dl3IoQLSoF5GmOPHXpd6fn-w14eraCwTOBk3lrK-thWThzkrhN8JAjHBPLvO5z0t4GAHrVJdUfhGdFAtM12jZzbWeN2gDxrbxZn_806o7VUNBTzwzNNG7ScpwUG8vsO_hppmbRATJDckZKB9oxYZbk9Fhr15uh_vkoF_k9YdS_INEona5CghaLk_JjYvPRoO9sZ4OhIq4EWiJh0zYqhk=\",\"id\":\"rs_071060073622eb04016aec91b73adc87d28bce45db8f4a91f8\",\"summary\":[{\"text\":\"**Inspecting call records**\",\"type\":\"summary_text\"}],\"type\":\"reasoning\"}"
+              },
+              {
+                "type": "text",
+                "text": "const data = await ctx.call(\"records\", {});\nconsole.log(data);\n"
+              },
+              {
+                "type": "thinking",
+                "text": "",
+                "signature": "{\"encrypted_content\":\"gAAAAABq7JG6fDus6_4XP3P2HtIWS2-C_7fwo5yTmS8AkIaHwiOdSTm9Pv4FtP0CZ1t6D97mTsK5mrpHe5BShIqzaXDOCBv994ST6JnAO2AhTQqNGaTCjgu6l9kQb2KWxxOtl-tQK0eQCF6ppxGRwIm5wFuNASgoGApnLd2CDfk5g_OfBEViVy4WsH-ED_cEaXdBq78wK5C2WZlwKZtW5Z8A6u0l5YO7wQgMw_D_0G4-UoyKrtDtgOuv1pMfmus6k6bML_HDqyy1XMCjYZxz2fCN6myb7G06yGVQXHSvlv-js9ovZMZDX16MjAvNefHquSyGzuuuB0Wj9Ou2WFvET6rkFLB-LBCzOZthNwqw0YTEUz4NuKTv_pu16mRJ_I6t9Llw1gthwjX-nVKiJXzw7f2I7MPbZkmJ6tr29psXOAccqeou3dsBk9Pud_wGvM3HrYRVJgvK3KZ9K18EY7qqER3THSA2UIV33XA8uNsWdOD3tpvXzLfwO-ElxFZHmevUX4q-EbrKUUPhzHzX_9JtAWqpNEZ7LJdqGSR_KU3y7O9SXL8HKiOaXkaWoRPm6C6-G5QJoNEKrYkefL8tn0h_R2Uer64MEFf_neUa_Y481bZwu2nVQL5uvABXFR37mLTaq1RYsoFIjo2h5RAfLZdxquQ8In1MNbpGt8BpLh2eb2Vgz2V8tufRpbMx1eC0cbpvmVcpw1hqF8EMwhCj_hxKqzswTy4lK17D5pda1sNI8nxxl5QH9d0dqtyri7Wj0Wk4IuH0pi_k0PLc71pNATtGykAvAlYPa3iDH_zGmUUmWtxChgV_Z5pymND_l_Db5akY9mecByS4EweSWV4kBq8C9gN7reGRIV3rWGzhbgcia47EuhnUEoDUwqSVPxoCfiruXPxCjY2H1PAoDsx4JYwXgtNnJoZRPxFydU0QZyDVKOxkQkharxTA6oPjyz3uCeFXXr4Lrr485fdSbt4PxYWtQ89nA5l6H8sXZ8S7VQeRGRPB1_JY-DDubeD6kT1c60t_pQ8Efctv2_dNaMGTRMuABu4nlslkG9azmXI6NOQt7_Aykv7een_IaRp2ZKlVd9AnniTY53-u0utwMjVhBBZ9_IH_s_pG_IhcJwyNEvbxfBCgMNpcqKagn9tQq5DxRv2EfVS8lpfj8NWD0ukCmwTzJ-bkvgNCsF9VjMp877HdNylKPyJJgbxLmf_12Y-HZmUHgNZQ4BBwxSyRx9d_MGXL8fzJoL5FzfiK7SvAQutWlZv7jviwyLC9DdjUan8euZnUzbB2ZGPXw7QfVYbtvckIp4CtOvth_THYnPWqXR-I4DfuOCAqT3_dq1o1LonAasn8lVP-nwJi_ZRTZR1GBhHICqg9_-kDjNJUlkjcshQ-RhIqE2niWqzFIHBpjIwX4R7Umco0CgIC5TcqfEVoMo9-XU-pLTXtk9BaMbfFSdx8GS48DI12mjG5Kj_uKHImpAti4brv_raUGW2tVIYBYFI3N-QNyGfuEg1PSnjPFk18FicFSYI9bfDa1DK1SwBufqKigmQZUwFbPDoRGzpyuMaWYI6FMq9_C4i5L41P_M6BnfHZr1YTy_1MTSor6T4ixXiGnwyY3ppLCtLLZtoveN3HlLhpQFlSScitnBygDBLsa7EUzQtDe9tzO8M=\",\"id\":\"rs_071060073622eb04016aec91b92ff487d285cdbbfeb0f3e77a\",\"summary\":[],\"type\":\"reasoning\"}"
+              },
+              {
+                "type": "text",
+                "text": "console.log(data);"
+              }
+            ],
+            "stopReason": "stop",
+            "responseId": "resp_071060073622eb04016aec91b6aa6887d2955eb2710e20d8d1"
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Cell observation: {\"outcome\":{\"_tag\":\"settled\",\"transition\":{\"_tag\":\"continue\"}},\"prints\":\"{\\\"owners\\\":{\\\"a\\\":\\\"Ada\\\",\\\"b\\\":\\\"Bo\\\",\\\"c\\\":\\\"Cy\\\"}}\\nrecords (18):\\nid | sku | revision | group | value | active | tags\\nr00 | s0 | 0 | a | 92 | true |  green, yellow\\nr01 | s1 | 0 | a | 97 | false | Red, blue\\nr02 | s2 | 0 | a | 61 | false |  green, yellow\\nr03 | s3 | 0 | a | 96 | false |  green, yellow\\nr04 | s4 | 0 | c | 32 | false | \\nr05 | s5 | 0 | c | 7 | false |  BLUE,green \\nr06 | s0 | 1 | c | 82 | false | \\nr07 | s1 | 1 | a | 1 | true | \\nr08 | s2 | 1 | a | 32 | true | Red, blue\\nr09 | s3 | 1 | a | 55 | true | \\nr10 | s4 | 1 | a | 43 | false |  BLUE,green \\nr11 | s5 | 1 | b | 64 | false | Red, blue\\nr12 | s0 | 2 | c | -2 | false |  green, yellow\\nr13 | s1 | 2 | a | 81 | true | red,RED\\nr14 | s2 | 2 | b | 44 | true | red,RED\\nr15 | s3 | 2 | c | 53 | false | Red, blue\\nr16 | s4 | 2 | c | 76 | true | Red, blue\\nr17 | s5 | 2 | a | 93 | true |  green, yellow\\n{\\\"owners\\\":{\\\"a\\\":\\\"Ada\\\",\\\"b\\\":\\\"Bo\\\",\\\"c\\\":\\\"Cy\\\"}}\\nrecords (18):\\nid | sku | revision | group | value | active | tags\\nr00 | s0 | 0 | a | 92 | true |  green, yellow\\nr01 | s1 | 0 | a | 97 | false | Red, blue\\nr02 | s2 | 0 | a | 61 | false |  green, yellow\\nr03 | s3 | 0 | a | 96 | false |  green, yellow\\nr04 | s4 | 0 | c | 32 | false | \\nr05 | s5 | 0 | c | 7 | false |  BLUE,green \\nr06 | s0 | 1 | c | 82 | false | \\nr07 | s1 | 1 | a | 1 | true | \\nr08 | s2 | 1 | a | 32 | true | Red, blue\\nr09 | s3 | 1 | a | 55 | true | \\nr10 | s4 | 1 | a | 43 | false |  BLUE,green \\nr11 | s5 | 1 | b | 64 | false | Red, blue\\nr12 | s0 | 2 | c | -2 | false |  green, yellow\\nr13 | s1 | 2 | a | 81 | true | red,RED\\nr14 | s2 | 2 | b | 44 | true | red,RED\\nr15 | s3 | 2 | c | 53 | false | Red, blue\\nr16 | s4 | 2 | c | 76 | true | Red, blue\\nr17 | s5 | 2 | a | 93 | true |  green, yellow\",\"bindings\":[{\"name\":\"data\",\"type\":\"object\",\"size\":\"2 keys\"}]}"
+              }
+            ]
+          }
+        ],
+        "tools": [],
+        "params": {
+          "reasoningEffort": "low"
+        },
+        "cacheKey": "cell-comparison/9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2/6/cell/2026-11-05T14:22:23.672Z"
+      },
+      "events": [
+        {
+          "type": "thinking-start",
+          "id": "rs_071060073622eb04016aec91bcb5d487d287fb6f6251fe6367"
+        },
+        {
+          "type": "thinking-delta",
+          "id": "rs_071060073622eb04016aec91bcb5d487d287fb6f6251fe6367",
+          "text": "**Fetching filtered records**"
+        },
+        {
+          "type": "thinking-end",
+          "id": "rs_071060073622eb04016aec91bcb5d487d287fb6f6251fe6367"
+        },
+        {
+          "type": "thinking-start",
+          "id": "rs_071060073622eb04016aec91bcb5d487d287fb6f6251fe6367:encrypted",
+          "signature": "{\"encrypted_content\":\"gAAAAABq7JHAeF5g7OPkiEfMwKQNv9M6AnrrhO03E14T2V0UQEYxwqB3wW_kjRvOjd7XCeDMW3ZhdsEXq6rWd27XjNomnqOi2lgWC4Zb5WPUEM2HHUzOVEhApyYf75J1eM83MzxNUhnFiXtwwWfHd-K0WXSh78YOd91OIUaEi4giqFBpOHTzPJWVybGql2uuXUHgq7eB1QoSG_d79oZ72VzybFFjprqQct-zLFpBsg_oDPKyKg5WSFGf5qAmB_iOFXV-2qdFzc-uJMgYxCJ3iSflfB-ZeW3wob1GaA4VA0yN7oBb-x1QEXhpvXJ_6bWmg275uegcAGWBO42d3xqy33TNDwNlZ-r-AqlXLTn_d3B5v0bstTZgX2ZRcPdLYmIAMcOrm_QPmBCJ188xk1anz_Wj7TZP878e0tC4Zs4BG-HDWaKaAz9ybTngVC-XfAizhUS5sRL7NJIQ0rOxUaF8k6XEGTH5gHCrieXz4ACLfczusZzO8FQJKcnRbY0R-bvmBhNNGP3K5N_P3cr-NwiozMCB5QUTRCdF7DGq0s5MQRksfy-ZEMM7ng3Cd63-rotGE1v_6FT8-o5yM_xNXCqvak3q3qUc5t1gMoDAtaCTrUgQ3UweN-UbPXMunKLa5f50Xg0D7jHj99gRXkT4f-OIHLq_DtMR2M--JQv1h-AvrqD4VvMXzZsDOe32v0rTYi8LnmZSSK38-gfgjaT1AuDV3AxblZNjJIx8hXVd-9KL6GVEsNWTGlk-HO7gJ-oUDmnHzINfOyrPecZschn-WJLkEts-VdDBhmNljufOXsQXClgxX8u0FzEe7_0fGP7XUVrcVF7rZB0A6H9-uj3-SJLb86aeGT-H2czmIpkILMLj_ID18lF8WZURKwLbQ8HdhEGSSbJE64zpU0akehdTAXZjesAaytvMJ9VcWYPfNKE4I62iZhTXU7KEhMXNkhZVE4vEJwTpxyurTah3NaBVS-Ece6QFWLfoROO-E6kIDgAFKbzWwI6mvHPYUrUYKxpcpypa9rvZl8676gRw-XilQXDywSgVzGhOOrtnRS0p3Aq7D9Li3jObYZaecr1tUZWWlHvQ696nY5hhi6WyVPYNcUwO0xpvZvGNe-lACSb8n0b0hCRgbldjBLLHoopsHv5jBqtdKPfIUyccd2Pa3wGaeGcj4DX1zCwaRdKBg5PTC_3DVzOH6RAfqcNEBQQ0BhxS61Ha853w7D7leElBU17WnXmOpkCK87oOUG2WmvoXW9gDnFZ7E5072_eUJfcZ6sx66xjavhzBNZZZ6xP0xNxhHf7MEkvFOhQ2zZnt76irEJIVksRMUPNU2x4X8DiwEgQNhXCKj_taMB25ZFdi-ygnZx7WSOhiE1Q9KYOHHIwvv3okOOtnLKbkeWOsNQp0OrErC58abGL3NfFCFISTKpou8dKQVbUKTzxtvR_zAg9aayShYcjfkGc_WuRxIUXUwGlZjyLk9tZxYVZ6kqvamalNvWr8D-D6Hu4l-GcAsZYV5YnD-6oM6w_isnEP1BSxYd6H0tQvisdzcA9trFEHoYmuAj2N0f-qBiP5cWlAZIrfH71cec-xisA70g-58U_q0wy6kMgLiEQaH3IlBzgugXQMKZuARo8-PDntzulMzwR8FFBP6YhAdNaS3RhHBgkBu06Ui7BI_3_Uia0737ygDCLONNIBPp32naG9B9V5w6wuPRoGEPTH3VyxADQshwQ=\",\"id\":\"rs_071060073622eb04016aec91bcb5d487d287fb6f6251fe6367\",\"summary\":[{\"text\":\"**Fetching filtered records**\",\"type\":\"summary_text\"}],\"type\":\"reasoning\"}"
+        },
+        {
+          "type": "thinking-end",
+          "id": "rs_071060073622eb04016aec91bcb5d487d287fb6f6251fe6367:encrypted"
+        },
+        {
+          "type": "text-start",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": "const"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " data"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " ="
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " await"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " ctx"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": ".call"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": "(\""
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": "records"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": "\","
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " {});\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": "const"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " ids"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " ="
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " data"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": ".records"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": "\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " "
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " ."
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": "filter"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": "(record"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " =>"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " record"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": ".active"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " &&"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " record"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": ".value"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " >="
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " "
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": "40"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": ")\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " "
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " ."
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": "map"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": "(record"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " =>"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " record"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": ".id"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": ")\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " "
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " ."
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": "sort"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": "();\n"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": "ctx"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": ".done"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": "({"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " ids"
+        },
+        {
+          "type": "text-delta",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d",
+          "text": " });"
+        },
+        {
+          "type": "text-end",
+          "id": "msg_071060073622eb04016aec91c0af8487d29c2933d6ba5f877d"
+        },
+        {
+          "type": "usage",
+          "inputTokens": 993,
+          "outputTokens": 68,
+          "reasoningTokens": 15,
+          "cachedInputTokens": 0,
+          "totalTokens": 1061
+        },
+        {
+          "type": "settle",
+          "stopReason": "stop",
+          "responseId": "resp_071060073622eb04016aec91bafd0087d29de6842d425e692d",
+          "servedTier": "default",
+          "timing": {
+            "startedAt": 1793888698544,
+            "attempts": 1,
+            "requestBytes": 6741,
+            "preparedMs": 0,
+            "signedMs": 1,
+            "sentMs": 2,
+            "headersMs": 1007,
+            "firstEventMs": 2082,
+            "firstThinkingMs": 6165,
+            "firstOutputMs": 6166,
+            "lastOutputMs": 6175,
+            "completedMs": 6254,
+            "closedMs": 6254
+          }
+        }
+      ],
+      "usage": {
+        "inputTokens": 993,
+        "outputTokens": 68,
+        "reasoningTokens": 15,
+        "cachedInputTokens": 0,
+        "totalTokens": 1061
+      },
+      "cost": {
+        "costUsd": 0.0001333,
+        "costSource": "estimated"
+      },
+      "elapsedMs": 6440,
+      "replayed": false,
+      "frame": {
+        "outcome": {
+          "_tag": "settled",
+          "transition": {
+            "_tag": "complete",
+            "output": "{\"ids\":[\"r00\",\"r09\",\"r13\",\"r14\",\"r16\",\"r17\"]}",
+            "value": {
+              "ids": [
+                "r00",
+                "r09",
+                "r13",
+                "r14",
+                "r16",
+                "r17"
+              ]
+            }
+          }
+        },
+        "prints": "",
+        "bindings": [
+          {
+            "name": "data",
+            "type": "object",
+            "size": "2 keys"
+          },
+          {
+            "name": "ids",
+            "type": "array",
+            "size": "6 items"
+          }
+        ]
+      }
+    }
+  ],
+  "calls": [
+    {
+      "ordinal": 0,
+      "name": "records",
+      "input": {},
+      "value": {
+        "records": [
+          {
+            "id": "r00",
+            "sku": "s0",
+            "revision": 0,
+            "group": "a",
+            "value": 92,
+            "active": true,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r01",
+            "sku": "s1",
+            "revision": 0,
+            "group": "a",
+            "value": 97,
+            "active": false,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r02",
+            "sku": "s2",
+            "revision": 0,
+            "group": "a",
+            "value": 61,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r03",
+            "sku": "s3",
+            "revision": 0,
+            "group": "a",
+            "value": 96,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r04",
+            "sku": "s4",
+            "revision": 0,
+            "group": "c",
+            "value": 32,
+            "active": false,
+            "tags": ""
+          },
+          {
+            "id": "r05",
+            "sku": "s5",
+            "revision": 0,
+            "group": "c",
+            "value": 7,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r06",
+            "sku": "s0",
+            "revision": 1,
+            "group": "c",
+            "value": 82,
+            "active": false,
+            "tags": ""
+          },
+          {
+            "id": "r07",
+            "sku": "s1",
+            "revision": 1,
+            "group": "a",
+            "value": 1,
+            "active": true,
+            "tags": ""
+          },
+          {
+            "id": "r08",
+            "sku": "s2",
+            "revision": 1,
+            "group": "a",
+            "value": 32,
+            "active": true,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r09",
+            "sku": "s3",
+            "revision": 1,
+            "group": "a",
+            "value": 55,
+            "active": true,
+            "tags": ""
+          },
+          {
+            "id": "r10",
+            "sku": "s4",
+            "revision": 1,
+            "group": "a",
+            "value": 43,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r11",
+            "sku": "s5",
+            "revision": 1,
+            "group": "b",
+            "value": 64,
+            "active": false,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r12",
+            "sku": "s0",
+            "revision": 2,
+            "group": "c",
+            "value": -2,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r13",
+            "sku": "s1",
+            "revision": 2,
+            "group": "a",
+            "value": 81,
+            "active": true,
+            "tags": "red,RED"
+          },
+          {
+            "id": "r14",
+            "sku": "s2",
+            "revision": 2,
+            "group": "b",
+            "value": 44,
+            "active": true,
+            "tags": "red,RED"
+          },
+          {
+            "id": "r15",
+            "sku": "s3",
+            "revision": 2,
+            "group": "c",
+            "value": 53,
+            "active": false,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r16",
+            "sku": "s4",
+            "revision": 2,
+            "group": "c",
+            "value": 76,
+            "active": true,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r17",
+            "sku": "s5",
+            "revision": 2,
+            "group": "a",
+            "value": 93,
+            "active": true,
+            "tags": " green, yellow"
+          }
+        ],
+        "owners": {
+          "a": "Ada",
+          "b": "Bo",
+          "c": "Cy"
+        }
+      }
+    },
+    {
+      "ordinal": 1,
+      "name": "records",
+      "input": {},
+      "value": {
+        "records": [
+          {
+            "id": "r00",
+            "sku": "s0",
+            "revision": 0,
+            "group": "a",
+            "value": 92,
+            "active": true,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r01",
+            "sku": "s1",
+            "revision": 0,
+            "group": "a",
+            "value": 97,
+            "active": false,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r02",
+            "sku": "s2",
+            "revision": 0,
+            "group": "a",
+            "value": 61,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r03",
+            "sku": "s3",
+            "revision": 0,
+            "group": "a",
+            "value": 96,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r04",
+            "sku": "s4",
+            "revision": 0,
+            "group": "c",
+            "value": 32,
+            "active": false,
+            "tags": ""
+          },
+          {
+            "id": "r05",
+            "sku": "s5",
+            "revision": 0,
+            "group": "c",
+            "value": 7,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r06",
+            "sku": "s0",
+            "revision": 1,
+            "group": "c",
+            "value": 82,
+            "active": false,
+            "tags": ""
+          },
+          {
+            "id": "r07",
+            "sku": "s1",
+            "revision": 1,
+            "group": "a",
+            "value": 1,
+            "active": true,
+            "tags": ""
+          },
+          {
+            "id": "r08",
+            "sku": "s2",
+            "revision": 1,
+            "group": "a",
+            "value": 32,
+            "active": true,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r09",
+            "sku": "s3",
+            "revision": 1,
+            "group": "a",
+            "value": 55,
+            "active": true,
+            "tags": ""
+          },
+          {
+            "id": "r10",
+            "sku": "s4",
+            "revision": 1,
+            "group": "a",
+            "value": 43,
+            "active": false,
+            "tags": " BLUE,green "
+          },
+          {
+            "id": "r11",
+            "sku": "s5",
+            "revision": 1,
+            "group": "b",
+            "value": 64,
+            "active": false,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r12",
+            "sku": "s0",
+            "revision": 2,
+            "group": "c",
+            "value": -2,
+            "active": false,
+            "tags": " green, yellow"
+          },
+          {
+            "id": "r13",
+            "sku": "s1",
+            "revision": 2,
+            "group": "a",
+            "value": 81,
+            "active": true,
+            "tags": "red,RED"
+          },
+          {
+            "id": "r14",
+            "sku": "s2",
+            "revision": 2,
+            "group": "b",
+            "value": 44,
+            "active": true,
+            "tags": "red,RED"
+          },
+          {
+            "id": "r15",
+            "sku": "s3",
+            "revision": 2,
+            "group": "c",
+            "value": 53,
+            "active": false,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r16",
+            "sku": "s4",
+            "revision": 2,
+            "group": "c",
+            "value": 76,
+            "active": true,
+            "tags": "Red, blue"
+          },
+          {
+            "id": "r17",
+            "sku": "s5",
+            "revision": 2,
+            "group": "a",
+            "value": 93,
+            "active": true,
+            "tags": " green, yellow"
+          }
+        ],
+        "owners": {
+          "a": "Ada",
+          "b": "Bo",
+          "c": "Cy"
+        }
+      }
+    }
+  ],
+  "output": {
+    "ids": [
+      "r00",
+      "r09",
+      "r13",
+      "r14",
+      "r16",
+      "r17"
+    ]
+  }
+}

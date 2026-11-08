@@ -4,7 +4,7 @@
  * SHA-256 as an injected capability, with one stable digest representation.
  *
  * Hashing is host access, so the cryptographic operation goes through
- * `effect/Crypto`: a Node process, Bun process, browser, or test supplies the
+ * `effect/crypto/Digest`: a Node process, Bun process, browser, or test supplies the
  * implementation. Text conversion is deliberately narrower. A string must be
  * well-formed UTF-16 and is encoded as UTF-8 with the standard `TextEncoder`
  * available in every supported Smithers runtime. No Unicode normalization is
@@ -18,13 +18,14 @@
  * @since 0.1.0
  */
 
+import * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
+import * as Hex from "effect/encoding/Hex"
 import * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 import * as SchemaGetter from "effect/SchemaGetter"
 import * as SchemaIssue from "effect/SchemaIssue"
 import * as SchemaParser from "effect/SchemaParser"
-import * as Crypto from "./Crypto.ts"
 import { sha256, Sha256Prefix } from "./internal/sha256.ts"
 
 const digestBytes = 32
@@ -198,66 +199,63 @@ const hostFailure = (cause: unknown): Sha256Error =>
  */
 export const digestSync = (input: string | Uint8Array): Digest => encodeHex(sha256(snapshotSync(input))) as Digest
 
+// SHA-256 over a snapshot of the input; any other algorithm is a defect.
+const synchronousDigest: typeof EffectDigest.Digest.Service["digest"] = (algorithm, input) =>
+  algorithm.name === "SHA-256"
+    ? Effect.try({
+      try: () => sha256(new Uint8Array(input)),
+      catch: (cause) =>
+        PlatformError.badArgument({
+          module: "@smthrs/crypto",
+          method: "digest",
+          description: "syncCrypto could not snapshot SHA-256 input",
+          cause
+        })
+    }).pipe(Effect.orDie)
+    : Effect.die(PlatformError.badArgument({
+      module: "@smthrs/crypto",
+      method: "digest",
+      description: `syncCrypto supports only SHA-256, not ${algorithm.name}`
+    }))
+
 /**
- * A synchronous, SHA-256-only Effect `Crypto` service.
+ * A synchronous, SHA-256-only Effect `Digest` service.
  *
  * This adapter exists for synchronous code that already consumes an Effect
- * `Crypto` service. It snapshots byte input, rejects every other digest
- * algorithm, and deliberately refuses randomness. Normal application code
- * should supply its platform Crypto layer instead.
+ * `Digest` service. It snapshots byte input and rejects every other digest
+ * algorithm as a defect. Randomness uses the separate `SecureRandom` service.
+ * Normal application code should supply its platform digest layer instead.
  *
  * @category services
  * @since 1.0.0
  */
-export const syncCrypto: Crypto.Crypto = Crypto.make({
-  randomBytes: () => {
-    throw PlatformError.badArgument({
-      module: "@smthrs/crypto",
-      method: "randomBytes",
-      description: "@smthrs/crypto syncCrypto provides SHA-256 only; supply a platform Crypto layer for randomness"
-    })
-  },
-  digest: (algorithm, input) =>
-    algorithm === "SHA-256"
-      ? Effect.try({
-        try: () => sha256(new Uint8Array(input)),
-        catch: (cause) =>
-          PlatformError.badArgument({
-            module: "@smthrs/crypto",
-            method: "digest",
-            description: "syncCrypto could not snapshot SHA-256 input",
-            cause
-          })
-      })
-      : Effect.fail(PlatformError.badArgument({
-        module: "@smthrs/crypto",
-        method: "digest",
-        description: `syncCrypto supports only SHA-256, not ${algorithm}`
-      }))
+export const syncCrypto: typeof EffectDigest.Digest.Service = EffectDigest.Digest.of({
+  digest: synchronousDigest,
+  digestHex: (algorithm, data) => Effect.map(synchronousDigest(algorithm, data), Hex.encode)
 })
 
 /**
  * Hashes well-formed UTF-8 text or a byte-array snapshot with injected Crypto.
  *
- * The returned Effect requires `Crypto.Crypto`. A missing service is an Effect
+ * The returned Effect requires `EffectDigest.Digest`. A missing service is an Effect
  * configuration defect. Invalid input, text-encoding failures, provided-host
  * failures, and malformed host output fail with {@link Sha256Error}. The host
  * must return exactly 32 bytes.
  *
  * @param input - Well-formed text or bytes, snapshotted each time the Effect runs.
- * @returns An Effect requiring `Crypto.Crypto`, succeeding with the lowercase
+ * @returns An Effect requiring `EffectDigest.Digest`, succeeding with the lowercase
  * hexadecimal digest or failing with `Sha256Error` for input, encoding, host
  * operation, or host output failures.
  *
  * @category hashing
  * @since 1.0.0
  */
-export const digest = (input: string | Uint8Array): Effect.Effect<Digest, Sha256Error, Crypto.Crypto> =>
+export const digest = (input: string | Uint8Array): Effect.Effect<Digest, Sha256Error, EffectDigest.Digest> =>
   Effect.gen(function*() {
     const bytes = yield* snapshot(input)
-    const crypto = yield* Crypto.Crypto
+    const crypto = yield* EffectDigest.Digest
     const operation = (yield* Effect.try({
-      try: () => crypto.digest("SHA-256", bytes),
+      try: () => crypto.digest(EffectDigest.sha256, bytes),
       catch: hostFailure
     })) as unknown
     if (!Effect.isEffect(operation)) {

@@ -42,7 +42,7 @@ const recordingHost = (ino: Option.Option<number> = Option.some(42)) => {
         exists: true,
         readFile: new Uint8Array([1]),
         readFileString: "text",
-        readDirectory: [],
+        readDirectory: ["a.txt"],
         stat: { type: "File" },
         realPath: "/canonical/x",
         readLink: "x",
@@ -66,8 +66,10 @@ const exercise = (fs: EffectFileSystem.FileSystem) =>
     yield* fs.makeDirectory("dir/sub", { recursive: true })
     yield* fs.remove("dir/a.txt", { force: true })
     yield* fs.rename("dir/b.txt", "dir/c.txt")
-    yield* fs.readDirectory("dir")
+    expect(yield* fs.readDirectory("dir")).toEqual(["a.txt"])
+    expect(yield* fs.readDirectoryEntries("dir")).toEqual([{ name: "a.txt", type: "Unknown" }])
     yield* fs.stat("dir/c.txt")
+    yield* fs.lstat("dir/c.txt")
     yield* fs.chmod("dir/c.txt", 0o600)
     yield* fs.chown("dir/c.txt", 1, 2)
     yield* fs.readLink("dir/link")
@@ -186,8 +188,6 @@ describe("FileSystem.confined", () => {
         yield* Effect.flip(view.truncate("a")),
         yield* Effect.flip(view.copyFile("a", "b")),
         yield* Effect.flip(view.access("a")),
-        yield* Effect.flip(view.lstat("a")),
-        yield* Effect.flip(view.readDirectoryEntries("a")),
         yield* Effect.flip(view.utimes("a", 0, 0)),
         yield* Effect.flip(view.makeTempDirectory()),
         yield* Effect.flip(view.makeTempDirectoryScoped({ directory: "tmp" }).pipe(Effect.scoped)),

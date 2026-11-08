@@ -34,8 +34,8 @@ const neverBlank = (frames: Array<Frame>) => {
     expect(frame.spinner, `no spinner at ${Math.round(frame.t)} ms`).toBe(false)
     if (frame.app) continue
     expect(
-      frame.repository !== undefined && (frame.repository !== "" || frame.placeholder),
-      `the repository page's body at ${Math.round(frame.t)} ms: ${frame.markup ?? "no page"}`,
+      frame.repository === true || frame.placeholder,
+      `the repository page's body: ${JSON.stringify(frame)}`,
     ).toBe(true)
   }
   const headers = frames.flatMap((frame) => (frame.header === undefined ? [] : [frame.header]))
@@ -57,7 +57,7 @@ test("navigate by the agent: asking to open octocat/Spoon-Knife takes the tab th
   const b = await devices.tab(a.device, "B")
   const question = `Open octocat/Spoon-Knife, then reply with the word nav-${word}.`
 
-  await recordFrames(a.page)
+  await recordFrames(a.page, { region: "Repository" })
   await a.askAndWaitTaken(question)
 
   // The tab whose composer asked moves, through the router: the repository screen at GitHub's path, never blank.
@@ -98,7 +98,7 @@ test("navigate by a person: /navigate /octocat/Spoon-Knife in the composer takes
   const [a] = await devices.open("A")
   const b = await devices.tab(a.device, "B")
 
-  await recordFrames(a.page)
+  await recordFrames(a.page, { region: "Repository" })
   await a.send("/navigate /octocat/Spoon-Knife")
 
   await expect(a.page).toHaveURL(/\/octocat\/Spoon-Knife$/, { timeout: 30_000 })
@@ -108,7 +108,7 @@ test("navigate by a person: /navigate /octocat/Spoon-Knife in the composer takes
   await expect(b.page).toHaveURL(atAppHome())
 })
 
-test("navigate by hover: Runs, hovered first, opens at the click with no loading frame", async ({ devices }) => {
+test("navigate by hover: Runs, hovered first, opens at the click with no loading frame", async ({ devices }, testInfo) => {
   const [a] = await devices.open("A")
   const runs = a.page.getByRole("link", { name: "Runs", exact: true })
   await recordFrames(a.page)
@@ -117,20 +117,35 @@ test("navigate by hover: Runs, hovered first, opens at the click with no loading
     // Past the 50 ms intent delay and the page's warm: 30 frames on the page left.
     await framesPass(a.page, 30)
   })
-  await step("A: open Runs", () => runs.click())
-  await expect(a.page).toHaveURL(/\/app\/runs$/)
-  await expect(a.page.getByRole("main", { name: "Runs" })).toBeVisible()
-  await framesPass(a.page, 30)
-  const frames = await framesOf(a.page)
-  // Every frame shows the page left or Runs, whole: never a bar, a skeleton or a spinner, never a blank frame.
+  await step("A: open Runs", async () => {
+    // Start at the DOM click, after Playwright's actionability checks. The previous page may hold pending answers.
+    await recordFrames(a.page, { region: "Runs", fromClick: true })
+    await runs.click()
+  })
+  let frames: Array<Frame> = []
+  try {
+    await expect(a.page).toHaveURL(/\/app\/runs$/)
+    await expect(a.page.getByRole("main", { name: "Runs" })).toBeVisible()
+    await framesPass(a.page, 30)
+  } finally {
+    // A closed page must preserve the route assertion's original failure.
+    frames = await framesOf(a.page).catch(() => [])
+    await testInfo.attach("navigation-frames", { body: JSON.stringify(frames, null, 2), contentType: "application/json" })
+  }
+  expect(frames.length).toBeGreaterThan(0)
+  expect(frames[0]!.main, JSON.stringify(frames[0])).toBe("App")
+  expect(frames[0]!.path, JSON.stringify(frames[0])).not.toBe("/app/runs")
+  // From the click, the previous page stays painted until Runs opens whole. Only Runs' loading elements count.
   for (const frame of frames) {
-    expect([frame.bar, frame.skeleton, frame.spinner], `frame at ${Math.round(frame.t)} ms`).toEqual([false, false, false])
-    expect(["App", "Runs"], `the page at ${Math.round(frame.t)} ms`).toContain(frame.main)
+    const diagnostic = JSON.stringify(frame)
+    expect([frame.bar, frame.skeleton, frame.spinner], diagnostic).toEqual([false, false, false])
+    expect(["App", "Runs"], diagnostic).toContain(frame.main)
+    expect(frame.content, diagnostic).toBe(true)
   }
   // The page left stays until Runs is ready, and Runs is ready well inside the loading delay, so nothing loading shows.
-  const clicked = frames.find((frame) => frame.path === "/app/runs")!
-  const opened = frames.find((frame) => frame.main === "Runs")!
-  expect(opened.t - clicked.t).toBeLessThan(300)
+  const opened = frames.find((frame) => frame.main === "Runs")
+  expect(opened, JSON.stringify(frames)).toBeDefined()
+  expect(opened!.t).toBeLessThan(300)
 })
 
 test("navigate refused: asking the agent to open an outside site is refused, and the page stays put", async ({ devices, request }) => {

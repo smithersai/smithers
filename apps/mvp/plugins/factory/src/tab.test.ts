@@ -149,7 +149,7 @@ describe("an opened document", () => {
       const { opened } = built.queries
       expect(opened.current()).toBeNull()
       built.actions.read(vibelang, "transcript", "transcript/lane-1", "lane-1")
-      expect(opened.current()).toEqual({ kind: "transcript", title: "lane-1", name: "transcript/lane-1", body: undefined })
+      expect(opened.current()).toEqual({ kind: "transcript", title: "lane-1", name: "transcript/lane-1", repository: "smithersai/vibelang", body: undefined })
       await vi.waitFor(() => expect(host.listeners.size).toBe(1))
       // Another repository's document of the same name, or another document, is not this one.
       host.push(DOCUMENT, doc("octo/hello", "transcript/lane-1", { events: [] }), doc("smithersai/vibelang", "transcript/lane-2", {}))
@@ -158,7 +158,7 @@ describe("an opened document", () => {
       await vi.waitFor(() => expect(opened.current()?.body).toEqual({ live: true, events: [{ kind: "text", text: "hi" }] }))
       // Opening another replaces it; the first one is no longer followed.
       built.actions.read(vibelang, "diff", "diff/abc", "fix: things")
-      await vi.waitFor(() => expect(opened.current()).toEqual({ kind: "diff", title: "fix: things", name: "diff/abc", body: undefined }))
+      await vi.waitFor(() => expect(opened.current()).toEqual({ kind: "diff", title: "fix: things", name: "diff/abc", repository: "smithersai/vibelang", body: undefined }))
       await vi.waitFor(() => expect(host.listeners.size).toBe(1))
       built.actions.close()
       expect(opened.current()).toBeNull()
@@ -176,7 +176,7 @@ describe("an opened document", () => {
       built.actions.read(vibelang, "report", "report/r1", "Round 1")
       host.release()
       await vi.waitFor(() => expect(host.listeners.size).toBe(1))
-      expect(built.queries.opened.current()).toEqual({ kind: "report", title: "Round 1", name: "report/r1", body: undefined })
+      expect(built.queries.opened.current()).toEqual({ kind: "report", title: "Round 1", name: "report/r1", repository: "smithersai/vibelang", body: undefined })
     })
   })
 

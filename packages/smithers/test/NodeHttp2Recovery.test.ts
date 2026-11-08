@@ -43,7 +43,7 @@ describe("Node HTTP/2 model transport recovery", () => {
           decorated += 1
           if (decorated === 2) {
             yield* Deferred.succeed(entered, undefined)
-            yield* Effect.never
+            return yield* Effect.never
           }
           return client
         }))

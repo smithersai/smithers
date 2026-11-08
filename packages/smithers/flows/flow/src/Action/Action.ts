@@ -6,11 +6,11 @@
  * @since 0.1.0
  */
 
-import type { Crypto } from "@smthrs/crypto"
 import * as Effects from "@smthrs/plan/Effects"
 import type * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
 import type * as Context from "effect/Context"
+import type * as EffectDigest from "effect/crypto/Digest"
 import type * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -227,7 +227,7 @@ export interface Action<
     | Success["DecodingServices"]
     | Error["DecodingServices"]
     | R
-    | Crypto.Crypto
+    | EffectDigest.Digest
     | FlowRuntime
     | FlowInstance
   >
@@ -267,7 +267,7 @@ export interface Action<
     | Error["DecodingServices"]
     | Error["EncodingServices"]
     | R
-    | Crypto.Crypto
+    | EffectDigest.Digest
     | Scope
     | FlowRuntime
     | FlowInstance
@@ -280,7 +280,7 @@ export interface Action<
     | Error["DecodingServices"]
     | Error["EncodingServices"]
     | R
-    | Crypto.Crypto
+    | EffectDigest.Digest
     | Scope
     | FlowRuntime
     | FlowInstance

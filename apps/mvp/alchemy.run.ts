@@ -39,9 +39,10 @@
  *
  * ChatApi reads its settings with Effect Config; see docs/features/chat.md#configuration.
  */
-import * as Alchemy from "alchemy"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as Neon from "@alchemy.run/neon"
+import * as Alchemy from "alchemy"
+import * as Output from "alchemy/Output"
 import type { State } from "alchemy/State"
 import { Effect, Layer, Option } from "effect"
 import { Databases } from "./infra/ChatDatabase.ts"
@@ -52,6 +53,7 @@ import ElectricGateway from "./infra/ElectricGateway.ts"
 import { DatabaseUrl as ElectricDatabaseUrl } from "./infra/ElectricRuntime.ts"
 import { directUrl, Postgres } from "./infra/Postgres.ts"
 import * as Secrets from "./infra/Secrets.ts"
+import { SessionSigningKeyGate } from "./infra/SessionSigningKeyGate.ts"
 import * as SignIn from "./infra/SignIn.ts"
 import ChatApi from "./worker/ChatApi.ts"
 import DevChatApi from "./worker/DevChatApi.ts"
@@ -59,12 +61,12 @@ import DevChatApi from "./worker/DevChatApi.ts"
 // Local dev keeps state in .alchemy/ with no Cloudflare account; deploys keep it in the account's state store.
 const stateFor = (dev: boolean): Layer.Layer<State, never, Alchemy.StackServices> =>
   dev ? Alchemy.localState() : Cloudflare.state()
-const state = Layer.unwrap(Effect.gen(function* () {
+const state = Layer.unwrap(Effect.gen(function*() {
   return stateFor(yield* Alchemy.ALCHEMY_DEV)
 })).pipe(Layer.orDie)
 
 /** Production: Electric's gateway, for ChatApi to bind. `undefined` under `alchemy dev`. */
-const electric = Effect.gen(function* () {
+const electric = Effect.gen(function*() {
   if (yield* Alchemy.ALCHEMY_DEV) return undefined
   // The owner binds Postgres' direct URL as its secret; the gateway receives only the namespace binding.
   const databaseUrl = ElectricDatabaseUrl.of({ value: directUrl(yield* Postgres) })
@@ -75,16 +77,38 @@ const electric = Effect.gen(function* () {
 export default Alchemy.Stack(
   "smithers-mvp",
   { providers: Layer.mergeAll(Cloudflare.providers(), Neon.providers()), state },
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     // Production's hostname, read first: a production deploy without APP_DOMAIN stops before it changes anything
     // (infra/Domain.ts).
     const domain = (yield* Alchemy.ALCHEMY_DEV) ? Option.none<AppHost>() : yield* AppDomain.pipe(Effect.orDie)
     // Declared before ChatApi, so ChatApi's `ChatDatabase` and `EngineDatabase` are these: Neon's in production,
     // compose's in dev.
-    yield* Databases
+    const databases = yield* Databases
     const endpoint = yield* electric
     // Sign-in's secret, in production and under `alchemy dev` alike (docs/features/sign-in.md#configuration).
     const sessionSecret = SignIn.Secret.of({ value: (yield* SignIn.SessionSecret).text })
+    const configuredSessionSecrets = yield* SignIn.configuredSecrets(sessionSecret.value)
+    const configuredSealSecret = yield* SignIn.configuredSealSecret(sessionSecret.value)
+    // A fresh action identity prevents Alchemy from reusing a gate receipt from an earlier publication.
+    const gated = (yield* Alchemy.ALCHEMY_DEV) ?
+      Output.all(configuredSessionSecrets, configuredSealSecret) :
+      Output.map(
+        Output.all(
+          configuredSessionSecrets,
+          configuredSealSecret,
+          yield* SessionSigningKeyGate({
+            database: databases.migratedDatabase,
+            secrets: configuredSessionSecrets,
+            sealSecret: configuredSealSecret,
+            publication: yield* Effect.sync(() => crypto.randomUUID())
+          })
+        ),
+        ([secrets, seal]) => [secrets, seal] as const
+      )
+    const signingSecrets = SignIn.SigningSecrets.of({
+      value: Output.map(gated, ([secrets]) => secrets),
+      seal: Output.map(gated, ([, seal]) => seal)
+    })
     // Repository secrets' key, in production and under `alchemy dev` alike (docs/features/secrets.md#keys).
     const secretsKey = Secrets.Secret.of({ value: (yield* Secrets.SecretsKey).text })
     // Under `alchemy dev`, a local developer is signed in until the GitHub App is configured (worker/DevChatApi.ts).
@@ -92,7 +116,11 @@ export default Alchemy.Stack(
       ? ChatApi.pipe(Effect.provideService(Electric.Endpoint, endpoint))
       : (yield* Alchemy.ALCHEMY_DEV)
       ? DevChatApi
-      : ChatApi).pipe(Effect.provideService(SignIn.Secret, sessionSecret), Effect.provideService(Secrets.Secret, secretsKey))
+      : ChatApi).pipe(
+        Effect.provideService(SignIn.Secret, sessionSecret),
+        Effect.provideService(SignIn.SigningSecrets, signingSecrets),
+        Effect.provideService(Secrets.Secret, secretsKey)
+      )
     const site = yield* Cloudflare.Website.Vite("smithers-mvp", {
       main: "worker/index.ts",
       compatibility: { date: "2026-10-01", flags: ["enable_request_signal"] },
@@ -103,7 +131,7 @@ export default Alchemy.Stack(
         CHAT_API: chatApi,
         ...(Option.isSome(domain) && domain.value.aliases.length > 0
           ? { APP_ALIASES: aliasesBinding(domain.value) }
-          : {}),
+          : {})
       },
       // Production's custom domain and the hostnames that redirect to it, or none at all with APP_DOMAIN=workers.dev;
       // `alchemy dev` leaves it alone.
@@ -116,10 +144,10 @@ export default Alchemy.Stack(
       observability: {
         enabled: true,
         logs: { enabled: true, invocationLogs: true, persist: true },
-        traces: { enabled: true, persist: true },
-      },
+        traces: { enabled: true, persist: true }
+      }
     })
     if (Option.isSome(domain)) yield* DocsSite(domain.value.name)
     return { url: site.url }
-  }),
+  })
 )

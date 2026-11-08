@@ -16,7 +16,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { decideTranscriptScroll, transcriptFollowInterrupted } from "./transcriptScroll";
 import { prefersReducedMotion, useInjectUiCss } from "../styles";
 import { subscribeVisibility } from "./visibilitySubscriptionRegistry";

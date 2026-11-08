@@ -8,7 +8,6 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as AgentSession from "@smthrs/agent/AgentSession"
-import { Crypto } from "@smthrs/crypto"
 import * as Sha256 from "@smthrs/crypto/Sha256"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
@@ -262,7 +261,7 @@ const humanWaitStack = (interpreter: Layer.Layer<never, any, any>) => {
     DurableEngineState.layer
   ).pipe(
     Layer.provideMerge(Layer.effectDiscard(EngineMigrations.run)),
-    Layer.provideMerge(Layer.merge(TestDatabase.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+    Layer.provideMerge(Layer.merge(TestDatabase.layer, NodeCrypto.layer))
   )
   const engine = Layer.mergeAll(HumanTask.layer, interpreter).pipe(
     Layer.provideMerge(Action.layerImplementations),

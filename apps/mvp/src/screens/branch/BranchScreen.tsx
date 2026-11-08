@@ -100,7 +100,7 @@ export function BranchScreen({ homeTabs = false }: { readonly homeTabs?: boolean
         </div>
         {open || savedConversation ? (
           <div className="branch-screen-side">
-            <Card className="branch-screen-conversation" aria-label="Conversation">
+            <Card className="branch-screen-conversation">
               <Conversation timelineTodos={todos.filter(todo => todo.branch === current?.name)} timelineRepo={current ? { owner: current.owner, name: current.repo } : undefined} readOnly={savedConversation} empty={<EmptyState title={NO_MESSAGES} />} />
             </Card>
             {open ? <div className="branch-screen-composer">

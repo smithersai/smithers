@@ -1,11 +1,33 @@
 ---
 title: Secrets through an egress proxy (feature 6)
-status: done
+status: blocked
 area: infra
-owner: Codex secrets rebase
-updated: 2026-10-22
+owner: Codex GPT-6 Astra (e2e-secrets)
+updated: 2026-11-04
 links: [../decisions/0005-sandboxes-secrets-and-the-forge.md, ../../../../AGENTS.md, sandboxes.md, design-questions.md, branch-terminal.md, connect-agents-sandboxes-forge.md, decisions-for-will.md, ../features/secrets.md, docs-truth-pass.md]
 ---
+
+## Production proof — 2026-11-04
+
+The real controlled-receiver proof and the retained Docker inspection both pass locally. Production is not proven:
+repository-secret egress defaults off, and writes remain fenced to the deployment's own
+repository. No deployment or permission widening is part of this lane. Private configuration and execution receipts
+stay in the lane's private status file. Library catalog entries: `@smthrs/secrets` for egress and `@smthrs/platform-cloudflare`
+for the real branch machine; the tests exercise their existing public HTTP and terminal boundaries.
+
+The controlled-receiver journey exposed terminal recovery after `exit`: the socket reported ended while the row
+remained open, suppressing the button and returning a dead session on a new open. Recovery now offers the button,
+checks that person's session before admission, and records the recovery without terminal content. Its state and
+fault-service regressions accompany the real browser journey. This uses the catalog's existing
+`@smthrs/terminal-frame`, `@smthrs/platform-browser` and `@smthrs/platform-cloudflare` terminal boundaries.
+
+Validation: four-project typecheck, 108 focused unit/integration tests, and both real browser journeys plus setup
+passed on the admitted mini. The receiver verified both versions and revocation. The public scan read 35 files,
+4 process environments and 6 argument lists with zero matches; console, exported logs/metrics/traces, transcript
+and 2,687 server log lines contained neither value. Root Docker filesystem/process inspection also passed.
+The proof waits for each write's asynchronous telemetry export before replacing its document. Production needs
+authorized egress enablement, an authorized scratch-repository write scope, and authorized server-log capture;
+none is changed by this lane. Private receipts and pushed revisions are in the lane status file.
 
 ## Rebase validation — 2026-10-22
 

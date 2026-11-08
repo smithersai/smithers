@@ -79,7 +79,7 @@ test("disk admission executes its typed cleanup action through the engine", asyn
   const { FlowEngine } = await import("@smthrs/engine")
   const { Action } = await import("@smthrs/flow")
   const { Layer, ManagedRuntime } = await import("effect")
-  const { WebCrypto } = await import("@smthrs/crypto")
+  const NodeCrypto = await import("@effect/platform-node/NodeCrypto")
   const NodeServices = await import("@effect/platform-node/NodeServices")
   const { DiskAdmission, makeDiskLayer } = await import("../disk.ts")
   const events: string[] = []
@@ -96,7 +96,7 @@ test("disk admission executes its typed cleanup action through the engine", asyn
     makeDiskLayer(gate).pipe(
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(WebCrypto.layer),
+      Layer.provideMerge(NodeCrypto.layer),
       Layer.provideMerge(NodeServices.layer)
     )
   )

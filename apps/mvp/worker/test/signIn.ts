@@ -121,8 +121,12 @@ export const signInHarness = async (runtime: Runtime, options: Options = {}) => 
       }),
   )
   const revocations: Array<string> = []
+  const cleanupStarts: Array<string> = []
   const starter = options.starter ?? Flows.FlowStarter.of({
-    start: (_, { payload }) => Effect.sync(() => void revocations.push((payload as { readonly sessionId: string }).sessionId)),
+    start: (flow, { payload }) => Effect.sync(() => {
+      if (flow._tag === "auth/RevokeGitHubToken") revocations.push((payload as { readonly sessionId: string }).sessionId)
+      if (flow._tag === "auth/RevokeReplacedGitHubToken") cleanupStarts.push((payload as { readonly cleanupId: string }).cleanupId)
+    }),
   })
   const handler = HttpEffect.toWebHandler(
     observed(signIn.fetch.pipe(Effect.provide(checks), Effect.provideService(Flows.FlowStarter, starter))),
@@ -155,6 +159,7 @@ export const signInHarness = async (runtime: Runtime, options: Options = {}) => 
 
   return {
     signIn,
+    services: Layer.merge(checks, Layer.succeed(Flows.FlowStarter, starter)),
     github,
     fetch,
     at,
@@ -164,6 +169,7 @@ export const signInHarness = async (runtime: Runtime, options: Options = {}) => 
     roleChecks,
     /** The sessions a request started signing out (`auth/RevokeGitHubToken`), in order, through the default starter. */
     revocations,
+    cleanupStarts,
     /** Moves the clock the routes read `ms` later, for every request from now on. */
     advance: (ms: number) => void (offset += ms),
     /** `Actor.Sessions` from sign-in, recording role checks, for worker/test/harness.ts. */

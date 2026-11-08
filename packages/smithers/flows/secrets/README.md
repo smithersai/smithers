@@ -23,7 +23,7 @@ with `effect` at this exact version.
 {
   "dependencies": {
     "@smthrs/secrets": "workspace:*",
-    "effect": "4.1.0"
+    "effect": "4.1.1"
   }
 }
 ```

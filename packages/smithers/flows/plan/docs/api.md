@@ -35,7 +35,6 @@ The shortest composition that reaches every layer:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { Plan, PlanDiff } from "@smthrs/plan"
 import * as Effect from "effect/Effect"
 
@@ -72,7 +71,7 @@ const program = Effect.gen(function*() {
   })
 
   return PlanDiff.diff(plan, plan)
-}).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+}).pipe(Effect.provide(NodeCrypto.layer))
 ```
 
 Compiling needs Effect's `Crypto` service and nothing else. The package depends on [`@smthrs/crypto`](/api/crypto), [`@smthrs/canonical`](/api/canonical), [`@smthrs/keys`](/api/keys), and `effect`, performs no I/O, and is browser-safe. Persisting a compiled plan is [`@smthrs/plan-store`](/api/plan-store), which is where the database dependency lives.
@@ -253,7 +252,7 @@ validate the entire shape, reject unknown fields, and return typed
 ```ts
 const environmentIdentity: (
   environment?: EnvironmentIdentity
-) => Effect.Effect<StoredKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StoredKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 A fingerprint for binding a durable execution to its runtime environment,
@@ -310,8 +309,8 @@ interface DigestMemo {
   readonly digest: (
     from: string,
     path: ReadonlyArray<string>,
-    compute: Effect.Effect<StepKey, Schema.SchemaError, Crypto.Crypto>
-  ) => Effect.Effect<StepKey, Schema.SchemaError, Crypto.Crypto>
+    compute: Effect.Effect<StepKey, Schema.SchemaError, EffectDigest.Digest>
+  ) => Effect.Effect<StepKey, Schema.SchemaError, EffectDigest.Digest>
 }
 ```
 
@@ -330,7 +329,7 @@ Creates an empty memo.
 ```ts
 const content: (
   identity: ContentIdentity
-) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 Produces a cross-run reusable key. Set-like declarations are normalized before serialization; write declarations remain part of the identity even when the step writes nothing.
@@ -340,7 +339,7 @@ Produces a cross-run reusable key. Set-like declarations are normalized before s
 ```ts
 const ordinal: (
   identity: OrdinalIdentity
-) => Effect.Effect<StepKey, Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StepKey, Schema.SchemaError, EffectDigest.Digest>
 ```
 
 Produces a run-local key for compensable, irreversible, or unsealed work. These keys intentionally cannot be reused across runs.
@@ -351,7 +350,7 @@ Produces a run-local key for compensable, irreversible, or unsealed work. These 
 const planIdentity: (
   material: KeyMaterial.KeyMaterial,
   dependencyDigests: Readonly<Record<string, string>>
-) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 The declaration fingerprint used by `Plan.compile`, `append`, and `verify`.
@@ -365,7 +364,7 @@ to own string-valued properties, as with `fromKeyMaterial`.
 const fromKeyMaterial: (
   material: KeyMaterial.KeyMaterial,
   dependencyDigests: Readonly<Record<string, string>>
-) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 The sealed plan key: resolves graph-local references against `dependencyDigests`, which must hold an own string-valued property for every node the material names, then builds a content key. Fails `non_content_material` unless `material.kind` is `sealed`. Use `planIdentity` for a tier-independent compiler.
@@ -379,7 +378,7 @@ const dispatchIdentity: (options: {
   readonly hermetic: NonNullable<ContentIdentity["hermetic"]>
   readonly environment?: EnvironmentIdentity | undefined
   readonly digestMemo?: DigestMemo | undefined
-}) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+}) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 The key a dispatch is _cached_ under, as distinct from the plan key a node is _identified_ by.
@@ -527,7 +526,7 @@ const compile: (options: {
   readonly planId: string
   readonly flow: string
   readonly nodes: ReadonlyArray<NodeDraft>
-}) => Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+}) => Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 Compiles drafts into a plan: topological order of material dependencies, dependency-digest substitution, overlap annotation, reader-after-writer ordering, and the plan digest. No I/O. The options are snapshotted before anything else happens, and the result is deep-frozen at generation 0 with `baseDigest` equal to `digest`. Array order follows material dependencies; scheduling follows the complete `dependsOn` graph.
@@ -540,7 +539,7 @@ Traversal uses explicit stacks. Because the conflict and reader-after-writer pas
 const append: (
   plan: Plan,
   drafts: ReadonlyArray<NodeDraft>
-) => Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 Appends an elaborated subgraph at the next generation. Nodes already in the plan keep their id, key, edges, and generation byte for byte, and the new nodes arrive pre-keyed against them. `baseDigest` does not move; `digest` does. New nodes retain material-dependency order after the recorded prefix, including when inferred edges point to later entries. An append with no drafts fails as `invalid_node`.
@@ -551,7 +550,7 @@ Appends an elaborated subgraph at the next generation. Nodes already in the plan
 const verify: (input: unknown) => Effect.Effect<
   Plan,
   PlanError | StepKey.KeyMaterialError | Schema.SchemaError,
-  Crypto.Crypto
+  EffectDigest.Digest
 >
 ```
 
@@ -570,7 +569,7 @@ Whether a value is a compiler-owned immutable snapshot that already passed `veri
 ```ts
 const prefixDigest: (
   plan: Plan
-) => Effect.Effect<StepKey.StepKey, StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StepKey.StepKey, StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 The approval digest of every generation before the newest: the digest the plan carried before its last append. `PlanStore.append` matches it against the stored envelope, so an append proves the recorded prefix is the caller's from the already-verified prefix instead of decoding and re-verifying every stored row.
@@ -975,9 +974,9 @@ type RepresentationIdentityVersion = 2 | 1
 
 `flowCall` and `actionCall` validate nothing: an unknown tag becomes a call node the graph keeps as a leaf. `declaration`, `continuation`, `mapper`, `predicate`, and `catchFilter` answer `undefined` for the wrong variant and for an AST rehydrated from JSON, whose side tables did not survive serialization. `functionIdentity` throws a `TypeError` when handed anything but a function.
 
-`schemaIdentity` returns the document a schema contributes to a step key: what the callee of a call accepts and produces, and what a `catch` filters on. The document has the shape of `Schema.toJsonSchemaDocument(schema, options)`, and this package prints it. `onExcessProperty` has the meaning and the default it has there; a step key takes the identity under `"error"`, which closes every object over the keys it declares. The installed `effect` does not, because a later Effect release can print a different document for the same schema: for a string, `effect@4.1.0` prints `minLength: 3` for `isMinLength(5)` where `effect@4.0.0-rc.115` printed `minLength: 5`, adds a `minimum` and a `maximum` to `Schema.Int`, and prints an `isPattern` pattern only when the expression has the `u` flag. A document that moved with the dependency would re-key every recorded step. `schemaIdentity` prints what `effect@4.0.0-rc.115` printed, under every release this package supports. Use it for identity only. A JSON Schema you show to a model or a person comes from `Schema.toJsonSchemaDocument`.
+`schemaIdentity` returns the document a schema contributes to a step key: what the callee of a call accepts and produces, and what a `catch` filters on. The document has the shape of `Schema.toJsonSchemaDocument(schema, options)`, and this package prints it. `onExcessProperty` has the meaning and the default it has there; a step key takes the identity under `"error"`, which closes every object over the keys it declares. The installed `effect` does not, because a later Effect release can print a different document for the same schema: for a string, `effect@4.1.1` prints `minLength: 3` for `isMinLength(5)` where `effect@4.0.0-rc.115` printed `minLength: 5`, adds a `minimum` and a `maximum` to `Schema.Int`, and prints an `isPattern` pattern only when the expression has the `u` flag. A document that moved with the dependency would re-key every recorded step. `schemaIdentity` prints what `effect@4.0.0-rc.115` printed, under every release this package supports. Use it for identity only. A JSON Schema you show to a model or a person comes from `Schema.toJsonSchemaDocument`.
 
-The identity has three limits. A built-in check such as `Schema.isMinLength` contributes the constraint its name and arguments state, so a `toJsonSchema` annotation passed to a built-in check is not read; one on a `Schema.makeFilter` check is. `Schema.brand` contributes nothing, because a brand is not part of the schema in `effect@4.1.0`: a declaration that uses one schema with an `identifier`, or one recursive schema, both with and without a brand got two definitions under `effect@4.0.0-rc.115` and gets one now, so it re-keys once. And a codec's behavior contributes nothing, so an author who changes what a transformation does renames the declaration to re-key its calls. `schemaIdentity` throws `Node.SchemaIdentityError`, tagged `@smthrs/plan/SchemaIdentityError`, for a schema that has no JSON Schema form, such as a record keyed by a number.
+The identity has three limits. A built-in check such as `Schema.isMinLength` contributes the constraint its name and arguments state, so a `toJsonSchema` annotation passed to a built-in check is not read; one on a `Schema.makeFilter` check is. `Schema.brand` contributes nothing, because a brand is not part of the schema in `effect@4.1.1`: a declaration that uses one schema with an `identifier`, or one recursive schema, both with and without a brand got two definitions under `effect@4.0.0-rc.115` and gets one now, so it re-keys once. And a codec's behavior contributes nothing, so an author who changes what a transformation does renames the declaration to re-key its calls. `schemaIdentity` throws `Node.SchemaIdentityError`, tagged `@smthrs/plan/SchemaIdentityError`, for a schema that has no JSON Schema form, such as a record keyed by a number.
 
 `representationIdentity` returns what a sealed action's step key folds in for its success and error schemas: `SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(schema.ast))` as `effect@4.0.0-rc.115` wrote it. A later release renamed six built-in checks, `isStartsWith`, `isEndsWith`, `isIncludes`, `isLengthBetween`, `isSizeBetween` and `isPropertiesLengthBetween`; the identity writes their rc.115 ids back. `representationIdentity` throws for a schema that has no representation, such as one with a `Schema.makeFilter` check.
 

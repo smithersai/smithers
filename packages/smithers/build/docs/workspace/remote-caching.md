@@ -106,8 +106,8 @@ bearer token under `cacheTokenEnv`, which defaults to `SMITHERS_CACHE_TOKEN`.
 
 > **Coming soon.** Smithers Cloud has not been released yet; the discovery, the committed read token, and the endpoint below describe the interface ahead of general availability.
 
-Smithers Cloud serves this same protocol per repository at
-`https://api.jjhub.tech/api/repos/<owner>/<name>/build-cache`. Two things
+At `https://smithers.sh`, Smithers Cloud serves this same protocol per repository at
+`/api/repos/<owner>/<name>/build-cache`. Two things
 differ from the two services below. A checkout of a Smithers Cloud repository needs no
 declaration at all: with no `RemoteCache` and no `SMITHERS_CACHE_URL`, the CLI
 discovers the repository from the git remote and reads anonymously. And the

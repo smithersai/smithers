@@ -1,0 +1,22 @@
+// The emitted Factory surfaces (`pnpm build:surfaces`) for the process-boundary suites, and the CLI's manifest.
+import { node, run } from "./support/processes.vibe"
+
+/** The emitted CLI didn't print its manifest. */
+error ManifestFailed { stderr: string }
+
+/** The emitted CLI's path. */
+export effect function cliPath() {
+  return try (try Path.Path).fromFileUrl(new URL("../dist-factory/surfaces/cli-entry.js", import.meta.url))
+}
+
+/** The emitted MCP server's path. */
+export effect function serverPath() {
+  return try (try Path.Path).fromFileUrl(new URL("../dist-factory/surfaces/mcp-entry.js", import.meta.url))
+}
+
+/** What the emitted CLI's `--llms` prints: the command manifest for agents. */
+export effect function cliManifest() {
+  const result = try run(try node(), [try cliPath(), "--llms"])
+  if (result.status !== 0) throw new ManifestFailed({ stderr: result.stderr })
+  return result.stdout
+}

@@ -22,13 +22,13 @@
  * Run it with `pnpm exec smithers-build test '//packages/repo-targets:dependencyBoundaries'`, or
  * directly with `node packages/repo-targets/contracts/check-dependency-boundaries.mjs`.
  */
-import { builtinModules } from "node:module"
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { builtinModules } from "node:module"
 import { basename, dirname, extname, join, relative, resolve, sep } from "node:path"
 
-import { analyze, specifiers } from "../src/ImportAnalysis.ts"
-import { workspacePackages, isMain, repoRoot } from "../scripts/workspace-packages.mjs"
 import { privateEffectAdapters } from "../scripts/private-effect-adapters.mjs"
+import { isMain, repoRoot, workspacePackages } from "../scripts/workspace-packages.mjs"
+import { analyze, specifiers } from "../src/ImportAnalysis.ts"
 
 // Resolved from this file, not from `process.cwd()`: the build system runs a
 // target from the directory that owns it, and this gate is about the whole
@@ -69,7 +69,7 @@ const ignoredDirs = new Set([
   "eval-runs",
   "node_modules",
   "target",
-  "tmp",
+  "tmp"
 ])
 const builtinPackages = new Set(["bun", ...builtinModules, ...builtinModules.map((mod) => `node:${mod}`)])
 // Reach-throughs that predate the rule, as `file -> specifier`. Each is a
@@ -79,7 +79,7 @@ const builtinPackages = new Set(["bun", ...builtinModules, ...builtinModules.map
 // the list only shrinks.
 const knownReachThroughs = new Set([
   "PACKAGE.ts -> ./apps/site/src/data/project.json",
-  "packages/smithers/build/infra/worker/test/action-cache.test.ts -> ../../../../flows/step-cache/src/CacheStore.ts",
+  "packages/smithers/build/infra/worker/test/action-cache.test.ts -> ../../../../flows/step-cache/src/CacheStore.ts"
 ])
 
 // Banned imports that are the input of the 0.x migrator, as `file -> import`.
@@ -91,14 +91,13 @@ const knownLegacyFixtureImports = new Set([
   "packages/smithers/migrate/test/fixtures/jsx-single/simple-workflow.jsx -> ai",
   "packages/smithers/migrate/test/fixtures/jsx-single/tests/_setup.ts -> ai",
   "packages/smithers/migrate/test/fixtures/persisted-db/simple-workflow.jsx -> @ai-sdk/anthropic",
-  "packages/smithers/migrate/test/fixtures/persisted-db/simple-workflow.jsx -> ai",
+  "packages/smithers/migrate/test/fixtures/persisted-db/simple-workflow.jsx -> ai"
 ])
 
 /**
  * The end of every banned-import message: why, and where the rule lives.
  */
-export const durableFlowRule =
-  "every action, model calls included, runs as an @smthrs/flow step. " +
+export const durableFlowRule = "every action, model calls included, runs as an @smthrs/flow step. " +
   "See \"Everything is a durable flow\" in AGENTS.md at the repository root."
 
 /**
@@ -111,32 +110,29 @@ const bannedPackages = [
   { names: ["inngest"], runtime: "Inngest" },
   { names: ["@trigger.dev/"], runtime: "Trigger.dev" },
   { names: ["langchain", "@langchain/"], runtime: "LangChain" },
-  { names: ["@mastra/"], runtime: "Mastra" },
+  { names: ["@mastra/"], runtime: "Mastra" }
 ]
 
 /**
  * Modules whose Workflow exports are Cloudflare Workflows. `whole` bans every
  * import of the module; otherwise an imported or accessed name is banned when
- * `names` matches it. Alchemy's Cloudflare provider is `alchemy/Cloudflare`
- * through 2.0.0-beta.83 and the `@alchemy.run/cloudflare` package from beta.84.
+ * `names` matches it.
  */
-const alchemyCloudflare = String.raw`(?:alchemy\/Cloudflare|@alchemy\.run\/cloudflare)`
-
 const workflowModules = [
   { matches: (specifier) => specifier === "cloudflare:workflows", whole: true, runtime: "Cloudflare Workflows" },
   { matches: (specifier) => specifier === "cloudflare:workers", names: /^Workflow/, runtime: "Cloudflare Workflows" },
   {
-    matches: (specifier) => new RegExp(`^${alchemyCloudflare}\\/Workflows(?:\\/|$)`).test(specifier),
+    matches: (specifier) => /^alchemy\/Cloudflare\/Workflows(?:\/|$)/.test(specifier),
     whole: true,
-    runtime: "Cloudflare Workflows through Alchemy",
+    runtime: "Cloudflare Workflows through Alchemy"
   },
   {
-    matches: (specifier) => new RegExp(`^${alchemyCloudflare}(?:\\/|$)`).test(specifier),
+    matches: (specifier) => /^alchemy\/Cloudflare(?:\/|$)/.test(specifier),
     // `task`, `sleep`, `sleepUntil` and `waitForEvent` are Alchemy's workflow
-    // step functions, which its Cloudflare module re-exports at its root.
+    // step functions, which `@alchemy.run/cloudflare` re-exports at its root.
     names: /Workflow|^(?:task|sleep|sleepUntil|waitForEvent)$/,
-    runtime: "Cloudflare Workflows through Alchemy",
-  },
+    runtime: "Cloudflare Workflows through Alchemy"
+  }
 ]
 
 /**
@@ -368,9 +364,8 @@ export function packageSourceReachedBy(file, specifier, packageDirs) {
  * Banned are another durable runtime's or model SDK's package in any import
  * form (static, type-only, re-export, `import()`, `require()`, an `import()`
  * type); every import of `cloudflare:workflows` and
- * `alchemy/Cloudflare/Workflows` (`@alchemy.run/cloudflare/Workflows`); and a
- * `Workflow*` name imported from `cloudflare:workers`, or one imported from or
- * read off `alchemy/Cloudflare` (`@alchemy.run/cloudflare`)
+ * `@alchemy.run/cloudflare/Workflows`; and a `Workflow*` name imported from
+ * `cloudflare:workers`, or one imported from or read off `@alchemy.run/cloudflare`
  * (with Alchemy's workflow step functions `task`, `sleep`, `sleepUntil` and
  * `waitForEvent`), whether named in the import, accessed on a namespace or
  * default import, or used as a qualified type. A string or comment that
@@ -393,12 +388,21 @@ export function scanSource(file, text) {
     }
     for (const { name, line } of reference.names) {
       const named = bannedRuntimeForName(specifier, name)
-      if (named !== null) banned.push({ file, line, specifier, name, usage: `imports ${name} from "${specifier}"`, runtime: named })
+      if (named !== null) {
+        banned.push({ file, line, specifier, name, usage: `imports ${name} from "${specifier}"`, runtime: named })
+      }
     }
     for (const { name, binding, line } of reference.members) {
       const named = bannedRuntimeForName(specifier, name)
       if (named !== null) {
-        banned.push({ file, line, specifier, name, usage: `uses ${binding}.${name} from "${specifier}"`, runtime: named })
+        banned.push({
+          file,
+          line,
+          specifier,
+          name,
+          usage: `uses ${binding}.${name} from "${specifier}"`,
+          runtime: named
+        })
       }
     }
   }
@@ -445,7 +449,9 @@ export function partitionBannedImports(found, known) {
  * @param {BannedImport} entry
  */
 export function bannedImportMessage(entry) {
-  return `- ${entry.file.split(sep).join("/")}:${entry.line} ${entry.usage} (${entry.runtime}), which is banned: ${durableFlowRule}`
+  return `- ${
+    entry.file.split(sep).join("/")
+  }:${entry.line} ${entry.usage} (${entry.runtime}), which is banned: ${durableFlowRule}`
 }
 
 /** @param {Record<string, unknown>} manifest @param {string} section */
@@ -500,8 +506,10 @@ export function dependencySets(pkg) {
     ...dependencyNames(pkg.manifest, "dependencies"),
     ...dependencyNames(pkg.manifest, "peerDependencies"),
     ...dependencyNames(pkg.manifest, "optionalDependencies"),
-    ...Object.entries(pkg.manifest.peerDependenciesMeta ?? {}).filter(([, meta]) => meta?.optional === true).map(([name]) => name),
-    ...privateEffectAdapters(pkg.manifest),
+    ...Object.entries(pkg.manifest.peerDependenciesMeta ?? {}).filter(([, meta]) => meta?.optional === true).map((
+      [name]
+    ) => name),
+    ...privateEffectAdapters(pkg.manifest)
   ])
   const dev = new Set([...declared, ...dependencyNames(pkg.manifest, "devDependencies")])
   const runtime = pkg.manifest.private === true ? dev : declared
@@ -565,7 +573,7 @@ function main() {
   const staleReachThroughs = [...knownReachThroughs].filter((key) => !seenReachThroughs.has(key))
   const bans = partitionBannedImports(
     [...banScope].sort().flatMap((file) => scanFile(file).banned),
-    knownLegacyFixtureImports,
+    knownLegacyFixtureImports
   )
   if (bans.violations.length > 0 || bans.stale.length > 0) {
     console.error("Dependency boundary check failed: banned durable runtimes imported.\n")
@@ -582,14 +590,14 @@ function main() {
       const workspaceHint = workspaceNames.has(violation.packageName) ? "workspace dependency" : "dependency"
       console.error(
         `- ${relative(repoRoot, join(repoRoot, violation.file))} imports ${violation.specifier}; ` +
-          `declare ${violation.packageName} as a ${workspaceHint} in ${violation.section}.`,
+          `declare ${violation.packageName} as a ${workspaceHint} in ${violation.section}.`
       )
     }
     for (const reach of reachThroughs) {
       const name = readPackage(reach.packageDir)?.name ?? reach.packageDir
       console.error(
         `- ${relative(repoRoot, join(repoRoot, reach.file))} imports ${reach.specifier}, ` +
-          `which resolves inside ${reach.packageDir}/src; import ${name} by package name through its export map.`,
+          `which resolves inside ${reach.packageDir}/src; import ${name} by package name through its export map.`
       )
     }
     for (const key of staleReachThroughs) {
@@ -599,7 +607,7 @@ function main() {
   } else if (process.exitCode !== 1) {
     console.log(
       `Dependency boundary check passed for ${checkedPackageCount} package(s); ` +
-        `${banScope.size} source files import no banned durable runtime.`,
+        `${banScope.size} source files import no banned durable runtime.`
     )
   }
 }

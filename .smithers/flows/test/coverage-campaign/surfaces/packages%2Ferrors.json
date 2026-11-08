@@ -1,0 +1,530 @@
+{
+  "id": "packages/errors",
+  "name": "@smthrs/errors",
+  "owner": {
+    "declaration": "packages/errors/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "lint": "vibelang -p tsconfig.test.json --noEmit && eslint \"src/**/*.ts\" \"examples/**/*.ts\" --no-error-on-unmatched-pattern --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "vibelang -p tsconfig.json --noEmit && vibelang -p tsconfig.test.json --noEmit",
+    "circular": "node ../repo-targets/scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./ErrorCode": "./src/ErrorCode.ts",
+    "./SmithersError": "./src/SmithersError.vibe",
+    "./index": "./src/index.ts"
+  },
+  "production": [
+    "eslint.config.js",
+    "examples/handling.vibe",
+    "PACKAGE.ts",
+    "scripts/build.mjs",
+    "src/ErrorCode.ts",
+    "src/ErrorShape.ts",
+    "src/index.ts",
+    "src/SmithersError.vibe",
+    "test/helpers.vibe",
+    "vitest.config.ts"
+  ],
+  "tests": [
+    "packages/errors/test/examples.test.vibe",
+    "packages/errors/test/helpers.vibe",
+    "packages/errors/test/SmithersError.test.ts",
+    "packages/errors/test/TaggedFailures.test.vibe",
+    "packages/errors/tsconfig.test.json"
+  ],
+  "benchmarks": [],
+  "platformPaths": [],
+  "ignoredCases": [
+    {
+      "path": "packages/errors/test/SmithersError.test.ts",
+      "line": 596,
+      "text": "it.skipIf("
+    }
+  ],
+  "configurations": [
+    {
+      "path": "packages/errors/eslint.config.js",
+      "sha256": "b918d3135d00affa5f2ef4bacd6447b50f6f9048c08fc0b648e717ead039b7c2",
+      "source": "import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  {\n    ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]\n  },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\", \"examples/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: {\n      parserOptions: {\n        project: \"./tsconfig.test.json\",\n        tsconfigRootDir: import.meta.dirname\n      }\n    },\n    settings: {\n      \"import/resolver\": {\n        typescript: {\n          project: [\"./tsconfig.json\"]\n        }\n      }\n    },\n    plugins: {\n      unicorn\n    },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n",
+      "coverageDirectives": [
+        {
+          "line": 10,
+          "text": "ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]"
+        },
+        {
+          "line": 41,
+          "text": "\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"
+        }
+      ]
+    },
+    {
+      "path": "packages/errors/package.json",
+      "sha256": "3005822f07df008f09083a3a23916d48fe30ae088a5d48bfbc1463959fd1277d",
+      "source": "{\n  \"name\": \"@smthrs/errors\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"agent\"\n  },\n  \"description\": \"SmithersError and the error codes the integration adapters raise\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/errors\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"errors\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"errors\"\n  ],\n  \"engines\": {\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [],\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./internal/*\": null,\n    \"./*/index\": null,\n    \"./ErrorCode\": \"./src/ErrorCode.ts\",\n    \"./SmithersError\": \"./src/SmithersError.vibe\",\n    \"./index\": \"./src/index.ts\"\n  },\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./internal/*\": null,\n      \"./*/index\": null,\n      \"./ErrorCode\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ErrorCode.d.ts\",\n          \"default\": \"./dist/esm/ErrorCode.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ErrorCode.d.ts\",\n          \"default\": \"./dist/cjs/ErrorCode.js\"\n        }\n      },\n      \"./SmithersError\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SmithersError.d.ts\",\n          \"default\": \"./dist/esm/SmithersError.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SmithersError.d.ts\",\n          \"default\": \"./dist/cjs/SmithersError.js\"\n        }\n      },\n      \"./index\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      }\n    }\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"src/**/*.vibe\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"docs/\"\n  ],\n  \"scripts\": {\n    \"lint\": \"vibelang -p tsconfig.test.json --noEmit && eslint \\\"src/**/*.ts\\\" \\\"examples/**/*.ts\\\" --no-error-on-unmatched-pattern --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"check\": \"vibelang -p tsconfig.json --noEmit && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"vitest --coverage\"\n  },\n  \"dependencies\": {\n    \"vibelang-runtime\": \"0.0.8\"\n  },\n  \"peerDependencies\": {\n    \"effect\": \"4.0.5\"\n  },\n  \"devDependencies\": {\n    \"@effect/language-service\": \"0.87.2\",\n    \"@effect/vitest\": \"4.0.5\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"effect\": \"4.0.5\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\"\n  }\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 110,
+          "text": "\"coverage\": \"vitest --coverage\""
+        },
+        {
+          "line": 123,
+          "text": "\"@vitest/coverage-v8\": \"5.0.0\","
+        }
+      ]
+    },
+    {
+      "path": "packages/errors/PACKAGE.ts",
+      "sha256": "e0e6d792c6e993ffd8e19470988e16682af72cb62015b56ac3121a123447fc05",
+      "source": "import { BuildAndCheckTypeScriptPackage } from \"@smthrs/repo-targets\"\n/** Standard package targets. */\nimport { Smithers } from \"@smthrs/targets\"\nimport * as Input from \"@smthrs/targets/Input\"\n\nconst cwd = \"packages/errors\"\n\nconst { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({\n  deps: [],\n  sources: Input.glob(\"{src,examples}/**/*.{ts,vibe}\"),\n  cwd\n})\n\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"src/**\", \"docs/**\", \"README.md\"],\n  checks: [\n    {\n      id: \"error-context-exposure\",\n      title: \"SmithersError never adds a serialization path that widens what a caller attached\",\n      threat:\n        \"A log reader or API client sees a bot token, API key, or webhook secret an adapter attached to details or cause, because the error re-exposes it in message, toJSON, or inspect output.\",\n      lookFor: [\n        \"A toJSON, Symbol.for('nodejs.util.inspect.custom'), or enumerable getter on SmithersError that folds cause or nested details into message or serialized output.\",\n        \"The constructor interpolating details or cause into message or summary instead of storing them in separate fields.\",\n        \"details stored by reference instead of the shallow Object.freeze({ ...details }) copy, letting a caller mutate it after a redaction check.\"\n      ],\n      paths: [\"src/SmithersError.vibe\"]\n    },\n    {\n      id: \"shape-refinement-forgery\",\n      title:\n        \"hasSmithersErrorShape stays a total, side-effect-contained structural check that is never trusted as provenance\",\n      threat:\n        \"A caller who throws an attacker-built object (proxy or getter-laden Error) crashes or misroutes a failure classifier, or passes a forged error as a genuine Smithers failure.\",\n      lookFor: [\n        \"A property read on value in hasSmithersErrorShape that runs outside the try block, letting a throwing getter or proxy trap escape.\",\n        \"A code, summary, docsUrl, or details test that accepts values outside the closed code set or non-plain details (arrays, null).\",\n        \"Docs or JSDoc that present hasSmithersErrorShape or the name field as proof an error came from Smithers rather than a structural match.\"\n      ],\n      paths: [\"src/ErrorShape.ts\", \"docs/guides/detect-an-error-across-module-copies.md\"]\n    },\n    {\n      id: \"closed-code-table\",\n      title: \"The error-code table is frozen and lookups only accept own keys\",\n      threat:\n        \"Any module sharing the process adds or rewrites a code definition, or a string like __proto__ or toString passes as a valid code and misroutes error handling.\",\n      lookFor: [\n        \"isSmithersErrorCode or getSmithersErrorDefinition using `in`, bracket lookup, or optional chaining instead of Object.hasOwn on smithersErrorDefinitions.\",\n        \"smithersErrorDefinitions, a nested definition, or smithersErrorCodes left unfrozen after module load.\",\n        \"ERROR_REFERENCE_URL or docsUrl derived from caller input or served over a non-https URL, since it is appended to every user-visible message.\"\n      ],\n      paths: [\"src/ErrorCode.ts\", \"src/SmithersError.vibe\"]\n    },\n    {\n      id: \"docs-redaction-examples\",\n      title: \"Copyable examples redact credentials before constructing an error\",\n      threat:\n        \"A developer copies a docs snippet that attaches a raw bot token, API key, or webhook secret to details or cause, leaking it into their users' logs.\",\n      lookFor: [\n        \"A docs or README example passing a token, key, secret, or authorization header into SmithersError details, summary, or cause without a redaction call.\",\n        \"A literal credential-shaped value (bot<id>:<secret>, sk-..., ghp_...) in an example.\"\n      ],\n      paths: [\"docs/**\", \"README.md\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: { check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 16,
+          "text": "include: [\"src/**\", \"docs/**\", \"README.md\"],"
+        }
+      ]
+    },
+    {
+      "path": "packages/errors/tsconfig.json",
+      "sha256": "eef0b78bf1f4a856e6014ad220c136d74b855ce36c5ff0f88b84098bbab7c65e",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [\n      {\n        \"name\": \"@effect/language-service\",\n        \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n        \"includeSuggestionsInTsc\": false,\n        \"ignoreEffectWarningsInTscExitCode\": true,\n        \"ignoreEffectErrorsInTscExitCode\": true,\n        \"diagnosticSeverity\": {\n          \"globalErrorInEffectFailure\": \"off\"\n        }\n      }\n    ]\n  },\n  \"include\": [\"src/**/*\"],\n  \"vibelang\": { \"trustedPackages\": [\"@smthrs/*\", \"@vitest/*\", \"vitest\"] }\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 17,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 30,
+          "text": "\"includeSuggestionsInTsc\": false,"
+        },
+        {
+          "line": 31,
+          "text": "\"ignoreEffectWarningsInTscExitCode\": true,"
+        },
+        {
+          "line": 32,
+          "text": "\"ignoreEffectErrorsInTscExitCode\": true,"
+        },
+        {
+          "line": 39,
+          "text": "\"include\": [\"src/**/*\"],"
+        }
+      ]
+    },
+    {
+      "path": "packages/errors/vitest.config.ts",
+      "sha256": "af0fe9f3e47462bc1b1f15f1c4c161d76866b26c5b81aba6dfb622276ab10a2c",
+      "source": "import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    environment: \"node\",\n    // House convention (see packages/smithers/flows/journal/vitest.config.ts): a finite 30 s\n    // wall-clock budget so correct suites survive coverage-instrumented load\n    // while a genuine hang still fails the run.\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    include: [...configDefaults.include, \"test/**/*.test.vibe\"],\n    coverage: {\n      enabled: true,\n      provider: \"v8\",\n      // Per-process report directory so concurrent vitest runs do not destroy\n      // each other's coverage scratch state (issues #115/#121).\n      reportsDirectory: join(tmpdir(), `flows-errors-coverage-${process.pid}`),\n      include: [\"src/**\"],\n      thresholds: {\n        branches: 100,\n        functions: 100,\n        lines: 100,\n        statements: 100\n      }\n    }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 11,
+          "text": "fileURLToPath(new URL(\"../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"
+        },
+        {
+          "line": 16,
+          "text": "// wall-clock budget so correct suites survive coverage-instrumented load"
+        },
+        {
+          "line": 20,
+          "text": "include: [...configDefaults.include, \"test/**/*.test.vibe\"],"
+        },
+        {
+          "line": 21,
+          "text": "coverage: {"
+        },
+        {
+          "line": 23,
+          "text": "provider: \"v8\","
+        },
+        {
+          "line": 25,
+          "text": "// each other's coverage scratch state (issues #115/#121)."
+        },
+        {
+          "line": 26,
+          "text": "reportsDirectory: join(tmpdir(), `flows-errors-coverage-${process.pid}`),"
+        },
+        {
+          "line": 27,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 28,
+          "text": "thresholds: {"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/errors",
+      "label": "//packages/errors:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/errors/{src,examples}/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/errors/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/errors/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/errors/tsconfig.test.json"
+        }
+      ],
+      "dependencies": [
+        "//packages/errors:lib"
+      ]
+    },
+    {
+      "package": "packages/errors",
+      "label": "//packages/errors:circular",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/circular.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/errors/{src,examples}/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/errors/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/errors",
+      "label": "//packages/errors:docs",
+      "rule": "DocsParity",
+      "kinds": [
+        "docs"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/errors/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/errors",
+      "label": "//packages/errors:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/errors/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/errors/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/errors/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/errors",
+      "label": "//packages/errors:fmt",
+      "rule": "Dprint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/errors/{src,examples}/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/errors/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/errors/dprint.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/errors",
+      "label": "//packages/errors:lib",
+      "rule": "TsBuild",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/errors/{src,examples}/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/build-library.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/scripts/compile-commonjs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-single-effect-version.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/errors/src/index.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/errors/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/errors/scripts/build.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/errors",
+      "label": "//packages/errors:lint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/errors/{src,examples}/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/errors/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.jsdoc.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/errors",
+      "label": "//packages/errors:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/errors/src/**",
+            "packages/errors/docs/**",
+            "packages/errors/README.md"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/errors/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/errors/docs/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/errors/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/errors",
+      "label": "//packages/errors:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/errors/src/**",
+            "packages/errors/docs/**",
+            "packages/errors/README.md"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/errors/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/errors/docs/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/errors/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/errors",
+      "label": "//packages/errors:test",
+      "rule": "Vitest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/errors/test/**/*.test.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/errors/{src,examples}/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/errors/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/errors/vitest.config.ts"
+        }
+      ],
+      "dependencies": [
+        "//packages/errors:lib"
+      ]
+    }
+  ],
+  "areas": [
+    "PACKAGE.ts",
+    "eslint.config.js",
+    "examples/handling.vibe",
+    "scripts/build.mjs",
+    "src/ErrorCode.ts",
+    "src/ErrorShape.ts",
+    "src/SmithersError.vibe",
+    "src/index.ts",
+    "test/helpers.vibe",
+    "vitest.config.ts"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

@@ -90,12 +90,12 @@ const durableEngine = (model: ScriptedModel.Fixture, kept: Journal): EngineLike.
         })
         const recorded = kept.calls.get(key)
         if (recorded !== undefined) {
-          return new Cell.CallResult({ outcome: "success", value: recorded.value as never })
+          return Cell.CallResult.new({ outcome: "success", value: recorded.value as never })
         }
         kept.executed.push(key)
         const value = { flow: call.flowName, input: call.input, ran: kept.executed.length }
         kept.calls.set(key, { value })
-        return new Cell.CallResult({ outcome: "success", value })
+        return Cell.CallResult.new({ outcome: "success", value })
       }),
     record: (boundary) =>
       Effect.suspend(() => {
@@ -382,9 +382,9 @@ describe("CellTurn repl completion, behind the check that decides it", () => {
         Effect.sync(() => {
           if (call.flowName === "fs/write") {
             written = true
-            return new Cell.CallResult({ outcome: "success", value: { ok: true, wrote: 12 } })
+            return Cell.CallResult.new({ outcome: "success", value: { ok: true, wrote: 12 } })
           }
-          return new Cell.CallResult({
+          return Cell.CallResult.new({
             outcome: "success",
             value: { exitCode: written ? report("after") : report("before") }
           })

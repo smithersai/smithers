@@ -1,0 +1,70 @@
+// The site Worker (worker/index.vibe) over a stand-in asset service, with and without the API Worker bound.
+// Typechecked with the Worker project (worker/tsconfig.json), which has Cloudflare's types.
+import { expect, it } from "@effect/vitest"
+import { HttpClientRequest, HttpServerResponse } from "effect/http"
+import worker from "../worker/index.vibe"
+
+/** The asset service: the dark logo, and the splash for any other path, as its SPA fallback answers. */
+const assets = {
+  fetch: async (request: Request) => {
+    const logo = new URL(request.url).pathname === "/media/logo-dark.svg"
+    return HttpServerResponse.toWeb(HttpServerResponse.text(logo ? "<svg/>" : "<html>splash</html>", { contentType: logo ? "image/svg+xml" : "text/html" }))
+  },
+}
+
+// The stand-ins implement only `fetch`, and the requests carry no Cloudflare `cf` properties.
+type Incoming = Parameters<typeof worker.fetch>[0]
+type Bindings = Parameters<typeof worker.fetch>[1]
+const env = { ASSETS: assets } as unknown as Bindings
+
+/** The site Worker's answer to `path` on `bindings`. */
+effect function get(path: string, bindings: Bindings = env) {
+  const request = try HttpClientRequest.toWeb(HttpClientRequest.get(`https://example.test${path}`))
+  return try promise(() => worker.fetch(request as Incoming, bindings))
+}
+
+/** The body of `response`. */
+effect function text(response: Response) {
+  return try promise(() => response.text())
+}
+
+it.effect("never serves the splash for unknown routes or production fault pages", () => effect {
+  for (const path of ["/nope", "/missing.js", "/assets/missing.js", "/media/missing.png", "/e2e", "/e2e/", "/e2e/runtime/index.html", "/e2e/runtime/entry.vibe"]) {
+    const response = try get(path)
+    const body = try text(response)
+    try Effect.try(() => {
+      expect(response.status, path).toBe(404)
+      expect(body).not.toContain("splash")
+    })
+  }
+})
+
+it.effect("serves the home, health and known assets", () => effect {
+  const home = try text(try get("/"))
+  const health = try text(try get("/api/health"))
+  const logo = try text(try get("/media/logo-dark.svg"))
+  try Effect.try(() => {
+    expect(home).toContain("splash")
+    expect(JSON.parse(health)).toEqual({ ok: true, agent: "mock" })
+    expect(logo).toBe("<svg/>")
+  })
+})
+
+it.effect("hands every /api/ path to the API Worker when it is bound, health included", () => effect {
+  const seen: Array<string> = []
+  const api = {
+    fetch: async (request: Request) => {
+      seen.push(new URL(request.url).pathname)
+      return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe({ ok: true, agent: "live" }))
+    },
+  }
+  const bound = { ASSETS: assets, API: api } as unknown as Bindings
+  const health = try text(try get("/api/health", bound))
+  try get("/api/conversations/home/events?after=2", bound)
+  const unbound = try get("/api/conversations/home")
+  try Effect.try(() => {
+    expect(JSON.parse(health)).toEqual({ ok: true, agent: "live" })
+    expect(seen).toEqual(["/api/health", "/api/conversations/home/events"])
+    expect(unbound.status).toBe(404)
+  })
+})

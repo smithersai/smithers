@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.1.0` peer dependency. Install one
+This package declares `effect` as an exact `4.1.1` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -40,6 +40,8 @@ URL. An unavailable configured server fails the PostgreSQL leg. The direct
 matrix script retains its existing password support and disposable-server path.
 
 ## The shortest real use
+
+Declaration paths use `Options.declarationRoot`, or the injected `Workspace` root from `@smthrs/kernel`. Without either, journal records omit declaration paths; the store never reads a process working directory.
 
 `EngineStore.layer` is the composition. It provides `FlowRuntime`, the service
 that executes a flow durably, and the snapshot boundary the engine measures
@@ -111,6 +113,14 @@ abandoned; an activated run returns to `suspended`, preserving any declared
 approval, timer, or event wait. This lets a replacement engine in the same
 process resume with a new owner nonce without weakening the PID liveness
 check. Only a persisted operator cancellation closes the run as `cancelled`.
+
+A scoped flow registration owns every drive that selected its handler, including
+work still waiting to claim a run. Closing that registration first removes it
+from dispatch, interrupts those drives, and waits for their ownership and scope
+cleanup before releasing the implementation. Other live registrations and their
+runs keep running. A drive closing its own registration is interrupted without
+waiting on itself. The debug event `flow.registration.released` records the flow
+name and the number of drives stopped, without payloads.
 
 ## Browser imports and native durable execution
 

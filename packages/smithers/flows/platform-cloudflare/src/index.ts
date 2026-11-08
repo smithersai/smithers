@@ -7,6 +7,8 @@
  * - `ExecutionObject`: the per-execution Durable Object, as `start`, `wake`
  *   and `alarm` functions an Effect-native Durable Object delegates to; a
  *   `Router` reaches the objects of child and handoff executions.
+ * - `ObjectDatabase`: the engine's `SqlClient` in a SQLite-backed Durable
+ *   Object's own storage, so a host needs no database server.
  * - `EdgeCache`: `@smthrs/artifacts`' `ImmutableCache` over the Workers Cache
  *   API.
  * - `SandboxObject`: what a container Durable Object runs before it uses its
@@ -48,6 +50,13 @@ export * as CloudflareRuntime from "./CloudflareRuntime.vibe"
  * @since 1.0.0
  */
 export * as ExecutionObject from "./ExecutionObject.ts"
+
+/**
+ * The durable engine's database in a Durable Object's own SQLite storage.
+ *
+ * @since 1.0.0-rc.17
+ */
+export * as ObjectDatabase from "./ObjectDatabase.ts"
 
 /**
  * The immutable cache over the Workers Cache API.

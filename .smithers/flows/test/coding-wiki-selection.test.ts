@@ -1,5 +1,7 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
 import { NodeServices } from "@effect/platform-node"
 import { Effect, Exit } from "effect"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { createServer, type IncomingMessage } from "node:http"
@@ -74,7 +76,9 @@ test("the bound provider selects through the host API and cites only the selecte
       isolated: true
     })
     const result = await Effect.runPromise(
-      wikiMemory({ ...options, wikiProvider: provider }, input).pipe(Effect.provide(NodeServices.layer))
+      wikiMemory({ ...options, wikiProvider: provider }, input).pipe(
+        Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
+      )
     )
     assert.deepEqual(result.pages.map((page) => page.citation), [
       { slug: "retry-policy", pageID: "42", revision: 3, digest: retryDigest }
@@ -117,7 +121,9 @@ test("a page edited between selection and read is cited at the revision the read
       isolated: true
     })
     const result = await Effect.runPromise(
-      wikiMemory({ ...options, wikiProvider: provider }, input).pipe(Effect.provide(NodeServices.layer))
+      wikiMemory({ ...options, wikiProvider: provider }, input).pipe(
+        Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
+      )
     )
     assert.deepEqual(result.pages.map((page) => page.citation), [
       { slug: "retry-policy", pageID: "42", revision: 4, digest: retryDigest }
@@ -141,7 +147,9 @@ test("a process runtime refuses with isolation_required before any host API call
     }
   })
   const result = await Effect.runPromiseExit(
-    wikiMemory({ ...options, wikiProvider: provider }, input).pipe(Effect.provide(NodeServices.layer))
+    wikiMemory({ ...options, wikiProvider: provider }, input).pipe(
+      Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
+    )
   )
   assert.ok(Exit.isFailure(result))
   assert.match(JSON.stringify(result.cause), /isolation_required/)
@@ -173,7 +181,9 @@ test("refused, malformed or foreign selections refuse planning, never an empty v
       }
     })
     const result = await Effect.runPromiseExit(
-      wikiMemory({ ...options, wikiProvider: provider }, input).pipe(Effect.provide(NodeServices.layer))
+      wikiMemory({ ...options, wikiProvider: provider }, input).pipe(
+        Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
+      )
     )
     assert.ok(Exit.isFailure(result), JSON.stringify(json))
     assert.match(JSON.stringify(result.cause), /unavailable/)
@@ -209,12 +219,18 @@ test("the delivered project configuration turns citations on, but never binds a 
   const root = await mkdtemp(join(tmpdir(), "wiki-citations-"))
   try {
     await writeFile(join(root, "project.json"), JSON.stringify({ wikiCitations: true, checks: [] }))
-    const project = await Effect.runPromise(loadProject(root, "project.json").pipe(Effect.provide(NodeServices.layer)))
+    const project = await Effect.runPromise(
+      loadProject(root, "project.json").pipe(
+        Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
+      )
+    )
     assert.equal(project.wikiCitations, true)
     assert.equal(Object.hasOwn(project, "wikiProvider"), false)
     await writeFile(join(root, "project.json"), JSON.stringify({ wikiCitations: true, wikiProvider: {} }))
     const refused = await Effect.runPromiseExit(
-      loadProject(root, "project.json").pipe(Effect.provide(NodeServices.layer))
+      loadProject(root, "project.json").pipe(
+        Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
+      )
     )
     assert.ok(Exit.isFailure(refused))
   } finally {

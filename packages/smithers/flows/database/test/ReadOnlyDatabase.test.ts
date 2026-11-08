@@ -1,4 +1,3 @@
-import * as TestSchemas from "../src/TestSchemas.ts"
 import * as Pg from "@effect/sql-pg"
 import { describe, expect, it } from "@effect/vitest"
 import { Context, Duration, Effect, Exit, Layer } from "effect"
@@ -12,6 +11,7 @@ import * as DurableWriter from "../src/DurableWriter.ts"
 import * as NodeDatabase from "../src/node/NodeDatabase.ts"
 import * as PostgresDatabase from "../src/postgres/PostgresDatabase.ts"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
+import * as TestSchemas from "../src/TestSchemas.ts"
 
 /** A migrated SQLite store in WAL mode with one row, closed cleanly. */
 const store = () => {

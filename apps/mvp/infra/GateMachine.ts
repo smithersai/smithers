@@ -12,7 +12,10 @@ import { Config, Effect } from "effect"
 /** The gate machine's container class: the GATE_IMAGE image, which only a deployment that sets it binds. */
 export class GateMachine extends Cloudflare.Container<GateMachine>()(
   "GateMachine",
-  Effect.map(Config.String("GATE_IMAGE"), (image) => ({ schedulingPolicy: "durable_object" as const, image: image.trim() })),
+  Effect.map(
+    Config.String("GATE_IMAGE"),
+    (image) => ({ schedulingPolicy: "durable_object" as const, image: image.trim() })
+  )
 ) {}
 
 /** How long an artifact lives: 7 days. */
@@ -22,6 +25,6 @@ export const ARTIFACT_DAYS = 7
 export const CiArtifacts = Cloudflare.R2.Bucket("CiArtifacts", {
   lifecycleRules: [{
     id: "expire-artifacts",
-    deleteObjectsTransition: { condition: { type: "Age", maxAge: ARTIFACT_DAYS * 24 * 60 * 60 } },
-  }],
+    deleteObjectsTransition: { condition: { type: "Age", maxAge: ARTIFACT_DAYS * 24 * 60 * 60 } }
+  }]
 })

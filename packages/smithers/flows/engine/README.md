@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.1.0` peer dependency. Install one
+This package declares `effect` as an exact `4.1.1` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -25,7 +25,7 @@ npm install @smthrs/engine@next effect
 
 Built on [Effect](https://effect.website): flows, actions, and the engine are
 Effect values you compose as layers. `effect` is a peer dependency in the
-version `4.1.0`, listed under `peerDependencies` in `package.json`.
+version `4.1.1`, listed under `peerDependencies` in `package.json`.
 
 ## Mental model
 
@@ -53,7 +53,6 @@ Everything below it decides only where state lives. That is what makes
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
@@ -77,7 +76,7 @@ const BuildLayer = Layer.mergeAll(
 ).pipe(
   Layer.provideMerge(Action.layerImplementations),
   Layer.provideMerge(FlowEngine.layerMemory),
-  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+  Layer.provideMerge(NodeCrypto.layer)
 )
 
 const built: Effect.Effect<string> = Build.execute(
@@ -147,3 +146,7 @@ that arrives with a different payload, is refused with
 the request body by default. Set the `executionId` option on either
 `FlowProxyServer` layer to apply one `ExecutionIdScope` to execute, discard, and
 resume requests before they reach the engine.
+
+A terminal action failure carries `FlowEngine.FailureSite` cause annotations with its action name, actual durable attempt count and interpreted node address. The registered flow's schema boundary preserves those annotations; durable hosts can persist a diagnostic without inspecting action payloads or repeating the action.
+
+Action error codecs and outcome decoding preserve cause annotations, including the original failure site of a child flow invoked inside an action. Durable hosts retain those coordinates in failed-attempt evidence for replay.

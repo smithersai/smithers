@@ -192,7 +192,7 @@ describe("RemoteCache public read tokens and Smithers Cloud", () => {
 
   it("accepts a committed public read token and defaults the write secret", () => {
     const declaration = RemoteCache.make({
-      endpoint: "https://api.jjhub.tech/api/repos/acme/app/build-cache",
+      endpoint: "https://smithers.sh/api/repos/acme/app/build-cache",
       publicReadToken: token
     })
     expect(declaration.publicReadToken).toBe(token)
@@ -231,7 +231,7 @@ describe("RemoteCache public read tokens and Smithers Cloud", () => {
 
   it("derives the Smithers Cloud endpoint from the repository", () => {
     const declaration = RemoteCache.smithersCloud({ repo: "acme/app", publicReadToken: token })
-    expect(declaration.endpoint).toBe("https://api.jjhub.tech/api/repos/acme/app/build-cache")
+    expect(declaration.endpoint).toBe("https://smithers.sh/api/repos/acme/app/build-cache")
     expect(declaration.publicReadToken).toBe(token)
     expect(RemoteCache.smithersCloud({ repo: "acme/app", apiBase: "https://smithers-cloud.example.test/" }).endpoint)
       .toBe(

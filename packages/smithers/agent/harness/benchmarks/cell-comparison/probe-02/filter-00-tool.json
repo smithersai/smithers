@@ -1,0 +1,83 @@
+{
+  "task": "filter-00",
+  "seed": 184600,
+  "family": "filter",
+  "arm": "tool",
+  "taskHash": "9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2",
+  "model": "gpt-6.1-sol",
+  "cohort": "codex-proton",
+  "maxTurns": 6,
+  "executionId": "cell-comparison/9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2/0/tool/2026-11-05T14:18:30.258Z",
+  "startedAt": "2026-11-05T14:18:31.183Z",
+  "elapsedMs": 303,
+  "outcome": "model_failure",
+  "turns": [
+    {
+      "turn": 0,
+      "request": {
+        "modelId": "gpt-6.1-sol",
+        "system": [
+          {
+            "type": "text",
+            "text": "Solve the task using native function tools. Read the input with records({}); it returns {records, owners}. Submit the requested JSON object with submit({answer: object}). You have at most six turns."
+          }
+        ],
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Return {\"ids\":[...]}: ids of active records with value >= 40, sorted lexicographically."
+              }
+            ]
+          }
+        ],
+        "tools": [
+          {
+            "name": "records",
+            "description": "Read the task input: {records, owners}.",
+            "parameters": {
+              "type": "object",
+              "properties": {},
+              "required": [],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "submit",
+            "description": "Submit the requested JSON object.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "answer": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              },
+              "required": [
+                "answer"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ],
+        "params": {
+          "reasoningEffort": "low"
+        },
+        "cacheKey": "cell-comparison/9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2/0/tool/2026-11-05T14:18:30.258Z"
+      },
+      "events": [],
+      "usage": {},
+      "cost": null,
+      "elapsedMs": 303,
+      "replayed": false,
+      "error": {
+        "code": "invalid_request",
+        "message": "The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account.",
+        "httpStatus": 400
+      }
+    }
+  ],
+  "calls": []
+}

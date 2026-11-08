@@ -60,7 +60,7 @@
  * @since 0.1.0
  */
 
-import { type Crypto, Sha256 } from "@smthrs/crypto"
+import { Sha256 } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
 import { Journal, type JournalEvent } from "@smthrs/journal"
@@ -73,6 +73,8 @@ import type { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as FileSystem from "effect/FileSystem"
@@ -289,7 +291,7 @@ export type Requirements =
   | PlanMergeStore.PlanMergeStore
   | AttemptStore.AttemptStore
   | CacheStore.CacheStore
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | Jj.Jj
   | Journal.Journal
   | NodeExecutor
@@ -330,11 +332,19 @@ export interface Service {
   /** Persists generation 0 and journals `plan-recorded`. */
   readonly record: (
     plan: Plan.Plan
-  ) => Effect.Effect<PlanStore.RecordResult, SchedulerError, PlanStore.PlanStore | Journal.Journal | Crypto.Crypto>
+  ) => Effect.Effect<
+    PlanStore.RecordResult,
+    SchedulerError,
+    PlanStore.PlanStore | Journal.Journal | (EffectDigest.Digest | SecureRandom.SecureRandom)
+  >
   /** Persists the newest generation and journals `subgraph-appended`. */
   readonly append: (
     plan: Plan.Plan
-  ) => Effect.Effect<void, SchedulerError, PlanStore.PlanStore | Journal.Journal | Crypto.Crypto>
+  ) => Effect.Effect<
+    void,
+    SchedulerError,
+    PlanStore.PlanStore | Journal.Journal | (EffectDigest.Digest | SecureRandom.SecureRandom)
+  >
   /** Drives the plan to completion and reports every node's outcome. */
   readonly run: (plan: Plan.Plan) => Effect.Effect<Report, SchedulerError, Requirements>
 }
@@ -982,7 +992,7 @@ type CommitSnapshot = (
 ) => Effect.Effect<
   PlanInputStore.Snapshot,
   SchedulerError,
-  PlanStore.PlanStore | Journal.Journal | Crypto.Crypto
+  PlanStore.PlanStore | Journal.Journal | (EffectDigest.Digest | SecureRandom.SecureRandom)
 >
 
 /**

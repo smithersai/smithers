@@ -30,5 +30,5 @@ export const host = (perform: (text: string) => Effect.Effect<void>, value?: str
     runPrompt: (_name, input) => Effect.succeed(String(input.args))
   }),
   promptRunner: ({ text }) =>
-    perform(text).pipe(Effect.as(new Cell.CallResult({ outcome: "success", value: value ?? text })))
+    perform(text).pipe(Effect.as(Cell.CallResult.new({ outcome: "success", value: value ?? text })))
 })

@@ -135,7 +135,7 @@ const program = Effect.gen(function*() {
     mode === phase ?
       Effect.gen(function*() {
         yield* emit({ phase, state: state(), cursors: (yield* client.progress).delivered })
-        yield* Effect.never
+        return yield* Effect.never
       }) :
       Effect.void
   let snapshots = 0
