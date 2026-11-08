@@ -254,7 +254,7 @@ export const digest = (manifest: Manifest, files: ReadonlyArray<File>): string =
   const measured = files
     .map((file) => ({
       path: normalizePackRelativePath(file.path),
-      contents: Digest.digest(file.contents)
+      contents: $invoke(Digest, () => file.contents)
     }))
     .sort((left, right) => {
       const pathOrder = left.path < right.path ? -1 : left.path > right.path ? 1 : 0

@@ -209,227 +209,233 @@ const terminal = (summary) => summary !== undefined &&
  * @category constructors
  * @since 0.1.0
  */
-export const run = Effect_1.fnUntraced(function* run(options) {
-    const intervalMs = options.intervalMs ?? options.healthCheck?.policy.intervalMs ?? 1_000;
-    const maxChecks = options.maxChecks ?? 10;
-    const stallBeats = options.stallBeats ?? 3;
-    // A bound the loop cannot honour is refused before the first beat:
-    // `stallBeats: 0` makes every beat a stall and `roundBound: 0` makes every
-    // run a runaway, and either one under `autoHeal` remedies a healthy run.
-    const refused = !(Number.isFinite(intervalMs) && intervalMs >= 0)
-        ? "intervalMs must be a non-negative finite number"
-        : !(maxChecks >= 0)
-            ? "maxChecks must be a non-negative number"
-            : !(Number.isSafeInteger(stallBeats) && stallBeats >= 1)
-                ? "stallBeats must be a positive integer"
-                : options.roundBound !== undefined && !(Number.isSafeInteger(options.roundBound) && options.roundBound >= 1)
-                    ? "roundBound must be a positive integer"
-                    : options.retainBeats !== undefined && !(Number.isSafeInteger(options.retainBeats) && options.retainBeats >= 1)
-                        ? "retainBeats must be a positive integer"
-                        : undefined;
-    if (refused !== undefined)
-        return yield* Effect_1.fail(new InvalidInput({ issue: `Monitor.run: ${refused}` }));
-    const control = yield* Control;
-    const journal = yield* Journal.Journal;
-    let consecutiveProbeFailures = 0;
-    let lastPublished;
-    const autoHeal = options.autoHeal ?? [];
-    const monitorId = options.monitorId ?? "default";
-    const heal = options.heal ?? ((input) => input.remedy === "resume"
-        ? control.resume({
-            runId: input.runId,
-            idempotencyKey: `monitor:${monitorId}:resume:${input.runId}:${input.beat}`
-        })
-        : control.cancel({
-            runId: input.runId,
-            reason: `monitor:${input.health}`,
-            idempotencyKey: `monitor:${monitorId}:cancel:${input.runId}:${input.beat}`
-        }));
-    const emit = (eventType, payload, operation) => {
-        const unrecorded = (cause) => new PersistenceError({
-            operation: eventType,
-            message: `Failed to record ${operation} for ${options.runId}`,
-            cause
-        });
-        // The record is BUILT inside the failure channel, not before it.
-        // `JournalEvent.RunId`/`SourceId` refuse an identifier the store cannot
-        // tell apart from another one — a lone UTF-16 surrogate, an embedded NUL
-        // — by THROWING, and `monitorId` reaches here from an operator's flag. A
-        // thrown constructor is a defect, which the RPC boundary reports as an
-        // opaque `TransportError` and a caller cannot handle; a beat whose record
-        // cannot be built is the same event as a beat whose record cannot be
-        // appended, so both fail as `PersistenceError` naming the record.
-        return Effect.asVoid(Effect.flatMap(Effect.try({
-            try: () => new JournalEvent.Input({
-                runId: JournalEvent.RunId.make(options.runId),
-                sourceId: JournalEvent.SourceId.make(`/control/monitor/${monitorId}`),
-                eventType,
-                payload: { runId: options.runId, monitorId, ...payload }
-            }),
-            catch: unrecorded
-        }), (input) => Effect.mapError(journal.emitDurableUnfenced(input), unrecorded)));
-    };
-    /** What the beat saw, and what it is about to do about it. */
-    const record = (beat, remedy) => emit(beatEventType, {
-        beat: beat.beat,
-        health: beat.health,
-        sequence: beat.sequence,
-        ...(remedy === "none" ? {} : { remedy })
-    }, `monitor beat ${beat.beat}`);
-    /** What the remedy did, once it returned. */
-    const recordHealed = (beat, remedy, receipt) => emit(healedEventType, { beat: beat.beat, health: beat.health, healed: remedy, receipt: receipt._tag }, `monitor heal ${beat.beat}`);
-    const beats = [];
-    let beatsWithoutProgress = 0;
-    let lastSequence = -1;
-    let checkpoint = {};
-    const attempts = { open: 0, failed: false };
-    let sequence = -1;
-    for (let beat = 0; beat < maxChecks; beat += 1) {
-        if (beat > 0 && intervalMs > 0) {
-            yield* Effect.sleep(Duration.millis(options.healthCheck === undefined
-                ? intervalMs
-                : SubjectHealth.nextDelay(options.healthCheck.policy, consecutiveProbeFailures)));
-        }
-        const summary = yield* summaryOf(options.runId);
-        const newEvents = [];
-        const sinceCursor = Math.max(0, sequence);
-        yield* control.watch({ runId: options.runId, follow: false, ...checkpoint }).pipe(Stream.runForEach(Effect_1.fnUntraced(function* (event) {
-            // Advance over bookkeeping too, but never count it as run progress.
-            checkpoint = event.cursor === undefined
-                ? { afterSequence: event.sequence }
-                : { afterCursor: event.cursor };
-            if (isBookkeepingEvent(event.kind))
-                return;
-            newEvents.push(event);
-            if (newEvents.length > 256)
-                newEvents.shift();
-            sequence = event.sequence;
-            foldAttempt(attempts, event);
-        })));
-        beatsWithoutProgress = sequence === lastSequence ? beatsWithoutProgress + 1 : 0;
-        lastSequence = sequence;
-        const health = classifyState({
-            ...(summary === undefined ? {} : { summary }),
-            beatsWithoutProgress,
-            stallBeats,
-            ...(options.roundBound === undefined ? {} : { roundBound: options.roundBound })
-        }, attempts);
-        if (options.healthCheck !== undefined && summary !== undefined) {
-            const check = options.healthCheck;
-            const subjectId = `run:${options.runId}`;
-            const incarnation = SubjectHealth.runIncarnation(summary);
-            const probe = Effect_1.suspend({ probe: () => SubjectHealth.evaluate(check, {
-                    subjectId,
-                    state: summary.status,
-                    summary,
-                    events: newEvents,
-                    sinceCursor
-                }, { monitorId, incarnation, evidenceSeq: Math.max(0, sequence) }) }.probe);
-            let observation = yield* (options.withProbePermit?.(probe) ?? probe);
-            const current = yield* summaryOf(options.runId);
-            if (current === undefined || SubjectHealth.runIncarnation(current) !== incarnation) {
-                observation = { ...observation, outcome: "discarded", report: undefined, reason: "owner-changed" };
+export const run = (options) => {
+    return Effect_1.gen(function* run() {
+        const intervalMs = options.intervalMs ?? options.healthCheck?.policy.intervalMs ?? 1_000;
+        const maxChecks = options.maxChecks ?? 10;
+        const stallBeats = options.stallBeats ?? 3;
+        // A bound the loop cannot honour is refused before the first beat:
+        // `stallBeats: 0` makes every beat a stall and `roundBound: 0` makes every
+        // run a runaway, and either one under `autoHeal` remedies a healthy run.
+        const refused = !(Number.isFinite(intervalMs) && intervalMs >= 0)
+            ? "intervalMs must be a non-negative finite number"
+            : !(maxChecks >= 0)
+                ? "maxChecks must be a non-negative number"
+                : !(Number.isSafeInteger(stallBeats) && stallBeats >= 1)
+                    ? "stallBeats must be a positive integer"
+                    : options.roundBound !== undefined && !(Number.isSafeInteger(options.roundBound) && options.roundBound >= 1)
+                        ? "roundBound must be a positive integer"
+                        : options.retainBeats !== undefined && !(Number.isSafeInteger(options.retainBeats) && options.retainBeats >= 1)
+                            ? "retainBeats must be a positive integer"
+                            : undefined;
+        if (refused !== undefined)
+            return yield* Effect_1.fail(new InvalidInput({ issue: `Monitor.run: ${refused}` }));
+        const control = yield* Control;
+        const journal = yield* Journal.Journal;
+        let consecutiveProbeFailures = 0;
+        let lastPublished;
+        const autoHeal = options.autoHeal ?? [];
+        const monitorId = options.monitorId ?? "default";
+        const heal = options.heal ?? ((input) => input.remedy === "resume"
+            ? control.resume({
+                runId: input.runId,
+                idempotencyKey: `monitor:${monitorId}:resume:${input.runId}:${input.beat}`
+            })
+            : control.cancel({
+                runId: input.runId,
+                reason: `monitor:${input.health}`,
+                idempotencyKey: `monitor:${monitorId}:cancel:${input.runId}:${input.beat}`
+            }));
+        const emit = (eventType, payload, operation) => {
+            const unrecorded = (cause) => new PersistenceError({
+                operation: eventType,
+                message: `Failed to record ${operation} for ${options.runId}`,
+                cause
+            });
+            // The record is BUILT inside the failure channel, not before it.
+            // `JournalEvent.RunId`/`SourceId` refuse an identifier the store cannot
+            // tell apart from another one — a lone UTF-16 surrogate, an embedded NUL
+            // — by THROWING, and `monitorId` reaches here from an operator's flag. A
+            // thrown constructor is a defect, which the RPC boundary reports as an
+            // opaque `TransportError` and a caller cannot handle; a beat whose record
+            // cannot be built is the same event as a beat whose record cannot be
+            // appended, so both fail as `PersistenceError` naming the record.
+            return Effect.asVoid(Effect.flatMap(Effect.try({
+                try: () => new JournalEvent.Input({
+                    runId: JournalEvent.RunId.make(options.runId),
+                    sourceId: JournalEvent.SourceId.make(`/control/monitor/${monitorId}`),
+                    eventType,
+                    payload: { runId: options.runId, monitorId, ...payload }
+                }),
+                catch: unrecorded
+            }), (input) => Effect.mapError(journal.emitDurableUnfenced(input), unrecorded)));
+        };
+        /** What the beat saw, and what it is about to do about it. */
+        const record = (beat, remedy) => emit(beatEventType, {
+            beat: beat.beat,
+            health: beat.health,
+            sequence: beat.sequence,
+            ...(remedy === "none" ? {} : { remedy })
+        }, `monitor beat ${beat.beat}`);
+        /** What the remedy did, once it returned. */
+        const recordHealed = (beat, remedy, receipt) => emit(healedEventType, { beat: beat.beat, health: beat.health, healed: remedy, receipt: receipt._tag }, `monitor heal ${beat.beat}`);
+        const beats = [];
+        let beatsWithoutProgress = 0;
+        let lastSequence = -1;
+        let checkpoint = {};
+        const attempts = { open: 0, failed: false };
+        let sequence = -1;
+        for (let beat = 0; beat < maxChecks; beat += 1) {
+            if (beat > 0 && intervalMs > 0) {
+                yield* Effect.sleep(Duration.millis(options.healthCheck === undefined
+                    ? intervalMs
+                    : SubjectHealth.nextDelay(options.healthCheck.policy, consecutiveProbeFailures)));
             }
-            consecutiveProbeFailures = observation.outcome === "ok" ? 0 : consecutiveProbeFailures + 1;
-            const semanticProgress = observation.outcome === "ok" && observation.report?.activity === "working";
-            const baseHealth = classifyState({
-                summary,
+            const summary = yield* summaryOf(options.runId);
+            const newEvents = [];
+            const sinceCursor = Math.max(0, sequence);
+            yield* control.watch({ runId: options.runId, follow: false, ...checkpoint }).pipe(Stream.runForEach((event) => {
+                return Effect_1.gen(function* () {
+                    // Advance over bookkeeping too, but never count it as run progress.
+                    checkpoint = event.cursor === undefined
+                        ? { afterSequence: event.sequence }
+                        : { afterCursor: event.cursor };
+                    if (isBookkeepingEvent(event.kind))
+                        return;
+                    newEvents.push(event);
+                    if (newEvents.length > 256)
+                        newEvents.shift();
+                    sequence = event.sequence;
+                    foldAttempt(attempts, event);
+                });
+            }));
+            beatsWithoutProgress = sequence === lastSequence ? beatsWithoutProgress + 1 : 0;
+            lastSequence = sequence;
+            const health = classifyState({
+                ...(summary === undefined ? {} : { summary }),
                 beatsWithoutProgress,
                 stallBeats,
-                roundBound: options.roundBound,
-                semanticProgress
+                ...(options.roundBound === undefined ? {} : { roundBound: options.roundBound })
             }, attempts);
-            observation = { ...observation, baseHealth };
-            const status = SubjectHealth.rollup({
-                subjectId,
-                state: summary.status,
-                incarnation,
-                waitingReason: summary.waitingReason,
-                baseHealth,
-                latest: { observation, sequence: 0 },
-                now: observation.observedAt,
-                updatedAt: summary.updatedAt
-            });
-            const changed = lastPublished === undefined || lastPublished.incarnation !== observation.incarnation ||
-                lastPublished.outcome !== observation.outcome || lastPublished.baseHealth !== observation.baseHealth ||
-                lastPublished.evidenceSeq !== observation.evidenceSeq ||
-                JSON.stringify(lastPublished.report) !== JSON.stringify(observation.report) ||
-                lastPublished.reason !== observation.reason;
-            // Renew before expiry, but do not fill the journal with identical per-probe records.
-            if (changed || observation.observedAt >= lastPublished.observedAt + check.policy.ttlMs / 2) {
-                yield* emit(SubjectHealth.statusObservedEventType, {
-                    ...observation,
-                    status: summary.status,
-                    health: status.health,
-                    activity: status.activity,
-                    attention: status.attention,
-                    freshness: status.freshness,
-                    waitingReason: summary.waitingReason ?? ""
-                }, "health observation");
-                lastPublished = observation;
+            if (options.healthCheck !== undefined && summary !== undefined) {
+                const check = options.healthCheck;
+                const subjectId = `run:${options.runId}`;
+                const incarnation = SubjectHealth.runIncarnation(summary);
+                const probe = Effect_1.gen(function* probe() {
+                    return yield* SubjectHealth.evaluate(check, {
+                        subjectId,
+                        state: summary.status,
+                        summary,
+                        events: newEvents,
+                        sinceCursor
+                    }, { monitorId, incarnation, evidenceSeq: Math.max(0, sequence) });
+                });
+                let observation = yield* (options.withProbePermit?.(probe) ?? probe);
+                const current = yield* summaryOf(options.runId);
+                if (current === undefined || SubjectHealth.runIncarnation(current) !== incarnation) {
+                    observation = { ...observation, outcome: "discarded", report: undefined, reason: "owner-changed" };
+                }
+                consecutiveProbeFailures = observation.outcome === "ok" ? 0 : consecutiveProbeFailures + 1;
+                const semanticProgress = observation.outcome === "ok" && observation.report?.activity === "working";
+                const baseHealth = classifyState({
+                    summary,
+                    beatsWithoutProgress,
+                    stallBeats,
+                    roundBound: options.roundBound,
+                    semanticProgress
+                }, attempts);
+                observation = { ...observation, baseHealth };
+                const status = SubjectHealth.rollup({
+                    subjectId,
+                    state: summary.status,
+                    incarnation,
+                    waitingReason: summary.waitingReason,
+                    baseHealth,
+                    latest: { observation, sequence: 0 },
+                    now: observation.observedAt,
+                    updatedAt: summary.updatedAt
+                });
+                const changed = lastPublished === undefined || lastPublished.incarnation !== observation.incarnation ||
+                    lastPublished.outcome !== observation.outcome || lastPublished.baseHealth !== observation.baseHealth ||
+                    lastPublished.evidenceSeq !== observation.evidenceSeq ||
+                    JSON.stringify(lastPublished.report) !== JSON.stringify(observation.report) ||
+                    lastPublished.reason !== observation.reason;
+                // Renew before expiry, but do not fill the journal with identical per-probe records.
+                if (changed || observation.observedAt >= lastPublished.observedAt + check.policy.ttlMs / 2) {
+                    yield* emit(SubjectHealth.statusObservedEventType, {
+                        ...observation,
+                        status: summary.status,
+                        health: status.health,
+                        activity: status.activity,
+                        attention: status.attention,
+                        freshness: status.freshness,
+                        waitingReason: summary.waitingReason ?? ""
+                    }, "health observation");
+                    lastPublished = observation;
+                }
             }
-        }
-        // Checker output is observational and never participates in remedy authorization.
-        const remedy = autoHeal.includes(health) ? remedyFor(health) : "none";
-        const observed = { beat, health, sequence };
-        if (options.recordBeats !== false)
-            yield* record(observed, remedy);
-        if (remedy === "none") {
-            beats.push(observed);
-        }
-        else {
-            const receipt = yield* (Effect.catch(heal({ runId: options.runId, health, remedy, beat })
-            // A remedy that fails must not abort the run of beats: the monitor
-            // is an unattended loop, and one failing heal leaves every other
-            // beat — and every other run it would have observed — unwatched.
-            // The failure is logged with the beat it failed on, and the beat is
-            // recorded without `healed` or `receipt`, exactly as a remedy the
-            // monitor never got to apply reports.
-            , (failure) => Effect.as(Effect.annotateLogs(Effect.logWarning("A monitor remedy failed and was skipped"), { runId: options.runId, beat, health, remedy, cause: String(failure) }), undefined)));
-            if (receipt === undefined) {
-                // The stall evidence stands: nothing provably moved the run, so the
-                // next beat compares against the same progress mark and the remedy
-                // is retried with the beat's own idempotency key.
+            // Checker output is observational and never participates in remedy authorization.
+            const remedy = autoHeal.includes(health) ? remedyFor(health) : "none";
+            const observed = { beat, health, sequence };
+            if (options.recordBeats !== false)
+                yield* record(observed, remedy);
+            if (remedy === "none") {
                 beats.push(observed);
             }
             else {
-                // A remedy that returned is not a remedy that was applied. `Terminal`
-                // says the run had already settled, so nothing was healed; `Conflict`
-                // says the key belonged to another mutation, so this monitor's remedy
-                // never ran. Recording either as `healed` claimed something that did
-                // not happen, and resetting the stall count on either erased the
-                // evidence the next beat needs to notice the run is still stuck.
-                const applied = receipt._tag === "Accepted" || receipt._tag === "AlreadyApplied";
-                if (applied) {
-                    // Journaled here and not a line earlier: `healed` is a claim about
-                    // something that happened, and until the receipt came back it had not.
-                    yield* recordHealed(observed, remedy, receipt);
-                    // The heal moved the run, so the next beat compares against a run
-                    // that has changed. Counting the beats before it as stall evidence
-                    // again would heal a second time for the same stall.
-                    beatsWithoutProgress = 0;
+                const receipt = yield* (Effect.catch(heal({ runId: options.runId, health, remedy, beat })
+                // A remedy that fails must not abort the run of beats: the monitor
+                // is an unattended loop, and one failing heal leaves every other
+                // beat — and every other run it would have observed — unwatched.
+                // The failure is logged with the beat it failed on, and the beat is
+                // recorded without `healed` or `receipt`, exactly as a remedy the
+                // monitor never got to apply reports.
+                , (failure) => Effect.as(Effect.annotateLogs(Effect.logWarning("A monitor remedy failed and was skipped"), { runId: options.runId, beat, health, remedy, cause: String(failure) }), undefined)));
+                if (receipt === undefined) {
+                    // The stall evidence stands: nothing provably moved the run, so the
+                    // next beat compares against the same progress mark and the remedy
+                    // is retried with the beat's own idempotency key.
+                    beats.push(observed);
                 }
-                beats.push(applied ? { ...observed, healed: remedy, receipt } : { ...observed, receipt });
-                // A remedy that answered `Terminal` observed the run settle. The loop
-                // ends on the same evidence a terminal summary ends it on, rather than
-                // beating against a run nothing can move.
-                if (receipt._tag === "Terminal")
-                    break;
+                else {
+                    // A remedy that returned is not a remedy that was applied. `Terminal`
+                    // says the run had already settled, so nothing was healed; `Conflict`
+                    // says the key belonged to another mutation, so this monitor's remedy
+                    // never ran. Recording either as `healed` claimed something that did
+                    // not happen, and resetting the stall count on either erased the
+                    // evidence the next beat needs to notice the run is still stuck.
+                    const applied = receipt._tag === "Accepted" || receipt._tag === "AlreadyApplied";
+                    if (applied) {
+                        // Journaled here and not a line earlier: `healed` is a claim about
+                        // something that happened, and until the receipt came back it had not.
+                        yield* recordHealed(observed, remedy, receipt);
+                        // The heal moved the run, so the next beat compares against a run
+                        // that has changed. Counting the beats before it as stall evidence
+                        // again would heal a second time for the same stall.
+                        beatsWithoutProgress = 0;
+                    }
+                    beats.push(applied ? { ...observed, healed: remedy, receipt } : { ...observed, receipt });
+                    // A remedy that answered `Terminal` observed the run settle. The loop
+                    // ends on the same evidence a terminal summary ends it on, rather than
+                    // beating against a run nothing can move.
+                    if (receipt._tag === "Terminal")
+                        break;
+                }
+            }
+            if (options.retainBeats !== undefined && beats.length > options.retainBeats) {
+                beats.splice(0, beats.length - options.retainBeats);
+            }
+            if (terminal(summary)) {
+                break;
             }
         }
-        if (options.retainBeats !== undefined && beats.length > options.retainBeats) {
-            beats.splice(0, beats.length - options.retainBeats);
-        }
-        if (terminal(summary)) {
-            break;
-        }
-    }
-    return {
-        runId: options.runId,
-        beats,
-        health: beats[beats.length - 1]?.health ?? "unknown"
-    };
-});
+        return {
+            runId: options.runId,
+            beats,
+            health: beats[beats.length - 1]?.health ?? "unknown"
+        };
+    });
+};
 /** Observer and notification bookkeeping is never execution progress.
  * @category predicates
  * @since 1.0.0

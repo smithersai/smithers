@@ -55,17 +55,17 @@ import * as Schema from "effect/Schema"
  * @since 0.1.0
  */
 schema RetryPolicyFields {
-  initialMs: number
-  factor: number
-  maxMs: number
-  maxAttempts?: number
-  expirationMs?: number
-  jitterRatio?: number
-  nonRetryable?: ReadonlyArray<string>
-  retryable?: ReadonlyArray<{
-    tag: string
-    code?: string
-  }>
+  readonly initialMs: number
+  readonly factor: number
+  readonly maxMs: number
+  readonly maxAttempts?: number | undefined
+  readonly expirationMs?: number | undefined
+  readonly jitterRatio?: number | undefined
+  readonly nonRetryable?: ReadonlyArray<string> | undefined
+  readonly retryable?: ReadonlyArray<{
+    readonly tag: string
+    readonly code?: string | undefined
+  }> | undefined
 }
 
 /** Returns the first contract violation shared by decoding and construction. */

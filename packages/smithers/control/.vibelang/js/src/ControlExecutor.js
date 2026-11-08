@@ -8,7 +8,7 @@
  */
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import * as Sha256 from "@smthrs/crypto/Sha256";
 import * as DurableDeferred from "@smthrs/flow/DurableDeferred";
 import { Context, Effect, Layer } from "effect";
@@ -75,7 +75,7 @@ export const pendingWaitOf = (row) => {
         runId: row.runId,
         reason: row.reason,
         token: row.token,
-        tokenDigest: Sha256.digestSync(row.token),
+        tokenDigest: $invoke(Sha256.digestSync, row.token),
         createdAt: row.createdAt,
         ...(row.flowId === undefined ? {} : { flowId: row.flowId }),
         ...point,
@@ -215,3 +215,4 @@ export const makeReadOnly = ({ readExecution, readExecutions } = {}) => {
  * @since 0.1.0
  */
 export const layerNoop = (overrides = {}) => Layer.succeed(ControlExecutor)(makeNoop(overrides));
+import { invoke as $invoke } from "./ControlExecutor.vibe.-24-call-24-ts.js";

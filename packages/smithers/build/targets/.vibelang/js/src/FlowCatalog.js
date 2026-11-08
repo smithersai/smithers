@@ -110,7 +110,7 @@ export const rows = (discovered, declarations) => {
     const byId = new Map();
     for (const flow of discovered) {
         if (byId.has(flow.id)) {
-            throw new FlowCatalogError({ message: `discovery reported the flow ${JSON.stringify(flow.id)} twice` });
+            $raise(new FlowCatalogError({ message: `discovery reported the flow ${JSON.stringify(flow.id)} twice` }));
         }
         byId.set(flow.id, flow);
     }
@@ -118,18 +118,18 @@ export const rows = (discovered, declarations) => {
     const unknown = [];
     for (const declaration of declarations) {
         if (declared.has(declaration.flow)) {
-            throw new FlowCatalogError({
+            $raise(new FlowCatalogError({
                 message: `FACTORY.ts declares the flow ${JSON.stringify(declaration.flow)} twice`
-            });
+            }));
         }
         declared.set(declaration.flow, declaration);
         if (!byId.has(declaration.flow))
             unknown.push(declaration.flow);
     }
     if (unknown.length > 0) {
-        throw new FlowCatalogError({
+        $raise(new FlowCatalogError({
             message: `FACTORY.ts declares ${unknown.length === 1 ? "a flow" : "flows"} discovery did not find: ${unknown.map((id) => JSON.stringify(id)).join(", ")}`
-        });
+        }));
     }
     const row = (flow, declaration) => ({
         id: flow.id,
@@ -167,3 +167,4 @@ export const rows = (discovered, declarations) => {
         .map((flow) => row(flow, undefined));
     return [...featured, ...declaredOnly, ...rest];
 };
+import { raise as $raise } from "./FlowCatalog.vibe.-24-throw-24-ts.js";

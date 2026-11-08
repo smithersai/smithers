@@ -3,7 +3,7 @@ import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-run
 /** @jsxImportSource react */
 import { Children, useEffect, useRef, useState } from "react";
 import { Button } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { isNoticeHotkey, isTypingTarget, NOTICE_GLYPHS, NOTICE_KEYS, NOTICE_WORDS, noticeKeyAction } from "./notices";
 import { moveFocus } from "./roving";

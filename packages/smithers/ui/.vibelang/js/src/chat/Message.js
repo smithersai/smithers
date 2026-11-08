@@ -2,7 +2,7 @@
 import { jsx as _jsx } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { useCallback, useEffect, useRef, useState, } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 function useMessageLaneCss() {
     useInjectUiCss();

@@ -3,7 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { createContext, useContext, useId, useLayoutEffect, useRef, useState, } from "react";
 import { cva } from "class-variance-authority";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 const bubbleVariantClasses = cva("sui-bubble", {
     variants: {

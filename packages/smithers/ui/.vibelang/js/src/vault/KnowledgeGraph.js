@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { Badge } from "../badge";
 import { Button } from "../button";
 import { EmptyState } from "../empty-state";

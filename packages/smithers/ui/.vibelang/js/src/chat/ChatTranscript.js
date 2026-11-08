@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { Children, useLayoutEffect, useRef } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { ChatMessage } from "./ChatMessage";
 import { MessageScrollerButton, MessageScrollerContent, MessageScrollerProvider, MessageScrollerViewport, } from "./MessageScroller";

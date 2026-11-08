@@ -105,7 +105,7 @@ export type Agent = typeof Agent.Type
  * @category schemas
  * @since 1.0.0
  */
-export schema Limits { readonly files: Positive; readonly bytes: Positive }
+export const Limits = Schema.Struct({ files: Positive, bytes: Positive })
 
 /**
  * The most a step's change may hold, decoded.
@@ -156,15 +156,15 @@ export type Task = typeof Task.Type
  * @category schemas
  * @since 1.0.0
  */
-export schema Job {
-  readonly key: NonEmpty
-  readonly claim: NonEmpty
-  readonly generation: Positive
-  readonly task: Task
-  readonly deadline: Count
-  readonly leaseSeconds: Positive
-  readonly reclaimed: boolean
-}
+export const Job = Schema.Struct({
+  key: NonEmpty,
+  claim: NonEmpty,
+  generation: Positive,
+  task: Task,
+  deadline: Count,
+  leaseSeconds: Positive,
+  reclaimed: Schema.Boolean
+})
 
 /**
  * One claimed job, decoded.
@@ -236,7 +236,7 @@ export const ClaimResponse = Schema.Struct({ job: Schema.NullOr(Job) })
  * @category schemas
  * @since 1.0.0
  */
-export schema Steer { readonly id: NonEmpty; readonly text: NonEmpty }
+export const Steer = Schema.Struct({ id: NonEmpty, text: NonEmpty })
 
 /**
  * A message for the job's agent, decoded.
@@ -301,12 +301,12 @@ export const HeartbeatRequest = Schema.Struct({
  * @category schemas
  * @since 1.0.0
  */
-export schema HeartbeatResponse {
-  readonly held: boolean
-  readonly cancel: boolean
-  readonly leaseSeconds: Positive
-  readonly steers?: ReadonlyArray<Steer>
-}
+export const HeartbeatResponse = Schema.Struct({
+  held: Schema.Boolean,
+  cancel: Schema.Boolean,
+  leaseSeconds: Positive,
+  steers: Schema.optional(Schema.Array(Steer))
+})
 
 /**
  * The files one step changed: each added or modified file's path and its
@@ -315,10 +315,10 @@ export schema HeartbeatResponse {
  * @category schemas
  * @since 1.0.0
  */
-export schema Changes {
-  readonly additions: ReadonlyArray<{ readonly path: NonEmpty; readonly contents: string }>
-  readonly deletions: ReadonlyArray<NonEmpty>
-}
+export const Changes = Schema.Struct({
+  additions: Schema.Array(Schema.Struct({ path: NonEmpty, contents: Schema.String })),
+  deletions: Schema.Array(NonEmpty)
+})
 
 /**
  * The files one step changed, decoded.
@@ -378,12 +378,12 @@ export type Outcome = typeof Outcome.Type
  * @category schemas
  * @since 1.0.0
  */
-export schema SettleRequest {
-  readonly key: NonEmpty
-  readonly claim: NonEmpty
-  readonly outcome: Outcome
-  readonly delivered?: ReadonlyArray<NonEmpty>
-}
+export const SettleRequest = Schema.Struct({
+  key: NonEmpty,
+  claim: NonEmpty,
+  outcome: Outcome,
+  delivered: Schema.optional(Schema.Array(NonEmpty))
+})
 
 /**
  * Whether the settlement was recorded: `false` when the claim no longer held
@@ -392,7 +392,7 @@ export schema SettleRequest {
  * @category schemas
  * @since 1.0.0
  */
-export schema SettleResponse { readonly recorded: boolean }
+export const SettleResponse = Schema.Struct({ recorded: Schema.Boolean })
 
 /**
  * A runner asks for a read credential for the repository of a job it holds,
@@ -401,7 +401,7 @@ export schema SettleResponse { readonly recorded: boolean }
  * @category schemas
  * @since 1.0.0
  */
-export schema GitCredentialRequest { readonly key: NonEmpty; readonly claim: NonEmpty }
+export const GitCredentialRequest = Schema.Struct({ key: NonEmpty, claim: NonEmpty })
 
 /**
  * A read-only, one-repository credential for git over HTTPS: `remote` is the
@@ -413,12 +413,12 @@ export schema GitCredentialRequest { readonly key: NonEmpty; readonly claim: Non
  * @category schemas
  * @since 1.0.0
  */
-export schema GitCredentialResponse {
-  readonly remote: NonEmpty
-  readonly username: NonEmpty
-  readonly password: NonEmpty
-  readonly expiresAt: number
-}
+export const GitCredentialResponse = Schema.Struct({
+  remote: NonEmpty,
+  username: NonEmpty,
+  password: NonEmpty,
+  expiresAt: Schema.Number
+})
 
 /**
  * The runner routes, relative to the host's origin. Each takes the runner's
@@ -487,8 +487,8 @@ export service AgentJobs {
 
 /**
  * The origin and generation of a generation key, `<origin>#g<generation>`.
+ * Throws a `RangeError` when `key` is not a generation key.
  *
- * @throws {RangeError} When `key` is not a generation key.
  * @category parsers
  * @since 1.0.0
  */

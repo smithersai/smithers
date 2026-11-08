@@ -340,6 +340,13 @@ export * as SecretProxy from "./SecretProxy.js";
  */
 export * as Shell from "./Shell.js";
 /**
+ * Project skill libraries and their explicit durable agent installation.
+ *
+ * @category namespace exports
+ * @since 1.0.0-rc.17
+ */
+export * as Skills from "./Skills.js";
+/**
  * mise version authority and pinned binary references.
  *
  * @category namespace exports

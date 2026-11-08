@@ -3,9 +3,9 @@ import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-run
 /** @jsxImportSource react */
 import { useEffect, useRef, } from "react";
 import { Badge } from "../badge";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { composeRefs } from "../internal/composeRefs";
-import { formatStatus, statusClass } from "../status";
+import { formatStatus, statusClass } from "@smthrs/ui-css";
 import { StatusPill } from "../status-pill";
 import { useInjectUiCss } from "../styles";
 /**

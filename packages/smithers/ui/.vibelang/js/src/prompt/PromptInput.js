@@ -3,7 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { Children, createContext, isValidElement, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, } from "react";
 import { Attachment, AttachmentGroup } from "../chat/Attachment";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { LoadingBar } from "../loading";
 import { useInjectUiCss } from "../styles";
 const PromptInputContext = createContext(null);

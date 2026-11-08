@@ -4,9 +4,11 @@
  *
  * @since 0.1.0
  */
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
-import { Effect, Schema, Stream } from "effect";
+import {} from "effect";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import { Channels } from "./Channels.js";
 import { InvalidInput } from "./ControlError.js";
@@ -82,54 +84,40 @@ export const make = (config) => {
  * @category handlers
  * @since 0.1.0
  */
-export const handler = Effect_1.fnUntraced(runtime.$joinedFrame(function* handler(channel, idempotencyKey, options) {
-    const limit = options?.maximumBodyBytes ?? maximumBodyBytes;
-    if (!Number.isFinite(limit) || limit < 0) {
-        // NaN would make every size comparison false and read an unbounded body.
-        return yield* Effect.die(new Error(`maximumBodyBytes must be a non-negative finite number, got ${limit}`));
-    }
-    const request = yield* HttpServerRequest.HttpServerRequest;
-    const declared = declaredLength(request.headers);
-    if (declared !== undefined && declared > limit) {
-        return yield* Effect_1.fail(invalidInput(`webhook body: declared ${declared} bytes exceeds the ${limit} byte limit`));
-    }
-    const chunks = [];
-    let size = 0;
-    yield* Stream.runForEach(request.stream, Effect_1.fnUntraced(function* (chunk) {
-        size += chunk.byteLength;
-        if (size > limit) {
-            return yield* Effect_1.fail(invalidInput(`webhook body: ${size} bytes exceeds the ${limit} byte limit`));
+export const handler = (channel, idempotencyKey, options) => {
+    return Effect_1.gen(function* handler() {
+        const limit = options?.maximumBodyBytes ?? maximumBodyBytes;
+        if (!Number.isFinite(limit) || limit < 0) {
+            // NaN would make every size comparison false and read an unbounded body.
+            return yield* Effect.die(new Error(`maximumBodyBytes must be a non-negative finite number, got ${limit}`));
         }
-        if (chunk.byteLength > 0)
-            chunks.push(chunk.slice());
-    }));
-    const body = new Uint8Array(size);
-    let offset = 0;
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const chunk of chunks) {
-                try {
-                    {
-                        body.set(chunk, offset);
-                        offset += chunk.byteLength;
-                    }
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        const declared = declaredLength(request.headers);
+        if (declared !== undefined && declared > limit) {
+            return yield* Effect_1.fail(invalidInput(`webhook body: declared ${declared} bytes exceeds the ${limit} byte limit`));
+        }
+        const chunks = [];
+        let size = 0;
+        yield* Stream.runForEach(request.stream, (chunk) => {
+            return Effect_1.gen(function* () {
+                size += chunk.byteLength;
+                if (size > limit) {
+                    return yield* Effect_1.fail(invalidInput(`webhook body: ${size} bytes exceeds the ${limit} byte limit`));
                 }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
-            }
+                if (chunk.byteLength > 0)
+                    chunks.push(chunk.slice());
+            });
+        });
+        const body = new Uint8Array(size);
+        let offset = 0;
+        for (const chunk of chunks) {
+            body.set(chunk, offset);
+            offset += chunk.byteLength;
         }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
-        }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
-    }
-    const channels = yield* Channels;
-    return yield* channels.ingest({
-        channel,
-        raw: { body, headers: request.headers, idempotencyKey }
+        const channels = yield* Channels;
+        return yield* channels.ingest({
+            channel,
+            raw: { body, headers: request.headers, idempotencyKey }
+        });
     });
-}));
+};

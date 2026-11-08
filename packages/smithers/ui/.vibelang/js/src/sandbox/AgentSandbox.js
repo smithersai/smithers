@@ -2,9 +2,9 @@
 import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { createContext, useContext, useEffect, useId, useRef, useState, } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { EmptyState } from "../empty-state";
-import { formatStatus } from "../status";
+import { formatStatus } from "@smthrs/ui-css";
 import { StatusPill } from "../status-pill";
 import { useInjectUiCss } from "../styles";
 /** Map sandbox lifecycle states onto the shared status vocabulary. */

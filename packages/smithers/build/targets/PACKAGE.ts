@@ -271,7 +271,7 @@ const securityReview = Smithers.SecurityReview({
         "A claude or codex argv that drops --tools '', --safe-mode, --strict-mcp-config, or --sandbox read-only, or passes the prompt on argv.",
         "A SecurityReview rubric or finding parser where planted text can drop a check, downgrade an error to a warning, or end the review early."
       ],
-      paths: ["src/LlmLint.ts", "src/AgentTarget.ts", "src/SecurityReview.vibe", "src/ModelEngine.vibe"]
+      paths: ["src/LlmLint.ts", "src/AgentTarget.ts", "src/SecurityReview.ts", "src/ModelEngine.vibe"]
     },
     {
       id: "irreversible-effect-gating",

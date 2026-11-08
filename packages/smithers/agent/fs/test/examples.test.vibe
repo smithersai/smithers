@@ -2,7 +2,6 @@ import { Request } from "./modules.ts"
 import { describe, expect, it } from "@effect/vitest"
 import { fetchCommand, flowsRoot, runAgentCommand } from "../examples/agent-command.vibe"
 import { failureOf } from "./helpers.vibe"
-import { Request } from "./hostGlobals.ts"
 
 describe("examples/agent-command", () => {
   it.effect("lists the scanned command and decodes the command-line number before invoking", effect () => {

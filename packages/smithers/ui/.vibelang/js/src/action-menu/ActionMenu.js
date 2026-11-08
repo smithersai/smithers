@@ -4,7 +4,7 @@ import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-run
 import { useRef, useState } from "react";
 import { DropdownMenu as MenuPrimitive } from "radix-ui";
 import { Button } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, } from "../dialog";
 import { useInjectUiCss } from "../styles";
 /** The confirm dialog's body: title, description, Cancel (focused first) and the action. */

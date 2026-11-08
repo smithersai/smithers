@@ -2,7 +2,7 @@
 import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useEffect, useRef } from "react";
 import { Button } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { isPlainNavigationClick } from "../internal/navigationClick";
 import { safeHref } from "../internal/safeHref";
 import { useCopyFeedback } from "../internal/useCopyFeedback";

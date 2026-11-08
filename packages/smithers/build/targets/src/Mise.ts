@@ -43,11 +43,11 @@ export type Declaration = typeof Declaration.Type
 export const isDeclaration: (value: unknown) => value is Declaration = Schema.is(Declaration)
 
 const make = (options: { readonly config: Input.File }): Declaration => {
-  if (typeof options !== "object" || options === null) $raise(new TypeError("Mise options must be an object"))
+  if (typeof options !== "object" || options === null) throw new TypeError("Mise options must be an object")
   for (const key of Object.getOwnPropertyNames(options)) {
-    if (key !== "config") $raise(new TypeError(`Mise received unknown option ${JSON.stringify(key)}`))
+    if (key !== "config") throw new TypeError(`Mise received unknown option ${JSON.stringify(key)}`)
   }
-  if (options.config?._tag !== "File") $raise(new TypeError("Mise config must be an S.file declaration"))
+  if (options.config?._tag !== "File") throw new TypeError("Mise config must be an S.file declaration")
   return Object.freeze(Declaration.make({ config: options.config }))
 }
 
@@ -60,8 +60,3 @@ const make = (options: { readonly config: Input.File }): Declaration => {
 export const Mise: typeof make & { readonly bin: (name: string) => Reference.MiseBin } = Object.assign(make, {
   bin: Reference.miseBin
 })
-
-module $throw$ts {
-export function raise(value: unknown): never { throw value }
-}
-import { raise as $raise } from $throw$ts

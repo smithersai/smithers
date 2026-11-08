@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { useState } from "react";
-import { cn } from "./cn";
+import { cn } from "@smthrs/ui-css";
 import { StatusPill } from "./status-pill";
 import { useInjectUiCss } from "./styles";
 const INTERACTIVE_SELECTOR = 'button, a, input, select, textarea, [role="button"]';

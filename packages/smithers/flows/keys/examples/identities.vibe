@@ -22,11 +22,11 @@ export const compileKey = (target: string, flags: ReadonlyArray<string>) =>
 export const decodeIdentity = (input: unknown) => Schema.decodeUnknownEffect(DerivedKey)(input, { reportInput: false })
 
 /**
- * Validates received key text without hashing it or requiring Crypto.
+ * Validates received key text without hashing it or requiring Crypto. Throws a
+ * schema error if the input is not a supported stored key.
  *
  * @param input - Untrusted stored key text.
  * @returns The validated key and its hexadecimal digest.
- * @throws A schema error if the input is not a supported stored key.
  * @since 1.0.0
  */
 export const readIdentity = (input: unknown): infer _ => {

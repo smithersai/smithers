@@ -3,6 +3,7 @@
  * @since 1.0.0
  */
 import * as Metric from "effect/Metric";
+import { $schemaErrorMatcher } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
 import * as Schema_1 from "effect/Schema";
 import * as Sha256 from "@smthrs/crypto/Sha256";
@@ -129,7 +130,7 @@ export const statusObservedEventType = "control.status.observed";
  * @category getters
  * @since 1.0.0
  */
-export const runIncarnation = (run) => Sha256.digestSync(JSON.stringify([
+export const runIncarnation = (run) => $invoke(Sha256, () => (JSON.stringify([
     run.runId,
     run.createdAt,
     run.updatedAt,
@@ -137,7 +138,7 @@ export const runIncarnation = (run) => Sha256.digestSync(JSON.stringify([
     run.parkedBy ?? null,
     run.status,
     run.waitingReason ?? null
-]));
+])));
 /** Invalid trusted configuration fails startup instead of silently running another policy.
  * @category errors
  * @since 1.0.0
@@ -145,6 +146,9 @@ export const runIncarnation = (run) => Sha256.digestSync(JSON.stringify([
 export class HealthConfigurationError extends Schema_1.TaggedError()("HealthConfigurationError", {
     reason: Schema_1.Literals(["invalid-policy", "invalid-checker", "invalid-config"]),
 }) {
+    static {
+        $schemaErrorMatcher(this, "HealthConfigurationError");
+    }
 }
 Fault.register("HealthConfigurationError", "bug");
 /** Safe cadence used by unconfigured hosts.
@@ -200,7 +204,7 @@ const hostCheckers = (evaluator) => [
 export const registeredCheckers = hostCheckers(undefined);
 const bounded = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max;
 const invalid = (reason) => {
-    throw new HealthConfigurationError({ reason });
+    $raise(new HealthConfigurationError({ reason }));
 };
 /** Admit a host registry and all configured bindings. Unknown checker ids use the lifecycle default.
  * @category constructors
@@ -268,42 +272,46 @@ const decodeReport = Schema.decodeUnknownSync(ProbeReport);
  * @category constructors
  * @since 1.0.0
  */
-export const evaluate = Effect_1.fnUntraced(function* evaluate(check, context, stamp) {
-    const subjectId = context.subjectId;
-    const state = context.state;
-    const captured = { ...stamp };
-    const started = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
-    const result = yield* (Effect.withSpan(Effect.tap(Effect.timeoutOrElse(Effect.catchCause(Effect.map(Effect.flatMap(Effect_1.suspend(() => check.checker.probe(context, check.config)), (candidate) => Effect.try({ try: () => decodeReport(candidate), catch: () => "invalid-report" })), (report) => ({ outcome: "ok", report })), (cause) => Cause.hasInterruptsOnly(cause)
-        ? Effect.interrupt
-        : Effect.succeed({ outcome: "error", reason: "probe-error" })), {
-        duration: check.policy.timeoutMs,
-        orElse: () => Effect.succeed({ outcome: "timeout", reason: "probe-timeout" })
-    }), (outcome) => Effect.annotateCurrentSpan({
-        outcome: outcome.outcome,
-        activity: "report" in outcome ? outcome.report.activity : "unknown"
-    })), "smithers.health.probe", {
-        attributes: {
-            subjectKind: context.session === undefined ? "run" : "session",
+export const evaluate = (check, context, stamp) => {
+    return Effect_1.gen(function* evaluate() {
+        const subjectId = context.subjectId;
+        const state = context.state;
+        const captured = { ...stamp };
+        const started = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
+        const result = yield* (Effect.withSpan(Effect.tap(Effect.timeoutOrElse(Effect.catchCause(Effect.map(Effect.flatMap(Effect_1.gen(function* () {
+            return yield* check.checker.probe(context, check.config);
+        }), (candidate) => Effect.try({ try: () => decodeReport(candidate), catch: () => "invalid-report" })), (report) => ({ outcome: "ok", report })), (cause) => Cause.hasInterruptsOnly(cause)
+            ? Effect.interrupt
+            : Effect.succeed({ outcome: "error", reason: "probe-error" })), {
+            duration: check.policy.timeoutMs,
+            orElse: () => Effect.succeed({ outcome: "timeout", reason: "probe-timeout" })
+        }), (outcome) => Effect.annotateCurrentSpan({
+            outcome: outcome.outcome,
+            activity: "report" in outcome ? outcome.report.activity : "unknown"
+        })), "smithers.health.probe", {
+            attributes: {
+                subjectKind: context.session === undefined ? "run" : "session",
+                subjectId,
+                checkerId: check.checker.id,
+                monitorId: captured.monitorId
+            }
+        }));
+        const observedAt = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
+        const durationMs = Math.max(0, observedAt - started);
+        yield* Metric.update(outcomes.pipe(Metric.withAttributes({ outcome: result.outcome })), 1);
+        yield* Metric.update(durations, durationMs);
+        return {
             subjectId,
+            state,
             checkerId: check.checker.id,
-            monitorId: captured.monitorId
-        }
-    }));
-    const observedAt = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
-    const durationMs = Math.max(0, observedAt - started);
-    yield* Metric.update(outcomes.pipe(Metric.withAttributes({ outcome: result.outcome })), 1);
-    yield* Metric.update(durations, durationMs);
-    return {
-        subjectId,
-        state,
-        checkerId: check.checker.id,
-        ...captured,
-        observedAt,
-        expiresAt: observedAt + check.policy.ttlMs,
-        durationMs,
-        ...result
-    };
-});
+            ...captured,
+            observedAt,
+            expiresAt: observedAt + check.policy.ttlMs,
+            durationMs,
+            ...result
+        };
+    });
+};
 /** Select evidence for the current opaque owner incarnation, breaking equal evidence ties by durable sequence.
  * @category projections
  * @since 1.0.0
@@ -401,3 +409,5 @@ export const rollup = (input) => {
         updatedAt: Math.max(input.updatedAt, reading?.observedAt ?? 0)
     };
 };
+import { invoke as $invoke } from "./Health.vibe.-24-call-24-ts.js";
+import { raise as $raise } from "./Health.vibe.-24-throw-24-ts.js";

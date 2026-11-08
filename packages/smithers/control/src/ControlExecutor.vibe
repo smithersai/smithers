@@ -260,7 +260,7 @@ export const pendingWaitOf = (row: {
     runId: row.runId,
     reason: row.reason,
     token: row.token,
-    tokenDigest: Sha256.digestSync(row.token),
+    tokenDigest: $invoke(Sha256.digestSync,row.token),
     createdAt: row.createdAt,
     ...(row.flowId === undefined ? {} : { flowId: row.flowId }),
     ...point,
@@ -492,3 +492,8 @@ export const makeReadOnly = (
  */
 export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<ControlExecutor> =>
   Layer.succeed(ControlExecutor)(makeNoop(overrides))
+
+module $call$ts {
+export function invoke<T extends Function>(target:T,arg0:Parameters<Extract<T,(...args:any[])=>any>>[0]):ReturnType<Extract<T,(...args:any[])=>any>> { return target(arg0) }
+}
+import { invoke as $invoke } from $call$ts

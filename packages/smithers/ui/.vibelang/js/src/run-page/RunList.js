@@ -3,7 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { Fragment } from "react";
 import { Badge } from "../badge";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { EmptyState } from "../empty-state";
 import { safeHref } from "../internal/safeHref";
 import { useInjectUiCss } from "../styles";

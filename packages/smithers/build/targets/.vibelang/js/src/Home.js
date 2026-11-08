@@ -22,6 +22,7 @@
  */
 import * as Result from "effect/Result";
 import * as SchemaIssue from "effect/SchemaIssue";
+import * as Schema_1 from "effect/Schema";
 import * as Views from "@smthrs/views";
 import * as Schema from "effect/Schema";
 import * as $platform from "./Home.platform.js";
@@ -82,7 +83,8 @@ export const Title = Format.Title;
  */
 export const Prose = Format.Prose;
 /**
- * A link target: an absolute `http` or `https` URL.
+ * A link target: a safe absolute `http` or `https` URL, or an origin-relative
+ * path starting with one `/`, using the reader's schema.
  *
  * @category schemas
  * @since 1.0.0
@@ -213,8 +215,8 @@ export const Declaration = Schema.TaggedStruct("HomeDeclaration", {
  * @category schemas
  * @since 1.0.0
  */
-export const Document = Schema.Struct({
-    blocks: Schema.Array(Block)
+export const Document = Schema_1.Struct({
+    blocks: Schema_1.Array(Block),
 });
 /**
  * Reports whether a value is a home declaration.
@@ -244,7 +246,7 @@ export const plainOptions = (name, options, keys) => $platform.plainOptions(name
 export const decode = (name, schema, value) => {
     const result = Schema.decodeUnknownResult(schema)(value);
     if (Result.isFailure(result))
-        throw new TypeError(`${name}: ${formatIssue(result.failure.issue)}`);
+        $raise(new TypeError(`${name}: ${formatIssue(result.failure.issue)}`));
     return result.success;
 };
 /**
@@ -369,10 +371,10 @@ export const Home = (options) => {
     const plain = plainOptions("Factory.Home", options, new Set(["blocks"]));
     const blocks = plain["blocks"];
     if (!Array.isArray(blocks))
-        throw new TypeError("Factory.Home blocks must be an array of declared blocks");
+        $raise(new TypeError("Factory.Home blocks must be an array of declared blocks"));
     blocks.forEach((block, index) => {
         if (typeof block !== "object" || block === null) {
-            throw new TypeError(`Factory.Home block ${index} must be a declared block (Smithers.Home.Text, Links, Flows, Prompt, Markdown, Stack, App, View), not ${typeof block === "string" ? "a string" : typeof block}`);
+            $raise(new TypeError(`Factory.Home block ${index} must be a declared block (Smithers.Home.Text, Links, Flows, Prompt, Markdown, Stack, App, View), not ${typeof block === "string" ? "a string" : typeof block}`));
         }
     });
     return freezeDeep(decode("Factory.Home", Declaration, { _tag: "HomeDeclaration", blocks }));
@@ -404,3 +406,4 @@ export const parse = (text) => {
         ? `the homepage does not have the .smithers/home.json shape: ${formatIssue(result.failure.issue)}`
         : result.success;
 };
+import { raise as $raise } from "./Home.vibe.-24-throw-24-ts.js";

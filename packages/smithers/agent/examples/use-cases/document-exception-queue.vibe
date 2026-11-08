@@ -270,7 +270,7 @@ const review = (
           Node.map(Node.succeed(reconciliation), reviewPrompt),
           Node.capture({}, (prompt: Planned.Planned<string>) =>
             HumanTask.action.call({ name: reviewTask, kind: "json", prompt, schema: approvalSchema }).pipe(
-              HumanTask.decode(Approval)
+              (task) => HumanTask.decode(Approval)(task)
             ))
         ),
         {

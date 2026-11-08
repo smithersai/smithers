@@ -43,7 +43,7 @@ export const main = (backend: BrowserFileSystem.ZenFsPromisesLike, root: string)
     const chunks = try Stream.runCollect(
       fs.stream(`${root}/logs/app.log`, { offset: 2, bytesToRead: 4, chunkSize: 3 })
     )
-    const slice = chunks.map((chunk) => decoder.decode(chunk))
+    const slice = chunks.map((chunk) => decodeChunk(decoder, chunk))
 
     // The volume cannot create links; the refusal is typed, not a false success.
     const symlink = (fs.symlink(`${root}/notes.txt`, `${root}/link`)
@@ -54,3 +54,8 @@ export const main = (backend: BrowserFileSystem.ZenFsPromisesLike, root: string)
 
     return { notes, exclusive, tree, slice, symlink, missing }
   }) |> Effect.provide(%, BrowserFileSystem.layer(backend))
+
+module decoding {
+  export const decodeChunk = (decoder: TextDecoder, chunk: Uint8Array): string => decoder.decode(chunk)
+}
+import { decodeChunk } from decoding

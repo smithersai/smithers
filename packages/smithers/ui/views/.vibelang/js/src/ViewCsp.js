@@ -42,7 +42,7 @@ export const nonceAttribute = "data-smithers-nonce";
  * @since 0.1.0
  */
 export const hash = (script) => {
-    const hex = digestSync(script);
+    const hex = $invoke(digestSync, script);
     const bytes = new Uint8Array(32);
     for (let index = 0; index < 32; index++)
         bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
@@ -94,3 +94,4 @@ export const frameDocument = (options) => {
     const runtime = inert(options.runtime, "script");
     return `<!doctype html><html ${nonceAttribute}="${attribute(options.nonce)}" data-theme="${attribute(options.theme)}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${attribute(policy(hash(runtime)))}"><meta name="referrer" content="no-referrer"><style>${inert(options.styles, "style")}</style></head><body><script>${runtime}</script></body></html>`;
 };
+import { invoke as $invoke } from "./ViewCsp.vibe.-24-call-24-ts.js";

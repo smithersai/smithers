@@ -2,7 +2,7 @@
 import { jsx as _jsx } from "react/jsx-runtime";
 import { cva } from "class-variance-authority";
 import { Slot } from "radix-ui";
-import { cn } from "./cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "./styles";
 export const badgeVariants = cva("sui-badge", {
     variants: {

@@ -4,7 +4,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useState } from "react";
 import { Badge } from "./badge";
 import { Button } from "./button";
-import { cn } from "./cn";
+import { cn } from "@smthrs/ui-css";
 import { Input } from "./input";
 import { isPlainNavigationClick } from "./internal/navigationClick";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";

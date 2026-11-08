@@ -273,7 +273,7 @@ const settleUngrounded = (ask: Ask, answer: Planned.Planned<Answer>, grade: Plan
           Node.map(Node.succeed(graded), reviewRequest),
           Node.capture({ name: reviewTask, schema: approvalSchema }, (prompt: Planned.Planned<string>) =>
             HumanTask.action.call({ name: reviewTask, kind: "json", prompt, schema: approvalSchema }).pipe(
-              HumanTask.decode(Approval)
+              (task) => HumanTask.decode(Approval)(task)
             ))
         ),
         Node.capture({ ask }, (approval) =>

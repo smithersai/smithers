@@ -7,6 +7,7 @@
  */
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as Effect_1 from "effect/Effect";
 import { InvalidInput, Unauthorized } from "./ControlError.js";
 import { GrantScope } from "./ControlSchema.js";
 const IdentityPart = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024));
@@ -23,29 +24,44 @@ const IdentityPart = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLeng
 export const Delegation = Schema.Struct({
     principal: Schema.Struct({ id: IdentityPart, kind: IdentityPart }),
     scopes: Schema.Array(GrantScope).check(Schema.isMinLength(1), Schema.isMaxLength(3)),
-    targets: Schema.Array(Schema.Literals(["Plan", "Node"])).check(Schema.isMinLength(1), Schema.isMaxLength(2))
+    targets: Schema.Array(Schema.Literals(["Plan", "Node"])).check(Schema.isMinLength(1), Schema.isMaxLength(2)),
+    flowId: Schema.optional(IdentityPart),
+    waitName: Schema.optional(IdentityPart),
+    requiredProof: Schema.optional(IdentityPart)
 });
 const identity = (principal) => JSON.stringify([principal.id, principal.kind]);
-const compile = (delegations) => {
-    // Separate target keys preserve each delegation's target/scope pairing;
-    // unioning both dimensions independently would grant a cross product.
-    const permissions = new Map();
-    for (const delegation of delegations) {
-        for (const target of delegation.targets) {
-            const key = JSON.stringify([identity(delegation.principal), target]);
-            const scopes = permissions.get(key) ?? new Set();
-            for (const scope of delegation.scopes)
-                scopes.add(scope);
-            permissions.set(key, scopes);
-        }
-    }
+const compile = (delegations, options = {}) => {
+    const entries = delegations.map((entry) => ({
+        ...entry,
+        principal: identity(entry.principal),
+        scopes: [...entry.scopes],
+        targets: [...entry.targets]
+    }));
+    const verifyProof = options.verifyProof;
+    const refused = () => new Unauthorized({ message: "This caller has no authority to make this approval decision" });
     return Object.freeze({
-        authorize: (request) => Effect.suspend(() => {
-            const scopes = permissions.get(JSON.stringify([identity(request.principal), request.target._tag]));
-            return scopes !== undefined &&
-                (request.decision === "denied" || (request.decision === "approved" && scopes.has(request.scope)))
-                ? Effect.void
-                : Effect.fail(new Unauthorized({ message: "This caller has no authority to make this approval decision" }));
+        authorize: (request, context) => Effect_1.gen(function* () {
+            // Check identity and scope before reading target metadata. Keep every
+            // entry intact: combining dimensions would grant their cross product.
+            const candidates = entries.filter((entry) => entry.principal === identity(request.principal) && entry.targets.includes(request.target._tag) &&
+                (request.decision === "denied" || entry.scopes.includes(request.scope)) &&
+                (entry.waitName === undefined ||
+                    (request.target._tag === "Node" && entry.waitName === request.target.requestId)));
+            if (candidates.length === 0)
+                return yield* Effect_1.fail(refused());
+            const flowId = candidates.some((entry) => entry.flowId !== undefined)
+                ? yield* (context?.flowId ?? Effect.succeed(undefined)) : undefined;
+            for (const entry of candidates) {
+                if (entry.flowId !== undefined && entry.flowId !== flowId)
+                    continue;
+                if (entry.requiredProof !== undefined) {
+                    if (verifyProof === undefined)
+                        continue;
+                    yield* verifyProof(entry.requiredProof, request);
+                }
+                return;
+            }
+            return yield* Effect_1.fail(refused());
         })
     });
 };
@@ -56,9 +72,9 @@ const compile = (delegations) => {
  * @category constructors
  * @since 1.0.0
  */
-export const make = (delegations) => Effect.map(Effect.mapError(Schema.decodeUnknownEffect(Schema.Array(Delegation).check(Schema.isMaxLength(1024)))(delegations, {
+export const make = (delegations, options = {}) => Effect.map(Effect.mapError(Schema.decodeUnknownEffect(Schema.Array(Delegation).check(Schema.isMaxLength(1024)))(delegations, {
     onExcessProperty: "error"
-}), () => new InvalidInput({ issue: "Invalid approval-authority delegation configuration" })), compile);
+}), () => new InvalidInput({ issue: "Invalid approval-authority delegation configuration" })), (entries) => compile(entries, options));
 /**
  * Default trusted-local policy. Only the local operator identity is an
  * approver. A custom actor, gateway identity, or agent needs explicit host

@@ -89,7 +89,7 @@ export interface BrowserJjOptions {
  * @since 0.1.0
  */
 export const make = (options: BrowserJjOptions): Jj => create(options).jj
-const create: typeof create$platform = create$platform
+const create = create$platform
 /**
  * Provides the `Jj` service backed by a `flows_jj.wasm` module.
  *

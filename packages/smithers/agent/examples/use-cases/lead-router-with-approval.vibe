@@ -135,7 +135,7 @@ const approve = (lead: Planned.Planned<Lead>, score: Planned.Planned<Score>) =>
     Node.map(Node.succeed({ company: lead.company, score }), question),
     Node.capture({}, (prompt: Planned.Planned<string>) =>
       HumanTask.action.call({ name: approvalTask, kind: "json", prompt, schema: approvalSchema }).pipe(
-        HumanTask.decode(Approval)
+        (task) => HumanTask.decode(Approval)(task)
       ))
   )
 

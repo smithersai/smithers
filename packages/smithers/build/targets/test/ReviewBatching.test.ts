@@ -9,7 +9,7 @@ import * as Input from "../src/Input.ts"
 import * as ReviewBatches from "../src/internal/ReviewBatches.ts"
 import { maximumResponseTokens } from "../src/internal/ReviewModel.ts"
 import * as LlmLint from "../src/LlmLint.ts"
-import * as SecurityReview from "../src/SecurityReview.vibe"
+import * as SecurityReview from "../src/SecurityReview.ts"
 import * as Target from "../src/Target.ts"
 
 vi.mock("@smthrs/platform-node/ScopedProcess", async (original) => ({

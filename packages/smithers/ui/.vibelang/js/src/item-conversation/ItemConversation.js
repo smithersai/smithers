@@ -4,7 +4,7 @@ import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-run
 import { useId } from "react";
 import { Badge } from "../badge";
 import { Button } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { Textarea } from "../input";
 import { ITEM_STATE_VARIANTS, ItemStateIcon } from "../issues-view/ItemStateIcon";
 import { issueNumberText, PENDING_WORDS, STATE_STATUS } from "../issues-view/IssuesView";

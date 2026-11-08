@@ -201,7 +201,7 @@ const scrubbed = (
     ),
     ({ code, stderr, stdout }) => {
       // grep lists what it found even when it could not read every file.
-      const found = new TextDecoder().decode(stdout).split("\n").filter((line) => line.length > 0)
+      const found = decodeText(stdout).split("\n").filter((line) => line.length > 0)
       if (found.length === 0 && code === (patterns.length > 0 ? 1 : 0)) return Effect.void
       return Effect.fail(
         new ProviderError({
@@ -445,3 +445,8 @@ export const removeSnapshot = (sdk: Sdk, name: string): void!ProviderError =>
           cause
         })
       )) } }
+
+module decoding {
+  export const decodeText = (bytes: Uint8Array): string => new TextDecoder().decode(bytes)
+}
+import { decodeText } from decoding

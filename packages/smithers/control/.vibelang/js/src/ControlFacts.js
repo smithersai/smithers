@@ -334,5 +334,5 @@ export const fold = (events, snapshot, observedApprovals = []) => {
         approvals: [...requests.values()].map(({ row }) => row)
     };
 };
-import { raise as $raise } from "./ControlFacts.vibe.$throw$ts.js";
-import { invoke as $invoke } from "./ControlFacts.vibe.$call$ts.js";
+import { raise as $raise } from "./ControlFacts.vibe.-24-throw-24-ts.js";
+import { invoke as $invoke } from "./ControlFacts.vibe.-24-call-24-ts.js";

@@ -81,7 +81,9 @@ const path = /^[A-Za-z0-9._/-]+$/
 /**
  * The prompt text that carries `directives`: one bracketed tag each.
  *
- * @throws Error when a hold key, a file path or a uid cannot be written as a tag.
+ * Throws an `Error` when a hold key, a file path or a uid cannot be written as a
+ * tag.
+ *
  * @category constructors
  * @since 1.0.0
  */
@@ -772,7 +774,9 @@ export const isJudgement = (questions: Readonly<Record<string, unknown>> | null 
  * result complete and on target and nothing else, and a wiki citation
  * supported.
  *
- * @throws Error for a choice it cannot route or a question type it does not know.
+ * Throws an `Error` for a choice it cannot route or a question type it does not
+ * know.
+ *
  * @category constructors
  * @since 1.0.0
  */

@@ -17,7 +17,6 @@ import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
 import { withSpan } from "effect/Effect";
 import * as Effect_1 from "effect/Effect";
-import * as runtime_1 from "vibelang-runtime";
 import * as Sha256 from "@smthrs/crypto/Sha256";
 import {} from "effect";
 import { Control } from "./Control.js";
@@ -59,7 +58,7 @@ class InboundBoundaryError extends TypeError {
     }
 }
 const boundary = (issue) => {
-    throw new InboundBoundaryError(issue);
+    $raise(new InboundBoundaryError(issue));
 };
 const plainRecord = (input, path) => {
     if (typeof input !== "object" || input === null || Array.isArray(input)) {
@@ -152,10 +151,10 @@ const normalizedFingerprintHeaders = (channel) => Array.from(new Set((channel.fi
 /** Digests the body plus only the adapter-declared, non-secret semantic headers. */
 const fingerprint = (body, headers, names) => {
     const document = JSON.stringify([
-        Sha256.digestSync(body),
+        $invoke(Sha256, () => (body)),
         names.map((name) => [name, headers[name] ?? null])
     ]);
-    return `channel-ingress:v2:${Sha256.digestSync(new TextEncoder().encode(document))}`;
+    return `channel-ingress:v2:${$invoke(Sha256, () => (new TextEncoder().encode(document)))}`;
 };
 const externalReceipt = (receipt, key) => {
     switch (receipt._tag) {
@@ -172,112 +171,120 @@ const externalReceipt = (receipt, key) => {
  * mutation store. Inbound idempotency therefore survives coordinator restarts;
  * only registration and outbound projection cursors are process-local.
  */
-const makeWith = Effect_1.fnUntraced(runtime_1.$joinedFrame(function* makeWith(runtime) {
-    const channels = yield* Ref.make(new Map());
-    const deliveries = new Map();
-    // Live identities are never evicted. Terminal identities have a FIFO window
-    // for reconnects; retaining one per historical run would grow without bound.
-    const terminalDeliveries = new Set();
-    const maximumTerminalDeliveries = 1024;
-    const ingestion = yield* Semaphore.make(1);
-    const control = yield* Control;
-    const lookup = (name) => Effect_1.suspend({ lookup: () => { return withSpan(Effect_1.suspend(() => Effect.flatMap(Ref.get(channels), (registered) => {
-            const channel = registered.get(name);
-            return channel === undefined
-                ? Effect.fail(unavailable(`channel "${name}" is not registered`))
-                : Effect.succeed(channel);
-        })), "Channels.lookup"); } }.lookup);
-    return Channels.of({
-        register: Effect.fn("Channels.register")((channel) => Ref.update(channels, (registered) => {
-            const next = new Map(registered);
-            next.set(channel.name, eraseChannel(channel));
-            return next;
-        })),
-        lookup,
-        ingest: Effect.fn("Channels.ingest")((request) => Effect.flatMap(snapshotRequest(request), (snapshot) => ingestion.withPermits(1)(Effect_1.gen(function* () {
-            const channel = yield* lookup(snapshot.channel);
-            const fingerprintHeaders = normalizedFingerprintHeaders(channel);
-            const bodyFingerprint = fingerprint(snapshot.raw.body, snapshot.raw.headers, fingerprintHeaders);
-            // This ordering is intentional: signature verification is the
-            // amplification guard and must happen before decode or Control access.
-            // The verifier receives its own body copy, so even a verifier that
-            // edits bytes cannot change what the decoder sees after approval.
-            yield* channel.verify({ ...snapshot.raw, body: copyBody(snapshot.raw.body) });
-            const externalKey = snapshot.raw.idempotencyKey;
-            const durableKey = mutationKey(snapshot.channel, externalKey);
-            const prior = yield* runtime.lookupMutation(durableKey, bodyFingerprint);
-            if (prior !== undefined)
-                return externalReceipt(prior, externalKey);
-            const mapped = yield* channel.decodeAndMap(snapshot.raw);
-            const key = scopedKey(snapshot.channel, externalKey);
-            const principal = { id: snapshot.channel, kind: "channel", stampedAt: yield* Clock.currentTimeMillis };
-            let receipt;
-            if (mapped._tag === "Signal") {
-                // The channel is the caller, not the local operator: a webhook
-                // body names the run and wait, so a signal it maps to answers a
-                // human wait only if the host delegates approval to this channel.
-                receipt = yield* control.signal({
-                    runId: mapped.runId,
-                    signal: mapped.signal,
-                    idempotencyKey: key,
-                    principal,
-                    reader: principal
+const makeWith = (runtime) => {
+    return Effect_1.gen(function* makeWith() {
+        const channels = yield* Ref.make(new Map());
+        const deliveries = new Map();
+        // Live identities are never evicted. Terminal identities have a FIFO window
+        // for reconnects; retaining one per historical run would grow without bound.
+        const terminalDeliveries = new Set();
+        const maximumTerminalDeliveries = 1024;
+        const ingestion = yield* Semaphore.make(1);
+        const control = yield* Control;
+        const lookup = (name) => {
+            return Effect_1.gen(function* lookup() { return yield* withSpan(Effect_1.gen(function* () {
+                return yield* Effect.flatMap(Ref.get(channels), (registered) => {
+                    const channel = registered.get(name);
+                    return channel === undefined
+                        ? Effect.fail(unavailable(`channel "${name}" is not registered`))
+                        : Effect.succeed(channel);
                 });
-            }
-            else {
-                const plan = yield* control.plan({
-                    flowId: mapped.flowId,
-                    input: mapped.input,
-                    idempotencyKey: key
-                });
-                receipt = yield* control.run({
-                    _tag: "Plan",
-                    planId: plan.planId,
-                    digest: plan.digest,
-                    envelope: plan.envelope,
-                    idempotencyKey: key,
-                    principal
-                });
-            }
-            // A parked start has not launched. Leave ingress unsettled so a
-            // redelivery can retry the same Control key after plan approval.
-            if (receipt._tag !== "Conflict" && receipt._tag !== "Parked") {
-                yield* runtime.recordMutation(durableKey, bodyFingerprint, receipt);
-            }
-            return externalReceipt(receipt, externalKey);
-        })))),
-        project: (request) => Effect_1.suspend({ project: () => { return withSpan(Effect_1.gen(function* () {
-                const channel = yield* lookup(request.channel);
-                const key = deliveryKey(request.channel, request.run);
-                // Keep the read, projection and update synchronous so concurrent fibers
-                // cannot project from the same stale delivery identity.
-                return yield* Effect_1.gen(function* () {
-                    const prior = deliveries.get(key);
-                    const projection = channel.project(request.run, prior);
-                    if (projection.operation !== "noop" &&
-                        (prior === undefined || prior.cursor !== projection.cursor || prior.messageId !== projection.messageId)) {
-                        deliveries.set(key, { cursor: projection.cursor, messageId: projection.messageId });
-                    }
-                    if (deliveries.has(key)) {
-                        const status = request.run.status;
-                        if (status === "completed" || status === "failed" || status === "cancelled") {
-                            terminalDeliveries.add(key);
-                            if (terminalDeliveries.size > maximumTerminalDeliveries) {
-                                // The set is nonempty because it just exceeded the limit.
-                                const oldest = terminalDeliveries.values().next().value;
-                                terminalDeliveries.delete(oldest);
-                                deliveries.delete(oldest);
+            }), "Channels.lookup"); });
+        };
+        return Channels.of({
+            register: Effect.fn("Channels.register")((channel) => Ref.update(channels, (registered) => {
+                const next = new Map(registered);
+                next.set(channel.name, eraseChannel(channel));
+                return next;
+            })),
+            lookup,
+            ingest: Effect.fn("Channels.ingest")((request) => Effect.flatMap(snapshotRequest(request), (snapshot) => ingestion.withPermits(1)(Effect_1.gen(function* () {
+                const channel = yield* lookup(snapshot.channel);
+                const fingerprintHeaders = normalizedFingerprintHeaders(channel);
+                const bodyFingerprint = fingerprint(snapshot.raw.body, snapshot.raw.headers, fingerprintHeaders);
+                // This ordering is intentional: signature verification is the
+                // amplification guard and must happen before decode or Control access.
+                // The verifier receives its own body copy, so even a verifier that
+                // edits bytes cannot change what the decoder sees after approval.
+                yield* channel.verify({ ...snapshot.raw, body: copyBody(snapshot.raw.body) });
+                const externalKey = snapshot.raw.idempotencyKey;
+                const durableKey = mutationKey(snapshot.channel, externalKey);
+                const prior = yield* runtime.lookupMutation(durableKey, bodyFingerprint);
+                if (prior !== undefined)
+                    return externalReceipt(prior, externalKey);
+                const mapped = yield* channel.decodeAndMap(snapshot.raw);
+                const key = scopedKey(snapshot.channel, externalKey);
+                const principal = { id: snapshot.channel, kind: "channel", stampedAt: yield* Clock.currentTimeMillis };
+                let receipt;
+                if (mapped._tag === "Signal") {
+                    // The channel is the caller, not the local operator: a webhook
+                    // body names the run and wait, so a signal it maps to answers a
+                    // human wait only if the host delegates approval to this channel.
+                    receipt = yield* control.signal({
+                        runId: mapped.runId,
+                        signal: mapped.signal,
+                        idempotencyKey: key,
+                        principal,
+                        reader: principal
+                    });
+                }
+                else {
+                    const plan = yield* control.plan({
+                        flowId: mapped.flowId,
+                        input: mapped.input,
+                        idempotencyKey: key
+                    });
+                    receipt = yield* control.run({
+                        _tag: "Plan",
+                        planId: plan.planId,
+                        digest: plan.digest,
+                        envelope: plan.envelope,
+                        idempotencyKey: key,
+                        principal
+                    });
+                }
+                // A parked start has not launched. Leave ingress unsettled so a
+                // redelivery can retry the same Control key after plan approval.
+                if (receipt._tag !== "Conflict" && receipt._tag !== "Parked") {
+                    yield* runtime.recordMutation(durableKey, bodyFingerprint, receipt);
+                }
+                return externalReceipt(receipt, externalKey);
+            })))),
+            project: (request) => {
+                return Effect_1.gen(function* project() { return yield* withSpan(Effect_1.gen(function* () {
+                    const channel = yield* lookup(request.channel);
+                    const key = deliveryKey(request.channel, request.run);
+                    // Keep the read, projection and update synchronous so concurrent fibers
+                    // cannot project from the same stale delivery identity.
+                    return yield* Effect_1.gen(function* () {
+                        const prior = deliveries.get(key);
+                        const projection = channel.project(request.run, prior);
+                        if (projection.operation !== "noop" &&
+                            (prior === undefined || prior.cursor !== projection.cursor || prior.messageId !== projection.messageId)) {
+                            deliveries.set(key, { cursor: projection.cursor, messageId: projection.messageId });
+                        }
+                        if (deliveries.has(key)) {
+                            const status = request.run.status;
+                            if (status === "completed" || status === "failed" || status === "cancelled") {
+                                terminalDeliveries.add(key);
+                                if (terminalDeliveries.size > maximumTerminalDeliveries) {
+                                    // The set is nonempty because it just exceeded the limit.
+                                    const oldest = terminalDeliveries.values().next().value;
+                                    terminalDeliveries.delete(oldest);
+                                    deliveries.delete(oldest);
+                                }
+                            }
+                            else {
+                                terminalDeliveries.delete(key);
                             }
                         }
-                        else {
-                            terminalDeliveries.delete(key);
-                        }
-                    }
-                    return projection;
-                });
-            }), "Channels.project"); } }.project)
+                        return projection;
+                    });
+                }), "Channels.project"); });
+            }
+        });
     });
-}));
+};
 /**
  * Builds the coordinator over Control's durable mutation store.
  *
@@ -329,3 +336,5 @@ export const layer = Layer.effect(Channels, make);
  * @since 1.0.0
  */
 export const layerMemory = Layer.effect(Channels, makeMemory);
+import { raise as $raise } from "./Channels.vibe.-24-throw-24-ts.js";
+import { invoke as $invoke } from "./Channels.vibe.-24-call-24-ts.js";

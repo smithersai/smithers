@@ -4,6 +4,7 @@
  * @since 1.0.0
  */
 import * as Effect from "effect/Effect";
+import { $schemaErrorMatcher } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
 import * as Schema_1 from "effect/Schema";
 import * as Fault from "@smthrs/flow/Fault";
@@ -14,8 +15,11 @@ import { Schema } from "effect";
  */
 export class JevProbeError extends Schema_1.TaggedError()("JevProbeError", {
     reason: Schema_1.Literals(["unconfigured", "http", "timeout", "unreachable", "malformed"]),
-    status: Schema_1.optional(Schema_1.Number),
+    status: Schema_1.optionalKey(Schema_1.Number),
 }) {
+    static {
+        $schemaErrorMatcher(this, "JevProbeError");
+    }
 }
 Fault.register("JevProbeError", {
     unconfigured: "policy",
@@ -68,41 +72,43 @@ const questions = {
 export const makeJevSessionChecker = (options = {}) => ({
     id: "jev.session",
     defaults: { timeoutMs: jevProbeTimeoutMs, ttlMs: 60_000 },
-    probe: Effect_1.fnUntraced(function* probe(context) {
-        const session = context.session;
-        const tail = session?.outputTail;
-        if (session === undefined || !session.alive || tail === undefined || tail === "")
-            return lifecycleReport;
-        if (options.evaluator === undefined)
-            return yield* Effect_1.fail(new JevProbeError({ reason: "unconfigured" }));
-        const result = yield* (Effect.timeoutOrElse(Effect.mapError(options.evaluator.evaluate({
-            state: { alive: session.alive, exitCode: session.exitCode, outputTail: tail.slice(-jevStateTailCharacters) },
-            questions
-        }), (error) => new JevProbeError({
-            reason: error.code === "timeout"
-                ? "timeout"
-                : error.code === "refused"
-                    ? "http"
-                    : error.code === "unreachable"
-                        ? "unreachable"
-                        : "malformed",
-            ...(error.status === undefined ? {} : { status: error.status })
-        })), {
-            duration: options.timeoutMs ?? jevRequestTimeoutMs,
-            orElse: () => Effect.fail(new JevProbeError({ reason: "timeout" }))
-        }));
-        const answer = result.answers.activity;
-        if (answer?.type !== "choice" || !Object.hasOwn(activityCriteria, answer.choice)) {
-            return yield* Effect_1.fail(new JevProbeError({ reason: "malformed" }));
-        }
-        const confidence = result.confidence?.activity ?? answer.probabilities?.[answer.choice] ?? 0;
-        if (!Number.isFinite(confidence) || confidence < jevConfidenceFloor || confidence > 1)
-            return lifecycleReport;
-        const choice = answer.choice;
-        return choice === "needs-input"
-            ? { activity: choice, reason: "prompt-detected" }
-            : { activity: choice, reason: "ok" };
-    })
+    probe: (context) => {
+        return Effect_1.gen(function* probe() {
+            const session = context.session;
+            const tail = session?.outputTail;
+            if (session === undefined || !session.alive || tail === undefined || tail === "")
+                return lifecycleReport;
+            if (options.evaluator === undefined)
+                return yield* Effect_1.fail(new JevProbeError({ reason: "unconfigured" }));
+            const result = yield* (Effect.timeoutOrElse(Effect.mapError(options.evaluator.evaluate({
+                state: { alive: session.alive, exitCode: session.exitCode, outputTail: tail.slice(-jevStateTailCharacters) },
+                questions
+            }), (error) => new JevProbeError({
+                reason: error.code === "timeout"
+                    ? "timeout"
+                    : error.code === "refused"
+                        ? "http"
+                        : error.code === "unreachable"
+                            ? "unreachable"
+                            : "malformed",
+                ...(error.status === undefined ? {} : { status: error.status })
+            })), {
+                duration: options.timeoutMs ?? jevRequestTimeoutMs,
+                orElse: () => Effect.fail(new JevProbeError({ reason: "timeout" }))
+            }));
+            const answer = result.answers.activity;
+            if (answer?.type !== "choice" || !Object.hasOwn(activityCriteria, answer.choice)) {
+                return yield* Effect_1.fail(new JevProbeError({ reason: "malformed" }));
+            }
+            const confidence = result.confidence?.activity ?? answer.probabilities?.[answer.choice] ?? 0;
+            if (!Number.isFinite(confidence) || confidence < jevConfidenceFloor || confidence > 1)
+                return lifecycleReport;
+            const choice = answer.choice;
+            return choice === "needs-input"
+                ? { activity: choice, reason: "prompt-detected" }
+                : { activity: choice, reason: "ok" };
+        });
+    }
 });
 /** Registered but unconfigured until a host supplies its evaluator.
  * @category constants

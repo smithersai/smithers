@@ -282,10 +282,11 @@ const withAttempt = <Payload>(payload: object, attempt: number): Payload =>
  * budget, and a budget below one attempt reaches `Flow.make` as a `maxRounds`
  * complaint about an option the author never wrote.
  *
- * @throws A `RangeError` when `intervalMs` is not a duration a clock accepts,
+ * Throws a `RangeError` when `intervalMs` is not a duration a clock accepts,
  * when `maxAttempts` is not a whole number of attempts of at least one, or when
  * the interval under the declared backoff reaches a wait no clock can be armed
  * with before the budget is spent.
+ *
  * @category constructors
  * @since 0.1.0
  */

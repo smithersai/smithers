@@ -3,10 +3,10 @@ import { jsx as _jsx } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { Bridge, ViewCsp } from "@smthrs/views";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { newNonce, useNearScreen } from "../internal/frameMount";
 import { composeSmithersUiStyles, useInjectUiCss } from "../styles";
-import { frameBaseCss } from "./generatedViewCss";
+import { frameBaseCss } from "@smthrs/ui-css";
 import { frameRuntime } from "./runtime.generated";
 // Other mounted views receive the same window broadcasts; they are not this view.
 const mountedFrames = new WeakSet();

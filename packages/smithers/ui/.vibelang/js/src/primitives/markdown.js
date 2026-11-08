@@ -5,7 +5,7 @@ import { createContext, Fragment, memo, useContext, useMemo } from "react";
 import { markdownDocumentBody } from "./markdownDocumentBody";
 import { CodeBlock } from "./CodeBlock";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../table";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { safeHref } from "../internal/safeHref";
 import { useInjectUiCss } from "../styles";
 /**

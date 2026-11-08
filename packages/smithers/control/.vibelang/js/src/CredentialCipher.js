@@ -9,7 +9,10 @@
  *
  * @since 0.1.0
  */
-import { Context as EffectContext, Effect, Layer } from "effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as runtime from "vibelang-runtime/internal";
+import {} from "effect";
 import { Unavailable } from "./ControlError.js";
 /**
  * Service key for credential encryption.
@@ -17,7 +20,7 @@ import { Unavailable } from "./ControlError.js";
  * @category services
  * @since 0.1.0
  */
-export class CredentialCipher extends EffectContext.Service()("/control/CredentialCipher") {
+export class CredentialCipher extends runtime.$service("/control/CredentialCipher") {
 }
 /**
  * Constructs a cipher from an implementation record.

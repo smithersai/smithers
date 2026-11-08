@@ -16,7 +16,6 @@ import * as Incur from "../src/Incur.vibe"
 import * as SchemaBridge from "../src/internal/SchemaBridge.vibe"
 import * as Route from "../src/Route.vibe"
 import { failureOf, makeRoute } from "./helpers.vibe"
-import { Request } from "./hostGlobals.ts"
 
 // A plain copy of the namespace, so `vi.spyOn` can replace
 // `Schema.toJsonSchemaDocument`. Vitest hoists the call only when its object

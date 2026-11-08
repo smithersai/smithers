@@ -26,6 +26,7 @@
  * @since 0.1.0
  */
 import * as Result from "effect/Result";
+import * as Schema_1 from "effect/Schema";
 import * as Schema from "effect/Schema";
 /**
  * The file a repository declares its home in, at its default branch's head.
@@ -131,12 +132,27 @@ export const Title = Schema.NonEmptyString.check(Schema.isMaxLength(maximumTitle
  */
 export const Prose = Schema.NonEmptyString.check(Schema.isMaxLength(maximumTextLength), noHtml);
 /**
- * A link target: an absolute `http` or `https` URL.
+ * A link target: an absolute `http` or `https` URL, or an origin-relative
+ * path starting with one `/`. Protocol-relative links, backslashes, control
+ * characters and malformed URLs are refused.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const Url = Schema.NonEmptyString.check(Schema.isMaxLength(maximumUrlLength), Schema.isPattern(/^https?:\/\/[^\s<>"']+$/i));
+export const Url = Schema.NonEmptyString.check(Schema.isMaxLength(maximumUrlLength), Schema.isPattern(/^(?:https?:\/\/(?![/?#])|\/(?!\/))/i), Schema.makeFilter((value) => {
+    // Browsers normalize backslashes and controls; reject them before parsing.
+    // eslint-disable-next-line no-control-regex
+    if (/[\s\u0000-\u001f\u007f<>"'\\]/.test(value) || /%(?![0-9a-f]{2})/i.test(value)) {
+        return "must not contain unsafe characters or malformed escapes";
+    }
+    try {
+        new URL(value, "https://home.invalid");
+        return true;
+    }
+    catch {
+        return "must be an HTTP(S) URL or an origin-relative path";
+    }
+}));
 /**
  * Where a home's docs are listed: the absolute `https` URL of the docs site's
  * index in the `llms.txt` format, such as `https://vibelang.sh/llms.txt`,
@@ -145,7 +161,7 @@ export const Url = Schema.NonEmptyString.check(Schema.isMaxLength(maximumUrlLeng
  * @category schemas
  * @since 0.1.0
  */
-export const DocsUrl = Schema.NonEmptyString.check(Schema.isMaxLength(maximumUrlLength), Schema.isPattern(/^https:\/\/[^\s<>"'@]+$/i));
+export const DocsUrl = Url.check(Schema.isPattern(/^https:\/\/[^\s<>"'@]+$/i));
 /**
  * A relative path that cannot escape the repository.
  *
@@ -221,12 +237,14 @@ export const IsoDate = Schema.String.check(Schema.makeFilter((value) => {
         : "must be a date that exists";
 }));
 /**
- * A link: a label and the absolute `http` or `https` URL it opens.
+ * A link: a label and the safe absolute or origin-relative URL it opens.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const Link = Schema.Struct({ label: Title, url: Url });
+export const Link = Schema_1.Struct({
+    label: Title, url: Url,
+});
 /**
  * Who may see a section:
  *
@@ -317,11 +335,11 @@ export const AppPicture = Schema.Literals(["issue", "review", "wiki", "schedule"
  * @category schemas
  * @since 0.1.0
  */
-export const AppBlock = Schema.Struct({
-    type: Schema.Literal("app"),
+export const AppBlock = Schema_1.Struct({
+    type: Schema_1.Literal("app"),
     flow: FlowName,
     title: Title,
-    picture: AppPicture
+    picture: AppPicture,
 });
 /**
  * A Markdown file of the repository, read at the home's own commit.
@@ -351,9 +369,9 @@ export const StackBlock = Schema.Struct({
  * @category schemas
  * @since 0.1.0
  */
-export const ViewBlock = Schema.Struct({
-    type: Schema.Literal("view"),
-    flow: FlowName
+export const ViewBlock = Schema_1.Struct({
+    type: Schema_1.Literal("view"),
+    flow: FlowName,
 });
 /**
  * A project's opening: its name, a tagline, a paragraph, the command that
@@ -417,7 +435,9 @@ export const CardsBlock = Schema.Struct({
  * @category schemas
  * @since 0.1.0
  */
-export const Stat = Schema.Struct({ value: Title, label: Title });
+export const Stat = Schema_1.Struct({
+    value: Title, label: Title,
+});
 /**
  * A row of up to {@link maximumStats} declared facts. They are the
  * repository's own words, never counted by the page.

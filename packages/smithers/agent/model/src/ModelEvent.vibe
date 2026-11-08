@@ -60,7 +60,7 @@ export type Usage = typeof Usage.Type
  * @since 0.1.0
  * @slop
  */
-export schema TextStart { readonly type: "text-start"; readonly id: string }
+export const TextStart = Schema.Struct({ type: Schema.Literal("text-start"), id: Schema.String })
 /**
  * The decoded form of {@link TextStart}.
  *
@@ -76,7 +76,7 @@ export type TextStart = typeof TextStart.Type
  * @since 0.1.0
  * @slop
  */
-export schema TextDelta { readonly type: "text-delta"; readonly id: string; readonly text: string }
+export const TextDelta = Schema.Struct({ type: Schema.Literal("text-delta"), id: Schema.String, text: Schema.String })
 /**
  * The decoded form of {@link TextDelta}.
  *
@@ -92,7 +92,7 @@ export type TextDelta = typeof TextDelta.Type
  * @since 0.1.0
  * @slop
  */
-export schema TextEnd { readonly type: "text-end"; readonly id: string }
+export const TextEnd = Schema.Struct({ type: Schema.Literal("text-end"), id: Schema.String })
 /**
  * The decoded form of {@link TextEnd}.
  *
@@ -109,11 +109,11 @@ export type TextEnd = typeof TextEnd.Type
  * @since 0.1.0
  * @slop
  */
-export schema ThinkingStart {
-  readonly type: "thinking-start"
-  readonly id: string
-  readonly signature?: string
-}
+export const ThinkingStart = Schema.Struct({
+  type: Schema.Literal("thinking-start"),
+  id: Schema.String,
+  signature: Schema.optional(Schema.String)
+})
 /**
  * The decoded form of {@link ThinkingStart}.
  *
@@ -129,11 +129,11 @@ export type ThinkingStart = typeof ThinkingStart.Type
  * @since 0.1.0
  * @slop
  */
-export schema ThinkingDelta {
-  readonly type: "thinking-delta"
-  readonly id: string
-  readonly text: string
-}
+export const ThinkingDelta = Schema.Struct({
+  type: Schema.Literal("thinking-delta"),
+  id: Schema.String,
+  text: Schema.String
+})
 /**
  * The decoded form of {@link ThinkingDelta}.
  *
@@ -149,7 +149,7 @@ export type ThinkingDelta = typeof ThinkingDelta.Type
  * @since 0.1.0
  * @slop
  */
-export schema ThinkingEnd { readonly type: "thinking-end"; readonly id: string }
+export const ThinkingEnd = Schema.Struct({ type: Schema.Literal("thinking-end"), id: Schema.String })
 /**
  * The decoded form of {@link ThinkingEnd}.
  *
@@ -165,11 +165,11 @@ export type ThinkingEnd = typeof ThinkingEnd.Type
  * @since 0.1.0
  * @slop
  */
-export schema ToolCallStart {
-  readonly type: "tool-call-start"
-  readonly id: string
-  readonly name: string
-}
+export const ToolCallStart = Schema.Struct({
+  type: Schema.Literal("tool-call-start"),
+  id: Schema.String,
+  name: Schema.String
+})
 /**
  * The decoded form of {@link ToolCallStart}.
  *
@@ -185,11 +185,11 @@ export type ToolCallStart = typeof ToolCallStart.Type
  * @since 0.1.0
  * @slop
  */
-export schema ToolCallDelta {
-  readonly type: "tool-call-delta"
-  readonly id: string
-  readonly arguments: string
-}
+export const ToolCallDelta = Schema.Struct({
+  type: Schema.Literal("tool-call-delta"),
+  id: Schema.String,
+  arguments: Schema.String
+})
 /**
  * The decoded form of {@link ToolCallDelta}.
  *
@@ -206,11 +206,11 @@ export type ToolCallDelta = typeof ToolCallDelta.Type
  * @since 0.1.0
  * @slop
  */
-export schema ToolCallEnd {
-  readonly type: "tool-call-end"
-  readonly id: string
-  readonly arguments?: string
-}
+export const ToolCallEnd = Schema.Struct({
+  type: Schema.Literal("tool-call-end"),
+  id: Schema.String,
+  arguments: Schema.optional(Schema.String)
+})
 /**
  * The decoded form of {@link ToolCallEnd}.
  *
@@ -228,12 +228,12 @@ export type ToolCallEnd = typeof ToolCallEnd.Type
  * @since 0.1.0
  * @slop
  */
-export schema ToolResult {
-  readonly type: "tool-result"
-  readonly id: string
-  readonly output: string
-  readonly isError?: boolean
-}
+export const ToolResult = Schema.Struct({
+  type: Schema.Literal("tool-result"),
+  id: Schema.String,
+  output: Schema.String,
+  isError: Schema.optional(Schema.Boolean)
+})
 /**
  * The decoded form of {@link ToolResult}.
  *
@@ -250,16 +250,16 @@ export type ToolResult = typeof ToolResult.Type
  * @since 0.1.0
  * @slop
  */
-export schema UsageEvent {
-  readonly type: "usage"
-  readonly inputTokens?: number
-  readonly outputTokens?: number
-  readonly reasoningTokens?: number
-  readonly cachedInputTokens?: number
-  readonly cacheWriteTokens?: number
-  readonly totalTokens?: number
-  readonly costUsd?: number
-}
+export const UsageEvent = Schema.Struct({
+  type: Schema.Literal("usage"),
+  inputTokens: Schema.optional(Schema.Number),
+  outputTokens: Schema.optional(Schema.Number),
+  reasoningTokens: Schema.optional(Schema.Number),
+  cachedInputTokens: Schema.optional(Schema.Number),
+  cacheWriteTokens: Schema.optional(Schema.Number),
+  totalTokens: Schema.optional(Schema.Number),
+  costUsd: Schema.optional(Schema.Number)
+})
 /**
  * The decoded form of {@link UsageEvent}.
  *
@@ -449,19 +449,19 @@ export const ModelEvent = Object.assign(
     Settle
   ]).pipe(Schema.toTaggedUnion("type")),
   {
-    TextStart: TextStart.make,
-    TextDelta: TextDelta.make,
-    TextEnd: TextEnd.make,
-    ThinkingStart: ThinkingStart.make,
-    ThinkingDelta: ThinkingDelta.make,
-    ThinkingEnd: ThinkingEnd.make,
-    ToolCallStart: ToolCallStart.make,
-    ToolCallDelta: ToolCallDelta.make,
-    ToolCallEnd: ToolCallEnd.make,
-    ToolResult: ToolResult.make,
+    TextStart: ((input, options?) => TextStart.make(input, options)) satisfies typeof TextStart.make,
+    TextDelta: ((input, options?) => TextDelta.make(input, options)) satisfies typeof TextDelta.make,
+    TextEnd: ((input, options?) => TextEnd.make(input, options)) satisfies typeof TextEnd.make,
+    ThinkingStart: ((input, options?) => ThinkingStart.make(input, options)) satisfies typeof ThinkingStart.make,
+    ThinkingDelta: ((input, options?) => ThinkingDelta.make(input, options)) satisfies typeof ThinkingDelta.make,
+    ThinkingEnd: ((input, options?) => ThinkingEnd.make(input, options)) satisfies typeof ThinkingEnd.make,
+    ToolCallStart: ((input, options?) => ToolCallStart.make(input, options)) satisfies typeof ToolCallStart.make,
+    ToolCallDelta: ((input, options?) => ToolCallDelta.make(input, options)) satisfies typeof ToolCallDelta.make,
+    ToolCallEnd: ((input, options?) => ToolCallEnd.make(input, options)) satisfies typeof ToolCallEnd.make,
+    ToolResult: ((input, options?) => ToolResult.make(input, options)) satisfies typeof ToolResult.make,
     Usage: (input: Usage): UsageEvent => ({ type: "usage", ...input }),
-    Retry: Retry.make,
-    Settle: Settle.make,
+    Retry: ((input, options?) => Retry.make(input, options)) satisfies typeof Retry.make,
+    Settle: ((input, options?) => Settle.make(input, options)) satisfies typeof Settle.make,
     settledMessage
   }
 )

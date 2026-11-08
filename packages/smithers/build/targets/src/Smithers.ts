@@ -27,7 +27,7 @@ import * as DocsPageModule from "./DocsPage.ts"
 import * as FactoryModule from "./Factory.ts"
 import * as HomeModule from "./Home.vibe"
 import * as InputModule from "./Input.ts"
-import { Mise as MiseSurface } from "./Mise.vibe"
+import { Mise as MiseSurface } from "./Mise.ts"
 import * as NodeArtifactModule from "./NodeArtifact.ts"
 import * as NpmTargetModule from "./NpmTarget.ts"
 import * as OwnersModule from "./Owners.ts"
@@ -248,7 +248,7 @@ export { JevLint } from "./JevLint.ts"
 /** @category actions @since 1.0.0 */
 export { JevReview } from "./JevLint.ts"
 /** @category macros @since 1.0.0 */
-export { SecurityReview } from "./SecurityReview.vibe"
+export { SecurityReview } from "./SecurityReview.ts"
 /** @category targets @since 0.1.0 */
 export { Clean } from "./Compose.ts"
 /** @category targets @since 0.1.0 */

@@ -128,7 +128,7 @@ export const compileSource = (
           Effect.map(
             Compile.execute({ target }, {
               executionId: `compile-by-tool/${
-                Digest.digest(Digest.canonical({ identity: { ...call.identity }, target }))
+                $invokeDigest(Digest, () => Digest.canonical({ identity: { ...call.identity }, target }))
               }`
             }),
             (bundle) => ({ bundle })
@@ -373,3 +373,8 @@ module $call$ts {
 export function invoke<T extends {"parse":Function}>(target:T,arg0:()=>Parameters<Extract<T["parse"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["parse"],(...args:any[])=>any>> { return target["parse"](arg0()) }
 }
 import { invoke as $invoke } from $call$ts
+
+module $digest$ts {
+export function invoke<T extends {"digest":Function}>(target:T,arg0:()=>Parameters<Extract<T["digest"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["digest"],(...args:any[])=>any>> { return target["digest"](arg0()) }
+}
+import { invoke as $invokeDigest } from $digest$ts

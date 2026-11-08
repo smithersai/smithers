@@ -22,12 +22,14 @@
  * @since 1.0.0
  */
 
+import * as Schema from "effect/Schema"
 import { Minimatch } from "minimatch"
+import * as NodeFs from "node:fs"
+import * as NodePath from "node:path"
 import * as Input from "./Input.ts"
 import { Finding, LlmLint, Reproduction, type ReviewBudget } from "./LlmLint.ts"
 import type { Engine } from "./ModelEngine.vibe"
 import * as Target from "./Target.ts"
-import { declaredRoot as declaredRoot$platform, globMagic as globMagic$platform, probe as probe$platform } from "./SecurityReview.platform.ts"
 
 /**
  * The model a `claude` security review runs on when the caller names none.
@@ -36,6 +38,7 @@ import { declaredRoot as declaredRoot$platform, globMagic as globMagic$platform,
  * @since 1.0.0
  */
 export const defaultClaudeModel = "claude-opus-5-5"
+
 /**
  * The model a `codex` security review runs on when the caller names none.
  *
@@ -43,6 +46,7 @@ export const defaultClaudeModel = "claude-opus-5-5"
  * @since 1.0.0
  */
 export const defaultCodexModel = "gpt-6-sol"
+
 /**
  * One security check a reviewer performs on a package.
  *
@@ -62,6 +66,7 @@ export interface Check {
   readonly lookFor: ReadonlyArray<string>
   readonly paths?: ReadonlyArray<string> | undefined
 }
+
 /**
  * A trust boundary's actors, assumptions and ordered cross-package execution path.
  * Path entries use the same file glob syntax as include. Every path is reviewed
@@ -85,6 +90,7 @@ export interface Boundary {
     readonly storageOrEgress: ReadonlyArray<string>
   }
 }
+
 /**
  * The built-in check every security review ends with.
  *
@@ -111,6 +117,7 @@ export const generalCheck: Check = {
     "Information leaks: stack traces, internal paths, other tenants' data, or secrets in errors, logs, or responses."
   ]
 }
+
 /**
  * The framing every security review prompt starts with.
  *
@@ -127,24 +134,27 @@ export const securityPrompt = [
   "a trusted host can run them in an isolated checkout. This reviewer cannot attest execution;",
   "prefer one well-evidenced finding over several speculative ones."
 ].join(" ")
+
 const checkId = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
+
 const oneLine = (value: unknown, what: string): string => {
   if (typeof value !== "string" || value.trim() === "" || /[\r\n]/.test(value)) {
-    $raise(new TypeError(`${what} must be one nonempty line`))
+    throw new TypeError(`${what} must be one nonempty line`)
   }
   return value.trim()
 }
+
 /** Validates the declared checks and returns them with the general check appended. */
 const withGeneral = (cwd: string, checks: ReadonlyArray<Check>): ReadonlyArray<Check> => {
   const seen = new Set<string>()
   const output: Array<Check> = []
   for (const check of checks) {
     const id = oneLine(check.id, "security check id")
-    if (!checkId.test(id)) $raise(new TypeError(`security check id must be kebab-case: ${JSON.stringify(id)}`))
-    if (id === generalCheck.id) $raise(new TypeError("security check id \"general\" is reserved for the built-in check"))
-    if (seen.has(id)) $raise(new TypeError(`security check id is declared twice: ${id}`))
+    if (!checkId.test(id)) throw new TypeError(`security check id must be kebab-case: ${JSON.stringify(id)}`)
+    if (id === generalCheck.id) throw new TypeError("security check id \"general\" is reserved for the built-in check")
+    if (seen.has(id)) throw new TypeError(`security check id is declared twice: ${id}`)
     seen.add(id)
-    if (check.lookFor.length === 0) $raise(new TypeError(`security check ${id} must list at least one lookFor item`))
+    if (check.lookFor.length === 0) throw new TypeError(`security check ${id} must list at least one lookFor item`)
     output.push({
       id,
       title: oneLine(check.title, `security check ${id} title`),
@@ -157,6 +167,7 @@ const withGeneral = (cwd: string, checks: ReadonlyArray<Check>): ReadonlyArray<C
   }
   return [...output, generalCheck]
 }
+
 /**
  * Renders the rubric for a list of checks whose `paths` are already
  * workspace-relative, the built-in general check included.
@@ -188,6 +199,7 @@ export const renderRubric = (checks: ReadonlyArray<Check>): string =>
     "- Style, correctness bugs without a security consequence, and missing tests are not findings.",
     "- Return the completion envelope requested by the review host, including coverage for every declared check."
   ].join("\n")
+
 /**
  * Options for {@link SecurityReview}.
  *
@@ -232,6 +244,7 @@ export interface Options {
   readonly summary?: string | undefined
   readonly workspaceRoot?: string | undefined
 }
+
 /**
  * The two targets {@link SecurityReview} returns.
  *
@@ -242,6 +255,7 @@ export interface SecurityTargets {
   readonly security: ReturnType<typeof LlmLint>
   readonly securityAudit: ReturnType<typeof LlmLint>
 }
+
 /** Re-roots one declared glob so it matches workspace-relative git paths. */
 const anchor = (cwd: string, declaration: Input.Glob | string): Input.Glob => {
   const glob = typeof declaration === "string" ? Input.glob(declaration) : declaration
@@ -250,6 +264,7 @@ const anchor = (cwd: string, declaration: Input.Glob | string): Input.Glob => {
     exclude: glob.exclude.map((entry) => `//${Input.resolvePath(cwd, entry)}`)
   })
 }
+
 const boundaryFields = [
   ["actors", "Actors"],
   ["assets", "Assets"],
@@ -258,15 +273,17 @@ const boundaryFields = [
   ["enforcementPoints", "Enforcement points"],
   ["deploymentAssumptions", "Deployment assumptions"]
 ] as const
+
 const boundaryStages = [
   ["caller", "Caller"],
   ["authorization", "Authorization"],
   ["service", "Service"],
   ["storageOrEgress", "Storage/egress"]
 ] as const
+
 const assembleBoundaries = (cwd: string, boundaries: ReadonlyArray<Boundary> | undefined, root: string | undefined) => {
   if (boundaries !== undefined && boundaries.length === 0) {
-    $raise(new TypeError("security boundaries must contain at least one boundary"))
+    throw new TypeError("security boundaries must contain at least one boundary")
   }
   const ids = new Set<string>()
   const paths = new Map<string, Input.Glob>()
@@ -274,12 +291,12 @@ const assembleBoundaries = (cwd: string, boundaries: ReadonlyArray<Boundary> | u
   const rubric: Array<string> = []
   for (const boundary of boundaries ?? []) {
     const id = oneLine(boundary.id, "security boundary id")
-    if (!checkId.test(id)) $raise(new TypeError(`security boundary id must be kebab-case: ${id}`))
-    if (ids.has(id)) $raise(new TypeError(`security boundary id is declared twice: ${id}`))
+    if (!checkId.test(id)) throw new TypeError(`security boundary id must be kebab-case: ${id}`)
+    if (ids.has(id)) throw new TypeError(`security boundary id is declared twice: ${id}`)
     ids.add(id)
     const lines = (values: ReadonlyArray<string>, field: string) => {
       if (!Array.isArray(values) || values.length === 0) {
-        $raise(new TypeError(`security boundary ${id} ${field} must contain at least one item`))
+        throw new TypeError(`security boundary ${id} ${field} must contain at least one item`)
       }
       return values.map((value) => oneLine(value, `security boundary ${id} ${field}`))
     }
@@ -294,7 +311,7 @@ const assembleBoundaries = (cwd: string, boundaries: ReadonlyArray<Boundary> | u
       for (const glob of stage) {
         const path = glob.pattern.slice(2)
         if (root !== undefined && !probe(root, matcherOf(glob), () => true).matched) {
-          $raise(new TypeError(`security boundary ${id} (${cwd}) ${field} path ${JSON.stringify(path)} matches no file`))
+          throw new TypeError(`security boundary ${id} (${cwd}) ${field} path ${JSON.stringify(path)} matches no file`)
         }
         paths.set(glob.pattern, glob)
         boundaryPaths.push(glob.pattern)
@@ -324,11 +341,29 @@ const assembleBoundaries = (cwd: string, boundaries: ReadonlyArray<Boundary> | u
   }
   return { paths: [...paths.values()], checks, rubric: rubric.join("\n") }
 }
-const globMagic: typeof globMagic$platform = globMagic$platform
+
+/** Directories a plan-time path check never descends into. */
+const skippedDirectories = new Set([".git", ".jj", "node_modules"])
+
+const globMagic = /[*?[\]{}!()|@+]/
+
+/** Workspace-relative directory holding every file a resolved pattern can match. */
+const patternBase = (pattern: string): string => {
+  const segments = pattern.split("/")
+  const literal: Array<string> = []
+  for (const segment of segments) {
+    if (globMagic.test(segment)) break
+    literal.push(segment)
+  }
+  if (literal.length === segments.length) literal.pop()
+  return literal.join("/")
+}
+
 interface Matcher {
   readonly pattern: string
   readonly matches: (path: string) => boolean
 }
+
 const matcherOf = (glob: Input.Glob): Matcher => {
   const pattern = glob.pattern.slice(2)
   const included = new Minimatch(pattern, { dot: true })
@@ -338,8 +373,56 @@ const matcherOf = (glob: Input.Glob): Matcher => {
     matches: (path) => included.match(path) && !excluded.some((entry) => entry.match(path))
   }
 }
-const probe: typeof probe$platform = probe$platform
-const declaredRoot: typeof declaredRoot$platform = declaredRoot$platform
+
+/**
+ * Finds the first workspace file under `matcher`'s base that satisfies
+ * `accept`, walking real directories only. Returns whether any file matched
+ * the pattern at all, and whether one was also accepted.
+ */
+const probe = (
+  root: string,
+  matcher: Matcher,
+  accept: (path: string) => boolean
+): { readonly matched: boolean; readonly accepted: boolean } => {
+  let matched = false
+  const pending = [patternBase(matcher.pattern)]
+  while (pending.length > 0) {
+    const directory = pending.pop()!
+    let entries: Array<NodeFs.Dirent>
+    try {
+      entries = NodeFs.readdirSync(NodePath.join(root, directory), { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const entry of entries) {
+      const path = directory === "" ? entry.name : `${directory}/${entry.name}`
+      if (entry.isDirectory()) {
+        if (!skippedDirectories.has(entry.name)) pending.push(path)
+      } else if ((entry.isFile() || entry.isSymbolicLink()) && matcher.matches(path)) {
+        matched = true
+        if (accept(path)) return { matched, accepted: true }
+      }
+    }
+  }
+  return { matched, accepted: false }
+}
+
+/** The absolute workspace root a PACKAGE.ts at `cwd` declares from, if known. */
+const declaredRoot = (cwd: string): string | undefined => {
+  const source = Target.declarationSourceFile()
+  if (source === undefined) return undefined
+  const directory = NodePath.dirname(source)
+  const relative = Input.resolvePath("", cwd)
+  if (relative === ".") return directory
+  const suffix = `${NodePath.sep}${relative.split("/").join(NodePath.sep)}`
+  if (!directory.endsWith(suffix)) {
+    throw new TypeError(
+      `security review cwd ${JSON.stringify(cwd)} does not name the directory of its declaring ${source}`
+    )
+  }
+  return directory.slice(0, -suffix.length)
+}
+
 /**
  * Throws when a context entry matches no file, or when a check path matches
  * no file the review reads (an include or context glob).
@@ -353,10 +436,10 @@ const validatePaths = (
   for (const glob of context) {
     const matcher = matcherOf(glob)
     if (!probe(root, matcher, () => true).matched) {
-      $raise(new TypeError(
+      throw new TypeError(
         `security review context ${JSON.stringify(matcher.pattern)} matches no file; context entries are file ` +
           "globs, so put descriptions in the check text"
-      ))
+      )
     }
   }
   const reviewed = [...include, ...context].map(matcherOf)
@@ -365,17 +448,18 @@ const validatePaths = (
       const matcher = matcherOf(Input.Glob.make({ pattern: `//${path}`, exclude: [] }))
       const found = probe(root, matcher, (file) => reviewed.some((entry) => entry.matches(file)))
       if (!found.matched) {
-        $raise(new TypeError(`security check ${check.id} path ${JSON.stringify(path)} matches no file`))
+        throw new TypeError(`security check ${check.id} path ${JSON.stringify(path)} matches no file`)
       }
       if (!found.accepted) {
-        $raise(new TypeError(
+        throw new TypeError(
           `security check ${check.id} path ${JSON.stringify(path)} matches no file the review reads; ` +
             "add it to include or context, or drop the path"
-        ))
+        )
       }
     }
   }
 }
+
 /**
  * Declares a package's security review: the `security` diff review and the
  * manual `securityAudit` full audit, both over the declared checks plus the
@@ -462,6 +546,7 @@ export const SecurityReview = (options: Options): SecurityTargets => {
     })
   }
 }
+
 /**
  * Records a trusted host's controlled reproduction. The host must actually run
  * the command against the immutable revision and retain its execution evidence.
@@ -477,11 +562,6 @@ export const confirmFinding = (
 ): Finding => {
   const decoded = Schema.decodeUnknownSync(Finding)(finding)
   const reproduction = Schema.decodeUnknownSync(Reproduction)(receipt)
-  if (decoded.security === undefined) $raise(new TypeError("confirmation requires a security finding"))
+  if (decoded.security === undefined) throw new TypeError("confirmation requires a security finding")
   return { ...decoded, security: { ...decoded.security, verification: "confirmed", reproduction } }
 }
-
-module $throw$ts {
-export function raise(value: unknown): never { throw value }
-}
-import { raise as $raise } from $throw$ts

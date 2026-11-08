@@ -4,7 +4,7 @@ import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-run
 import { useId } from "react";
 import { Button } from "../button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "../card";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { Input, Textarea } from "../input";
 import { Field, Label } from "../label";
 import { useInjectUiCss } from "../styles";

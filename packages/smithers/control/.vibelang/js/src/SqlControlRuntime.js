@@ -46,18 +46,18 @@
  *
  * @since 0.1.0
  */
-import { Crypto } from "@smthrs/crypto";
 import * as Dialect from "@smthrs/database/Dialect";
 import { DurableWriter } from "@smthrs/database/DurableWriter";
 import * as DurableWrites from "@smthrs/database/DurableWriter";
 import { Ownership, RunStore } from "@smthrs/run-store";
 import { Clock, Effect, Fiber, Layer, Option, Schema } from "effect";
+import * as EffectDigest from "effect/crypto/Digest";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as ApprovalAuthority from "./ApprovalAuthority.js";
 import * as Attribution from "./Cancellation.js";
 import { AlreadyResolved, ClaimLost, EnvelopeMismatch, FlowNotFound, InvalidInput, PersistenceError, PlanDenied, PlanDigestMismatch, PlanNotFound, RunNotFound, Unauthorized } from "./ControlError.js";
 import * as ControlExecutor from "./ControlExecutor.js";
-import { ApprovalDecision, ControlRuntime, idPageLimit, make } from "./ControlRuntime.js";
+import { ApprovalDecision, ControlRuntime, idPageLimit, make, signalReceiptId } from "./ControlRuntime.js";
 import { ApprovalTarget, Envelope, GrantScope, PlanCard, PlanDecision, Principal, Receipt, RunSummary, SignalPayload } from "./ControlSchema.js";
 import * as ActiveFibers from "./internal/activeFibers.js";
 import { canonicalIssue, cappedIssue, schemaIssuePath } from "./internal/issues.js";
@@ -209,6 +209,33 @@ export const migrate = Effect.gen(function* () {
     // without advancing the shared migration ledger during standalone bootstrap.
     yield* DurableWrites.make(sql).write(Effect.forEach(Object.values(Migrations.set.migrations), (migration) => migration, { discard: true }));
 }).pipe(Effect.mapError(persistence("migrate")));
+/** Read a bounded page directly from the durable signal ledger. This is a
+ * storage port: hosts must authorize visibility of the run before calling it.
+ * No answer payload or wait token is loaded into the process.
+ * @category queries
+ * @since 1.0.0
+ */
+export const querySignalReceipts = (request) => Effect.gen(function* () {
+    yield* idPageLimit(request.limit);
+    if (request.after !== undefined && (!Number.isSafeInteger(request.after) || request.after < 0)) {
+        return yield* new InvalidInput({ issue: "after: must be a nonnegative safe integer" });
+    }
+    const sql = yield* SqlClient.SqlClient;
+    const rows = yield* sql `
+    SELECT seq AS sequence, command_id AS "commandId", run_id AS "runId",
+      substr(${Dialect.jsonText(sql, sql `payload_json`, "$.name")}, 1, 1024) AS name, state, rejection
+    FROM control_signal_commands
+    WHERE run_id = ${request.runId} AND seq > ${request.after ?? 0}
+      AND ${request.commandId === undefined ? sql `1 = 1` : sql `command_id = ${request.commandId}`}
+    ORDER BY seq LIMIT ${request.limit + 1}
+  `.pipe(Effect.mapError(persistence("read signal receipts")));
+    const items = rows.slice(0, request.limit).map(({ rejection, ...row }) => ({
+        ...row,
+        receiptId: signalReceiptId(row.commandId),
+        ...(rejection === null ? {} : { rejection })
+    }));
+    return { items, ...(rows.length > request.limit ? { next: items.at(-1).sequence } : {}) };
+});
 /**
  * Constructs a durable runtime over the ambient database and run store.
  *
@@ -228,9 +255,9 @@ const makeRuntime = (options = {}) => {
         : Object.freeze({ ...options.owner });
     const isAlive = options.isAlive;
     const approvalAuthority = options.approvalAuthority ?? ApprovalAuthority.local;
-    const authorizeApproval = approvalAuthority.authorize.bind(approvalAuthority);
+    const authorizeLaunch = options.authorizeLaunch;
     return Effect.gen(function* () {
-        const crypto = yield* Crypto.Crypto;
+        const crypto = yield* EffectDigest.Digest;
         const writer = yield* DurableWriter;
         const runStore = yield* RunStore.RunStore;
         yield* migrate;
@@ -262,11 +289,17 @@ const makeRuntime = (options = {}) => {
          *
          * Inside an enclosing transaction the read takes a savepoint, because a
          * failed statement aborts a PostgreSQL transaction and the catch could not
-         * recover it. Outside one it runs bare: on SQLite a top-level transaction
-         * is `BEGIN IMMEDIATE`, which takes the write lock for a read and fails a
-         * contender with `SQLITE_BUSY` while another plane holds the claim.
+         * recover it. A standalone PostgreSQL probe uses a read transaction so
+         * optional-table diagnostics remain relative to the client's search path;
+         * the lone-read optimization otherwise qualifies them with the schema.
+         * SQLite stays bare: its top-level write transaction takes a write lock
+         * and can fail a contender with SQLITE_BUSY while another plane holds it.
          */
-        const probe = (effect) => Effect.flatMap(Effect.serviceOption(sql.transactionService), (enclosing) => Option.isSome(enclosing) ? sql.withTransaction(effect) : effect);
+        const probe = (effect) => Effect.flatMap(Effect.serviceOption(sql.transactionService), (enclosing) => Option.isSome(enclosing)
+            ? sql.withTransaction(effect)
+            : Dialect.isPostgres(sql)
+                ? Dialect.readTransaction(sql, effect)
+                : effect);
         /** Allocates the next value of a durable counter inside one transaction. */
         const nextSequence = (name) => writer.write(Effect.gen(function* () {
             yield* sql `INSERT INTO control_sequences (name, value) VALUES (${name}, 0) ON CONFLICT (name) DO NOTHING`;
@@ -429,7 +462,7 @@ const makeRuntime = (options = {}) => {
         const forkedRunIds = (scope) => sql `
       SELECT DISTINCT run_id AS "runId" FROM flows_journal_events
       WHERE event_type = ${Lineage.forkCreatedEventType} AND ${within("run_id", scope)}
-    `.pipe(Effect.map((rows) => new Set(rows.map((row) => row.runId))), Effect.catchIf(missingTable("flows_journal_events"), () => Effect.succeed(new Set())), Effect.mapError(persistence("read fork markers")));
+    `.pipe(probe, Effect.map((rows) => new Set(rows.map((row) => row.runId))), Effect.catchIf(missingTable("flows_journal_events"), () => Effect.succeed(new Set())), Effect.mapError(persistence("read fork markers")));
         /**
          * The run that spawned each child, by child id.
          *
@@ -545,7 +578,7 @@ const makeRuntime = (options = {}) => {
       FROM flows_journal_events
       WHERE event_type = ${Attribution.requestedEventType} AND ${within("run_id", scope)}
       ORDER BY run_id, seq
-    `.pipe(Effect.catchIf(missingTable("flows_journal_events"), () => Effect.succeed(new Array())), Effect.mapError(persistence("read cancel requests")), Effect.flatMap((rows) => Effect.gen(function* () {
+    `.pipe(probe, Effect.catchIf(missingTable("flows_journal_events"), () => Effect.succeed(new Array())), Effect.mapError(persistence("read cancel requests")), Effect.flatMap((rows) => Effect.gen(function* () {
             const requests = new Map();
             for (const row of rows) {
                 if (requests.has(row.runId))
@@ -572,7 +605,7 @@ const makeRuntime = (options = {}) => {
       SELECT run_id AS "runId", payload_json AS "payloadJson"
       FROM flows_journal_events
       WHERE event_type = ${Attribution.interruptedEventType} AND ${within("run_id", scope)}
-    `.pipe(Effect.catchIf(missingTable("flows_journal_events"), () => Effect.succeed(new Array())), Effect.mapError(persistence("read engine interruptions")), Effect.flatMap((rows) => Effect.gen(function* () {
+    `.pipe(probe, Effect.catchIf(missingTable("flows_journal_events"), () => Effect.succeed(new Array())), Effect.mapError(persistence("read engine interruptions")), Effect.flatMap((rows) => Effect.gen(function* () {
             const cancelled = new Map();
             for (const row of rows) {
                 const payload = yield* decodeStoredJson("flows_journal_events.payload_json for flows.engine.interrupted", EngineInterruptionPayload, row.payloadJson);
@@ -1075,6 +1108,15 @@ const makeRuntime = (options = {}) => {
           VALUES (${runId}, ${kind}, ${JSON.stringify(payload)})
         `.pipe(Effect.mapError(persistence("append a run message")));
         });
+        const authorizeApproval = (request) => approvalAuthority.authorize(request, {
+            flowId: Effect.gen(function* () {
+                if (request.target._tag === "Plan") {
+                    const row = yield* readPlan(request.target.planId);
+                    return Option.isSome(row) ? (yield* storedPlan(row.value)).card.flowId : undefined;
+                }
+                return yield* requireRow(request.target.runId).pipe(Effect.flatMap(summaryOf), Effect.map((summary) => summary.flowId), Effect.catchTag("/control/RunNotFound", () => Effect.succeed(undefined)));
+            })
+        });
         const service = make({
             authorizeApproval,
             plan: Effect.fn("SqlControlRuntime.plan")(function* (input) {
@@ -1123,7 +1165,7 @@ const makeRuntime = (options = {}) => {
                     executionDigest: flow.executionDigest,
                     handoff,
                     idempotencyKey: input.idempotencyKey
-                }).pipe(Effect.provideService(Crypto.Crypto, crypto));
+                }).pipe(Effect.provideService(EffectDigest.Digest, crypto));
                 const identity = approvalIdentity(card.approval.target);
                 // The key row is claimed FIRST, and the claim is a conditional insert
                 // followed by a read of whoever holds it. `idempotency_key` is the
@@ -1375,6 +1417,7 @@ const makeRuntime = (options = {}) => {
                 }
                 if (plan.decision !== "approved")
                     return yield* new PlanDenied({ planId });
+                yield* authorizeLaunch?.(plan.card, sql) ?? Effect.void;
                 const sequence = yield* nextSequence("run");
                 const runId = reservedRunId ?? `run-${sequence}`;
                 const timestamp = yield* now;
@@ -1465,6 +1508,7 @@ const makeRuntime = (options = {}) => {
                     return yield* new InvalidInput({ issue: "commandId: already used for a different signal request" });
                 }
             }),
+            querySignals: (request) => Effect.andThen(requireRow(request.runId), querySignalReceipts(request).pipe(Effect.provideService(SqlClient.SqlClient, sql))),
             signalCommand: Effect.fn("SqlControlRuntime.signalCommand")(function* (commandId) {
                 const rows = yield* sql `
           SELECT command_id AS "commandId", run_id AS "runId", payload_json AS "payloadJson", wait_token AS token, state,

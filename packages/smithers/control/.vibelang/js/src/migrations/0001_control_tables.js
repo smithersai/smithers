@@ -5,7 +5,6 @@
  * @since 0.1.0
  */
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as Dialect from "@smthrs/database/Dialect";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -90,27 +89,9 @@ const statements = (sql) => [
  * @category migrations
  * @since 0.1.0
  */
-export const initial = Effect_1.gen(runtime.$iteratorFrame(runtime.$joinedFrame(function* initial() {
+export const initial = Effect_1.gen(function* initial() {
     const sql = yield* SqlClient.SqlClient;
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const statement of statements(sql)) {
-                try {
-                    {
-                        yield* statement;
-                    }
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
-            }
-        }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
-        }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
+    for (const statement of statements(sql)) {
+        yield* statement;
     }
-})));
+});

@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Badge } from "../badge";
 import { Button } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { PENDING_WORDS, TRIAGE_VARIANTS, TRIAGE_WORDS, } from "../issues-view/IssuesView";
 import { useInjectUiCss } from "../styles";
 /**

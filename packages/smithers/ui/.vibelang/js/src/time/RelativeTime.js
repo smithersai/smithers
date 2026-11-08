@@ -2,7 +2,7 @@
 import { jsx as _jsx } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { useMemo, useSyncExternalStore } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { dateFromMs } from "./dateFromMs";
 import { formatRelativeTime } from "./formatRelativeTime";

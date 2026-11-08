@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { useRef } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { STEP_GLYPHS, STEP_WORDS, stepDuration, stepElapsed } from "./runPage";
 /**

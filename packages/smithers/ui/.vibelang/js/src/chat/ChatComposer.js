@@ -3,7 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { useEffect, useId, useRef, } from "react";
 import { Button } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { CollaboratorCarets, selectionOf, useSharedSelection } from "../collaborators";
 import { useInjectUiCss } from "../styles";
 import { clampHighlight, CompletionList, completionOptionId } from "./CompletionList";

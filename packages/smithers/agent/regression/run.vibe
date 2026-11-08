@@ -143,7 +143,7 @@ const gate = effect {
   // caught here: a case that scored zero is a result this suite has to report,
   // not a crash.
   const graded = (Gate.check(regression, { mean: 1, min: 1 })
-    |> Effect.map(%, Gate.ciGrade)) catch (error) => ({
+    |> Effect.map(%, (verdict) => Gate.ciGrade(verdict))) catch (error) => ({
       exitCode: 1 as const,
       summary: `${error.code}: threshold ${error.threshold}, actual ${error.actual}`,
     })

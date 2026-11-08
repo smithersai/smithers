@@ -2,7 +2,7 @@
 import { jsx as _jsx } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { createContext, forwardRef, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { decideTranscriptScroll, transcriptFollowInterrupted } from "./transcriptScroll";
 import { prefersReducedMotion, useInjectUiCss } from "../styles";
 import { subscribeVisibility } from "./visibilitySubscriptionRegistry";

@@ -15,9 +15,9 @@
  *
  * @since 1.0.0
  */
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as runtime from "vibelang-runtime/internal";
 import { InvalidInput } from "./ControlError.js";
 /**
  * The {@link Service} tag.
@@ -25,7 +25,7 @@ import { InvalidInput } from "./ControlError.js";
  * @category services
  * @since 1.0.0
  */
-export class DispatchReader extends Context.Service()("/control/DispatchReader") {
+export class DispatchReader extends runtime.$service("/control/DispatchReader") {
 }
 /**
  * The refusal a host without a trigger store answers both variants with.

@@ -4,7 +4,7 @@
  *
  * @since 0.1.0
  */
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import { Context, Effect, Layer, Stream } from "effect";
 import { Unavailable as UnavailableError } from "./ControlError.js";
 /**

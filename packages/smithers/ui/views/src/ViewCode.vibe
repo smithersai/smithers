@@ -669,9 +669,14 @@ export const check = (source: string, options: CheckOptions): CheckedModule!View
       new CheckedModule({
         source,
         compiled,
-        digest: digestSync(source),
+        digest: $invoke(digestSync,source),
         interactions: declared,
         reduces: findings.reduces
       })
     )
   })
+
+module $call$ts {
+export function invoke<T extends Function>(target:T,arg0:Parameters<Extract<T,(...args:any[])=>any>>[0]):ReturnType<Extract<T,(...args:any[])=>any>> { return target(arg0) }
+}
+import { invoke as $invoke } from $call$ts

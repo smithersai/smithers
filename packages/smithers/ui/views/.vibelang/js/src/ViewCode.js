@@ -612,8 +612,9 @@ export const check = (source, options) => Effect.suspend(() => {
     return Effect.succeed(new CheckedModule({
         source,
         compiled,
-        digest: digestSync(source),
+        digest: $invoke(digestSync, source),
         interactions: declared,
         reduces: findings.reduces
     }));
 });
+import { invoke as $invoke } from "./ViewCode.vibe.-24-call-24-ts.js";

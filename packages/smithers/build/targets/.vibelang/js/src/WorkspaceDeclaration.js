@@ -392,7 +392,8 @@ const workspacePath = (what, value) => {
 };
 /**
  * Declares the workspace: its name plus the typed host and toolchain
- * services every target resolves against.
+ * services its targets may resolve against. Toolchains are optional until a
+ * selected target requires one; a docs-only repository needs no Node manifest.
  *
  * @example
  * ```ts
@@ -451,10 +452,6 @@ export const Workspace = (name, options) => {
     if (options.environment !== undefined && !Nix.isEnvironment(options.environment)) {
         throw new TypeError("Workspace environment must be an S.Nix.Environment declaration");
     }
-    if (!hasAllNode && options.environment === undefined &&
-        (options.toolchains === undefined || options.toolchains.length === 0)) {
-        throw new TypeError("Workspace requires the Node runtime/packageManager/nodeModules set, an environment, or toolchains");
-    }
     if (options.runtime !== undefined && !Runtime.isRuntime(options.runtime) &&
         !Runtime.isNodeDeclaration(options.runtime) &&
         !Runtime.isBunDeclaration(options.runtime)) {
@@ -470,9 +467,6 @@ export const Workspace = (name, options) => {
         throw new TypeError("Workspace nodeModules must be an S.Npm.NodeModules declaration");
     }
     if (options.toolchains !== undefined) {
-        if (options.toolchains.length === 0) {
-            throw new TypeError("Workspace toolchains must be a non-empty array");
-        }
         for (const toolchain of options.toolchains) {
             if (typeof toolchain !== "object" || toolchain === null ||
                 typeof toolchain._tag !== "string") {

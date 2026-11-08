@@ -2,7 +2,7 @@
 import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { createContext, useContext, useEffect, useId, useMemo, useRef, useState, } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { Progress } from "../progress";
 import { StatusPill } from "../status-pill";

@@ -289,8 +289,8 @@
       "default": "./.vibelang/js/src/MemoryTarget.js"
     },
     "./Mise": {
-      "types": "./.vibe/declarations/src/Mise.d.vibe.ts",
-      "vibelang-source": "./src/Mise.vibe",
+      "types": "./src/Mise.ts",
+      "vibelang-source": "./src/Mise.ts",
       "default": "./.vibelang/js/src/Mise.js"
     },
     "./Mount": {
@@ -419,8 +419,8 @@
       "default": "./.vibelang/js/src/SecretProxy.js"
     },
     "./SecurityReview": {
-      "types": "./.vibe/declarations/src/SecurityReview.d.vibe.ts",
-      "vibelang-source": "./src/SecurityReview.vibe",
+      "types": "./src/SecurityReview.ts",
+      "vibelang-source": "./src/SecurityReview.ts",
       "default": "./.vibelang/js/src/SecurityReview.js"
     },
     "./Shell": {
@@ -530,11 +530,9 @@
     "src/FlowCatalog.vibe",
     "src/Home.vibe",
     "src/LocalRepository.vibe",
-    "src/Mise.vibe",
     "src/ModelEngine.vibe",
     "src/Mount.vibe",
     "src/Outward.vibe",
-    "src/SecurityReview.vibe",
     "src/Verb.vibe",
     "src/internal/Process.vibe",
     "src/internal/PublicationFileSystem.vibe",

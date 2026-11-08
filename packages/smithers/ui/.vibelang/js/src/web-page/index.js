@@ -2,5 +2,5 @@
 export {} from "./PagePreview";
 export { WebLinkCard } from "./WebLinkCard";
 export { WEB_PAGE_SANDBOX, WebPageView } from "./WebPageView";
-export { webPageCss } from "./webPageCss";
+export { webPageCss } from "@smthrs/ui-css";
 export { framedPageTarget, webPageTarget } from "./webPageUrl";

@@ -11,14 +11,14 @@
  *
  * @since 0.1.0
  */
-import { Crypto } from "@smthrs/crypto";
 import * as Fault from "@smthrs/flow/Fault";
 import { Context, Effect, Fiber, Layer, Option, Schema } from "effect";
+import * as EffectDigest from "effect/crypto/Digest";
 import * as ApprovalAuthority from "./ApprovalAuthority.js";
 import { AlreadyResolved, ClaimLost, EnvelopeMismatch, FlowNotFound, InvalidInput, PersistenceError, PlanDenied, PlanDigestMismatch, PlanNotFound, RunNotFound } from "./ControlError.js";
 import { GrantScope as GrantScopeSchema, Principal as PrincipalSchema } from "./ControlSchema.js";
 import { canonicalIssue } from "./internal/issues.js";
-import { accepted, adoptedCode, alreadyApplied as replayReceipt, budgeted, canonical, codeDriftOf, emptyEnvelope, planCard, planFingerprint, sameEnvelope, signalCommandFingerprint } from "./internal/planning.js";
+import { accepted, adoptedCode, alreadyApplied as replayReceipt, budgeted, canonical, codeDriftOf, emptyEnvelope, mutationKey, planCard, planFingerprint, sameEnvelope, signalCommandFingerprint } from "./internal/planning.js";
 import { plannable } from "./SystemFlows.js";
 /**
  * Whether `run` was launched by the principal `launcher` names: the same `id`,
@@ -30,6 +30,17 @@ import { plannable } from "./SystemFlows.js";
  */
 export const launchedByMatches = (run, launcher) => run.launchedBy !== undefined && run.launchedBy.id === launcher.id &&
     (launcher.kind === undefined || run.launchedBy.kind === launcher.kind);
+/** The public receipt is the suffix of the actor-scoped durable identity.
+ * Legacy command identities are retained unchanged.
+ * @category utilities
+ * @since 1.0.0
+ */
+export const signalReceiptId = (commandId) => commandId.replace(/^signal:actor:[a-f0-9]{64}:/, "");
+/** Actor-scoped lookup identity for a public signal receipt.
+ * @category utilities
+ * @since 1.0.0
+ */
+export const signalCommandId = (receiptId, principal) => mutationKey("signal", receiptId, principal);
 /**
  * The durable answer to an approval request. A decision is not inferred from
  * the presence of a grant or from a boolean that also means denial.
@@ -97,6 +108,16 @@ export const requireApproved = (token) => token._tag === "Approved"
 export class ControlRuntime extends Context.Service()("/control/ControlRuntime") {
 }
 /**
+ * The operator-visible run owning the current native flow/action. Hosts restore
+ * it from persisted ancestry on every handler entry, including resumed children.
+ * Undefined outside a control-owned execution; attribution is never authority.
+ * @category context
+ * @since 1.0.0
+ */
+export const CurrentRunId = Context.Reference("/control/CurrentRunId", {
+    defaultValue: () => undefined
+});
+/**
  * Constructs a runtime service from an implementation record.
  *
  * @category constructors
@@ -162,7 +183,7 @@ const approvalToken = (token) => ({
  * @since 0.1.0
  */
 export const layerMemory = (options = {}) => Layer.effect(ControlRuntime, Effect.gen(function* () {
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* EffectDigest.Digest;
     const now = options.now ?? Date.now;
     // The in-memory adapter stamps `memory`/`test` on a caller that names no
     // principal, so its default policy delegates that identity as well as
@@ -175,7 +196,6 @@ export const layerMemory = (options = {}) => Layer.effect(ControlRuntime, Effect
         },
         { principal: { id: "memory", kind: "test" }, scopes: ["once", "run", "remembered"], targets: ["Plan", "Node"] }
     ]).pipe(Effect.orDie));
-    const authorizeApproval = approvalAuthority.authorize.bind(approvalAuthority);
     const configuredFlows = options.flows ?? plannable.map((entry) => ({
         flowId: entry.flowId,
         description: `Reserved ${entry.verb} system flow`,
@@ -190,6 +210,11 @@ export const layerMemory = (options = {}) => Layer.effect(ControlRuntime, Effect
     const planKeys = new Map();
     const tokens = new Map();
     const runs = new Map();
+    const authorizeApproval = (request) => approvalAuthority.authorize(request, {
+        flowId: Effect.sync(() => request.target._tag === "Plan"
+            ? plans.get(request.target.planId)?.card.flowId
+            : runs.get(request.target.runId)?.summary.flowId)
+    });
     const mutations = new Map();
     const runKeys = new Map();
     const installedGrants = [];
@@ -288,7 +313,7 @@ export const layerMemory = (options = {}) => Layer.effect(ControlRuntime, Effect
                 executionDigest: flow.executionDigest,
                 handoff,
                 idempotencyKey: submitted.idempotencyKey
-            }).pipe(Effect.provideService(Crypto.Crypto, crypto)));
+            }).pipe(Effect.provideService(EffectDigest.Digest, crypto)));
             // Decoding, planning and hashing may yield to another keyed plan.
             // Recheck immediately before publication, with no yield between a
             // successful check and the three map writes below.
@@ -607,6 +632,34 @@ export const layerMemory = (options = {}) => Layer.effect(ControlRuntime, Effect
             }
         }),
         signalCommand: (commandId) => Effect.sync(() => snapshot(signalCommands.get(commandId))),
+        querySignals: (request) => Effect.gen(function* () {
+            yield* idPageLimit(request.limit);
+            if (request.after !== undefined && (!Number.isSafeInteger(request.after) || request.after < 0)) {
+                return yield* new InvalidInput({ issue: "after: must be a nonnegative safe integer" });
+            }
+            yield* requireRun(request.runId);
+            const items = [];
+            let sequence = 0;
+            for (const command of signalCommands.values()) {
+                sequence++;
+                if (sequence <= (request.after ?? 0) || command.runId !== request.runId ||
+                    (request.commandId !== undefined && command.commandId !== request.commandId))
+                    continue;
+                items.push({
+                    sequence,
+                    commandId: command.commandId,
+                    receiptId: signalReceiptId(command.commandId),
+                    runId: command.runId,
+                    name: command.signal.name.slice(0, 1024),
+                    state: command.state,
+                    ...(command.rejection === undefined ? {} : { rejection: command.rejection })
+                });
+                if (items.length > request.limit)
+                    break;
+            }
+            const selected = items.slice(0, request.limit);
+            return { items: selected, ...(items.length > request.limit ? { next: selected.at(-1).sequence } : {}) };
+        }),
         pendingSignals: Effect.sync(() => {
             const pending = Array.from(signalCommands.values()).filter((command) => command.state === "pending");
             if (pendingSignalOffset >= pending.length)

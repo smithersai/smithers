@@ -409,7 +409,7 @@ const readText = (stream: Stream.Stream<Uint8Array, unknown>, limit: number): st
       |> Stream.runForEach(%, (chunk) => {
         bytes += chunk.byteLength
         if (bytes > limit) return Effect.fail(413)
-        text += decoder.decode(chunk, { stream: true })
+        text += $decodeChunk(decoder, chunk)
         return Effect.void
       })
       |> Effect.map(%, () => text + $invoke(decoder))
@@ -518,5 +518,6 @@ export const serve = (
 
 module $call$ts {
 export function invoke<T extends {"decode":Function}>(target:T):ReturnType<Extract<T["decode"],(...args:any[])=>any>> { return target["decode"]() }
+export function decodeChunk(decoder: TextDecoder, chunk: Uint8Array): string { return decoder.decode(chunk, { stream: true }) }
 }
-import { invoke as $invoke } from $call$ts
+import { decodeChunk as $decodeChunk, invoke as $invoke } from $call$ts

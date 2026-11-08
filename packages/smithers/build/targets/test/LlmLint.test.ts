@@ -12,7 +12,7 @@ import * as ProcessTable from "../../../../testing/src/ProcessTable.ts"
 import { Smithers } from "../src/index.ts"
 import * as Input from "../src/Input.ts"
 import * as LlmLint from "../src/LlmLint.ts"
-import * as SecurityReview from "../src/SecurityReview.vibe"
+import * as SecurityReview from "../src/SecurityReview.ts"
 import * as Target from "../src/Target.ts"
 import { plannedCalls } from "./plan.ts"
 

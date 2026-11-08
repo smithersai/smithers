@@ -3,7 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { useId } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
-import { cn } from "./cn";
+import { cn } from "@smthrs/ui-css";
 import { Dialog, DialogOverlay, DialogPortal } from "./dialog";
 /** Keeps the highlighted row in view as it moves. A ref callback, so it runs only when the row changes. */
 function scrollIntoNearest(row) {

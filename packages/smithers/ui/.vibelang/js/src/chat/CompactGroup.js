@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { useId, useState } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 /** Collapsed run of compacted conversation turns behind a disclosure. */
 export function CompactGroup({ open, defaultOpen = false, onOpenChange, count, label, className, children, ...props }) {

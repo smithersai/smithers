@@ -210,7 +210,7 @@ export const lint = (): ReadonlyArray<Monitor> => [
     limit: Number.MAX_SAFE_INTEGER,
     priority: 30,
     score: (reading) => Supervisor.crosses(reading) ? 1 : 0,
-    say: Supervisor.nudge
+    say: (snapshot, reading) => Supervisor.nudge(snapshot, reading)
   })
 ]
 
@@ -338,7 +338,7 @@ export const skills = (snapshot: Supervisor.Snapshot): ReadonlyArray<Monitor> =>
   const seen = new Set<string>()
   return snapshot.skills.map((skill, index) => {
     const plain = skillId(skill.name)
-    const id = seen.has(plain) ? `${plain.slice(0, 39)}_${Digest.digest(skill.name).slice(0, 8)}` : plain
+    const id = seen.has(plain) ? `${plain.slice(0, 39)}_${$invoke(Digest, () => skill.name).slice(0, 8)}` : plain
     seen.add(id)
     const text = skillText(skill.name, skill.path)
     return make({ _tag: "Questioned", id, kind: "skill", question: skillQuestion(index), say: () => text })
@@ -577,3 +577,8 @@ export const gate = (input: {
   ledger[winner.id] = { ...entry, delivered: entry.delivered + 1, lastFrame: input.frame }
   return { message: { id: winner.id, text: winner.text }, suppressed, ledger }
 }
+
+module $call$ts {
+export function invoke<T extends {"digest":Function}>(target:T,arg0:()=>Parameters<Extract<T["digest"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["digest"],(...args:any[])=>any>> { return target["digest"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts

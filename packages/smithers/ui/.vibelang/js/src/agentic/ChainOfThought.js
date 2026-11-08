@@ -2,8 +2,8 @@
 import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { useEffect, useId, useRef, useState } from "react";
-import { cn } from "../cn";
-import { formatStatus, statusClass } from "../status";
+import { cn } from "@smthrs/ui-css";
+import { formatStatus, statusClass } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 /** Map chain-of-thought states into the shared status vocabulary. */
 export function chainOfThoughtStepStatus(status) {

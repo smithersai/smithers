@@ -61,7 +61,7 @@ export const normalizePublicReadToken = (value) => {
  * @category constants
  * @since 0.1.0
  */
-export const defaultSmithersCloudApiBase = "https://api.jjhub.tech";
+export const defaultSmithersCloudApiBase = "https://smithers.sh";
 const environmentName = /^[A-Za-z_][A-Za-z0-9_]*$/;
 /**
  * Validates and normalizes a remote-cache endpoint.

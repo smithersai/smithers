@@ -182,16 +182,20 @@ export interface Reading {
 export const judge = effect (context: Context, items: ReadonlyArray<Item>): Reading!Judgement.Unjudged => {
   const sent = items.map((item) => ({ ...item, text: headKept(item.text, itemBytes) }))
   const [elapsed, read] = try (reader.read(context, sent) |> Effect.timed(%))
-  const verdicts = items.map((item, index): Verdict => {
-    const answer = read.answers[index]!.unnecessary
-    return {
-      item,
-      digest: Digest.digest(item.text),
-      p: answer.probability,
-      withheld: bytes.size(item.text) <= itemBytes &&
-        Option.getOrElse(Classifier.confident(answer, confidentAt), () => false)
-    }
-  })
+  const verdicts = try Effect.orDie(Effect.try({
+    try: () =>
+      items.map((item, index): Verdict => {
+        const answer = read.answers[index]!.unnecessary
+        return {
+          item,
+          digest: Digest.digest(item.text),
+          p: answer.probability,
+          withheld: bytes.size(item.text) <= itemBytes &&
+            Option.getOrElse(Classifier.confident(answer, confidentAt), () => false)
+        }
+      }),
+    catch: (e) => e
+  }))
   const usages = read.asked.flatMap((asked) => asked.usage === undefined ? [] : [asked.usage])
   return {
     verdicts,

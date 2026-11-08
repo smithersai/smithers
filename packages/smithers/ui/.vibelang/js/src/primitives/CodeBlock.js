@@ -3,7 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { createContext, useContext, useId, useRef, useState, } from "react";
 import { highlight as highlightCode } from "../repository-home/highlight";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { canCopyText } from "../internal/copyToClipboard";
 import { useCopyFeedback } from "../internal/useCopyFeedback";
 import { useInjectUiCss } from "../styles";

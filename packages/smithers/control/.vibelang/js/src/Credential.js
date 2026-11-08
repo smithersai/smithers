@@ -109,43 +109,52 @@ export const make = (options) => {
     const store = options.store;
     const cipher = options.cipher;
     /** Reads the record `reference` names, refusing a forged or stale one. */
-    const authenticate = Effect_1.fnUntraced(function* authenticate(operation, reference) {
-        const snapshot = referenceOf(reference);
-        yield* authorize(operation, Option.some(snapshot));
-        const record = yield* store.read(snapshot.id);
-        if (Option.isNone(record))
-            return yield* Effect_1.fail(missing(snapshot.id));
-        if (record.value.name !== snapshot.name)
-            return yield* Effect_1.fail(missing(snapshot.id));
-        return record.value;
-    });
-    const put = Effect_1.fnUntraced(function* put(record, secret) {
-        if (!wellFormed(Redacted.value(secret))) {
-            return yield* Effect_1.fail(new InvalidInput({ issue: "Credential secret must be well-formed Unicode" }));
-        }
-        // The metadata written beside this blob is also its authenticated data;
-        // moving the blob to another id, name, or version must make it unreadable.
-        const context = cipherContextOf(record);
-        const sealed = yield* cipher.seal(secret, context);
-        const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
-        yield* store.write({ ...record, ...sealed, updatedAtMs: now });
-        return referenceOf(record);
-    });
+    const authenticate = (operation, reference) => {
+        return Effect_1.gen(function* authenticate() {
+            const snapshot = referenceOf(reference);
+            yield* authorize(operation, Option.some(snapshot));
+            const record = yield* store.read(snapshot.id);
+            if (Option.isNone(record))
+                return yield* Effect_1.fail(missing(snapshot.id));
+            if (record.value.name !== snapshot.name)
+                return yield* Effect_1.fail(missing(snapshot.id));
+            return record.value;
+        });
+    };
+    const put = (record, secret) => {
+        return Effect_1.gen(function* put() {
+            if (!wellFormed(Redacted.value(secret))) {
+                return yield* Effect_1.fail(new InvalidInput({ issue: "Credential secret must be well-formed Unicode" }));
+            }
+            // The metadata written beside this blob is also its authenticated data;
+            // moving the blob to another id, name, or version must make it unreadable.
+            const context = cipherContextOf(record);
+            const sealed = yield* cipher.seal(secret, context);
+            const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
+            yield* store.write({ ...record, ...sealed, updatedAtMs: now });
+            return referenceOf(record);
+        });
+    };
     return Credential.of({
-        list: () => Effect_1.suspend({ list: () => { return withSpan(Effect_1.gen(function* () {
+        list: () => {
+            return Effect_1.gen(function* list() { return yield* withSpan(Effect_1.gen(function* () {
                 yield* authorize("list", Option.none());
                 const records = yield* store.list();
                 return records.map(referenceOf);
-            }), "Credential.list"); } }.list),
-        get: (id) => Effect_1.suspend({ get: () => { return withSpan(Effect_1.gen(function* () {
-                const record = yield* store.read(id);
-                if (Option.isNone(record))
-                    return yield* Effect_1.fail(missing(id));
-                const reference = referenceOf(record.value);
-                yield* authorize("get", Option.some(reference));
-                return reference;
-            }), "Credential.get"); } }.get),
-        create: (input) => Effect_1.suspend({ create: () => { return withSpan(Effect_1.gen(function* () {
+            }), "Credential.list"); });
+        },
+        get: (id) => {
+            return Effect_1.gen({ *"get"() { return yield* withSpan(Effect_1.gen(function* () {
+                    const record = yield* store.read(id);
+                    if (Option.isNone(record))
+                        return yield* Effect_1.fail(missing(id));
+                    const reference = referenceOf(record.value);
+                    yield* authorize("get", Option.some(reference));
+                    return reference;
+                }), "Credential.get"); } }["get"]);
+        },
+        create: (input) => {
+            return Effect_1.gen(function* create() { return yield* withSpan(Effect_1.gen(function* () {
                 const snapshot = Object.freeze({
                     reference: referenceOf(input),
                     secret: input.secret
@@ -159,12 +168,16 @@ export const make = (options) => {
                     version: 1,
                     updatedAtMs: 0
                 }, snapshot.secret);
-            }), "Credential.create"); } }.create),
-        resolve: (reference) => Effect_1.suspend({ resolve: () => { return withSpan(Effect_1.gen(function* () {
+            }), "Credential.create"); });
+        },
+        resolve: (reference) => {
+            return Effect_1.gen(function* resolve() { return yield* withSpan(Effect_1.gen(function* () {
                 const record = yield* authenticate("resolve", reference);
                 return yield* cipher.open({ ciphertext: record.ciphertext, nonce: record.nonce }, cipherContextOf(record));
-            }), "Credential.resolve"); } }.resolve),
-        rotate: (reference, secret, options) => Effect_1.suspend({ rotate: () => { return withSpan(Effect_1.gen(function* () {
+            }), "Credential.resolve"); });
+        },
+        rotate: (reference, secret, options) => {
+            return Effect_1.gen(function* rotate() { return yield* withSpan(Effect_1.gen(function* () {
                 const expected = options?.expected;
                 const record = yield* authenticate("rotate", reference);
                 if (expected !== undefined) {
@@ -180,11 +193,14 @@ export const make = (options) => {
                 // `put` writes over exactly the version read above, so the secret just
                 // compared is still the stored one when the write commits.
                 return yield* put({ ...record, version: record.version + 1 }, secret);
-            }), "Credential.rotate"); } }.rotate),
-        revoke: (reference) => Effect_1.suspend({ revoke: () => { return withSpan(Effect_1.gen(function* () {
+            }), "Credential.rotate"); });
+        },
+        revoke: (reference) => {
+            return Effect_1.gen(function* revoke() { return yield* withSpan(Effect_1.gen(function* () {
                 const record = yield* authenticate("revoke", reference);
                 yield* store.remove(record.id);
-            }), "Credential.revoke"); } }.revoke)
+            }), "Credential.revoke"); });
+        }
     });
 };
 /**

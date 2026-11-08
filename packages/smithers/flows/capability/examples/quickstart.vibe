@@ -8,12 +8,12 @@ import { Capability, Permission } from "@smthrs/capability"
 
 /**
  * Reads one configured pattern into a rule, refusing text the grammar rejects
- * instead of guessing a default.
+ * instead of guessing a default. Throws an `Error` when `declared` is not a
+ * capability pattern.
  *
  * @param effect - The decision the rule contributes when it matches.
  * @param declared - Operator text in `action:resource` form.
  * @returns The rule for `declared`.
- * @throws {Error} When `declared` is not a capability pattern.
  * @since 1.0.0
  */
 export const ruleFor = (effect: Permission.RuleEffect, declared: string): Permission.Rule => {

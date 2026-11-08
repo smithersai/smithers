@@ -78,11 +78,11 @@ export const Declaration = Schema.TaggedStruct("Mount", {
 export const Mount = (options) => {
     const ref = options.ref;
     if (!commit.test(ref)) {
-        throw new TypeError(`S.Mount ref must be a full commit id, not ${JSON.stringify(ref)}; pin a commit, not a branch`);
+        $raise(new TypeError(`S.Mount ref must be a full commit id, not ${JSON.stringify(ref)}; pin a commit, not a branch`));
     }
     const drift = options.drift ?? "warn";
     if (drift !== "warn" && options.track === undefined) {
-        throw new TypeError(`S.Mount drift ${JSON.stringify(drift)} needs a track: the branch drift is measured against`);
+        $raise(new TypeError(`S.Mount drift ${JSON.stringify(drift)} needs a track: the branch drift is measured against`));
     }
     return Object.freeze(Schema.decodeUnknownSync(Declaration)({
         _tag: "Mount",
@@ -114,13 +114,13 @@ const mountName = /^[a-z0-9][a-z0-9-]*$/;
 export const Mounts = (mounts) => {
     const entries = Object.entries(mounts);
     if (entries.length === 0)
-        throw new TypeError("S.Mounts needs at least one mount");
+        $raise(new TypeError("S.Mounts needs at least one mount"));
     for (const [name, mount] of entries) {
         if (!mountName.test(name)) {
-            throw new TypeError(`S.Mounts mount name ${JSON.stringify(name)} must be lowercase letters, digits, and dashes`);
+            $raise(new TypeError(`S.Mounts mount name ${JSON.stringify(name)} must be lowercase letters, digits, and dashes`));
         }
         if (!Schema.is(Declaration)(mount))
-            throw new TypeError(`S.Mounts entry ${name} must be an S.Mount declaration`);
+            $raise(new TypeError(`S.Mounts entry ${name} must be an S.Mount declaration`));
     }
     const declaration = { [TypeId]: TypeId, mounts: Object.freeze({ ...mounts }) };
     return Object.freeze(declaration);
@@ -132,3 +132,4 @@ export const Mounts = (mounts) => {
  * @since 1.0.0
  */
 export const isMounts = (value) => typeof value === "object" && value !== null && value[TypeId] === TypeId;
+import { raise as $raise } from "./Mount.vibe.-24-throw-24-ts.js";

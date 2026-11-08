@@ -14,11 +14,11 @@
  *
  * @since 0.1.0
  */
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Effect_1 from "effect/Effect";
+import * as runtime from "vibelang-runtime/internal";
 import { CredentialConflict, Unavailable } from "./ControlError.js";
 /**
  * Service key for encrypted credential persistence.
@@ -26,7 +26,7 @@ import { CredentialConflict, Unavailable } from "./ControlError.js";
  * @category services
  * @since 0.1.0
  */
-export class CredentialStore extends Context.Service()("/control/CredentialStore") {
+export class CredentialStore extends runtime.$service("/control/CredentialStore") {
 }
 /**
  * Constructs a store from an implementation record.
@@ -91,9 +91,11 @@ export const makeMemory = () => {
             records.set(record.id, copy(record));
             return Effect.void;
         })),
-        remove: Effect.fn("CredentialStore.remove")(Effect_1.fnUntraced(function* (id) {
-            records.delete(id);
-        }))
+        remove: Effect.fn("CredentialStore.remove")((id) => {
+            return Effect_1.gen(function* () {
+                records.delete(id);
+            });
+        })
     });
 };
 /**

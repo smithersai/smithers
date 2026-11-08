@@ -160,50 +160,52 @@ export const alreadyApplied = (key, receipt) => {
  * @since 0.1.0
  * @private
  */
-export const planCard = Effect_1.fnUntraced(function* planCard(source) {
-    const plan = source.handoff?.plan;
-    const nodes = plan === undefined
-        ? []
-        : plan.nodes.map((node) => ({
-            ...node,
-            status: source.handoff?.statuses?.[node.id] ?? "run"
-        }));
-    const planDigest = yield* digest({
-        flowId: source.flowId,
-        input: source.decodedInput,
-        envelope: source.envelope,
-        deployClass: source.deployClass,
-        ...(source.executionDigest === undefined ? {} : { executionDigest: source.executionDigest }),
-        // The persisted plan digest covers keys, edges, effects, conflicts,
-        // priorities, and generations. Hashing only node keys loses executable
-        // graph changes whose content keys legitimately stay stable.
-        persistedPlan: plan?.digest ?? null
+export const planCard = (source) => {
+    return Effect_1.gen(function* planCard() {
+        const plan = source.handoff?.plan;
+        const nodes = plan === undefined
+            ? []
+            : plan.nodes.map((node) => ({
+                ...node,
+                status: source.handoff?.statuses?.[node.id] ?? "run"
+            }));
+        const planDigest = yield* digest({
+            flowId: source.flowId,
+            input: source.decodedInput,
+            envelope: source.envelope,
+            deployClass: source.deployClass,
+            ...(source.executionDigest === undefined ? {} : { executionDigest: source.executionDigest }),
+            // The persisted plan digest covers keys, edges, effects, conflicts,
+            // priorities, and generations. Hashing only node keys loses executable
+            // graph changes whose content keys legitimately stay stable.
+            persistedPlan: plan?.digest ?? null
+        });
+        const target = {
+            _tag: "Plan",
+            planId: source.planId,
+            digest: planDigest,
+            envelope: source.envelope
+        };
+        return {
+            planId: source.planId,
+            flowId: source.flowId,
+            digest: planDigest,
+            inputSummary: canonical(source.decodedInput),
+            envelope: source.envelope,
+            deployClass: source.deployClass,
+            ...(source.executionDigest === undefined ? {} : { executionDigest: source.executionDigest }),
+            ...(plan === undefined ? {} : { plan }),
+            nodes,
+            // Outside `digest` above on purpose: the edges are how a reader draws
+            // the plan, not what the plan will do, so gaining them must not
+            // invalidate an approval taken before the host reported them.
+            ...(source.handoff?.graph === undefined ? {} : { graph: source.handoff.graph }),
+            approval: {
+                target,
+                scope: "run",
+                idempotencyKey: source.idempotencyKey ?? `approve:${source.planId}`
+            }
+        };
     });
-    const target = {
-        _tag: "Plan",
-        planId: source.planId,
-        digest: planDigest,
-        envelope: source.envelope
-    };
-    return {
-        planId: source.planId,
-        flowId: source.flowId,
-        digest: planDigest,
-        inputSummary: canonical(source.decodedInput),
-        envelope: source.envelope,
-        deployClass: source.deployClass,
-        ...(source.executionDigest === undefined ? {} : { executionDigest: source.executionDigest }),
-        ...(plan === undefined ? {} : { plan }),
-        nodes,
-        // Outside `digest` above on purpose: the edges are how a reader draws
-        // the plan, not what the plan will do, so gaining them must not
-        // invalidate an approval taken before the host reported them.
-        ...(source.handoff?.graph === undefined ? {} : { graph: source.handoff.graph }),
-        approval: {
-            target,
-            scope: "run",
-            idempotencyKey: source.idempotencyKey ?? `approve:${source.planId}`
-        }
-    };
-});
-import { invoke as $invoke } from "./planning.vibe.$call$ts.js";
+};
+import { invoke as $invoke } from "./planning.vibe.-24-call-24-ts.js";

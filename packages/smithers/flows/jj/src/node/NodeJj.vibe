@@ -601,7 +601,11 @@ module platform {
     output.exitCode === 0 && !refusedFiles(output.stderr)
       ? Effect.succeed(output.stdout)
       : Effect.fail(classify(method, args, output))
-  /** Runs `jj` with argv (never a shell string) in `cwd`. */
+  /**
+   * Runs `jj` with argv (never a shell string) in `cwd`.
+   *
+   * @throws {never}
+   */
   export const jj = (binary: Binary): Run => (method, args, cwd) =>
     Effect.callback<Output, JjError>((resume) => {
       const { command, hint } = binary
@@ -685,8 +689,12 @@ module platform {
    * The classification is the same as {@link jj}'s, including the `not_installed`
    * answer: a spawner reports a missing binary as a `NotFound` `PlatformError`,
    * which is `ENOENT` with a different name on it.
+   *
+   * @throws {never}
    */
-  export const viaSpawner = (spawner: ChildProcessSpawner["Service"]) => (binary: Binary): Run => (method, args, cwd) =>
+  export const viaSpawner = (spawner: ChildProcessSpawner["Service"]) =>
+    /** @throws {never} */
+    (binary: Binary): Run => (method, args, cwd) =>
     Effect.suspend(() => {
       const { command, hint } = binary
       /**

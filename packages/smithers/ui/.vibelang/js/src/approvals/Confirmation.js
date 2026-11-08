@@ -2,7 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { createContext, useCallback, useContext, useEffect, useRef, } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { Button } from "../button";
 /** Map approval states onto the shared status vocabulary (freeze v2 §0.6). */

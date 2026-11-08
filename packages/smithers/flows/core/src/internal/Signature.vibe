@@ -373,9 +373,8 @@ export const build = <
     flow,
     action,
     call: (input: I["~type.make.in"]) => flow.call((wrapped ? input : { input }) as never),
-    pipe() {
-      // eslint-disable-next-line prefer-rest-params
-      return pipeArguments(this, arguments)
+    pipe(...args: ReadonlyArray<unknown>) {
+      return pipeArguments(this, args as unknown as IArguments)
     }
   }
   built.set(self, {

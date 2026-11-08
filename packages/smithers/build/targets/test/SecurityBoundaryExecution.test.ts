@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { Smithers } from "../src/index.ts"
 import * as Input from "../src/Input.ts"
 import * as LlmLint from "../src/LlmLint.ts"
-import * as SecurityReview from "../src/SecurityReview.vibe"
+import * as SecurityReview from "../src/SecurityReview.ts"
 import * as Target from "../src/Target.ts"
 
 let root: string

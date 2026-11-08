@@ -51,9 +51,11 @@ export interface QuickstartResult {
  * This program deletes the row before it returns, so reruns succeed and apply
  * no migration.
  *
+ * Fails with `DatabaseError` when a write fails, and with `MigrationError` when
+ * the ladder refuses.
+ *
  * @param filename - The SQLite database file to create or open.
  * @returns The migrations applied, the note bodies, the ledger, and both delete counts.
- * @throws `DatabaseError` when a write fails; `MigrationError` when the ladder refuses.
  * @since 1.0.0
  * @category examples
  */

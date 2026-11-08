@@ -5,6 +5,7 @@
  * @since 0.1.0
  */
 import * as SchemaTransformation from "effect/SchemaTransformation";
+import * as runtime from "vibelang-runtime/internal";
 import { NotificationError } from "@smthrs/notifications/NotificationQueue";
 import { Context, Effect, Layer, Schema } from "effect";
 import { Rpc, RpcGroup, RpcMiddleware } from "effect/rpc";
@@ -16,7 +17,7 @@ import { ApprovalInputSchema, CancelInputSchema, ControlEvent, ListRequest, List
  * @category services
  * @since 0.1.0
  */
-export class ControlPrincipal extends Context.Service()("/control/ControlPrincipal") {
+export class ControlPrincipal extends runtime.$service("/control/ControlPrincipal") {
 }
 /**
  * Middleware boundary that authenticates control RPC requests.

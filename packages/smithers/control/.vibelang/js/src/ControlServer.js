@@ -28,12 +28,10 @@ import { ControlPrincipal, ControlRpcs, RunVisibility } from "./ControlRpcs.js";
  */
 export const logDefect = (cause) => Cause.hasDies(cause) ? Effect.logError("A control RPC handler died") : Effect.void;
 /**
- * The effective external scheme. A TLS host or trusted TLS-terminating proxy
- * supplies `https:`; a plain HTTP host supplies `http:`. When set, it decides
- * over the request URL's scheme, which is the socket's (Node) or the platform's
- * (web adapters) and is wrong behind a TLS-terminating proxy. Forwarding headers
- * are not trusted automatically. Without this service or an absolute URL,
- * browser origins fail closed.
+ * The authoritative external scheme, including behind a TLS-terminating host.
+ * A TLS host or trusted TLS-terminating proxy supplies `https:`; a plain HTTP
+ * host supplies `http:`. Forwarding headers are not trusted automatically.
+ * Without an absolute URL or this service, browser origins fail closed.
  *
  * @category services
  * @since 1.0.0
@@ -68,47 +66,61 @@ export const layer = ControlRpcs.toLayer(Effect_1.gen(function* () {
         } }.reader);
     return ControlRpcs.of({
         Plan: Effect.fn("Control.plan")((input) => control.plan(input), logged),
-        Run: Effect.fn("Control.run")(Effect_1.fnUntraced(function* (input) {
-            const principal = yield* ControlPrincipal;
-            return yield* control.run({ ...input, principal });
-        }), logged),
-        Approve: Effect.fn("Control.approve")(Effect_1.fnUntraced(function* (input) {
-            const principal = yield* ControlPrincipal;
-            if (principal.id === "loopback" && principal.kind === "anonymous") {
-                return yield* Effect_1.fail(new Unauthorized({ message: "An operator credential is required" }));
-            }
-            return yield* control.approve({ ...input, principal });
-        }), logged),
-        Deny: Effect.fn("Control.deny")(Effect_1.fnUntraced(function* (input) {
-            const principal = yield* ControlPrincipal;
-            if (principal.id === "loopback" && principal.kind === "anonymous") {
-                return yield* Effect_1.fail(new Unauthorized({ message: "An operator credential is required" }));
-            }
-            return yield* control.deny({ ...input, principal });
-        }), logged),
-        Steer: Effect.fn("Control.steer")(Effect_1.fnUntraced(function* (input) {
-            const principal = yield* ControlPrincipal;
-            // A steer carries a principal on the wire because an in-process
-            // caller names one that is not an operator: `agent/send` attributes
-            // a child's steer to the parent flow. A remote client may not, so
-            // the authenticated identity replaces whatever arrived. It reaches
-            // the notification's `sourceActor` and the run transcript, which is
-            // exactly where a spoofed name would be read as truth.
-            const { attribution: _attribution, ...message } = input.message;
-            return yield* control.steer({ ...input, message: { ...message, principal }, ...yield* reader });
-        }), logged),
-        Signal: Effect.fn("Control.signal")(Effect_1.fnUntraced(function* (input) {
-            const principal = yield* ControlPrincipal;
-            return yield* control.signal({ ...input, principal, ...yield* reader });
-        }), logged),
-        Cancel: Effect.fn("Control.cancel")(Effect_1.fnUntraced(function* (input) {
-            const principal = yield* ControlPrincipal;
-            return yield* control.cancel({ ...input, principal, ...yield* reader });
-        }), logged),
-        Resume: Effect.fn("Control.resume")(Effect_1.fnUntraced(function* (input) {
-            const principal = yield* ControlPrincipal;
-            return yield* control.resume({ ...input, principal, ...yield* reader });
-        }), logged),
+        Run: Effect.fn("Control.run")((input) => {
+            return Effect_1.gen(function* () {
+                const principal = yield* ControlPrincipal;
+                return yield* control.run({ ...input, principal });
+            });
+        }, logged),
+        Approve: Effect.fn("Control.approve")((input) => {
+            return Effect_1.gen(function* () {
+                const principal = yield* ControlPrincipal;
+                if (principal.id === "loopback" && principal.kind === "anonymous") {
+                    return yield* Effect_1.fail(new Unauthorized({ message: "An operator credential is required" }));
+                }
+                return yield* control.approve({ ...input, principal });
+            });
+        }, logged),
+        Deny: Effect.fn("Control.deny")((input) => {
+            return Effect_1.gen(function* () {
+                const principal = yield* ControlPrincipal;
+                if (principal.id === "loopback" && principal.kind === "anonymous") {
+                    return yield* Effect_1.fail(new Unauthorized({ message: "An operator credential is required" }));
+                }
+                return yield* control.deny({ ...input, principal });
+            });
+        }, logged),
+        Steer: Effect.fn("Control.steer")((input) => {
+            return Effect_1.gen(function* () {
+                const principal = yield* ControlPrincipal;
+                // A steer carries a principal on the wire because an in-process
+                // caller names one that is not an operator: `agent/send` attributes
+                // a child's steer to the parent flow. A remote client may not, so
+                // the authenticated identity replaces whatever arrived. It reaches
+                // the notification's `sourceActor` and the run transcript, which is
+                // exactly where a spoofed name would be read as truth.
+                const { attribution: _attribution, ...message } = input.message;
+                return yield* control.steer({ ...input, message: { ...message, principal }, ...yield* reader });
+            });
+        }, logged),
+        Signal: Effect.fn("Control.signal")((input) => {
+            return Effect_1.gen(function* () {
+                const principal = yield* ControlPrincipal;
+                return yield* control.signal({ ...input, principal, ...yield* reader });
+            });
+        }, logged),
+        Cancel: Effect.fn("Control.cancel")((input) => {
+            return Effect_1.gen(function* () {
+                const principal = yield* ControlPrincipal;
+                return yield* control.cancel({ ...input, principal, ...yield* reader });
+            });
+        }, logged),
+        Resume: Effect.fn("Control.resume")((input) => {
+            return Effect_1.gen(function* () {
+                const principal = yield* ControlPrincipal;
+                return yield* control.resume({ ...input, principal, ...yield* reader });
+            });
+        }, logged),
         List: Effect.fn("Control.list")((input) => Effect.flatMap(reader, (restriction) => control.list({ ...input, ...restriction })), logged),
         Watch: (input) => Stream.tapCause(Stream.unwrap(Effect.map(reader, (restriction) => control.watch({ ...input, ...restriction }))), logDefect)
     });
@@ -129,10 +141,9 @@ const sameOrigin = (request, scheme) => {
         return true;
     const host = headers.host;
     const parsed = URL.parse(origin);
-    // A configured external scheme decides. Otherwise the request URL's scheme
-    // does: web adapters retain the absolute URL, and Effect 4.1's Node server
-    // builds one from the socket's TLS state. A relative URL reveals nothing
-    // about transport security, so it fails closed.
+    // Effect 4.1 Node adapters retain an absolute transport URL too. A host
+    // behind TLS termination explicitly supplies its external scheme; that
+    // configuration takes precedence over the internal connection URL.
     const protocol = scheme ?? URL.parse(request.originalUrl)?.protocol;
     return host !== undefined && parsed !== null &&
         (parsed.protocol === "http:" || parsed.protocol === "https:") &&
@@ -143,14 +154,16 @@ const sameOrigin = (request, scheme) => {
  * matching decides what it guards, and a host's stricter global policy (the
  * gateway's ingress) still answers first with its own typed refusal.
  */
-const originGuard = Layer.unwrap(Effect.map(RequestScheme, (scheme) => HttpRouter.middleware(Effect_1.fnUntraced(function* (httpEffect) {
-    const request = yield* HttpServerRequest.HttpServerRequest;
-    if (sameOrigin(request, scheme))
-        return yield* httpEffect;
-    return HttpServerResponse.text("The browser Origin must match the control server scheme and Host", {
-        status: 403
+const originGuard = Layer.unwrap(Effect.map(RequestScheme, (scheme) => HttpRouter.middleware((httpEffect) => {
+    return Effect_1.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        if (sameOrigin(request, scheme))
+            return yield* httpEffect;
+        return HttpServerResponse.text("The browser Origin must match the control server scheme and Host", {
+            status: 403
+        });
     });
-})).layer));
+}).layer));
 const server = RpcServer.layer(ControlRpcs, {
     disableFatalDefects: true
 });

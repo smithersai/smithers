@@ -1655,7 +1655,7 @@ const askOperator = (input: Input) =>
     schema: operatorPlanSchema,
     maxAttempts: 5,
     timeoutMs: 7 * 24 * 60 * 60_000
-  }).pipe(HumanTask.decode(OperatorPlan))
+  }).pipe((task) => HumanTask.decode(OperatorPlan)(task))
 
 /** The pack's entrypoint. */
 export const BunPortSmithers = Flow.make("examples/BunPortSmithers", {

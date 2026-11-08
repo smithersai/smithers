@@ -5,19 +5,19 @@ import { operation } from "./index.js";
 const N = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
 const Text = Schema.NonEmptyString;
 const Todo = Schema.Struct({
-    n: N,
+    n: Schema.mutableKey(N),
 });
 const MovedTodo = Schema.Struct({
-    n: N, id: Schema.optional(Text),
+    n: Schema.mutableKey(N), id: Schema.mutableKey(Schema.optional(Text)),
 });
 const Branch = Schema.Struct({
-    branch: Text,
+    branch: Schema.mutableKey(Text),
 });
 const Foreign = Schema.Struct({
-    branch: Text, id: Text, revision: Text,
+    branch: Schema.mutableKey(Text), id: Schema.mutableKey(Text), revision: Schema.mutableKey(Text),
 });
 const Learning = Schema.Struct({
-    id: Text,
+    id: Schema.mutableKey(Text),
 });
 const controlHttp = (name) => name === "branch.rebase-now"
     ? { method: "POST", path: "/api/branches/{branch}", defaults: { rebase: true } }

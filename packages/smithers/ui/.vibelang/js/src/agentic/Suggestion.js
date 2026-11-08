@@ -2,7 +2,7 @@
 import { jsx as _jsx } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { useRef } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { prefersReducedMotion, useInjectUiCss } from "../styles";
 /** Ghost pill carrying one prompt suggestion; fires onClick with the suggestion text. */
 export function Suggestion({ suggestion, onClick, children, className, type, ...props }) {

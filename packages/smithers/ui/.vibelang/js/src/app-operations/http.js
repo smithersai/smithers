@@ -37,10 +37,10 @@ const system = (name, method, path, credentialScope, input = NoInput) => operati
     actors: [],
 });
 const source = Schema.Struct({
-    change_id: Schema.String, commit_id: Schema.String, tree_id: Schema.String, parent_commit_ids: Schema.Array(Schema.String),
+    change_id: Schema.mutableKey(Schema.String), commit_id: Schema.mutableKey(Schema.String), tree_id: Schema.mutableKey(Schema.String), parent_commit_ids: Schema.mutableKey(Schema.Array(Schema.String)),
 });
 const reservedStack = Schema.Struct({
-    requestId: Schema.String, source: Schema.optional(source), generation: Schema.optional(Schema.Number),
+    requestId: Schema.mutableKey(Schema.String), source: Schema.mutableKey(Schema.optional(source)), generation: Schema.mutableKey(Schema.optional(Schema.Number)),
 });
 const machine = (op) => operation({
     name: `branch.${op}`,

@@ -253,10 +253,12 @@ export const Job = Schema.Struct({
      * Whether this job holds the write credential and publishes to the remote
      * cache.
      *
-     * A publishing job is rendered with
-     * `if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/<branch>' }}`
-     * over the declared push branches, so no `pull_request` run of it can ever
-     * receive the credential; every other job receives only the read credential.
+     * A publishing job requires a push matching the default branch of
+     * {@link Attrs.cacheWriteRepository}. GitHub compares strings without case
+     * sensitivity; the environment must restrict the exact branch.
+     * Push trigger branches do not grant
+     * publication authority. Every other job receives only the read credential,
+     * including same-repository pull requests and manual topic-branch runs.
      * The trust model is `packages/smithers/build/infra/CACHE-TRUST.md`: readers are
      * untrusted, writers are post-merge trunk jobs only. Absent means false.
      */
@@ -313,7 +315,9 @@ export const Attrs = Schema.Struct({
     /**
      * The declared secret supplying the remote-cache bearer token. When
      * {@link cacheWriteTokenSecret} is also declared, this is the READ
-     * credential, rendered into every job.
+     * credential, rendered into every job, including untrusted pull-request and
+     * manual branch code. It may read cached results and artifacts; never put
+     * secrets in cache contents. The server must refuse publication with it.
      */
     cacheTokenSecret: Schema.optional(Secret.Declaration),
     /**
@@ -334,10 +338,18 @@ export const Attrs = Schema.Struct({
      * readable by any workflow a branch in the repository defines, including a
      * `pull_request` run of an edited workflow file, so the write credential
      * lives in an environment whose deployment branch policy admits only the
-     * push branches, and every publishing job names it. GitHub then withholds
+     * repository's default branch, and every publishing job names it. Verify
+     * that policy and secret placement before enabling publication. GitHub withholds
      * the secret from a job on any other ref, whatever its workflow says.
      */
     cacheWriteEnvironment: Schema.optional(Schema.String),
+    /**
+     * The literal GitHub owner/repository allowed to publish, required with
+     * {@link cacheWriteTokenSecret}. Forks must not inherit publication authority.
+     * The job additionally requires a push to this repository's default branch
+     * from the GitHub event context; pushBranches only selects workflow triggers.
+     */
+    cacheWriteRepository: Schema.optional(Schema.String),
     /** The jobs the workflow declares. A generated workflow needs at least one. @default [] */
     jobs: Schema.Array(Job).pipe(Schema.withConstructorDefault(Effect.succeed([]))),
     /** The target invocations the pipeline must perform, in every mode. @default [] */
@@ -1154,16 +1166,21 @@ const isWhollyAdvisory = (job) => job.matrix === undefined ? job.continueOnError
  * binary to run it with.
  */
 /**
- * One push branch, as a literal inside a single-quoted GitHub expression.
- *
- * The set excludes quotes, whitespace, `$`, and `{`, so a branch name can
- * carry no expression and cannot close the quote it is rendered inside. A
- * branch outside it is refused rather than escaped: the guard is a security
- * boundary, and an escaping scheme is a second grammar to get wrong.
+ * Publishing workflows retain the restricted literal push-branch grammar:
+ * no expressions or wildcard trigger expansion. These triggers select runs;
+ * the separate publisher guard still requires the repository's default branch.
  */
 const publishBranchName = /^[A-Za-z0-9._/-]+$/;
 /** A GitHub environment name the generated YAML carries without quoting surprises. */
 const environmentName = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+/** A literal owner/name, never a GitHub expression or a repository URL. */
+const publishRepositoryName = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+$/;
+/** A cache publisher declaration that cannot preserve the credential boundary. */
+class InvalidCachePublisher extends Schema.TaggedError()("smithers-build/InvalidCachePublisher", {
+    code: Schema.Literals(["repository_without_writer", "invalid_repository", "writer_in_endpoint"]),
+    message: Schema.NonEmptyString
+}) {
+}
 /**
  * The split write-credential declaration, checked as a whole.
  *
@@ -1177,6 +1194,12 @@ const environmentName = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const validatePublishing = (attrs) => {
     const publishing = attrs.jobs.filter((job) => job.publishesToCache === true);
     if (attrs.cacheWriteTokenSecret === undefined) {
+        if (attrs.cacheWriteRepository !== undefined) {
+            throw new InvalidCachePublisher({
+                code: "repository_without_writer",
+                message: "GithubCiGen: cacheWriteRepository requires cacheWriteTokenSecret"
+            });
+        }
         if (attrs.cacheWriteEnvironment !== undefined) {
             throw new Error("GithubCiGen: cacheWriteEnvironment is declared but no cacheWriteTokenSecret is; declare the write credential or drop the environment");
         }
@@ -1188,14 +1211,26 @@ const validatePublishing = (attrs) => {
     if (publishing.length === 0) {
         throw new Error("GithubCiGen: cacheWriteTokenSecret is declared but no job declares publishesToCache; the trunk would silently stop publishing to the cache");
     }
+    if (attrs.cacheWriteRepository === undefined || !publishRepositoryName.test(attrs.cacheWriteRepository)) {
+        throw new InvalidCachePublisher({
+            code: "invalid_repository",
+            message: "GithubCiGen: cacheWriteTokenSecret needs cacheWriteRepository as a literal owner/repository"
+        });
+    }
     if (attrs.cacheWriteEnvironment === undefined || !environmentName.test(attrs.cacheWriteEnvironment)) {
         throw new Error("GithubCiGen: cacheWriteTokenSecret needs cacheWriteEnvironment, the GitHub environment (letters, digits, \".\", \"_\", \"-\") " +
-            "that holds it with a deployment branch policy admitting only the push branches; a repository secret reaches every branch's workflows");
+            "that holds it with a deployment branch policy admitting only the default branch; a repository secret reaches every branch's workflows");
     }
     if (attrs.cacheTokenSecret !== undefined &&
-        RemoteCache.normalizeTokenEnv(attrs.cacheTokenSecret.env) ===
-            RemoteCache.normalizeTokenEnv(attrs.cacheWriteTokenSecret.env)) {
+        attrs.cacheTokenSecret.env.toUpperCase() === attrs.cacheWriteTokenSecret.env.toUpperCase()) {
         throw new Error("GithubCiGen: cacheTokenSecret and cacheWriteTokenSecret name the same variable; a reader holding the write credential can publish, so the two must differ");
+    }
+    if (attrs.cacheUrlSecret !== undefined &&
+        attrs.cacheUrlSecret.env.toUpperCase() === attrs.cacheWriteTokenSecret.env.toUpperCase()) {
+        throw new InvalidCachePublisher({
+            code: "writer_in_endpoint",
+            message: "GithubCiGen: cacheUrlSecret must not expose the write credential to reader jobs"
+        });
     }
     if (attrs.pushBranches.length === 0) {
         throw new Error(`GithubCiGen: job ${JSON.stringify(publishing[0].id)} declares publishesToCache but the workflow has no push branches, so its guard can never be true`);
@@ -1333,19 +1368,15 @@ const writeCacheEnvironment = (attrs) => attrs.cacheWriteTokenSecret === undefin
     [RemoteCache.normalizeTokenEnv(attrs.cacheWriteTokenSecret.env)]: `\${{ secrets.${attrs.cacheWriteTokenSecret.env} }}`
 };
 /**
- * The `if:` expression guarding a publishing job to post-merge push runs.
+ * The `if:` expression guarding a publishing job to its repository's
+ * default-branch push. Trigger branches select runs, not trusted writers.
  *
- * Rendered PLAIN rather than through `scalar`, on the same terms as
- * {@link matrixExpressions}: a quoted expression is a string GitHub coerces
- * rather than the condition the job declares. The branch names inside it are
- * held to {@link publishBranchName} by `validatePublishing`, so nothing here
- * can open an expression or close a quote.
+ * The repository literal is validated before interpolation. The default
+ * branch comes from GitHub as data passed to format, never expression source.
  */
-const publishGuard = (attrs) => {
-    const refs = attrs.pushBranches.map((branch) => `github.ref == 'refs/heads/${branch}'`);
-    const condition = refs.length === 1 ? refs[0] : `(${refs.join(" || ")})`;
-    return `\${{ github.event_name == 'push' && ${condition} }}`;
-};
+const publishGuard = (attrs) => `\${{ github.event_name == 'push' && github.repository == '${attrs.cacheWriteRepository}' && ` +
+    "github.event.repository.default_branch != '' && " +
+    "github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}";
 /**
  * Renders the workflow YAML from attrs, deterministically.
  *
@@ -1471,7 +1502,18 @@ export const render = (attrs) => {
                 ...(step.name === undefined ? {} : { name: step.name }),
                 condition: independentGate,
                 run: stepCommand(attrs, step, job.toolchain.nix),
-                ...(hasJobEnv ? { env: jobEnv } : {})
+                // Result paths read runner environment variables using Bash syntax.
+                // Windows otherwise selects PowerShell and expands both names to empty.
+                ...(attrs.results === true
+                    ? {
+                        shell: "bash",
+                        // Git Bash must pass target labels literally, without treating //
+                        // as a Windows path. Real result-file paths still get converted.
+                        env: { ...jobEnv, MSYS2_ARG_CONV_EXCL: "//" }
+                    }
+                    : hasJobEnv
+                        ? { env: jobEnv }
+                        : {})
             });
         }
         if (job.toolchain.artifacts !== undefined)

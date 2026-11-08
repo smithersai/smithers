@@ -4,7 +4,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { cloneElement, isValidElement } from "react";
 import { cva } from "class-variance-authority";
 import { Slot } from "radix-ui";
-import { cn } from "./cn";
+import { cn } from "@smthrs/ui-css";
 import { LoadingBar } from "./loading";
 import { useInjectUiCss } from "./styles";
 export const buttonVariants = cva("sui-button", {

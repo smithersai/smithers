@@ -3,7 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { useId } from "react";
 import { Button } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { Input, Textarea } from "../input";
 import { Field, Label } from "../label";
 import { useInjectUiCss } from "../styles";

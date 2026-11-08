@@ -7,7 +7,9 @@
  * the factory that develops it: one `summary` line, the `flows` it features
  * ({@link Flow.Flow} declarations), the `on` table the Dispatcher listens
  * with, the `github` policy that says who writes `main`, and the `machine`
- * its TODO lanes need. `export const
+ * its TODO lanes need. Optional `policy` values set document/test classification,
+ * notification quiet hours and person-only approval rules; they grant no authority.
+ * `export const
  * home = S.Factory.Home({ blocks })` in the same file is the homepage
  * (`Home.ts`). The file sits beside `WORKSPACE.ts`, may import it, and never
  * imports a `PACKAGE.ts`: a target it needs is named by label
@@ -35,6 +37,7 @@ import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
+import * as FactoryPolicy from "./FactoryPolicy.js";
 import * as Flow from "./Flow.js";
 import * as FlowCatalog from "./FlowCatalog.js";
 import { DriftError, resolveOutputPath, WriteFileError } from "./GeneratedFile.js";
@@ -476,6 +479,8 @@ export const Declaration = Schema.TaggedStruct("FactoryDeclaration", {
     /** Who writes `main` and how Changes and issues move. */
     github: GithubPolicy,
     lifecycle: Schema.optionalKey(LifecyclePolicy),
+    /** Workflow preferences; never authority to approve, merge or widen access. */
+    policy: Schema.optionalKey(FactoryPolicy.Policy),
     /** The machine the factory's TODO lanes need, when declared. */
     machine: Schema.optionalKey(Machine),
     /** The saved issue views, in declaration order, when declared. */
@@ -522,7 +527,7 @@ export const isFactoryDeclaration = Schema.is(Declaration);
  * @since 1.0.0
  */
 export const Factory = (options) => {
-    const plain = Home.plainOptions("Factory", options, new Set(["summary", "flows", "on", "github", "lifecycle", "machine", "issueViews", "issueTransitions"]));
+    const plain = Home.plainOptions("Factory", options, new Set(["summary", "flows", "on", "github", "lifecycle", "policy", "machine", "issueViews", "issueTransitions"]));
     const flows = plain["flows"] ?? [];
     if (!Array.isArray(flows))
         throw new TypeError("Factory flows must be an array of Smithers.Flow declarations");
@@ -565,6 +570,7 @@ export const Factory = (options) => {
         on,
         github,
         ...(plain["lifecycle"] === undefined ? {} : { lifecycle: plain["lifecycle"] }),
+        ...(plain["policy"] === undefined ? {} : { policy: FactoryPolicy.make(plain["policy"]) }),
         ...(machine === undefined ? {} : { machine }),
         ...(issueViews === undefined ? {} : { issueViews }),
         ...(issueTransitions === undefined ? {} : { issueTransitions })
@@ -633,6 +639,8 @@ export const Projection = Schema.Struct({
     on: Schema.Array(Rule),
     github: GithubProjection,
     lifecycle: Schema.optionalKey(LifecyclePolicy),
+    /** Workflow preferences; never authority to approve, merge or widen access. */
+    policy: Schema.optionalKey(FactoryPolicy.Policy),
     machine: Schema.optionalKey(Machine),
     issueViews: Schema.optionalKey(Schema.Array(IssueView)),
     issueTransitions: Schema.optionalKey(Schema.Array(IssueTransition))
@@ -669,6 +677,7 @@ export const renderProjection = (declaration, catalog) => {
             ...(declaration.github.dailyTokens === undefined ? {} : { dailyTokens: declaration.github.dailyTokens })
         },
         ...(declaration.lifecycle === undefined ? {} : { lifecycle: declaration.lifecycle }),
+        ...(declaration.policy === undefined ? {} : { policy: FactoryPolicy.make(declaration.policy) }),
         ...(declaration.machine === undefined ? {} : { machine: declaration.machine }),
         ...(declaration.issueViews === undefined || declaration.issueViews.length === 0 ?
             {}

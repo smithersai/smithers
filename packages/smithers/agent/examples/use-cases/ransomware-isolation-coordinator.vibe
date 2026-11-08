@@ -142,7 +142,7 @@ const approve = (detection: Planned.Planned<Detection>) =>
     ),
     Node.capture({}, (prompt: Planned.Planned<string>) =>
       HumanTask.action.call({ name: approvalTask, kind: "json", prompt, schema: approvalSchema }).pipe(
-        HumanTask.decode(Approval)
+        (task) => HumanTask.decode(Approval)(task)
       ))
   )
 

@@ -3,7 +3,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 /** @jsxImportSource react */
 import { useCallback, useId, useRef, useState } from "react";
 import { Button } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { STEP_WORDS, STEP_GLYPHS } from "../run-page/runPage";
 import { useInjectUiCss } from "../styles";
 import { fitGraph, graphNeighbour } from "./graphLayout";

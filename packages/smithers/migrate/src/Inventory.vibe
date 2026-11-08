@@ -157,7 +157,7 @@ export const factoryNames = (
   const names = new Set<string>(["createSmithers", "createSmithersPostgres", "createSmithersCloudflare"])
   for (const [file, text] of sources) {
     if (!/\bcreateSmithers\w*\s*\(/.test(text)) continue
-    const parsed = parse(file, text)
+    const parsed = parseWith(parse, file, text)
     Ts.forEachNode(parsed, (node) => {
       if (ts.isFunctionDeclaration(node) && node.name !== undefined && node.body !== undefined) {
         if (/\bcreateSmithers\w*\s*\(/.test(node.body.getText())) names.add(node.name.text)
@@ -314,7 +314,7 @@ export const scanFile = (
   }
 ): ReadonlyArray<InventoryEntry> => {
   const parse = options.parse ?? Ts.parse
-  const source = parse(file, text)
+  const source = parseWith(parse, file, text)
   const hits: Array<InventoryEntry> = []
   const locals = initializers(source)
 
@@ -431,7 +431,7 @@ export const scanFile = (
   /** The zod chain one field of an object chain holds. */
   const fieldChain = (chain: string | undefined, field: string): string | undefined => {
     if (chain === undefined) return undefined
-    const parsed = parse("chain.ts", `const value = ${chain}`)
+    const parsed = parseWith(parse, "chain.ts", `const value = ${chain}`)
     let found: string | undefined
     Ts.forEachNode(parsed, (node) => {
       if (found !== undefined || !ts.isPropertyAssignment(node)) return
@@ -445,7 +445,7 @@ export const scanFile = (
   const depsChains = (text: string | undefined): ReadonlyMap<string, string> => {
     const found = new Map<string, string>()
     if (text === undefined) return found
-    const parsed = parse("deps.ts", `const value = (${text})`)
+    const parsed = parseWith(parse, "deps.ts", `const value = (${text})`)
     Ts.forEachNode(parsed, (node) => {
       if (!ts.isPropertyAssignment(node) || node.name === undefined) return
       const chain = outputChain(node.initializer.getText())
@@ -804,7 +804,7 @@ export const zodChains = (
   text: string,
   parse: typeof Ts.parse = Ts.parse
 ): ReadonlyArray<{ readonly name: string; readonly chain: string }> => {
-  const source = parse(file, text)
+  const source = parseWith(parse, file, text)
   const chains: Array<{ name: string; chain: string }> = []
   Ts.forEachNode(source, (node) => {
     if (!ts.isVariableDeclaration(node) || !ts.isIdentifier(node.name) || node.initializer === undefined) return
@@ -826,7 +826,7 @@ export const mdxImports = (
   text: string,
   parse: typeof Ts.parse = Ts.parse
 ): ReadonlyArray<{ readonly local: string; readonly specifier: string }> => {
-  const source = parse(file, text)
+  const source = parseWith(parse, file, text)
   const found: Array<{ local: string; specifier: string }> = []
   for (const record of Ts.imports(source)) {
     if (!record.specifier.endsWith(".mdx")) continue
@@ -860,7 +860,7 @@ export const factoryReexports = (
   const modules = new Map<string, ReadonlyMap<string, string>>()
   for (const [file, text] of sources) {
     if (!/\bcreateSmithers\w*\s*\(/.test(text)) continue
-    const source = parse(file, text)
+    const source = parseWith(parse, file, text)
     const bindings = new Map<string, string>()
     for (const statement of source.statements) {
       if (!ts.isVariableStatement(statement)) continue
@@ -923,3 +923,11 @@ export const scan = effect (
       Sort.byText(left.file, right.file) || left.line - right.line || left.column - right.column
     )
   }
+
+module parsing {
+  import type * as Ts from "./internal/Ts.ts"
+  /** Parses with `parse`, which may throw when the native compiler fails. */
+  export const parseWith = (parse: typeof Ts.parse, file: string, text: string): ReturnType<typeof Ts.parse> =>
+    parse(file, text)
+}
+import { parseWith } from parsing

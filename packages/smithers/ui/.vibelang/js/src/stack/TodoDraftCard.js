@@ -4,7 +4,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useId } from "react";
 import { Badge } from "../badge";
 import { Button } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { Input, Textarea } from "../input";
 import { isSubmitChord } from "../item-conversation/ItemConversation";
 import { Field, Label } from "../label";

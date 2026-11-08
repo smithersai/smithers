@@ -86,13 +86,16 @@ const unwrapOptional = (ast) => {
     return { ast, optional };
 };
 const literalOptions = (ast) => {
-    if (ast._tag === "Literal")
-        return [{ value: String(ast.literal), label: String(ast.literal) }];
-    if (ast._tag === "Union" && ast.types.length > 0 && ast.types.every((member) => member._tag === "Literal")) {
-        return ast.types.map((member) => {
-            const literal = String(member.literal);
-            return { value: literal, label: literal };
-        });
+    const members = ast._tag === "Literal" ? [ast] : ast._tag === "Union" ? ast.types : [];
+    if (members.length > 0 && members.every(member => member._tag === "Literal")) {
+        const values = members.map(member => member.literal);
+        const labels = values.map(String);
+        const encode = labels.includes("") || new Set(labels).size !== labels.length;
+        return values.map((literal, index) => ({
+            value: encode ? `__choice_${index}` : labels[index],
+            label: encode && typeof literal === "string" ? JSON.stringify(literal) : labels[index],
+            ...(encode ? { literal } : {})
+        }));
     }
     return undefined;
 };
@@ -136,7 +139,8 @@ const formObject = (ast, payload) => {
         if (inner._tag === "Never")
             return false;
         const literals = literalOptions(inner);
-        return literals === undefined || literals.some(option => option.value === String(value));
+        return literals === undefined ||
+            literals.some(option => "literal" in option ? Object.is(option.literal, value) : option.value === String(value));
     }));
 };
 export const formFieldsFor = (input, hints = undefined, payload = {}) => {
@@ -262,7 +266,10 @@ const inputShape = (input, payload = {}) => {
  * `assembleArgs` writes and every list grammar reads. Text that is not the
  * JSON an object field needs is the form's refusal, not the flow's problem.
  */
-const asProperty = (shape, value, arrays) => {
+const asProperty = (shape, value, arrays, field) => {
+    const option = field.options?.find(option => option.value === value);
+    if (option !== undefined && "literal" in option)
+        return { value: option.literal };
     if (typeof value !== "string" || shape === undefined)
         return { value };
     if (shape.tag === "Arrays" && arrays === "words") {
@@ -310,6 +317,10 @@ export const submissionPayload = (input, fields, given, draft, arrays = "words")
         const property = shape.get(field.name);
         const value = draft[field.name];
         if (value !== undefined) {
+            // A cleared optional JSON structure is absent; empty text remains a string answer.
+            if (value === "" && arrays === "json" && property?.optional &&
+                (property.tag === "Objects" || property.tag === "Arrays"))
+                continue;
             if (field.kind === "number") {
                 if (String(value).trim() === "" && !field.required)
                     continue;
@@ -319,7 +330,7 @@ export const submissionPayload = (input, fields, given, draft, arrays = "words")
                 payload[field.name] = number;
                 continue;
             }
-            const converted = asProperty(property, value, arrays);
+            const converted = asProperty(property, value, arrays, field);
             if ("invalid" in converted) {
                 return { error: `${field.label} is not valid JSON. Fix it before submitting the form.` };
             }
@@ -338,6 +349,11 @@ const coerce = (field, value, arrays) => {
         return undefined;
     if (Array.isArray(value))
         return arrays === "json" ? JSON.stringify(value) : value.map(String).join(" ");
+    if (field.kind === "select") {
+        const option = field.options?.find(option => "literal" in option && Object.is(option.literal, value));
+        if (option !== undefined)
+            return option.value;
+    }
     switch (field.kind) {
         case "number": {
             const number = typeof value === "number" ? value : Number(String(value).trim());
@@ -617,4 +633,51 @@ export const fileSubmission = (input, fields, given, draft) => {
     return missing.length > 0
         ? { error: `Needs: ${missing.join(", ")}` }
         : submissionPayload(input, fields, given, draft, "json");
+};
+/** Derive the shared form from the durable question, keeping JSON values typed. */
+export const humanTaskForm = (wait) => {
+    const request = wait.request;
+    const schema = request.schema;
+    const object = request.kind === "json" && schema !== null && typeof schema === "object" &&
+        schema.type === "object" && schema.enum === undefined && schema.nullable !== true &&
+        schema.properties !== null && typeof schema.properties === "object" &&
+        Object.keys(schema.properties).length > 0 && Object.values(schema.properties).every(property => {
+        if (property === null || typeof property !== "object")
+            return false;
+        const field = property;
+        return field.nullable !== true && field.type !== "null" &&
+            (field.type !== undefined || Array.isArray(field.enum)) &&
+            (!Array.isArray(field.enum) || field.enum.every(value => value !== null && typeof value !== "object"));
+    });
+    const raw = request.kind === "json" && !object;
+    const answerSchema = request.kind === "confirm"
+        ? { enum: [true, false] }
+        : request.kind === "select"
+            ? { enum: request.options ?? [] }
+            : { type: "string" };
+    return {
+        schema: request.kind === "select" && !request.options?.length
+            ? undefined
+            : object
+                ? schema
+                : { type: "object", properties: { answer: answerSchema }, required: ["answer"] },
+        values: object
+            ? wait.value
+            : wait.value === undefined
+                ? undefined
+                : { answer: raw ? JSON.stringify(wait.value) : wait.value },
+        answer: (payload) => {
+            let value = object ? payload : payload.answer;
+            if (raw) {
+                try {
+                    value = JSON.parse(String(value));
+                }
+                catch {
+                    return { error: "Answer is not valid JSON." };
+                }
+            }
+            const error = wait.validate(value);
+            return error === undefined ? { value } : { error };
+        }
+    };
 };
