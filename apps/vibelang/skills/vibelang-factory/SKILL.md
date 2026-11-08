@@ -40,6 +40,22 @@ with updated text; merge entries by `id`, then advance the cursor. An empty resu
 returns immediately. Read from 0 to obtain the whole conversation. Conversations
 default to `home`; `after` defaults to 0 and must be a nonnegative integer.
 
+Work on VibeLang runs through its mythical history: epics of small commits, each with
+notes on what was tried and what proves it. Read it, plan your task onto it, start it in
+your lane, and note what you tried:
+
+```sh
+vibelang-factory --json history                          # epics and work not landed
+vibelang-factory --json history --commit m4              # one commit's notes and real commits
+vibelang-factory plan "fix(compiler): ..." --epic e4 --task "issue 412"
+vibelang-factory plan "docs: ..." --before m12           # insert; --amend m12 reopens a landed one
+vibelang-factory start m5704 --lane my-lane
+vibelang-factory note m5704 --section tried "A cache; it went stale."
+```
+
+Put `Mythical: <id>` in the commit message you enqueue, so the fold maps it back. You
+never approve or fold: a person approves, and main folds in.
+
 Use `--json` when consuming results as data. Successful commands exit 0; invalid
 arguments, refused messages and unavailable backends exit nonzero with a plain error
 on stderr. Do not interpret an unavailable live backend as a successful post. A

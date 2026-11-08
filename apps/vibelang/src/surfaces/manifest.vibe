@@ -18,6 +18,7 @@ export const manifest = [
   "Live by default, at VIBELANG_FACTORY_URL (https://vibelang.smithers.sh). --mock (or VIBELANG_FACTORY=mock) uses the scripted mock; its data lasts for one process, and MCP calls share it.",
   "Global flags: --json --mock --help --llms. Conversation defaults to home; after defaults to 0.",
   "Usage: ask <text> [--conversation <id>]; read [--conversation <id>] [--after <seq>].",
+  "History: history [--commit <id>]; plan <title> [--epic <id> | --new-epic <title>] [--before <id> | --amend <id>] [--task <text>]; start <id> --lane <name>; note <id> --section tried|evidence|superseded <text>.",
   ...manifestCommands.flatMap((command) => [
     "", `## ${command.name}`, command.description,
     "```json", JSON.stringify({ inputSchema: command.inputSchema, outputSchema: command.outputSchema }), "```",

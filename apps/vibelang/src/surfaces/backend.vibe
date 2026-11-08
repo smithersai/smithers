@@ -1,6 +1,15 @@
 import { FetchHttpClient } from "effect/http"
 import { health, LiveFactory } from "../core/LiveFactory.vibe"
 import { MockFactory } from "../core/MockFactory.vibe"
+import { LiveMythical } from "../history/LiveMythical.vibe"
+import { MockMythical } from "../history/MockMythical.vibe"
+import type { Principal } from "../history/roles.vibe"
+
+/**
+ * Who the mock history's CLI and MCP caller is: the agent, for a maintainer, as these surfaces are how agents work on
+ * VibeLang (VL-26). The flows refuse it what they refuse any agent: approving and folding.
+ */
+export const SURFACE_PRINCIPAL: Principal = { role: "maintainer", name: "Factory CLI", agent: true }
 
 export schema error LiveBackendNotDeployed { readonly message: string }
 
@@ -25,10 +34,12 @@ const live = Layer.unwrap(effect {
     throw new LiveBackendNotDeployed({ message: unreachable(origin) })
   }
   if (answer.agent !== "live") throw new LiveBackendNotDeployed({ message: notDeployed(origin) })
-  return LiveFactory(origin)
+  return Layer.merge(LiveFactory(origin), LiveMythical(origin))
 }).pipe(Layer.provide(FetchHttpClient.layer))
 
+const mock = Layer.merge(MockFactory, MockMythical(SURFACE_PRINCIPAL))
+
 /** Backend choice belongs to the host: `--mock` or `VIBELANG_FACTORY=mock` for the mock, else the live Factory. */
-export function backend(mock: boolean, environment: string | undefined) {
-  return mock || environment === "mock" ? MockFactory : live
+export function backend(useMock: boolean, environment: string | undefined) {
+  return useMock || environment === "mock" ? mock : live
 }

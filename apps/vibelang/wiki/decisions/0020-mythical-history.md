@@ -4,7 +4,7 @@
 Smithers D-09a, D-20; repository rules FLOW-3, "people merge; agents never approve or merge". **Brings back** what
 `apps/mvp/docs/rulings.md` TODO-2 deferred, for this app only. **Designed twice:** Claude Opus
 (`~/vl/mythical/design-opus.md`) and Codex Sol (`~/vl/mythical/design-sol.md`), independently; Opus merged them. **Built so far:** the machine, its proofs, the bootstrap, the flows, the mock, the live History
-object and its routes; the surfaces and the view land next, each with this record updated.
+object, its routes and the agent's commands; the view lands next, with this record updated.
 
 **Decision.** VibeLang's mythical history is a second state machine beside the conversation's (0003): one linear stack
 of mythical commits grouped into epics, written only by its sequencer in one Durable Object, `History`, bootstrapped
@@ -97,6 +97,23 @@ Roles come from `src/history/roles.vibe`: each flow reads its least role from `H
 Landing stays the merge queue's: Approve is the person's decision; the lane enqueues the approved commit with a
 `Mythical: m<n>` trailer; the queue lands it on `vibe`; the green cut moves `main`; Fold maps it back, into the commit
 the trailer names, else as a new commit appended to the epic of its scope.
+
+## The agent's way in
+
+The command registry (0009) gains `history`, `plan`, `start` and `note`, so the CLI, the MCP server and `--llms` reach
+the same flows through `Mythical` (FLOW-3, VL-26); the skill shows them. In mock mode their caller is the agent for a
+maintainer (`SURFACE_PRINCIPAL`): it may append, insert, amend, start and note, and is refused approving and folding
+like any agent. Live, the server decides who asks. The in-chat agent gains these flows as tools with brick 4.
+
+```sh
+vibelang-factory --json history --commit m4
+vibelang-factory plan "fix(compiler): ..." --epic e4 --task "issue 412"
+vibelang-factory start m5704 --lane my-lane
+vibelang-factory note m5704 --section tried "A cache; it went stale."
+```
+
+`--llms` stays compact: its test allows 1,000 characters per command on average (4,689 for six), where it allowed
+4,000 for two.
 
 ## Proofs
 

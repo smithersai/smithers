@@ -3,6 +3,8 @@ import { Argument, Flag, type Command } from "effect/cli"
 import { IdGenerator, Tool } from "effect/ai"
 import { Factory } from "../core/Factory.vibe"
 import { Entry, Seq } from "../core/schemas.vibe"
+import type { History } from "../history/mythical.vibe"
+import { Mythical } from "../history/MythicalHistory.vibe"
 
 export schema error CommandError { readonly message: string }
 
@@ -58,14 +60,15 @@ effect function read(input: ReadInput) {
   return { conversation: input.conversation, ...snapshot }
 }
 
-function define<const Name extends string, I extends Schema.ConstraintCodec<unknown>, O extends Schema.ConstraintCodec<unknown>, P extends Command.Command.Config>(
+function define<const Name extends string, I extends Schema.ConstraintCodec<unknown>, O extends Schema.ConstraintCodec<unknown>, P extends Command.Command.Config, R extends Factory | Mythical>(
   name: Name,
   description: string,
   input: I,
   output: O,
   parameters: P,
-  handler: (input: I["Type"]) => O["Type"]!(CommandError | import("../core/Factory.vibe").Unavailable | import("../core/Factory.vibe").Refused)!Factory,
+  handler: (input: I["Type"]) => O["Type"]!(CommandError | import("../core/Factory.vibe").Unavailable | import("../core/Factory.vibe").Refused)!R,
   format: (output: O["Type"]) => string,
+  refused = "The message was refused",
 ) {
   const invoke = effect (value: unknown) => {
     const decoded = try Schema.decodeUnknownEffect(input)(value)
@@ -76,7 +79,7 @@ function define<const Name extends string, I extends Schema.ConstraintCodec<unkn
     return invoke(value) catch effect (error) => {
       if (error._tag === "CommandError") throw error
       const message = error._tag === "Unavailable" ? error.reason
-        : error._tag === "Refused" ? `The message was refused: ${error.refusal}` : error.message
+        : error._tag === "Refused" ? `${refused}: ${error.refusal}` : error.message
       throw new CommandError({ message })
     }
   }
@@ -99,4 +102,129 @@ export const Read = define("read", "Read current entries changed after an event 
 }, read, (output) => output.entries.length === 0 ? `No entries. Event: ${output.seq}`
   : `${output.entries.map((entry) => `${entry.name}: ${entry.text}`).join("\n\n")}\n\nEvent: ${output.seq}`)
 
-export const commands = [Ask, Read] as const
+// ── the mythical history (wiki/decisions/0020-mythical-history.md) ─────────────────────────────────────────────────
+
+/** How a history command reports the sequencer's refusal, or `forbidden`. */
+export const HISTORY_REFUSED = "The history refused it"
+
+const Id = Schema.String.check(Schema.isMinLength(1))
+const optional = Schema.String.pipe(Schema.withDecodingDefaultKey(succeed("")))
+
+export schema HistoryInput { readonly commit: optional }
+export schema HistoryEpic { readonly id: string; readonly title: string; readonly commits: number }
+export schema HistoryCommit { readonly id: string; readonly state: string; readonly title: string }
+export schema HistoryDetail {
+  readonly id: string
+  readonly state: string
+  readonly title: string
+  readonly task: string
+  readonly lane: string
+  readonly notes: ReadonlyArray<string>
+  readonly real: ReadonlyArray<string>
+}
+export schema HistoryOutput {
+  readonly seq: Seq
+  readonly main: string
+  readonly epics: ReadonlyArray<HistoryEpic>
+  readonly open: ReadonlyArray<HistoryCommit>
+  readonly commit: HistoryDetail | null
+}
+export schema PlanInput {
+  readonly title: string
+  readonly epic: optional
+  readonly newEpic: optional
+  readonly before: optional
+  readonly amend: optional
+  readonly task: optional
+}
+export schema StartInput { readonly id: Id; readonly lane: Id }
+export schema NoteInput { readonly id: Id; readonly section: "tried" | "evidence" | "superseded"; readonly text: string }
+export schema WrittenOutput { readonly id: string }
+
+/** The history as an agent reads it: its epics with counts, the work not yet landed, and one commit in full. */
+export function summaryOf(history: History, commit: string) {
+  const counts = new Map<string, number>()
+  for (const each of history.commits) counts.set(each.epic, (counts.get(each.epic) ?? 0) + 1)
+  const found = history.commits.find((each) => each.id === commit)
+  const brief = (each: History["commits"][number]) => ({ id: each.id, state: each.state, title: each.title })
+  return {
+    seq: history.seq,
+    main: history.main,
+    epics: history.epics.map((epic) => ({ id: epic.id, title: epic.title, commits: counts.get(epic.id) ?? 0 })),
+    open: history.commits.filter((each) => each.state !== "landed").map(brief),
+    commit: found === undefined ? null : {
+      ...brief(found),
+      task: found.task,
+      lane: found.lane,
+      notes: found.notes.map((each) => `${each.section}: ${each.text} (${each.by})`),
+      real: history.real.filter((real) => real.mythical === found.id).map((real) => real.sha),
+    },
+  }
+}
+
+effect function showHistory(input: HistoryInput) {
+  const history = try (try Mythical).read()
+  if (input.commit !== "" && !history.commits.some((each) => each.id === input.commit)) {
+    throw new CommandError({ message: `No mythical commit ${input.commit}.` })
+  }
+  return summaryOf(history, input.commit)
+}
+
+effect function plan(input: PlanInput) {
+  const mythical = try Mythical
+  const how = input.amend !== "" ? "amend" : input.before !== "" ? "insert" : "append"
+  const id = try mythical.plan({
+    how,
+    epic: input.epic,
+    newEpic: input.newEpic,
+    target: how === "amend" ? input.amend : input.before,
+    title: input.title,
+    task: input.task,
+  })
+  return { id }
+}
+
+effect function start(input: StartInput) {
+  try (try Mythical).start(input.id, input.lane)
+  return { id: input.id }
+}
+
+effect function note(input: NoteInput) {
+  try (try Mythical).note(input.id, input.section, input.text)
+  return { id: input.id }
+}
+
+export const ShowHistory = define("history", "Read VibeLang's mythical history: epics, work not landed, one commit in full.", HistoryInput, HistoryOutput, {
+  commit: Flag.String("commit").pipe(Flag.withDefault("")),
+}, showHistory, (output) => [
+  `Folded through ${output.main} (event ${output.seq}).`,
+  ...output.epics.map((epic) => `${epic.id}  ${epic.title}  ${epic.commits}`),
+  ...output.open.map((commit) => `${commit.id}  ${commit.state}  ${commit.title}`),
+  ...(output.commit === null ? [] : [
+    "", `${output.commit.id}  ${output.commit.state}  ${output.commit.title}`,
+    ...output.commit.notes,
+    ...output.commit.real.map((sha) => `real ${sha}`),
+  ]),
+].join("\n"))
+
+export const PlanWork = define("plan", "Plan a task onto the mythical history: append to --epic (or a --new-epic), insert --before a commit, or --amend a landed one.", PlanInput, WrittenOutput, {
+  title: Argument.String("title"),
+  epic: Flag.String("epic").pipe(Flag.withDefault("")),
+  newEpic: Flag.String("new-epic").pipe(Flag.withDefault("")),
+  before: Flag.String("before").pipe(Flag.withDefault("")),
+  amend: Flag.String("amend").pipe(Flag.withDefault("")),
+  task: Flag.String("task").pipe(Flag.withDefault("")),
+}, plan, (output) => `Planned ${output.id}.`, HISTORY_REFUSED)
+
+export const StartWork = define("start", "Start work on a planned mythical commit in a lane.", StartInput, WrittenOutput, {
+  id: Argument.String("id").pipe(Argument.withSchema(Id)),
+  lane: Flag.String("lane").pipe(Flag.withSchema(Id)),
+}, start, (output) => `Started ${output.id}.`, HISTORY_REFUSED)
+
+export const AddNote = define("note", "Add a note to a mythical commit: tried, evidence or superseded.", NoteInput, WrittenOutput, {
+  id: Argument.String("id").pipe(Argument.withSchema(Id)),
+  section: Flag.ChoiceWithValue("section", [["tried", "tried"], ["evidence", "evidence"], ["superseded", "superseded"]] as const),
+  text: Argument.String("text"),
+}, note, (output) => `Noted ${output.id}.`, HISTORY_REFUSED)
+
+export const commands = [Ask, Read, ShowHistory, PlanWork, StartWork, AddNote] as const
