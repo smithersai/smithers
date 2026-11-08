@@ -47,6 +47,20 @@ export effect function meter(ledger: SandboxLedger, months: Readonly<Record<stri
   return { ledger: { ...ledger, month, lastMeteredAt: high, usedMilliseconds: used, allowanceMilliseconds: allowance }, months: buckets }
 }
 
+/**
+ * The longest a running sandbox goes between meters. Each meter re-reads the role and policy, renews the container's
+ * lease and splits usage at UTC month boundaries; one meter covers its whole interval exactly (`meter`).
+ */
+export const METER_INTERVAL_MILLISECONDS = 60000
+
+/**
+ * When the next meter of `running` sandboxes is due, in milliseconds: one interval on, or sooner at the exhaustion of
+ * `remaining` allowance milliseconds, the first whole millisecond at which running × elapsed reaches it.
+ */
+export function meterDelayMilliseconds(remaining: number, running: number): number {
+  return Math.min(METER_INTERVAL_MILLISECONDS, Math.max(1, Math.ceil(remaining / Math.max(1, running))))
+}
+
 export function snapshotOf(ledger: SandboxLedger, conversation: string, generation: number, output: string) {
   const box = ledger.sandboxes.find((entry) => entry.conversation === conversation)
   const remaining = remainingMilliseconds(ledger.allowanceMilliseconds, ledger.usedMilliseconds)

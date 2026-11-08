@@ -2,7 +2,7 @@
 // committed before host I/O; recovery finishes it before admitting another operation. No container receipt is inferred.
 import { ALLOWANCES, applySandbox, decideSandbox, emptySandboxLedger, leaseMilliseconds, remainingMilliseconds, runningCount, type SandboxLedger } from "./sandboxDecision.vibe"
 import { Factory, Refused, Unavailable, type SandboxSnapshot } from "./Factory.vibe"
-import { meter, monthOf, nextMonth, millisecondOf, snapshotOf } from "./sandboxMeter.vibe"
+import { meter, meterDelayMilliseconds, monthOf, nextMonth, millisecondOf, snapshotOf } from "./sandboxMeter.vibe"
 import { mayStart, SandboxPolicy } from "./sandboxPolicy.vibe"
 
 export interface Pending { readonly kind: "start" | "stop" | "command" | "cancel-start"; readonly conversation: string; readonly operationId: string; readonly generation: number; readonly command: string }
@@ -74,8 +74,13 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
   }
   effect function arm(state: SandboxState) {
     const count = runningCount(state.ledger.sandboxes)
-    // Sample every second; a delayed alarm records all actual running time, including overage, without saturation.
-    try store.alarm(count > 0 || state.pending !== null ? (try Clock.currentTimeMillis) + 1000 : null)
+    const now = try Clock.currentTimeMillis
+    // A pending operation retries each second. A running sandbox is metered once a minute, or at its allowance's
+    // exhaustion if sooner: one meter records the whole interval exactly, and a delayed alarm records all actual
+    // running time, including overage, without saturation.
+    if (state.pending !== null) try store.alarm(now + 1000)
+    else if (count > 0) try store.alarm(now + meterDelayMilliseconds(remainingMilliseconds(state.ledger.allowanceMilliseconds, state.ledger.usedMilliseconds), count))
+    else try store.alarm(null)
   }
   effect function transition(state: SandboxState, pending: Pending, now: number) {
     if (!Number.isSafeInteger(state.ledger.sequence) || state.ledger.sequence < 0 || state.ledger.sequence >= Number.MAX_SAFE_INTEGER) throw new Unavailable({ reason: "sequence-overflow" })

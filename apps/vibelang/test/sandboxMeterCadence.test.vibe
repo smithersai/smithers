@@ -1,0 +1,148 @@
+// The live object's alarm meters a running sandbox once a minute, or at the allowance's exhaustion if that comes
+// first, never once a second: one durable meter covers the whole interval exactly, because `meter` sums
+// running count × elapsed milliseconds (review 2026-11-08 P1; wiki/decisions/0024-sandboxes.md).
+import { Fuzz } from "@smthrs/fuzz"
+import { expect, it } from "@effect/vitest"
+import { ALLOWANCES, emptySandboxLedger } from "../src/core/sandboxDecision.vibe"
+import { makeSandboxHost, type SandboxState, type Receipt } from "../src/core/sandboxHost.vibe"
+import { makeMockSandboxes, memoryMachines } from "../src/core/sandboxMock.vibe"
+import { meter, meterDelayMilliseconds, METER_INTERVAL_MILLISECONDS, type Metered, monthOf } from "../src/core/sandboxMeter.vibe"
+import { mockPolicy } from "../src/core/sandboxPolicy.vibe"
+
+/** Seconds of the mock's real alarm loop on the test clock; each due meter's flow finishes before the next. */
+effect function seconds(count: number) {
+  for (let second = 0; second < count; second++) {
+    try TestClock.adjust("1 second")
+    for (let turn = 0; turn < 50; turn++) try Effect.yieldNow
+  }
+}
+
+
+/** The engine's native work can outlive a scheduler turn; await its observed completion. */
+effect function awaitMeters(meters: Ref.Ref<number>, target: number) {
+  try TestClock.withLive(Effect.repeat(Ref.get(meters), {
+    until: (count) => count >= target, schedule: Schedule.spaced(Duration.millis(1)),
+  }).pipe(Effect.timeout("5 seconds")))
+}
+
+/** Counts the host's meter steps by their outcome-only log line. */
+effect function counted<A, E, R>(body: (meters: Ref.Ref<number>) => A!E!R) {
+  const meters = try Ref.make(0)
+  const counting = Logger.layer([Logger.make((options) => {
+    const annotations = options.fiber.getRef(References.CurrentLogAnnotations)
+    if (JSON.stringify(options.message).includes("vibelang.sandbox") && annotations["step"] === "meter") Effect.runSync(Ref.update(meters, (count) => count + 1))
+  })])
+  provide counting {
+    return try body(meters)
+  }
+}
+
+it.effect("meters a running sandbox once a minute, not once a second", () => counted(effect (meters) => {
+  try scoped(effect {
+    const sandboxes = try makeMockSandboxes("contributor")
+    try sandboxes.startSandbox("home", "start-1")
+    const started = try Ref.get(meters)
+    try seconds(59)
+    const early = (try Ref.get(meters)) - started
+    try seconds(1)
+    try awaitMeters(meters, started + 1)
+    const minute = (try Ref.get(meters)) - started
+    try seconds(60)
+    try awaitMeters(meters, started + 2)
+    const two = (try Ref.get(meters)) - started
+    try Effect.try(() => expect([early, minute, two]).toEqual([0, 1, 2]))
+  })
+}))
+
+it.effect("one meter a minute records exactly what a meter each second records", () => effect {
+  const coarse = try scoped(effect {
+    const sandboxes = try makeMockSandboxes("contributor")
+    try sandboxes.startSandbox("home", "start-1")
+    try seconds(150)
+    return try sandboxes.sandbox("home")
+  })
+  const fine = try scoped(effect {
+    const sandboxes = try makeMockSandboxes("contributor")
+    try sandboxes.startSandbox("home", "start-1")
+    // A read meters too: this sandbox is metered every second.
+    for (let second = 0; second < 150; second++) {
+      try seconds(1)
+      try sandboxes.sandbox("home")
+    }
+    return try sandboxes.sandbox("home")
+  })
+  try Effect.try(() => {
+    expect(coarse.used * 60000).toBe(150000)
+    expect(fine.used).toBe(coarse.used)
+    expect(fine.remaining).toBe(coarse.remaining)
+  })
+})
+
+it.effect("arms the next meter at the allowance's exhaustion when that comes before the minute", () => effect {
+  const state = try Ref.make<SandboxState | undefined>(undefined)
+  const armed = try Ref.make<number | null>(null)
+  const receipts = new Map<string, Receipt>()
+  const host = try Effect.provide(makeSandboxHost({
+    read: () => Ref.get(state),
+    receipt: (id) => succeed(receipts.get(id)),
+    write: (next, receipt) => sync(() => { if (receipt) receipts.set(receipt.request.operationId, receipt) }).pipe(Effect.andThen(Ref.set(state, next))),
+    alarm: (at) => Ref.set(armed, at),
+  }, memoryMachines()), mockPolicy("contributor"))
+  try host.start("a", "start-a")
+  try host.start("b", "start-b")
+  const allowance = ALLOWANCES.contributor * 60000
+  // 90,001 ms left across two running sandboxes: exhausted after 45,000.5 ms, so the meter is due at 45,001.
+  try Ref.update(state, (saved) => ({ ...saved!, ledger: { ...saved!.ledger, usedMilliseconds: allowance - 90001 } }))
+  const now = try Clock.currentTimeMillis
+  try host.tick()
+  const due = try Ref.get(armed)
+  try TestClock.adjust(due! - now)
+  try host.tick()
+  const after = try host.snapshot("a")
+  const other = try host.snapshot("b")
+  const used = (try Ref.get(state))!.ledger.usedMilliseconds
+  const rearmed = try Ref.get(armed)
+  try Effect.try(() => {
+    expect(due! - now).toBe(45001)
+    expect(after.remaining).toBe(0)
+    expect([after.status, other.status]).toEqual(["stopped", "stopped"])
+    // Two sandboxes for 45,001 ms each: the exact millisecond total, 1 ms past the allowance by the ceiling.
+    expect(used).toBe(allowance + 1)
+    // Nothing runs, so nothing is armed.
+    expect(rearmed).toBeNull()
+  })
+})
+
+it("waits at most the interval, and never past the exhaustion of the remaining allowance", () => {
+  expect(METER_INTERVAL_MILLISECONDS).toBe(60000)
+  expect(meterDelayMilliseconds(36000000, 1)).toBe(60000)
+  expect(meterDelayMilliseconds(90001, 2)).toBe(45001)
+  expect(meterDelayMilliseconds(1, 3)).toBe(1)
+  for (const [remaining, running] of [[59999, 1], [120000, 2], [7, 3], [60001, 1]] as const) {
+    const delay = meterDelayMilliseconds(remaining, running)
+    expect(delay * running).toBeGreaterThanOrEqual(Math.min(remaining, 60000 * running))
+    expect((delay - 1) * running).toBeLessThan(remaining)
+    expect(delay).toBeLessThanOrEqual(60000)
+  }
+})
+
+const Gap = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 180000 }))
+const Span = Schema.Struct({ gaps: Schema.Array(Gap).check(Schema.isMaxLength(40)), count: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 3 })) })
+it.live("feedback fuzz: one meter over a span equals metering it at every point of any partition, across a UTC month", () => effect {
+  const report = try Fuzz.run(Arbitrary.schema(Span), effect ({ gaps, count }) => {
+    // Starts 30 minutes before a month boundary, so long spans cross it.
+    const start = Date.UTC(2026, 10, 30, 23, 30)
+    const ledger = { ...emptySandboxLedger("u", "contributor", 36000000, monthOf(start), start), sandboxes: Array.from({ length: count }, (_, n) => ({ id: `s${n}`, conversation: `c${n}`, running: true })) }
+    // Both start from the meter at the span's start; the partition adds a meter at each of its points.
+    let fine: Metered = try meter(ledger, {}, start, 36000000)
+    let now = start
+    for (const gap of gaps) {
+      now += gap
+      fine = try meter(fine.ledger, fine.months, now, 36000000)
+    }
+    const once = try meter(ledger, {}, now, 36000000)
+    try Fuzz.observe(monthOf(now) !== monthOf(start) ? "crosses-month" : "same-month")
+    return once.ledger.usedMilliseconds === fine.ledger.usedMilliseconds && JSON.stringify(once.months) === JSON.stringify(fine.months) && once.ledger.lastMeteredAt === fine.ledger.lastMeteredAt
+  }, { executions: 1000, seed: 1108 })
+  try Effect.try(() => expect(report._tag, Fuzz.formatReport(report)).toBe("Passed"))
+}, 60000)
