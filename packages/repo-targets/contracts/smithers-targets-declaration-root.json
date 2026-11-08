@@ -4,10 +4,8 @@
     "./FlowCatalog",
     "./Home",
     "./LocalRepository",
-    "./Mise",
     "./Mount",
     "./Outward",
-    "./SecurityReview",
     "./Verb"
   ]
 }

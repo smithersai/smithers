@@ -7,7 +7,7 @@
 import { spawnSync } from "node:child_process"
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
-import { basename, dirname, join, relative, resolve } from "node:path"
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const require = createRequire(import.meta.url)
@@ -40,6 +40,20 @@ const readProject = file => {
   if (errors.length) throw new Error(errors.map(error => ts.flattenDiagnosticMessageText(error.messageText, "\n")).join("\n"))
   return parsed
 }
+
+const within = (directory, file) => {
+  const path = relative(directory, file)
+  return path !== "" && !path.startsWith("..") && !isAbsolute(path)
+}
+
+// The generation project lists only native files, so a compiler computing the source root
+// from them would place sidecars relative to their common directory (often src). TypeScript
+// pairs a source with its sidecar through rootDirs instead, so generate with the deepest
+// rootDirs entry that holds every native source as the source root.
+const sourceRoot = project => (project.parsed.options.rootDirs ?? [])
+  .map(directory => resolve(directory))
+  .filter(directory => project.native.every(file => within(directory, file)))
+  .sort((a, b) => b.length - a.length)[0]
 
 const generatedDeclaration = file => /\.d\.vibe\.ts$|\.vibe\.[^/]+\.d\.[cm]?ts$/.test(file)
 
@@ -82,7 +96,9 @@ export const sidecarProjects = (root = repository) => {
   }
   return [...projects.values()].filter(project => project.native.length).map(project => {
     const ambient = ambientContext(project)
+    const rootDir = sourceRoot(project)
     return {
+      ...(rootDir === undefined ? {} : { rootDir }),
       config: project.config,
       files: [...new Set([...project.native, ...ambient.files])].sort(),
       libs: ambient.libs,
@@ -109,7 +125,12 @@ export const prepareSidecars = (root = repository, { stdio = "inherit" } = {}) =
     const temporary = join(directory, ".tsconfig.vibelang-sidecars-" + process.pid + ".json")
     writeFileSync(temporary, JSON.stringify({
       extends: "./tsconfig.json",
-      compilerOptions: { noEmit: true, customConditions: project.conditions, ...(project.libs.length ? { lib: project.libs } : {}) },
+      compilerOptions: {
+        noEmit: true,
+        customConditions: project.conditions,
+        ...(project.libs.length ? { lib: project.libs } : {}),
+        ...(project.rootDir === undefined ? {} : { rootDir: slash(relative(directory, project.rootDir)) || "." })
+      },
       files: project.files.map(file => "./" + slash(relative(directory, file))),
       include: [],
       exclude: []

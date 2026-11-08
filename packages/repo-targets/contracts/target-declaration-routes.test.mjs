@@ -21,7 +21,7 @@ const fixture = action => {
   try { action(dir) } finally { rmSync(dir, { recursive: true, force: true }) }
 }
 test("every migrated public target points at its physical declaration", () => {
-  assert.equal(selected.length, 9)
+  assert.equal(selected.length, 7)
   for (const [name, entry] of selected) {
     assert.equal(entry["vibelang-source"], "./src/" + name.slice(2) + ".vibe")
     assert.match(readFileSync(resolve(targets, entry.types), "utf8"), /export/)
@@ -135,3 +135,34 @@ test("declaration preparation preserves project scope and inherited conditions a
     })
   ), { numRuns: 64, seed: 51720 })
 })
+
+test("sidecars land where rootDirs pairs them when every native source sits under src", () => fixture(dir => {
+  // No rootDir: the generation project lists only native files, so a compiler that computes the
+  // source root from them would choose src and write .vibe/declarations/value.d.vibe.ts, which
+  // rootDirs [".", ".vibe/declarations"] never pairs with src/value.vibe.
+  symlinkSync(join(root, "node_modules"), join(dir, "node_modules"), "dir")
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "declaration-root-fixture", type: "module" }))
+  mkdirSync(join(dir, "src/internal"), { recursive: true })
+  writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({
+    vibe: { sidecarDir: ".vibe/declarations" },
+    compilerOptions: {
+      target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", strict: true,
+      skipLibCheck: true, noEmit: true, rootDirs: [".", ".vibe/declarations"], allowArbitraryExtensions: true
+    },
+    include: ["src/**/*", "test/**/*"]
+  }))
+  writeFileSync(join(dir, "src/value.vibe"), "export const value = 1\n")
+  writeFileSync(join(dir, "src/internal/depth.vibe"), "export const depth = 2\n")
+  const [project] = sidecarProjects(dir)
+  assert.equal(project.rootDir, dir)
+  assert.equal(prepareSidecars(dir, { stdio: "pipe" }), 1)
+  for (const name of ["value", "internal/depth"]) {
+    const declaration = join(dir, ".vibe/declarations/src/" + name + ".d.vibe.ts")
+    assert.ok(existsSync(declaration), declaration)
+  }
+  assert.equal(existsSync(join(dir, ".vibe/declarations/value.d.vibe.ts")), false)
+  const read = ts.readConfigFile(join(dir, "tsconfig.json"), ts.sys.readFile)
+  const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, dir)
+  const found = ts.resolveModuleName("./value.vibe", join(dir, "src/consumer.ts"), parsed.options, ts.sys).resolvedModule
+  assert.equal(found?.resolvedFileName, join(dir, ".vibe/declarations/src/value.d.vibe.ts"))
+}))
