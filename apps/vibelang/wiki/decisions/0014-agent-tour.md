@@ -83,3 +83,11 @@ host, so it was not run.
 **Coverage regression (2026-11-07).** Ending a tour now returns keyboard focus to the composer after the render.
 The removed Esc button previously left focus on the page body, including after an unavailable end was retried.
 Scene checks require the focus command; browser checks require the actual composer focus after Escape or Esc.
+
+**Post/tour acceptance ordering (coverage lane, 2026-11-07).** A tour could win the interval between the mock
+actor choosing an unanswered post and that reply's first durable action. The reply journaled a refused start as
+complete, so the accepted post never received an answer. The start action now runs that already accepted tour as
+a child execution, then uses the engine's retry policy to start the same reply. This preserves oldest-post ordering
+and lets the tour finish naturally or be ended. The five public-Factory regressions vary fair scheduler boundaries,
+require every accepted post's complete answer, and require an accepted tour in the natural-completion case.
+The contended start emits a span, outcome-only log and counter; no prompt, author or conversation labels.

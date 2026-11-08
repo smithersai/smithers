@@ -10,7 +10,7 @@ import { Action, FlowRuntime } from "@smthrs/flow"
 import { apply, decide, empty, isTouring, type Conversation, type Decision, type Event, type Intent } from "./conversation.vibe"
 import { Factory, type Mode, Refused, Unavailable } from "./Factory.vibe"
 import {
-  EndTour, endsTour, openDocs, Post, postRegistration, Posts, Reply, replyIdOf, say, StartTour, Tour, toured, touring, tourRegistration,
+  EndTour, endsTour, openDocs, patient, Post, postRegistration, Posts, Reply, replyIdOf, say, StartTour, Tour, toured, touring, tourRegistration,
   Tours, unanswered,
 } from "./flows.vibe"
 import { chunks, mockReply, TOUR } from "./mockReplies.vibe"
@@ -39,6 +39,9 @@ export const MOCK_DELTA_DELAY = "25 millis"
 /** How long the scripted agent stays on a docs page after it said what the page is. */
 export const MOCK_STOP_DELAY = "1500 millis"
 
+/** Reply starts that yield to a concurrently accepted tour; no conversation or text labels. */
+const replyStarts = Metric.counter("vibelang_mock_reply_starts", { incremental: true })
+
 /** The scripted agent's tour, `vibelang/Tour`'s mock speaker: each stop opens its page, then says its words. */
 effect function scriptedTour(tour: string) {
   const tours = try Tours
@@ -57,13 +60,30 @@ effect function scriptedTour(tour: string) {
   try Action.make({ name: "vibelang/tour/finish", execute: tours.finish(tour, "") })
 }
 
+/** A tour won the acceptance race; the same durable reply waits for it. */
+schema error ReplyBusy {}
+
 /** The scripted agent's reply to `post`, `vibelang/Reply`'s mock body: every record is a step. */
-effect function scripted(state: Ref.Ref<State>, record: (intent: Intent) => Decision!!, post: string) {
+effect function scripted(engine: FlowRuntime.FlowRuntime["Service"], state: Ref.Ref<State>, record: (intent: Intent) => Decision!!, post: string) {
   const id = replyIdOf(post)
   const started = try Action.make({
     name: "vibelang/reply/start",
     success: Schema.Boolean,
-    execute: Effect.map(record({ type: "StartReply", id, inReplyTo: post }), (decision) => decision.ok),
+    error: ReplyBusy,
+    retryPolicy: patient,
+    execute: effect {
+      const decision = try record({ type: "StartReply", id, inReplyTo: post })
+      if (!decision.ok && decision.refusal === "busy") {
+        const tour = touring((try Ref.get(state)).conversation)
+        // The actor is awaiting this reply. Run the already accepted tour as a child so it can settle naturally;
+        // the engine then retries this same start action, preserving the post's reply execution and ordering.
+        if (tour !== "") try Effect.orDie(engine.execute(Tour, { executionId: `tour/${tour}`, payload: { tour } }))
+        try Metric.update(Metric.withAttributes(replyStarts, { outcome: "contended" }), 1)
+        try Effect.logInfo("vibelang.reply.start").pipe(Effect.annotateLogs({ outcome: "contended" }))
+        throw new ReplyBusy()
+      }
+      return decision.ok
+    },
   })
   if (!started) return null
   const prompt = (try Ref.get(state)).conversation.entries.find((entry) => entry.id === post)?.text ?? ""
@@ -183,7 +203,7 @@ export const MockFactory = Layer.effect(Factory, effect {
         tourRegistration,
         Layer.effectDiscard(effect {
           const engine = try FlowRuntime.FlowRuntime
-          try engine.register(Reply, (payload) => scripted(state, record, payload.post))
+          try engine.register(Reply, (payload) => Effect.orDie(withSpan(scripted(engine, state, record, payload.post), "vibelang.reply")))
           try engine.register(Tour, (payload) => withSpan(toured(payload.tour, scriptedTour(payload.tour)), "vibelang.tour"))
         }),
       ).pipe(

@@ -11,11 +11,14 @@
 //
 // The steps reach the conversation's one state machine (conversation.vibe) through the `Posts` and `Tours` services;
 // nothing here decides anything.
-import { Action, Flow, FlowRuntime } from "@smthrs/flow"
+import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { canReplyTo, type Conversation, type Event, isTour, type Refusal } from "./conversation.vibe"
 import { dispatches, endsTourEvent } from "./flowDecision.vibe"
 import { RefusalReason } from "./schemas.vibe"
+
+/** A contended reply or remote object waits through the engine's journaled retry policy. */
+export const patient = RetryPolicy.make({ initialMs: 500, factor: 2, maxMs: 60_000, jitterRatio: 0.2 })
 
 /** A post's answer: `null` once the sequencer recorded it, else why it refused. */
 export const PostAnswer = Schema.NullOr(RefusalReason)

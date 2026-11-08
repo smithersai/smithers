@@ -7,13 +7,13 @@
 // becomes `FailReply` with a reason the person reads.
 import { Agent, AgentAction, Budget, EventSink, QuotaPolicy, Seat, SeatResolver } from "@smthrs/agent"
 import { WebCrypto } from "@smthrs/crypto"
-import { Action, FlowRuntime, RetryPolicy } from "@smthrs/flow"
+import { Action, FlowRuntime } from "@smthrs/flow"
 import { type AgentEvent, DoneText, type FlowBinding } from "@smthrs/harness"
 import * as QuickJSWorkerd from "@smthrs/harness/QuickJSWorkerd"
 import { Evaluator, ModelRequest } from "@smthrs/model"
 import type { HostModel } from "@smthrs/model-host"
 import { Registry } from "@smthrs/registry"
-import { Reply, replyIdOf } from "../src/core/flows.vibe"
+import { patient, Reply, replyIdOf } from "../src/core/flows.vibe"
 import { AGENT_CONTEXT } from "./agentContext.vibe"
 import { Turn, type Answer } from "./Sequencer.vibe"
 import { Unreachable } from "./Unreachable.vibe"
@@ -86,8 +86,7 @@ export const AGENT_SEAT = "agent"
  */
 export const LIMITS = { calls: 0, memoryBytes: 32 * 1024 * 1024, timeMs: 5_000 }
 
-/** A step that waits on the budget's object, or on another reply: it retries until it can, at most a minute apart. */
-export const patient = RetryPolicy.make({ initialMs: 500, factor: 2, maxMs: 60_000, jitterRatio: 0.2 })
+export { patient } from "../src/core/flows.vibe"
 
 /** The UTC day of `millis`, as the budget names it: `2026-11-07`. */
 export function dayOf(millis: number): string {
