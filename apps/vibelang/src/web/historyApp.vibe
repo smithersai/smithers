@@ -1,0 +1,388 @@
+// The mythical history's page (wiki/decisions/0020-mythical-history.md; design: wiki/designs/mythical/): a Foldkit
+// program at /history, the history as a maximized pane whose − returns to the chat (VL-17). It reads the history once,
+// then applies the history's numbered events with the shared machine's `apply`, as every copy does; each button runs
+// one of the history's flows through `Mythical`. Where you are is the URL's hash: `#e4` an epic, `#m12` a commit.
+import { Command, Dom, Subscription, type Update } from "foldkit"
+import { defineMessageUnion } from "foldkit/message"
+import * as Machine from "../history/mythical.vibe"
+import { Mythical } from "../history/MythicalHistory.vibe"
+import { type Role, ROLES } from "../history/roles.vibe"
+import { History as HistorySchema, HistoryEvent } from "../history/schemas.vibe"
+
+// FLAGS
+
+export schema HistoryFlags {
+  readonly mode: "mock" | "live" | "pending"
+  readonly role: "viewer" | "new" | "community" | "contributor" | "maintainer"
+  readonly hash: string
+}
+
+// MODEL
+
+export schema PlanForm {
+  readonly how: "append" | "insert" | "amend"
+  readonly title: string
+  readonly epic: string
+  /** The title of a new epic, when `epic` is `NEW_EPIC`. */
+  readonly newEpic: string
+  readonly target: string
+  readonly task: string
+}
+
+export schema HistoryModel {
+  readonly mode: "mock" | "live" | "pending"
+  readonly role: "viewer" | "new" | "community" | "contributor" | "maintainer"
+  readonly status: "loading" | "ready" | "failed"
+  readonly history: HistorySchema
+  /** Where the reader is: the list, an epic (`e<n>`) or a commit (`m<n>`). */
+  readonly hash: string
+  /** Epics shown open on the list, and epics showing every commit rather than the first `PAGE`. */
+  readonly open: ReadonlyArray<string>
+  readonly full: ReadonlyArray<string>
+  readonly filter: string
+  readonly dialog: boolean
+  readonly form: PlanForm
+  readonly lane: string
+  readonly noteSection: "tried" | "evidence" | "superseded"
+  readonly noteText: string
+  /** Why the last write was refused, or `""`. */
+  readonly error: string
+  readonly busy: boolean
+  /** Bumped to read the history and follow its events again. */
+  readonly epoch: number
+}
+
+/** How many commits an open epic shows before Show all. */
+export const PAGE = 50
+
+/** How many commits a filter shows. */
+export const MATCHES = 100
+
+/** The Epic choice that opens a new epic. */
+export const NEW_EPIC = "new"
+
+/** The repository the history tells, for links to its real commits. */
+export const REPOSITORY_URL = "https://github.com/smithersai/vibelang"
+
+const emptyForm: PlanForm = { how: "append", title: "", epic: "", newEpic: "", target: "", task: "" }
+
+// MESSAGE
+
+export const HistoryMessage = defineMessageUnion({
+  ResolvedMode: { mode: Schema.Literals(["mock", "live"]) },
+  Loaded: { history: HistorySchema },
+  FailedLoad: { reason: Schema.String },
+  ClickedRetry: {},
+  Navigated: { hash: Schema.String },
+  ToggledEpic: { id: Schema.String },
+  ClickedShowAll: { id: Schema.String },
+  UpdatedFilter: { value: Schema.String },
+  OpenedPlan: { how: Schema.Literals(["append", "insert", "amend"]), target: Schema.String },
+  ClosedPlan: {},
+  UpdatedForm: { field: Schema.Literals(["title", "epic", "newEpic", "target", "task", "how"]), value: Schema.String },
+  SubmittedPlan: {},
+  UpdatedLane: { value: Schema.String },
+  ClickedStart: { id: Schema.String },
+  ClickedApprove: { id: Schema.String },
+  ClickedFold: {},
+  UpdatedNoteSection: { value: Schema.Literals(["tried", "evidence", "superseded"]) },
+  UpdatedNote: { value: Schema.String },
+  SubmittedNote: { id: Schema.String },
+  Wrote: { hash: Schema.String },
+  FailedWrite: { reason: Schema.String },
+  ReceivedEvent: { event: HistoryEvent },
+  FailedEvents: {},
+  PressedEscape: {},
+  /** A command that only acts on the page: nothing changes. */
+  Settled: {},
+})
+export type HistoryMessage = typeof HistoryMessage.Type
+
+/** What the page's commands need: the history, and the window whose hash they move. */
+export type Needs = Mythical | Experimental.Window.Window
+
+type Return = Update.Return<HistoryModel, HistoryMessage, Needs>
+
+// INIT
+
+export function init(flags: HistoryFlags): Return {
+  return {
+    model: {
+      mode: flags.mode,
+      role: flags.role,
+      status: "loading",
+      history: Machine.empty,
+      hash: flags.hash,
+      open: [],
+      full: [],
+      filter: "",
+      dialog: false,
+      form: emptyForm,
+      lane: "",
+      noteSection: "tried",
+      noteText: "",
+      error: "",
+      busy: false,
+      epoch: 1,
+    },
+  }
+}
+
+// QUERIES
+
+/** Whether `role` may take what needs `least`. */
+export function allowed(role: Role, least: Role): boolean {
+  return ROLES.indexOf(role) >= ROLES.indexOf(least)
+}
+
+/** The epic's commits in stack order. */
+export function commitsOf(history: Machine.History, epic: string): ReadonlyArray<Machine.Commit> {
+  return history.commits.filter((commit) => commit.epic === epic).sort((a, b) => a.rank - b.rank)
+}
+
+/** The real commits a mythical commit folds, in main's order. */
+export function realOf(history: Machine.History, id: string): ReadonlyArray<Machine.Real> {
+  return history.real.filter((real) => real.mythical === id)
+}
+
+/** Work on the stack that hasn't landed: planned, working or approved, in stack order. */
+export function openWork(history: Machine.History): ReadonlyArray<Machine.Commit> {
+  return history.epics.flatMap((epic) => commitsOf(history, epic.id).filter((commit) => commit.state !== "landed"))
+}
+
+/** Commits whose title has `filter`, at most `MATCHES`, in stack order. */
+export function matching(history: Machine.History, filter: string): ReadonlyArray<Machine.Commit> {
+  const needle = filter.trim().toLowerCase()
+  if (needle === "") return []
+  const found: Array<Machine.Commit> = []
+  for (const epic of history.epics) {
+    for (const commit of commitsOf(history, epic.id)) {
+      if (found.length >= MATCHES) return found
+      if (commit.title.toLowerCase().includes(needle) || commit.id === needle) found.push(commit)
+    }
+  }
+  return found
+}
+
+// UPDATE
+
+function write(model: HistoryModel, command: Command.Command<HistoryMessage, never, Needs>): Return {
+  return { model: { ...model, busy: true, error: "" }, commands: [command] }
+}
+
+export function update(model: HistoryModel, message: HistoryMessage): Return {
+  return HistoryMessage.match<Return>(message, {
+    // Live, the server decides who you are: a viewer until sign-in (decision 0019) lands.
+    ResolvedMode: ({ mode }) => ({ model: { ...model, mode, role: mode === "live" ? "viewer" : model.role } }),
+    Loaded: ({ history }) => ({ model: { ...model, status: "ready", history } }),
+    FailedLoad: () => ({ model: { ...model, status: "failed" } }),
+    ClickedRetry: () => ({ model: { ...model, status: "loading", epoch: model.epoch + 1 } }),
+    Navigated: ({ hash }) => ({ model: { ...model, hash, error: "" } }),
+    ToggledEpic: ({ id }) => ({
+      model: { ...model, open: model.open.includes(id) ? model.open.filter((each) => each !== id) : [...model.open, id] },
+    }),
+    ClickedShowAll: ({ id }) => ({ model: { ...model, full: [...model.full, id] } }),
+    UpdatedFilter: ({ value }) => ({ model: { ...model, filter: value } }),
+    OpenedPlan: ({ how, target }) => {
+      const epic = how === "append" ? (model.history.epics[0]?.id ?? NEW_EPIC) : ""
+      return {
+        model: { ...model, dialog: true, error: "", form: { ...emptyForm, how, target, epic } },
+        commands: [ShowPlan({})],
+      }
+    },
+    ClosedPlan: () => ({ model: { ...model, dialog: false, error: "" }, commands: [ClosePlan({})] }),
+    UpdatedForm: ({ field, value }) => ({ model: { ...model, form: { ...model.form, [field]: value } } }),
+    SubmittedPlan: () => {
+      const { form } = model
+      return write(model, PlanCommand({
+        how: form.how,
+        epic: form.epic === NEW_EPIC ? "" : form.epic,
+        newEpic: form.how === "append" && form.epic === NEW_EPIC ? form.newEpic : "",
+        target: form.target,
+        title: form.title,
+        task: form.task,
+      }))
+    },
+    UpdatedLane: ({ value }) => ({ model: { ...model, lane: value } }),
+    ClickedStart: ({ id }) => write(model, StartCommand({ id, lane: model.lane })),
+    ClickedApprove: ({ id }) => write(model, ApproveCommand({ id })),
+    ClickedFold: () => write(model, FoldCommand({})),
+    UpdatedNoteSection: ({ value }) => ({ model: { ...model, noteSection: value } }),
+    UpdatedNote: ({ value }) => ({ model: { ...model, noteText: value } }),
+    SubmittedNote: ({ id }) => write(model, NoteCommand({ id, section: model.noteSection, text: model.noteText })),
+    // A plan opens its new commit; every write clears its inputs.
+    Wrote: ({ hash }) => ({
+      model: { ...model, busy: false, dialog: false, lane: "", noteText: "", hash: hash === "" ? model.hash : hash },
+      commands: [ClosePlan({}), ...(hash === "" ? [] : [SetHash({ hash })])],
+    }),
+    FailedWrite: ({ reason }) => ({ model: { ...model, busy: false, error: reason } }),
+    ReceivedEvent: ({ event }) => {
+      const history = Machine.apply(model.history, event)
+      // A missed event: read the history again and follow from there.
+      if (event.seq > model.history.seq + 1) return { model: { ...model, epoch: model.epoch + 1 } }
+      return { model: { ...model, history } }
+    },
+    FailedEvents: () => ({ model }),
+    PressedEscape: () => model.dialog ? { model: { ...model, dialog: false }, commands: [ClosePlan({})] } : { model },
+    Settled: () => ({ model }),
+  })
+}
+
+// COMMAND
+
+/** A Message from its constructor, in a Command. Constructors validate with Schema, so a bad payload is a defect. */
+effect function message<A>(make: () => A) {
+  return try orDie(Effect.try(make))
+}
+
+/** Why a write failed, in the words the page shows: the refusal, or that the history can't be reached. */
+function reasonOf(error: { readonly _tag: string; readonly refusal?: string; readonly reason?: string }): string {
+  return error._tag === "Refused" ? error.refusal ?? "refused" : "unavailable"
+}
+
+export const PLAN_ID = "mh-plan"
+
+export const ShowPlan = Command.define("ShowPlan", {
+  args: {},
+  messages: [HistoryMessage.Settled],
+  execute: effect () => {
+    Dom.showDialog(`#${PLAN_ID}`, { isModal: true, focusSelector: "#mh-plan-title" }) catch () => false
+    return try message(() => HistoryMessage.Settled())
+  },
+})
+
+export const ClosePlan = Command.define("ClosePlan", {
+  args: {},
+  messages: [HistoryMessage.Settled],
+  execute: effect () => {
+    Dom.closeDialog(`#${PLAN_ID}`) catch () => false
+    return try message(() => HistoryMessage.Settled())
+  },
+})
+
+/** Moves the page to `hash`, so the address and Back follow the reader. */
+export const SetHash = Command.define("SetHash", {
+  args: { hash: Schema.String },
+  messages: [HistoryMessage.Settled],
+  execute: effect ({ hash }) => {
+    const window = try (try Experimental.Window.Window).current
+    try sync(() => { window.location.hash = hash })
+    return try message(() => HistoryMessage.Settled())
+  },
+})
+
+export const PlanCommand = Command.define("Plan", {
+  args: { how: Schema.Literals(["append", "insert", "amend"]), epic: Schema.String, newEpic: Schema.String, target: Schema.String, title: Schema.String, task: Schema.String },
+  messages: [HistoryMessage.Wrote, HistoryMessage.FailedWrite],
+  execute: effect (request) => {
+    const mythical = try Mythical
+    const written = effect {
+      return { id: try mythical.plan(request), reason: "" }
+    } catch (error) => ({ id: "", reason: reasonOf(error) })
+    return try message(() => written.reason === "" ? HistoryMessage.Wrote({ hash: written.id }) : HistoryMessage.FailedWrite({ reason: written.reason }))
+  },
+})
+
+/** A write that answers nothing: done, or its reason. */
+function settledMessage(reason: string) {
+  return reason === "" ? HistoryMessage.Wrote({ hash: "" }) : HistoryMessage.FailedWrite({ reason })
+}
+
+export const StartCommand = Command.define("Start", {
+  args: { id: Schema.String, lane: Schema.String },
+  messages: [HistoryMessage.Wrote, HistoryMessage.FailedWrite],
+  execute: effect ({ id, lane }) => {
+    const mythical = try Mythical
+    const reason = effect {
+      try mythical.start(id, lane)
+      return ""
+    } catch (error) => reasonOf(error)
+    return try message(() => settledMessage(reason))
+  },
+})
+
+export const ApproveCommand = Command.define("Approve", {
+  args: { id: Schema.String },
+  messages: [HistoryMessage.Wrote, HistoryMessage.FailedWrite],
+  execute: effect ({ id }) => {
+    const mythical = try Mythical
+    const reason = effect {
+      try mythical.approve(id)
+      return ""
+    } catch (error) => reasonOf(error)
+    return try message(() => settledMessage(reason))
+  },
+})
+
+export const NoteCommand = Command.define("Note", {
+  args: { id: Schema.String, section: Schema.Literals(["tried", "evidence", "superseded"]), text: Schema.String },
+  messages: [HistoryMessage.Wrote, HistoryMessage.FailedWrite],
+  execute: effect ({ id, section, text }) => {
+    const mythical = try Mythical
+    const reason = effect {
+      try mythical.note(id, section, text)
+      return ""
+    } catch (error) => reasonOf(error)
+    return try message(() => settledMessage(reason))
+  },
+})
+
+export const FoldCommand = Command.define("Fold", {
+  args: {},
+  messages: [HistoryMessage.Wrote, HistoryMessage.FailedWrite],
+  execute: effect () => {
+    const mythical = try Mythical
+    const reason = effect {
+      try mythical.fold()
+      return ""
+    } catch (error) => reasonOf(error)
+    return try message(() => settledMessage(reason))
+  },
+})
+
+// SUBSCRIPTION
+
+/** The page's subscriptions: Escape and the hash on `window`, and the history: read, then its events followed. */
+export function subscriptions(window: Window) {
+  return Subscription.make<HistoryModel, HistoryMessage, Needs>()((entry) => ({
+    keyboard: Subscription.persistentEntry(
+      Dom.streamFromEventFilterMap({
+        target: window,
+        type: "keydown",
+        filterMapEvent: (event: Event) =>
+          (event as KeyboardEvent).key === "Escape" ? Option.some(HistoryMessage.PressedEscape()) : Option.none(),
+      }),
+    ),
+    hash: Subscription.persistentEntry(
+      Dom.streamFromEventFilterMap({
+        target: window,
+        type: "hashchange",
+        filterMapEvent: () => Option.some(HistoryMessage.Navigated({ hash: window.location.hash.slice(1) })),
+      }),
+    ),
+    history: entry(
+      { epoch: Schema.Number },
+      {
+        modelToDependencies: (model: HistoryModel) => ({ epoch: model.epoch }),
+        dependenciesToStream: () =>
+          Stream.unwrap(effect {
+            const mythical = try Mythical
+            const history = mythical.read() catch () => undefined
+            if (history === undefined) {
+              const failed: Stream.Stream<HistoryMessage> = Stream.make(try message(() => HistoryMessage.FailedLoad({ reason: "unavailable" })))
+              return failed
+            }
+            const loaded = try message(() => HistoryMessage.Loaded({ history }))
+            const followed: Stream.Stream<HistoryMessage> = Stream.concat(
+              Stream.make(loaded),
+              mythical.events(history.seq).pipe(
+                Stream.map((event) => HistoryMessage.ReceivedEvent({ event })),
+                Stream.catchTag("Unavailable", () => Stream.make(HistoryMessage.FailedEvents())),
+              ),
+            )
+            return followed
+          }),
+      },
+    ),
+  }))
+}

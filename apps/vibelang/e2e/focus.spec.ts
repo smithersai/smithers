@@ -36,8 +36,8 @@ test("6: Enter focuses the docked composer; Escape and a second shortcut restore
 test("6: Escape returns to the actual keyboard opener on the splash", async ({ page }) => {
   await page.goto("/")
   const ask = page.getByRole("button", { name: "Ask the agent" })
-  // Home, Docs, GitHub, Learn more (the primary action, VL-28), then Ask the agent.
-  for (let i = 0; i < 5; i++) await page.keyboard.press("Tab")
+  // Home, History, Docs, GitHub, Learn more (the primary action, VL-28), then Ask the agent.
+  for (let i = 0; i < 6; i++) await page.keyboard.press("Tab")
   await expect(ask).toBeFocused()
   await ask.press("Enter")
   await expect(input(page)).toBeFocused()

@@ -1,7 +1,18 @@
-// Browser boundary. The startup program is shared with the runtime and injected-fault browser tests.
+// Browser boundary. The startup program is shared with the runtime and injected-fault browser tests. /history is the
+// mythical history's page (wiki/decisions/0020-mythical-history.md); every other path is the chat.
 import { FetchHttpClient } from "effect/http"
 import { Runtime } from "foldkit"
+import { historyMain } from "./historyStartup.vibe"
 import { main, page } from "./startup.vibe"
 
-const { application, flags } = await runPromise(Effect.provide(main(), Layer.merge(page, FetchHttpClient.layer)) |> Effect.orDie(%))
-Runtime.run(application, { flags: succeed(flags) })
+const services = Layer.merge(page, FetchHttpClient.layer)
+const path = await runPromise(Effect.provide(effect {
+  return (try (try Experimental.Window.Window).current).location.pathname
+}, page))
+if (path === "/history" || path.startsWith("/history/")) {
+  const { application, flags } = await runPromise(Effect.provide(historyMain(), services) |> Effect.orDie(%))
+  Runtime.run(application, { flags: succeed(flags) })
+} else {
+  const { application, flags } = await runPromise(Effect.provide(main(), services) |> Effect.orDie(%))
+  Runtime.run(application, { flags: succeed(flags) })
+}

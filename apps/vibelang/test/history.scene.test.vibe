@@ -1,0 +1,207 @@
+// The history page's real update and view, driven the way a person drives them, with Foldkit scenes (no browser)
+// (wiki/decisions/0020-mythical-history.md): what each role sees, planning, the commit page and events arriving.
+import { change, click, Command, expect, given, label, role, scene, Subscription, text, type, within } from "foldkit/scene"
+import { describe, expect as assert, it } from "@effect/vitest"
+import { apply, decide, type History, type Intent } from "../src/history/mythical.vibe"
+import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
+import {
+  ApproveCommand, ClosePlan, FoldCommand, HistoryMessage, type HistoryModel, init, NEW_EPIC, NoteCommand, PlanCommand, SetHash, ShowPlan,
+  StartCommand, update,
+} from "../src/web/historyApp.vibe"
+import { refusalText, view } from "../src/web/historyView.vibe"
+import { newClient } from "../src/core/conversation.vibe"
+import { HOME_CONVERSATION, type Model as ChatModel, update as chatUpdate } from "../src/web/main.vibe"
+import { view as chatView } from "../src/web/view.vibe"
+
+const chatHome: ChatModel = {
+  surface: "splash", palette: false, draft: "", session: "s1", name: "Ada", reducedMotion: false, sent: 0,
+  conversation: HOME_CONVERSATION, client: newClient, mode: "mock", stream: "closed", epoch: 0, from: 0, following: true,
+  followIntent: 0, answer: "", announced: 0, connection: "", tour: false, tourError: "", docs: "pane",
+}
+
+/** The compiler (m1 "one", m2 "three"), then Docs (m3 "two"), all landed. */
+const small: History = replay(intentsOf(seedOf("o/r", ["fix(compiler): one", "docs: two", "fix(compiler): three"].map((description, index) => ({
+  sha: `${index + 1}`.padStart(12, "0"), change: "", description, parents: index === 0 ? [] : [`${index}`.padStart(12, "0")],
+})), []))).history
+
+/** `history` after `intent`, which must be accepted. */
+function after(history: History, intent: Intent): History {
+  const decision = decide(history, intent)
+  return decision.ok ? apply(history, decision.event) : history
+}
+
+function loaded(role: HistoryModel["role"], hash = ""): HistoryModel {
+  return { ...init({ mode: "mock", role, hash }).model, status: "ready", history: small }
+}
+
+describe("the list", () => {
+  it("shows each epic with its count, and a maintainer Plan work and Fold", () => {
+    scene(
+      { update, view },
+      given(loaded("maintainer")),
+      expect(role("button", { name: /The compiler/ })).toHaveAttr("aria-expanded", "false"),
+      expect(text("2 commits")).toExist(),
+      expect(text("1 commits")).toExist(),
+      expect(role("button", { name: "Plan work" })).toExist(),
+      expect(role("button", { name: "Fold" })).toExist(),
+      expect(role("link", { name: "Minimize" })).toHaveAttr("href", "/"),
+      expect(text("Mock")).toExist(),
+      click(role("button", { name: /The compiler/ })),
+      expect(role("button", { name: /The compiler/ })).toHaveAttr("aria-expanded", "true"),
+      expect(role("link", { name: /fix\(compiler\): one/ })).toHaveAttr("href", "#m1"),
+      expect(role("link", { name: /fix\(compiler\): three/ })).toHaveAttr("href", "#m2"),
+    )
+  })
+
+  it("shows a viewer no action and a contributor no Fold", () => {
+    scene(
+      { update, view },
+      given(loaded("viewer")),
+      expect(role("button", { name: "Plan work" })).toBeAbsent(),
+      expect(role("button", { name: "Fold" })).toBeAbsent(),
+    )
+    scene(
+      { update, view },
+      given(loaded("contributor")),
+      expect(role("button", { name: "Plan work" })).toExist(),
+      expect(role("button", { name: "Fold" })).toBeAbsent(),
+    )
+  })
+
+  it("is a viewer's once live, whatever mock role the page had", () => {
+    assert(update(loaded("maintainer"), HistoryMessage.ResolvedMode({ mode: "live" })).model.role).toBe("viewer")
+    assert(update(loaded("contributor"), HistoryMessage.ResolvedMode({ mode: "mock" })).model.role).toBe("contributor")
+  })
+
+  it("filters commits by title, and says when the history is empty, loading or unreachable", () => {
+    scene(
+      { update, view },
+      given(loaded("viewer")),
+      type(label("Filter commits"), "three"),
+      expect(role("list", { name: "Matching commits" })).toExist(),
+      expect(role("link", { name: /fix\(compiler\): three/ })).toExist(),
+      expect(role("link", { name: /fix\(compiler\): one/ })).toBeAbsent(),
+    )
+    scene({ update, view }, given({ ...loaded("viewer"), history: { ...small, epics: [], commits: [], real: [] } }), expect(text("No mythical history yet.")).toExist())
+    scene(
+      { update, view },
+      given({ ...loaded("viewer"), status: "failed" }),
+      expect(text("Couldn't load the history.")).toExist(),
+      click(role("button", { name: "Retry" })),
+      expect(text("Couldn't load the history.")).toBeAbsent(),
+    )
+  })
+})
+
+describe("planning", () => {
+  it("opens Plan work, plans into a new epic, then opens the planned commit", () => {
+    scene(
+      { update, view },
+      given(loaded("contributor")),
+      click(role("button", { name: "Plan work" })),
+      Command.expectExact(ShowPlan({})),
+      Command.resolve(ShowPlan, HistoryMessage.Settled()),
+      type(label("Commit"), "feat(sandbox): start"),
+      change(label("Epic"), NEW_EPIC),
+      type(label("New epic"), "Sandboxes"),
+      type(label("Task"), "t1"),
+      click(within(role("dialog"), role("button", { name: "Plan work" }))),
+      Command.expectExact(PlanCommand({ how: "append", epic: "", newEpic: "Sandboxes", target: "", title: "feat(sandbox): start", task: "t1" })),
+      Command.resolve(PlanCommand, HistoryMessage.Wrote({ hash: "m4" })),
+      Command.expectExact(ClosePlan({}), SetHash({ hash: "m4" })),
+      Command.resolve(ClosePlan, HistoryMessage.Settled()),
+      Command.resolve(SetHash, HistoryMessage.Settled()),
+    )
+  })
+
+  it("shows a refusal in the dialog, and Escape closes it", () => {
+    scene(
+      { update, view },
+      given(loaded("contributor")),
+      click(role("button", { name: "Plan work" })),
+      Command.resolve(ShowPlan, HistoryMessage.Settled()),
+      click(within(role("dialog"), role("button", { name: "Plan work" }))),
+      Command.resolve(PlanCommand, HistoryMessage.FailedWrite({ reason: "empty" })),
+      expect(within(role("dialog"), role("alert"))).toHaveText(refusalText("empty")),
+      Subscription.emit(HistoryMessage.PressedEscape()),
+      Command.expectExact(ClosePlan({})),
+      Command.resolve(ClosePlan, HistoryMessage.Settled()),
+    )
+  })
+})
+
+describe("a commit", () => {
+  it("shows its note's four sections, its real commits on GitHub, and a maintainer Amend…", () => {
+    scene(
+      { update, view },
+      given(loaded("maintainer", "m1")),
+      expect(role("heading", { name: "fix(compiler): one" })).toExist(),
+      expect(text("Tried")).toExist(),
+      expect(text("Evidence")).toExist(),
+      expect(text("Folded")).toExist(),
+      expect(text("Superseded")).toExist(),
+      expect(role("link", { name: "000000000001" })).toHaveAttr("href", "https://github.com/smithersai/vibelang/commit/000000000001"),
+      expect(role("button", { name: "Amend…" })).toExist(),
+      click(role("button", { name: "Amend…" })),
+      Command.expectExact(ShowPlan({})),
+      Command.resolve(ShowPlan, HistoryMessage.Settled()),
+      expect(role("dialog", { name: "Amend" })).toExist(),
+    )
+  })
+
+  it("walks a planned commit: Start with a lane, a note, Approve for a maintainer", () => {
+    const planned = after(small, { type: "Plan", id: "m4", epic: "e1", before: "", title: "fix(compiler): four", task: "t4" })
+    const working = after(planned, { type: "Start", id: "m4", lane: "lane-a" })
+    scene(
+      { update, view },
+      given({ ...loaded("maintainer", "m4"), history: planned }),
+      expect(role("button", { name: "Approve" })).toBeAbsent(),
+      type(label("Lane"), "lane-a"),
+      click(role("button", { name: "Start" })),
+      Command.expectExact(StartCommand({ id: "m4", lane: "lane-a" })),
+      Command.resolve(StartCommand, HistoryMessage.Wrote({ hash: "" })),
+      Command.resolve(ClosePlan, HistoryMessage.Settled()),
+      Subscription.emit(HistoryMessage.ReceivedEvent({ event: { type: "Started", seq: planned.seq + 1, id: "m4", lane: "lane-a" } })),
+      expect(text("working")).toExist(),
+      type(label("Note"), "A cache; it went stale."),
+      click(role("button", { name: "Add note" })),
+      Command.expectExact(NoteCommand({ id: "m4", section: "tried", text: "A cache; it went stale." })),
+      Command.resolve(NoteCommand, HistoryMessage.Wrote({ hash: "" })),
+      Command.resolve(ClosePlan, HistoryMessage.Settled()),
+      click(role("button", { name: "Approve" })),
+      Command.expectExact(ApproveCommand({ id: "m4" })),
+      Command.resolve(ApproveCommand, HistoryMessage.Wrote({ hash: "" })),
+      Command.resolve(ClosePlan, HistoryMessage.Settled()),
+    )
+    assert(working.commits.find((commit) => commit.id === "m4")?.state).toBe("working")
+  })
+
+  it("never offers a contributor Approve or Amend…", () => {
+    const working = after(after(small, { type: "Plan", id: "m4", epic: "e1", before: "", title: "x", task: "" }), { type: "Start", id: "m4", lane: "a" })
+    scene({ update, view }, given({ ...loaded("contributor", "m4"), history: working }), expect(role("button", { name: "Approve" })).toBeAbsent())
+    scene({ update, view }, given(loaded("contributor", "m1")), expect(role("button", { name: "Amend…" })).toBeAbsent(), expect(role("button", { name: "Add note" })).toExist())
+  })
+})
+
+describe("events", () => {
+  it("applies the next event, and reads again after a gap", () => {
+    const model = loaded("viewer")
+    const next = update(model, HistoryMessage.ReceivedEvent({ event: { type: "Noted", seq: small.seq + 1, id: "m1", section: "tried", text: "x", by: "Ada" } })).model
+    assert(next.history.commits.find((commit) => commit.id === "m1")!.notes).toEqual([{ section: "tried", text: "x", by: "Ada" }])
+    const gap = update(model, HistoryMessage.ReceivedEvent({ event: { type: "Noted", seq: small.seq + 5, id: "m1", section: "tried", text: "x", by: "Ada" } })).model
+    assert([gap.epoch, gap.history]).toEqual([model.epoch + 1, small])
+    const folding = update(model, HistoryMessage.ClickedFold())
+    assert(folding.model.busy).toBe(true)
+    assert(folding.commands?.map((command) => command.name)).toEqual([FoldCommand({}).name])
+  })
+})
+
+describe("the chat", () => {
+  it("links to the history from its top bar", () => {
+    scene(
+      { update: chatUpdate, view: chatView },
+      given(chatHome),
+      expect(role("link", { name: "History" })).toHaveAttr("href", "/history"),
+    )
+  })
+})

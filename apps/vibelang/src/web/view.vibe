@@ -48,6 +48,7 @@ function top(model: Model, h: H): Html {
     h.button([h.Class("vl-home"), h.Type("button"), h.AriaLabel("Home"), h.OnClick(Message.ClickedSplash())], [logo(h)]),
     h.nav([h.Class("vl-nav")], [
       ...(model.mode === "mock" ? [h.span([h.Class("vl-pill")], ["Mock"])] : []),
+      h.a([h.Class("vl-nav-link"), h.Href("/history")], ["History"]),
       h.a([h.Class("vl-nav-link"), h.Href(DOCS_URL)], ["Docs", away(h)]),
       h.a([h.Class("vl-nav-link"), h.Href(SOURCE_URL)], [githubMark(h), "GitHub", away(h)]),
     ]),

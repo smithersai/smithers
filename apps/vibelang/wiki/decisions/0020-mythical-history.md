@@ -3,8 +3,8 @@
 **Status:** accepted, 2026-11-07; Will may override. **Rulings:** VL-22 (and VL-9, VL-11, VL-13, VL-17, VL-18, VL-21);
 Smithers D-09a, D-20; repository rules FLOW-3, "people merge; agents never approve or merge". **Brings back** what
 `apps/mvp/docs/rulings.md` TODO-2 deferred, for this app only. **Designed twice:** Claude Opus
-(`~/vl/mythical/design-opus.md`) and Codex Sol (`~/vl/mythical/design-sol.md`), independently; Opus merged them. **Built so far:** the machine, its proofs, the bootstrap, the flows, the mock, the live History
-object, its routes and the agent's commands; the view lands next, with this record updated.
+(`~/vl/mythical/design-opus.md`) and Codex Sol (`~/vl/mythical/design-sol.md`), independently; Opus merged them. **Built:** the machine and its proofs, the bootstrap, the flows, the mock, the live History object
+and its routes, the agent's commands and the view.
 
 **Decision.** VibeLang's mythical history is a second state machine beside the conversation's (0003): one linear stack
 of mythical commits grouped into epics, written only by its sequencer in one Durable Object, `History`, bootstrapped
@@ -97,6 +97,27 @@ Roles come from `src/history/roles.vibe`: each flow reads its least role from `H
 Landing stays the merge queue's: Approve is the person's decision; the lane enqueues the approved commit with a
 `Mythical: m<n>` trailer; the queue lands it on `vibe`; the green cut moves `main`; Fold maps it back, into the commit
 the trailer names, else as a new commit appended to the epic of its scope.
+
+## The view
+
+`/history` is its own Foldkit program (`src/web/historyApp.vibe`, `historyView.vibe`), the designer's design
+(`wiki/designs/mythical/`) as a maximized pane whose − returns to the chat; the chat's top bar links to it. It reads
+the history once, then applies its events with the machine's `apply`; a gap reads again. Each button runs a flow
+through `Mythical`, which the page selects as the chat selects `Factory` (live when `/api/health` says so, else the
+mock, downloaded only then). Where the reader is lives in the hash: `#e4` an epic, `#m12` a commit, so links and Back
+work.
+
+- **List:** epics as collapsible cards with their counts, 50 commits each until Show all; open work on top
+  (planned, working, approved); a filter over every title; "Folded through `<sha>`" as a badge linking the commit.
+- **Commit:** title, state, id, task and lane; its progress (planned, working, approved, landed on main) with Start
+  and Approve where the role allows; the note's four sections with `(none)` when empty; its real commits on GitHub.
+- **Plan work:** Commit, Epic (or New epic…), Task; Insert before… and Amend… open it from a commit, for a maintainer.
+- **Roles:** an action renders only for a role that may take it; a viewer gets no dialog at all. In mock mode the page
+  plays `?role=` or the `vibelang.role` key (maintainer when neither says); live, it is a viewer until 0019 lands.
+
+Where the design and the data differ, the data wins: no docs/code/test planes (the bootstrap groups by queue entry,
+not by plane), no diff (no trees), no `tree = main` badge (equality isn't checked; "Folded through" is what is known),
+no bootstrap budget form (the bootstrap is a deterministic replay, not a model run), and no inline pane in the chat yet.
 
 ## The agent's way in
 

@@ -75,6 +75,8 @@ button { font: inherit; }
 /* Docked, the composer spans the window less its margins, up to the transcript's width, on any screen. */
 .vl-chat .sui-chat-composer[data-docked="true"] { width: auto; max-width: 720px; margin: 0 auto; }
 @media (max-width: 600px) { .vl-chat .sui-chat-composer[data-docked="true"] { right: 12px; left: 12px; } .vl-top { padding: 12px 16px; } }
+/* Four links and the Mock pill fit a phone: Home, History, Docs, GitHub (0020). */
+@media (max-width: 600px) { .vl-nav-link { padding: 6px 5px; } }
 .vl-pane-text { flex: 1; font-size: 13px; }
 .vl-pane-expand { display: inline-flex; color: var(--text-faint, var(--text-muted)); }
 .sui-chat-message[data-pending="true"] .sui-chat-bubble { opacity: .6; }
