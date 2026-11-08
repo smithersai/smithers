@@ -27,6 +27,23 @@ const binding = (value: unknown): null | number | bigint | string | Uint8Array =
   : value instanceof ArrayBuffer ? new Uint8Array(value)
   : JSON.stringify(value)
 
+/** node:sqlite errcodes of the SQLITE_CONSTRAINT family, as workerd's message names them. */
+const constraintMessage = (errcode: number, query: string): string | undefined => {
+  switch (errcode) {
+    case 2067: // SQLITE_CONSTRAINT_UNIQUE
+    case 1555: // SQLITE_CONSTRAINT_PRIMARYKEY
+      return `UNIQUE constraint failed: ${query}`
+    case 1811: // SQLITE_CONSTRAINT_FOREIGNKEY
+      return "FOREIGN KEY constraint failed"
+    case 1299: // SQLITE_CONSTRAINT_NOTNULL
+      return "NOT NULL constraint failed"
+    case 275: // SQLITE_CONSTRAINT_CHECK
+      return "CHECK constraint failed"
+    default:
+      return undefined
+  }
+}
+
 export interface ObjectStorage {
   readonly kv: Map<string, unknown>
   alarmAt: number | undefined
@@ -72,39 +89,42 @@ export function objectStorage(): ObjectStorage {
     },
     sql: {
       exec(query, ...bindings) {
-        const statement = db.prepare(query)
-        const columnNames = statement.columns().map((column) => column.name ?? "")
-        const rows = (statement.all(...bindings.map(binding)) as Array<Record<string, unknown>>)
-          .map((row) => columnNames.map((name) => row[name]))
-        return new SqlCursor(columnNames, rows)
+        try {
+          const statement = db.prepare(query)
+          const columnNames = statement.columns().map((column) => column.name ?? "")
+          const rows = (statement.all(...bindings.map(binding)) as Array<Record<string, unknown>>)
+            .map((row) => columnNames.map((name) => row[name]))
+          return new SqlCursor(columnNames, rows)
+        } catch (error) {
+          // workerd surfaces SQLite's own message; node:sqlite carries only its errcode.
+          const errcode = typeof error === "object" && error !== null && "errcode" in error
+            ? Number((error as { errcode: unknown }).errcode)
+            : undefined
+          const translated = errcode ? constraintMessage(errcode, query) : undefined
+          throw translated === undefined ? error : new Error(translated)
+        }
       },
     },
     async transaction(closure) {
-      const level = ++depth
+      const level = depth++
       const savepoint = `vibelang_sp_${level}`
-      db.exec(level === 1 ? "BEGIN" : `SAVEPOINT ${savepoint}`)
+      db.exec(level === 0 ? "BEGIN" : `SAVEPOINT ${savepoint}`)
       let aborted = false
+      const end = (commit: boolean) => {
+        depth--
+        // Real Durable Object storage resolves transaction() after txn.rollback(): a rollback is
+        // an outcome, not an exception, and the closure's value is discarded (see the monorepo's
+        // workerd-validated fixture, platform-cloudflare/test/fixtures/SqliteStorage.ts).
+        if (level === 0) db.exec(commit ? "COMMIT" : "ROLLBACK")
+        else db.exec(commit ? `RELEASE ${savepoint}` : `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`)
+      }
       try {
         const result = await closure({ sql: storage.sql, rollback: () => { aborted = true } })
-        if (aborted) {
-          db.exec(level === 1 ? "ROLLBACK" : `ROLLBACK TO ${savepoint}`)
-          if (level !== 1) db.exec(`RELEASE ${savepoint}`)
-          throw new Error("transaction rolled back")
-        }
-        db.exec(level === 1 ? "COMMIT" : `RELEASE ${savepoint}`)
+        end(!aborted)
         return result
       } catch (error) {
-        if (!aborted) {
-          try {
-            db.exec(level === 1 ? "ROLLBACK" : `ROLLBACK TO ${savepoint}`)
-            if (level !== 1) db.exec(`RELEASE ${savepoint}`)
-          } catch {
-            // The database already rejected the transaction.
-          }
-        }
+        end(false)
         throw error
-      } finally {
-        depth--
       }
     },
   }
