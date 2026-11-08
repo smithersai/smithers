@@ -1035,10 +1035,8 @@ const targetDeclarationRoutes = Smithers.NodeTest({
     Smithers.file("//packages/smithers/build/targets/.vibe/declarations/src/FlowCatalog.d.vibe.ts"),
     Smithers.file("//packages/smithers/build/targets/.vibe/declarations/src/Home.d.vibe.ts"),
     Smithers.file("//packages/smithers/build/targets/.vibe/declarations/src/LocalRepository.d.vibe.ts"),
-    Smithers.file("//packages/smithers/build/targets/.vibe/declarations/src/Mise.d.vibe.ts"),
     Smithers.file("//packages/smithers/build/targets/.vibe/declarations/src/Mount.d.vibe.ts"),
     Smithers.file("//packages/smithers/build/targets/.vibe/declarations/src/Outward.d.vibe.ts"),
-    Smithers.file("//packages/smithers/build/targets/.vibe/declarations/src/SecurityReview.d.vibe.ts"),
     Smithers.file("//packages/smithers/build/targets/.vibe/declarations/src/Verb.d.vibe.ts")
   ],
   deps: [repositoryInputs]
