@@ -1,9 +1,9 @@
 // A transport fault over the product's real MockFactory: posts, replies, replay and live delivery stay real.
 import type { Event } from "../../src/core/conversation.vibe"
-import { Factory, Unavailable } from "../../src/core/Factory.vibe"
+import { Factory, Refused, Unavailable } from "../../src/core/Factory.vibe"
 import { MockFactory } from "../../src/core/MockFactory.vibe"
 
-export type Fault = "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming"
+export type Fault = "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable"
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -35,8 +35,21 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         try base.post(conversation, clientId, name, text)
       },
       read: base.read,
-      tour: base.tour,
-      endTour: base.endTour,
+      tour: effect (conversation) => {
+        if ((fault === "tour-refuse" || fault === "tour-unavailable") && !observation.faulted) {
+          observation.faulted = true
+          if (fault === "tour-refuse") throw new Refused({ refusal: "busy" })
+          throw new Unavailable({ reason: "Factory closed" })
+        }
+        try base.tour(conversation)
+      },
+      endTour: effect (conversation) => {
+        if (fault === "end-tour-unavailable" && !observation.faulted) {
+          observation.faulted = true
+          throw new Unavailable({ reason: "Factory closed" })
+        }
+        try base.endTour(conversation)
+      },
       sandbox: base.sandbox,
       startSandbox: base.startSandbox,
       stopSandbox: base.stopSandbox,

@@ -12,7 +12,7 @@ import { canonical } from "./probe.vibe"
 /** The fault this page's `?fault=` names; a missing or unknown one drops an event. */
 function faultOf(search: string) {
   const requested = new URLSearchParams(search).get("fault")
-  if (requested === "thinking" || requested === "streaming") return requested
+  if (requested === "thinking" || requested === "streaming" || requested === "tour-refuse" || requested === "tour-unavailable" || requested === "end-tour-unavailable") return requested
   return requested === "refuse" ? "refuse" : requested === "end" ? "end" : requested === "disconnect" ? "disconnect" : "drop"
 }
 

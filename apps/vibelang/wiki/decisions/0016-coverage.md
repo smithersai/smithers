@@ -71,3 +71,7 @@ refer to Node clients only. The final per-file snapshot follows when the prototy
 <!-- measurements:start -->
 Final snapshot pending.
 <!-- measurements:end -->
+
+Browser boundary cases additionally cover the default answer, rejected/unavailable tour starts, retry after an
+unavailable end, and native touch end/cancellation followed by Latest. Read-only native event evidence distinguishes
+an earlier follow scroll's end from the actual gesture ending; the test waits for the latter before tapping.
