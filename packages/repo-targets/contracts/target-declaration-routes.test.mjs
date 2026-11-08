@@ -189,10 +189,19 @@ test("sidecars stay paired when a project's program reaches another package's na
   writeFileSync(join(dir, "lib/src/value.vibe"), "export const value = 1\n")
   writeFileSync(join(dir, "app/src/main.vibe"), 'import { value } from "../../lib/src/value.vibe"\nexport const main = value + 1\n')
   writeFileSync(join(dir, "app/src/same/main.vibe"), "export const nested = 2\n")
+  writeFileSync(join(dir, "app/src/same/helper.ts"), "export type Helper = { readonly n: number }\n")
+  writeFileSync(join(dir, "app/src/same/uses.vibe"), 'import type { Helper } from "./helper.ts"\nexport const make = (n: number): Helper => ({ n })\n')
   assert.equal(prepareSidecars(dir, { stdio: "pipe" }), 2)
+  // The sidecar names helper.ts by a relative path; after the move it still reaches the real file.
+  const uses = join(dir, "app/.vibe/declarations/src/same/uses.d.vibe.ts")
+  const specifiers = [...readFileSync(uses, "utf8").matchAll(/from "(\.[^"]+)"/g)].map(match => match[1])
+  assert.ok(specifiers.length > 0, readFileSync(uses, "utf8"))
+  for (const specifier of specifiers) {
+    if (specifier.endsWith(".ts")) assert.ok(existsSync(resolve(dirname(uses), specifier)), specifier)
+  }
   const listed = name => readdirSync(join(dir, name, ".vibe/declarations"), { recursive: true })
     .filter(file => file.endsWith(".d.vibe.ts")).map(file => file.split("\\").join("/")).sort()
-  assert.deepEqual(listed("app"), ["src/main.d.vibe.ts", "src/same/main.d.vibe.ts"])
+  assert.deepEqual(listed("app"), ["src/main.d.vibe.ts", "src/same/main.d.vibe.ts", "src/same/uses.d.vibe.ts"])
   assert.deepEqual(listed("lib"), ["src/value.d.vibe.ts"])
   assert.match(readFileSync(join(dir, "app/.vibe/declarations/src/same/main.d.vibe.ts"), "utf8"), /nested/)
 }))

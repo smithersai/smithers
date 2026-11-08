@@ -74,9 +74,23 @@ const relocate = project => {
   const staging = project.sidecarDir + ".relocating-" + process.pid
   rmSync(staging, { recursive: true, force: true })
   for (const file of project.native) {
+    const written = join(project.sidecarDir, sidecarName(common, file))
+    const target = join(project.sidecarDir, sidecarName(project.rootDir, file))
     const staged = join(staging, sidecarName(project.rootDir, file))
     mkdirSync(dirname(staged), { recursive: true })
-    renameSync(join(project.sidecarDir, sidecarName(common, file)), staged)
+    // A specifier between sidecars keeps working because every sidecar moves by the same offset;
+    // one that reaches a real file outside the sidecar directory is recomputed from the new place.
+    const text = readFileSync(written, "utf8").replace(
+      /(\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*|<reference\s+path=)(["'])(\.\.?\/[^"']*)\2/g,
+      (whole, lead, quote, specifier) => {
+        const reached = resolve(dirname(written), specifier)
+        if (within(project.sidecarDir, reached)) return whole
+        const moved = slash(relative(dirname(target), reached))
+        return lead + quote + (moved.startsWith(".") ? moved : "./" + moved) + quote
+      }
+    )
+    writeFileSync(staged, text)
+    rmSync(written)
   }
   rmSync(project.sidecarDir, { recursive: true, force: true })
   renameSync(staging, project.sidecarDir)
