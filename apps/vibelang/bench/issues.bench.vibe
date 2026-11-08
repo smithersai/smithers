@@ -29,17 +29,17 @@ it("every issue flow through the real product fixture engine", async ({ bench })
         expect([created.seq, commented.seq, split.seq, linked.seq, committed.seq, replay.seq, uncommitted.seq, drafted.seq, proposed.seq, accepted.seq, declined.seq, after.seq]).toEqual([1, 2, 3, 4, 5, 5, 6, 6, 7, 8, 9, 9])
         expect(created.selected).toBe(51)
         expect(created.items[0]).toMatchObject({ number: 51, title: "Benchmark issue", body: "Keep body", parent: 0, task: "", author: "will" })
-        expect(commented.items.find((item) => item.number === 51)).toMatchObject({ comments: 1, notes: [{ author: "will", text: "Evidence", event: false }] })
+        expect(commented.items.find((item) => item.number === 51)).toMatchObject({ comments: 1, notes: [{ age: "just now", author: "will", text: "Evidence", event: false }] })
         expect(split.items[0]).toMatchObject({ number: 52, parent: 51, title: "Smaller", body: "Smaller body" })
-        expect(linked.items[0]).toEqual({ ...split.items[0]!, parent: 38, notes: [{ author: "will", text: "linked this under #38", event: true }] })
+        expect(linked.items[0]).toEqual({ ...split.items[0]!, parent: 38, notes: [{ age: "just now", author: "will", text: "linked this under #38", event: true }] })
         expect(committed.items.find((item) => item.number === 51)).toMatchObject({ number: 51, parent: 0, title: "Benchmark issue", body: "Keep body", task: "Queued", assignee: "Will" })
         expect(replay).toEqual(committed)
-        expect(uncommitted.items.find((item) => item.number === 51)).toMatchObject({ task: "", assignee: "", notes: [{ author: "will", text: "Evidence", event: false }, { author: "will", text: "committed this as a task and assigned Will", event: true }, { author: "will", text: "uncommitted this task", event: true }] })
+        expect(uncommitted.items.find((item) => item.number === 51)).toMatchObject({ task: "", assignee: "", notes: [{ age: "just now", author: "will", text: "Evidence", event: false }, { age: "just now", author: "will", text: "committed this as a task and assigned Will", event: true }, { age: "just now", author: "will", text: "uncommitted this task", event: true }] })
         expect(drafted.items).toEqual(uncommitted.items)
         expect(drafted.draft).toEqual({ title: "Tuple proposal", summary: "Summary", example: "const pair = [1, 2]", prior: "Rust tuple patterns\nTypeScript tuple types" })
-        expect(proposed.items[0]).toMatchObject({ number: 53, title: "Tuple proposal", vip: "In review", task: "", path: "docs/design/vips/53.md", review: "https://github.com/smithersai/vibelang/pull/53", body: "# Tuple proposal\n\n## Summary\n\nSummary\n\n## Example\n\n```vibe\nconst pair = [1, 2]\n```\n\n## Prior art\n\nEffect\n" })
-        expect(accepted.items[0]).toEqual({ ...proposed.items[0]!, vip: "Accepted", notes: [...proposed.items[0]!.notes, { author: "will", text: "accepted this VIP", event: true }] })
-        expect(declined.items.find((item) => item.number === 45)).toEqual({ ...before.items.find((item) => item.number === 45)!, vip: "Declined", state: "closed", notes: [...before.items.find((item) => item.number === 45)!.notes, { author: "will", text: "declined this VIP", event: true }] })
+        expect(proposed.items[0]).toMatchObject({ number: 53, title: "Tuple proposal", vip: "In review", task: "", path: "docs/design/vips/53.md", review: "https://github.com/smithersai/vibelang/pull/53", body: "Summary\n\n```vibe\nconst pair = [1, 2]\n```\n\nEffect" })
+        expect(accepted.items[0]).toEqual({ ...proposed.items[0]!, vip: "Accepted", notes: [...proposed.items[0]!.notes, { age: "just now", author: "will", text: "accepted this VIP", event: true }] })
+        expect(declined.items.find((item) => item.number === 45)).toEqual({ ...before.items.find((item) => item.number === 45)!, vip: "Declined", state: "closed", notes: [...before.items.find((item) => item.number === 45)!.notes, { age: "just now", author: "will", text: "declined this VIP", event: true }] })
         expect(after.items.map((item) => item.number)).toEqual([53, 52, 51, 48, 46, 45, 44, 47, 42, 40, 39, 38, 36, 49, 50, 43, 41, 37, 35, 34, 33, 31])
         expect(after.items.filter((item) => item.number <= 50 && item.number !== 45)).toEqual(before.items.filter((item) => item.number !== 45))
         expect(after.role).toBe("maintainer")
@@ -93,14 +93,14 @@ it("each issue command's fresh-engine latency", async ({ bench }) => {
   const cases: ReadonlyArray<{ op: IssueOperation; data: Partial<IssueRequest>; number: number; expected: object }> = [
     { op: "read", data: {}, number: 42, expected: issue42 },
     { op: "new", data: { title: "Measure", text: "Body" }, number: 51, expected: created },
-    { op: "comment", data: { number: 42, text: "Measured" }, number: 42, expected: { ...issue42, comments: 7, notes: [...issue42.notes, { author: "will", text: "Measured", event: false }] } },
-    { op: "link", data: { number: 49, parent: 38 }, number: 49, expected: { ...issue49, parent: 38, notes: [...issue49.notes, { author: "will", text: "linked this under #38", event: true }] } },
+    { op: "comment", data: { number: 42, text: "Measured" }, number: 42, expected: { ...issue42, comments: 7, notes: [...issue42.notes, { age: "just now", author: "will", text: "Measured", event: false }] } },
+    { op: "link", data: { number: 49, parent: 38 }, number: 49, expected: { ...issue49, parent: 38, notes: [...issue49.notes, { age: "just now", author: "will", text: "linked this under #38", event: true }] } },
     { op: "split", data: { number: 42, title: "Measure", text: "Body" }, number: 51, expected: { ...created, parent: 42 } },
-    { op: "commit", data: { number: 42, assignee: "Will" }, number: 42, expected: { ...issue42, task: "Queued", assignee: "Will", notes: [...issue42.notes, { author: "will", text: "committed this as a task and assigned Will", event: true }] } },
-    { op: "uncommit", data: { number: 48 }, number: 48, expected: { ...issue48, task: "", assignee: "", notes: [...issue48.notes, { author: "will", text: "uncommitted this task", event: true }] } },
-    { op: "propose", data: { title: "Measure", text: "Summary", example: "const n = 1", prior: "Effect" }, number: 51, expected: { ...created, vip: "In review", path: "docs/design/vips/51.md", review: "https://github.com/smithersai/vibelang/pull/51", body: "# Measure\n\n## Summary\n\nSummary\n\n## Example\n\n```vibe\nconst n = 1\n```\n\n## Prior art\n\nEffect\n" } },
-    { op: "accept", data: { number: 45 }, number: 45, expected: { ...issue45, vip: "Accepted", notes: [...issue45.notes, { author: "will", text: "accepted this VIP", event: true }] } },
-    { op: "decline", data: { number: 45 }, number: 45, expected: { ...issue45, vip: "Declined", state: "closed", notes: [...issue45.notes, { author: "will", text: "declined this VIP", event: true }] } },
+    { op: "commit", data: { number: 42, assignee: "Will" }, number: 42, expected: { ...issue42, task: "Queued", assignee: "Will", notes: [...issue42.notes, { age: "just now", author: "will", text: "committed this as a task and assigned Will", event: true }] } },
+    { op: "uncommit", data: { number: 48 }, number: 48, expected: { ...issue48, task: "", assignee: "", notes: [...issue48.notes, { age: "just now", author: "will", text: "uncommitted this task", event: true }] } },
+    { op: "propose", data: { title: "Measure", text: "Summary", example: "const n = 1", prior: "Effect" }, number: 51, expected: { ...created, vip: "In review", path: "docs/design/vips/51.md", review: "https://github.com/smithersai/vibelang/pull/51", body: "Summary\n\n```vibe\nconst n = 1\n```\n\nEffect" } },
+    { op: "accept", data: { number: 45 }, number: 45, expected: { ...issue45, vip: "Accepted", notes: [...issue45.notes, { age: "just now", author: "will", text: "accepted this VIP", event: true }] } },
+    { op: "decline", data: { number: 45 }, number: 45, expected: { ...issue45, vip: "Declined", state: "closed", notes: [...issue45.notes, { age: "just now", author: "will", text: "declined this VIP", event: true }] } },
     { op: "draft", data: { title: "Measure", text: "Summary" }, number: 42, expected: issue42 },
   ]
   const results = []
