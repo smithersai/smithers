@@ -57,7 +57,16 @@ export const Text = Schema.String.check(Schema.isMaxLength(120))
 export const TextOrBoundary = Schema.Union([Text, Schema.Literals(["", " ", "\n\t", "x".repeat(MAX_TEXT + 1), "```vibe\nhello\n```", "a`b`c", "\ud800"])])
 export const Steps = Schema.Array(Schema.Struct({ op: Int, id: Int, text: TextOrBoundary, flag: Schema.Boolean })).check(Schema.isMaxLength(48))
 
-/** Structural comparison keeps prototypes out of the value-level invariants. */
+/** Structural comparison keeps prototypes and JSON key order out of the value-level invariants. */
 export function same(a: unknown, b: unknown): boolean {
-  try { return JSON.stringify(a) === JSON.stringify(b) } catch { return false }
+  const canonical = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(canonical)
+    if (typeof value === "object" && value !== null) {
+      const out: Record<string, unknown> = {}
+      for (const key of Object.keys(value).sort()) out[key] = canonical((value as Record<string, unknown>)[key])
+      return out
+    }
+    return value
+  }
+  try { return JSON.stringify(canonical(a)) === JSON.stringify(canonical(b)) } catch { return false }
 }

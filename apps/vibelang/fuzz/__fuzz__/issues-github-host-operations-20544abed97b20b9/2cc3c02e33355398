@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 7
+bias 2
+null-prototype false
+key 2394790482
+tape vnNL9Eu6d8EMIubWI-daZ7jLR7PxbddFAQAAAOVQEfx6avmeYxxznkGc7EGHTT-2TOS9t806djhtTNJHet_Sh8D19aUsjEZ12JNQ2Xi_qzmkfN7A5IfViHUY2pu2B83rFceW12FUsmybY6tFn3Q4TKqjHA8Q6hGizNBkNoRI_dRL7hHkwdFzuHtpqRztFZm-VbjJAA_mv7WRG5l5inxQXOskY_Yq13uhYcZeipahOi7tuqYPEL7lhZ3T1NtrOm8xSkM5terSrLurNCTfriZ2Z4m0JD31xbG-SezDh5P3kiYF7jT8blfXcXmeVQaPLlQwFUUBfM2K16uHsgraAkbmW--n8n5vGACouef4Oq5S5vW6vMjSAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACYONr8oDDPzj4C8baLAfOEpAsNDH7pStmMIRF_cX6yeeH3XUUt9bMmjyTjjB4C5U8gb_ECylqVQaJtV8JhZv-nTVqYrYir19X1DIHDr-LawV08wp5Y-ED3TUUxAVs4tT2b1hG7q02Td41WF8iK9LSAIQ1k68aP5FXDoKnGTC10qRmSgQd7Qy07RlSr_EDLUbUOY1c8O3W3ULzzMVOgS0DrJ-96fhmx2ueZsXntAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA_PUfFn15BhcycZI8VzaPVYK7iYOCapxL2W5idYXUxX8B9L2c_____xzLVwg_VqAL2ekd-yBf2AHRNZH7-YH2tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKrIAMu8oWWkEqfvxIEINfmgGxblYq_Wgc3qMiqOYs1_FG-f7BfvPY2im9Ax5cRg-wYEKPVvyo8byK1xSJYHvjD4QlH1mXV0rsAGXApyjkUdphET0hJnPjG0pa316TOjzBRvn-wX7z2NopvQMeXEYPsGBCj1b8qPG8itcUiWB74wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAnyM4P9HkY6Cqvh8N
+schedule-key 951120712
+schedule 
+signature "ReturnedFalse"
+path 3.3.3.8.4.10.5
+codec "json"
+value "[{\"op\":\"decline\",\"role\":\"community\",\"signedOut\":false,\"noToken\":false,\"number\":0,\"parent\":9999,\"title\":\"\",\"text\":\"\",\"example\":\"\",\"prior\":\"\",\"assignee\":\"VibeLang agent\",\"key\":31,\"salt\":0},{\"op\":\"decline\",\"role\":\"maintainer\",\"signedOut\":false,\"noToken\":false,\"number\":0,\"parent\":0,\"title\":\"\",\"text\":\"\",\"example\":\"word\",\"prior\":\"\",\"assignee\":\"vibe-agent\",\"key\":31,\"salt\":0}]"
+# ReturnedFalse
+# [{"op":"decline","role":"community","signedOut":false,"noToken":false,"number":0,"parent":9999,"title":"","text":"","example":"","prior":"","assignee":"VibeLang agent","key":31,"salt":0},{"op":"decline","role":"maintainer","signedOut":false,"noToken":false,"number":0,"parent":0,"title":"","text":"","example":"word","prior":"","assignee":"vibe-agent","key":31,"salt":0}]

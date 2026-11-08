@@ -84,4 +84,4 @@ function decodeSegment(segment: string): string | undefined {
 
 export schema WikiBody { readonly page: string }
 
-export schema TourControlBody { readonly action: "pause" | "resume" | "seek"; readonly step: number }
+export schema TourControlBody { readonly action: "pause" | "resume" | "seek"; readonly step: Seq }

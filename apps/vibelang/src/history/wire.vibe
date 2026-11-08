@@ -8,6 +8,7 @@
 //   GET  /api/history/events?after=<seq>    text/event-stream: `id: <seq>`, `data: <HistoryEvent JSON>`
 //   POST /api/history/<action>            a flow: plan, start, note, approve or fold
 //                                         → 200 Written | 409 Refusal (the sequencer's) | 403 Refusal (forbidden)
+import { Seq } from "../core/schemas.vibe"
 import { historyStatus } from "./flowMachine.vibe"
 import { DurableText } from "../core/wire.vibe"
 import { MAX_NOTE, MAX_TITLE } from "./mythical.vibe"
@@ -79,7 +80,7 @@ export schema ApproveBody { readonly id: DurableText }
 export schema FoldBody {}
 
 /** What a recorded write answers: the commit it wrote (plan), or how many commits of main it folded (fold). */
-export schema Written { readonly id: string; readonly folded: number }
+export schema Written { readonly id: string; readonly folded: Seq }
 
 /** Why a write was refused: the sequencer's refusal (409), `forbidden` (403), or `unavailable` main (503). */
 export schema HistoryRefusal { readonly refusal: string }

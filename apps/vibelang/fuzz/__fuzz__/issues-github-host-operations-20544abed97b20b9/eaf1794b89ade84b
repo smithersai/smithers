@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 12
+bias 2
+null-prototype false
+key 2394790482
+tape vnNL9Eu6d8EMIubWI-daZ7jLR7PxbddFAQAAAOVQEfx6avmewPX1pSyMRnXYk1DZeL-rOaR83sDkh9WIdRjam7YHzesVx5bXYVSybJtjq0WfdDhMqqMcDxDqEaLM0GQ2hEj91EvuEeTB0XO4e2mpHO0Vmb5VuMkAD-a_tZEbmXmKfFBc6yRj9irXe6Fhxl6KlqE6Lu26pg8QvuWFndPU22s6bzFKQzm16tKsu6s0JN-uJnZnibQkPfXFsb5J7MOHk_eSJgXuNPxuV9dxeZ5VBo8uVDAVRQF8zYrXq4eyCtoCRuZb76fyfm8YAKi55_g6rlLm9bq8yNIAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJg42vygMM_OPgLxtosB84SkCw0MfulK2YwhEX9xfrJ54fddRS31syaPJOOMHgLlTyBv8QLKWpVBom1XwmFm_6dNWpitiKvX1fUMgcOv4trBXTzCnlj4QPdNRTEBWzi1PZvWEburTZN3AAAAgIr0tIAhDWTrxo_kVcOgqcZMLXSpGZKBB3tDLTtGVKv8QMtRtQ5jVzw7dbdQvPMxU6BLQOsn73p-GbHa55mxee1n-uviavc6VnAhKHK6HHaXEsswKsFF1Mb89R8WfXkGFzJxkjxXNo9VgruJg4JqnEvZbmJ1hdTFfwH0vZz_____HMtXCD9WoAvZ6R37IF_YAdE1kfv5gfa19HCWPDvzm1bW-FiBurGUG9mUBYee6pZHqsgAy7yhZaQSp-_EgQg1-aAbFuVir9aBzeoyKo5izX8Ub5_sF-89jaKb0DHlxGD7BgQo9W_KjxvIrXFIlge-MPhCUfWZdXSuwAZcCnKORR2mERPSEmc-MbSlrfXpM6PMFG-f7BfvPY2im9Ax5cRg-wYEKPVvyo8byK1xSJYHvjD4QlH1mXV0rsAGXApyjkUdphET0hJnPjG0pa316TOjzM9pKugMb9Cq7Y6ciuElGLKfIzg_0eRjoKq-Hw1e2O6c9dJ6PDr_OcKS8i8Dkd0ogI23Wo9fudavYXKE9GkDUafHglJ6pjYcUrjdi-dhz0Iuo5cupETT5uEMORUZ8E-Vem3uKA2-jUODp0x37Ed0yQrydozYUuBou0yJdsVG6kfBRHqWba7HdeyhZWdl1dvIXRaXeFHhHbC6qJJsyFfQN4JUoaQ1q4YYvLajV1r8a9uqP07YvvntIq4dOdp-Rgntjnqra6BAi5SPLnSMR0Fb7ddQhlSpZq2iejd8Oyx47XsoIM7nyHVwklaWvXabTu7AH747eJboNBwpMLZ9j66-1NgNkkrFDkGZgsmrXUnHq4B077wvkpfHj_96Env3pjmf7RMq96k6MwvXILZdgPpgMQQB1PIwGMw0V3p0Dfq1Z3wTDO69Olel01z1EoUqqa03RFNKgljiVGgN_RgNVQobY8b4LRMx3Y8mhf4oBzRV5dKOmsF50WIpkUshyuuziVrBOTH6UYh6_xgSQMewVqvX25EWsWm3KjV2uoDqP4OYllo3QkmZ8eXZE4O3s0V7MzhIFcSnSf3UOVp8vU91ey0arh_WpQTHsBWYw-9kHXNOfm-Hetzrx0Zpd41ghQKkWLVwbXeI8e1H7DAx8-hoR0rCL0hV5zpQ_o4DiDf9kR8CWb5QEHdpeS9WYEwP2rZvQ85XhKSFSAw0yY7ZCaEqMlKXQ7bBQCCfqYAPisNB0sIWD2UtfBGArG_Z0cfYFGIJLtN8RBa2KdCxSget
+schedule-key 951120712
+schedule 
+signature "ReturnedFalse"
+path 1.3.3.3.4.4.3.3.4
+codec "json"
+value "[{\"op\":\"accept\",\"role\":\"contributor\",\"signedOut\":false,\"noToken\":false,\"number\":9999,\"parent\":3,\"title\":\"word\",\"text\":\"\",\"example\":\"A longer body\",\"prior\":\"\",\"assignee\":\"fuzz\",\"key\":1,\"salt\":0},{\"op\":\"accept\",\"role\":\"community\",\"signedOut\":false,\"noToken\":false,\"number\":3,\"parent\":2,\"title\":\"A longer body\",\"text\":\"word\",\"example\":\"A longer body\",\"prior\":\"\",\"assignee\":\"VibeLang agent\",\"key\":1,\"salt\":0}]"
+# ReturnedFalse
+# [{"op":"accept","role":"contributor","signedOut":false,"noToken":false,"number":9999,"parent":3,"title":"word","text":"","example":"A longer body","prior":"","assignee":"fuzz","key":1,"salt":0},{"op":"accept","role":"community","signedOut":false,"noToken":false,"number":3,"parent":2,"title":"A longer body","text":"word","example":"A longer body","prior":"","assignee":"VibeLang agent","key":1,"salt":0}]

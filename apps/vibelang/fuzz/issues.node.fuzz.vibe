@@ -1,0 +1,268 @@
+import { it } from "@effect/vitest"
+import { HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import { GitHub } from "@smthrs/integrations"
+import { issuePermission } from "../src/core/conversation.vibe"
+import { IssueFailure, IssueRequest, IssuesState } from "../src/core/issueSchemas.vibe"
+import { executeIssues, githubHost, issueFailureOf, publicIssues, serveIssues, verifiedVip, IssueAuthority, type Repository } from "../worker/Issues.vibe"
+import { agentLayer, DraftAgent, writer } from "../worker/VipDraft.vibe"
+import { ChatModel, Spend } from "../worker/Reply.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { fakeClient, repo, seed, type Fake } from "./issues-node-fake.vibe"
+import { run, Int } from "./run.vibe"
+
+// The durable payload contract (DurableText) refuses lone surrogates; direct flow calls hold it.
+const Clean = Schema.String.check(Schema.isMaxLength(120), Schema.isPattern(/^[^\uD800-\uDFFF]*$/))
+const Words = Schema.Union([Schema.Literals(["", "word", "A longer body"]), Clean])
+const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
+const Op = Schema.Struct({
+  op: Schema.Literals(["read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft"]),
+  role: Role,
+  signedOut: Schema.Boolean,
+  noToken: Schema.Boolean,
+  number: Schema.Literals([0, 1, 2, 3, 4, 100, 9999]),
+  parent: Schema.Literals([0, 1, 2, 3, 4, 9999]),
+  title: Words,
+  text: Words,
+  example: Words,
+  prior: Words,
+  assignee: Schema.Literals(["", "fuzz", "vibe-agent", "VibeLang agent", "ghost"]),
+  key: Int,
+  salt: Int,
+})
+const Input = Schema.Array(Op).check(Schema.isMaxLength(10))
+
+const reasons = ["forbidden", "sign-in", "connect", "missing", "invalid", "title", "incomplete", "empty", "tree", "assignee", "closed", "review", "unsupported", "unavailable", "partial", "rate-limited", "unknown", "protocol", "no-model", "budget", "draft"]
+
+const writerLayer = (drafts: boolean, budget: boolean) => {
+  const agent: DraftAgent.Shape = { available: drafts, run: (request) => succeed({ title: request.title, summary: request.text, example: request.example, prior: request.prior }) }
+  const spending: Spend.Shape = { admit: () => succeed(budget), spend: () => Effect.void }
+  return writer.pipe(Layer.provide(Layer.succeed(DraftAgent, agent)), Layer.provide(Layer.succeed(Spend, spending)))
+}
+const noModelWriter = writer.pipe(
+  Layer.provide(agentLayer),
+  Layer.provide(Layer.succeed(Spend, { admit: () => succeed(true), spend: () => Effect.void })),
+  Layer.provide(Layer.succeed(ChatModel, { model: undefined, unusable: "unset" })),
+)
+
+/** The durable issues flow over a stateful in-memory GitHub: typed outcomes, idempotent replays, no write without authority. */
+it.live("issues/github-host-operations", () => run("issues/github-host-operations", Input, (ops) => effect {
+  const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+  const storage = raw as unknown as Storage
+  const fake = seed()
+  const principal = try Ref.make<{ id: string; login: string; role: typeof Role.Type; token: Redacted.Redacted<string> } | undefined>(undefined)
+  const forbidNext = try Ref.make(false)
+  const authority: IssueAuthority.Shape = {
+    current: () => Ref.get(principal),
+    authorize: () => Effect.flatMap(Ref.get(forbidNext), (forbid) => forbid ? Effect.fail(new IssueFailure({ reason: "forbidden" })) : Effect.void),
+  }
+  const client = fakeClient(fake)
+  const seen = new Map<string, { tag: "Success" | "Failure"; payload: string }>()
+  const writes = new Map<string, IssueRequest>()
+  const failedWrites = new Map<string, IssueRequest>()
+  const recovered = new Set<string>()
+  for (const op of ops) {
+    fake.forbiddenNext = op.salt % 8 === 7 && op.op !== "read" && op.op !== "draft"
+    fake.endlessIssues = op.salt % 32 === 15
+    fake.endlessTimeline = op.salt % 32 === 31
+    fake.endlessReviews = op.salt % 32 === 7 && op.op === "read" && op.number === 4
+    fake.malformedIssues = op.salt % 32 === 9
+    try Ref.set(forbidNext, op.salt % 16 === 5)
+    const actor = op.signedOut ? undefined : { id: "7", login: "fuzz", role: op.role, token: Redacted.make(op.noToken ? "" : "token") }
+    try Ref.set(principal, actor)
+    const badKey = op.salt % 32 === 17
+    const prior = writes.get(`${op.key % 4}`)
+    const failedPrior = failedWrites.get(`${op.key % 4}`)
+    const recovery = !badKey && failedPrior !== undefined && op.salt % 16 === 11 && !recovered.has(`${failedPrior.op}/${failedPrior.key}`)
+    if (recovery) recovered.add(`${failedPrior.op}/${failedPrior.key}`)
+    const resume = prior !== undefined && op.salt % 8 === 3
+    const base: IssueRequest = { op: op.op, number: op.number, parent: op.parent, title: op.title, text: op.text, example: op.example, prior: op.prior, assignee: op.assignee, key: `k${op.key}` }
+    const request: IssueRequest = recovery
+      ? { ...failedPrior!, recovery: op.salt % 64 === 43 ? "bad!" : "r1" }
+      : resume
+      ? {
+        ...base,
+        op: "read",
+        number: 0,
+        resumeOp: prior!.op,
+        resumeKey: op.salt % 32 === 19 ? "bad key!" : prior!.key,
+        ...(recovered.size > 0 && op.salt % 32 === 3 ? { resumeRecovery: "r1" } : {}),
+      }
+      : { ...base, ...(badKey ? { key: "bad key!" } : {}) }
+    const issuesBefore = fake.issues.length
+    const writesBefore = fake.writes
+    const program = executeIssues("issues-fuzz", storage, request, repo).pipe(
+      Effect.provideService(IssueAuthority, authority),
+      Effect.provideService(HttpClient.HttpClient, client),
+    )
+    const result = try Effect.result(op.salt % 8 === 3 ? program : Effect.provide(program, op.salt % 8 === 1 ? noModelWriter : writerLayer(op.salt % 4 !== 2, op.salt % 4 !== 1)))
+    const permitted = issuePermission(op.signedOut ? "viewer" : op.role, request.op)
+    const identity = `${actor?.id ?? "out"}/${request.op}/${request.key}`
+    const payloadJson = JSON.stringify({ ...request, recovery: undefined })
+    const seenBefore = recovery ? undefined : seen.get(identity)
+    if (result._tag === "Failure") {
+      const failure = result.failure
+      if (failure._tag !== "IssueFailure" || !reasons.includes(failure.reason)) return false
+      if (!permitted && !["forbidden", "sign-in", "invalid"].includes(failure.reason)) return false
+      if (["forbidden", "sign-in", "connect", "invalid", "title", "incomplete", "empty", "missing"].includes(failure.reason) && fake.writes !== writesBefore) return false
+      if (!recovery && !badKey && !["read", "draft"].includes(request.op)) failedWrites.set(`${op.key % 4}`, request)
+    } else {
+      if (!permitted) return false
+      if (!Schema.is(IssuesState)(result.success)) return false
+      if (["new", "split", "propose"].includes(request.op) && (recovery ? fake.issues.length - issuesBefore > 1 : fake.issues.length - issuesBefore !== 1)) return false
+      if (request.op === "new" && seenBefore === undefined && !result.success.items.some((item) => item.title === request.title.trim())) return false
+      if (request.op === "propose" && seenBefore === undefined && !result.success.items.some((item) => item.vip !== "")) return false
+      if (!recovery && !badKey && !["read", "draft"].includes(request.op)) writes.set(`${op.key % 4}`, request)
+    }
+    if (seenBefore !== undefined && seenBefore.payload === payloadJson && seenBefore.tag !== result._tag) return false
+    if (seenBefore !== undefined && seenBefore.payload === payloadJson && fake.writes !== writesBefore) return false
+    if (!recovery) seen.set(identity, { tag: result._tag, payload: payloadJson })
+  }
+  return true
+}))
+
+
+const Direct = Schema.Struct({
+  op: Schema.Literals(["read", "new", "comment", "link", "split", "commit", "uncommit", "accept", "decline", "draft"]),
+  role: Role,
+  signedOut: Schema.Boolean,
+  noToken: Schema.Boolean,
+  number: Schema.Literals([0, 1, 2, 3, 4, 9999]),
+  parent: Schema.Literals([0, 1, 2, 3, 4, 9999]),
+  blank: Schema.Boolean,
+  blankKey: Schema.Boolean,
+  bogus: Schema.Boolean,
+  demote: Schema.Boolean,
+  assignee: Schema.Literals(["", "fuzz", "vibe-agent", "VibeLang agent", "ghost"]),
+  withWriter: Schema.Boolean,
+  authorizeFails: Schema.Boolean,
+})
+
+/** The host itself, without the engine: every refusal is typed before any write, and unjournaled writes complete. */
+it.live("issues/host-perform-boundary", () => run("issues/host-perform-boundary", Direct, (input) => effect {
+  const fake = seed()
+  fake.endlessComments = input.number === 1 && input.op === "read" && input.blank
+  fake.dropAssignees = input.blankKey
+  fake.noMain = input.bogus
+  const authorizeFails = try Ref.make(input.authorizeFails)
+  const calls = try Ref.make(0)
+  const authority: IssueAuthority.Shape = {
+    current: () => Effect.flatMap(Ref.updateAndGet(calls, (n) => n + 1), (n) =>
+      Ref.get(authorizeFails).pipe(Effect.as(
+        input.signedOut ? undefined : { id: "7", login: "fuzz", role: (input.demote && n > 1 ? "viewer" : input.role) as typeof Role.Type, token: Redacted.make(input.noToken ? "" : "token") },
+      ))),
+    authorize: () => Effect.flatMap(Ref.get(authorizeFails), (forbid) => forbid ? Effect.fail(new IssueFailure({ reason: "forbidden" })) : Effect.void),
+  }
+  const host = try githubHost(repo).pipe(
+    Effect.provideService(IssueAuthority, authority),
+    Effect.provideService(HttpClient.HttpClient, fakeClient(fake)),
+  )
+  const journaled = ["new", "comment", "split", "propose"].includes(input.op)
+  // A signed-out caller acts with the viewer role (worker/Issues.vibe: `actor?.role ?? "viewer"`).
+  const permitted = !input.bogus && issuePermission(input.signedOut ? "viewer" : input.role, input.op) && !input.authorizeFails && !(input.demote && !issuePermission("viewer", input.op))
+  const proceeds = permitted && !input.noToken && !input.blankKey
+  // Journaled creations need the durable engine; here they only run up to their first typed refusal.
+  if ((journaled && proceeds && !(input.blank && ["new", "split", "propose"].includes(input.op)) && !(input.number === 9999 && ["split", "comment"].includes(input.op))) || (input.op === "draft" && input.withWriter && proceeds)) return true
+  const request: IssueRequest = {
+    op: (input.bogus ? "bogus" : input.op) as IssueRequest["op"], number: input.number, parent: input.parent, title: input.blank ? "  " : "T", text: input.blank ? "" : "body",
+    example: input.blank ? "" : "e", prior: input.blank ? " " : "p", assignee: input.assignee, key: input.blankKey ? "" : "direct-1",
+  }
+  // The journaled creation paths are excluded above, so the engine services perform declares are never read.
+  const call = host.perform as (request: IssueRequest) => typeof IssuesState.Type!IssueFailure
+  const performed = call(request).pipe(
+    Effect.provideService(IssueAuthority, authority),
+    Effect.provideService(HttpClient.HttpClient, fakeClient(fake)),
+  )
+  const result = try Effect.result(input.withWriter ? Effect.provide(performed, writerLayer(true, true)) : performed)
+  if (result._tag === "Failure") {
+    if (result.failure._tag !== "IssueFailure" || !reasons.includes(result.failure.reason)) return false
+    if (result.failure.reason === "forbidden" && permitted) return false
+    return true
+  }
+  if (!permitted) return false
+  if (input.op === "read") return Schema.is(IssuesState)(result.success)
+  return ["link", "commit", "uncommit", "accept", "decline"].includes(input.op)
+}))
+
+const HttpOp = Schema.Struct({
+  method: Schema.Literals(["GET", "POST", "PUT", "DELETE"]),
+  path: Schema.Literals(["/api/issues", "/api/issues/more", "/other"]),
+  body: Schema.Literals(["empty", "garbage", "valid", "bad-key", "oversized", "recovery"] as const),
+  role: Role,
+  signedOut: Schema.Boolean,
+  key: Int,
+})
+
+/** The issues HTTP boundary answers every shape with a typed status; failures name their reason. */
+it.live("issues/http-surface", () => run("issues/http-surface", HttpOp, (input) => effect {
+  const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+  const storage = raw as unknown as Storage
+  const fake = seed()
+  const authority: IssueAuthority.Shape = { current: () => succeed(input.signedOut ? undefined : { id: "7", login: "fuzz", role: input.role, token: Redacted.make("token") }) }
+  const validBody = { op: "comment", number: 1, parent: 0, title: "T", text: "body", example: "", prior: "", assignee: "", key: `k${input.key}` }
+  const body = input.body === "empty" ? undefined
+    : input.body === "garbage" ? "{not json"
+    : input.body === "bad-key" ? JSON.stringify({ ...validBody, key: "bad key!" })
+    : input.body === "recovery" ? JSON.stringify({ ...validBody, recovery: "r1" })
+    : JSON.stringify(validBody)
+  let request = HttpClientRequest.make(input.method)(`https://fuzz.invalid${input.path}`)
+  if (body !== undefined) request = HttpClientRequest.bodyText(request, body)
+  if (input.body === "oversized") request = HttpClientRequest.setHeader(request, "content-length", "40000")
+  const web = try HttpClientRequest.toWeb(request)
+  if (input.body === "empty" && input.method === "GET" && input.path === "/other") {
+    const publicResponse = try Effect.provideService(publicIssues("issues-public", storage), HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web))
+    if (publicResponse.status !== 404) return false
+  }
+  const counted = try Ref.make(0)
+  const response = try Effect.provideService(serveIssues("issues-http", storage, repo, (person) => Ref.update(counted, (n) => n + 1).pipe(Effect.asVoid)).pipe(
+    Effect.provideService(IssueAuthority, authority),
+    Effect.provideService(HttpClient.HttpClient, fakeClient(fake)),
+    Effect.provide(writerLayer(true, true)),
+  ), HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web))
+
+  const text = try promise(() => HttpServerResponse.toWeb(response).text())
+  if (![200, 400, 401, 403, 404, 405, 409, 413, 503].includes(response.status)) return false
+  if (response.status === 200) {
+    const parsed = try Effect.try(() => JSON.parse(text))
+    return Schema.is(Schema.Unknown)(parsed) && typeof parsed === "object" && parsed !== null && "items" in parsed
+  }
+  if (response.status === 404 || response.status === 405) return text === ""
+  const parsed = try Effect.try(() => JSON.parse(text))
+  return typeof parsed.reason === "string"
+}))
+
+const Evidence = Schema.Struct({
+  body: Schema.Literals(["plain", "marked", "bad-path", "bad-review", "foreign-review", "two-markers", "bad-number"] as const),
+  author: Schema.Literals([0, -1, 7, 8, 1.5] as const),
+  pullMissing: Schema.Boolean,
+  filesShifted: Schema.Boolean,
+  errorKind: Schema.Literals(["none", "401", "403", "404", "429", "500", "unknown", "incomplete", "rate-limited", "no-details"] as const),
+})
+
+/** VIP evidence verifies only against native pull data; provider errors map to their documented reasons. */
+it.live("issues/vip-evidence-and-failure-mapping", () => run("issues/vip-evidence-and-failure-mapping", Evidence, (input) => effect {
+  const fake = seed()
+  if (input.pullMissing) fake.pulls.length = 0
+  if (input.filesShifted) fake.pulls.forEach((pull) => { pull.files = [{ filename: "docs/design/vips/other.md", status: "added" }]; pull.changed_files = 1 })
+  const marker = (path: string, review: string) => `Proposal\n\n<!-- vibelang:vip path=${path} review=${review} -->`
+  const body = input.body === "plain" ? "No marker here"
+    : input.body === "marked" ? marker("docs/design/vips/proposal-seed.md", "https://github.com/o/r/pull/500")
+    : input.body === "bad-path" ? marker("docs/design/other.md", "https://github.com/o/r/pull/500")
+    : input.body === "bad-review" ? marker("docs/design/vips/proposal-seed.md", "https://github.com/o/r/issues/500")
+    : input.body === "foreign-review" ? marker("docs/design/vips/proposal-seed.md", "https://github.com/evil/r/pull/500")
+    : input.body === "bad-number" ? marker("docs/design/vips/proposal-seed.md", "https://github.com/o/r/pull/0")
+    : `${marker("docs/design/vips/proposal-seed.md", "https://github.com/o/r/pull/500")} ${marker("docs/design/vips/proposal-seed.md", "https://github.com/o/r/pull/501")}`
+  const observed = try GitHub.Calls.withToken(Redacted.make("t"), repo.api)(verifiedVip(repo, body, input.author)).pipe(Effect.provideService(HttpClient.HttpClient, fakeClient(fake)))
+  if (observed !== undefined) {
+    if (!observed.review.startsWith("https://github.com/o/r/pull/")) return false
+    if (input.author !== 7 || input.pullMissing || input.filesShifted || (input.body !== "marked" && input.body !== "two-markers")) return false
+    if (input.body === "two-markers" && observed.review !== "https://github.com/o/r/pull/501") return false
+  } else if (input.body === "marked" && input.author === 7 && !input.pullMissing && !input.filesShifted) return false
+
+  const details: Record<string, unknown> = input.errorKind === "no-details" ? {} : input.errorKind === "none" ? {} : input.errorKind === "unknown" ? { outcomeUnknown: true } : input.errorKind === "incomplete" ? { incomplete: true } : input.errorKind === "rate-limited" ? { rateLimited: true, retryAfterMillis: 5000 } : { status: Number(input.errorKind) }
+  const failure = issueFailureOf({ details })
+  const expected = input.errorKind === "unknown" ? "unknown" : input.errorKind === "incomplete" ? "partial" : input.errorKind === "rate-limited" ? "rate-limited" : input.errorKind === "401" ? "sign-in" : input.errorKind === "403" ? "forbidden" : input.errorKind === "404" ? "missing" : "unavailable"
+  if (failure.reason !== expected) return false
+  if (input.errorKind === "rate-limited" && failure.retryAfterMillis !== 5000) return false
+  return ["unknown", "rate-limited", "unavailable"].includes(expected) ? failure.code === expected : true
+}))

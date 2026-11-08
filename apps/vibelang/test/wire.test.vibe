@@ -1,7 +1,9 @@
 // The API's routes and cursors (src/core/wire.vibe, worker/Http.vibe) and the names the sequencer gives its replies
 // and the budget its days: plain functions the workerd suites reach only through HTTP.
 import { describe, expect, it } from "@effect/vitest"
-import { conversationPath, MAX_CONVERSATION, routeOf } from "../src/core/wire.vibe"
+import { Conversation, EventSchema } from "../src/core/schemas.vibe"
+import { conversationPath, MAX_CONVERSATION, routeOf, TourControlBody } from "../src/core/wire.vibe"
+import { Written } from "../src/history/wire.vibe"
 import { failureOf } from "../src/web/view.vibe"
 import { afterOf } from "../worker/Http.vibe"
 import { dayOf, REASONS } from "../worker/Reply.vibe"
@@ -34,6 +36,24 @@ describe("the API's routes", () => {
     expect(after("")).toBe(0)
     expect(after("?after=12")).toBe(12)
     for (const bad of ["-1", "1.5", "01", "1e3", "x", "", "9007199254740992"]) expect(after(`?after=${bad}`), bad).toBeUndefined()
+  })
+})
+
+describe("wire schemas and non-finite numbers", () => {
+  it("refuses NaN and Infinity in timestamps, attempts, steps and counts, which JSON carries as null", () => {
+    // Fuzz finding: a generated ActionSettled with `at: -Infinity` encoded as null and then failed to decode.
+    const cases: ReadonlyArray<readonly [Schema.Codec<unknown, unknown>, unknown]> = [
+      [EventSchema, { type: "ActionRequested", seq: 1, id: "a", flow: "f", door: "d", actor: "g", at: NaN }],
+      [EventSchema, { type: "ActionStep", seq: 1, id: "a", key: "k", name: "n", attempt: Infinity, state: "s", at: 1 }],
+      [EventSchema, { type: "ActionSettled", seq: 1, id: "a", state: "succeeded", result: "", at: -Infinity }],
+      [Conversation, { seq: 1, entries: [], agent: "idle", replying: "", pane: "", roles: [], runs: [{ id: "r", flow: "f", door: "d", actor: "a", state: "s", started: 1, at: 1.5, result: "", steps: [{ key: "k", name: "n", attempt: 0.5, state: "s", started: -1, at: 2 }] }] }],
+      [TourControlBody, { action: "seek", step: 1.5 }],
+      [Written, { id: "m1", folded: Infinity }],
+    ]
+    for (const [schema, value] of cases) {
+      expect(Schema.is(schema)(value)).toBe(false)
+      expect(() => Schema.decodeUnknownSync(Schema.fromJsonString(schema))(JSON.stringify(value))).toThrow()
+    }
   })
 })
 

@@ -23,8 +23,8 @@ export schema Entry {
 
 export schema RoleGrant { readonly id: string; readonly role: "viewer" | "new" | "community" | "contributor" | "maintainer"; readonly blocked: boolean }
 
-export schema StoredStep { readonly key: string; readonly name: string; readonly attempt: number; readonly state: string; readonly started: number; readonly at: number }
-export schema StoredRun { readonly id: string; readonly flow: string; readonly door: string; readonly actor: string; readonly state: string; readonly started: number; readonly at: number; readonly result: string; readonly steps: ReadonlyArray<StoredStep> }
+export schema StoredStep { readonly key: string; readonly name: string; readonly attempt: Seq; readonly state: string; readonly started: Seq; readonly at: Seq }
+export schema StoredRun { readonly id: string; readonly flow: string; readonly door: string; readonly actor: string; readonly state: string; readonly started: Seq; readonly at: Seq; readonly result: string; readonly steps: ReadonlyArray<StoredStep> }
 
 export schema Walkthrough { readonly step: Seq; readonly target: string; readonly paused: boolean; readonly revision: Seq; readonly remaining: Seq; readonly at: Seq }
 
@@ -72,9 +72,9 @@ export schema PaneOpened { readonly type: "PaneOpened"; readonly seq: Seq; reado
 export schema RoleGranted { readonly type: "RoleGranted"; readonly seq: Seq; readonly id: string; readonly by: string; readonly role: "viewer" | "new" | "community" | "contributor" | "maintainer"; readonly mode: "person" | "participation" | "bootstrap" }
 export schema ActionAuthorized { readonly type: "ActionAuthorized"; readonly seq: Seq; readonly id: string; readonly by: string; readonly action: "read" | "ask" | "tour" | "people" | "issue" | "comment" | "vip" | "action" | "sandbox" | "triage" | "merge" | "settings" | "roles" }
 
-export schema ActionRequested { readonly type: "ActionRequested"; readonly seq: Seq; readonly id: string; readonly flow: string; readonly door: string; readonly actor: string; readonly at: number }
-export schema ActionStep { readonly type: "ActionStep"; readonly seq: Seq; readonly id: string; readonly key: string; readonly name: string; readonly attempt: number; readonly state: string; readonly at: number }
-export schema ActionSettled { readonly type: "ActionSettled"; readonly seq: Seq; readonly id: string; readonly state: string; readonly result: string; readonly at: number }
+export schema ActionRequested { readonly type: "ActionRequested"; readonly seq: Seq; readonly id: string; readonly flow: string; readonly door: string; readonly actor: string; readonly at: Seq }
+export schema ActionStep { readonly type: "ActionStep"; readonly seq: Seq; readonly id: string; readonly key: string; readonly name: string; readonly attempt: Seq; readonly state: string; readonly at: Seq }
+export schema ActionSettled { readonly type: "ActionSettled"; readonly seq: Seq; readonly id: string; readonly state: string; readonly result: string; readonly at: Seq }
 
 export schema WalkthroughDriven { readonly type: "WalkthroughDriven"; readonly seq: Seq; readonly id: string; readonly step: Seq; readonly target: string; readonly at: Seq; readonly duration: Seq }
 export schema TourPaused { readonly type: "TourPaused"; readonly seq: Seq; readonly id: string; readonly at: Seq }

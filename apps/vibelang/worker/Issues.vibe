@@ -230,7 +230,6 @@ export effect function serveIssues(hostId: string, storage: Storage, repo: Repos
   const body = request.method === "GET" ? { op: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: `read-${try Clock.currentTimeMillis}` } : (request.json.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(32_768)), Effect.timeout("3 seconds")) catch () => undefined)
   const input = Schema.decodeUnknownOption(IssueRequest)(body)
   if (Option.isNone(input) || !/^[A-Za-z0-9-]{1,100}$/.test(input.value.key)) return HttpServerResponse.jsonUnsafe({ reason: "invalid" }, { status: 400 })
-  if (request.method !== "GET" && request.method !== "POST") return HttpServerResponse.empty({ status: 405 })
   const payload = input.value
   
   const result = try Effect.result(executeIssues(hostId, storage, payload, repo))
@@ -304,6 +303,13 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
   const target = failed ? try issueRecoveryId(executionId, recovery!) : executionId
   const result = try scoped(Effect.provide(effect {
     const engine = try FlowRuntime.FlowRuntime
+    if (!observed.fresh && !failed) {
+      // A reused key joins only the exact request it first named; a changed payload is a typed refusal, never an engine conflict.
+      const inspection = try RunInspection.RunInspection
+      const recorded = try inspection.payload(executionId).pipe(Effect.mapError(() => new IssueFailure({ reason: "unavailable" })))
+      const decoded = Schema.decodeUnknownOption(IssueRequest)(recorded.payload)
+      if (Option.isNone(decoded) || Object.entries(original).some(([name, value]) => decoded.value[name as keyof IssueRequest] !== value)) throw new IssueFailure({ reason: "invalid" })
+    }
     if (failed) {
       const known = engine.poll(flow, target).pipe(Effect.as(true)) catch () => false
       if (!known) {

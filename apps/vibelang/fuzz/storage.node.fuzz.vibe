@@ -62,6 +62,8 @@ it.live("storage/conversation-flows", () => run("storage/conversation-flows", Sc
   if ((try Objects.tour("fuzz", object, sequencer)) !== null || (try Objects.tour("fuzz", object, sequencer)) !== "busy") return false
   try Objects.alarm("fuzz", object, sequencer, { admit: () => succeed(true), spend: () => Effect.void }, model, history)
   try Objects.alarm("fuzz", object, sequencer, spend, model, history)
+  const ended = try Objects.endTour("fuzz", object, sequencer)
+  if (ended !== null && ended !== "not-replying") return false
   return (try Objects.endTour("fuzz", object, sequencer)) === "not-replying"
 }))
 
