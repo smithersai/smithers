@@ -33,14 +33,14 @@ export const RunResult = Schema.Struct({
 })
 
 /** The detector's verdict on one run. */
-export schema Notability {
-  readonly notable: boolean
-  readonly reasons: ReadonlyArray<string>
-  readonly exitCodeChanged: boolean
-  readonly durationDeltaPercent: number
-  readonly signatureChanged: boolean
-  readonly diffSummary: string
-}
+export const Notability = Schema.Struct({
+  notable: Schema.Boolean,
+  reasons: Schema.Array(Schema.String),
+  exitCodeChanged: Schema.Boolean,
+  durationDeltaPercent: Schema.Number,
+  signatureChanged: Schema.Boolean,
+  diffSummary: Schema.String
+})
 
 /** The report the flow settles with. */
 export const Report = Schema.Struct({

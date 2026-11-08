@@ -5,8 +5,8 @@ import { isRepository, repoId } from "./contract";
 import { embedLoadMs } from "./metrics";
 import { blobKey, readmeOf, treeKey } from "./paths";
 import { RepoStore } from "./store";
-/** Changes the embed row `key`. */
-const change = (key, fields) => Effect.flatMap(RepoStore, ({ embeds }) => Effect.orDie(embeds.update(key, (row) => void Object.assign(row, fields))));
+/** Changes the embed row `key`, unless a repository's refusal wiped it meanwhile: a late load writes nothing back. */
+const change = (key, fields) => Effect.flatMap(RepoStore, ({ embeds }) => Effect.flatMap(embeds.get(key), (row) => Option.isNone(row) ? Effect.void : Effect.orDie(embeds.update(key, (draft) => void Object.assign(draft, fields)))));
 /**
  * What the view shows, once the tab can tell: the about read first, then, once the repositories' shape has answered, a
  * cloned repository's location, else GitHub's root. A ref or path the repository doesn't have is `missing`.
@@ -82,12 +82,17 @@ export const embed = (viewId, target) => Effect.gen(function* () {
         bodyKey: null,
         bodyPath: null,
     };
+    if (store.isRefused(row.repoId))
+        return;
     yield* put(store.embeds, viewId, row);
     if (row.state === "missing")
         return;
     const startedAt = yield* Clock.currentTimeMillis;
     yield* load(row, target).pipe(Effect.andThen(Effect.gen(function* () {
-        const outcome = Option.getOrThrow(yield* store.embeds.get(viewId)).state;
+        const held = yield* store.embeds.get(viewId);
+        if (Option.isNone(held))
+            return;
+        const outcome = held.value.state;
         const durationMs = (yield* Clock.currentTimeMillis) - startedAt;
         yield* Metric.update(Metric.withAttributes(embedLoadMs, { outcome }), durationMs);
         yield* Effect.logWithLevel(outcome === "failed" ? "Warn" : "Info")("repo.embed.load").pipe(Effect.annotateLogs({ outcome, durationMs, feature: "repo" }));

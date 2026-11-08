@@ -26,6 +26,5 @@
     "allowImportingTsExtensions": true,
     "rootDir": "src"
   },
-  "include": ["src/**/*"],
-  "vibelang": { "declarationImportStyle": "extensionless" }
+  "include": ["src/**/*"]
 }

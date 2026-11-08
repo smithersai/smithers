@@ -348,7 +348,9 @@ export function subscriptions(keys: EventTarget, page?: Document) {
               return factory.events(conversation, from).pipe(
                 Stream.map((event) => Message.ReceivedEvent({ event })),
                 Stream.concat(Stream.make(ended)),
-                Stream.catchTag("Unavailable", (error) => Stream.make(Message.FailedEvents({ reason: error.reason }))),
+                Stream.catchTag("Unavailable", (error) =>
+                  Stream.fromEffect(message(() => Message.FailedEvents({ reason: error.reason })))
+                ),
               )
             }),
             sync(() => open),

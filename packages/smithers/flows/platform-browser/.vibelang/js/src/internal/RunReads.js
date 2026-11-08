@@ -15,7 +15,7 @@
 import * as Schema_1 from "effect/Schema";
 import * as Schema from "effect/Schema";
 const Value = Schema_1.Struct({
-    text: Schema_1.String, bytes: Schema_1.Number, clipped: Schema_1.Boolean,
+    text: Schema_1.mutableKey(Schema_1.String), bytes: Schema_1.mutableKey(Schema_1.Number), clipped: Schema_1.mutableKey(Schema_1.Boolean),
 });
 const Waiting = Schema.Struct({
     kind: Schema.Literals(["timer", "signal", "approval", "quota", "human", "other"]),

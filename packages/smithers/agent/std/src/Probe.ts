@@ -46,7 +46,7 @@ import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { truncateBytes } from "./internal/Text.ts"
-import * as StdError from "./StdError.vibe"
+import * as StdError from "./StdError.ts"
 
 /**
  * The reserved output key a flow reports an invalid probe under.

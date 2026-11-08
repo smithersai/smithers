@@ -35,15 +35,15 @@ export const Stakes = Schema.Literals(["high", "low"])
 export const stakesToThreshold = (stakes: typeof Stakes.Type): number => stakes === "high" ? 1.0 : 0.7
 
 /** The R-C-T-F slots, plus the auxiliary ones that often matter. */
-export schema Structured {
-  readonly role: string
-  readonly context: string
-  readonly task: string
-  readonly format: string
-  readonly constraints: ReadonlyArray<string>
-  readonly successCriteria: ReadonlyArray<string>
-  readonly outOfScope: ReadonlyArray<string>
-}
+export const Structured = Schema.Struct({
+  role: Schema.String,
+  context: Schema.String,
+  task: Schema.String,
+  format: Schema.String,
+  constraints: Schema.Array(Schema.String),
+  successCriteria: Schema.Array(Schema.String),
+  outOfScope: Schema.Array(Schema.String)
+})
 
 /** The Socratic principle the next question applies. */
 export const Principle = Schema.Literals([

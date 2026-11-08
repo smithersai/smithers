@@ -81,7 +81,7 @@ export * as Event from "./Event.vibe"
  * @since 0.1.0
  * @slop
  */
-export * as MemoryEntries from "./MemoryEntries.vibe"
+export * as MemoryEntries from "./MemoryEntries.ts"
 
 /**
  * The model-backed author seat over `Model.Model`.

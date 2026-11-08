@@ -33,7 +33,6 @@
  *
  * @since 1.0.0
  */
-import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
@@ -44,6 +43,7 @@ import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Effect_1 from "effect/Effect";
+import * as runtime from "vibelang-runtime/internal";
 /**
  * The channels a message can go out on.
  *
@@ -191,7 +191,7 @@ export const DeliveryError = Schema.Union([DeliveryFailed, DeliveryRefused]);
  * @category services
  * @since 1.0.0
  */
-export class Channels extends Context.Service()("@smthrs/notifications/Channels") {
+export class Channels extends runtime.$service("@smthrs/notifications/Channels") {
 }
 /**
  * Resend's API origin.
@@ -225,7 +225,7 @@ const originOf = (raw, channel) => {
     }
     if (parsed === undefined || (parsed.protocol !== "http:" && parsed.protocol !== "https:")) {
         // The message names no url: a misconfigured one may hold a credential.
-        throw new Error(`The ${channel} provider's url must be an absolute http: or https: URL`);
+        $raise(new Error(`The ${channel} provider's url must be an absolute http: or https: URL`));
     }
     return raw.replace(/\/+$/u, "");
 };
@@ -373,3 +373,4 @@ export const layer = (options) => Layer.effect(Channels, Effect_1.gen(function* 
     });
     return Channels.of({ available, send });
 })).pipe(Layer.provide(FetchHttpClient.layer));
+import { raise as $raise } from "./Channels.vibe.-24-throw-24-ts.js";

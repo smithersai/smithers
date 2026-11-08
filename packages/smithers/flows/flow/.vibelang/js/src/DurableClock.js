@@ -20,11 +20,11 @@ const TypeId = "@smthrs/flow/DurableClock";
 const durationFromInput = (input, field) => {
     const parsed = Duration.fromInput(input);
     if (Option.isNone(parsed)) {
-        throw new RangeError(`DurableClock: "${field}" must be a valid finite duration that is not negative.`);
+        $raise(new RangeError(`DurableClock: "${field}" must be a valid finite duration that is not negative.`));
     }
     const millis = Duration.toMillis(parsed.value);
     if (!Duration.isFinite(parsed.value) || !Number.isFinite(millis) || millis < 0) {
-        throw new RangeError(`DurableClock: "${field}" must be a valid finite duration that is not negative.`);
+        $raise(new RangeError(`DurableClock: "${field}" must be a valid finite duration that is not negative.`));
     }
     return parsed.value;
 };
@@ -44,7 +44,7 @@ const latestDueAtMs = Number.MAX_SAFE_INTEGER;
 const clockDuration = (input) => {
     const duration = durationFromInput(input, "duration");
     if (Duration.toMillis(duration) > latestDueAtMs) {
-        throw new RangeError(`DurableClock: "duration" must be at most ${latestDueAtMs} milliseconds.`);
+        $raise(new RangeError(`DurableClock: "duration" must be at most ${latestDueAtMs} milliseconds.`));
     }
     return duration;
 };
@@ -82,32 +82,35 @@ export const sleep = (options) => {
     const duration = clockDuration(options.duration);
     const inMemoryThreshold = durationFromInput(options.inMemoryThreshold ?? defaultInMemoryThreshold, "inMemoryThreshold");
     // Untraced because durable sleeps are recursively resumed by the engine.
-    return (Effect_1.fnUntraced(function* () {
-        if (Duration.isZero(duration)) {
-            return;
-        }
-        if (Duration.isLessThanOrEqualTo(duration, inMemoryThreshold)) {
-            return yield* Action.make({
-                name: `DurableClock/${name}`,
-                tier: "sealed",
-                execute: Effect.sleep(duration)
+    return (() => {
+        return Effect_1.gen(function* () {
+            if (Duration.isZero(duration)) {
+                return;
+            }
+            if (Duration.isLessThanOrEqualTo(duration, inMemoryThreshold)) {
+                return yield* Action.make({
+                    name: `DurableClock/${name}`,
+                    tier: "sealed",
+                    execute: Effect.sleep(duration)
+                });
+            }
+            // A due time past the latest one a store records would fail the park
+            // write deep in the engine, so the sleep refuses it here by name.
+            const now = yield* Clock.currentTimeMillis;
+            if (now + Duration.toMillis(duration) > latestDueAtMs) {
+                return yield* Effect.die(new RangeError(`DurableClock: "${name}" would wake after epoch millisecond ${latestDueAtMs}, ` +
+                    `the latest due time a durable timer records.`));
+            }
+            const engine = yield* FlowRuntime;
+            const instance = yield* FlowInstance;
+            const clock = makeClock(name, duration);
+            yield* engine.scheduleClock(instance.flow, {
+                executionId: instance.executionId,
+                clock
             });
-        }
-        // A due time past the latest one a store records would fail the park
-        // write deep in the engine, so the sleep refuses it here by name.
-        const now = yield* Clock.currentTimeMillis;
-        if (now + Duration.toMillis(duration) > latestDueAtMs) {
-            return yield* Effect.die(new RangeError(`DurableClock: "${name}" would wake after epoch millisecond ${latestDueAtMs}, ` +
-                `the latest due time a durable timer records.`));
-        }
-        const engine = yield* FlowRuntime;
-        const instance = yield* FlowInstance;
-        const clock = makeClock(name, duration);
-        yield* engine.scheduleClock(instance.flow, {
-            executionId: instance.executionId,
-            clock
+            return yield* DurableDeferred.await(clock.deferred);
         });
-        return yield* DurableDeferred.await(clock.deferred);
-    }))();
+    })();
 };
 const defaultInMemoryThreshold = Duration.seconds(60);
+import { raise as $raise } from "./DurableClock.vibe.-24-throw-24-ts.js";

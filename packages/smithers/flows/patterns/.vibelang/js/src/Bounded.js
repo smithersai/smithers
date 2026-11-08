@@ -27,12 +27,12 @@ const nonEmptyRefusal = (names) => Compose.nonEmptyMembersRefusal("Bounded", nam
 const width = (concurrency) => {
     const refusal = widthRefusal(concurrency);
     if (refusal !== undefined)
-        throw refusal;
+        $raise(refusal);
 };
 const nonEmpty = (names) => {
     const refusal = nonEmptyRefusal(names);
     if (refusal !== undefined)
-        throw refusal;
+        $raise(refusal);
 };
 const declaredPriority = (node) => Node.declaredPriority(node.ast);
 // Descending priority, declaration order among equals, so a plan built twice
@@ -60,7 +60,7 @@ export const all = (members, options) => {
         const value = declaredPriority(members[name]) ?? options.priority ?? 0;
         const refusal = Compose.safeIntegerPriorityRefusal("Bounded", name, value);
         if (refusal !== undefined)
-            throw refusal;
+            $raise(refusal);
         priorities.set(name, value);
     }
     const order = ranked(members, (name) => priorities.get(name));
@@ -142,3 +142,4 @@ export const run = (members, options) => {
         return Effect.map(Effect.forEach(order, (entry) => Effect.map(entry.member, (value) => [entry.name, value]), { concurrency }), (pairs) => Object.fromEntries(pairs));
     });
 };
+import { raise as $raise } from "./Bounded.vibe.-24-throw-24-ts.js";

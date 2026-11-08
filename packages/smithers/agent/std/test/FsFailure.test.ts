@@ -6,7 +6,7 @@ import * as Edit from "../src/Edit.ts"
 import { rootFailure } from "../src/internal/SearchContract.vibe"
 import * as Ls from "../src/Ls.ts"
 import * as Read from "../src/Read.ts"
-import type * as StdError from "../src/StdError.vibe"
+import type * as StdError from "../src/StdError.ts"
 import * as Write from "../src/Write.vibe"
 import { fileInfo, layer } from "./TestLayers.ts"
 

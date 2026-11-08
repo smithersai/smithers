@@ -15,8 +15,8 @@
  * @since 1.0.0
  */
 import * as Model from "@smthrs/model/Model";
-import { Effect, Ref, Stream } from "effect";
-import { appendFileSync } from "node:fs";
+import { NodeHost } from "@smthrs/platform-node";
+import { Effect, Ref, Semaphore, Stream } from "effect";
 import * as ScriptedModel from "./ScriptedModel.js";
 /**
  * Builds an empty turn log.
@@ -26,12 +26,16 @@ import * as ScriptedModel from "./ScriptedModel.js";
  */
 export const make = (options = {}) => Effect.gen(function* () {
     const state = yield* Ref.make([]);
-    const record = (kind, step, detail = {}) => Ref.modify(state, (entries) => {
+    const publication = yield* NodeHost.AtomicFileSystem.ownerPrivate;
+    const serial = yield* Semaphore.make(1);
+    const record = (kind, step, detail = {}) => serial.withPermits(1)(Effect.gen(function* () {
+        const entries = yield* Ref.get(state);
         const entry = { ...detail, n: entries.length + 1, at: new Date().toISOString(), kind, step };
-        return [entry, [...entries, entry]];
-    }).pipe(Effect.flatMap((entry) => options.file === undefined
-        ? Effect.void
-        : Effect.sync(() => appendFileSync(options.file, `${JSON.stringify(entry)}\n`, { mode: 0o600 }))));
+        if (options.file !== undefined) {
+            yield* publication.append(options.file, `${JSON.stringify(entry)}\n`).pipe(Effect.orDie);
+        }
+        yield* Ref.set(state, [...entries, entry]);
+    }));
     const chat = (request, step, detail = {}) => record("chat", step, {
         model: request.modelId,
         messageCount: request.messages.length,

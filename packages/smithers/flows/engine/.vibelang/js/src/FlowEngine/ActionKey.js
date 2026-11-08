@@ -8,7 +8,7 @@
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import { firstPath as schemaErrorPath } from "@smthrs/canonical/IssuePath";
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet";
 import { Action, Flow, StepIdentity } from "@smthrs/flow";
@@ -145,42 +145,46 @@ const declarations = {
  * encoding picks the identity version, so a key written before an `effect`
  * upgrade stays derivable.
  */
-const declarationDigest = Effect_1.fnUntraced(function* declarationDigest(action, encoding) {
-    const version = identityVersion(encoding);
-    const success = version === 1 ? action.successSchema : action.successSchema.ast;
-    const error = version === 1 ? action.errorSchema : action.errorSchema.ast;
-    let errors = declarations[version].get(success);
-    const cached = errors?.get(error);
-    if (cached !== undefined)
-        return cached;
-    const digest = yield* Schema.decodeUnknownEffect(DerivedKey)({
-        success: yield* Effect.orDie(Effect.try({ try: () => Node.representationIdentity(action.successSchema, version), catch: (error) => error })),
-        error: yield* Effect.orDie(Effect.try({ try: () => Node.representationIdentity(action.errorSchema, version), catch: (error) => error }))
+const declarationDigest = (action, encoding) => {
+    return Effect_1.gen(function* declarationDigest() {
+        const version = identityVersion(encoding);
+        const success = version === 1 ? action.successSchema : action.successSchema.ast;
+        const error = version === 1 ? action.errorSchema : action.errorSchema.ast;
+        let errors = declarations[version].get(success);
+        const cached = errors?.get(error);
+        if (cached !== undefined)
+            return cached;
+        const digest = yield* Schema.decodeUnknownEffect(DerivedKey)({
+            success: yield* Effect.orDie(Effect.try({ try: () => Node.representationIdentity(action.successSchema, version), catch: (error) => error })),
+            error: yield* Effect.orDie(Effect.try({ try: () => Node.representationIdentity(action.errorSchema, version), catch: (error) => error }))
+        });
+        if (errors === undefined) {
+            errors = new WeakMap();
+            declarations[version].set(success, errors);
+        }
+        errors.set(error, digest);
+        return digest;
     });
-    if (errors === undefined) {
-        errors = new WeakMap();
-        declarations[version].set(success, errors);
-    }
-    errors.set(error, digest);
-    return digest;
-});
+};
 const boundaries = new WeakMap();
 /** Hash the validated boundary once per distinct metadata document. */
-const boundaryDigest = Effect_1.fnUntraced(function* boundaryDigest(metadata) {
-    const boundary = fileBoundary(metadata);
-    if (boundary === undefined)
-        return undefined;
-    // Metadata is caller-owned and may mutate. The decoded JSON snapshot is a
-    // cheap equality check, never hash input: DerivedKey still canonicalizes
-    // the descriptor, so object property order cannot change its identity.
-    const document = JSON.stringify(boundary);
-    const cached = boundaries.get(metadata);
-    if (cached?.document === document)
-        return cached.digest;
-    const digest = yield* Schema.decodeUnknownEffect(DerivedKey)(boundary);
-    boundaries.set(metadata, { document, digest });
-    return digest;
-});
+const boundaryDigest = (metadata) => {
+    return Effect_1.gen(function* boundaryDigest() {
+        const boundary = fileBoundary(metadata);
+        if (boundary === undefined)
+            return undefined;
+        // Metadata is caller-owned and may mutate. The decoded JSON snapshot is a
+        // cheap equality check, never hash input: DerivedKey still canonicalizes
+        // the descriptor, so object property order cannot change its identity.
+        const document = JSON.stringify(boundary);
+        const cached = boundaries.get(metadata);
+        if (cached?.document === document)
+            return cached.digest;
+        const digest = yield* Schema.decodeUnknownEffect(DerivedKey)(boundary);
+        boundaries.set(metadata, { document, digest });
+        return digest;
+    });
+};
 /**
  * The persisted key an action dispatch is recorded under: a pure cache key
  * for a keyed sealed action, an ordinal-scoped invocation key otherwise.
@@ -190,99 +194,106 @@ const boundaryDigest = Effect_1.fnUntraced(function* boundaryDigest(metadata) {
  * @private
  * @since 0.1.0
  */
-export const actionKey = Effect_1.fnUntraced(runtime.$joinedFrame(function* actionKey(action, executionId, ordinal, environment, scope, encoding = keyEncodings[0]) {
-    if (action.tier === "sealed" && action.idempotencyKey !== undefined) {
-        // Skyframe's SkyKey is (functionName, argument): a string idempotencyKey
-        // is namespaced by the action name so two distinct actions sharing an
-        // idempotency string can never collide and replay each other's outcomes,
-        // and the declared success/error schemas are folded in so the body is the
-        // *compiled declaration* the step-key spec requires — a schema change
-        // must miss rather than replay a stale row decoded under the new schema
-        // (issue #120). The object form stays caller-owned (no
-        // name and no schema material folded in) as the explicit, documented
-        // escape hatch for rename- and refactor-stable identity. Note: folding
-        // the declaration changes the digest of every persisted string-key row
-        // from before this fix; those keys were unsafe to replay across schema
-        // changes, so the break is intentional (same precedent as the
-        // name-namespacing fix). Compact declaration and boundary SHA-256 keys
-        // intentionally change those bytes again under the same precedent. A
-        // boundary also re-keys the object form; boundary-free object keys retain
-        // their encoding.
-        // The two forms build `input` from different material, so the form itself
-        // is key input. Without it a caller object that spells the string form's
-        // `{action, idempotencyKey, declaration}` encoding — the shape a caller
-        // reaches for when copying the engine's own encoding to get a
-        // rename-stable key — digests byte-identically to the string form, shares
-        // one attempt row and one cache row, and replays the string form's
-        // recorded outcome under its own schema. `StepIdentity.allocationScope`
-        // already tags the same aliasing `/s:` and `/c:` (StepIdentity.ts:88-89);
-        // the persisted key omitted it. The tag is a sibling of `input`, not a
-        // member of it, so the caller-owned object stays verbatim and
-        // rename-stability is untouched.
-        const form = typeof action.idempotencyKey === "string" ? "declared" : "caller";
-        const input = typeof action.idempotencyKey === "string"
-            ? {
-                action: action.name,
-                idempotencyKey: action.idempotencyKey,
-                declaration: yield* declarationDigest(action, encoding)
+export const actionKey = (arg_1, arg_2, arg_3, arg_4, arg_5, ...args_1) => {
+    try {
+        return ((action, executionId, ordinal, environment, scope, encoding = keyEncodings[0]) => Effect_1.gen(function* actionKey() {
+            if (action.tier === "sealed" && action.idempotencyKey !== undefined) {
+                // Skyframe's SkyKey is (functionName, argument): a string idempotencyKey
+                // is namespaced by the action name so two distinct actions sharing an
+                // idempotency string can never collide and replay each other's outcomes,
+                // and the declared success/error schemas are folded in so the body is the
+                // *compiled declaration* the step-key spec requires — a schema change
+                // must miss rather than replay a stale row decoded under the new schema
+                // (issue #120). The object form stays caller-owned (no
+                // name and no schema material folded in) as the explicit, documented
+                // escape hatch for rename- and refactor-stable identity. Note: folding
+                // the declaration changes the digest of every persisted string-key row
+                // from before this fix; those keys were unsafe to replay across schema
+                // changes, so the break is intentional (same precedent as the
+                // name-namespacing fix). Compact declaration and boundary SHA-256 keys
+                // intentionally change those bytes again under the same precedent. A
+                // boundary also re-keys the object form; boundary-free object keys retain
+                // their encoding.
+                // The two forms build `input` from different material, so the form itself
+                // is key input. Without it a caller object that spells the string form's
+                // `{action, idempotencyKey, declaration}` encoding — the shape a caller
+                // reaches for when copying the engine's own encoding to get a
+                // rename-stable key — digests byte-identically to the string form, shares
+                // one attempt row and one cache row, and replays the string form's
+                // recorded outcome under its own schema. `StepIdentity.allocationScope`
+                // already tags the same aliasing `/s:` and `/c:` (StepIdentity.ts:88-89);
+                // the persisted key omitted it. The tag is a sibling of `input`, not a
+                // member of it, so the caller-owned object stays verbatim and
+                // rename-stability is untouched.
+                const form = typeof action.idempotencyKey === "string" ? "declared" : "caller";
+                const input = typeof action.idempotencyKey === "string"
+                    ? {
+                        action: action.name,
+                        idempotencyKey: action.idempotencyKey,
+                        declaration: yield* declarationDigest(action, encoding)
+                    }
+                    : action.idempotencyKey;
+                // The cacheability-gating boundary descriptor is cache key input
+                // (issue #25): a changed read set, write set, or boundary mode must miss
+                // rather than replay a stale cross-run cache entry. Both key forms fold
+                // it through this one path — the caller-owned object keeps
+                // rename-stability (no name enters the digest) but can never opt out of
+                // the read-set material `ActionPersistence` gates cacheability on
+                // (issue #57): the descriptor derived from `action.metadata` overrides
+                // any caller-supplied `boundary` field.
+                const boundary = yield* boundaryDigest(action.metadata);
+                // The caller-owned object can carry material canonicalization
+                // rejects; the typed `SchemaError` propagates to the dispatch site
+                // (issue #151) instead of being discarded through `Result.getOrThrow`.
+                // A declared nondeterministic result is also key material. Otherwise a
+                // tolerant declaration could consume a strict row (or the reverse) under
+                // an identity whose conflict policy was never part of the claim. Omitting
+                // it emits no field and preserves every deterministic key byte-for-byte.
+                // Cache hits disclose the output without re-running guarded host operations.
+                // Partition both key forms by effective authority; run-local replay identity
+                // remains stable and cannot be turned into a second execution by a ceiling.
+                const ceiling = environment === undefined ?
+                    [] :
+                    (yield* Flow.attenuateCapabilities(Flow.capabilityCeilings(action.annotations))(CapabilitySet.current)).groups;
+                return yield* Schema.decodeUnknownEffect(DerivedKey)({
+                    // An encoding names itself from 3 on; 2 and 1 were written before keys
+                    // were versioned and emit nothing, so their bytes stay derivable.
+                    ...(encoding < 3 ? {} : { keyEncoding: encoding }),
+                    kind: environment === undefined ? "run" : "cache",
+                    ...(ceiling.length === 0 ? {} : {
+                        capabilityCeilings: ceiling.map((group) => group.map(({ action, resource }) => ({ action, resource })))
+                    }),
+                    form,
+                    input,
+                    // This is outside caller-owned input, retaining object-key rename
+                    // stability while preventing it from masking an explicit version. An
+                    // absent version emits no field and preserves all legacy key bytes.
+                    ...(action.implementationVersion === undefined ? {} : { implementationVersion: action.implementationVersion }),
+                    ...(environment === undefined ? { runId: executionId } : { environment }),
+                    ...(action.nondeterministic === undefined ? {} : { nondeterministic: action.nondeterministic }),
+                    ...(boundary === undefined ? {} : { boundary })
+                });
             }
-            : action.idempotencyKey;
-        // The cacheability-gating boundary descriptor is cache key input
-        // (issue #25): a changed read set, write set, or boundary mode must miss
-        // rather than replay a stale cross-run cache entry. Both key forms fold
-        // it through this one path — the caller-owned object keeps
-        // rename-stability (no name enters the digest) but can never opt out of
-        // the read-set material `ActionPersistence` gates cacheability on
-        // (issue #57): the descriptor derived from `action.metadata` overrides
-        // any caller-supplied `boundary` field.
-        const boundary = yield* boundaryDigest(action.metadata);
-        // The caller-owned object can carry material canonicalization
-        // rejects; the typed `SchemaError` propagates to the dispatch site
-        // (issue #151) instead of being discarded through `Result.getOrThrow`.
-        // A declared nondeterministic result is also key material. Otherwise a
-        // tolerant declaration could consume a strict row (or the reverse) under
-        // an identity whose conflict policy was never part of the claim. Omitting
-        // it emits no field and preserves every deterministic key byte-for-byte.
-        // Cache hits disclose the output without re-running guarded host operations.
-        // Partition both key forms by effective authority; run-local replay identity
-        // remains stable and cannot be turned into a second execution by a ceiling.
-        const ceiling = environment === undefined ?
-            [] :
-            (yield* Flow.attenuateCapabilities(Flow.capabilityCeilings(action.annotations))(CapabilitySet.current)).groups;
-        return yield* Schema.decodeUnknownEffect(DerivedKey)({
-            // An encoding names itself from 3 on; 2 and 1 were written before keys
-            // were versioned and emit nothing, so their bytes stay derivable.
-            ...(encoding < 3 ? {} : { keyEncoding: encoding }),
-            kind: environment === undefined ? "run" : "cache",
-            ...(ceiling.length === 0 ? {} : {
-                capabilityCeilings: ceiling.map((group) => group.map(({ action, resource }) => ({ action, resource })))
-            }),
-            form,
-            input,
-            // This is outside caller-owned input, retaining object-key rename
-            // stability while preventing it from masking an explicit version. An
-            // absent version emits no field and preserves all legacy key bytes.
-            ...(action.implementationVersion === undefined ? {} : { implementationVersion: action.implementationVersion }),
-            ...(environment === undefined ? { runId: executionId } : { environment }),
-            ...(action.nondeterministic === undefined ? {} : { nondeterministic: action.nondeterministic }),
-            ...(boundary === undefined ? {} : { boundary })
-        });
+            // The ordinal is allocated from a counter scoped to this action's
+            // declaration identity and that scope is folded into the key as
+            // `parentScope` (issues #73, #85). One per-run counter bumped in
+            // fiber-arrival order made the identity of a compensable, irreversible, or
+            // unsealed action depend on scheduling: under `Effect.all` with
+            // concurrency a replay could hand `chargeCard` the ordinal `sendEmail`
+            // recorded and replay the wrong attempt rows, checkpoint, and outcome.
+            // Per-identity counters are stable under any interleaving of distinct
+            // declarations or structural dispatch sites — distinct names, one name
+            // with distinct declared idempotency keys, or distinct interpreter graph
+            // nodes; the scope also keeps two identities from sharing the number 1.
+            return yield* StepIdentity.invocationKey({
+                runId: executionId,
+                parentScope: scope,
+                ordinal,
+                tier: action.tier === "sealed" ? "unsealed" : action.tier
+            });
+        }))(arg_1, arg_2, arg_3, arg_4, arg_5, ...runtime.$spreadItems(args_1));
     }
-    // The ordinal is allocated from a counter scoped to this action's
-    // declaration identity and that scope is folded into the key as
-    // `parentScope` (issues #73, #85). One per-run counter bumped in
-    // fiber-arrival order made the identity of a compensable, irreversible, or
-    // unsealed action depend on scheduling: under `Effect.all` with
-    // concurrency a replay could hand `chargeCard` the ordinal `sendEmail`
-    // recorded and replay the wrong attempt rows, checkpoint, and outcome.
-    // Per-identity counters are stable under any interleaving of distinct
-    // declarations or structural dispatch sites — distinct names, one name
-    // with distinct declared idempotency keys, or distinct interpreter graph
-    // nodes; the scope also keeps two identities from sharing the number 1.
-    return yield* StepIdentity.invocationKey({
-        runId: executionId,
-        parentScope: scope,
-        ordinal,
-        tier: action.tier === "sealed" ? "unsealed" : action.tier
-    });
-}));
+    catch (e_1) {
+        return Effect_1.die(e_1);
+    }
+};

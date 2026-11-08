@@ -327,8 +327,7 @@
   "dependencies": {
     "@smthrs/canonical": "1.0.0-rc.16",
     "@smthrs/flow": "1.0.0-rc.16",
-    "@smthrs/registry": "1.0.0-rc.16",
-    "vibelang-runtime": "0.0.13"
+    "@smthrs/registry": "1.0.0-rc.16"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",

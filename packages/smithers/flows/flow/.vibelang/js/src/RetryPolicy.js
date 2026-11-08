@@ -2,7 +2,7 @@
 // Deep reviewed and polished by a human on 2026-08-10.
 import * as Duration from "effect/Duration";
 import * as Random from "effect/Random";
-import { $extract } from "vibelang-runtime";
+import { $extract } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
 import * as Option_1 from "effect/Option";
 import * as Schema_1 from "effect/Schema";
@@ -125,7 +125,7 @@ export const RetryPolicy = RetryPolicyFields.check(Schema.makeFilter((policy) =>
 export const make = (options) => {
     const issue = validationIssue(options);
     if (issue !== undefined)
-        throw new RangeError(`RetryPolicy.make: ${issue}`);
+        $raise(new RangeError(`RetryPolicy.make: ${issue}`));
     return Object.freeze({
         initialMs: options.initialMs,
         factor: options.factor,
@@ -313,7 +313,7 @@ export const nextDelay = (policy, attempt, options) => {
  * @since 0.1.0
  */
 export const nextDelayEffect = (policy, attempt, options) => policy.jitterRatio === undefined || policy.jitterRatio <= 0
-    ? Effect_1.sync(() => nextDelay(policy, attempt, { elapsedMs: options?.elapsedMs }))
+    ? Effect_1.sync(() => { return nextDelay(policy, attempt, { elapsedMs: options?.elapsedMs }); })
     : Effect.map(Random.next, (random) => nextDelay(policy, attempt, { random, elapsedMs: options?.elapsedMs }));
 /**
  * Extracts the stable identity tag of an error for non-retryable matching:
@@ -504,7 +504,7 @@ export const decide = (policy, options) => {
  * @since 0.1.0
  */
 export const decideEffect = (policy, options) => policy.jitterRatio === undefined || policy.jitterRatio <= 0
-    ? Effect_1.sync(() => decide(policy, options))
+    ? Effect_1.sync(() => { return decide(policy, options); })
     : Effect.map(Random.next, (random) => decide(policy, { ...options, random }));
 /**
  * The engine's retry decision as an Effect `Schedule`, for work that no
@@ -525,3 +525,4 @@ export const decideEffect = (policy, options) => policy.jitterRatio === undefine
 export const schedule = (policy) => Schedule.fromStepWithMetadata(Effect.succeed((meta) => Effect.flatMap(decideEffect(policy, { attempt: meta.attempt, error: meta.input, elapsedMs: meta.elapsed }), (decision) => decision._tag === "GiveUp"
     ? Cause.done(meta.attempt)
     : Effect.succeed([meta.attempt, Duration.millis(decision.delayMs)]))));
+import { raise as $raise } from "./RetryPolicy.vibe.-24-throw-24-ts.js";

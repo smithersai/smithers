@@ -10,7 +10,7 @@
  * `capabilities` and `budget`. There is no second agent or graph model.
  */
 import { Schema } from "effect";
-import * as Panels from "#vibelang/emitted/src/panels";
+import * as Panels from "./panels.js";
 const short = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(240));
 const line = (max) => Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(max), Schema.isPattern(/^[^\r\n]+$/));
 /** What choosing a key, a status item or a row does; defined beside `Row` so rows can carry one. */

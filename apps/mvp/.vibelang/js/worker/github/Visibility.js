@@ -2,8 +2,8 @@
 import { GitHub } from "@smthrs/integrations";
 import { Clock, Effect, Metric, Option, Redacted, Schema } from "effect";
 import { HttpClient } from "effect/http";
-import { classify, isRateLimited } from "#vibelang/emitted/worker/github/Calls";
-import * as Metrics from "#vibelang/emitted/worker/github/Metrics";
+import { classify, isRateLimited, statusOf } from "./Calls.js";
+import * as Metrics from "./Metrics.js";
 /** Only bounded diagnostics leave the metadata transport; no headers or provider text are logged. */
 export const remainingBucket = (raw) => {
     if (raw === undefined || !/^\d+$/.test(raw))
@@ -37,18 +37,23 @@ export const readDetailed = (target, apiBaseUrl, readToken, http) => Effect.gen(
     }, {}).pipe(Effect.provideService(HttpClient.HttpClient, observed), Effect.orDie);
     const result = yield* client.request("GET", `/repos/${GitHub.Repository.repositoryPath(target.owner, target.name)}`, undefined, { schema: Schema.Struct({ private: Schema.Boolean }) }).pipe(Effect.result);
     const failed = result._tag === "Failure";
-    const status = failed ? result.failure.details?.["status"] : 200;
-    const visible = failed ? status === 404 || status === 410 ? Option.some(false) : Option.none()
+    const rateLimited = headerLimited || (failed && isRateLimited(result.failure));
+    const failure = failed ? classify(result.failure) : undefined;
+    // A 404 proves only that this read cannot see a public repository. Cache the denial equally for absent and
+    // inaccessible repositories; never infer which. Other failed reads cannot establish visibility.
+    const notFound = !rateLimited && failure?.kind === "refused" && failure.status === 404;
+    const visible = failed ? notFound ? Option.some(false) : Option.none()
         : Option.some(!result.success.private);
-    const outcome = Option.isNone(visible) ? "unavailable" : visible.value ? "public" : "private";
-    const attributes = { outcome, statusClass, rateLimited: String(headerLimited || (failed && isRateLimited(result.failure))),
+    const outcome = notFound ? "not_found" : Option.isNone(visible) ? "unavailable" : visible.value ? "public" : "private";
+    const attributes = { outcome, statusClass, rateLimited: String(rateLimited),
         remaining, errorCode: failed ? result.failure.reason : "none" };
     yield* Metric.update(Metric.withAttributes(Metrics.visibilityReads, attributes), 1);
-    yield* Effect.logInfo("github.visibility").pipe(Effect.annotateLogs({ repoId: target.id, ...attributes }));
-    const failure = failed ? classify(result.failure) : undefined;
+    yield* Effect.logInfo("github.visibility").pipe(Effect.annotateLogs({
+        repoId: target.id, stage: "metadata", upstreamStatus: failed ? statusOf(result.failure) ?? null : 200, ...attributes,
+    }));
     const retryAfterSeconds = headerRetrySeconds ?? (failure?.kind === "retry" && failure.retryAfterMillis !== undefined
         ? Math.max(1, Math.ceil(failure.retryAfterMillis / 1000)) : undefined);
-    return { visible, rateLimited: headerLimited || (failed && isRateLimited(result.failure)), retryAfterSeconds };
+    return { visible, rateLimited, retryAfterSeconds, upstreamStatus: failed ? statusOf(result.failure) : undefined };
 }).pipe(Effect.withSpan("github.visibility"));
 /** Metadata visibility for readers that need no refusal details. */
 export const read = (target, apiBaseUrl, readToken, http) => Effect.map(readDetailed(target, apiBaseUrl, readToken, http), (answer) => answer.visible);

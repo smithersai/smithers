@@ -41,10 +41,10 @@ const addressed = {
  * @category protocol
  * @since 1.0.0
  */
-export schema Statement {
-  readonly sql: string
-  readonly params: ReadonlyArray<Schema.Unknown>
-}
+export const Statement = Schema.Struct({
+  sql: Schema.String,
+  params: Schema.Array(Schema.Unknown)
+})
 
 /**
  * What a batch request's `sql` says: nothing, so an older leader that runs it

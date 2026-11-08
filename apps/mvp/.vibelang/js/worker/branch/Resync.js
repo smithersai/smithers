@@ -7,9 +7,9 @@ import { Base64 } from "effect/encoding";
 import { SqlClient, SqlError } from "effect/sql";
 import { TEXT_NAMESPACE, textName } from "../../src/features/coedit/contract.js";
 import { SAVED_MARK, savedMarkOf } from "../../src/features/coedit/saved.js";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { codeOf } from "../ErrorCode.js";
 import { Forge } from "./Forge.js";
-import { Machines } from "#vibelang/emitted/worker/branch/Machines";
+import { Machines } from "./Machines.js";
 // Resync (docs/features/branch-publish.md#resync; ruling GH-6, Will, 2026-10-20 06:39: "update branch resync"): a
 // published branch's GitHub branch moves on GitHub (an Update branch's merge, a push, a commit on github.com), and the
 // Smithers branch and its working copy follow it, keeping every change only the working copy has.

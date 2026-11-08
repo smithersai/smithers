@@ -44,33 +44,35 @@ export const failOnConflict = {
  * @since 1.0.0
  */
 export const resolveWith = (resolver) => ({
-    onConflict: Effect_1.fnUntraced(function* onConflict(conflicted, repository) {
-        const { change } = yield* resolver(conflicted, repository);
-        const rejected = (why) => new MergeError({ reason: "resolution_rejected", message: `the resolution ${change} ${why}` });
-        const named = (yield* Effect.mapError(repository.jj(["log", "--no-graph", "-r", change, "-T", "commit_id ++ \"\\t\" ++ change_id ++ \"\\n\""]), () => rejected("names no commit"))).trim().split("\n");
-        if (named.length !== 1 || named[0] === "")
-            return yield* Effect_1.fail(rejected("must name exactly one commit"));
-        const [commit, changeId] = named[0].split("\t");
-        const descends = yield* repository.jj([
-            "log",
-            "--no-graph",
-            "-r",
-            `${conflicted.onto} & ::${commit}`,
-            "-T",
-            "commit_id"
-        ]);
-        if (descends.trim() === "")
-            return yield* Effect_1.fail(rejected(`does not descend from ${conflicted.onto}`));
-        const conflicts = yield* repository.jj([
-            "log",
-            "--no-graph",
-            "-r",
-            `(${conflicted.onto}::${commit}) & conflicts()`,
-            "-T",
-            "commit_id ++ \"\\n\""
-        ]);
-        if (conflicts.trim() !== "")
-            return yield* Effect_1.fail(rejected("still has conflicts"));
-        return new Merged({ change: changeId, commit, onto: conflicted.onto });
-    })
+    onConflict: (conflicted, repository) => {
+        return Effect_1.gen(function* onConflict() {
+            const { change } = yield* resolver(conflicted, repository);
+            const rejected = (why) => new MergeError({ reason: "resolution_rejected", message: `the resolution ${change} ${why}` });
+            const named = (yield* Effect.mapError(repository.jj(["log", "--no-graph", "-r", change, "-T", "commit_id ++ \"\\t\" ++ change_id ++ \"\\n\""]), () => rejected("names no commit"))).trim().split("\n");
+            if (named.length !== 1 || named[0] === "")
+                return yield* Effect_1.fail(rejected("must name exactly one commit"));
+            const [commit, changeId] = named[0].split("\t");
+            const descends = yield* repository.jj([
+                "log",
+                "--no-graph",
+                "-r",
+                `${conflicted.onto} & ::${commit}`,
+                "-T",
+                "commit_id"
+            ]);
+            if (descends.trim() === "")
+                return yield* Effect_1.fail(rejected(`does not descend from ${conflicted.onto}`));
+            const conflicts = yield* repository.jj([
+                "log",
+                "--no-graph",
+                "-r",
+                `(${conflicted.onto}::${commit}) & conflicts()`,
+                "-T",
+                "commit_id ++ \"\\n\""
+            ]);
+            if (conflicts.trim() !== "")
+                return yield* Effect_1.fail(rejected("still has conflicts"));
+            return new Merged({ change: changeId, commit, onto: conflicted.onto });
+        });
+    }
 });

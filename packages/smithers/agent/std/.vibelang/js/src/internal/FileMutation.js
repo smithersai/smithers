@@ -6,8 +6,9 @@
  * @since 1.0.0
  */
 import * as Semaphore from "effect/Semaphore";
+import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as StdError from "../StdError.js";
@@ -52,15 +53,17 @@ export const recordRead = (fs, path, bytes) => Effect.flatMap(ReadSession, (sess
  * @category filesystem
  * @since 1.0.0
  */
-export const validate = Effect_1.fnUntraced(function* validate(fs, paths) {
-    const policy = fs[Preconditions];
-    if (policy === undefined)
-        return;
-    const session = yield* ReadSession;
-    yield* policy.validate(paths, session);
-    if (policy.prepare === undefined)
-        return yield* unavailable();
-});
+export const validate = (fs, paths) => {
+    return Effect_1.gen(function* validate() {
+        const policy = fs[Preconditions];
+        if (policy === undefined)
+            return;
+        const session = yield* ReadSession;
+        yield* policy.validate(paths, session);
+        if (policy.prepare === undefined)
+            return yield* unavailable();
+    });
+};
 // This serializes one host's preparation, ledger and diagnostic ordering only.
 // It is NOT the guest's outside-writer exclusion or its atomic commit boundary.
 const hostLocks = new WeakMap();
@@ -86,77 +89,53 @@ const parent = (path) => path.slice(0, path.lastIndexOf(path.startsWith("/") ? "
  * @private
  * @since 1.0.0
  */
-export const acquire = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* acquire(fileSystem, paths, creationPaths) {
-    // Unavailable coding providers refuse before acquiring even protocol state.
-    // The versioned provider owns exclusion and revalidation at its commit;
-    // cooperative caller-side locks cannot exclude terminal or SSH writers.
-    yield* validate(fileSystem, paths);
-    const policy = fileSystem[Preconditions];
-    if (policy !== undefined) {
-        let lock = hostLocks.get(policy);
-        if (lock === undefined) {
-            lock = Semaphore.makeUnsafe(1);
-            hostLocks.set(policy, lock);
-        }
-        const held = lock;
-        yield* runtime.acquireRelease(held.take(1), () => held.release(1), { interruptible: true });
-        const session = yield* ReadSession;
-        const prepared = yield* policy.prepare(paths, session);
-        return { read: (path) => prepared.read(path), commit: (changes) => prepared.commit(changes) };
-    }
-    const locks = new Map();
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const path of paths) {
-                try {
-                    {
-                        const destination = yield* (Effect.mapError(Effect.catch(fileSystem.realPath(path), (error) => error.reason._tag === "NotFound" && creationPaths !== undefined
-                            ? (Effect.map(fileSystem.realPath(creationPaths.dirname(path)), (directory) => creationPaths.join(directory, creationPaths.basename(path))))
-                            : Effect.fail(error)), FsFailure.reading(path, `File not found: ${path}`)));
-                        const lock = `${parent(destination)}.smithers-${lockHash(destination)}.lock`;
-                        locks.set(lock, path);
-                    }
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
+export const acquire = (fileSystem, paths, creationPaths) => {
+    return Effect_1.gen(function* acquire() {
+        // Unavailable coding providers refuse before acquiring even protocol state.
+        // The versioned provider owns exclusion and revalidation at its commit;
+        // cooperative caller-side locks cannot exclude terminal or SSH writers.
+        yield* validate(fileSystem, paths);
+        const policy = fileSystem[Preconditions];
+        if (policy !== undefined) {
+            let lock = hostLocks.get(policy);
+            if (lock === undefined) {
+                lock = Semaphore.makeUnsafe(1);
+                hostLocks.set(policy, lock);
             }
+            const held = lock;
+            yield* runtime.acquireRelease(held.take(1), () => held.release(1), { interruptible: true });
+            const session = yield* ReadSession;
+            const prepared = yield* policy.prepare(paths, session);
+            return { read: (path) => prepared.read(path), commit: (changes) => prepared.commit(changes) };
         }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
+        const locks = new Map();
+        for (const path of paths) {
+            const destination = yield* (Effect.mapError((yield* (function* () {
+                let $do1;
+                const catchProgram = fileSystem.realPath(path);
+                $do1
+                    =
+                        Effect_1.gen(function* () {
+                            return yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return catchProgram; }); })(), (error) => {
+                                return Effect_1.gen(function* () { return yield* (error.reason._tag === "NotFound" && creationPaths !== undefined
+                                    ? (Effect.map(fileSystem.realPath(creationPaths.dirname(path)), (directory) => creationPaths.join(directory, creationPaths.basename(path))))
+                                    : Effect.fail(error)); });
+                            });
+                        });
+                return $do1;
+            })()), FsFailure.reading(path, `File not found: ${path}`)));
+            const lock = `${parent(destination)}.smithers-${lockHash(destination)}.lock`;
+            locks.set(lock, path);
         }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
-    }
-    {
-        let pending_2 = runtime.$normal;
-        try {
-            for (const value_1 of [...locks].sort(([left], [right]) => left.localeCompare(right))) {
-                try {
-                    const [lock, path] = value_1;
-                    {
-                        yield* runtime.acquireRelease(Effect.mapError(fileSystem.makeDirectory(lock, { mode: 0o700 }), FsFailure.denied(path, (error) => new StdError.StdError({
-                            code: error.reason._tag === "AlreadyExists" ? "no_match" : "command_failed",
-                            message: error.reason._tag === "AlreadyExists"
-                                ? `Concurrent mutation of ${path}: lock ${lock} is held. Re-read and retry after the other writer finishes; a stopped writer's lock requires explicit recovery.`
-                                : `Could not lock ${path} for mutation`,
-                            path
-                        }))), () => Effect.orDie(fileSystem.remove(lock, { recursive: true })));
-                    }
-                }
-                catch (thrown_3) {
-                    pending_2 = thrown_3;
-                    break;
-                }
-            }
+        for (const [lock, path] of [...locks].sort(([left], [right]) => left.localeCompare(right))) {
+            yield* runtime.acquireRelease(Effect.mapError(fileSystem.makeDirectory(lock, { mode: 0o700 }), FsFailure.denied(path, (error) => new StdError.StdError({
+                code: error.reason._tag === "AlreadyExists" ? "no_match" : "command_failed",
+                message: error.reason._tag === "AlreadyExists"
+                    ? `Concurrent mutation of ${path}: lock ${lock} is held. Re-read and retry after the other writer finishes; a stopped writer's lock requires explicit recovery.`
+                    : `Could not lock ${path} for mutation`,
+                path
+            }))), () => Effect.orDie(fileSystem.remove(lock, { recursive: true })));
         }
-        catch (thrown_4) {
-            throw runtime.$finallyFailure(pending_2, thrown_4);
-        }
-        if (pending_2 !== runtime.$normal)
-            throw pending_2;
-    }
-    return { read: (_path, ordinary) => ordinary, commit: (_changes, ordinary) => ordinary };
-})));
+        return { read: (_path, ordinary) => ordinary, commit: (_changes, ordinary) => ordinary };
+    });
+};

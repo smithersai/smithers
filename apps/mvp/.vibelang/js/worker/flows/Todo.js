@@ -11,10 +11,10 @@ import { checkExecutionId, todoExecutionId } from "../../src/features/pulls/cont
 import { base64Bytes } from "../../src/features/runners/contract.js";
 import { TODO_FAILURES } from "../../src/features/todos/contract.js";
 import * as Change from "#vibelang/emitted/worker/branch/Change";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { codeOf } from "../ErrorCode.js";
 import { agentFailureCodes } from "#vibelang/emitted/worker/flows/TodoDiagnostic";
-import { classify, withToken } from "#vibelang/emitted/worker/github/Calls";
-import { repositoryOf } from "#vibelang/emitted/worker/github/Config";
+import { classify, withToken } from "../github/Calls.js";
+import { repositoryOf } from "../github/Config.js";
 import { fetchPull, projectPull } from "../github/Pulls.js";
 import * as Stack from "../stack/Stack.js";
 import { ChecksRun } from "./Checks.js";

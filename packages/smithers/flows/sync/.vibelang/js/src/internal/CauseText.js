@@ -39,6 +39,7 @@ export const boundedText = (text) => text.length <= maxCauseTextLength ? text : 
  *
  * @category encoding
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const causeText = (cause) => boundedText(cause instanceof Error ? `${cause.name}: ${cause.message}` : Object.prototype.toString.call(cause));
 /**

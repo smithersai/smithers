@@ -13,7 +13,9 @@ import { CuratedRow, HomeRow } from "../features/home/rows";
 import { Comment, Draft as IssueDraft, Item, ItemSummary, Requested as IssueRequested, Sending as IssueSending, SyncRow, TriageSettings, WorkLinkRow, WriteRow, } from "../features/issues/schema";
 import { CheckRow, PullCommitRow, PullRow, ReviewRow } from "../features/pulls/schema";
 import { Hidden as PersonalModelHidden, PersonalModelRow } from "../features/personal-model/schema";
-import { Repository } from "../features/repo/schema";
+import { RepoRefusalV1 } from "./repo-history";
+import { RepoRefusal, Repository } from "../features/repo/schema";
+import { repoId } from "../features/repo/contract";
 import { SecretRow } from "../features/secrets/schema";
 import { AlertChannel, AlertDelivery, SandboxLimitsRow, Seen, SpendAlert } from "../features/spend/schema";
 import { BugReport } from "../features/bugs/schema";
@@ -25,7 +27,7 @@ import { Draft as TodoDraft, Requested as TodoRequested, Sending as TodoSending,
 import { View } from "../features/views/schema";
 import { CuratedRowV1, HomeRowV2 } from "./home-history";
 import { Draft as PluginDraft } from "../plugins/schema";
-import { AskingV1, AuthConfirmedV1, ChatDraftV1, IssueSendingV1, IssueSendingV2, RequestedV1, TodoRequestedV1, UnsentV1 } from "./history";
+import { AskingV1, AuthConfirmedV1, AuthConfirmedV2, ChatDraftV1, FileTabRowV1, IssueSendingV1, IssueSendingV2, RequestedV1, TodoRequestedV1, UnsentV1 } from "./history";
 // Every store this device keeps, and its history (decision 0021): each persisted collection, synced or local, and
 // each payload the outbox carries. A store's collection opens only at the version declared here (the app's
 // `Persistence` refuses any other), the engine worker brings the device store to these versions before any tab reads
@@ -59,16 +61,32 @@ export const IssueRequestedStore = Migrations.local({
     migrations: [Migrations.step(RequestedV1, IssueRequestedV2, ({ via: _via, ...row }) => row), Migrations.step(IssueRequestedV2, IssueRequested, (row) => row)],
     getKey: (row) => row.id,
 });
+/**
+ * Repositories that refused this person (a 403): every tab reads this at render, a reload included, until a role read
+ * started after the refusal answers otherwise (src/features/repo/store.ts).
+ */
+export const RepoRefusalsStore = Migrations.local({ id: "repo-refusals", versions: [RepoRefusalV1, RepoRefusal], migrations: [Migrations.step(RepoRefusalV1, RepoRefusal, (row) => ({ ...row, repoId: row.id }))], getKey: (row) => row.id });
 /** The new-issue form's and comments' drafts. */
 export const IssueDraftsStore = Migrations.local({ id: "issue-drafts", versions: [IssueDraft], getKey: (row) => row.id });
 /** Who this device last knew was signed in, and as what (src/features/auth/store.ts). */
-export const AuthConfirmedStore = Migrations.local({ id: "auth-confirmed", versions: [AuthConfirmedV1, Confirmed], migrations: [Migrations.step(AuthConfirmedV1, Confirmed, (row) => row)], getKey: (row) => row.id });
+export const AuthConfirmedStore = Migrations.local({
+    id: "auth-confirmed",
+    versions: [AuthConfirmedV1, AuthConfirmedV2, Confirmed],
+    migrations: [Migrations.step(AuthConfirmedV1, AuthConfirmedV2, (row) => row), Migrations.step(AuthConfirmedV2, Confirmed, (row) => row)],
+    getKey: (row) => row.id,
+});
 /** The plugin host's strip notes, one per view and item (src/plugins/schema.ts `Draft`). */
 export const PluginDraftsStore = Migrations.local({ id: "plugin-drafts", versions: [PluginDraft], getKey: (row) => row.id });
 /** This device's theme. */
 export const PreferencesStore = Migrations.local({ id: "preferences", versions: [Preference], getKey: (row) => row.id });
 /** This device's open files and the lines each last highlighted (src/features/files/store.ts). */
-export const FileTabsStore = Migrations.local({ id: "file-tabs", versions: [FileTabRow], getKey: (row) => row.key });
+export const FileTabsStore = Migrations.local({
+    id: "file-tabs",
+    // Version 2: a tab names its repository, which the data gate joins (decision 0110).
+    versions: [FileTabRowV1, FileTabRow],
+    migrations: [Migrations.step(FileTabRowV1, FileTabRow, (row) => ({ ...row, repoId: repoId(row.owner, row.name) }))],
+    getKey: (row) => row.key,
+});
 /** Repository homes as last read: a cache RepoApi fills again. Version 1 (a flat list of blocks) was never declared. */
 export const HomesStore = Migrations.local({
     id: "homes",
@@ -155,7 +173,7 @@ const synced = [
     Migrations.synced({ id: "message-pins", version: 1, schema: Pin }),
     ViewsStore,
     // Version 2: an approval's answer may carry a note (`Decision`).
-    Migrations.synced({ id: "runs", version: 2, schema: Run }),
+    Migrations.synced({ id: "runs", version: 3, schema: Run }),
     Migrations.synced({ id: "repo-repositories", version: 4, schema: Repository }),
     Migrations.synced({ id: "issue-summaries", version: 2, schema: ItemSummary, family: true }),
     Migrations.synced({ id: "issue-items", version: 3, schema: Item, family: true }),
@@ -240,6 +258,7 @@ export const deviceRegistry = Migrations.registry({
         PreferencesStore,
         PluginDraftsStore,
         FileTabsStore,
+        RepoRefusalsStore,
         HomesStore,
         CuratedHomesStore,
         AttentionPendingStore,

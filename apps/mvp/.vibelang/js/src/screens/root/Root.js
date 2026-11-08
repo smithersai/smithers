@@ -15,7 +15,7 @@ import "../../../../../src/screens/root/root.css";
 // (docs/features/navigation.md). A plain link's hover or focus preloads its page (IntentPreload).
 export function Root() {
     const pathname = useRouterState({ select: (state) => state.resolvedLocation?.pathname ?? state.location.pathname });
-    const loading = useRouterState({ select: (state) => state.status === "pending" });
+    const loading = useRouterState({ select: (state) => state.status === "pending" && state.resolvedLocation !== undefined });
     const routeId = useRouterState({ select: (state) => state.matches.at(-1)?.routeId });
     return (_jsxs(_Fragment, { children: [_jsx("a", { className: "root-skip", href: "#main-content", children: "Skip to content" }), _jsx(LoadingBar, { loading: loading, label: "Loading page" }), _jsxs(IntentPreload, { children: [_jsx(PageNotices, {}), _jsx(Outlet, {}), _jsx(PageFocus, { pathname: pathname }), floatsBell(routeId) ? (_jsx("div", { className: "root-bell", children: _jsx(NotificationsBell, {}) })) : null, _jsx(NotificationsPanel, {})] })] }));
 }

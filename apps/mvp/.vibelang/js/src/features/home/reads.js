@@ -37,11 +37,11 @@ export const homeRowOfText = (key, text) => {
         };
 };
 /** A Markdown block's file as its read left it: its text, or failed (missing, binary, too large, unreadable). */
-export const fileRowOf = (key, home, path, result) => {
+export const fileRowOf = (key, repoId, home, path, result) => {
     const text = result._tag === "Success" ? textOf(result.success.bytes) : undefined;
     return text === undefined
-        ? { key, home, path, state: "failed", text: null }
-        : { key, home, path, state: "text", text };
+        ? { key, repoId, home, path, state: "failed", text: null }
+        : { key, repoId, home, path, state: "text", text };
 };
 /** The distinct files a home's Markdown blocks name, in every section, in order. */
 export const markdownPaths = (sections) => [

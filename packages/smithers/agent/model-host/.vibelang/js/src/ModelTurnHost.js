@@ -6,11 +6,13 @@
  */
 import * as Stream from "effect/Stream";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import { ModelError, ModelRequest } from "@smthrs/model";
-import { AgentContext, ConfiguredModel } from "@smthrs/rpc";
+import { AgentContext } from "@smthrs/rpc";
 import { Effect } from "effect";
+import { fastModelFallback } from "./FastModelFallback.js";
 import { createHostDiagnostics } from "./HostDiagnostics.js";
+import { StreamingCredentialCutter } from "./StreamingCredentialCutter.js";
+export { StreamingCredentialCutter } from "./StreamingCredentialCutter.js";
 const appendWireMessage = (messages, item) => {
     if ("role" in item) {
         messages.push(item.role === "user" ? ModelRequest.Message.user(item.content) : ModelRequest.Message.assistant(item.content));
@@ -61,82 +63,6 @@ export const providerRequest = (turn, options) => {
         params: { ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }) }
     });
 };
-/**
- * Removes a configured credential even when provider chunks split it. The
- * concatenation of everything `push` and `finish` return never contains the
- * credential: when cutting one echo joins text already returned with text
- * still to come, the joining text is dropped too.
- *
- * @category utilities
- * @since 1.0.0-rc.0
- */
-export class StreamingCredentialCutter {
-    pending = "";
-    /** The end of the returned text, one character shorter than the longest secret part. */
-    returned = "";
-    parts;
-    constructor(secret, additional = []) {
-        this.parts = [secret ?? "", ...additional].flatMap(ConfiguredModel.modelCredentialParts);
-    }
-    cut(value) {
-        let kept = value;
-        let previous;
-        do {
-            previous = kept;
-            for (const part of this.parts)
-                kept = kept.split(part).join("");
-        } while (previous !== kept);
-        return kept;
-    }
-    push(value) {
-        if (this.parts.length === 0)
-            return value;
-        this.pending = this.cut(this.pending + value);
-        let held = 0;
-        for (const part of this.parts) {
-            for (let size = Math.min(this.pending.length, part.length - 1); size > held; size -= 1) {
-                if (this.pending.endsWith(part.slice(0, size))) {
-                    held = size;
-                    break;
-                }
-            }
-        }
-        const emitted = this.pending.slice(0, this.pending.length - held);
-        this.pending = this.pending.slice(this.pending.length - held);
-        return this.release(emitted);
-    }
-    finish() {
-        const emitted = this.cut(this.pending);
-        this.pending = "";
-        return this.release(emitted);
-    }
-    /**
-     * Drops the start of `text` while it completes a secret part begun in the
-     * returned text. Both sides are already free of whole parts, so any part
-     * found from one part-length before the seam straddles it.
-     */
-    release(text) {
-        const parts = this.parts;
-        let kept = text;
-        for (let joined = true; joined;) {
-            joined = false;
-            const seam = this.returned.length;
-            const combined = this.returned + kept;
-            for (const part of parts) {
-                const index = combined.indexOf(part, Math.max(0, seam - part.length + 1));
-                if (index !== -1) {
-                    kept = combined.slice(index + part.length);
-                    joined = true;
-                    break;
-                }
-            }
-        }
-        const longest = Math.max(0, ...parts.map((part) => part.length));
-        const combined = this.returned + kept;
-        this.returned = combined.slice(Math.max(0, combined.length - (longest - 1)));
-        return kept;
-    }
-}
 const usageCount = (value) => value === undefined || !Number.isFinite(value) || value < 0 ? undefined : Math.round(value);
 /**
  * Folds one `usage` event into the call's running counts. A provider may
@@ -191,7 +117,7 @@ const doneFrame = (runId, event, usage) => {
  * @category runners
  * @since 1.0.0-rc.0
  */
-export const runModelTurn = (model, turn, options, write, host, diagnostics = createHostDiagnostics()) => {
+export const runModelTurn = (model, turn, options, write, host, diagnostics = createHostDiagnostics()) => Effect.suspend(() => {
     const text = new StreamingCredentialCutter(options.credential, options.additionalCredentials);
     const reasoning = new StreamingCredentialCutter(options.credential, options.additionalCredentials);
     const cut = (value) => {
@@ -214,15 +140,7 @@ export const runModelTurn = (model, turn, options, write, host, diagnostics = cr
             case "thinking-delta":
                 return emitDelta("reasoning", reasoning.push(event.text));
             case "tool-call-start":
-                // The id goes back to the provider with the tool result, so it cannot
-                // be cut like text: a provider that names a call with the credential
-                // is refused before the id reaches a frame or the journal.
-                if (cut(event.id) !== event.id) {
-                    return Effect.fail(new ModelError.ModelError({
-                        code: "invalid_provider_output",
-                        message: "tool call id contains the credential"
-                    }));
-                }
+                // DurableModelCall refuses credential-bearing IDs before recording.
                 tools.set(event.id, { name: event.name, arguments: "" });
                 return Effect.void;
             case "tool-call-delta": {
@@ -261,10 +179,10 @@ export const runModelTurn = (model, turn, options, write, host, diagnostics = cr
                     return Effect.fail(new ModelError.ModelError({ code: "invalid_provider_output", message: "model settled twice" }));
                 }
                 settled = event;
-                return Effect_1.gen(runtime.$joinedFrame(function* () {
-                    yield* emitDelta("reasoning", reasoning.finish());
-                    yield* emitDelta("text", text.finish());
-                }));
+                return Effect_1.gen(function* () {
+                    yield* emitDelta("reasoning", yield* Effect.orDie(Effect.try({ try: () => reasoning.finish(), catch: (e) => e })));
+                    yield* emitDelta("text", yield* Effect.orDie(Effect.try({ try: () => text.finish(), catch: (e) => e })));
+                });
             case "usage":
                 usage = mergeUsage(usage, event);
                 return Effect.void;
@@ -309,18 +227,14 @@ export const runModelTurn = (model, turn, options, write, host, diagnostics = cr
     // callback deadline in `DurableChatProducer`, which ends an unanswered
     // attempt in seconds instead of accumulating a whole turn's response behind
     // it. The capacity and that deadline are one repair: neither holds alone.
-    const buffered = Stream.buffer(model.stream(providerRequest(turn, options)), { capacity: "unbounded" });
+    const buffered = fastModelFallback([{ model, ...options }, ...(options.fallbacks ?? [])], options.onFallback, "model-host/turn").stream(providerRequest(turn, options));
     return Effect.flatMap(diagnostics.begin("model_stream"), (endStream) => Effect.onExit(Effect.flatMap(Stream.runForEach(buffered, observe), () => {
-        if (settled === undefined) {
-            return Effect.fail(new ModelError.ModelError({
-                code: "invalid_provider_output",
-                message: "model stream ended without settlement"
-            }));
-        }
+        // The durable stream refuses any answer without settlement.
+        const completion = settled;
         const total = addUsage(host?.usage, usage);
-        if (host !== undefined && settled.stopReason === "tool-calls" && held.length > 0) {
+        if (host !== undefined && completion.stopReason === "tool-calls" && held.length > 0) {
             return Effect.succeed({ calls: held, usage: total });
         }
-        return Effect.as(emit(doneFrame(turn.runId, settled, total)), undefined);
+        return Effect.as(emit(doneFrame(turn.runId, completion, total)), undefined);
     }), (exit) => Effect_1.sync(() => { return endStream({ events: consumed, characters, settled: settled !== undefined, failed: exit._tag === "Failure" }); })));
-};
+});

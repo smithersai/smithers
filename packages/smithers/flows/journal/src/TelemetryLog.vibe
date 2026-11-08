@@ -87,10 +87,10 @@ export const redactedMarker = "<redacted>"
  * @category schemas
  * @since 1.0.0
  */
-export schema Fail {
-  readonly _tag: "Fail"
-  readonly error: Schema.Unknown
-}
+export const Fail = Schema.Struct({
+  _tag: Schema.Literal("Fail"),
+  error: Schema.Unknown
+})
 
 /**
  * One unexpected defect retained from an Effect cause.
@@ -98,10 +98,10 @@ export schema Fail {
  * @category schemas
  * @since 1.0.0
  */
-export schema Die {
-  readonly _tag: "Die"
-  readonly defect: Schema.Unknown
-}
+export const Die = Schema.Struct({
+  _tag: Schema.Literal("Die"),
+  defect: Schema.Unknown
+})
 
 /**
  * One interruption retained from an Effect cause.
@@ -139,10 +139,10 @@ export type CauseReason = typeof CauseReason.Type
  * @category schemas
  * @since 1.0.0
  */
-export schema LogCause {
-  readonly version: 1
-  readonly reasons: ReadonlyArray<CauseReason>
-}
+export const LogCause = Schema.Struct({
+  version: Schema.Literal(1),
+  reasons: Schema.Array(CauseReason)
+})
 
 /**
  * A versioned structural Effect cause.

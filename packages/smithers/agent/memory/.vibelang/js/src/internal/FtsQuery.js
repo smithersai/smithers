@@ -20,5 +20,6 @@ export const ftsTerms = (query) => {
  *
  * @category queries
  * @since 0.1.0
+ * @throws {never}
  */
 export const literalFtsQuery = (query) => ftsTerms(query).map((term) => `"${term.replaceAll("\"", "\"\"")}"`).join(" ");

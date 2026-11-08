@@ -21,12 +21,12 @@ import type { Effect } from "effect"
  * @category schemas
  * @since 1.0.0-rc.0
  */
-export schema Row {
-  readonly origin: "primer" | "recall"
-  readonly bank: string
-  readonly key: string
-  readonly text: string
-}
+export const Row = Schema.Struct({
+  origin: Schema.Literals(["primer", "recall"]),
+  bank: Schema.String,
+  key: Schema.String,
+  text: Schema.String
+})
 
 /**
  * The decoded form of {@link Row}.
@@ -42,7 +42,7 @@ export type Row = typeof Row.Type
  * @category schemas
  * @since 1.0.0-rc.0
  */
-export schema Snapshot { readonly rows: ReadonlyArray<Row> }
+export const Snapshot = Schema.Struct({ rows: Schema.Array(Row) })
 
 /**
  * The decoded form of {@link Snapshot}.

@@ -126,20 +126,20 @@ const attemptToExecutionResult = (
   }
   return makeResult(executionId, "failed", Cause.squash(exit.cause))
 }
-const append = effect (
+const append = (
   journal: Array<JournalEntryLike>,
   stepKey: string,
   kind: string,
   outcome: JournalEntryLike["outcome"],
   value: unknown
 ): void!! =>
-  {
+  Effect.sync(() => {
     journal.push(
       value === undefined
         ? { index: journal.length, stepKey, kind, outcome }
         : { index: journal.length, stepKey, kind, outcome, value }
     )
-  }
+  })
 /**
  * Runs a step closure in a child fiber so its own outcome stays observable:
  *
@@ -265,10 +265,10 @@ export const make = effect (): EngineSubjectService!never!(Scope.Scope | FlowRun
   const settlements = new Map<string, Deferred.Deferred<ExecutionResult>>()
   let nextExecutionId = 0
 
-  const arm = effect (executionId: string): void!! =>
-    {
+  const arm = (executionId: string): void!! =>
+    Effect.sync(() => {
       settlements.set(executionId, Deferred.makeUnsafe<ExecutionResult>())
-    }
+    })
 
   const settle = (executionId: string, result: ExecutionResult): void!! =>
     Effect.suspend(() => {

@@ -49,11 +49,11 @@ import { CaseExecutor, EvalError, Runner, Suite, Trials } from "../../evals/src/
 import { Binding, Checks, Rubric, Scoring as ScorerRunner, Scorer } from "../../scorers/src/index.js";
 import * as Event from "./event.js";
 import * as Profile from "./profile.js";
-import * as CharacterRubric from "#vibelang/emitted/character/rubric";
+import * as CharacterRubric from "./rubric.js";
 import * as Score from "./score.js";
 import * as Subject from "./subject.js";
 import * as CharacterSuite from "./suite.js";
-import * as World from "#vibelang/emitted/character/world";
+import * as World from "./world.js";
 // ---------------------------------------------------------------------------
 // Arguments
 const argv = process.argv.slice(2);

@@ -5,7 +5,7 @@ import * as FileSystem from "effect/FileSystem"
 import { describe, expect, it } from "vitest"
 import * as Checkpoints from "../src/Checkpoints.ts"
 import * as Walk from "../src/internal/Walk.vibe"
-import type * as StdError from "../src/StdError.vibe"
+import type * as StdError from "../src/StdError.ts"
 import * as TestRun from "../src/TestRun.ts"
 import * as TreeFingerprint from "../src/TreeFingerprint.ts"
 

@@ -79,8 +79,7 @@ export interface Implementation {
  * @category services
  * @since 0.1.0
  */
-export service Implementations {
-  static readonly key = "@smthrs/flow/Action/Implementations"
+export service Implementations: {
   /**
    * Files an implementation under its action tag for the lifetime of the
    * registering scope. A conflicting registration dies unless `override: true` explicitly replaces the
@@ -92,7 +91,7 @@ export service Implementations {
    * memoization shadows the enclosing entry only while it lives, instead
    * of leaking its replacement into the enclosing composition.
    */
-  add: (
+  readonly add: (
     implementation: Implementation,
     options?: { readonly override?: boolean }
   ) => void!never!Scope
@@ -101,8 +100,8 @@ export service Implementations {
    * The implementation registered for an action tag, if a layer supplied
    * one.
    */
-  get: (name: string) => Option.Option<Implementation>!!
-}
+  readonly get: (name: string) => Option.Option<Implementation>!!
+} { static readonly key = "@smthrs/flow/Action/Implementations" }
 
 /**
  * Layer providing an implementation table scoped to the composition that

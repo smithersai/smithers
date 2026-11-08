@@ -50,7 +50,7 @@ export * as NotificationQueue from "./NotificationQueue.ts"
  * @category projections
  * @since 0.1.0
  */
-export * as Projection from "./Projection.vibe"
+export * as Projection from "./Projection.ts"
 
 /**
  * @category models

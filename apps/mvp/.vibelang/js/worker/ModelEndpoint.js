@@ -6,9 +6,9 @@ import { Model, ModelError, ModelEvent, ModelProxy, ModelRequest } from "@smthrs
 import { HostModel, HostModelUnusable } from "@smthrs/model-host";
 import { Cause, Config, Duration, Effect, Exit, Metric, Option, Schema, Stream } from "effect";
 import { MODEL_ROUTE } from "../src/features/model/contract.js";
-import { canAsk, Sessions } from "#vibelang/emitted/worker/Actor";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
-import { FlowStarter } from "#vibelang/emitted/worker/Flows";
+import { canAsk, Sessions } from "./Actor.js";
+import { codeOf } from "./ErrorCode.js";
+import { FlowStarter } from "./Flows.js";
 import * as HostedModel from "./HostedModel.js";
 import * as ModelRoles from "./ModelRoles.js";
 import * as ModelSpend from "./ModelSpend.js";

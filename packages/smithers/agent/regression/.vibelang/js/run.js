@@ -2,9 +2,9 @@
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { $catchExpression } from "vibelang-runtime";
+import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 /**
  * Runs the flows-agent evaluation suite and gates it on the committed baseline.
  *
@@ -102,7 +102,7 @@ const gate = Effect_1.gen(function* gate() {
     // A threshold breach is a typed failure rather than a verdict, so it is
     // caught here: a case that scored zero is a result this suite has to report,
     // not a crash.
-    const graded = yield* $catchExpression(() => (Effect.map(Gate.check(regression, { mean: 1, min: 1 }), Gate.ciGrade)), (error) => Effect_1.sync(() => { return ({
+    const graded = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return (Effect.map(Gate.check(regression, { mean: 1, min: 1 }), (verdict) => Gate.ciGrade(verdict))); }); })(), (error) => Effect_1.sync(() => { return ({
         exitCode: 1,
         summary: `${error.code}: threshold ${error.threshold}, actual ${error.actual}`,
     }); }));

@@ -5,12 +5,12 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { SqlClient } from "effect/sql";
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.js";
 import { PIN_ROUTE, PINS_TABLE } from "../src/features/pins/contract.js";
-import { boundTo, Sessions } from "#vibelang/emitted/worker/Actor";
+import { boundTo, Sessions } from "./Actor.js";
 import { branchAccess, canView } from "./branch/Access.js";
 import * as Conversations from "./branch/Conversations.js";
 import { answerConversation } from "./branch/SandboxCalls.js";
 import { readBounded } from "#vibelang/emitted/worker/Body";
-import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess";
+import * as ShapeAccess from "./ShapeAccess.js";
 const Id = Schema.String.check(Schema.isUUID());
 const Request = Schema.Struct({
     conversationId: Schema.optional(Id), answerId: Schema.optional(Id),

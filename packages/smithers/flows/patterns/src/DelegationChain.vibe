@@ -298,10 +298,10 @@ export const bound = (options: Bounds): number =>
  * @category schemas
  * @since 1.0.0
  */
-export schema ExecutionState {
-  readonly goal: Schema.Unknown
-  readonly derisked: Schema.Unknown
-}
+export const ExecutionState = Schema.Struct({
+  goal: Schema.Unknown,
+  derisked: Schema.Unknown
+})
 
 /**
  * What a declared chain is called with. A caller passes `input` alone; the

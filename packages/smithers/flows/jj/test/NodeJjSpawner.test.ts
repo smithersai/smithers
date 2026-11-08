@@ -32,7 +32,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, 
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Jj } from "../src/Jj.vibe"
-import * as NodeJj from "../src/node/NodeJj.vibe"
+import * as NodeJj from "../src/node/NodeJj.ts"
 import { budgeted } from "./budgeted.ts"
 
 const script = `#!/bin/sh

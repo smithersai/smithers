@@ -26,7 +26,6 @@
  * @since 1.0.0
  */
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -142,14 +141,16 @@ export const plan = (options) => {
  * @category generators
  * @since 1.0.0
  */
-export const materialize = Effect_1.fnUntraced(function* materialize(target) {
-    const fileSystem = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    yield* Effect.forEach(target.files, (entry) => {
-        const absolute = path.join(target.root, ...entry.path.split("/"));
-        return Effect.orDie(Effect.andThen(fileSystem.makeDirectory(path.dirname(absolute), { recursive: true }), fileSystem.writeFileString(absolute, entry.content)));
-    }, { discard: true });
-});
+export const materialize = (target) => {
+    return Effect_1.gen(function* materialize() {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        yield* Effect.forEach(target.files, (entry) => {
+            const absolute = path.join(target.root, ...entry.path.split("/"));
+            return Effect.orDie(Effect.andThen(fileSystem.makeDirectory(path.dirname(absolute), { recursive: true }), fileSystem.writeFileString(absolute, entry.content)));
+        }, { discard: true });
+    });
+};
 /** A typed answer rendered so two of them can be compared as text. */
 const rendered = (effect) => Effect.match(effect, {
     onSuccess: (value) => JSON.stringify(value),
@@ -166,58 +167,24 @@ const rendered = (effect) => Effect.match(effect, {
  * @category conformance
  * @since 1.0.0
  */
-export const compare = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* compare(options) {
-    const divergences = [];
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const input of options.plan.grep) {
-                try {
-                    {
-                        const subject = yield* rendered(options.subject.grep(input));
-                        const reference = yield* rendered(options.reference.grep(input));
-                        if (subject !== reference)
-                            divergences.push({ call: "grep", input, subject, reference });
-                    }
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
-            }
+export const compare = (options) => {
+    return Effect_1.gen(function* compare() {
+        const divergences = [];
+        for (const input of options.plan.grep) {
+            const subject = yield* rendered(options.subject.grep(input));
+            const reference = yield* rendered(options.reference.grep(input));
+            if (subject !== reference)
+                divergences.push({ call: "grep", input, subject, reference });
         }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
+        for (const input of options.plan.glob) {
+            const subject = yield* rendered(options.subject.glob(input));
+            const reference = yield* rendered(options.reference.glob(input));
+            if (subject !== reference)
+                divergences.push({ call: "glob", input, subject, reference });
         }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
-    }
-    {
-        let pending_2 = runtime.$normal;
-        try {
-            for (const input of options.plan.glob) {
-                try {
-                    {
-                        const subject = yield* rendered(options.subject.glob(input));
-                        const reference = yield* rendered(options.reference.glob(input));
-                        if (subject !== reference)
-                            divergences.push({ call: "glob", input, subject, reference });
-                    }
-                }
-                catch (thrown_3) {
-                    pending_2 = thrown_3;
-                    break;
-                }
-            }
-        }
-        catch (thrown_4) {
-            throw runtime.$finallyFailure(pending_2, thrown_4);
-        }
-        if (pending_2 !== runtime.$normal)
-            throw pending_2;
-    }
-    return divergences;
-})));
+        return divergences;
+    });
+};
 /**
  * Renders divergences as the report a failing conformance run should print.
  *

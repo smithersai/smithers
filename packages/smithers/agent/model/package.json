@@ -51,21 +51,13 @@
       "vibelang-source": "./src/Auth.ts",
       "default": "./.vibelang/js/src/Auth.js"
     },
-    "./CanonicalJson": {
-      "types": "./src/CanonicalJson.ts",
-      "vibelang-source": "./src/CanonicalJson.ts",
-      "default": "./.vibelang/js/src/CanonicalJson.js"
-    },
+    "./CanonicalJson": "./src/CanonicalJson.ts",
     "./Classifier": {
       "types": "./.vibe/declarations/src/Classifier.d.vibe.ts",
       "vibelang-source": "./src/Classifier.vibe",
       "default": "./.vibelang/js/src/Classifier.js"
     },
-    "./DeferredTools": {
-      "types": "./src/DeferredTools.ts",
-      "vibelang-source": "./src/DeferredTools.ts",
-      "default": "./.vibelang/js/src/DeferredTools.js"
-    },
+    "./DeferredTools": "./src/DeferredTools.ts",
     "./Endpoint": {
       "types": "./src/Endpoint.ts",
       "vibelang-source": "./src/Endpoint.ts",
@@ -96,11 +88,7 @@
       "vibelang-source": "./src/Model.vibe",
       "default": "./.vibelang/js/src/Model.js"
     },
-    "./ModelCatalog": {
-      "types": "./src/ModelCatalog.ts",
-      "vibelang-source": "./src/ModelCatalog.ts",
-      "default": "./.vibelang/js/src/ModelCatalog.js"
-    },
+    "./ModelCatalog": "./src/ModelCatalog.ts",
     "./ModelError": {
       "types": "./.vibe/declarations/src/ModelError.d.vibe.ts",
       "vibelang-source": "./src/ModelError.vibe",
@@ -111,11 +99,7 @@
       "vibelang-source": "./src/ModelEvent.vibe",
       "default": "./.vibelang/js/src/ModelEvent.js"
     },
-    "./ModelRequest": {
-      "types": "./src/ModelRequest.ts",
-      "vibelang-source": "./src/ModelRequest.ts",
-      "default": "./.vibelang/js/src/ModelRequest.js"
-    },
+    "./ModelRequest": "./src/ModelRequest.ts",
     "./OpenAIChatCompletions": {
       "types": "./src/OpenAIChatCompletions.ts",
       "vibelang-source": "./src/OpenAIChatCompletions.ts",

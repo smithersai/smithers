@@ -16,7 +16,7 @@ import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as Pattern from "../src/Pattern.vibe"
 import { PatternError } from "../src/PatternError.vibe"
-import * as Runbook from "../src/Runbook.vibe"
+import * as Runbook from "../src/Runbook.ts"
 import { executeExit } from "./Execute.ts"
 import { callsTo, payloadOf } from "./Graphs.ts"
 

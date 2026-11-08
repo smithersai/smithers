@@ -5,11 +5,11 @@
  * A Worker has WebCrypto, `fetch` and nothing else a flow host usually
  * reaches for: no filesystem, no child processes and no jj. This bundle
  * provides the same five Host tags `NodeHost`, `BunHost` and `BrowserHost`
- * provide, plus `effect/Crypto` and the engine's `OwnerIdentity`, so the
- * durable engine composes on Cloudflare exactly as it does elsewhere. The
- * three services a Worker cannot serve are present and refuse every call, so
- * a flow that reaches for one meets a typed failure at the call instead of a
- * missing-service defect at composition.
+ * provide, plus Effect's `Digest` and `SecureRandom` and the engine's
+ * `OwnerIdentity`, so the durable engine composes on Cloudflare exactly as it
+ * does elsewhere. The three services a Worker cannot serve are present and
+ * refuse every call, so a flow that reaches for one meets a typed failure at
+ * the call instead of a missing-service defect at composition.
  *
  * @since 1.0.0
  */
@@ -25,8 +25,8 @@ const layerHttpClient = Layer.provide(FetchHttpClient.layer, Layer.succeed(Fetch
 /**
  * Provides the closed Host surface on Cloudflare.
  *
- * - `Crypto` is WebCrypto: `WebCrypto.layer` from `@smthrs/crypto`, which
- *   reads randomness only when a caller asks for it.
+ * - `Digest` and `SecureRandom` are WebCrypto: `WebCrypto.layer` from
+ *   `@smthrs/crypto`, which reads randomness only when a caller asks for it.
  * - `OwnerIdentity` is `OwnerIdentity.layerWithoutPid`: a Worker has no
  *   process id, and the one `nodejs_compat` reports can be the same for two
  *   isolates of one object, so every owner carries a drawn incarnation

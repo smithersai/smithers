@@ -7,7 +7,7 @@ import { hostname, tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { isJjError, Jj, type Snapshot } from "../src/Jj.vibe"
-import * as NodeJj from "../src/node/NodeJj.vibe"
+import * as NodeJj from "../src/node/NodeJj.ts"
 import { budgeted } from "./budgeted.ts"
 
 const jjInstalled = (() => {
@@ -316,7 +316,7 @@ describe.skipIf(!jjInstalled)("NodeJj", () => {
       (target) =>
         Effect.gen(function*() {
           const contract = new URL("../src/Jj.vibe", import.meta.url).href
-          const adapter = new URL("../src/node/NodeJj.vibe", import.meta.url).href
+          const adapter = new URL("../src/node/NodeJj.ts", import.meta.url).href
           const worker = `
             import * as Effect from "effect/Effect"
             import { Jj } from ${JSON.stringify(contract)}

@@ -30,7 +30,6 @@
 import * as Deferred from "effect/Deferred";
 import * as Exit from "effect/Exit";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import { DerivedKey } from "@smthrs/keys";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -122,12 +121,14 @@ export const makeDigestMemo = () => {
         }
         const pending = Deferred.makeUnsafe();
         entries.set(address, pending);
-        return Effect.onExit(restore(compute), Effect_1.fnUntraced(function* (exit) {
-            if (Exit.isFailure(exit) && entries.get(address) === pending) {
-                entries.delete(address);
-            }
-            yield* Deferred.done(pending, exit);
-        }));
+        return Effect.onExit(restore(compute), (exit) => {
+            return Effect_1.gen(function* () {
+                if (Exit.isFailure(exit) && entries.get(address) === pending) {
+                    entries.delete(address);
+                }
+                yield* Deferred.done(pending, exit);
+            });
+        });
     }));
     return { digest };
 };
@@ -178,7 +179,7 @@ const decodeEnvironment = (environment) => Effect.try({
     try: () => {
         const invalid = validateEnvironment(environment);
         if (invalid !== undefined)
-            throw invalid;
+            $raise(invalid);
         return Schema.decodeUnknownSync(EnvironmentIdentity)(environment, { onExcessProperty: "error" });
     },
     catch: (cause) => cause instanceof KeyMaterialError ? cause : new KeyMaterialError({
@@ -249,13 +250,15 @@ const decodeKey = Schema.decodeUnknownEffect(DerivedKey);
  * @since 1.0.0
  * @category constructors
  */
-export const environmentIdentity = Effect_1.fnUntraced(function* environmentIdentity(environment) {
-    const captured = environment === undefined ? undefined : yield* decodeEnvironment(environment);
-    return yield* decodeKey({
-        kind: "execution-environment/v1",
-        environment: captured === undefined ? null : normalizeEnvironment(captured)
+export const environmentIdentity = (environment) => {
+    return Effect_1.gen(function* environmentIdentity() {
+        const captured = environment === undefined ? undefined : yield* decodeEnvironment(environment);
+        return yield* decodeKey({
+            kind: "execution-environment/v1",
+            environment: captured === undefined ? null : normalizeEnvironment(captured)
+        });
     });
-});
+};
 /**
  * Produces a cross-run reusable key for a sealed or hermetic step. Set-like
  * declarations are normalized before serialization; write declarations remain
@@ -267,18 +270,20 @@ export const environmentIdentity = Effect_1.fnUntraced(function* environmentIden
  * @since 0.1.0
  * @category constructors
  */
-export const content = Effect_1.fnUntraced(function* content(identity) {
-    const environment = identity.environment === undefined ? undefined : yield* decodeEnvironment(identity.environment);
-    return yield* decodeKey({
-        kind: "content",
-        body: identity.body,
-        inputs: normalizeInputs(identity.inputs),
-        layers: sortStrings(identity.layers),
-        capabilities: normalizeCapabilities(identity.capabilities),
-        ...(environment === undefined ? {} : { environment: normalizeEnvironment(environment) }),
-        ...(identity.hermetic === undefined ? {} : { hermetic: normalizeHermetic(identity.hermetic) })
+export const content = (identity) => {
+    return Effect_1.gen(function* content() {
+        const environment = identity.environment === undefined ? undefined : yield* decodeEnvironment(identity.environment);
+        return yield* decodeKey({
+            kind: "content",
+            body: identity.body,
+            inputs: normalizeInputs(identity.inputs),
+            layers: sortStrings(identity.layers),
+            capabilities: normalizeCapabilities(identity.capabilities),
+            ...(environment === undefined ? {} : { environment: normalizeEnvironment(environment) }),
+            ...(identity.hermetic === undefined ? {} : { hermetic: normalizeHermetic(identity.hermetic) })
+        });
     });
-});
+};
 /**
  * Produces a run-local ordinal key for compensable, irreversible, or unsealed
  * work. These keys intentionally cannot be reused across runs.
@@ -367,23 +372,25 @@ const ownDataProperty = (record, from, label) => {
  *
  * @private
  */
-const resolveInputs = Effect_1.fnUntraced(function* resolveInputs(material, resolve) {
-    const inputs = {};
-    for (let index = 0; index < material.inputs.length; index++) {
-        const input = material.inputs[index];
-        if (input._tag === "Literal") {
-            inputs[String(index)] = input.value;
-            continue;
+const resolveInputs = (material, resolve) => {
+    return Effect_1.gen(function* resolveInputs() {
+        const inputs = {};
+        for (let index = 0; index < material.inputs.length; index++) {
+            const input = material.inputs[index];
+            if (input._tag === "Literal") {
+                inputs[String(index)] = input.value;
+                continue;
+            }
+            const digest = yield* resolve(input);
+            inputs[String(index)] = input._tag === "Pending"
+                ? digestInput(digest, { reference: "pending" })
+                : input.path.length > 0
+                    ? digestInput(digest, { reference: "ref-projected", path: input.path })
+                    : digestInput(digest, { reference: "ref" });
         }
-        const digest = yield* resolve(input);
-        inputs[String(index)] = input._tag === "Pending"
-            ? digestInput(digest, { reference: "pending" })
-            : input.path.length > 0
-                ? digestInput(digest, { reference: "ref-projected", path: input.path })
-                : digestInput(digest, { reference: "ref" });
-    }
-    return inputs;
-});
+        return inputs;
+    });
+};
 /** Resolves plan references once for both content and non-cacheable declarations. */
 const materialIdentity = (material, dependencyDigests) => Effect.map(resolveInputs(material, (reference) => Effect.flatMap(ownDataProperty(dependencyDigests, reference.from, "Digest"), (digest) => typeof digest === "string" ? Effect.succeed(digest) : Effect.fail(new KeyMaterialError({
     code: "missing_dependency",
@@ -477,29 +484,32 @@ export const project = (value, path) => {
  * @since 0.1.0
  * @category constructors
  */
-export const dispatchIdentity = Effect_1.fnUntraced(runtime.$joinedFrame(function* dispatchIdentity(options) {
-    const material = options.material;
-    if (material.kind !== "sealed") {
-        return yield* Effect_1.fail(new KeyMaterialError({
-            code: "non_content_material",
-            message: `Cannot create a dispatch key for ${material.kind} material`
-        }));
-    }
-    const environment = options.environment === undefined ? undefined : yield* decodeEnvironment(options.environment);
-    const inputs = yield* resolveInputs(material, (reference) => reference._tag === "Pending"
-        ? Effect.succeed(orderingOnly)
-        : Effect.flatMap(ownDataProperty(options.results, reference.from, "Settled result"), (settled) => {
-            const compute = decodeKey({ kind: "input-value", value: project(settled, reference.path) });
-            return options.digestMemo === undefined
-                ? compute
-                : options.digestMemo.digest(reference.from, reference.path, compute);
-        }));
-    return yield* content({
-        body: materialBody(material),
-        inputs,
-        layers: material.layers,
-        capabilities: { declared: material.capabilities },
-        environment,
-        hermetic: options.hermetic
+export const dispatchIdentity = (options) => {
+    return Effect_1.gen(function* dispatchIdentity() {
+        const material = options.material;
+        if (material.kind !== "sealed") {
+            return yield* Effect_1.fail(new KeyMaterialError({
+                code: "non_content_material",
+                message: `Cannot create a dispatch key for ${material.kind} material`
+            }));
+        }
+        const environment = options.environment === undefined ? undefined : yield* decodeEnvironment(options.environment);
+        const inputs = yield* resolveInputs(material, (reference) => reference._tag === "Pending"
+            ? Effect.succeed(orderingOnly)
+            : Effect.flatMap(ownDataProperty(options.results, reference.from, "Settled result"), (settled) => {
+                const compute = decodeKey({ kind: "input-value", value: project(settled, reference.path) });
+                return options.digestMemo === undefined
+                    ? compute
+                    : options.digestMemo.digest(reference.from, reference.path, compute);
+            }));
+        return yield* content({
+            body: materialBody(material),
+            inputs,
+            layers: material.layers,
+            capabilities: { declared: material.capabilities },
+            environment,
+            hermetic: options.hermetic
+        });
     });
-}));
+};
+import { raise as $raise } from "./StepKey.vibe.-24-throw-24-ts.js";

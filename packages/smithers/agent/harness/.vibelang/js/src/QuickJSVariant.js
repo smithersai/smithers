@@ -18,10 +18,10 @@
  *
  * @since 1.0.0-rc.16
  */
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Effect_1 from "effect/Effect";
+import * as runtime from "vibelang-runtime/internal";
 import { newQuickJSWASMModuleFromVariant } from "quickjs-emscripten-core";
 import * as Sandbox from "./Sandbox.js";
 /**
@@ -49,7 +49,7 @@ export const cacheSuccessful = (load) => {
  * @category services
  * @since 0.1.0
  */
-export class Variant extends Context.Service()("@smthrs/harness/QuickJSSandbox/Variant") {
+export class Variant extends runtime.$service("@smthrs/harness/QuickJSSandbox/Variant") {
 }
 /**
  * Provides a build the host names.

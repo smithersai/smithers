@@ -71,26 +71,28 @@ const invalid = (field, message, value) => new IntegrationError("invalid-config"
     value: typeof value === "string" ? value.slice(0, 64) : typeof value,
     retryable: false
 });
-const requireInput = Effect_1.fnUntraced(function* requireInput(sha, input) {
-    if (typeof sha !== "string" || !SHA.test(sha)) {
-        return yield* Effect_1.fail(invalid("sha", "A commit SHA must be 40 or 64 lowercase hex digits.", sha));
-    }
-    if (!STATES.includes(input.state)) {
-        return yield* Effect_1.fail(invalid("state", "A status's state must be pending, success, failure or error.", input.state));
-    }
-    if (typeof input.context !== "string" || !CONTEXT_PATTERN.test(input.context)) {
-        return yield* Effect_1.fail(invalid("context", "A status's context must be 1 to 255 printable characters.", input.context));
-    }
-    if (input.targetUrl !== undefined && !isHttps(input.targetUrl)) {
-        return yield* Effect_1.fail(invalid("targetUrl", "A status's target URL must be an absolute https URL.", input.targetUrl));
-    }
-    return {
-        state: input.state,
-        context: input.context,
-        ...(input.description === undefined ? {} : { description: cut(input.description) }),
-        ...(input.targetUrl === undefined ? {} : { target_url: input.targetUrl })
-    };
-});
+const requireInput = (sha, input) => {
+    return Effect_1.gen(function* requireInput() {
+        if (typeof sha !== "string" || !SHA.test(sha)) {
+            return yield* Effect_1.fail(invalid("sha", "A commit SHA must be 40 or 64 lowercase hex digits.", sha));
+        }
+        if (!STATES.includes(input.state)) {
+            return yield* Effect_1.fail(invalid("state", "A status's state must be pending, success, failure or error.", input.state));
+        }
+        if (typeof input.context !== "string" || !CONTEXT_PATTERN.test(input.context)) {
+            return yield* Effect_1.fail(invalid("context", "A status's context must be 1 to 255 printable characters.", input.context));
+        }
+        if (input.targetUrl !== undefined && !isHttps(input.targetUrl)) {
+            return yield* Effect_1.fail(invalid("targetUrl", "A status's target URL must be an absolute https URL.", input.targetUrl));
+        }
+        return {
+            state: input.state,
+            context: input.context,
+            ...(input.description === undefined ? {} : { description: cut(input.description) }),
+            ...(input.targetUrl === undefined ? {} : { target_url: input.targetUrl })
+        };
+    });
+};
 const isHttps = (url) => {
     try {
         return new URL(url).protocol === "https:";

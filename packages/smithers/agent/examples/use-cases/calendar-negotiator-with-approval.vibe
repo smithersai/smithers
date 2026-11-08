@@ -45,47 +45,47 @@ export const ScheduleRequest = Schema.Struct({
 })
 
 /** One availability or policy check's candidates. */
-export schema Availability {
-  readonly source: string
-  readonly slots: ReadonlyArray<Slot>
-  readonly unavailableReasons: ReadonlyArray<string>
-}
+export const Availability = Schema.Struct({
+  source: Schema.String,
+  slots: Schema.Array(Slot),
+  unavailableReasons: Schema.Array(Schema.String)
+})
 
 /** The ranked candidates. */
-export schema RankedSlots {
-  readonly slots: ReadonlyArray<Slot>
-  readonly rankingExplanation: string
-}
+export const RankedSlots = Schema.Struct({
+  slots: Schema.Array(Slot),
+  rankingExplanation: Schema.String
+})
 
 /** The drafted reply. */
-export schema Reply {
-  readonly subject: string
-  readonly body: string
-  readonly proposedSlots: ReadonlyArray<Slot>
-  readonly requiresApproval: boolean
-}
+export const Reply = Schema.Struct({
+  subject: Schema.String,
+  body: Schema.String,
+  proposedSlots: Schema.Array(Slot),
+  requiresApproval: Schema.Boolean
+})
 
 /** A person's decision on the write. */
-export schema Approval {
-  readonly approved: boolean
-  readonly reviewer: string
-  readonly note: string
-}
+export const Approval = Schema.Struct({
+  approved: Schema.Boolean,
+  reviewer: Schema.String,
+  note: Schema.String
+})
 
 /** What creating the event did. */
-export schema CalendarMutation {
-  readonly eventId: string
-  readonly status: "created" | "skipped" | "failed"
-  readonly idempotencyKey: string
-  readonly summary: string
-}
+export const CalendarMutation = Schema.Struct({
+  eventId: Schema.String,
+  status: Schema.Literals(["created", "skipped", "failed"]),
+  idempotencyKey: Schema.String,
+  summary: Schema.String
+})
 
 /** What sending the reply did. */
-export schema EmailResult {
-  readonly messageId: string
-  readonly status: "sent" | "skipped" | "failed"
-  readonly idempotencyKey: string
-}
+export const EmailResult = Schema.Struct({
+  messageId: Schema.String,
+  status: Schema.Literals(["sent", "skipped", "failed"]),
+  idempotencyKey: Schema.String
+})
 
 /** What the flow settles with. The writes are `null` when the approval was denied. */
 export const Outcome = Schema.Struct({
@@ -96,7 +96,7 @@ export const Outcome = Schema.Struct({
 })
 
 /** The defaults the parser falls back on. */
-export schema Defaults { readonly timezone: string; readonly durationMinutes: number }
+export const Defaults = Schema.Struct({ timezone: Schema.String, durationMinutes: Schema.Number })
 
 /** The JSON Schema the approval answer must fit; `HumanTask` checks it where the answer arrives. */
 const approvalSchema = {

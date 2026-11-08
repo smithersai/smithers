@@ -73,10 +73,9 @@ export interface Entry {
  * @category services
  * @since 1.0.0-rc.17
  */
-export service Recent {
-  static readonly key = "@smthrs/observability/LogFailures/Recent"
-  entries: ReadonlyArray<Entry>!!
-}
+export service Recent: {
+  readonly entries: ReadonlyArray<Entry>!!
+} { static readonly key = "@smthrs/observability/LogFailures/Recent" }
 
 /**
  * Lines logged at `Warn` or above, by `level` (`warn`, `error`, `fatal`),

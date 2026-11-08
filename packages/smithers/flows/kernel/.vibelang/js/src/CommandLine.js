@@ -21,9 +21,6 @@
  */
 import * as Redacted from "effect/Redacted";
 import { isInheritedName } from "./ChildProcessEnvironment.js";
-// Effect 4.1 lets an argument or an environment value be Redacted; the
-// process receives its value, as Effect's own spawners pass it.
-const word = (value) => Redacted.isRedacted(value) ? Redacted.value(value) : value;
 /** Tokens made only of these characters need no quoting in a POSIX shell. */
 const SAFE = /^[A-Za-z0-9_@%+=:,./-]+$/;
 /**
@@ -60,13 +57,26 @@ export const quote = (token) => token !== "" && SAFE.test(token) ? token : `'${t
  * @category rendering
  * @since 1.0.0-rc.0
  */
-export const render = (command) => command._tag === "StandardCommand"
-    ? command.options.shell === undefined || command.options.shell === false
-        ? [command.command, ...command.args.map(word)].map(quote).join(" ")
+export const render = (command) => renderWith(command, (value) => Redacted.isRedacted(value) ? "<redacted>" : value);
+/**
+ * Renders arguments at the interpreter host boundary, revealing protected
+ * values only for execution. Diagnostics and grants use {@link render}.
+ *
+ * @category rendering
+ * @since 1.0.0
+ */
+export const renderForExecution = (command) => renderWith(command, (value) => Redacted.isRedacted(value) ? Redacted.value(value) : value);
+const renderWith = (command, argument) => {
+    if (command._tag === "PipedCommand") {
+        return `${renderWith(command.left, argument)} | ${renderWith(command.right, argument)}`;
+    }
+    const tokens = [command.command, ...command.args.map(argument)];
+    return command.options.shell === undefined || command.options.shell === false
+        ? tokens.map(quote).join(" ")
         : command.options.shell === true
-            ? [command.command, ...command.args.map(word)].join(" ")
-            : `${quote(command.options.shell)} -c ${quote([command.command, ...command.args.map(word)].join(" "))}`
-    : `${render(command.left)} | ${render(command.right)}`;
+            ? tokens.join(" ")
+            : `${quote(command.options.shell)} -c ${quote(tokens.join(" "))}`;
+};
 /**
  * Shell syntax that chains, substitutes, groups, or redirects: everything that
  * lets one shell line run or write more than a single simple command.
@@ -196,14 +206,4 @@ export const cwd = (command) => command._tag === "StandardCommand" ? command.opt
  * @category rendering
  * @since 1.0.0-rc.0
  */
-export const env = (command) => command._tag === "StandardCommand" ? values(command.options.env) : env(command.left);
-const values = (environment) => {
-    if (environment === undefined || !Object.values(environment).some(Redacted.isRedacted)) {
-        return environment;
-    }
-    // A null prototype keeps an own `__proto__` name an ordinary variable.
-    const text = Object.create(null);
-    for (const [name, value] of Object.entries(environment))
-        text[name] = value === undefined ? undefined : word(value);
-    return text;
-};
+export const env = (command) => command._tag === "StandardCommand" ? command.options.env : env(command.left);

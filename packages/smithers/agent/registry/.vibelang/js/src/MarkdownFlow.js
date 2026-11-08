@@ -118,7 +118,7 @@ export const fromMarkdown = (options) => {
             body: new BodyRefMarkdown({
                 path: options.path,
                 baseDirectory: options.baseDirectory,
-                contentDigest: options.contentDigest ?? Digest.digest(options.text)
+                contentDigest: options.contentDigest ?? $invoke(Digest, () => (options.text))
             }),
             input: new SchemaRefMarkdownArgs({}),
             output: new SchemaRefMarkdownOutput({}),
@@ -678,3 +678,4 @@ const warnUnknownFields = (fields, path, warnings) => {
         }
     }
 };
+import { invoke as $invoke } from "./MarkdownFlow.vibe.-24-call-24-ts.js";

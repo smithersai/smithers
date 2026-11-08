@@ -7,8 +7,9 @@ import { FlowDispatch } from "../../flows/dispatch";
 import { signedInShapeSource } from "../auth/source";
 import { AuthStore } from "../auth/store";
 import { ChatStore } from "../chat/store";
+import { ConversationOwners } from "../conversations/owners";
 import { RUNS_SHAPE_ROUTE } from "./contract";
-import { deliveriesQuery, latestQuery, statusesQuery, waitsQuery } from "./queries";
+import { deliveriesQuery, latestQuery, shownRunsQuery, statusesQuery, waitsQuery } from "./queries";
 import { Local, Run } from "./schema";
 // Agent status on this tab (decision 0015, docs/features/agent-status.md#the-browser): the person's `runs`, synced by
 // Electric and kept on the device; this tab's own rows about each question; the live queries the views read, each
@@ -41,22 +42,27 @@ export class StatusStore extends Context.Service()("@smthrs/mvp/status/StatusSto
             schema: Run,
             getKey: (row) => row.id,
             syncMode: "eager",
-            persist: { schemaVersion: 2 },
+            // Version 3: a run names its conversation (`conversationId`), what its wait shows through.
+            persist: { schemaVersion: 3 },
             shape: {
                 url: `${config.origin}${RUNS_SHAPE_ROUTE}`,
                 columnMapper: ElectricCollection.snakeCamelMapper(),
             },
         }).pipe(Effect.provideService(ShapeSource.ShapeSource, signedInShapeSource(yield* ShapeSource.ShapeSource, yield* AuthStore)));
         const local = yield* Collection.local({ id: "status-local", schema: Local, getKey: (row) => row.id });
-        const statuses = yield* statusesQuery(messages, runs, local);
-        const waits = yield* waitsQuery(messages, runs);
+        const statuses = yield* statusesQuery(chat.shownMessages, runs, local);
+        // A wait shows only through its run's conversation (decision 0110, the data gate): the home conversation's, or one
+        // whose repository may show now. A run of a conversation this device has no row of shows no wait.
+        const shownRuns = yield* shownRunsQuery(chat.shownMessages, runs, (yield* ConversationOwners).shown);
+        const waits = yield* waitsQuery(messages, shownRuns);
         const latest = yield* latestQuery(statuses);
         const deliveries = yield* deliveriesQuery(runs);
         // A branch's status (decision 0013 §1): its own messages against the same runs, built as chat opens the
         // conversation, so a tab that shows it finds it whole; the views read it beside chat's window of it.
         const branches = new Map();
         yield* chat.forEachOpened((opened) => Effect.gen(function* () {
-            const branchStatuses = yield* statusesQuery(opened.messages, runs, local);
+            // Through the data gate: a branch's statuses carry its waits' prompts, options and answers (Astra on 0c7b9f01).
+            const branchStatuses = yield* statusesQuery(opened.shownMessages, runs, local);
             branches.set(opened.conversationId, { statuses: branchStatuses, latest: yield* latestQuery(branchStatuses) });
         }).pipe(Scope.provide(scope), 
         // These queries' shape is fixed here; one TanStack DB can't build is a bug, as chat's own queries are.
@@ -86,6 +92,8 @@ export class StatusStore extends Context.Service()("@smthrs/mvp/status/StatusSto
             statuses,
             latest,
             waits,
+            shownRuns,
+            homeMessages: messages,
             opened: (conversationId) => branches.get(conversationId),
             scope,
         });

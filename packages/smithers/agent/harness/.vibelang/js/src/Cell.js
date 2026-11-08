@@ -625,11 +625,11 @@ export class CallResult extends Schema.Class("flows/harness/Cell/CallResult")(Sc
      */
     code: Schema.optional(CallFailureCode)
 })) {
-    constructor(props, options) {
+    static new(props, options) {
         // The encoded schema is the durable wire contract used in sealed keys.
         // Refining its AST would re-key valid recorded results. Admission checks
         // belong here and in decodeCallResult, which also revalidates instances.
-        super(CallResultVariant.make(props), options);
+        return new CallResult(CallResultVariant.make(props), options);
     }
 }
 /**

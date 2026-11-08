@@ -3,10 +3,12 @@ import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric";
 import { Collection, LiveQuery, Persistence, Query } from "@smthrs/effect-tanstack-db";
 import { BrowserEngine } from "@smthrs/platform-browser";
 import { Clock, Context, Duration, Effect, Layer, Metric, Option, Ref, Scope, Semaphore, Stream } from "effect";
+import { evictOnRefusal, repositoryAccessChanges, revokingSource, wipeAuthority } from "../issues/source";
 import { RemoteReadFailed, RemoteRunsClient, RepoRunsFailed } from "./api";
 import { isRemoteRun, JOURNAL_PAGE, REMOTE_RUN_SHAPE_ROUTE, RUN_LIST_LIMIT, settled } from "./contract";
 import { ACTIONS_SHAPE_ROUTE } from "../actions/contract";
-import { CloudRun, FORM, RepoRunForm, RepoRunRow, RepoRunsLoaded, RunChange, RunPage, RunRow, RunView, VIEW } from "./schema";
+import { anyOf } from "../repo/gate";
+import { CloudRun, UNATTRIBUTED_RUN_KINDS, FORM, RepoRunForm, RepoRunRow, RepoRunsLoaded, RunChange, RunPage, RunRow, RunView, VIEW } from "./schema";
 import { routeTiming } from "./timing";
 import { domainOutcomeOf, hasDomainOutcome } from "./todoRun";
 import { repoId } from "../repo/contract";
@@ -26,7 +28,12 @@ export const followChanges = Metric.counter("smithers_run_follow_changes", {
     description: "Remote run changes received by whether their run is open",
     incremental: true,
 });
-/** The run of `view`, joined to its read: what the run page shows. */
+/**
+ * The run pages that show with no repository's say (the data gate's `also`): one read from this device's own engine,
+ * and one holding no read (loading, not found, not started, unavailable), which has nothing of a run to hide.
+ */
+export const pageShowsAlone = (own) => Query.or(Query.or(Query.eq(own.personal, true), Query.eq(own.system, true)), Query.isNull(own.inspection));
+/** The run of `view`, joined to its read: what the run page shows. `pages` are the reads the data gate shows. */
 export const pageQuery = (view, pages) => LiveQuery.make((q) => q
     .from({ view: view.tanstack })
     .innerJoin({ page: pages.tanstack }, ({ view, page }) => Query.eq(view.runId, page.id))
@@ -42,13 +49,13 @@ export const expandedQuery = (view, pages) => LiveQuery.make((q) => q
 export const viewQuery = (view) => LiveQuery.make((q) => q.from({ view: view.tanstack }).findOne());
 /** Every run of the list. */
 export const runsQuery = (runs) => LiveQuery.make((q) => q.from({ run: runs.tanstack }));
-/** Every run on Cloudflare the list holds. */
+/** Every run on Cloudflare the list holds, as the data gate shows them. */
 export const cloudRunsQuery = (rows) => LiveQuery.make((q) => q.from({ run: rows.tanstack }));
 /** How many unsettled runs on Cloudflare one read of the list follows: the newest. */
 export const CLOUD_FOLLOWS = 6;
 /** How many completed answers or drafts one read of the list reads the results of, newest first. */
 export const OUTCOME_READS = 10;
-/** Every repository run the device holds: the list filters it to the repository it shows. */
+/** Every repository run the device holds, as the data gate shows them: the list filters it to the repository it shows. */
 export const repoRunsQuery = (rows) => LiveQuery.make((q) => q.from({ run: rows.tanstack }));
 /** The Run form's one row. */
 export const formQuery = (form) => LiveQuery.make((q) => q.from({ form: form.tanstack }));
@@ -128,7 +135,7 @@ export class RunsStore extends Context.Service()("@smthrs/mvp/runs/RunsStore") {
      */
     static layer = (config) => Layer.effect(RunsStore, Effect.gen(function* () {
         const auth = yield* Effect.serviceOption(AuthStore);
-        const repos = yield* Effect.serviceOption(RepoStore);
+        const repos = yield* RepoStore;
         const timing = yield* routeTiming;
         const attempts = new Map();
         const scope = yield* Effect.scope;
@@ -167,6 +174,8 @@ export class RunsStore extends Context.Service()("@smthrs/mvp/runs/RunsStore") {
             const startedAt = yield* Clock.currentTimeMillis;
             const attempt = attempts.get(runId);
             const source = reader(runId, attempt);
+            // Read from this device's engine: the person's own run. From Cloudflare: its root's repository's (`attributed`).
+            const local = !onCloud(runId);
             const read = yield* Effect.result(source(runId, { limit: JOURNAL_PAGE }));
             if (generations.get(runId) !== generation)
                 return;
@@ -207,7 +216,7 @@ export class RunsStore extends Context.Service()("@smthrs/mvp/runs/RunsStore") {
                         visible.push(child);
                         pending.push(...child.children.map((nested) => nested.runId));
                     }
-                    yield* put(pages, { id: runId, state: "read", inspection, ...kept, descendants: visible });
+                    yield* put(pages, { id: runId, state: "read", inspection, ...kept, descendants: visible, ...(yield* attributed(runId, inspection, local)) });
                 });
                 yield* publish([]);
                 yield* attempt?.record("page", "rows", 1) ?? Effect.void;
@@ -278,7 +287,14 @@ export class RunsStore extends Context.Service()("@smthrs/mvp/runs/RunsStore") {
                 const latestView = Option.getOrThrow(yield* view.get(VIEW));
                 if (latestView.runId === runId && latestView.at != null)
                     return;
-                yield* put(pages, { id: runId, state: "read", inspection, ...kept, descendants });
+                const owner = yield* attributed(runId, inspection, local);
+                yield* put(pages, { id: runId, state: "read", inspection, ...kept, descendants, ...owner });
+                // A run on Cloudflare whose root this tab can't place shows nothing until it can: the list of runs on
+                // Cloudflare may name its repository. One read of it at a time for each such run.
+                if (owner.repoId === undefined && owner.personal === undefined && owner.system !== true && !placing.has(runId)) {
+                    placing.add(runId);
+                    yield* Effect.forkIn(readCloud.pipe(Effect.ensuring(Effect.sync(() => placing.delete(runId)))), scope, { startImmediately: true });
+                }
                 // A run on Cloudflare is never one of this device's runs.
                 if (!onCloud(runId))
                     yield* put(runs, rowOf(inspection.run));
@@ -304,7 +320,7 @@ export class RunsStore extends Context.Service()("@smthrs/mvp/runs/RunsStore") {
             // again. Only an answer about the run itself (not found, not started) replaces what the page shows.
             const shown = yield* pages.get(runId);
             if (state !== "unavailable" || Option.isNone(shown) || shown.value.state !== "read") {
-                yield* put(pages, { id: runId, state, inspection: null, more: [], hasMore: false });
+                yield* put(pages, { id: runId, state, inspection: null, more: [], hasMore: false, repoId: undefined, personal: undefined, system: undefined });
             }
             yield* recordRead("run", state, startedAt, undefined, read.failure);
         }).pipe(Effect.orDie);
@@ -527,6 +543,68 @@ export class RunsStore extends Context.Service()("@smthrs/mvp/runs/RunsStore") {
             schema: RepoRunsLoaded,
             getKey: (row) => row.id,
         });
+        // The data gate (decision 0110, 2026-11-03; repo/gate.ts): which repository each run read on Cloudflare is of, and
+        // what of the runs shows. A run's repository is its root run's: the topmost run of its inspection's chain this tab
+        // can place, by that run's Cloudflare row (`repo`) or its repository row (`execution`). A run read from this
+        // device's engine is the person's own. One this tab can't place shows nothing, wherever it is opened.
+        /** Runs read on Cloudflare this tab couldn't place, whose read of the list of runs on Cloudflare is on its way. */
+        const placing = new Set();
+        const repositoryOf = (id, cloud, executions) => {
+            const named = cloud.get(id)?.repo;
+            return named != null ? `github/${named}`.toLowerCase() : executions.get(id);
+        };
+        /** Whose run `runId`'s read `inspection` is: `{ personal }` read from this device's engine, else its root's repository. */
+        const attributed = (runId, inspection, local) => Effect.gen(function* () {
+            if (local)
+                return { repoId: undefined, personal: true, system: undefined };
+            const cloud = new Map((yield* cloudRuns.toArray).map((run) => [run.runId, run]));
+            const executions = new Map((yield* shownRepoRuns.toArray).map((run) => [run.execution, run.repoId]));
+            // Up the chain as far as this tab has the reads: each run's parent, from its own read, else its page's.
+            let found = repositoryOf(runId, cloud, executions);
+            let parent = inspection.run.parentRunId ?? null;
+            const seen = new Set([runId]);
+            while (parent !== null && !seen.has(parent)) {
+                seen.add(parent);
+                found = repositoryOf(parent, cloud, executions) ?? found;
+                const page = Option.getOrUndefined(yield* pages.get(parent));
+                const read = page?.inspection;
+                parent = read?.run?.parentRunId ?? null;
+            }
+            const listed = cloud.get(runId);
+            const system = found === undefined && listed?.repo === null && UNATTRIBUTED_RUN_KINDS[listed.kind] !== null;
+            return { repoId: found, personal: undefined, system: system ? true : undefined };
+        });
+        /** Places again each read on Cloudflare: a list or repository row that arrived may name its root's repository. */
+        const placeAgain = Effect.gen(function* () {
+            for (const page of yield* pages.toArray) {
+                if (page.inspection === null || page.personal === true)
+                    continue;
+                const owner = yield* attributed(page.id, page.inspection, false);
+                // Only the attribution: a read on its way meanwhile keeps what it wrote.
+                if (owner.repoId !== page.repoId || owner.system !== page.system)
+                    yield* Effect.ignore(pages.update(page.id, (draft) => { draft.repoId = owner.repoId; draft.system = owner.system; }));
+            }
+        }).pipe(Effect.orDie);
+        yield* Stream.mergeAll([Stream.map(cloudRuns.changes(), () => undefined), Stream.map(shownRepoRuns.changes(), () => undefined)], { concurrency: "unbounded" }).pipe(Stream.runForEach(() => placeAgain), Effect.forkScoped({ startImmediately: true }));
+        /** `rows` as the repository authority allows them to show. */
+        const gated = (rows, by = "repoId", also) => repos.gate(rows, by, also);
+        // A read with no content shows as it is: loading, not found, not started, unavailable.
+        // A read with no content (loading, not found, not started, unavailable) and a read from this device's own engine
+        // are no repository's: they show as they are. One query each, never a union (repo/gate.ts `gate`).
+        const shownPages = yield* gated(pages, "repoId", pageShowsAlone);
+        // A run on Cloudflare that names no repository shows only if its kind is a deployment's own (UNATTRIBUTED_RUN_KINDS).
+        const unattributed = Object.entries(UNATTRIBUTED_RUN_KINDS).flatMap(([kind, why]) => why === null ? [] : [kind]);
+        const shownCloud = yield* gated(cloudRuns, "repo", (run) => Query.and(Query.isNull(run.repo), anyOf(unattributed.map((kind) => Query.eq(run.kind, kind)))));
+        // A refused repository's run reads and Cloudflare rows go from this tab; their pages read again if it returns.
+        yield* repos.registerCache(["run-pages", "cloud-runs"], (id) => Effect.gen(function* () {
+            const reads = (yield* pages.toArray).filter((page) => page.repoId === id).map((page) => page.id);
+            if (reads.length > 0)
+                yield* Effect.ignore(pages.delete(reads));
+            const listed = (yield* cloudRuns.toArray)
+                .filter((run) => run.repo !== null && `github/${run.repo}`.toLowerCase() === id).map((run) => run.runId);
+            if (listed.length > 0)
+                yield* Effect.ignore(cloudRuns.delete(listed));
+        }));
         // The runs page's Run form: the repository's flows a person runs by hand, and the chosen one's form, read from
         // ChatApi (docs/features/actions.md#running-a-flow-by-hand). This tab's only.
         const form = yield* Collection.local({
@@ -578,7 +656,9 @@ export class RunsStore extends Context.Service()("@smthrs/mvp/runs/RunsStore") {
         });
         const opening = yield* Semaphore.make(1);
         const opened = new Set();
+        const repoRuns = new Map();
         const openRepoRuns = (owner, name, route) => Semaphore.withPermits(opening, 1)(Effect.gen(function* () {
+            yield* repos.refusalsKnown;
             const repo = `${owner}/${name}`.toLowerCase();
             const attempt = route ?? (yield* timing.begin);
             if (opened.has(repo))
@@ -591,8 +671,13 @@ export class RunsStore extends Context.Service()("@smthrs/mvp/runs/RunsStore") {
                 syncMode: "eager",
                 persist: { schemaVersion: 1 },
                 shape: { url: `${config.origin}${ACTIONS_SHAPE_ROUTE}?repo=${encodeURIComponent(repo)}`, columnMapper: ElectricCollection.snakeCamelMapper() },
-            }).pipe(Effect.provideService(ShapeSource.ShapeSource, memberRunSource(yield* ShapeSource.ShapeSource, auth, repos, repoId(owner, name))), Scope.provide(scope), Effect.provideService(Persistence.Persistence, persistence), Effect.orDie);
+            }).pipe(Effect.provideService(ShapeSource.ShapeSource, memberRunSource(Option.isSome(auth) ? revokingSource(yield* ShapeSource.ShapeSource, auth.value, repos, repoId(owner, name)) : yield* ShapeSource.ShapeSource, auth, Option.some(repos), repoId(owner, name))), Scope.provide(scope), Effect.provideService(Persistence.Persistence, persistence), Effect.orDie);
             yield* attempt.record("repo-runs", "ready");
+            repoRuns.set(repoId(owner, name), rows);
+            if (Option.isSome(auth)) {
+                // A refusal drops the repository's runs from the device, and from what this tab shows of them.
+                yield* evictOnRefusal(wipeAuthority(auth.value, repositoryAccessChanges(auth.value, repos, repoId(owner, name))), [rows]).pipe(Effect.forkIn(scope, { startImmediately: true }));
+            }
             let firstRows = true;
             opened.add(repo);
             yield* rows.changes({ initial: true }).pipe(Stream.tap((batch) => Effect.gen(function* () {
@@ -609,6 +694,10 @@ export class RunsStore extends Context.Service()("@smthrs/mvp/runs/RunsStore") {
                 yield* attempt.record("repo-runs", "loaded", (yield* rows.toArray).length);
             }).pipe(Effect.forkIn(scope, { startImmediately: true }));
         }));
+        yield* repos.registerCache(["repo-runs", "repo-runs-shown"], (id) => {
+            const [owner, name] = id.slice("github/".length).split("/");
+            return Effect.andThen(openRepoRuns(owner, name), Effect.suspend(() => repoRuns.get(id)?.evict ?? Effect.void));
+        });
         return RunsStore.of({
             scope,
             steerRevision: yield* Ref.make(0),
@@ -616,15 +705,16 @@ export class RunsStore extends Context.Service()("@smthrs/mvp/runs/RunsStore") {
             runs,
             pages,
             view,
-            page: yield* pageQuery(view, pages),
-            expandedPage: yield* expandedQuery(view, pages),
+            page: yield* pageQuery(view, shownPages),
+            shownPages: shownPages,
+            expandedPage: yield* expandedQuery(view, shownPages),
             viewRow: yield* viewQuery(view),
             list: yield* runsQuery(runs),
             cloudRuns,
-            cloudList: yield* cloudRunsQuery(cloudRuns),
+            cloudList: yield* cloudRunsQuery(shownCloud),
             readCloud,
             loadCloud: Effect.asVoid(Effect.forkIn(readCloud, scope, { startImmediately: true })),
-            repoRunList: yield* repoRunsQuery(shownRepoRuns),
+            repoRunList: yield* repoRunsQuery(yield* gated(shownRepoRuns)),
             repoRunsLoaded: yield* repoRunsLoadedQuery(loadedRepoRuns),
             openRepoRuns,
             form,

@@ -3,7 +3,7 @@ import { Effect, Option } from "effect";
 import { SqlClient } from "effect/sql";
 import * as RepoRoles from "./github/RepoRoles.js";
 import { latestRole } from "./SessionStore.js";
-import { mayRead } from "#vibelang/emitted/worker/stack/Access";
+import { mayRead } from "./stack/Access.js";
 /** Inside a run start or stop transaction: lock the authority's rows, then judge them by Postgres' current clock. */
 export const stillAdmitted = (actor, resolved) => Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;

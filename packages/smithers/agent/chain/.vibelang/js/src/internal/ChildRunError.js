@@ -12,9 +12,7 @@ import * as Catalog from "../Catalog.js";
  * @since 0.1.0
  */
 export class ChildRunError extends Catalog.CallError {
-    error;
-    constructor(error) {
-        super({ cause: error.code, message: `${error._tag}: ${error.message}`, name: "agent" });
-        this.error = error;
+    static new(error) {
+        return Object.assign(new ChildRunError({ cause: error.code, message: `${error._tag}: ${error.message}`, name: "agent" }), { error });
     }
 }

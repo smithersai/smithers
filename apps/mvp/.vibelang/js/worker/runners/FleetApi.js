@@ -5,11 +5,11 @@ import { HttpServerRequest } from "effect/http";
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
 import { AGENT_RUN_COLUMNS, AGENT_RUN_MAINTAINER_COLUMNS, AGENT_RUNS_SHAPE_ROUTE, MACHINE_COLUMNS, MACHINES_SHAPE_ROUTE, } from "../../src/features/fleet/contract.js";
 import { isRepository } from "../../src/features/repo/contract.js";
-import { canAsk } from "#vibelang/emitted/worker/Actor";
+import { canAsk } from "../Actor.js";
 import { mayMaintain } from "../feeds/Api.js";
-import { repositoryOf as repositoryNamed } from "#vibelang/emitted/worker/github/Config";
+import { repositoryOf as repositoryNamed } from "../github/Config.js";
 import * as RepoRoles from "../github/RepoRoles.js";
-import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess";
+import * as ShapeAccess from "../ShapeAccess.js";
 // The fleet's shapes (decision 0143, docs/features/fleet.md#the-shapes): one Electric shape per repository for its
 // runs, and one for its machines, so fifty runs are fifty rows of one shape, never fifty inspectors.
 //

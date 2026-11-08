@@ -104,10 +104,10 @@ export const RecordedRunId = Schema.NonEmptyString.check(
  * @category schemas
  * @since 1.0.0-rc.0
  */
-export schema RecordedBy {
-  readonly runId: RecordedRunId
-  readonly eventSeq: NonNegativeSafeInt
-}
+export const RecordedBy = Schema.Struct({
+  runId: RecordedRunId,
+  eventSeq: NonNegativeSafeInt
+})
 
 /**
  * Exact journal event that recorded a cache result.
@@ -123,14 +123,14 @@ export type RecordedBy = typeof RecordedBy.Type
  * @category schemas
  * @since 0.1.0
  */
-export schema CacheEntry {
-  readonly keyDigest: KeyDigest
-  readonly result: Schema.Unknown
-  readonly meta: Schema.Unknown
-  readonly createdAtMs: NonNegativeSafeInt
-  readonly recordedRunId: RecordedRunId
-  readonly recordedEventSeq: NonNegativeSafeInt
-}
+export const CacheEntry = Schema.Struct({
+  keyDigest: KeyDigest,
+  result: Schema.Unknown,
+  meta: Schema.Unknown,
+  createdAtMs: NonNegativeSafeInt,
+  recordedRunId: RecordedRunId,
+  recordedEventSeq: NonNegativeSafeInt
+})
 
 /**
  * The durable data recorded for a cache key.

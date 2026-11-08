@@ -115,32 +115,37 @@ export const reader = Judgement.perItem({
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const judge = Effect_1.fnUntraced(function* judge(context, items) {
-    const sent = items.map((item) => ({ ...item, text: headKept(item.text, itemBytes) }));
-    const [elapsed, read] = yield* (Effect.timed(reader.read(context, sent)));
-    const verdicts = items.map((item, index) => {
-        const answer = read.answers[index].unnecessary;
+export const judge = (context, items) => {
+    return Effect_1.gen(function* judge() {
+        const sent = items.map((item) => ({ ...item, text: headKept(item.text, itemBytes) }));
+        const [elapsed, read] = yield* (Effect.timed(reader.read(context, sent)));
+        const verdicts = yield* Effect.orDie(Effect.try({
+            try: () => items.map((item, index) => {
+                const answer = read.answers[index].unnecessary;
+                return {
+                    item,
+                    digest: Digest.digest(item.text),
+                    p: answer.probability,
+                    withheld: bytes.size(item.text) <= itemBytes &&
+                        Option.getOrElse(Classifier.confident(answer, confidentAt), () => false)
+                };
+            }),
+            catch: (e) => e
+        }));
+        const usages = read.asked.flatMap((asked) => asked.usage === undefined ? [] : [asked.usage]);
         return {
-            item,
-            digest: Digest.digest(item.text),
-            p: answer.probability,
-            withheld: bytes.size(item.text) <= itemBytes &&
-                Option.getOrElse(Classifier.confident(answer, confidentAt), () => false)
+            verdicts,
+            asked: read.asked,
+            latencyMs: Math.round(Duration.toMillis(elapsed)),
+            ...(usages.length === 0 ? {} : {
+                usage: {
+                    inputTokens: usages.reduce((sum, usage) => sum + usage.inputTokens, 0),
+                    outputTokens: usages.reduce((sum, usage) => sum + usage.outputTokens, 0)
+                }
+            })
         };
     });
-    const usages = read.asked.flatMap((asked) => asked.usage === undefined ? [] : [asked.usage]);
-    return {
-        verdicts,
-        asked: read.asked,
-        latencyMs: Math.round(Duration.toMillis(elapsed)),
-        ...(usages.length === 0 ? {} : {
-            usage: {
-                inputTokens: usages.reduce((sum, usage) => sum + usage.inputTokens, 0),
-                outputTokens: usages.reduce((sum, usage) => sum + usage.outputTokens, 0)
-            }
-        })
-    };
-});
+};
 /**
  * The `relevance-settled` row for a reading: ids and digests, never text.
  *

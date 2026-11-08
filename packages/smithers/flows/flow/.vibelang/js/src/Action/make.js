@@ -102,18 +102,16 @@ const makeInline = (options) => {
             });
         },
         execute: executeWithInfraRetry,
-        executeEncoded: Effect.matchEffect(
-        // Recovery handlers in Effect discard typed reasons during interruption.
-        // Preserve failed cleanup as defects before entering the encoder.
-        Effect.onExit(executeWithInfraRetry, (exit) => {
+        executeEncoded: Effect.onExit(executeWithInfraRetry, (exit) => {
             if (Exit.isSuccess(exit) || !Cause.hasInterrupts(exit.cause))
                 return Effect.void;
             const failures = exit.cause.reasons.filter(Cause.isFailReason);
-            return failures.length === 0 ? Effect.void : Effect.failCause(Cause.fromReasons(failures.map((reason) => Cause.makeDieReason(reason.error))));
-        }), {
-            onFailure: (error) => Effect.flatMap(Effect.orDie(Schema.encodeEffect(errorSchemaJson)(error)), Effect.fail),
-            onSuccess: (value) => Effect.orDie(Schema.encodeEffect(successSchemaJson)(value))
-        })
+            return failures.length === 0 ? Effect.void : Effect.failCause(Cause.fromReasons(failures.map((reason) => Cause.makeDieReason(reason.error).annotate(Cause.reasonAnnotations(reason)))));
+        }).pipe(
+        // Encoding changes the error value, not its originating action or other cause annotations.
+        Effect.catchCause((cause) => Effect.forEach(cause.reasons, (reason) => Cause.isFailReason(reason)
+            ? Effect.orDie(Schema.encodeEffect(errorSchemaJson)(reason.error)).pipe(Effect.map((encoded) => Cause.makeFailReason(encoded).annotate(Cause.reasonAnnotations(reason))))
+            : Effect.succeed(reason)).pipe(Effect.flatMap((reasons) => Effect.failCause(Cause.fromReasons(reasons))))), Effect.flatMap((value) => Effect.orDie(Schema.encodeEffect(successSchemaJson)(value))))
     };
     execute = makeExecute(self);
     return self;

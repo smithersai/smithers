@@ -28,7 +28,7 @@ export const ExternalEvent = Schema.Struct({
      * second colon, cannot enter persistence and become a routing identity
      * nothing can rebuild.
      */
-    eventName: Schema.String.pipe(Schema.refine(isEventName, { expected: "an integration signal name SignalName.eventName could build" })),
+    eventName: Schema.String.pipe(Schema.refine((value) => isEventName(value), { expected: "an integration signal name SignalName.eventName could build" })),
     /** What the event is about, or `null` when it addresses nothing narrower. */
     correlationId: Schema.NullOr(Schema.String),
     /** The provider payload, as delivered. */

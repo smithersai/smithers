@@ -14,7 +14,7 @@ import { SyncError } from "@smthrs/sync/SyncError"
 import { SyncAuth } from "@smthrs/sync/SyncRpcs"
 import { Effect, Layer, Redacted, Stream } from "effect"
 import { RpcServer } from "effect/rpc"
-import type { Config } from "./RuntimeBridge.vibe"
+import type { Config } from "./RuntimeBridge.ts"
 
 /**
  * Mount only on authenticated native runtime hosts, never anonymous gateways.

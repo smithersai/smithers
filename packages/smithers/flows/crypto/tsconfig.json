@@ -35,6 +35,5 @@
       "diagnosticSeverity": { "globalErrorInEffectFailure": "off" }
     }]
   },
-  "include": ["src/**/*"],
-  "vibelang": { "declarationImportStyle": ".ts" }
+  "include": ["src/**/*"]
 }

@@ -82,6 +82,7 @@ IntegrationError.prototype.name = "IntegrationError";
  *
  * @category refinements
  * @since 1.0.0
+ * @throws {never}
  */
 export const isIntegrationError = (error) => {
     try {

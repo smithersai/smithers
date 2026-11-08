@@ -22,9 +22,9 @@
  */
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { $catchExpression } from "vibelang-runtime";
+import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import * as EngineEvent from "@smthrs/journal/EngineEvent";
 import * as Journal from "@smthrs/journal/Journal";
 import * as CacheStore from "@smthrs/step-cache/CacheStore";
@@ -35,7 +35,7 @@ import * as JournalPages from "./JournalPages.js";
 import { LineageMetadata } from "./LineageMetadata.js";
 /** @private */
 const CacheMetadata = Schema.Struct({
-    cacheKey: Schema.NonEmptyString,
+    cacheKey: Schema.mutableKey(Schema.NonEmptyString),
 });
 /**
  * Re-derives a projection from committed evidence only. This deliberately has
@@ -43,116 +43,107 @@ const CacheMetadata = Schema.Struct({
  * @since 0.1.0
  * @category constructors
  */
-export const rederive = (frame, projection, options) => Effect.fn("Replay.rederive")(Effect_1.fnUntraced(function* () {
-    yield* Effect.annotateCurrentSpan({
-        runId: options.runId,
-        lineageId: frame.lineageId,
-        seq: frame.seq
-    });
-    const journal = yield* Journal.Journal;
-    const cache = yield* CacheStore.CacheStore;
-    const maxEntries = options.maxEntries ?? HistoryLimit.defaultMaxHistoryEntries;
-    const fold = Effect_1.fnUntraced(function* fold(entry, state) {
-        const cacheKey = Option.getOrUndefined(Schema.decodeUnknownOption(CacheMetadata)(entry.meta))?.cacheKey;
-        // The provenance fence keeps the projection durable: the version this
-        // exact record landed answers first, and only an entry recorded
-        // elsewhere falls back to the shared content-addressed head.
-        const sealed = cacheKey === undefined
-            ? undefined
-            : yield* (Effect.map(Effect.mapError(cache.get(cacheKey, { recordedBy: { runId: options.runId, eventSeq: entry.seq } }), (cause) => error("unknown", "could not read sealed result", cause)), (cached) => cached._tag === "Some" ? cached.value.result : undefined));
-        return projection.reduce(state, entry, sealed);
-    });
-    let state = projection.initial;
-    let foundLineage = false;
-    let folded = 0;
-    /**
-     * Each page is normalized before it is folded: one record per
-     * coordinate, ordered by seq. A page may repeat a record or list two out
-     * of order, and the durable projection is a function of the run's
-     * records, never of how a reader happened to page them. ACROSS pages the
-     * journal contract is sequence order, so a coordinate the fold has passed
-     * is a duplicate when it was folded and corrupt evidence when it was not;
-     * the old whole-prefix sort would have silently slotted it in. A
-     * coordinate repeated with a DIFFERENT event id is corrupt too: keeping
-     * whichever sorted first would tie the projection to page order.
-     */
-    const seen = new Map();
-    let lastSeq = -1;
-    let observedTail = -1;
-    yield* JournalPages.forEachPage(journal, {
-        runId: options.runId,
-        pageSize: options.pageSize ?? 100,
-        label: "journal replay",
-        readFailure: "could not read journal"
-    }, Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* (entries) {
-        const ordered = [...entries].sort((left, right) => left.seq - right.seq);
-        {
-            let pending_1 = runtime.$normal;
-            try {
+export const rederive = (frame, projection, options) => Effect.fn("Replay.rederive")(() => {
+    return Effect_1.gen(function* () {
+        yield* Effect.annotateCurrentSpan({
+            runId: options.runId,
+            lineageId: frame.lineageId,
+            seq: frame.seq
+        });
+        const journal = yield* Journal.Journal;
+        const cache = yield* CacheStore.CacheStore;
+        const maxEntries = options.maxEntries ?? HistoryLimit.defaultMaxHistoryEntries;
+        const fold = (entry, state) => {
+            return Effect_1.gen(function* fold() {
+                const cacheKey = Option.getOrUndefined(Schema.decodeUnknownOption(CacheMetadata)(entry.meta))?.cacheKey;
+                // The provenance fence keeps the projection durable: the version this
+                // exact record landed answers first, and only an entry recorded
+                // elsewhere falls back to the shared content-addressed head.
+                const sealed = cacheKey === undefined
+                    ? undefined
+                    : yield* (Effect.map(Effect.mapError(cache.get(cacheKey, { recordedBy: { runId: options.runId, eventSeq: entry.seq } }), (cause) => error("unknown", "could not read sealed result", cause)), (cached) => cached._tag === "Some" ? cached.value.result : undefined));
+                return projection.reduce(state, entry, sealed);
+            });
+        };
+        let state = projection.initial;
+        let foundLineage = false;
+        let folded = 0;
+        /**
+         * Each page is normalized before it is folded: one record per
+         * coordinate, ordered by seq. A page may repeat a record or list two out
+         * of order, and the durable projection is a function of the run's
+         * records, never of how a reader happened to page them. ACROSS pages the
+         * journal contract is sequence order, so a coordinate the fold has passed
+         * is a duplicate when it was folded and corrupt evidence when it was not;
+         * the old whole-prefix sort would have silently slotted it in. A
+         * coordinate repeated with a DIFFERENT event id is corrupt too: keeping
+         * whichever sorted first would tie the projection to page order.
+         */
+        const seen = new Map();
+        let lastSeq = -1;
+        let observedTail = -1;
+        yield* JournalPages.forEachPage(journal, {
+            runId: options.runId,
+            pageSize: options.pageSize ?? 100,
+            label: "journal replay",
+            readFailure: "could not read journal"
+        }, (entries) => {
+            return Effect_1.gen(function* () {
+                const ordered = [...entries].sort((left, right) => left.seq - right.seq);
                 for (const entry of ordered) {
-                    try {
-                        {
-                            const seenEventId = seen.get(entry.seq);
-                            if (seenEventId !== undefined) {
-                                if (seenEventId === entry.eventId)
-                                    continue;
-                                return yield* Effect_1.fail(error("invalid", `journal replay returned two records at seq ${entry.seq} for ${options.runId}`, { runId: entry.runId, seq: entry.seq, eventIds: [seenEventId, entry.eventId] }));
-                            }
-                            if (entry.seq < lastSeq) {
-                                return yield* Effect_1.fail(error("invalid", `journal replay returned seq ${entry.seq} after seq ${lastSeq} for ${options.runId}`));
-                            }
-                            observedTail = entry.seq;
-                            if (entry.seq > frame.seq)
-                                return JournalPages.Stop;
-                            seen.set(entry.seq, entry.eventId);
-                            lastSeq = entry.seq;
-                            folded += 1;
-                            if (folded > maxEntries) {
-                                return yield* Effect_1.fail(HistoryLimit.exceeded("replay", options.runId, maxEntries));
-                            }
-                            let lineageId;
-                            if (/^flows\.engine\.v[0-9]+(?:\.|$)/.test(entry.eventType)) {
-                                const consumer = options.engineEvents;
-                                if (consumer === undefined || consumer.runId !== options.runId || consumer.lineageId !== frame.lineageId) {
-                                    return yield* Effect_1.fail(error("invalid", "versioned engine replay requires the matching lineage and source contract", {
-                                        runId: entry.runId,
-                                        seq: entry.seq,
-                                        eventId: entry.eventId,
-                                        eventType: entry.eventType,
-                                        expected: { runId: options.runId, lineageId: frame.lineageId }
-                                    }));
-                                }
-                                yield* $catchExpression(() => EngineEvent.decodeEntry(entry, consumer), (cause) => Effect_1.suspend(() => { return Effect_1.fail(error("invalid", "invalid versioned engine history", cause)); }));
-                                lineageId = consumer.lineageId;
-                            }
-                            else {
-                                lineageId = Option.getOrUndefined(Schema.decodeUnknownOption(LineageMetadata)(entry.meta))?.lineageId;
-                            }
-                            if (lineageId !== undefined && lineageId !== frame.lineageId)
-                                continue;
-                            if (lineageId === frame.lineageId)
-                                foundLineage = true;
-                            state = yield* fold(entry, state);
+                    const seenEventId = seen.get(entry.seq);
+                    if (seenEventId !== undefined) {
+                        if (seenEventId === entry.eventId)
+                            continue;
+                        return yield* Effect_1.fail(error("invalid", `journal replay returned two records at seq ${entry.seq} for ${options.runId}`, { runId: entry.runId, seq: entry.seq, eventIds: [seenEventId, entry.eventId] }));
+                    }
+                    if (entry.seq < lastSeq) {
+                        return yield* Effect_1.fail(error("invalid", `journal replay returned seq ${entry.seq} after seq ${lastSeq} for ${options.runId}`));
+                    }
+                    observedTail = entry.seq;
+                    if (entry.seq > frame.seq)
+                        return JournalPages.Stop;
+                    seen.set(entry.seq, entry.eventId);
+                    lastSeq = entry.seq;
+                    folded += 1;
+                    if (folded > maxEntries) {
+                        return yield* Effect_1.fail(HistoryLimit.exceeded("replay", options.runId, maxEntries));
+                    }
+                    let lineageId;
+                    if (/^flows\.engine\.v[0-9]+(?:\.|$)/.test(entry.eventType)) {
+                        const consumer = options.engineEvents;
+                        if (consumer === undefined || consumer.runId !== options.runId || consumer.lineageId !== frame.lineageId) {
+                            return yield* Effect_1.fail(error("invalid", "versioned engine replay requires the matching lineage and source contract", {
+                                runId: entry.runId,
+                                seq: entry.seq,
+                                eventId: entry.eventId,
+                                eventType: entry.eventType,
+                                expected: { runId: options.runId, lineageId: frame.lineageId }
+                            }));
                         }
+                        yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return EngineEvent.decodeEntry(entry, consumer); }); })(), (cause) => (_tail_1 => { return Effect_1.gen(function* () {
+                            const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+                            return _completion_1[0] ? yield* _value_1 : _value_1;
+                        }); })(() => { return [true, Effect_1.fail(error("invalid", "invalid versioned engine history", cause))]; }));
+                        lineageId = consumer.lineageId;
                     }
-                    catch (thrown_1) {
-                        pending_1 = thrown_1;
-                        break;
+                    else {
+                        lineageId = Option.getOrUndefined(Schema.decodeUnknownOption(LineageMetadata)(entry.meta))?.lineageId;
                     }
+                    if (lineageId !== undefined && lineageId !== frame.lineageId)
+                        continue;
+                    if (lineageId === frame.lineageId)
+                        foundLineage = true;
+                    state = yield* fold(entry, state);
                 }
-            }
-            catch (thrown_2) {
-                throw runtime.$finallyFailure(pending_1, thrown_2);
-            }
-            if (pending_1 !== runtime.$normal)
-                throw pending_1;
+            });
+        });
+        if (!foundLineage) {
+            return yield* Effect_1.fail(error("not_found", `lineage ${frame.lineageId} is not present in ${options.runId}`));
         }
-    }))));
-    if (!foundLineage) {
-        return yield* Effect_1.fail(error("not_found", `lineage ${frame.lineageId} is not present in ${options.runId}`));
-    }
-    if (frame.seq > observedTail) {
-        return yield* Effect_1.fail(error("not_found", `frame ${frame.seq} is past the journal tail for ${options.runId}`));
-    }
-    return state;
-}))();
+        if (frame.seq > observedTail) {
+            return yield* Effect_1.fail(error("not_found", `frame ${frame.seq} is past the journal tail for ${options.runId}`));
+        }
+        return state;
+    });
+})();

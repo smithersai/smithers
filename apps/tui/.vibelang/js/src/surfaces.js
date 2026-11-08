@@ -7,7 +7,7 @@
  */
 import { useRef, useState } from "react";
 import { settled } from "./lifecycle.js";
-import * as Panels from "#vibelang/emitted/src/panels";
+import * as Panels from "./panels.js";
 /** A tab's name; an agent's tab leads with the agent. */
 export const tabTitle = (tab) => {
     const title = tab.harness === undefined ? tab.title : tab.description ?? tab.title;

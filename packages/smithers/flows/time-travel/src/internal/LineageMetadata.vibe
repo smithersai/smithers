@@ -15,4 +15,4 @@ import * as Schema from "effect/Schema"
  * @since 0.1.0
  * @category schemas
  */
-export schema LineageMetadata { readonly lineageId: Schema.NonEmptyString }
+export const LineageMetadata = Schema.Struct({ lineageId: Schema.NonEmptyString })

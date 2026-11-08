@@ -8,7 +8,7 @@ import { BRANCH_OPERATIONS, CREATION_ACTIONS, OPERATION_ACTIONS } from "../../sr
 import { readSource } from "../../src/features/flows-ui/checks.js";
 import { isRepository, repoId } from "../../src/features/repo/contract.js";
 import { BRANCH_FLOWS } from "../../src/plugins/builtinFlows.js";
-import { Sessions } from "#vibelang/emitted/worker/Actor";
+import { Sessions } from "../Actor.js";
 import { isMemberOn } from "./Access.js";
 import { homeRepositoryNames } from "./Conversations.js";
 import { defaultBranch } from "./Forge.js";

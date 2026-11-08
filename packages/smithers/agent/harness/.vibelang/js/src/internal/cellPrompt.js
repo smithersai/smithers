@@ -286,7 +286,7 @@ const environmentText = (environment, profile) => {
         ? undefined
         : `Harness-computed facts about the checkout and container, not the task.\n${lines.join("\n")}`;
 };
-const digest = (id, text) => Digest.digest(CanonicalJson.stringify({ id, text }));
+const digest = (id, text) => $invoke(Digest, () => (CanonicalJson.stringify({ id, text })));
 const catalogText = (flows) => {
     const names = Object.keys(flows).sort();
     if (names.length === 0) {
@@ -357,3 +357,4 @@ export const make = (flows, environment = {}, stance, profile = "workspace") => 
         { id: "cell-catalog", text: catalog, digest: digest("cell-catalog", catalog) }
     ];
 };
+import { invoke as $invoke } from "./cellPrompt.vibe.-24-call-24-ts.js";

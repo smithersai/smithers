@@ -32,6 +32,12 @@ export class StreamingCredentialCutter {
     } while (previous !== kept)
     return kept
   }
+  /**
+   * Returns the part of `value` that can be released without exposing a
+   * credential, holding back a possible credential prefix for the next chunk.
+   *
+   * @throws {never}
+   */
   push(value: string): string {
     if (this.parts.length === 0) return value
     this.pending = this.cut(this.pending + value)

@@ -47,14 +47,14 @@ export const make = (options) => {
     const stages = { produce: options.produce, review: options.review, revise: options.revise };
     const maxRounds = options.maxRounds;
     if (!Number.isSafeInteger(maxRounds) || maxRounds < 1) {
-        throw new PatternError({
+        $raise(new PatternError({
             code: "invalid_decorator",
             message: "ReviewLoop maxRounds must be a positive safe integer"
-        });
+        }));
     }
     const stall = Stalling.resolve("ReviewLoop", options.stall);
     if (stall instanceof PatternError)
-        throw stall;
+        $raise(stall);
     const { name, description } = Compose.label("reviewLoop", { maxRounds, stall: Stalling.labelOf(stall) }, options);
     const captured = stall === undefined ? { maxRounds } : { maxRounds, stall };
     const body = ({ input }) => {
@@ -147,3 +147,4 @@ export const run = (input, options) => {
         }
     });
 };
+import { raise as $raise } from "./ReviewLoop.vibe.-24-throw-24-ts.js";

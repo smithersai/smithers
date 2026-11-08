@@ -4,7 +4,7 @@ import { Cause, Config, Data, Effect, Layer, Metric, Option, Ref, Schema, Stream
 import { MAX_BLOB_BYTES, REFS_PAGE_SIZE, repoId, textOf, TREE_PAGE_SIZE } from "../src/features/repo/contract.js";
 import { RepoNotFound, RepoReader, RepoReadsPaused, RepoReadUnavailable, } from "../src/features/repo/flows.js";
 import { RefsListing, TreeListing } from "../src/features/repo/schema.js";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { codeOf } from "./ErrorCode.js";
 import * as RepoMetrics from "./RepoMetrics.js";
 import * as Repos from "./Repos.js";
 // Reading a cloned repository (decision 0006 §1, docs/features/repo.md#reads): one implementation for RepoApi's `GET`

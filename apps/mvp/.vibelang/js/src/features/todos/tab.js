@@ -37,7 +37,7 @@ export const tabTodos = (host) => Layer.effectDiscard(Effect.gen(function* () {
         const items = repo.details;
         const find = Effect.map(items.toArray, (rows) => rows.find((row) => row.repoId === draft.repoId && row.number === draft.issue && row.kind === "issue"));
         // expected: restore failures are logged by Collection
-        yield* Effect.ignore(items.restored);
+        yield* repo.restored;
         const kept = yield* find;
         if (kept !== undefined)
             return kept;

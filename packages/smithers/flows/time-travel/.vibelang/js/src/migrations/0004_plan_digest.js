@@ -18,7 +18,7 @@ import { step } from "../internal/MigrationStep.js";
 export const planDigest = Effect_1.gen(function* planDigest() {
     const sql = yield* SqlClient.SqlClient;
     // Older store builds added this column outside the migration ledger.
-    const columns = yield* Effect.suspend(() => Dialect.columns(sql, "flows_time_travel_snapshots"));
+    const columns = yield* Dialect.columns(sql, "flows_time_travel_snapshots");
     if (columns.some((column) => column.name === "plan_digest"))
         return;
     yield* step("the flows_time_travel_snapshots plan_digest column", sql `ALTER TABLE flows_time_travel_snapshots ADD COLUMN plan_digest TEXT

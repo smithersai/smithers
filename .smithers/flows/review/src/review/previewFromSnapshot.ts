@@ -1,6 +1,6 @@
 import { diffStatus } from "../git/diffStatus.ts"
 import { effectivePath } from "../git/effectivePath.ts"
-import type { PreviewOutput } from "../workflow/previewOutputSchema.vibe"
+import type { PreviewOutput } from "../workflow/previewOutputSchema.ts"
 import type { ReviewSnapshot } from "./reviewSnapshot.ts"
 import { whyExcluded } from "./whyExcluded.ts"
 

@@ -13,7 +13,7 @@ import * as Container from "../src/Container.vibe"
 import * as Exec from "../src/internal/Exec.vibe"
 import { MAX_SHELL_OUTPUT_BYTES } from "../src/internal/Text.ts"
 import * as LanguageServer from "../src/LanguageServer.vibe"
-import * as StdError from "../src/StdError.vibe"
+import * as StdError from "../src/StdError.ts"
 import * as TreeFingerprint from "../src/TreeFingerprint.ts"
 import { layer } from "./TestLayers.ts"
 

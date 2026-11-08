@@ -164,16 +164,20 @@ export const presentation = {
  * @category handlers
  * @since 1.0.0
  */
-export const run = (input) => Effect_1.suspend({ run: () => { return withSpan((Effect_1.fnUntraced(function* () {
-        const patternError = Contract.validateGlob(input.pattern);
-        if (patternError !== undefined)
-            return yield* Effect_1.fail(patternError);
-        const search = yield* Search.Search;
-        return yield* search.glob({
-            pattern: input.pattern,
-            root: input.root ?? ".",
-            hidden: input.hidden ?? false,
-            noIgnore: input.noIgnore ?? false,
-            limit: Math.min(input.limit ?? MAX_ENTRIES, MAX_ENTRIES)
+export const run = (input) => {
+    return Effect_1.gen(function* run() { return yield* withSpan((() => {
+        return Effect_1.gen(function* () {
+            const patternError = Contract.validateGlob(input.pattern);
+            if (patternError !== undefined)
+                return yield* Effect_1.fail(patternError);
+            const search = yield* Search.Search;
+            return yield* search.glob({
+                pattern: input.pattern,
+                root: input.root ?? ".",
+                hidden: input.hidden ?? false,
+                noIgnore: input.noIgnore ?? false,
+                limit: Math.min(input.limit ?? MAX_ENTRIES, MAX_ENTRIES)
+            });
         });
-    }))(), "Glob.run"); } }.run);
+    })(), "Glob.run"); });
+};

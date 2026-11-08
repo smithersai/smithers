@@ -47,11 +47,7 @@
       "vibelang-source": "./src/ApprovalAuthority.vibe",
       "default": "./.vibelang/js/src/ApprovalAuthority.js"
     },
-    "./Cancellation": {
-      "types": "./src/Cancellation.ts",
-      "vibelang-source": "./src/Cancellation.ts",
-      "default": "./.vibelang/js/src/Cancellation.js"
-    },
+    "./Cancellation": "./src/Cancellation.ts",
     "./Channels": {
       "types": "./.vibe/declarations/src/Channels.d.vibe.ts",
       "vibelang-source": "./src/Channels.vibe",
@@ -152,16 +148,8 @@
       "vibelang-source": "./src/SqlCredentialStore.vibe",
       "default": "./.vibelang/js/src/SqlCredentialStore.js"
     },
-    "./Steering": {
-      "types": "./src/Steering.ts",
-      "vibelang-source": "./src/Steering.ts",
-      "default": "./.vibelang/js/src/Steering.js"
-    },
-    "./SystemFlows": {
-      "types": "./src/SystemFlows.ts",
-      "vibelang-source": "./src/SystemFlows.ts",
-      "default": "./.vibelang/js/src/SystemFlows.js"
-    },
+    "./Steering": "./src/Steering.ts",
+    "./SystemFlows": "./src/SystemFlows.ts",
     "./WebCryptoCipher": {
       "types": "./src/WebCryptoCipher.ts",
       "vibelang-source": "./src/WebCryptoCipher.ts",
@@ -200,7 +188,6 @@
     "CHANGELOG.md",
     "docs/",
     ".vibelang/js",
-    "src/ControlFacts.vibe",
     "src/internal/planning.vibe",
     "src/ApprovalAuthority.vibe",
     "src/Control.vibe",

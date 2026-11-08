@@ -468,11 +468,11 @@ export const wrap = <Message, Output>(
 export const layer = (options?: Redaction.Options): Layer.Layer<never> =>
   Layer.effect(
     Logger.CurrentLoggers,
-    Effect.withFiber(effect (fiber) =>
-      {
+    Effect.withFiber((fiber) =>
+      Effect.sync(() => {
         const wrapped = new Set<Logger.Logger<unknown, any>>()
         for (const logger of fiber.getRef(Logger.CurrentLoggers)) wrapped.add(wrap(logger, options))
         return wrapped
-      }
+      })
     )
   )

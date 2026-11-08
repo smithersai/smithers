@@ -45,11 +45,12 @@
  * @since 0.1.0
  */
 import { Control } from "@smthrs/control";
-import { Crypto } from "@smthrs/crypto";
 import { Action, DurableClock, FlowRuntime } from "@smthrs/flow";
 import { Redaction } from "@smthrs/journal";
 import { RunStore } from "@smthrs/run-store";
 import * as Cause from "effect/Cause";
+import * as EffectDigest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -161,7 +162,8 @@ export const make = (options) => Effect.gen(function* () {
      * derivation takes its digest from injected cryptography rather than a
      * global, so the port has to hold the service to be able to run it.
      */
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* EffectDigest.Digest;
+    const random = yield* SecureRandom.SecureRandom;
     const pollInterval = Duration.fromInputUnsafe(options.pollInterval ?? "250 millis");
     const startTimeout = Duration.fromInputUnsafe(options.startTimeout ?? "30 seconds");
     const awaitTimeout = Duration.fromInputUnsafe(options.awaitTimeout ?? "10 minutes");
@@ -344,7 +346,7 @@ export const make = (options) => Effect.gen(function* () {
             return yield* Effect.timeoutOrElse(attempt, { duration: timeout, orElse: expired });
         }
         const dispatch = yield* Action.CurrentInvocationKey;
-        const key = yield* Action.idempotencyKey("agent/await", dispatch === undefined ? undefined : { parentScope: dispatch }).pipe(Effect.provideService(Crypto.Crypto, crypto), Effect.provideService(FlowRuntime.FlowInstance, parent.value));
+        const key = yield* Action.idempotencyKey("agent/await", dispatch === undefined ? undefined : { parentScope: dispatch }).pipe(Effect.provideService(EffectDigest.Digest, crypto), Effect.provideService(SecureRandom.SecureRandom, random), Effect.provideService(FlowRuntime.FlowInstance, parent.value));
         // This is an invocation deadline, not a fresh timeout on every drive.
         const deadline = yield* Action.make({
             name: "agent/await/deadline",
@@ -352,7 +354,7 @@ export const make = (options) => Effect.gen(function* () {
             idempotencyKey: key,
             success: Schema.Number,
             execute: Effect.clockWith((clock) => Effect.map(clock.currentTimeMillis, (now) => now + Duration.toMillis(timeout)))
-        }).pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime), Effect.provideService(Crypto.Crypto, crypto), Effect.provideService(FlowRuntime.FlowInstance, parent.value));
+        }).pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime), Effect.provideService(EffectDigest.Digest, crypto), Effect.provideService(SecureRandom.SecureRandom, random), Effect.provideService(FlowRuntime.FlowInstance, parent.value));
         let attempt = 0;
         while (true) {
             const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
@@ -366,7 +368,7 @@ export const make = (options) => Effect.gen(function* () {
                 name: `${key}/${attempt++}`,
                 duration: Math.min(Duration.toMillis(pollInterval), remaining),
                 inMemoryThreshold: 0
-            }).pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime), Effect.provideService(Crypto.Crypto, crypto), Effect.provideService(FlowRuntime.FlowInstance, parent.value));
+            }).pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime), Effect.provideService(EffectDigest.Digest, crypto), Effect.provideService(SecureRandom.SecureRandom, random), Effect.provideService(FlowRuntime.FlowInstance, parent.value));
         }
     });
     const send = (input) => Effect.gen(function* () {
@@ -407,7 +409,7 @@ export const make = (options) => Effect.gen(function* () {
         // their own ordinals in order. Only a step the engine replays instead
         // of running can skip one, and such a step always has a key.
         const dispatch = yield* Action.CurrentInvocationKey;
-        const messageId = yield* Action.idempotencyKey("agent/send", dispatch === undefined ? undefined : { parentScope: dispatch }).pipe(Effect.provideService(FlowRuntime.FlowInstance, parent), Effect.provideService(Crypto.Crypto, crypto));
+        const messageId = yield* Action.idempotencyKey("agent/send", dispatch === undefined ? undefined : { parentScope: dispatch }).pipe(Effect.provideService(FlowRuntime.FlowInstance, parent), Effect.provideService(EffectDigest.Digest, crypto), Effect.provideService(SecureRandom.SecureRandom, random));
         // The clock is read inside a SEALED step, so the message a re-drive
         // submits is byte-identical to the one the first drive submitted.
         // The control plane fingerprints the whole steer input and answers
@@ -426,7 +428,7 @@ export const make = (options) => Effect.gen(function* () {
             idempotencyKey: messageId,
             success: Schema.Number,
             execute: Effect.clockWith((clock) => clock.currentTimeMillis)
-        }).pipe(Effect.provideService(FlowRuntime.FlowInstance, parent), Effect.provideService(FlowRuntime.FlowRuntime, runtime), Effect.provideService(Crypto.Crypto, crypto));
+        }).pipe(Effect.provideService(FlowRuntime.FlowInstance, parent), Effect.provideService(FlowRuntime.FlowRuntime, runtime), Effect.provideService(EffectDigest.Digest, crypto), Effect.provideService(SecureRandom.SecureRandom, random));
         const receipt = yield* control.steer({
             runId: input.child,
             message: {

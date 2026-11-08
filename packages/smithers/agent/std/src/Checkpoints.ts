@@ -77,7 +77,7 @@ import * as Exec from "./internal/Exec.vibe"
 import { GitWorktree, type Repository } from "./internal/GitWorktree.ts"
 import { withoutTrailingSlash } from "./internal/Paths.ts"
 import * as Prune from "./internal/Prune.ts"
-import * as StdError from "./StdError.vibe"
+import * as StdError from "./StdError.ts"
 import * as TestRunner from "./TestRunner.vibe"
 
 /**

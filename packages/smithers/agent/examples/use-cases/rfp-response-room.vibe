@@ -25,13 +25,13 @@ import * as Schema from "effect/Schema"
 const seat = "anthropic:claude-sonnet-5-5"
 
 /** One row of the requirement matrix. */
-export schema Requirement {
-  readonly id: string
-  readonly section: string
-  readonly question: string
-  readonly mandatory: boolean
-  readonly topic: "security" | "legal" | "implementation" | "pricing" | "support" | "other"
-}
+export const Requirement = Schema.Struct({
+  id: Schema.String,
+  section: Schema.String,
+  question: Schema.String,
+  mandatory: Schema.Boolean,
+  topic: Schema.Literals(["security", "legal", "implementation", "pricing", "support", "other"])
+})
 
 /** The parsed RFP. */
 export const Rfp = Schema.Struct({
@@ -43,15 +43,15 @@ export const Rfp = Schema.Struct({
 })
 
 /** Which owner answers which requirements, from which sources. */
-export schema AnswerPlan {
-  readonly workstreams: ReadonlyArray<{
-    readonly topic: string
-    readonly ownerRole: string
-    readonly requirementIds: ReadonlyArray<string>
-  }>
-  readonly sourceCollections: ReadonlyArray<string>
-  readonly risks: ReadonlyArray<string>
-}
+export const AnswerPlan = Schema.Struct({
+  workstreams: Schema.Array(Schema.Struct({
+    topic: Schema.String,
+    ownerRole: Schema.String,
+    requirementIds: Schema.Array(Schema.String)
+  })),
+  sourceCollections: Schema.Array(Schema.String),
+  risks: Schema.Array(Schema.String)
+})
 
 /** One cited answer. */
 export const AnswerDraft = Schema.Struct({
@@ -73,19 +73,19 @@ export const Review = Schema.Struct({
 })
 
 /** The SME's decision on the exceptions. */
-export schema Approval {
-  readonly approved: boolean
-  readonly reviewer: string
-  readonly note: string
-}
+export const Approval = Schema.Struct({
+  approved: Schema.Boolean,
+  reviewer: Schema.String,
+  note: Schema.String
+})
 
 /** The packaged proposal the flow settles with. */
-export schema ProposalPackage {
-  readonly files: ReadonlyArray<string>
-  readonly openQuestions: ReadonlyArray<string>
-  readonly submissionReady: boolean
-  readonly summary: string
-}
+export const ProposalPackage = Schema.Struct({
+  files: Schema.Array(Schema.String),
+  openQuestions: Schema.Array(Schema.String),
+  submissionReady: Schema.Boolean,
+  summary: Schema.String
+})
 
 /** The SME denied the exceptions, so nothing was packaged. */
 export class ProposalDenied extends Schema.TaggedError<ProposalDenied>()(

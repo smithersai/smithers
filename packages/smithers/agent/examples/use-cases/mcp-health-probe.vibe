@@ -27,11 +27,11 @@ import * as Schema from "effect/Schema"
 const seat = "anthropic:claude-sonnet-5-5"
 
 /** The scheduler's ruling. */
-export schema ScheduleDecision {
-  readonly shouldProbe: boolean
-  readonly reason: string
-  readonly intervalMs: number
-}
+export const ScheduleDecision = Schema.Struct({
+  shouldProbe: Schema.Boolean,
+  reason: Schema.String,
+  intervalMs: Schema.Number
+})
 
 /** One server's probe. */
 export const ProbeResult = Schema.Struct({
@@ -45,13 +45,13 @@ export const ProbeResult = Schema.Struct({
 })
 
 /** The checker's verdict on every probe so far. */
-export schema Check {
-  readonly materialChange: boolean
-  readonly unhealthyServers: ReadonlyArray<string>
-  readonly driftedServers: ReadonlyArray<string>
-  readonly newIssues: ReadonlyArray<string>
-  readonly resolvedIssues: ReadonlyArray<string>
-}
+export const Check = Schema.Struct({
+  materialChange: Schema.Boolean,
+  unhealthyServers: Schema.Array(Schema.String),
+  driftedServers: Schema.Array(Schema.String),
+  newIssues: Schema.Array(Schema.String),
+  resolvedIssues: Schema.Array(Schema.String)
+})
 
 /** One report the reporter wrote. */
 export const Report = Schema.Struct({

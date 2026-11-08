@@ -36,10 +36,10 @@ export type ParkCode = typeof ParkCode.Type
  * @since 0.1.0
  * @slop
  */
-export schema ParkReason {
-  readonly code: ParkCode
-  readonly message: string
-}
+export const ParkReason = Schema.Struct({
+  code: ParkCode,
+  message: Schema.String
+})
 
 /**
  * The decoded form of {@link ParkReason}.

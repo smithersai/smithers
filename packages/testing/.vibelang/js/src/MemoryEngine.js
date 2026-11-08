@@ -9,9 +9,9 @@ import * as Deferred from "effect/Deferred";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
-import { $extract } from "vibelang-runtime";
+import { $catchExpression, $extract, $matchCache } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import * as Option_1 from "effect/Option";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -202,38 +202,20 @@ const executeRace = (store, executionId, race, input, slots, path) => Effect.fla
         onWinner: ({ index }) => {
             winnerIndex.value = index;
         }
-    }), () => Effect.orDie(Effect_1.gen(runtime.$iteratorFrame(runtime.$joinedFrame(function* () {
+    }), () => Effect.orDie(Effect_1.gen(function* () {
         const settled = yield* getExecution(store, executionId);
         const winner = recordedWinner(settled.journal, race, slots, path)?.branch;
-        {
-            let pending_1 = runtime.$normal;
-            try {
-                for (const branch of race.branches) {
-                    try {
-                        {
-                            if (branch === winner)
-                                continue;
-                            const hasOutcome = settled.journal.some((entry) => entry.stepKey === branch.key &&
-                                (entry.outcome === "aborted" ||
-                                    entry.outcome === "failed"));
-                            if (!hasOutcome) {
-                                yield* appendEntry(store, executionId, branch.key, branch.kind, "aborted", undefined);
-                            }
-                        }
-                    }
-                    catch (thrown_1) {
-                        pending_1 = thrown_1;
-                        break;
-                    }
-                }
+        for (const branch of race.branches) {
+            if (branch === winner)
+                continue;
+            const hasOutcome = settled.journal.some((entry) => entry.stepKey === branch.key &&
+                (entry.outcome === "aborted" ||
+                    entry.outcome === "failed"));
+            if (!hasOutcome) {
+                yield* appendEntry(store, executionId, branch.key, branch.kind, "aborted", undefined);
             }
-            catch (thrown_2) {
-                throw runtime.$finallyFailure(pending_1, thrown_2);
-            }
-            if (pending_1 !== runtime.$normal)
-                throw pending_1;
         }
-    })))));
+    })));
 });
 const executeStep = (store, executionId, step, input, active, slots, path) => Effect.flatMap(getExecution(store, executionId), (execution) => {
     const recorded = step.kind === "step"
@@ -269,27 +251,29 @@ const executeStep = (store, executionId, step, input, active, slots, path) => Ef
         })), { status: "failed", value });
     });
 });
-const execute = Effect_1.fnUntraced(runtime.$joinedFrame(function* execute(store, executionId, active) {
-    const execution = yield* getExecution(store, executionId);
-    const slots = occurrenceSlots(execution.flow);
-    let input = execution.payload;
-    for (let index = 0; index < execution.flow.steps.length; index++) {
-        const step = execution.flow.steps[index];
-        if (step === undefined)
-            continue;
-        const outcome = yield* executeStep(store, executionId, step, input, active, slots, String(index));
-        if (outcome.status === "failed") {
-            return yield* setStatus(store, executionId, "failed", outcome.value);
+const execute = (store, executionId, active) => {
+    return Effect_1.gen(function* execute() {
+        const execution = yield* getExecution(store, executionId);
+        const slots = occurrenceSlots(execution.flow);
+        let input = execution.payload;
+        for (let index = 0; index < execution.flow.steps.length; index++) {
+            const step = execution.flow.steps[index];
+            if (step === undefined)
+                continue;
+            const outcome = yield* executeStep(store, executionId, step, input, active, slots, String(index));
+            if (outcome.status === "failed") {
+                return yield* setStatus(store, executionId, "failed", outcome.value);
+            }
+            if (outcome.status === "suspended") {
+                const suspended = yield* getExecution(store, executionId);
+                return storedResult(suspended);
+            }
+            input = outcome.value;
         }
-        if (outcome.status === "suspended") {
-            const suspended = yield* getExecution(store, executionId);
-            return storedResult(suspended);
-        }
-        input = outcome.value;
-    }
-    active.activeStep = undefined;
-    return yield* setStatus(store, executionId, "completed", input);
-}));
+        active.activeStep = undefined;
+        return yield* setStatus(store, executionId, "completed", input);
+    });
+};
 const claimExecution = (store, options) => Effect.flatten(Ref.modify(store[EngineStoreTypeId], (state) => {
     const joinedId = options.idempotencyKey === undefined
         ? undefined
@@ -382,78 +366,117 @@ export const makeStore = () => Effect.map(Ref.make({
  * @category constructors
  * @since 0.0.0
  */
-export const make = Effect_1.fnUntraced(function* make(store) {
-    const scope = yield* Effect.scope;
-    const active = new Map();
-    const start = Effect_1.fnUntraced(function* start(executionId) {
-        const running = active.get(executionId);
-        if (running !== undefined)
-            return yield* Deferred.await(running.deferred);
-        const execution = yield* getExecution(store, executionId);
-        if (execution.status === "completed" ||
-            execution.status === "failed" ||
-            execution.status === "aborted") {
-            return storedResult(execution);
-        }
-        const deferred = Deferred.makeUnsafe();
-        const activeExecution = {
-            deferred,
-            fiber: Deferred.makeUnsafe(),
-            activeStep: undefined
+export const make = (store) => {
+    return Effect_1.gen(function* make() {
+        const scope = yield* Effect.scope;
+        const active = new Map();
+        const start = (executionId) => {
+            return Effect_1.gen(function* start() {
+                const running = active.get(executionId);
+                if (running !== undefined)
+                    return yield* Deferred.await(running.deferred);
+                const execution = yield* getExecution(store, executionId);
+                if (execution.status === "completed" ||
+                    execution.status === "failed" ||
+                    execution.status === "aborted") {
+                    return storedResult(execution);
+                }
+                const deferred = Deferred.makeUnsafe();
+                const activeExecution = {
+                    deferred,
+                    fiber: Deferred.makeUnsafe(),
+                    activeStep: undefined
+                };
+                const worker = Effect.orDie(Effect.tap(Effect.ensuring(Effect.onInterrupt(execute(store, executionId, activeExecution), () => Effect.orDie(Effect.asVoid(Effect.tap(suspendIfRunning(store, executionId, activeExecution.activeStep), (result) => Deferred.succeed(deferred, result))))), Effect.sync(() => {
+                    active.delete(executionId);
+                })), (result) => Deferred.succeed(deferred, result)));
+                // Claiming the execution is one synchronous step. The check above ran
+                // before a store read, so a concurrent caller can reach here too; only
+                // re-reading `active` in the same step that publishes keeps two callers
+                // from forking two workers over one journal. The loser joins the winner's
+                // deferred and forks nothing.
+                //
+                // Publishing an active entry and the fiber that owns it is one
+                // interruption boundary. If cancellation could land between those two
+                // writes, interrupt and resume would wait forever on deferreds no worker
+                // can complete. A typed store failure still rolls the provisional entry
+                // back, because no worker was successfully published to own its cleanup.
+                const claimed = yield* (Effect.uninterruptible(Effect.onError(Effect_1.gen(function* () {
+                    const concurrent = active.get(executionId);
+                    if (concurrent !== undefined)
+                        return concurrent;
+                    active.set(executionId, activeExecution);
+                    yield* setStatus(store, executionId, "running", execution.value);
+                    const fiber = yield* Effect.forkIn(worker, scope);
+                    yield* Deferred.succeed(activeExecution.fiber, fiber);
+                    return activeExecution;
+                }), () => Effect.sync(() => {
+                    // Only this claimant can publish here. Arming failed before a
+                    // worker was forked; concurrent callers only join this entry.
+                    active.delete(executionId);
+                }))));
+                // Only arming is protected. A caller may stop waiting without stopping
+                // the independently scoped execution, which is the engine's join
+                // contract for run and resume.
+                return yield* Deferred.await(claimed.deferred);
+            });
         };
-        const worker = Effect.orDie(Effect.tap(Effect.ensuring(Effect.onInterrupt(execute(store, executionId, activeExecution), () => Effect.orDie(Effect.asVoid(Effect.tap(suspendIfRunning(store, executionId, activeExecution.activeStep), (result) => Deferred.succeed(deferred, result))))), Effect.sync(() => {
-            active.delete(executionId);
-        })), (result) => Deferred.succeed(deferred, result)));
-        // Claiming the execution is one synchronous step. The check above ran
-        // before a store read, so a concurrent caller can reach here too; only
-        // re-reading `active` in the same step that publishes keeps two callers
-        // from forking two workers over one journal. The loser joins the winner's
-        // deferred and forks nothing.
-        //
-        // Publishing an active entry and the fiber that owns it is one
-        // interruption boundary. If cancellation could land between those two
-        // writes, interrupt and resume would wait forever on deferreds no worker
-        // can complete. A typed store failure still rolls the provisional entry
-        // back, because no worker was successfully published to own its cleanup.
-        const claimed = yield* (Effect.uninterruptible(Effect.onError(Effect_1.gen(function* () {
-            const concurrent = active.get(executionId);
-            if (concurrent !== undefined)
-                return concurrent;
-            active.set(executionId, activeExecution);
-            yield* setStatus(store, executionId, "running", execution.value);
-            const fiber = yield* Effect.forkIn(worker, scope);
-            yield* Deferred.succeed(activeExecution.fiber, fiber);
-            return activeExecution;
-        }), () => Effect.sync(() => {
-            // Only this claimant can publish here. Arming failed before a
-            // worker was forked; concurrent callers only join this entry.
-            active.delete(executionId);
-        }))));
-        // Only arming is protected. A caller may stop waiting without stopping
-        // the independently scoped execution, which is the engine's join
-        // contract for run and resume.
-        return yield* Deferred.await(claimed.deferred);
+        const engine = EngineSubjectTag.of({
+            name: "MemoryEngine",
+            run: (options) => {
+                return Effect_1.gen(function* run() {
+                    const execution = yield* claimExecution(store, options);
+                    return yield* start(execution.executionId);
+                });
+            },
+            result: (executionId) => Effect.map(getExecution(store, executionId), storedResult),
+            interrupt: (executionId) => {
+                let $do2;
+                {
+                    const catchProgram = (Effect_1.gen(function* () {
+                        const running = active.get(executionId);
+                        const result = yield* abort(store, executionId, running?.activeStep);
+                        if (running !== undefined) {
+                            yield* Deferred.succeed(running.deferred, result);
+                            yield* (Effect.flatMap(Deferred.await(running.fiber), Fiber.interrupt));
+                        }
+                    }));
+                    $do2
+                        =
+                            Effect_1.gen(function* () {
+                                return yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return catchProgram; }); })(), (e) => (_tail_1 => { return Effect_1.gen(function* () {
+                                    const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+                                    return _completion_1[0] ? yield* _value_1 : _value_1;
+                                }); })(() => { return [true, (Effect_1.fnUntraced(function* () {
+                                        const $matchCache7 = $matchCache();
+                                        try {
+                                            const $match6 = e;
+                                            {
+                                                {
+                                                    runtime.$assertMatch((typeof $match6 === "function" || typeof $match6 === "object") && $match6
+                                                        !== null && $matchCache7.propertyHas($match6, "_tag") && $matchCache7.get($match6, "_tag") === "EngineUnavailableError", $match6);
+                                                    return undefined;
+                                                }
+                                            }
+                                        }
+                                        catch (matchError_1) {
+                                            $matchCache7.threw(matchError_1);
+                                            throw matchError_1;
+                                        }
+                                        finally {
+                                            $matchCache7.finish();
+                                        }
+                                    }))()]; }));
+                            });
+                }
+                return $do2;
+            },
+            resume: start,
+            journal: (executionId) => Effect.map(getExecution(store, executionId), (execution) => execution.journal)
+        });
+        return engine;
     });
-    const engine = EngineSubjectTag.of({
-        name: "MemoryEngine",
-        run: Effect_1.fnUntraced(function* run(options) {
-            const execution = yield* claimExecution(store, options);
-            return yield* start(execution.executionId);
-        }),
-        result: (executionId) => Effect.map(getExecution(store, executionId), storedResult),
-        interrupt: (executionId) => Effect.catchTag(Effect_1.gen(function* () {
-            const running = active.get(executionId);
-            const result = yield* abort(store, executionId, running?.activeStep);
-            if (running !== undefined) {
-                yield* Deferred.succeed(running.deferred, result);
-                yield* (Effect.flatMap(Deferred.await(running.fiber), Fiber.interrupt));
-            }
-        }), "EngineUnavailableError", () => Effect.void),
-        resume: start,
-        journal: (executionId) => Effect.map(getExecution(store, executionId), (execution) => execution.journal)
-    });
-    return engine;
-});
+};
 /**
  * Provides a scoped in-memory engine backed by `store`.
  *

@@ -1,7 +1,7 @@
 /** The runner contract's schemas: what a host and a runner may send each other, and what each refuses. */
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
-import * as AgentRunner from "../src/AgentRunner.vibe"
+import * as AgentRunner from "../src/AgentRunner.ts"
 
 const is = <S extends Schema.Top>(schema: S) => Schema.is(schema as never) as (value: unknown) => boolean
 

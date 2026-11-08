@@ -57,11 +57,6 @@
       "vibelang-source": "./src/features/secrets/api.vibe",
       "default": "./.vibelang/js/src/features/secrets/api.js"
     },
-    "#vibelang/emitted/src/features/sharing/store": {
-      "types": "./.vibe/declarations/src/features/sharing/store.d.vibe.ts",
-      "vibelang-source": "./src/features/sharing/store.vibe",
-      "default": "./.vibelang/js/src/features/sharing/store.js"
-    },
     "#vibelang/emitted/src/features/secrets/metrics": {
       "types": "./.vibe/declarations/src/features/secrets/metrics.d.vibe.ts",
       "vibelang-source": "./src/features/secrets/metrics.vibe",
@@ -281,11 +276,6 @@
       "types": "./.vibe/declarations/src/features/chat/metrics.d.vibe.ts",
       "vibelang-source": "./src/features/chat/metrics.vibe",
       "default": "./.vibelang/js/src/features/chat/metrics.js"
-    },
-    "#vibelang/emitted/src/features/pulls/api": {
-      "types": "./.vibe/declarations/src/features/pulls/api.d.vibe.ts",
-      "vibelang-source": "./src/features/pulls/api.vibe",
-      "default": "./.vibelang/js/src/features/pulls/api.js"
     },
     "#vibelang/emitted/src/features/pulls/comparison": {
       "types": "./.vibe/declarations/src/features/pulls/comparison.d.vibe.ts",

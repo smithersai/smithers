@@ -70,9 +70,9 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { $catchExpression } from "vibelang-runtime";
+import { $catchExpression, $matchCache } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as HttpClient from "effect/http/HttpClient";
@@ -176,283 +176,323 @@ const timedOut = () => new CacheStore.CacheStoreError({
  * @category constructors
  * @since 0.1.0
  */
-export const make = Effect_1.fnUntraced(function* make(options) {
-    const configured = yield* Effect.try({
-        try: () => {
-            if (typeof options !== "object" || options === null)
-                throw new TypeError("options");
-            const allowed = new Set(["endpoint", "headers", "requestTimeout", "maxResponseBytes"]);
-            for (const key of Reflect.ownKeys(options)) {
-                if (typeof key !== "string" || !allowed.has(key))
-                    throw new TypeError("option");
-                const descriptor = Object.getOwnPropertyDescriptor(options, key);
-                if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
-                    throw new TypeError("option");
-                }
-            }
-            const data = (key) => Object.getOwnPropertyDescriptor(options, key)?.value;
-            const endpoint = data("endpoint");
-            if (typeof endpoint !== "string" || endpoint.length > 16 * 1024 ||
-                endpoint.trim() !== endpoint || !isWellFormedText(endpoint) ||
-                hasControlText(endpoint))
-                throw new TypeError("endpoint");
-            const rawHeaders = data("headers");
-            let headers;
-            if (rawHeaders !== undefined) {
-                if (typeof rawHeaders !== "object" || rawHeaders === null)
-                    throw new TypeError("headers");
-                const prototype = Object.getPrototypeOf(rawHeaders);
-                if (prototype !== Object.prototype && prototype !== null)
-                    throw new TypeError("headers");
-                const snapshot = Object.create(null);
-                for (const key of Reflect.ownKeys(rawHeaders)) {
-                    if (typeof key !== "string")
-                        throw new TypeError("headers");
-                    const descriptor = Object.getOwnPropertyDescriptor(rawHeaders, key);
-                    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable ||
-                        typeof descriptor.value !== "string" ||
-                        !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(key) ||
-                        descriptor.value.length > 16 * 1024 || !isWellFormedText(descriptor.value) ||
-                        hasControlText(descriptor.value))
-                        throw new TypeError("headers");
-                    Object.defineProperty(snapshot, key, {
-                        value: descriptor.value,
-                        enumerable: true,
-                        configurable: false,
-                        writable: false
-                    });
-                }
-                headers = Object.freeze(snapshot);
-            }
-            return {
-                endpoint,
-                headers,
-                requestTimeout: data("requestTimeout"),
-                maxResponseBytes: data("maxResponseBytes")
-            };
-        },
-        catch: () => invalidConfiguration("options")
-    });
-    const endpoint = yield* Effect.try({
-        try: () => new URL(configured.endpoint),
-        catch: () => invalidConfiguration("endpoint")
-    });
-    const loopback = endpoint.hostname === "localhost" || endpoint.hostname.endsWith(".localhost") ||
-        endpoint.hostname === "127.0.0.1" || endpoint.hostname === "[::1]";
-    if (endpoint.protocol !== "https:" && !(endpoint.protocol === "http:" && loopback)) {
-        return yield* Effect_1.fail(invalidConfiguration("endpoint protocol"));
-    }
-    if (endpoint.username !== "" || endpoint.password !== "" || endpoint.search !== "" || endpoint.hash !== "") {
-        return yield* Effect_1.fail(invalidConfiguration("endpoint authority"));
-    }
-    // Only the trailing slash is the client's to drop, which is all
-    // `Options.endpoint` promises. Trimming it leaves either an empty path or
-    // one that does not end in a separator, so the join below cannot double a
-    // separator, and an empty interior segment the operator configured stays a
-    // segment the server may route on. The trim is a local: assigning `""` to
-    // `URL.pathname` reads back as `/`, which is what a collapsing pass here
-    // used to hide by rewriting interior separators too.
-    const rootPath = endpoint.pathname.replace(/\/+$/, "");
-    const acPrefix = `${rootPath}/ac/`;
-    const base = endpoint.origin;
-    const requestDeadlineOption = yield* Effect.try({
-        try: () => Duration.fromInput(configured.requestTimeout ?? defaultRequestTimeout),
-        /* v8 ignore next -- defensive normalization if a future Duration input implementation throws */
-        catch: () => invalidConfiguration("requestTimeout")
-    });
-    if (Option.isNone(requestDeadlineOption) ||
-        !Number.isFinite(Duration.toMillis(requestDeadlineOption.value)) ||
-        Duration.toMillis(requestDeadlineOption.value) <= 0)
-        return yield* Effect_1.fail(invalidConfiguration("requestTimeout"));
-    const requestDeadline = requestDeadlineOption.value;
-    const maxResponseBytes = configured.maxResponseBytes ?? maximumEntryBytes;
-    if (!Number.isSafeInteger(maxResponseBytes) || maxResponseBytes <= 0 ||
-        maxResponseBytes > maximumEntryBytes)
-        return yield* Effect_1.fail(invalidConfiguration("maxResponseBytes"));
-    const client = yield* HttpClient.HttpClient;
-    const headers = configured.headers;
-    const credentialNames = Object.keys(headers ?? {}).map((name) => name.toLowerCase());
-    const authorize = (request) => headers === undefined ? request : HttpClientRequest.setHeaders(request, headers);
-    const acUrl = (keyDigest) => {
-        const target = new URL(base);
-        target.pathname = `${acPrefix}${keyDigest}`;
-        /* v8 ignore next -- KeyDigest excludes every path separator and dot segment */
-        if (!target.pathname.startsWith(acPrefix))
-            throw new Error("cache-key path escaped its namespace");
-        return target.toString();
-    };
-    // One budget for the whole operation, not one per phase. `client.execute`
-    // resolves when the response *headers* arrive, so a per-phase deadline let
-    // a tier that answered headers promptly and then stalled the body spend the
-    // configured value twice, and a caller budgeting 60 s waited 120 s.
-    // The scope also aborts unread bodies on early status/length returns.
-    const withDeadline = (effect) => Effect.catchTag(Effect.timeout(Effect.scoped(effect), requestDeadline), "TimeoutError", () => Effect.fail(timedOut()));
-    // Redirects are never followed. A tier that answers 3xx to another origin
-    // would otherwise receive the credential headers there: fetch strips only
-    // `authorization` on a cross-origin hop, never a custom header such as
-    // `x-api-key`. A fetch-backed client keeps the caller's other options and
-    // hands back the 3xx, which every operation reports as `persistence_failed`.
-    const send = (operation, request) => Effect.flatMap(Effect.serviceOption(FetchHttpClient.RequestInit), (init) => Effect.mapError(Effect.updateService(Effect.provideService(HttpClient.withScope(client).execute(authorize(request)), FetchHttpClient.RequestInit, {
-        ...Option.getOrUndefined(init),
-        redirect: "manual"
-    }), Headers.CurrentRedactedNames, (names) => [...names, ...credentialNames]), (cause) => transportFailure(operation, cause)));
-    const readBounded = Effect_1.fnUntraced(runtime.$joinedFrame(function* readBounded(response) {
-        const declared = response.headers["content-length"];
-        if (declared !== undefined) {
-            const declaredBytes = Number(declared);
-            if (!/^\d+$/.test(declared) || !Number.isSafeInteger(declaredBytes)) {
-                return yield* Effect_1.fail(transportFailure("a lookup body", undefined));
-            }
-            if (declaredBytes > maxResponseBytes) {
-                return yield* Effect_1.fail(bodyTooLarge(declaredBytes, maxResponseBytes));
-            }
-        }
-        const chunks = [];
-        let received = 0;
-        yield* $catchExpression(() => Stream.runForEach(response.stream, (chunk) => Effect.suspend(() => {
-            received += chunk.byteLength;
-            if (received > maxResponseBytes)
-                return Effect.fail(bodyTooLarge(received, maxResponseBytes));
-            chunks.push(new Uint8Array(chunk));
-            return Effect.void;
-        })), (cause) => Effect_1.suspend(() => { return Effect_1.fail(Schema.is(CacheStore.CacheStoreError)(cause)
-            ? cause
-            : transportFailure("a lookup body", cause)); }));
-        const bytes = new Uint8Array(received);
-        let offset = 0;
-        {
-            let pending_1 = runtime.$normal;
-            try {
-                for (const chunk of chunks) {
-                    try {
-                        {
-                            bytes.set(chunk, offset);
-                            offset += chunk.byteLength;
-                        }
-                    }
-                    catch (thrown_1) {
-                        pending_1 = thrown_1;
-                        break;
+export const make = (options) => {
+    return Effect_1.gen(function* make() {
+        const configured = yield* Effect.try({
+            try: () => {
+                if (typeof options !== "object" || options === null)
+                    $raise(new TypeError("options"));
+                const allowed = new Set(["endpoint", "headers", "requestTimeout", "maxResponseBytes"]);
+                for (const key of Reflect.ownKeys(options)) {
+                    if (typeof key !== "string" || !allowed.has(key))
+                        $raise(new TypeError("option"));
+                    const descriptor = Object.getOwnPropertyDescriptor(options, key);
+                    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
+                        $raise(new TypeError("option"));
                     }
                 }
-            }
-            catch (thrown_2) {
-                throw runtime.$finallyFailure(pending_1, thrown_2);
-            }
-            if (pending_1 !== runtime.$normal)
-                throw pending_1;
-        }
-        return bytes;
-    }));
-    const get = Effect.fn("RemoteCacheStore.get")((keyDigest, getOptions) => withDeadline(Effect_1.gen(runtime.$joinedFrame(function* () {
-        yield* CacheAdmission.validateKey(keyDigest);
-        yield* Effect.annotateCurrentSpan({ keyDigest });
-        const recordedBy = yield* CacheAdmission.validateRecordedBy(getOptions?.recordedBy);
-        const maxAgeMs = yield* CacheAdmission.validateAge("maxAgeMs", getOptions?.maxAgeMs);
-        const floorMs = maxAgeMs === undefined
-            ? undefined
-            : (yield* Clock.currentTimeMillis) - maxAgeMs;
-        const lookup = HttpClientRequest.get(acUrl(keyDigest));
-        const request = recordedBy === undefined
-            ? lookup
-            : HttpClientRequest.setUrlParams(lookup, {
-                recordedRunId: recordedBy.runId,
-                recordedEventSeq: String(recordedBy.eventSeq)
-            });
-        const response = yield* send("a lookup", request);
-        if (response.status === 404)
-            return Option.none();
-        if (!isOk(response.status))
-            return yield* Effect_1.fail(unexpectedStatus("a lookup", response.status));
-        const bytes = yield* readBounded(response);
-        const body = yield* Effect.try({
-            try: () => JSON.parse(decoder.decode(bytes)),
-            catch: (cause) => transportFailure("a lookup body", cause)
+                const data = (key) => Object.getOwnPropertyDescriptor(options, key)?.value;
+                const endpoint = data("endpoint");
+                if (typeof endpoint !== "string" || endpoint.length > 16 * 1024 ||
+                    endpoint.trim() !== endpoint || !isWellFormedText(endpoint) ||
+                    hasControlText(endpoint))
+                    $raise(new TypeError("endpoint"));
+                const rawHeaders = data("headers");
+                let headers;
+                if (rawHeaders !== undefined) {
+                    if (typeof rawHeaders !== "object" || rawHeaders === null)
+                        $raise(new TypeError("headers"));
+                    const prototype = Object.getPrototypeOf(rawHeaders);
+                    if (prototype !== Object.prototype && prototype !== null)
+                        $raise(new TypeError("headers"));
+                    const snapshot = Object.create(null);
+                    for (const key of Reflect.ownKeys(rawHeaders)) {
+                        if (typeof key !== "string")
+                            $raise(new TypeError("headers"));
+                        const descriptor = Object.getOwnPropertyDescriptor(rawHeaders, key);
+                        if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable ||
+                            typeof descriptor.value !== "string" ||
+                            !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(key) ||
+                            descriptor.value.length > 16 * 1024 || !isWellFormedText(descriptor.value) ||
+                            hasControlText(descriptor.value))
+                            $raise(new TypeError("headers"));
+                        Object.defineProperty(snapshot, key, {
+                            value: descriptor.value,
+                            enumerable: true,
+                            configurable: false,
+                            writable: false
+                        });
+                    }
+                    headers = Object.freeze(snapshot);
+                }
+                return {
+                    endpoint,
+                    headers,
+                    requestTimeout: data("requestTimeout"),
+                    maxResponseBytes: data("maxResponseBytes")
+                };
+            },
+            catch: () => invalidConfiguration("options")
         });
-        // Compact numeric encodings can grow during canonicalization. Bound
-        // the same envelope that a later publication must encode.
-        const entry = yield* $catchExpression(() => (Effect.tap(CacheAdmission.snapshotEntry(body), (entry) => CacheAdmission.encodeEntryCanonical(entry))), () => Effect_1.suspend(() => { return Effect_1.fail(new CacheStore.CacheStoreError({
-            code: "decode_failed",
-            message: "the remote cache tier returned an entry that is not a bounded CacheEntry"
-        })); }));
-        // A tier that answers a lookup with someone else's entry would hand
-        // the caller a result under the wrong key — the one thing content
-        // addressing must never allow.
-        if (entry.keyDigest !== keyDigest) {
-            return yield* Effect_1.fail(new CacheStore.CacheStoreError({
-                code: "decode_failed",
-                message: `the remote cache tier answered ${keyDigest} with an entry for ${entry.keyDigest}`
-            }));
+        const endpoint = yield* Effect.try({
+            try: () => new URL(configured.endpoint),
+            catch: () => invalidConfiguration("endpoint")
+        });
+        const loopback = endpoint.hostname === "localhost" || endpoint.hostname.endsWith(".localhost") ||
+            endpoint.hostname === "127.0.0.1" || endpoint.hostname === "[::1]";
+        if (endpoint.protocol !== "https:" && !(endpoint.protocol === "http:" && loopback)) {
+            return yield* Effect_1.fail(invalidConfiguration("endpoint protocol"));
         }
-        // A tier answering a fenced lookup with an entry recorded under
-        // different provenance is serving its head, which is what the server
-        // contract asks of a tier holding no row for that provenance and what
-        // the SQL tier does in the same position. It is accepted as that
-        // fallback: nothing on the wire distinguishes it from a tier that
-        // ignored the parameters, which is why the module doc makes a
-        // conforming server a precondition of a fenced read.
-        if (floorMs !== undefined && entry.createdAtMs < floorMs)
-            return Option.none();
-        return Option.some(entry);
-    }))));
-    const put = Effect.fn("RemoteCacheStore.put")((candidate) => withDeadline(Effect_1.gen(runtime.$joinedFrame(function* () {
-        const entry = yield* CacheAdmission.snapshotEntry(candidate);
-        yield* Effect.annotateCurrentSpan({ keyDigest: entry.keyDigest });
-        // The wire bytes are the canonical form itself. Besides refusing
-        // values JSON cannot represent, this gives structurally equal entries
-        // identical bytes on every host regardless of object insertion order.
-        // `snapshotEntry` has already admitted `result` and `meta` under the
-        // per-field policy (an `undefined` member, a bigint or a cycle fails
-        // there), so this is the one encoding a publication performs: the
-        // whole entry under the envelope-aware policy, not the per-field one.
-        // Each field keeps its own node and depth budget, the envelope adds
-        // one nesting level and a fixed node allowance, and the whole-entry
-        // byte bound is enforced on the encoding itself. `get` checks this
-        // same whole-entry encoding after admitting each field, so a
-        // publication never refuses an entry a lookup could have returned.
-        const body = yield* CacheAdmission.encodeEntryCanonical(entry);
-        const response = yield* send("a publication", HttpClientRequest.put(acUrl(entry.keyDigest)).pipe(HttpClientRequest.bodyText(body, "application/json")));
-        if (response.status === 409)
-            return { _tag: "Conflict" };
-        if (!isOk(response.status))
-            return yield* Effect_1.fail(unexpectedStatus("a publication", response.status));
-        return response.status === 201 ? { _tag: "Inserted" } : { _tag: "ExistingSame" };
-    }))));
-    const evict = Effect.fn("RemoteCacheStore.evict")((keyDigest, evictOptions) => withDeadline(Effect_1.gen(function* () {
-        // An empty key would aim the protocol's one destructive verb at the
-        // `/ac/` collection root instead of a single entry, so the preflight
-        // that guards `get` guards the DELETE all the more.
-        yield* CacheAdmission.validateKey(keyDigest);
-        yield* Effect.annotateCurrentSpan({ keyDigest });
-        const fenced = yield* CacheAdmission.validateFence(evictOptions?.ifRecordedBy);
-        // The provenance fence rides in the request the same way it rides in
-        // the SQL `DELETE`: the server compares before deleting, so a fresher
-        // entry recorded by another machine between this caller's lookup and
-        // its eviction is never dropped with the poison. The request reads the
-        // decoded fence, never the caller's provenance object.
-        const deletion = HttpClientRequest.make("DELETE")(acUrl(keyDigest));
-        const request = fenced === undefined
-            ? deletion
-            : HttpClientRequest.setUrlParams(deletion, {
-                recordedRunId: fenced.runId,
-                recordedEventSeq: String(fenced.eventSeq)
+        if (endpoint.username !== "" || endpoint.password !== "" || endpoint.search !== "" || endpoint.hash !== "") {
+            return yield* Effect_1.fail(invalidConfiguration("endpoint authority"));
+        }
+        // Only the trailing slash is the client's to drop, which is all
+        // `Options.endpoint` promises. Trimming it leaves either an empty path or
+        // one that does not end in a separator, so the join below cannot double a
+        // separator, and an empty interior segment the operator configured stays a
+        // segment the server may route on. The trim is a local: assigning `""` to
+        // `URL.pathname` reads back as `/`, which is what a collapsing pass here
+        // used to hide by rewriting interior separators too.
+        const rootPath = endpoint.pathname.replace(/\/+$/, "");
+        const acPrefix = `${rootPath}/ac/`;
+        const base = endpoint.origin;
+        const requestDeadlineOption = yield* Effect.try({
+            try: () => Duration.fromInput(configured.requestTimeout ?? defaultRequestTimeout),
+            /* v8 ignore next -- defensive normalization if a future Duration input implementation throws */
+            catch: () => invalidConfiguration("requestTimeout")
+        });
+        if (Option.isNone(requestDeadlineOption) ||
+            !Number.isFinite(Duration.toMillis(requestDeadlineOption.value)) ||
+            Duration.toMillis(requestDeadlineOption.value) <= 0)
+            return yield* Effect_1.fail(invalidConfiguration("requestTimeout"));
+        const requestDeadline = requestDeadlineOption.value;
+        const maxResponseBytes = configured.maxResponseBytes ?? maximumEntryBytes;
+        if (!Number.isSafeInteger(maxResponseBytes) || maxResponseBytes <= 0 ||
+            maxResponseBytes > maximumEntryBytes)
+            return yield* Effect_1.fail(invalidConfiguration("maxResponseBytes"));
+        const client = yield* HttpClient.HttpClient;
+        const headers = configured.headers;
+        const credentialNames = Object.keys(headers ?? {}).map((name) => name.toLowerCase());
+        const authorize = (request) => headers === undefined ? request : HttpClientRequest.setHeaders(request, headers);
+        const acUrl = (keyDigest) => {
+            const target = new URL(base);
+            target.pathname = `${acPrefix}${keyDigest}`;
+            /* v8 ignore next -- KeyDigest excludes every path separator and dot segment */
+            if (!target.pathname.startsWith(acPrefix))
+                $raise(new Error("cache-key path escaped its namespace"));
+            return target.toString();
+        };
+        // One budget for the whole operation, not one per phase. `client.execute`
+        // resolves when the response *headers* arrive, so a per-phase deadline let
+        // a tier that answered headers promptly and then stalled the body spend the
+        // configured value twice, and a caller budgeting 60 s waited 120 s.
+        // The scope also aborts unread bodies on early status/length returns.
+        const withDeadline = (effect) => {
+            let $do1;
+            {
+                const catchProgram = (Effect.timeout(Effect.scoped(effect), requestDeadline));
+                $do1
+                    =
+                        Effect_1.gen(function* () {
+                            return yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return catchProgram; }); })(), (e) => (_tail_1 => { return Effect_1.gen(function* () {
+                                const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+                                return _completion_1[0] ? yield* _value_1 : _value_1;
+                            }); })(() => { return [true, (Effect_1.fnUntraced(function* () {
+                                    const $matchCache2 = $matchCache();
+                                    try {
+                                        const $match1 = e;
+                                        {
+                                            if ((typeof $match1 === "function" || typeof $match1 === "object") && $match1
+                                                !== null && $matchCache2.propertyHas($match1, "_tag") && $matchCache2.get($match1, "_tag") === "TimeoutError") {
+                                                return yield* (() => { return (_tail_2 => { return Effect_1.gen(function* () {
+                                                    const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
+                                                    return _completion_2[0] ? yield* _value_2 : _value_2;
+                                                }); })(() => { return [true, Effect_1.fail(timedOut())]; }); })();
+                                            }
+                                        }
+                                        return yield* (() => { return (_tail_3 => { return Effect_1.gen(function* () {
+                                            const _completion_3 = _tail_3(), _value_3 = _completion_3[1];
+                                            return _completion_3[0] ? yield* _value_3 : _value_3;
+                                        }); })(() => { return [true, Effect_1.fail(e)]; }); })();
+                                    }
+                                    catch (matchError_1) {
+                                        $matchCache2.threw(matchError_1);
+                                        throw matchError_1;
+                                    }
+                                    finally {
+                                        $matchCache2.finish();
+                                    }
+                                }))()]; }));
+                        });
+            }
+            return $do1;
+            // Redirects are never followed. A tier that answers 3xx to another origin
+            // would otherwise receive the credential headers there: fetch strips only
+            // `authorization` on a cross-origin hop, never a custom header such as
+            // `x-api-key`. A fetch-backed client keeps the caller's other options and
+            // hands back the 3xx, which every operation reports as `persistence_failed`.
+        };
+        // Redirects are never followed. A tier that answers 3xx to another origin
+        // would otherwise receive the credential headers there: fetch strips only
+        // `authorization` on a cross-origin hop, never a custom header such as
+        // `x-api-key`. A fetch-backed client keeps the caller's other options and
+        // hands back the 3xx, which every operation reports as `persistence_failed`.
+        const send = (operation, request) => Effect.flatMap(Effect.serviceOption(FetchHttpClient.RequestInit), (init) => Effect.mapError(Effect.updateService(Effect.provideService(HttpClient.withScope(client).execute(authorize(request)), FetchHttpClient.RequestInit, {
+            ...Option.getOrUndefined(init),
+            redirect: "manual"
+        }), Headers.CurrentRedactedNames, (names) => [...names, ...credentialNames]), (cause) => transportFailure(operation, cause)));
+        const readBounded = (response) => {
+            return Effect_1.gen(function* readBounded() {
+                const declared = response.headers["content-length"];
+                if (declared !== undefined) {
+                    const declaredBytes = Number(declared);
+                    if (!/^\d+$/.test(declared) || !Number.isSafeInteger(declaredBytes)) {
+                        return yield* Effect_1.fail(transportFailure("a lookup body", undefined));
+                    }
+                    if (declaredBytes > maxResponseBytes) {
+                        return yield* Effect_1.fail(bodyTooLarge(declaredBytes, maxResponseBytes));
+                    }
+                }
+                const chunks = [];
+                let received = 0;
+                yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return Stream.runForEach(response.stream, (chunk) => Effect.suspend(() => {
+                    received += chunk.byteLength;
+                    if (received > maxResponseBytes)
+                        return Effect.fail(bodyTooLarge(received, maxResponseBytes));
+                    chunks.push(new Uint8Array(chunk));
+                    return Effect.void;
+                })); }); })(), (cause) => (_tail_4 => { return Effect_1.gen(function* () {
+                    const _completion_4 = _tail_4(), _value_4 = _completion_4[1];
+                    return _completion_4[0] ? yield* _value_4 : _value_4;
+                }); })(() => { return [true, Effect_1.fail(Schema.is(CacheStore.CacheStoreError)(cause)
+                        ? cause
+                        : transportFailure("a lookup body", cause))]; }));
+                const bytes = new Uint8Array(received);
+                let offset = 0;
+                for (const chunk of chunks) {
+                    bytes.set(chunk, offset);
+                    offset += chunk.byteLength;
+                }
+                return bytes;
             });
-        const response = yield* send("an eviction", request);
-        if (response.status === 404)
-            return false;
-        if (!isOk(response.status))
-            return yield* Effect_1.fail(unexpectedStatus("an eviction", response.status));
-        return true;
-    })));
-    const sweepExpired = Effect.fn("RemoteCacheStore.sweepExpired")((olderThanMs) => 
-    // The shared tier owns its retention. A client that swept it would
-    // delete rows other machines are still replaying from, which is the
-    // same reason `CombinedCacheStore.evict` never reaches across. The
-    // argument is still validated, so a caller mistake is reported here
-    // rather than silently absorbed.
-    Effect.as(CacheAdmission.validateAge("olderThanMs", olderThanMs), 0));
-    return { get, put, evict, sweepExpired };
-});
+        };
+        const get = Effect.fn("RemoteCacheStore.get")((keyDigest, getOptions) => withDeadline(Effect_1.gen(function* () {
+            yield* CacheAdmission.validateKey(keyDigest);
+            yield* Effect.annotateCurrentSpan({ keyDigest });
+            const recordedBy = yield* CacheAdmission.validateRecordedBy(getOptions?.recordedBy);
+            const maxAgeMs = yield* CacheAdmission.validateAge("maxAgeMs", getOptions?.maxAgeMs);
+            const floorMs = maxAgeMs === undefined
+                ? undefined
+                : (yield* Clock.currentTimeMillis) - maxAgeMs;
+            const lookup = HttpClientRequest.get(acUrl(keyDigest));
+            const request = recordedBy === undefined
+                ? lookup
+                : HttpClientRequest.setUrlParams(lookup, {
+                    recordedRunId: recordedBy.runId,
+                    recordedEventSeq: String(recordedBy.eventSeq)
+                });
+            const response = yield* send("a lookup", request);
+            if (response.status === 404)
+                return Option.none();
+            if (!isOk(response.status))
+                return yield* Effect_1.fail(unexpectedStatus("a lookup", response.status));
+            const bytes = yield* readBounded(response);
+            const body = yield* Effect.try({
+                try: () => JSON.parse(decoder.decode(bytes)),
+                catch: (cause) => transportFailure("a lookup body", cause)
+            });
+            // Compact numeric encodings can grow during canonicalization. Bound
+            // the same envelope that a later publication must encode.
+            const entry = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return (Effect.tap(CacheAdmission.snapshotEntry(body), (entry) => CacheAdmission.encodeEntryCanonical(entry))); }); })(), () => (_tail_5 => { return Effect_1.gen(function* () {
+                const _completion_5 = _tail_5(), _value_5 = _completion_5[1];
+                return _completion_5[0] ? yield* _value_5 : _value_5;
+            }); })(() => { return [true, Effect_1.fail(new CacheStore.CacheStoreError({
+                    code: "decode_failed",
+                    message: "the remote cache tier returned an entry that is not a bounded CacheEntry"
+                }))]; })
+            // A tier that answers a lookup with someone else's entry would hand
+            // the caller a result under the wrong key — the one thing content
+            // addressing must never allow.
+            );
+            // A tier that answers a lookup with someone else's entry would hand
+            // the caller a result under the wrong key — the one thing content
+            // addressing must never allow.
+            if (entry.keyDigest !== keyDigest) {
+                return yield* Effect_1.fail(new CacheStore.CacheStoreError({
+                    code: "decode_failed",
+                    message: `the remote cache tier answered ${keyDigest} with an entry for ${entry.keyDigest}`
+                }));
+            }
+            // A tier answering a fenced lookup with an entry recorded under
+            // different provenance is serving its head, which is what the server
+            // contract asks of a tier holding no row for that provenance and what
+            // the SQL tier does in the same position. It is accepted as that
+            // fallback: nothing on the wire distinguishes it from a tier that
+            // ignored the parameters, which is why the module doc makes a
+            // conforming server a precondition of a fenced read.
+            if (floorMs !== undefined && entry.createdAtMs < floorMs)
+                return Option.none();
+            return Option.some(entry);
+        })));
+        const put = Effect.fn("RemoteCacheStore.put")((candidate) => withDeadline(Effect_1.gen(function* () {
+            const entry = yield* CacheAdmission.snapshotEntry(candidate);
+            yield* Effect.annotateCurrentSpan({ keyDigest: entry.keyDigest });
+            // The wire bytes are the canonical form itself. Besides refusing
+            // values JSON cannot represent, this gives structurally equal entries
+            // identical bytes on every host regardless of object insertion order.
+            // `snapshotEntry` has already admitted `result` and `meta` under the
+            // per-field policy (an `undefined` member, a bigint or a cycle fails
+            // there), so this is the one encoding a publication performs: the
+            // whole entry under the envelope-aware policy, not the per-field one.
+            // Each field keeps its own node and depth budget, the envelope adds
+            // one nesting level and a fixed node allowance, and the whole-entry
+            // byte bound is enforced on the encoding itself. `get` checks this
+            // same whole-entry encoding after admitting each field, so a
+            // publication never refuses an entry a lookup could have returned.
+            const body = yield* CacheAdmission.encodeEntryCanonical(entry);
+            const response = yield* send("a publication", HttpClientRequest.bodyText(HttpClientRequest.put(acUrl(entry.keyDigest)), body, "application/json"));
+            if (response.status === 409)
+                return { _tag: "Conflict" };
+            if (!isOk(response.status))
+                return yield* Effect_1.fail(unexpectedStatus("a publication", response.status));
+            return response.status === 201 ? { _tag: "Inserted" } : { _tag: "ExistingSame" };
+        })));
+        const evict = Effect.fn("RemoteCacheStore.evict")((keyDigest, evictOptions) => withDeadline(Effect_1.gen(function* () {
+            // An empty key would aim the protocol's one destructive verb at the
+            // `/ac/` collection root instead of a single entry, so the preflight
+            // that guards `get` guards the DELETE all the more.
+            yield* CacheAdmission.validateKey(keyDigest);
+            yield* Effect.annotateCurrentSpan({ keyDigest });
+            const fenced = yield* CacheAdmission.validateFence(evictOptions?.ifRecordedBy);
+            // The provenance fence rides in the request the same way it rides in
+            // the SQL `DELETE`: the server compares before deleting, so a fresher
+            // entry recorded by another machine between this caller's lookup and
+            // its eviction is never dropped with the poison. The request reads the
+            // decoded fence, never the caller's provenance object.
+            const deletion = HttpClientRequest.make("DELETE")(acUrl(keyDigest));
+            const request = fenced === undefined
+                ? deletion
+                : HttpClientRequest.setUrlParams(deletion, {
+                    recordedRunId: fenced.runId,
+                    recordedEventSeq: String(fenced.eventSeq)
+                });
+            const response = yield* send("an eviction", request);
+            if (response.status === 404)
+                return false;
+            if (!isOk(response.status))
+                return yield* Effect_1.fail(unexpectedStatus("an eviction", response.status));
+            return true;
+        })));
+        const sweepExpired = Effect.fn("RemoteCacheStore.sweepExpired")((olderThanMs) => 
+        // The shared tier owns its retention. A client that swept it would
+        // delete rows other machines are still replaying from, which is the
+        // same reason `CombinedCacheStore.evict` never reaches across. The
+        // argument is still validated, so a caller mistake is reported here
+        // rather than silently absorbed.
+        Effect.as(CacheAdmission.validateAge("olderThanMs", olderThanMs), 0));
+        return { get, put, evict, sweepExpired };
+    });
+};
 /**
  * Provides a remote cache store as the `CacheStore` tag.
  *
@@ -464,3 +504,4 @@ export const make = Effect_1.fnUntraced(function* make(options) {
  * @since 0.1.0
  */
 export const layer = (options) => Layer.effect(CacheStore.CacheStore)(make(options));
+import { raise as $raise } from "./RemoteCacheStore.vibe.-24-throw-24-ts.js";

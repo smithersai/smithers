@@ -92,13 +92,13 @@ export type SandboxSelection = typeof SandboxSelection.Type
  * @category models
  * @since 0.1.0
  */
-export schema EffectDeclaration {
-  readonly reads: ReadonlyArray<string>
-  readonly writes: ReadonlyArray<string>
-  readonly mode: "hermetic" | "expected"
-  readonly onConflict: "serialize" | "lane" | "fail"
-  readonly tier: EffectTier
-}
+export const EffectDeclaration = Schema.Struct({
+  reads: Schema.Array(Schema.String),
+  writes: Schema.Array(Schema.String),
+  mode: Schema.Literals(["hermetic", "expected"]),
+  onConflict: Schema.Literals(["serialize", "lane", "fail"]),
+  tier: EffectTier
+})
 
 /**
  * The canonical effect declaration shared with `/core`.
@@ -382,11 +382,11 @@ export type FlowBody = typeof FlowBody.Type
  * @category models
  * @since 0.1.0
  */
-export schema PackRef {
-  readonly name: Schema.NonEmptyString
-  readonly version: Schema.NonEmptyString
-  readonly origin: "local" | "installed"
-}
+export const PackRef = Schema.Struct({
+  name: Schema.NonEmptyString,
+  version: Schema.NonEmptyString,
+  origin: Schema.Literals(["local", "installed"])
+})
 
 /**
  * The pack a descriptor was discovered in.
@@ -690,11 +690,23 @@ export type FlowActivity = typeof FlowActivity.Type
  * @category schemas
  * @since 1.0.0-rc.0
  */
-export schema CallPresentation {
-  readonly verb: { readonly pending: string; readonly success: string; readonly failure: string }
-  readonly subject: "path" | "command" | "patch" | "selection" | "pattern" | "none"
-  readonly result: "text" | "read" | "write" | "edit" | "patch" | "tests" | "command" | "matches" | "paths" | "entries" | "none"
-}
+export const CallPresentation = Schema.Struct({
+  verb: Schema.Struct({ pending: Schema.String, success: Schema.String, failure: Schema.String }),
+  subject: Schema.Literals(["path", "command", "patch", "selection", "pattern", "none"]),
+  result: Schema.Literals([
+    "text",
+    "read",
+    "write",
+    "edit",
+    "patch",
+    "tests",
+    "command",
+    "matches",
+    "paths",
+    "entries",
+    "none"
+  ])
+})
 
 /**
  * Serializable call presentation.

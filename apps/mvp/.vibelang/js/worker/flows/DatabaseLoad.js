@@ -5,8 +5,8 @@ import { Node } from "@smthrs/plan";
 import { Clock, Duration, Effect, Layer, Metric, Option, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 import { ALERT_PERCENT } from "../../infra/Connections.js";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
-import * as Flows from "#vibelang/emitted/worker/Flows";
+import { codeOf } from "../ErrorCode.js";
+import * as Flows from "../Flows.js";
 import * as HyperdrivePool from "../HyperdrivePool.js";
 import * as AlertDelivery from "./AlertDelivery.js";
 // `ops/DatabaseLoad { from, until }` (docs/features/database-alerts.md): how many connections the app's Postgres has

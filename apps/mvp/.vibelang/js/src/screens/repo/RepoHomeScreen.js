@@ -10,5 +10,5 @@ import "../../../../../src/screens/repo/repo-screen.css";
 // file tree, as on any repository. The route's loader opens the location and the home; this screen only renders what
 // the device has.
 export function RepoHomeScreen() {
-    return (_jsxs("main", { className: "repo-screen", "aria-label": "Repository", children: [_jsx(RepoHeader, {}), _jsxs(PageBody, { width: "wide", children: [_jsx(HomeTabs, { active: "home" }), _jsx(HomePage, { tree: _jsx(RepoPage, {}) })] })] }));
+    return (_jsxs("main", { className: "repo-screen", "aria-label": "Repository", children: [_jsx(RepoHeader, {}), _jsxs(PageBody, { width: "wide", children: [_jsx(HomeTabs, { active: "home" }), _jsx(HomePage, { tree: _jsx(RepoPage, {}), showConnection: false })] })] }));
 }

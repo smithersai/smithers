@@ -635,6 +635,16 @@ accept) => {
 const durable = { header: false, diagnostic: false };
 const urlCredentials = /\b([a-z][a-z0-9+.-]{0,30}:\/\/[^\s:@/]*):(?!\[REDACTED\]@)[^\s/?#"'`\\]*@/gi;
 const urlCredentialsSource = urlCredentials.source;
+// Smithers credential words. Keep the patterns non-global for repeated tests.
+const machineToken = /smm_[A-Za-z0-9_-]{43,}/;
+const scopedToken = /smt1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43,}/;
+/**
+ * Redact the containing dotted identifier too: an API key or JWT can enclose
+ * a Smithers-shaped substring. Replacing only its interior would prevent the
+ * other rules from recognizing the remaining credential. The disjoint words
+ * keep this scan linear and leave sentence punctuation outside the match.
+ */
+const redactCredentialWord = (text, token) => text.replace(/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/g, (word) => token.test(word) ? placeholder : word);
 /**
  * Best-effort textual rules for credential shapes observed in real reports.
  * Every replacement reaches a fixed point so replaying or exporting an entry
@@ -654,6 +664,23 @@ export const defaultRules = [
         // replaced, is userinfo the URL rule then reads whole, so a second pass
         // finds nothing left to change.
         pattern: /-----BEGIN[^-]*PRIVATE KEY(?: BLOCK)?-----(?:(?!-----BEGIN)[\s\S])*?(?:-----END[^-]*-----|(?=-----BEGIN)|$)/g
+    },
+    {
+        id: "smithers-scoped-token",
+        // control/ScopedToken: base64url JSON claims and a 32-byte HMAC-SHA256.
+        // Match the most specific prefix first; claims/signatures can contain smm_.
+        // This version prefix is not a JWT header, so the JWT rule cannot cover it.
+        pattern: new RegExp(scopedToken.source, "g"),
+        rewrite: (text) => redactCredentialWord(text, scopedToken)
+    },
+    {
+        id: "smithers-machine-token",
+        // ops/machine-token/issue.ts: smm_ + 32 random bytes in base64url (43 chars).
+        // Run before provider-key rules that could consume a token's interior.
+        // No word boundary: URL paths and log/Markdown underscores can touch a token.
+        // Consume a longer suffix too so a wrapper cannot leave credential material.
+        pattern: new RegExp(machineToken.source, "g"),
+        rewrite: (text) => redactCredentialWord(text, machineToken)
     },
     // Git HTTPS OAuth credentials place the secret in the username. Match
     // before password rewriting removes the x-oauth-basic marker.
@@ -879,6 +906,91 @@ export const diagnosticRules = [
         rewrite: (text) => redactArguments(text, attachedPasswordFlag)
     }
 ];
+// Contextual Smithers redaction. Compare effective rule shapes so custom
+// policies and rules that reuse a built-in name retain their own behavior.
+const privateKeyBlock = new RegExp(defaultRules[0].pattern.source);
+const ruleShape = (rule) => JSON.stringify([
+    rule.id,
+    rule.pattern.source,
+    rule.pattern.flags,
+    rule.rewrite === undefined ? rule.replace ?? placeholder : null
+]);
+const smithersShapes = defaultRules
+    .filter((rule) => rule.id === "smithers-machine-token" || rule.id === "smithers-scoped-token")
+    .map((rule) => ({ shape: ruleShape(rule), rewrite: rule.rewrite, pattern: new RegExp(rule.pattern.source) }));
+const isSmithersRule = (rule) => smithersShapes.some((known) => known.rewrite === rule.rewrite && known.shape === ruleShape(rule));
+const contextualIds = new Set([
+    "private-key-block",
+    "git-oauth-userinfo",
+    "url-credentials",
+    "bearer-token",
+    "slack-webhook",
+    "assignment",
+    "credential-flag",
+    "cookie-session-assignment",
+    "authorization-header",
+    "bearer-or-basic",
+    "password-flag",
+    "sshpass-password",
+    "user-flag",
+    "header-pair",
+    "command-password-flag",
+    "url-userinfo",
+    "signed-query",
+    "short-password-flag",
+    "attached-password-flag"
+]);
+const builtinShapes = [...defaultRules, ...diagnosticRules]
+    .map((rule) => ({ shape: ruleShape(rule), rewrite: rule.rewrite }));
+const contextualShapes = [...defaultRules, ...diagnosticRules]
+    .filter((rule) => contextualIds.has(rule.id))
+    .map((rule) => ({ shape: ruleShape(rule), rewrite: rule.rewrite }));
+const isContextualRule = (rule) => {
+    const shape = ruleShape(rule);
+    return contextualShapes.some((known) => known.rewrite === rule.rewrite && known.shape === shape);
+};
+const isBuiltinRule = (rule) => {
+    const shape = ruleShape(rule);
+    return builtinShapes.some((known) => known.rewrite === rule.rewrite && known.shape === shape);
+};
+const hasContextBarrier = (rules, index) => {
+    const following = rules.slice(index + 1);
+    const barrier = following.findIndex((rule) => !isBuiltinRule(rule));
+    return barrier !== -1 && following.slice(barrier + 1).some(isContextualRule);
+};
+/** Read enclosing values at the token rule's position, after preceding custom rules. */
+const redactSmithersContexts = (value, rule, rules, index, onProtected) => {
+    // PEM replacements, including customized markers, must not shorten a token
+    // before a selected Smithers rule can see it. A PEM-only policy stays independent.
+    if (rule.pattern.source === defaultRules[0].pattern.source &&
+        rule.pattern.flags === defaultRules[0].pattern.flags &&
+        value.includes("-----BEGIN") && privateKeyBlock.test(value) &&
+        smithersShapes.some((known) => known.pattern.test(value) &&
+            rules.some((selected) => known.rewrite === selected.rewrite && known.shape === ruleShape(selected)))) {
+        onProtected?.(value, index, true);
+        return placeholder;
+    }
+    if (!rule.id.startsWith("smithers-"))
+        return value;
+    const shape = ruleShape(rule);
+    const known = smithersShapes.find((known) => known.rewrite === rule.rewrite && known.shape === shape);
+    if (known === undefined || !known.pattern.test(value))
+        return value;
+    const pem = privateKeyBlock.test(value);
+    onProtected?.(value, index, pem);
+    if (pem)
+        return placeholder;
+    const following = rules.slice(index + 1);
+    // Never move built-in processing across an opaque custom transformation.
+    // Its output could change credential boundaries; close the whole value instead.
+    if (hasContextBarrier(rules, index))
+        return placeholder;
+    // Context scanners may split a token into a value and a following name. Once
+    // that happens no prefix matcher can recover its original extent. Preserve
+    // neither interpretation when contextual rewriting changes a credential value.
+    const contextual = following.filter(isContextualRule).reduce(applyRule, value);
+    return contextual === value ? value : placeholder;
+};
 /**
  * Redacts one diagnostic value with {@link diagnosticRules}: a log line, a
  * stderr message, an error handed back to a caller.
@@ -1064,10 +1176,10 @@ const applyRule = (text, rule) => {
         return text;
     return rule.rewrite === undefined ? text.replace(rule.pattern, rule.replace ?? placeholder) : rule.rewrite(text);
 };
-const redactString = (value, rules) => {
+const redactString = (value, rules, onProtected) => {
     let text = value;
     for (let pass = 0; pass < fixedPointPasses; pass++) {
-        const next = rules.reduce(applyRule, text);
+        const next = rules.reduce((text, rule, index) => applyRule(redactSmithersContexts(text, rule, rules, index, onProtected), rule), text);
         if (next === text)
             return text;
         text = next;
@@ -1534,6 +1646,41 @@ export const lineRedactor = (rules = diagnosticRules) => {
         carry = seen.slice(-64);
     };
     const redacted = (text) => redactString(text, globalRules(rules));
+    // Prefix tokens cannot cross a newline, but contextual grammars can. Observe
+    // recognition in the actual bounded rendering passes, after preceding custom
+    // transformations. Probe each active grammar before another can erase its name.
+    const hasOpenValue = (text) => {
+        const selected = globalRules(rules);
+        const protectedValues = [];
+        let ambiguous = false;
+        redactString(text, selected, (value, index, pem) => {
+            protectedValues.push({ value, pem });
+            if (hasContextBarrier(selected, index))
+                ambiguous = true;
+        });
+        // A following opaque custom transformation cannot certify closure of an
+        // opener rendering masks before that rule executes. Keep existing bounds.
+        if (ambiguous)
+            return true;
+        const probeRules = selected.filter((rule) => !isSmithersRule(rule));
+        if (!redactString(text + continuationProbe, probeRules).endsWith(continuationProbe))
+            return true;
+        const contexts = selected.filter(isContextualRule);
+        for (const { value, pem } of protectedValues) {
+            const probe = value + continuationProbe;
+            // Smithers overlap protection activates the canonical PEM grammar even
+            // when a custom PEM rewrite handles only completed blocks.
+            if (pem && !redactString(probe, [defaultRules[0]]).endsWith(continuationProbe))
+                return true;
+            // Preceding custom rules already ran in this snapshot. Following custom
+            // rules cannot erase an opener before its independent grammar reads it.
+            for (const context of contexts) {
+                if (!redactString(probe, [context]).endsWith(continuationProbe))
+                    return true;
+            }
+        }
+        return false;
+    };
     const release = () => {
         const text = redacted(held.join("\n"));
         const overlongBlock = heldOverlong;
@@ -1593,7 +1740,7 @@ export const lineRedactor = (rules = diagnosticRules) => {
         // cost linear; a block that closed in between is released with the
         // lines after it, redacted as one block, which hides no less.
         if (held.length <= eagerHeldLines || heldBytes >= askAt) {
-            if (redacted(held.join("\n") + continuationProbe).endsWith(continuationProbe))
+            if (!hasOpenValue(held.join("\n")))
                 return release();
             askAt = heldBytes + (heldBytes >> 1);
         }
@@ -1634,4 +1781,4 @@ export const lineRedactor = (rules = diagnosticRules) => {
  * @category constructors
  */
 export const makeNoop = () => (value) => value;
-import { raise as $raise } from "./Redaction.vibe.$throw$ts.js";
+import { raise as $raise } from "./Redaction.vibe.-24-throw-24-ts.js";

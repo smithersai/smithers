@@ -35,7 +35,6 @@
 import * as Stream from "effect/Stream";
 import { withSpan } from "effect/Effect";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import { Fault } from "@smthrs/flow";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -356,7 +355,7 @@ const quote = (value) => `'${value.replaceAll("'", `'\\''`)}'`;
 /** A shell command that runs `body` with `args` as its positional parameters. */
 const script = (body, args) => [`sh -c ${quote(body)} sandbox-tool`, ...args.map(quote)].join(" ");
 const decoder = new TextDecoder();
-const text = (bytes) => decoder.decode(bytes);
+const text = (bytes) => $invoke(decoder, () => (bytes));
 /** The bytes a stream sent, keeping at most `max`. */
 const kept = (stream, max) => Effect.map(Stream.runFold(stream, () => ({ chunks: [], size: 0 }), (acc, chunk) => {
     const room = max - acc.size;
@@ -377,7 +376,7 @@ const kept = (stream, max) => Effect.map(Stream.runFold(stream, () => ({ chunks:
 });
 const unavailable = (error) => new ToolUnavailable({ code: error.code });
 /** Runs `command`, feeding it `stdin`: its exit code and at most `max` bytes of its standard output. */
-const gather = (session, command, max, stdin) => Effect.mapError(Effect.scoped(Effect_1.gen(runtime.$joinedFrame(function* () {
+const gather = (session, command, max, stdin) => Effect.mapError(Effect.scoped(Effect_1.gen(function* () {
     const process = yield* session.spawn(command, stdin === undefined ? {} : { stdin });
     const [stdout, , code] = yield* Effect.all([
         kept(process.stdout, max),
@@ -385,7 +384,7 @@ const gather = (session, command, max, stdin) => Effect.mapError(Effect.scoped(E
         process.exitCode
     ], { concurrency: "unbounded" });
     return { stdout, code };
-}))), unavailable);
+})), unavailable);
 /** The first line of `bytes`, split on spaces, and what follows it. A script that exits 0 always prints that line. */
 const headed = (bytes) => {
     const end = bytes.indexOf(10);
@@ -498,63 +497,69 @@ const answered = (stdout) => {
  * Runs a command at most once under its call's fence. A cwd that isn't a
  * directory is recorded as such, so the same call answers the same refusal.
  */
-const run = Effect_1.fnUntraced(runtime.$joinedFrame(function* run(session, call, options) {
-    const cwd = resolve(session.workdir, call.cwd ?? ".");
-    const fence = fenceOf(options.callsDirectory, options.callId);
-    if (cwd === undefined || fence === undefined)
-        return yield* refused("path");
-    const timeout = call.timeoutSeconds ?? limits.defaultTimeoutSeconds;
-    const max = limits.outputBytes;
-    const { code, stdout } = yield* gather(session, script(RUN, [RUNNER, fence, String(timeout), cwd, call.command, String(max)]), 2 * max + 128);
-    if (code !== 0)
-        return yield* Effect_1.fail(failedWith(code));
-    return answered(stdout);
-}));
+const run = (session, call, options) => {
+    return Effect_1.gen(function* run() {
+        const cwd = resolve(session.workdir, call.cwd ?? ".");
+        const fence = fenceOf(options.callsDirectory, options.callId);
+        if (cwd === undefined || fence === undefined)
+            return yield* refused("path");
+        const timeout = call.timeoutSeconds ?? limits.defaultTimeoutSeconds;
+        const max = limits.outputBytes;
+        const { code, stdout } = yield* gather(session, script(RUN, [RUNNER, fence, String(timeout), cwd, call.command, String(max)]), 2 * max + 128);
+        if (code !== 0)
+            return yield* Effect_1.fail(failedWith(code));
+        return answered(stdout);
+    });
+};
 const READ = `p=$1; max=$2
 [ -d "$p" ] && exit 21
 [ -f "$p" ] || exit 44
 printf '%s\\n' $(($(wc -c <"$p")))
 head -c "$max" -- "$p"`;
-const read = Effect_1.fnUntraced(runtime.$joinedFrame(function* read(session, call) {
-    const path = resolve(session.workdir, call.path);
-    if (path === undefined)
-        return yield* refused("path");
-    const max = limits.fileBytes;
-    const { code, stdout } = yield* gather(session, script(READ, [path, String(max)]), max + 64);
-    if (code !== 0)
-        return yield* Effect_1.fail(failedWith(code));
-    const { body, header } = headed(stdout);
-    const bytes = Number(header[0]);
-    return {
-        tool: "read",
-        path: relative(session.workdir, path),
-        content: text(body),
-        bytes,
-        truncated: bytes > max
-    };
-}));
+const read = (session, call) => {
+    return Effect_1.gen(function* read() {
+        const path = resolve(session.workdir, call.path);
+        if (path === undefined)
+            return yield* refused("path");
+        const max = limits.fileBytes;
+        const { code, stdout } = yield* gather(session, script(READ, [path, String(max)]), max + 64);
+        if (code !== 0)
+            return yield* Effect_1.fail(failedWith(code));
+        const { body, header } = headed(stdout);
+        const bytes = Number(header[0]);
+        return {
+            tool: "read",
+            path: relative(session.workdir, path),
+            content: text(body),
+            bytes,
+            truncated: bytes > max
+        };
+    });
+};
 const WRITE = `p=$1
 umask 002
 [ -d "$p" ] && exit 21
 mkdir -p -- "\${p%/*}" 2>/dev/null || exit 20
 cat >"$p" || exit 20`;
 const encoder = new TextEncoder();
-const write = Effect_1.fnUntraced(runtime.$joinedFrame(function* write(session, call) {
-    const path = resolve(session.workdir, call.path);
-    if (path === undefined || path === resolve(session.workdir, "."))
-        return yield* refused("path");
-    const content = encoder.encode(call.content);
-    if (content.byteLength > limits.fileBytes)
-        return yield* refused("too_large");
-    const { code } = yield* gather(session, script(WRITE, [path]), 0, content);
-    if (code !== 0)
-        return yield* Effect_1.fail(failedWith(code));
-    return {
-        tool: "write",
-        path: relative(session.workdir, path),
-        bytes: content.byteLength
-    };
-}));
+const write = (session, call) => {
+    return Effect_1.gen(function* write() {
+        const path = resolve(session.workdir, call.path);
+        if (path === undefined || path === resolve(session.workdir, "."))
+            return yield* refused("path");
+        const content = encoder.encode(call.content);
+        if (content.byteLength > limits.fileBytes)
+            return yield* refused("too_large");
+        const { code } = yield* gather(session, script(WRITE, [path]), 0, content);
+        if (code !== 0)
+            return yield* Effect_1.fail(failedWith(code));
+        return {
+            tool: "write",
+            path: relative(session.workdir, path),
+            bytes: content.byteLength
+        };
+    });
+};
 const LIST = `p=$1; max=$2
 [ -e "$p" ] || exit 44
 [ -d "$p" ] || exit 20
@@ -569,21 +574,23 @@ for f in "$p"/* "$p"/.[!.]* "$p"/..?*; do
   else k=other; s=0; fi
   printf '%s %s %s\\0' "$k" "$s" "\${f##*/}"
 done`;
-const list = Effect_1.fnUntraced(runtime.$joinedFrame(function* list(session, call) {
-    const path = resolve(session.workdir, call.path ?? ".");
-    if (path === undefined)
-        return yield* refused("path");
-    const { code, stdout } = yield* gather(session, script(LIST, [path, String(limits.listEntries)]), (limits.listEntries + 1) * (limits.pathLength + 32));
-    if (code !== 0)
-        return yield* Effect_1.fail(failedWith(code));
-    const records = text(stdout).split("\0").filter((record) => record !== "");
-    const truncated = records.at(-1) === "more";
-    const entries = (truncated ? records.slice(0, -1) : records).map((record) => {
-        const [kind, bytes] = record.split(" ", 2);
-        return { name: record.slice(kind.length + bytes.length + 2), kind, bytes: Number(bytes) };
+const list = (session, call) => {
+    return Effect_1.gen(function* list() {
+        const path = resolve(session.workdir, call.path ?? ".");
+        if (path === undefined)
+            return yield* refused("path");
+        const { code, stdout } = yield* gather(session, script(LIST, [path, String(limits.listEntries)]), (limits.listEntries + 1) * (limits.pathLength + 32));
+        if (code !== 0)
+            return yield* Effect_1.fail(failedWith(code));
+        const records = text(stdout).split("\0").filter((record) => record !== "");
+        const truncated = records.at(-1) === "more";
+        const entries = (truncated ? records.slice(0, -1) : records).map((record) => {
+            const [kind, bytes] = record.split(" ", 2);
+            return { name: record.slice(kind.length + bytes.length + 2), kind, bytes: Number(bytes) };
+        });
+        return { tool: "list", path: relative(session.workdir, path), entries, truncated };
     });
-    return { tool: "list", path: relative(session.workdir, path), entries, truncated };
-}));
+};
 const STATUS = `cd -- "$1" 2>/dev/null && git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 69
 git -c core.quotePath=false status --porcelain=v1 --branch -z --untracked-files=all`;
 /** Git's `## <branch>...<upstream> [ahead n]` header: the branch, or `null` when detached or unborn without a name. */
@@ -600,41 +607,43 @@ git read-tree HEAD || exit 69
 git -c core.fsmonitor=false add -A -- . || exit 125
 tree=$(git write-tree) || exit 125
 git diff --name-status -z --no-renames --no-ext-diff "$2" "$tree" --`;
-const status = Effect_1.fnUntraced(runtime.$joinedFrame(function* status(session, call) {
-    const { code, stdout } = yield* gather(session, script(call.base === undefined ? STATUS : BASE_STATUS, [
-        resolve(session.workdir, "."),
-        ...(call.base === undefined ? [] : [call.base])
-    ]), limits.diffBytes + 1);
-    if (code !== 0)
-        return yield* Effect_1.fail(failedWith(code));
-    if (stdout.length > limits.diffBytes)
-        return yield* Effect_1.fail(new ToolUnavailable({ code: "unknown" }));
-    const records = text(stdout).split("\0");
-    let branch = null;
-    const entries = [];
-    if (call.base !== undefined) {
-        for (let index = 0; index < records.length - 1; index += 2) {
-            const path = records[index + 1];
-            if (resolve(session.workdir, path) === undefined)
-                return yield* refused("path");
-            entries.push({ path, index: records[index], worktree: " " });
+const status = (session, call) => {
+    return Effect_1.gen(function* status() {
+        const { code, stdout } = yield* gather(session, script(call.base === undefined ? STATUS : BASE_STATUS, [
+            resolve(session.workdir, "."),
+            ...(call.base === undefined ? [] : [call.base])
+        ]), limits.diffBytes + 1);
+        if (code !== 0)
+            return yield* Effect_1.fail(failedWith(code));
+        if (stdout.length > limits.diffBytes)
+            return yield* Effect_1.fail(new ToolUnavailable({ code: "unknown" }));
+        const records = text(stdout).split("\0");
+        let branch = null;
+        const entries = [];
+        if (call.base !== undefined) {
+            for (let index = 0; index < records.length - 1; index += 2) {
+                const path = records[index + 1];
+                if (resolve(session.workdir, path) === undefined)
+                    return yield* refused("path");
+                entries.push({ path, index: records[index], worktree: " " });
+            }
+            return { tool: "status", branch, entries };
+        }
+        for (let index = 0; index < records.length; index++) {
+            const record = records[index];
+            if (record.startsWith("## ")) {
+                branch = branchOf(record.startsWith("## No commits yet on ") ? `## ${record.slice(21)}` : record);
+            }
+            else if (record.length > 3) {
+                const [x, y] = [record[0], record[1]];
+                // A rename or copy names its old path in the next record.
+                const from = x === "R" || x === "C" ? records[++index] : undefined;
+                entries.push({ path: record.slice(3), index: x, worktree: y, ...from === undefined ? {} : { from } });
+            }
         }
         return { tool: "status", branch, entries };
-    }
-    for (let index = 0; index < records.length; index++) {
-        const record = records[index];
-        if (record.startsWith("## ")) {
-            branch = branchOf(record.startsWith("## No commits yet on ") ? `## ${record.slice(21)}` : record);
-        }
-        else if (record.length > 3) {
-            const [x, y] = [record[0], record[1]];
-            // A rename or copy names its old path in the next record.
-            const from = x === "R" || x === "C" ? records[++index] : undefined;
-            entries.push({ path: record.slice(3), index: x, worktree: y, ...from === undefined ? {} : { from } });
-        }
-    }
-    return { tool: "status", branch, entries };
-}));
+    });
+};
 const DIFF = `w=$1; max=$2; shift 2
 cd -- "$w" 2>/dev/null && git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 69
 out=$(mktemp) || exit 125
@@ -647,40 +656,24 @@ out=$(mktemp) || exit 125
 printf '%s\\n' $(($(wc -c <"$out")))
 head -c "$max" -- "$out"
 rm -f -- "$out"`;
-const diff = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame({ *diff(session, call) {
-        const paths = [];
-        {
-            let pending_1 = runtime.$normal;
-            try {
-                for (const path of call.paths ?? []) {
-                    try {
-                        {
-                            const resolved = resolve(session.workdir, path);
-                            if (resolved === undefined)
-                                return yield* refused("path");
-                            paths.push(resolved);
-                        }
-                    }
-                    catch (thrown_1) {
-                        pending_1 = thrown_1;
-                        break;
-                    }
-                }
+const diff = (session, call) => {
+    return Effect_1.gen({ *diff() {
+            const paths = [];
+            for (const path of call.paths ?? []) {
+                const resolved = resolve(session.workdir, path);
+                if (resolved === undefined)
+                    return yield* refused("path");
+                paths.push(resolved);
             }
-            catch (thrown_2) {
-                throw runtime.$finallyFailure(pending_1, thrown_2);
-            }
-            if (pending_1 !== runtime.$normal)
-                throw pending_1;
-        }
-        const max = limits.diffBytes;
-        const { code, stdout } = yield* gather(session, script(DIFF, [resolve(session.workdir, "."), String(max), ...paths]), max + 64);
-        if (code !== 0)
-            return yield* Effect_1.fail(failedWith(code));
-        const { body, header } = headed(stdout);
-        const bytes = Number(header[0]);
-        return { tool: "diff", diff: text(body), bytes, truncated: bytes > max };
-    } }.diff)));
+            const max = limits.diffBytes;
+            const { code, stdout } = yield* gather(session, script(DIFF, [resolve(session.workdir, "."), String(max), ...paths]), max + 64);
+            if (code !== 0)
+                return yield* Effect_1.fail(failedWith(code));
+            const { body, header } = headed(stdout);
+            const bytes = Number(header[0]);
+            return { tool: "diff", diff: text(body), bytes, truncated: bytes > max };
+        } }.diff);
+};
 /**
  * Runs `call` on `session`'s working copy. A `run` runs at most once per
  * `options.callId`: the same call again answers the result the first attempt
@@ -851,7 +844,7 @@ const commandFence = (options) => {
  * @category operations
  * @since 1.0.0-rc.17
  */
-export const start = (session, call, options) => commandSpan("start", Effect_1.gen(runtime.$joinedFrame(function* () {
+export const start = (session, call, options) => commandSpan("start", Effect_1.gen(function* () {
     const cwd = resolve(session.workdir, call.cwd ?? ".");
     if (cwd === undefined)
         return yield* refused("path");
@@ -862,7 +855,7 @@ export const start = (session, call, options) => commandSpan("start", Effect_1.g
         return yield* Effect_1.fail(failedWith(code));
     const [pid, startedAt] = text(stdout).trim().split(" ").map(Number);
     return { pid, startedAt };
-})));
+}));
 /**
  * What the command started under `options.key` is doing ({@link Observed}).
  * It reads only: asking changes nothing in the box. With `waitMs`, it first
@@ -873,7 +866,7 @@ export const start = (session, call, options) => commandSpan("start", Effect_1.g
  * @category operations
  * @since 1.0.0-rc.17
  */
-export const observe = (session, options) => commandSpan("observe", Effect_1.gen(runtime.$joinedFrame(function* () {
+export const observe = (session, options) => commandSpan("observe", Effect_1.gen(function* () {
     const fence = yield* commandFence(options);
     const wait = Math.min(limits.maxObserveWaitSeconds, Math.max(0, Math.ceil((options.waitMs ?? 0) / 1000)));
     const { code, stdout } = yield* gather(session, script(OBSERVE, [fence, String(wait)]), 128);
@@ -885,7 +878,7 @@ export const observe = (session, options) => commandSpan("observe", Effect_1.gen
         : state === "finished"
             ? { state: "finished", exitCode: Number(first), timedOut: second === "1" }
             : { state: "lost" };
-})));
+}));
 /**
  * The result of the command started under `options.key`, once it finished:
  * the same {@link RunResult} {@link execute} answers, as often as it is
@@ -895,14 +888,14 @@ export const observe = (session, options) => commandSpan("observe", Effect_1.gen
  * @category operations
  * @since 1.0.0-rc.17
  */
-export const collect = (session, options) => commandSpan("collect", Effect_1.gen(runtime.$joinedFrame(function* () {
+export const collect = (session, options) => commandSpan("collect", Effect_1.gen(function* () {
     const fence = yield* commandFence(options);
     const max = limits.outputBytes;
     const { code, stdout } = yield* gather(session, script(COLLECT, [fence, String(max)]), 2 * max + 128);
     if (code !== 0)
         return yield* Effect_1.fail(failedWith(code));
     return answered(stdout);
-})));
+}));
 /**
  * Stops the command started under `options.key`: its runner's and its own
  * process groups, TERM and then KILL. A key not started yet is cancelled
@@ -913,12 +906,12 @@ export const collect = (session, options) => commandSpan("collect", Effect_1.gen
  * @category operations
  * @since 1.0.0-rc.17
  */
-export const cancel = (session, options) => commandSpan("cancel", Effect_1.gen(runtime.$joinedFrame(function* () {
+export const cancel = (session, options) => commandSpan("cancel", Effect_1.gen(function* () {
     const fence = yield* commandFence(options);
     const { code } = yield* gather(session, script(CANCEL, [fence]), 0);
     if (code !== 0)
         return yield* Effect_1.fail(failedWith(code));
-})));
+}));
 // Each step that can fail exits with its own code (120 to 124), so a failure names its step (`ToolUnavailable.exitCode`).
 // The index the changes are staged in starts as a copy of the checkout's own, whose stat data lets `git add` hash only
 // the files that changed rather than every file in the checkout (on 15,000 files, 25 ms rather than a second); a checkout
@@ -946,7 +939,7 @@ if [ $((p + b)) -le "$2" ]; then cat -- "$dir/patch" "$dir/bundle"; fi`;
  * @category operations
  * @since 1.0.0-rc.17
  */
-export const checkpoint = (session) => withSpan((Effect_1.gen(runtime.$joinedFrame(function* () {
+export const checkpoint = (session) => withSpan((Effect_1.gen(function* () {
     const max = limits.checkpointBytes;
     const { code, stdout } = yield* gather(session, script(CHECKPOINT, [resolve(session.workdir, "."), String(max)]), max + 128);
     if (code !== 0)
@@ -956,7 +949,7 @@ export const checkpoint = (session) => withSpan((Effect_1.gen(runtime.$joinedFra
     if (patchBytes + Number(header[2]) > max)
         return yield* Effect_1.fail(new ToolRefused({ reason: "too_large" }));
     return { head: header[0], patch: body.slice(0, patchBytes), bundle: body.slice(patchBytes) };
-}))), "sandbox.checkpoint");
+})), "sandbox.checkpoint");
 const RESTORE = `cd -- "$1" 2>/dev/null && git rev-parse --verify -q HEAD >/dev/null 2>&1 || exit 69
 dir=$(mktemp -d) || exit 125
 trap 'rm -rf -- "$dir"' EXIT
@@ -998,7 +991,7 @@ git apply --binary --whitespace=nowarn "$dir/patch" || exit 125`;
  * @category operations
  * @since 1.0.0-rc.17
  */
-export const restore = (session, saved) => withSpan((Effect_1.gen(runtime.$joinedFrame(function* () {
+export const restore = (session, saved) => withSpan((Effect_1.gen(function* () {
     const bundle = saved.bundle ?? new Uint8Array();
     const input = new Uint8Array(saved.patch.byteLength + bundle.byteLength);
     input.set(saved.patch);
@@ -1006,7 +999,7 @@ export const restore = (session, saved) => withSpan((Effect_1.gen(runtime.$joine
     const { code } = yield* gather(session, script(RESTORE, [resolve(session.workdir, "."), saved.head, String(saved.patch.byteLength)]), 0, input);
     if (code !== 0)
         return yield* Effect_1.fail(failedWith(code));
-}))), "sandbox.restore");
+})), "sandbox.restore");
 /**
  * Where {@link rebaseCall}'s script leaves the paths it found, relative to
  * the workdir, NUL-separated: the files that conflict, or the files whose
@@ -1128,3 +1121,4 @@ export const rebased = (result) => {
 export const rebasePaths = (read) => [
     ...new Set(read.content.split("\0").filter((path) => path !== ""))
 ];
+import { invoke as $invoke } from "./index.vibe.-24-call-24-ts.js";

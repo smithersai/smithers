@@ -190,7 +190,7 @@ export const decodeSync = (configuration) => {
         return Schema.decodeUnknownSync(Configuration)(configuration);
     }
     catch (cause) {
-        throw invalid(cause);
+        $raise(invalid(cause));
     }
 };
 /**
@@ -236,3 +236,4 @@ export const layer = (configuration) => Layer.unwrap(Effect.map(decode(configura
  * @since 1.0.0-rc.0
  */
 export const Resource = OtelResource.Resource;
+import { raise as $raise } from "./Resource.vibe.-24-throw-24-ts.js";

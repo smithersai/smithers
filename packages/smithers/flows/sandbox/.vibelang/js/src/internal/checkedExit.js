@@ -14,6 +14,11 @@ import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.js";
  * @category constructors
  * @since 0.1.0
  */
-export const checked = (result, code, message) => Effect_1.suspend({ checked: () => { return result.exitCode === 0
-        ? Effect_1.succeed(result)
-        : (() => Effect_1.suspend(() => Effect_1.fail(new ProviderError({ code, message: `${message}: command exited ${result.exitCode}` }))))(); } }.checked);
+export const checked = (result, code, message) => (_tail_1 => { return Effect_1.gen(function* checked() {
+    const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+    return _completion_1[0] ? yield* _value_1 : _value_1;
+}); })({ checked: () => { return result.exitCode === 0
+        ? [false, result] : [true, (() => { return (_tail_2 => { return Effect_1.gen(function* () {
+            const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
+            return _completion_2[0] ? yield* _value_2 : _value_2;
+        }); })(() => { return [true, Effect_1.fail(new ProviderError({ code, message: `${message}: command exited ${result.exitCode}` }))]; }); })()]; } }.checked);

@@ -8,9 +8,9 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import { all } from "effect/Effect";
-import { $catchExpression, $is } from "vibelang-runtime";
+import { $catchExpression, $is, $matchCache } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import * as Descriptor from "@smthrs/registry/Descriptor";
 import * as Discovery from "@smthrs/registry/Discovery";
 import { DiscoveryError } from "@smthrs/registry/RegistryError";
@@ -29,40 +29,47 @@ const kindOf = (descriptor) => {
 };
 const failure = (code, description) => new FsError({ code, method: "FileRouter.scan", description });
 const discoveryFailure = (cause) => (() => {
-    const $match1 = cause;
-    {
-        if ($is(DiscoveryError, $match1) && (typeof $match1 === "function" || typeof $match1 === "object") && $match1
-            !== null && "code" in
-            $match1 && $match1.code === "root_missing") {
-            return failure("root_missing", "The flow root does not exist");
+    const $matchCache2 = $matchCache();
+    try {
+        const $match1 = cause;
+        {
+            if (runtime.$is(DiscoveryError, $match1, null, true) && (typeof $match1 === "function" || typeof $match1 === "object") && $match1
+                !== null && $matchCache2.propertyHas($match1, "code") && $matchCache2.get($match1, "code") === "root_missing") {
+                return failure("root_missing", "The flow root does not exist");
+            }
         }
-    }
-    {
-        if ($is(DiscoveryError, $match1) && (typeof $match1 === "function" || typeof $match1 === "object") && $match1
-            !== null && "code" in
-            $match1 && $match1.code === "invalid_root") {
-            return failure("invalid_root", "The flow root is not a readable directory");
+        {
+            if (runtime.$is(DiscoveryError, $match1, null, true) && (typeof $match1 === "function" || typeof $match1 === "object") && $match1
+                !== null && $matchCache2.propertyHas($match1, "code") && $matchCache2.get($match1, "code") === "invalid_root") {
+                return failure("invalid_root", "The flow root is not a readable directory");
+            }
         }
-    }
-    {
-        if ($is(DiscoveryError, $match1) && (typeof $match1 === "function" || typeof $match1 === "object") && $match1
-            !== null && "code" in
-            $match1 && $match1.code === "read_failed") {
-            return failure("read_failed", "The flow root could not be read");
+        {
+            if (runtime.$is(DiscoveryError, $match1, null, true) && (typeof $match1 === "function" || typeof $match1 === "object") && $match1
+                !== null && $matchCache2.propertyHas($match1, "code") && $matchCache2.get($match1, "code") === "read_failed") {
+                return failure("read_failed", "The flow root could not be read");
+            }
         }
+        return failure("discovery_failed", "Flow discovery failed");
     }
-    return failure("discovery_failed", "Flow discovery failed");
+    catch (matchError_1) {
+        $matchCache2.threw(matchError_1);
+        throw matchError_1;
+    }
+    finally {
+        $matchCache2.finish();
+    }
 })();
 const readFailure = () => failure("read_failed", "A route companion could not be inspected");
-function snapshotRoot(arg_1, arg_2) {
-    return Effect_1.fnUntraced(function* snapshotRoot(config, path) {
-        const admitted = Boundary.inspectRecord(config, ["root"]);
+function snapshotRoot(config, path) {
+    return Effect_1.gen(function* snapshotRoot() {
+        const admitted = yield* Effect_1.sync(() => Boundary.inspectRecord(config, ["root"]));
         const root = admitted.ok ? admitted.value.root : undefined;
-        if (typeof root !== "string" || root.length === 0 || root.length > Route.maximumPathLength
-            || root.includes("\0") || !Boundary.isWellFormedText(root))
+        if (typeof root !== "string" || root.length === 0 || root.length > Route.maximumPathLength ||
+            root.includes("\0") || !(yield* Effect_1.sync(() => Boundary.isWellFormedText(root))))
             return yield* Effect_1.fail(failure("invalid_root", "The flow root must be bounded, well-formed text"));
-        return path.resolve(root);
-    }).apply(this, arguments);
+        return yield* Effect_1.sync(() => path.resolve(root));
+    });
 }
 const warningSnapshot = (warning) => new Descriptor.DiscoveryWarning({
     code: warning.code,
@@ -80,89 +87,79 @@ const warningSnapshot = (warning) => new Descriptor.DiscoveryWarning({
  * @category constructors
  * @since 0.1.0
  */
-export function scan(arg_3) {
-    return Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* scan(config) {
+export function scan(config) {
+    return Effect_1.gen(function* scan() {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const root = yield* snapshotRoot(config, path);
-        const discovery = Discovery.make(fileSystem, path);
+        const discovery = yield* Effect_1.sync(() => Discovery.make(fileSystem, path));
         // Confinement makes discovery refuse any entry or directory whose real
         // path leaves the root, so a symlink in a cloned repository cannot route
         // a module that lives elsewhere on the host.
-        const result = yield* $catchExpression(() => discovery.scan({ source: "flows", root, naming: "path", confinementRoot: root }), (cause) => Effect_1.suspend(() => { return (() => Effect_1.suspend(() => Effect_1.fail(discoveryFailure(cause)
+        const result = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return discovery.scan({ source: "flows", root, naming: "path", confinementRoot: root }); }); })(), (cause) => (_tail_1 => { return Effect_1.gen(function* () {
+            const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+            return _completion_1[0] ? yield* _value_1 : _value_1;
+        }); })(() => { return [true, Effect_1.fail(discoveryFailure(cause))]; })
         // Discovery confines entries, not companions: a UI module is recorded only
         // when its real path stays inside the root's real path.
-        )))(
+        );
         // Discovery confines entries, not companions: a UI module is recorded only
         // when its real path stays inside the root's real path.
-        ); }));
-        // Discovery confines entries, not companions: a UI module is recorded only
-        // when its real path stays inside the root's real path.
-        const withinRoot = Effect_1.fnUntraced(function* withinRoot(location) {
-            const [realRoot, real] = yield* $catchExpression(() => all([fileSystem.realPath(root), fileSystem.realPath(location)]), () => Effect_1.suspend(() => { return (() => Effect_1.suspend(() => Effect_1.fail(readFailure())))(); }));
-            return real.startsWith(path.join(realRoot, path.sep));
-        });
+        const withinRoot = (location) => {
+            return Effect_1.gen(function* withinRoot() {
+                const [realRoot, real] = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return all([fileSystem.realPath(root), fileSystem.realPath(location)]); }); })(), () => (_tail_2 => { return Effect_1.gen(function* () {
+                    const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
+                    return _completion_2[0] ? yield* _value_2 : _value_2;
+                }); })(() => { return [true, Effect_1.fail(readFailure())]; }));
+                return real.startsWith(yield* Effect_1.sync(() => path.join(realRoot, path.sep)));
+            });
+        };
         if (result.entries.length > CommandTree.maximumRoutes) {
             return yield* Effect_1.fail(failure("resource_limit", `A scan may return at most ${CommandTree.maximumRoutes} routes`));
         }
         const routes = new Map();
-        {
-            let pending_1 = runtime.$normal;
-            try {
-                for (const descriptor of result.entries) {
-                    try {
-                        {
-                            const sourcePath = path.resolve(descriptor.path);
-                            const segments = toSegments(path, root, sourcePath);
-                            if (segments.length === 0)
-                                continue;
-                            const name = segments.join("/");
-                            if (routes.has(name)) {
-                                return yield* Effect_1.fail(new FsError({
-                                    code: "duplicate_route",
-                                    method: "FileRouter.scan",
-                                    description: "Distinct source paths collapse to one command name",
-                                    path: name
-                                }));
-                            }
-                            const directory = path.dirname(sourcePath);
-                            const uiPath = path.join(directory, "ui.tsx");
-                            const hasUi = (yield* $catchExpression(() => fileSystem.exists(uiPath), () => Effect_1.suspend(() => { return (() => Effect_1.suspend(() => Effect_1.fail(readFailure())))(); }))) && (yield* withinRoot(uiPath));
-                            const route = yield* Route.snapshot({
-                                name,
-                                segments,
-                                kind: kindOf(descriptor),
-                                sourcePath,
-                                // Discovery accepts an empty literal; it means no description, not a
-                                // malformed route that would fail the scan for every sibling.
-                                description: descriptor.description.length === 0 ? Option.none() : Option.some(descriptor.description),
-                                input: descriptor.input,
-                                output: descriptor.output,
-                                capabilities: descriptor.capabilities,
-                                effects: descriptor.effects,
-                                modelInvocable: descriptor.modelInvocable,
-                                placement: descriptor.placement,
-                                ui: hasUi ? Option.some(uiPath) : Option.none()
-                            });
-                            routes.set(name, route);
-                        }
-                    }
-                    catch (thrown_1) {
-                        pending_1 = thrown_1;
-                        break;
-                    }
-                }
+        for (const descriptor of result.entries) {
+            const sourcePath = path.resolve(descriptor.path);
+            const segments = toSegments(path, root, sourcePath);
+            if (segments.length === 0)
+                continue;
+            const name = segments.join("/");
+            if (routes.has(name)) {
+                return yield* Effect_1.fail(new FsError({
+                    code: "duplicate_route",
+                    method: "FileRouter.scan",
+                    description: "Distinct source paths collapse to one command name",
+                    path: name
+                }));
             }
-            catch (thrown_2) {
-                throw runtime.$finallyFailure(pending_1, thrown_2);
-            }
-            if (pending_1 !== runtime.$normal)
-                throw pending_1;
+            const directory = path.dirname(sourcePath);
+            const uiPath = path.join(directory, "ui.tsx");
+            const hasUi = (yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return fileSystem.exists(uiPath); }); })(), () => (_tail_3 => { return Effect_1.gen(function* () {
+                const _completion_3 = _tail_3(), _value_3 = _completion_3[1];
+                return _completion_3[0] ? yield* _value_3 : _value_3;
+            }); })(() => { return [true, Effect_1.fail(readFailure())]; }))) && (yield* withinRoot(uiPath));
+            const route = yield* Route.snapshot({
+                name,
+                segments,
+                kind: kindOf(descriptor),
+                sourcePath,
+                // Discovery accepts an empty literal; it means no description, not a
+                // malformed route that would fail the scan for every sibling.
+                description: descriptor.description.length === 0 ? Option.none() : Option.some(descriptor.description),
+                input: descriptor.input,
+                output: descriptor.output,
+                capabilities: descriptor.capabilities,
+                effects: descriptor.effects,
+                modelInvocable: descriptor.modelInvocable,
+                placement: descriptor.placement,
+                ui: hasUi ? Option.some(uiPath) : Option.none()
+            });
+            routes.set(name, route);
         }
         const ordered = Array.from(routes.keys()).sort().map((name) => routes.get(name));
         return Object.freeze({
             routes: Object.freeze(ordered),
             warnings: Object.freeze(result.warnings.map(warningSnapshot))
         });
-    }))).apply(this, arguments);
+    });
 }

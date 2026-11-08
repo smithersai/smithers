@@ -23,6 +23,9 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Metric from "effect/Metric";
 import * as Schedule from "effect/Schedule";
+import { $catchExpression } from "vibelang-runtime/internal";
+import * as Effect_1 from "effect/Effect";
+import * as runtime from "vibelang-runtime/internal";
 import * as SqlError from "effect/sql/SqlError";
 import * as DatabaseMetrics from "../DatabaseMetrics.js";
 const defaultMaxAttempts = 10;
@@ -260,5 +263,12 @@ export const withWriteRetry = (effect, options) => {
     // the error instead.
     Schedule.tap(() => Metric.update(DatabaseMetrics.writeRetries, 1)));
     const retryableEffect = Effect.catchCause(effect, (cause) => Effect.fail(classifyCause(cause)));
-    return Effect.catch(Effect.retry(retryableEffect, { schedule, while: (classified) => classified.retryable }), (classified) => Effect.failCause(classified.cause));
+    let $do1;
+    {
+        const catchProgram = Effect.retry(retryableEffect, { schedule, while: (classified) => classified.retryable });
+        $do1 = Effect_1.gen(function* () { return yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return catchProgram; }); })(), (classified) => {
+            return Effect_1.gen(function* () { return yield* Effect.failCause(classified.cause); });
+        }); });
+    }
+    return $do1;
 };

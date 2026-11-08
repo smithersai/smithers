@@ -5,7 +5,7 @@ import { Node } from "@smthrs/plan";
 import { Effect, Layer, Metric, Option, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 import { BUG_INBOX_PATH, bugAlertId, bugSubject } from "../../src/features/bugs/contract.js";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { codeOf } from "../ErrorCode.js";
 import * as AlertDelivery from "./AlertDelivery.js";
 // `ops/BugReport { id }` (docs/features/bugs.md#the-admins-hear): once a person files a report
 // (worker/bugs/Api.ts), each Admin gets it in their bell, never as a toast, and by email and Telegram where an Admin set

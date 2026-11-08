@@ -136,11 +136,11 @@ export class AttemptStoreError extends Schema.TaggedError<AttemptStoreError>()(
  * @category models
  * @since 0.1.0
  */
-export schema AttemptId {
-  readonly runId: durableIdentifier
-  readonly stepKeyDigest: durableIdentifier
-  readonly attempt: NonNegativeSafeInt
-}
+export const AttemptId = Schema.Struct({
+  runId: durableIdentifier,
+  stepKeyDigest: durableIdentifier,
+  attempt: NonNegativeSafeInt
+})
 
 /**
  * Identifies one execution of a content-addressed step within a run.

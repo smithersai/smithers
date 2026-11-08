@@ -14,28 +14,30 @@ Fault.register("FramesExhausted", "factory");
  * @category destructors
  * @since 1.0.0
  */
-export const agentOutcome = Effect_1.fnUntraced(function* agentOutcome(stream, record) {
-    let frames = 0;
-    let output;
-    let value;
-    // Completions the run handed back for a shape the host refused.
-    let corrected = 0;
-    yield* stream.pipe(Stream.runForEach((event) => Effect.suspend(() => {
-        if (event._tag === "turn-opened") {
-            frames += 1;
-            // A completion bounced by the controller is not the next frame's answer.
-            output = undefined;
-            value = undefined;
-        }
-        if (event._tag === "output-demanded")
-            corrected += 1;
-        if (event._tag === "transition-applied") {
-            output = event.transition._tag === "complete" ? event.transition.output : undefined;
-            value = event.transition._tag === "complete" ? event.transition.value : undefined;
-        }
-        return record(event);
-    })));
-    return output === undefined
-        ? { _tag: "FramesExhausted", frames, corrected }
-        : { _tag: "Completed", output, value, corrected };
-});
+export const agentOutcome = (stream, record) => {
+    return Effect_1.gen(function* agentOutcome() {
+        let frames = 0;
+        let output;
+        let value;
+        // Completions the run handed back for a shape the host refused.
+        let corrected = 0;
+        yield* stream.pipe(Stream.runForEach((event) => Effect.suspend(() => {
+            if (event._tag === "turn-opened") {
+                frames += 1;
+                // A completion bounced by the controller is not the next frame's answer.
+                output = undefined;
+                value = undefined;
+            }
+            if (event._tag === "output-demanded")
+                corrected += 1;
+            if (event._tag === "transition-applied") {
+                output = event.transition._tag === "complete" ? event.transition.output : undefined;
+                value = event.transition._tag === "complete" ? event.transition.value : undefined;
+            }
+            return record(event);
+        })));
+        return output === undefined
+            ? { _tag: "FramesExhausted", frames, corrected }
+            : { _tag: "Completed", output, value, corrected };
+    });
+};

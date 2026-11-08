@@ -3,7 +3,7 @@ import { finalizeNativeReview } from "../../src/review/finalizeNativeReview.ts"
 import type { NativeReviewAgentOutput } from "../../src/workflow/nativeReviewAgentOutputSchema.ts"
 import type { NativeReviewPrompt } from "../../src/workflow/nativeReviewPromptSchema.ts"
 import { normalizeOpenCodeReviewInput } from "../../src/workflow/normalizeOpenCodeReviewInput.ts"
-import type { PreviewOutput } from "../../src/workflow/previewOutputSchema.vibe"
+import type { PreviewOutput } from "../../src/workflow/previewOutputSchema.ts"
 
 describe("finalizeNativeReview", () => {
   const diffText = [

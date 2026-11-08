@@ -10,7 +10,6 @@
  * @since 0.1.0
  */
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as Effects from "@smthrs/core/Effects";
 import * as Pattern from "@smthrs/patterns/Pattern";
 import * as Effect from "effect/Effect";
@@ -202,22 +201,24 @@ export const bindRecall = (supplied) => Pattern.bind(Recall.slot, "flow" in supp
  * @category handlers
  * @since 0.1.0
  */
-export const runRememberWith = (provenance) => Effect_1.fnUntraced(function* (input) {
-    const store = yield* MemoryStore.MemoryStore;
-    const { namespace } = yield* resolveNamespace(input.bank);
-    const reserved = reservedTagIssue(input.tags ?? []);
-    if (reserved !== undefined)
-        return yield* Effect_1.fail(new MemoryError({ code: "invalid_tag", message: reserved }));
-    yield* store.putFact({
-        namespace,
-        key: input.key,
-        value: { content: input.text },
-        tags: input.tags ?? [],
-        ...(input.ttlMs === undefined ? {} : { ttlMs: input.ttlMs }),
-        provenance
+export const runRememberWith = (provenance) => (input) => {
+    return Effect_1.gen(function* () {
+        const store = yield* MemoryStore.MemoryStore;
+        const { namespace } = yield* resolveNamespace(input.bank);
+        const reserved = reservedTagIssue(input.tags ?? []);
+        if (reserved !== undefined)
+            return yield* Effect_1.fail(new MemoryError({ code: "invalid_tag", message: reserved }));
+        yield* store.putFact({
+            namespace,
+            key: input.key,
+            value: { content: input.text },
+            tags: input.tags ?? [],
+            ...(input.ttlMs === undefined ? {} : { ttlMs: input.ttlMs }),
+            provenance
+        });
+        return { key: input.key };
     });
-    return { key: input.key };
-});
+};
 /**
  * Runtime binding for the remember declaration.
  *
@@ -240,16 +241,18 @@ const missingPolicy = Effect.fail(new MemoryError({
     code: "invalid_namespace",
     message: "memory flow carries no policy; bind a WithMemory.withMemory declaration"
 }));
-const validatePolicyBank = Effect_1.fnUntraced(function* validatePolicyBank(bank, policy) {
-    const { namespace } = yield* resolveNamespace(bank);
-    const allowed = yield* Effect.forEach(policy.banks, resolveNamespace);
-    if (!allowed.some((entry) => entry.namespace.kind === namespace.kind && entry.namespace.id === namespace.id)) {
-        return yield* Effect_1.fail(new MemoryError({
-            code: "invalid_namespace",
-            message: "memory bank is outside the policy namespace"
-        }));
-    }
-});
+const validatePolicyBank = (bank, policy) => {
+    return Effect_1.gen(function* validatePolicyBank() {
+        const { namespace } = yield* resolveNamespace(bank);
+        const allowed = yield* Effect.forEach(policy.banks, resolveNamespace);
+        if (!allowed.some((entry) => entry.namespace.kind === namespace.kind && entry.namespace.id === namespace.id)) {
+            return yield* Effect_1.fail(new MemoryError({
+                code: "invalid_namespace",
+                message: "memory bank is outside the policy namespace"
+            }));
+        }
+    });
+};
 /**
  * Applies the memory policy a flow carries to a recall request.
  *
@@ -269,33 +272,16 @@ export const runRecallFor = (flow, input) => {
         return missingPolicy;
     if (policy.recall === "none")
         return Effect.succeed([]);
-    return Effect_1.gen(runtime.$iteratorFrame(runtime.$joinedFrame(function* () {
+    return Effect_1.gen(function* () {
         const banks = input.banks.length > 0 ? input.banks : policy.banks;
-        {
-            let pending_1 = runtime.$normal;
-            try {
-                for (const bank of banks) {
-                    try {
-                        yield* validatePolicyBank(bank, policy);
-                    }
-                    catch (thrown_1) {
-                        pending_1 = thrown_1;
-                        break;
-                    }
-                }
-            }
-            catch (thrown_2) {
-                throw runtime.$finallyFailure(pending_1, thrown_2);
-            }
-            if (pending_1 !== runtime.$normal)
-                throw pending_1;
-        }
+        for (const bank of banks)
+            yield* validatePolicyBank(bank, policy);
         return yield* runRecall({
             ...input,
             banks,
             maxTokens: input.maxTokens ?? policy.maxTokens
         });
-    })));
+    });
 };
 /**
  * Applies the memory policy a flow carries to a memory write.

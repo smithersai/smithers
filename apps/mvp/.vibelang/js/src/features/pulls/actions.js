@@ -5,8 +5,8 @@ import { FlowDispatch } from "../../flows/dispatch";
 import { open as openIssues, reconnectShapes as reconnectIssueShapes } from "../issues/actions";
 import { recordShapeRetry } from "../issues/shapeSync";
 import { repoId } from "../repo/contract";
-import { PullsClient } from "#vibelang/emitted/src/features/pulls/api";
-import { readComparison } from "#vibelang/emitted/src/features/pulls/comparison";
+import { PullsClient } from "./api";
+import { readComparison } from "./comparison.js";
 import { DEFAULT_MERGE_METHOD, SHA } from "./contract";
 import { VIEW } from "./schema";
 import { PullsStore } from "./store";
@@ -73,7 +73,7 @@ export const closeFiles = (owner, name, number) => Effect.flatMap(PullsStore, (s
         row.tab = "conversation";
 })).pipe(Effect.orDie);
 /** Reads the files `base` and `head` differ by into this tab, once: a comparison of two SHAs never changes. */
-export const loadFiles = (owner, name, base, head) => Effect.flatMap(PullsStore, (store) => readComparison(store.files, store.scope, owner, name, base, head));
+export const loadFiles = (owner, name, base, head) => Effect.flatMap(PullsStore, (store) => readComparison(store.files, store.scope, owner, name, base, head, store.compared));
 /**
  * Merge on the routed pull request, bound to the head and base this device shows: a new write id, sent at once in the
  * person's session; never queued, since a merge that waited offline would skip what the person saw. A refusal stays on

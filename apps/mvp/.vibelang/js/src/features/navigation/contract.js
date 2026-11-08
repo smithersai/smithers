@@ -15,6 +15,8 @@ export const OUTCOMES = ["navigated", "refused", "gone", "failed"];
 /**
  * The `BroadcastChannel` the engine worker asks the tabs of engine `name` on. A `BroadcastChannel` reaches only its own
  * origin's tabs and workers.
+ *
+ * @throws {never}
  */
 export const navigationChannel = (name) => `${name}/navigate`;
 /**

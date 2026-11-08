@@ -5,7 +5,6 @@
  * @since 0.1.0
  */
 import * as Effect from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as Sse from "effect/encoding/Sse";
 import * as Stream from "effect/Stream";
 import { ModelError } from "./ModelError.js";
@@ -39,41 +38,39 @@ const bounded = (stream, sse, limits) => Stream.suspend(() => {
     let recordBytes = 0;
     let lineBytes = 0;
     let afterCr = false;
-    return stream.pipe(Stream.mapEffect(Effect.fnUntraced(function* (chunk) {
-        responseBytes += chunk.byteLength;
-        if (responseBytes > responseLimit) {
-            return yield* Effect.fail(new ModelError({
-                code: "invalid_provider_output",
-                message: `Model response exceeds ${responseLimit} bytes`
-            }));
-        }
-        yield* runtime.$forOf((function* (iterable_1) {
-            for (const value_1 of iterable_1)
-                yield value_1;
-        })(chunk), Effect.fnUntraced(function* (byte) {
-            if (byte === 10 && afterCr) {
-                afterCr = false;
-                return { kind: "continue", label: "" };
-            }
-            afterCr = byte === 13;
-            if (byte === 10 || byte === 13) {
-                recordBytes = sse && lineBytes !== 0 ? recordBytes + 1 : 0;
-                lineBytes = 0;
-            }
-            else {
-                lineBytes += 1;
-                recordBytes += 1;
-            }
-            if (recordBytes > recordLimit) {
+    return stream.pipe(Stream.mapEffect((chunk) => {
+        return Effect.gen(function* () {
+            responseBytes += chunk.byteLength;
+            if (responseBytes > responseLimit) {
                 return yield* Effect.fail(new ModelError({
                     code: "invalid_provider_output",
-                    message: `Model stream record exceeds ${recordLimit} bytes`
+                    message: `Model response exceeds ${responseLimit} bytes`
                 }));
             }
-            return runtime.$normal;
-        }));
-        return chunk;
-    })));
+            for (const byte of chunk) {
+                if (byte === 10 && afterCr) {
+                    afterCr = false;
+                    continue;
+                }
+                afterCr = byte === 13;
+                if (byte === 10 || byte === 13) {
+                    recordBytes = sse && lineBytes !== 0 ? recordBytes + 1 : 0;
+                    lineBytes = 0;
+                }
+                else {
+                    lineBytes += 1;
+                    recordBytes += 1;
+                }
+                if (recordBytes > recordLimit) {
+                    return yield* Effect.fail(new ModelError({
+                        code: "invalid_provider_output",
+                        message: `Model stream record exceeds ${recordLimit} bytes`
+                    }));
+                }
+            }
+            return chunk;
+        });
+    }));
 });
 /**
  * Creates bounded SSE framing. Incomplete final events are discarded; malformed

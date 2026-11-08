@@ -19,6 +19,7 @@
  *
  * @since 1.0.0-rc.0
  */
+import * as runtime from "vibelang-runtime/internal";
 import { HarnessError } from "@smthrs/harness/HarnessError";
 import * as ModelCatalog from "@smthrs/model/ModelCatalog";
 import * as Context from "effect/Context";
@@ -31,7 +32,7 @@ import * as Seat from "./Seat.js";
  * @category services
  * @since 1.0.0-rc.0
  */
-export class SeatResolver extends Context.Service()("@smthrs/agent/SeatResolver") {
+export class SeatResolver extends runtime.$service("@smthrs/agent/SeatResolver") {
 }
 /**
  * Builds a {@link Service} from an implementation of its one method.

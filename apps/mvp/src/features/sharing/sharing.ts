@@ -3,7 +3,7 @@ import { runners } from "../../boundary"
 import type { FlowDispatch } from "../../flows/dispatch"
 import type { ShareAccess } from "../branch/contract"
 import { add, closeDialog, openDialog, set } from "#vibelang/emitted/src/features/sharing/actions"
-import { type SharingConfig, SharingStore } from "#vibelang/emitted/src/features/sharing/store"
+import { type SharingConfig, SharingStore } from "./store"
 
 // Sharing as a frontend sees it (docs/features/branch-workspace.md#sharing): live queries to read and plain functions to
 // act, with no Effect in sight.

@@ -114,8 +114,8 @@ export const makeFileSystem = (fs, options = {}) => {
             // age evidence, so the sweep must never judge it.
             const info = yield* Effect.gen(function* () {
                 yield* checkRoot;
-                yield* ArtifactPath.guard(fs, `${directory}/${fan}`);
-                yield* ArtifactPath.guard(fs, `${directory}/${entry}`, "File");
+                yield* Effect.asVoid(ArtifactPath.guard(fs, `${directory}/${fan}`));
+                yield* Effect.asVoid(ArtifactPath.guard(fs, `${directory}/${entry}`, "File"));
                 return yield* fs.stat(`${directory}/${entry}`);
             }).pipe(Effect.option);
             if (Option.isNone(info) || info.value.type !== "File")

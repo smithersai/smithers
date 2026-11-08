@@ -439,10 +439,10 @@ const executeStep = (
             ) |> Effect.asVoid(%))
             : Effect.void
           return record
-            |> Effect.tap(%, effect () =>
-              {
+            |> Effect.tap(%, () =>
+              Effect.sync(() => {
                 active.activeStep = undefined
-              })
+              }))
             |> Effect.as(%, { status: "completed" as const, value: exit.value })
         }
         if (Cause.hasInterruptsOnly(exit.cause)) {
@@ -451,10 +451,10 @@ const executeStep = (
             executionId,
             active.activeStep
           )
-            |> Effect.tap(%, effect () =>
-              {
+            |> Effect.tap(%, () =>
+              Effect.sync(() => {
                 active.activeStep = undefined
-              })
+              }))
             |> Effect.map(%, (result) => ({
               status: "suspended" as const,
               value: result.value
@@ -469,10 +469,10 @@ const executeStep = (
           "failed",
           value
         )
-          |> Effect.tap(%, effect () =>
-            {
+          |> Effect.tap(%, () =>
+            Effect.sync(() => {
               active.activeStep = undefined
-            })
+            }))
           |> Effect.as(%, { status: "failed" as const, value })
       })
   })
@@ -653,9 +653,9 @@ export const make = effect (
         |> Effect.orDie(%))
       |> Effect.ensuring(
         %,
-        effect {
+        Effect.sync(() => {
           active.delete(executionId)
-        }
+        })
       )
       |> Effect.tap(%, (result) => Deferred.succeed(deferred, result))
       |> Effect.orDie(%)
@@ -680,12 +680,12 @@ export const make = effect (
       try Deferred.succeed(activeExecution.fiber, fiber)
       return activeExecution
     }
-      |> Effect.onError(%, effect () =>
-        {
+      |> Effect.onError(%, () =>
+        Effect.sync(() => {
           // Only this claimant can publish here. Arming failed before a
           // worker was forked; concurrent callers only join this entry.
           active.delete(executionId)
-        })
+        }))
       |> Effect.uninterruptible(%))
 
     // Only arming is protected. A caller may stop waiting without stopping

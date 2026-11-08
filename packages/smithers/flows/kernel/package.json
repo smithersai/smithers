@@ -46,21 +46,13 @@
     },
     "./internal/*": null,
     "./*/index": null,
-    "./CapabilitySet": {
-      "types": "./src/CapabilitySet.ts",
-      "vibelang-source": "./src/CapabilitySet.ts",
-      "default": "./.vibelang/js/src/CapabilitySet.js"
-    },
+    "./CapabilitySet": "./src/CapabilitySet.ts",
     "./ChildProcessSpawner": {
       "types": "./src/ChildProcessSpawner.ts",
       "vibelang-source": "./src/ChildProcessSpawner.ts",
       "default": "./.vibelang/js/src/ChildProcessSpawner.js"
     },
-    "./CommandLine": {
-      "types": "./src/CommandLine.ts",
-      "vibelang-source": "./src/CommandLine.ts",
-      "default": "./.vibelang/js/src/CommandLine.js"
-    },
+    "./CommandLine": "./src/CommandLine.ts",
     "./ContainedSpawner": {
       "types": "./src/ContainedSpawner.ts",
       "vibelang-source": "./src/ContainedSpawner.ts",
@@ -110,21 +102,13 @@
       "vibelang-source": "./src/Path.ts",
       "default": "./.vibelang/js/src/Path.js"
     },
-    "./ProcessLedger": {
-      "types": "./src/ProcessLedger.ts",
-      "vibelang-source": "./src/ProcessLedger.ts",
-      "default": "./.vibelang/js/src/ProcessLedger.js"
-    },
+    "./ProcessLedger": "./src/ProcessLedger.ts",
     "./Rooted": {
       "types": "./src/Rooted.ts",
       "vibelang-source": "./src/Rooted.ts",
       "default": "./.vibelang/js/src/Rooted.js"
     },
-    "./Workspace": {
-      "types": "./src/Workspace.ts",
-      "vibelang-source": "./src/Workspace.ts",
-      "default": "./.vibelang/js/src/Workspace.js"
-    },
+    "./Workspace": "./src/Workspace.ts",
     "./index": {
       "types": "./src/index.ts",
       "vibelang-source": "./src/index.ts",
@@ -140,16 +124,8 @@
       "vibelang-source": "./src/test/TestGrantStore.ts",
       "default": "./.vibelang/js/src/test/TestGrantStore.js"
     },
-    "./ChildProcessEnvironment": {
-      "types": "./src/ChildProcessEnvironment.ts",
-      "vibelang-source": "./src/ChildProcessEnvironment.ts",
-      "default": "./.vibelang/js/src/ChildProcessEnvironment.js"
-    },
-    "./ProcessConfinement": {
-      "types": "./src/ProcessConfinement.ts",
-      "vibelang-source": "./src/ProcessConfinement.ts",
-      "default": "./.vibelang/js/src/ProcessConfinement.js"
-    },
+    "./ChildProcessEnvironment": "./src/ChildProcessEnvironment.ts",
+    "./ProcessConfinement": "./src/ProcessConfinement.ts",
     "./Unreachable": {
       "types": "./.vibe/declarations/src/Unreachable.d.vibe.ts",
       "default": {

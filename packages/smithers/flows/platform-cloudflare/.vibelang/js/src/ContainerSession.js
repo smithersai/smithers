@@ -25,7 +25,6 @@
  * @since 1.0.0-rc.17
  */
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import { RetryPolicy } from "@smthrs/flow";
 import { RemoteChildProcessSpawner } from "@smthrs/sandbox";
 import * as Effect from "effect/Effect";
@@ -48,7 +47,7 @@ const uidGid = /^\d{1,10}:\d{1,10}$/;
  */
 export const make = (container, options) => Effect.map(Effect.context(), (context) => {
     const workdir = options.workdir;
-    const spawn = (command, spawnOptions) => Effect.provideContext((Effect_1.gen(runtime.$joinedFrame(function* () {
+    const spawn = (command, spawnOptions) => Effect.provideContext((Effect_1.gen(function* () {
         if (options.user !== undefined && !uidGid.test(options.user)) {
             return yield* Effect_1.fail(new ProviderError({
                 code: "spawn_error",
@@ -56,28 +55,9 @@ export const make = (container, options) => Effect.map(Effect.context(), (contex
             }));
         }
         const env = { ...options.env };
-        {
-            let pending_1 = runtime.$normal;
-            try {
-                for (const value_1 of Object.entries(spawnOptions.env ?? {})) {
-                    try {
-                        const [name, value] = value_1;
-                        {
-                            if (value !== undefined)
-                                env[name] = value;
-                        }
-                    }
-                    catch (thrown_1) {
-                        pending_1 = thrown_1;
-                        break;
-                    }
-                }
-            }
-            catch (thrown_2) {
-                throw runtime.$finallyFailure(pending_1, thrown_2);
-            }
-            if (pending_1 !== runtime.$normal)
-                throw pending_1;
+        for (const [name, value] of Object.entries(spawnOptions.env ?? {})) {
+            if (value !== undefined)
+                env[name] = value;
         }
         const cwd = spawnOptions.cwd === undefined
             ? workdir
@@ -108,9 +88,9 @@ export const make = (container, options) => Effect.map(Effect.context(), (contex
                 .pipe(Stream.provideContext(context)),
             exitCode: Effect.provideContext(Effect.mapError(Effect.tapError(process.exitCode, logged("exit")), unavailable("exit")), context)
         };
-    }))), context);
+    })), context);
     /** Runs `command` to completion: its exit code and standard output. */
-    const run = (command, stdin) => Effect.scoped(Effect_1.gen(runtime.$joinedFrame(function* () {
+    const run = (command, stdin) => Effect.scoped(Effect_1.gen(function* () {
         const process = yield* spawn(command, stdin === undefined ? {} : { stdin });
         const [stdout, , code] = yield* Effect.all([
             Stream.runCollect(process.stdout),
@@ -119,30 +99,12 @@ export const make = (container, options) => Effect.map(Effect.context(), (contex
         ], { concurrency: "unbounded" });
         const bytes = new Uint8Array(stdout.reduce((size, chunk) => size + chunk.byteLength, 0));
         let offset = 0;
-        {
-            let pending_2 = runtime.$normal;
-            try {
-                for (const chunk of stdout) {
-                    try {
-                        {
-                            bytes.set(chunk, offset);
-                            offset += chunk.byteLength;
-                        }
-                    }
-                    catch (thrown_3) {
-                        pending_2 = thrown_3;
-                        break;
-                    }
-                }
-            }
-            catch (thrown_4) {
-                throw runtime.$finallyFailure(pending_2, thrown_4);
-            }
-            if (pending_2 !== runtime.$normal)
-                throw pending_2;
+        for (const chunk of stdout) {
+            bytes.set(chunk, offset);
+            offset += chunk.byteLength;
         }
         return { bytes, code };
-    })));
+    }));
     const session = {
         id: options.id,
         remoteId: options.id,

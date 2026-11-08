@@ -60,7 +60,7 @@ export const formatStructured = Logger.make((options) => {
  */
 export const layerStructuredJson = (options) => {
     const resolved = optionsWithDefaults(options);
-    return withMinimumLogLevel(Logger.layer([Logger.withConsoleLog(Logger.map(formatStructured, Formatter.formatJson))], {
+    return withMinimumLogLevel(Logger.layer([Logger.withConsoleLog(Logger.map(formatStructured, (output) => Formatter.formatJson(output)))], {
         mergeWithExisting: resolved.mergeWithExisting
     }), resolved.minimumLogLevel);
 };

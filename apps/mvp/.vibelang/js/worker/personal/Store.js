@@ -64,8 +64,9 @@ export const put = (write) => Effect.gen(function* () {
         yield* sql `
         INSERT INTO personal_model_events (person_id, action, invocation_key)
         VALUES (${write.personId}, ${change}, ${write.invocationKey})`;
+        yield* WriteAuthority.requireAtCommit(write.authority ?? undefined);
         return change;
-    }));
+    })).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed("stale")));
 });
 /**
  * Adds or replaces the person's Codex subscription and records it once. A person holds one: a link replaces its
@@ -100,8 +101,9 @@ export const link = (write) => Effect.gen(function* () {
         yield* sql `
         INSERT INTO personal_model_events (person_id, action, invocation_key)
         VALUES (${write.personId}, ${change}, ${write.invocationKey})`;
+        yield* WriteAuthority.requireAtCommit(write.authority ?? undefined);
         return replaced.length === 0 ? "set" : "replace";
-    }));
+    })).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed("stale")));
 });
 /** Holds `personId`'s Codex rows for the transaction it runs in, so one refresh runs at a time. */
 export const holdCodex = (personId) => Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.asVoid(sql `
@@ -128,8 +130,9 @@ export const remove = (write) => Effect.gen(function* () {
         yield* sql `
         INSERT INTO personal_model_events (person_id, action, invocation_key)
         VALUES (${write.personId}, 'delete', ${write.invocationKey})`;
+        yield* WriteAuthority.requireAtCommit(write.authority ?? undefined);
         return deleted.length > 0 ? "deleted" : "missing";
-    }));
+    })).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed("stale")));
 });
 /** Whether a person saved a model of their own: a flow that runs on it, such as triage's judge, can answer them. */
 export const hasModel = (personId) => Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.map(sql `SELECT 1 FROM personal_models WHERE person_id = ${personId} LIMIT 1`, (rows) => rows.length > 0));

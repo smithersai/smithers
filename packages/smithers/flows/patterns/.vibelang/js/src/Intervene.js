@@ -23,7 +23,7 @@ import { OpaqueInput } from "./internal/Payload.js";
 import * as Pattern from "./Pattern.js";
 import { PatternError } from "./PatternError.js";
 const ApprovalInput = Schema_1.Struct({
-    input: Schema.Unknown, reason: Schema_1.String, scope: Schema_1.String,
+    input: Schema_1.mutableKey(Schema.Unknown), reason: Schema_1.mutableKey(Schema_1.String), scope: Schema_1.mutableKey(Schema_1.String),
 });
 const DEFAULT_REASON = "apply the proposed intervention";
 const decide = Schema.decodeUnknownEffect(Pattern.Approved);
@@ -47,7 +47,7 @@ export const make = (options) => {
     const reason = options.reason ?? DEFAULT_REASON;
     const apply = options.apply;
     if (options.approval !== undefined && reason.trim().length === 0) {
-        throw new PatternError({ code: "invalid_decorator", message: "Approval reason must not be empty" });
+        $raise(new PatternError({ code: "invalid_decorator", message: "Approval reason must not be empty" }));
     }
     const approval = options.approval === undefined
         ? undefined
@@ -109,3 +109,4 @@ export const run = (input, options) => {
         return yield* report({ phase: "report", input, proposal, applied, dryRun: false });
     });
 };
+import { raise as $raise } from "./Intervene.vibe.-24-throw-24-ts.js";

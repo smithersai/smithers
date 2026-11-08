@@ -12,6 +12,7 @@
  *
  * @since 0.1.0
  */
+import { Markdown as CoreMarkdown } from "@smthrs/core";
 import * as Digest from "@smthrs/core/Digest";
 import * as ByteSize from "effect/ByteSize";
 import * as Context from "effect/Context";
@@ -187,6 +188,7 @@ const holdsEntry = (fs, path, directory, depth, visited = new Map()) => Effect.g
  */
 export const make = (fs, path) => Discovery.of({
     scan: Effect.fn("Discovery.scan")((source) => Effect.gen(function* () {
+        const skills = "skills" in source && source.skills === true;
         const provenance = new Provenance({ source: source.source, root: source.root });
         // Sibling flows in one project share most of their imports, so the
         // closure walk reads and tokenizes each reached module once per scan.
@@ -284,6 +286,19 @@ export const make = (fs, path) => Discovery.of({
         const projectEntry = (directory, location, selected, contents, segments, imports, hostImports) => {
             const pathName = Names.deriveFromPath(segments);
             if (selected !== "flow.ts") {
+                if (skills) {
+                    const parsed = CoreMarkdown.parseSkill(contents.text);
+                    if (Result.isFailure(parsed) || parsed.success.name !== path.basename(directory)) {
+                        return {
+                            descriptor: Option.none(),
+                            warnings: [
+                                warning("frontmatter_parse_error", location, Result.isFailure(parsed)
+                                    ? `SKILL.md frontmatter is invalid (${parsed.failure.code})`
+                                    : "SKILL.md name must equal its directory name")
+                            ]
+                        };
+                    }
+                }
                 return MarkdownFlow.fromMarkdown({
                     text: contents.text,
                     contentDigest: contents.contentDigest,
@@ -347,7 +362,7 @@ export const make = (fs, path) => Discovery.of({
                 }
                 directories.push({ name: entry, location, identity: directoryIdentity(info.success, location) });
             }
-            const candidates = entryPrecedence.filter((entry) => files.has(entry));
+            const candidates = entryPrecedence.filter((entry) => files.has(entry) && (!skills || entry === "SKILL.md"));
             const selected = candidates[0];
             if (selected !== undefined && (yield* withinRoot(path.join(directory, selected)))) {
                 const location = path.join(directory, selected);

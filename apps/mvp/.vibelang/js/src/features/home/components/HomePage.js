@@ -22,8 +22,8 @@ import { useHome } from "./HomeContext";
 // button's command when it has one. An action (New branch) runs its flow and opens what it made. The live blocks draw
 // the rows this device synced. A person who may see more than one view switches between their own and the lower ones
 // (SCOPE-14); a view above theirs never shows.
-export function HomePage({ tree }) {
-    return _jsxs(_Fragment, { children: [_jsx("div", { role: "status", "aria-label": "Connection", "aria-live": "polite", children: _jsx(ConnectionPill, {}) }), _jsx(HomeContent, { tree: tree })] });
+export function HomePage({ tree, showConnection = true }) {
+    return _jsxs(_Fragment, { children: [showConnection ? _jsx("div", { role: "status", "aria-label": "Connection", "aria-live": "polite", children: _jsx(ConnectionPill, {}) }) : null, _jsx(HomeContent, { tree: tree })] });
 }
 function HomeContent({ tree }) {
     const { queries, actions } = useHome();

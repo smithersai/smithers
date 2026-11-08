@@ -10,7 +10,7 @@ import * as Fs from "node:fs"
 import * as Path from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import { maxEventBytes, maxEventsPerPage, maxEventsPerRun, maxProjectionBytes } from "../src/Projections.vibe"
+import { maxEventBytes, maxEventsPerPage, maxEventsPerRun, maxProjectionBytes } from "../src/Projections.ts"
 
 const packageRoot = Path.join(Path.dirname(fileURLToPath(import.meta.url)), "..")
 const read = (file: string): string => Fs.readFileSync(Path.join(packageRoot, file), "utf8")
@@ -103,10 +103,10 @@ describe("the package docs", () => {
   })
 })
 
-/** Every TypeScript file under src/, relative to the package. */
+/** Every TypeScript or VibeLang file under src/, relative to the package. */
 const srcSources = (): ReadonlyArray<string> =>
   (Fs.readdirSync(Path.join(packageRoot, "src"), { recursive: true }) as Array<string>)
-    .filter((file) => file.endsWith(".ts"))
+    .filter((file) => file.endsWith(".ts") || file.endsWith(".vibe"))
     .map((file) => Path.join("src", file))
 
 describe("the package manifest and source references", () => {

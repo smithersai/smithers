@@ -6,7 +6,7 @@ import { SqlClient } from "effect/sql";
 import { MARK_SUMMARY_LENGTH, MOST_COVERED, PHASES_FLOW, SEGMENT_SPANS, SUMMARIZE_FLOW, SUMMARY_DAILY_CAP, SUMMARY_REASONS, TIMELINE_SUMMARIES_ROUTE, TITLE_LENGTH } from "../src/features/timeline/contract.js";
 import { segmentRevision } from "../src/features/timeline/identity.js";
 import { checkPlan, exchangeUnits, phaseUnits, sealSpans } from "../src/features/timeline/marks.js";
-import { Sessions } from "#vibelang/emitted/worker/Actor";
+import { Sessions } from "./Actor.js";
 import { branchAccess, canView } from "./branch/Access.js";
 import { readBounded } from "#vibelang/emitted/worker/Body";
 // The timeline's summaries, once per message for everyone (docs/features/timeline.md#cost). A tab that wants a model

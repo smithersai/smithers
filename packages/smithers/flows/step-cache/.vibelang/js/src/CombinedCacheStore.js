@@ -28,9 +28,9 @@
  */
 import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
-import { $catchExpression } from "vibelang-runtime";
+import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as CacheStore from "./CacheStore.js";
@@ -49,104 +49,125 @@ export const make = (options) => {
     // Resolve that distinction before either fallback to a shared entry. An
     // unbounded read can itself fall back to the head, so both provenance fields
     // must match before the miss is treated as a refusal.
-    const refusedLocally = Effect_1.fnUntraced(function* refusedLocally(keyDigest, options) {
-        const { recordedBy, maxAgeMs } = options;
-        if (recordedBy === undefined || maxAgeMs === undefined)
-            return false;
-        const recorded = yield* local.get(keyDigest, { recordedBy });
-        return Option.isSome(recorded) &&
-            recorded.value.recordedRunId === recordedBy.runId &&
-            recorded.value.recordedEventSeq === recordedBy.eventSeq;
-    });
-    const get = Effect.fn("CombinedCacheStore.get")(Effect_1.fnUntraced(function* (keyDigest, options) {
-        yield* CacheAdmission.validateKey(keyDigest);
-        yield* Effect.annotateCurrentSpan({ keyDigest });
-        // One decode for the whole operation. Every tier and guard below reads
-        // this detached, frozen selector, never the caller's object: an accessor
-        // or a mutation during an asynchronous tier must not drop the fence
-        // after the local tier refused an expired exact record.
-        const maxAgeMs = yield* CacheAdmission.validateAge("maxAgeMs", options?.maxAgeMs);
-        const recordedBy = yield* CacheAdmission.validateRecordedBy(options?.recordedBy);
-        const selector = Object.freeze({
-            ...(maxAgeMs === undefined ? {} : { maxAgeMs }),
-            ...(recordedBy === undefined ? {} : { recordedBy: Object.freeze({ ...recordedBy }) })
+    const refusedLocally = (keyDigest, options) => {
+        return Effect_1.gen(function* refusedLocally() {
+            const { recordedBy, maxAgeMs } = options;
+            if (recordedBy === undefined || maxAgeMs === undefined)
+                return false;
+            const recorded = yield* local.get(keyDigest, { recordedBy });
+            return Option.isSome(recorded) &&
+                recorded.value.recordedRunId === recordedBy.runId &&
+                recorded.value.recordedEventSeq === recordedBy.eventSeq;
         });
-        // The provenance fence travels with the lookup: each tier answers with
-        // its recorded version when it holds one and its head otherwise.
-        const cached = yield* local.get(keyDigest, selector);
-        if (Option.isSome(cached))
-            return cached;
-        if (yield* refusedLocally(keyDigest, selector))
-            return cached;
-        // A shared cache is an accelerator. Its refusal is observable, but it
-        // cannot replace the executable miss path with a failed run.
-        const shared = yield* $catchExpression(() => remote.get(keyDigest, selector), () => Effect_1.suspend(() => { return (Effect.as(Metric.update(CacheStoreMetrics.remoteFailure.get, 1), Option.none())); }));
-        if (Option.isNone(shared))
+    };
+    const get = Effect.fn("CombinedCacheStore.get")((keyDigest, options) => {
+        return Effect_1.gen(function* () {
+            yield* CacheAdmission.validateKey(keyDigest);
+            yield* Effect.annotateCurrentSpan({ keyDigest });
+            // One decode for the whole operation. Every tier and guard below reads
+            // this detached, frozen selector, never the caller's object: an accessor
+            // or a mutation during an asynchronous tier must not drop the fence
+            // after the local tier refused an expired exact record.
+            const maxAgeMs = yield* CacheAdmission.validateAge("maxAgeMs", options?.maxAgeMs);
+            const recordedBy = yield* CacheAdmission.validateRecordedBy(options?.recordedBy);
+            const selector = Object.freeze({
+                ...(maxAgeMs === undefined ? {} : { maxAgeMs }),
+                ...(recordedBy === undefined ? {} : { recordedBy: Object.freeze({ ...recordedBy }) })
+            });
+            // The provenance fence travels with the lookup: each tier answers with
+            // its recorded version when it holds one and its head otherwise.
+            const cached = yield* local.get(keyDigest, selector);
+            if (Option.isSome(cached))
+                return cached;
+            if (yield* refusedLocally(keyDigest, selector))
+                return cached;
+            // A shared cache is an accelerator. Its refusal is observable, but it
+            // cannot replace the executable miss path with a failed run.
+            const shared = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return remote.get(keyDigest, selector); }); })(), () => {
+                return Effect_1.gen(function* () { return yield* (Effect.as(Metric.update(CacheStoreMetrics.remoteFailure.get, 1), Option.none())); });
+            });
+            if (Option.isNone(shared))
+                return shared;
+            // Write-back, exactly as `downloadActionResultFromRemote` does: the
+            // shared entry becomes a local row so this machine's next lookup — and
+            // every sibling run on it — is a local hit. Its original provenance must
+            // survive for local replay; reference-aware sweeps reclaim it once the
+            // host has released all frames that could read it.
+            const written = yield* local.put(shared.value);
+            if (written._tag === "Inserted")
+                return shared;
+            // The write-back lost: a sibling run recorded its own row under the key
+            // while this lookup was inside the remote tier. The durable local row is
+            // the one this machine replays from and the one a fenced eviction must
+            // name, so the caller is served that row — handing out the remote entry
+            // over a local `Conflict` would be a cache collision the caller cannot
+            // detect. If the winner is already gone again, the remote entry is the
+            // only row anyone holds and stands.
+            const durable = yield* local.get(keyDigest, selector);
+            if (Option.isSome(durable))
+                return durable;
+            if (yield* refusedLocally(keyDigest, selector))
+                return durable;
             return shared;
-        // Write-back, exactly as `downloadActionResultFromRemote` does: the
-        // shared entry becomes a local row so this machine's next lookup — and
-        // every sibling run on it — is a local hit. Its original provenance must
-        // survive for local replay; reference-aware sweeps reclaim it once the
-        // host has released all frames that could read it.
-        const written = yield* local.put(shared.value);
-        if (written._tag === "Inserted")
-            return shared;
-        // The write-back lost: a sibling run recorded its own row under the key
-        // while this lookup was inside the remote tier. The durable local row is
-        // the one this machine replays from and the one a fenced eviction must
-        // name, so the caller is served that row — handing out the remote entry
-        // over a local `Conflict` would be a cache collision the caller cannot
-        // detect. If the winner is already gone again, the remote entry is the
-        // only row anyone holds and stands.
-        const durable = yield* local.get(keyDigest, selector);
-        if (Option.isSome(durable))
-            return durable;
-        if (yield* refusedLocally(keyDigest, selector))
-            return durable;
-        return shared;
-    }));
-    const put = Effect.fn("CombinedCacheStore.put")(Effect_1.fnUntraced(runtime.$joinedFrame(function* (candidate) {
-        // One detachment for both tiers, taken before any field is read. Each
-        // tier snapshots when its own `put` begins, so forwarding the caller's
-        // object let a mutation between the two writes persist one value locally
-        // and publish a different one under the same digest, with `Inserted`
-        // answered for both. Reading `keyDigest` off the argument first had the
-        // same shape of problem: a throwing accessor became a defect instead of
-        // the `invalid_cache` this package promises.
-        const entry = yield* CacheAdmission.snapshotEntry(candidate);
-        yield* Effect.annotateCurrentSpan({ keyDigest: entry.keyDigest });
-        // Local first, and the local outcome is the answer: first-writer-wins
-        // conflict detection is what drives the `Inconsistency` receiver, and it
-        // has to be decided against the durable row this machine will actually
-        // replay from.
-        const outcome = yield* local.put(entry);
-        // A local `Conflict` means this machine already holds a *different*
-        // result under the key. Publishing to the shared tier anyway would push
-        // a result the caller is about to fail the run over.
-        if (outcome._tag === "Conflict")
+        });
+    });
+    const put = Effect.fn("CombinedCacheStore.put")((candidate) => {
+        return Effect_1.gen(function* () {
+            // One detachment for both tiers, taken before any field is read. Each
+            // tier snapshots when its own `put` begins, so forwarding the caller's
+            // object let a mutation between the two writes persist one value locally
+            // and publish a different one under the same digest, with `Inserted`
+            // answered for both. Reading `keyDigest` off the argument first had the
+            // same shape of problem: a throwing accessor became a defect instead of
+            // the `invalid_cache` this package promises.
+            const entry = yield* CacheAdmission.snapshotEntry(candidate);
+            yield* Effect.annotateCurrentSpan({ keyDigest: entry.keyDigest });
+            // Local first, and the local outcome is the answer: first-writer-wins
+            // conflict detection is what drives the `Inconsistency` receiver, and it
+            // has to be decided against the durable row this machine will actually
+            // replay from.
+            const outcome = yield* local.put(entry);
+            // A local `Conflict` means this machine already holds a *different*
+            // result under the key. Publishing to the shared tier anyway would push
+            // a result the caller is about to fail the run over.
+            if (outcome._tag === "Conflict")
+                return outcome;
+            // In `"deferred"` mode the shared write is the caller's, precisely so it
+            // can happen outside whatever transaction this `put` runs in.
+            if (!deferred) {
+                // The local row is already the durable answer. A refused publication
+                // leaves another host without this acceleration; it does not revoke
+                // the successful local recording.
+                const published = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return remote.put(entry); }); })(), () => {
+                    return Effect_1.gen(function* () { return yield* (Effect.as(Metric.update(CacheStoreMetrics.remoteFailure.put, 1), undefined)); });
+                }
+                // The shared outcome is deliberately not the caller's answer: this
+                // machine replays from its own row, and `@smthrs/engine-store`'s
+                // `CacheSync` makes the same call for the deferred path. But a shared
+                // `Conflict` is not the harmless "another machine got there first"
+                // that an `ExistingSame` is: by `RemoteCacheStore`'s status mapping it
+                // means the shared tier holds a *different* result under this digest,
+                // which is cross-host determinism divergence and the very thing
+                // `CacheStoreMetrics.put.Conflict` exists to surface. Counting it is
+                // the only way an operator ever sees it, because nothing else on this
+                // path returns, fails, or records it.
+                );
+                // The shared outcome is deliberately not the caller's answer: this
+                // machine replays from its own row, and `@smthrs/engine-store`'s
+                // `CacheSync` makes the same call for the deferred path. But a shared
+                // `Conflict` is not the harmless "another machine got there first"
+                // that an `ExistingSame` is: by `RemoteCacheStore`'s status mapping it
+                // means the shared tier holds a *different* result under this digest,
+                // which is cross-host determinism divergence and the very thing
+                // `CacheStoreMetrics.put.Conflict` exists to surface. Counting it is
+                // the only way an operator ever sees it, because nothing else on this
+                // path returns, fails, or records it.
+                if (published?._tag === "Conflict")
+                    yield* Metric.update(CacheStoreMetrics.put.Conflict, 1);
+            }
             return outcome;
-        // In `"deferred"` mode the shared write is the caller's, precisely so it
-        // can happen outside whatever transaction this `put` runs in.
-        if (!deferred) {
-            // The local row is already the durable answer. A refused publication
-            // leaves another host without this acceleration; it does not revoke
-            // the successful local recording.
-            const published = yield* $catchExpression(() => remote.put(entry), () => Effect_1.suspend(() => { return (Effect.as(Metric.update(CacheStoreMetrics.remoteFailure.put, 1), undefined)); }));
-            // The shared outcome is deliberately not the caller's answer: this
-            // machine replays from its own row, and `@smthrs/engine-store`'s
-            // `CacheSync` makes the same call for the deferred path. But a shared
-            // `Conflict` is not the harmless "another machine got there first"
-            // that an `ExistingSame` is: by `RemoteCacheStore`'s status mapping it
-            // means the shared tier holds a *different* result under this digest,
-            // which is cross-host determinism divergence and the very thing
-            // `CacheStoreMetrics.put.Conflict` exists to surface. Counting it is
-            // the only way an operator ever sees it, because nothing else on this
-            // path returns, fails, or records it.
-            if (published?._tag === "Conflict")
-                yield* Metric.update(CacheStoreMetrics.put.Conflict, 1);
-        }
-        return outcome;
-    })));
+        });
+    });
     const evict = Effect.fn("CombinedCacheStore.evict")((keyDigest, evictOptions) => Effect.andThen(Effect.andThen(
     // Eviction is deliberately local-only. Every eviction in the engine is a
     // *this host observed this row to be poison* judgement — a stale read set,

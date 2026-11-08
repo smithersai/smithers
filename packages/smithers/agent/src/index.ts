@@ -64,7 +64,7 @@ export * as CellPlugin from "./CellPlugin.ts"
  * @category plugins
  * @since 1.0.0-rc.1
  */
-export * as SmithersPlugin from "./SmithersPlugin.vibe"
+export * as SmithersPlugin from "./SmithersPlugin.ts"
 
 /**
  * @category constructors
@@ -184,13 +184,13 @@ export * as MemoryMine from "./MemoryMine.ts"
  * @category models
  * @since 1.0.0
  */
-export * as AgentRunner from "./AgentRunner.vibe"
+export * as AgentRunner from "./AgentRunner.ts"
 
 /**
  * @category constructors
  * @since 1.0.0
  */
-export * as ExternalAgent from "./ExternalAgent.vibe"
+export * as ExternalAgent from "./ExternalAgent.ts"
 
 /**
  * @category constructors

@@ -181,7 +181,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/formatError.ts",
-        "src/toPlatformError.vibe",
+        "src/toPlatformError.ts",
         "src/internal/displayField.ts",
         "src/maxDisplayFieldLength.ts"
       ]

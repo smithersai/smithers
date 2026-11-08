@@ -22,7 +22,6 @@
  */
 import * as Result from "effect/Result";
 import * as SchemaIssue from "effect/SchemaIssue";
-import * as Schema_1 from "effect/Schema";
 import * as Views from "@smthrs/views";
 import * as Schema from "effect/Schema";
 import * as $platform from "./Home.platform.js";
@@ -215,8 +214,8 @@ export const Declaration = Schema.TaggedStruct("HomeDeclaration", {
  * @category schemas
  * @since 1.0.0
  */
-export const Document = Schema_1.Struct({
-    blocks: Schema_1.Array(Block),
+export const Document = Schema.Struct({
+    blocks: Schema.Array(Block)
 });
 /**
  * Reports whether a value is a home declaration.

@@ -32,6 +32,7 @@ const ANSWER_REDIRECTS: globalThis.RequestInit = { redirect: "manual" }
  *
  * @since 1.0.0
  * @private
+ * @throws {never}
  */
 export const forCredentials = (client: HttpClient.HttpClient): HttpClient.HttpClient =>
   HttpClient.transform(client, (effect) =>
@@ -59,6 +60,7 @@ export const webHeaders = (headers: Headers.Headers): globalThis.Headers =>
  *
  * @since 1.0.0
  * @private
+ * @throws {never}
  */
 export const transportCause = (error: HttpClientError.HttpClientError): unknown => error.cause ?? error
 
@@ -80,6 +82,7 @@ export const MAX_RETRY_AFTER_MS = 60_000
  *
  * @since 1.0.0
  * @private
+ * @throws {never}
  */
 export const retryAfterHeader = (headers: globalThis.Headers): number | null => {
   const retryAfter = headers.get("retry-after")?.trim()

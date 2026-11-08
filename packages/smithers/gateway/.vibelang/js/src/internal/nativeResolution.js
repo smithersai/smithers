@@ -10,6 +10,7 @@ const position = (value) => typeof value === "number" && Number.isSafeInteger(va
  * A root's committed success is authoritative; child outputs and telemetry are not.
  * @category projections
  * @since 1.0.0
+ * @throws {never}
  */
 export const fromEvent = (event) => {
     if (event.runId === undefined || event.runId.length === 0)

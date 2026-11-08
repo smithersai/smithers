@@ -6,7 +6,6 @@
  */
 import * as Schema from "effect/Schema";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as Effect from "effect/Effect";
 import { MemoryError } from "../MemoryError.js";
 import * as Namespace from "../Namespace.js";
@@ -109,7 +108,7 @@ export const encodeJson = (value, field, path) => Effect.try({
     try: () => {
         const encoded = JSON.stringify(value);
         if (encoded === undefined) {
-            throw new TypeError(`${field} is not JSON-serializable`);
+            $raise(new TypeError(`${field} is not JSON-serializable`));
         }
         return encoded;
     },
@@ -211,20 +210,22 @@ export const MIN_NOTE_PAGE_SIZE = 128;
  * @category utils
  * @since 0.1.0
  */
-export const collectUntil = Effect_1.fnUntraced(function* collectUntil(limit, pageSize, fetchPage, keep) {
-    const collected = [];
-    let after;
-    while (collected.length < limit) {
-        const rows = yield* fetchPage(pageSize, after);
-        if (rows.length === 0)
-            break;
-        collected.push(...(yield* keep(rows)).slice(0, limit - collected.length));
-        if (rows.length < pageSize)
-            break;
-        after = rows[rows.length - 1];
-    }
-    return collected;
-});
+export const collectUntil = (limit, pageSize, fetchPage, keep) => {
+    return Effect_1.gen(function* collectUntil() {
+        const collected = [];
+        let after;
+        while (collected.length < limit) {
+            const rows = yield* fetchPage(pageSize, after);
+            if (rows.length === 0)
+                break;
+            collected.push(...(yield* keep(rows)).slice(0, limit - collected.length));
+            if (rows.length < pageSize)
+                break;
+            after = rows[rows.length - 1];
+        }
+        return collected;
+    });
+};
 /**
  * Builds the tag-group predicate of a read.
  *
@@ -238,34 +239,19 @@ export const tagMatcher = (input) => (tags) => input.tagGroups === undefined || 
  * @category validation
  * @since 0.1.0
  */
-export const validateRecords = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* validateRecords(records, operation) {
-    if (records === undefined)
-        return;
-    if (records.length > 64) {
-        return yield* Effect_1.fail(error("invalid_argument", `${operation} accepts at most 64 record identities`));
-    }
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const record of records) {
-                try {
-                    {
-                        if (record.kind !== "fact" && record.kind !== "note") {
-                            return yield* Effect_1.fail(error("invalid_argument", `${operation} record kind must be fact or note`));
-                        }
-                        yield* validateNonEmpty(record.id, "record id", ["records", "id"]);
-                    }
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
+export const validateRecords = (records, operation) => {
+    return Effect_1.gen(function* validateRecords() {
+        if (records === undefined)
+            return;
+        if (records.length > 64) {
+            return yield* Effect_1.fail(error("invalid_argument", `${operation} accepts at most 64 record identities`));
+        }
+        for (const record of records) {
+            if (record.kind !== "fact" && record.kind !== "note") {
+                return yield* Effect_1.fail(error("invalid_argument", `${operation} record kind must be fact or note`));
             }
+            yield* validateNonEmpty(record.id, "record id", ["records", "id"]);
         }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
-        }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
-    }
-})));
+    });
+};
+import { raise as $raise } from "./Store.vibe.-24-throw-24-ts.js";

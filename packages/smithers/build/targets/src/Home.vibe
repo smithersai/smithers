@@ -227,9 +227,9 @@ export type Declaration = typeof Declaration.Type
  * @category schemas
  * @since 1.0.0
  */
-export schema Document {
-  readonly blocks: ReadonlyArray<Block>
-}
+export const Document = Schema.Struct({
+  blocks: Schema.Array(Block)
+})
 /**
  * The document `.smithers/home.json` holds.
  *

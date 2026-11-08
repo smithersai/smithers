@@ -46,15 +46,14 @@ export interface SnapshotBoundaryOptions {
  * @category services
  * @since 0.1.0
  */
-export service SnapshotBoundary {
-  static readonly key = "@smthrs/engine/FlowEngine/SnapshotBoundary"
-  snapshot: (options: SnapshotBoundaryOptions) => unknown!!
-  restore: (
+export service SnapshotBoundary: {
+  readonly snapshot: (options: SnapshotBoundaryOptions) => unknown!!
+  readonly restore: (
     snapshot: unknown,
     options: SnapshotBoundaryOptions
   ) => void!!
-  diff: (
+  readonly diff: (
     snapshot: unknown,
     options: SnapshotBoundaryOptions
   ) => unknown!!
-}
+} { static readonly key = "@smthrs/engine/FlowEngine/SnapshotBoundary" }

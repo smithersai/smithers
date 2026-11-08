@@ -3,7 +3,7 @@
  * Versioned facts for an authorized native cell invocation and its delivered result.
  * @since 1.0.0
  */
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import * as Context from "effect/Context";
 import * as Schema from "effect/Schema";
 /** Stable harness coordinates, independent of physical attempt or publication order.

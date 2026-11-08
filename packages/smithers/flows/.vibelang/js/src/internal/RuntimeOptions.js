@@ -37,7 +37,7 @@ export const decodeField = (field, schema, value, expectation, label = "Runtime"
         return Schema.decodeUnknownSync(schema)(value);
     }
     catch {
-        throw invalidConfiguration(field, `${label} ${field} ${expectation}`);
+        $raise(invalidConfiguration(field, `${label} ${field} ${expectation}`));
     }
 };
 const nonEmpty = "must be a non-empty string";
@@ -66,19 +66,19 @@ export const validate = (options, label = "Runtime") => {
     const hostId = decodeField("owner.hostId", Schema.NonEmptyString, owner?.hostId, nonEmpty, label);
     const isAlive = options.isAlive;
     if (typeof isAlive !== "function") {
-        throw invalidConfiguration("isAlive", `${label} isAlive must be a function`);
+        $raise(invalidConfiguration("isAlive", `${label} isAlive must be a function`));
     }
     const canExecute = options.canExecute;
     if (canExecute !== undefined && typeof canExecute !== "function") {
-        throw invalidConfiguration("canExecute", `${label} canExecute must be a function when supplied`);
+        $raise(invalidConfiguration("canExecute", `${label} canExecute must be a function when supplied`));
     }
     const canActivate = options.canActivate;
     if (canActivate !== undefined && typeof canActivate !== "function") {
-        throw invalidConfiguration("canActivate", `${label} canActivate must be a function when supplied`);
+        $raise(invalidConfiguration("canActivate", `${label} canActivate must be a function when supplied`));
     }
     const requestResume = options.requestResume;
     if (requestResume !== undefined && typeof requestResume !== "function") {
-        throw invalidConfiguration("requestResume", `${label} requestResume must be a function when supplied`);
+        $raise(invalidConfiguration("requestResume", `${label} requestResume must be a function when supplied`));
     }
     // Decoded rather than trusted: this value is cache key material, and a
     // malformed one would silently key every sealed result of this host.
@@ -92,7 +92,7 @@ export const validate = (options, label = "Runtime") => {
         : decodeField("sourceRevision", Schema.NonEmptyString, options.sourceRevision, nonEmpty, label);
     const privilegedJj = options.privilegedJj;
     if (privilegedJj !== undefined && !Layer.isLayer(privilegedJj)) {
-        throw invalidConfiguration("privilegedJj", `${label} privilegedJj must be a Layer when supplied`);
+        $raise(invalidConfiguration("privilegedJj", `${label} privilegedJj must be a Layer when supplied`));
     }
     const sweep = decodeField("sweep", Sweep, options.sweep, "must be \"process\" or { host: <execution id> }", label);
     const placement = options.placement === undefined
@@ -115,3 +115,4 @@ export const validate = (options, label = "Runtime") => {
         placement
     });
 };
+import { raise as $raise } from "./RuntimeOptions.vibe.-24-throw-24-ts.js";

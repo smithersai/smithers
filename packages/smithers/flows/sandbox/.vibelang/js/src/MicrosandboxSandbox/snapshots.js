@@ -17,7 +17,9 @@
  *
  * @since 1.0.0
  */
+import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
+import * as runtime from "vibelang-runtime/internal";
 import * as Effect from "effect/Effect";
 import { attemptIn } from "../internal/attempt.js";
 import { encodeBase64 } from "../internal/base64.js";
@@ -168,7 +170,7 @@ const scrubbed = (sandbox, patterns, machine, name) => {
         stdin: patterns.length > 0 ? encoder.encode(`${patterns.join("\n")}\n`) : undefined
     }, searched, uncounted), ({ code, stderr, stdout }) => {
         // grep lists what it found even when it could not read every file.
-        const found = new TextDecoder().decode(stdout).split("\n").filter((line) => line.length > 0);
+        const found = decodeText(stdout).split("\n").filter((line) => line.length > 0);
         if (found.length === 0 && code === (patterns.length > 0 ? 1 : 0))
             return Effect.void;
         return Effect.fail(new ProviderError({
@@ -269,12 +271,34 @@ export const captureSnapshot = (options) => {
  * @category snapshots
  * @since 1.0.0
  */
-export const hasSnapshot = (sdk, name) => Effect.catch(Effect.as(Effect.tryPromise({
-    try: () => sdk.Snapshot.get(name),
-    catch: (cause) => cause
-}), true), (cause) => isMissingSnapshot(cause)
-    ? Effect.succeed(false)
-    : Effect.fail(new ProviderError({ code: "unavailable", message: `microsandbox: snapshot ${name} could not be read`, cause })));
+export const hasSnapshot = (sdk, name) => {
+    let $do1;
+    {
+        const catchProgram = (Effect.as(Effect.tryPromise({
+            try: () => sdk.Snapshot.get(name),
+            catch: (cause) => cause
+        }), true));
+        $do1
+            =
+                Effect_1.gen(function* () {
+                    return yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return catchProgram; }); })(), (cause) => {
+                        return Effect_1.gen(function* () { return yield* (isMissingSnapshot(cause)
+                            ? Effect.succeed(false)
+                            : Effect.fail(new ProviderError({ code: "unavailable", message: `microsandbox: snapshot ${name} could not be read`, cause }))); });
+                    });
+                });
+    }
+    return $do1;
+    /**
+     * Removes `family`'s snapshots (those {@link snapshotFamily} places in it,
+     * exactly), except the `keep` newest and any named in `retain` (snapshots a
+     * machine is about to boot from), and returns the removed names. Another
+     * family whose name extends this one is never touched.
+     *
+     * @category snapshots
+     * @since 1.0.0
+     */
+};
 /**
  * Removes `family`'s snapshots (those {@link snapshotFamily} places in it,
  * exactly), except the `keep` newest and any named in `retain` (snapshots a
@@ -305,10 +329,24 @@ export const pruneSnapshots = (sdk, family, keep, retain = []) => attempt(async 
  * @category snapshots
  * @since 1.0.0
  */
-export const removeSnapshot = (sdk, name) => Effect.catch(Effect.tryPromise({ try: () => sdk.Snapshot.remove(name, { force: true }), catch: (cause) => cause }), (cause) => isMissingSnapshot(cause)
-    ? Effect.void
-    : Effect.fail(new ProviderError({
-        code: "unavailable",
-        message: `microsandbox: snapshot ${name} could not be removed`,
-        cause
-    })));
+export const removeSnapshot = (sdk, name) => {
+    let $do2;
+    {
+        const catchProgram = Effect.tryPromise({ try: () => sdk.Snapshot.remove(name, { force: true }), catch: (cause) => cause });
+        $do2
+            =
+                Effect_1.gen(function* () {
+                    return yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return catchProgram; }); })(), (cause) => {
+                        return Effect_1.gen(function* () { return yield* (isMissingSnapshot(cause)
+                            ? Effect.void
+                            : Effect.fail(new ProviderError({
+                                code: "unavailable",
+                                message: `microsandbox: snapshot ${name} could not be removed`,
+                                cause
+                            }))); });
+                    });
+                });
+    }
+    return $do2;
+};
+import { decodeText } from "./snapshots.vibe.decoding.js";

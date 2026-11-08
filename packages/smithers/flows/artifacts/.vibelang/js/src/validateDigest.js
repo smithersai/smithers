@@ -19,9 +19,14 @@ import { ArtifactStoreError } from "./ArtifactStoreError.js";
  * @since 1.0.0-rc.0
  * @slop
  */
-export const validateDigest = (digest) => Effect_1.suspend({ validateDigest: () => { return typeof digest === "string" && /^[0-9a-f]{64}$/.test(digest)
-        ? Effect_1.succeed(digest)
-        : (() => Effect_1.suspend(() => Effect_1.fail(new ArtifactStoreError({
-            code: "invalid_digest",
-            message: "artifact digest must be exactly 64 lowercase hexadecimal characters"
-        }))))(); } }.validateDigest);
+export const validateDigest = (digest) => (_tail_1 => { return Effect_1.gen(function* validateDigest() {
+    const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+    return _completion_1[0] ? yield* _value_1 : _value_1;
+}); })({ validateDigest: () => { return typeof digest === "string" && /^[0-9a-f]{64}$/.test(digest)
+        ? [false, digest] : [true, (() => { return (_tail_2 => { return Effect_1.gen(function* () {
+            const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
+            return _completion_2[0] ? yield* _value_2 : _value_2;
+        }); })(() => { return [true, Effect_1.fail(new ArtifactStoreError({
+                code: "invalid_digest",
+                message: "artifact digest must be exactly 64 lowercase hexadecimal characters"
+            }))]; }); })()]; } }.validateDigest);

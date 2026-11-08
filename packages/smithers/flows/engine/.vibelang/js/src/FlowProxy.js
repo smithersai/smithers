@@ -108,7 +108,7 @@ const executePayload = (payload) => Schema.Struct({
  * **Example** (Deriving RPC endpoints from flows)
  *
  * ```ts
- * import { WebCrypto } from "@smthrs/crypto"
+ * import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
  * import { Effect, Layer, Schema } from "effect"
  * import { RpcServer } from "effect/rpc"
  * import { FlowEngine, FlowProxy, FlowProxyServer } from "@smthrs/engine"
@@ -136,7 +136,7 @@ const executePayload = (payload) => Schema.Struct({
  * ).pipe(
  *   Layer.provideMerge(Action.layerImplementations),
  *   Layer.provideMerge(FlowEngine.layerMemory),
- *   Layer.provideMerge(WebCrypto.layer)
+ *   Layer.provideMerge(NodeCrypto.layer)
  * )
  *
  * const myFlows = [EmailFlow] as const
@@ -183,7 +183,7 @@ export const toRpcGroup = (flows, options) => {
  * **Example** (Deriving HTTP API endpoints from flows)
  *
  * ```ts
- * import { WebCrypto } from "@smthrs/crypto"
+ * import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
  * import { Effect, Layer, Schema } from "effect"
  * import { HttpApi, HttpApiBuilder } from "effect/http-api"
  * import { FlowEngine, FlowProxy, FlowProxyServer } from "@smthrs/engine"
@@ -211,7 +211,7 @@ export const toRpcGroup = (flows, options) => {
  * ).pipe(
  *   Layer.provideMerge(Action.layerImplementations),
  *   Layer.provideMerge(FlowEngine.layerMemory),
- *   Layer.provideMerge(WebCrypto.layer)
+ *   Layer.provideMerge(NodeCrypto.layer)
  * )
  *
  * const myFlows = [EmailFlow] as const

@@ -17,7 +17,6 @@
  *
  * @since 0.1.0
  */
-import * as Schema_1 from "effect/Schema";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 /**
@@ -58,9 +57,7 @@ export const Name = Schema.String.check(Schema.isPattern(namePattern));
  * @category schemas
  * @since 0.1.0
  */
-export const StateInteraction = Schema_1.Struct({
-    kind: Schema_1.Literal("state"),
-});
+export const StateInteraction = Schema.Struct({ kind: Schema.Literal("state") });
 /**
  * An event that becomes a question from the person. `label` is the question's
  * text, such as the label of the button that sent it.

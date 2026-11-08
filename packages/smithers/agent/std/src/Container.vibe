@@ -24,7 +24,7 @@
  * @since 1.0.0
  */
 
-import * as StdError from "./StdError.vibe"
+import * as StdError from "./StdError.ts"
 
 /**
  * One command to run inside a container.

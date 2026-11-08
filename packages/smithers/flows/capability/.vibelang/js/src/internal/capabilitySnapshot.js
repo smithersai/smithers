@@ -8,6 +8,7 @@ import { Capability } from "../Capability.js";
 /**
  * @since 0.1.0
  * @private
+ * @throws {never}
  */
 export const capabilitySnapshot = (capability) => {
     const snapshot = new Capability({ action: capability.action, resource: capability.resource });

@@ -37,12 +37,12 @@ export const Span = Schema.Struct({
 })
 
 /** Every span the traces hold, with their totals. */
-export schema Ingested {
-  readonly spans: ReadonlyArray<Span>
-  readonly totalDurationMs: number
-  readonly totalTokens: number
-  readonly failedSpanCount: number
-}
+export const Ingested = Schema.Struct({
+  spans: Schema.Array(Span),
+  totalDurationMs: Schema.Number,
+  totalTokens: Schema.Number,
+  failedSpanCount: Schema.Number
+})
 
 /** Where the trace spent its time and tokens. */
 export const Analysis = Schema.Struct({

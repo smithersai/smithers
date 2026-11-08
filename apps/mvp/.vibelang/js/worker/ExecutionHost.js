@@ -5,8 +5,8 @@ import { DurableDeferred, FlowRuntime } from "@smthrs/flow";
 import { CloudflareRuntime, ExecutionObject } from "@smthrs/platform-cloudflare";
 import { CiJob } from "@smthrs/sandbox";
 import { Effect, Exit, Layer, Option, Schema } from "effect";
-import * as Dispatch from "#vibelang/emitted/worker/ci/Dispatch";
-import * as RepoFlow from "#vibelang/emitted/worker/ci/RepoFlow";
+import * as Dispatch from "./ci/Dispatch.js";
+import * as RepoFlow from "./ci/RepoFlow.js";
 import * as RepoRuns from "./RepoRuns.js";
 import * as Checks from "./flows/Checks.js";
 import * as DatabaseLoad from "./flows/DatabaseLoad.js";
@@ -14,16 +14,17 @@ import * as SandboxSpend from "./flows/SandboxSpend.js";
 import * as BugReport from "./flows/BugReport.js";
 import * as CiJobMachine from "#vibelang/emitted/worker/flows/CiJobMachine";
 import * as Expire from "./flows/Expire.js";
-import * as Pause from "#vibelang/emitted/worker/flows/Pause";
+import * as Pause from "./flows/Pause.js";
 import * as RecheckRole from "./flows/RecheckRole.js";
-import * as RepoClone from "#vibelang/emitted/worker/flows/RepoClone";
+import * as RepoClone from "./flows/RepoClone.js";
 import * as RepoRefresh from "./flows/RepoRefresh.js";
+import * as ReplacedTokens from "./flows/RevokeReplacedGitHubToken.js";
 import * as RevokeGitHubToken from "./flows/RevokeGitHubToken.js";
 import * as SandboxCall from "./flows/SandboxCall.js";
 import * as SandboxCommand from "./flows/SandboxCommand.js";
 import * as SandboxKeep from "#vibelang/emitted/worker/flows/SandboxKeep";
 import * as DomainFlows from "./domains/DomainFlows.js";
-import * as SecretFlows from "#vibelang/emitted/worker/secrets/SecretFlows";
+import * as SecretFlows from "./secrets/SecretFlows.js";
 import * as ModelFlows from "./personal/ModelFlows.js";
 import * as SpendAlert from "./flows/SpendAlert.js";
 import * as TerminalOpen from "./flows/TerminalOpen.js";
@@ -36,6 +37,7 @@ import * as FleetAlert from "./flows/FleetAlert.js";
 import * as RedactFeed from "./flows/RedactFeed.js";
 import * as RunnerAdmin from "./runners/AdminFlows.js";
 import * as GitHubHost from "./github/Host.js";
+import { RoleFreshMs, SigningKeyIds } from "./SessionStore.js";
 // What a remote flow execution runs on Cloudflare (docs/features/remote-flows.md): `@smthrs/platform-cloudflare`'s
 // per-execution Durable Object functions over the engine's Postgres schema. worker/Executions.ts hands it the Durable
 // Object's storage and id under Alchemy; the workerd test hands it a plain Durable Object's. The flows themselves
@@ -70,8 +72,8 @@ export const remote = (app, channels, pool) => ({
 export const remoteWithSignIn = (app, services, channels, pool) => {
     const base = remote(app, channels, pool);
     return {
-        flows: [...base.flows, RecheckRole.RecheckRole, RevokeGitHubToken.RevokeGitHubToken],
-        registration: Layer.mergeAll(base.registration, RecheckRole.registration(app.database, services), RevokeGitHubToken.registration(app.database, services)),
+        flows: [...base.flows, RecheckRole.RecheckRole, RevokeGitHubToken.RevokeGitHubToken, ReplacedTokens.RevokeReplacedGitHubToken, ReplacedTokens.SweepReplacedGitHubTokens, ReplacedTokens.MaintainSessions],
+        registration: Layer.mergeAll(base.registration, RecheckRole.registration(app.database, services), RevokeGitHubToken.registration(app.database, services), ReplacedTokens.registration(app.database, services)),
     };
 };
 /**
@@ -265,7 +267,11 @@ export const readDatabase = (url, schema) => PostgresDatabase.layer({ url, drive
  * Cloudflare it settles a repository run's row (worker/RepoRuns.ts `settle`).
  */
 export const make = (storage, options) => {
-    const { flows, registration } = options.flows;
+    const { flows } = options.flows;
+    const withKeys = options.signingKeyIds === undefined ? options.flows.registration
+        : options.flows.registration.pipe(Layer.provideMerge(Layer.succeed(SigningKeyIds, options.signingKeyIds)));
+    const registration = options.roleFreshMs === undefined ? withKeys
+        : withKeys.pipe(Layer.provideMerge(Layer.succeed(RoleFreshMs, options.roleFreshMs)));
     const object = ExecutionObject.make(storage, {
         flows,
         runtime: (intent) => CloudflareRuntime.layer({ hostId: options.hostId, executionId: intent.executionId, flow: intent.flow }, registration).pipe(Layer.provide(options.database)),

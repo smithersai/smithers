@@ -59,6 +59,8 @@ export const FeedAnswerPayload = Schema.Struct({
 export const FeedItem = Schema.Struct({
     key: Schema.String,
     repo: Schema.String,
+    /** The repository's id (`github/owner/name`): what the data gate joins (repo/gate.ts). */
+    repoId: Schema.String,
     owner: Schema.String,
     name: Schema.String,
     document: Schema.String,

@@ -4,6 +4,8 @@
  *
  * @since 0.0.0
  */
+import { $extract } from "vibelang-runtime/internal";
+import * as Option_1 from "effect/Option";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { canonical } from "./internal/Structural.js";
@@ -70,8 +72,28 @@ export const firstDivergence = (expected, actual) => {
  */
 export const assertNoDivergence = (expected, actual) => {
     const divergence = firstDivergence(expected, actual);
-    return Option.match(divergence, {
-        onNone: () => Effect.void,
-        onSome: (difference) => Effect.fail(new FixtureDivergenceError(difference))
-    });
+    let $do1;
+    {
+        const $optionSubject = divergence;
+        const $optionHandlers = {
+            onNone: () => Effect.void,
+            onSome: (difference) => Effect.fail(new FixtureDivergenceError(difference))
+        };
+        const { onNone: $optionNone, onSome: $optionSome } = $optionHandlers;
+        $match3: {
+            const $match4 = $optionSubject;
+            {
+                const $extracted5 = (subject_1 => Option_1.isOption(subject_1) && Option_1.isSome(subject_1) && [subject_1.value])($match4);
+                $do1 = void 0;
+                if ($extracted5 !== false && $extracted5.length === 1) {
+                    let $optionValue = $extracted5[0];
+                    $do1 = $optionSome($optionValue);
+                    break $match3;
+                }
+            }
+            $do1 = $optionNone();
+            break $match3;
+        }
+    }
+    return $do1;
 };

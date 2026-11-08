@@ -14,8 +14,9 @@
  * @since 0.1.0
  */
 import * as Option from "effect/Option";
-import { $catchExpression } from "vibelang-runtime";
+import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
+import * as runtime from "vibelang-runtime/internal";
 import * as Descriptor from "@smthrs/registry/Descriptor";
 import * as Registry from "@smthrs/registry/Registry";
 import { Effect, Layer } from "effect";
@@ -43,21 +44,26 @@ const promptArgs = (name, payload) => {
     }
     return Effect.fail(new Catalog.CallError({ message: `"${name}" takes { args: string }`, name }));
 };
-const markdownHandler = (registry, descriptor, digest, prompt) => Effect_1.fnUntraced(function* (payload) {
-    const args = yield* promptArgs(descriptor.name, payload);
-    // The projection is a snapshot; a refreshed registry may carry a
-    // different declaration under the same name. Re-check at call time so
-    // the journaled entryDigest never lies about what actually ran.
-    const current = yield* registry.getOption(descriptor.name);
-    if (Option.isNone(current) || declarationDigest(current.value) !== digest) {
-        return yield* Effect_1.fail(new Catalog.CallError({
-            message: `"${descriptor.name}" was redeclared since this catalog was built; rebuild the catalog`,
-            name: descriptor.name
-        }));
-    }
-    const rendered = yield* $catchExpression(() => registry.runPrompt(descriptor.name, { args }), (error) => Effect_1.suspend(() => { return Effect_1.fail(new Catalog.CallError({ message: `"${descriptor.name}" failed: ${error.message}`, name: descriptor.name })); }));
-    return yield* prompt(rendered, descriptor);
-});
+const markdownHandler = (registry, descriptor, digest, prompt) => (payload) => {
+    return Effect_1.gen(function* () {
+        const args = yield* promptArgs(descriptor.name, payload);
+        // The projection is a snapshot; a refreshed registry may carry a
+        // different declaration under the same name. Re-check at call time so
+        // the journaled entryDigest never lies about what actually ran.
+        const current = yield* registry.getOption(descriptor.name);
+        if (Option.isNone(current) || declarationDigest(current.value) !== digest) {
+            return yield* Effect_1.fail(new Catalog.CallError({
+                message: `"${descriptor.name}" was redeclared since this catalog was built; rebuild the catalog`,
+                name: descriptor.name
+            }));
+        }
+        const rendered = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return registry.runPrompt(descriptor.name, { args }); }); })(), (error) => (_tail_1 => { return Effect_1.gen(function* () {
+            const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+            return _completion_1[0] ? yield* _value_1 : _value_1;
+        }); })(() => { return [true, Effect_1.fail(new Catalog.CallError({ message: `"${descriptor.name}" failed: ${error.message}`, name: descriptor.name }))]; }));
+        return yield* prompt(rendered, descriptor);
+    });
+};
 /**
  * Builds the catalog service from the ambient registry.
  *

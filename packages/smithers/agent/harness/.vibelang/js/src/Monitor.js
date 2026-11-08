@@ -17,7 +17,6 @@
  * @since 1.0.0-rc.0
  */
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as Digest from "@smthrs/core/Digest";
 import * as Fault from "@smthrs/flow/Fault";
 import * as Classifier from "@smthrs/model/Classifier";
@@ -95,34 +94,18 @@ const invalid = (monitor, seen) => {
  * @category validation
  * @since 1.0.0-rc.0
  */
-export const validate = (monitors) => Effect.suspend(Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* () {
-    const seen = new Set();
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const monitor of monitors) {
-                try {
-                    {
-                        const message = invalid(monitor, seen);
-                        if (message !== undefined)
-                            return yield* Effect_1.fail(new InvalidMonitor({ id: monitor.id, message }));
-                        seen.add(monitor.id);
-                    }
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
-            }
+export const validate = (monitors) => Effect.suspend(() => {
+    return Effect_1.gen(function* () {
+        const seen = new Set();
+        for (const monitor of monitors) {
+            const message = invalid(monitor, seen);
+            if (message !== undefined)
+                return yield* Effect_1.fail(new InvalidMonitor({ id: monitor.id, message }));
+            seen.add(monitor.id);
         }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
-        }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
-    }
-    return monitors;
-}))));
+        return monitors;
+    });
+});
 /**
  * The supervisor's own nudge as a monitor: it crosses exactly when
  * {@link Supervisor.crosses} does and says {@link Supervisor.nudge}, with no
@@ -142,7 +125,7 @@ export const lint = () => [
         limit: Number.MAX_SAFE_INTEGER,
         priority: 30,
         score: (reading) => Supervisor.crosses(reading) ? 1 : 0,
-        say: Supervisor.nudge
+        say: (snapshot, reading) => Supervisor.nudge(snapshot, reading)
     })
 ];
 /**
@@ -239,7 +222,7 @@ export const skills = (snapshot) => {
     const seen = new Set();
     return snapshot.skills.map((skill, index) => {
         const plain = skillId(skill.name);
-        const id = seen.has(plain) ? `${plain.slice(0, 39)}_${Digest.digest(skill.name).slice(0, 8)}` : plain;
+        const id = seen.has(plain) ? `${plain.slice(0, 39)}_${$invoke(Digest, () => skill.name).slice(0, 8)}` : plain;
         seen.add(id);
         const text = skillText(skill.name, skill.path);
         return make({ _tag: "Questioned", id, kind: "skill", question: skillQuestion(index), say: () => text });
@@ -388,3 +371,4 @@ export const gate = (input) => {
     ledger[winner.id] = { ...entry, delivered: entry.delivered + 1, lastFrame: input.frame };
     return { message: { id: winner.id, text: winner.text }, suppressed, ledger };
 };
+import { invoke as $invoke } from "./Monitor.vibe.-24-call-24-ts.js";

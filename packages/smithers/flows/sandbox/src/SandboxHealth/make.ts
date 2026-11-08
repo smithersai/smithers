@@ -24,6 +24,7 @@ import type { Service } from "./Service.vibe"
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const make = (
   provider: { readonly ping?: PingProvider["ping"] | undefined },

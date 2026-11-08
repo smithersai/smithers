@@ -43,6 +43,7 @@ import * as Statement from "effect/sql/Statement";
 import * as Stream from "effect/Stream";
 import * as Statements from "./internal/Statements.js";
 import * as StorageDiagnostics from "./internal/StorageDiagnostics.js";
+import { bufferWalWrites } from "./internal/WalBuffer.js";
 /**
  * A loaded synchronous wa-sqlite build with a VFS registered under `vfs`,
  * which every database {@link layer} opens uses. With `exclusive`, the VFS
@@ -88,6 +89,7 @@ export const make = (database) => Effect.gen(function* () {
         semaphore: yield* Semaphore.make(1)
     });
     return yield* Client.make({
+        driver: "sqlite-browser",
         acquirer,
         borrower,
         compiler: Statement.makeCompilerSqlite(),
@@ -95,7 +97,6 @@ export const make = (database) => Effect.gen(function* () {
         onCommitFailure,
         releaseSavepoint: (name) => `RELEASE SAVEPOINT ${name}`,
         beginTransaction: "BEGIN IMMEDIATE",
-        driver: "sqlite-wasm",
         spanAttributes: [["db.system.name", "sqlite"]]
     });
 });
@@ -109,7 +110,7 @@ const isHeldElsewhere = (error) => error.reason.cause?.name === "NoModificationA
 const heldSchedule = Schedule.exponential(Duration.millis(20)).pipe(Schedule.modifyDelay(({ duration }) => Effect.succeed(Duration.millis(Math.min(500, Duration.toMillis(duration))))));
 /** Opens the pool directory, holding every access handle until the scope closes. */
 const openPool = (directory, module, Vfs) => Effect.acquireRelease(Effect.suspend(() => {
-    const vfs = new Vfs(directory, module);
+    const vfs = bufferWalWrites(new Vfs(directory, module));
     return Effect.tryPromise({
         try: () => vfs.isReady(),
         catch: (cause) => Statements.failed(cause, "Failed to open the OPFS directory", "connect")
@@ -195,12 +196,19 @@ export const open = (filename) => Effect.gen(function* () {
         try: () => sqlite3.open_v2(filename, undefined, vfs),
         catch: (cause) => Statements.failed(cause, "Failed to open database", "connect")
     }))), (db) => Effect.promise(() => sqlite3.close(db)));
-    if (exclusive === true) {
-        yield* StorageDiagnostics.observe("journal", Effect.tryPromise({
-            try: () => Statements.runAll({ sqlite3, db }, JOURNAL, [], "array"),
-            catch: (cause) => Statements.failed(cause, "Failed to journal database", "connect")
-        }));
-    }
+    yield* StorageDiagnostics.observe("journal", Effect.tryPromise({
+        try: async () => {
+            if (exclusive === true)
+                await Statements.runAll({ sqlite3, db }, JOURNAL, [], "array");
+            // A PRAGMA may succeed without applying the requested mode. Buffered WAL commits rely on FULL's
+            // jSync boundary, so refuse the connection before any caller can acknowledge a less durable write.
+            const { rows } = await Statements.runAll({ sqlite3, db }, "PRAGMA synchronous", [], "array");
+            if (rows[0]?.[0] !== 2) {
+                throw new Error("SQLite synchronous must be FULL");
+            }
+        },
+        catch: (cause) => Statements.failed(cause, "Failed to journal database", "connect")
+    }));
     return { sqlite3, db };
 });
 /**

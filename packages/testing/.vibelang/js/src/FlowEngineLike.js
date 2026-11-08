@@ -30,18 +30,17 @@ import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Effect_1 from "effect/Effect";
-import * as runtime_1 from "vibelang-runtime";
-import { Crypto } from "@smthrs/crypto";
 import { FlowEngine } from "@smthrs/engine";
 import { Action, Flow, FlowRuntime } from "@smthrs/flow";
 import * as Node from "@smthrs/plan/Node";
+import * as EffectDigest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
 import { EngineSubject as EngineSubjectTag } from "./EngineSubject.js";
 import { conflict } from "./internal/Execution.js";
 import { EngineUnavailableError } from "./TestingError.js";
-import { layerWebCrypto as layerWebCrypto$platform } from "./FlowEngineLike.platform.js";
 /**
  * The payload wrapper the adapter registers for every `FlowSpec`.
  *
@@ -114,30 +113,36 @@ const append = (journal, stepKey, kind, outcome, value) => Effect.sync(() => {
  *   `aborted` and re-propagated,
  * - failure is journaled as `failed`.
  */
-const instrument = Effect_1.fnUntraced(function* instrument(journal, step, effect) {
-    const instance = yield* FlowRuntime.FlowInstance;
-    return yield* Effect.uninterruptibleMask(Effect_1.fnUntraced(function* (restore) {
-        var topic_1;
-        const fiber = yield* ((topic_1 = Effect.interruptible(effect), Effect.forkChild({ startImmediately: true })(topic_1)));
-        const exit = yield* (Effect.onInterrupt(restore(Fiber.await(fiber)), () => Effect.andThen(Fiber.interrupt(fiber), append(journal, step.key, step.kind, "aborted", undefined))));
-        if (Exit.isSuccess(exit)) {
-            yield* append(journal, step.key, step.kind, "completed", exit.value);
-            return exit.value;
-        }
-        if (Cause.hasInterruptsOnly(exit.cause)) {
-            yield* append(journal, step.key, step.kind, "suspended", undefined);
-            return yield* Flow.suspend(instance);
-        }
-        yield* append(journal, step.key, step.kind, "failed", Cause.squash(exit.cause));
-        return yield* Effect.failCause(exit.cause);
-    }));
-});
+const instrument = (journal, step, effect) => {
+    return Effect_1.gen(function* instrument() {
+        const instance = yield* FlowRuntime.FlowInstance;
+        return yield* Effect.uninterruptibleMask((restore) => {
+            return Effect_1.gen(function* () {
+                var topic_1;
+                const fiber = yield* ((topic_1 = Effect.interruptible(effect), Effect.forkChild({ startImmediately: true })(topic_1)));
+                const exit = yield* (Effect.onInterrupt(restore(Fiber.await(fiber)), () => Effect.andThen(Fiber.interrupt(fiber), append(journal, step.key, step.kind, "aborted", undefined))));
+                if (Exit.isSuccess(exit)) {
+                    yield* append(journal, step.key, step.kind, "completed", exit.value);
+                    return exit.value;
+                }
+                if (Cause.hasInterruptsOnly(exit.cause)) {
+                    yield* append(journal, step.key, step.kind, "suspended", undefined);
+                    return yield* Flow.suspend(instance);
+                }
+                yield* append(journal, step.key, step.kind, "failed", Cause.squash(exit.cause));
+                return yield* Effect.failCause(exit.cause);
+            });
+        });
+    });
+};
 const stepActivity = (journal, step, input) => Action.make({
     name: step.key,
     success: Schema.Unknown,
     error: Schema.Unknown,
     ...(step.sealed ? { idempotencyKey: step.key } : {}),
-    execute: instrument(journal, step, Effect_1.suspend(() => step.run(input)))
+    execute: instrument(journal, step, Effect_1.gen(function* () {
+        return yield* step.run(input);
+    }))
 });
 const branchActivity = (journal, branch, input) => branch.kind === "step"
     ? stepActivity(journal, branch, input)
@@ -169,252 +174,252 @@ const raceStep = (journal, race, input) => race.branches.length === 0
  * @category constructors
  * @since 0.0.0
  */
-export const make = Effect_1.fnUntraced(function* make() {
-    const engine = yield* FlowRuntime.FlowRuntime;
-    const scope = yield* Effect.scope;
-    // Captured once so the service methods stay `R = never`: a Context.Service
-    // record cannot carry requirements, and the step-key derivation inside
-    // `engine.register` needs a Crypto in strict type environments.
-    const crypto = yield* Crypto.Crypto;
-    const journals = new Map();
-    const executions = new Map();
-    const idempotencyIndex = new Map();
-    const interrupted = new Set();
-    // Skips ids a caller already claimed explicitly, so an anonymous run can
-    // never collide with `executionId: "engine-0"`. The memory reference
-    // engine has always done this; the two subjects must agree.
-    const freshExecutionId = () => {
-        while (executions.has(`engine-${nextExecutionId}`))
-            nextExecutionId += 1;
-        return `engine-${nextExecutionId++}`;
-    };
-    // One completion latch per execution *attempt*. `awaitResult` waits on it
-    // instead of spinning on `engine.poll`, so an execution that settles only
-    // after a delay (a timer, an external signal) costs one suspension rather
-    // than an unbounded busy-poll that never yields the CPU to the sleeping
-    // step.
-    const settlements = new Map();
-    let nextExecutionId = 0;
-    const arm = (executionId) => Effect.sync(() => {
-        settlements.set(executionId, Deferred.makeUnsafe());
-    });
-    const settle = (executionId, result) => Effect.suspend(() => {
-        const deferred = settlements.get(executionId);
-        /* v8 ignore next -- Registered execution bodies settle only after run or resume arms their settlement. */
-        return deferred === undefined ? Effect.void : Effect.asVoid(Deferred.succeed(deferred, result));
-    });
-    const journalFor = (executionId) => {
-        let journal = journals.get(executionId);
-        if (journal === undefined) {
-            journal = [];
-            journals.set(executionId, journal);
-        }
-        return journal;
-    };
-    const register = (spec) => Effect.provideService(Effect_1.gen(function* () {
-        const flow = Flow.make(spec.name, {
-            payload: payloadSchema.fields,
-            success: Schema.Unknown,
-            error: Schema.Unknown,
-            // The registration below supplies this flow's behavior: the engine
-            // runs the registered execute and never interprets the plan-time
-            // body `Flow.make` requires, so the declaration carries the
-            // smallest honest body.
-            /* v8 ignore next -- The registered execute function runs every subject flow, so the declarative body is never interpreted. */
-            body: () => Node.succeed(undefined)
+export const make = () => {
+    return Effect_1.gen(function* make() {
+        const engine = yield* FlowRuntime.FlowRuntime;
+        const scope = yield* Effect.scope;
+        // Captured once so the service methods stay `R = never`: a Context.Service
+        // record cannot carry requirements, and the step-key derivation inside
+        // `engine.register` needs a Crypto in strict type environments.
+        const crypto = yield* EffectDigest.Digest;
+        const random = yield* SecureRandom.SecureRandom;
+        const journals = new Map();
+        const executions = new Map();
+        const idempotencyIndex = new Map();
+        const interrupted = new Set();
+        // Skips ids a caller already claimed explicitly, so an anonymous run can
+        // never collide with `executionId: "engine-0"`. The memory reference
+        // engine has always done this; the two subjects must agree.
+        const freshExecutionId = () => {
+            while (executions.has(`engine-${nextExecutionId}`))
+                nextExecutionId += 1;
+            return `engine-${nextExecutionId++}`;
+        };
+        // One completion latch per execution *attempt*. `awaitResult` waits on it
+        // instead of spinning on `engine.poll`, so an execution that settles only
+        // after a delay (a timer, an external signal) costs one suspension rather
+        // than an unbounded busy-poll that never yields the CPU to the sleeping
+        // step.
+        const settlements = new Map();
+        let nextExecutionId = 0;
+        const arm = (executionId) => Effect.sync(() => {
+            settlements.set(executionId, Deferred.makeUnsafe());
         });
-        yield* (Scope.provide(engine.register(flow, (payload, executionId) => Effect.suspend(() => {
-            const journal = journalFor(executionId);
-            return Effect_1.gen(function* () {
-                const instance = yield* FlowRuntime.FlowInstance;
-                return yield* Effect.onExit(Effect_1.gen(runtime_1.$iteratorFrame(runtime_1.$joinedFrame(function* () {
-                    let input = payload.value;
-                    {
-                        let pending_1 = runtime_1.$normal;
-                        try {
-                            for (const step of spec.steps) {
-                                try {
-                                    {
-                                        input = step.kind === "step"
-                                            ? yield* stepActivity(journal, step, input) : yield* raceStep(journal, step, input);
-                                    }
-                                }
-                                catch (thrown_1) {
-                                    pending_1 = thrown_1;
-                                    break;
-                                }
-                            }
-                        }
-                        catch (thrown_2) {
-                            throw runtime_1.$finallyFailure(pending_1, thrown_2);
-                        }
-                        if (pending_1 !== runtime_1.$normal)
-                            throw pending_1;
-                    }
-                    return input;
-                }))), (exit) => settle(executionId, attemptToExecutionResult(executionId, instance, exit)));
+        const settle = (executionId, result) => Effect.suspend(() => {
+            const deferred = settlements.get(executionId);
+            /* v8 ignore next -- Registered execution bodies settle only after run or resume arms their settlement. */
+            return deferred === undefined ? Effect.void : Effect.asVoid(Deferred.succeed(deferred, result));
+        });
+        const journalFor = (executionId) => {
+            let journal = journals.get(executionId);
+            if (journal === undefined) {
+                journal = [];
+                journals.set(executionId, journal);
+            }
+            return journal;
+        };
+        const register = (spec) => Effect.provideService(Effect.provideService(Effect_1.gen(function* () {
+            const flow = Flow.make(spec.name, {
+                payload: payloadSchema.fields,
+                success: Schema.Unknown,
+                error: Schema.Unknown,
+                // The registration below supplies this flow's behavior: the engine
+                // runs the registered execute and never interprets the plan-time
+                // body `Flow.make` requires, so the declaration carries the
+                // smallest honest body.
+                /* v8 ignore next -- The registered execute function runs every subject flow, so the declarative body is never interpreted. */
+                body: () => Node.succeed(undefined)
             });
-        })), scope));
-        return flow;
-    }), Crypto.Crypto, crypto);
-    const requireMeta = (executionId) => Effect.suspend(() => {
-        const meta = executions.get(executionId);
-        return meta === undefined
-            ? Effect.fail(unavailable(`Execution ${executionId} is unavailable`))
-            : Effect.succeed(meta);
-    });
-    const awaitResult = Effect_1.fnUntraced(function* awaitResult(executionId) {
-        const meta = yield* requireMeta(executionId);
-        const deferred = settlements.get(executionId);
-        /* v8 ignore next 3 -- Every path to awaitResult arms a settlement after recording execution metadata, and settlements are never removed. */
-        if (deferred === undefined) {
-            return yield* Effect_1.fail(unavailable(`Execution ${executionId} has no pending settlement`));
-        }
-        // Completion signal. Nothing polls while the execution is still doing
-        // work, so a step that settles only after a delay costs this fiber one
-        // suspension instead of a hot `yieldNow` loop that starves the timer it
-        // is waiting on.
-        const settled = yield* Deferred.await(deferred);
-        // The engine publishes the execution result a few scheduler steps after
-        // the flow body exits. Confirm publication before reporting, so
-        // `resume` observes a finished execution fiber rather than a live one,
-        // which the engine refuses to re-enter. This loop only spans fiber
-        // teardown -- the awaited work has already completed -- so it yields
-        // the scheduler rather than sleeping, and it is bounded: a runtime
-        // that never publishes fails typed here instead of spinning until the
-        // runner's wall-clock timeout reports a generic hang.
-        const confirm = Effect_1.fnUntraced({ *confirm(attempt) {
-                const polled = yield* Effect.exit(engine.poll(meta.flow, executionId));
-                // An interrupted execution leaves `poll` with nothing to decode;
-                // the attempt classification already recorded the abort.
-                if (Exit.isFailure(polled) || Option.isSome(polled.value))
-                    return settled;
-                if (attempt >= publicationPasses) {
-                    return yield* Effect_1.fail(unavailable(`Execution ${executionId} settled but the flow engine did not publish its result within ${publicationPasses} scheduler passes`));
+            yield* (Scope.provide(engine.register(flow, (payload, executionId) => Effect.suspend(() => {
+                const journal = journalFor(executionId);
+                return Effect_1.gen(function* () {
+                    const instance = yield* FlowRuntime.FlowInstance;
+                    return yield* Effect.onExit(Effect_1.gen(function* () {
+                        let input = payload.value;
+                        for (const step of spec.steps) {
+                            input = step.kind === "step"
+                                ? yield* stepActivity(journal, step, input) : yield* raceStep(journal, step, input);
+                        }
+                        return input;
+                    }), (exit) => settle(executionId, attemptToExecutionResult(executionId, instance, exit)));
+                });
+            })), scope));
+            return flow;
+        }), EffectDigest.Digest, crypto), SecureRandom.SecureRandom, random);
+        const requireMeta = (executionId) => Effect.suspend(() => {
+            const meta = executions.get(executionId);
+            return meta === undefined
+                ? Effect.fail(unavailable(`Execution ${executionId} is unavailable`))
+                : Effect.succeed(meta);
+        });
+        const awaitResult = (executionId) => {
+            return Effect_1.gen(function* awaitResult() {
+                const meta = yield* requireMeta(executionId);
+                const deferred = settlements.get(executionId);
+                /* v8 ignore next 3 -- Every path to awaitResult arms a settlement after recording execution metadata, and settlements are never removed. */
+                if (deferred === undefined) {
+                    return yield* Effect_1.fail(unavailable(`Execution ${executionId} has no pending settlement`));
                 }
-                yield* Effect.yieldNow;
-                return yield* confirm(attempt + 1);
-            } }.confirm);
-        return yield* confirm(0);
-    });
-    const run = Effect_1.fnUntraced(runtime_1.$joinedFrame(function* run(options) {
-        const joinedId = options.idempotencyKey === undefined
-            ? undefined
-            : idempotencyIndex.get(options.idempotencyKey);
-        const executionId = joinedId ?? options.executionId ?? freshExecutionId();
-        const known = executions.get(executionId);
-        if (known !== undefined) {
-            // A re-submission that matches joins the existing execution; one
-            // that disagrees about the flow or the payload is refused rather
-            // than silently running the original.
-            const difference = conflict(executionId, known.submitted, { flowName: options.flow.name, payload: options.payload });
-            if (Option.isSome(difference))
-                return yield* Effect_1.fail(difference.value);
-        }
-        if (options.idempotencyKey !== undefined) {
-            idempotencyIndex.set(options.idempotencyKey, executionId);
-        }
-        if (known === undefined) {
-            const flow = yield* register(options.flow);
-            executions.set(executionId, {
-                flow,
-                submitted: { flowName: options.flow.name, payload: options.payload }
+                // Completion signal. Nothing polls while the execution is still doing
+                // work, so a step that settles only after a delay costs this fiber one
+                // suspension instead of a hot `yieldNow` loop that starves the timer it
+                // is waiting on.
+                const settled = yield* Deferred.await(deferred);
+                // The engine publishes the execution result a few scheduler steps after
+                // the flow body exits. Confirm publication before reporting, so
+                // `resume` observes a finished execution fiber rather than a live one,
+                // which the engine refuses to re-enter. This loop only spans fiber
+                // teardown -- the awaited work has already completed -- so it yields
+                // the scheduler rather than sleeping, and it is bounded: a runtime
+                // that never publishes fails typed here instead of spinning until the
+                // runner's wall-clock timeout reports a generic hang.
+                const confirm = (attempt) => {
+                    return Effect_1.gen({ *confirm() {
+                            const polled = yield* Effect.exit(engine.poll(meta.flow, executionId));
+                            // An interrupted execution leaves `poll` with nothing to decode;
+                            // the attempt classification already recorded the abort.
+                            if (Exit.isFailure(polled) || Option.isSome(polled.value))
+                                return settled;
+                            if (attempt >= publicationPasses) {
+                                return yield* Effect_1.fail(unavailable(`Execution ${executionId} settled but the flow engine did not publish its result within ${publicationPasses} scheduler passes`));
+                            }
+                            yield* Effect.yieldNow;
+                            return yield* confirm(attempt + 1);
+                        } }.confirm);
+                };
+                return yield* confirm(0);
             });
-            journalFor(executionId);
-            // Armed before submission so the body can never settle a latch that
-            // does not exist yet.
-            yield* arm(executionId);
-            yield* (Effect.mapError(engine.execute(flow, {
-                executionId,
-                // Omitted rather than set to `undefined`: see `payloadSchema`.
-                payload: options.payload === undefined ? {} : { value: options.payload },
-                discard: true
-            })
-            // `FlowCycleDetected` is part of the engine's typed `execute`
-            // contract — a recoverable failure the caller matches on — so it
-            // passes through untouched. Every other submission failure is
-            // foreign to this seam and maps onto the subject's typed channel
-            // instead of widening the channel back to `unknown`.
-            , (cause) => cause instanceof FlowRuntime.FlowCycleDetected
-                ? cause
-                : unavailable(`Execution ${executionId} could not be submitted to the flow engine: ${String(cause)}`)));
-        }
-        return yield* awaitResult(executionId);
-    }));
-    const result = Effect_1.fnUntraced(function* result(executionId) {
-        const meta = yield* requireMeta(executionId);
-        // Cancellation can re-drive a suspended round without entering the
-        // registered body. In that case only the runtime has its latest exit.
-        const deferred = settlements.get(executionId);
-        if (!interrupted.has(executionId) && deferred !== undefined && Deferred.isDoneUnsafe(deferred)) {
-            return yield* Deferred.await(deferred);
-        }
-        const polled = yield* Effect.exit(engine.poll(meta.flow, executionId));
-        if (Exit.isFailure(polled)) {
-            return interrupted.has(executionId)
-                ? { executionId, status: "aborted" }
-                : yield* (() => Effect_1.suspend(() => Effect_1.fail(unavailable(`Execution ${executionId} failed while polling: ${String(polled.cause)}`))))();
-        }
-        return Option.isSome(polled.value)
-            ? toExecutionResult(executionId, polled.value.value)
-            : { executionId, status: "suspended" };
+        };
+        const run = (options) => {
+            return Effect_1.gen(function* run() {
+                const joinedId = options.idempotencyKey === undefined
+                    ? undefined
+                    : idempotencyIndex.get(options.idempotencyKey);
+                const executionId = joinedId ?? options.executionId ?? freshExecutionId();
+                const known = executions.get(executionId);
+                if (known !== undefined) {
+                    // A re-submission that matches joins the existing execution; one
+                    // that disagrees about the flow or the payload is refused rather
+                    // than silently running the original.
+                    const difference = conflict(executionId, known.submitted, { flowName: options.flow.name, payload: options.payload });
+                    if (Option.isSome(difference))
+                        return yield* Effect_1.fail(difference.value);
+                }
+                if (options.idempotencyKey !== undefined) {
+                    idempotencyIndex.set(options.idempotencyKey, executionId);
+                }
+                if (known === undefined) {
+                    const flow = yield* register(options.flow);
+                    executions.set(executionId, {
+                        flow,
+                        submitted: { flowName: options.flow.name, payload: options.payload }
+                    });
+                    journalFor(executionId);
+                    // Armed before submission so the body can never settle a latch that
+                    // does not exist yet.
+                    yield* arm(executionId);
+                    yield* (Effect.mapError(engine.execute(flow, {
+                        executionId,
+                        // Omitted rather than set to `undefined`: see `payloadSchema`.
+                        payload: options.payload === undefined ? {} : { value: options.payload },
+                        discard: true
+                    })
+                    // `FlowCycleDetected` is part of the engine's typed `execute`
+                    // contract — a recoverable failure the caller matches on — so it
+                    // passes through untouched. Every other submission failure is
+                    // foreign to this seam and maps onto the subject's typed channel
+                    // instead of widening the channel back to `unknown`.
+                    , (cause) => cause instanceof FlowRuntime.FlowCycleDetected
+                        ? cause
+                        : unavailable(`Execution ${executionId} could not be submitted to the flow engine: ${String(cause)}`)));
+                }
+                return yield* awaitResult(executionId);
+            });
+        };
+        const result = (executionId) => {
+            return Effect_1.gen(function* result() {
+                const meta = yield* requireMeta(executionId);
+                // Cancellation can re-drive a suspended round without entering the
+                // registered body. In that case only the runtime has its latest exit.
+                const deferred = settlements.get(executionId);
+                if (!interrupted.has(executionId) && deferred !== undefined && Deferred.isDoneUnsafe(deferred)) {
+                    return yield* Deferred.await(deferred);
+                }
+                const polled = yield* Effect.exit(engine.poll(meta.flow, executionId));
+                if (Exit.isFailure(polled)) {
+                    return interrupted.has(executionId)
+                        ? { executionId, status: "aborted" }
+                        : yield* (() => { return (_tail_1 => { return Effect_1.gen(function* () {
+                            const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+                            return _completion_1[0] ? yield* _value_1 : _value_1;
+                        }); })(() => { return [true, Effect_1.fail(unavailable(`Execution ${executionId} failed while polling: ${String(polled.cause)}`))]; }); })();
+                }
+                return Option.isSome(polled.value)
+                    ? toExecutionResult(executionId, polled.value.value)
+                    : { executionId, status: "suspended" };
+            });
+        };
+        const interrupt = (executionId) => {
+            return Effect_1.gen(function* interrupt() {
+                const meta = executions.get(executionId);
+                if (meta === undefined)
+                    return;
+                const deferred = settlements.get(executionId);
+                const wasSettled = deferred !== undefined && Deferred.isDoneUnsafe(deferred);
+                if (wasSettled)
+                    yield* arm(executionId);
+                interrupted.add(executionId);
+                // `interrupt`, never `interruptUnsafe`: the durable engine refuses the
+                // unsafe path with `unsafe_interrupt_unsupported` by contract, and the
+                // safe path does deliver the interruption to the live body fiber.
+                yield* engine.interrupt(meta.flow, executionId);
+                if (!wasSettled)
+                    return;
+                // A cancelled parked round can self-interrupt before the registered
+                // body installs its onExit. Publish that round's exit to the fresh
+                // latch so run joins and resume cannot reuse its earlier suspension.
+                for (let attempt = 0;; attempt++) {
+                    const current = yield* result(executionId);
+                    if (current.status !== "suspended") {
+                        yield* settle(executionId, current);
+                        return;
+                    }
+                    if (attempt >= publicationPasses) {
+                        return yield* Effect_1.fail(unavailable(`Execution ${executionId} did not publish its cancellation result within ${publicationPasses} scheduler passes`));
+                    }
+                    yield* Effect.yieldNow;
+                }
+            });
+        };
+        const resume = (executionId) => {
+            return Effect_1.gen(function* resume() {
+                const meta = yield* requireMeta(executionId);
+                // The engine only re-enters a *suspended* execution; resuming a
+                // settled one is a no-op that would never settle a fresh latch.
+                const current = yield* result(executionId);
+                if (current.status !== "suspended")
+                    return current;
+                yield* arm(executionId);
+                yield* engine.resume(meta.flow, executionId);
+                return yield* awaitResult(executionId);
+            });
+        };
+        const journal = (executionId) => Effect.suspend(() => {
+            const stored = journals.get(executionId);
+            return stored === undefined
+                ? Effect.fail(unavailable(`Execution ${executionId} is unavailable`))
+                : Effect.succeed(stored.slice());
+        });
+        return EngineSubjectTag.of({
+            name: "FlowEngineLike",
+            run,
+            result,
+            interrupt,
+            resume,
+            journal
+        });
     });
-    const interrupt = Effect_1.fnUntraced(function* interrupt(executionId) {
-        const meta = executions.get(executionId);
-        if (meta === undefined)
-            return;
-        const deferred = settlements.get(executionId);
-        const wasSettled = deferred !== undefined && Deferred.isDoneUnsafe(deferred);
-        if (wasSettled)
-            yield* arm(executionId);
-        interrupted.add(executionId);
-        // `interrupt`, never `interruptUnsafe`: the durable engine refuses the
-        // unsafe path with `unsafe_interrupt_unsupported` by contract, and the
-        // safe path does deliver the interruption to the live body fiber.
-        yield* engine.interrupt(meta.flow, executionId);
-        if (!wasSettled)
-            return;
-        // A cancelled parked round can self-interrupt before the registered
-        // body installs its onExit. Publish that round's exit to the fresh
-        // latch so run joins and resume cannot reuse its earlier suspension.
-        for (let attempt = 0;; attempt++) {
-            const current = yield* result(executionId);
-            if (current.status !== "suspended") {
-                yield* settle(executionId, current);
-                return;
-            }
-            if (attempt >= publicationPasses) {
-                return yield* Effect_1.fail(unavailable(`Execution ${executionId} did not publish its cancellation result within ${publicationPasses} scheduler passes`));
-            }
-            yield* Effect.yieldNow;
-        }
-    });
-    const resume = Effect_1.fnUntraced(function* resume(executionId) {
-        const meta = yield* requireMeta(executionId);
-        // The engine only re-enters a *suspended* execution; resuming a
-        // settled one is a no-op that would never settle a fresh latch.
-        const current = yield* result(executionId);
-        if (current.status !== "suspended")
-            return current;
-        yield* arm(executionId);
-        yield* engine.resume(meta.flow, executionId);
-        return yield* awaitResult(executionId);
-    });
-    const journal = (executionId) => Effect.suspend(() => {
-        const stored = journals.get(executionId);
-        return stored === undefined
-            ? Effect.fail(unavailable(`Execution ${executionId} is unavailable`))
-            : Effect.succeed(stored.slice());
-    });
-    return EngineSubjectTag.of({
-        name: "FlowEngineLike",
-        run,
-        result,
-        interrupt,
-        resume,
-        journal
-    });
-});
+};
 /**
  * Provides an `EngineSubject` over the ambient `FlowEngine` service.
  *
@@ -422,7 +427,14 @@ export const make = Effect_1.fnUntraced(function* make() {
  * @since 0.0.0
  */
 export const layer = () => Layer.effect(EngineSubjectTag)(make());
-const layerWebCrypto = layerWebCrypto$platform;
+/**
+ * Web Crypto as the engine's `Crypto`, so `layerMemory` stays a
+ * zero-configuration bundle. The engine digests step identities through the
+ * service, and `globalThis.crypto` is the one implementation both Node and the
+ * browser ship — pulling in a platform package here would cost this package
+ * its browser safety.
+ */
+const layerWebCrypto = Layer.mergeAll(EffectDigest.layerWebCrypto, SecureRandom.layerWebCrypto);
 /**
  * Provides an `EngineSubject` over any `FlowRuntime` implementation.
  *

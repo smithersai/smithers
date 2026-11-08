@@ -204,10 +204,10 @@ export class Suspended extends Schema.Class<Suspended>(
  * @category results
  * @since 1.0.0
  */
-export schema LineageDeadline {
-  readonly startedAtMs: number
-  readonly deadlineMs: number
-}
+export const LineageDeadline = Schema.Struct({
+  startedAtMs: Schema.Number,
+  deadlineMs: Schema.Number
+})
 
 /**
  * The deadline a trampoline lineage's rounds share.

@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
 import * as CatchUp from "../src/CatchUp.vibe"
-import * as Cron from "../src/Cron.vibe"
+import * as Cron from "../src/Cron.ts"
 
 describe("CatchUp", () => {
   const from = new Date("2026-01-01T00:00:00.000Z")

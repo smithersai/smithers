@@ -24,6 +24,7 @@
  *
  * @since 0.1.0
  */
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -45,9 +46,7 @@ import { Capability, GrantStore, Permission, Workspace } from "../../../flows/ke
 import { Node } from "../../../flows/plan/src/index.js";
 import * as EgressHttpClient from "../../../flows/platform-node/src/EgressHttpClient.js";
 import * as NativeEquipment from "../../../src/internal/NativeEquipment.js";
-import * as World from "#vibelang/emitted/character/world";
-import { Crypto } from "@smthrs/crypto";
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as World from "./world.js";
 const emptyRegistry = Registry.makeNoop({
     list: () => Effect.succeed([]),
     visible: () => Effect.succeed([]),
@@ -215,4 +214,4 @@ export const runTurn = (options) => Effect.gen(function* () {
         usage,
         durationMs: Date.now() - started
     };
-}).pipe(Effect.provide(Layer.merge(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest))), Effect.scoped, Effect.orDie);
+}).pipe(Effect.provide(Layer.merge(FlowEngine.layerMemory, NodeCrypto.layer)), Effect.scoped, Effect.orDie);

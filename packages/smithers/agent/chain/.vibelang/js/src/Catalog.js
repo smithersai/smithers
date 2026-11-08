@@ -8,8 +8,13 @@
  *
  * @since 0.1.0
  */
+import * as Clock from "effect/Clock";
+import * as Layer from "effect/Layer";
+import * as Random from "effect/Random";
+import * as Schema from "effect/Schema";
+import * as runtime from "vibelang-runtime/internal";
 import * as Digest from "@smthrs/core/Digest";
-import { Clock, Context, Layer, Random, Schema } from "effect";
+import {} from "effect";
 /**
  * A call that reached its entry and failed there. The chain journals it as
  * an observation rather than crashing the run. The message is journaled
@@ -38,7 +43,7 @@ export class CallError extends Schema.TaggedError()("/chain/CallError", {
  * @since 0.1.0
  * @slop
  */
-export class Catalog extends Context.Service()("/chain/Catalog") {
+export class Catalog extends runtime.$service("/chain/Catalog") {
 }
 /**
  * The declaration digest that pins an entry's identity into every call key
@@ -55,11 +60,11 @@ export const entryDigest = (entry) =>
 // settled under it.
 entry.digest !== undefined && entry.digest !== ""
     ? entry.digest
-    : Digest.digest(Digest.canonical({
+    : $invoke(Digest, () => (Digest.canonical({
         capabilities: entry.capabilities ?? null,
         description: entry.description,
         name: entry.name
-    }));
+    })));
 /**
  * One entry copied out of the caller's object.
  *
@@ -164,3 +169,4 @@ export const layer = (entries) => Layer.succeed(Catalog)(make(entries));
  * @slop
  */
 export const layerNoop = Layer.succeed(Catalog)(makeNoop());
+import { invoke as $invoke } from "./Catalog.vibe.-24-call-24-ts.js";

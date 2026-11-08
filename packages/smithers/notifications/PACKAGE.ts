@@ -105,7 +105,7 @@ const securityReview = Smithers.SecurityReview({
         "The NotificationQueue fold or Projection.derive applying a decoded Admitted record whose decision was never produced by applyAdmission.",
         "A forged Promoted record whose ids remove another lineage's pending notifications, dropping an operator steer."
       ],
-      paths: ["src/NotificationEvent.ts", "src/NotificationQueue.ts", "src/Projection.vibe", "src/NotificationState.ts"]
+      paths: ["src/NotificationEvent.ts", "src/NotificationQueue.ts", "src/Projection.ts", "src/NotificationState.ts"]
     },
     {
       id: "alert-journal-evidence-spoofing",

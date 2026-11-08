@@ -12,14 +12,14 @@ import { MAX_GENERATED_BODY_BYTES, MAX_VIEW_BODY_BYTES, MAX_VIEW_HTML_BYTES, MAX
 import { acceptedValues, formRefusal } from "../src/features/views/form.js";
 import { StateWrite, ViewWrite, } from "../src/features/views/schema.js";
 import { checkUrl } from "../src/features/web/url.js";
-import { Sessions } from "#vibelang/emitted/worker/Actor";
+import { Sessions } from "./Actor.js";
 import { askingOf, branchAccess, canView } from "./branch/Access.js";
 import * as Conversations from "./branch/Conversations.js";
 import { readBounded } from "#vibelang/emitted/worker/Body";
 import { DocsSource } from "./docs/Source.js";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { codeOf } from "./ErrorCode.js";
 import * as Messages from "./Messages.js";
-import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess";
+import * as ShapeAccess from "./ShapeAccess.js";
 import * as ViewRealm from "./ViewRealm.js";
 // The conversation's views in ChatApi (docs/features/web-pages.md#the-views-table, decision 0004 §8): `POST /api/views`
 // adds one, and `GET /api/shapes/views` is Electric's `views`, which every device syncs like the messages. Only a

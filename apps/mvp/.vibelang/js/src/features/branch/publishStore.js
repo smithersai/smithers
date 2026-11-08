@@ -4,6 +4,7 @@ import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db";
 import { Context, Effect, FiberHandle, Layer, Scope, Semaphore } from "effect";
 import { IssuesStore } from "../issues/store";
 import { FilesRow } from "../pulls/schema";
+import { RepoStore } from "../repo/store";
 import { PUBLICATIONS_SHAPE_ROUTE } from "./contract";
 import { PublicationRow, PublishPress, PullTitle } from "./publishSchema";
 import { BranchStore } from "./store";
@@ -62,7 +63,7 @@ export const writesQuery = (current, writes) => LiveQuery.make((q) => q
     failure: write.failure,
     createdAt: write.createdAt,
 })));
-/** Every comparison this tab's Compare read, by `<base>...<head>`. */
+/** Every comparison this tab's Compare read, by repository and both SHAs. */
 export const comparisonsQuery = (comparisons) => LiveQuery.make((q) => q.from({ comparison: comparisons.tanstack }).select(({ comparison }) => comparison));
 /** Publish's and Update branch's state for one tab. */
 export class PublishStore extends Context.Service()("@smthrs/mvp/branch/PublishStore") {
@@ -70,7 +71,8 @@ export class PublishStore extends Context.Service()("@smthrs/mvp/branch/PublishS
     static layer = (config) => Layer.effect(PublishStore, Effect.gen(function* () {
         const scope = yield* Effect.scope;
         const { current } = yield* BranchStore;
-        const { writes } = yield* IssuesStore;
+        const { writeRows } = yield* IssuesStore;
+        const repos = yield* RepoStore;
         const shown = yield* Collection.local({
             id: "branch-publication",
             schema: PublicationRow,
@@ -91,6 +93,10 @@ export class PublishStore extends Context.Service()("@smthrs/mvp/branch/PublishS
             schema: FilesRow,
             getKey: (row) => row.id,
         });
+        yield* repos.registerCache(["branch-compare"], (repoId) => Effect.flatMap(comparisons.toArray, (rows) => {
+            const keys = rows.filter((row) => row.repoId === repoId).map((row) => row.id);
+            return keys.length === 0 ? Effect.void : Effect.asVoid(comparisons.delete(keys));
+        }));
         const opened = new Map();
         const opening = yield* Semaphore.make(1);
         const open = (branchId) => ElectricCollection.make({
@@ -114,11 +120,12 @@ export class PublishStore extends Context.Service()("@smthrs/mvp/branch/PublishS
             presses,
             titles,
             comparisons,
-            publication: yield* publicationQuery(current, shown),
-            pullTitle: yield* pullTitleQuery(current, titles),
+            // What shows of a branch's repository goes through the data gate (repo/gate.ts).
+            publication: yield* publicationQuery(current, yield* repos.gate(shown)),
+            pullTitle: yield* pullTitleQuery(current, yield* repos.gate(titles)),
             press: yield* pressQuery(current, presses),
-            writes: yield* writesQuery(current, writes),
-            comparisonList: yield* comparisonsQuery(comparisons),
+            writes: yield* writesQuery(current, writeRows),
+            comparisonList: yield* comparisonsQuery(yield* repos.gate(comparisons)),
             follower: yield* FiberHandle.make(),
             scope,
         });

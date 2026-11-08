@@ -28,9 +28,9 @@
  * @since 0.1.0
  */
 import * as Result from "effect/Result";
-import { $catchExpression } from "vibelang-runtime";
+import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import * as Digest from "@smthrs/core/Digest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -67,7 +67,7 @@ const isPackRelativePath = (value) => value.length > 0 &&
 const PackRelativePath = Schema.NonEmptyString.check(Schema.makeFilter((value) => isPackRelativePath(value) || "must be a safe pack-relative path without traversal or empty segments", { title: "PackRelativePath" }));
 const normalizePackRelativePath = (value) => {
     if (!isPackRelativePath(value)) {
-        throw new TypeError(`Pack path ${JSON.stringify(value)} is not a safe pack-relative path`);
+        $raise(new TypeError(`Pack path ${JSON.stringify(value)} is not a safe pack-relative path`));
     }
     return value;
 };
@@ -124,37 +124,45 @@ const knownManifestKeys = new Set(["name", "version", "flows", "skills", "requir
  * @category constructors
  * @since 0.1.0
  */
-export const read = Effect_1.fnUntraced(runtime.$joinedFrame(function* read(fs, path, dir) {
-    const location = path.join(dir, manifestFileName);
-    const invalid = (description, cause) => registryError({
-        code: "invalid_pack",
-        module: "Pack",
-        method: "read",
-        path: location,
-        description,
-        cause
+export const read = (fs, path, dir) => {
+    return Effect_1.gen(function* read() {
+        const location = path.join(dir, manifestFileName);
+        const invalid = (description, cause) => registryError({
+            code: "invalid_pack",
+            module: "Pack",
+            method: "read",
+            path: location,
+            description,
+            cause
+        });
+        const text = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return fs.readFileString(location); }); })(), (cause) => (_tail_1 => { return Effect_1.gen(function* () {
+            const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+            return _completion_1[0] ? yield* _value_1 : _value_1;
+        }); })(() => { return [true, Effect_1.fail(invalid(`the pack manifest at "${location}" could not be read`, cause))]; }));
+        const parsed = yield* Effect.try({
+            try: () => JSON.parse(text),
+            catch: (cause) => invalid(`the pack manifest at "${location}" is not valid JSON`, cause)
+        });
+        const unsafe = unsafeManifestEntry(parsed);
+        if (unsafe !== undefined) {
+            return yield* Effect_1.fail(invalid(`the pack manifest at "${location}" contains unsafe ${unsafe.field} entry ${JSON.stringify(unsafe.entry)}`));
+        }
+        const manifest = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return decodeManifest(parsed); }); })(), (cause) => (_tail_2 => { return Effect_1.gen(function* () {
+            const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
+            return _completion_2[0] ? yield* _value_2 : _value_2;
+        }); })(() => { return [true, Effect_1.fail(invalid(`the pack manifest at "${location}" is not a valid manifest`, cause))]; }));
+        const warnings = Object.keys(parsed).flatMap((key) => knownManifestKeys.has(key)
+            ? []
+            : [
+                new DiscoveryWarning({
+                    code: "unknown_pack_key",
+                    path: location,
+                    message: `Unknown pack manifest key: ${key}`
+                })
+            ]);
+        return { manifest, dir, warnings };
     });
-    const text = yield* $catchExpression(() => fs.readFileString(location), (cause) => Effect_1.suspend(() => { return Effect_1.fail(invalid(`the pack manifest at "${location}" could not be read`, cause)); }));
-    const parsed = yield* Effect.try({
-        try: () => JSON.parse(text),
-        catch: (cause) => invalid(`the pack manifest at "${location}" is not valid JSON`, cause)
-    });
-    const unsafe = unsafeManifestEntry(parsed);
-    if (unsafe !== undefined) {
-        return yield* Effect_1.fail(invalid(`the pack manifest at "${location}" contains unsafe ${unsafe.field} entry ${JSON.stringify(unsafe.entry)}`));
-    }
-    const manifest = yield* $catchExpression(() => decodeManifest(parsed), (cause) => Effect_1.suspend(() => { return Effect_1.fail(invalid(`the pack manifest at "${location}" is not a valid manifest`, cause)); }));
-    const warnings = Object.keys(parsed).flatMap((key) => knownManifestKeys.has(key)
-        ? []
-        : [
-            new DiscoveryWarning({
-                code: "unknown_pack_key",
-                path: location,
-                message: `Unknown pack manifest key: ${key}`
-            })
-        ]);
-    return { manifest, dir, warnings };
-}));
+};
 /**
  * The content address of one pack, as a lock file records it.
  *
@@ -173,7 +181,7 @@ export const digest = (manifest, files) => {
     const measured = files
         .map((file) => ({
         path: normalizePackRelativePath(file.path),
-        contents: Digest.digest(file.contents)
+        contents: $invoke(Digest, () => file.contents)
     }))
         .sort((left, right) => {
         const pathOrder = left.path < right.path ? -1 : left.path > right.path ? 1 : 0;
@@ -185,14 +193,14 @@ export const digest = (manifest, files) => {
                     ? 1
                     : 0;
     });
-    return Digest.digest(Digest.canonical({
+    return $invoke(Digest, () => (Digest.canonical({
         name: manifest.name,
         version: manifest.version,
         flows: [...manifest.flows],
         skills: manifest.skills === undefined ? [] : [...manifest.skills],
         requires: manifest.requires === undefined ? null : { smithers: manifest.requires.smithers },
         files: measured
-    }));
+    })));
 };
 /**
  * Reads one to three numeric version components, zero-filling omitted
@@ -334,73 +342,57 @@ export const compatible = (range, runtimeVersion) => {
  * @category conversions
  * @since 0.1.0
  */
-export const sources = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* sources(pack, path) {
-    const fs = yield* FileSystem.FileSystem;
-    const root = path.resolve(pack.dir);
-    const location = path.join(pack.dir, manifestFileName);
-    const invalid = (entry) => registryError({
-        code: "invalid_pack",
-        module: "Pack",
-        method: "sources",
-        path: location,
-        description: `pack "${pack.manifest.name}@${pack.manifest.version}" at "${location}" declares unsafe source entry ${JSON.stringify(entry)}`
-    });
-    const contains = (parent, candidate) => {
-        const resolvedParent = path.resolve(parent);
-        const resolvedCandidate = path.resolve(candidate);
-        const prefix = path.join(resolvedParent, path.sep);
-        return resolvedCandidate === resolvedParent || resolvedCandidate.startsWith(prefix);
-    };
-    const output = [];
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const relative of [...pack.manifest.flows, ...(pack.manifest.skills ?? [])]) {
-                try {
-                    {
-                        if (!isPackRelativePath(relative))
-                            return yield* Effect_1.fail(invalid(relative));
-                        const sourcePath = path.resolve(pack.dir, relative);
-                        if (!contains(root, sourcePath))
-                            return yield* Effect_1.fail(invalid(relative));
-                        const [realRoot, realSource] = yield* Effect.all([
-                            Effect.result(fs.realPath(root)),
-                            Effect.result(fs.realPath(sourcePath))
-                        ]);
-                        // An unresolved root cannot establish physical confinement. A source must either
-                        // resolve inside it or not exist yet; any other failure (a looping or
-                        // unreadable link) is refused rather than trusted lexically.
-                        if (Result.isFailure(realRoot))
-                            return yield* Effect_1.fail(invalid(relative));
-                        if (Result.isSuccess(realSource)) {
-                            if (!contains(realRoot.success, realSource.success))
-                                return yield* Effect_1.fail(invalid(relative));
-                        }
-                        else if (realSource.failure.reason._tag !== "NotFound") {
-                            return yield* Effect_1.fail(invalid(relative));
-                        }
-                        output.push({
-                            source: `pack:${pack.manifest.name}`,
-                            root: sourcePath,
-                            confinementRoot: root,
-                            naming: "path"
-                        });
-                    }
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
+export const sources = (pack, path) => {
+    return Effect_1.gen(function* sources() {
+        const fs = yield* FileSystem.FileSystem;
+        const root = path.resolve(pack.dir);
+        const location = path.join(pack.dir, manifestFileName);
+        const invalid = (entry) => registryError({
+            code: "invalid_pack",
+            module: "Pack",
+            method: "sources",
+            path: location,
+            description: `pack "${pack.manifest.name}@${pack.manifest.version}" at "${location}" declares unsafe source entry ${JSON.stringify(entry)}`
+        });
+        const contains = (parent, candidate) => {
+            const resolvedParent = path.resolve(parent);
+            const resolvedCandidate = path.resolve(candidate);
+            const prefix = path.join(resolvedParent, path.sep);
+            return resolvedCandidate === resolvedParent || resolvedCandidate.startsWith(prefix);
+        };
+        const output = [];
+        for (const relative of [...pack.manifest.flows, ...(pack.manifest.skills ?? [])]) {
+            if (!isPackRelativePath(relative))
+                return yield* Effect_1.fail(invalid(relative));
+            const sourcePath = path.resolve(pack.dir, relative);
+            if (!contains(root, sourcePath))
+                return yield* Effect_1.fail(invalid(relative));
+            const [realRoot, realSource] = yield* Effect.all([
+                Effect.result(fs.realPath(root)),
+                Effect.result(fs.realPath(sourcePath))
+            ]);
+            // An unresolved root cannot establish physical confinement. A source must either
+            // resolve inside it or not exist yet; any other failure (a looping or
+            // unreadable link) is refused rather than trusted lexically.
+            if (Result.isFailure(realRoot))
+                return yield* Effect_1.fail(invalid(relative));
+            if (Result.isSuccess(realSource)) {
+                if (!contains(realRoot.success, realSource.success))
+                    return yield* Effect_1.fail(invalid(relative));
             }
+            else if (realSource.failure.reason._tag !== "NotFound") {
+                return yield* Effect_1.fail(invalid(relative));
+            }
+            output.push({
+                source: `pack:${pack.manifest.name}`,
+                root: sourcePath,
+                confinementRoot: root,
+                naming: "path"
+            });
         }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
-        }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
-    }
-    return output;
-})));
+        return output;
+    });
+};
 /**
  * Stamps a descriptor with the pack it was discovered in.
  *
@@ -507,3 +499,5 @@ export const checkCompatible = (pack, path, runtimeVersion) => {
             description: `pack "${pack.manifest.name}@${pack.manifest.version}" requires smithers ${range}, and this runtime is ${runtimeVersion}`
         }));
 };
+import { raise as $raise } from "./Pack.vibe.-24-throw-24-ts.js";
+import { invoke as $invoke } from "./Pack.vibe.-24-call-24-ts.js";

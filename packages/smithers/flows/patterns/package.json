@@ -136,8 +136,8 @@
       "default": "./.vibelang/js/src/ReviewLoop.js"
     },
     "./Runbook": {
-      "types": "./.vibe/declarations/src/Runbook.d.vibe.ts",
-      "vibelang-source": "./src/Runbook.vibe",
+      "types": "./src/Runbook.ts",
+      "vibelang-source": "./src/Runbook.ts",
       "default": "./.vibelang/js/src/Runbook.js"
     },
     "./Saga": {
@@ -477,8 +477,7 @@
   },
   "dependencies": {
     "@smthrs/flow": "1.0.0-rc.16",
-    "@smthrs/plan": "1.0.0-rc.16",
-    "vibelang-runtime": "0.0.13"
+    "@smthrs/plan": "1.0.0-rc.16"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",

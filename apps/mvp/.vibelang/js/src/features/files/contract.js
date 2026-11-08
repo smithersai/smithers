@@ -15,7 +15,11 @@ export const LINES_PATTERN = /^[1-9]\d{0,8}(?:-[1-9]\d{0,8})?$/;
  * is gone (`gone`).
  */
 export const OUTCOMES = ["opened", "closed", "absent", "no_repository", "gone"];
-/** The `BroadcastChannel` the engine worker asks the tabs of engine `name` on. */
+/**
+ * The `BroadcastChannel` the engine worker asks the tabs of engine `name` on.
+ *
+ * @throws {never}
+ */
 export const filesChannel = (name) => `${name}/files`;
 /**
  * What file tabs record, by name, and the attributes they carry: the step's log line, span and count, in the engine

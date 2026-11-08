@@ -203,6 +203,7 @@ export const canonical = (value) => render(value, new Set(), 0);
  *
  * @since 0.0.0
  * @category encoding
+ * @throws {never}
  */
 export const same = (left, right) => Object.is(left, right) || canonical(left) === canonical(right);
 const copy = (value, ancestors, depth) => {

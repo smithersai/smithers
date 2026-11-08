@@ -84,7 +84,7 @@ const poisonedService = (capability) => new Proxy({}, {
     get: (_target, property) => {
         if (typeof property === "symbol" || probes.has(property))
             return undefined;
-        throw denied(capability, property);
+        $raise(denied(capability, property));
     }
 });
 const poisonedModel = ModelLike.of({
@@ -92,25 +92,25 @@ const poisonedModel = ModelLike.of({
 });
 const poisonedClock = {
     currentTimeMillisUnsafe: () => {
-        throw denied("clock", "currentTimeMillisUnsafe");
+        $raise(denied("clock", "currentTimeMillisUnsafe"));
     },
     currentTimeMillis: Effect.die(denied("clock", "currentTimeMillis")),
     currentTimeNanosUnsafe: () => {
-        throw denied("clock", "currentTimeNanosUnsafe");
+        $raise(denied("clock", "currentTimeNanosUnsafe"));
     },
     currentTimeNanos: Effect.die(denied("clock", "currentTimeNanos")),
     monotonicTimeNanosUnsafe: () => {
-        throw denied("clock", "monotonicTimeNanosUnsafe");
+        $raise(denied("clock", "monotonicTimeNanosUnsafe"));
     },
     monotonicTimeNanos: Effect.die(denied("clock", "monotonicTimeNanos")),
     sleep: () => Effect.die(denied("clock", "sleep"))
 };
 const poisonedRandom = {
     nextIntUnsafe: () => {
-        throw denied("random", "nextIntUnsafe");
+        $raise(denied("random", "nextIntUnsafe"));
     },
     nextDoubleUnsafe: () => {
-        throw denied("random", "nextDoubleUnsafe");
+        $raise(denied("random", "nextDoubleUnsafe"));
     }
 };
 /**
@@ -134,3 +134,4 @@ export const poisonedClockAndRandom = Layer.mergeAll(Layer.succeed(Clock.Clock)(
  * @category layers
  */
 export const poisoned = Layer.mergeAll(Layer.succeed(FileSystem.FileSystem)(poisonedService("filesystem")), Layer.succeed(Path.Path)(poisonedService("path")), Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(poisonedService("shell")), Layer.succeed(Kernel.Jj.Jj)(poisonedService("jj")), Layer.succeed(HttpClient.HttpClient)(poisonedService("httpTransport")), Layer.succeed(ModelLike)(poisonedModel), poisonedClockAndRandom);
+import { raise as $raise } from "./TestLayers.vibe.-24-throw-24-ts.js";

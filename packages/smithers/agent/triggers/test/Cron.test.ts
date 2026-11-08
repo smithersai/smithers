@@ -2,7 +2,7 @@ import * as EffectCron from "effect/Cron"
 import * as Effect from "effect/Effect"
 import * as Result from "effect/Result"
 import { describe, expect, it } from "vitest"
-import * as Cron from "../src/Cron.vibe"
+import * as Cron from "../src/Cron.ts"
 
 // A cron the field parser accepts and the calendar never reaches. Building it
 // by hand is the only way to reach the search paths, because `parse` now

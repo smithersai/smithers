@@ -138,7 +138,12 @@ export const StackView = Schema.Struct({
  * `unavailable` (ChatApi couldn't answer the role: Try again asks once more), or refused: `sign_in` (signed out) or
  * `forbidden` (not a Member). One row per repository.
  */
-export const ACCESS_STATES = ["unknown", "allowed", "unavailable", "sign_in", "forbidden"];
+/**
+ * Whether this person may read a repository's stack. `syncing`: authority answered yes and the first sync hasn't
+ * landed, so what the device kept may show and nothing is called missing. `unverified`: a reached server couldn't
+ * verify the session, so no TODO shows; a pending check (`unknown`) and a failed network still show what the device has.
+ */
+export const ACCESS_STATES = ["unknown", "unverified", "allowed", "syncing", "unavailable", "sign_in", "forbidden"];
 export const Access = Schema.Struct({ id: Schema.String, status: Schema.Literals(ACCESS_STATES) });
 /** What a TODO step asks the tab that started its request (src/flows/askingTab.ts): keep a draft, or queue a change. */
 export const TodosCall = Schema.Union([

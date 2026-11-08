@@ -40,7 +40,7 @@
  * @since 1.0.0-rc.17
  */
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import { Action, Flow, RetryPolicy } from "@smthrs/flow";
 import { Node } from "@smthrs/plan";
 import * as Context from "effect/Context";
@@ -288,7 +288,9 @@ const outputText = (text) => {
     return text.slice(0, low);
 };
 const refOf = ({ machine, name }) => machine === undefined ? { name } : { name, machine };
-const machine = Effect_1.suspend({ machine: () => Machine }.machine);
+const machine = Effect_1.gen(function* machine() {
+    return yield* Machine;
+});
 /**
  * The implementations of `ci/job`'s actions over the host's {@link Machine}.
  *

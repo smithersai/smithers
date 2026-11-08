@@ -22,7 +22,8 @@ const noticeOf = (row) => {
         quiet: row.state !== "failed",
         // Open goes to its href; a local row has no conversation's run to scroll to.
         runId: null,
-        repoId: row.repo === undefined ? null : `github/${row.repo}`,
+        // The canonical id (`repoId`, lower case): what the data gate joins its repository's visibility on.
+        repoId: row.repo === undefined ? null : `github/${row.repo}`.toLowerCase(),
         conversationId: null,
         actor: null,
         title: row.title,

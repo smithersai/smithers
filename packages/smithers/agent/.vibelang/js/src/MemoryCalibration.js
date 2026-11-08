@@ -215,7 +215,7 @@ export const refit = (current, labels) => {
  * @category math
  * @since 1.0.0
  */
-export const digest = (thresholds) => Digest.digest(Digest.canonical(thresholds));
+export const digest = (thresholds) => $invoke(Digest, () => (Digest.canonical(thresholds)));
 const declared = (miss, extra) => ({
     costs: { miss, extra },
     tau: Number(tau({ miss, extra }).toFixed(2)),
@@ -262,3 +262,4 @@ export const initial = {
 export const Current = Context.Reference("@smthrs/agent/MemoryCalibration/Current", {
     defaultValue: () => initial
 });
+import { invoke as $invoke } from "./MemoryCalibration.vibe.-24-call-24-ts.js";

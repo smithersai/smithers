@@ -9,10 +9,7 @@ import { accessOf, canView, installedOn, roleOn } from "./Access.js";
  */
 export const visible = (repo, signedIn) => Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
-    const actor = Option.isNone(signedIn)
-        ? signedIn
-        : Option.some({ ...signedIn.value, role: yield* roleOn(signedIn.value, repo, yield* installedOn(repo)) });
-    const person = Option.isSome(actor) ? actor.value.subject.id : "";
+    const person = Option.isSome(signedIn) ? signedIn.value.subject.id : "";
     const rows = yield* sql `
       SELECT b.name, b.created_by AS "createdBy",
         (SELECT access FROM branch_shares s WHERE s.branch_id = b.id AND s.grantee = ${person}
@@ -20,5 +17,12 @@ export const visible = (repo, signedIn) => Effect.gen(function* () {
         (SELECT access FROM branch_shares s WHERE s.branch_id = b.id AND s.grantee = ${REPOSITORY_GRANTEE}) AS repository
       FROM branches b WHERE b.repo_id = ${repo} AND b.ref_namespace = 'ephemeral'
         AND b.deleted_at IS NULL ORDER BY b.name`;
+    // No private ref exists to authorize. The repository HTTP reader still classifies a missing mirror from
+    // metadata; this empty private-ref set says nothing about existence or public readability.
+    if (rows.length === 0)
+        return [];
+    const actor = Option.isNone(signedIn)
+        ? signedIn
+        : Option.some({ ...signedIn.value, role: yield* roleOn(signedIn.value, repo, yield* installedOn(repo)) });
     return rows.filter((row) => canView(accessOf(actor, row))).map((row) => row.name);
 });

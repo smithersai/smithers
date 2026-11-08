@@ -54,6 +54,9 @@ import {
   wrappedBrief
 } from "../wrapped/prompt.ts"
 
+// wrapped/main.ts and its imports reach `.vibe` modules, which a child Node loads through VibeLang.
+const vibeLoader = ["--import", import.meta.resolve("vibelang/register")]
+
 const claude = adapters["claude-code"]
 const memoryBlock = (text: string) => `<memory>\n${text}\n</memory>`
 
@@ -582,6 +585,7 @@ test("a host stopped by SIGINT, SIGTERM or SIGHUP kills the harness and the proc
       process.execPath,
       [
         "--experimental-strip-types",
+        ...vibeLoader,
         join(import.meta.dirname, "..", "wrapped", "main.ts"),
         "--cwd",
         repo,
@@ -909,6 +913,7 @@ test("the Codex dry-run CLI resumes the vendor session without probing or rewrit
   const before = readFileSync(path, "utf8")
   const result = spawnSync(process.execPath, [
     "--experimental-strip-types",
+    ...vibeLoader,
     join(import.meta.dirname, "..", "wrapped", "main.ts"),
     "--harness",
     "codex",

@@ -83,7 +83,7 @@ const placeholder = (reference) => {
                 return reference;
             const refusal = refusals.get(key);
             if (refusal !== undefined)
-                throw refuse(reference, refusal);
+                $raise(refuse(reference, refusal));
             // Not a thenable: a body that returns a planned value inside a promise
             // must resolve to the placeholder, not hang awaiting a proxy.
             if (key === "then")
@@ -91,13 +91,13 @@ const placeholder = (reference) => {
             return placeholder({ node: reference.node, path: [...reference.path, String(key)] });
         },
         apply: () => {
-            throw refuse(reference, "function application");
+            $raise(refuse(reference, "function application"));
         },
         has: () => {
-            throw refuse(reference, "property existence (`in`)");
+            $raise(refuse(reference, "property existence (`in`)"));
         },
         ownKeys: () => {
-            throw refuse(reference, "property enumeration");
+            $raise(refuse(reference, "property enumeration"));
         }
     });
 };
@@ -145,3 +145,4 @@ export const reference = (value) => {
  * @slop
  */
 export const isPlanned = (value) => reference(value) !== undefined;
+import { raise as $raise } from "./Planned.vibe.-24-throw-24-ts.js";

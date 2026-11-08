@@ -52,7 +52,7 @@ export const inWorkspace = (source, cwd) => ({
             })[0];
             return refused === undefined
                 ? binding.run(call)
-                : Effect.succeed(new Cell.CallResult({ outcome: "failure", value: null, message: refused }));
+                : Effect.succeed(Cell.CallResult.new({ outcome: "failure", value: null, message: refused }));
         }
     })))
 });

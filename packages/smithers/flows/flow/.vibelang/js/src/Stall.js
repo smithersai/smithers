@@ -92,7 +92,7 @@ export const Stalled = Schema.Struct({
  */
 export const policy = (options) => {
     if (!Number.isSafeInteger(options.rounds) || options.rounds < 2) {
-        throw new RangeError("Stall rounds must be a safe integer of at least 2");
+        $raise(new RangeError("Stall rounds must be a safe integer of at least 2"));
     }
     return { rounds: options.rounds, on: options.on ?? "stop" };
 };
@@ -136,3 +136,4 @@ export const observe = (policy, state, observation) => {
         stalled: signal === undefined ? undefined : { _tag: "Stalled", signal, rounds: next[signal].rounds, on: policy.on }
     };
 };
+import { raise as $raise } from "./Stall.vibe.-24-throw-24-ts.js";

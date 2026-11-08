@@ -12,7 +12,7 @@
  */
 import * as SqlError from "effect/sql/SqlError";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import * as Dialect from "@smthrs/database/Dialect";
 import { DatabaseError, DurableWriter, fromSqlError } from "@smthrs/database/DurableWriter";
 import * as Context from "effect/Context";
@@ -167,7 +167,7 @@ export const AttemptPatch = Schema.Struct({
  * @category services
  * @since 0.1.0
  */
-export class AttemptStore extends Context.Service()("@smthrs/run-store/AttemptStore") {
+export class AttemptStore extends runtime.$service("@smthrs/run-store/AttemptStore") {
 }
 const AttemptRow = Schema.Struct({
     run_id: durableIdentifier,
@@ -218,16 +218,16 @@ const validateId = (method, id) => Boundary.isDurableText(id.runId) &&
     : Effect.fail(error(method, "invalid_attempt", "attempt identity violates the durable identifier contract"));
 const inspectRecord = (input, required, optional, field) => {
     if (typeof input !== "object" || input === null)
-        throw new TypeError(field);
+        $raise(new TypeError(field));
     const prototype = Object.getPrototypeOf(input);
     if (prototype !== Object.prototype && prototype !== null)
-        throw new TypeError(field);
+        $raise(new TypeError(field));
     const allowed = new Set([...required, ...optional]);
     const output = Object.create(null);
     for (const name of required) {
         const descriptor = Object.getOwnPropertyDescriptor(input, name);
         if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable)
-            throw new TypeError(field);
+            $raise(new TypeError(field));
         output[name] = descriptor.value;
     }
     for (const name of optional) {
@@ -235,14 +235,14 @@ const inspectRecord = (input, required, optional, field) => {
         if (descriptor === undefined)
             continue;
         if (!("value" in descriptor) || !descriptor.enumerable)
-            throw new TypeError(field);
+            $raise(new TypeError(field));
         if (descriptor.value !== undefined)
             output[name] = descriptor.value;
     }
     for (const key of Reflect.ownKeys(input)) {
         if (typeof key !== "string" || !allowed.has(key)) {
             if (Object.getOwnPropertyDescriptor(input, key)?.enumerable)
-                throw new TypeError(field);
+                $raise(new TypeError(field));
         }
     }
     return output;
@@ -280,20 +280,20 @@ const snapshotJson = (method, value, field, maxBytes) => {
  */
 const inspectIdRecord = (input, field) => {
     if (typeof input !== "object" || input === null)
-        throw new TypeError(field);
+        $raise(new TypeError(field));
     const prototype = Object.getPrototypeOf(input);
     if (prototype !== Object.prototype && prototype !== null)
-        throw new TypeError(field);
+        $raise(new TypeError(field));
     for (const key of Reflect.ownKeys(input)) {
         const descriptor = Object.getOwnPropertyDescriptor(input, key);
         if (descriptor !== undefined && descriptor.enumerable && !("value" in descriptor))
-            throw new TypeError(field);
+            $raise(new TypeError(field));
     }
     const output = Object.create(null);
     for (const name of ["runId", "stepKeyDigest", "attempt"]) {
         const descriptor = Object.getOwnPropertyDescriptor(input, name);
         if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable)
-            throw new TypeError(field);
+            $raise(new TypeError(field));
         output[name] = descriptor.value;
     }
     return output;
@@ -504,7 +504,7 @@ const decodeRow = (method, input) => Effect.flatMap(Effect.mapError(Schema.decod
  * @category constructors
  * @since 0.1.0
  */
-export const makeWith = (options = {}) => Effect_1.gen(runtime.$joinedFrame(function* () {
+export const makeWith = (options = {}) => Effect_1.gen(function* () {
     const sql = yield* Effect.service(SqlClient.SqlClient);
     const writer = yield* DurableWriter;
     // Every write reads and changes one run's attempt rows and reads that run's
@@ -522,7 +522,7 @@ export const makeWith = (options = {}) => Effect_1.gen(runtime.$joinedFrame(func
     const patchEncodeOptional = encodeOptionalWith("patch");
     const patchEncodeCheckpoint = encodeCheckpointWith("patch", maxCheckpointBytes);
     const inProgress = sql.in("state", [...inProgressStates]);
-    const put = Effect.fn("AttemptStore.put")((input, ownerInput) => { var topic_1; return (topic_1 = Effect_1.gen(runtime.$joinedFrame(function* () {
+    const put = Effect.fn("AttemptStore.put")((input, ownerInput) => { var topic_1; return (topic_1 = Effect_1.gen(function* () {
         const owner = yield* snapshotOwner("put", ownerInput);
         const attempt = yield* snapshotAttempt("put", input);
         yield* Effect.annotateCurrentSpan({
@@ -616,8 +616,8 @@ export const makeWith = (options = {}) => Effect_1.gen(runtime.$joinedFrame(func
                 ? { _tag: "ExistingSame" }
                 : { _tag: "Conflict" };
         })), mapPersistenceError("put")));
-    })), observeOutcome()(topic_1)); });
-    const get = Effect.fn("AttemptStore.get")((input) => observeExit(Effect_1.gen(runtime.$joinedFrame(function* () {
+    }), observeOutcome()(topic_1)); });
+    const get = Effect.fn("AttemptStore.get")((input) => observeExit(Effect_1.gen(function* () {
         const id = yield* snapshotId("get", input);
         yield* Effect.annotateCurrentSpan({
             runId: id.runId,
@@ -631,7 +631,7 @@ export const makeWith = (options = {}) => Effect_1.gen(runtime.$joinedFrame(func
         WHERE run_id = ${id.runId} AND step_key_digest = ${id.stepKeyDigest} AND attempt = ${id.attempt}
       `, mapPersistenceError("get")));
         return rows.length === 0 ? Option.none() : yield* Effect.map(decodeRow("get", rows[0]), Option.some);
-    }))));
+    })));
     const listRun = Effect.fn("AttemptStore.listRun")((runId) => observeExit(Effect_1.gen(function* () {
         if (!(yield* Effect.orDie(Effect.try({ try: () => Boundary.isDurableText(runId), catch: (error) => error })))) {
             return yield* Effect_1.fail(error("listRun", "invalid_attempt", "run id violates the durable identifier contract"));
@@ -646,7 +646,7 @@ export const makeWith = (options = {}) => Effect_1.gen(runtime.$joinedFrame(func
       `, mapPersistenceError("listRun")));
         return yield* Effect.forEach(rows, (row) => decodeRow("listRun", row));
     })));
-    const heartbeat = Effect.fn("AttemptStore.heartbeat")((runId, stepKeyDigest, attempt, ownerInput, nowMs, checkpointValue) => { var topic_2; return (topic_2 = Effect_1.gen(runtime.$joinedFrame(function* () {
+    const heartbeat = Effect.fn("AttemptStore.heartbeat")((runId, stepKeyDigest, attempt, ownerInput, nowMs, checkpointValue) => { var topic_2; return (topic_2 = Effect_1.gen(function* () {
         const owner = yield* snapshotOwner("heartbeat", ownerInput);
         yield* validateId("heartbeat", { runId, stepKeyDigest, attempt });
         if (!Number.isSafeInteger(nowMs) || nowMs < 0) {
@@ -693,8 +693,8 @@ export const makeWith = (options = {}) => Effect_1.gen(runtime.$joinedFrame(func
             }
             return { _tag: "StateChanged" };
         })), mapPersistenceError("heartbeat")));
-    })), observeOutcome()(topic_2)); });
-    const finish = Effect.fn("AttemptStore.finish")((input, ownerInput) => { var topic_3; return (topic_3 = Effect_1.gen(runtime.$joinedFrame(function* () {
+    }), observeOutcome()(topic_2)); });
+    const finish = Effect.fn("AttemptStore.finish")((input, ownerInput) => { var topic_3; return (topic_3 = Effect_1.gen(function* () {
         const owner = yield* snapshotOwner("finish", ownerInput);
         const attempt = yield* snapshotFinish("finish", input);
         yield* Effect.annotateCurrentSpan({
@@ -754,8 +754,8 @@ export const makeWith = (options = {}) => Effect_1.gen(runtime.$joinedFrame(func
             }
             return { _tag: "StateChanged" };
         })), mapPersistenceError("finish")));
-    })), observeOutcome()(topic_3)); });
-    const patch = Effect.fn("AttemptStore.patch")((idInput, patchInput, ownerInput) => { var topic_4; return (topic_4 = Effect_1.gen(runtime.$joinedFrame(function* () {
+    }), observeOutcome()(topic_3)); });
+    const patch = Effect.fn("AttemptStore.patch")((idInput, patchInput, ownerInput) => { var topic_4; return (topic_4 = Effect_1.gen(function* () {
         const owner = yield* snapshotOwner("patch", ownerInput);
         const id = yield* snapshotId("patch", idInput);
         const fields = yield* snapshotPatch("patch", patchInput);
@@ -805,9 +805,9 @@ export const makeWith = (options = {}) => Effect_1.gen(runtime.$joinedFrame(func
                 ? { _tag: "NotFound" }
                 : { _tag: "FenceLost" };
         })), mapPersistenceError("patch")));
-    })), observeOutcome()(topic_4)); });
+    }), observeOutcome()(topic_4)); });
     return { put, get, listRun, heartbeat, finish, patch };
-}));
+});
 /**
  * Builds the SQL-backed attempt store with default policy.
  *
@@ -853,3 +853,4 @@ export const layer = Layer.effect(AttemptStore)(make);
  * @since 0.1.0
  */
 export const layerWith = (options) => Layer.effect(AttemptStore)(makeWith(options));
+import { raise as $raise } from "./AttemptStore.vibe.-24-throw-24-ts.js";

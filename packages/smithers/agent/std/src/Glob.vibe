@@ -52,7 +52,7 @@ import { capability, envelope, rootSubtree } from "./internal/Declaration.ts"
 import { MAX_ENTRIES } from "./internal/Text.ts"
 import * as Search from "./Search.vibe"
 import * as Contract from "./SearchContract.vibe"
-import type * as StdError from "./StdError.vibe"
+import type * as StdError from "./StdError.ts"
 
 /**
  * The registry name for glob.

@@ -263,7 +263,8 @@ export const mayChange = (session, confirmed, answer) => {
  * answered and the TODO isn't there; else `waiting`, which shows the page's frame and nothing more.
  */
 export const todoScreenOf = (card, number, todos, access, owner, name) => {
-    // A role ChatApi couldn't answer shows nothing this device kept of the TODO, as a refusal shows nothing.
+    // A role ChatApi couldn't answer shows nothing this device kept of the TODO, as a refusal shows nothing. What the
+    // repository may show at all is the route's gate (`RepoGate`).
     if (access === "unavailable")
         return { kind: "unavailable" };
     if (card !== undefined)

@@ -33,11 +33,11 @@ const seat = "anthropic:claude-sonnet-5-5"
 const Fraction = Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 }))
 
 /** The router's decision. */
-export schema Route {
-  readonly mode: "answer-from-memory" | "retrieve" | "retrieve-and-use-tool" | "insufficient"
-  readonly reason: string
-  readonly risk: "low" | "medium" | "high"
-}
+export const Route = Schema.Struct({
+  mode: Schema.Literals(["answer-from-memory", "retrieve", "retrieve-and-use-tool", "insufficient"]),
+  reason: Schema.String,
+  risk: Schema.Literals(["low", "medium", "high"])
+})
 
 /** The planner's retrieval plan. */
 export const RetrievalPlan = Schema.Struct({
@@ -76,11 +76,11 @@ export const Grade = Schema.Struct({
 })
 
 /** A person's review of an answer that stayed ungrounded. */
-export schema Approval {
-  readonly approved: boolean
-  readonly reviewer: string
-  readonly note: string
-}
+export const Approval = Schema.Struct({
+  approved: Schema.Boolean,
+  reviewer: Schema.String,
+  note: Schema.String
+})
 
 /** The final status the flow settles with. */
 export const Final = Schema.Struct({

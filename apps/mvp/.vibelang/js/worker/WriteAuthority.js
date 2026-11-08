@@ -2,11 +2,14 @@
 import { Duration, Effect, Metric, Option, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 import { ROLES } from "../src/features/auth/contract.js";
+import { sessionDeadline, sessionLive } from "./SessionStore.js";
 /** The sign-in authority retained by a write, including an alias when it came through one. */
 export const Session = Schema.Struct({
     personId: Schema.String,
     sessionId: Schema.String,
     alias: Schema.optional(Schema.String),
+    /** The key that verified the admitting cookie; older recorded payloads without it retain the legacy key. */
+    cookieKey: Schema.optional(Schema.String),
     // Missing on legacy protected payloads: those fail closed rather than guessing the role's scope.
     scope: Schema.optional(Schema.Union([
         Schema.TaggedStruct("Deployment", {}),
@@ -19,7 +22,14 @@ export const sessionOf = (actor) => actor.session === undefined ? undefined : {
     personId: actor.subject.id,
     sessionId: actor.session,
     ...(actor.alias === undefined ? {} : { alias: actor.alias }),
+    cookieKey: actor.cookieKey ?? "legacy",
 };
+const checked = (live, alias) => Effect.gen(function* () {
+    yield* Effect.annotateCurrentSpan({ "write.authority.live": live, "write.authority.alias": alias });
+    if (!live)
+        yield* Effect.logWarning("write.authority_unavailable").pipe(Effect.annotateLogs({ reason: "session_authority" }));
+    return live;
+});
 /**
  * In the writing transaction, lock the session and alias before judging either by the database's current clock.
  * Revocation then serializes with the write. A read never calls this seam; a local write makes no query.
@@ -31,21 +41,49 @@ export const holds = (session) => Effect.gen(function* () {
     const [locked] = yield* sql `
     SELECT 1 FROM sessions WHERE id::text = ${session.sessionId} AND person_id::text = ${session.personId} FOR SHARE`;
     if (locked === undefined)
-        return false;
+        return yield* checked(false, session.alias !== undefined);
     if (session.alias !== undefined) {
         const [alias] = yield* sql `
       SELECT 1 FROM host_sessions WHERE id::text = ${session.alias} AND parent_id::text = ${session.sessionId} FOR SHARE`;
         if (alias === undefined)
-            return false;
+            return yield* checked(false, true);
     }
+    return yield* live(session);
+}).pipe(Effect.withSpan("write.authority"));
+/** A single MVCC read for coedit; revocation can race the subsequent commit (decision 0151). */
+export const live = (session) => Effect.gen(function* () {
+    if (session === undefined)
+        return true;
+    const cookieKey = session.cookieKey ?? "legacy";
+    const sql = yield* SqlClient.SqlClient;
     const [row] = yield* sql `
-    SELECT s.revoked_at IS NULL AND s.expires_at > clock_timestamp()
-      AND (${session.alias ?? null}::text IS NULL OR EXISTS (
-        SELECT 1 FROM host_sessions h WHERE h.id::text = ${session.alias ?? null}
-          AND h.parent_id = s.id AND h.revoked_at IS NULL)) AS live
-    FROM sessions s WHERE s.id::text = ${session.sessionId} AND s.person_id::text = ${session.personId}`;
-    return row?.live === true;
-});
+    SELECT ${yield* sessionLive(sql, sql `s`, undefined, session.alias === undefined ? cookieKey : undefined)}
+      AND (${session.alias ?? null}::text IS NULL OR (h.id IS NOT NULL
+        AND ${yield* sessionLive(sql, sql `s`, sql `h`, cookieKey)})) AS live
+    FROM sessions s LEFT JOIN host_sessions h ON h.id::text = ${session.alias ?? null} AND h.parent_id = s.id
+    WHERE s.id::text = ${session.sessionId} AND s.person_id::text = ${session.personId}`;
+    return yield* checked(row?.live === true, session.alias !== undefined);
+}).pipe(Effect.withSpan("write.authority"));
+/** The earliest session deadline, read under the authority locks held by this transaction. */
+export const deadline = (sql, session) => session === undefined
+    ? sql `'infinity'::timestamptz`
+    : sql `coalesce((SELECT least(s.expires_at, ${sessionDeadline(sql, sql `s`, session.alias === undefined ? undefined : sql `h`)})
+      FROM sessions s LEFT JOIN host_sessions h ON h.id::text = ${session.alias ?? null} AND h.parent_id = s.id
+      WHERE s.id::text = ${session.sessionId} AND s.person_id::text = ${session.personId}
+        AND (${session.alias ?? null}::text IS NULL OR h.id IS NOT NULL)), '-infinity'::timestamptz)`;
+/** Raised inside a transaction so every preceding write rolls back before the route reports a retryable refusal. */
+export class Expired extends Schema.TaggedError()("WriteAuthorityExpired", {}) {
+}
+/** Last check after all potentially blocking writes; session/key changes serialize on the already-held locks. */
+export const requireAtCommit = (session) => Effect.gen(function* () {
+    if (session === undefined)
+        return;
+    const sql = yield* SqlClient.SqlClient;
+    const [row] = yield* sql `SELECT clock_timestamp() < ${deadline(sql, session)} AS live`;
+    yield* Effect.annotateCurrentSpan({ "write.authority.stage": "commit" });
+    if (!(yield* checked(row?.live === true, session.alias !== undefined)))
+        return yield* new Expired({});
+}).pipe(Effect.withSpan("write.authority"));
 /** Fixed database bounds for a short write transaction, installed before its first lock. Postgres 17 owns the cap. */
 export const bound = Effect.flatMap(SqlClient.SqlClient, (sql) => sql `
   SELECT set_config('lock_timeout', '1s', true), set_config('statement_timeout', '2s', true),

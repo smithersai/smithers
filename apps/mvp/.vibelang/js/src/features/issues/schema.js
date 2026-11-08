@@ -181,8 +181,9 @@ export const IssueView = Schema.Struct({
  * loading forever or claims that an absent item is Not found.
  */
 export const ACCESS = "access";
+/** `unverified`: a session check failed, so nothing private shows until one answers (decision 0110, 2026-11-03). */
 /** `elsewhere`: the deployment doesn't act on the repository, so its shape answered `404` (decision 0079 slice 1b). */
-export const ACCESS_STATES = ["unknown", "allowed", "unavailable", "sign_in", "forbidden", "elsewhere"];
+export const ACCESS_STATES = ["unknown", "unverified", "allowed", "unavailable", "sign_in", "forbidden", "elsewhere"];
 export const Access = Schema.Struct({ id: Schema.Literal(ACCESS), status: Schema.Literals(ACCESS_STATES), installed: Schema.Boolean });
 /** A repository whose issues this tab opened (src/features/issues/store.ts `forRepo`). */
 export const OpenedRepository = Schema.Struct({ id: Schema.String });

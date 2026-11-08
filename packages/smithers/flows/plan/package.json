@@ -106,11 +106,7 @@
       "vibelang-source": "./src/StepKey.vibe",
       "default": "./.vibelang/js/src/StepKey.js"
     },
-    "./Scheduling": {
-      "types": "./src/Scheduling.ts",
-      "vibelang-source": "./src/Scheduling.ts",
-      "default": "./.vibelang/js/src/Scheduling.js"
-    },
+    "./Scheduling": "./src/Scheduling.ts",
     "./index": {
       "types": "./src/index.ts",
       "vibelang-source": "./src/index.ts",

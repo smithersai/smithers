@@ -18,7 +18,7 @@ import * as Schema from "effect/Schema"
 import { formatExecOutputForModel } from "./internal/CodexText.ts"
 import { capability, envelope } from "./internal/Declaration.ts"
 import * as Exec from "./internal/Exec.vibe"
-import type * as StdError from "./StdError.vibe"
+import type * as StdError from "./StdError.ts"
 
 /**
  * Registry name for the shell_command flow. Matches the Codex CLI tool name.

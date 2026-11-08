@@ -102,11 +102,7 @@
       "vibelang-source": "./src/index.ts",
       "default": "./.vibelang/js/src/index.js"
     },
-    "./test/Notifying": {
-      "types": "./src/test/Notifying.ts",
-      "vibelang-source": "./src/test/Notifying.ts",
-      "default": "./.vibelang/js/src/test/Notifying.js"
-    },
+    "./test/Notifying": "./src/test/Notifying.ts",
     "./test/TestJournal": {
       "types": "./src/test/TestJournal.ts",
       "vibelang-source": "./src/test/TestJournal.ts",

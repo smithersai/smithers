@@ -23,8 +23,8 @@ import { CallResult } from "../Cell.js";
  * @private
  */
 export const refusal = (code, message) => code === undefined
-    ? new CallResult({ outcome: "failure", value: null, message })
-    : new CallResult({ outcome: "failure", value: null, code, message });
+    ? CallResult.new({ outcome: "failure", value: null, message })
+    : CallResult.new({ outcome: "failure", value: null, code, message });
 /**
  * A timeout refusal: the `timeout` code, with the limit the call ran past
  * recorded as `{ limitMillis }` in `value`, so a host that guards timeouts
@@ -33,7 +33,7 @@ export const refusal = (code, message) => code === undefined
  * @since 1.0.0-rc.1
  * @private
  */
-export const timedOut = (message, limitMillis) => new CallResult({ outcome: "failure", value: { limitMillis }, code: "timeout", message });
+export const timedOut = (message, limitMillis) => CallResult.new({ outcome: "failure", value: { limitMillis }, code: "timeout", message });
 /**
  * The limit a {@link timedOut} refusal recorded, when it recorded one.
  *

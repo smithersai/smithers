@@ -6,7 +6,7 @@ import { Node } from "@smthrs/plan";
 import { Clock, Effect, Layer, Metric, Option, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 import { ALERT_WORD } from "../../src/features/spend/copy.js";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { codeOf } from "../ErrorCode.js";
 import * as AlertDelivery from "./AlertDelivery.js";
 import { DeliverUnavailable, noChannels } from "./AlertDelivery.js";
 // `ops/SpendAlert { from, until, budget }` (docs/features/spend-alerts.md): one alert to the deployment's Admins about

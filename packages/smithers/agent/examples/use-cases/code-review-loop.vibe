@@ -30,16 +30,16 @@ export const Review = Schema.Struct({
 })
 
 /** The fixes the fixer describes. It changes no files. */
-export schema Fix {
-  readonly filesChanged: ReadonlyArray<string>
-  readonly changesSummary: string
-}
+export const Fix = Schema.Struct({
+  filesChanged: Schema.Array(Schema.String),
+  changesSummary: Schema.String
+})
 
 /** What the flow settles with. */
-export schema Output {
-  readonly finalSummary: string
-  readonly totalIterations: number
-}
+export const Output = Schema.Struct({
+  finalSummary: Schema.String,
+  totalIterations: Schema.Number
+})
 
 /** One review of the directory. */
 export const ReviewCode = AgentAction.make("examples/CodeReviewLoop/Review", {

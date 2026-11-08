@@ -335,17 +335,16 @@ export const layer = (options) => {
         };
         Object.defineProperty(compiler, "withoutTransform", { value: compiler });
         const sql = yield* SqlClient.make({
+            driver: "pg",
             acquirer: Effect.map(reserve, statements),
             compiler,
-            driver: "pg",
             spanAttributes: [["db.system.name", "postgresql"]]
         });
         const transactions = (start) => SqlClient.makeWithTransaction({
             transactionService: sql.transactionService,
             spanAttributes: [["db.system.name", "postgresql"]],
-            // The transaction owns the scope its connection is reserved in.
-            acquireConnection: () => Effect.map(reserve, tracked),
-            begin: (conn) => start(conn),
+            acquireConnection: (restore) => Effect.map(restore(reserve), tracked),
+            begin: start,
             savepoint,
             commit,
             rollback,

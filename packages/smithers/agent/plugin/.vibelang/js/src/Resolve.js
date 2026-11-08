@@ -8,7 +8,6 @@
  * @since 1.0.0-rc.0
  */
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as ImmutableMap from "@smthrs/canonical/ReadonlyMap";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -78,22 +77,22 @@ const childPath = (path, key) => {
 };
 const ownData = (input, path, allowed, fields = {}) => {
     if (typeof input !== "object" || input === null || Array.isArray(input)) {
-        throw invalidPlugin(path, "must be an ordinary record", fields);
+        $raise(invalidPlugin(path, "must be an ordinary record", fields));
     }
     const prototype = Object.getPrototypeOf(input);
     if (prototype !== Object.prototype && prototype !== null) {
-        throw invalidPlugin(path, "must be an ordinary record", fields);
+        $raise(invalidPlugin(path, "must be an ordinary record", fields));
     }
     const output = {};
     for (const key of Reflect.ownKeys(input)) {
         if (typeof key !== "string")
-            throw invalidPlugin(path, "must not contain symbol keys", fields);
+            $raise(invalidPlugin(path, "must not contain symbol keys", fields));
         if (allowed !== undefined && !allowed.has(key)) {
-            throw invalidPlugin(childPath(path, key), "contains an unknown property", fields);
+            $raise(invalidPlugin(childPath(path, key), "contains an unknown property", fields));
         }
         const descriptor = Object.getOwnPropertyDescriptor(input, key);
         if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
-            throw invalidPlugin(childPath(path, key), "must be an enumerable data property", fields);
+            $raise(invalidPlugin(childPath(path, key), "must be an enumerable data property", fields));
         }
         Object.defineProperty(output, key, { value: descriptor.value, enumerable: true });
     }
@@ -113,29 +112,29 @@ const validName = (value) => typeof value === "string" && value.length > 0 && va
     Boundary.isWellFormedText(value) && !/^\s*$/u.test(value) && !/\p{Cc}/u.test(value);
 const snapshotCatalog = (input) => {
     if (typeof input !== "object" || input === null || Array.isArray(input)) {
-        throw invalidPlugin("$options.hooks", "must be an ordinary hook catalog");
+        $raise(invalidPlugin("$options.hooks", "must be an ordinary hook catalog"));
     }
     const prototype = Object.getPrototypeOf(input);
     if (prototype !== Object.prototype && prototype !== null) {
-        throw invalidPlugin("$options.hooks", "must be an ordinary hook catalog");
+        $raise(invalidPlugin("$options.hooks", "must be an ordinary hook catalog"));
     }
     const output = {};
     for (const key of Reflect.ownKeys(input)) {
         if (typeof key !== "string" || !validName(key)) {
-            throw invalidPlugin("$options.hooks", "contains an invalid hook name");
+            $raise(invalidPlugin("$options.hooks", "contains an invalid hook name"));
         }
         const descriptor = Object.getOwnPropertyDescriptor(input, key);
         if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
-            throw invalidPlugin(childPath("$options.hooks", key), "must be an enumerable data property");
+            $raise(invalidPlugin(childPath("$options.hooks", key), "must be an enumerable data property"));
         }
         if (!["sequential", "parallel", "first", "waterfall"].includes(descriptor.value)) {
-            throw invalidPlugin(childPath("$options.hooks", key), "contains an invalid hook kind");
+            $raise(invalidPlugin(childPath("$options.hooks", key), "contains an invalid hook kind"));
         }
         Object.defineProperty(output, key, { value: descriptor.value, enumerable: true });
     }
     for (const hook of Object.keys(engineHooks)) {
         if (Object.hasOwn(output, hook) && output[hook] !== engineHooks[hook]) {
-            throw failure("hook_kind_mismatch", `hook catalog declares shared hook ${JSON.stringify(hook)} as ${JSON.stringify(output[hook])}, the kernel dispatches it as ${JSON.stringify(engineHooks[hook])}`, childPath("$options.hooks", hook), { hook });
+            $raise(failure("hook_kind_mismatch", `hook catalog declares shared hook ${JSON.stringify(hook)} as ${JSON.stringify(output[hook])}, the kernel dispatches it as ${JSON.stringify(engineHooks[hook])}`, childPath("$options.hooks", hook), { hook }));
         }
     }
     return Object.freeze(output);
@@ -144,14 +143,14 @@ const snapshotHook = (entry, path, plugin, hook) => {
     if (typeof entry === "function")
         return entry;
     if (entry === undefined) {
-        throw invalidPlugin(path, "must be a function or a hook object", { plugin, hook });
+        $raise(invalidPlugin(path, "must be a function or a hook object", { plugin, hook }));
     }
     const values = ownData(entry, path, new Set(["order", "handler"]), { plugin, hook });
     if (typeof values.handler !== "function") {
-        throw invalidPlugin(`${path}.handler`, "must be a function", { plugin, hook });
+        $raise(invalidPlugin(`${path}.handler`, "must be a function", { plugin, hook }));
     }
     if (values.order !== undefined && values.order !== "pre" && values.order !== "post") {
-        throw invalidPlugin(`${path}.order`, "must be pre or post", { plugin, hook });
+        $raise(invalidPlugin(`${path}.order`, "must be pre or post", { plugin, hook }));
     }
     return Object.freeze({
         ...(values.order === undefined ? {} : { order: values.order }),
@@ -161,19 +160,19 @@ const snapshotHook = (entry, path, plugin, hook) => {
 const snapshotPlugin = (input, path) => {
     const values = ownData(input, path, new Set(["name", "version", "enforce", "apply", "layer", "hooks"]));
     if (!validName(values.name))
-        throw invalidPlugin(`${path}.name`, "requires a bounded non-empty name");
+        $raise(invalidPlugin(`${path}.name`, "requires a bounded non-empty name"));
     const name = values.name;
     if (values.version !== undefined && !validName(values.version)) {
-        throw invalidPlugin(`${path}.version`, "requires a bounded non-empty version", { plugin: name });
+        $raise(invalidPlugin(`${path}.version`, "requires a bounded non-empty version", { plugin: name }));
     }
     if (values.enforce !== undefined && values.enforce !== "pre" && values.enforce !== "post") {
-        throw invalidPlugin(`${path}.enforce`, "must be pre or post", { plugin: name });
+        $raise(invalidPlugin(`${path}.enforce`, "must be pre or post", { plugin: name }));
     }
     if (values.apply !== undefined && values.apply !== "engine" && values.apply !== "harness" &&
         typeof values.apply !== "function")
-        throw invalidPlugin(`${path}.apply`, "must be engine, harness, or a predicate", { plugin: name });
+        $raise(invalidPlugin(`${path}.apply`, "must be engine, harness, or a predicate", { plugin: name }));
     if (values.layer !== undefined && !Layer.isLayer(values.layer)) {
-        throw invalidPlugin(`${path}.layer`, "must be an Effect Layer", { plugin: name });
+        $raise(invalidPlugin(`${path}.layer`, "must be an Effect Layer", { plugin: name }));
     }
     let hooks;
     if (values.hooks !== undefined) {
@@ -181,7 +180,7 @@ const snapshotPlugin = (input, path) => {
         const snapshot = Object.create(null);
         for (const [index, hook] of Object.keys(rawHooks).entries()) {
             if (!validName(hook)) {
-                throw invalidPlugin(`${path}.hooks[${index}]`, "contains an invalid hook name", { plugin: name });
+                $raise(invalidPlugin(`${path}.hooks[${index}]`, "contains an invalid hook name", { plugin: name }));
             }
             const entry = rawHooks[hook];
             Object.defineProperty(snapshot, hook, {
@@ -214,25 +213,25 @@ const flatten = (input) => {
             continue;
         if (Array.isArray(current.value)) {
             if (current.depth >= maximumPluginDepth) {
-                throw failure("resource_limit", `plugin input exceeds the depth limit of ${maximumPluginDepth}`, current.path);
+                $raise(failure("resource_limit", `plugin input exceeds the depth limit of ${maximumPluginDepth}`, current.path));
             }
             if (arrays.has(current.value))
-                throw invalidPlugin(current.path, "contains a cycle or repeated preset array");
+                $raise(invalidPlugin(current.path, "contains a cycle or repeated preset array"));
             arrays.add(current.value);
             const length = current.value.length;
             // Every queued frame and array element costs a node, including omitted
             // entries. Refuse before enumerating keys, descriptors, or child frames.
             if (length > maximumPluginInputNodes - nodes - stack.length) {
-                throw failure("resource_limit", `plugin input exceeds the ${maximumPluginInputNodes}-node limit`, current.path);
+                $raise(failure("resource_limit", `plugin input exceeds the ${maximumPluginInputNodes}-node limit`, current.path));
             }
             const keys = Reflect.ownKeys(current.value);
             if (keys.length !== length + 1 || !keys.includes("length")) {
-                throw invalidPlugin(current.path, "must be a dense preset array with no extra properties");
+                $raise(invalidPlugin(current.path, "must be a dense preset array with no extra properties"));
             }
             for (let index = length - 1; index >= 0; index--) {
                 const descriptor = Object.getOwnPropertyDescriptor(current.value, String(index));
                 if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
-                    throw invalidPlugin(`${current.path}[${index}]`, "must be an enumerable data property");
+                    $raise(invalidPlugin(`${current.path}[${index}]`, "must be an enumerable data property"));
                 }
                 stack.push({ value: descriptor.value, path: `${current.path}[${index}]`, depth: current.depth + 1 });
             }
@@ -240,7 +239,7 @@ const flatten = (input) => {
         }
         output.push(Object.freeze({ plugin: snapshotPlugin(current.value, current.path), path: current.path }));
         if (output.length > maximumPlugins) {
-            throw failure("resource_limit", `plugin input exceeds the ${maximumPlugins}-plugin limit`, current.path);
+            $raise(failure("resource_limit", `plugin input exceeds the ${maximumPlugins}-plugin limit`, current.path));
         }
     }
     return output;
@@ -267,7 +266,7 @@ const rank = (enforce) => (enforce === "pre" ? 0 : enforce === "post" ? 2 : 1);
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const resolve = (input, options = {}, configOverride) => Effect_1.gen(runtime.$iteratorFrame(runtime.$joinedFrame(function* () {
+export const resolve = (input, options = {}, configOverride) => Effect_1.gen(function* () {
     const raw = yield* Effect.try({
         try: () => snapshotOptions(options),
         catch: (cause) => cause instanceof PluginError
@@ -305,82 +304,26 @@ export const resolve = (input, options = {}, configOverride) => Effect_1.gen(run
     const target = raw.target ?? "engine";
     const selected = yield* Effect.filter(admitted, (entry) => included(entry, config, target));
     let handlerCount = 0;
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const value_1 of selected) {
-                try {
-                    const { path, plugin } = value_1;
-                    {
-                        const pluginHooks = plugin.hooks;
-                        if (pluginHooks === undefined)
-                            continue;
-                        {
-                            let pending_2 = runtime.$normal;
-                            try {
-                                for (const hook of Object.keys(pluginHooks)) {
-                                    try {
-                                        {
-                                            if (!Object.hasOwn(known, hook)) {
-                                                return yield* Effect_1.fail(failure("unknown_hook", `plugin ${JSON.stringify(plugin.name)} declares unknown hook ${JSON.stringify(diagnosticKey(hook))}`, childPath(`${path}.hooks`, hook), { plugin: plugin.name, hook }));
-                                            }
-                                            handlerCount += 1;
-                                            if (handlerCount > maximumHandlers) {
-                                                return yield* Effect_1.fail(failure("resource_limit", `plugin handlers exceed the limit of ${maximumHandlers}`, childPath(`${path}.hooks`, hook)));
-                                            }
-                                        }
-                                    }
-                                    catch (thrown_1) {
-                                        pending_2 = thrown_1;
-                                        break;
-                                    }
-                                }
-                            }
-                            catch (thrown_2) {
-                                throw runtime.$finallyFailure(pending_2, thrown_2);
-                            }
-                            if (pending_2 !== runtime.$normal)
-                                throw pending_2;
-                        }
-                    }
-                }
-                catch (thrown_3) {
-                    pending_1 = thrown_3;
-                    break;
-                }
+    for (const { path, plugin } of selected) {
+        const pluginHooks = plugin.hooks;
+        if (pluginHooks === undefined)
+            continue;
+        for (const hook of Object.keys(pluginHooks)) {
+            if (!Object.hasOwn(known, hook)) {
+                return yield* Effect_1.fail(failure("unknown_hook", `plugin ${JSON.stringify(plugin.name)} declares unknown hook ${JSON.stringify(diagnosticKey(hook))}`, childPath(`${path}.hooks`, hook), { plugin: plugin.name, hook }));
+            }
+            handlerCount += 1;
+            if (handlerCount > maximumHandlers) {
+                return yield* Effect_1.fail(failure("resource_limit", `plugin handlers exceed the limit of ${maximumHandlers}`, childPath(`${path}.hooks`, hook)));
             }
         }
-        catch (thrown_4) {
-            throw runtime.$finallyFailure(pending_1, thrown_4);
-        }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
     }
     const seen = new Set();
-    {
-        let pending_3 = runtime.$normal;
-        try {
-            for (const value_2 of selected) {
-                try {
-                    const { path, plugin } = value_2;
-                    {
-                        if (seen.has(plugin.name)) {
-                            return yield* Effect_1.fail(failure("duplicate_name", `duplicate plugin name "${plugin.name}"`, `${path}.name`, { plugin: plugin.name }));
-                        }
-                        seen.add(plugin.name);
-                    }
-                }
-                catch (thrown_5) {
-                    pending_3 = thrown_5;
-                    break;
-                }
-            }
+    for (const { path, plugin } of selected) {
+        if (seen.has(plugin.name)) {
+            return yield* Effect_1.fail(failure("duplicate_name", `duplicate plugin name "${plugin.name}"`, `${path}.name`, { plugin: plugin.name }));
         }
-        catch (thrown_6) {
-            throw runtime.$finallyFailure(pending_3, thrown_6);
-        }
-        if (pending_3 !== runtime.$normal)
-            throw pending_3;
+        seen.add(plugin.name);
     }
     const orderedEntries = selected
         .map((entry, index) => ({ entry, index }))
@@ -388,62 +331,25 @@ export const resolve = (input, options = {}, configOverride) => Effect_1.gen(run
         .map(({ entry }) => entry);
     const plugins = Object.freeze(orderedEntries.map(({ plugin }) => plugin));
     const entries = [];
-    {
-        let pending_4 = runtime.$normal;
-        try {
-            for (const hook of Object.keys(known)) {
-                try {
-                    {
-                        const records = [];
-                        {
-                            let pending_5 = runtime.$normal;
-                            try {
-                                for (const value_3 of plugins.entries()) {
-                                    try {
-                                        const [index, plugin] = value_3;
-                                        {
-                                            const pluginHooks = plugin.hooks;
-                                            if (pluginHooks === undefined || !Object.hasOwn(pluginHooks, hook))
-                                                continue;
-                                            const entry = pluginHooks[hook];
-                                            const record = Object.freeze({ plugin: plugin.name, hook, handler: handlerOf(entry) });
-                                            records.push({ record, enforceRank: rank(plugin.enforce), orderRank: rank(orderOf(entry)), index });
-                                        }
-                                    }
-                                    catch (thrown_7) {
-                                        pending_5 = thrown_7;
-                                        break;
-                                    }
-                                }
-                            }
-                            catch (thrown_8) {
-                                throw runtime.$finallyFailure(pending_5, thrown_8);
-                            }
-                            if (pending_5 !== runtime.$normal)
-                                throw pending_5;
-                        }
-                        // Vite's rule, verbatim: the per-hook `order` is the outer partition and
-                        // the enforce-sorted plugin list supplies the stable order inside it, so a
-                        // hook marked `order: "pre"` runs ahead of every normal-order handler even
-                        // when its plugin is `enforce: "post"`.
-                        const ordered = records
-                            .sort((left, right) => left.orderRank - right.orderRank || left.enforceRank - right.enforceRank || left.index - right.index)
-                            .map(({ record }) => record);
-                        if (ordered.length > 0)
-                            entries.push([hook, Object.freeze(ordered)]);
-                    }
-                }
-                catch (thrown_9) {
-                    pending_4 = thrown_9;
-                    break;
-                }
-            }
+    for (const hook of Object.keys(known)) {
+        const records = [];
+        for (const [index, plugin] of plugins.entries()) {
+            const pluginHooks = plugin.hooks;
+            if (pluginHooks === undefined || !Object.hasOwn(pluginHooks, hook))
+                continue;
+            const entry = pluginHooks[hook];
+            const record = Object.freeze({ plugin: plugin.name, hook, handler: handlerOf(entry) });
+            records.push({ record, enforceRank: rank(plugin.enforce), orderRank: rank(orderOf(entry)), index });
         }
-        catch (thrown_10) {
-            throw runtime.$finallyFailure(pending_4, thrown_10);
-        }
-        if (pending_4 !== runtime.$normal)
-            throw pending_4;
+        // Vite's rule, verbatim: the per-hook `order` is the outer partition and
+        // the enforce-sorted plugin list supplies the stable order inside it, so a
+        // hook marked `order: "pre"` runs ahead of every normal-order handler even
+        // when its plugin is `enforce: "post"`.
+        const ordered = records
+            .sort((left, right) => left.orderRank - right.orderRank || left.enforceRank - right.enforceRank || left.index - right.index)
+            .map(({ record }) => record);
+        if (ordered.length > 0)
+            entries.push([hook, Object.freeze(ordered)]);
     }
     const cacheEnvironment = yield* snapshotCacheEnvironment(raw.cacheEnvironment, orderedEntries);
     return Object.freeze({
@@ -453,7 +359,7 @@ export const resolve = (input, options = {}, configOverride) => Effect_1.gen(run
         parallelConcurrency,
         ...(cacheEnvironment === undefined ? {} : { cacheEnvironment })
     });
-})));
+});
 /**
  * Merges every resolved plugin layer left-to-right and supplies the detached
  * cache environment captured during resolution.
@@ -462,3 +368,4 @@ export const resolve = (input, options = {}, configOverride) => Effect_1.gen(run
  * @since 1.0.0-rc.0
  */
 export const layer = (resolved) => mergePluginLayers(resolved.plugins, resolved.cacheEnvironment);
+import { raise as $raise } from "./Resolve.vibe.-24-throw-24-ts.js";

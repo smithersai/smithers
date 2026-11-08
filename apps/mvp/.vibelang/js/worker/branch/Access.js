@@ -2,8 +2,8 @@
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 import { MODES, REPOSITORY_GRANTEE, SHARE_ACCESSES, } from "../../src/features/branch/contract.js";
-import { canAsk } from "#vibelang/emitted/worker/Actor";
-import { repositoryOf } from "#vibelang/emitted/worker/github/Config";
+import { canAsk } from "../Actor.js";
+import { repositoryOf } from "../github/Config.js";
 import * as RepoRoles from "../github/RepoRoles.js";
 // Who may do what on a branch's live workspace (decision 0013 §2 and §4, docs/features/branch-workspace.md#sharing):
 // its conversation, its terminals, its room. A live branch is private to its creator until they share it, Google Docs
@@ -13,7 +13,8 @@ import * as RepoRoles from "../github/RepoRoles.js";
 // The role every check decides with is the person's on the branch's own repository (decision 0079), from
 // `BranchRoles`: on a repository the App is installed on (as Smithers recorded it), the role `RepoRoles` gives there,
 // so a Member of the deployment's repository is only a Guest on another where GitHub says read. Without an
-// installation, only a recorded public repository admits the deployment's role; private or unknown visibility denies.
+// installation, the deployment's own repository still uses its fresh session role. Elsewhere only confirmed public
+// visibility admits that role; confirmed private visibility denies, and unavailable metadata remains retryable.
 //
 // Seams for the features beside this one (no tables of their own):
 // - Notifications (worker/Notifications.ts) route a run on a branch to the people watching it: a watcher whose
@@ -76,7 +77,7 @@ export class BranchRoles extends Context.Service()("@smthrs/mvp/branch/BranchRol
 }
 /**
  * The role `actor` works with on repository `repoId` (`installed`: whether Smithers recorded the App's installation on
- * it): `BranchRoles`' where the App is installed; otherwise its fail-closed public-copy check, asking GitHub nothing.
+ * it): `BranchRoles`' where the App is installed; otherwise its deployment-session or public-copy check.
  */
 export const roleOn = (actor, repoId, installed) => Effect.gen(function* () {
     const roles = yield* BranchRoles;

@@ -17,7 +17,6 @@
 import * as Clock from "effect/Clock";
 import * as Option from "effect/Option";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import { DurableEngineState, EngineStore, RunState } from "@smthrs/engine-store";
 import { RunStore } from "@smthrs/run-store";
 import * as Effect from "effect/Effect";
@@ -53,150 +52,59 @@ export const routes = (executionId) => Effect.flatMap(DurableEngineState.Durable
  * {@link routes}' reads, which it runs as one read transaction: one snapshot of what the drive left, and one
  * transaction's round trips for all of them rather than a transaction for each.
  */
-const read = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* read(executionId) {
-    const runs = yield* RunStore.RunStore;
-    const engineState = yield* DurableEngineState.DurableEngineState;
-    // Read the clock after `nextWake` does: it answers "now" with its own read.
-    const due = Effect_1.fnUntraced(function* due(id) {
-        const wake = yield* EngineStore.nextWake(id);
-        const nowMs = Math.floor(yield* Clock.currentTimeMillis);
-        return Option.exists(wake, (at) => at <= nowMs);
+const read = (executionId) => {
+    return Effect_1.gen(function* read() {
+        const runs = yield* RunStore.RunStore;
+        const engineState = yield* DurableEngineState.DurableEngineState;
+        // Read the clock after `nextWake` does: it answers "now" with its own read.
+        const due = (id) => {
+            return Effect_1.gen(function* due() {
+                const wake = yield* EngineStore.nextWake(id);
+                const nowMs = Math.floor(yield* Clock.currentTimeMillis);
+                return Option.exists(wake, (at) => at <= nowMs);
+            });
+        };
+        const lineage = yield* runs.lineage(executionId);
+        const index = lineage.findIndex((round) => round.runId === executionId);
+        const self = lineage[index];
+        const successor = lineage[index + 1];
+        const settled = successor === undefined &&
+            (yield* Effect.orDie(Effect.try({ try: () => RunStore.isTerminalRunStatus(self.status), catch: (error) => error })));
+        const linked = new Set();
+        for (const round of settled ? lineage : [self]) {
+            for (const edge of yield* engineState.runChildren(round.runId))
+                linked.add(edge.childId);
+        }
+        const next = successor === undefined ? [] : [successor];
+        for (const child of linked)
+            next.push(yield* runs.latestRound(child));
+        const state = settled ? yield* decodeState(self.stateJson) : undefined;
+        const cancellation = state?.cancellation?.run;
+        if (cancellation !== undefined)
+            next.push(yield* runs.latestRound(cancellation));
+        const start = [];
+        const wake = [];
+        for (const row of next) {
+            if (!(yield* due(row.runId)))
+                continue;
+            if (row.status !== "pending") {
+                wake.push(row.runId);
+                continue;
+            }
+            const admitted = yield* decodeState(row.stateJson);
+            start.push({ flow: admitted.flowName, executionId: row.runId, payload: admitted.payload });
+        }
+        if (state !== undefined) {
+            const parents = new Set(state.parentExecutionId === undefined ? [] : [state.parentExecutionId]);
+            for (const round of lineage) {
+                for (const edge of yield* engineState.runParents(round.runId))
+                    parents.add(edge.parentId);
+            }
+            for (const parent of parents) {
+                if (yield* due(parent))
+                    wake.push(parent);
+            }
+        }
+        return { start, wake };
     });
-    const lineage = yield* runs.lineage(executionId);
-    const index = lineage.findIndex((round) => round.runId === executionId);
-    const self = lineage[index];
-    const successor = lineage[index + 1];
-    const settled = successor === undefined &&
-        (yield* Effect.orDie(Effect.try({ try: () => RunStore.isTerminalRunStatus(self.status), catch: (error) => error })));
-    const linked = new Set();
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const round of settled ? lineage : [self]) {
-                try {
-                    {
-                        {
-                            let pending_2 = runtime.$normal;
-                            try {
-                                for (const edge of yield* engineState.runChildren(round.runId)) {
-                                    try {
-                                        linked.add(edge.childId);
-                                    }
-                                    catch (thrown_1) {
-                                        pending_2 = thrown_1;
-                                        break;
-                                    }
-                                }
-                            }
-                            catch (thrown_2) {
-                                throw runtime.$finallyFailure(pending_2, thrown_2);
-                            }
-                            if (pending_2 !== runtime.$normal)
-                                throw pending_2;
-                        }
-                    }
-                }
-                catch (thrown_3) {
-                    pending_1 = thrown_3;
-                    break;
-                }
-            }
-        }
-        catch (thrown_4) {
-            throw runtime.$finallyFailure(pending_1, thrown_4);
-        }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
-    }
-    const next = successor === undefined ? [] : [successor];
-    yield* runtime.$forOf((function* (iterable_1) {
-        for (const value_1 of iterable_1)
-            yield value_1;
-    })(linked), Effect_1.fnUntraced(function* read$for(child) {
-        next.push(yield* runs.latestRound(child));
-    }));
-    const state = settled ? yield* decodeState(self.stateJson) : undefined;
-    const cancellation = state?.cancellation?.run;
-    if (cancellation !== undefined)
-        next.push(yield* runs.latestRound(cancellation));
-    const start = [];
-    const wake = [];
-    {
-        let pending_3 = runtime.$normal;
-        try {
-            for (const row of next) {
-                try {
-                    {
-                        if (!(yield* due(row.runId)))
-                            continue;
-                        if (row.status !== "pending") {
-                            wake.push(row.runId);
-                            continue;
-                        }
-                        const admitted = yield* decodeState(row.stateJson);
-                        start.push({ flow: admitted.flowName, executionId: row.runId, payload: admitted.payload });
-                    }
-                }
-                catch (thrown_5) {
-                    pending_3 = thrown_5;
-                    break;
-                }
-            }
-        }
-        catch (thrown_6) {
-            throw runtime.$finallyFailure(pending_3, thrown_6);
-        }
-        if (pending_3 !== runtime.$normal)
-            throw pending_3;
-    }
-    if (state !== undefined) {
-        const parents = new Set(state.parentExecutionId === undefined ? [] : [state.parentExecutionId]);
-        {
-            let pending_4 = runtime.$normal;
-            try {
-                for (const round of lineage) {
-                    try {
-                        {
-                            {
-                                let pending_5 = runtime.$normal;
-                                try {
-                                    for (const edge of yield* engineState.runParents(round.runId)) {
-                                        try {
-                                            parents.add(edge.parentId);
-                                        }
-                                        catch (thrown_7) {
-                                            pending_5 = thrown_7;
-                                            break;
-                                        }
-                                    }
-                                }
-                                catch (thrown_8) {
-                                    throw runtime.$finallyFailure(pending_5, thrown_8);
-                                }
-                                if (pending_5 !== runtime.$normal)
-                                    throw pending_5;
-                            }
-                        }
-                    }
-                    catch (thrown_9) {
-                        pending_4 = thrown_9;
-                        break;
-                    }
-                }
-            }
-            catch (thrown_10) {
-                throw runtime.$finallyFailure(pending_4, thrown_10);
-            }
-            if (pending_4 !== runtime.$normal)
-                throw pending_4;
-        }
-        yield* runtime.$forOf((function* (iterable_2) {
-            for (const value_2 of iterable_2)
-                yield value_2;
-        })(parents), Effect_1.fnUntraced(function* read$for(parent) {
-            if (yield* due(parent))
-                wake.push(parent);
-        }));
-    }
-    return { start, wake };
-})));
+};

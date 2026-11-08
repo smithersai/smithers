@@ -1,7 +1,7 @@
 import type { Collection } from "@smthrs/effect-tanstack-db"
 import { type Scope } from "effect"
 import { codeOf } from "../../errorCode"
-import { PullsClient } from "./api.vibe"
+import { PullsClient } from "./api.ts"
 import { RepoStore } from "../repo/store"
 import { comparisonKey, SHA } from "./contract"
 import type { FilesRow } from "./schema.ts"

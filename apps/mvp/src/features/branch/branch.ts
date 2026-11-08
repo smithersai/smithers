@@ -7,7 +7,7 @@ import { Conversations, type ConversationsView } from "../conversations/conversa
 import { ConversationsStore } from "../conversations/store"
 import { Presence, type PresenceView } from "../presence/presence"
 import { Sharing, type SharingView } from "../sharing/sharing"
-import { SharingStore } from "#vibelang/emitted/src/features/sharing/store"
+import { SharingStore } from "../sharing/store"
 import { leave, open, writable } from "./actions"
 import { Publishing, type PublishingView } from "./publishing"
 import { BranchRoute, BranchStore } from "./store"

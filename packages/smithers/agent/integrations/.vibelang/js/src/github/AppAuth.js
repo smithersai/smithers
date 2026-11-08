@@ -262,3 +262,10 @@ export const make = (credentials) => Effect.gen(function* () {
  * @since 1.0.0
  */
 export const layer = (credentials) => Layer.effect(AppAuth)(make(credentials));
+/**
+ * Maximum repositories explicitly named by one installation token.
+ * @see https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app
+ * @category constants
+ * @since 1.0.0
+ */
+export const MAX_TOKEN_REPOSITORIES = 500;

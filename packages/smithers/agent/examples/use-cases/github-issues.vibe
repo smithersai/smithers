@@ -30,24 +30,24 @@ export const Issue = Schema.Struct({
 })
 
 /** The triager's answer: every open issue, triaged. */
-export schema Triaged {
-  readonly repo: string
-  readonly issues: ReadonlyArray<Issue>
-}
+export const Triaged = Schema.Struct({
+  repo: Schema.String,
+  issues: Schema.Array(Issue)
+})
 
 /** The board the flow settles with. */
-export schema Board {
-  readonly repo: string
-  readonly total: number
-  readonly columns: ReadonlyArray<{
-    readonly name: string
-    readonly cards: ReadonlyArray<{
-      readonly number: number
-      readonly title: string
-      readonly priority: string
-    }>
-  }>
-}
+export const Board = Schema.Struct({
+  repo: Schema.String,
+  total: Schema.Number,
+  columns: Schema.Array(Schema.Struct({
+    name: Schema.String,
+    cards: Schema.Array(Schema.Struct({
+      number: Schema.Number,
+      title: Schema.String,
+      priority: Schema.String
+    }))
+  }))
+})
 
 /** Fetches and triages every open issue in one pass. */
 export const TriageIssues = AgentAction.make("examples/GitHubIssues/Triage", {

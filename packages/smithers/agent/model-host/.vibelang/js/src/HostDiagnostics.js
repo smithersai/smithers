@@ -17,7 +17,6 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Scope from "effect/Scope";
 import * as Effect_1 from "effect/Effect";
-import * as runtime_1 from "vibelang-runtime";
 /**
  * The marker every record carries, so an operator can select them out of a
  * guest's log without parsing the rest of it.
@@ -181,7 +180,7 @@ export const createHostDiagnostics = (options = {}) => {
         return inert;
     const runtime = options.runtime;
     if (runtime === undefined)
-        throw new Error("Host diagnostics require an Effect clock and scope");
+        $raise(new Error("Host diagnostics require an Effect clock and scope"));
     const clock = options.clock ?? (() => Number(runtime.clock.monotonicTimeNanosUnsafe()) / 1_000_000);
     const pendingMillis = options.pendingMillis ?? 15_000;
     const detailLimit = options.detailLimit ?? 8;
@@ -214,7 +213,7 @@ export const createHostDiagnostics = (options = {}) => {
     };
     return {
         record: (event, phase, fields = {}) => emit(event, phase, fields),
-        begin: (event, fields = {}) => Effect_1.gen(runtime_1.$joinedFrame(function* () {
+        begin: (event, fields = {}) => Effect_1.gen(function* () {
             const openedAt = clock();
             event = EVENTS.has(event) ? event : "diagnostics";
             const count = (counts.get(event) ?? 0) + 1;
@@ -225,7 +224,7 @@ export const createHostDiagnostics = (options = {}) => {
             const detailed = count <= detailLimit;
             if (detailed)
                 emit(event, "begin", fields);
-            const fiber = yield* Effect.forkIn(Effect.forever(Effect.andThen(runtime.clock.sleep(Duration.millis(pendingMillis)), Effect_1.sync(() => emit(event, "pending", { ...fields, pendingMillis: Math.round(clock() - openedAt) })))), runtime.scope);
+            const fiber = yield* Effect.forkIn(Effect.forever(Effect.andThen(runtime.clock.sleep(Duration.millis(pendingMillis)), Effect_1.sync(() => { return emit(event, "pending", { ...fields, pendingMillis: Math.round(clock() - openedAt) }); }))), runtime.scope);
             let settled = false;
             return (outcome = {}) => {
                 // A completion reached twice, say from a finalizer and a handler,
@@ -240,7 +239,7 @@ export const createHostDiagnostics = (options = {}) => {
                     outcome.failed === true)
                     emit(event, "end", { ...fields, ...outcome, elapsedMillis: elapsed });
             };
-        }))
+        })
     };
 };
 /**
@@ -250,8 +249,9 @@ export const createHostDiagnostics = (options = {}) => {
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const makeHostDiagnostics = (options = {}) => Effect_1.gen(runtime_1.$joinedFrame(function* () {
+export const makeHostDiagnostics = (options = {}) => Effect_1.gen(function* () {
     if (options.write === undefined)
         return inert;
     return createHostDiagnostics({ ...options, runtime: { clock: yield* Clock.Clock, scope: yield* Scope.Scope } });
-}));
+});
+import { raise as $raise } from "./HostDiagnostics.vibe.-24-throw-24-ts.js";

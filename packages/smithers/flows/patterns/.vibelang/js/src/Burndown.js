@@ -20,7 +20,6 @@
  *
  * @since 1.0.0
  */
-import { Crypto } from "@smthrs/crypto";
 import * as Action from "@smthrs/flow/Action";
 import * as Fault from "@smthrs/flow/Fault";
 import * as Flow from "@smthrs/flow/Flow";
@@ -30,6 +29,7 @@ import * as Sleep from "@smthrs/flow/Sleep";
 import * as WaitFor from "@smthrs/flow/WaitFor";
 import * as Node from "@smthrs/plan/Node";
 import * as Cause from "effect/Cause";
+import * as EffectDigest from "effect/crypto/Digest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -486,7 +486,7 @@ const roundRefusal = (input, key, concurrency, landConcurrency) => {
 const engineOf = Effect.map(Effect.all([
     Effect.serviceOption(FlowRuntime.FlowInstance),
     Effect.serviceOption(FlowRuntime.FlowRuntime),
-    Effect.serviceOption(Crypto.Crypto)
+    Effect.serviceOption(EffectDigest.Digest)
 ]), ([instance, runtime, crypto]) => Option.isSome(instance) && Option.isSome(runtime) && Option.isSome(crypto)
     ? { instance: instance.value, runtime: runtime.value, crypto: crypto.value }
     : undefined);
@@ -530,7 +530,7 @@ const journaled = (engine, options, run) => {
                     reports.replayed += 1;
                 reports.digests.add(dispatch.stepKeyDigest);
             })
-        })), Effect.provideService(FlowRuntime.FlowInstance, engine.instance), Effect.provideService(FlowRuntime.FlowRuntime, engine.runtime), Effect.provideService(Crypto.Crypto, engine.crypto))
+        })), Effect.provideService(FlowRuntime.FlowInstance, engine.instance), Effect.provideService(FlowRuntime.FlowRuntime, engine.runtime), Effect.provideService(EffectDigest.Digest, engine.crypto))
         : run;
     const settled = (outcome, value) => record(() => ({
         _tag: "NodeSettled",

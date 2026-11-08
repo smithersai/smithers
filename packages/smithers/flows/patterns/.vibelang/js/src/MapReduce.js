@@ -43,10 +43,10 @@ export const make = (options) => {
     const concurrency = options.concurrency;
     const onEmpty = options.onEmpty;
     if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
-        throw new PatternError({
+        $raise(new PatternError({
             code: "invalid_decorator",
             message: "MapReduce concurrency must be a positive safe integer"
-        });
+        }));
     }
     const { name, description } = Compose.label("mapReduce", { concurrency, onEmpty }, options);
     const body = (input) => {
@@ -54,10 +54,10 @@ export const make = (options) => {
             input === null ||
             !("shards" in input) ||
             !Array.isArray(input.shards)) {
-            throw new PatternError({
+            $raise(new PatternError({
                 code: "invalid_input",
                 message: "MapReduce input must contain a shards array"
-            });
+            }));
         }
         const shards = input.shards;
         if (shards.length === 0) {
@@ -112,7 +112,10 @@ export function run(input, options) {
         }
         return onEmpty === "succeed"
             ? Effect.succeed([])
-            : Effect_1.suspend(() => stages.reduce({ input, mapped: [] }));
+            : Effect_1.gen(function* () {
+                return yield* stages.reduce({ input, mapped: [] });
+            });
     }
     return Effect.flatMap(Effect.forEach(shards, (shard, index) => stages.map({ shard, index, input }), { concurrency }), (mapped) => stages.reduce({ input, mapped }));
 }
+import { raise as $raise } from "./MapReduce.vibe.-24-throw-24-ts.js";

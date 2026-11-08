@@ -72,7 +72,7 @@ const widthRefusal = (concurrency) => concurrency === "unbounded" ? undefined : 
 const nonEmpty = (names) => {
     const refusal = nonEmptyRefusal(names);
     if (refusal !== undefined)
-        throw refusal;
+        $raise(refusal);
 };
 export function all(members, options) {
     const names = Object.keys(members);
@@ -147,3 +147,4 @@ export const settle = (result) => {
     }
     return Effect.succeed(Object.fromEntries(names.map((member) => [member, result[member].value])));
 };
+import { raise as $raise } from "./Quarantine.vibe.-24-throw-24-ts.js";

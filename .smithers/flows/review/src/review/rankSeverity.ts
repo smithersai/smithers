@@ -1,4 +1,4 @@
-import { ReviewCommentSeverity } from "../workflow/reviewCommentSeveritySchema.vibe"
+import { ReviewCommentSeverity } from "../workflow/reviewCommentSeveritySchema.ts"
 
 /**
  * A severity's position in `ReviewCommentSeverity.literals`, most severe first;

@@ -165,7 +165,9 @@ export const run = (input, options) => {
         // The shadow callback is invoked inside `Effect.suspend` so that a factory
         // that throws before it returns an effect is a defect the quarantine
         // claims, not one that fails the run before the primary ever starts.
-        const quarantine = Effect.flatMap(Effect.exit(Effect_1.suspend(() => declared.shadow(input))), (exit) => Exit.isSuccess(exit)
+        const quarantine = Effect.flatMap(Effect.exit(Effect_1.gen(function* () {
+            return yield* declared.shadow(input);
+        })), (exit) => Exit.isSuccess(exit)
             ? Effect.succeed({ quarantined: false, value: exit.value })
             // An interrupted shadow means the run itself is being cancelled.
             // Reporting that as a quarantined experiment would hide the
@@ -186,4 +188,4 @@ export const run = (input, options) => {
         return reported;
     });
 };
-import { raise as $raise } from "./Sidecar.vibe.$throw$ts.js";
+import { raise as $raise } from "./Sidecar.vibe.-24-throw-24-ts.js";

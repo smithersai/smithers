@@ -111,11 +111,11 @@ const State = Schema.NullOr(Schema.String.check(Schema.makeFilter((state) => fit
     expected: `a state of at most ${maxStateBytes} bytes`
 })));
 const ParticipantSchema = Schema.Struct({
-    id: Schema.String,
-    principal: Schema.String,
-    name: Schema.String,
-    access: Schema.Literals(["read", "write"]),
-    state: State,
+    id: Schema.mutableKey(Schema.String),
+    principal: Schema.mutableKey(Schema.String),
+    name: Schema.mutableKey(Schema.String),
+    access: Schema.mutableKey(Schema.Literals(["read", "write"])),
+    state: Schema.mutableKey(State),
 });
 const decodeClient = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Struct({ type: Schema.Literal("state"), state: State })));
 const decodeServer = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Struct({

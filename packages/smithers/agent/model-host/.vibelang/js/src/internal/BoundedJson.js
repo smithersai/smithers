@@ -22,13 +22,15 @@ export const boundedJson = (message) => {
         return Effect.succeed(undefined);
     const chunks = [];
     let size = 0;
-    return Effect.catchDefect(Effect.catch(Effect.flatMap(Stream.runForEachWhile(message.stream, Effect_1.fnUntraced(function* (chunk) {
-        size += chunk.byteLength;
-        if (size > MAX_BODY_BYTES)
-            return false;
-        chunks.push(chunk);
-        return true;
-    })), () => {
+    return Effect.catchDefect(Effect.catch(Effect.flatMap(Stream.runForEachWhile(message.stream, (chunk) => {
+        return Effect_1.gen(function* () {
+            size += chunk.byteLength;
+            if (size > MAX_BODY_BYTES)
+                return false;
+            chunks.push(chunk);
+            return true;
+        });
+    }), () => {
         if (size === 0 || size > MAX_BODY_BYTES)
             return Effect.succeed(undefined);
         const bytes = new Uint8Array(size);

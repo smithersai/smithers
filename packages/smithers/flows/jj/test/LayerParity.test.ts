@@ -20,7 +20,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as BrowserJj from "../src/browser/BrowserJj.vibe"
 import { isJjError, Jj, type JjErrorCode } from "../src/Jj.vibe"
-import * as NodeJj from "../src/node/NodeJj.vibe"
+import * as NodeJj from "../src/node/NodeJj.ts"
 import { budgeted } from "./budgeted.ts"
 import { rootedSyncFs } from "./RootedSyncFs.ts"
 

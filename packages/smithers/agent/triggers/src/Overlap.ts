@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 
-import type { Overlap as Policy } from "./Schedule.vibe"
+import type { Overlap as Policy } from "./Schedule.ts"
 
 /**
  * What the overlap decision is made from: whether a run is in flight, the

@@ -12,9 +12,9 @@
  *
  * @since 1.0.0
  */
-import { $catchExpression } from "vibelang-runtime";
+import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import { Effect } from "effect";
 import * as Ignore from "./Ignore.js";
 import * as Prune from "./Prune.js";
@@ -74,8 +74,11 @@ export const symbolicLinks = (fileSystem, candidates) => Effect.forEach(candidat
  * @private
  * @since 1.0.0
  */
-export const files = (fileSystem, path, root, hidden, noIgnore = false, included = () => true) => Effect_1.gen(runtime.$iteratorFrame(runtime.$joinedFrame(function* () {
-    const info = yield* $catchExpression(() => fileSystem.stat(root), (error) => Effect_1.suspend(() => { return Effect_1.fail(rootFailure(root, error)); }));
+export const files = (fileSystem, path, root, hidden, noIgnore = false, included = () => true) => Effect_1.gen(function* () {
+    const info = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return fileSystem.stat(root); }); })(), (error) => (_tail_1 => { return Effect_1.gen(function* () {
+        const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+        return _completion_1[0] ? yield* _value_1 : _value_1;
+    }); })(() => { return [true, Effect_1.fail(rootFailure(root, error))]; }));
     if (info.type === "File")
         return { explicitFile: true, files: [path.normalize(root)], ignored: false };
     const files = [];
@@ -88,11 +91,13 @@ export const files = (fileSystem, path, root, hidden, noIgnore = false, included
         const next = directories.pop();
         const { directory } = next;
         let scopes = next.scopes;
-        const children = yield* $catchExpression(() => fileSystem.readDirectory(directory), (error) => Effect_1.suspend(() => { return (directory === root
-            ? Effect.fail(rootFailure(directory, error))
-            : Effect.succeed([])); }));
+        const children = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return fileSystem.readDirectory(directory); }); })(), (error) => {
+            return Effect_1.gen(function* () { return yield* (directory === root
+                ? Effect.fail(rootFailure(directory, error))
+                : Effect.succeed([])); });
+        });
         if (!noIgnore && children.includes(".gitignore")) {
-            const content = yield* $catchExpression(() => fileSystem.readFileString(path.join(directory, ".gitignore")), () => Effect_1.sync(() => { return ""; }));
+            const content = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return fileSystem.readFileString(path.join(directory, ".gitignore")); }); })(), () => Effect_1.sync(() => { return ""; }));
             const scope = yield* Effect.orDie(Effect.try({ try: () => Ignore.parse(directory, content), catch: (error) => error }));
             if (scope.rules.length > 0)
                 scopes = [...scopes, scope];
@@ -105,39 +110,21 @@ export const files = (fileSystem, path, root, hidden, noIgnore = false, included
             type: candidateInfo.type
         })), () => ({ candidate, type: undefined })), { concurrency });
         const nested = [];
-        {
-            let pending_1 = runtime.$normal;
-            try {
-                for (const entry of entries) {
-                    try {
-                        {
-                            if (entry.type !== undefined &&
-                                (yield* Effect.orDie(Effect.try({
-                                    try: () => Ignore.ignored(scopes, entry.candidate, path.basename(entry.candidate), entry.type === "Directory", (from, to) => relativeForPattern(path, from, to)),
-                                    catch: (error) => error
-                                })))) {
-                                if (entry.type === "Directory" ||
-                                    included(relativeForPattern(path, root, entry.candidate), path.basename(entry.candidate)))
-                                    excluded = true;
-                                continue;
-                            }
-                            if (entry.type === "Directory")
-                                nested.push(entry.candidate);
-                            else if (entry.type === "File")
-                                files.push(path.normalize(entry.candidate));
-                        }
-                    }
-                    catch (thrown_1) {
-                        pending_1 = thrown_1;
-                        break;
-                    }
-                }
+        for (const entry of entries) {
+            if (entry.type !== undefined &&
+                (yield* Effect.orDie(Effect.try({
+                    try: () => Ignore.ignored(scopes, entry.candidate, path.basename(entry.candidate), entry.type === "Directory", (from, to) => relativeForPattern(path, from, to)),
+                    catch: (error) => error
+                })))) {
+                if (entry.type === "Directory" ||
+                    included(relativeForPattern(path, root, entry.candidate), path.basename(entry.candidate)))
+                    excluded = true;
+                continue;
             }
-            catch (thrown_2) {
-                throw runtime.$finallyFailure(pending_1, thrown_2);
-            }
-            if (pending_1 !== runtime.$normal)
-                throw pending_1;
+            if (entry.type === "Directory")
+                nested.push(entry.candidate);
+            else if (entry.type === "File")
+                files.push(path.normalize(entry.candidate));
         }
         const links = yield* symbolicLinks(fileSystem, nested);
         for (let index = 0; index < nested.length; index++) {
@@ -147,4 +134,4 @@ export const files = (fileSystem, path, root, hidden, noIgnore = false, included
         }
     }
     return { explicitFile: false, files: files.sort(), ignored: excluded };
-})));
+});

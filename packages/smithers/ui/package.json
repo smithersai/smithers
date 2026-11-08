@@ -87,16 +87,8 @@
     },
     "./status": {
       "types": "./src/status.ts",
-      "import": {
-        "types": "./src/status.ts",
-        "vibelang-source": "./src/status.ts",
-        "default": "./.vibelang/js/src/status.js"
-      },
-      "default": {
-        "types": "./src/status.ts",
-        "vibelang-source": "./src/status.ts",
-        "default": "./.vibelang/js/src/status.js"
-      }
+      "import": "./src/status.ts",
+      "default": "./src/status.ts"
     },
     "./time": {
       "types": "./src/time/index.ts",

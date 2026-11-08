@@ -48,14 +48,14 @@ export const FixResult = Schema.Struct({
 })
 
 /** The cleanup pull request's summary, which the flow settles with. */
-export schema PrSummary {
-  readonly title: string
-  readonly body: string
-  readonly totalFixes: number
-  readonly categories: ReadonlyArray<string>
-  readonly filesChanged: ReadonlyArray<string>
-  readonly riskLevel: "low" | "medium"
-}
+export const PrSummary = Schema.Struct({
+  title: Schema.String,
+  body: Schema.String,
+  totalFixes: Schema.Number,
+  categories: Schema.Array(Schema.String),
+  filesChanged: Schema.Array(Schema.String),
+  riskLevel: Schema.Literals(["low", "medium"])
+})
 
 type Category = (typeof categories)[number]
 type FixResult = typeof FixResult.Type

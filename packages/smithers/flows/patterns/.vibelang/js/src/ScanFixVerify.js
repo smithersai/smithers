@@ -142,4 +142,4 @@ export const make = (options) => {
         body: Node.capture(captures, body)
     });
 };
-import { raise as $raise } from "./ScanFixVerify.vibe.$throw$ts.js";
+import { raise as $raise } from "./ScanFixVerify.vibe.-24-throw-24-ts.js";

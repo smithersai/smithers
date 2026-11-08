@@ -1660,7 +1660,7 @@ const minter = (state, cell, engine, minted, callMs, emit) => (mint) => Effect.g
         cell: cell.digest,
         ordinal: mint.ordinal
     }));
-    return new Cell.CallResult({ outcome: "success", value: Cell.checkpoint(snapshot.value.id) });
+    return Cell.CallResult.new({ outcome: "success", value: Cell.checkpoint(snapshot.value.id) });
 });
 const emitModelProgress = (event, emit) => event.type === "retry"
     ? emit(new AgentEvent.ModelRetried({

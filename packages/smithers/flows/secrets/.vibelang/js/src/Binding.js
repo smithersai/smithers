@@ -128,8 +128,10 @@ export class ValueInvalid extends Schema.TaggedError()("@smthrs/secrets/Binding/
  * @category validation
  * @since 0.1.0
  */
-export const checkValue = Effect_1.fnUntraced(function* checkValue(value) {
-    const reason = valueProblem(Redacted.value(value));
-    if (reason !== undefined)
-        return yield* Effect_1.fail(new ValueInvalid({ reason }));
-});
+export const checkValue = (value) => {
+    return Effect_1.gen(function* checkValue() {
+        const reason = valueProblem(Redacted.value(value));
+        if (reason !== undefined)
+            return yield* Effect_1.fail(new ValueInvalid({ reason }));
+    });
+};

@@ -15,6 +15,9 @@
 import * as Schedule from "effect/Schedule";
 import * as TestClock from "effect/testing/TestClock";
 import { withSpan } from "effect/Effect";
+import { $catchExpression } from "vibelang-runtime/internal";
+import * as Effect_1 from "effect/Effect";
+import * as runtime from "vibelang-runtime/internal";
 import * as Effect from "effect/Effect";
 import { ConformanceViolation } from "../TestingError.js";
 /**
@@ -52,10 +55,26 @@ export const invoke = (pin, operation, evaluate) => withSpan(Effect.suspend(eval
  * @since 0.0.0
  * @category assertions
  */
-export const pollUntil = (pin, probe, message) => Effect.catch(TestClock.withLive(Effect.retry(Effect.suspend(() => {
-    const value = probe();
-    return value === undefined ? Effect.fail(undefined) : Effect.succeed(value);
-}), { schedule: Schedule.spaced("10 millis"), times: 99 })), () => fail(pin, message, "settlement within one second of live time", "still pending"));
+export const pollUntil = (pin, probe, message) => {
+    let $do1;
+    {
+        const catchProgram = (TestClock.withLive(Effect.retry(Effect.suspend(() => {
+            const value = probe();
+            return value === undefined ? Effect.fail(undefined) : Effect.succeed(value);
+        }), { schedule: Schedule.spaced("10 millis"), times: 99 })));
+        $do1 = Effect_1.gen(function* () { return yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return catchProgram; }); })(), () => {
+            return Effect_1.gen(function* () { return yield* fail(pin, message, "settlement within one second of live time", "still pending"); });
+        }); });
+    }
+    return $do1;
+    /**
+     * Polls `predicate` on the bounded live-clock schedule {@link pollUntil} uses,
+     * failing the pin rather than hanging when the condition never holds.
+     *
+     * @since 0.0.0
+     * @category assertions
+     */
+};
 /**
  * Polls `predicate` on the bounded live-clock schedule {@link pollUntil} uses,
  * failing the pin rather than hanging when the condition never holds.

@@ -76,7 +76,7 @@ export const memorySource = (
 }
 
 /** What one notebook step must answer with. Nothing downstream parses prose. */
-export schema Reading { readonly keys: ReadonlyArray<string> }
+export const Reading = Schema.Struct({ keys: Schema.Array(Schema.String) })
 
 /**
  * The step. Its prompt names the task, which is how a scripted model, and a

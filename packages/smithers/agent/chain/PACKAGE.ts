@@ -58,7 +58,7 @@ const securityReview = Smithers.SecurityReview({
         "A handle (deferred, scriptHandle, error) used after dispose, or a host exception from a bridge callback escaping as a defect instead of a typed ScriptFailure.",
         "Date or Math.random still reachable in the realm, or a prelude intrinsic read after the script could replace it."
       ],
-      paths: ["src/QuickJsRunner.ts", "src/internal/QuickJsJobs.vibe"]
+      paths: ["src/QuickJsRunner.ts", "src/internal/QuickJsJobs.ts"]
     },
     {
       id: "in-process-runner-trusted-only",
@@ -176,7 +176,7 @@ const securityReview = Smithers.SecurityReview({
         "A catalog shared across chains or tenants that captures one MemoryStore and Recall service at make time.",
         "Remembered facts written with empty provenance, so a poisoned memory cannot be traced to the chain, link, and call that wrote it."
       ],
-      paths: ["src/MemoryEntries.vibe"]
+      paths: ["src/MemoryEntries.ts"]
     },
     {
       id: "journal-secret-leak",
@@ -190,7 +190,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/Chain.ts",
-        "src/MemoryEntries.vibe",
+        "src/MemoryEntries.ts",
         "src/ModelAuthor.vibe",
         "src/internal/failureCode.ts",
         "src/Observation.vibe"

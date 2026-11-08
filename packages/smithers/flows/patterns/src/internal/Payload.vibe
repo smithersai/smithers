@@ -22,4 +22,4 @@ import * as Schema from "effect/Schema"
  * @since 1.0.0
  * @private
  */
-export schema OpaqueInput { readonly input: Schema.Unknown }
+export const OpaqueInput = Schema.Struct({ input: Schema.Unknown })

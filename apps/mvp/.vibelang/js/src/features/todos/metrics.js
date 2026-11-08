@@ -14,7 +14,7 @@ export const queued = Metric.counter("smithers_todo_queued", {
     description: "Stack changes queued in the device's outbox, by op, door and outcome",
     incremental: true,
 });
-/** Sends of a queued change, by `op` and `outcome` (`taken`, `existing`, `retry`, `refused`). */
+/** Sends of a queued change, by `op` and `outcome` (`taken`, `existing`, `held`, `retry`, `refused`). */
 export const sends = Metric.counter("smithers_todo_sends", {
     description: "Stack changes sent to ChatApi, by op and outcome",
     incremental: true,

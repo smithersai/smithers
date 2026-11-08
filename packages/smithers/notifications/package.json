@@ -83,8 +83,8 @@
       "default": "./.vibelang/js/src/NotificationState.js"
     },
     "./Projection": {
-      "types": "./.vibe/declarations/src/Projection.d.vibe.ts",
-      "vibelang-source": "./src/Projection.vibe",
+      "types": "./src/Projection.ts",
+      "vibelang-source": "./src/Projection.ts",
       "default": "./.vibelang/js/src/Projection.js"
     },
     "./SteerPayload": {

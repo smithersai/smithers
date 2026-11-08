@@ -14,7 +14,7 @@ import * as ControlWebhook from "@smthrs/control/WebhookChannel"
 import * as Effect from "effect/Effect"
 import type * as Redacted from "effect/Redacted"
 import type * as Channel from "./Channel.vibe"
-import { TriggerError } from "./TriggerError.vibe"
+import { TriggerError } from "./TriggerError.ts"
 
 /**
  * Compares a supplied byte string against the expected one without returning

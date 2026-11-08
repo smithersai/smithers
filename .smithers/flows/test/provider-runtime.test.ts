@@ -7,7 +7,11 @@ import { promisify } from "node:util"
 for (const runtime of ["node", "bun"]) {
   test(`shared provider transport streams, rebuilds and closes on ${runtime}`, { timeout: 90_000 }, async () => {
     const worker = fileURLToPath(new URL("./provider-runtime-worker.ts", import.meta.url))
-    const { stdout } = await promisify(execFile)(runtime === "node" ? process.execPath : "bun", [worker], {
+    // The worker's imports reach `.vibe` modules, which each runtime loads through VibeLang.
+    const loader = runtime === "node"
+      ? ["--import", import.meta.resolve("vibelang/register")]
+      : ["--preload", fileURLToPath(import.meta.resolve("vibelang/bun"))]
+    const { stdout } = await promisify(execFile)(runtime === "node" ? process.execPath : "bun", [...loader, worker], {
       timeout: 85_000,
       killSignal: "SIGKILL"
     })

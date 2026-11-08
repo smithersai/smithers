@@ -8,7 +8,7 @@
  * the rows is `FactoryProjection`, tested in `Factory.test.ts`.
  */
 import { describe, expect, it } from "vitest"
-import * as Flow from "../src/Flow.vibe"
+import * as Flow from "../src/Flow.ts"
 import * as FlowCatalog from "../src/FlowCatalog.vibe"
 
 const discovered = (

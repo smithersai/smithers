@@ -10,9 +10,9 @@
  *
  * @since 0.1.0
  */
-import { $catchExpression } from "vibelang-runtime";
+import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import { Jj } from "@smthrs/jj";
 import * as Journal from "@smthrs/journal/Journal";
 import * as RunStore from "@smthrs/run-store/RunStore";
@@ -103,47 +103,33 @@ export const workspaceNameFor = (childRunId) => `smithers-fork-${sanitize(childR
  * used to be retained for nothing, and a long run decided how much memory a
  * fork took.
  */
-const suffixAfter = Effect_1.fnUntraced(function* suffixAfter(journal, runId, frame, pageSize, maxEntries) {
-    const boundary = [];
-    let count = 0;
-    // The pager fails closed on a malformed page, so a transient empty page
-    // never lets the fork commit with an incomplete disclosure.
-    yield* JournalPages.forEachPage(journal, {
-        runId,
-        after: frame.seq,
-        pageSize,
-        label: "journal fork",
-        readFailure: `could not read fork suffix for ${runId}`
-    }, Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* (entries) {
-        {
-            let pending_1 = runtime.$normal;
-            try {
+const suffixAfter = (journal, runId, frame, pageSize, maxEntries) => {
+    return Effect_1.gen(function* suffixAfter() {
+        const boundary = [];
+        let count = 0;
+        // The pager fails closed on a malformed page, so a transient empty page
+        // never lets the fork commit with an incomplete disclosure.
+        yield* JournalPages.forEachPage(journal, {
+            runId,
+            after: frame.seq,
+            pageSize,
+            label: "journal fork",
+            readFailure: `could not read fork suffix for ${runId}`
+        }, (entries) => {
+            return Effect_1.gen(function* () {
                 for (const entry of entries) {
-                    try {
-                        {
-                            count += 1;
-                            if (count > maxEntries) {
-                                return yield* Effect_1.fail(HistoryLimit.exceeded("fork", runId, maxEntries));
-                            }
-                            if (entry.eventType === EffectBoundary.eventType)
-                                boundary.push(entry);
-                        }
+                    count += 1;
+                    if (count > maxEntries) {
+                        return yield* Effect_1.fail(HistoryLimit.exceeded("fork", runId, maxEntries));
                     }
-                    catch (thrown_1) {
-                        pending_1 = thrown_1;
-                        break;
-                    }
+                    if (entry.eventType === EffectBoundary.eventType)
+                        boundary.push(entry);
                 }
-            }
-            catch (thrown_2) {
-                throw runtime.$finallyFailure(pending_1, thrown_2);
-            }
-            if (pending_1 !== runtime.$normal)
-                throw pending_1;
-        }
-    }))));
-    return boundary;
-});
+            });
+        });
+        return boundary;
+    });
+};
 /**
  * Drops a lane registration, reporting rather than hiding a failure to.
  *
@@ -175,17 +161,22 @@ const normalize = (assessments) => assessments.map((assessment) => assessment.cl
  * holds is refused either way: a cache hit is served ahead of the attempt row,
  * so the child would replay the cached value and silently ignore the edit.
  */
-const admitOverride = Effect_1.fnUntraced(function* admitOverride(store, parentRunId, frame, override, carriesChildren) {
-    const admitted = yield* store.attemptsAt(parentRunId, frame);
-    if (!carriesChildren && !admitted.some((attempt) => attempt.stepKeyDigest === override.stepKeyDigest)) {
-        return yield* Effect_1.fail(error("not_found", `step ${override.stepKeyDigest} was not admitted at ${frame.lineageId}@${frame.seq}`));
-    }
-    const cache = yield* CacheStore.CacheStore;
-    const cached = yield* $catchExpression(() => cache.get(override.stepKeyDigest), (cause) => Effect_1.suspend(() => { return Effect_1.fail(error("unknown", "could not read the step cache", cause)); }));
-    if (cached._tag === "Some") {
-        return yield* Effect_1.fail(error("invalid", `step ${override.stepKeyDigest} replays from the shared step cache, so a fork cannot edit its result`));
-    }
-});
+const admitOverride = (store, parentRunId, frame, override, carriesChildren) => {
+    return Effect_1.gen(function* admitOverride() {
+        const admitted = yield* store.attemptsAt(parentRunId, frame);
+        if (!carriesChildren && !admitted.some((attempt) => attempt.stepKeyDigest === override.stepKeyDigest)) {
+            return yield* Effect_1.fail(error("not_found", `step ${override.stepKeyDigest} was not admitted at ${frame.lineageId}@${frame.seq}`));
+        }
+        const cache = yield* CacheStore.CacheStore;
+        const cached = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return cache.get(override.stepKeyDigest); }); })(), (cause) => (_tail_1 => { return Effect_1.gen(function* () {
+            const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+            return _completion_1[0] ? yield* _value_1 : _value_1;
+        }); })(() => { return [true, Effect_1.fail(error("unknown", "could not read the step cache", cause))]; }));
+        if (cached._tag === "Some") {
+            return yield* Effect_1.fail(error("invalid", `step ${override.stepKeyDigest} replays from the shared step cache, so a fork cannot edit its result`));
+        }
+    });
+};
 /**
  * Branches a child run off a parent frame.
  *
@@ -202,125 +193,149 @@ const admitOverride = Effect_1.fnUntraced(function* admitOverride(store, parentR
  * @since 0.1.0
  * @category constructors
  */
-export const fork = (options) => Effect.fn("Fork.fork")(Effect_1.fnUntraced(function* () {
-    yield* Effect.annotateCurrentSpan({
-        parentRunId: options.parentRunId,
-        lineageId: options.frame.lineageId,
-        seq: options.frame.seq
-    });
-    const runs = yield* RunStore.RunStore;
-    const live = (row) => row.status === "running" || row.claim !== null || row.owner !== null;
-    const parent = yield* $catchExpression(() => runs.get(options.parentRunId), (cause) => Effect_1.suspend(() => { return Effect_1.fail(error("unknown", "could not read parent", cause)); }));
-    if (live(parent)) {
-        return yield* Effect_1.fail(error("live_parent", `parent run ${options.parentRunId} is live`));
-    }
-    /**
-     * The ancestors the run table names, walked BEFORE anything is
-     * provisioned. The store re-walks the whole ancestry, fork edges and
-     * engine spawn edges included, inside the commit transaction, and that
-     * walk is the authoritative refusal; this pass only keeps a fork a live
-     * ancestor will refuse from provisioning a lane it would forget a
-     * moment later. A cycle terminates on the visited set.
-     */
-    const seen = new Set([options.parentRunId]);
-    let ancestorId = parent.parentRunId;
-    while (ancestorId !== null && !seen.has(ancestorId)) {
-        const currentId = ancestorId;
-        seen.add(currentId);
-        const ancestor = yield* $catchExpression(() => runs.get(currentId), (cause) => Effect_1.suspend(() => { return Effect_1.fail(cause.code === "not_found_row"
-            ? error("not_found", `parent ${currentId} was not found`)
-            : error("unknown", `could not read ancestor ${currentId}`, cause)); }));
-        if (live(ancestor)) {
-            return yield* Effect_1.fail(error("live_parent", `ancestor run ${currentId} is live`));
+export const fork = (options) => Effect.fn("Fork.fork")(() => {
+    return Effect_1.gen(function* () {
+        yield* Effect.annotateCurrentSpan({
+            parentRunId: options.parentRunId,
+            lineageId: options.frame.lineageId,
+            seq: options.frame.seq
+        });
+        const runs = yield* RunStore.RunStore;
+        const live = (row) => row.status === "running" || row.claim !== null || row.owner !== null;
+        const parent = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return runs.get(options.parentRunId); }); })(), (cause) => (_tail_2 => { return Effect_1.gen(function* () {
+            const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
+            return _completion_2[0] ? yield* _value_2 : _value_2;
+        }); })(() => { return [true, Effect_1.fail(error("unknown", "could not read parent", cause))]; }));
+        if (live(parent)) {
+            return yield* Effect_1.fail(error("live_parent", `parent run ${options.parentRunId} is live`));
         }
-        ancestorId = ancestor.parentRunId;
-    }
-    const store = yield* TimeTravelStore;
-    const journal = yield* Journal.Journal;
-    if (options.refreshAnchors !== undefined)
-        yield* options.refreshAnchors;
-    // Assessment BEFORE any mutation, exactly as a rewind does — the fork
-    // simply refuses to act on the verdict beyond disclosing it.
-    const snapshot = yield* store.snapshotAt(options.parentRunId, options.frame);
-    const suffix = yield* suffixAfter(journal, options.parentRunId, options.frame, options.pageSize ?? 100, options.maxEntries ?? HistoryLimit.defaultMaxHistoryEntries);
-    if (options.override !== undefined) {
-        yield* admitOverride(store, options.parentRunId, options.frame, options.override, options.rebind !== undefined);
-    }
-    const effects = yield* EffectBoundary.fromEntries(suffix);
-    const plan = yield* Compensation.assess(effects, snapshot?.changeId);
-    const warnings = normalize(plan.assessments);
-    const jj = yield* Jj;
-    /**
-     * MINT, THEN RENEW, THEN PROVISION, THEN COMMIT — in that order, on purpose.
-     *
-     * The mint is what makes the lane and the child one identity: the
-     * workspace is named after the run that will live in it, so a frame
-     * forked twice provisions two lanes and two parents that sanitize alike
-     * never share one. The mint is a durable RESERVATION and nothing more:
-     * no run exists yet, but the ordinal is taken, so a process that dies
-     * after provisioning and before commit retries under a fresh id instead of
-     * asking jj for the lane name its own leftover still holds. Renewal
-     * immediately before workspaceAdd restarts the stale window and refuses
-     * a reservation reclaimed while the fork stalled, without adding a lane.
-     * Startup hands the stale reservation back through `abandonForkIntents` and
-     * forgets the lane it named, retrying until removal is recorded. A
-     * reclaiming or forgotten reservation is reset to reclaiming in the
-     * refusal transaction, which commits before `fence_lost` is raised.
-     * The refused-commit path below forgets its lane; if cleanup fails,
-     * startup still retries. If it succeeds, later forgetting is a no-op.
-     *
-     * The store commit is the fork's finalization step, the way Temporal
-     * finalizes a workflow record only after what it names exists
-     * (Temporal's transactional finalization): `createFork`
-     * writes the child run, its copied prefix, attempts, and anchors, and
-     * the lineage edge in ONE store transaction, and consumes the
-     * reservation with them. A failed `workspaceAdd` therefore leaves no
-     * orphan child, no half-copied history, and no lineage edge to a run
-     * that cannot execute, which is the durable residue the reverse order
-     * left behind. A commit that fails AFTER provisioning is compensated
-     * right here by forgetting the lane it provisioned.
-     */
-    const childRunId = yield* store.nextForkId(options.parentRunId, options.frame);
-    const workspaceName = workspaceNameFor(childRunId);
-    yield* Effect.annotateCurrentSpan({ childRunId, workspaceName });
-    const rebinding = options.rebind === undefined ? undefined : yield* options.rebind(childRunId);
-    yield* StepHook.run("fork", options.hooks?.beforeStep, "provision-workspace");
-    yield* store.renewForkIntent(childRunId);
-    yield* $catchExpression(() => jj.workspaceAdd(workspaceName, `${options.workspaceRoot}/${workspaceName}`, snapshot?.changeId), (cause) => Effect_1.suspend(() => { return Effect_1.fail(error("unknown", "could not add fork workspace", cause)); }));
-    /**
-     * THE COMMIT AND THE LANE'S FINALIZER ARE ONE UNIT.
-     *
-     * COMMIT can finish in an uninterruptible SQL finalizer, so the store
-     * call and the forget-on-close registration share one mask: an interrupt
-     * that lands while the commit finishes is observed only once the
-     * committed child's lane has its finalizer. Registering it after the
-     * commit returned let that interrupt either strand the lane with no
-     * finalizer and no reservation left to reclaim it, or send a committed
-     * child's lane through the refused-commit forget. Only the hook stays
-     * interruptible, because nothing durable has happened when it runs.
-     */
-    const result = yield* Effect.uninterruptibleMask((restore) => Effect.tap(Effect.onError(Effect.andThen(restore(StepHook.run("fork", options.hooks?.beforeStep, "commit-fork")), store.createFork(options.parentRunId, options.frame, childRunId, options.override, rebinding)), () => forgetLane(jj, workspaceName, "after a refused commit")), () => options.retainWorkspace === true
-        ? Effect.void
-        : Effect.addFinalizer(() => forgetLane(jj, workspaceName, "when the service scope closed"))));
-    /**
-     * THE CHILD'S WORKTREE IS PINNED AT THE FRAME'S POINTER.
-     *
-     * A fork wants the child's lane
-     * restored to the frame's jj pointer, and `Jj.workspaceAdd` now takes
-     * that pointer as its optional `revision`: the new workspace is pinned
-     * at provisioning time, so the parent is never restored — "Fork never
-     * touches the parent. No compensation, no truncation, no workspace
-     * restore of the parent". A frame with no recorded pointer still lands
-     * at the lane default, and that is what the warning channel discloses.
-     */
-    return {
-        ...result,
-        warnings: snapshot === undefined
-            ? [
-                ...warnings,
-                `Frame ${options.frame.lineageId}@${options.frame.seq} has no recorded jj pointer; ` +
-                    `the fork workspace ${workspaceName} starts from the lane default rather than the frame.`
-            ]
-            : warnings
-    };
-}))();
+        /**
+         * The ancestors the run table names, walked BEFORE anything is
+         * provisioned. The store re-walks the whole ancestry, fork edges and
+         * engine spawn edges included, inside the commit transaction, and that
+         * walk is the authoritative refusal; this pass only keeps a fork a live
+         * ancestor will refuse from provisioning a lane it would forget a
+         * moment later. A cycle terminates on the visited set.
+         */
+        const seen = new Set([options.parentRunId]);
+        let ancestorId = parent.parentRunId;
+        while (ancestorId !== null && !seen.has(ancestorId)) {
+            const currentId = ancestorId;
+            seen.add(currentId);
+            const ancestor = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return runs.get(currentId); }); })(), (cause) => (_tail_3 => { return Effect_1.gen(function* () {
+                const _completion_3 = _tail_3(), _value_3 = _completion_3[1];
+                return _completion_3[0] ? yield* _value_3 : _value_3;
+            }); })(() => { return [true, Effect_1.fail(cause.code === "not_found_row"
+                    ? error("not_found", `parent ${currentId} was not found`)
+                    : error("unknown", `could not read ancestor ${currentId}`, cause))]; }));
+            if (live(ancestor)) {
+                return yield* Effect_1.fail(error("live_parent", `ancestor run ${currentId} is live`));
+            }
+            ancestorId = ancestor.parentRunId;
+        }
+        const store = yield* TimeTravelStore;
+        const journal = yield* Journal.Journal;
+        if (options.refreshAnchors !== undefined)
+            yield* options.refreshAnchors;
+        // Assessment BEFORE any mutation, exactly as a rewind does — the fork
+        // simply refuses to act on the verdict beyond disclosing it.
+        const snapshot = yield* store.snapshotAt(options.parentRunId, options.frame);
+        const suffix = yield* suffixAfter(journal, options.parentRunId, options.frame, options.pageSize ?? 100, options.maxEntries ?? HistoryLimit.defaultMaxHistoryEntries);
+        if (options.override !== undefined) {
+            yield* admitOverride(store, options.parentRunId, options.frame, options.override, options.rebind !== undefined);
+        }
+        const effects = yield* EffectBoundary.fromEntries(suffix);
+        const plan = yield* Compensation.assess(effects, snapshot?.changeId);
+        const warnings = normalize(plan.assessments);
+        const jj = yield* Jj;
+        /**
+         * MINT, THEN RENEW, THEN PROVISION, THEN COMMIT — in that order, on purpose.
+         *
+         * The mint is what makes the lane and the child one identity: the
+         * workspace is named after the run that will live in it, so a frame
+         * forked twice provisions two lanes and two parents that sanitize alike
+         * never share one. The mint is a durable RESERVATION and nothing more:
+         * no run exists yet, but the ordinal is taken, so a process that dies
+         * after provisioning and before commit retries under a fresh id instead of
+         * asking jj for the lane name its own leftover still holds. Renewal
+         * immediately before workspaceAdd restarts the stale window and refuses
+         * a reservation reclaimed while the fork stalled, without adding a lane.
+         * Startup hands the stale reservation back through `abandonForkIntents` and
+         * forgets the lane it named, retrying until removal is recorded. A
+         * reclaiming or forgotten reservation is reset to reclaiming in the
+         * refusal transaction, which commits before `fence_lost` is raised.
+         * The refused-commit path below forgets its lane; if cleanup fails,
+         * startup still retries. If it succeeds, later forgetting is a no-op.
+         *
+         * The store commit is the fork's finalization step, the way Temporal
+         * finalizes a workflow record only after what it names exists
+         * (Temporal's transactional finalization): `createFork`
+         * writes the child run, its copied prefix, attempts, and anchors, and
+         * the lineage edge in ONE store transaction, and consumes the
+         * reservation with them. A failed `workspaceAdd` therefore leaves no
+         * orphan child, no half-copied history, and no lineage edge to a run
+         * that cannot execute, which is the durable residue the reverse order
+         * left behind. A commit that fails AFTER provisioning is compensated
+         * right here by forgetting the lane it provisioned.
+         */
+        const childRunId = yield* store.nextForkId(options.parentRunId, options.frame);
+        const workspaceName = workspaceNameFor(childRunId);
+        yield* Effect.annotateCurrentSpan({ childRunId, workspaceName });
+        const rebinding = options.rebind === undefined ? undefined : yield* options.rebind(childRunId);
+        yield* StepHook.run("fork", options.hooks?.beforeStep, "provision-workspace");
+        yield* store.renewForkIntent(childRunId);
+        yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return jj.workspaceAdd(workspaceName, `${options.workspaceRoot}/${workspaceName}`, snapshot?.changeId); }); })(), (cause) => (_tail_4 => { return Effect_1.gen(function* () {
+            const _completion_4 = _tail_4(), _value_4 = _completion_4[1];
+            return _completion_4[0] ? yield* _value_4 : _value_4;
+        }); })(() => { return [true, Effect_1.fail(error("unknown", "could not add fork workspace", cause))]; })
+        /**
+         * THE COMMIT AND THE LANE'S FINALIZER ARE ONE UNIT.
+         *
+         * COMMIT can finish in an uninterruptible SQL finalizer, so the store
+         * call and the forget-on-close registration share one mask: an interrupt
+         * that lands while the commit finishes is observed only once the
+         * committed child's lane has its finalizer. Registering it after the
+         * commit returned let that interrupt either strand the lane with no
+         * finalizer and no reservation left to reclaim it, or send a committed
+         * child's lane through the refused-commit forget. Only the hook stays
+         * interruptible, because nothing durable has happened when it runs.
+         */
+        );
+        /**
+         * THE COMMIT AND THE LANE'S FINALIZER ARE ONE UNIT.
+         *
+         * COMMIT can finish in an uninterruptible SQL finalizer, so the store
+         * call and the forget-on-close registration share one mask: an interrupt
+         * that lands while the commit finishes is observed only once the
+         * committed child's lane has its finalizer. Registering it after the
+         * commit returned let that interrupt either strand the lane with no
+         * finalizer and no reservation left to reclaim it, or send a committed
+         * child's lane through the refused-commit forget. Only the hook stays
+         * interruptible, because nothing durable has happened when it runs.
+         */
+        const result = yield* Effect.uninterruptibleMask((restore) => Effect.tap(Effect.onError(Effect.andThen(restore(StepHook.run("fork", options.hooks?.beforeStep, "commit-fork")), store.createFork(options.parentRunId, options.frame, childRunId, options.override, rebinding)), () => forgetLane(jj, workspaceName, "after a refused commit")), () => options.retainWorkspace === true
+            ? Effect.void
+            : Effect.addFinalizer(() => forgetLane(jj, workspaceName, "when the service scope closed"))));
+        /**
+         * THE CHILD'S WORKTREE IS PINNED AT THE FRAME'S POINTER.
+         *
+         * A fork wants the child's lane
+         * restored to the frame's jj pointer, and `Jj.workspaceAdd` now takes
+         * that pointer as its optional `revision`: the new workspace is pinned
+         * at provisioning time, so the parent is never restored — "Fork never
+         * touches the parent. No compensation, no truncation, no workspace
+         * restore of the parent". A frame with no recorded pointer still lands
+         * at the lane default, and that is what the warning channel discloses.
+         */
+        return {
+            ...result,
+            warnings: snapshot === undefined
+                ? [
+                    ...warnings,
+                    `Frame ${options.frame.lineageId}@${options.frame.seq} has no recorded jj pointer; ` +
+                        `the fork workspace ${workspaceName} starts from the lane default rather than the frame.`
+                ]
+                : warnings
+        };
+    });
+})();

@@ -4,12 +4,12 @@ import { bugs, factory, fleet, queue } from "./manifests";
 export const BUILTIN = [
     {
         manifest: queue,
-        tab: () => import("#vibelang/emitted/plugins/queue/src/tab"),
+        tab: () => import("../../plugins/queue/src/tab.js"),
         components: () => import("../../plugins/queue/src/components/index"),
     },
     {
         manifest: bugs,
-        tab: () => import("#vibelang/emitted/plugins/bugs/src/tab"),
+        tab: () => import("../../plugins/bugs/src/tab.js"),
         components: () => import("../../plugins/bugs/src/components/index"),
     },
     {

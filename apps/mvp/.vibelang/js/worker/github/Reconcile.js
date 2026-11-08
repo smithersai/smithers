@@ -5,10 +5,10 @@ import { Node } from "@smthrs/plan";
 import { Clock, Effect, Layer, Metric, Option, Schema } from "effect";
 import { HttpClient } from "effect/http";
 import { ISSUES_STREAM, SYNC_STALE_MS } from "../../src/features/issues/contract.js";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
-import { classify, withToken } from "#vibelang/emitted/worker/github/Calls";
-import { repositoryOf } from "#vibelang/emitted/worker/github/Config";
-import * as Metrics from "#vibelang/emitted/worker/github/Metrics";
+import { codeOf } from "../ErrorCode.js";
+import { classify, withToken } from "./Calls.js";
+import { repositoryOf } from "./Config.js";
+import * as Metrics from "./Metrics.js";
 import * as Store from "./Store.js";
 // `github/Reconcile { repo }` (decision 0012 §3, docs/features/issues.md#reconcile): walks GitHub's change-time listing
 // of a repository's issues, then of their comments (`GitHub.Sync` from `@smthrs/integrations`), and upserts every row

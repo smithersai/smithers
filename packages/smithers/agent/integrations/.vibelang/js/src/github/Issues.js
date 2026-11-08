@@ -47,7 +47,6 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { withSpan } from "effect/Effect";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import { IntegrationError } from "../core/IntegrationError.js";
 import { LabelName, RECONCILE_PAGES } from "./Actions.js";
 import { GitHubClient } from "./GitHubClient.js";
@@ -91,7 +90,13 @@ export const Issue = Schema.Struct({
     created_at: Schema.String,
     updated_at: Schema.String,
     closed_at: Schema.NullOr(Schema.String),
-    pull_request: Schema.optionalKey(Schema.Unknown)
+    pull_request: Schema.optionalKey(Schema.Unknown),
+    /** The parent's API URL. A listing leaves it out when there is none; one issue says `null`. */
+    parent_issue_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+    /** GitHub's count of its children. `null` on a pull request, which states no relation. */
+    sub_issues_summary: Schema.optionalKey(Schema.NullOr(Schema.Struct({ total: Schema.Number, completed: Schema.Number }))),
+    /** The issue's repository's API URL: a sub-issue listing can hold another repository's. */
+    repository_url: Schema.optionalKey(Schema.String)
 });
 /**
  * An issue comment as GitHub's REST API returns it, narrowed to the fields
@@ -140,7 +145,7 @@ const invalidWriteId = (writeId) => new IntegrationError("invalid-config", "A wr
  */
 export const writeMarker = (writeId) => {
     if (typeof writeId !== "string" || !WRITE_ID_PATTERN.test(writeId))
-        throw invalidWriteId(writeId);
+        $raise(invalidWriteId(writeId));
     return `<!-- smithers:write=${writeId} -->`;
 };
 /**
@@ -229,22 +234,24 @@ export const LABEL_COLOR_PATTERN = /^[0-9A-Fa-f]{6}$/;
  * @since 1.0.0
  */
 export const MAX_LABEL_DESCRIPTION = 100;
-const requireNewLabel = Effect_1.fnUntraced(function* requireNewLabel(input) {
-    const name = yield* requireLabelName(input.name);
-    if (typeof input.color !== "string" || !LABEL_COLOR_PATTERN.test(input.color)) {
-        return yield* Effect_1.fail(new IntegrationError("invalid-config", "A GitHub label color must be six hex digits, without `#`.", {
-            field: "color",
-            color: typeof input.color === "string" ? input.color.slice(0, 16) : typeof input.color,
-            retryable: false
-        }));
-    }
-    const description = input.description;
-    if (description !== undefined &&
-        (typeof description !== "string" || description.length > MAX_LABEL_DESCRIPTION)) {
-        return yield* Effect_1.fail(new IntegrationError("invalid-config", `A GitHub label description must be at most ${MAX_LABEL_DESCRIPTION} characters.`, { field: "description", retryable: false }));
-    }
-    return description === undefined ? { name, color: input.color } : { name, color: input.color, description };
-});
+const requireNewLabel = (input) => {
+    return Effect_1.gen(function* requireNewLabel() {
+        const name = yield* requireLabelName(input.name);
+        if (typeof input.color !== "string" || !LABEL_COLOR_PATTERN.test(input.color)) {
+            return yield* Effect_1.fail(new IntegrationError("invalid-config", "A GitHub label color must be six hex digits, without `#`.", {
+                field: "color",
+                color: typeof input.color === "string" ? input.color.slice(0, 16) : typeof input.color,
+                retryable: false
+            }));
+        }
+        const description = input.description;
+        if (description !== undefined &&
+            (typeof description !== "string" || description.length > MAX_LABEL_DESCRIPTION)) {
+            return yield* Effect_1.fail(new IntegrationError("invalid-config", `A GitHub label description must be at most ${MAX_LABEL_DESCRIPTION} characters.`, { field: "description", retryable: false }));
+        }
+        return description === undefined ? { name, color: input.color } : { name, color: input.color, description };
+    });
+};
 const hasStatus = (status) => (error) => error.details?.["status"] === status;
 const decodeFailed = (path, cause) => new IntegrationError("decode-failed", `GitHub response for GET ${path} failed schema validation.`, {
     method: "GET",
@@ -304,7 +311,7 @@ export const getIssue = (owner, repo, number) => withSpan((Effect_1.gen(function
  * @category getters
  * @since 1.0.0
  */
-export const listComments = (owner, repo, number, options) => withSpan((Effect_1.gen(runtime.$joinedFrame(function* () {
+export const listComments = (owner, repo, number, options) => withSpan((Effect_1.gen(function* () {
     const client = yield* GitHubClient;
     const repository = yield* requireRepositoryPath(owner, repo);
     const issue = yield* requireIssueNumber(number);
@@ -313,7 +320,38 @@ export const listComments = (owner, repo, number, options) => withSpan((Effect_1
     const page = yield* client.paginate(`${path}${query({ since })}`, { maxPages: options?.maxPages });
     const items = yield* decodeAll(IssueComment, page.items, path);
     return { items, truncated: page.truncated };
-}))), "GitHub.Issues.listComments", { attributes: spanAttributes(owner, repo, number) });
+})), "GitHub.Issues.listComments", { attributes: spanAttributes(owner, repo, number) });
+/**
+ * One page of every issue and pull request of the repository, oldest first, as GitHub sent it:
+ * `GET /repos/{owner}/{repo}/issues?state=all&sort=created&direction=asc`. `next` is the query of GitHub's own next
+ * link, GitHub's cursor; pass it back as `cursor`, and `null` is the last page. A page number would skip issues when
+ * an earlier one is deleted between pages.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const listAllIssuesPage = (owner, repo, options) => withSpan(Effect_1.gen(function* () {
+    const client = yield* GitHubClient;
+    const repository = yield* requireRepositoryPath(owner, repo);
+    const query = options?.cursor ?? "state=all&sort=created&direction=asc";
+    const page = yield* client.paginate(`/repos/${repository}/issues?${query}`, { maxPages: 1, withNext: true });
+    const next = page.next ?? null;
+    return { items: page.items, next: next === null ? null : new URL(next).search.slice(1) };
+}), "GitHub.Issues.listAllIssuesPage");
+/**
+ * Issue `number`'s sub-issues, as GitHub sent them: `GET /repos/{owner}/{repo}/issues/{number}/sub_issues`. GitHub allows
+ * at most 100 per parent, so one page of 100 is all of them.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const listSubIssues = (owner, repo, number) => Effect.gen(function* () {
+    const client = yield* GitHubClient;
+    const repository = yield* requireRepositoryPath(owner, repo);
+    const issue = yield* requireIssueNumber(number);
+    const page = yield* client.paginate(`/repos/${repository}/issues/${issue}/sub_issues`, { maxPages: 1 });
+    return page.items;
+}).pipe(withSpan("GitHub.Issues.listSubIssues", { attributes: spanAttributes(owner, repo, number) }));
 /**
  * Opens an issue: `POST /repos/{owner}/{repo}/issues`. Mark `body` with
  * {@link withWriteMarker} so a retry can find it.
@@ -364,7 +402,7 @@ export const createComment = (owner, repo, number, body) => withSpan((Effect_1.g
  * @category getters
  * @since 1.0.0
  */
-export const findIssueByWrite = (owner, repo, options) => withSpan((Effect_1.gen(runtime.$joinedFrame(function* () {
+export const findIssueByWrite = (owner, repo, options) => withSpan((Effect_1.gen(function* () {
     const client = yield* GitHubClient;
     const repository = yield* requireRepositoryPath(owner, repo);
     const writeId = yield* requireWriteId(options.writeId);
@@ -373,32 +411,14 @@ export const findIssueByWrite = (owner, repo, options) => withSpan((Effect_1.gen
     const page = yield* client.paginate(`${path}${query({ state: "all", sort: "created", direction: "desc", since })}`, { maxPages: RECONCILE_PAGES });
     // Newest first, so the last match is the earliest created.
     let found;
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const item of page.items) {
-                try {
-                    {
-                        if (markedWith(item, writeId) && byAuthor(item, options.author) && !isPullRequest(item))
-                            found = item;
-                    }
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
-            }
-        }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
-        }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
+    for (const item of page.items) {
+        if (markedWith(item, writeId) && byAuthor(item, options.author) && !isPullRequest(item))
+            found = item;
     }
     if (page.truncated)
         return yield* Effect_1.fail(incomplete("findIssueByWrite"));
     return found === undefined ? Option.none() : Option.some(yield* decodeOne(Issue, found, path));
-}))), "GitHub.Issues.findIssueByWrite", { attributes: spanAttributes(owner, repo) });
+})), "GitHub.Issues.findIssueByWrite", { attributes: spanAttributes(owner, repo) });
 /**
  * The comment on issue `number` whose body carries `writeId`'s marker, among
  * all its comments or those updated since `since` (ISO 8601), walking at most
@@ -410,7 +430,7 @@ export const findIssueByWrite = (owner, repo, options) => withSpan((Effect_1.gen
  * @category getters
  * @since 1.0.0
  */
-export const findCommentByWrite = (owner, repo, number, options) => withSpan((Effect_1.gen(runtime.$joinedFrame(function* () {
+export const findCommentByWrite = (owner, repo, number, options) => withSpan((Effect_1.gen(function* () {
     const client = yield* GitHubClient;
     const repository = yield* requireRepositoryPath(owner, repo);
     const issue = yield* requireIssueNumber(number);
@@ -423,7 +443,7 @@ export const findCommentByWrite = (owner, repo, number, options) => withSpan((Ef
     if (found === undefined && page.truncated)
         return yield* Effect_1.fail(incomplete("findCommentByWrite"));
     return found === undefined ? Option.none() : Option.some(yield* decodeOne(IssueComment, found, path));
-}))), "GitHub.Issues.findCommentByWrite", { attributes: spanAttributes(owner, repo, number) });
+})), "GitHub.Issues.findCommentByWrite", { attributes: spanAttributes(owner, repo, number) });
 /**
  * Adds labels to issue or pull request `number`, keeping the ones it has:
  * `POST /repos/{owner}/{repo}/issues/{number}/labels`. Answers every label
@@ -487,3 +507,4 @@ export const createLabel = (owner, repo, input) => withSpan((Effect_1.gen(functi
     const label = yield* requireNewLabel(input);
     return yield* (Effect.catchIf(Effect.as(client.request("POST", `/repos/${repository}/labels`, label, { retryUnsafeWrites: true }), true), hasStatus(422), () => Effect.succeed(false)));
 })), "GitHub.Issues.createLabel", { attributes: spanAttributes(owner, repo) });
+import { raise as $raise } from "./Issues.vibe.-24-throw-24-ts.js";

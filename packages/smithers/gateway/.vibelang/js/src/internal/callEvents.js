@@ -28,7 +28,7 @@ export const nativeCallEvent = (event) => {
     return {
         ...event,
         kind: fact.value.phase === "invoked" ? "control.agent.cell-call-started" : "control.agent.cell-call-settled",
-        payload: JSON.parse(JSON.stringify({ ...fact.value, callFactVersion: 1, at: envelope.emittedAtMs }))
+        payload: $invoke(JSON, () => (JSON.stringify({ ...fact.value, callFactVersion: 1, at: envelope.emittedAtMs })))
     };
 };
 /** Normalize a checkpoint only within its recorded execution and source.
@@ -204,3 +204,4 @@ export const callEventFilter = () => {
         }
     };
 };
+import { invoke as $invoke } from "./callEvents.vibe.-24-call-24-ts.js";

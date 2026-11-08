@@ -4,6 +4,16 @@ import { mayAsk } from "../auth/contract";
 import { hereOf, viewerOf } from "../auth/viewer";
 import { GITHUB_LIMIT } from "../repo/contract";
 import { githubIssueUrl, MAX_BODY_LENGTH, MAX_TITLE_LENGTH, NOT_SENT_COPY, TRIAGE_STATES } from "./contract";
+/** Only the exact issue read for this repository can stand in for its still-syncing summary. */
+export const earlySummaryOf = (read, repoId, number) => {
+    if (read?.repoId !== repoId || read.q !== `#${number}`)
+        return undefined;
+    const issue = read.issues.find((issue) => issue.number === number);
+    return issue === undefined ? undefined : {
+        number: issue.number, title: issue.title, state: issue.state,
+        author: issue.author.login, createdAt: issue.created_at,
+    };
+};
 /** A Not sent write's words, by its reason; none for a write that isn't Not sent. */
 export const reasonText = (reason) => typeof reason === "string" && reason in NOT_SENT_COPY ? NOT_SENT_COPY[reason] : undefined;
 /** A text column that may be missing: none for `null` or empty. */
@@ -34,10 +44,9 @@ export const issueOf = (row, triageOn = false) => {
 };
 /** The shape's refusal, from the access query's row; none while unknown or allowed. */
 export const refusedOf = (access) => access?.status === "sign_in" || access?.status === "forbidden" ? access.status : undefined;
-/** Authority or transport failure is terminal feedback, including before any issue shape can start. */
-export const listFailureOf = (access, failure, about) => failure === "rate_limited" || about?.state === "failed" && about.message === GITHUB_LIMIT
-    ? GITHUB_LIMIT
-    : failure !== undefined || access?.status === "unavailable" || about?.state === "failed" ? "Issues unavailable" : undefined;
+/** Only issue transport and repository authority decide availability; the unrelated About flow cannot settle it. */
+export const listFailureOf = (access, failure) => failure === "rate_limited" ? GITHUB_LIMIT
+    : failure !== undefined || access?.status === "unavailable" ? "Issues unavailable" : undefined;
 /**
  * A repository's issues view in a conversation (decision 0004 §3): the repository's synced issues (queries.ts
  * `allIssuesQuery`) that are `repoId`'s, and its sync once a walk completed, for `listProps`.

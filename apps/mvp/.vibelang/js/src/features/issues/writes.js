@@ -3,10 +3,10 @@ import { Collection, Outbox } from "@smthrs/effect-tanstack-db";
 import { Clock, Context, Effect, Layer, Metric, Option, Schema } from "effect";
 import { codeOf } from "../../errorCode";
 import { renewalOf } from "../../flows/bearer";
-import { OutboxWrites } from "#vibelang/emitted/src/outbox";
+import { held, OutboxWrites } from "../../outbox.js";
 import { IssuesClient, WriteNotTaken } from "./api";
 import { refusalOf } from "./contract";
-import { sends } from "#vibelang/emitted/src/features/issues/metrics";
+import { sends } from "./metrics.js";
 import { Requested, Sending } from "./schema";
 // Issue writes in the device's one outbox (decision 0012 §4, decision 0002 §3). A write step's tab puts the write in
 // the outbox (store.ts `queue`); the outbox stores it, then sends it through the `issue-write` mutation here, to
@@ -41,6 +41,7 @@ export class IssueWrites extends Context.Service()("@smthrs/mvp/issues/IssueWrit
         const writes = yield* OutboxWrites.adding({
             collections: { [SENDING]: sending },
             mutations: { [ISSUE_WRITE]: mutation },
+            orderingKeys: { [ISSUE_WRITE]: (rows) => rows.map((row) => `issue:${row.repo}:${row.number > 0 ? row.number : row.op === "issue/create" ? row.id : "settings"}`) },
             parked: { [ISSUE_WRITE]: (write) => keepParked(requested, write) },
         });
         const { search } = Context.get(context, IssuesClient);
@@ -149,7 +150,8 @@ export const requestOf = (row) => {
 };
 /**
  * Sends one queued write, as the run that wrote it when it carries that run's credential, else in the person's
- * session. ChatApi took it (202, or 200 for one it had): Requested, and done. A refusal (400, 401, 403,
+ * session. ChatApi took it (202, or 200 for one it had): Requested, and done. A session write's `401` while its person
+ * is still signed in is held (`held`): still Requested, sent again, until they sign in again. A refusal (400, 401, 403,
  * 404, 409, 413): Not sent with why, and never sent again. Anything else (no answer, a deadline, 429, 5xx) is sent
  * again. Records the send as a span `issues.write.send`, a log line and a count of `sends` by operation and outcome,
  * never the text.
@@ -175,12 +177,15 @@ const send = (requested, { rows }) => {
             ? Effect.fail(new WriteNotTaken({ status: 403 }))
             : (yield* IssuesClient).write(owner, name, requestOf(row), row.credential));
         const status = answer._tag === "Success" ? undefined : answer.failure.status;
-        const reason = answer._tag === "Success" ? undefined : refusalOf(status, answer.failure.code);
+        const holding = answer._tag === "Failure" && answer.failure.sessionCheck === "same_person";
+        const reason = answer._tag === "Success" || holding ? undefined : refusalOf(status, answer.failure.code);
         const outcome = answer._tag === "Success"
             ? answer.success.txid === null ? "existing" : "started"
-            : reason === undefined
-                ? "retry"
-                : "refused";
+            : holding
+                ? "held"
+                : reason === undefined
+                    ? "retry"
+                    : "refused";
         yield* Metric.update(Metric.withAttributes(sends, { op: row.op, outcome }), 1);
         yield* Effect.annotateCurrentSpan({ outcome });
         yield* Effect.logWithLevel(answer._tag === "Success" ? "Info" : "Warn")("issues.write.send").pipe(Effect.annotateLogs({
@@ -190,6 +195,8 @@ const send = (requested, { rows }) => {
         }));
         if (answer._tag === "Success")
             return yield* keep(requested, row, "requested", null);
+        if (holding)
+            return yield* held();
         if (reason === undefined)
             return yield* new Outbox.Retry(status === undefined ? {} : { status });
         yield* keep(requested, row, "not_sent", reason);

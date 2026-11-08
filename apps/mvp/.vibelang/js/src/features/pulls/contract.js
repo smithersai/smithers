@@ -150,6 +150,8 @@ export const checkFlowOf = (name) => `checks/${name}`;
 /**
  * A check's commit status context on GitHub (ruling GH-10): `smithers/<name>`, write-only, which a repository's branch
  * protection can require. The check itself stays a Smithers run; Smithers never reads statuses back.
+ *
+ * @throws {never}
  */
 export const statusContextOf = (name) => `smithers/${name}`;
 /** The `todo` run's execution id: one per attempt (decision 0016 §Decision 4). */
@@ -219,3 +221,5 @@ export const PULLS_TELEMETRY = {
 };
 /** The longest diff patch one file shows, in characters; GitHub leaves larger ones out. */
 export const MAX_PATCH_CHARS = 200_000;
+/** A comparison belongs to one repository, including when a fork shares both commit SHAs. */
+export const comparisonKey = (repository, base, head) => `${repository.toLowerCase()}@${base}...${head}`;

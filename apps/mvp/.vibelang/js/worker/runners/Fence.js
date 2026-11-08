@@ -50,6 +50,7 @@ export const Fence = Schema.Struct({
             personId: Schema.String,
             sessionId: Schema.String,
             alias: Schema.optional(Schema.String),
+            cookieKey: Schema.optional(Schema.String),
         }),
         Schema.TaggedStruct("Local", {}),
     ]),
@@ -67,7 +68,7 @@ export const authorityHolds = (fence) => Effect.gen(function* () {
             : (yield* RepoRoles.holds(fence.authority.held)) && (fence.authority.session === null ||
                 fence.authority.session.personId === fence.authority.held.personId && (yield* WriteAuthority.holds(fence.authority.session)))
         : fence.authority._tag === "Session"
-            ? yield* sessionHolds(fence.authority.personId, fence.authority.sessionId, fence.authority.alias)
+            ? yield* sessionHolds(fence.authority)
             : true;
     if (!held)
         return false;
@@ -80,12 +81,13 @@ export const authorityHolds = (fence) => Effect.gen(function* () {
  * person's row, the session's and the alias's locked first, so neither a role recorded nor a session ended lands in
  * between.
  */
-const sessionHolds = (personId, sessionId, alias) => Effect.gen(function* () {
+const sessionHolds = (authority) => Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
+    const { personId } = authority;
     const [person] = yield* sql `SELECT 1 FROM people WHERE id::text = ${personId} FOR SHARE`;
     if (person === undefined)
         return false;
-    if (!(yield* WriteAuthority.holds({ personId, sessionId, ...(alias === undefined ? {} : { alias }) })))
+    if (!(yield* WriteAuthority.holds(authority)))
         return false;
     const [row] = yield* sql `
       SELECT ${latestRole(sql, sql `${personId}::uuid`)} = 'admin' AS admin`;
@@ -97,8 +99,7 @@ const deadline = (sql, fence) => {
         : fence.authority._tag === "Repo" ? fence.authority.session : undefined;
     const role = fence.authority._tag === "Repo" ? fence.authority.held : undefined;
     return sql `least(to_timestamp(${fence.expiresAt}::float8 / 1000),
-    ${session == null ? sql `'infinity'::timestamptz` : sql `(SELECT expires_at FROM sessions
-      WHERE id::text = ${session.sessionId} AND person_id::text = ${session.personId})`},
+    ${WriteAuthority.deadline(sql, session ?? undefined)},
     ${role === undefined ? sql `'infinity'::timestamptz` : sql `(SELECT checked_at + make_interval(secs => ${RepoRoles.FRESH_SECONDS})
       FROM github_repo_roles WHERE repo_id = ${role.repoId} AND person_id = ${role.personId})`})`;
 };

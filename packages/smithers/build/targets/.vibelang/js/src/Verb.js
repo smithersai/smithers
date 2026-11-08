@@ -27,7 +27,6 @@
  *
  * @since 0.1.0
  */
-import * as Schema_1 from "effect/Schema";
 import * as Schema from "effect/Schema";
 /**
  * Schema for the `build` verb.
@@ -35,45 +34,35 @@ import * as Schema from "effect/Schema";
  * @category schemas
  * @since 0.1.0
  */
-export const BuildVerb = Schema_1.Struct({
-    name: Schema_1.Literal("build"),
-});
+export const BuildVerb = Schema.Struct({ name: Schema.Literal("build") });
 /**
  * Schema for the `test` verb.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const TestVerb = Schema_1.Struct({
-    name: Schema_1.Literal("test"),
-});
+export const TestVerb = Schema.Struct({ name: Schema.Literal("test") });
 /**
  * Schema for the `lint` verb.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const LintVerb = Schema_1.Struct({
-    name: Schema_1.Literal("lint"),
-});
+export const LintVerb = Schema.Struct({ name: Schema.Literal("lint") });
 /**
  * Schema for the `docs` verb.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const DocsVerb = Schema_1.Struct({
-    name: Schema_1.Literal("docs"),
-});
+export const DocsVerb = Schema.Struct({ name: Schema.Literal("docs") });
 /**
  * Schema for the `review` verb.
  *
  * @category schemas
  * @since 0.1.0
  */
-export const ReviewVerb = Schema_1.Struct({
-    name: Schema_1.Literal("review"),
-});
+export const ReviewVerb = Schema.Struct({ name: Schema.Literal("review") });
 /**
  * Schema for the aggregate `ci` verb.
  *
@@ -85,9 +74,7 @@ export const ReviewVerb = Schema_1.Struct({
  * @category schemas
  * @since 0.1.0
  */
-export const CiVerb = Schema_1.Struct({
-    name: Schema_1.Literal("ci"),
-});
+export const CiVerb = Schema.Struct({ name: Schema.Literal("ci") });
 /**
  * Schema for one verb a generated pipeline may run.
  *

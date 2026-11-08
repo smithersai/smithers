@@ -54,6 +54,13 @@ import { redactedError } from "../core/RedactedError.js";
 import * as Environment from "../Environment.js";
 import { resolve } from "./Config.js";
 /**
+ * The identity every host uses for GitHub HTTP requests, including outside the REST client.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const USER_AGENT = "smithers-integrations";
+/**
  * The response header in which the GitHub proxy names the instant a refused
  * request may be retried. A 429 that carries it was never sent to GitHub.
  *
@@ -157,7 +164,9 @@ export const retryAfterMs = (headers, nowMs = Date.now()) => {
  */
 const retryAfterUncapped = (headers) => {
     const retryAfter = headers.get("retry-after")?.trim();
-    return retryAfter !== undefined && /^\d+$/.test(retryAfter) ? { retryAfterUncappedMillis: Number(retryAfter) * 1000 } : {};
+    return retryAfter !== undefined && /^\d+$/.test(retryAfter)
+        ? { retryAfterUncappedMillis: Number(retryAfter) * 1000 }
+        : {};
 };
 /**
  * When a spent rate limit resets, uncapped: `x-ratelimit-reset` as epoch
@@ -276,7 +285,7 @@ const build = (config, env, http) => {
     };
     const headers = {
         accept: "application/vnd.github+json",
-        "user-agent": "smithers-integrations",
+        "user-agent": USER_AGENT,
         "x-github-api-version": "2022-11-28"
     };
     if (basic !== undefined)
@@ -448,7 +457,7 @@ const build = (config, env, http) => {
             pages += 1;
         }
         yield* Effect.annotateCurrentSpan({ "github.pages": pages, "github.truncated": url !== null });
-        return { items, truncated: url !== null };
+        return { items, truncated: url !== null, ...(options?.withNext === true ? { next: url } : {}) };
     }).pipe(Effect.withSpan("GitHubClient.paginate"));
     const count = (path, options) => Effect.gen(function* () {
         const url = yield* urlFor(path, { ...options?.query, per_page: 1, page: 1 });

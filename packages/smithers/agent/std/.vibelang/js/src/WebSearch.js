@@ -133,7 +133,9 @@ export const layerNoop = Layer.succeed(WebSearch, makeNoop());
  * @category handlers
  * @since 1.0.0
  */
-export const run = (input) => Effect_1.suspend({ run: () => { return withSpan(Effect_1.gen(function* () {
+export const run = (input) => {
+    return Effect_1.gen(function* run() { return yield* withSpan(Effect_1.gen(function* () {
         const provider = yield* WebSearch;
         return yield* provider.search(input);
-    }), "WebSearch.run"); } }.run);
+    }), "WebSearch.run"); });
+};

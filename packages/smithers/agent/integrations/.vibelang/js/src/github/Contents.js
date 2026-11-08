@@ -30,10 +30,10 @@ export const MAX_REF_LENGTH = 255;
 // "none"`, a directory an array, and a symlink or submodule another `type`;
 // none of them fits.
 const FileAnswer = Schema.Struct({
-    type: Schema.Literal("file"),
-    encoding: Schema.Literal("base64"),
-    content: Schema.String,
-    sha: Schema.String,
+    type: Schema.mutableKey(Schema.Literal("file")),
+    encoding: Schema.mutableKey(Schema.Literal("base64")),
+    content: Schema.mutableKey(Schema.String),
+    sha: Schema.mutableKey(Schema.String),
 });
 // Whether `value` holds a control character (C0 or DEL) or `also`: the
 // backslash some clients read as a separator in a path, a space in a ref.

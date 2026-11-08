@@ -40,7 +40,9 @@ export const apply = (frame) => Effect.gen(function* () {
         return;
     const folded = foldAll(yield* Ref.get(store.folded), rows);
     yield* Ref.set(store.folded, folded.state);
-    for (const item of folded.changed) {
+    for (const next of folded.changed) {
+        // Each item names the panel's run, which its showing joins (store.ts `itemsQuery`).
+        const item = panel.runId === null ? next : { ...next, runId: panel.runId };
         if (Option.isSome(yield* store.items.get(item.id))) {
             yield* Effect.orDie(store.items.update(item.id, (row) => void Object.assign(row, item)));
         }
@@ -103,6 +105,14 @@ const refusalOf = (runId) => Effect.gen(function* () {
     const response = yield* client.execute(HttpClientRequest.get(`${store.origin}${transcriptRoute(runId)}`)).pipe(Effect.timeout("10 seconds"), Effect.option);
     return Option.isNone(response) ? undefined : FINAL[response.value.status];
 });
+/** Empties the panel's items and what folding remembers. */
+const forget = Effect.gen(function* () {
+    const store = yield* TranscriptStore;
+    yield* Ref.set(store.folded, EMPTY);
+    const ids = (yield* store.items.toArray).map((item) => item.id);
+    if (ids.length > 0)
+        yield* Effect.orDie(store.items.delete(ids));
+});
 /**
  * Shows run `runId`'s transcript, or none for `null`: lets go of the socket it held, empties the panel, and holds a
  * socket to the run's until another watch or the store's end.
@@ -112,10 +122,7 @@ export const watch = (runId) => Effect.gen(function* () {
     if (runId !== null && (yield* panelNow).runId === runId)
         return;
     yield* FiberHandle.clear(store.socket);
-    yield* Ref.set(store.folded, EMPTY);
-    const ids = (yield* store.items.toArray).map((item) => item.id);
-    if (ids.length > 0)
-        yield* Effect.orDie(store.items.delete(ids));
+    yield* forget;
     yield* setPanel({ ...IDLE, runId, phase: runId === null ? "idle" : "connecting", digest: GENESIS });
     if (runId === null)
         return;
@@ -128,6 +135,8 @@ export const watch = (runId) => Effect.gen(function* () {
         }
         yield* Metric.update(Metric.withAttributes(dials, { outcome: refused }), 1);
         yield* Effect.logWarning("transcript.closed").pipe(Effect.annotateLogs({ outcome: refused }));
+        // A refusal ends what the panel shows too: the items it held go with the socket (Astra on 0c7b9f01).
+        yield* forget;
         yield* setPanel({ phase: "closed", closed: refused });
     })), Effect.retry(RetryPolicy.schedule(store.redial)), Effect.catch((dropped) => Effect.andThen(Effect.logWarning("transcript.closed").pipe(Effect.annotateLogs({ outcome: "failed", code: dropped.code })), setPanel({ phase: "closed", closed: "failed" }))), Effect.provide(Socket.layerWebSocketConstructorGlobal), Effect.withSpan("transcript.watch"), Effect.annotateLogs({ feature: "transcript" }));
     yield* FiberHandle.run(store.socket, follow);

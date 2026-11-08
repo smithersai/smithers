@@ -115,7 +115,7 @@ const Streak = Schema.NullOr(Schema.Struct({ key: Schema.String, rounds: Schema.
  * @category models
  * @since 1.0.0
  */
-export schema State { readonly tree: Streak; readonly checks: Streak; readonly output: Streak }
+export const State = Schema.Struct({ tree: Streak, checks: Streak, output: Streak })
 
 /**
  * The carried streaks as a type.
@@ -140,12 +140,12 @@ export const initial: State = { tree: null, checks: null, output: null }
  * @category models
  * @since 1.0.0
  */
-export schema Stalled {
-  readonly _tag: "Stalled"
-  readonly signal: Signal
-  readonly rounds: Schema.Int
-  readonly on: On
-}
+export const Stalled = Schema.Struct({
+  _tag: Schema.Literal("Stalled"),
+  signal: Signal,
+  rounds: Schema.Int,
+  on: On
+})
 
 /**
  * The verdict as a type.

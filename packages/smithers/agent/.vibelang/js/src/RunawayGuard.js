@@ -158,24 +158,26 @@ export const layerFlowLimit = (flowName, limitMillis) => Layer.effect(FlowRuntim
  * failure, a Stop or a park that could not be recorded, is not the flow's
  * declared error, so it fails the drive as a defect carrying the typed error.
  */
-const limited = Effect_1.fnUntraced(function* limited(subject, flowName, limitMillis, drive) {
-    const parking = yield* Effect.serviceOption(Budget.Parking);
-    if (Option.isNone(parking) || !parking.value.guardsTimeouts)
-        return yield* drive;
-    const guard = parking.value;
-    const admitted = yield* Effect.orDie(guard.admit(subject));
-    if (admitted._tag === "park")
-        return yield* parkOn(admitted.parked);
-    return yield* (Effect.timeoutOrElse(drive, {
-        duration: Duration.millis(limitMillis),
-        orElse: () => Effect.flatMap(Effect.orDie(guard.trip(new Timeout({
-            source: "tool-call",
-            subject,
-            limitMillis,
-            message: `${flowName} ran past its ${limitMillis} ms limit.`
-        }))), parkOn)
-    }));
-});
+const limited = (subject, flowName, limitMillis, drive) => {
+    return Effect_1.gen(function* limited() {
+        const parking = yield* Effect.serviceOption(Budget.Parking);
+        if (Option.isNone(parking) || !parking.value.guardsTimeouts)
+            return yield* drive;
+        const guard = parking.value;
+        const admitted = yield* Effect.orDie(guard.admit(subject));
+        if (admitted._tag === "park")
+            return yield* parkOn(admitted.parked);
+        return yield* (Effect.timeoutOrElse(drive, {
+            duration: Duration.millis(limitMillis),
+            orElse: () => Effect.flatMap(Effect.orDie(guard.trip(new Timeout({
+                source: "tool-call",
+                subject,
+                limitMillis,
+                message: `${flowName} ran past its ${limitMillis} ms limit.`
+            }))), parkOn)
+        }));
+    });
+};
 /** Suspends the current execution on a guard's park, declaring its wait. */
 const parkOn = (parked) => Effect.flatMap(FlowRuntime.FlowInstance, (instance) => {
     instance.waiting = parked.waiting;

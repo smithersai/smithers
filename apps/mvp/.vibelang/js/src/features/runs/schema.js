@@ -43,6 +43,16 @@ export const CloudRun = Schema.Struct({
     /** `owner/name`, for a TODO's or a repository's run. */
     repo: Schema.NullOr(Schema.String),
 });
+/**
+ * The kinds of run on Cloudflare that show with no repository, by why; `null` for a kind that never does (decision 0110,
+ * the data gate). Repository access doesn't govern a system flow: the server's own filter decides who lists one. A TODO's
+ * or a repository's run with no repository is unattributed, and hidden.
+ */
+export const UNATTRIBUTED_RUN_KINDS = {
+    system: "a deployment's own flow: the server lists it only to whom it may",
+    todo: null,
+    repo: null,
+};
 /** The list route's answer. */
 export const CloudRunList = Schema.Struct({ runs: Schema.Array(CloudRun) });
 /**
@@ -58,6 +68,15 @@ export const RunPage = Schema.Struct({
     more: Schema.Array(Schema.Unknown),
     descendants: Schema.optionalKey(Schema.Array(Schema.Unknown)),
     hasMore: Schema.Boolean,
+    /**
+     * Whose run this read is (decision 0110, 2026-11-03, the data gate): a repository's (`github/owner/name`), from its
+     * root run's Cloudflare or repository row; or `personal`, read from this device's engine. A read with neither shows
+     * nothing; a page with no read (`inspection` null) holds nothing to hide.
+     */
+    repoId: Schema.optional(Schema.String),
+    personal: Schema.optional(Schema.Boolean),
+    /** A repository-free system run explicitly listed to this person by the server. */
+    system: Schema.optional(Schema.Boolean),
 });
 /** The tabs of a run's page. */
 export const RUN_TABS = ["steps", "timeline", "journal"];

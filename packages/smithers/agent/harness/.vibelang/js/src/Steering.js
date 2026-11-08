@@ -7,23 +7,22 @@
  * @since 0.1.0
  */
 import * as Clock from "effect/Clock";
-import * as Schema_1 from "effect/Schema";
 import * as ModelRequest from "@smthrs/model/ModelRequest";
 import { Context, Effect, Layer, Schema } from "effect";
 import * as AgentEvent from "./AgentEvent.js";
 import * as compactionMarks from "./internal/compactionMarks.js";
 import * as Monitor from "./Monitor.js";
-const SeatChangeRecord = Schema_1.Struct({
-    _tag: Schema_1.Literal("SeatChange"),
-    delivery: Schema_1.Literal("steer"),
-    admittedAt: Schema_1.Number,
-    seat: Schema_1.String,
+const SeatChangeRecord = Schema.Struct({
+    _tag: Schema.Literal("SeatChange"),
+    delivery: Schema.Literal("steer"),
+    admittedAt: Schema.Number,
+    seat: Schema.String
 });
-const ThinkingChangeRecord = Schema_1.Struct({
-    _tag: Schema_1.Literal("ThinkingChange"),
-    delivery: Schema_1.Literal("steer"),
-    admittedAt: Schema_1.Number,
-    thinking: ModelRequest.ReasoningEffort,
+const ThinkingChangeRecord = Schema.Struct({
+    _tag: Schema.Literal("ThinkingChange"),
+    delivery: Schema.Literal("steer"),
+    admittedAt: Schema.Number,
+    thinking: ModelRequest.ReasoningEffort
 });
 /**
  * The journaled record of one turn-boundary drain.

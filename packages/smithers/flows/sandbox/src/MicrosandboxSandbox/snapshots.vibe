@@ -447,6 +447,7 @@ export const removeSnapshot = (sdk: Sdk, name: string): void!ProviderError =>
       )) } }
 
 module decoding {
+  /** @throws {never} */
   export const decodeText = (bytes: Uint8Array): string => new TextDecoder().decode(bytes)
 }
 import { decodeText } from decoding

@@ -36,27 +36,15 @@
       "vibelang-source": "./src/index.vibe",
       "default": "./.vibelang/js/src/index.js"
     },
-    "./Record": {
-      "types": "./src/Record.ts",
-      "vibelang-source": "./src/Record.ts",
-      "default": "./.vibelang/js/src/Record.js"
-    },
-    "./BoundedJson": {
-      "types": "./src/BoundedJson.ts",
-      "vibelang-source": "./src/BoundedJson.ts",
-      "default": "./.vibelang/js/src/BoundedJson.js"
-    },
+    "./Record": "./src/Record.ts",
+    "./BoundedJson": "./src/BoundedJson.ts",
     "./IssuePath": {
       "types": "./.vibe/declarations/src/IssuePath.d.vibe.ts",
       "vibelang-source": "./src/IssuePath.vibe",
       "default": "./.vibelang/js/src/IssuePath.js"
     },
     "./ReadonlyMap": "./src/ReadonlyMap.ts",
-    "./Serializer": {
-      "types": "./src/Serializer.ts",
-      "vibelang-source": "./src/Serializer.ts",
-      "default": "./.vibelang/js/src/Serializer.js"
-    }
+    "./Serializer": "./src/Serializer.ts"
   },
   "files": [
     "src/**/*.ts",

@@ -23,6 +23,7 @@ import { lineage } from "./migrations/0002_lineage.js";
 import { executionRevisions } from "./migrations/0003_execution_revisions.js";
 import { waitingRequest } from "./migrations/0004_waiting_request.js";
 import { runProgress } from "./migrations/0005_run_progress.js";
+import { deferredRevisions, revisionTriggers } from "./migrations/0006_deferred_revisions.js";
 /**
  * The run store's namespaced migration set, for composition with the other
  * storage packages.
@@ -33,6 +34,7 @@ import { runProgress } from "./migrations/0005_run_progress.js";
 export const set = {
     namespace: "run-store",
     idOffset: DatabaseMigrations.idBlock,
+    immediateTriggers: revisionTriggers,
     migrations: {
         "0001_initial": initial,
         "0002_lineage": lineage,
@@ -41,6 +43,24 @@ export const set = {
         "0005_run_progress": runProgress
     }
 };
+/**
+ * The deferred revision triggers on `flows_runs` (migration 1006): a read that
+ * joins a writer's transaction flushes them before it reads a revision.
+ *
+ * @category migrations
+ * @since 1.0.0
+ */
+export { revisionTriggers };
+/**
+ * Migration 1006, which defers those triggers. It is not in {@link set} yet: a
+ * binary whose readers do not flush reads wrong revisions inside a writer's
+ * transaction on a schema that has it, so the release that adds it must follow
+ * one that carries the flushing readers, which stays its rollback target.
+ *
+ * @category migrations
+ * @since 1.0.0
+ */
+export { deferredRevisions };
 /**
  * Creates the run and attempt schema, and the journal schema whose consensus
  * lease table the SQL `RunStore` fences through.

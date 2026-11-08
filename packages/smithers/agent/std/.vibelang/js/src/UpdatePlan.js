@@ -119,7 +119,8 @@ export const flow = { name, description, input: Input, output: Output, capabilit
  * @category handlers
  * @since 1.0.0
  */
-export const run = (input) => Effect_1.suspend({ run: () => { return withSpan(Effect_1.gen(function* () {
+export const run = (input) => {
+    return Effect_1.gen(function* run() { return yield* withSpan(Effect_1.gen(function* () {
         const running = inProgressCount(input.plan);
         if (running > 1) {
             return yield* Effect_1.fail(new StdError.StdError({
@@ -128,4 +129,5 @@ export const run = (input) => Effect_1.suspend({ run: () => { return withSpan(Ef
             }));
         }
         return { output: "Plan updated" };
-    }), "UpdatePlan.run"); } }.run);
+    }), "UpdatePlan.run"); });
+};

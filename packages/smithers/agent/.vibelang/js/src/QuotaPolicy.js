@@ -36,6 +36,7 @@
  *
  * @since 0.1.0
  */
+import * as runtime from "vibelang-runtime/internal";
 import { HarnessError } from "@smthrs/harness/HarnessError";
 import { isTerminalRefusal, ModelError } from "@smthrs/model/ModelError";
 import * as Context from "effect/Context";
@@ -77,7 +78,7 @@ export const Park = Schema.Struct({
  * @category services
  * @since 0.1.0
  */
-export class QuotaClassifier extends Context.Service()("@smthrs/agent/QuotaPolicy/QuotaClassifier") {
+export class QuotaClassifier extends runtime.$service("@smthrs/agent/QuotaPolicy/QuotaClassifier") {
 }
 /**
  * How long a refusal that names no deadline parks for.

@@ -29,26 +29,28 @@ export const failureOf = (failed) => failed.status !== undefined
  * `pull/review/request`: one `POST /api/repos/<owner>/<name>/pulls/<number>/review`, a log line `pull.review.request`
  * and a count by outcome, with ChatApi's status and code; never the pull request's title or diff.
  */
-export const requestReview = Effect_1.fnUntraced(function* requestReview(payload) {
-    var topic_1;
-    const answer = yield* Effect.result((yield* PullsClient).review(payload));
-    const failure = answer._tag === "Failure" ? failureOf(answer.failure) : undefined;
-    const outcome = failure === undefined
-        ? "sent"
-        : failure._tag === "@smthrs/mvp/pulls/ReviewRefused"
-            ? "refused"
-            : "unsent";
-    yield* Metric.update(Metric.withAttributes(reviews, { outcome }), 1);
-    yield* ((topic_1 = Effect.logWithLevel(failure === undefined ? "Info" : "Warn")("pull.review.request"), Effect.annotateLogs({
-        outcome,
-        ...(answer._tag === "Failure" && answer.failure.status !== undefined ? { status: answer.failure.status } : {}),
-        ...(answer._tag === "Failure" && answer.failure.code !== undefined ? { code: answer.failure.code } : {}),
-        feature: "pulls",
-    })(topic_1)));
-    if (answer._tag === "Success")
-        return answer.success;
-    return yield* Effect_1.fail(failure);
-});
+export const requestReview = (payload) => {
+    return Effect_1.gen(function* requestReview() {
+        var topic_1;
+        const answer = yield* Effect.result((yield* PullsClient).review(payload));
+        const failure = answer._tag === "Failure" ? failureOf(answer.failure) : undefined;
+        const outcome = failure === undefined
+            ? "sent"
+            : failure._tag === "@smthrs/mvp/pulls/ReviewRefused"
+                ? "refused"
+                : "unsent";
+        yield* Metric.update(Metric.withAttributes(reviews, { outcome }), 1);
+        yield* ((topic_1 = Effect.logWithLevel(failure === undefined ? "Info" : "Warn")("pull.review.request"), Effect.annotateLogs({
+            outcome,
+            ...(answer._tag === "Failure" && answer.failure.status !== undefined ? { status: answer.failure.status } : {}),
+            ...(answer._tag === "Failure" && answer.failure.code !== undefined ? { code: answer.failure.code } : {}),
+            feature: "pulls",
+        })(topic_1)));
+        if (answer._tag === "Success")
+            return answer.success;
+        return yield* Effect_1.fail(failure);
+    });
+};
 /** Registers `pull/review` with its step, asking through the host's `PullsClient`. */
 export const registration = Interpreter.layerWithImplementations(PullReview, ReviewRequestStep.toLayer(requestReview));
 /** The flow, asking ChatApi on `origin`. Needs the host's `HttpClient`. */

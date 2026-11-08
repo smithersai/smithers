@@ -25,19 +25,19 @@ import * as Schema from "effect/Schema"
 const seat = "anthropic:claude-sonnet-5-5"
 
 /** One place a doc disagrees with the code it describes. */
-export schema Discrepancy {
-  readonly docFile: string
-  readonly codeFile: string
-  readonly issue: "outdated-api" | "missing-param" | "wrong-example" | "missing-doc" | "stale-reference"
-  readonly description: string
-  readonly severity: "critical" | "warning" | "info"
-}
+export const Discrepancy = Schema.Struct({
+  docFile: Schema.String,
+  codeFile: Schema.String,
+  issue: Schema.Literals(["outdated-api", "missing-param", "wrong-example", "missing-doc", "stale-reference"]),
+  description: Schema.String,
+  severity: Schema.Literals(["critical", "warning", "info"])
+})
 
 /** The auditor's answer. */
-export schema Audit {
-  readonly discrepancies: ReadonlyArray<Discrepancy>
-  readonly totalDocsChecked: number
-}
+export const Audit = Schema.Struct({
+  discrepancies: Schema.Array(Discrepancy),
+  totalDocsChecked: Schema.Number
+})
 
 /** What one fixer did with its doc. */
 export const FixResult = Schema.Struct({

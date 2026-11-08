@@ -140,6 +140,7 @@ const transientCodes: ReadonlySet<string> = new Set([
  *
  * @category errors
  * @since 0.1.0
+ * @throws {never}
  */
 export const isTransient = (error: CodeStorageError): boolean =>
   transientCodes.has(error.code) || (error.status !== undefined && [500, 502, 503, 504].includes(error.status))

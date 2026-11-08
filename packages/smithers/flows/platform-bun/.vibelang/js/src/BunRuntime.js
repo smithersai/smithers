@@ -7,7 +7,6 @@
  *
  * @since 1.0.0
  */
-import { Crypto } from "@smthrs/crypto";
 import { NativeRuntime } from "@smthrs/platform-node";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -19,7 +18,7 @@ const runtime = NativeRuntime.make({
     // modules are read.
     database: (filename) => Layer.unwrap(Effect.map(Effect.promise(() => import("@smthrs/database/bun/BunDatabase")), (Database) => Database.layer({ filename }))),
     host: Host,
-    crypto: Crypto.layerFromDigest(Host.BunCrypto.layerDigest)
+    crypto: Host.BunCrypto.layer
 });
 /** Provides the migrated stores over the native SQL driver.
  * @since 1.0.0

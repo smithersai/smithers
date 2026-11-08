@@ -421,7 +421,7 @@ export const entry = (ordinal, call) => {
         bytes: encoder.encode(whole).byteLength,
         mutates,
         payloadBytes: mutates ? payload(call.input) : 0,
-        signature: mutates ? Digest.digest(CanonicalJson.stringify([call.flow, call.input])) : ""
+        signature: mutates ? $invoke(Digest, () => (CanonicalJson.stringify([call.flow, call.input]))) : ""
     });
 };
 /**
@@ -531,3 +531,4 @@ export const render = (ledger, since = 0) => {
     const trailer = "\nThese are an index, not the results: what each call returned is still under the name your cell bound it to. Read the name; do not issue the call again.";
     return `${heading}\n${lines.join("\n")}${trailer}${writes}`;
 };
+import { invoke as $invoke } from "./CallLedger.vibe.-24-call-24-ts.js";

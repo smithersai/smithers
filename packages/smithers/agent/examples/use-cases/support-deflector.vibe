@@ -54,19 +54,19 @@ export const Draft = Schema.Struct({
 })
 
 /** The package handed to a person. */
-export schema Escalation {
-  readonly reason: string
-  readonly priority: "urgent" | "high" | "normal"
-  readonly assignTo: string
-  readonly context: string
-}
+export const Escalation = Schema.Struct({
+  reason: Schema.String,
+  priority: Schema.Literals(["urgent", "high", "normal"]),
+  assignTo: Schema.String,
+  context: Schema.String
+})
 
 /** What the flow settles with. */
-export schema Outcome {
-  readonly status: "deflected" | "escalated"
-  readonly ticketId: string
-  readonly summary: string
-}
+export const Outcome = Schema.Struct({
+  status: Schema.Literals(["deflected", "escalated"]),
+  ticketId: Schema.String,
+  summary: Schema.String
+})
 
 /** Labels the ticket. */
 export const Classify = AgentAction.make("examples/SupportDeflector/Classify", {

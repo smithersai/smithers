@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema"
 import { arrayOf, withDefault } from "../schema/withDefault.ts"
-import { NativeReviewFile } from "./nativeReviewFileSchema.vibe"
-import { ReviewMode } from "./reviewModeSchema.vibe"
+import { NativeReviewFile } from "./nativeReviewFileSchema.ts"
+import { ReviewMode } from "./reviewModeSchema.ts"
 import { ReviewWarning } from "./reviewWarningSchema.ts"
 
 /**

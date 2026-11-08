@@ -18,7 +18,11 @@ export const stripOf = (rows, here) => here === undefined ? [] : tabsAt(rows, he
     href: fileHref(here, row.path, row.lines),
     active: here.kind === "blob" && here.path === row.path,
 }));
-/** Lines as `?L=` writes them, from the repository view's anchor; `null` for none. */
+/**
+ * Lines as `?L=` writes them, from the repository view's anchor; `null` for none.
+ *
+ * @throws {never}
+ */
 export const linesOf = (line, lineEnd) => line === null ? null : lineEnd === null || lineEnd <= line ? `${line}` : `${line}-${lineEnd}`;
 /** `pathname` decoded; none when it doesn't decode. */
 const decoded = (pathname) => {

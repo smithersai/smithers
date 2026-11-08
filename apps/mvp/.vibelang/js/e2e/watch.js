@@ -185,8 +185,8 @@ const lacks = () => {
  * context the worker's browser creates while the test runs.
  */
 export const problems = [
-    async ({ browser }, use) => {
-        const watched = new Watched(new URL(baseURL).origin);
+    async ({ browser, baseURL: contextBaseURL }, use) => {
+        const watched = new Watched(new URL(contextBaseURL ?? baseURL).origin);
         const watch = (context) => watched.watch(context);
         browser.on("context", watch);
         try {

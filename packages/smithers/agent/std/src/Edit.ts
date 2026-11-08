@@ -30,7 +30,7 @@ import * as FsFailure from "./internal/FsFailure.vibe"
 import * as Match from "./internal/Match.ts"
 import * as Preserve from "./internal/Preserve.vibe"
 import { sourceLines } from "./internal/Text.ts"
-import * as StdError from "./StdError.vibe"
+import * as StdError from "./StdError.ts"
 
 /**
  * Registry name for the edit flow.

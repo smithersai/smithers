@@ -26,7 +26,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as Digest from "@smthrs/core/Digest";
 import * as Author from "./Author.js";
 import * as AuthorDeclaration from "./AuthorDeclaration.js";
@@ -111,120 +110,105 @@ export const contractDigest = (options) => $invoke(Digest, () => (Digest.canonic
  * @since 0.1.0
  * @slop
  */
-export const make = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* make(options) {
-    // The child contract is snapshotted once: the digest below and every
-    // child the handler runs describe these values, never a later edit of
-    // the caller's options object.
-    const entries = [...options.entries];
-    const maxDepth = options.maxDepth ?? defaultMaxDepth;
-    const pinned = {
-        entries,
-        maxCallsPerLink: options.maxCallsPerLink,
-        maxDepth,
-        maxLinks: options.maxLinks,
-        prefix: options.prefix
-    };
-    const shadowed = entries.filter((entry) => reserved.includes(entry.name)).map((entry) => entry.name);
-    if (shadowed.length > 0) {
-        return yield* Effect.die(new Error(`entries shadow reserved catalog names: ${shadowed.join(", ")}`));
-    }
-    // Every bound is compared with `>` or `>=`, which NaN never satisfies:
-    // a NaN, negative, fractional, or infinite bound would remove the limit
-    // on nesting or child spend instead of enforcing one.
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const value_1 of [
-                ["maxDepth", maxDepth],
-                ["maxLinks", pinned.maxLinks],
-                ["maxCallsPerLink", pinned.maxCallsPerLink]
-            ]) {
-                try {
-                    const [bound, value] = value_1;
-                    {
-                        if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
-                            return yield* Effect.die(new Error(`${bound} must be a non-negative integer, got ${value}`));
-                        }
+export const make = (options) => {
+    return Effect_1.gen(function* make() {
+        // The child contract is snapshotted once: the digest below and every
+        // child the handler runs describe these values, never a later edit of
+        // the caller's options object.
+        const entries = [...options.entries];
+        const maxDepth = options.maxDepth ?? defaultMaxDepth;
+        const pinned = {
+            entries,
+            maxCallsPerLink: options.maxCallsPerLink,
+            maxDepth,
+            maxLinks: options.maxLinks,
+            prefix: options.prefix
+        };
+        const shadowed = entries.filter((entry) => reserved.includes(entry.name)).map((entry) => entry.name);
+        if (shadowed.length > 0) {
+            return yield* Effect.die(new Error(`entries shadow reserved catalog names: ${shadowed.join(", ")}`));
+        }
+        // Every bound is compared with `>` or `>=`, which NaN never satisfies:
+        // a NaN, negative, fractional, or infinite bound would remove the limit
+        // on nesting or child spend instead of enforcing one.
+        for (const [bound, value] of [
+            ["maxDepth", maxDepth],
+            ["maxLinks", pinned.maxLinks],
+            ["maxCallsPerLink", pinned.maxCallsPerLink]
+        ]) {
+            if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+                return yield* Effect.die(new Error(`${bound} must be a non-negative integer, got ${value}`));
+            }
+        }
+        // Captured at construction on purpose: a child must run on the very
+        // same journal/author/runner the parent chain runs on. Build the
+        // catalog layer over those same layers (see the module invariants).
+        const journal = yield* Journal.Journal;
+        const author = yield* Author.Author;
+        const runner = yield* ScriptRunner.ScriptRunner;
+        const agent = {
+            capabilities: [agentCapability],
+            description: agentDescription,
+            digest: contractDigest(pinned),
+            handler: (payload, slot) => {
+                return Effect_1.gen(function* handler() {
+                    const input = decodeInput(payload);
+                    if (input._tag === "None") {
+                        return yield* Effect_1.fail(new Catalog.CallError({
+                            message: `"${agentName}" takes { goal, context? }`,
+                            name: agentName
+                        }));
                     }
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
-            }
-        }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
-        }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
-    }
-    // Captured at construction on purpose: a child must run on the very
-    // same journal/author/runner the parent chain runs on. Build the
-    // catalog layer over those same layers (see the module invariants).
-    const journal = yield* Journal.Journal;
-    const author = yield* Author.Author;
-    const runner = yield* ScriptRunner.ScriptRunner;
-    const agent = {
-        capabilities: [agentCapability],
-        description: agentDescription,
-        digest: contractDigest(pinned),
-        handler: Effect_1.fnUntraced(function* handler(payload, slot) {
-            const input = decodeInput(payload);
-            if (input._tag === "None") {
-                return yield* Effect_1.fail(new Catalog.CallError({
-                    message: `"${agentName}" takes { goal, context? }`,
-                    name: agentName
-                }));
-            }
-            if (slot === undefined) {
-                // Without a slot there is no derivable child identity: two
-                // slotless spawns would alias one scope and replay each
-                // other's outcomes.
-                return yield* Effect_1.fail(new Catalog.CallError({
-                    message: `"${agentName}" requires a call slot; invoke it through a running chain`,
-                    name: agentName
-                }));
-            }
-            const child = `${slot.chain === "" ? "" : `${slot.chain}/`}${slot.link}.${slot.ordinal}`;
-            if (child.split("/").filter((segment) => derivedSegment.test(segment)).length > maxDepth) {
-                return yield* Effect_1.fail(new Catalog.CallError({
-                    message: `"${agentName}" refused: nesting deeper than ${maxDepth} chains`,
-                    name: agentName
-                }));
-            }
-            const outcome = yield* (Effect.mapError(Effect.provideService(Effect.provideService(Effect.provideService(Effect.provideService(Chain.run({
-                [childRun]: true,
-                chain: child,
-                context: input.value.context ?? [],
-                goal: input.value.goal,
-                maxCallsPerLink: pinned.maxCallsPerLink,
-                maxLinks: pinned.maxLinks,
-                prefix: pinned.prefix
-            }), Catalog.Catalog, catalog), Journal.Journal, journal), Author.Author, author), ScriptRunner.ScriptRunner, runner)
-            // Only a terminal is data. Preserve run failures as typed,
-            // un-settled failures of the parent, with their original cause.
-            , (error) => new ChildRunError(error)));
-            if (outcome._tag === "ApprovalWait") {
-                // A child waiting on approval must not settle as data: bubble
-                // it as the typed approval cause so the parent parks in place
-                // and a later grant resumes the child through this same slot.
-                return yield* Effect_1.fail(new Catalog.CallError({
-                    cause: "approval_required",
-                    message: outcome.reason.message,
-                    name: agentName
-                }));
-            }
-            return outcome;
-        }),
-        name: agentName
-    };
-    // The handler above closes over this binding, not a second state
-    // holder: `Catalog.make` only snapshots handler references, so the
-    // entry can never run before the binding is initialized.
-    const catalog = Catalog.make(Catalog.withSystem([...entries, agent]));
-    return catalog;
-})));
+                    if (slot === undefined) {
+                        // Without a slot there is no derivable child identity: two
+                        // slotless spawns would alias one scope and replay each
+                        // other's outcomes.
+                        return yield* Effect_1.fail(new Catalog.CallError({
+                            message: `"${agentName}" requires a call slot; invoke it through a running chain`,
+                            name: agentName
+                        }));
+                    }
+                    const child = `${slot.chain === "" ? "" : `${slot.chain}/`}${slot.link}.${slot.ordinal}`;
+                    if (child.split("/").filter((segment) => derivedSegment.test(segment)).length > maxDepth) {
+                        return yield* Effect_1.fail(new Catalog.CallError({
+                            message: `"${agentName}" refused: nesting deeper than ${maxDepth} chains`,
+                            name: agentName
+                        }));
+                    }
+                    const outcome = yield* (Effect.mapError(Effect.provideService(Effect.provideService(Effect.provideService(Effect.provideService(Chain.run({
+                        [childRun]: true,
+                        chain: child,
+                        context: input.value.context ?? [],
+                        goal: input.value.goal,
+                        maxCallsPerLink: pinned.maxCallsPerLink,
+                        maxLinks: pinned.maxLinks,
+                        prefix: pinned.prefix
+                    }), Catalog.Catalog, catalog), Journal.Journal, journal), Author.Author, author), ScriptRunner.ScriptRunner, runner)
+                    // Only a terminal is data. Preserve run failures as typed,
+                    // un-settled failures of the parent, with their original cause.
+                    , (error) => ChildRunError.new(error)));
+                    if (outcome._tag === "ApprovalWait") {
+                        // A child waiting on approval must not settle as data: bubble
+                        // it as the typed approval cause so the parent parks in place
+                        // and a later grant resumes the child through this same slot.
+                        return yield* Effect_1.fail(new Catalog.CallError({
+                            cause: "approval_required",
+                            message: outcome.reason.message,
+                            name: agentName
+                        }));
+                    }
+                    return outcome;
+                });
+            },
+            name: agentName
+        };
+        // The handler above closes over this binding, not a second state
+        // holder: `Catalog.make` only snapshots handler references, so the
+        // entry can never run before the binding is initialized.
+        const catalog = Catalog.make(Catalog.withSystem([...entries, agent]));
+        return catalog;
+    });
+};
 /**
  * The recursive catalog layer.
  *
@@ -233,4 +217,4 @@ export const make = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFr
  * @slop
  */
 export const layer = (options) => Layer.effect(Catalog.Catalog)(make(options));
-import { invoke as $invoke } from "./SubChains.vibe.$call$ts.js";
+import { invoke as $invoke } from "./SubChains.vibe.-24-call-24-ts.js";

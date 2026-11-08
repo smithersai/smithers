@@ -97,7 +97,7 @@ const fixture = (origin, url) => {
  * fiber's fetch, or the telemetry exporter giving up after 10 s or dropping a body it already has the status of. The
  * server failing shows as a 5xx or as another network error (a reset or empty response, an HTTP/2 error).
  */
-const cancelled = (error) => error === "net::ERR_ABORTED" || error === "NS_BINDING_ABORTED" || error === "cancelled";
+export const requestCancelled = (error) => error === "net::ERR_ABORTED" || error === "NS_BINDING_ABORTED" || error === "cancelled" || error === "Load request cancelled";
 /** A request the test's own offline device couldn't send (`context.setOffline(true)`): not the server's failure. */
 const offline = (error) => error === "net::ERR_INTERNET_DISCONNECTED" || error === "NS_ERROR_OFFLINE";
 const RESOURCE_STATUS = /^Failed to load resource: the server responded with a status of (\d{3})/;
@@ -118,7 +118,7 @@ export const problemOf = (origin, observation) => {
         }
         case "failed": {
             const { error } = observation;
-            if (!at(origin, observation.url) || !api(observation.url) || cancelled(error) || offline(error))
+            if (!at(origin, observation.url) || !api(observation.url) || requestCancelled(error) || offline(error))
                 return undefined;
             const path = pathOf(observation.url);
             return { kind: "server", status: "failed", path, line: `failed ${observation.method} ${path} ${error}` };
@@ -157,7 +157,7 @@ export const serverErrorAnnotation = (status, path) => {
     }
     if (!path.startsWith("/") || /[\s?]/.test(path))
         throw new Error(`expectServerError: "${path}" is not a pathname such as /api/auth/session`);
-    return { type: EXPECTED_SERVER_ERROR, description: `${status} ${path}` };
+    return { type: EXPECTED_SERVER_ERROR, description: `${status} ${path.replace(UUID, ":id")}` };
 };
 /**
  * The server errors a local dev server answers in place of a service it runs without, which no test causes: without

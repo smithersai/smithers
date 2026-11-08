@@ -79,7 +79,7 @@ export const factoryNames = (sources, parse = Ts.parse) => {
     for (const [file, text] of sources) {
         if (!/\bcreateSmithers\w*\s*\(/.test(text))
             continue;
-        const parsed = parse(file, text);
+        const parsed = parseWith(parse, file, text);
         Ts.forEachNode(parsed, (node) => {
             if (ts.isFunctionDeclaration(node) && node.name !== undefined && node.body !== undefined) {
                 if (/\bcreateSmithers\w*\s*\(/.test(node.body.getText()))
@@ -212,7 +212,7 @@ const entry = (file, source, node, construct, props, detail) => {
  */
 export const scanFile = (file, text, options) => {
     const parse = options.parse ?? Ts.parse;
-    const source = parse(file, text);
+    const source = parseWith(parse, file, text);
     const hits = [];
     const locals = initializers(source);
     // Local name to catalog name, for everything that came from an old import or
@@ -337,7 +337,7 @@ export const scanFile = (file, text, options) => {
     const fieldChain = (chain, field) => {
         if (chain === undefined)
             return undefined;
-        const parsed = parse("chain.ts", `const value = ${chain}`);
+        const parsed = parseWith(parse, "chain.ts", `const value = ${chain}`);
         let found;
         Ts.forEachNode(parsed, (node) => {
             if (found !== undefined || !ts.isPropertyAssignment(node))
@@ -353,7 +353,7 @@ export const scanFile = (file, text, options) => {
         const found = new Map();
         if (text === undefined)
             return found;
-        const parsed = parse("deps.ts", `const value = (${text})`);
+        const parsed = parseWith(parse, "deps.ts", `const value = (${text})`);
         Ts.forEachNode(parsed, (node) => {
             if (!ts.isPropertyAssignment(node) || node.name === undefined)
                 return;
@@ -672,7 +672,7 @@ export const scanFile = (file, text, options) => {
  * @since 1.0.0-rc.0
  */
 export const zodChains = (file, text, parse = Ts.parse) => {
-    const source = parse(file, text);
+    const source = parseWith(parse, file, text);
     const chains = [];
     Ts.forEachNode(source, (node) => {
         if (!ts.isVariableDeclaration(node) || !ts.isIdentifier(node.name) || node.initializer === undefined)
@@ -691,7 +691,7 @@ export const zodChains = (file, text, parse = Ts.parse) => {
  * @since 1.0.0-rc.0
  */
 export const mdxImports = (file, text, parse = Ts.parse) => {
-    const source = parse(file, text);
+    const source = parseWith(parse, file, text);
     const found = [];
     for (const record of Ts.imports(source)) {
         if (!record.specifier.endsWith(".mdx"))
@@ -722,7 +722,7 @@ export const factoryReexports = (sources, factories, parse = Ts.parse) => {
     for (const [file, text] of sources) {
         if (!/\bcreateSmithers\w*\s*\(/.test(text))
             continue;
-        const source = parse(file, text);
+        const source = parseWith(parse, file, text);
         const bindings = new Map();
         for (const statement of source.statements) {
             if (!ts.isVariableStatement(statement))
@@ -786,3 +786,4 @@ export const scan = (detection, parse = Ts.parse) => Effect.sync(() => {
     }
     return hits.sort((left, right) => Sort.byText(left.file, right.file) || left.line - right.line || left.column - right.column);
 });
+import { parseWith } from "./Inventory.vibe.parsing.js";

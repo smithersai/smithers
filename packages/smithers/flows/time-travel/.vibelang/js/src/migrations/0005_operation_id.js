@@ -19,7 +19,7 @@ import { step } from "../internal/MigrationStep.js";
 export const operationId = Effect_1.gen(function* operationId() {
     const sql = yield* SqlClient.SqlClient;
     // Idempotent like 0004, so a schema adopted from unrecorded rungs converges.
-    const columns = yield* Effect.suspend(() => Dialect.columns(sql, "flows_time_travel_snapshots"));
+    const columns = yield* Dialect.columns(sql, "flows_time_travel_snapshots");
     if (columns.some((column) => column.name === "operation_id"))
         return;
     yield* step("the flows_time_travel_snapshots operation_id column", sql `ALTER TABLE flows_time_travel_snapshots ADD COLUMN operation_id TEXT

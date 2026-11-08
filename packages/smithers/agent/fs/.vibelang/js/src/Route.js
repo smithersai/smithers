@@ -25,7 +25,9 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { tryPromise } from "effect/Effect";
 import * as Effect_1 from "effect/Effect";
+import * as runtime from "vibelang-runtime/internal";
 import * as RuntimeFlow from "@smthrs/flow/Flow";
 import * as Descriptor from "@smthrs/registry/Descriptor";
 import { fileSpecifier } from "@smthrs/registry/Executable";
@@ -67,194 +69,215 @@ export const maximumPathLength = 16_384;
  */
 export const maximumCapabilities = 256;
 const invalidRoute = (path, description = "Route metadata violates the command contract") => new FsError({ code: "invalid_route", method: "Route.snapshot", description, path });
-const text = Effect_1.fnUntraced(function* text(value, options) {
-    if (typeof value !== "string" || (options.empty !== true && value.length === 0)
-        || value.length > options.maximum || value.includes("\0") || !Boundary.isWellFormedText(value))
-        return yield* Effect_1.fail(invalidRoute(options.path));
-    return value;
-});
-const fields = Effect_1.fnUntraced(function* fields(value, required, optional = []) {
-    const admitted = Boundary.inspectRecord(value, required, optional);
-    if (!admitted.ok)
-        return yield* Effect_1.fail(invalidRoute(admitted.path));
-    return admitted.value;
-});
-const schemaFields = Effect_1.fnUntraced(function* schemaFields(input, required, optional = []) {
-    return yield* Effect.try({
-        try: () => ((input, required, optional, invalidRoute) => {
+const text = (value, options) => {
+    return Effect_1.gen(function* text() {
+        if (typeof value !== "string" || (options.empty !== true && value.length === 0) ||
+            value.length > options.maximum || value.includes("\0") || !(yield* inspect(() => Boundary.isWellFormedText(value), options.path)))
+            return yield* Effect_1.fail(invalidRoute(options.path));
+        return value;
+    });
+};
+const fields = (arg_1, arg_2, ...args_1) => {
+    try {
+        return ((value, required, optional = []) => Effect_1.gen(function* fields() {
+            const admitted = yield* inspect(() => Boundary.inspectRecord(value, required, optional), "$");
+            if (!admitted.ok)
+                return yield* Effect_1.fail(invalidRoute(admitted.path));
+            return admitted.value;
+        }))(arg_1, arg_2, ...runtime.$spreadItems(args_1));
+    }
+    catch (e_1) {
+        return Effect_1.die(e_1);
+    }
+};
+function inspect(read, path) {
+    return Effect_1.gen(function* inspect() {
+        return yield* Effect.try({ try: read, catch: () => invalidRoute(path) });
+    });
+}
+const schemaFields = (arg_3, arg_4, ...args_2) => {
+    try {
+        return ((input, required, optional = []) => Effect_1.gen(function* schemaFields() {
             if (typeof input !== "object" || input === null || Array.isArray(input))
-                throw invalidRoute("$");
-            const prototype = Object.getPrototypeOf(input);
-            const known = input instanceof Descriptor.SchemaRefMarkdownArgs
-                || input instanceof Descriptor.SchemaRefMarkdownOutput
-                || input instanceof Descriptor.SchemaRefNone
-                || input instanceof Descriptor.SchemaRefModule
-                || input instanceof Descriptor.SchemaRefInline;
+                return yield* Effect_1.fail(invalidRoute("$"));
+            const prototype = yield* inspect(() => Object.getPrototypeOf(input), "$");
+            const known = yield* inspect(() => input instanceof Descriptor.SchemaRefMarkdownArgs ||
+                input instanceof Descriptor.SchemaRefMarkdownOutput || input instanceof Descriptor.SchemaRefNone ||
+                input instanceof Descriptor.SchemaRefModule || input instanceof Descriptor.SchemaRefInline, "$");
             if (!known && prototype !== Object.prototype && prototype !== null)
-                throw invalidRoute("$");
+                return yield* Effect_1.fail(invalidRoute("$"));
             const allowed = new Set([...required, ...optional]);
-            const keys = Reflect.ownKeys(input);
+            const keys = yield* inspect(() => Reflect.ownKeys(input), "$");
             if (keys.some((key) => typeof key === "symbol" || !allowed.has(key)))
-                throw invalidRoute("$");
+                return yield* Effect_1.fail(invalidRoute("$"));
             const output = Object.create(null);
             for (const key of required) {
-                const descriptor = Object.getOwnPropertyDescriptor(input, key);
-                if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
-                    throw invalidRoute(`$.${key}`);
-                }
+                const descriptor = yield* inspect(() => Object.getOwnPropertyDescriptor(input, key), "$");
+                if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable)
+                    return yield* Effect_1.fail(invalidRoute(`$.${key}`));
                 output[key] = descriptor.value;
             }
             for (const key of optional) {
-                const descriptor = Object.getOwnPropertyDescriptor(input, key);
+                const descriptor = yield* inspect(() => Object.getOwnPropertyDescriptor(input, key), "$");
                 if (descriptor === undefined)
                     continue;
                 if (!("value" in descriptor) || !descriptor.enumerable)
-                    throw invalidRoute(`$.${key}`);
+                    return yield* Effect_1.fail(invalidRoute(`$.${key}`));
                 output[key] = descriptor.value;
             }
             return Object.freeze(output);
-        })(input, required, optional, invalidRoute),
-        catch: (cause) => cause instanceof FsError ? cause : invalidRoute("$")
-    });
-});
-// Inspect foreign Option values inside JavaScript so hostile proxy traps are normalized.
-const inspectOption = (input, path) => Effect_1.suspend({ inspectOption: () => { return Effect.try({
-        try: () => ((input) => {
-            if (!Option.isOption(input))
-                throw new Error("Invalid Option");
-            // Reading the payload here also catches a hostile getter.
-            return input._tag === "None" ? Option.none() : Option.some(input.value);
-        })(input),
-        catch: () => invalidRoute(path)
-    }); } }.inspectOption);
-const optionText = Effect_1.fnUntraced(function* optionText(input, path, maximum) {
-    const option = yield* inspectOption(input, path);
-    if (Option.isNone(option))
-        return Option.none();
-    return Option.some(yield* text(option.value, { path, maximum }));
-});
-const optionPlacement = Effect_1.fnUntraced(function* optionPlacement(input) {
-    const option = yield* inspectOption(input, "$.placement");
-    if (Option.isNone(option))
-        return Option.none();
-    const placement = option.value;
-    if (!(yield* ($is1 => Effect_1.sync(() => (($is1 === "client") || ($is1 === "local") || ($is1 === "sandbox") || ($is1 === "remote"))))(placement)))
-        return yield* Effect_1.fail(invalidRoute("$.placement"));
-    return Option.some(placement);
-});
-const schemaRef = Effect_1.fnUntraced(function* schemaRef(input, path) {
-    const tagged = yield* schemaFields(input, ["_tag"], ["path", "field", "document"]);
-    switch (tagged._tag) {
-        case "MarkdownArgs":
-            return new Descriptor.SchemaRefMarkdownArgs({});
-        case "MarkdownOutput":
-            return new Descriptor.SchemaRefMarkdownOutput({});
-        case "None":
-            return new Descriptor.SchemaRefNone({});
-        case "Module": {
-            const source = yield* text(tagged.path, { path: `${path}.path`, maximum: maximumPathLength });
-            if (!(yield* ($is2 => Effect_1.sync(() => (($is2 === "input") || ($is2 === "output"))))(tagged.field)))
-                return yield* Effect_1.fail(invalidRoute(`${path}.field`));
-            return new Descriptor.SchemaRefModule({ path: source, field: tagged.field });
-        }
-        case "Inline": {
-            const admitted = Boundary.admitJson(tagged.document);
-            if (!admitted.ok)
-                return yield* Effect_1.fail(invalidRoute(`${path}.document${admitted.path.slice(1)}`));
-            return new Descriptor.SchemaRefInline({ document: admitted.value });
-        }
-        default:
-            return yield* Effect_1.fail(invalidRoute(`${path}._tag`));
+        }))(arg_3, arg_4, ...runtime.$spreadItems(args_2));
     }
-});
-const effectDeclaration = Effect_1.fnUntraced(function* effectDeclaration(input) {
-    const data = yield* fields(input, ["reads", "writes", "mode", "onConflict", "tier"]);
-    const reads = Boundary.stringArray(data.reads, {
-        maxItems: maximumCapabilities,
-        maxLength: maximumPathLength
+    catch (e_2) {
+        return Effect_1.die(e_2);
+    }
+};
+const inspectOption = (input, path) => {
+    return Effect_1.gen(function* inspectOption() {
+        const option = yield* inspect(() => Option.isOption(input) ? input : undefined, path);
+        if (option === undefined)
+            return yield* Effect_1.fail(invalidRoute(path));
+        return yield* inspect(() => option._tag === "None" ? Option.none() : Option.some(option.value), path);
     });
-    const writes = Boundary.stringArray(data.writes, {
-        maxItems: maximumCapabilities,
-        maxLength: maximumPathLength
+};
+const optionText = (input, path, maximum) => {
+    return Effect_1.gen(function* optionText() {
+        const option = yield* inspectOption(input, path);
+        if (Option.isNone(option))
+            return Option.none();
+        return Option.some(yield* text(option.value, { path, maximum }));
     });
-    if (!reads.ok)
-        return yield* Effect_1.fail(invalidRoute(`$.effects.reads${reads.path.slice(1)}`));
-    if (!writes.ok)
-        return yield* Effect_1.fail(invalidRoute(`$.effects.writes${writes.path.slice(1)}`));
-    if (!(yield* ($is3 => Effect_1.sync(() => (($is3 === "hermetic") || ($is3 === "expected"))))(data.mode)))
-        return yield* Effect_1.fail(invalidRoute("$.effects.mode"));
-    if (!(yield* ($is4 => Effect_1.sync(() => (($is4 === "serialize") || ($is4 === "lane") || ($is4 === "fail"))))(data.onConflict)))
-        return yield* Effect_1.fail(invalidRoute("$.effects.onConflict"));
-    if (!(yield* ($is5 => Effect_1.sync(() => (($is5 === "sealed") || ($is5 === "compensable") || ($is5 === "irreversible"))))(data.tier)))
-        return yield* Effect_1.fail(invalidRoute("$.effects.tier"));
-    return Object.freeze({
-        reads: reads.value,
-        writes: writes.value,
-        mode: data.mode,
-        onConflict: data.onConflict,
-        tier: data.tier
+};
+const optionPlacement = (input) => {
+    return Effect_1.gen(function* optionPlacement() {
+        const option = yield* inspectOption(input, "$.placement");
+        if (Option.isNone(option))
+            return Option.none();
+        const placement = option.value;
+        if (!(yield* ($is1 => { return Effect_1.sync(() => { return (($is1 === "client") || ($is1 === "local") || ($is1 === "sandbox") || ($is1 === "remote")); }); })(placement)))
+            return yield* Effect_1.fail(invalidRoute("$.placement"));
+        return Option.some(placement);
     });
-});
+};
+const schemaRef = (input, path) => {
+    return Effect_1.gen(function* schemaRef() {
+        const tagged = yield* schemaFields(input, ["_tag"], ["path", "field", "document"]);
+        switch (tagged._tag) {
+            case "MarkdownArgs":
+                return new Descriptor.SchemaRefMarkdownArgs({});
+            case "MarkdownOutput":
+                return new Descriptor.SchemaRefMarkdownOutput({});
+            case "None":
+                return new Descriptor.SchemaRefNone({});
+            case "Module": {
+                const source = yield* text(tagged.path, { path: `${path}.path`, maximum: maximumPathLength });
+                if (!(yield* ($is2 => { return Effect_1.sync(() => { return (($is2 === "input") || ($is2 === "output")); }); })(tagged.field)))
+                    return yield* Effect_1.fail(invalidRoute(`${path}.field`));
+                return new Descriptor.SchemaRefModule({ path: source, field: tagged.field });
+            }
+            case "Inline": {
+                const admitted = yield* inspect(() => Boundary.admitJson(tagged.document), path);
+                if (!admitted.ok)
+                    return yield* Effect_1.fail(invalidRoute(`${path}.document${admitted.path.slice(1)}`));
+                return new Descriptor.SchemaRefInline({ document: admitted.value });
+            }
+            default:
+                return yield* Effect_1.fail(invalidRoute(`${path}._tag`));
+        }
+    });
+};
+const effectDeclaration = (input) => {
+    return Effect_1.gen(function* effectDeclaration() {
+        const data = yield* fields(input, ["reads", "writes", "mode", "onConflict", "tier"]);
+        const reads = yield* inspect(() => Boundary.stringArray(data.reads, {
+            maxItems: maximumCapabilities,
+            maxLength: maximumPathLength
+        }), "$");
+        const writes = yield* inspect(() => Boundary.stringArray(data.writes, {
+            maxItems: maximumCapabilities,
+            maxLength: maximumPathLength
+        }), "$");
+        if (!reads.ok)
+            return yield* Effect_1.fail(invalidRoute(`$.effects.reads${reads.path.slice(1)}`));
+        if (!writes.ok)
+            return yield* Effect_1.fail(invalidRoute(`$.effects.writes${writes.path.slice(1)}`));
+        if (!(yield* ($is3 => { return Effect_1.sync(() => { return (($is3 === "hermetic") || ($is3 === "expected")); }); })(data.mode)))
+            return yield* Effect_1.fail(invalidRoute("$.effects.mode"));
+        if (!(yield* ($is4 => { return Effect_1.sync(() => { return (($is4 === "serialize") || ($is4 === "lane") || ($is4 === "fail")); }); })(data.onConflict)))
+            return yield* Effect_1.fail(invalidRoute("$.effects.onConflict"));
+        if (!(yield* ($is5 => { return Effect_1.sync(() => { return (($is5 === "sealed") || ($is5 === "compensable") || ($is5 === "irreversible")); }); })(data.tier)))
+            return yield* Effect_1.fail(invalidRoute("$.effects.tier"));
+        return Object.freeze({
+            reads: reads.value,
+            writes: writes.value,
+            mode: data.mode,
+            onConflict: data.onConflict,
+            tier: data.tier
+        });
+    });
+};
 const isAbsolutePath = (value) => value.startsWith("file:///") || value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
 // Foreign inspection is bounded by hatches; validation fails with FsError.
-const copyRoute = Effect_1.fnUntraced(function* copyRoute(input) {
-    const data = yield* fields(input, [
-        "name",
-        "segments",
-        "kind",
-        "sourcePath",
-        "description",
-        "input",
-        "output",
-        "capabilities",
-        "effects",
-        "modelInvocable",
-        "placement",
-        "ui"
-    ]);
-    const segments = Boundary.stringArray(data.segments, {
-        maxItems: maximumRouteDepth,
-        maxLength: maximumSegmentLength
+const copyRoute = (input) => {
+    return Effect_1.gen(function* copyRoute() {
+        const data = yield* fields(input, [
+            "name",
+            "segments",
+            "kind",
+            "sourcePath",
+            "description",
+            "input",
+            "output",
+            "capabilities",
+            "effects",
+            "modelInvocable",
+            "placement",
+            "ui"
+        ]);
+        const segments = yield* inspect(() => Boundary.stringArray(data.segments, {
+            maxItems: maximumRouteDepth,
+            maxLength: maximumSegmentLength
+        }), "$");
+        if (!segments.ok || segments.value.length === 0
+            || segments.value.some((segment) => segment === "." || segment === ".." || segment.includes("/"))) {
+            return yield* Effect_1.fail(invalidRoute(segments.ok ? "$.segments" : `$.segments${segments.path.slice(1)}`));
+        }
+        // A directory name arrives decomposed on macOS and composed from a
+        // browser or an agent, so one canonical form decides route identity.
+        const normalized = Object.freeze(segments.value.map((segment) => segment.normalize("NFC")));
+        const name = (yield* text(data.name, { path: "$.name", maximum: maximumRouteNameLength })).normalize("NFC");
+        if (name !== normalized.join("/")) {
+            return yield* Effect_1.fail(invalidRoute("$.name", "Route name must equal its slash-joined segments"));
+        }
+        if (!(yield* ($is6 => { return Effect_1.sync(() => { return (($is6 === "module") || ($is6 === "markdown") || ($is6 === "skill")); }); })(data.kind)))
+            return yield* Effect_1.fail(invalidRoute("$.kind"));
+        const sourcePath = yield* text(data.sourcePath, { path: "$.sourcePath", maximum: maximumPathLength });
+        if (!isAbsolutePath(sourcePath))
+            return yield* Effect_1.fail(invalidRoute("$.sourcePath", "Route source paths must be absolute"));
+        const capabilities = yield* inspect(() => Boundary.stringArray(data.capabilities, {
+            maxItems: maximumCapabilities,
+            maxLength: maximumPathLength
+        }), "$");
+        if (!capabilities.ok)
+            return yield* Effect_1.fail(invalidRoute(`$.capabilities${capabilities.path.slice(1)}`));
+        if (typeof data.modelInvocable !== "boolean")
+            return yield* Effect_1.fail(invalidRoute("$.modelInvocable"));
+        return Object.freeze({
+            name,
+            segments: normalized,
+            kind: data.kind,
+            sourcePath,
+            description: yield* optionText(data.description, "$.description", maximumPathLength),
+            input: yield* schemaRef(data.input, "$.input"),
+            output: yield* schemaRef(data.output, "$.output"),
+            capabilities: capabilities.value,
+            effects: yield* effectDeclaration(data.effects),
+            modelInvocable: data.modelInvocable,
+            placement: yield* optionPlacement(data.placement),
+            ui: yield* optionText(data.ui, "$.ui", maximumPathLength)
+        });
     });
-    if (!segments.ok || segments.value.length === 0
-        || segments.value.some((segment) => segment === "." || segment === ".." || segment.includes("/"))) {
-        return yield* Effect_1.fail(invalidRoute(segments.ok ? "$.segments" : `$.segments${segments.path.slice(1)}`));
-    }
-    // A directory name arrives decomposed on macOS and composed from a
-    // browser or an agent, so one canonical form decides route identity.
-    const normalized = Object.freeze(segments.value.map((segment) => segment.normalize("NFC")));
-    const name = (yield* text(data.name, { path: "$.name", maximum: maximumRouteNameLength })).normalize("NFC");
-    if (name !== normalized.join("/")) {
-        return yield* Effect_1.fail(invalidRoute("$.name", "Route name must equal its slash-joined segments"));
-    }
-    if (!(yield* ($is6 => Effect_1.sync(() => (($is6 === "module") || ($is6 === "markdown") || ($is6 === "skill"))))(data.kind)))
-        return yield* Effect_1.fail(invalidRoute("$.kind"));
-    const sourcePath = yield* text(data.sourcePath, { path: "$.sourcePath", maximum: maximumPathLength });
-    if (!isAbsolutePath(sourcePath))
-        return yield* Effect_1.fail(invalidRoute("$.sourcePath", "Route source paths must be absolute"));
-    const capabilities = Boundary.stringArray(data.capabilities, {
-        maxItems: maximumCapabilities,
-        maxLength: maximumPathLength
-    });
-    if (!capabilities.ok)
-        return yield* Effect_1.fail(invalidRoute(`$.capabilities${capabilities.path.slice(1)}`));
-    if (typeof data.modelInvocable !== "boolean")
-        return yield* Effect_1.fail(invalidRoute("$.modelInvocable"));
-    return Object.freeze({
-        name,
-        segments: normalized,
-        kind: data.kind,
-        sourcePath,
-        description: yield* optionText(data.description, "$.description", maximumPathLength),
-        input: yield* schemaRef(data.input, "$.input"),
-        output: yield* schemaRef(data.output, "$.output"),
-        capabilities: capabilities.value,
-        effects: yield* effectDeclaration(data.effects),
-        modelInvocable: data.modelInvocable,
-        placement: yield* optionPlacement(data.placement),
-        ui: yield* optionText(data.ui, "$.ui", maximumPathLength)
-    });
-});
+};
 /**
  * Copies and validates caller-owned route metadata before asynchronous use.
  *
@@ -289,8 +312,8 @@ const exportMissing = () => loadFailed("The selected flow module has no default 
  * @category constructors
  * @since 0.1.0
  */
-export function load(arg_1) {
-    return Effect_1.fnUntraced(function* load(input) {
+export function load(input) {
+    return Effect_1.gen(function* load() {
         const route = yield* snapshot(input);
         if (route.kind !== "module") {
             return yield* Effect_1.fail(new FsError({
@@ -299,24 +322,24 @@ export function load(arg_1) {
                 description: "Only module routes are executable"
             }));
         }
-        const specifier = fileSpecifier(route.sourcePath);
-        // tryPromise's arguments are plain TypeScript, not VibeLang.
-        const module = yield* Effect.tryPromise({
+        const specifier = yield* Effect_1.sync(() => fileSpecifier(route.sourcePath));
+        const module = yield* tryPromise({
             try: () => import(__rewriteRelativeImportExtension(/* @vite-ignore */ specifier)),
             catch: importFailed
         });
-        if (RuntimeFlow.isFlow(module.default)) {
+        const flow = yield* Effect_1.sync(() => RuntimeFlow.isFlow(module.default) ? module.default : undefined);
+        if (flow !== undefined) {
             // Route metadata is caller-owned and can predate an edit that hid the
             // flow, so the runtime declaration has the final word: a flow its author
             // hid never reaches a model-facing surface.
-            if (route.modelInvocable && !Context.get(module.default.annotations, RuntimeFlow.ModelInvocable)) {
+            if (route.modelInvocable && !Context.get(flow.annotations, RuntimeFlow.ModelInvocable)) {
                 return yield* Effect_1.fail(loadFailed("The selected flow is not model-invocable"));
             }
             return {
-                name: module.default._tag,
-                description: module.default.description,
-                input: module.default.payloadSchema,
-                output: module.default.successSchema
+                name: flow._tag,
+                description: flow.description,
+                input: flow.payloadSchema,
+                output: flow.successSchema
             };
         }
         if (typeof module.default !== "object" || module.default === null
@@ -324,5 +347,5 @@ export function load(arg_1) {
             || !("output" in module.default) || !Schema.isSchema(module.default.output))
             return yield* Effect_1.fail(exportMissing());
         return module.default;
-    }).apply(this, arguments);
+    });
 }

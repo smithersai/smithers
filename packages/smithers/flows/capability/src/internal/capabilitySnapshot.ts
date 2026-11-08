@@ -9,6 +9,7 @@ import { Capability } from "../Capability.ts"
 /**
  * @since 0.1.0
  * @private
+ * @throws {never}
  */
 export const capabilitySnapshot = (capability: Capability): Capability => {
   const snapshot = new Capability({ action: capability.action, resource: capability.resource })

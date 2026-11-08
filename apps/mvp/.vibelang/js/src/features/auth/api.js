@@ -3,10 +3,12 @@ import { Context, Data, Effect, Layer } from "effect";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { SESSION_ROUTE, SIGN_OUT_ROUTE } from "./contract";
 import { SessionState } from "./schema";
+import { DeviceIdentityRefused } from "../../device/identity";
 /**
  * ChatApi couldn't answer within the deadline (`code` `timeout`), the request never reached it (`unreachable`), or it
  * answered outside the contract: `status`, the HTTP status it answered with, and `code` `status`, or `malformed` for a
- * 200 whose body isn't a session. A log line names the failure by `code` (src/errorCode.ts).
+ * 200 whose body isn't a session. `credential_stale` preserves a reached server's unverified credentials through the
+ * bound transport, so the privacy gate hides private rows. A log line names the failure by `code` (src/errorCode.ts).
  */
 export class AuthUnreachable extends Data.TaggedError("AuthUnreachable") {
 }
@@ -14,7 +16,9 @@ export class AuthUnreachable extends Data.TaggedError("AuthUnreachable") {
 export const getSession = Effect.fn("auth.session.get")(function* (origin, within) {
     const client = yield* HttpClient.HttpClient;
     return yield* Effect.gen(function* () {
-        const response = yield* client.execute(HttpClientRequest.get(`${origin}${SESSION_ROUTE}`)).pipe(Effect.mapError(() => new AuthUnreachable({ code: "unreachable" })));
+        const response = yield* client.execute(HttpClientRequest.get(`${origin}${SESSION_ROUTE}`)).pipe(Effect.mapError(error => new AuthUnreachable({ code: error.reason._tag === "TransportError" && error.reason.cause instanceof DeviceIdentityRefused && error.reason.cause.reason === "credential_stale"
+                ? "credential_stale" : "unreachable",
+        })));
         yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status });
         if (response.status !== 200)
             return yield* new AuthUnreachable({ status: response.status, code: "status" });

@@ -82,12 +82,8 @@ const listedRow = (row) => ({
 export const make = Effect.gen(function* () {
     const sql = yield* Effect.service(SqlClient.SqlClient);
     const writer = yield* DurableWriter;
-    // The migrator raises a schema it cannot apply as a defect, not as a typed
-    // failure, so mapping the error channel alone left a defect escaping a
-    // constructor whose signature promises `TriggerError`. Defects are caught
-    // separately from failures, which leaves interruption alone.
-    const migrationFailed = (cause) => storeError("could not run trigger migrations", cause);
-    yield* Migrations.run.pipe(Effect.mapError(migrationFailed), Effect.catchDefect((defect) => Effect.fail(migrationFailed(defect))));
+    // Effect 4.1 reports migration failures in the typed error channel.
+    yield* Migrations.run.pipe(Effect.mapError((cause) => storeError("could not run trigger migrations", cause)));
     // A failure the store itself typed already says which refusal it is, so it
     // travels out unchanged. Re-wrapping it turned `unknown trigger x` into the
     // generic write failure and erased the one code a caller could branch on.

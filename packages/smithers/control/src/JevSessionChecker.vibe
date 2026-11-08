@@ -14,7 +14,7 @@ import type { HealthChecker, ProbeReport } from "./Health.vibe"
  */
 export schema error JevProbeError {
   reason: "unconfigured" | "http" | "timeout" | "unreachable" | "malformed"
-  status?: number
+  status?: number | undefined
 }
 Fault.register(
   "JevProbeError",

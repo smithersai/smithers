@@ -3,7 +3,7 @@ import { runners } from "../../boundary";
 import { Context, Effect, Layer, Metric } from "effect";
 import { closeTab, openTab } from "./actions";
 import { fileFocus } from "./metrics";
-import { FilesStore } from "#vibelang/emitted/src/features/files/store";
+import { FilesStore } from "./store.js";
 export class Files extends Context.Service()("@smthrs/mvp/files/Files") {
     /**
      * Binds the store's query and the strip's actions for frontends. Each action runs with the services this layer was

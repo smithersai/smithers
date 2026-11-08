@@ -1021,6 +1021,6 @@ export const make = (options) => {
         dispose
     };
 };
-import { invoke as $invoke } from "./WasiPreview1.vibe.$call$ts.js";
-import { raise as $raise } from "./WasiPreview1.vibe.$throw$ts.js";
-import { invoke as $invoke2 } from "./WasiPreview1.vibe.$call$ts2.js";
+import { invoke as $invoke } from "./WasiPreview1.vibe.-24-call-24-ts.js";
+import { raise as $raise } from "./WasiPreview1.vibe.-24-throw-24-ts.js";
+import { invoke as $invoke2 } from "./WasiPreview1.vibe.-24-call-24-ts2.js";

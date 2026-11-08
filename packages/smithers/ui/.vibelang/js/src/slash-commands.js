@@ -9,7 +9,7 @@
  * @since 1.0.0
  */
 import { parseSubmit } from "./command-line";
-import { positionalRead } from "#vibelang/emitted/src/flow-form";
+import { positionalRead } from "./flow-form.js";
 const NONE = { kind: "none", items: [] };
 /** The fields a line fills by position: every field but a boolean, which only a `--flag` sets. */
 const positional = (command) => command.fields.filter((field) => field.kind !== "boolean");

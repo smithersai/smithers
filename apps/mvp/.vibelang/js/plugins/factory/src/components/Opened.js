@@ -5,9 +5,10 @@ import { commitDiffOf, reportOf, transcriptOf } from "../model";
 import { Close, useWatched } from "./parts";
 // The document the person opened beside a view, in a panel over its right side (full width on a phone): a lane's live
 // transcript, a commit's diff, or a review's Markdown. Esc or Close closes it; it follows the document while it shows.
-export function OpenedPanel({ tab }) {
+export function OpenedPanel({ tab, repository }) {
     const opened = useWatched(tab.queries.opened);
-    if (opened === null)
+    // A document opened on another repository shows nothing here, not even its title.
+    if (opened === null || opened.repository !== `${repository.owner}/${repository.name}`.toLowerCase())
         return null;
     return (_jsxs("aside", { className: "factory-panel", "aria-label": opened.title, "data-kind": opened.kind, onKeyDown: (event) => {
             if (event.key === "Escape")

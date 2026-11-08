@@ -60,7 +60,7 @@ export const fromModule = (options) => {
             description: metadata.description,
             body: new BodyRefModule({
                 path: options.path,
-                contentDigest: options.contentDigest ?? Digest.digest(options.text),
+                contentDigest: options.contentDigest ?? $invoke(Digest, () => (options.text)),
                 ...(metadata.prompt === true ? { prompt: true } : {}),
                 // Absent, not empty, when the entry loads nothing beside itself: such
                 // a module keeps the identity it had before a closure was recorded.
@@ -92,3 +92,4 @@ export const fromModule = (options) => {
         warnings
     };
 };
+import { invoke as $invoke } from "./ModuleFlow.vibe.-24-call-24-ts.js";

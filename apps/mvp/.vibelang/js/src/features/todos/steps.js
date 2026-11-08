@@ -9,7 +9,7 @@ import { repoId } from "../repo/contract";
 import { readTodoStatus } from "./api";
 import { DRAFT_ID_NAMESPACE, OP_ID_NAMESPACE, QUEUE_WITHIN, stackPath, titleOf, todosChannel, } from "./contract";
 import { KeepDraft, KeepIssueDraft, QueueCommit, QueueDrop, QueueAttach, TodoAttach, QueueRetry, ReadTodoStatus, TodoRetry, TodoCommit, TodoDraft, TodoDrop, TodoIssue, TodoInspect, TodoStepRefused, } from "./flows";
-import { drafts, queued, statusReads } from "#vibelang/emitted/src/features/todos/metrics";
+import { drafts, queued, statusReads } from "./metrics.js";
 import { Kept } from "./schema";
 /** The tabs of this browser, as a step reaches them: only the tab that started a request answers. */
 export class TabTodos extends Context.Service()("@smthrs/mvp/todos/TabTodos") {

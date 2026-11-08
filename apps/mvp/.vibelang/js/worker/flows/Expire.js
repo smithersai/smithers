@@ -4,7 +4,7 @@ import { Node } from "@smthrs/plan";
 import { Config, Duration, Effect, Layer, Metric, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 import { ANSWER_SETTLE_WITHIN, ANSWER_TURN_WAIT } from "../../src/features/agent/contract.js";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { codeOf } from "../ErrorCode.js";
 import { withAnswerConversation } from "../Messages.js";
 import * as Notifications from "../Notifications.js";
 // `chat/Expire { answerId }` (docs/features/remote-flows.md, docs/features/agent.md#settling): settles an answer whose

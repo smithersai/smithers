@@ -4,8 +4,8 @@ import { Effect, Function, Metric, Option } from "effect";
 import { FetchHttpClient, HttpClient, HttpServerResponse } from "effect/http";
 import { COMPARE_SEGMENT, SHA } from "../../src/features/pulls/contract.js";
 import { REPOS_ROUTE } from "../../src/features/repo/contract.js";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
-import { statusOf, withToken } from "#vibelang/emitted/worker/github/Calls";
+import { codeOf } from "../ErrorCode.js";
+import { statusOf, withToken } from "./Calls.js";
 import * as Tokens from "./Tokens.js";
 // `GET /api/repos/<owner>/<name>/compare/<base>...<head>` (decision 0012 §3, docs/features/pulls.md#files): the files two
 // commits differ by, with their patches, which a pull request's Files tab shows. Two SHAs never change what they

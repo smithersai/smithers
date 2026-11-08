@@ -77,26 +77,26 @@ export const AttendeeContext = Schema.Struct({
 })
 
 /** Past meetings and what is still open from them. */
-export schema HistoryContext {
-  readonly previousMeetings: ReadonlyArray<{ readonly date: string; readonly topic: string; readonly outcome: string }>
-  readonly openActionItems: ReadonlyArray<string>
-  readonly summary: string
-}
+export const HistoryContext = Schema.Struct({
+  previousMeetings: Schema.Array(Schema.Struct({ date: Schema.String, topic: Schema.String, outcome: Schema.String })),
+  openActionItems: Schema.Array(Schema.String),
+  summary: Schema.String
+})
 
 /** The prep brief the flow settles with. */
-export schema Brief {
-  readonly meetingId: string
-  readonly headline: string
-  readonly intent: string
-  readonly priority: string
-  readonly accountSnapshot: string
-  readonly attendeeSummary: string
-  readonly talkingPoints: ReadonlyArray<string>
-  readonly risksAndFlags: ReadonlyArray<string>
-  readonly suggestedAgenda: ReadonlyArray<string>
-  readonly openItems: ReadonlyArray<string>
-  readonly summary: string
-}
+export const Brief = Schema.Struct({
+  meetingId: Schema.String,
+  headline: Schema.String,
+  intent: Schema.String,
+  priority: Schema.String,
+  accountSnapshot: Schema.String,
+  attendeeSummary: Schema.String,
+  talkingPoints: Schema.Array(Schema.String),
+  risksAndFlags: Schema.Array(Schema.String),
+  suggestedAgenda: Schema.Array(Schema.String),
+  openItems: Schema.Array(Schema.String),
+  summary: Schema.String
+})
 
 /** Reads the meeting's intent, priority and flags. */
 export const Classify = AgentAction.make("examples/MeetingBriefer/Classify", {

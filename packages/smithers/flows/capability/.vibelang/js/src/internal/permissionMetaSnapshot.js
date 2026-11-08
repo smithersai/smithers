@@ -18,7 +18,7 @@ const metadataStringBytes = (value, path) => {
     // Check before escaping/encoding so a single huge string cannot allocate an
     // unbounded temporary serialization. JSON's UTF-8 size is at least this long.
     if (value.length > maximumMetadataBytes) {
-        throw invalidMetadata(path, `metadata exceeds ${maximumMetadataBytes} bytes`);
+        $raise(invalidMetadata(path, `metadata exceeds ${maximumMetadataBytes} bytes`));
     }
     return metadataEncoder.encode(JSON.stringify(value)).byteLength;
 };
@@ -40,7 +40,7 @@ const metadataKeys = function* (value) {
  */
 export const permissionMetaSnapshot = (meta) => {
     if (!isPlainObject(meta))
-        throw invalidMetadata("meta", "metadata must be a plain record");
+        $raise(invalidMetadata("meta", "metadata must be a plain record"));
     const snapshots = new WeakMap();
     const active = new WeakSet();
     const stack = [];
@@ -66,15 +66,15 @@ export const permissionMetaSnapshot = (meta) => {
         frame.members += 1 + child.members;
         frame.height = Math.max(frame.height, 1 + child.height);
         if (frame.depth + frame.height > maximumMetadataDepth) {
-            throw invalidMetadata(path, `metadata exceeds depth ${maximumMetadataDepth}`);
+            $raise(invalidMetadata(path, `metadata exceeds depth ${maximumMetadataDepth}`));
         }
         if (frame.members > maximumMetadataMembers) {
-            throw invalidMetadata(path, `metadata exceeds ${maximumMetadataMembers} members`);
+            $raise(invalidMetadata(path, `metadata exceeds ${maximumMetadataMembers} members`));
         }
         frame.bytes += child.bytes + (frame.entries.length === 0 ? 0 : 1) +
             (frame.array ? 0 : metadataStringBytes(key, path) + 1);
         if (frame.bytes > maximumMetadataBytes) {
-            throw invalidMetadata(path, `metadata exceeds ${maximumMetadataBytes} bytes`);
+            $raise(invalidMetadata(path, `metadata exceeds ${maximumMetadataBytes} bytes`));
         }
         frame.entries.push([key, child.value]);
     };
@@ -103,21 +103,21 @@ export const permissionMetaSnapshot = (meta) => {
         metadataStringBytes(key, frame.path);
         const path = `${frame.path}[${JSON.stringify(key)}]`;
         if (++visitedMembers > maximumMetadataMembers) {
-            throw invalidMetadata(path, `metadata exceeds ${maximumMetadataMembers} members`);
+            $raise(invalidMetadata(path, `metadata exceeds ${maximumMetadataMembers} members`));
         }
         const value = frame.input[key];
         if (value === undefined && !frame.array) {
             if (++frame.members > maximumMetadataMembers) {
-                throw invalidMetadata(path, `metadata exceeds ${maximumMetadataMembers} members`);
+                $raise(invalidMetadata(path, `metadata exceeds ${maximumMetadataMembers} members`));
             }
             continue;
         }
         const depth = frame.depth + 1;
         if (depth > maximumMetadataDepth)
-            throw invalidMetadata(path, `metadata exceeds depth ${maximumMetadataDepth}`);
+            $raise(invalidMetadata(path, `metadata exceeds depth ${maximumMetadataDepth}`));
         if (value !== null && typeof value === "object") {
             if (active.has(value))
-                throw invalidMetadata(path, "metadata must not contain cycles");
+                $raise(invalidMetadata(path, "metadata must not contain cycles"));
             const existing = snapshots.get(value);
             if (existing !== undefined) {
                 append(frame, key, existing, path);
@@ -126,7 +126,7 @@ export const permissionMetaSnapshot = (meta) => {
                 push(value, path, depth, key);
             }
             else {
-                throw invalidMetadata(path, "metadata objects must be plain records");
+                $raise(invalidMetadata(path, "metadata objects must be plain records"));
             }
             continue;
         }
@@ -137,9 +137,10 @@ export const permissionMetaSnapshot = (meta) => {
             bytes = JSON.stringify(value).length;
         }
         else {
-            throw invalidMetadata(path, "metadata must be JSON data");
+            $raise(invalidMetadata(path, "metadata must be JSON data"));
         }
         append(frame, key, { value, bytes, members: 0, height: 0 }, path);
     }
     return snapshots.get(meta).value;
 };
+import { raise as $raise } from "./permissionMetaSnapshot.vibe.-24-throw-24-ts.js";

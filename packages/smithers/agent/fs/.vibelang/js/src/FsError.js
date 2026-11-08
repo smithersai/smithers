@@ -4,7 +4,7 @@
  *
  * @since 0.1.0
  */
-import { TaggedError } from "vibelang-runtime";
+import { $schemaErrorMatcher, TaggedError } from "vibelang-runtime/internal";
 /**
  * A recoverable file-routing failure.
  *
@@ -16,4 +16,7 @@ import { TaggedError } from "vibelang-runtime";
  * @since 0.1.0
  */
 export class FsError extends TaggedError("FsError") {
+    static {
+        $schemaErrorMatcher(this, "FsError", true);
+    }
 }

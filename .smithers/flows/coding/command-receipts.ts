@@ -2,7 +2,7 @@
 import { Effect, type FileSystem, Option, Schema } from "effect"
 import { createHash, randomUUID } from "node:crypto"
 import { join } from "node:path"
-import { CommandReceipt } from "../../../packages/smithers/gateway/src/RuntimeBridge.vibe"
+import { CommandReceipt } from "../../../packages/smithers/gateway/src/RuntimeBridge.ts"
 import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
 
 type Result = {

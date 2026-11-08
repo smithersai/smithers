@@ -359,12 +359,37 @@ export const projectSource = (path, root) => ({
     retiredRoot: path.join(root, retiredProjectFlowsDirectory)
 });
 /**
+ * Orders project flows before declared skill libraries. Library roots stay
+ * within the project, including through symbolic links during discovery.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const projectSources = (path, options) => [
+    projectSource(path, options.root),
+    ...(options.skills ?? []).map((library) => {
+        const root = typeof library === "string" ? library : library.root;
+        if (typeof root !== "string" || root.trim() === "" || /^([/\\]|[A-Za-z]:)/.test(root) ||
+            [...root].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) ||
+            root.split(/[/\\]/).includes("..")) {
+            throw new TypeError("Project skill roots must be workspace-relative directories");
+        }
+        return {
+            source: "project-skills",
+            root: path.join(options.root, ...root.trim().split(/[/\\]/)),
+            naming: "frontmatter",
+            skills: true,
+            confinementRoot: options.root,
+            lockfileRoot: options.root
+        };
+    })
+];
+/**
  * Provides a project's refreshable registry using portable discovery.
  *
- * Scans `<root>/.smithers/flows` first, then installed packs with their
- * provenance, compatibility checks, and local-pack precedence. Project flows
- * shadow pack flows of the same name. Every refresh rescans both sources and
- * packs. Flows left in a root `flows/` never load; the scan reports one
+ * Scans `<root>/.smithers/flows` first, then declared skill libraries, then
+ * installed packs with their provenance and compatibility checks. Project
+ * flows shadow skills and packs of the same name; earlier libraries shadow
+ * later ones. Every refresh rescans all sources and packs. Flows left in a root `flows/` never load; the scan reports one
  * `retired_root` warning instead.
  *
  * The project source remains configured when `.smithers/flows/` is absent.
@@ -380,7 +405,7 @@ export const layerProject = (options) => Layer.unwrap(Effect.gen(function* () {
     const path = yield* Path.Path;
     return layer({
         snapshots: options.snapshots,
-        sources: [projectSource(path, options.root)],
+        sources: projectSources(path, options),
         ...(options.packs === undefined ? {} : { packs: options.packs })
     }).pipe(Layer.provide(discoveryLayer));
 }));
@@ -432,6 +457,7 @@ export const layerFromPacks = (packs, options) => layer({ sources: [], packs: { 
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const makeNoop = (overrides = {}) => {
     const get = (name) => Effect.fail(notFound(name, "get"));

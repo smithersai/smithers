@@ -44,14 +44,14 @@ export function StackScreen() {
         return (_jsxs("main", { className: "stack-screen", "aria-label": "Stack", children: [_jsx(RepoHeader, {}), _jsx(PageBody, { width: "wide", children: _jsx(Card, { children: _jsx(CardContent, { children: _jsx(EmptyState, { title: "Members can make TODOs.", action: _jsx(SignInButton, {}) }) }) }) })] }));
     }
     if (status === "unavailable") {
-        return (_jsxs("main", { className: "stack-screen", "aria-label": "Stack", children: [_jsx(RepoHeader, {}), _jsx(PageBody, { width: "wide", children: _jsx(Card, { children: _jsx(CardContent, { children: _jsx(EmptyState, { title: "Can't check your role on this repository right now.", action: _jsx(Button, { variant: "outline", size: "sm", onClick: () => repository.actions.role(owner, repo), children: "Try again" }) }) }) }) })] }));
+        return (_jsxs("main", { className: "stack-screen", "aria-label": "Stack", children: [_jsx(RepoHeader, {}), _jsx(PageBody, { width: "wide", children: _jsx(Card, { children: _jsx(CardContent, { children: _jsx(EmptyState, { title: "Can't check your role on this repository right now.", action: _jsx(Button, { variant: "outline", size: "sm", onClick: () => { auth.actions.reload(); repository.actions.role(owner, repo); }, children: "Try again" }) }) }) }) })] }));
     }
     if (status === "forbidden") {
         return (_jsxs("main", { className: "stack-screen", "aria-label": "Stack", children: [_jsx(RepoHeader, {}), _jsx(PageBody, { width: "wide", children: _jsx(Card, { children: _jsx(CardContent, { children: _jsx(EmptyState, { title: "Members can make TODOs." }) }) }) })] }));
     }
     const rows = stackRows(repoId, todos, sending, requested);
     const may = status === "allowed" && session !== undefined && mayChange(session, confirmed, answer);
-    return (_jsxs("main", { className: "stack-screen", "aria-label": "Stack", children: [_jsx(RepoHeader, {}), _jsxs(PageBody, { width: "wide", children: [draftsOfRepo(repoId, drafts).map((draft) => _jsx(DraftCard, { draft: draft }, draft.id)), _jsx(IssuesView, { repo: `${owner}/${repo}`, "aria-label": `${owner}/${repo} stack`, size: "full", ordered: true, numberPrefix: "T", emptyTitle: NO_TODOS, unknown: status === "unknown" && rows.length === 0, issues: withDrop(stackItemsOf(rows, todos, owner, repo), may, (number) => actions.drop(owner, repo, number)), filter: {
+    return (_jsxs("main", { className: "stack-screen", "aria-label": "Stack", children: [_jsx(RepoHeader, {}), _jsxs(PageBody, { width: "wide", children: [draftsOfRepo(repoId, drafts).map((draft) => _jsx(DraftCard, { draft: draft }, draft.id)), _jsx(IssuesView, { repo: `${owner}/${repo}`, "aria-label": `${owner}/${repo} stack`, size: "full", ordered: true, numberPrefix: "T", emptyTitle: NO_TODOS, unknown: (status === "unknown" || status === "syncing") && rows.length === 0, issues: withDrop(stackItemsOf(rows, todos, owner, repo), may, (number) => actions.drop(owner, repo, number)), filter: {
                             state: stackFilterOf(search.state),
                             href: (state) => stackPath(owner, repo, state),
                             onSelect: (_, href) => void navigate({ href }),

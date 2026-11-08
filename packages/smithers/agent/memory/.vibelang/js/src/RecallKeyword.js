@@ -10,7 +10,6 @@
  * @since 0.1.0
  */
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as Effect from "effect/Effect";
 import { resolveBanks } from "./internal/ResolveNamespace.js";
 import * as MemoryStore from "./MemoryStore.js";
@@ -42,31 +41,33 @@ const authoritative = (row, groups) => matches(row, groups) && (row.status === u
  * @category constructors
  * @since 0.1.0
  */
-export const recall = Effect_1.fnUntraced(runtime.$joinedFrame(function* recall(input) {
-    const store = yield* MemoryStore.MemoryStore;
-    const banks = yield* resolveBanks(input.banks);
-    const terms = normalizeQueryTerms(input.query);
-    if (banks.length === 0 || terms.length === 0)
-        return [];
-    const rows = yield* Effect.all(banks.map(({ namespace }) => store.searchRows({
-        namespace,
-        status: "accepted",
-        tagGroups: input.tagGroups
-    })), { concurrency: 4 });
-    const ranked = rows.flatMap((bankRows, index) => bankRows
-        .map((row) => ({ ...row, bank: banks[index]?.bank ?? "" }))
-        .filter((row) => authoritative(row, input.tagGroups))
-        .map((row) => ({
-        bank: banks[index]?.bank ?? "",
-        key: row.key,
-        text: row.text,
-        score: scoreRow(terms, row),
-        updatedAtMs: row.updatedAtMs
-    }))
-        .filter((row) => row.score > 0));
-    ranked.sort(Recall.compareResults);
-    return Recall.capRecallResults(ranked, input.maxTokens);
-}));
+export const recall = (input) => {
+    return Effect_1.gen(function* recall() {
+        const store = yield* MemoryStore.MemoryStore;
+        const banks = yield* resolveBanks(input.banks);
+        const terms = normalizeQueryTerms(input.query);
+        if (banks.length === 0 || terms.length === 0)
+            return [];
+        const rows = yield* Effect.all(banks.map(({ namespace }) => store.searchRows({
+            namespace,
+            status: "accepted",
+            tagGroups: input.tagGroups
+        })), { concurrency: 4 });
+        const ranked = rows.flatMap((bankRows, index) => bankRows
+            .map((row) => ({ ...row, bank: banks[index]?.bank ?? "" }))
+            .filter((row) => authoritative(row, input.tagGroups))
+            .map((row) => ({
+            bank: banks[index]?.bank ?? "",
+            key: row.key,
+            text: row.text,
+            score: scoreRow(terms, row),
+            updatedAtMs: row.updatedAtMs
+        }))
+            .filter((row) => row.score > 0));
+        ranked.sort(Recall.compareResults);
+        return Recall.capRecallResults(ranked, input.maxTokens);
+    });
+};
 /**
  * Provides keyword recall as the default replaceable recall slot.
  *

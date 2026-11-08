@@ -343,7 +343,7 @@ const securityReview = Smithers.SecurityReview({
         "smithers.run declaring no capabilities, so the envelope never gates which flow it starts.",
         "Port error messages returned to the model that expose host paths or credentials."
       ],
-      paths: ["src/SmithersPlugin.vibe"]
+      paths: ["src/SmithersPlugin.ts"]
     }
   ]
 })

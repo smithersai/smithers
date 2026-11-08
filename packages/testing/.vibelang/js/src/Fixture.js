@@ -96,7 +96,7 @@ const stopReasonSchema = Schema.Literals([
     "unknown"
 ]);
 const textPartSchema = Schema_1.Struct({
-    type: Schema_1.Literal("text"), text: Schema_1.String,
+    type: Schema_1.mutableKey(Schema_1.Literal("text")), text: Schema_1.mutableKey(Schema_1.String),
 });
 // The message, tool, and params shapes mirror `/model/ModelRequest`
 // (read-only; see `ModelLike` for the structural contract), so an invalid
@@ -144,13 +144,13 @@ const toolSchema = Schema.Struct({
     loader: Schema.optional(Schema.Boolean)
 });
 const paramsSchema = Schema_1.Struct({
-    maxTokens: Schema_1.optional(Schema_1.Number),
-    temperature: Schema_1.optional(Schema_1.Number),
-    topP: Schema_1.optional(Schema_1.Number),
-    topK: Schema_1.optional(Schema_1.Number),
-    stopSequences: Schema_1.optional(Schema_1.Array(Schema_1.String)),
-    thinkingBudget: Schema_1.optional(Schema_1.Number),
-    reasoningEffort: Schema_1.optional(Schema_1.Literals(["none", "minimal", "low", "medium", "high", "xhigh", "max"])),
+    maxTokens: Schema_1.mutableKey(Schema_1.optionalKey(Schema_1.Number)),
+    temperature: Schema_1.mutableKey(Schema_1.optionalKey(Schema_1.Number)),
+    topP: Schema_1.mutableKey(Schema_1.optionalKey(Schema_1.Number)),
+    topK: Schema_1.mutableKey(Schema_1.optionalKey(Schema_1.Number)),
+    stopSequences: Schema_1.mutableKey(Schema_1.optionalKey(Schema_1.Array(Schema_1.String))),
+    thinkingBudget: Schema_1.mutableKey(Schema_1.optionalKey(Schema_1.Number)),
+    reasoningEffort: Schema_1.mutableKey(Schema_1.optionalKey(Schema_1.Literals(["none", "minimal", "low", "medium", "high", "xhigh", "max"]))),
 });
 const requestSchema = Schema.Struct({
     modelId: Schema.String,
@@ -235,7 +235,7 @@ export const Fixture = Schema.Struct({ calls: Schema.Array(recordedCallSchema) }
  */
 export const decode = (input) => Schema.decodeUnknownEffect(Fixture)(input);
 const invalid = (path, reason) => {
-    throw new FixtureEncodingError({ path, reason });
+    $raise(new FixtureEncodingError({ path, reason }));
 };
 /**
  * How deep a recorded value may nest.
@@ -474,10 +474,11 @@ const canonicalize = (value, path = "$", ancestors = new Set(), depth = 0) => {
     }
     catch (error) {
         if (error instanceof FixtureEncodingError)
-            throw error;
+            $raise(error);
         return invalid(path, "unsupported-type");
     }
     finally {
         ancestors.delete(value);
     }
 };
+import { raise as $raise } from "./Fixture.vibe.-24-throw-24-ts.js";

@@ -31,6 +31,7 @@ const position = (value: unknown): boolean => typeof value === "number" && Numbe
  * A root's committed success is authoritative; child outputs and telemetry are not.
  * @category projections
  * @since 1.0.0
+ * @throws {never}
  */
 export const fromEvent = (event: ControlSchema.ControlEvent): NativeResolution | undefined => {
   if (event.runId === undefined || event.runId.length === 0) return undefined

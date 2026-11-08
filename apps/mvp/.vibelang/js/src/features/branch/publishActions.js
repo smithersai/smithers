@@ -6,7 +6,7 @@ import { Effect, FiberHandle, Metric, Option, Stream } from "effect";
 import { FlowDispatch } from "../../flows/dispatch";
 import { MAX_BODY_LENGTH, MAX_TITLE_LENGTH } from "../issues/contract";
 import { IssuesStore } from "../issues/store";
-import { readComparison } from "#vibelang/emitted/src/features/pulls/comparison";
+import { readComparison } from "../pulls/comparison.js";
 import { publishes, resyncs, updates } from "./metrics";
 import { PublishStore } from "./publishStore";
 import { CURRENT } from "./schema";
@@ -57,16 +57,18 @@ const mirror = (rows) => Effect.gen(function* () {
             : shown.insert(row));
     }
 });
-/** Keeps branch `branchId`'s pull request title equal to `title`, or none. */
-const keepTitle = (branchId, title) => Effect.gen(function* () {
+/** Keeps branch `branchId`'s pull request title equal to `found`'s, with its repository, or none. */
+const keepTitle = (branchId, found) => Effect.gen(function* () {
     const { titles } = yield* PublishStore;
     const kept = yield* titles.get(branchId);
-    if (title === undefined) {
+    if (found === undefined) {
         if (Option.isSome(kept))
             yield* Effect.orDie(titles.delete(branchId));
         return;
     }
-    yield* Effect.orDie(Option.isSome(kept) ? titles.update(branchId, (draft) => void (draft.title = title)) : titles.insert({ branchId, title }));
+    yield* Effect.orDie(Option.isSome(kept)
+        ? titles.update(branchId, (draft) => void Object.assign(draft, found))
+        : titles.insert({ branchId, ...found }));
 });
 /**
  * The title of `publication`'s pull request as its repository's issues have it, each time they change, none once
@@ -76,7 +78,7 @@ const pullTitles = (publication) => publication === undefined || publication.prN
     ? Stream.make(undefined)
     : Stream.unwrap(Effect.gen(function* () {
         const { items } = yield* (yield* IssuesStore).forRepo(publication.repoId);
-        return items.changes({ initial: true }).pipe(Stream.mapEffect(() => items.toArray), Stream.map((rows) => rows.find((row) => row.number === publication.prNumber && row.kind === "pull" && row.deletedAt === null)?.title));
+        return items.changes({ initial: true }).pipe(Stream.mapEffect(() => items.toArray), Stream.map((rows) => rows.find((row) => row.number === publication.prNumber && row.kind === "pull" && row.deletedAt === null)?.title), Stream.map((title) => title === undefined ? undefined : { repoId: publication.repoId, title }));
     }));
 /** Reads the publication's base and head into the Compare's comparisons, once per pair. */
 const compare = (publication) => Effect.gen(function* () {

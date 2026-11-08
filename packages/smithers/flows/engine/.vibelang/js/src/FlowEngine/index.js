@@ -15,6 +15,7 @@
 export { ActionKeyEncoding, keyEncodings } from "./ActionKey.js";
 export * from "./Authority.js";
 export * from "./Encoded.js";
+export * from "./FailureSite.js";
 export * from "./FlowInstance.js";
 export * from "./layerMemory.js";
 /**

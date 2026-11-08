@@ -66,24 +66,24 @@ export class StreamingPatchParser {
         if (last === undefined || last.kind !== "update")
             return;
         if (last.chunks.length === 0 && this.mode._tag === "UpdateFile") {
-            throw parseError("invalid_hunk", `Update file hunk for path '${last.path}' is empty`, this.mode.hunkLineNumber);
+            $raise(parseError("invalid_hunk", `Update file hunk for path '${last.path}' is empty`, this.mode.hunkLineNumber));
         }
         const chunk = last.chunks[last.chunks.length - 1];
         if (chunk !== undefined && chunk.oldLines.length === 0 && chunk.newLines.length === 0) {
             if (line === END_PATCH_MARKER) {
-                throw parseError("invalid_hunk", "Update hunk does not contain any lines", this.lineNumber);
+                $raise(parseError("invalid_hunk", "Update hunk does not contain any lines", this.lineNumber));
             }
-            throw unexpectedUpdateLine(line, this.lineNumber);
+            $raise(unexpectedUpdateLine(line, this.lineNumber));
         }
     }
     handleHunkHeadersAndEndPatch(trimmed) {
         if (this.mode._tag === "StartedPatch" && trimmed.startsWith(ENVIRONMENT_ID_MARKER)) {
             if (this._environmentId !== undefined) {
-                throw parseError("invalid_patch", "apply_patch environment_id cannot be specified more than once");
+                $raise(parseError("invalid_patch", "apply_patch environment_id cannot be specified more than once"));
             }
             const environmentId = trimmed.slice(ENVIRONMENT_ID_MARKER.length).trim();
             if (environmentId === "") {
-                throw parseError("invalid_patch", "apply_patch environment_id cannot be empty");
+                $raise(parseError("invalid_patch", "apply_patch environment_id cannot be empty"));
             }
             this._environmentId = environmentId;
             return true;
@@ -149,7 +149,7 @@ export class StreamingPatchParser {
             }
         }
         if (this.mode._tag !== "EndedPatch") {
-            throw parseError("invalid_patch", "The last line of the patch must be '*** End Patch'");
+            $raise(parseError("invalid_patch", "The last line of the patch must be '*** End Patch'"));
         }
         return this.hunks;
     }
@@ -161,12 +161,12 @@ export class StreamingPatchParser {
                     this.mode = { _tag: "StartedPatch" };
                     return;
                 }
-                throw parseError("invalid_patch", "The first line of the patch must be '*** Begin Patch'");
+                $raise(parseError("invalid_patch", "The first line of the patch must be '*** Begin Patch'"));
             }
             case "StartedPatch": {
                 if (this.handleHunkHeadersAndEndPatch(trimmed))
                     return;
-                throw invalidHunkHeader(trimmed, this.lineNumber);
+                $raise(invalidHunkHeader(trimmed, this.lineNumber));
             }
             case "AddFile": {
                 if (this.handleHunkHeadersAndEndPatch(trimmed))
@@ -176,12 +176,12 @@ export class StreamingPatchParser {
                     last.contents += `${line.slice(1)}\n`;
                     return;
                 }
-                throw invalidHunkHeader(trimmed, this.lineNumber);
+                $raise(invalidHunkHeader(trimmed, this.lineNumber));
             }
             case "DeleteFile": {
                 if (this.handleHunkHeadersAndEndPatch(trimmed))
                     return;
-                throw invalidHunkHeader(trimmed, this.lineNumber);
+                $raise(invalidHunkHeader(trimmed, this.lineNumber));
             }
             case "UpdateFile": {
                 const updateLine = line.replace(/\s+$/, "");
@@ -194,7 +194,7 @@ export class StreamingPatchParser {
                     if (updateLine === "")
                         return;
                     if (updateLine !== EMPTY_CHANGE_CONTEXT_MARKER && !updateLine.startsWith(CHANGE_CONTEXT_MARKER)) {
-                        throw parseError("invalid_hunk", `Expected update hunk to start with a @@ context marker, got: '${line}'`, this.lineNumber);
+                        $raise(parseError("invalid_hunk", `Expected update hunk to start with a @@ context marker, got: '${line}'`, this.lineNumber));
                     }
                 }
                 if (chunks.length === 0 && hunk.movePath === undefined && updateLine.startsWith(MOVE_TO_MARKER)) {
@@ -203,7 +203,7 @@ export class StreamingPatchParser {
                 }
                 if ((updateLine === EMPTY_CHANGE_CONTEXT_MARKER || updateLine.startsWith(CHANGE_CONTEXT_MARKER)) &&
                     lastChunk !== undefined && lastChunk.oldLines.length === 0 && lastChunk.newLines.length === 0) {
-                    throw unexpectedUpdateLine(line, this.lineNumber);
+                    $raise(unexpectedUpdateLine(line, this.lineNumber));
                 }
                 if (updateLine === EMPTY_CHANGE_CONTEXT_MARKER) {
                     chunks.push({ changeContext: undefined, oldLines: [], newLines: [], isEndOfFile: false });
@@ -220,7 +220,7 @@ export class StreamingPatchParser {
                 }
                 if (updateLine === EOF_MARKER) {
                     if (lastChunk !== undefined && lastChunk.oldLines.length === 0 && lastChunk.newLines.length === 0) {
-                        throw parseError("invalid_hunk", "Update hunk does not contain any lines", this.lineNumber);
+                        $raise(parseError("invalid_hunk", "Update hunk does not contain any lines", this.lineNumber));
                     }
                     if (lastChunk !== undefined)
                         lastChunk.isEndOfFile = true;
@@ -253,14 +253,14 @@ export class StreamingPatchParser {
                     return;
                 }
                 if (lastChunk !== undefined && (lastChunk.oldLines.length > 0 || lastChunk.newLines.length > 0)) {
-                    throw parseError("invalid_hunk", `Expected update hunk to start with a @@ context marker, got: '${line}'`, this.lineNumber);
+                    $raise(parseError("invalid_hunk", `Expected update hunk to start with a @@ context marker, got: '${line}'`, this.lineNumber));
                 }
-                throw unexpectedUpdateLine(line, this.lineNumber);
+                $raise(unexpectedUpdateLine(line, this.lineNumber));
             }
             case "EndedPatch": {
                 if (trimmed === "")
                     return;
-                throw parseError("invalid_patch", "The last line of the patch must be '*** End Patch'");
+                $raise(parseError("invalid_patch", "The last line of the patch must be '*** End Patch'"));
             }
         }
     }
@@ -271,9 +271,9 @@ const checkStartAndEndLinesStrict = (firstLine, lastLine) => {
     if (first === BEGIN_PATCH_MARKER && last === END_PATCH_MARKER)
         return;
     if (first !== undefined && first !== BEGIN_PATCH_MARKER) {
-        throw parseError("invalid_patch", "The first line of the patch must be '*** Begin Patch'");
+        $raise(parseError("invalid_patch", "The first line of the patch must be '*** Begin Patch'"));
     }
-    throw parseError("invalid_patch", "The last line of the patch must be '*** End Patch'");
+    $raise(parseError("invalid_patch", "The last line of the patch must be '*** End Patch'"));
 };
 const checkPatchBoundariesStrict = (lines) => {
     checkStartAndEndLinesStrict(lines[0], lines.length === 0 ? undefined : lines[lines.length - 1]);
@@ -295,7 +295,7 @@ const checkPatchBoundariesLenient = (originalLines) => {
             return checkPatchBoundariesStrict(originalLines.slice(1, -1));
         }
     }
-    throw originalError;
+    $raise(originalError);
 };
 /**
  * Parse a complete patch text; lenient mode (heredoc unwrapping) is always
@@ -409,11 +409,11 @@ const computeReplacements = (originalLines, path, chunks) => {
         if (chunk.changeContext !== undefined) {
             const idx = seekSequence(originalLines, [chunk.changeContext], lineIndex, false);
             if (idx === undefined) {
-                throw new ComputeReplacementsError({
+                $raise(new ComputeReplacementsError({
                     reason: "context_not_found",
                     path,
                     message: `Failed to find context '${chunk.changeContext}' in ${path}`
-                });
+                }));
             }
             lineIndex = idx + 1;
         }
@@ -438,11 +438,11 @@ const computeReplacements = (originalLines, path, chunks) => {
             lineIndex = found + pattern.length;
         }
         else {
-            throw new ComputeReplacementsError({
+            $raise(new ComputeReplacementsError({
                 reason: "lines_not_found",
                 path,
                 message: `Failed to find expected lines in ${path}:\n${chunk.oldLines.join("\n")}`
-            });
+            }));
         }
     }
     replacements.sort((a, b) => a[0] - b[0]);
@@ -487,3 +487,4 @@ export const printSummary = (affected) => {
         lines.push(`D ${path}`);
     return `${lines.join("\n")}\n`;
 };
+import { raise as $raise } from "./ApplyPatch.vibe.-24-throw-24-ts.js";

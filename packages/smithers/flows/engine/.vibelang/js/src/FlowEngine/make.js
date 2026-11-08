@@ -10,53 +10,19 @@
  *
  * @since 0.1.0
  */
-import { Deadline, Flow, FlowRuntime } from "@smthrs/flow";
+import { FlowRuntime } from "@smthrs/flow";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
-import * as Semaphore from "effect/Semaphore";
-import { renderDiagnostic } from "../internal/Diagnostic.js";
 import { toJsonExit } from "../internal/JsonExit.js";
-import { makeActionExecute, resetActionContext } from "./Dispatch.js";
+import { declaredHandler } from "./DeclaredHandler.js";
+import { makeActionExecute } from "./Dispatch.js";
 import { placeExecute, placeInterrupt, placeResume, placeRetryFrom } from "./Placed.js";
+import { CurrentRegistrations, makeRegistrationGate } from "./RegistrationGate.js";
 import { makeExecute } from "./Trampoline.js";
-/** Recursive admission violates the registration ownership invariant. */
-class RegistrationFault extends Schema.TaggedError()("@smthrs/engine/RegistrationFault", {
-    flowName: Schema.String,
-    message: Schema.String
-}) {
-}
-const CurrentRegistrations = Context.Reference("@smthrs/engine/CurrentRegistrations", { defaultValue: () => [] });
-/**
- * Admits one registration per flow name at a time. A registration that
- * re-enters its own name's admission would wait on itself, so it dies.
- */
-const makeRegistrationGate = () => {
-    const gates = new Map();
-    const enter = (name) => Effect.sync(() => {
-        const gate = gates.get(name) ?? { semaphore: Semaphore.makeUnsafe(1), users: 0 };
-        gates.set(name, gate);
-        gate.users++;
-        return gate;
-    });
-    // Waiters count as users, so cancellation cannot replace the lock while
-    // another admission still owns or awaits it.
-    const leave = (name, gate) => Effect.sync(() => {
-        if (--gate.users === 0)
-            gates.delete(name);
-    });
-    return (name, admission) => Effect.flatMap(CurrentRegistrations, (ancestors) => {
-        if (ancestors.some((entry) => entry.owner === gates && entry.name === name)) {
-            const message = `Flow ${name} cannot recursively register itself while admission is in progress`;
-            return Effect.die(new RegistrationFault({ flowName: name, message }));
-        }
-        const admitting = [...ancestors, { owner: gates, name }];
-        return Effect.acquireUseRelease(enter(name), (gate) => gate.semaphore.withPermit(admission).pipe(Effect.provideService(CurrentRegistrations, admitting)), (gate) => leave(name, gate));
-    });
-};
 /**
  * Lists the registration under its flow's tag until its scope closes. A
  * handoff names its next round's flow by tag, so the trampoline reads the
@@ -73,35 +39,6 @@ const declare = (declarations, flow, scope) => Effect.suspend(() => {
             declarations.delete(flow._tag);
     }));
 });
-/**
- * Fails with a body error the flow declares, and dies with any other. The
- * defect is the error itself, not the schema issue about it, so the message
- * survives; and a defect, unlike an undeclared failure, can be encoded into
- * the settled run. `FlowProxyServer` redacts it before it leaves the process.
- */
-const failDeclared = (flow, error) => Effect.matchEffect(flow.errorSchema.makeEffect(error), {
-    onFailure: () => Effect.logError("A flow body failed with an error outside its declared error schema").pipe(Effect.annotateLogs({ flow: flow._tag, error: renderDiagnostic(error) }), Effect.andThen(Effect.die(error))),
-    onSuccess: () => Effect.fail(error)
-});
-/** Checks a round's success against the declared schema. A handoff round has none of its own. */
-const succeedDeclared = (flow, value) => Effect.flatMap(FlowRuntime.FlowInstance, (instance) => instance.handoff === undefined
-    ? Effect.as(Effect.orDie(flow.successSchema.makeEffect(value)), value)
-    : Effect.succeed(value));
-/**
- * Wraps a registered body for the driver: bounded by the flow's deadline,
- * held to its declared schemas and capability ceilings, and run with the
- * registration's services under the caller's, in a fresh dispatch context.
- */
-const declaredHandler = (flow, services, execute) => {
-    const bounded = Deadline.bound({ flowName: flow._tag, deadline: flow.deadline });
-    return (payload, executionId) => Effect.suspend(() => bounded(execute(payload, executionId))).pipe(Effect.matchEffect({
-        onFailure: (error) => failDeclared(flow, error),
-        onSuccess: (value) => succeedDeclared(flow, value)
-    }), Flow.attenuateCapabilities(Flow.capabilityCeilings(flow.annotations)), Effect.updateContext((input) => {
-        const caller = input.pipe(Context.omit(CurrentRegistrations));
-        return resetActionContext(Context.merge(services, caller));
-    }));
-};
 const makeRegister = (options, declarations) => {
     const withRegistrationGate = makeRegistrationGate();
     // Only the driver's registration may be interrupted; its failure closes the

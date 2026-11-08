@@ -9,7 +9,7 @@ import * as ModelRequest from "@smthrs/model/ModelRequest";
 import { Effect, Schema } from "effect";
 import * as Agents from "./agents.js";
 import * as Extension from "./extension.js";
-import * as Panels from "#vibelang/emitted/src/panels";
+import * as Panels from "./panels.js";
 /** Calls that wait on another agent or the person, unbounded. */
 export const waiting = ["agent.wait", StandardFlows.askFlow.name];
 /**

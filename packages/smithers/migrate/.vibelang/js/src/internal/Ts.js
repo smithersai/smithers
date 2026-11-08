@@ -88,6 +88,7 @@ export const session = Effect.acquireRelease(Effect.sync(makeSession), (session)
  * The compiler sees only supplied text and a synthetic configuration; every
  * other filesystem read reports absence without falling back to disk.
  *
+ * @throws {unknown} When the native compiler session cannot start or parse.
  * @since 1.0.0-rc.0
  * @private
  */

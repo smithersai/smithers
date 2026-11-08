@@ -72,11 +72,7 @@
       "default": "./.vibelang/js/src/FlowRuntime/index.js"
     },
     "./FlowRuntime/*": null,
-    "./StepIdentity": {
-      "types": "./src/Action/StepIdentity.ts",
-      "vibelang-source": "./src/Action/StepIdentity.ts",
-      "default": "./.vibelang/js/src/Action/StepIdentity.js"
-    },
+    "./StepIdentity": "./src/Action/StepIdentity.ts",
     "./internal/*": null,
     "./*/index": null,
     "./Deadline": {
@@ -125,8 +121,8 @@
       "default": "./.vibelang/js/src/Interpreter.js"
     },
     "./Poll": {
-      "types": "./.vibe/declarations/src/Poll.d.vibe.ts",
-      "vibelang-source": "./src/Poll.vibe",
+      "types": "./src/Poll.ts",
+      "vibelang-source": "./src/Poll.ts",
       "default": "./.vibelang/js/src/Poll.js"
     },
     "./RetryPolicy": {

@@ -5,7 +5,7 @@ import { PendingSnapshot } from "@smthrs/platform-browser";
 import { hostRecords, thrownName } from "./hostRecords";
 import { applyRelease, watchInstalls, watchUpdates } from "./pwa";
 import { reloadedBecause, reloadFor } from "./reloadReason";
-import { SmithersUiStyles } from "@smthrs/ui";
+import { Button, EmptyState, SmithersUiStyles } from "@smthrs/ui";
 import { BrowserCollectionCoordinator, createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence";
 import { SharedSqlite, StoragePersistence, WebLock } from "@smthrs/platform-browser";
 import { IndexedDBAdapter, startOfflineExecutor, WebOnlineDetector } from "@tanstack/offline-transactions";
@@ -16,11 +16,11 @@ import { registerSW } from "virtual:pwa-register";
 import { AppProviders } from "./AppProviders";
 import { realServices, start } from "./boot";
 import { THEME_ATTRIBUTE, THEME_MIRROR_KEY } from "./features/theme/contract";
-import { ENGINE_NAME } from "./flows/contract";
+import { ENGINE_NAME, OUTBOX_DATABASE } from "./flows/contract";
 import { router } from "./router";
 import { navigateTo } from "./features/navigation/router";
 import { AppErrorBoundary } from "./screens/root/AppErrorBoundary";
-import { activationGate, boundFetch, outboxPrincipal, DeviceIdentityRefused, IDENTITY_MESSAGE, readReceipt, VISITOR } from "./device/identity";
+import { activationGate, boundFetch, outboxPrincipal, DeviceIdentityRefused, IDENTITY_MESSAGE, readReceipt, reopenDue, VISITOR } from "./device/identity";
 import { DEVICE_ADOPTED_EVENT, NO_DEVICE_DATA } from "./features/auth/contract";
 import { failedWorker, memoryStorage, pageWipe, unwiped } from "./wipe";
 import { claimEditorTabId } from "./device/editorTab";
@@ -170,9 +170,15 @@ const root = createRoot(document.getElementById("root"), {
 // Sign-out's wipe (src/wipe.ts, decision 0008 §4.6): this page hears wipes from the start and holds the device's data
 // while it runs. A boot a sign-out marked deletes the engine's OPFS directory (the engine's store and the device store)
 // and the outbox's IndexedDB database once no other page and no engine worker has them open. The theme's mirror stays.
-const OUTBOX_DATABASE = "smithers-outbox";
+let wipeFailureRoot;
 const wipe = pageWipe({
     locks: navigator.locks,
+    record: (outcome) => records.record({ _tag: "device.lifecycle", outcome }),
+    failed: () => {
+        // Stopping unmounts the app. This retry stays available without reopening its runtime or stores.
+        wipeFailureRoot ??= createRoot(document.getElementById("root"));
+        wipeFailureRoot.render(_jsxs(StrictMode, { children: [_jsx(SmithersUiStyles, { withTheme: true }), _jsx("main", { role: "alert", children: _jsx(EmptyState, { title: "Wipe failed", action: _jsx(Button, { onClick: () => { void wipe.wipe().catch(() => undefined); }, children: "Retry" }) }) })] }));
+    },
     // Read when used: a browser that blocks storage throws on reaching `localStorage`.
     marks: {
         getItem: (key) => localStorage.getItem(key),
@@ -190,6 +196,7 @@ const wipe = pageWipe({
 // until one comes, both wait, as they wait for a leader anyway. Otherwise it runs on memory stores, and the device's
 // data stays sealed and whole.
 let deviceOwner;
+let deviceSessionTag;
 // Whether the owner held the device's data before this activation (`Receipt.continuous`): only then are the outbox's
 // writes stored before writes named who queued them theirs.
 let deviceContinuous = false;
@@ -206,22 +213,43 @@ void activation.ready.then(() => markStage(performance, "activation"));
 // Reopening loads every page again so a new activation checks the session the browser has now. Once a minute at most
 // from this tab: a second mismatch so soon settles on memory instead of reloading again. A tab of an older build leading
 // the store reopens every page at most once in ten minutes from this tab: a leader that doesn't load again (a build
-// older than the wipe channel) leaves this page on what it can read, never reloading it every minute.
+// older than the wipe channel) leaves this page on what it can read, never reloading it every minute. True when it
+// reopened.
 const REOPENED = "smithers-identity-reopened";
 const OLDER_LEADER_REOPENED = "smithers-older-leader-reopened";
-const reopen = (why = () => console.info("auth.device_identity", { outcome: "reopened" }), reason = "identity_reopen", mark = REOPENED, within = 60_000) => {
-    let last = 0;
+const pendingReopens = new Map();
+const reopen = async (why = () => console.info("auth.device_identity", { outcome: "reopened" }), reason = "identity_reopen", mark = REOPENED, within = 60_000) => {
+    // Read when used: a browser that blocks storage throws on reaching `sessionStorage`.
+    const marks = { getItem: (key) => sessionStorage.getItem(key), setItem: (key, value) => sessionStorage.setItem(key, value) };
+    const retain = (delay) => {
+        // One pending request retains its deadline even while repeated failures ask for the same reopen.
+        if (!pendingReopens.has(mark))
+            pendingReopens.set(mark, setTimeout(() => {
+                pendingReopens.delete(mark);
+                void reopen(why, reason, mark, within);
+            }, delay));
+        return false;
+    };
+    if (!reopenDue(marks, mark, within, Date.now())) {
+        let delay = within;
+        try {
+            delay = Math.max(1, Number(marks.getItem(mark)) + within - Date.now());
+        }
+        catch { /* Blocked storage skips the throttle. */ }
+        return retain(delay);
+    }
+    if (!(await wipe.reopen(reason)))
+        return retain(within);
+    const pending = pendingReopens.get(mark);
+    if (pending !== undefined)
+        clearTimeout(pending);
+    pendingReopens.delete(mark);
     try {
-        last = Number(sessionStorage.getItem(mark) ?? 0);
-        sessionStorage.setItem(mark, String(Date.now()));
+        marks.setItem(mark, String(Date.now()));
     }
-    catch {
-        // expected: blocked storage only skips the once-a-minute check
-    }
-    if (Date.now() - last < within)
-        return;
+    catch { /* A blocked mark cannot prevent an accepted reopen. */ }
     why();
-    wipe.reopen(reason);
+    return true;
 };
 // Adopting in place (decision 0023, "Adopting in place"): a page that opened the visitor's data asks its leader to
 // claim it for the person signed in now, instead of reopening every page, and waits for the receipt.
@@ -237,6 +265,8 @@ const adopted = (receipt) => {
         // What this page syncs and sends goes again now, as theirs.
         window.dispatchEvent(new Event(DEVICE_ADOPTED_EVENT));
     }
+    if (receipt.owner === deviceOwner)
+        deviceSessionTag = receipt.sessionTag;
     if (adoption === undefined || receipt.owner === undefined)
         return;
     adoption.settle(receipt.owner === adoption.personId && deviceOwner === receipt.owner
@@ -274,6 +304,7 @@ const accept = (message) => {
         return;
     if (receipt.owner !== undefined) {
         deviceOwner = receipt.owner;
+        deviceSessionTag = receipt.sessionTag;
         deviceContinuous = receipt.continuous === true;
         activation.allow();
         return;
@@ -286,6 +317,10 @@ const accept = (message) => {
 };
 const identity = new BroadcastChannel(IDENTITY_MESSAGE);
 identity.onmessage = (event) => accept(event.data);
+const outboxChanges = new BroadcastChannel("smithers-outbox-changed");
+const outboxListeners = new Set();
+outboxChanges.onmessage = () => { for (const listener of outboxListeners)
+    listener(); };
 const memoryOutbox = memoryStorage();
 let retainedOutbox;
 const outboxStorage = async () => {
@@ -296,6 +331,22 @@ const outboxStorage = async () => {
 // `SharedSqlite`), one per origin, reached by every tab through the leading tab's worker. The outbox: IndexedDB,
 // sending when the browser says it can, led by one tab through @smthrs/platform-browser's Web Lock service.
 const host = {
+    ...(firstPaint?.bindSearch === undefined ? {} : { earlyIssueSearch: {
+            show: (owner, name, q, issues) => firstPaint.showSearch?.(owner, name, q, issues),
+            bind: (ask, forget) => firstPaint.bindSearch((owner, name, q) => {
+                // Router history owns the URL even before React mounts. The route consumes the same read at hand-over.
+                const search = new URLSearchParams(router.history.location.search);
+                if (q === "")
+                    search.delete("q");
+                else
+                    search.set("q", q);
+                const suffix = search.size === 0 ? "" : `?${search}`;
+                router.history.replace(`${router.history.location.pathname}${suffix}`);
+                // Browser history batches writes. The shell observes DOM changes before that batch may flush.
+                router.history.flush();
+                ask(owner, name, q);
+            }, forget),
+        } }),
     persistence: {
         open: async () => {
             try {
@@ -320,10 +371,59 @@ const host = {
     },
     outbox: {
         start: startOfflineExecutor,
+        changes: {
+            publish: () => outboxChanges.postMessage(null),
+            subscribe: (listener) => { outboxListeners.add(listener); return () => { outboxListeners.delete(listener); }; },
+        },
         // The device's IndexedDB outbox once this page may open the device's data; memory otherwise.
         storage: {
+            withLock: async (name, action) => (await outboxStorage()) === memoryOutbox
+                ? memoryOutbox.withLock(name, action)
+                : navigator.locks.request(`${OUTBOX_DATABASE}:${name}`, action),
             get: async (key) => (await outboxStorage()).get(key),
             set: async (key, value) => (await outboxStorage()).set(key, value),
+            setMany: async (entries) => {
+                const adapter = await outboxStorage();
+                if (adapter === memoryOutbox) {
+                    await memoryOutbox.setMany(entries);
+                    return;
+                }
+                // The adapter initializes its schema first. Both admission rows then commit in one native transaction.
+                await adapter.get("outbox:admission-counter");
+                await new Promise((resolve, reject) => {
+                    const opening = indexedDB.open(OUTBOX_DATABASE, 1);
+                    opening.onerror = () => reject(opening.error);
+                    let refused = false;
+                    opening.onblocked = () => { refused = true; reject(new Error("Outbox admission database blocked")); };
+                    opening.onsuccess = () => {
+                        const database = opening.result;
+                        if (refused) {
+                            database.close();
+                            return;
+                        }
+                        let transaction;
+                        try {
+                            transaction = database.transaction("transactions", "readwrite");
+                        }
+                        catch (error) {
+                            database.close();
+                            reject(error);
+                            return;
+                        }
+                        transaction.oncomplete = () => { database.close(); resolve(); };
+                        transaction.onabort = () => { database.close(); reject(transaction.error ?? new Error("Outbox admission aborted")); };
+                        try {
+                            const store = transaction.objectStore("transactions");
+                            for (const [key, value] of entries)
+                                store.put(value, key);
+                        }
+                        catch (error) {
+                            transaction.abort();
+                            reject(error);
+                        }
+                    };
+                });
+            },
             delete: async (key) => (await outboxStorage()).delete(key),
             keys: async () => (await outboxStorage()).keys(),
             clear: async () => (await outboxStorage()).clear(),
@@ -376,16 +476,25 @@ const host = {
     screen: () => ({ browser: navigator.userAgent, viewport: `${window.innerWidth}x${window.innerHeight}` }),
     // `app/web/open` (src/features/web/url.ts): `http:` pages on this machine open in a new tab only under the dev
     // server. A person's own `/web … tab` opens its tab here, inside their keypress, when the browser still allows it:
-    // `window.open` takes the click's activation when it opens a tab, so an activation still there after it means the
-    // browser refused, and the flow adds a card instead. A browser that can't say opens nothing here.
+    // The host obtains a real tab handle before dropping its opener and navigating without a referrer. Activation
+    // consumption cannot be the receipt: WebKit leaves it active after opening the tab.
     web: {
         policy: { localHttp: import.meta.env.DEV, appOrigin: window.location.origin },
         openTab: (href) => {
-            const activation = navigator.userActivation;
-            if (activation === undefined || !activation.isActive)
+            if (!navigator.userActivation?.isActive)
                 return false;
-            window.open(href, "_blank", "noopener,noreferrer");
-            return !activation.isActive;
+            const tab = window.open("about:blank", "_blank");
+            if (tab === null)
+                return false;
+            // The new document is still ours. Sever its opener before any outside document can run, and let an actual
+            // noreferrer link navigate it: location.replace would send the app's referrer.
+            tab.opener = null;
+            const link = tab.document.createElement("a");
+            link.href = href;
+            link.rel = "noreferrer";
+            tab.document.body.appendChild(link);
+            link.click();
+            return true;
         },
     },
     // The repository view's language server: TypeScript in a worker of its own, started when a TypeScript or JavaScript
@@ -425,6 +534,7 @@ const host = {
     title: { read: () => document.title, write: (title) => void (document.title = title) },
     // Sign-out's wipe: mark it and tell every page, this one included; each stops and loads again (src/wipe.ts).
     wipe: wipe.wipe,
+    finishSignOut: wipe.finishSignOut,
 };
 const render = (chat, auth, theme, repo, commands, views, web, status, branch, terminal, transcript, issues, runs, flows, home, spend, attention, todos, codeIntel, pulls, plugins, files, secrets, docs, domains, personalModel, firstRun) => root.render(_jsxs(StrictMode, { children: [_jsx(SmithersUiStyles, { withTheme: true }), _jsx(AppErrorBoundary, { reload: () => reloadWith("error_retry"), children: _jsx(AppProviders, { views: {
                     chat, auth, theme, repo, commands, views, web, status, branch, terminal, transcript, issues, runs, flows, home,
@@ -438,8 +548,12 @@ const page = {
     fetch: boundFetch(verifyingFetch(window.fetch.bind(window), firstPaint), {
         origin: window.location.origin,
         principal: () => (activation.state() === "retained" && deviceOwner !== undefined ? deviceOwner : NO_DEVICE_DATA),
+        sessionTag: () => deviceSessionTag,
+        credentialStorage: host.outbox.storage,
+        withCredential: (action, signal) => navigator.locks?.request("smithers-credential-state", signal === undefined ? {} : { signal }, action) ?? action(),
         ready: activation.ready,
-        reauthorize: async () => void reopen(),
+        reauthorize: async () => reopen(),
+        signOut: wipe.signOut,
         reopensOnSignIn: () => activation.state() === "memory" && sealedUntilSignIn,
         adopt,
     }),
@@ -457,10 +571,17 @@ const page = {
 // (src/test/e2e.ts). A production build drops this branch, and the test module with it. Either way, a wipe a sign-out
 // marked finishes first, and a page whose wipe couldn't delete starts on stores that aren't the device's
 // (src/wipe.ts `unwiped`). Leaving on a wipe drops the view, then stops the program.
-void Promise.all([wipe.open(firstPaint?.handOver()), claimEditorTabId({
+void Promise.all([Promise.resolve(firstPaint?.handOver()).then((held) => wipe.open(held)), claimEditorTabId({
         storage: { getItem: (key) => sessionStorage.getItem(key), setItem: (key, value) => sessionStorage.setItem(key, value) },
         locks: navigator.locks, page: window, randomId: () => crypto.randomUUID(),
     })]).then(([wiped, editorTab]) => {
+    if (wiped === "unsupported") {
+        wipe.close();
+        // The application never starts here, so its buffered host records cannot report this capability failure.
+        console.info("browser.unsupported", { capability: "web_locks" });
+        root.render(_jsxs(StrictMode, { children: [_jsx(SmithersUiStyles, { withTheme: true }), _jsx("main", { role: "alert", children: _jsx(EmptyState, { title: "This browser needs Web Locks" }) })] }));
+        return;
+    }
     if (!wiped)
         activation.refuse();
     const tabHost = {

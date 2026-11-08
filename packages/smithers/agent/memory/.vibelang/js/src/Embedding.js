@@ -10,7 +10,7 @@
  * @see https://memory.smithers.sh/reference/api/
  * @since 0.1.0
  */
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

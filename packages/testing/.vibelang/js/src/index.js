@@ -59,3 +59,7 @@ export * as RestartableEngine from "./RestartableEngine.js";
 export * as HostSuite from "./HostSuite.js";
 /** @since 0.0.0 @category assertions */
 export * as ScoreGate from "./ScoreGate.js";
+/** @since 1.0.0 @category testing */
+export * as RealCliDriver from "./RealCliDriver.js";
+/** @since 1.0.0 @category testing */
+export * as TerminalRecording from "./TerminalRecording.js";

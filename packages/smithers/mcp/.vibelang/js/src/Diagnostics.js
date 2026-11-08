@@ -6,7 +6,7 @@
  * @since 1.0.0-rc.0
  */
 import * as Layer from "effect/Layer";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 /**
  * Optional diagnostic observer, captured when a connection is opened. The
  * synchronous callback must not block; throws are isolated from the protocol.

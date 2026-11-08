@@ -38,13 +38,13 @@
   },
   "imports": {
     "#vibelang/emitted/character/rubric": {
-      "types": "./.vibe/declarations/character/rubric.d.vibe.ts",
-      "vibelang-source": "./character/rubric.vibe",
+      "types": "./character/rubric.ts",
+      "vibelang-source": "./character/rubric.ts",
       "default": "./.vibelang/js/character/rubric.js"
     },
     "#vibelang/emitted/character/world": {
-      "types": "./.vibe/declarations/character/world.d.vibe.ts",
-      "vibelang-source": "./character/world.vibe",
+      "types": "./character/world.ts",
+      "vibelang-source": "./character/world.ts",
       "default": "./.vibelang/js/character/world.js"
     }
   }

@@ -7,7 +7,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as SearchContract from "../src/SearchContract.vibe"
-import * as StdError from "../src/StdError.vibe"
+import * as StdError from "../src/StdError.ts"
 
 const ignoredNotice = "No results; ignore files excluded paths. Retry with noIgnore: true to include them."
 const syntaxCases = [

@@ -212,9 +212,9 @@ export {
 /** @category targets @since 0.1.0 */
 export { GithubCiGen } from "./GithubCiGen.ts"
 /** @category constructors @since 1.0.0 */
-export { Flow } from "./Flow.vibe"
+export { Flow } from "./Flow.ts"
 /** @category guards @since 1.0.0 */
-export { isFlowDeclaration } from "./Flow.vibe"
+export { isFlowDeclaration } from "./Flow.ts"
 /** @category errors @since 1.0.0 */
 export { FlowCatalogError } from "./FlowCatalog.vibe"
 /** @category targets @since 1.0.0 */
@@ -500,7 +500,7 @@ export * as Bundler from "./BundlerTarget.ts"
 export * as Go from "./Go.ts"
 
 /** Late-bound build stamps. */
-export * as Stamp from "./Stamp.vibe"
+export * as Stamp from "./Stamp.ts"
 
 /** Nix dev-shell version authority and tools. */
 export * as Nix from "./Nix.ts"

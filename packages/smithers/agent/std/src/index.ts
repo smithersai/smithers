@@ -152,4 +152,4 @@ export * as Manifest from "./Manifest.ts"
  * @category errors
  * @since 1.0.0
  */
-export * as StdError from "./StdError.vibe"
+export * as StdError from "./StdError.ts"

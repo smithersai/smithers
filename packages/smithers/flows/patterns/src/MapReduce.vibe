@@ -75,7 +75,7 @@ export interface RuntimeOptions<I, Shard, Mapped, Reduced, E, R, E2, R2> {
  * @category schemas
  * @since 0.1.0
  */
-export schema Payload { readonly shards: ReadonlyArray<Schema.Unknown> }
+export const Payload = Schema.Struct({ shards: Schema.Array(Schema.Unknown) })
 
 /**
  * The declared form of a map-reduce flow.

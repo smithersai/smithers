@@ -5,7 +5,7 @@ import { useId, useMemo, useRef, useState } from "react";
 import { Button } from "../button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "../card";
 import { cn } from "@smthrs/ui-css";
-import { declaredInput, humanTaskForm, draftFrom, formFieldsFor, missingLabels, publicFormPayload, submissionPayload, } from "#vibelang/emitted/src/flow-form";
+import { declaredInput, humanTaskForm, draftFrom, formFieldsFor, missingLabels, publicFormPayload, submissionPayload, } from "../flow-form.js";
 import { Input } from "../input";
 import { Field, Label } from "../label";
 const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value) ? value : undefined;

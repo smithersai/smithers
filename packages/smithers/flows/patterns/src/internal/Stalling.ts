@@ -27,6 +27,7 @@ export interface RuntimeOptions<A> extends Stall.Options {
  *
  * @since 1.0.0
  * @private
+ * @throws {never}
  */
 export const resolve = (
   pattern: string,

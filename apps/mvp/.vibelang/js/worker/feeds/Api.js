@@ -9,12 +9,12 @@ import { SqlClient } from "effect/sql";
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
 import { ANSWERS_MAX, FEED_DOCUMENT_COLUMNS, FEED_DOCUMENTS_TABLE, FEED_KEYS_VARIABLE, feedDocumentId, feedRepo, FEEDS_SHAPE_ROUTE, isFeedName, MAX_ANSWER_BODY_BYTES, MAX_FEED_DOCUMENT_BYTES, MAX_FEED_DOCUMENTS, MAX_FEED_REQUEST_BYTES, parseFeedRepo, parseFeedRoute, } from "../../src/features/feeds/contract.js";
 import { AnswerRequest, IngestRequest } from "../../src/features/feeds/schema.js";
-import { refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor";
+import { refusesPersonOnly, Sessions } from "../Actor.js";
 import { readBounded } from "#vibelang/emitted/worker/Body";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
-import { repositoryOf } from "#vibelang/emitted/worker/github/Config";
+import { codeOf } from "../ErrorCode.js";
+import { repositoryOf } from "../github/Config.js";
 import * as RepoRoles from "../github/RepoRoles.js";
-import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess";
+import * as ShapeAccess from "../ShapeAccess.js";
 // Repository feeds' routes (decision 0128, docs/features/feeds.md):
 //
 // - `POST /api/repos/<owner>/<name>/feeds`, bearer feed key: an outside collector sets or deletes a repository's

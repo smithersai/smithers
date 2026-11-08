@@ -39,30 +39,14 @@
       "vibelang-source": "./src/index.ts",
       "default": "./.vibelang/js/src/index.js"
     },
-    "./BrowserChildProcessSpawner": {
-      "types": "./src/BrowserChildProcessSpawner/index.ts",
-      "vibelang-source": "./src/BrowserChildProcessSpawner/index.ts",
-      "default": "./.vibelang/js/src/BrowserChildProcessSpawner/index.js"
-    },
+    "./BrowserChildProcessSpawner": "./src/BrowserChildProcessSpawner/index.ts",
     "./BrowserChildProcessSpawner/*": null,
-    "./BrowserFileSystem": {
-      "types": "./src/BrowserFileSystem/index.ts",
-      "vibelang-source": "./src/BrowserFileSystem/index.ts",
-      "default": "./.vibelang/js/src/BrowserFileSystem/index.js"
-    },
+    "./BrowserFileSystem": "./src/BrowserFileSystem/index.ts",
     "./BrowserFileSystem/*": null,
     "./internal/*": null,
     "./*/index": null,
-    "./BrowserHost": {
-      "types": "./src/BrowserHost.ts",
-      "vibelang-source": "./src/BrowserHost.ts",
-      "default": "./.vibelang/js/src/BrowserHost.js"
-    },
-    "./BrowserServices": {
-      "types": "./src/BrowserServices.ts",
-      "vibelang-source": "./src/BrowserServices.ts",
-      "default": "./.vibelang/js/src/BrowserServices.js"
-    },
+    "./BrowserHost": "./src/BrowserHost.ts",
+    "./BrowserServices": "./src/BrowserServices.ts",
     "./index": {
       "types": "./src/index.ts",
       "vibelang-source": "./src/index.ts",

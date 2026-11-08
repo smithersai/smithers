@@ -10,7 +10,7 @@ import { SandboxCommand as CommandJob, SandboxTools } from "@smthrs/sandbox";
 import { Effect, Layer, Option, Schema } from "effect";
 import { CHECKS_DIRECTORY } from "../../src/features/pulls/contract.js";
 import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.js";
-import { Machines } from "#vibelang/emitted/worker/branch/Machines";
+import { Machines } from "../branch/Machines.js";
 import * as SandboxCommand from "./SandboxCommand.js";
 import * as Machine from "./TodoMachine.js";
 // The `todo` run's implement step (decision 0016, the factory simplified): the agent (`AgentAction` from

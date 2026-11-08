@@ -16,10 +16,10 @@ import { call as callMember } from "./internal/Member.js";
 import { OpaqueInput } from "./internal/Payload.js";
 import { PatternError } from "./PatternError.js";
 const invalidRounds = (rounds) => {
-    throw new PatternError({
+    $raise(new PatternError({
         code: "invalid_decorator",
         message: `Debate rounds must be a positive safe integer, received ${rounds}`
-    });
+    }));
 };
 /**
  * Builds the conservative fixed-round participant topology. Use {@link run}
@@ -88,3 +88,4 @@ export const run = (input, options) => {
         return yield* participants.judge({ input, transcript: snapshot() });
     });
 };
+import { raise as $raise } from "./Debate.vibe.-24-throw-24-ts.js";

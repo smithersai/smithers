@@ -40,10 +40,10 @@ export type Kind = typeof Kind.Type
  * @since 0.1.0
  * @slop
  */
-export schema Observation {
-  readonly kind: Kind
-  readonly message: string
-}
+export const Observation = Schema.Struct({
+  kind: Kind,
+  message: Schema.String
+})
 
 /**
  * The decoded form of {@link Observation}.

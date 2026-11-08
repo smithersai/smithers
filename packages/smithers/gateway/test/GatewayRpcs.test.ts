@@ -28,8 +28,8 @@ import { RpcTest } from "effect/rpc"
 import type * as GatewayProjection from "../src/GatewayProjection.ts"
 import { GatewayRpcs, SubmitApprovalOutput } from "../src/GatewayRpcs.ts"
 import * as GatewayServer from "../src/GatewayServer.ts"
-import { Projections } from "../src/Projections.vibe"
-import type { Service as ProjectionsService } from "../src/Projections.vibe"
+import { Projections } from "../src/Projections.ts"
+import type { Service as ProjectionsService } from "../src/Projections.ts"
 import { driverFence, emit, stack } from "./GatewayStack.ts"
 
 const principal = { id: "gateway-test", kind: "test", stampedAt: 1 }

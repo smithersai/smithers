@@ -110,16 +110,18 @@ export const enableFts = (database, kind, enabledAtMs) => {
  * @category projections
  * @since 1.0.0
  */
-export const deleteFtsFacts = Effect_1.fnUntraced(function* deleteFtsFacts(database, kind, namespaceId, factKeys) {
-    if (factKeys.length === 0 || !(yield* isFtsEnabled(database, kind)))
-        return;
-    const { sql } = database;
-    const table = sql.literal(ftsTable(kind));
-    yield* sql `DELETE FROM ${table}
+export const deleteFtsFacts = (database, kind, namespaceId, factKeys) => {
+    return Effect_1.gen(function* deleteFtsFacts() {
+        if (factKeys.length === 0 || !(yield* isFtsEnabled(database, kind)))
+            return;
+        const { sql } = database;
+        const table = sql.literal(ftsTable(kind));
+        yield* sql `DELETE FROM ${table}
       WHERE record_kind = 'fact'
         AND namespace_id = ${namespaceId}
         AND ${sql.in("record_id", factKeys)}`;
-});
+    });
+};
 /**
  * Replaces one authoritative record's FTS projection when its kind is enabled.
  *
@@ -129,34 +131,38 @@ export const deleteFtsFacts = Effect_1.fnUntraced(function* deleteFtsFacts(datab
  * @category projections
  * @since 0.1.0
  */
-export const replaceFtsRecord = Effect_1.fnUntraced(function* replaceFtsRecord(database, kind, record) {
-    if (!(yield* isFtsEnabled(database, kind))) {
-        return;
-    }
-    const { sql } = database;
-    const table = sql.literal(ftsTable(kind));
-    yield* sql `DELETE FROM ${table}
+export const replaceFtsRecord = (database, kind, record) => {
+    return Effect_1.gen(function* replaceFtsRecord() {
+        if (!(yield* isFtsEnabled(database, kind))) {
+            return;
+        }
+        const { sql } = database;
+        const table = sql.literal(ftsTable(kind));
+        yield* sql `DELETE FROM ${table}
       WHERE record_id = ${record.recordId}
         AND record_kind = ${record.recordKind}
         AND namespace_id = ${record.namespaceId}`;
-    yield* sql `INSERT INTO ${table} (record_id, record_kind, namespace_id, record_key, text)
+        yield* sql `INSERT INTO ${table} (record_id, record_kind, namespace_id, record_key, text)
       VALUES (${record.recordId}, ${record.recordKind}, ${record.namespaceId}, ${record.key}, ${record.text})`;
-});
+    });
+};
 /**
  * Deletes one authoritative record's FTS projection when its kind is enabled.
  *
  * @category projections
  * @since 0.1.0
  */
-export const deleteFtsRecord = Effect_1.fnUntraced(function* deleteFtsRecord(database, kind, record) {
-    if (!(yield* isFtsEnabled(database, kind)))
-        return;
-    const table = database.sql.literal(ftsTable(kind));
-    yield* database.sql `DELETE FROM ${table}
+export const deleteFtsRecord = (database, kind, record) => {
+    return Effect_1.gen(function* deleteFtsRecord() {
+        if (!(yield* isFtsEnabled(database, kind)))
+            return;
+        const table = database.sql.literal(ftsTable(kind));
+        yield* database.sql `DELETE FROM ${table}
       WHERE record_id = ${record.recordId}
         AND record_kind = ${record.recordKind}
         AND namespace_id = ${record.namespaceId}`;
-});
+    });
+};
 /**
  * Searches one namespace-kind FTS5 table in raw BM25 rank order.
  *

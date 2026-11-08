@@ -8,7 +8,7 @@ import { useAuth } from "../../features/auth/components/AuthContext";
 import { SignInButton } from "../../features/auth/components/SignInButton";
 import { useIssues } from "../../features/issues/components/IssuesContext";
 import { usePulls } from "../../features/pulls/components/PullsContext";
-import { githubPullUrl, pullTabPath } from "../../features/pulls/contract";
+import { comparisonKey, githubPullUrl, pullTabPath } from "../../features/pulls/contract";
 import { ChangedFiles } from "../../features/pulls/components/ChangedFiles";
 import { CommitList } from "../../features/pulls/components/CommitList";
 import { checkRows, checksSummaryOf, conversationProps, mergeBoxOf, pullAccessOf, pullPageOf, reviewBoxOf } from "../../features/pulls/view";
@@ -68,7 +68,7 @@ export function PullScreen({ tab }) {
                 : null, box.merge
                 ? _jsx(Button, { onClick: () => void actions.merge(pull.headSha, pull.baseSha, pull.number), children: "Squash and merge" })
                 : null] }));
-    const filesKey = `${pull.baseSha}...${pull.headSha}`;
+    const filesKey = comparisonKey(`github/${owner}/${repo}`, pull.baseSha, pull.headSha);
     const compared = (files ?? []).find((row) => row.id === filesKey);
     return (_jsxs("main", { className: "pulls-screen", "aria-label": `Pull request ${pull.number}`, children: [_jsx(RepoHeader, {}), _jsxs(PageBody, { width: "wide", children: [back, _jsx(LinkTabs, { "aria-label": "Pull request", children: tabs.map((entry) => (_jsx(Link, { to: pullTabPath(owner, repo, number, entry.tab), 
                             // Exact: the conversation's path is the other tabs' prefix, so the router would mark it current on each.

@@ -51,12 +51,18 @@
  *
  * @since 1.0.0
  */
-import { withSpan } from "effect/Effect";
-import * as Effect_1 from "effect/Effect";
-import * as Schema_1 from "effect/Schema";
-import { Clock, Duration, Effect, Option, Redacted, Ref, Schema, Semaphore } from "effect";
-import * as HttpClient from "effect/http/HttpClient";
+import * as Clock from "effect/Clock";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
+import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
+import * as Semaphore from "effect/Semaphore";
+import { withSpan } from "effect/Effect";
+import { $catchExpression, $matchCache } from "vibelang-runtime/internal";
+import * as Effect_1 from "effect/Effect";
+import * as runtime from "vibelang-runtime/internal";
+import { Duration, Effect, Redacted } from "effect";
+import * as HttpClient from "effect/http/HttpClient";
 import { forCredentials, retryAfterHeader, transportCause, webHeaders } from "./CredentialHttp.js";
 import { IntegrationError, isIntegrationError } from "./IntegrationError.js";
 import { redactedError } from "./RedactedError.js";
@@ -100,13 +106,15 @@ export const ROTATION_SETTLE_MS = 500;
 export const memoryStore = (initial) => {
     let current = initial;
     return {
-        load: Effect_1.sync({ load: () => current }.load),
-        replace: Effect_1.fnUntraced(function* replace(previous, next) {
-            if (Redacted.value(current) !== Redacted.value(previous))
-                return false;
-            current = next;
-            return true;
-        })
+        load: Effect_1.sync({ load: () => { return current; } }.load),
+        replace: (previous, next) => {
+            return Effect_1.gen(function* replace() {
+                if (Redacted.value(current) !== Redacted.value(previous))
+                    return false;
+                current = next;
+                return true;
+            });
+        }
     };
 };
 const credentialFailure = (reference) => (error) => error._tag === "/control/Unauthorized"
@@ -128,19 +136,55 @@ export const credentialStore = (credential, reference) => {
     const load = Effect.mapError(credential.resolve(reference), credentialFailure(reference));
     return {
         load,
-        replace: (previous, next) => Effect.mapError(Effect.catchTag(Effect.as(credential.rotate(reference, next, { expected: previous }), true), "/control/CredentialConflict", () => Effect.succeed(false)), credentialFailure(reference))
+        replace: (previous, next) => {
+            let $do1;
+            {
+                const catchProgram = (Effect.as(credential.rotate(reference, next, { expected: previous }), true));
+                $do1
+                    =
+                        Effect_1.gen(function* () {
+                            return yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return catchProgram; }); })(), (e) => (_tail_1 => { return Effect_1.gen(function* () {
+                                const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+                                return _completion_1[0] ? yield* _value_1 : _value_1;
+                            }); })(() => { return [true, (Effect_1.fnUntraced(function* () {
+                                    const $matchCache2 = $matchCache();
+                                    try {
+                                        const $match1 = e;
+                                        {
+                                            if ((typeof $match1 === "function" || typeof $match1 === "object") && $match1
+                                                !== null && $matchCache2.propertyHas($match1, "_tag") && $matchCache2.get($match1, "_tag") === "/control/CredentialConflict") {
+                                                return false;
+                                            }
+                                        }
+                                        return yield* (() => { return (_tail_2 => { return Effect_1.gen(function* () {
+                                            const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
+                                            return _completion_2[0] ? yield* _value_2 : _value_2;
+                                        }); })(() => { return [true, Effect_1.fail(e)]; }); })();
+                                    }
+                                    catch (matchError_1) {
+                                        $matchCache2.threw(matchError_1);
+                                        throw matchError_1;
+                                    }
+                                    finally {
+                                        $matchCache2.finish();
+                                    }
+                                }))()]; }));
+                        });
+            }
+            return Effect.mapError(($do1), credentialFailure(reference));
+        }
     };
 };
-const TokenResponse = Schema_1.Struct({
-    access_token: Schema.NonEmptyString,
-    token_type: Schema_1.optional(Schema_1.String),
-    expires_in: Schema_1.optional(Schema_1.Union([Schema_1.Number, Schema_1.String,])),
-    refresh_token: Schema_1.optional(Schema_1.String),
-    scope: Schema_1.optional(Schema_1.String),
+const TokenResponse = Schema.Struct({
+    access_token: Schema.mutableKey(Schema.NonEmptyString),
+    token_type: Schema.mutableKey(Schema.optionalKey(Schema.String)),
+    expires_in: Schema.mutableKey(Schema.optionalKey(Schema.Union([Schema.Number, Schema.String,]))),
+    refresh_token: Schema.mutableKey(Schema.optionalKey(Schema.String)),
+    scope: Schema.mutableKey(Schema.optionalKey(Schema.String)),
 });
-const ErrorResponse = Schema_1.Struct({
-    error: Schema_1.String,
-    error_description: Schema_1.optional(Schema_1.String),
+const ErrorResponse = Schema.Struct({
+    error: Schema.mutableKey(Schema.String),
+    error_description: Schema.mutableKey(Schema.optionalKey(Schema.String)),
 });
 const decodeTokenResponse = Schema.decodeUnknownOption(TokenResponse);
 const decodeErrorResponse = Schema.decodeUnknownOption(ErrorResponse);
@@ -182,24 +226,24 @@ const invalidConfig = (message, details) => new IntegrationError("invalid-config
 const resolveEndpoint = (endpoint) => {
     const provider = endpoint.provider ?? "OAuth";
     if (typeof endpoint.tokenUrl !== "string" || !URL.canParse(endpoint.tokenUrl)) {
-        throw invalidConfig(`${provider} tokenUrl must be an absolute HTTP or HTTPS URL.`, { provider });
+        $raise(invalidConfig(`${provider} tokenUrl must be an absolute HTTP or HTTPS URL.`, { provider }));
     }
     const url = new URL(endpoint.tokenUrl);
     if (url.protocol !== "http:" && url.protocol !== "https:") {
-        throw invalidConfig(`${provider} tokenUrl must be an absolute HTTP or HTTPS URL.`, { provider });
+        $raise(invalidConfig(`${provider} tokenUrl must be an absolute HTTP or HTTPS URL.`, { provider }));
     }
     if (typeof endpoint.clientId !== "string" || endpoint.clientId.trim().length === 0) {
-        throw new IntegrationError("credentials-missing", `${provider} OAuth client id is not configured.`, {
+        $raise(new IntegrationError("credentials-missing", `${provider} OAuth client id is not configured.`, {
             provider,
             retryable: false
-        });
+        }));
     }
     const timeout = Option.getOrUndefined(Duration.fromInput(endpoint.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT));
     if (timeout === undefined || !Duration.isFinite(timeout) || Duration.toMillis(timeout) <= 0) {
-        throw invalidConfig(`${provider} requestTimeout must be a finite, positive duration.`, {
+        $raise(invalidConfig(`${provider} requestTimeout must be a finite, positive duration.`, {
             provider,
             requestTimeout: String(endpoint.requestTimeout)
-        });
+        }));
     }
     return {
         url,
@@ -374,10 +418,10 @@ const build = (options, http) => {
     const endpoint = resolveEndpoint(options);
     const skew = Option.getOrUndefined(Duration.fromInput(options.skew ?? DEFAULT_SKEW));
     if (skew === undefined || !Duration.isFinite(skew) || Duration.toMillis(skew) < 0) {
-        throw invalidConfig(`${endpoint.provider} skew must be a finite, non-negative duration.`, {
+        $raise(invalidConfig(`${endpoint.provider} skew must be a finite, non-negative duration.`, {
             provider: endpoint.provider,
             skew: String(options.skew)
-        });
+        }));
     }
     const skewMs = Duration.toMillis(skew);
     const scope = options.scopes === undefined || options.scopes.length === 0 ? undefined : options.scopes.join(" ");
@@ -469,6 +513,7 @@ export const make = (options) => Effect.flatMap(Effect.service(HttpClient.HttpCl
     catch (error) {
         if (isIntegrationError(error))
             return Effect.fail(error);
-        throw error;
+        return Effect.die(error);
     }
 }));
+import { raise as $raise } from "./OAuthToken.vibe.-24-throw-24-ts.js";

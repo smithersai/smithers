@@ -9,7 +9,7 @@
  *
  * @since 1.0.0-rc.1
  */
-import { TaggedError } from "vibelang-runtime";
+import { $schemaErrorMatcher, TaggedError } from "vibelang-runtime/internal";
 /**
  * The trusted host could not resolve the owner's configured model.
  *
@@ -17,6 +17,9 @@ import { TaggedError } from "vibelang-runtime";
  * @since 1.0.0-rc.1
  */
 export class ResolveFailed extends TaggedError("ResolveFailed") {
+    static {
+        $schemaErrorMatcher(this, "ResolveFailed", true);
+    }
 }
 /**
  * The durable producer endpoint could not be reached.
@@ -25,6 +28,9 @@ export class ResolveFailed extends TaggedError("ResolveFailed") {
  * @since 1.0.0-rc.1
  */
 export class ProducerUnreachable extends TaggedError("ProducerUnreachable") {
+    static {
+        $schemaErrorMatcher(this, "ProducerUnreachable", true);
+    }
 }
 /**
  * The durable producer refused the provider-start acknowledgment.
@@ -33,6 +39,9 @@ export class ProducerUnreachable extends TaggedError("ProducerUnreachable") {
  * @since 1.0.0-rc.1
  */
 export class ProviderStartRefused extends TaggedError("ProviderStartRefused") {
+    static {
+        $schemaErrorMatcher(this, "ProviderStartRefused", true);
+    }
 }
 /**
  * The durable producer refused a frame commit, for example a lost fence.
@@ -41,6 +50,9 @@ export class ProviderStartRefused extends TaggedError("ProviderStartRefused") {
  * @since 1.0.0-rc.1
  */
 export class CommitRefused extends TaggedError("CommitRefused") {
+    static {
+        $schemaErrorMatcher(this, "CommitRefused", true);
+    }
 }
 /**
  * A commit receipt was malformed or did not extend the committed cursor.
@@ -49,6 +61,9 @@ export class CommitRefused extends TaggedError("CommitRefused") {
  * @since 1.0.0-rc.1
  */
 export class ReceiptMismatch extends TaggedError("ReceiptMismatch") {
+    static {
+        $schemaErrorMatcher(this, "ReceiptMismatch", true);
+    }
 }
 /**
  * A sealed model stream outgrew the bytes one response may hold.
@@ -57,4 +72,7 @@ export class ReceiptMismatch extends TaggedError("ReceiptMismatch") {
  * @since 1.0.0-rc.1
  */
 export class StreamTooLarge extends TaggedError("StreamTooLarge") {
+    static {
+        $schemaErrorMatcher(this, "StreamTooLarge", true);
+    }
 }

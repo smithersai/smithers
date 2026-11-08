@@ -28,7 +28,7 @@ export const writes = Metric.counter("smithers_secret_writes", {
 /** Recording: 1 s doubling to a minute, for at most 30 minutes, while Postgres is unreachable. */
 export const STORE_RETRY = RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000, expirationMs: 30 * 60_000 });
 const Sealed = Schema_1.Struct({
-    ciphertext: Schema_1.String, nonce: Schema_1.String,
+    ciphertext: Schema_1.mutableKey(Schema_1.String), nonce: Schema_1.mutableKey(Schema_1.String),
 });
 const putPayload = {
     authority: WriteAuthority.Admission,

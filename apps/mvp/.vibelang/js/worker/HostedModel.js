@@ -3,8 +3,8 @@ import { Action, Flow, Interpreter } from "@smthrs/flow";
 import { Node } from "@smthrs/plan";
 import { Config, Effect, Layer, Schema } from "effect";
 import { SqlClient } from "effect/sql";
-import { CurrentActor } from "#vibelang/emitted/worker/Actor";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { CurrentActor } from "./Actor.js";
+import { codeOf } from "./ErrorCode.js";
 import { NoInvocationKey, NotAllowed } from "./SetModel.js";
 // Hosted inference (docs/features/model-endpoint.md#hosted-inference, decision 0099): whether the deployment's own model
 // answers anyone. Will, 2026-10-25 13:28 PDT: "Please get it working with byok prioritize byok over our hosted

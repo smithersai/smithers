@@ -3,7 +3,7 @@ import { AgentRunner } from "@smthrs/agent";
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow";
 import { Node } from "@smthrs/plan";
 import { Effect, Layer, Metric, Schema } from "effect";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { codeOf } from "../ErrorCode.js";
 import * as Fence from "./Fence.js";
 import * as Overflow from "./Overflow.js";
 import * as Store from "./Store.js";

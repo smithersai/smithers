@@ -871,6 +871,7 @@ const transcriptKinds: ReadonlySet<string> = new Set(["control.approval.requeste
  * @param events the run's ordered control events
  * @since 1.0.0
  * @category projections
+ * @throws {never}
  */
 export const transcript = (
   events: ReadonlyArray<ControlSchema.ControlEvent>

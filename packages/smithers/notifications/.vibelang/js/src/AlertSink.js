@@ -8,10 +8,10 @@
  *
  * @since 1.0.0
  */
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as runtime from "vibelang-runtime/internal";
 /**
  * Why a sink did not take an alert.
  *
@@ -51,7 +51,7 @@ export class AlertError extends Schema.TaggedError()("/notifications/AlertError"
  * @category services
  * @since 0.1.0
  */
-export class Sink extends Context.Service()("/notifications/AlertSink") {
+export class Sink extends runtime.$service("/notifications/AlertSink") {
 }
 /**
  * A sink that accepts every alert and sends it nowhere.

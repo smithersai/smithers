@@ -2,8 +2,8 @@
 import { Action, Flow, Interpreter } from "@smthrs/flow";
 import { Node } from "@smthrs/plan";
 import { Effect, Layer, Schema } from "effect";
-import { CurrentActor } from "#vibelang/emitted/worker/Actor";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { CurrentActor } from "./Actor.js";
+import { codeOf } from "./ErrorCode.js";
 import * as ModelRoles from "./ModelRoles.js";
 // `admin/SetModel { role, model }` (docs/features/model-endpoint.md#roles): an admin sets which model answers a role.
 // The setting is a `model_roles` row, read on every call, so the next call uses it; the change is recorded in

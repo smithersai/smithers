@@ -52,6 +52,5 @@
   },
   "include": [
     "src/**/*"
-  ],
-  "vibelang": { "declarationImportStyle": ".ts" }
+  ]
 }

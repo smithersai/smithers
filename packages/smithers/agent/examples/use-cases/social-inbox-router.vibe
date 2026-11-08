@@ -59,43 +59,43 @@ export const LeadAction = Schema.Struct({
 })
 
 /** The support agent's answer. */
-export schema SupportAction {
-  readonly tickets: ReadonlyArray<{
-    readonly itemId: string
-    readonly subject: string
-    readonly urgency: "low" | "medium" | "high" | "critical"
-    readonly suggestedReply: string
-    readonly escalate: boolean
-  }>
-  readonly summary: string
-}
+export const SupportAction = Schema.Struct({
+  tickets: Schema.Array(Schema.Struct({
+    itemId: Schema.String,
+    subject: Schema.String,
+    urgency: Schema.Literals(["low", "medium", "high", "critical"]),
+    suggestedReply: Schema.String,
+    escalate: Schema.Boolean
+  })),
+  summary: Schema.String
+})
 
 /** The follow-up agent's answer. */
-export schema FollowUpAction {
-  readonly followUps: ReadonlyArray<{
-    readonly itemId: string
-    readonly senderName: string
-    readonly context: string
-    readonly suggestedReply: string
-    readonly dueBy: string
-  }>
-  readonly summary: string
-}
+export const FollowUpAction = Schema.Struct({
+  followUps: Schema.Array(Schema.Struct({
+    itemId: Schema.String,
+    senderName: Schema.String,
+    context: Schema.String,
+    suggestedReply: Schema.String,
+    dueBy: Schema.String
+  })),
+  summary: Schema.String
+})
 
 /** The routing summary the flow settles with. */
-export schema RouterOutput {
-  readonly totalProcessed: number
-  readonly categoryCounts: {
-    readonly lead: number
-    readonly noise: number
-    readonly support: number
-    readonly followUp: number
-  }
-  readonly leadActions: ReadonlyArray<string>
-  readonly supportTickets: ReadonlyArray<string>
-  readonly followUps: ReadonlyArray<string>
-  readonly summary: string
-}
+export const RouterOutput = Schema.Struct({
+  totalProcessed: Schema.Number,
+  categoryCounts: Schema.Struct({
+    lead: Schema.Number,
+    noise: Schema.Number,
+    support: Schema.Number,
+    followUp: Schema.Number
+  }),
+  leadActions: Schema.Array(Schema.String),
+  supportTickets: Schema.Array(Schema.String),
+  followUps: Schema.Array(Schema.String),
+  summary: Schema.String
+})
 
 /** Normalizes the incoming messages into one inbox item. */
 export const NormalizeMessage = AgentAction.make("examples/SocialInboxRouter/Trigger", {

@@ -29,27 +29,27 @@ export const ScheduleContext = Schema.Struct({
 })
 
 /** GitHub activity since the cutoff. */
-export schema GithubDigest {
-  readonly mergedPRs: number
-  readonly openPRs: number
-  readonly notableCommits: ReadonlyArray<string>
-  readonly stalePRs: ReadonlyArray<{ readonly number: number; readonly title: string; readonly author: string }>
-}
+export const GithubDigest = Schema.Struct({
+  mergedPRs: Schema.Number,
+  openPRs: Schema.Number,
+  notableCommits: Schema.Array(Schema.String),
+  stalePRs: Schema.Array(Schema.Struct({ number: Schema.Number, title: Schema.String, author: Schema.String }))
+})
 
 /** Linear activity since the cutoff. */
-export schema LinearDigest {
-  readonly completedIssues: number
-  readonly inProgressIssues: number
-  readonly blockedIssues: ReadonlyArray<{ readonly id: string; readonly title: string; readonly blocker: string }>
-  readonly topLabels: ReadonlyArray<string>
-}
+export const LinearDigest = Schema.Struct({
+  completedIssues: Schema.Number,
+  inProgressIssues: Schema.Number,
+  blockedIssues: Schema.Array(Schema.Struct({ id: Schema.String, title: Schema.String, blocker: Schema.String })),
+  topLabels: Schema.Array(Schema.String)
+})
 
 /** Slack activity since the cutoff. */
-export schema SlackDigest {
-  readonly activeThreads: number
-  readonly topTopics: ReadonlyArray<string>
-  readonly unresolvedQuestions: ReadonlyArray<{ readonly channel: string; readonly question: string }>
-}
+export const SlackDigest = Schema.Struct({
+  activeThreads: Schema.Number,
+  topTopics: Schema.Array(Schema.String),
+  unresolvedQuestions: Schema.Array(Schema.Struct({ channel: Schema.String, question: Schema.String }))
+})
 
 /** The team update. */
 export const Summary = Schema.Struct({

@@ -31,12 +31,14 @@ export const failureType = (cause) => RetryPolicy.errorTag(Cause.squash(cause)) 
  * @category telemetry
  * @since 1.0.0-rc.17
  */
-export const observed = (effect, options) => Effect.flatMap(Clock.currentTimeMillis, (startedAt) => Effect.flatMap(Effect.withSpan(Effect.tap(Effect.exit(effect), Effect_1.fnUntraced(function* (exit) {
-    var topic_1;
-    const outcome = Exit.isSuccess(exit) ? exit.value : "failed";
-    const failure = Exit.isFailure(exit) ? { "error.type": failureType(exit.cause) } : {};
-    const durationMs = (yield* Clock.currentTimeMillis) - startedAt;
-    yield* Effect.annotateCurrentSpan({ [options.attribute]: outcome, ...failure });
-    yield* Metric.update(Metric.withAttributes(options.counter, { outcome }), 1);
-    yield* ((topic_1 = (Exit.isFailure(exit) ? Effect.logWarning : Effect.logInfo)(options.log), Effect.annotateLogs({ outcome, durationMs, ...failure })(topic_1)));
-})), options.span, { attributes: options.attributes }), (exit) => exit));
+export const observed = (effect, options) => Effect.flatMap(Clock.currentTimeMillis, (startedAt) => Effect.flatMap(Effect.withSpan(Effect.tap(Effect.exit(effect), (exit) => {
+    return Effect_1.gen(function* () {
+        var topic_1;
+        const outcome = Exit.isSuccess(exit) ? exit.value : "failed";
+        const failure = Exit.isFailure(exit) ? { "error.type": failureType(exit.cause) } : {};
+        const durationMs = (yield* Clock.currentTimeMillis) - startedAt;
+        yield* Effect.annotateCurrentSpan({ [options.attribute]: outcome, ...failure });
+        yield* Metric.update(Metric.withAttributes(options.counter, { outcome }), 1);
+        yield* ((topic_1 = (Exit.isFailure(exit) ? Effect.logWarning : Effect.logInfo)(options.log), Effect.annotateLogs({ outcome, durationMs, ...failure })(topic_1)));
+    });
+}), options.span, { attributes: options.attributes }), (exit) => exit));

@@ -53,7 +53,7 @@ export const Attrs = Schema.Struct({
  * {@link import("./NpmPublish.ts").NpmPublish} and
  * {@link import("./JsrPublish.ts").JsrPublish} are examples) when the operation
  * has a stable identity; reach for `ToolRun` for a one-off external command.
- * Executing the plan requires {@link import("./Changesets.vibe").ExecIrreversibleLive}.
+ * Executing the plan requires {@link import("./Changesets.ts").ExecIrreversibleLive}.
  *
  * @category targets
  * @since 0.1.0

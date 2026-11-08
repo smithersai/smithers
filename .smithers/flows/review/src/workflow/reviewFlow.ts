@@ -1,4 +1,4 @@
-import { ReviewFailure } from "./reviewFailureSchema.vibe"
+import { ReviewFailure } from "./reviewFailureSchema.ts"
 /**
  * The review workflow, as four durable stages.
  *

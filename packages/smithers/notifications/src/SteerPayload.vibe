@@ -55,10 +55,10 @@ export type Thinking = typeof Thinking.Type
  * @category models
  * @since 0.1.0
  */
-export schema MessagePayload {
-  readonly kind: "Message"
-  readonly body: string
-}
+export const MessagePayload = Schema.Struct({
+  kind: Schema.Literal("Message"),
+  body: Schema.String
+})
 
 /**
  * The decoded form of {@link MessagePayload}.
@@ -74,10 +74,10 @@ export type MessagePayload = typeof MessagePayload.Type
  * @category models
  * @since 0.1.0
  */
-export schema SeatPayload {
-  readonly kind: "Seat"
-  readonly seat: Schema.NonEmptyString
-}
+export const SeatPayload = Schema.Struct({
+  kind: Schema.Literal("Seat"),
+  seat: Schema.NonEmptyString
+})
 
 /**
  * The decoded form of {@link SeatPayload}.
@@ -93,10 +93,10 @@ export type SeatPayload = typeof SeatPayload.Type
  * @category models
  * @since 0.1.0
  */
-export schema ThinkingPayload {
-  readonly kind: "Thinking"
-  readonly thinking: Thinking
-}
+export const ThinkingPayload = Schema.Struct({
+  kind: Schema.Literal("Thinking"),
+  thinking: Thinking
+})
 
 /**
  * The decoded form of {@link ThinkingPayload}.

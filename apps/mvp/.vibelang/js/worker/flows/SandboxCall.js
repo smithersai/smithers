@@ -5,9 +5,9 @@ import { SandboxTools } from "@smthrs/sandbox";
 import { Effect, Layer, Metric, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 import { CALL_FAILURES, COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.js";
-import { Machines } from "#vibelang/emitted/worker/branch/Machines";
-import { CheckoutFailed, SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "#vibelang/emitted/worker/branch/Sandboxes";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { Machines } from "../branch/Machines.js";
+import { checkoutDetails, CheckoutFailed, SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "../branch/Sandboxes.js";
+import { codeOf } from "../ErrorCode.js";
 import { Command, ToolCall } from "./SandboxCommand.js";
 // `sandbox/Call { callId, ownerId, branch, call }` (decision 0005 §3 and §5, docs/features/sandbox-tools.md#the-remote-flow):
 // runs one sandbox tool on a branch's machine, as the person who asked. `POST /api/sandbox/calls` admits it (signed
@@ -150,7 +150,8 @@ export const settle = (callId, outcome) => Effect.gen(function* () {
 });
 /** The steps over the host's `Machines` and `database`; each records ids, the tool and outcomes, never content. */
 export const steps = (database) => {
-    const tool = ({ branch, ownerId, callId, call }) => Effect.flatMap(Machines, (machines) => machines.tool(branch, ownerId, callId, call)).pipe(Effect.map(({ result, generation }) => ({ status: "done", result, generation })), Effect.tapError((error) => Effect.logWarning("sandbox.tool").pipe(Effect.annotateLogs({ callId, branchId: branch.branchId, tool: call.tool, errorCode: codeOf(error) }))), Effect.withSpan("sandbox.call.tool", {
+    const tool = ({ branch, ownerId, callId, call }) => Effect.flatMap(Machines, (machines) => machines.tool(branch, ownerId, callId, call)).pipe(Effect.map(({ result, generation }) => ({ status: "done", result, generation })), Effect.tapError((error) => Effect.logWarning("sandbox.tool").pipe(Effect.annotateLogs({ callId, branchId: branch.branchId, tool: call.tool, errorCode: codeOf(error),
+        ...(error._tag === "@smthrs/mvp/branch/CheckoutFailed" ? checkoutDetails(error) : {}) }))), Effect.withSpan("sandbox.call.tool", {
         attributes: { "smithers.branch.id": branch.branchId, "smithers.sandbox.tool": call.tool },
     }));
     const failed = ({ error }) => Effect.succeed(failureOf(error));

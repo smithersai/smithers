@@ -173,13 +173,15 @@ const target = (payload, flowName, executionId) => {
  * @category layers
  * @since 0.1.0
  */
-export const layer = action.toLayer(Effect_1.fnUntraced(function* (payload) {
-    const instance = yield* FlowInstance;
-    const waitPoint = yield* target(payload, instance.flow._tag, instance.executionId);
-    const token = DurableDeferred.tokenFromExecutionId(waitPoint, {
-        flow: instance.flow,
-        executionId: instance.executionId
+export const layer = action.toLayer((payload) => {
+    return Effect_1.gen(function* () {
+        const instance = yield* FlowInstance;
+        const waitPoint = yield* target(payload, instance.flow._tag, instance.executionId);
+        const token = DurableDeferred.tokenFromExecutionId(waitPoint, {
+            flow: instance.flow,
+            executionId: instance.executionId
+        });
+        yield* annotateWaiting({ reason: "event", token });
+        return yield* DurableDeferred.await(waitPoint);
     });
-    yield* annotateWaiting({ reason: "event", token });
-    return yield* DurableDeferred.await(waitPoint);
-}));
+});

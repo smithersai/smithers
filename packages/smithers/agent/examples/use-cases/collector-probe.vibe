@@ -45,13 +45,13 @@ export const Invocation = Schema.Struct({
 })
 
 /** Running statistics over every call so far. */
-export schema Aggregates {
-  readonly meanLatencyMs: number
-  readonly p95LatencyMs: number
-  readonly meanCostUsd: number
-  readonly meanQuality: number
-  readonly totalInvocations: number
-}
+export const Aggregates = Schema.Struct({
+  meanLatencyMs: Schema.Number,
+  p95LatencyMs: Schema.Number,
+  meanCostUsd: Schema.Number,
+  meanQuality: Schema.Number,
+  totalInvocations: Schema.Number
+})
 
 /** The collector's aggregation. */
 export const Collection = Schema.Struct({

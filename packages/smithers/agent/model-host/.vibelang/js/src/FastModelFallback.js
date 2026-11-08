@@ -4,10 +4,12 @@
  *
  * @since 1.0.0
  */
+import * as Metric from "effect/Metric";
 import { withSpan } from "effect/Effect";
 import * as Effect_1 from "effect/Effect";
 import { ModelError, ModelRequest } from "@smthrs/model";
-import { Effect, Metric, Stream } from "effect";
+import { Effect, Stream } from "effect";
+import { durableModelStream } from "./DurableModelCall.js";
 const notificationTimeouts = Metric.counter("smithers_model_host_fallback_notification_timeouts");
 /**
  * Builds one model that streams from the first host-owned source and falls back
@@ -21,7 +23,7 @@ const notificationTimeouts = Metric.counter("smithers_model_host_fallback_notifi
  * @since 1.0.0
  * @category constructors
  */
-export const fastModelFallback = (sources, onFallback) => ({
+export const fastModelFallback = (sources, onFallback, name = "model-host/fallback") => ({
     stream: (request) => Stream.suspend(() => {
         if (sources.length === 0) {
             return Stream.fail(new ModelError.ModelError({ code: "no_route", message: "Fast model unavailable" }));
@@ -30,21 +32,26 @@ export const fastModelFallback = (sources, onFallback) => ({
             const source = sources[index];
             let emitted = false;
             const { maxTokens: _maxTokens, ...unlimited } = request.params;
-            return source.model.stream(new ModelRequest.ModelRequest({
+            return durableModelStream(name + "/" + index, {
+                ...source,
+                additionalCredentials: sources.flatMap((item) => [item.credential ?? "", ...(item.additionalCredentials ?? [])])
+            }, new ModelRequest.ModelRequest({
                 ...request,
                 modelId: source.modelId,
                 params: source.outputTokenLimitSupported === false ? unlimited : request.params
-            })).pipe(Stream.tap(Effect_1.fnUntraced(function* () {
-                emitted = true;
-            })), Stream.catch((error) => {
+            }), undefined, index === 0 ? undefined : () => (withSpan(Effect.timeoutOrElse((onFallback?.(index) ?? Effect.void), {
+                duration: 1000,
+                orElse: () => Effect.andThen(Metric.update(notificationTimeouts, 1), Effect.logWarning("Model fallback notification timed out"))
+            }), "model_host.fallback_notification"))).pipe(Stream.tap(() => {
+                return Effect_1.gen(function* () {
+                    emitted = true;
+                });
+            }), Stream.catch((error) => {
                 const unavailable = error._tag === "flows/model/ModelError" &&
                     ["authentication", "rate_limited", "quota_exceeded", "transport", "call_timeout", "provider_internal"]
                         .includes(error.code);
                 return !emitted && unavailable && index + 1 < sources.length
-                    ? Stream.unwrap(Effect.as(withSpan(Effect.timeoutOrElse((onFallback?.(index + 1) ?? Effect.void), {
-                        duration: 1000,
-                        orElse: () => Effect.andThen(Metric.update(notificationTimeouts, 1), Effect.logWarning("Model fallback notification timed out"))
-                    }), "model_host.fallback_notification"), attempt(index + 1)))
+                    ? attempt(index + 1)
                     : Stream.fail(error);
             }));
         };

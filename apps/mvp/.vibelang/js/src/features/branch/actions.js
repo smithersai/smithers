@@ -6,7 +6,7 @@ import { signedOut } from "../auth/store";
 import { openAt } from "../conversations/actions";
 import { ChatStore } from "../chat/store";
 import { isRepository } from "../repo/contract";
-import { SharingStore } from "#vibelang/emitted/src/features/sharing/store";
+import { SharingStore } from "../sharing/store";
 import { isBranchName } from "./contract";
 import { opens, reopens } from "./metrics";
 import { CURRENT } from "./schema";

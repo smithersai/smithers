@@ -14,6 +14,8 @@
 import * as Duration from "effect/Duration";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { $extract } from "vibelang-runtime/internal";
+import * as Option_1 from "effect/Option";
 import * as Digest from "@smthrs/core/Digest";
 import * as CoreMarkdown from "@smthrs/core/Markdown";
 /**
@@ -451,16 +453,57 @@ export const FlowBudget = Schema.Struct({
  * @since 1.0.0
  */
 export const deadlineMillis = (value) => {
-    const milliseconds = typeof value === "number"
-        ? value
-        : typeof value === "string" && /^\s*\d+(\.\d+)?\s*$/.test(value)
-            ? Number(value)
-            : typeof value === "string"
-                ? Option.match(Duration.fromInput(value.trim()), {
-                    onNone: () => Number.NaN,
-                    onSome: Duration.toMillis
-                })
-                : Number.NaN;
+    let $do_v1;
+    if (typeof value === "number") {
+        $do_v1 = value;
+    }
+    else {
+        let $do_v2;
+        if (typeof value === "string" && /^\s*\d+(\.\d+)?\s*$/.test(value)) {
+            $do_v2 = Number(value);
+        }
+        else {
+            let $do_v3;
+            if (typeof value === "string") {
+                let $do1;
+                {
+                    const $optionSubject = Duration.fromInput(value.trim());
+                    const $optionHandlers = {
+                        onNone: () => Number.NaN,
+                        onSome: Duration.toMillis
+                    };
+                    const { onNone: $optionNone, onSome: $optionSome } = $optionHandlers;
+                    $match3: {
+                        const $match4 = $optionSubject;
+                        {
+                            const $extracted5 = (subject_1 => Option_1.isOption(subject_1) && Option_1.isSome(subject_1) && [subject_1.value])($match4);
+                            $do1 = void 0;
+                            if ($extracted5 !== false && $extracted5.length === 1) {
+                                let $optionValue = $extracted5[0];
+                                $do1 = $optionSome($optionValue);
+                                break $match3;
+                            }
+                        }
+                        $do1 = $optionNone();
+                        break $match3;
+                    }
+                }
+                $do_v3
+                    =
+                        $do1;
+            }
+            else {
+                $do_v3 = Number.NaN;
+            }
+            $do_v2
+                =
+                    $do_v3;
+        }
+        $do_v1
+            =
+                $do_v2;
+    }
+    const milliseconds = $do_v1;
     return Number.isSafeInteger(milliseconds) && milliseconds > 0 ? milliseconds : undefined;
 };
 /**
@@ -613,14 +656,14 @@ export const executionDigest = (descriptor) => {
         return memoized;
     const { activity: _activity, presentation: _presentation, ...executable } = Schema.encodeSync(FlowDescriptor)(descriptor);
     const local = (value) => underRoot(executable.provenance.root, value);
-    const digest = Digest.digest(Digest.canonical({
+    const digest = $invoke(Digest, () => (Digest.canonical({
         ...executable,
         path: local(executable.path),
         body: relocated(executable.body, local),
         input: relocated(executable.input, local),
         output: relocated(executable.output, local),
         provenance: { ...executable.provenance, root: "." }
-    }));
+    })));
     executionDigests.set(descriptor, digest);
     return digest;
 };
@@ -656,7 +699,7 @@ export const executionDigest = (descriptor) => {
  * @category hashing
  * @since 1.0.0-rc.0
  */
-export const declarationDigest = (descriptor) => Digest.digest(Digest.canonical({
+export const declarationDigest = (descriptor) => $invoke(Digest, () => (Digest.canonical({
     body: { ...descriptor.body },
     budget: descriptor.budget ?? null,
     capabilities: [...descriptor.capabilities].sort(),
@@ -676,7 +719,7 @@ export const declarationDigest = (descriptor) => Digest.digest(Digest.canonical(
     // Spread only when present: hashing an absent selection as `null` would
     // move the identity of every declaration that selects none.
     ...(descriptor.sandbox === undefined ? {} : { sandbox: descriptor.sandbox })
-}));
+})));
 /**
  * The budget one descriptor declared, or {@link budgetUnbounded}.
  *
@@ -699,3 +742,4 @@ export class SourceScan extends Schema.Class("flows/registry/SourceScan")({
     warnings: Schema.Array(DiscoveryWarning)
 }) {
 }
+import { invoke as $invoke } from "./Descriptor.vibe.-24-call-24-ts.js";

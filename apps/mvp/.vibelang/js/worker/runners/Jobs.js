@@ -2,7 +2,7 @@
 import { AgentRunner } from "@smthrs/agent";
 import { Cause, Effect, Layer, Metric, Option, Schema } from "effect";
 import { SqlClient } from "effect/sql";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { codeOf } from "../ErrorCode.js";
 import * as Fleet from "./Fleet.js";
 import * as Overflow from "./Overflow.js";
 // The host's job store on Postgres (decision 0136, docs/features/agent-runners.md#the-job-store): `@smthrs/agent`'s
@@ -94,7 +94,7 @@ export const make = (database, alerts, wake) => {
         FROM (SELECT COALESCE((SELECT stopped FROM previous), false) AS stopped) AS ended
         ON CONFLICT (key) DO NOTHING RETURNING key`;
         return inserted.length > 0;
-    }).pipe(Effect.tap((queued) => (queued ? projected("queue", key, Fleet.queue(key)) : Effect.void)), Effect.provide(database), recorded("start", key, (queued) => (queued ? "queued" : "existing")), Effect.mapError(() => new AgentRunner.AgentJobsUnavailable()));
+    }).pipe(Effect.tap((queued) => (queued ? projected("queue", key, Fleet.queue(key)) : Effect.void)), Effect.provide(database), recorded("start", key, (queued) => (queued ? "queued" : "existing")), Effect.catch(() => Effect.fail(new AgentRunner.AgentJobsUnavailable())));
     const status = (key) => Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         // One statement: an open job past its agent's hours ends `timeout` (a claimed one after the runner's grace to
@@ -112,7 +112,7 @@ export const make = (database, alerts, wake) => {
         SELECT status, outcome, task, generation FROM agent_jobs WHERE key = ${key} AND NOT EXISTS (SELECT 1 FROM expired)`;
         // A key with no row was never queued: another generation.
         return row === undefined ? { _tag: "Again" } : yield* standingOf(row);
-    }).pipe(Effect.provide(database), Effect.tap(() => projected("probe", key, probe(key))), recorded("status", key, (standing) => (standing._tag === "Ended" ? standing.outcome._tag : standing._tag).toLowerCase()), Effect.mapError(() => new AgentRunner.AgentJobsUnavailable()));
+    }).pipe(Effect.provide(database), Effect.tap(() => projected("probe", key, probe(key))), recorded("status", key, (standing) => (standing._tag === "Ended" ? standing.outcome._tag : standing._tag).toLowerCase()), Effect.catch(() => Effect.fail(new AgentRunner.AgentJobsUnavailable())));
     const cancel = (key) => Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         const { origin, generation } = AgentRunner.parseKey(key);
@@ -130,7 +130,7 @@ export const make = (database, alerts, wake) => {
           updated_at = now()
         RETURNING status`;
         return row.status;
-    }).pipe(Effect.provide(database), Effect.tap((status) => projected("stop", key, Fleet.stopping(key, status))), recorded("cancel", key, (status) => status), Effect.asVoid, Effect.mapError(() => new AgentRunner.AgentJobsUnavailable()));
+    }).pipe(Effect.provide(database), Effect.tap((status) => projected("stop", key, Fleet.stopping(key, status))), recorded("cancel", key, (status) => status), Effect.asVoid, Effect.catch(() => Effect.fail(new AgentRunner.AgentJobsUnavailable())));
     return AgentRunner.AgentJobs.of({ start: (task, key) => Effect.asVoid(start(task, key)), status, cancel });
 };
 /**

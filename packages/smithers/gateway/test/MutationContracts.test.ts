@@ -3,7 +3,7 @@ import { expect, it } from "@effect/vitest"
 import type { Service as ControlService } from "@smthrs/control/Control"
 import type { ControlEvent } from "@smthrs/control/ControlSchema"
 import { Effect, Stream } from "effect"
-import * as Projections from "../src/Projections.vibe"
+import * as Projections from "../src/Projections.ts"
 
 const bytes = (value: unknown): number => Buffer.byteLength(JSON.stringify(value), "utf8")
 

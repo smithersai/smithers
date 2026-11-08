@@ -55,7 +55,7 @@ export * as PresentationRealm from "./PresentationRealm.ts"
  * @category checking
  * @since 0.1.0
  */
-export * as ViewCode from "./ViewCode.vibe"
+export * as ViewCode from "./ViewCode.ts"
 
 /**
  * @category framing

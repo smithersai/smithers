@@ -51,41 +51,21 @@
       "vibelang-source": "./src/Digest.vibe",
       "default": "./.vibelang/js/src/Digest.js"
     },
-    "./Effects": {
-      "types": "./src/Effects.ts",
-      "vibelang-source": "./src/Effects.ts",
-      "default": "./.vibelang/js/src/Effects.js"
-    },
+    "./Effects": "./src/Effects.ts",
     "./Flow": {
       "types": "./src/Flow.ts",
       "vibelang-source": "./src/Flow.ts",
       "default": "./.vibelang/js/src/Flow.js"
     },
-    "./Graph": {
-      "types": "./src/Graph.ts",
-      "vibelang-source": "./src/Graph.ts",
-      "default": "./.vibelang/js/src/Graph.js"
-    },
-    "./KeyMaterial": {
-      "types": "./src/KeyMaterial.ts",
-      "vibelang-source": "./src/KeyMaterial.ts",
-      "default": "./.vibelang/js/src/KeyMaterial.js"
-    },
+    "./Graph": "./src/Graph.ts",
+    "./KeyMaterial": "./src/KeyMaterial.ts",
     "./Markdown": {
       "types": "./.vibe/declarations/src/Markdown.d.vibe.ts",
       "vibelang-source": "./src/Markdown.vibe",
       "default": "./.vibelang/js/src/Markdown.js"
     },
-    "./Node": {
-      "types": "./src/Node.ts",
-      "vibelang-source": "./src/Node.ts",
-      "default": "./.vibelang/js/src/Node.js"
-    },
-    "./Placement": {
-      "types": "./src/Placement.ts",
-      "vibelang-source": "./src/Placement.ts",
-      "default": "./.vibelang/js/src/Placement.js"
-    },
+    "./Node": "./src/Node.ts",
+    "./Placement": "./src/Placement.ts",
     "./index": {
       "types": "./src/index.ts",
       "vibelang-source": "./src/index.ts",
@@ -239,8 +219,7 @@
     "@smthrs/crypto": "1.0.0-rc.16",
     "@smthrs/flow": "1.0.0-rc.16",
     "@smthrs/plan": "1.0.0-rc.16",
-    "yaml": "2.9.0",
-    "vibelang-runtime": "0.0.13"
+    "yaml": "2.9.0"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",

@@ -16,7 +16,7 @@ import { OpaqueInput } from "./internal/Payload.js";
 import { PatternError } from "./PatternError.js";
 const valid = (value) => Number.isSafeInteger(value) && value >= 1;
 const boundError = (message) => {
-    throw new PatternError({ code: "recursion_bound", message });
+    $raise(new PatternError({ code: "recursion_bound", message }));
 };
 /**
  * Validates and returns an envelope-bounded recursive tree flow.
@@ -110,3 +110,4 @@ export const recurse = (options) => {
         body: Node.capture({ depth: envelope.depth, fanout: envelope.fanout, fuel: envelope.fuel }, body)
     });
 };
+import { raise as $raise } from "./Recursion.vibe.-24-throw-24-ts.js";

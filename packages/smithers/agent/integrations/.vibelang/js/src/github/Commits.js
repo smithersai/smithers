@@ -90,15 +90,23 @@ const SHA = /^[0-9a-f]{40}$/;
 /** The most files one commit may add or delete. */
 const MAX_CHANGES = 1000;
 const invalid = (field, message) => new IntegrationError("invalid-config", message, { field, retryable: false });
-const requireSha = (field, sha) => Effect_1.suspend({ requireSha: () => { return typeof sha === "string" && SHA.test(sha)
-        ? Effect_1.succeed(sha)
-        : (() => Effect_1.suspend(() => Effect_1.fail(invalid(field, "A commit SHA must be 40 lowercase hex digits.")
+const requireSha = (field, sha) => (_tail_1 => { return Effect_1.gen(function* requireSha() {
+    const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+    return _completion_1[0] ? yield* _value_1 : _value_1;
+}); })({ requireSha: () => { return typeof sha === "string" && SHA.test(sha)
+        ? [false, sha] : [true, (() => { return (_tail_2 => { return Effect_1.gen(function* () {
+            const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
+            return _completion_2[0] ? yield* _value_2 : _value_2;
+        }); })(() => { return [true, Effect_1.fail(invalid(field, "A commit SHA must be 40 lowercase hex digits.")
+            // A repository-relative path: segments that are not empty, `.` or `..`, with
+            // no control character or backslash.
+            )]; }); })(
         // A repository-relative path: segments that are not empty, `.` or `..`, with
         // no control character or backslash.
-        )))(
+        )
         // A repository-relative path: segments that are not empty, `.` or `..`, with
         // no control character or backslash.
-        ); } }.requireSha);
+    ]; } }.requireSha);
 // A repository-relative path: segments that are not empty, `.` or `..`, with
 // no control character or backslash.
 const isFilePath = (path) => typeof path === "string" && path.length <= 4096

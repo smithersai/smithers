@@ -29,7 +29,9 @@
  */
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import { $extract } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
+import * as Option_1 from "effect/Option";
 import * as CellHistory from "@smthrs/harness/CellHistory";
 import * as FlowBinding from "@smthrs/harness/FlowBinding";
 import { projectFlowsDirectory } from "@smthrs/registry/Descriptor";
@@ -182,42 +184,68 @@ const filesFor = (input) => ({
 export const source = (services, options = {}) => FlowBinding.source("flows", [
     FlowBinding.provide(FlowBinding.make({
         flow: showScriptFlow,
-        handler: Effect_1.fnUntraced(function* handler(input) {
-            const history = yield* CellHistory.CellHistory;
-            const cells = yield* history.cells();
-            const rules = options.bestPractices ?? bestPractices;
-            return {
-                cells: cells.map((cell) => ({ ordinal: cell.ordinal, source: cell.source })),
-                bestPractices: input.bestPractices === undefined ? rules : `${rules}\n${input.bestPractices}`,
-                template: options.template ?? flowTemplate
-            };
-        })
+        handler: (input) => {
+            return Effect_1.gen(function* handler() {
+                const history = yield* CellHistory.CellHistory;
+                const cells = yield* history.cells();
+                const rules = options.bestPractices ?? bestPractices;
+                return {
+                    cells: cells.map((cell) => ({ ordinal: cell.ordinal, source: cell.source })),
+                    bestPractices: input.bestPractices === undefined ? rules : `${rules}\n${input.bestPractices}`,
+                    template: options.template ?? flowTemplate
+                };
+            });
+        }
     }), services),
     FlowBinding.provide(FlowBinding.make({
         flow: writeFlowFlow,
         publicError: (error) => error.message,
-        handler: Effect_1.fnUntraced(function* handler(input) {
-            // Checked here as well as in the store, because a store that keeps
-            // nothing would otherwise answer a bad id with "nowhere to save"
-            // and send the model off to fix the wrong thing.
-            yield* FlowStore.validateId(input.id);
-            yield* Effect.annotateCurrentSpan({ flow: input.id });
-            const store = yield* FlowStore.FlowStore;
-            const written = yield* store.write(input.id, filesFor(input));
-            // The registry is optional and its rescan is best effort: the files
-            // are already saved, so a rescan that failed makes the flow appear
-            // one refresh later rather than making the save a lie.
-            const registry = yield* Effect.serviceOption(Registry.Registry);
-            const warning = yield* Option.match(registry, {
-                onNone: () => Effect.succeed(undefined),
-                onSome: (found) => Effect.catch(Effect.as(found.refresh(), undefined), Effect_1.fnUntraced(function* (error) {
-                    var topic_1;
-                    yield* Effect.annotateCurrentSpan({ discovery: "failed", "error.type": error.code });
-                    yield* ((topic_1 = Effect.logWarning("Saved flow registry refresh failed"), Effect.annotateLogs({ code: error.code })(topic_1)));
-                    return `Flow saved; registry refresh failed (${error.code}).`;
-                }))
+        handler: (input) => {
+            return Effect_1.gen(function* handler() {
+                // Checked here as well as in the store, because a store that keeps
+                // nothing would otherwise answer a bad id with "nowhere to save"
+                // and send the model off to fix the wrong thing.
+                yield* FlowStore.validateId(input.id);
+                yield* Effect.annotateCurrentSpan({ flow: input.id });
+                const store = yield* FlowStore.FlowStore;
+                const written = yield* store.write(input.id, filesFor(input));
+                // The registry is optional and its rescan is best effort: the files
+                // are already saved, so a rescan that failed makes the flow appear
+                // one refresh later rather than making the save a lie.
+                const registry = yield* Effect.serviceOption(Registry.Registry);
+                let $do1;
+                {
+                    const $optionSubject = registry;
+                    const $optionHandlers = {
+                        onNone: () => Effect.succeed(undefined),
+                        onSome: (found) => Effect.catch(Effect.as(found.refresh(), undefined), (error) => {
+                            return Effect_1.gen(function* () {
+                                var topic_1;
+                                yield* Effect.annotateCurrentSpan({ discovery: "failed", "error.type": error.code });
+                                yield* ((topic_1 = Effect.logWarning("Saved flow registry refresh failed"), Effect.annotateLogs({ code: error.code })(topic_1)));
+                                return `Flow saved; registry refresh failed (${error.code}).`;
+                            });
+                        })
+                    };
+                    const { onNone: $optionNone, onSome: $optionSome } = $optionHandlers;
+                    $match3: {
+                        const $match4 = $optionSubject;
+                        {
+                            const $extracted5 = (subject_1 => Option_1.isOption(subject_1) && Option_1.isSome(subject_1) && [subject_1.value])($match4);
+                            $do1 = void 0;
+                            if ($extracted5 !== false && $extracted5.length === 1) {
+                                let $optionValue = $extracted5[0];
+                                $do1 = yield* $optionSome($optionValue);
+                                break $match3;
+                            }
+                        }
+                        $do1 = yield* $optionNone();
+                        break $match3;
+                    }
+                }
+                const warning = $do1;
+                return warning === undefined ? { files: written.files } : { files: written.files, warning };
             });
-            return warning === undefined ? { files: written.files } : { files: written.files, warning };
-        })
+        }
     }), services)
 ]);

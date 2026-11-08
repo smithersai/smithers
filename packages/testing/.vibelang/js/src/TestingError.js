@@ -13,6 +13,8 @@
  * @since 0.0.0
  */
 import * as Effect from "effect/Effect";
+import { $schemaErrorMatcher } from "vibelang-runtime/internal";
+import * as Schema_1 from "effect/Schema";
 import { CancelRequestFailed, FlowCycleDetected } from "@smthrs/flow/FlowRuntime";
 import { ScoreGateCode } from "@smthrs/scorers/ScoreGate";
 import * as Schema from "effect/Schema";
@@ -131,6 +133,7 @@ export class ConformanceViolation extends Schema.TaggedError()("ConformanceViola
     actual: Schema.optional(Schema.Unknown)
 }) {
 }
+const UnscriptedModelErrorCodeField = constantCode("unscripted_model");
 /**
  * A recorded model received a request with no matching fixture.
  *
@@ -144,13 +147,17 @@ export class ConformanceViolation extends Schema.TaggedError()("ConformanceViola
  * @since 0.0.0
  * @category errors
  */
-export class UnscriptedModelError extends Schema.TaggedError()("UnscriptedModelError", {
-    code: constantCode("unscripted_model"),
-    modelId: Schema.String,
-    messageCount: Schema.Number,
-    toolNames: Schema.Array(Schema.String)
+export class UnscriptedModelError extends Schema_1.TaggedError()("UnscriptedModelError", {
+    code: UnscriptedModelErrorCodeField,
+    modelId: Schema_1.String,
+    messageCount: Schema_1.Number,
+    toolNames: Schema_1.Array(Schema_1.String),
 }) {
+    static {
+        $schemaErrorMatcher(this, "UnscriptedModelError");
+    }
 }
+const FixtureEncodingErrorCodeField = constantCode("fixture_not_encodable");
 /**
  * A value a fixture must store is not representable as canonical JSON.
  *
@@ -161,45 +168,50 @@ export class UnscriptedModelError extends Schema.TaggedError()("UnscriptedModelE
  * @since 0.0.0
  * @category errors
  */
-export class FixtureEncodingError extends Schema.TaggedError()("FixtureEncodingError", {
-    code: constantCode("fixture_not_encodable"),
-    path: Schema.String,
-    reason: Schema.Literals([
-        "cycle",
-        "non-plain-object",
-        "non-finite-number",
-        "symbol-key",
-        "unsupported-type",
-        "too-deep"
-    ])
+export class FixtureEncodingError extends Schema_1.TaggedError()("FixtureEncodingError", {
+    code: FixtureEncodingErrorCodeField,
+    path: Schema_1.String,
+    reason: Schema_1.Literals(["cycle", "non-plain-object", "non-finite-number", "symbol-key", "unsupported-type", "too-deep"]),
 }) {
+    static {
+        $schemaErrorMatcher(this, "FixtureEncodingError");
+    }
 }
+const ReplayHarnessMismatchErrorCodeField = constantCode("replay_harness_mismatch");
 /**
  * A replay harness produced output different from its recorded expectation.
  *
  * @since 0.0.0
  * @category errors
  */
-export class ReplayHarnessMismatchError extends Schema.TaggedError()("ReplayHarnessMismatchError", {
-    code: constantCode("replay_harness_mismatch"),
-    expected: Schema.String,
-    actual: Schema.String
+export class ReplayHarnessMismatchError extends Schema_1.TaggedError()("ReplayHarnessMismatchError", {
+    code: ReplayHarnessMismatchErrorCodeField,
+    expected: Schema_1.String,
+    actual: Schema_1.String,
 }) {
+    static {
+        $schemaErrorMatcher(this, "ReplayHarnessMismatchError");
+    }
 }
+const FixtureDivergenceErrorCodeField = constantCode("fixture_divergence");
 /**
  * The first divergent field in a fixture sequence.
  *
  * @since 0.0.0
  * @category errors
  */
-export class FixtureDivergenceError extends Schema.TaggedError()("FixtureDivergenceError", {
-    code: constantCode("fixture_divergence"),
-    index: Schema.Number,
-    field: Schema.String,
+export class FixtureDivergenceError extends Schema_1.TaggedError()("FixtureDivergenceError", {
+    code: FixtureDivergenceErrorCodeField,
+    index: Schema_1.Number,
+    field: Schema_1.String,
     expected: Schema.Unknown,
-    actual: Schema.Unknown
+    actual: Schema.Unknown,
 }) {
+    static {
+        $schemaErrorMatcher(this, "FixtureDivergenceError");
+    }
 }
+const ExactlyOnceUnsupportedErrorCodeField = constantCode("exactly_once_unsupported");
 /**
  * Exactly-once assertions are unsupported because the assertion vocabulary must
  * not be able to lie: the engine does not provide exactly-once execution.
@@ -207,10 +219,23 @@ export class FixtureDivergenceError extends Schema.TaggedError()("FixtureDiverge
  * @since 0.0.0
  * @category errors
  */
-export class ExactlyOnceUnsupportedError extends Schema.TaggedError()("ExactlyOnceUnsupportedError", {
-    code: constantCode("exactly_once_unsupported"),
-    message: Schema.String
+export class ExactlyOnceUnsupportedError extends Schema_1.TaggedError()("ExactlyOnceUnsupportedError", {
+    code: ExactlyOnceUnsupportedErrorCodeField,
+    message: Schema_1.String,
+    /**
+     * An operation violated its declared capability contract.
+     *
+     * When the violation is a wrong typed capability code, the expectation and the
+     * observation are carried as the typed `expectedCode` / `actualCode` fields —
+     * never encoded into the operation string.
+     *
+     * @since 0.0.0
+     * @category errors
+     */
 }) {
+    static {
+        $schemaErrorMatcher(this, "ExactlyOnceUnsupportedError");
+    }
 }
 /**
  * An operation violated its declared capability contract.
@@ -230,6 +255,7 @@ export class CapabilityContractError extends Schema.TaggedError()("CapabilityCon
     actualCode: Schema.optional(Schema.String)
 }) {
 }
+const ConformanceSkippedCodeField = constantCode("conformance_skipped");
 /**
  * A conformance pin could not run because its subject does not implement the
  * capability named by the pin.
@@ -242,24 +268,32 @@ export class CapabilityContractError extends Schema.TaggedError()("CapabilityCon
  * @since 0.0.0
  * @category errors
  */
-export class ConformanceSkipped extends Schema.TaggedError()("ConformanceSkipped", {
-    code: constantCode("conformance_skipped"),
-    pin: Schema.String,
-    capability: Schema.String,
-    reason: Schema.String
+export class ConformanceSkipped extends Schema_1.TaggedError()("ConformanceSkipped", {
+    code: ConformanceSkippedCodeField,
+    pin: Schema_1.String,
+    capability: Schema_1.String,
+    reason: Schema_1.String,
 }) {
+    static {
+        $schemaErrorMatcher(this, "ConformanceSkipped");
+    }
 }
+const EngineUnavailableErrorCodeField = constantCode("engine_unavailable");
 /**
  * The requested engine subject is unavailable for a test or conformance pin.
  *
  * @since 0.0.0
  * @category errors
  */
-export class EngineUnavailableError extends Schema.TaggedError()("EngineUnavailableError", {
-    code: constantCode("engine_unavailable"),
-    message: Schema.String
+export class EngineUnavailableError extends Schema_1.TaggedError()("EngineUnavailableError", {
+    code: EngineUnavailableErrorCodeField,
+    message: Schema_1.String,
 }) {
+    static {
+        $schemaErrorMatcher(this, "EngineUnavailableError");
+    }
 }
+const ExecutionConflictErrorCodeField = constantCode("execution_conflict");
 /**
  * A `run` named an execution id that already exists, with a different flow or a
  * different payload.
@@ -272,13 +306,22 @@ export class EngineUnavailableError extends Schema.TaggedError()("EngineUnavaila
  * @since 0.0.0
  * @category errors
  */
-export class ExecutionConflictError extends Schema.TaggedError()("ExecutionConflictError", {
-    code: constantCode("execution_conflict"),
-    executionId: Schema.String,
-    field: Schema.Literals(["flow", "payload"]),
-    expected: Schema.String,
-    actual: Schema.String
+export class ExecutionConflictError extends Schema_1.TaggedError()("ExecutionConflictError", {
+    code: ExecutionConflictErrorCodeField,
+    executionId: Schema_1.String,
+    field: Schema_1.Literals(["flow", "payload"]),
+    expected: Schema_1.String,
+    actual: Schema_1.String,
+    /**
+     * Transaction commit-failure injection boundaries.
+     *
+     * @since 0.0.0
+     * @category codes
+     */
 }) {
+    static {
+        $schemaErrorMatcher(this, "ExecutionConflictError");
+    }
 }
 /**
  * Transaction commit-failure injection boundaries.
@@ -303,43 +346,56 @@ export const RewindBoundary = Schema.Literals([
     "append-audit",
     "resume"
 ]);
+const CapabilityOperationErrorCodeField = constantCode("capability_operation_failed");
 /**
  * A requested capability operation has no valid subject.
  *
  * @since 0.0.0
  * @category errors
  */
-export class CapabilityOperationError extends Schema.TaggedError()("CapabilityOperationError", {
-    code: constantCode("capability_operation_failed"),
-    capability: Schema.String,
-    operation: Schema.String,
-    message: Schema.String
+export class CapabilityOperationError extends Schema_1.TaggedError()("CapabilityOperationError", {
+    code: CapabilityOperationErrorCodeField,
+    capability: Schema_1.String,
+    operation: Schema_1.String,
+    message: Schema_1.String,
 }) {
+    static {
+        $schemaErrorMatcher(this, "CapabilityOperationError");
+    }
 }
+const TransactionCommitErrorCodeField = constantCode("transaction_commit_failed");
 /**
  * A failure raised at an injected transactional commit boundary.
  *
  * @since 0.0.0
  * @category errors
  */
-export class TransactionCommitError extends Schema.TaggedError()("TransactionCommitError", {
-    code: constantCode("transaction_commit_failed"),
-    boundary: TransactionBoundary
+export class TransactionCommitError extends Schema_1.TaggedError()("TransactionCommitError", {
+    code: TransactionCommitErrorCodeField,
+    boundary: TransactionBoundary,
 }) {
+    static {
+        $schemaErrorMatcher(this, "TransactionCommitError");
+    }
 }
+const RewindFailureErrorCodeField = constantCode("rewind_failed");
 /**
  * A failure raised at an injected frame-rewind boundary.
  *
  * @since 0.0.0
  * @category errors
  */
-export class RewindFailureError extends Schema.TaggedError()("RewindFailureError", {
-    code: constantCode("rewind_failed"),
-    executionId: Schema.String,
-    frame: Schema.Number,
-    boundary: RewindBoundary
+export class RewindFailureError extends Schema_1.TaggedError()("RewindFailureError", {
+    code: RewindFailureErrorCodeField,
+    executionId: Schema_1.String,
+    frame: Schema_1.Number,
+    boundary: RewindBoundary,
 }) {
+    static {
+        $schemaErrorMatcher(this, "RewindFailureError");
+    }
 }
+const FlowHashMismatchErrorCodeField = constantCode("flow_hash_mismatch");
 /**
  * Resume was rejected because the current flow or import graph differs
  * from the stamp recorded for the execution.
@@ -347,12 +403,30 @@ export class RewindFailureError extends Schema.TaggedError()("RewindFailureError
  * @since 0.0.0
  * @category errors
  */
-export class FlowHashMismatchError extends Schema.TaggedError()("FlowHashMismatchError", {
-    code: constantCode("flow_hash_mismatch"),
-    executionId: Schema.String,
-    expectedFlowHash: Schema.String,
-    actualFlowHash: Schema.String,
-    expectedImportHash: Schema.String,
-    actualImportHash: Schema.String
+export class FlowHashMismatchError extends Schema_1.TaggedError()("FlowHashMismatchError", {
+    code: FlowHashMismatchErrorCodeField,
+    executionId: Schema_1.String,
+    expectedFlowHash: Schema_1.String,
+    actualFlowHash: Schema_1.String,
+    expectedImportHash: Schema_1.String,
+    actualImportHash: Schema_1.String,
+    /**
+     * Every typed failure an engine subject (or one of its optional capabilities)
+     * may raise. The conformance seam never carries an `unknown` error channel: a
+     * subject that laundered a foreign cause into `unknown` could not be matched on
+     * by a pin.
+     *
+     * `FlowCycleDetected` is re-declared here because it is part of the engine's
+     * typed `execute` contract: a recoverable failure carrying the cycle `path`,
+     * which pins must be able to match on rather than a stringified dump.
+     * `CancelRequestFailed` is part of the engine's typed interrupt contract for
+     * the same reason.
+     *
+     * @since 0.0.0
+     * @category errors
+     */
 }) {
+    static {
+        $schemaErrorMatcher(this, "FlowHashMismatchError");
+    }
 }

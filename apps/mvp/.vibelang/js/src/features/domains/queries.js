@@ -4,7 +4,7 @@ import { LiveQuery } from "@smthrs/effect-tanstack-db";
 // tab's writes that haven't landed.
 /** The repository the Settings page shows. */
 export const pageQuery = (page) => LiveQuery.make((q) => q.from({ page: page.tanstack }).findOne());
-/** The page's domains, by hostname. */
+/** The page's domains, by hostname, read through the data gate (repo/gate.ts). */
 export const listQuery = (list) => LiveQuery.make((q) => q.from({ domain: list.tanstack }).orderBy(({ domain }) => domain.hostname));
 /** This tab's writes that haven't landed. */
 export const savesQuery = (saves) => LiveQuery.make((q) => q.from({ save: saves.tanstack }).select(({ save }) => save));

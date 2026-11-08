@@ -169,20 +169,20 @@ export const validateAge = (field, value) => value === undefined || (Number.isSa
 export const snapshotEntry = (input) => Effect.suspend(() => {
     try {
         if (typeof input !== "object" || input === null)
-            throw new TypeError("entry");
+            $raise(new TypeError("entry"));
         const names = ["keyDigest", "result", "meta", "createdAtMs", "recordedRunId", "recordedEventSeq"];
         const values = Object.create(null);
         for (const name of names) {
             const descriptor = Object.getOwnPropertyDescriptor(input, name);
             if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
-                throw new TypeError("entry");
+                $raise(new TypeError("entry"));
             }
             values[name] = descriptor.value;
         }
         for (const key of Reflect.ownKeys(input)) {
             if (typeof key !== "string" || !names.includes(key)) {
                 if (Object.getOwnPropertyDescriptor(input, key)?.enumerable)
-                    throw new TypeError("entry");
+                    $raise(new TypeError("entry"));
             }
         }
         const result = BoundedJson.admit(values.result, jsonLimits);
@@ -204,3 +204,4 @@ export const snapshotEntry = (input) => Effect.suspend(() => {
         return Effect.fail(error("invalid_cache", "cache entry cannot be inspected as inert data"));
     }
 });
+import { raise as $raise } from "./CacheAdmission.vibe.-24-throw-24-ts.js";

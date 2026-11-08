@@ -9,6 +9,7 @@
  * @since 0.1.0
  */
 import * as Effect_1 from "effect/Effect";
+import * as runtime from "vibelang-runtime/internal";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -32,7 +33,7 @@ export class JournalError extends Schema.TaggedError()("/chain/JournalError", {
  * @since 0.1.0
  * @slop
  */
-export class Journal extends Context.Service()("/chain/Journal") {
+export class Journal extends runtime.$service("/chain/Journal") {
 }
 /**
  * Builds a journal from an implementation.
@@ -92,7 +93,7 @@ export const layerMemory = (initial = []) => {
                 events.push(event);
                 return Effect.void;
             })),
-            read: Effect_1.sync({ read: () => events.slice() }.read)
+            read: Effect_1.sync({ read: () => { return events.slice(); } }.read)
         });
     });
 };

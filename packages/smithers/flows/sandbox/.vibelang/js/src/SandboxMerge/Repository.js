@@ -43,14 +43,16 @@ export const output = (spawner, command, args, options = {}) => Effect.catchTag(
  * @category constructors
  * @since 1.0.0
  */
-export const make = Effect_1.fnUntraced(function* make(path) {
-    const spawner = yield* ChildProcessSpawner;
-    return {
-        path,
-        jj: (args) => 
-        // From the repository's root, so the paths jj prints are repository-relative.
-        output(spawner, "jj", ["-R", path, "--ignore-working-copy", "--no-pager", "--color=never", ...args], {
-            cwd: path
-        })
-    };
-});
+export const make = (path) => {
+    return Effect_1.gen(function* make() {
+        const spawner = yield* ChildProcessSpawner;
+        return {
+            path,
+            jj: (args) => 
+            // From the repository's root, so the paths jj prints are repository-relative.
+            output(spawner, "jj", ["-R", path, "--ignore-working-copy", "--no-pager", "--color=never", ...args], {
+                cwd: path
+            })
+        };
+    });
+};

@@ -14,7 +14,7 @@
 
 import * as Overlap from "./Overlap.ts"
 import type { Overlap as Policy } from "./Trigger.ts"
-import { TriggerError } from "./TriggerError.vibe"
+import { TriggerError } from "./TriggerError.ts"
 import {
   type Claim,
   type ClaimFire,

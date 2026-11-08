@@ -87,7 +87,7 @@ export * as Interpreter from "./Interpreter.ts"
  *
  * @since 0.1.0
  */
-export * as Poll from "./Poll.vibe"
+export * as Poll from "./Poll.ts"
 
 /**
  * The stall breaker: rounds whose tree, failing checks, or output held still.

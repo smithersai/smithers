@@ -3,13 +3,14 @@ import * as GitHubCreation from "../branch/GitHubCreation.js";
 import { GitHub } from "@smthrs/integrations";
 import { Effect, Layer, Option } from "effect";
 import { HttpClient } from "effect/http";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
-import * as Apply from "#vibelang/emitted/worker/github/Apply";
-import * as GitHubConfig from "#vibelang/emitted/worker/github/Config";
+import { codeOf } from "../ErrorCode.js";
+import * as Apply from "./Apply.js";
+import * as GitHubConfig from "./Config.js";
 import * as RepoRoles from "./RepoRoles.js";
 import { appSlug } from "../GitHubAuth.js";
 import * as Merge from "./Merge.js";
 import * as Reconcile from "./Reconcile.js";
+import * as Relations from "./Relations.js";
 import * as Tokens from "./Tokens.js";
 import * as Triage from "./Triage.js";
 import * as MachineWrite from "./MachineWrite.js";
@@ -20,7 +21,7 @@ import * as Write from "./Write.js";
 // deployment's config (worker/Executions.ts); the tests build it over a scripted GitHub and a scripted model. Nothing
 // here names a host.
 /** The GitHub flows, in the order a host registers them. */
-export const flows = [Apply.Apply, Reconcile.Reconcile, Write.Write, MachineWrite.MachineDispatch, Triage.TriageRun, Merge.Merge, GitHubCreation.Create];
+export const flows = [Apply.Apply, Reconcile.Reconcile, Relations.Relations, Write.Write, MachineWrite.MachineDispatch, Triage.TriageRun, Merge.Merge, GitHubCreation.Create];
 /**
  * The App from the deployment's config (`GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_API_URL`), over the
  * `HttpClient` in context, with the app's tables on `database`. `None` when the App isn't configured, or its key doesn't
@@ -40,7 +41,8 @@ export const ready = (database) => Effect.gen(function* () {
     const allowed = yield* RepoRoles.allowed;
     const roles = yield* RepoRoles.make(database, { repository: configured.value.repository, app: configured, allowed, http });
     return Option.some({ app: app.success, database, http, apiBaseUrl, roles, mayAct: RepoRoles.actsOn(repository, allowed),
-        appLogin: `${yield* appSlug}[bot]` });
+        appLogin: `${yield* appSlug}[bot]`,
+        allowedRepositories: [repository.id, ...Option.match(allowed, { onNone: () => [], onSome: (ids) => [...ids] })] });
 });
 /**
  * The flows' services from `ready`: sign-in's keys open a person's token (none without sign-in), `refresh` starts the
@@ -54,8 +56,9 @@ export const services = (ready, sessions, judge) => ({
     apiBaseUrl: ready.apiBaseUrl,
     mayAct: ready.mayAct,
     appLogin: ready.appLogin,
+    allowedRepositories: ready.allowedRepositories ?? [ready.roles.repository.id],
     tokens: Tokens.make({ app: ready.app, keys: sessions.keys, refresh: sessions.refresh }),
     judge,
 });
-/** Registers `github/Apply`, `github/Reconcile`, `github/Write`, `github/MachineDispatch`, `triage/Run` and `pr/Merge` over `services`. */
-export const registration = (services) => Layer.mergeAll(Apply.registration(services), Reconcile.registration(services), Write.registration(services), MachineWrite.registration(services), Triage.registration(services), Merge.registration(services), GitHubCreation.registration(services.database, services.http));
+/** Registers `github/Apply`, `github/Reconcile`, `github/Relations`, `github/Write`, `github/MachineDispatch`, `triage/Run` and `pr/Merge` over `services`. */
+export const registration = (services) => Layer.mergeAll(Apply.registration(services), Reconcile.registration(services), Relations.registration(services), Write.registration(services), MachineWrite.registration(services), Triage.registration(services), Merge.registration(services), GitHubCreation.registration(services.database, services.http));

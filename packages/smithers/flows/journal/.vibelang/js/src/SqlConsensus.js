@@ -51,15 +51,16 @@ export const make = Effect.gen(function* () {
         message: "consensus lease operation failed",
         cause
     });
+    const preserveConsensusError = (cause) => cause instanceof ConsensusError ? cause : strategyError(cause);
     // The original cause is preserved through the wrapper so an enclosing
     // `DurableWriter.write`'s retry classification still sees a transient
     // conflict raised by a savepoint-nested lease statement. Every operation
     // reads and changes one key's lease row only, so it writes that key's
     // partition: a guard and the reclaim it must exclude serialize, and two
     // runs' leases do not.
-    const write = (key, body) => writer.write(body, { partition: key }).pipe(Effect.mapError((cause) => cause instanceof ConsensusError ? cause : strategyError(cause)));
+    const write = (key, body) => writer.write(body, { partition: key }).pipe(Effect.mapError(preserveConsensusError));
     /** `write` for a body that only reads: it serializes the same, with no savepoint around it. */
-    const writeReading = (key, body) => writer.write(body, { partition: key, readOnly: true }).pipe(Effect.mapError((cause) => cause instanceof ConsensusError ? cause : strategyError(cause)));
+    const writeReading = (key, body) => writer.write(body, { partition: key, readOnly: true }).pipe(Effect.mapError(preserveConsensusError));
     const leaseOf = (runId) => sql `
       SELECT owner_host_id, owner_pid, owner_nonce, claim_host_id, claim_pid, claim_nonce
       FROM flows_consensus_leases

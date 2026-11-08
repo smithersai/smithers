@@ -24,9 +24,9 @@ import * as GatewayRpcs from "../src/GatewayRpcs.ts"
 import * as GatewaySchema from "../src/GatewaySchema.vibe"
 import * as GatewayServer from "../src/GatewayServer.ts"
 import * as NodeGateway from "../src/node/NodeGateway.vibe"
-import * as Projections from "../src/Projections.vibe"
+import * as Projections from "../src/Projections.ts"
 import * as RunHistory from "../src/RunHistory.ts"
-import * as RuntimeBridge from "../src/RuntimeBridge.vibe"
+import * as RuntimeBridge from "../src/RuntimeBridge.ts"
 
 const packageRoot = Path.join(Path.dirname(fileURLToPath(import.meta.url)), "..")
 

@@ -524,7 +524,7 @@ export const make = (options) => Effect.gen(function* () {
                     // The batch still owns loss reporting and pending
                     // settlement; neither may escape an outer rollback.
                     for (const { queued, commit } of outcome.commits) {
-                        yield* settleCommit(queued, commit, restore);
+                        yield* Effect.asVoid(settleCommit(queued, commit, restore));
                     }
                 }
                 return yield* Effect.asSome(effect);
@@ -1530,7 +1530,7 @@ export const make = (options) => Effect.gen(function* () {
             entry.sourceSeq = sourceSeq;
             const queued = queuedOf(entry.prepared, entry.emittedAtMs, seq, sourceSeq);
             const commit = yield* insertOne(queued, guarded);
-            yield* settleCommit(queued, commit, (effect) => effect);
+            yield* Effect.asVoid(settleCommit(queued, commit, (effect) => effect));
             yield* Metric.update(JournalMetrics.durable[commit.inserted ? "Accepted" : "Duplicate"], 1);
         }
         yield* afterCommit(Effect.sync(() => discard(runId, (entry) => batch.includes(entry))), sql);

@@ -40,7 +40,7 @@ export const dropWord = async (page, repository, word) => {
 const RETIRES_WITHIN_MS = 60_000;
 /**
  * Puts a scratch repository back as a run needs it, through the product's own routes, and says what it found: no e2e
- * runner, no coding agent of one, no open TODO, one stacked lane. `pnpm e2e:prod` holds the test account's lock, so
+ * runner, no coding agent of one, no open TODO, one stacked lane. `pnpm e2e:prod` holds this repository's resource lease, so
  * nothing here is another run's: a run that was killed never reached its own cleanup, and its leavings would otherwise
  * hold the lane from every later test as a 60 s `queued` timeout.
  */

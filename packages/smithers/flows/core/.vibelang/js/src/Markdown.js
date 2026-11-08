@@ -16,7 +16,6 @@
  *
  * @since 0.0.0
  */
-import * as Schema_1 from "effect/Schema";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Annotations from "./Annotations.js";
@@ -32,9 +31,7 @@ import * as Placement from "./Placement.js";
  * @since 1.0.0
  */
 export { split as splitFrontmatter } from "./internal/skillFrontmatter.js";
-const input = Schema_1.Struct({
-    args: Schema_1.String,
-});
+const input = Schema.Struct({ args: Schema.String });
 const output = Schema.String;
 /**
  * A positive safe-integer budget ceiling. Tokens are indivisible, and
@@ -148,11 +145,11 @@ export const lowerMarkdown = (frontmatter, body) => {
     const budget = decodeLimit(frontmatter.name, "budget", Budget, frontmatter.budget);
     if (budget !== undefined && budget.tokens === undefined && budget.milliseconds === undefined &&
         budget.usd === undefined) {
-        throw new RangeError(`lowerMarkdown: "${frontmatter.name}" budget must declare at least one ceiling`);
+        $raise(new RangeError(`lowerMarkdown: "${frontmatter.name}" budget must declare at least one ceiling`));
     }
     const sandbox = decodeLimit(frontmatter.name, "sandbox", SandboxSelection, frontmatter.sandbox);
     if (sandbox !== undefined && frontmatter.placement !== undefined && frontmatter.placement !== "sandbox") {
-        throw new RangeError(`lowerMarkdown: "${frontmatter.name}" selects a sandbox but is placed ${frontmatter.placement}`);
+        $raise(new RangeError(`lowerMarkdown: "${frontmatter.name}" selects a sandbox but is placed ${frontmatter.placement}`));
     }
     const flow = build({
         error: Schema.Never,
@@ -203,7 +200,7 @@ const decodeLimit = (name, field, schema, value) => {
         return undefined;
     const decoded = Schema.decodeUnknownResult(schema)(value);
     if (Result.isFailure(decoded)) {
-        throw new RangeError(`lowerMarkdown: "${name}" ${field} is invalid: ${decoded.failure.message}`);
+        $raise(new RangeError(`lowerMarkdown: "${name}" ${field} is invalid: ${decoded.failure.message}`));
     }
     return decoded.success;
 };
@@ -341,3 +338,4 @@ export const lowerSkill = (text) => Result.map(parseSkill(text), (skill) => lowe
     description: skill.description,
     flows: skill.allowedTools
 }, skill.body));
+import { raise as $raise } from "./Markdown.vibe.-24-throw-24-ts.js";

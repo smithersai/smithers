@@ -41,6 +41,7 @@ const walk = (error) => {
  *
  * @private
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const schemaIssuePath = (error, fallback) => walk(error).segments.join(".") || fallback;
 /**
@@ -51,6 +52,7 @@ export const schemaIssuePath = (error, fallback) => walk(error).segments.join(".
  *
  * @private
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const schemaIssueMessage = (error) => {
     const leaf = walk(error).leaf;

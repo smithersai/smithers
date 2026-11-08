@@ -18,6 +18,12 @@ export const pinnedQuery = (pins, messages, pending, conversationId) => LiveQuer
         .where(({ held }) => Query.and(conversationId === undefined ? Query.eq(held.home, true) : Query.eq(held.conversationId, conversationId), Query.eq(held.awaitAdmission, true), Query.eq(held.failed, false), Query.not(Query.isNull(held.messageId))))
         .select(({ held }) => ({ id: Query.coalesce(held.messageId, ""), role: "user", text: Query.coalesce(held.text, ""), status: "unsent", local: 1 })));
 });
+/** Personal home intents and branch intents whose conversation access is known. */
+export const pendingQuery = (pending, shown) => LiveQuery.make(q => q
+    .from({ row: pending.tanstack })
+    .leftJoin({ permitted: shown.tanstack }, ({ row, permitted }) => Query.eq(Query.coalesce(row.conversationId, ""), permitted.conversationId))
+    .where(({ row, permitted }) => Query.or(Query.eq(row.home, true), Query.not(Query.isUndefined(permitted?.conversationId))))
+    .select(({ row }) => row));
 /** One personal shape per tab, stored on the device with an explicit schema version. */
 export const makePins = (origin, homeMessages) => Effect.gen(function* () {
     const pins = yield* ElectricCollection.make({
@@ -55,5 +61,5 @@ export const makePins = (origin, homeMessages) => Effect.gen(function* () {
     yield* Stream.merge(Stream.map(pins.changes({ initial: true }), () => undefined), Stream.merge(Stream.map(pending.changes({ initial: true }), () => undefined), Stream.map(homeMessages.changes({ initial: true }), () => undefined))).pipe(Stream.runForEach(() => project), Effect.forkScoped);
     const collapsed = yield* Collection.local({ id: "pin-collapsed", schema: Collapsed, getKey: r => r.id });
     const collapseState = yield* LiveQuery.make(q => q.from({ row: collapsed.tanstack }));
-    return { pins, effective, pending, pendingState: yield* LiveQuery.make(q => q.from({ row: pending.tanstack })), collapsed, collapseState };
+    return { pins, effective, pending, collapsed, collapseState };
 });

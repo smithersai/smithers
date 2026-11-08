@@ -312,19 +312,19 @@ export const ModelEvent = Object.assign(Schema.Union([
     Retry,
     Settle
 ]).pipe(Schema.toTaggedUnion("type")), {
-    TextStart: TextStart.make,
-    TextDelta: TextDelta.make,
-    TextEnd: TextEnd.make,
-    ThinkingStart: ThinkingStart.make,
-    ThinkingDelta: ThinkingDelta.make,
-    ThinkingEnd: ThinkingEnd.make,
-    ToolCallStart: ToolCallStart.make,
-    ToolCallDelta: ToolCallDelta.make,
-    ToolCallEnd: ToolCallEnd.make,
-    ToolResult: ToolResult.make,
+    TextStart: ((input, options) => TextStart.make(input, options)),
+    TextDelta: ((input, options) => TextDelta.make(input, options)),
+    TextEnd: ((input, options) => TextEnd.make(input, options)),
+    ThinkingStart: ((input, options) => ThinkingStart.make(input, options)),
+    ThinkingDelta: ((input, options) => ThinkingDelta.make(input, options)),
+    ThinkingEnd: ((input, options) => ThinkingEnd.make(input, options)),
+    ToolCallStart: ((input, options) => ToolCallStart.make(input, options)),
+    ToolCallDelta: ((input, options) => ToolCallDelta.make(input, options)),
+    ToolCallEnd: ((input, options) => ToolCallEnd.make(input, options)),
+    ToolResult: ((input, options) => ToolResult.make(input, options)),
     Usage: (input) => ({ type: "usage", ...input }),
-    Retry: Retry.make,
-    Settle: Settle.make,
+    Retry: ((input, options) => Retry.make(input, options)),
+    Settle: ((input, options) => Settle.make(input, options)),
     settledMessage
 });
 /**

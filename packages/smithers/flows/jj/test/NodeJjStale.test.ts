@@ -5,7 +5,7 @@ import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, unlinkSyn
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Jj } from "../src/Jj.vibe"
-import * as NodeJj from "../src/node/NodeJj.vibe"
+import * as NodeJj from "../src/node/NodeJj.ts"
 import { budgeted } from "./budgeted.ts"
 
 it.effect("refuses a real sibling workspace without touching uncommitted files", () =>

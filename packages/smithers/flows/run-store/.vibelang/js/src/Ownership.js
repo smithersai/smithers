@@ -293,7 +293,7 @@ export const heartbeatLoop = (runId, owner, options = {}) => Effect.gen(function
         })), Effect.catchCause((cause) => Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.succeed(false)));
         if (renewed)
             return;
-        yield* Effect.logWarning("run lease lapsed; interrupting owned work").pipe(Effect.annotateLogs({ runId, unconfirmedMs }), Effect.andThen(options.onLapse?.(unconfirmedMs) ?? Effect.void), Effect.andThen(Effect.interrupt));
+        return yield* Effect.logWarning("run lease lapsed; interrupting owned work").pipe(Effect.annotateLogs({ runId, unconfirmedMs }), Effect.andThen(options.onLapse?.(unconfirmedMs) ?? Effect.void), Effect.andThen(Effect.interrupt));
     }));
     const deadline = Effect.gen(function* () {
         while (true) {

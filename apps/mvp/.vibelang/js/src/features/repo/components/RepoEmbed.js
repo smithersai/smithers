@@ -3,6 +3,7 @@ import { jsx as _jsx } from "react/jsx-runtime";
 import { RepoView } from "@smthrs/repo-view";
 import { Card, EmptyState } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
+import { RepoGate } from "./RepoGate";
 import { embedHref, embedShown, fullScreenHref } from "../embedView";
 import { useRepo } from "./RepoContext";
 // A repository's view in a conversation (docs/features/views.md#a-repository-and-its-issues): the repository's own
@@ -10,7 +11,12 @@ import { useRepo } from "./RepoContext";
 // root as GitHub has it. Every link is the app's URL of a location; a plain click opens it full screen (`onOpen`), and
 // `fullScreen(href)` is the view's action, opening what it shows. What it shows is loaded by the views' follower
 // (src/features/views/embeds.ts); this only renders what the device has.
-export function RepoEmbed({ viewId, target, fullScreen, onOpen, }) {
+/** The repository view, behind the repository's visibility (`RepoGate`): a conversation shows none of a repository it may not. */
+export function RepoEmbed(props) {
+    const [owner = "", name = ""] = props.target.repo.split("/");
+    return _jsx(RepoGate, { owner: owner, name: name, children: _jsx(RepoEmbedShown, { ...props }) });
+}
+function RepoEmbedShown({ viewId, target, fullScreen, onOpen, }) {
     const { queries } = useRepo();
     const { data: rows } = useLiveQuery(queries.embeds);
     const row = rows.find((each) => each.embed.key === viewId);

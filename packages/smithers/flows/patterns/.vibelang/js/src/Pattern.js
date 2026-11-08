@@ -54,10 +54,10 @@ export const slot = (options) => {
         ? undefined
         : Decorate.schemasCompatible(options.input, options.output, options.default);
     if (issue !== undefined) {
-        throw new PatternError({
+        $raise(new PatternError({
             code: "invalid_decorator",
             message: schemaRefusalMessage("The slot default", issue)
-        });
+        }));
     }
     // A frozen copy: `bind` reads the slot again later, and a caller's edit to
     // the options object in between must not turn a defaulted slot required or
@@ -76,17 +76,17 @@ export const slot = (options) => {
 export const bind = (declaration, supplied) => {
     const flow = supplied ?? declaration.default;
     if (flow === undefined) {
-        throw new PatternError({
+        $raise(new PatternError({
             code: "missing_slot",
             message: "A required flow slot was not bound and has no default"
-        });
+        }));
     }
     const issue = Decorate.schemasCompatible(declaration.input, declaration.output, flow);
     if (issue !== undefined) {
-        throw new PatternError({
+        $raise(new PatternError({
             code: "invalid_decorator",
             message: schemaRefusalMessage("The bound flow", issue)
-        });
+        }));
     }
     return flow;
 };
@@ -124,17 +124,17 @@ export const clipped = (template, supplied) => {
 export const decorate = dual(2, (self, decorator) => {
     const supplied = decorator(self);
     if (!Flow.isFlow(supplied)) {
-        throw new PatternError({
+        $raise(new PatternError({
             code: "invalid_decorator",
             message: "A flow decorator must return a Flow"
-        });
+        }));
     }
     const issue = Decorate.schemasCompatible(self.payloadSchema, self.successSchema, supplied, self.errorSchema);
     if (issue !== undefined) {
-        throw new PatternError({
+        $raise(new PatternError({
             code: "invalid_decorator",
             message: schemaRefusalMessage("The flow decorator result", issue)
-        });
+        }));
     }
     const innerName = Decorate.displayName(self);
     const suppliedName = supplied._tag;
@@ -151,3 +151,4 @@ export const decorate = dual(2, (self, decorator) => {
  * @since 0.1.0
  */
 export const decorateAll = (flow, decorators) => decorators.reduce((inner, decorator) => decorate(inner, decorator), flow);
+import { raise as $raise } from "./Pattern.vibe.-24-throw-24-ts.js";

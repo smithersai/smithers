@@ -23,7 +23,6 @@
  * @since 0.1.0
  */
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as Flow from "@smthrs/flow/Flow";
 import * as Node from "@smthrs/plan/Node";
 import * as Effect from "effect/Effect";
@@ -288,7 +287,7 @@ export const make = (caller) => {
     };
     const refusal = checkBounds(options, Object.keys(options.execute));
     if (refusal !== undefined)
-        throw refusal;
+        $raise(refusal);
     const derisk = ReviewLoop.make({
         produce: options.plan,
         review: options.derisk,
@@ -398,7 +397,7 @@ export const run = (prompt, caller) => {
         budget: copiedBudget(caller.budget),
         concurrency: caller.concurrency
     };
-    return Effect_1.gen(runtime.$joinedFrame(function* () {
+    return Effect_1.gen(function* () {
         const refusal = checkBounds(options, Object.keys(options.execute));
         if (refusal !== undefined)
             return yield* Effect_1.fail(refusal);
@@ -473,5 +472,6 @@ export const run = (prompt, caller) => {
             review,
             deriskExhausted: exhausted
         });
-    }));
+    });
 };
+import { raise as $raise } from "./DelegationChain.vibe.-24-throw-24-ts.js";

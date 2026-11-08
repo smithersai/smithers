@@ -3,10 +3,10 @@ import { observeInitialApplied } from "../../shapeApplied";
 import { admissionReceipt } from "../../writeAdmission";
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric";
 import { Collection, LiveQuery, Persistence } from "@smthrs/effect-tanstack-db";
-import { Cache, Clock, Context, Effect, Exit, Layer, Metric, Option, PubSub, Scope, Stream } from "effect";
+import { Cache, Clock, Context, Effect, Exit, Layer, Metric, Option, PubSub, Scope, Stream, SubscriptionRef } from "effect";
 import { AuthStore } from "../auth/store";
 import { RepoStore } from "../repo/store";
-import { repositoryShapeSource } from "../issues/source";
+import { evictOnRefusal, repositoryShapeSource, wipeAuthority } from "../issues/source";
 import { stackAccess } from "./source";
 import { ChatStore } from "../chat/store";
 import { repoId } from "../repo/contract";
@@ -15,7 +15,7 @@ import { TODO_REQUESTS_SHAPE_ROUTE, TODOS_SHAPE_ROUTE } from "./contract";
 import { Access, Draft, requestKey, StackView, Todo, TodoRequest, VIEW, } from "./schema";
 import { deliveredOf } from "./view";
 import { keep, StackWrites, TODO_OP } from "./writes";
-import { admissions } from "#vibelang/emitted/src/features/todos/metrics";
+import { admissions } from "./metrics.js";
 /** A row's key: its id. */
 const byId = (row) => row.id;
 /** A live query of every row of `collection`. */
@@ -58,7 +58,9 @@ const make = Effect.fnUntraced(function* (config) {
         initialData: [{ id: VIEW, owner: "", name: "", repoId: "", number: null, committing: [] }],
     });
     const access = yield* Collection.local({ id: "todo-access", schema: Access, getKey: byId });
-    const requestedQuery = yield* rowsOf(requested);
+    // The store's own follower reads every requested change; what shows reads `requestedQuery`, through the data gate.
+    const requestedRows = yield* rowsOf(requested);
+    const requestedQuery = yield* repos.gate(requested);
     // A stack nobody opened: no rows, never a request.
     const nothing = yield* Collection.local({ id: "todo-none", schema: Todo, getKey: byId });
     const noRequests = yield* Collection.local({
@@ -66,17 +68,37 @@ const make = Effect.fnUntraced(function* (config) {
         schema: TodoRequest,
         getKey: requestKey,
     });
-    const empty = { todos: yield* rowsOf(nothing), requests: yield* rowsOf(noRequests) };
+    const empty = { todos: yield* repos.gate(nothing), requests: yield* repos.gate(noRequests), stored: nothing.toArray };
     // Each shape is ChatApi's proxy of one table for one repository, kept on the device.
     const shape = (route, id) => ({
         url: `${config.origin}${route}?repo=${encodeURIComponent(id.slice("github/".length))}`,
         columnMapper: ElectricCollection.snakeCamelMapper(),
     });
+    // Stacks a TODO shape refused (a 403), by repository id, with how many role answers the tab had then: the next answer
+    // decides again.
+    const stackRefused = yield* SubscriptionRef.make(new Map());
     // The stacks opened so far, by repository id, for frontends to read at once; each opens once (`opening`).
     const stacks = new Map();
+    const shapesOf = new Map();
     const open = (id) => Effect.gen(function* () {
-        const authority = Stream.zipLatest(auth.sessionState.rows, repos.rolesState.rows).pipe(Stream.map(([sessions, roles]) => stackAccess(sessions[0], roles, id)), Stream.changes);
-        const guarded = repositoryShapeSource(source, authority);
+        yield* repos.refusalsKnown;
+        // A stack needs Member: its 403 can be a tier refusal of someone who still reads the repository (a Member made a
+        // Guest), so it never marks the repository. It refuses this stack until a role read answers again, which the next route asks for (`markStale`).
+        const authority = Stream.zipLatest(Stream.zipLatest(auth.sessionState.rows, repos.rolesState.rows), Stream.zipLatest(SubscriptionRef.changes(stackRefused), repos.answerChanges)).pipe(Stream.map(([[sessions, roles], [refusedUnder]]) => refusedUnder.get(id) === repos.answersOf(id) ? "forbidden" : stackAccess(sessions[0], roles, id)), Stream.changes);
+        const tierSource = {
+            cacheNamespace: source.cacheNamespace,
+            request: (url, init) => Effect.tap(source.request(url, init), (response) => {
+                if (response.status === 401)
+                    return auth.askCheck;
+                if (response.status !== 403)
+                    return Effect.void;
+                return Effect.gen(function* () {
+                    yield* SubscriptionRef.update(stackRefused, (held) => new Map(held).set(id, repos.answersOf(id)));
+                    yield* repos.markStale(id);
+                }).pipe(Effect.uninterruptible);
+            }),
+        };
+        const guarded = repositoryShapeSource(tierSource, authority);
         const todos = yield* ElectricCollection.make({
             id: `todos:${id}`,
             schema: Todo,
@@ -96,13 +118,24 @@ const make = Effect.fnUntraced(function* (config) {
             syncMode: "eager",
             persist: { schemaVersion: 1 },
         }).pipe(Effect.provideService(ShapeSource.ShapeSource, guarded));
-        const stack = { todos: yield* rowsOf(todos), requests: yield* rowsOf(requests) };
-        yield* stack.todos.rows.pipe(Stream.runForEach(() => PubSub.publish(changedTodos, undefined)), Effect.forkIn(scope, { startImmediately: true }));
+        repos.track(id);
+        const stack = { todos: yield* repos.gate(todos), requests: yield* repos.gate(requests), stored: todos.toArray };
+        // The store's own followers read every synced row, shown or not: a result that arrived settles its change.
+        const allTodos = yield* rowsOf(todos);
+        // A refusal drops the repository's TODOs and prompts from the device. What this device queued stays in `sending`
+        // and `requested` (`StackWrites`): the route answers it, and it reads Not sent with Discard.
+        shapesOf.set(id, [todos, requests]);
+        yield* evictOnRefusal(wipeAuthority(auth, authority), [todos, requests]).pipe(Effect.forkIn(scope, { startImmediately: true }));
+        yield* allTodos.rows.pipe(Stream.runForEach(() => PubSub.publish(changedTodos, undefined)), Effect.forkIn(scope, { startImmediately: true }));
         // A requested change whose result arrived goes. Access follows the device session and repository role.
-        yield* Stream.zipLatest(stack.todos.rows, requestedQuery.rows).pipe(Stream.runForEach(([rows, mine]) => Effect.forEach(deliveredOf(id, rows, mine), (opId) => Effect.ignore(requested.delete(opId)), { discard: true })), Effect.forkIn(scope, { startImmediately: true }));
+        yield* Stream.zipLatest(allTodos.rows, requestedRows.rows).pipe(Stream.runForEach(([rows, mine]) => Effect.forEach(deliveredOf(id, rows, mine), (opId) => Effect.ignore(requested.delete(opId)), { discard: true })), Effect.forkIn(scope, { startImmediately: true }));
         // Unknown until the session and repository role answer.
         yield* Effect.ignore(access.insert({ id, status: "unknown" }));
-        yield* Stream.zipLatestWith(authority, Stream.concat(Stream.make(false), Stream.fromEffect(Effect.as(todos.currentApplied, true))), (status, applied) => status === "allowed" && !applied ? "unknown" : status).pipe(Stream.runForEach((status) => Effect.ignore(access.update(id, (row) => { row.status = status; }))), Effect.forkIn(scope, { startImmediately: true }));
+        yield* authority.pipe(
+        // Each time authority allows it, as an eviction restarts the shape from nothing.
+        Stream.switchMap((status) => status === "allowed"
+            ? Stream.concat(Stream.make("syncing"), Stream.fromEffect(Effect.as(todos.currentApplied, "allowed")))
+            : Stream.make(status)), Stream.runForEach((status) => Effect.ignore(access.update(id, (row) => { row.status = status; }))), Effect.forkIn(scope, { startImmediately: true }));
         stacks.set(id, stack);
         return stack;
     }).pipe(Scope.provide(scope), Effect.provideService(Persistence.Persistence, persistence), Effect.provideService(ShapeSource.ShapeSource, source));
@@ -112,6 +145,7 @@ const make = Effect.fnUntraced(function* (config) {
         timeToLive: (exit) => Exit.isFailure(exit) ? 0 : Infinity,
     });
     const stackOf = (id) => Cache.get(opening, id);
+    yield* repos.registerCache(["todos", "todo-requests"], (id) => Effect.andThen(stackOf(id), Effect.suspend(() => Effect.forEach(shapesOf.get(id) ?? [], (shape) => shape.evict, { discard: true }))));
     /** Keeps `draft` on the device once: a draft the device has already is kept. Answers whether the device has it. */
     const keepDraft = (draft) => Effect.gen(function* () {
         if (Option.isSome(yield* drafts.get(draft.id)))
@@ -161,8 +195,8 @@ const make = Effect.fnUntraced(function* (config) {
         drafts,
         view,
         access,
-        draftsQuery: yield* rowsOf(drafts),
-        sendingQuery: yield* rowsOf(sending),
+        draftsQuery: yield* repos.gate(drafts),
+        sendingQuery: yield* repos.gate(sending),
         requestedQuery,
         viewQuery: yield* viewOf(view),
         accessQuery: yield* rowsOf(access),

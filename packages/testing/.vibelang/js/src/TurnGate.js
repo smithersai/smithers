@@ -14,39 +14,46 @@
  *
  * @since 1.0.0
  */
+import * as Deferred from "effect/Deferred";
+import * as Ref from "effect/Ref";
+import * as Stream from "effect/Stream";
 import * as Effect_1 from "effect/Effect";
 import * as Model from "@smthrs/model/Model";
-import { Deferred, Effect, Ref, Stream } from "effect";
+import { Effect } from "effect";
 /**
  * Builds a gate with nothing held and nothing released.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const make = Effect_1.fnUntraced(function* make() {
-    const state = yield* Ref.make({ released: new Set(), waiting: [] });
-    const hold = Effect_1.fnUntraced(function* hold(key) {
-        const signal = yield* Deferred.make();
-        const waits = yield* Ref.modify(state, (current) => current.released.has(key)
-            ? [false, current]
-            : [true, { ...current, waiting: [...current.waiting, { key, signal }] }]);
-        if (!waits)
-            return;
-        yield* (Effect.onInterrupt(Deferred.await(signal), () => Ref.update(state, (current) => ({
-            ...current,
-            waiting: current.waiting.filter((entry) => entry.signal !== signal)
-        }))));
+export const make = () => {
+    return Effect_1.gen(function* make() {
+        const state = yield* Ref.make({ released: new Set(), waiting: [] });
+        const hold = (key) => {
+            return Effect_1.gen(function* hold() {
+                const signal = yield* Deferred.make();
+                const waits = yield* Ref.modify(state, (current) => current.released.has(key)
+                    ? [false, current]
+                    : [true, { ...current, waiting: [...current.waiting, { key, signal }] }]);
+                if (!waits)
+                    return;
+                yield* (Effect.onInterrupt(Deferred.await(signal), () => Ref.update(state, (current) => ({
+                    ...current,
+                    waiting: current.waiting.filter((entry) => entry.signal !== signal)
+                }))));
+            });
+        };
+        const release = (key) => Effect.asVoid(Effect.flatMap(Ref.modify(state, (current) => [
+            current.waiting.filter((entry) => entry.key === key),
+            {
+                released: new Set([...current.released, key]),
+                waiting: current.waiting.filter((entry) => entry.key !== key)
+            }
+        ]), (answered) => Effect.forEach(answered, (entry) => Deferred.succeed(entry.signal, undefined))));
+        const held = () => Effect.map(Ref.get(state), (current) => current.waiting.map((entry) => entry.key));
+        return { hold, release, held };
     });
-    const release = (key) => Effect.asVoid(Effect.flatMap(Ref.modify(state, (current) => [
-        current.waiting.filter((entry) => entry.key === key),
-        {
-            released: new Set([...current.released, key]),
-            waiting: current.waiting.filter((entry) => entry.key !== key)
-        }
-    ]), (answered) => Effect.forEach(answered, (entry) => Deferred.succeed(entry.signal, undefined))));
-    const held = () => Effect.map(Ref.get(state), (current) => current.waiting.map((entry) => entry.key));
-    return { hold, release, held };
-});
+};
 /**
  * Wraps a model so a turn whose request names a key waits on the gate before
  * the wrapped model is called.

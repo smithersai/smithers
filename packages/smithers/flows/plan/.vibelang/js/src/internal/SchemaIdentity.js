@@ -243,20 +243,6 @@ const ordinaryAnnotations = (annotations) => {
         out["contentSchema"] = annotations["contentSchema"];
     return Object.keys(out).length === 0 ? undefined : out;
 };
-/**
- * A representation's annotations as rc.115 carried them. From `effect@4.1.0`
- * on a string's media type is the representation's `content`, not its
- * `contentMediaType` annotation; rc.115 printed it as that annotation and did
- * not print the content schema.
- *
- * @private
- */
-const withContentMediaType = (representation) => {
-    const content = representation._tag === "String" ? representation.content : undefined;
-    return content === undefined || typeof content.mediaType !== "string"
-        ? representation.annotations
-        : { ...representation.annotations, contentMediaType: content.mediaType };
-};
 /** @private */
 const finitePattern = "[+-]?\\d*\\.?\\d+(?:[Ee][+-]?\\d+)?";
 /** @private */
@@ -279,10 +265,10 @@ const uuidPattern = (version) => version === null
 const field = (id, payload, name, is) => {
     const value = isObject(payload) ? payload[name] : undefined;
     if (!is(value)) {
-        throw new SchemaIdentityError({
+        $raise(new SchemaIdentityError({
             message: `Cannot derive a schema identity: check ${id} carries no usable "${name}" in its payload. ` +
                 "The installed effect release describes this check differently from the releases @smthrs/plan supports."
-        });
+        }));
     }
     return value;
 };
@@ -322,6 +308,7 @@ const empty = () => ({});
  * @private
  */
 const builtinChecks = new Map([
+    ["effect/schema/isAscii", pattern("^[\\x00-\\x7F]*$")],
     ["effect/schema/isTrimmed", pattern("^\\S[\\s\\S]*\\S$|^\\S$|^$")],
     ["effect/schema/isPattern", (id, payload) => ({ pattern: field(id, payload, "source", isString) })],
     ["effect/schema/isStringFinite", pattern(`^${finitePattern}$`)],
@@ -333,7 +320,6 @@ const builtinChecks = new Map([
         })],
     ["effect/schema/isGUID", pattern("^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$")],
     ["effect/schema/isULID", pattern("^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$")],
-    ["effect/schema/isAscii", pattern("^[\\x00-\\x7F]*$")],
     ["effect/schema/isBase64", pattern("^([0-9a-zA-Z+/]{4})*(([0-9a-zA-Z+/]{2}==)|([0-9a-zA-Z+/]{3}=))?$")],
     ["effect/schema/isBase64Url", pattern("^([0-9a-zA-Z-_]{4})*(([0-9a-zA-Z-_]{2}(==)?)|([0-9a-zA-Z-_]{3}(=)?))?$")],
     ["effect/schema/isStartingWith", literalPattern("startsWith", (escaped) => `^${escaped}`)],
@@ -574,7 +560,7 @@ const partPattern = (part) => {
         case "Union":
             return `(?:${part.types.map(partPattern).join("|")})`;
         default:
-            throw invalid("Invalid schema representation document", []);
+            $raise(invalid("Invalid schema representation document", []));
     }
 };
 /** @private */
@@ -586,7 +572,7 @@ const neverSchema = { not: {} };
  * @private
  */
 const unsupported = (representation, path) => {
-    throw invalid(`Unsupported schema representation ${representation._tag}`, path);
+    $raise(invalid(`Unsupported schema representation ${representation._tag}`, path));
 };
 /**
  * Prints a representation document as the JSON Schema document rc.115
@@ -612,7 +598,7 @@ export const fromRepresentation = (document, options) => {
             return typeof compiled === "string" ? compiled : key;
         const representation = Object.hasOwn(references, key) ? references[key] : undefined;
         if (representation === undefined)
-            throw invalid(`Invalid reference ${key}`, [...path, "$ref"]);
+            $raise(invalid(`Invalid reference ${key}`, [...path, "$ref"]));
         definitionStates.set(key, null);
         const schema = recur(representation, ["references", key]);
         const fallback = identifierFallback(representation);
@@ -637,7 +623,7 @@ export const fromRepresentation = (document, options) => {
         const pointer = decodeUriFragment(reference);
         if (pointer === undefined) {
             if (/^#(?:\/|%2f)/i.test(reference)) {
-                throw new SchemaIdentityError({ message: `Invalid JSON Pointer URI fragment ${JSON.stringify(reference)}` });
+                $raise(new SchemaIdentityError({ message: `Invalid JSON Pointer URI fragment ${JSON.stringify(reference)}` }));
             }
             return reference;
         }
@@ -692,7 +678,7 @@ export const fromRepresentation = (document, options) => {
         if (cached !== undefined)
             return cached;
         let output = on(representation, path);
-        const ordinary = ordinaryAnnotations(withContentMediaType(representation));
+        const ordinary = ordinaryAnnotations(representation.annotations);
         if (ordinary !== undefined)
             output = { ...output, ...ordinary };
         representation.checks.forEach((check, index) => {
@@ -732,7 +718,11 @@ export const fromRepresentation = (document, options) => {
             case "Never":
                 return { not: {} };
             case "String":
-                return { type: "string" };
+                // Effect 4.1 moves fromJsonString's media type out of annotations.
+                // This emitter owns the older durable identity, not runtime validation.
+                return representation.content?.mediaType === "application/json"
+                    ? { type: "string", contentMediaType: "application/json" }
+                    : { type: "string" };
             case "Number":
                 return { anyOf: [{ type: "number" }, { type: "string", enum: ["NaN", "Infinity", "-Infinity"] }] };
             case "Boolean":
@@ -746,7 +736,7 @@ export const fromRepresentation = (document, options) => {
             case "Enum": {
                 const types = representation.enums.map(([title, literal], index) => {
                     if (typeof literal === "number" && !Number.isFinite(literal)) {
-                        throw invalid(`Invalid numeric enum value ${String(literal)}`, [...path, "enums", index, 1]);
+                        $raise(invalid(`Invalid numeric enum value ${String(literal)}`, [...path, "enums", index, 1]));
                     }
                     return { type: typeof literal, enum: [literal], title };
                 });
@@ -757,7 +747,7 @@ export const fromRepresentation = (document, options) => {
             case "Arrays": {
                 const rest = representation.rest[0];
                 if (representation.rest.length > 1) {
-                    throw invalid("Invalid schema representation document", [...path, "rest"]);
+                    $raise(invalid("Invalid schema representation document", [...path, "rest"]));
                 }
                 const out = { type: "array" };
                 let minItems = representation.elements.length;
@@ -795,7 +785,7 @@ export const fromRepresentation = (document, options) => {
                 representation.propertySignatures.forEach((property, index) => {
                     const name = property.name;
                     if (typeof name !== "string") {
-                        throw invalid("Invalid schema representation document", [...path, "propertySignatures", index, "name"]);
+                        $raise(invalid("Invalid schema representation document", [...path, "propertySignatures", index, "name"]));
                     }
                     assignProperty(properties, name, annotated(recur(property.type, [...path, "propertySignatures", index, "type"]), property.annotations));
                     if (!property.isOptional)
@@ -886,7 +876,7 @@ export const fromRepresentation = (document, options) => {
             case "Reference": {
                 const target = Object.hasOwn(references, parameter.$ref) ? references[parameter.$ref] : undefined;
                 if (target === undefined)
-                    throw invalid(`Invalid reference ${parameter.$ref}`, [...path, "$ref"]);
+                    $raise(invalid(`Invalid reference ${parameter.$ref}`, [...path, "$ref"]));
                 compileDefinition(parameter.$ref, path);
                 if (seenReferences.has(parameter.$ref))
                     return undefined;
@@ -924,7 +914,7 @@ export const fromRepresentation = (document, options) => {
                 return patterns;
             }
             default:
-                throw invalid("Invalid schema representation document", path);
+                $raise(invalid("Invalid schema representation document", path));
         }
     };
     const referenceKeys = Object.keys(references);
@@ -956,7 +946,7 @@ export const schemaIdentity = (schema, options) => fromRepresentation(Schema.toR
 /**
  * The six built-in checks `effect` renamed after `4.0.0-rc.115`, from the id
  * a later release writes to the id rc.115 wrote. Their payloads and
- * annotations did not change.
+ * payloads did not change. The 4.1 default annotations are projected separately.
  *
  * @private
  */
@@ -968,91 +958,56 @@ const rc115CheckIds = new Map([
     ["effect/schema/isBetweenSize", "effect/schema/isSizeBetween"],
     ["effect/schema/isBetweenProperties", "effect/schema/isPropertiesLengthBetween"]
 ]);
-/**
- * The default annotations `effect@4.1.0` changed on three built-in checks,
- * from what 4.1.0 writes to what rc.115 wrote, by check id and annotation
- * path. A value is written back only where it is exactly 4.1.0's default, so
- * an author's own annotation is kept as written.
- *
- * @private
- */
-const rc115CheckAnnotations = new Map([
-    ["effect/schema/isStringFinite", [
-            [
-                ["arbitraryConstraint", "patterns", "0", "source"],
-                "^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?$",
-                "^[+-]?\\d*\\.?\\d+(?:[Ee][+-]?\\d+)?$"
-            ]
-        ]],
-    ["effect/schema/isGUID", [[["arbitraryConstraint", "patterns", "0", "flags"], "u", ""]]],
-    ["effect/schema/isULID", [
-            [
-                ["expected"],
-                "a string matching the RegExp ^[0-7][0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{25}$",
-                "a string matching the RegExp ^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$"
-            ],
-            [
-                ["arbitraryConstraint", "patterns", "0", "source"],
-                "^[0-7][0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{25}$",
-                "^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$"
-            ],
-            [["arbitraryConstraint", "patterns", "0", "flags"], "u", ""]
-        ]]
+/** The default check annotations that changed in 4.1, projected to rc.115 bytes. */
+const rc115CheckPatterns = new Map([
+    ["effect/schema/isStringFinite", {
+            current: "^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?$",
+            flags: "",
+            previous: `^${finitePattern}$`
+        }],
+    ["effect/schema/isGUID", {
+            current: "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
+            flags: "u",
+            previous: "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+        }],
+    ["effect/schema/isULID", {
+            current: "^[0-7][0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{25}$",
+            flags: "u",
+            previous: "^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$"
+        }]
 ]);
-/**
- * A copy of `value` with the string at `path` replaced, where it is exactly
- * `from`. A path that does not reach a string leaves `value` as it is.
- *
- * @private
- */
-const replacedAt = (value, path, from, to) => {
-    const [head, ...rest] = path;
-    if (head === undefined)
-        return value === from ? to : value;
-    if (typeof value !== "object" || value === null || !Object.hasOwn(value, head))
-        return value;
-    if (Array.isArray(value)) {
-        const copy = [...value];
-        copy[Number(head)] = replacedAt(copy[Number(head)], rest, from, to);
-        return copy;
-    }
-    const out = {};
-    for (const [key, member] of Object.entries(value)) {
-        assignProperty(out, key, key === head ? replacedAt(member, rest, from, to) : member);
-    }
-    return out;
-};
-/**
- * A string's `content` written back as rc.115 wrote it: its media type as the
- * last `contentMediaType` annotation, its content schema dropped, in the key
- * order rc.115 wrote (`_tag`, `annotations`, `checks`).
- *
- * @private
- */
-const withRc115Content = (value) => {
-    const content = value["content"];
-    if (value["_tag"] !== "String" || !isObject(content) ||
-        typeof content["mediaType"] !== "string") {
-        return value;
-    }
-    const mediaType = content["mediaType"];
-    const out = {};
-    const annotations = value["annotations"];
-    for (const [key, member] of Object.entries(value)) {
-        if (key === "content" || key === "annotations")
-            continue;
-        assignProperty(out, key, member);
-        if (key === "_tag")
-            assignProperty(out, "annotations", { ...annotations, contentMediaType: mediaType });
-    }
-    return out;
+/** Keeps author overrides while restoring only the changed built-in defaults. */
+const withRc115CheckAnnotations = (check, annotations) => {
+    const representation = check["representation"];
+    if (!isObject(representation) || typeof representation["id"] !== "string")
+        return annotations;
+    const patterns = rc115CheckPatterns.get(representation["id"]);
+    if (patterns === undefined || !isObject(annotations))
+        return annotations;
+    const constraint = annotations["arbitraryConstraint"];
+    if (!isObject(constraint) || !Array.isArray(constraint["patterns"]))
+        return annotations;
+    const entries = constraint["patterns"];
+    if (entries.length !== 1 || !isObject(entries[0]) || entries[0]["source"] !== patterns.current ||
+        entries[0]["flags"] !== patterns.flags)
+        return annotations;
+    return {
+        ...annotations,
+        ...(annotations["expected"] === `a string matching the RegExp ${patterns.current}`
+            ? { expected: `a string matching the RegExp ${patterns.previous}` }
+            : {}),
+        arbitraryConstraint: {
+            ...constraint,
+            patterns: [{ ...entries[0], source: patterns.previous, flags: "" }]
+        }
+    };
 };
 /**
  * A copy of an encoded representation with every renamed check id written
  * back as rc.115 wrote it. Only an element of a `checks` array is a check.
- * `annotations` and `payload` hold an author's data, which may have any
- * shape, so they are copied as they are. Key order is kept, so the bytes
- * match.
+ * Author annotations and payloads are preserved. Known 4.1 built-in pattern
+ * defaults and JSON string content metadata are projected to their older
+ * identity forms. Key order is kept, so the recorded bytes match.
  *
  * @private
  */
@@ -1061,13 +1016,17 @@ const withRc115CheckIds = (value, isCheck = false) => {
         return value.map((member) => withRc115CheckIds(member, isCheck));
     if (!isObject(value))
         return value;
-    const source = isCheck
-        ? withRc115CheckAnnotations(value)
-        : withRc115Content(value);
     const out = {};
-    for (const [key, member] of Object.entries(source)) {
+    for (const [key, member] of Object.entries(value)) {
+        if (key === "content" && value["_tag"] === "String" && isObject(member) && member["mediaType"] === "application/json") {
+            continue;
+        }
         if (key === "annotations" || key === "payload") {
-            assignProperty(out, key, member);
+            const annotations = key === "annotations" && value["_tag"] === "String" && isObject(value["content"]) &&
+                value["content"]["mediaType"] === "application/json" && isObject(member)
+                ? { ...member, contentMediaType: "application/json" }
+                : member;
+            assignProperty(out, key, key === "annotations" && isCheck ? withRc115CheckAnnotations(value, annotations) : annotations);
             continue;
         }
         const renamed = isCheck && key === "representation" && isObject(member) && typeof member["id"] === "string"
@@ -1079,15 +1038,6 @@ const withRc115CheckIds = (value, isCheck = false) => {
     }
     return out;
 };
-/** A check with the default annotations `effect@4.1.0` changed written back as rc.115 wrote them. @private */
-const withRc115CheckAnnotations = (check) => {
-    const representation = check["representation"];
-    const id = isObject(representation) ? representation["id"] : undefined;
-    const changes = typeof id === "string" ? rc115CheckAnnotations.get(id) : undefined;
-    return changes === undefined
-        ? check
-        : changes.reduce((out, [path, from, to]) => replacedAt(out, ["annotations", ...path], from, to), check);
-};
 /**
  * The versions of a representation identity, newest first. A sealed action's
  * step key hashes one, and a key written under an older version must stay
@@ -1096,8 +1046,7 @@ const withRc115CheckAnnotations = (check) => {
  *
  * - `2`, the current version, written since `effect@4.0.4` (2026-10-13):
  *   what the installed release encodes, with the six check ids renamed after
- *   `4.0.0-rc.115`, and the check annotations and string `content`
- *   `effect@4.1.0` changed, written back. From `4.0.4` on `Schema.brand` is not part of
+ *   `4.0.0-rc.115` written back. From `4.0.4` on `Schema.brand` is not part of
  *   the AST, so a brand contributes nothing.
  * - `1`, what every key written under `4.0.0-rc.115` hashed: version 2 with
  *   each brand restored as the `brands` annotation rc.115 wrote, in the place
@@ -1325,6 +1274,36 @@ const withRc115Brands = (schema, document) => {
     const representation = at(schema, document.representation);
     return ambiguous ? document : { representation, references: references };
 };
+/** Removes definitions belonging only to 4.1 JSON content metadata. */
+const withReachableReferences = (document) => {
+    const projected = document;
+    const reached = new Set();
+    const pending = [projected.representation];
+    while (pending.length > 0) {
+        const value = pending.pop();
+        if (Array.isArray(value))
+            pending.push(...value);
+        else if (isObject(value)) {
+            if (value["_tag"] === "Reference" && typeof value["$ref"] === "string") {
+                const reference = value["$ref"];
+                if (!reached.has(reference)) {
+                    reached.add(reference);
+                    pending.push(projected.references[reference]);
+                }
+            }
+            else {
+                for (const [key, member] of Object.entries(value)) {
+                    if (key !== "annotations" && key !== "payload")
+                        pending.push(member);
+                }
+            }
+        }
+    }
+    return {
+        representation: projected.representation,
+        references: Object.fromEntries(Object.entries(projected.references).filter(([key]) => reached.has(key)))
+    };
+};
 /**
  * The representation identity of a schema: what
  * `SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(schema.ast))`
@@ -1334,8 +1313,8 @@ const withRc115Brands = (schema, document) => {
  * `effect`.
  *
  * The installed release encodes the representation; this writes back the six
- * check ids renamed after rc.115, and the check annotations and string
- * `content` `effect@4.1.0` changed. From `effect@4.0.4` on `Schema.brand` is not
+ * check ids renamed after rc.115 and projects the 4.1 pattern/content metadata
+ * to the recorded identity without changing runtime validation. From `effect@4.0.4` on `Schema.brand` is not
  * part of the AST, so version 2 omits it, and version 1 restores it from the
  * schema value, where the brand still lives.
  *
@@ -1347,5 +1326,6 @@ const withRc115Brands = (schema, document) => {
  */
 export const representationIdentity = (schema, version = representationIdentityVersions[0]) => {
     const document = SchemaRepresentation.toRepresentation(schema.ast);
-    return withRc115CheckIds(SchemaRepresentation.toJson(version === 1 ? withRc115Brands(schema, document) : document));
+    return withReachableReferences(withRc115CheckIds(SchemaRepresentation.toJson(version === 1 ? withRc115Brands(schema, document) : document)));
 };
+import { raise as $raise } from "./SchemaIdentity.vibe.-24-throw-24-ts.js";

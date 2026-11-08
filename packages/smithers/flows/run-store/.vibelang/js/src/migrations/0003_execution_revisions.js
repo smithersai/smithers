@@ -5,7 +5,6 @@
  * @since 1.0.0
  */
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as Dialect from "@smthrs/database/Dialect";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -15,7 +14,7 @@ import * as SqlClient from "effect/sql/SqlClient";
  * @category migrations
  * @since 1.0.0
  */
-export const executionRevisions = Effect_1.gen(runtime.$iteratorFrame(runtime.$joinedFrame(function* executionRevisions() {
+export const executionRevisions = Effect_1.gen(function* executionRevisions() {
     const sql = yield* SqlClient.SqlClient;
     yield* sql `CREATE TABLE flows_run_source (
     singleton ${Dialect.integer(sql)} PRIMARY KEY CHECK (singleton = 1),
@@ -34,40 +33,21 @@ export const executionRevisions = Effect_1.gen(runtime.$iteratorFrame(runtime.$j
     yield* sql `INSERT INTO flows_run_changes (run_id, revision, deleted)
     SELECT run_id, ROW_NUMBER() OVER (ORDER BY created_at_ms, run_id), 0 FROM flows_runs`;
     yield* sql `UPDATE flows_run_source SET revision = (SELECT COUNT(*) FROM flows_run_changes)`;
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const value_1 of [["INSERT", "NEW", 0], ["UPDATE", "NEW", 0], ["DELETE", "OLD", 1]]) {
-                try {
-                    const [operation, row, deleted] = value_1;
-                    {
-                        yield* Dialect.trigger(sql, {
-                            name: `flows_runs_revision_${operation.toLowerCase()}`,
-                            table: "flows_runs",
-                            event: `AFTER ${operation}`,
-                            body: `
+    for (const [operation, row, deleted] of [["INSERT", "NEW", 0], ["UPDATE", "NEW", 0], ["DELETE", "OLD", 1]]) {
+        yield* Dialect.trigger(sql, {
+            name: `flows_runs_revision_${operation.toLowerCase()}`,
+            table: "flows_runs",
+            event: `AFTER ${operation}`,
+            body: `
         ${Dialect.isPostgres(sql)
-                                ? "IF NOT EXISTS (SELECT 1 FROM flows_run_source WHERE singleton = 1) THEN RAISE EXCEPTION 'execution source identity is missing' USING ERRCODE = '23514'; END IF;"
-                                : "SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM flows_run_source WHERE singleton = 1) THEN RAISE(ABORT, 'execution source identity is missing') END;"}
+                ? "IF NOT EXISTS (SELECT 1 FROM flows_run_source WHERE singleton = 1) THEN RAISE EXCEPTION 'execution source identity is missing' USING ERRCODE = '23514'; END IF;"
+                : "SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM flows_run_source WHERE singleton = 1) THEN RAISE(ABORT, 'execution source identity is missing') END;"}
         UPDATE flows_run_source SET revision = revision + 1 WHERE singleton = 1;
         INSERT INTO flows_run_changes (run_id, revision, deleted)
           SELECT ${row}.run_id, revision, ${deleted} FROM flows_run_source WHERE singleton = 1
           ON CONFLICT (run_id) DO UPDATE SET revision = excluded.revision, deleted = excluded.deleted;
       `
-                        });
-                    }
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
-            }
-        }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
-        }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
+        });
     }
     yield* Dialect.trigger(sql, {
         name: `flows_runs_identity_immutable`,
@@ -76,4 +56,4 @@ export const executionRevisions = Effect_1.gen(runtime.$iteratorFrame(runtime.$j
         when: `NEW.run_id <> OLD.run_id`,
         reject: "run identity is immutable"
     });
-})));
+});

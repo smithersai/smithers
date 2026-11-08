@@ -1,7 +1,7 @@
 import { Journal } from "@smthrs/journal"
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Facts from "../src/ControlFacts.vibe"
+import * as Facts from "../src/ControlFacts.ts"
 import type { ControlEvent, RunSummary } from "../src/ControlSchema.ts"
 
 const run: RunSummary = { runId: "run-1", flowId: "test", status: "accepted", createdAt: 1, updatedAt: 1 }

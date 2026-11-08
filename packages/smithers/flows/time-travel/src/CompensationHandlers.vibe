@@ -71,11 +71,11 @@ export type Classification = typeof Classification.Type
  * @since 0.1.0
  * @category models
  */
-export schema Assessment {
-  readonly classification: Classification
-  readonly reason: string
-  readonly residue: string
-}
+export const Assessment = Schema.Struct({
+  classification: Classification,
+  reason: Schema.String,
+  residue: Schema.String
+})
 /**
  * The value form of {@link Assessment}.
  *

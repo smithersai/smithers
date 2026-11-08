@@ -4,12 +4,13 @@
  * @since 1.0.0
  */
 import * as Digest from "@smthrs/core/Digest";
-import { Crypto } from "@smthrs/crypto";
 import { Action, FlowRuntime } from "@smthrs/flow";
 import { HarnessError } from "@smthrs/harness/HarnessError";
 import { JournalEvent, StepFact } from "@smthrs/journal";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as EffectDigest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import { maxTracedBytes, traceIdentity, tracer } from "../AgentSession.js";
 const boundCallFields = (payload) => Object.fromEntries(Object.entries(payload).map(([key, value]) => {
@@ -29,7 +30,8 @@ const boundCallFields = (payload) => Object.fromEntries(Object.entries(payload).
 export const make = (journal) => Effect.gen(function* () {
     const runtime = yield* FlowRuntime.FlowRuntime;
     const instance = yield* FlowRuntime.FlowInstance;
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* EffectDigest.Digest;
+    const random = yield* SecureRandom.SecureRandom;
     const cursors = new WeakMap();
     const emit = (event, step) => Effect.gen(function* () {
         if (step === undefined || step.executionId !== instance.executionId) {
@@ -99,7 +101,7 @@ export const make = (journal) => Effect.gen(function* () {
                     payload
                 };
             })
-        }).pipe(Effect.provideService(Action.CurrentAttempt, 1), Effect.provideService(FlowRuntime.FlowRuntime, runtime), Effect.provideService(FlowRuntime.FlowInstance, instance), Effect.provideService(Crypto.Crypto, crypto));
+        }).pipe(Effect.provideService(Action.CurrentAttempt, 1), Effect.provideService(FlowRuntime.FlowRuntime, runtime), Effect.provideService(FlowRuntime.FlowInstance, instance), Effect.provideService(EffectDigest.Digest, crypto), Effect.provideService(SecureRandom.SecureRandom, random));
     });
     return { emit, atSource: true };
 });

@@ -41,9 +41,13 @@ const resolve = (repository, key, sha) => Effect.gen(function* () {
             yield* recordResolve(kept.value, "cached", 0, undefined);
             return kept.value;
         }
+        const repos = yield* RepoStore;
+        const id = repoId(repository.owner, repository.name);
+        const fence = repos.fenceOf(id);
         const result = yield* Effect.result((yield* RepoClient).blob(repository.owner, repository.name, sha, HOME_FILE));
         const row = homeRowOf(key, result);
-        yield* put(store.homes, key, row);
+        // Answered after the repository refused this person: what it read is shown, never kept.
+        yield* repos.fenced(id, fence, put(store.homes, key, row));
         yield* recordResolve(row, row.state, (yield* Clock.currentTimeMillis) - startedAt, statusOf(result));
         return row;
     }));
@@ -55,14 +59,19 @@ const ensureFile = (repository, home, sha, path) => Effect.gen(function* () {
     const found = yield* store.files.get(key);
     if (Option.isSome(found) && found.value.state !== "failed")
         return;
-    yield* put(store.files, key, { key, home, path, state: "loading", text: null });
+    const repos = yield* RepoStore;
+    const id = repoId(repository.owner, repository.name);
+    if (repos.isRefused(id))
+        return;
+    const fence = repos.fenceOf(id);
+    yield* put(store.files, key, { key, repoId: id, home, path, state: "loading", text: null });
     const startedAt = yield* Clock.currentTimeMillis;
     const result = yield* Effect.result((yield* RepoClient).blob(repository.owner, repository.name, sha, path)).pipe(Effect.onInterrupt(() => Effect.gen(function* () {
-        yield* put(store.files, key, { key, home, path, state: "failed", text: null });
+        yield* put(store.files, key, { key, repoId: id, home, path, state: "failed", text: null });
         yield* recordFile("interrupted", (yield* Clock.currentTimeMillis) - startedAt, undefined);
     })));
-    const row = fileRowOf(key, home, path, result);
-    yield* put(store.files, key, row);
+    const row = fileRowOf(key, id, home, path, result);
+    yield* repos.fenced(id, fence, put(store.files, key, row));
     yield* recordFile(row.state, (yield* Clock.currentTimeMillis) - startedAt, statusOf(result));
 });
 /**
@@ -94,6 +103,8 @@ const syncLive = (id) => Effect.gen(function* () {
  */
 const answer = (owner, name, id) => Effect.gen(function* () {
     const store = yield* HomeStore;
+    const repos = yield* RepoStore;
+    const fence = repos.fenceOf(id);
     const startedAt = yield* Clock.currentTimeMillis;
     const result = yield* Effect.result((yield* HomeClient).answer(owner, name));
     const durationMs = (yield* Clock.currentTimeMillis) - startedAt;
@@ -103,7 +114,7 @@ const answer = (owner, name, id) => Effect.gen(function* () {
     }
     const { audience, curated } = result.success;
     const row = curatedRowOf(id, curated);
-    yield* put(store.curated, id, row);
+    yield* repos.fenced(id, fence, put(store.curated, id, row));
     yield* setCurrent({ audience, answering: false, curatedDocs: curated?.docs ?? null });
     yield* recordAnswer(row.state, audience, row.sections.length, durationMs, undefined);
 }).pipe(Effect.withSpan("home.answer"));
@@ -183,10 +194,12 @@ export const warm = (owner, name) => Effect.gen(function* () {
         const store = yield* HomeStore;
         if (Option.isSome(yield* store.curated.get(id)))
             return;
+        const repos = yield* RepoStore;
+        const fence = repos.fenceOf(id);
         // A warm that can't read it leaves it to `open`, which asks again and logs a failure (`home.answer`).
         const result = yield* Effect.result((yield* HomeClient).answer(owner, name));
         if (result._tag === "Success")
-            yield* put(store.curated, id, curatedRowOf(id, result.success.curated));
+            yield* repos.fenced(id, fence, put(store.curated, id, curatedRowOf(id, result.success.curated)));
     });
     const own = Effect.gen(function* () {
         const repository = yield* shownRepository(id);

@@ -43,10 +43,10 @@ const widthRefusal = (concurrency) => concurrency === undefined ? undefined : Co
 export const make = (options) => {
     const panelists = Object.entries(options.panelists);
     if (panelists.length === 0) {
-        throw new PatternError({
+        $raise(new PatternError({
             code: "invalid_decorator",
             message: "Panel requires at least one panelist"
-        });
+        }));
     }
     // The body runs when the graph builds, later than this call, so it reads
     // these snapshots and never the caller's options again. Roles are copied
@@ -57,13 +57,13 @@ export const make = (options) => {
     const concurrency = options.concurrency;
     const width = widthRefusal(concurrency);
     if (width !== undefined)
-        throw width;
+        $raise(width);
     for (const name of roles?.keys() ?? []) {
         if (!Object.hasOwn(options.panelists, name)) {
-            throw new PatternError({
+            $raise(new PatternError({
                 code: "invalid_decorator",
                 message: `Panel declares a role for the unknown panelist "${name}"`
-            });
+            }));
         }
     }
     const names = panelists.map(([name]) => name);
@@ -122,3 +122,4 @@ export const run = (input, options) => {
         return Effect.flatMap(Effect.forEach(panelists, ([name, panelist]) => Effect.map(panelist(input), (opinion) => [name, opinion]), { concurrency: concurrency ?? "unbounded" }), (opinions) => moderator({ input, opinions: Object.fromEntries(opinions) }));
     });
 };
+import { raise as $raise } from "./Panel.vibe.-24-throw-24-ts.js";

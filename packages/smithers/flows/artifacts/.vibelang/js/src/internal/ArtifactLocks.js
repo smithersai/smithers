@@ -68,7 +68,7 @@ Effect.suspend(() => {
             // claim, or tombstone writes and removals elsewhere. The portable
             // filesystem cannot make a check atomic with the mutation after it.
             const lockDirectory = `${directory}/${directoryName}`;
-            yield* ArtifactPath.guard(fs, lockDirectory).pipe(Effect.mapError(failure));
+            yield* Effect.asVoid(ArtifactPath.guard(fs, lockDirectory).pipe(Effect.mapError(failure)));
             yield* fs.makeDirectory(lockDirectory, { recursive: true, mode: 0o700 }).pipe(Effect.mapError(failure));
             const checkLockDirectory = yield* ArtifactPath.guard(fs, lockDirectory).pipe(Effect.mapError(failure));
             return yield* FileLease.hold(fs, `${lockDirectory}/${digest}.lock`, effect, failure, {

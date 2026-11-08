@@ -5,7 +5,7 @@
  * @since 1.0.0-rc.0
  */
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import * as Dialect from "@smthrs/database/Dialect";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -52,18 +52,20 @@ const journals = new WeakMap();
  * @category lifecycle
  * @since 1.0.0-rc.0
  */
-export const onTruncate = Effect_1.fnUntraced(function* onTruncate(forget) {
-    const sql = yield* SqlClient.SqlClient;
-    let listeners = journals.get(sql);
-    if (listeners === undefined) {
-        listeners = new Set();
-        journals.set(sql, listeners);
-    }
-    const registered = listeners;
-    yield* runtime.acquireRelease(Effect_1.sync(() => registered.add(forget)), () => Effect.sync(() => {
-        registered.delete(forget);
-    }));
-});
+export const onTruncate = (forget) => {
+    return Effect_1.gen(function* onTruncate() {
+        const sql = yield* SqlClient.SqlClient;
+        let listeners = journals.get(sql);
+        if (listeners === undefined) {
+            listeners = new Set();
+            journals.set(sql, listeners);
+        }
+        const registered = listeners;
+        yield* runtime.acquireRelease(Effect_1.sync(() => { return registered.add(forget); }), () => Effect.sync(() => {
+            registered.delete(forget);
+        }));
+    });
+};
 /**
  * Forgets cached identities and allocation floors after a committed truncation.
  * The rewinder must quiesce producers and flush pending admissions first.
@@ -72,10 +74,12 @@ export const onTruncate = Effect_1.fnUntraced(function* onTruncate(forget) {
  * @category lifecycle
  * @since 1.0.0-rc.0
  */
-export const forget = Effect_1.fnUntraced(function* forget(runIds) {
-    const sql = yield* SqlClient.SqlClient;
-    yield* Effect.sync(() => {
-        for (const invalidate of journals.get(sql) ?? [])
-            invalidate(runIds);
+export const forget = (runIds) => {
+    return Effect_1.gen(function* forget() {
+        const sql = yield* SqlClient.SqlClient;
+        yield* Effect.sync(() => {
+            for (const invalidate of journals.get(sql) ?? [])
+                invalidate(runIds);
+        });
     });
-});
+};

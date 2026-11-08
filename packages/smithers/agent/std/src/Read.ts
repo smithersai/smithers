@@ -26,7 +26,7 @@ import { capability, envelope } from "./internal/Declaration.ts"
 import * as FileMutation from "./internal/FileMutation.vibe"
 import * as FsFailure from "./internal/FsFailure.vibe"
 import { DEFAULT_READ_LIMIT, MAX_LINE_CHARS, MAX_OUTPUT_BYTES, notice, slice, truncateBytes } from "./internal/Text.ts"
-import * as StdError from "./StdError.vibe"
+import * as StdError from "./StdError.ts"
 
 export { Preconditions, ReadSession, type VersionedFileSystem } from "./internal/FileMutation.vibe"
 

@@ -5,8 +5,8 @@ import { Effect, Layer, Metric, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 import { ADMIT_WAIT_SECONDS, FAILURES, OPEN_DEADLINE_SECONDS } from "../../src/features/terminal/contract.js";
 import * as Budget from "../branch/Budget.js";
-import { CheckoutFailed, SandboxBranch, Sandboxes, SandboxUnavailable } from "#vibelang/emitted/worker/branch/Sandboxes";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { CheckoutFailed, SandboxBranch, Sandboxes, SandboxUnavailable } from "../branch/Sandboxes.js";
+import { codeOf } from "../ErrorCode.js";
 // `terminal/Open { terminalId, branch }` (decision 0013 §2, docs/features/branch-workspace.md#opening-a-terminal):
 // opens a person's terminal on a branch's machine. `POST /api/terminals` admits it (sign-in, the Member role, a branch
 // that isn't locked) and records its `opening` row, then starts this flow, one execution per terminal

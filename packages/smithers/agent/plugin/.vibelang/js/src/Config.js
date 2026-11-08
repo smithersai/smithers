@@ -90,11 +90,11 @@ const snapshotRecord = (input, reuse = true) => {
         return input;
     const admitted = Boundary.record(input);
     if (!admitted.ok)
-        throw invalid(admitted.path, admitted.complaint);
+        $raise(invalid(admitted.path, admitted.complaint));
     const record = admitted.value;
     for (const key of Object.keys(record)) {
         if (reservedRootKeys.has(key)) {
-            throw invalid(`$.${key}`, "uses a runtime-policy key that the plugin kernel does not own");
+            $raise(invalid(`$.${key}`, "uses a runtime-policy key that the plugin kernel does not own"));
         }
     }
     admittedConfigs.add(record);
@@ -127,7 +127,7 @@ export const merge = (base, patch) => {
     const safePatch = snapshotRecord(patch, false);
     const merged = Boundary.mergeRecords(safeBase, safePatch);
     if (!merged.ok)
-        throw invalid(merged.path, merged.complaint);
+        $raise(invalid(merged.path, merged.complaint));
     const record = merged.value;
     admittedConfigs.add(record);
     return record;
@@ -141,7 +141,7 @@ export const merge = (base, patch) => {
 export const deepFreeze = (value) => {
     const admitted = Boundary.admit(value);
     if (!admitted.ok)
-        throw invalid(admitted.path, admitted.complaint);
+        $raise(invalid(admitted.path, admitted.complaint));
     return admitted.value;
 };
 /**
@@ -158,3 +158,4 @@ export const snapshot = (config) => Effect.try({ try: () => snapshotRecord(confi
  * @since 1.0.0-rc.0
  */
 export const resolve = (config) => snapshot(config);
+import { raise as $raise } from "./Config.vibe.-24-throw-24-ts.js";

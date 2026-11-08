@@ -795,7 +795,7 @@ export const check = (grants, requests, memory, local = true) => Effect.forEach(
     if (decision._tag === "allow")
         return Effect.void;
     const asked = decision._tag === "deny"
-        ? Effect.fail(new Permission.PermissionDenied({ capability: request.capability, reason: "denied earlier in this run" }))
+        ? Effect.fail(Permission.PermissionDenied.new({ capability: request.capability, reason: "denied earlier in this run" }))
         : grants.check(request.capability, { ...request.meta });
     return asked.pipe(Effect.mapError((cause) => {
         if (!(cause instanceof Permission.PermissionDenied)) {

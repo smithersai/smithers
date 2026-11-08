@@ -9,7 +9,7 @@ import * as Edit from "../src/Edit.ts"
 import * as FileMutation from "../src/internal/FileMutation.vibe"
 import * as LanguageServer from "../src/LanguageServer.vibe"
 import * as Read from "../src/Read.ts"
-import { StdError } from "../src/StdError.vibe"
+import { StdError } from "../src/StdError.ts"
 import * as Write from "../src/Write.vibe"
 
 // This deliberately substitutes only the provider seam to prove tool batching,

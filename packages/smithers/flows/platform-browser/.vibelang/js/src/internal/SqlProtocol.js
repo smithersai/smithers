@@ -172,7 +172,7 @@ const keep = (value) => typeof value === "bigint" ?
 const restore = (value) => value === null || typeof value !== "object" ?
     value
     : "integer" in value ?
-        BigInt(value.integer)
+        $invoke(BigInt, value.integer)
         : "real" in value ?
             Number(value.real)
             : new Uint8Array(value.blob);
@@ -191,7 +191,7 @@ export const encodeRows = (rows) => JSON.stringify(keepRows(rows));
  * @category protocol
  * @since 1.0.0
  */
-export const decodeRows = (text) => restoreRows(JSON.parse(text));
+export const decodeRows = (text) => restoreRows($invoke2(JSON, () => (text)));
 /**
  * Encodes a batch's rows, one array per statement, as {@link replies} keeps
  * them.
@@ -206,4 +206,6 @@ export const encodeResults = (results) => JSON.stringify(results.map(keepRows));
  * @category protocol
  * @since 1.0.0
  */
-export const decodeResults = (text) => JSON.parse(text).map(restoreRows);
+export const decodeResults = (text) => $invoke2(JSON, () => (text)).map(restoreRows);
+import { invoke as $invoke } from "./SqlProtocol.vibe.-24-call-24-ts.js";
+import { invoke as $invoke2 } from "./SqlProtocol.vibe.-24-call-24-ts2.js";

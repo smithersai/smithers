@@ -20,7 +20,6 @@
  *
  * @since 0.1.0
  */
-import * as Schema_1 from "effect/Schema";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Interactions from "./Interactions.js";
@@ -103,13 +102,11 @@ const Id = Schema.Union([Schema.String.check(Schema.isMaxLength(64)), Schema.Int
  * @category schemas
  * @since 0.1.0
  */
-export const Initialize = Schema_1.Struct({
-    jsonrpc: Schema_1.Literal("2.0"),
+export const Initialize = Schema.Struct({
+    jsonrpc: Schema.Literal("2.0"),
     id: Id,
-    method: Schema_1.Literal("ui/initialize"),
-    params: Schema_1.Struct({
-        nonce: Nonce,
-    }),
+    method: Schema.Literal("ui/initialize"),
+    params: Schema.Struct({ nonce: Nonce })
 });
 /**
  * What the frame needs to show the view: the sanitized-on-arrival HTML, the
@@ -118,10 +115,10 @@ export const Initialize = Schema_1.Struct({
  * @category schemas
  * @since 0.1.0
  */
-export const HostContext = Schema_1.Struct({
-    html: Schema_1.String,
+export const HostContext = Schema.Struct({
+    html: Schema.String,
     theme: Theme,
-    size: Size,
+    size: Size
 });
 /**
  * The page's answer to `ui/initialize`, posted with the port it transfers.
@@ -129,10 +126,10 @@ export const HostContext = Schema_1.Struct({
  * @category schemas
  * @since 0.1.0
  */
-export const InitializeResult = Schema_1.Struct({
-    jsonrpc: Schema_1.Literal("2.0"),
+export const InitializeResult = Schema.Struct({
+    jsonrpc: Schema.Literal("2.0"),
     id: Id,
-    result: HostContext,
+    result: HostContext
 });
 /**
  * `ui/notifications/host-context-changed`: new HTML, a new theme, or both.

@@ -31,7 +31,10 @@ export class Auth extends Context.Service()("@smthrs/mvp/auth/Auth") {
  */
 export const bindSessionConnectivity = (target) => Effect.gen(function* () {
     const listening = yield* Deferred.make();
+    const store = yield* AuthStore;
     const source = Stream.callback((queue) => Effect.gen(function* () {
+        // A burst of shapes answering 401 asks once.
+        yield* store.checksAsked.pipe(Stream.debounce("100 millis"), Stream.runForEach(() => Queue.offer(queue, "retry")), Effect.forkScoped({ startImmediately: true }));
         const online = () => { Queue.offerUnsafe(queue, "online"); };
         yield* Effect.acquireRelease(Effect.sync(() => target.addEventListener("online", online)), () => Effect.sync(() => target.removeEventListener("online", online)));
         // Subscribe before admitting the initial read, so an earlier network transition needs no second event.

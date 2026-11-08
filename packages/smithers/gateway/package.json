@@ -77,13 +77,13 @@
       "default": "./.vibelang/js/src/GatewayServer.js"
     },
     "./Projections": {
-      "types": "./.vibe/declarations/src/Projections.d.vibe.ts",
-      "vibelang-source": "./src/Projections.vibe",
+      "types": "./src/Projections.ts",
+      "vibelang-source": "./src/Projections.ts",
       "default": "./.vibelang/js/src/Projections.js"
     },
     "./RuntimeBridge": {
-      "types": "./.vibe/declarations/src/RuntimeBridge.d.vibe.ts",
-      "vibelang-source": "./src/RuntimeBridge.vibe",
+      "types": "./src/RuntimeBridge.ts",
+      "vibelang-source": "./src/RuntimeBridge.ts",
       "default": "./.vibelang/js/src/RuntimeBridge.js"
     },
     "./index": {
@@ -116,11 +116,7 @@
       "vibelang-source": "./src/RunDevTools.ts",
       "default": "./.vibelang/js/src/RunDevTools.js"
     },
-    "./RunHistory": {
-      "types": "./src/RunHistory.ts",
-      "vibelang-source": "./src/RunHistory.ts",
-      "default": "./.vibelang/js/src/RunHistory.js"
-    },
+    "./RunHistory": "./src/RunHistory.ts",
     "./SuperviseRuntime": null,
     "./test/TestSuperviseRuntime": null
   },
@@ -140,8 +136,6 @@
     "src/Diagnosis.vibe",
     "src/GatewayError.vibe",
     "src/GatewaySchema.vibe",
-    "src/Projections.vibe",
-    "src/RuntimeBridge.vibe",
     "src/node/NodeGateway.vibe"
   ],
   "publishConfig": {
@@ -335,8 +329,7 @@
     "undici": "8.11.2",
     "redis": "6.2.1",
     "@types/ws": "8.18.2",
-    "ws": "8.22.0",
-    "vibelang-runtime": "0.0.13"
+    "ws": "8.22.0"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",

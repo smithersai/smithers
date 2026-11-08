@@ -92,7 +92,7 @@ export const makePair = () => Effect.gen(function* () {
                 const closed = yield* Deferred.make();
                 yield* Effect.addFinalizer(() => Deferred.fail(closed, transportError()));
                 return {
-                    pull: Effect.raceFirst(Effect.map(delivery.whenOpen(Queue.take(incoming)), (bytes) => [bytes]), Deferred.await(closed)),
+                    pull: Effect.raceFirst(Effect.flatMap(Queue.take(incoming), (bytes) => delivery.whenOpen(Effect.succeed([bytes]))), Deferred.await(closed)),
                     upgrade: Socket.SocketUpgradeError.unsupported
                 };
             }),

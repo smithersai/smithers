@@ -11,7 +11,7 @@ import * as ApplyPatch from "../src/ApplyPatch.ts"
 import * as Edit from "../src/Edit.ts"
 import * as Diagnostics from "../src/internal/Diagnostics.vibe"
 import * as LanguageServer from "../src/LanguageServer.vibe"
-import * as StdError from "../src/StdError.vibe"
+import * as StdError from "../src/StdError.ts"
 import * as Write from "../src/Write.vibe"
 import { layer } from "./TestLayers.ts"
 

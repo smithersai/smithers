@@ -12,7 +12,7 @@ import { basename } from "node:path";
 import { useRef } from "react";
 import stringWidth from "string-width";
 import * as Editor from "./editor.js";
-import * as Dispatch from "#vibelang/emitted/src/key-dispatch";
+import * as Dispatch from "./key-dispatch.js";
 import * as Keys from "./keys.js";
 import * as Models from "./models.js";
 import { color } from "./theme.js";

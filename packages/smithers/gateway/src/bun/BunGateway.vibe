@@ -7,9 +7,9 @@ import type { HttpServer } from "effect/http/HttpServer"
 import type { ServeError } from "effect/http/HttpServerError"
 import { GatewayError } from "../GatewayError.vibe"
 import type * as GatewayServer from "../GatewayServer.ts"
-import * as NativeGateway from "../internal/NativeGateway.vibe"
+import * as NativeGateway from "../internal/NativeGateway.ts"
 
-export { bearerPrincipal, scopedPrincipal } from "../internal/NativeGateway.vibe"
+export { bearerPrincipal, scopedPrincipal } from "../internal/NativeGateway.ts"
 
 /** TCP bind and existing gateway policy options supported by the Bun host.
  * @since 1.0.0

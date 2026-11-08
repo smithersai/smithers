@@ -13,10 +13,13 @@
  *
  * @since 1.0.0-rc.0
  */
+import { digestSync } from "@smthrs/crypto";
+import { Action } from "@smthrs/flow";
 import { Classifier, Evaluator, ModelRequest } from "@smthrs/model";
 import { ConfiguredModel } from "@smthrs/rpc";
 import { Effect, Exit, Redacted, Schema, Stream } from "effect";
 import { toEvaluatorLayer, toModel } from "./ConfiguredModelRoute.js";
+import { durableModelStream } from "./DurableModelCall.js";
 import { localModelCatalog, modelFailureOf, planOnLocal } from "./LocalModel.js";
 import { providerTransport } from "./ProviderTransport.js";
 const invalidProtocol = { failure: { code: "invalid", field: "protocol" } };
@@ -48,8 +51,8 @@ export const modelAnswersOf = (questions, answers) => Object.fromEntries(Object.
     ];
 }));
 const generation = (planned, input, transport, bounded = true) => Effect.gen(function* () {
-    const { model } = yield* toModel(planned.plan, planned.apiKey, { ...transport, execution: { maxRetries: 0 } });
-    const events = Array.from(yield* Stream.runCollect(model.stream(ModelRequest.ModelRequest.make({
+    const source = yield* toModel(planned.plan, planned.apiKey, { ...transport, execution: { maxRetries: 0 } });
+    const events = Array.from(yield* Stream.runCollect(durableModelStream("model-host/probe/generation", { ...source, modelId: planned.plan.modelId, credential: Redacted.value(planned.apiKey) }, ModelRequest.ModelRequest.make({
         modelId: planned.plan.modelId,
         system: input.system.trim() === "" ? [] : [ModelRequest.SystemPart.make({ text: input.system })],
         messages: [{ role: "user", content: [{ type: "text", text: input.prompt }] }],
@@ -59,9 +62,7 @@ const generation = (planned, input, transport, bounded = true) => Effect.gen(fun
             ...(input.temperature === undefined ? {} : { temperature: input.temperature })
         }
     }))));
-    // Reaching `settle` is the pass: a reasoning model may spend every token thinking and say nothing.
-    if (!events.some((event) => event.type === "settle"))
-        return invalidProtocol;
+    // The durable boundary requires settlement, even for an answer with no text.
     const text = events.flatMap((event) => event.type === "text-delta" ? [event.text] : []).join("");
     const output = {
         kind: "generation",
@@ -111,35 +112,50 @@ export const createModelProbe = (options) => {
         // A prompt for a decision model, or questions for a generation model, fit no wire the record speaks.
         if (request.kind !== planned.plan.kind)
             return failed({ code: "invalid", field: "protocol" });
-        // A refused redirect fails the call as a transport error; the status it was answered is the result.
-        let redirected;
-        const transport = {
-            fetch: options.fetch,
-            onRedirect: (status) => {
-                redirected = status;
-            }
-        };
-        const exit = yield* Effect.exit((request.kind === "decision"
-            ? decision(planned, deadlineMs, request).pipe(Effect.provide(providerTransport(transport.fetch, transport.onRedirect)))
-            : generation(planned, request, transport, input !== undefined || planned.plan.protocol !== "openai-responses-chatgpt"))
-            .pipe(Effect.catch((error) => Effect.succeed({ failure: modelFailureOf(error, deadlineMs) })), Effect.timeoutOrElse({
-            duration: deadlineMs,
-            orElse: () => Effect.succeed({ failure: { code: "timeout", deadlineMs } })
-        })));
-        if (redirected !== undefined)
-            return failed({ code: "refused", status: redirected });
-        // A defect is a bug in this host, and its cause may hold a signed request: dropped, never logged or returned.
-        if (!Exit.isSuccess(exit))
+        const identity = yield* Effect.result(Effect.try(() => digestSync(JSON.stringify({ plan: planned.plan, request, deadlineMs }))));
+        if (identity._tag === "Failure")
             return failed({ code: "unreachable" });
-        if ("failure" in exit.value)
-            return failed(exit.value.failure);
-        const { output } = exit.value;
-        return {
-            ok: true,
-            latencyMs: Math.max(0, Math.round(performance.now() - started)),
-            sample: ConfiguredModel.modelCallSample(output, Redacted.value(planned.apiKey)),
-            output
-        };
+        const probe = Effect.gen(function* () {
+            // A refused redirect fails the call as a transport error; the status it was answered is the result.
+            let redirected;
+            const transport = {
+                fetch: options.fetch,
+                onRedirect: (status) => {
+                    redirected = status;
+                }
+            };
+            const exit = yield* Effect.exit((request.kind === "decision"
+                ? decision(planned, deadlineMs, request).pipe(Effect.provide(providerTransport(transport.fetch, transport.onRedirect)))
+                : generation(planned, request, transport, input !== undefined || planned.plan.protocol !== "openai-responses-chatgpt"))
+                .pipe(Effect.catch((error) => Effect.succeed({ failure: modelFailureOf(error, deadlineMs) })), Effect.timeoutOrElse({
+                duration: deadlineMs,
+                orElse: () => Effect.succeed({ failure: { code: "timeout", deadlineMs } })
+            })));
+            if (redirected !== undefined)
+                return failed({ code: "refused", status: redirected });
+            // A defect is a bug in this host, and its cause may hold a signed request: dropped, never logged or returned.
+            if (!Exit.isSuccess(exit))
+                return failed({ code: "unreachable" });
+            if ("failure" in exit.value)
+                return failed(exit.value.failure);
+            const { output } = exit.value;
+            return {
+                ok: true,
+                latencyMs: Math.max(0, Math.round(performance.now() - started)),
+                sample: ConfiguredModel.modelCallSample(output, Redacted.value(planned.apiKey)),
+                output
+            };
+        });
+        // The decision protocol is an Evaluator, not a generation route. Seal
+        // the bounded probe result with the SDK action, including safe refusals.
+        const encoded = yield* Action.make({
+            name: "model-host/probe",
+            tier: "sealed",
+            idempotencyKey: identity.success,
+            success: Schema.String,
+            execute: probe.pipe(Effect.map((result) => JSON.stringify(result)))
+        });
+        return ConfiguredModel.ModelTestResultSchema.parse(JSON.parse(encoded));
     });
     return { catalog: () => localModelCatalog(options.env, planOptions, options.credentials), test };
 };

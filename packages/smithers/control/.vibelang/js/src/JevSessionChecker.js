@@ -15,7 +15,7 @@ import { Schema } from "effect";
  */
 export class JevProbeError extends Schema_1.TaggedError()("JevProbeError", {
     reason: Schema_1.Literals(["unconfigured", "http", "timeout", "unreachable", "malformed"]),
-    status: Schema_1.optionalKey(Schema_1.Number),
+    status: Schema_1.optional(Schema_1.Number),
 }) {
     static {
         $schemaErrorMatcher(this, "JevProbeError");

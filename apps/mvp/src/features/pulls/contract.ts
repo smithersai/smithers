@@ -189,6 +189,8 @@ export const checkFlowOf = (name: string): string => `checks/${name}`
 /**
  * A check's commit status context on GitHub (ruling GH-10): `smithers/<name>`, write-only, which a repository's branch
  * protection can require. The check itself stays a Smithers run; Smithers never reads statuses back.
+ *
+ * @throws {never}
  */
 export const statusContextOf = (name: string): string => `smithers/${name}`
 

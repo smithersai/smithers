@@ -30,7 +30,7 @@ export const Script = Schema.Struct({
  * @since 0.1.0
  * @slop
  */
-export const make = (text) => ({ text, digest: Digest.digest(text) });
+export const make = (text) => ({ text, digest: $invoke(Digest, () => (text)) });
 // Closes the way a markdown fence closes: on a line holding only a run of
 // backticks at least as long as the opening run, plus trailing blanks. A
 // lazy match on any "\n```" would end the block at an inner "```js" line
@@ -63,3 +63,4 @@ export const extract = (raw) => {
     // The capture group always participates when the fence matches.
     return { _tag: "Extracted", script: make(first[2]) };
 };
+import { invoke as $invoke } from "./Script.vibe.-24-call-24-ts.js";

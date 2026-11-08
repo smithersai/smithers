@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import * as Rubric from "./rubric.vibe"
+import * as Rubric from "./rubric.ts"
 import type * as Subject from "./subject.ts"
 import type * as Suite from "./suite.ts"
 

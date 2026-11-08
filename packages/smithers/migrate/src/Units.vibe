@@ -47,11 +47,11 @@ export type UnitKind = "dependencies" | "workflow" | "integration" | "project"
  * @category models
  * @since 1.0.0-rc.0
  */
-export schema ArgvCommand {
-  readonly _tag: "argv"
-  readonly executable: string
-  readonly args: ReadonlyArray<string>
-}
+export const ArgvCommand = Schema.Struct({
+  _tag: Schema.Literal("argv"),
+  executable: Schema.String,
+  args: Schema.Array(Schema.String)
+})
 
 /**
  * A repository-derived command whose arguments never pass through a shell.

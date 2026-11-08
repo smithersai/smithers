@@ -39,13 +39,28 @@ export const defaultFiles = async (directory) => {
   return [...top, ...source.map(entry => `src/${entry.replaceAll("\\", "/")}`)].filter(shipsWithDefault).sort()
 }
 
+/**
+ * An export's source file: the target itself, or for a migrated package the `vibelang-source` condition, at any
+ * depth, since its `default` names emitted JavaScript.
+ */
+const sourceTarget = (entry) => {
+  if (typeof entry === "string") return entry
+  if (entry === null || typeof entry !== "object") return undefined
+  if (typeof entry["vibelang-source"] === "string") return entry["vibelang-source"]
+  for (const nested of Object.values(entry)) {
+    const target = typeof nested === "object" ? sourceTarget(nested) : undefined
+    if (target !== undefined) return target
+  }
+  return undefined
+}
+
 /** Used to build the same runtime acceptance entry with the deployment bundler; not a package export. */
 export const bundle = async (entryPoint, outfile) => {
   // Resolve workspace packages from this checkout even when node_modules is
   // shared with another worktree. Otherwise a release silently bundles old code.
   const root = fileURLToPath(new URL("../../../", import.meta.url))
   const manifest = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"))
-  const alias = {}, roots = {}
+  const alias = {}, typeAlias = {}, roots = {}
   for (const pattern of manifest.workspaces) {
     const paths = pattern.endsWith("/*")
       ? (await readdir(resolve(root, pattern.slice(0, -2)), { withFileTypes: true }))
@@ -56,9 +71,13 @@ export const bundle = async (entryPoint, outfile) => {
         const pkg = JSON.parse(await readFile(resolve(path, "package.json"), "utf8"))
         if (pkg.name) {
           roots[pkg.name] = path
-          for (const [key, target] of Object.entries(pkg.exports ?? {})) {
+          for (const [key, entry] of Object.entries(pkg.exports ?? {})) {
+            const target = sourceTarget(entry)
             if (typeof target !== "string" || key.includes("*")) continue
             alias[pkg.name + (key === "." ? "" : key.slice(1))] = resolve(path, target)
+            // Types read a `.vibe` module's sidecar at the path beside its source (flow-typecheck-build.mjs), the one
+            // path its package's own relative imports reach too, so the shipped graph has one declaration of it.
+            typeAlias[pkg.name + (key === "." ? "" : key.slice(1))] = resolve(path, target.replace(/\.vibe(x?)$/, ".d.vibe$1.ts"))
           }
         }
       } catch (error) {
@@ -154,7 +173,7 @@ export const bundle = async (entryPoint, outfile) => {
       defaults[`${name}/${relative}`] = await readFile(resolve(directory, relative), "utf8")
     }
   }
-  const flowTypes = await typecheckInputs(root, alias)
+  const flowTypes = await typecheckInputs(root, typeAlias)
   const compiled = result.outputFiles[0].text.replace(/^(#![^\n]*\n)/,
     (banner) => `${banner}${typecheckSource(flowTypes)}const __SMITHERS_CREATE_FLOW_PACK__ = ${JSON.stringify(pack)};\nconst __SMITHERS_CODING_WIKI_POLICY__ = ${JSON.stringify(wikiPolicyIdentity(policyTexts))};\nconst __SMITHERS_BUILTIN_DEFAULTS__ = ${JSON.stringify(defaults)};\n`)
   if (compiled === result.outputFiles[0].text) throw new Error("Coding artifact has no executable banner")

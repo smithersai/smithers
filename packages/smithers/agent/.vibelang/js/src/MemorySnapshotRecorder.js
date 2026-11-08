@@ -14,22 +14,24 @@ import * as Effect_1 from "effect/Effect";
 import * as EngineLike from "@smthrs/harness/EngineLike";
 import * as SnapshotRecorder from "@smthrs/memory/SnapshotRecorder";
 import * as Layer from "effect/Layer";
-const record = Effect_1.fnUntraced(function* record(engine, identity, effect) {
-    const services = yield* Effect.context();
-    return yield* (Effect.orDie(engine.record({
-        name: "memory-snapshot",
-        identity: {
-            session: identity.lineageId,
-            frame: identity.iteration,
-            boundary: "opening-context"
-        },
-        success: SnapshotRecorder.Snapshot,
-        execute: Effect.provideContext(effect, services)
-    })
-    // Continuing with a live value after the recorder fails would recreate
-    // the replay divergence this adapter exists to prevent.
-    ));
-});
+const record = (engine, identity, effect) => {
+    return Effect_1.gen(function* record() {
+        const services = yield* Effect.context();
+        return yield* (Effect.orDie(engine.record({
+            name: "memory-snapshot",
+            identity: {
+                session: identity.lineageId,
+                frame: identity.iteration,
+                boundary: "opening-context"
+            },
+            success: SnapshotRecorder.Snapshot,
+            execute: Effect.provideContext(effect, services)
+        })
+        // Continuing with a live value after the recorder fails would recreate
+        // the replay divergence this adapter exists to prevent.
+        ));
+    });
+};
 /**
  * Builds the memory recorder backed by a harness engine.
  *

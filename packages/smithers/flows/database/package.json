@@ -56,11 +56,7 @@
       "vibelang-source": "./src/Migrations.ts",
       "default": "./.vibelang/js/src/Migrations.js"
     },
-    "./UnsupportedBackend": {
-      "types": "./src/UnsupportedBackend.ts",
-      "vibelang-source": "./src/UnsupportedBackend.ts",
-      "default": "./.vibelang/js/src/UnsupportedBackend.js"
-    },
+    "./UnsupportedBackend": "./src/UnsupportedBackend.ts",
     "./index": {
       "types": "./.vibe/declarations/src/index.d.vibe.ts",
       "vibelang-source": "./src/index.vibe",

@@ -34,7 +34,7 @@ export const withRoute = (plan, apiKey, given) => {
             try {
                 access = JSON.parse(Secret.value(apiKey));
                 if (!access.accessToken || !access.accountId)
-                    throw new Error("missing access");
+                    $raise(new Error("missing access"));
             }
             catch {
                 return Result.fail(new ModelError.ModelError({ code: "authentication", message: "ChatGPT sign-in unavailable" }));
@@ -83,3 +83,4 @@ export const toModel = (plan, apiKey, options = {}) => Effect.provide(Effect.fla
  * @since 1.0.0-rc.0
  */
 export const toEvaluatorLayer = (plan, apiKey, timeoutMs) => Evaluator.layerVercelGateway({ apiKey, model: plan.modelId, timeoutMs, baseUrl: plan.url });
+import { raise as $raise } from "./ConfiguredModelRoute.vibe.-24-throw-24-ts.js";

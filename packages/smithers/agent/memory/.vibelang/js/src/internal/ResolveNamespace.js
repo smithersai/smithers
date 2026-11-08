@@ -6,7 +6,6 @@
  */
 import * as Schema from "effect/Schema";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as Effect from "effect/Effect";
 import { MemoryError } from "../MemoryError.js";
 import * as Namespace from "../Namespace.js";
@@ -43,18 +42,20 @@ export const namespaceForBank = (bank) => {
  * @category constructors
  * @since 0.1.0
  */
-export const resolveNamespace = Effect_1.fnUntraced(runtime.$joinedFrame(function* resolveNamespace(input) {
-    if (typeof input !== "string") {
-        return yield* Effect.map(Effect.mapError(Schema.decodeUnknownEffect(Namespace.Namespace)(input), () => new MemoryError({
-            code: "invalid_namespace",
-            message: "memory namespace is invalid"
-        })), (namespace) => ({ namespace, bank: bankForNamespace(namespace) }));
-    }
-    if (input.length === 0) {
-        return yield* Effect_1.fail(new MemoryError({ code: "invalid_namespace", message: "memory bank must not be empty" }));
-    }
-    return { namespace: namespaceForBank(input), bank: input };
-}));
+export const resolveNamespace = (input) => {
+    return Effect_1.gen(function* resolveNamespace() {
+        if (typeof input !== "string") {
+            return yield* Effect.map(Effect.mapError(Schema.decodeUnknownEffect(Namespace.Namespace)(input), () => new MemoryError({
+                code: "invalid_namespace",
+                message: "memory namespace is invalid"
+            })), (namespace) => ({ namespace, bank: bankForNamespace(namespace) }));
+        }
+        if (input.length === 0) {
+            return yield* Effect_1.fail(new MemoryError({ code: "invalid_namespace", message: "memory bank must not be empty" }));
+        }
+        return { namespace: namespaceForBank(input), bank: input };
+    });
+};
 /**
  * Resolves and de-duplicates bank names by structured namespace, preserving
  * the first public spelling for result attribution.

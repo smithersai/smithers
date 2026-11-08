@@ -23,8 +23,10 @@ import { evidence, repository, scriptedSeats, scriptedTemplate } from "./fixture
 test("content approval survives exit and restart in a different Node process", { timeout: 60_000 }, async (test) => {
   const fixture = await repository(test)
   const worker = join(import.meta.dirname, "resume-worker.ts")
-  const start = await promisify(execFile)(process.execPath, [worker, fixture.root, "start"])
-  const resume = await promisify(execFile)(process.execPath, [worker, fixture.root, "resume"])
+  // The worker's imports reach `.vibe` modules, which load through VibeLang.
+  const loader = ["--import", import.meta.resolve("vibelang/register")]
+  const start = await promisify(execFile)(process.execPath, [...loader, worker, fixture.root, "start"])
+  const resume = await promisify(execFile)(process.execPath, [...loader, worker, fixture.root, "resume"])
   const first = JSON.parse(start.stdout.trim().split("\n").at(-1)!)
   const last = JSON.parse(resume.stdout.trim().split("\n").at(-1)!)
   assert.equal(first.result.status, "waiting")

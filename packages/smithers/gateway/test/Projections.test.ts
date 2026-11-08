@@ -22,7 +22,7 @@ import { Deferred, Effect, Fiber, Schema, type Scope, Stream } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as GatewayProjection from "../src/GatewayProjection.ts"
 import * as GatewaySchema from "../src/GatewaySchema.vibe"
-import { make, maxDurationRuns, Projections } from "../src/Projections.vibe"
+import { make, maxDurationRuns, Projections } from "../src/Projections.ts"
 import { defaultCadenceStack, driverFence, emit, stack } from "./GatewayStack.ts"
 
 const approvalOf = (card: PlanCard): ApprovalPayload => ({

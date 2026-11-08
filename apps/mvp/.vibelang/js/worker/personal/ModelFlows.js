@@ -4,7 +4,7 @@ import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow";
 import { Node } from "@smthrs/plan";
 import { Clock, Effect, Layer, Metric, Option, Redacted, Schema } from "effect";
 import { CONNECTION_KINDS, PROTOCOLS } from "../../src/features/personal-model/contract.js";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { codeOf } from "../ErrorCode.js";
 import { SecretKeys } from "../secrets/Keys.js";
 import * as Codex from "./Codex.js";
 import * as Store from "./Store.js";

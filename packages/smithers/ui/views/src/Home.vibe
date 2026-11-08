@@ -291,7 +291,7 @@ export const IsoDate = Schema.String.check(
  * @category schemas
  * @since 0.1.0
  */
-export schema Link { readonly label: Title; readonly url: Url }
+export const Link = Schema.Struct({ label: Title, url: Url })
 
 /**
  * Who may see a section:
@@ -407,12 +407,12 @@ export const AppPicture = Schema.Literals(["issue", "review", "wiki", "schedule"
  * @category schemas
  * @since 0.1.0
  */
-export schema AppBlock {
-  readonly type: "app"
-  readonly flow: FlowName
-  readonly title: Title
-  readonly picture: AppPicture
-}
+export const AppBlock = Schema.Struct({
+  type: Schema.Literal("app"),
+  flow: FlowName,
+  title: Title,
+  picture: AppPicture
+})
 
 /**
  * A Markdown file of the repository, read at the home's own commit.
@@ -444,10 +444,10 @@ export const StackBlock = Schema.Struct({
  * @category schemas
  * @since 0.1.0
  */
-export schema ViewBlock {
-  readonly type: "view"
-  readonly flow: FlowName
-}
+export const ViewBlock = Schema.Struct({
+  type: Schema.Literal("view"),
+  flow: FlowName
+})
 
 /**
  * A project's opening: its name, a tagline, a paragraph, the command that
@@ -515,7 +515,7 @@ export const CardsBlock = Schema.Struct({
  * @category schemas
  * @since 0.1.0
  */
-export schema Stat { readonly value: Title; readonly label: Title }
+export const Stat = Schema.Struct({ value: Title, label: Title })
 
 /**
  * A row of up to {@link maximumStats} declared facts. They are the

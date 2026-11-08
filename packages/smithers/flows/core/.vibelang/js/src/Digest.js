@@ -15,7 +15,8 @@
  * @since 0.1.0
  */
 import { canonicalize } from "@smthrs/canonical";
-import { Crypto, digestSync, syncCrypto } from "@smthrs/crypto";
+import { digestSync, syncCrypto } from "@smthrs/crypto";
+import * as EffectDigest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 /**
  * Provides the synchronous SHA-256 service to an Effect. The caller runs the
@@ -24,7 +25,7 @@ import * as Effect from "effect/Effect";
  * @category hashing
  * @since 1.0.0
  */
-export const provideSync = (effect) => Effect.provideService(effect, Crypto.Crypto, syncCrypto);
+export const provideSync = (effect) => Effect.provideService(effect, EffectDigest.Digest, syncCrypto);
 /**
  * Returns the full lowercase SHA-256 digest of UTF-8 string or byte input.
  *

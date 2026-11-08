@@ -15,7 +15,6 @@ import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as Schema_1 from "effect/Schema";
 import * as Flow from "@smthrs/flow/Flow";
 import * as Node from "@smthrs/plan/Node";
@@ -217,45 +216,29 @@ export const run = (input, options) => {
         if (refusal !== undefined)
             return Effect.fail(refusal);
         const residue = [];
-        const forward = Effect_1.gen(runtime.$iteratorFrame(runtime.$joinedFrame(function* forward() {
+        const forward = Effect_1.gen(function* forward() {
             const completed = new Map();
-            {
-                let pending_1 = runtime.$normal;
-                try {
-                    for (const step of steps) {
-                        try {
-                            {
-                                const value = yield* step.action({
-                                    input,
-                                    completed: Object.fromEntries(completed)
-                                });
-                                completed.set(step.id, value);
-                                if (policy === "fail")
-                                    continue;
-                                yield* Effect.addFinalizer((exit) => Exit.isSuccess(exit)
-                                    ? Effect.void
-                                    : Effect.matchCause(Effect_1.suspend(() => step.compensation({ id: step.id, input, value })), {
-                                        onFailure: (cause) => {
-                                            residue.push({ id: step.id, error: Cause.squash(cause) });
-                                        },
-                                        onSuccess: () => { }
-                                    }));
-                            }
-                        }
-                        catch (thrown_1) {
-                            pending_1 = thrown_1;
-                            break;
-                        }
-                    }
-                }
-                catch (thrown_2) {
-                    throw runtime.$finallyFailure(pending_1, thrown_2);
-                }
-                if (pending_1 !== runtime.$normal)
-                    throw pending_1;
+            for (const step of steps) {
+                const value = yield* step.action({
+                    input,
+                    completed: Object.fromEntries(completed)
+                });
+                completed.set(step.id, value);
+                if (policy === "fail")
+                    continue;
+                yield* Effect.addFinalizer((exit) => Exit.isSuccess(exit)
+                    ? Effect.void
+                    : Effect.matchCause(Effect_1.gen(function* () {
+                        return yield* step.compensation({ id: step.id, input, value });
+                    }), {
+                        onFailure: (cause) => {
+                            residue.push({ id: step.id, error: Cause.squash(cause) });
+                        },
+                        onSuccess: () => { }
+                    }));
             }
             return Object.fromEntries(completed);
-        })));
+        });
         const settle = (exit) => {
             const failure = Exit.findErrorOption(exit);
             if (residue.length > 0) {
@@ -279,4 +262,4 @@ export const run = (input, options) => {
         return Effect.flatMap(Effect.exit(Effect.scoped(forward)), settle);
     });
 };
-import { raise as $raise } from "./Saga.vibe.$throw$ts.js";
+import { raise as $raise } from "./Saga.vibe.-24-throw-24-ts.js";

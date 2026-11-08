@@ -8,7 +8,6 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import { forEach } from "effect/Effect";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as ReadonlyMap from "@smthrs/canonical/ReadonlyMap";
 import { FsError } from "./FsError.js";
 import * as Boundary from "./internal/Boundary.js";
@@ -37,47 +36,54 @@ export const maximumTotalSegments = 4_096;
 export const maximumResolutionTokens = 4_096;
 const emptyNode = () => ({ route: Option.none(), children: new Map() });
 const resourceLimit = (method, description) => new FsError({ code: "resource_limit", method, description });
-// Bound foreign reflection with a JavaScript try hatch and normalize to FsError.
-const routeReferences = (input) => Effect_1.suspend({ routeReferences: () => { return Effect.try({
-        try: () => ((input, maximumRoutes, resourceLimit) => {
-            if (!Array.isArray(input) || Object.getPrototypeOf(input) !== Array.prototype) {
-                throw new FsError({
+// Reflection may trigger a hostile proxy; normalize its failure at the boundary.
+function inspect(read) {
+    return Effect_1.gen(function* inspect() {
+        return yield* Effect.try({
+            try: read,
+            catch: () => new FsError({
+                code: "invalid_route",
+                method: "CommandTree.make",
+                description: "Routes could not be inspected without executing user code"
+            })
+        });
+    });
+}
+const routeReferences = (input) => {
+    return Effect_1.gen(function* routeReferences() {
+        const ordinary = yield* inspect(() => Array.isArray(input) && Object.getPrototypeOf(input) === Array.prototype);
+        if (!ordinary)
+            return yield* Effect_1.fail(new FsError({
+                code: "invalid_route",
+                method: "CommandTree.make",
+                description: "Routes must be supplied as an ordinary dense array"
+            }));
+        const length = yield* inspect(() => input.length);
+        if (length > maximumRoutes) {
+            return yield* Effect_1.fail(resourceLimit("CommandTree.make", `A command tree may contain at most ${maximumRoutes} routes`));
+        }
+        const keys = yield* inspect(() => Reflect.ownKeys(input));
+        if (keys.length !== length + 1)
+            return yield* Effect_1.fail(new FsError({
+                code: "invalid_route",
+                method: "CommandTree.make",
+                description: "Routes must be supplied as an ordinary dense array"
+            }));
+        const output = [];
+        for (let index = 0; index < length; index++) {
+            const descriptor = yield* inspect(() => Object.getOwnPropertyDescriptor(input, String(index)));
+            if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable)
+                return yield* Effect_1.fail(new FsError({
                     code: "invalid_route",
                     method: "CommandTree.make",
-                    description: "Routes must be supplied as an ordinary dense array"
-                });
-            }
-            if (input.length > maximumRoutes) {
-                throw resourceLimit("CommandTree.make", `A command tree may contain at most ${maximumRoutes} routes`);
-            }
-            if (Reflect.ownKeys(input).length !== input.length + 1) {
-                throw new FsError({
-                    code: "invalid_route",
-                    method: "CommandTree.make",
-                    description: "Routes must be supplied as an ordinary dense array"
-                });
-            }
-            const output = [];
-            for (let index = 0; index < input.length; index++) {
-                const descriptor = Object.getOwnPropertyDescriptor(input, String(index));
-                if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
-                    throw new FsError({
-                        code: "invalid_route",
-                        method: "CommandTree.make",
-                        description: "Routes must be supplied as enumerable data properties",
-                        path: `$[${index}]`
-                    });
-                }
-                output.push(descriptor.value);
-            }
-            return Object.freeze(output);
-        })(input, maximumRoutes, resourceLimit),
-        catch: (cause) => cause instanceof FsError ? cause : new FsError({
-            code: "invalid_route",
-            method: "CommandTree.make",
-            description: "Routes could not be inspected without executing user code"
-        })
-    }); } }.routeReferences);
+                    description: "Routes must be supplied as enumerable data properties",
+                    path: `$[${index}]`
+                }));
+            output.push(descriptor.value);
+        }
+        return Object.freeze(output);
+    });
+};
 const freezeTree = (root) => {
     const frozen = new Map();
     const stack = [{ node: root, visited: false }];
@@ -106,8 +112,8 @@ const freezeTree = (root) => {
  * @category constructors
  * @since 0.1.0
  */
-export function make(arg_1) {
-    return Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* make(input) {
+export function make(input) {
+    return Effect_1.gen(function* make() {
         const references = yield* routeReferences(input);
         const routes = yield* forEach(references, Route.snapshot);
         const totalSegments = routes.reduce((total, route) => total + route.segments.length, 0);
@@ -115,72 +121,36 @@ export function make(arg_1) {
             return yield* Effect_1.fail(resourceLimit("CommandTree.make", `A command tree may contain at most ${maximumTotalSegments} total segments`));
         }
         const root = emptyNode();
-        {
-            let pending_1 = runtime.$normal;
-            try {
-                for (const route of routes) {
-                    try {
-                        {
-                            let node = root;
-                            {
-                                let pending_2 = runtime.$normal;
-                                try {
-                                    for (const segment of route.segments) {
-                                        try {
-                                            {
-                                                let child = node.children.get(segment);
-                                                if (child === undefined) {
-                                                    child = emptyNode();
-                                                    node.children.set(segment, child);
-                                                }
-                                                node = child;
-                                            }
-                                        }
-                                        catch (thrown_1) {
-                                            pending_2 = thrown_1;
-                                            break;
-                                        }
-                                    }
-                                }
-                                catch (thrown_2) {
-                                    throw runtime.$finallyFailure(pending_2, thrown_2);
-                                }
-                                if (pending_2 !== runtime.$normal)
-                                    throw pending_2;
-                            }
-                            if (Option.isSome(node.route)) {
-                                return yield* Effect_1.fail(new FsError({
-                                    code: "duplicate_route",
-                                    method: "CommandTree.make",
-                                    description: "Two routes claim the same command name",
-                                    path: route.name
-                                }));
-                            }
-                            node.route = Option.some(route);
-                        }
-                    }
-                    catch (thrown_3) {
-                        pending_1 = thrown_3;
-                        break;
-                    }
+        for (const route of routes) {
+            let node = root;
+            for (const segment of route.segments) {
+                let child = node.children.get(segment);
+                if (child === undefined) {
+                    child = emptyNode();
+                    node.children.set(segment, child);
                 }
+                node = child;
             }
-            catch (thrown_4) {
-                throw runtime.$finallyFailure(pending_1, thrown_4);
+            if (Option.isSome(node.route)) {
+                return yield* Effect_1.fail(new FsError({
+                    code: "duplicate_route",
+                    method: "CommandTree.make",
+                    description: "Two routes claim the same command name",
+                    path: route.name
+                }));
             }
-            if (pending_1 !== runtime.$normal)
-                throw pending_1;
+            node.route = Option.some(route);
         }
         return freezeTree(root);
-    }))).apply(this, arguments);
+    });
 }
-function resolutionTokens(arg_2) {
-    return Effect_1.fnUntraced(function* resolutionTokens(input) {
-        const captured = Boundary.stringArray(input, {
+function resolutionTokens(input) {
+    return Effect_1.gen(function* resolutionTokens() {
+        const captured = yield* Effect_1.sync(() => Boundary.stringArray(input, {
             maxItems: maximumResolutionTokens,
             maxLength: CommandLine.maximumTokenLength,
             allowEmpty: true
-        });
+        }));
         if (!captured.ok) {
             if (captured.kind === "invalid_text") {
                 return yield* Effect_1.fail(new FsError({
@@ -193,7 +163,7 @@ function resolutionTokens(arg_2) {
             return yield* Effect_1.fail(resourceLimit("CommandTree.resolve", "The command arguments exceed their resource bounds"));
         }
         return captured.value;
-    }).apply(this, arguments);
+    });
 }
 /**
  * Resolves the longest routable prefix of an argv.
@@ -201,8 +171,8 @@ function resolutionTokens(arg_2) {
  * @category constructors
  * @since 0.1.0
  */
-export function resolve(arg_3, arg_4) {
-    return Effect_1.fnUntraced(function* resolve(tree, input) {
+export function resolve(tree, input) {
+    return Effect_1.gen(function* resolve() {
         const argv = yield* resolutionTokens(input);
         let node = tree;
         let matched;
@@ -234,7 +204,7 @@ export function resolve(arg_3, arg_4) {
             }));
         }
         return Object.freeze({ route: matched.route, rest: Object.freeze(argv.slice(matched.consumed)) });
-    }).apply(this, arguments);
+    });
 }
 /**
  * Resolves one complete route name and refuses unconsumed path segments.
@@ -242,8 +212,8 @@ export function resolve(arg_3, arg_4) {
  * @category constructors
  * @since 0.1.0
  */
-export function resolveExact(arg_5, arg_6) {
-    return Effect_1.fnUntraced(function* resolveExact(tree, argv) {
+export function resolveExact(tree, argv) {
+    return Effect_1.gen(function* resolveExact() {
         const { rest, route } = yield* resolve(tree, argv);
         if (rest.length !== 0) {
             return yield* Effect_1.fail(new FsError({
@@ -253,7 +223,7 @@ export function resolveExact(arg_5, arg_6) {
             }));
         }
         return route;
-    }).apply(this, arguments);
+    });
 }
 /**
  * Lists every route in stable segment order.

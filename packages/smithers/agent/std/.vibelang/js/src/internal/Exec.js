@@ -17,7 +17,6 @@
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as Stream from "effect/Stream";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as ChildProcessEnvironment from "@smthrs/kernel/ChildProcessEnvironment";
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner";
 import * as Effect from "effect/Effect";
@@ -97,11 +96,11 @@ const keepTail = (state, chunk, maxBytes) => {
 const decodeTail = (state) => {
     const bytes = join(state.chunks, state.bytes);
     if (state.dropped === 0)
-        return { text: decoder.decode(bytes), droppedBytes: 0 };
+        return { text: $invoke(decoder, () => (bytes)), droppedBytes: 0 };
     let start = 0;
     while (start < bytes.byteLength && start < 3 && isContinuation(bytes[start]))
         start++;
-    return { text: decoder.decode(bytes.subarray(start)), droppedBytes: state.dropped + start };
+    return { text: $invoke(decoder, () => (bytes.subarray(start))), droppedBytes: state.dropped + start };
 };
 /**
  * The length of a cut head without the character the cut left unfinished.
@@ -129,13 +128,13 @@ const wholeLength = (bytes) => {
 const decodeEnds = (state) => {
     if (state.tail.dropped === 0) {
         const whole = join([...state.head, ...state.tail.chunks], state.headBytes + state.tail.bytes);
-        return { text: decoder.decode(whole), droppedBytes: 0 };
+        return { text: $invoke(decoder, () => (whole)), droppedBytes: 0 };
     }
     const head = join(state.head, state.headBytes);
     const kept = wholeLength(head);
     const tail = decodeTail(state.tail);
     const droppedBytes = head.byteLength - kept + tail.droppedBytes;
-    return { text: elideMiddle(decoder.decode(head.subarray(0, kept)), droppedBytes, tail.text), droppedBytes };
+    return { text: elideMiddle($invoke(decoder, () => (head.subarray(0, kept))), droppedBytes, tail.text), droppedBytes };
 };
 const boundedTail = (stream, maxBytes, overflow) => Effect.map(Stream.runFold(stream, emptyTail, (state, chunk) => {
     keepTail(state, chunk, maxBytes);
@@ -179,7 +178,7 @@ const argumentsTooLong = (error) => error.cause?.code === "E2BIG"
         message: "Command not started: its arguments exceed the operating system's size limit (E2BIG). Send long text on standard input or in a file, not in the command line or its arguments."
     })
     : undefined;
-const unbounded = (command, options) => Effect.mapError(Effect.scoped((Effect_1.gen(runtime.$joinedFrame(function* () {
+const unbounded = (command, options) => Effect.mapError(Effect.scoped((Effect_1.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const settings = {
         ...(options.args === undefined ? { shell: true } : {}),
@@ -231,7 +230,7 @@ const unbounded = (command, options) => Effect.mapError(Effect.scoped((Effect_1.
         stdoutDroppedBytes: stdout.droppedBytes,
         stderrDroppedBytes: stderr.droppedBytes
     };
-})))), (error) => error instanceof ExecError ? error : argumentsTooLong(error) ?? new ExecError({
+}))), (error) => error instanceof ExecError ? error : argumentsTooLong(error) ?? new ExecError({
     code: "spawn_error",
     message: `exec: ${command}: ${error.message}`
 }));
@@ -289,3 +288,4 @@ export const toStdError = (command, error) => new StdError.StdError({
             : `Command failed to start: ${error.message}`,
     ...(error.limitMillis === undefined ? {} : { limitMillis: error.limitMillis })
 });
+import { invoke as $invoke } from "./Exec.vibe.-24-call-24-ts.js";

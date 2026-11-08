@@ -5,10 +5,10 @@ import { SqlClient } from "effect/sql";
 import { MAX_ANSWER_BODY_BYTES } from "../src/features/agent/contract.js";
 import { AnswerWrite } from "../src/features/agent/schema.js";
 import { agentLiveSeconds } from "../src/features/model/contract.js";
-import { boundTo, Sessions } from "#vibelang/emitted/worker/Actor";
+import { boundTo, Sessions } from "./Actor.js";
 import { askingOnAnswer } from "./branch/Access.js";
 import { readBounded } from "#vibelang/emitted/worker/Body";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { codeOf } from "./ErrorCode.js";
 import * as Notifications from "./Notifications.js";
 import * as Messages from "./Messages.js";
 // The answer routes (docs/features/agent.md#the-answer-routes): the server's write path for the answers the browser's

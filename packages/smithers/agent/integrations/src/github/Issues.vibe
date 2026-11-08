@@ -63,7 +63,7 @@ export const IssueUser = Schema.NullOr(Schema.Struct({ id: Schema.Number, login:
  * @category schemas
  * @since 1.0.0
  */
-export schema IssueLabel { readonly name: string }
+export const IssueLabel = Schema.Struct({ name: Schema.String })
 
 /**
  * A decoded {@link IssueLabel}.

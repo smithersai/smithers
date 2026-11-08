@@ -10,5 +10,8 @@ export class WipeFailed extends Data.TaggedError("WipeFailed") {
 /** Wipes this device's synced data and outbox. */
 export class DeviceWipe extends Context.Service()("@smthrs/mvp/auth/DeviceWipe") {
     /** The device whose wipe is the host's `wipe` (`Host.wipe` in src/boot.ts). */
-    static layer = (wipe) => Layer.succeed(DeviceWipe, DeviceWipe.of({ wipe: Effect.tryPromise({ try: wipe, catch: () => new WipeFailed() }) }));
+    static layer = (wipe, finishSignOut = async () => { }) => Layer.succeed(DeviceWipe, DeviceWipe.of({
+        wipe: Effect.tryPromise({ try: wipe, catch: () => new WipeFailed() }),
+        finishSignOut: Effect.promise(finishSignOut),
+    }));
 }

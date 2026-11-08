@@ -4,7 +4,7 @@ import { toModel } from "@smthrs/model-host";
 import { ConfiguredModel } from "@smthrs/rpc";
 import { Context, Effect, Layer, Option, Schema, Stream } from "effect";
 import { hostOf, resolveTier } from "../../src/features/personal-model/contract.js";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { codeOf } from "../ErrorCode.js";
 import { acceptsEffort } from "#vibelang/emitted/worker/ModelTiers";
 import { SecretKeys } from "../secrets/Keys.js";
 import * as Store from "./Store.js";

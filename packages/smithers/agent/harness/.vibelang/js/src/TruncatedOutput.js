@@ -129,7 +129,7 @@ const captureField = (flow, node, field, into) => {
         flow,
         field,
         droppedBytes: droppedBytes(node, field),
-        digest: Digest.digest(text)
+        digest: $invoke(Digest, () => (text))
     }));
 };
 const captureNode = (flow, node, into) => {
@@ -174,7 +174,7 @@ const search = (value, path, known) => {
     if (typeof value === "string") {
         if (byteLength(value) < minimumBytes)
             return undefined;
-        const capture = known.get(Digest.digest(value));
+        const capture = known.get($invoke(Digest, () => (value)));
         return capture === undefined ? undefined : { path: path === "" ? "input" : path, capture };
     }
     if (Array.isArray(value)) {
@@ -256,3 +256,4 @@ export const retain = (ledger) => {
  * @slop
  */
 export const Ledger = Schema.Array(Capture).pipe(Schema.withConstructorDefault(Effect.succeed([])), Schema.withDecodingDefaultKey(Effect.succeed([])));
+import { invoke as $invoke } from "./TruncatedOutput.vibe.-24-call-24-ts.js";

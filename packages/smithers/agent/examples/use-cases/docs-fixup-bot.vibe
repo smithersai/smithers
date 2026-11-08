@@ -25,47 +25,47 @@ const seat = "anthropic:claude-sonnet-5-5"
 const Category = Schema.Literals(["import", "api", "cli", "syntax", "dead-link", "other"])
 
 /** One broken example and where it lives. */
-export schema BrokenExample {
-  readonly docPath: string
-  readonly lineRange: { readonly start: number; readonly end: number }
-  readonly language: string
-  readonly snippet: string
-  readonly error: string
-  readonly category: Category
-}
+export const BrokenExample = Schema.Struct({
+  docPath: Schema.String,
+  lineRange: Schema.Struct({ start: Schema.Number, end: Schema.Number }),
+  language: Schema.String,
+  snippet: Schema.String,
+  error: Schema.String,
+  category: Category
+})
 
 /** The scanner's answer. */
-export schema Scan {
-  readonly brokenExamples: ReadonlyArray<BrokenExample>
-  readonly totalDocsScanned: number
-  readonly totalBroken: number
-  readonly summary: string
-}
+export const Scan = Schema.Struct({
+  brokenExamples: Schema.Array(BrokenExample),
+  totalDocsScanned: Schema.Number,
+  totalBroken: Schema.Number,
+  summary: Schema.String
+})
 
 /** What the repair agent rewrote and what it left alone. */
-export schema Repair {
-  readonly fixes: ReadonlyArray<{
-    readonly docPath: string
-    readonly original: string
-    readonly fixed: string
-    readonly explanation: string
-  }>
-  readonly filesChanged: ReadonlyArray<string>
-  readonly skipped: ReadonlyArray<{ readonly docPath: string; readonly reason: string }>
-  readonly summary: string
-}
+export const Repair = Schema.Struct({
+  fixes: Schema.Array(Schema.Struct({
+    docPath: Schema.String,
+    original: Schema.String,
+    fixed: Schema.String,
+    explanation: Schema.String
+  })),
+  filesChanged: Schema.Array(Schema.String),
+  skipped: Schema.Array(Schema.Struct({ docPath: Schema.String, reason: Schema.String })),
+  summary: Schema.String
+})
 
 /** The verifier's verdict on the repair. */
-export schema Verification {
-  readonly allPassing: boolean
-  readonly results: ReadonlyArray<{
-    readonly docPath: string
-    readonly passed: boolean
-    readonly issues: ReadonlyArray<string>
-  }>
-  readonly regressions: ReadonlyArray<string>
-  readonly summary: string
-}
+export const Verification = Schema.Struct({
+  allPassing: Schema.Boolean,
+  results: Schema.Array(Schema.Struct({
+    docPath: Schema.String,
+    passed: Schema.Boolean,
+    issues: Schema.Array(Schema.String)
+  })),
+  regressions: Schema.Array(Schema.String),
+  summary: Schema.String
+})
 
 /** The pull request a host is asked to open, with 0.x's PR props. */
 export const PullRequestRequest = Schema.Struct({
@@ -89,12 +89,12 @@ export const PullRequest = Schema.Struct({
 })
 
 /** What the flow settles with: every 0.x output. */
-export schema Output {
-  readonly scan: Scan
-  readonly repair: Repair
-  readonly verification: Verification
-  readonly pullRequest: PullRequest
-}
+export const Output = Schema.Struct({
+  scan: Scan,
+  repair: Repair,
+  verification: Verification,
+  pullRequest: PullRequest
+})
 
 /** Finds broken examples under the doc globs. */
 export const ScanDocs = AgentAction.make("examples/DocsFixupBot/Scan", {

@@ -5,7 +5,6 @@
  * @since 1.0.0-rc.0
  */
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as Effect from "effect/Effect";
 import * as CatchUp from "../CatchUp.js";
 import * as Cron from "../Cron.js";
@@ -26,38 +25,40 @@ const withinBound = (triggerId, owed) => Effect.catch(owed, (error) => error.cod
  * @private
  * @since 1.0.0-rc.0
  */
-export const compute = Effect_1.fnUntraced(runtime.$joinedFrame(function* compute(trigger, now, observed) {
-    const cron = yield* Cron.parse(trigger.cron, trigger.timezone);
-    const current = (yield* Cron.previousAtOrBefore(cron, new Date(now))).getTime();
-    // First sight of this trigger in this process starts from the last fire
-    // the store recorded. A trigger that has never fired starts from here
-    // rather than from whatever occurrence last passed: registering a weekly
-    // trigger on a Sunday evening owes nothing for the Monday six days gone,
-    // which is what `catchUp` says.
-    const since = observed ?? trigger.lastFiredAt;
-    if (since === undefined || current <= since) {
-        return { occurrences: [], watermark: Math.max(current, observed ?? current) };
-    }
-    // A restart and a stall in this process missed the same boundaries, so
-    // both ask the policy about the same interval, the current boundary
-    // included. The stalled poll used to leave the current boundary out, so
-    // `one` fired two runs and a bound of 2 fired three where a restart fired
-    // one.
-    //
-    // When only the boundary that just passed is due, nothing was missed: a
-    // bound of zero has nothing to refuse, so it is read as one. Every other
-    // bound is still validated and searched exactly as stated.
-    // Only a zero bound needs the boundary before this one, so no other tick
-    // pays for that search.
-    const lone = trigger.maxCatchUp === 0 &&
-        (yield* Cron.previousAtOrBefore(cron, new Date(current - 1))).getTime() <= since;
-    const bound = lone ? 1 : trigger.maxCatchUp;
-    const owed = yield* withinBound(trigger.id, CatchUp.occurrences(trigger.catchUp, bound, new Date(since), new Date(now), cron));
-    // The current boundary is owed whatever the policy says about the
-    // backlog. Under `none`, or once the bound abandoned the backlog, a
-    // restart used to skip it.
-    const occurrences = owed.map((occurrence) => occurrence.getTime());
-    if (occurrences.at(-1) !== current)
-        occurrences.push(current);
-    return { occurrences, watermark: current };
-}));
+export const compute = (trigger, now, observed) => {
+    return Effect_1.gen(function* compute() {
+        const cron = yield* Cron.parse(trigger.cron, trigger.timezone);
+        const current = (yield* Cron.previousAtOrBefore(cron, new Date(now))).getTime();
+        // First sight of this trigger in this process starts from the last fire
+        // the store recorded. A trigger that has never fired starts from here
+        // rather than from whatever occurrence last passed: registering a weekly
+        // trigger on a Sunday evening owes nothing for the Monday six days gone,
+        // which is what `catchUp` says.
+        const since = observed ?? trigger.lastFiredAt;
+        if (since === undefined || current <= since) {
+            return { occurrences: [], watermark: Math.max(current, observed ?? current) };
+        }
+        // A restart and a stall in this process missed the same boundaries, so
+        // both ask the policy about the same interval, the current boundary
+        // included. The stalled poll used to leave the current boundary out, so
+        // `one` fired two runs and a bound of 2 fired three where a restart fired
+        // one.
+        //
+        // When only the boundary that just passed is due, nothing was missed: a
+        // bound of zero has nothing to refuse, so it is read as one. Every other
+        // bound is still validated and searched exactly as stated.
+        // Only a zero bound needs the boundary before this one, so no other tick
+        // pays for that search.
+        const lone = trigger.maxCatchUp === 0 &&
+            (yield* Cron.previousAtOrBefore(cron, new Date(current - 1))).getTime() <= since;
+        const bound = lone ? 1 : trigger.maxCatchUp;
+        const owed = yield* withinBound(trigger.id, CatchUp.occurrences(trigger.catchUp, bound, new Date(since), new Date(now), cron));
+        // The current boundary is owed whatever the policy says about the
+        // backlog. Under `none`, or once the bound abandoned the backlog, a
+        // restart used to skip it.
+        const occurrences = owed.map((occurrence) => occurrence.getTime());
+        if (occurrences.at(-1) !== current)
+            occurrences.push(current);
+        return { occurrences, watermark: current };
+    });
+};

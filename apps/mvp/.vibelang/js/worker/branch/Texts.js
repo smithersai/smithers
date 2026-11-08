@@ -7,15 +7,16 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { SqlClient } from "effect/sql";
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
 import { HOME, MAX_TEXT_BODY_BYTES, MAX_UPDATE_LENGTH, TEXT_UPDATE_COLUMNS, TEXT_UPDATES_TABLE, TEXTS_ROUTE, TEXTS_SHAPE_ROUTE, } from "../../src/features/coedit/contract.js";
-import { Sessions } from "#vibelang/emitted/worker/Actor";
+import { Sessions } from "../Actor.js";
 import { readBounded } from "#vibelang/emitted/worker/Body";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
-import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess";
+import { codeOf } from "../ErrorCode.js";
+import * as ShapeAccess from "../ShapeAccess.js";
 import { askingOf, branchAccess, canEdit, canView, installedOn, isMember, roleOn } from "./Access.js";
 import * as Conversations from "./Conversations.js";
-import { Rooms } from "#vibelang/emitted/worker/branch/Rooms";
+import { Rooms } from "./Rooms.js";
 import { isUpgrade, sameOrigin } from "#vibelang/emitted/worker/branch/Upgrade";
 import * as SocketAccess from "../SocketAccess.js";
+import * as WriteAuthority from "../WriteAuthority.js";
 // Co-editing's routes (decision 0013 §4, docs/features/coedit.md): every input two people see at once is a text they
 // edit together (`@smthrs/sync`'s `SharedText`), with each other's cursors.
 //
@@ -134,18 +135,19 @@ const textPath = (path) => {
     return match === null ? undefined : { textId: match[1], room: match[2] !== undefined };
 };
 /** Inserts one update, once: the transaction it went in, or `null` when it, or the text's seed, was there already. */
-const insert = (scope, textId, write, personId) => Effect.gen(function* () {
+const insert = (scope, textId, write, actor) => Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
+    const authority = WriteAuthority.sessionOf(actor);
     return yield* sql.withTransaction(Effect.gen(function* () {
         const stored = yield* sql `
         INSERT INTO text_updates (id, scope, text_id, data, seed, person_id)
-        VALUES (${write.id.toLowerCase()}, ${scope}, ${textId}, ${write.update}, ${write.seed === true}, ${personId})
+        VALUES (${write.id.toLowerCase()}, ${scope}, ${textId}, ${write.update}, ${write.seed === true}, ${actor.subject.id})
         ON CONFLICT DO NOTHING
-        RETURNING id`;
-        if (stored.length === 0)
-            return null;
-        const [row] = yield* sql `SELECT pg_current_xact_id()::xid::text AS txid`;
-        return Number(row.txid);
+        RETURNING pg_current_xact_id()::xid::text AS txid`;
+        // Check after any unique-index wait. Coedit accepts the small read-to-commit race without session locks.
+        if (!(yield* WriteAuthority.live(authority)))
+            return yield* new WriteAuthority.Expired({});
+        return stored.length === 0 ? null : Number(stored[0].txid);
     }));
 });
 /** One request's records: a log line `text.<route>`, its span's status, and a count by outcome. */
@@ -208,7 +210,7 @@ export const make = (database) => Effect.gen(function* () {
         const valid = yield* SharedText.validate(bytes.success, { seed: decoded.value.seed === true }).pipe(Effect.result);
         if (Result.isFailure(valid))
             return refuse(fields, 400, "invalid");
-        const txid = yield* insert(scoped.key, textId.toLowerCase(), decoded.value, actor.value.subject.id).pipe(Effect.provide(database));
+        const txid = yield* insert(scoped.key, textId.toLowerCase(), decoded.value, actor.value).pipe(Effect.provide(database));
         fields.outcome = txid === null ? "existing" : "stored";
         return HttpServerResponse.jsonUnsafe({ txid }, { headers: noStore });
     }).pipe(Effect.catchCause(unavailable(fields))));

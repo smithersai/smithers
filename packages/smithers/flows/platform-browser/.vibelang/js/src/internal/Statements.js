@@ -25,7 +25,7 @@ const row = 100;
  *   `NULL`.
  */
 const bindable = (value) => typeof value === "number" && Number.isSafeInteger(value) && (value | 0) !== value ?
-    BigInt(value)
+    $invoke(BigInt, value)
     : value instanceof Date ?
         value.toISOString()
         : value;
@@ -103,3 +103,4 @@ export const runAll = async (database, sql, params, shape, hooks = {}) => {
     const { columns, results } = await runEach(database, [{ sql, params }], shape, hooks);
     return { rows: results[0], columns };
 };
+import { invoke as $invoke } from "./Statements.vibe.-24-call-24-ts.js";

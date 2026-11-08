@@ -26,7 +26,7 @@ const files = (directory: string): ReadonlyArray<string> =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) =>
     entry.isDirectory()
       ? files(join(directory, entry.name))
-      : entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts")
+      : (entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts")) || entry.name.endsWith(".vibe")
       ? [join(directory, entry.name)]
       : []
   )

@@ -54,11 +54,7 @@
       "vibelang-source": "./src/browser/BrowserJj.vibe",
       "default": "./.vibelang/js/src/browser/BrowserJj.js"
     },
-    "./browser/WasiFs": {
-      "types": "./src/browser/WasiFs.ts",
-      "vibelang-source": "./src/browser/WasiFs.ts",
-      "default": "./.vibelang/js/src/browser/WasiFs.js"
-    },
+    "./browser/WasiFs": "./src/browser/WasiFs.ts",
     "./browser/WasiPreview1": {
       "types": "./.vibe/declarations/src/browser/WasiPreview1.d.vibe.ts",
       "vibelang-source": "./src/browser/WasiPreview1.vibe",
@@ -75,15 +71,11 @@
       "default": "./.vibelang/js/src/index.js"
     },
     "./node/NodeJj": {
-      "types": "./.vibe/declarations/src/node/NodeJj.d.vibe.ts",
-      "vibelang-source": "./src/node/NodeJj.vibe",
+      "types": "./src/node/NodeJj.ts",
+      "vibelang-source": "./src/node/NodeJj.ts",
       "default": "./.vibelang/js/src/node/NodeJj.js"
     },
-    "./node/resolveJjBinary": {
-      "types": "./src/node/resolveJjBinary.ts",
-      "vibelang-source": "./src/node/resolveJjBinary.ts",
-      "default": "./.vibelang/js/src/node/resolveJjBinary.js"
-    }
+    "./node/resolveJjBinary": "./src/node/resolveJjBinary.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -103,8 +95,7 @@
     "src/Jj.vibe",
     "src/browser/BrowserJj.vibe",
     "src/browser/WasiPreview1.vibe",
-    "src/bun/BunJj.vibe",
-    "src/node/NodeJj.vibe"
+    "src/bun/BunJj.vibe"
   ],
   "publishConfig": {
     "access": "public",

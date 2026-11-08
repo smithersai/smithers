@@ -32,12 +32,12 @@ export const BenchmarkRun = Schema.Struct({
 })
 
 /** One benchmark that slowed past the threshold. */
-export schema Regression {
-  readonly name: string
-  readonly baselineMs: number
-  readonly currentMs: number
-  readonly deltaPercent: number
-}
+export const Regression = Schema.Struct({
+  name: Schema.String,
+  baselineMs: Schema.Number,
+  currentMs: Schema.Number,
+  deltaPercent: Schema.Number
+})
 
 /** The diff against the baseline. */
 export const Diff = Schema.Struct({

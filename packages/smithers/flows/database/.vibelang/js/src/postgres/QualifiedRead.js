@@ -15,6 +15,8 @@
  * misses fails loudly: outside the search path it resolves nowhere, unless
  * `public` holds a table of that name, and each table position is checked so
  * that no name is missed.
+ *
+ * @since 1.0.0-rc.17
  */
 const REFUSED = /\b(for\s+(no\s+key\s+)?update|for\s+(key\s+)?share|current_schema|current_schemas|set_config|nextval|setval|currval|to_regclass|into)\b|\bpg_\w+|::\s*regclass/i;
 /** The code of `sql` between its literals and quoted identifiers, or undefined if it can't be split with certainty. */
@@ -60,7 +62,7 @@ const segments = (sql) => {
  * of only those tables; undefined when it isn't, or when that can't be proved.
  *
  * @category internals
- * @since 1.0.0
+ * @since 1.0.0-rc.17
  */
 export const qualify = (sql, schema) => {
     if (!/^\s*select\b/i.test(sql))

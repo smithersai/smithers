@@ -9,7 +9,7 @@ import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { caller, holder, push, Ship } from "../../examples/42-placed-deploy.vibe"
+import { caller, holder, push, Ship } from "../../examples/42-placed-deploy.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-placed-deploy-"))
 afterAll(() => rmSync(directory, { recursive: true, force: true }))

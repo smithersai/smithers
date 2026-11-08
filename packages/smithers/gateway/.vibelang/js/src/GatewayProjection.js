@@ -715,6 +715,7 @@ const transcriptKinds = new Set(["control.approval.requested"]);
  * @param events the run's ordered control events
  * @since 1.0.0
  * @category projections
+ * @throws {never}
  */
 export const transcript = (events) => {
     const rows = [];

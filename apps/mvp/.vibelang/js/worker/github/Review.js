@@ -5,12 +5,12 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { SqlClient } from "effect/sql";
 import { checkFlowOf, PULLS_SEGMENT, REVIEW_CHECK, REVIEW_SEGMENT, reviewExecutionId, SHA, } from "../../src/features/pulls/contract.js";
 import { isRepository, REPOS_ROUTE } from "../../src/features/repo/contract.js";
-import { refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor";
+import { refusesPersonOnly, Sessions } from "../Actor.js";
 import { readBounded } from "#vibelang/emitted/worker/Body";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
-import { FlowStarter } from "#vibelang/emitted/worker/Flows";
+import { codeOf } from "../ErrorCode.js";
+import { FlowStarter } from "../Flows.js";
 import { checkRunIdOf, ReviewRun } from "../flows/Checks.js";
-import { repositoryOf } from "#vibelang/emitted/worker/github/Config";
+import { repositoryOf } from "./Config.js";
 import * as RepoRoles from "./RepoRoles.js";
 // Review on request (decision 0129, docs/features/pulls.md#review-on-request): `POST
 // /api/repos/<owner>/<name>/pulls/<number>/review` asks Smithers to review a pull request's current head, any pull
@@ -92,6 +92,8 @@ export const make = (database, options) => (target) => Effect.gen(function* () {
         const resolved = yield* options.roles.resolve(signed, repo).pipe(Effect.result);
         if (resolved._tag === "Failure") {
             const { code, retryAfterSeconds } = resolved.failure;
+            // Where the role read failed, as `github.repo_role` logs it: Postgres down on the session receipt says database.
+            fields.errorCode = RepoRoles.refusalFields(resolved.failure).stage;
             return refused(RepoRoles.REFUSALS[code], code, retryAfterSeconds);
         }
         // A Maintainer's or Admin's act on that repository (decision 0007 `repo:merge`'s tier): the review spends a model.

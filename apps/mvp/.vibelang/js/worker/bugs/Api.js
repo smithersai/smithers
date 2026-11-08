@@ -7,13 +7,13 @@ import { SqlClient } from "effect/sql";
 import { BUG_READ_TOKEN_VARIABLE, BUG_REPORT_COLUMNS, BUG_REPORTS_ROUTE, BUG_REPORTS_SHAPE_ROUTE, BUG_REPORTS_TABLE, bugAlertId, LIST_DEFAULT, LIST_MAX, MAX_REPORT_BODY_BYTES, } from "../../src/features/bugs/contract.js";
 import { ReportRequest } from "../../src/features/bugs/schema.js";
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
-import { Sessions } from "#vibelang/emitted/worker/Actor";
+import { Sessions } from "../Actor.js";
 import { readBounded } from "#vibelang/emitted/worker/Body";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
-import * as Flows from "#vibelang/emitted/worker/Flows";
+import { codeOf } from "../ErrorCode.js";
+import * as Flows from "../Flows.js";
 import { BugReport } from "../flows/BugReport.js";
 import { bearerOf } from "../RunCredentials.js";
-import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess";
+import * as ShapeAccess from "../ShapeAccess.js";
 // Bug reports' routes (docs/features/bugs.md).
 //
 // - `POST /api/bugs`: a signed-in person, whatever their role, or a run acting for them, files a report

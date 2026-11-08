@@ -29,31 +29,31 @@ export const IssueReport = Schema.Struct({
 })
 
 /** What the issue reader found. */
-export schema Analysis {
-  readonly component: string
-  readonly reproSteps: ReadonlyArray<string>
-  readonly expectedBehavior: string
-  readonly actualBehavior: string
-  readonly summary: string
-}
+export const Analysis = Schema.Struct({
+  component: Schema.String,
+  reproSteps: Schema.Array(Schema.String),
+  expectedBehavior: Schema.String,
+  actualBehavior: Schema.String,
+  summary: Schema.String
+})
 
 /** The test the author wrote. */
-export schema AuthoredTest {
-  readonly testPath: string
-  readonly testName: string
-  readonly assertion: string
-  readonly linesOfCode: number
-  readonly summary: string
-}
+export const AuthoredTest = Schema.Struct({
+  testPath: Schema.String,
+  testName: Schema.String,
+  assertion: Schema.String,
+  linesOfCode: Schema.Number,
+  summary: Schema.String
+})
 
 /** What running the test showed. */
-export schema RunResult {
-  readonly testPath: string
-  readonly didFail: boolean
-  readonly exitCode: number
-  readonly errorOutput: string
-  readonly summary: string
-}
+export const RunResult = Schema.Struct({
+  testPath: Schema.String,
+  didFail: Schema.Boolean,
+  exitCode: Schema.Number,
+  errorOutput: Schema.String,
+  summary: Schema.String
+})
 
 /** The handoff the flow settles with. */
 export const Report = Schema.Struct({

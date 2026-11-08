@@ -23,9 +23,9 @@ export const panelViewOf = (panel, tabs, canOpen, deploymentMember = true) => {
     if (panel.phase === "loading")
         return { badge: undefined, open: undefined, screen: { kind: "empty", text: undefined } };
     const badge = BADGES[panel.phase];
-    // A failed terminal can be retried unless another owned terminal is already available.
+    // The socket can report an ended shell before its database row changes. Offer recovery for that terminal too.
     const another = tabs.some((tab) => tab.mine && tab.id !== panel.terminalId);
-    const offered = canOpen && panel.phase !== "members_only" && (panel.phase === "opening" || (panel.phase === "failed" && !another) || !tabs.some((tab) => tab.mine));
+    const offered = canOpen && panel.phase !== "members_only" && (panel.phase === "opening" || ((panel.phase === "failed" || panel.phase === "ended") && !another) || !tabs.some((tab) => tab.mine));
     const waiting = tabs.some((tab) => tab.id === panel.terminalId && tab.waiting);
     const open = !offered ? undefined : panel.phase !== "opening" ? "button" : waiting ? "waiting" : "opening";
     const attached = panel.terminalId !== null &&

@@ -6,7 +6,7 @@ import type { Notification } from "../src/Notification.vibe"
 import * as NotificationEvent from "../src/NotificationEvent.ts"
 import * as NotificationQueue from "../src/NotificationQueue.ts"
 import * as NotificationState from "../src/NotificationState.ts"
-import * as Projection from "../src/Projection.vibe"
+import * as Projection from "../src/Projection.ts"
 
 const runId = "notification-projection" as JournalEvent.RunId
 const sourceId = "notification-test" as JournalEvent.SourceId

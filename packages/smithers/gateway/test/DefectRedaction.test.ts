@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest"
 import { GatewayError } from "../src/GatewayError.vibe"
 import type * as GatewayServer from "../src/GatewayServer.ts"
 import * as NodeGateway from "../src/node/NodeGateway.vibe"
-import { Projections } from "../src/Projections.vibe"
+import { Projections } from "../src/Projections.ts"
 import { stack } from "./GatewayStack.ts"
 
 const secret = "secret internal detail"

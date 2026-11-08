@@ -5,7 +5,6 @@ import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { withSpan } from "effect/Effect";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import { FlowDispatch } from "../../flows/dispatch";
 import { DIALOG } from "./schema";
 import { SharingStore } from "./store.js";
@@ -15,39 +14,23 @@ import { SharingStore } from "./store.js";
 const setDialog = (fields) => Effect.flatMap(SharingStore, ({ dialog }) => Effect.orDie(dialog.update(DIALOG, (row) => void Object.assign(row, fields))));
 const dialogNow = Effect.flatMap(SharingStore, ({ dialog }) => Effect.map(dialog.get(DIALOG), Option.getOrThrow));
 /** Makes the dialog's list `rows`. */
-const mirror = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* mirror(rows) {
-    const { list } = yield* SharingStore;
-    const keep = new Set(rows.map((row) => row.grantee));
-    const gone = (yield* list.toArray).filter((row) => !keep.has(row.grantee)).map((row) => row.grantee);
-    if (gone.length > 0)
-        yield* Effect.orDie(list.delete(gone));
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const row of rows) {
-                try {
-                    {
-                        if (Option.isSome(yield* list.get(row.grantee))) {
-                            yield* Effect.orDie(list.update(row.grantee, (draft) => void Object.assign(draft, row)));
-                        }
-                        else {
-                            yield* Effect.orDie(list.insert(row));
-                        }
-                    }
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
+const mirror = (rows) => {
+    return Effect_1.gen(function* mirror() {
+        const { list } = yield* SharingStore;
+        const keep = new Set(rows.map((row) => row.grantee));
+        const gone = (yield* list.toArray).filter((row) => !keep.has(row.grantee)).map((row) => row.grantee);
+        if (gone.length > 0)
+            yield* Effect.orDie(list.delete(gone));
+        for (const row of rows) {
+            if (Option.isSome(yield* list.get(row.grantee))) {
+                yield* Effect.orDie(list.update(row.grantee, (draft) => void Object.assign(draft, row)));
+            }
+            else {
+                yield* Effect.orDie(list.insert(row));
             }
         }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
-        }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
-    }
-})));
+    });
+};
 /** Opens the share dialog on branch `branchId`, its list kept equal to the branch's while it shows. */
 export const openDialog = (branchId) => { var topic_1; return (topic_1 = Effect_1.gen(function* () {
     const store = yield* SharingStore;

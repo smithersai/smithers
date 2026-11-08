@@ -10,7 +10,6 @@ import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import { canonicalRequestDigest } from "./Fixture.js";
 import { modelErrorTag, ModelLike } from "./ModelLike.js";
 import { ReplayHarnessMismatchError, UnscriptedModelError } from "./TestingError.js";
@@ -45,7 +44,7 @@ const requestShapeDigest = (request) => canonicalRequestDigest({ ...request, mod
  * @category constructors
  * @since 0.0.0
  */
-export const make = (fixture, options = {}) => Effect_1.gen(runtime.$joinedFrame(function* () {
+export const make = (fixture, options = {}) => Effect_1.gen(function* () {
     const consumed = yield* Ref.make(fixture.calls.map(() => false));
     // Encoded once per fixture rather than once per recorded call per model
     // invocation, and read back by index rather than re-derived after the
@@ -108,7 +107,7 @@ export const make = (fixture, options = {}) => Effect_1.gen(runtime.$joinedFrame
         unconsumed: () => Effect.map(Ref.get(consumed), (used) => fixture.calls.filter((_, index) => !used[index]))
     });
     return { model, controller };
-}));
+});
 /**
  * Provides both `ModelLike` and the recorded-model controller.
  *

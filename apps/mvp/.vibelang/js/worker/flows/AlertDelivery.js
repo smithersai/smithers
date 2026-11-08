@@ -4,7 +4,7 @@ import { Channels } from "@smthrs/notifications";
 import { Effect, Metric, Option, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 import { destinationOf } from "../AlertChannels.js";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { codeOf } from "../ErrorCode.js";
 // Delivering an alert outside the app (docs/features/spend-alerts.md#delivery): what every alert flow's delivery step
 // does on one channel, whatever the alert says. `ops/DeliverSpendAlert` (worker/flows/SpendAlert.ts) and
 // `ops/DeliverDatabaseAlert` (worker/flows/DatabaseLoad.ts) each build their message and call `deliver`, wrapped in

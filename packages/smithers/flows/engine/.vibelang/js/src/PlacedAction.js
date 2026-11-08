@@ -54,16 +54,18 @@ export const served = (action) => {
  * @category layers
  * @since 1.0.0
  */
-export const layer = (action, placement, body) => action.toLayer(Effect_1.fnUntraced(function* (payload) {
-    const binding = (yield* Hosts).resolve(placement);
-    if (binding._tag === "Here")
-        return yield* body(payload);
-    const key = yield* Action.CurrentInvocationKey;
-    if (key === undefined) {
-        return yield* Effect.die(new Error(`${action.name} is placed elsewhere and was dispatched with no invocation key`));
-    }
-    return (yield* callRemote(binding, served(action), {
-        executionId: key,
-        payload
-    }));
-}));
+export const layer = (action, placement, body) => action.toLayer((payload) => {
+    return Effect_1.gen(function* () {
+        const binding = (yield* Hosts).resolve(placement);
+        if (binding._tag === "Here")
+            return yield* body(payload);
+        const key = yield* Action.CurrentInvocationKey;
+        if (key === undefined) {
+            return yield* Effect.die(new Error(`${action.name} is placed elsewhere and was dispatched with no invocation key`));
+        }
+        return (yield* callRemote(binding, served(action), {
+            executionId: key,
+            payload
+        }));
+    });
+});

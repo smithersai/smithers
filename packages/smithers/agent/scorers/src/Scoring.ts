@@ -124,6 +124,7 @@ const failureOf = (cause: unknown): Failure => {
  *
  * @category converting
  * @since 0.1.0
+ * @throws {never}
  */
 export const inconclusive = (job: Job, cause: unknown): Observation => {
   const failure = failureOf(cause)

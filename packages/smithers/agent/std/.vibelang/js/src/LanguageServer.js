@@ -27,23 +27,37 @@ export const LanguageServer = Context.Service("@smthrs/std/LanguageServer");
  * @since 1.0.0
  */
 export const make = (service) => LanguageServer.of(service);
-const unsupported = () => Effect_1.suspend({ unsupported: () => { return (() => Effect_1.suspend(() => Effect_1.fail(new StdError.StdError({ code: "unsupported", message: "Language server support is unavailable" })
-    /**
-     * A {@link LanguageServer} that reports `unsupported` for every request,
-     * for an environment with no server configured.
-     *
-     * @category constructors
-     * @since 1.0.0
-     */
-    )))(
-    /**
-     * A {@link LanguageServer} that reports `unsupported` for every request,
-     * for an environment with no server configured.
-     *
-     * @category constructors
-     * @since 1.0.0
-     */
-    ); } }.unsupported);
+const unsupported = () => (_tail_1 => { return Effect_1.gen(function* unsupported() {
+    const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+    return _completion_1[0] ? yield* _value_1 : _value_1;
+}); })({ unsupported: () => { return [true, (() => { return (_tail_2 => { return Effect_1.gen(function* () {
+            const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
+            return _completion_2[0] ? yield* _value_2 : _value_2;
+        }); })(() => { return [true, Effect_1.fail(new StdError.StdError({ code: "unsupported", message: "Language server support is unavailable" })
+            /**
+             * A {@link LanguageServer} that reports `unsupported` for every request,
+             * for an environment with no server configured.
+             *
+             * @category constructors
+             * @since 1.0.0
+             */
+            )]; }); })(
+        /**
+         * A {@link LanguageServer} that reports `unsupported` for every request,
+         * for an environment with no server configured.
+         *
+         * @category constructors
+         * @since 1.0.0
+         */
+        )
+        /**
+         * A {@link LanguageServer} that reports `unsupported` for every request,
+         * for an environment with no server configured.
+         *
+         * @category constructors
+         * @since 1.0.0
+         */
+    ]; } }.unsupported);
 /**
  * A {@link LanguageServer} that reports `unsupported` for every request,
  * for an environment with no server configured.

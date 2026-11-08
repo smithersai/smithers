@@ -41,9 +41,9 @@ import { GatewayError, settingRefusal } from "./GatewayError.vibe"
 import { GatewayRpcs } from "./GatewayRpcs.ts"
 import * as GatewaySchema from "./GatewaySchema.vibe"
 import * as HostBranchPresence from "./HostBranchPresence.ts"
-import { heartbeatIntervalMillis, Projections } from "./Projections.vibe"
+import { heartbeatIntervalMillis, Projections } from "./Projections.ts"
 import * as RunHistory from "./RunHistory.ts"
-import * as RuntimeBridge from "./RuntimeBridge.vibe"
+import * as RuntimeBridge from "./RuntimeBridge.ts"
 
 /**
  * What `GET /health` answers: the `GatewaySchema.GatewayHealth` identity plus

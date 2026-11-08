@@ -85,12 +85,12 @@ const shares = (a, b) => [...a].some((word) => b.has(word));
 /** The envelope `Relevance.flowItem` puts around a description, and its capability line, which are not the item's words. */
 const envelope = /^External metadata [^\n]*\n<untrusted-data>\nProvenance: [^\n]*$|^<\/untrusted-data>$|^capabilities: .*$/gm;
 const RelevanceState = Schema.Struct({
-    context: Relevance.Context, items: Schema.Array(Relevance.Item),
+    context: Schema.mutableKey(Relevance.Context), items: Schema.mutableKey(Schema.Array(Relevance.Item)),
 });
 const CompactionState = Schema.Struct({
-    items: Schema.Array(Schema.Struct({
-        observed: Schema.String,
-    })),
+    items: Schema.mutableKey(Schema.Array(Schema.Struct({
+        observed: Schema.mutableKey(Schema.String),
+    }))),
 });
 const skillPrefix = `${Supervisor.monitorPrefix}skill_`;
 /** The skill a skill monitor's question asks about, by its index in the snapshot. */

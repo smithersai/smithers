@@ -30,6 +30,8 @@ export const layerFileSystem = (path) => Layer.effect(WireTrace, Effect_1.gen(fu
     const fs = yield* FileSystem.FileSystem;
     const lock = yield* Semaphore.make(1);
     return WireTrace.of({
-        write: (record) => lock.withPermits(1)(Effect_1.suspend(() => fs.writeFileString(path, `${JSON.stringify(record)}\n`, { flag: "a" })))
+        write: (record) => lock.withPermits(1)(Effect_1.gen(function* () {
+            return yield* fs.writeFileString(path, `${JSON.stringify(record)}\n`, { flag: "a" });
+        }))
     });
 }));

@@ -2,7 +2,7 @@
 import * as Clock from "effect/Clock";
 import * as Ref from "effect/Ref";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import { Cause, Duration, Effect, Schema } from "effect";
 import { codeOf } from "./ErrorCode.js";
 // Where a remote flow starts (docs/features/remote-flows.md#starting-an-execution). A route that admits a remote flow

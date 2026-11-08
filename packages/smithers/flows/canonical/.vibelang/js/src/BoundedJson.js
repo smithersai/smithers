@@ -298,6 +298,7 @@ const walk = (input, limits, preflightObjects, strict) => {
  *
  * @category validation
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const admit = (input, limits, options = {}) => {
     const result = walk(input, limits, options.preflightObjects !== false);

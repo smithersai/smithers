@@ -17,36 +17,38 @@ import * as StepIdentity from "./StepIdentity.js";
  */
 export const idempotencyKey = 
 // Untraced because action-key allocation is on every action attempt.
-Effect_1.fnUntraced(function* idempotencyKey(name, options) {
-    const instance = yield* FlowInstance;
-    const attempt = yield* CurrentAttempt;
-    // Internal durable operations are scoped by the caller's declaration name
-    // and declared `parentScope` through the canonical `StepIdentity` derivation (issue
-    // #98): a run-global counter numbered concurrent offers in fiber-arrival
-    // order, so a replay with a permuted interleaving handed one payload's
-    // ordinal to another and its await watched a deferred nothing resolves.
-    // With the counter scoped per declared parent, each scope numbers its
-    // own allocations deterministically; only allocations *within* one
-    // scope remain arrival-ordered — they carry no input that orders them
-    // by.
-    const parentScope = options?.parentScope !== undefined
-        ? options.parentScope
-        : options?.includeAttempt
-            ? `attempt:${attempt}`
-            : undefined;
-    // Invalid identity material is a defect at this internal-operation boundary;
-    // injected cryptography keeps key construction platform-independent.
-    const scope = yield* (Effect.orDie(StepIdentity.allocationScope({
-        kind: "internal",
-        name,
-        idempotency: parentScope
-    })));
-    const ordinal = yield* Effect.orDie(Effect.try({ try: () => instance.actionState.nextOrdinal(scope), catch: (error) => error }));
-    const identityScope = JSON.stringify([name, parentScope ?? null]);
-    return yield* (Effect.orDie(StepIdentity.invocationKey({
-        runId: instance.executionId,
-        ordinal,
-        tier: "unsealed",
-        parentScope: identityScope
-    })));
-});
+(name, options) => {
+    return Effect_1.gen(function* idempotencyKey() {
+        const instance = yield* FlowInstance;
+        const attempt = yield* CurrentAttempt;
+        // Internal durable operations are scoped by the caller's declaration name
+        // and declared `parentScope` through the canonical `StepIdentity` derivation (issue
+        // #98): a run-global counter numbered concurrent offers in fiber-arrival
+        // order, so a replay with a permuted interleaving handed one payload's
+        // ordinal to another and its await watched a deferred nothing resolves.
+        // With the counter scoped per declared parent, each scope numbers its
+        // own allocations deterministically; only allocations *within* one
+        // scope remain arrival-ordered — they carry no input that orders them
+        // by.
+        const parentScope = options?.parentScope !== undefined
+            ? options.parentScope
+            : options?.includeAttempt
+                ? `attempt:${attempt}`
+                : undefined;
+        // Invalid identity material is a defect at this internal-operation boundary;
+        // injected cryptography keeps key construction platform-independent.
+        const scope = yield* (Effect.orDie(StepIdentity.allocationScope({
+            kind: "internal",
+            name,
+            idempotency: parentScope
+        })));
+        const ordinal = yield* Effect.orDie(Effect.try({ try: () => instance.actionState.nextOrdinal(scope), catch: (error) => error }));
+        const identityScope = JSON.stringify([name, parentScope ?? null]);
+        return yield* (Effect.orDie(StepIdentity.invocationKey({
+            runId: instance.executionId,
+            ordinal,
+            tier: "unsealed",
+            parentScope: identityScope
+        })));
+    });
+};

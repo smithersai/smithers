@@ -216,42 +216,44 @@ const clockName = Effect_1.gen(function* clockName() {
  * @category layers
  * @since 0.1.0
  */
-export const layer = action.toLayer(Effect_1.fnUntraced(function* (payload) {
-    // Whole milliseconds, both of them. A durable deadline lands in an INTEGER
-    // column whose CHECK constraint refuses anything else
-    // (`flows_runs.waiting_wake_at_ms`, `flows_clock_deadlines.due_at_ms`), and
-    // `Clock.currentTimeMillis` is not integral under every clock: a test clock
-    // advanced by a fractional-millisecond sleep reports a fractional now, and
-    // a fractional `millis` or `until` in the payload does the same. The
-    // unrounded deadline reached the park write as a raw SQL constraint
-    // failure, which killed the drive and left the run `running` with nothing
-    // left to wake it. `now` floors, and the deadline ceils so a rounded sleep
-    // never ends before the instant it was asked to wait for.
-    const now = Math.floor(yield* Clock.currentTimeMillis);
-    const wakeAt = Math.ceil(yield* deadlineOf(payload, now));
-    const remaining = wakeAt - now;
-    // DECIDED: a deadline that has already passed
-    // settles the node instead of parking it. A durable wait exists to survive
-    // the gap until a deadline, and a run that resumes after its own deadline
-    // has to make progress rather than park again on a timer that can only fire
-    // in the past.
-    if (remaining <= 0)
-        return;
-    const name = yield* clockName;
-    // DECIDED: the park is declared rather than
-    // left to a driver's derivation, so a host with no clock table still parks
-    // under `timer`. A `millis` deadline is recomputed from the current clock,
-    // so a round re-driven before its timer fires re-declares a `wakeAt` later
-    // than the armed one; the wake itself is unaffected, because the durable
-    // clock row is keyed by name and keeps the deadline it was first armed
-    // with, and `wakeAt` is a sweeper hint rather than the wake.
-    yield* annotateWaiting({ reason: "timer", wakeAt });
-    yield* DurableClock.sleep({
-        name,
-        duration: Duration.millis(remaining),
-        // The wait is the point: a sleep called as a plan node parks the
-        // execution rather than holding a fiber open, so the in-memory shortcut
-        // is disabled instead of being left at its 60-second default.
-        inMemoryThreshold: Duration.zero
+export const layer = action.toLayer((payload) => {
+    return Effect_1.gen(function* () {
+        // Whole milliseconds, both of them. A durable deadline lands in an INTEGER
+        // column whose CHECK constraint refuses anything else
+        // (`flows_runs.waiting_wake_at_ms`, `flows_clock_deadlines.due_at_ms`), and
+        // `Clock.currentTimeMillis` is not integral under every clock: a test clock
+        // advanced by a fractional-millisecond sleep reports a fractional now, and
+        // a fractional `millis` or `until` in the payload does the same. The
+        // unrounded deadline reached the park write as a raw SQL constraint
+        // failure, which killed the drive and left the run `running` with nothing
+        // left to wake it. `now` floors, and the deadline ceils so a rounded sleep
+        // never ends before the instant it was asked to wait for.
+        const now = Math.floor(yield* Clock.currentTimeMillis);
+        const wakeAt = Math.ceil(yield* deadlineOf(payload, now));
+        const remaining = wakeAt - now;
+        // DECIDED: a deadline that has already passed
+        // settles the node instead of parking it. A durable wait exists to survive
+        // the gap until a deadline, and a run that resumes after its own deadline
+        // has to make progress rather than park again on a timer that can only fire
+        // in the past.
+        if (remaining <= 0)
+            return;
+        const name = yield* clockName;
+        // DECIDED: the park is declared rather than
+        // left to a driver's derivation, so a host with no clock table still parks
+        // under `timer`. A `millis` deadline is recomputed from the current clock,
+        // so a round re-driven before its timer fires re-declares a `wakeAt` later
+        // than the armed one; the wake itself is unaffected, because the durable
+        // clock row is keyed by name and keeps the deadline it was first armed
+        // with, and `wakeAt` is a sweeper hint rather than the wake.
+        yield* annotateWaiting({ reason: "timer", wakeAt });
+        yield* DurableClock.sleep({
+            name,
+            duration: Duration.millis(remaining),
+            // The wait is the point: a sleep called as a plan node parks the
+            // execution rather than holding a fiber open, so the in-memory shortcut
+            // is disabled instead of being left at its 60-second default.
+            inMemoryThreshold: Duration.zero
+        });
     });
-}));
+});

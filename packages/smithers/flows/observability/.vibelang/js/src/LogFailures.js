@@ -23,7 +23,7 @@ import * as Logger from "effect/Logger";
 import * as References from "effect/References";
 import * as Tracer from "effect/Tracer";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -138,7 +138,7 @@ const levels = { Warn: "warn", Error: "error", Fatal: "fatal" };
  * @category layers
  * @since 1.0.0-rc.17
  */
-export const layer = (options) => Layer.unwrap(Effect_1.gen(runtime.$joinedFrame(function* () {
+export const layer = (options) => Layer.unwrap(Effect_1.gen(function* () {
     const allowed = options?.records === undefined ? undefined : new Set(options.records);
     const codeFields = options?.codes ?? defaultCodeFields;
     const areaField = options?.area ?? "feature";
@@ -188,6 +188,6 @@ export const layer = (options) => Layer.unwrap(Effect_1.gen(runtime.$joinedFrame
             entries.shift();
     });
     return Layer.merge(Logger.layer([logger], { mergeWithExisting: true }), Layer.succeed(Recent, Recent.of({
-        entries: Effect_1.sync({ entries: () => entries.slice() }.entries)
+        entries: Effect_1.sync({ entries: () => { return entries.slice(); } }.entries)
     })));
-})));
+}));

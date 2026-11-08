@@ -7,7 +7,7 @@ import { describe, expect, it } from "@effect/vitest"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { ModelRequest } from "@smthrs/model/ModelRequest"
 import { Effect } from "effect"
-import * as BuiltinScript from "../src/BuiltinScript.vibe"
+import * as BuiltinScript from "../src/BuiltinScript.ts"
 
 type Message = BuiltinScript.ChatMessage
 type Json = any // Settled values are read structurally.

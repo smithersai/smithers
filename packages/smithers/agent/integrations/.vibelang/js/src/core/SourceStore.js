@@ -42,7 +42,6 @@
 import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import { affectedRows, DurableWriter } from "@smthrs/database/DurableWriter";
 import { Context, Effect, Layer, Option, Schema } from "effect";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -160,51 +159,35 @@ const decide = (current, candidate, revokedNow) => {
 };
 const isRevokedIn = (markers, record) => markers.has(WILDCARD) || SourceRecord.containers(record).some((container) => markers.has(container));
 const emptyReport = { inserted: 0, updated: 0, unchanged: 0, tombstoned: 0 };
-const applyAll = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* applyAll(tables, records, mark) {
-    const markers = new Map();
-    let report = emptyReport;
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const record of records) {
-                try {
-                    {
-                        let connectionMarkers = markers.get(record.connectionId);
-                        if (connectionMarkers === undefined) {
-                            connectionMarkers = yield* tables.markers(record.connectionId);
-                            markers.set(record.connectionId, connectionMarkers);
-                        }
-                        const revokedNow = isRevokedIn(connectionMarkers, record);
-                        const candidate = record.deleted || revokedNow ? purge(record) : record;
-                        const current = yield* tables.read(record.connectionId, record.externalId);
-                        const decision = decide(current, candidate, revokedNow);
-                        if (decision !== "keep") {
-                            yield* tables.write({ record: candidate, revoked: revokedNow, stream: current?.stored.stream ?? null });
-                        }
-                        if (mark !== undefined)
-                            yield* tables.mark(record.connectionId, record.externalId, mark.stream, mark.generation);
-                        report = {
-                            inserted: report.inserted + (decision === "insert" ? 1 : 0),
-                            updated: report.updated + (decision === "replace" ? 1 : 0),
-                            unchanged: report.unchanged + (decision === "keep" ? 1 : 0),
-                            tombstoned: report.tombstoned + (decision !== "keep" && candidate.deleted ? 1 : 0)
-                        };
-                    }
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
+const applyAll = (tables, records, mark) => {
+    return Effect_1.gen(function* applyAll() {
+        const markers = new Map();
+        let report = emptyReport;
+        for (const record of records) {
+            let connectionMarkers = markers.get(record.connectionId);
+            if (connectionMarkers === undefined) {
+                connectionMarkers = yield* tables.markers(record.connectionId);
+                markers.set(record.connectionId, connectionMarkers);
             }
+            const revokedNow = isRevokedIn(connectionMarkers, record);
+            const candidate = record.deleted || revokedNow ? purge(record) : record;
+            const current = yield* tables.read(record.connectionId, record.externalId);
+            const decision = decide(current, candidate, revokedNow);
+            if (decision !== "keep") {
+                yield* tables.write({ record: candidate, revoked: revokedNow, stream: current?.stored.stream ?? null });
+            }
+            if (mark !== undefined)
+                yield* tables.mark(record.connectionId, record.externalId, mark.stream, mark.generation);
+            report = {
+                inserted: report.inserted + (decision === "insert" ? 1 : 0),
+                updated: report.updated + (decision === "replace" ? 1 : 0),
+                unchanged: report.unchanged + (decision === "keep" ? 1 : 0),
+                tombstoned: report.tombstoned + (decision !== "keep" && candidate.deleted ? 1 : 0)
+            };
         }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
-        }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
-    }
-    return report;
-})));
+        return report;
+    });
+};
 const admitAll = (records) => Effect.forEach(records, admit);
 const checkConnectionId = (connectionId) => typeof connectionId === "string" && connectionId.length > 0 && !connectionId.includes(":")
     ? Effect.void
@@ -212,42 +195,46 @@ const checkConnectionId = (connectionId) => typeof connectionId === "string" && 
 const checkContainerId = (containerId) => typeof containerId === "string" && containerId.length > 0 && containerId !== WILDCARD
     ? Effect.void
     : Effect.fail(invalid("A container id must be a non-empty string other than the connection-wide \"*\".", { containerId }));
-const admitPage = Effect_1.fnUntraced(function* admitPage(page) {
-    yield* checkConnectionId(page.connectionId);
-    if (typeof page.stream !== "string" || page.stream.length === 0) {
-        return yield* Effect_1.fail(invalid("A sync stream must be a non-empty string.", { stream: page.stream }));
-    }
-    const records = yield* admitAll(page.changes.records);
-    // An adapter bound to one connection must not write into another one's
-    // records: that would move data across a grant boundary.
-    const foreign = records.find((record) => record.connectionId !== page.connectionId || record.provider !== page.provider);
-    if (foreign !== undefined) {
-        return yield* Effect_1.fail(invalid("A sync page carries a record from another connection or provider.", {
-            connectionId: page.connectionId,
-            provider: page.provider,
-            recordConnectionId: foreign.connectionId,
-            recordProvider: foreign.provider
-        }));
-    }
-    return records;
-});
-const commitPage = Effect_1.fnUntraced(function* commitPage(tables, page, records, nowMs) {
-    const previous = yield* tables.stream(page.connectionId, page.stream);
-    const state = page.changes.reset
-        ? { generation: previous.generation + 1, sweeping: true }
-        : previous;
-    const applied = yield* applyAll(tables, records, { stream: page.stream, generation: state.generation });
-    const sweep = state.sweeping && page.changes.done;
-    const swept = sweep ? yield* tables.sweep(page.connectionId, page.stream, state.generation, nowMs) : 0;
-    yield* tables.setStream(page.connectionId, page.stream, {
-        generation: state.generation,
-        sweeping: !sweep && state.sweeping
-    }, nowMs);
-    if (page.changes.cursor !== null) {
-        yield* tables.setCursor(cursorKey(page.connectionId, page.stream), page.changes.cursor);
-    }
-    return { ...applied, swept, sweeping: !sweep && state.sweeping };
-});
+const admitPage = (page) => {
+    return Effect_1.gen(function* admitPage() {
+        yield* checkConnectionId(page.connectionId);
+        if (typeof page.stream !== "string" || page.stream.length === 0) {
+            return yield* Effect_1.fail(invalid("A sync stream must be a non-empty string.", { stream: page.stream }));
+        }
+        const records = yield* admitAll(page.changes.records);
+        // An adapter bound to one connection must not write into another one's
+        // records: that would move data across a grant boundary.
+        const foreign = records.find((record) => record.connectionId !== page.connectionId || record.provider !== page.provider);
+        if (foreign !== undefined) {
+            return yield* Effect_1.fail(invalid("A sync page carries a record from another connection or provider.", {
+                connectionId: page.connectionId,
+                provider: page.provider,
+                recordConnectionId: foreign.connectionId,
+                recordProvider: foreign.provider
+            }));
+        }
+        return records;
+    });
+};
+const commitPage = (tables, page, records, nowMs) => {
+    return Effect_1.gen(function* commitPage() {
+        const previous = yield* tables.stream(page.connectionId, page.stream);
+        const state = page.changes.reset
+            ? { generation: previous.generation + 1, sweeping: true }
+            : previous;
+        const applied = yield* applyAll(tables, records, { stream: page.stream, generation: state.generation });
+        const sweep = state.sweeping && page.changes.done;
+        const swept = sweep ? yield* tables.sweep(page.connectionId, page.stream, state.generation, nowMs) : 0;
+        yield* tables.setStream(page.connectionId, page.stream, {
+            generation: state.generation,
+            sweeping: !sweep && state.sweeping
+        }, nowMs);
+        if (page.changes.cursor !== null) {
+            yield* tables.setCursor(cursorKey(page.connectionId, page.stream), page.changes.cursor);
+        }
+        return { ...applied, swept, sweeping: !sweep && state.sweeping };
+    });
+};
 const classify = (stored, marked, reference, allowed) => {
     if (stored === undefined)
         return "missing";
@@ -292,57 +279,46 @@ const cloneState = (state) => ({
     cursors: new Map(state.cursors)
 });
 const memoryTables = (draft) => ({
-    read: Effect_1.fnUntraced(function* read(connectionId, externalId) {
-        const row = draft.records.get(pair(connectionId, externalId));
-        return row === undefined ? undefined : { stored: row.stored, swept: row.swept };
-    }),
-    write: Effect_1.fnUntraced(function* write(stored) {
-        const key = pair(stored.record.connectionId, stored.record.externalId);
-        draft.records.set(key, { stored, seenGeneration: draft.records.get(key)?.seenGeneration ?? 0, swept: false });
-    }),
-    mark: Effect_1.fnUntraced(function* mark(connectionId, externalId, stream, generation) {
-        const key = pair(connectionId, externalId);
-        const row = draft.records.get(key);
-        draft.records.set(key, { ...row, stored: { ...row.stored, stream }, seenGeneration: generation });
-    }),
+    read: (connectionId, externalId) => {
+        return Effect_1.gen(function* read() {
+            const row = draft.records.get(pair(connectionId, externalId));
+            return row === undefined ? undefined : { stored: row.stored, swept: row.swept };
+        });
+    },
+    write: (stored) => {
+        return Effect_1.gen(function* write() {
+            const key = pair(stored.record.connectionId, stored.record.externalId);
+            draft.records.set(key, { stored, seenGeneration: draft.records.get(key)?.seenGeneration ?? 0, swept: false });
+        });
+    },
+    mark: (connectionId, externalId, stream, generation) => {
+        return Effect_1.gen(function* mark() {
+            const key = pair(connectionId, externalId);
+            const row = draft.records.get(key);
+            draft.records.set(key, { ...row, stored: { ...row.stored, stream }, seenGeneration: generation });
+        });
+    },
     markers: (connectionId) => Effect_1.sync({ markers: () => { return new Set(draft.revocations.get(connectionId) ?? []); } }.markers),
     stream: (connectionId, stream) => Effect_1.sync({ stream: () => { return draft.streams.get(pair(connectionId, stream)) ?? { generation: 0, sweeping: false }; } }.stream),
     setStream: (connectionId, stream, state) => Effect_1.sync({ setStream: () => { return void draft.streams.set(pair(connectionId, stream), state); } }.setStream),
-    sweep: Effect_1.fnUntraced(runtime.$joinedFrame(function* sweep(connectionId, stream, generation, nowMs) {
-        let swept = 0;
-        {
-            let pending_2 = runtime.$normal;
-            try {
-                for (const value_1 of draft.records) {
-                    try {
-                        const [key, row] = value_1;
-                        {
-                            const record = row.stored.record;
-                            if (record.connectionId !== connectionId || row.stored.stream !== stream || record.deleted ||
-                                row.seenGeneration >= generation)
-                                continue;
-                            draft.records.set(key, {
-                                ...row,
-                                stored: { ...row.stored, record: { ...purge(record), deleted: true, retrievedAtMs: nowMs } },
-                                swept: true
-                            });
-                            swept += 1;
-                        }
-                    }
-                    catch (thrown_3) {
-                        pending_2 = thrown_3;
-                        break;
-                    }
-                }
+    sweep: (connectionId, stream, generation, nowMs) => {
+        return Effect_1.gen(function* sweep() {
+            let swept = 0;
+            for (const [key, row] of draft.records) {
+                const record = row.stored.record;
+                if (record.connectionId !== connectionId || row.stored.stream !== stream || record.deleted ||
+                    row.seenGeneration >= generation)
+                    continue;
+                draft.records.set(key, {
+                    ...row,
+                    stored: { ...row.stored, record: { ...purge(record), deleted: true, retrievedAtMs: nowMs } },
+                    swept: true
+                });
+                swept += 1;
             }
-            catch (thrown_4) {
-                throw runtime.$finallyFailure(pending_2, thrown_4);
-            }
-            if (pending_2 !== runtime.$normal)
-                throw pending_2;
-        }
-        return swept;
-    })),
+            return swept;
+        });
+    },
     setCursor: (key, cursor) => Effect_1.sync({ setCursor: () => { return void draft.cursors.set(key, cursor); } }.setCursor)
 });
 /**
@@ -352,7 +328,7 @@ const memoryTables = (draft) => ({
  * @category constructors
  * @since 1.0.0
  */
-export const makeMemory = Effect_1.gen(runtime.$joinedFrame(function* makeMemory() {
+export const makeMemory = Effect_1.gen(function* makeMemory() {
     const state = yield* Ref.make({
         records: new Map(),
         streams: new Map(),
@@ -362,64 +338,49 @@ export const makeMemory = Effect_1.gen(runtime.$joinedFrame(function* makeMemory
     const lock = yield* Semaphore.make(1);
     // A draft copy stands in for the transaction: it is published only when the
     // whole body succeeds, so a failure leaves the store exactly as it was.
-    const transact = (body) => lock.withPermit(Effect_1.gen(runtime.$joinedFrame(function* () {
+    const transact = (body) => lock.withPermit(Effect_1.gen(function* () {
         const draft = cloneState(yield* Ref.get(state));
         const result = yield* body(memoryTables(draft), draft);
         yield* Ref.set(state, draft);
         return result;
-    })));
+    }));
     const markedIn = (current, record) => isRevokedIn(current.revocations.get(record.connectionId) ?? new Set(), record);
-    const revoke = (connectionId, containerId) => transact(Effect_1.fnUntraced(runtime.$joinedFrame(function* (_, draft) {
-        const markers = draft.revocations.get(connectionId) ?? new Set();
-        markers.add(containerId);
-        draft.revocations.set(connectionId, markers);
-        let purged = 0;
-        {
-            let pending_3 = runtime.$normal;
-            try {
-                for (const value_2 of draft.records) {
-                    try {
-                        const [key, row] = value_2;
-                        {
-                            const record = row.stored.record;
-                            if (record.connectionId !== connectionId)
-                                continue;
-                            if (containerId !== WILDCARD && !SourceRecord.containers(record).includes(containerId))
-                                continue;
-                            draft.records.set(key, { ...row, stored: { ...row.stored, record: purge(record), revoked: true } });
-                            purged += 1;
-                        }
-                    }
-                    catch (thrown_5) {
-                        pending_3 = thrown_5;
-                        break;
-                    }
-                }
+    const revoke = (connectionId, containerId) => transact((_, draft) => {
+        return Effect_1.gen(function* () {
+            const markers = draft.revocations.get(connectionId) ?? new Set();
+            markers.add(containerId);
+            draft.revocations.set(connectionId, markers);
+            let purged = 0;
+            for (const [key, row] of draft.records) {
+                const record = row.stored.record;
+                if (record.connectionId !== connectionId)
+                    continue;
+                if (containerId !== WILDCARD && !SourceRecord.containers(record).includes(containerId))
+                    continue;
+                draft.records.set(key, { ...row, stored: { ...row.stored, record: purge(record), revoked: true } });
+                purged += 1;
             }
-            catch (thrown_6) {
-                throw runtime.$finallyFailure(pending_3, thrown_6);
-            }
-            if (pending_3 !== runtime.$normal)
-                throw pending_3;
-        }
-        return purged;
-    })));
+            return purged;
+        });
+    });
     return SourceStore.of({
         apply: (records) => Effect.flatMap(admitAll(records), (admitted) => transact((tables) => applyAll(tables, admitted))),
         get: (connectionId, externalId) => Effect.map(Ref.get(state), (current) => Option.fromNullishOr(current.records.get(pair(connectionId, externalId))?.stored)),
-        retrieve: Effect_1.fnUntraced(runtime.$joinedFrame(function* retrieve(query) {
-            const limit = yield* checkLimit(query.limit);
-            const current = yield* Ref.get(state);
-            const needle = query.query === undefined || query.query.length === 0 ? undefined : asciiLower(query.query);
-            return Array.from(current.records.values(), (row) => row.stored)
-                .filter((stored) => !stored.revoked && !stored.record.deleted && !markedIn(current, stored.record) &&
-                covers(query.allowed, stored.record) &&
-                (query.kinds === undefined || query.kinds.includes(stored.record.kind)) &&
-                (needle === undefined || asciiLower(stored.record.text).includes(needle)))
-                .map((stored) => stored.record)
-                .sort(newestFirst)
-                .slice(0, limit);
-        })),
+        retrieve: (query) => {
+            return Effect_1.gen(function* retrieve() {
+                const limit = yield* checkLimit(query.limit);
+                const current = yield* Ref.get(state);
+                const needle = query.query === undefined || query.query.length === 0 ? undefined : asciiLower(query.query);
+                return Array.from(current.records.values(), (row) => row.stored)
+                    .filter((stored) => !stored.revoked && !stored.record.deleted && !markedIn(current, stored.record) &&
+                    covers(query.allowed, stored.record) &&
+                    (query.kinds === undefined || query.kinds.includes(stored.record.kind)) &&
+                    (needle === undefined || asciiLower(stored.record.text).includes(needle)))
+                    .map((stored) => stored.record)
+                    .sort(newestFirst)
+                    .slice(0, limit);
+            });
+        },
         validate: ({ allowed, references }) => Effect.map(Ref.get(state), (current) => references.map((reference) => {
             const stored = current.records.get(pair(reference.connectionId, reference.externalId))?.stored;
             const marked = stored !== undefined && markedIn(current, stored.record);
@@ -434,13 +395,15 @@ export const makeMemory = Effect_1.gen(runtime.$joinedFrame(function* makeMemory
                 (markers.has(WILDCARD) || (containerId !== undefined && markers.has(containerId)));
         }),
         cursor: (connectionId, stream) => Effect.map(Ref.get(state), (current) => current.cursors.get(cursorKey(connectionId, stream)) ?? null),
-        commit: Effect_1.fnUntraced(runtime.$joinedFrame(function* commit(page) {
-            const records = yield* admitPage(page);
-            const nowMs = yield* now;
-            return yield* transact((tables) => commitPage(tables, page, records, nowMs));
-        }))
+        commit: (page) => {
+            return Effect_1.gen(function* commit() {
+                const records = yield* admitPage(page);
+                const nowMs = yield* now;
+                return yield* transact((tables) => commitPage(tables, page, records, nowMs));
+            });
+        }
     });
-}));
+});
 /**
  * Layer for the in-memory store.
  *
@@ -485,7 +448,7 @@ const fromRow = (row) => Effect.try({
  * @category constructors
  * @since 1.0.0
  */
-export const makeSql = Effect_1.gen(runtime.$joinedFrame(function* makeSql() {
+export const makeSql = Effect_1.gen(function* makeSql() {
     const sql = yield* SqlClient.SqlClient;
     const writer = yield* DurableWriter;
     const cursors = yield* CursorStore.makeSql;
@@ -576,31 +539,33 @@ export const makeSql = Effect_1.gen(runtime.$joinedFrame(function* makeSql() {
     return SourceStore.of({
         apply: (records) => Effect.flatMap(admitAll(records), (admitted) => transact("apply", applyAll(tables, admitted))),
         get: (connectionId, externalId) => Effect.map(tables.read(connectionId, externalId), (current) => Option.fromNullishOr(current?.stored)),
-        retrieve: Effect_1.fnUntraced(function* retrieve(query) {
-            const limit = yield* checkLimit(query.limit);
-            if (query.allowed.length === 0)
-                return [];
-            const conditions = [
-                sql.or(query.allowed.map(grantClause)),
-                sql.literal("r.deleted = 0"),
-                sql.literal("r.revoked = 0"),
-                sql `NOT ${marked}`
-            ];
-            if (query.kinds !== undefined) {
-                conditions.push(query.kinds.length === 0 ? sql.literal("1 = 0") : sql.in("r.kind", query.kinds));
-            }
-            if (query.query !== undefined && query.query.length > 0) {
-                conditions.push(sql.onDialectOrElse({
-                    pg: () => sql `strpos(lower(r.text), lower(${query.query})) > 0`,
-                    orElse: () => sql `instr(lower(r.text), lower(${query.query})) > 0`
-                }));
-            }
-            const rows = yield* sql `SELECT r.* FROM smithers_integration_records r WHERE ${sql.and(conditions)}
+        retrieve: (query) => {
+            return Effect_1.gen(function* retrieve() {
+                const limit = yield* checkLimit(query.limit);
+                if (query.allowed.length === 0)
+                    return [];
+                const conditions = [
+                    sql.or(query.allowed.map(grantClause)),
+                    sql.literal("r.deleted = 0"),
+                    sql.literal("r.revoked = 0"),
+                    sql `NOT ${marked}`
+                ];
+                if (query.kinds !== undefined) {
+                    conditions.push(query.kinds.length === 0 ? sql.literal("1 = 0") : sql.in("r.kind", query.kinds));
+                }
+                if (query.query !== undefined && query.query.length > 0) {
+                    conditions.push(sql.onDialectOrElse({
+                        pg: () => sql `strpos(lower(r.text), lower(${query.query})) > 0`,
+                        orElse: () => sql `instr(lower(r.text), lower(${query.query})) > 0`
+                    }));
+                }
+                const rows = yield* sql `SELECT r.* FROM smithers_integration_records r WHERE ${sql.and(conditions)}
           ORDER BY (COALESCE(r.updated_at_ms, r.created_at_ms) IS NULL),
             COALESCE(r.updated_at_ms, r.created_at_ms) DESC, r.connection_id, r.external_id
           LIMIT ${limit}`.pipe(failAs("retrieve"));
-            return yield* Effect.forEach(rows, (row) => Effect.map(fromRow(row), (stored) => stored.record));
-        }),
+                return yield* Effect.forEach(rows, (row) => Effect.map(fromRow(row), (stored) => stored.record));
+            });
+        },
         validate: ({ allowed, references }) => Effect.forEach(references, (reference) => {
             var topic_9;
             return Effect.flatMap((topic_9 = sql `SELECT r.*, ${marked} AS marked FROM smithers_integration_records r
@@ -625,13 +590,15 @@ export const makeSql = Effect_1.gen(runtime.$joinedFrame(function* makeSql() {
         WHERE connection_id = ${connectionId}
           AND (container_id = '*' OR container_id = ${containerId ?? WILDCARD}) LIMIT 1`, (rows) => rows.length > 0), failAs("revocation read")(topic_11)); },
         cursor: (connectionId, stream) => cursors.get(cursorKey(connectionId, stream)),
-        commit: Effect_1.fnUntraced(function* commit(page) {
-            const records = yield* admitPage(page);
-            const nowMs = yield* now;
-            return yield* transact("commit", commitPage(tables, page, records, nowMs));
-        })
+        commit: (page) => {
+            return Effect_1.gen(function* commit() {
+                const records = yield* admitPage(page);
+                const nowMs = yield* now;
+                return yield* transact("commit", commitPage(tables, page, records, nowMs));
+            });
+        }
     });
-}));
+});
 /**
  * Layer for the SQL-backed store.
  *

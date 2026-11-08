@@ -10,7 +10,7 @@
  */
 
 import { capability, envelope } from "./internal/Declaration.ts"
-import * as StdError from "./StdError.vibe"
+import * as StdError from "./StdError.ts"
 
 /**
  * The registry name of the `websearch` flow.
@@ -68,7 +68,7 @@ export const Result = Schema.Struct({
  * @category schemas
  * @since 1.0.0
  */
-export schema Output { readonly results: ReadonlyArray<Result> }
+export const Output = Schema.Struct({ results: Schema.Array(Result) })
 /**
  * Decoded output returned by the `websearch` flow.
  *

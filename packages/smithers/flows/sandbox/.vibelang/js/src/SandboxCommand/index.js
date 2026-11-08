@@ -119,13 +119,13 @@ export const Run = (maxTimeoutSeconds = defaults.maxTimeoutSeconds) => Schema.St
 export const make = (tag, options) => {
     const maxTimeoutSeconds = options.maxTimeoutSeconds ?? defaults.maxTimeoutSeconds;
     if (!Number.isSafeInteger(maxTimeoutSeconds) || maxTimeoutSeconds < SandboxTools.limits.defaultTimeoutSeconds) {
-        throw new RangeError(`SandboxCommand.make: maxTimeoutSeconds must be a whole number of seconds from ${SandboxTools.limits.defaultTimeoutSeconds}`);
+        $raise(new RangeError(`SandboxCommand.make: maxTimeoutSeconds must be a whole number of seconds from ${SandboxTools.limits.defaultTimeoutSeconds}`));
     }
     const probe = options.probe ?? defaults.probe;
     const timeout = options.timeout ?? Duration.millis(maxTimeoutSeconds * 1000 + Duration.toMillis(defaults.slack));
     const covered = (maxTimeoutSeconds + STOP_SECONDS) * 1000 + Duration.toMillis(probe.max);
     if (!(Duration.toMillis(timeout) >= covered)) {
-        throw new RangeError(`SandboxCommand.make: timeout must be at least ${covered} ms, a command at its limit, its stop and the probe after it`);
+        $raise(new RangeError(`SandboxCommand.make: timeout must be at least ${covered} ms, a command at its limit, its stop and the probe after it`));
     }
     return ExternalJob.make(tag, {
         payload: Schema.Struct({ target: options.target, call: Run(maxTimeoutSeconds) }),
@@ -168,3 +168,4 @@ export const operations = (reach) => ({
     cancel: (handle, key) => Effect.flatMap(reach(handle.target), (box) => box.cancel(key)),
     abandon: ({ target }, key) => Effect.flatMap(reach(target), (box) => box.cancel(key))
 });
+import { raise as $raise } from "./index.vibe.-24-throw-24-ts.js";

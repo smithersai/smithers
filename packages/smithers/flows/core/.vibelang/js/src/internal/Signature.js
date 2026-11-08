@@ -121,9 +121,8 @@ export const build = (options) => {
         flow,
         action,
         call: (input) => flow.call((wrapped ? input : { input })),
-        pipe() {
-            // eslint-disable-next-line prefer-rest-params
-            return pipeArguments(this, arguments);
+        pipe(...args) {
+            return pipeArguments(this, args);
         }
     };
     built.set(self, {

@@ -2,6 +2,7 @@
 // First: the worker's first session read starts before the rest of its bundle evaluates
 // (src/flows/sessionStart.worker.ts).
 import { started as sessionStarted } from "./sessionStart.worker";
+import { IndexedDBAdapter } from "@tanstack/offline-transactions";
 import SqliteFactory from "@journeyapps/wa-sqlite/dist/wa-sqlite.mjs";
 import wasmUrl from "@journeyapps/wa-sqlite/dist/wa-sqlite.wasm?url";
 import { Migrations } from "@smthrs/effect-tanstack-db";
@@ -12,7 +13,7 @@ import { answer, authorizeDevice, boundFetch, IDENTITY_MESSAGE, sessionNow, VISI
 import { deviceRegistry } from "../device/registry";
 import { getSession } from "../features/auth/api";
 import { NO_DEVICE_DATA, SESSION_ROUTE } from "../features/auth/contract";
-import { ENGINE_NAME } from "./contract";
+import { ENGINE_NAME, OUTBOX_DATABASE } from "./contract";
 import { firstReadFrom } from "./sessionRead";
 import { clientFlows } from "./declarations";
 import { engineRequests, engineTelemetry } from "./engine";
@@ -39,10 +40,10 @@ const faulted = dev?.get("faults") === "session-503";
 let session = getSession(self.location.origin, "10 seconds").pipe(Effect.provide(FetchHttpClient.layer), Effect.provideService(FetchHttpClient.Fetch, firstReadFrom(unbound, `${self.location.origin}${SESSION_ROUTE}`, faulted ? undefined : sessionStarted)));
 // While this worker leads: the device store its activation checked, which it checks again to adopt a visitor's data.
 let database;
-const report = (owner, outcome, continuous) => {
+const report = (owner, outcome, continuous, sessionTag) => {
     // `continuous`: the owner held the data before this activation. An adopted visitor's data never is, so the
     // person who adopts it never owns the outbox's writes stored before writes named who queued them.
-    receipt = { _tag: IDENTITY_MESSAGE, owner, outcome, ...(continuous ? { continuous: true } : {}) };
+    receipt = { _tag: IDENTITY_MESSAGE, owner, outcome, ...(continuous ? { continuous: true } : {}), ...(sessionTag === undefined ? {} : { sessionTag }) };
     self.postMessage(receipt);
     identity.postMessage(receipt);
 };
@@ -70,7 +71,14 @@ const identityRequests = Layer.effectDiscard(Stream.fromEventListener(identity, 
         .then(sessionNow, () => "unreachable"));
     identity.postMessage(answer(opened, current));
 })), Effect.forkScoped({ startImmediately: true })));
-self.fetch = boundFetch(unbound, { origin: self.location.origin, principal: () => receipt?.owner ?? NO_DEVICE_DATA });
+const credentialStorage = new IndexedDBAdapter(OUTBOX_DATABASE, "transactions");
+self.fetch = boundFetch(unbound, {
+    origin: self.location.origin,
+    principal: () => receipt?.owner ?? NO_DEVICE_DATA,
+    sessionTag: () => receipt?.sessionTag,
+    credentialStorage,
+    withCredential: (action, signal) => navigator.locks.request("smithers-credential-state", signal === undefined ? {} : { signal }, action),
+});
 const run = (model, summaryModel, rendererModel) => BrowserRuntime.run({
     name: ENGINE_NAME,
     // The SQLite build loads only once this worker leads, and only in this worker's bundle.
@@ -86,9 +94,9 @@ const run = (model, summaryModel, rendererModel) => BrowserRuntime.run({
     authorize: (opened) => authorizeDevice({
         database: opened,
         session,
-        report: (owner, outcome, continuous) => {
+        report: (owner, outcome, continuous, sessionTag) => {
             database = opened;
-            report(owner, outcome, continuous);
+            report(owner, outcome, continuous, sessionTag);
         },
     }),
     // `http:` pages on this machine open only under the dev server (src/features/web/url.ts).

@@ -8,10 +8,10 @@ import { HttpClient } from "effect/http";
 import { SqlClient } from "effect/sql";
 import { WRITE_FAILURES } from "../../src/features/issues/contract.js";
 import { DEFAULT_MERGE_FLOW, MERGE_FLOW_FILE, MERGE_FLOWS, queueRequestOf, } from "../../src/features/pulls/contract.js";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
-import { classify, withToken } from "#vibelang/emitted/worker/github/Calls";
-import { repositoryOf } from "#vibelang/emitted/worker/github/Config";
-import * as Metrics from "#vibelang/emitted/worker/github/Metrics";
+import { codeOf } from "../ErrorCode.js";
+import { classify, withToken } from "./Calls.js";
+import { repositoryOf } from "./Config.js";
+import * as Metrics from "./Metrics.js";
 import { fetchPull, liveBaseHeadOf, moveBase, projectPull } from "./Pulls.js";
 import * as Store from "./Store.js";
 // `pr/Merge { writeId }` (decision 0012 decision 6, docs/features/pulls.md#merge): a person's merge, and only a

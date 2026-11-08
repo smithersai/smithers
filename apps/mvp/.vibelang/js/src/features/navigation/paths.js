@@ -4,6 +4,8 @@
  * its leading slash), or a full URL on `origin` itself, reduced to its path. Any other origin, any other scheme
  * (`javascript:`, `data:`, `mailto:`, ...) and anything that isn't a URL are refused. Leading slashes collapse to one,
  * so a path never reads as another host (`//example.com`).
+ *
+ * @throws {never}
  */
 export const appPath = (to, origin) => {
     let url;

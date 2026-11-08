@@ -8,10 +8,10 @@ import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.js";
 import { FLOW_DRAFTS_TABLE, FLOWS_TABLE, MAX_FLOWS_BODY_BYTES, MAX_SOURCE_BYTES, RESERVED_NAMES, } from "../src/features/flows-ui/contract.js";
 import { DraftAnswers, DraftWrite, FlowName, SaveRequest, WriteRequest, } from "../src/features/flows-ui/schema.js";
 import { placementOf, SOURCE_PATH } from "../src/features/flows-ui/source.js";
-import { refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor";
+import { refusesPersonOnly, Sessions } from "./Actor.js";
 import { readBounded } from "#vibelang/emitted/worker/Body";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
-import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess";
+import { codeOf } from "./ErrorCode.js";
+import * as ShapeAccess from "./ShapeAccess.js";
 // A person's own flows in ChatApi (decision 0014 §1 and §2, docs/features/flows.md#your-own-flows). A person's flow is
 // flow source, a `Flow.make` module stored here and synced to their devices, with where its latest revision runs
 // (`placement`, read from the source by `placementOf`). Only its owner reads or writes it, and anyone signed in may have

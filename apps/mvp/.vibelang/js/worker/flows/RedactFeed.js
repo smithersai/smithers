@@ -3,9 +3,9 @@ import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow";
 import { Node } from "@smthrs/plan";
 import { Cause, Clock, Effect, Layer, Metric, Ref, Schema } from "effect";
 import { SqlClient } from "effect/sql";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { codeOf } from "../ErrorCode.js";
 import * as FeedLocks from "../FeedLocks.js";
-import * as Flows from "#vibelang/emitted/worker/Flows";
+import * as Flows from "../Flows.js";
 // `ops/RedactFeed` (docs/features/notifications.md#rows-written-before): one pass over the feed, after a barrier the
 // deploy owner confirmed (`feed_barriers`, ops/feed-barrier/confirm.ts) once every Worker that wrote private text to
 // people's feeds had drained, so no writer is left to put it back behind the cursor. The barrier row is the durable

@@ -265,7 +265,6 @@ export const confined = (fileSystem, root) => Effect.gen(function* () {
             chmod: (value, mode) => run({ operation: "chmod", path: normalize(value), options: { mode } }),
             chown: (value, uid, gid) => run({ operation: "chown", path: normalize(value), options: { uid, gid } }),
             link: (from) => refuse("link", from),
-            lstat: (value) => refuse("lstat", value),
             makeDirectory: (value, options) => run({
                 operation: "makeDirectory",
                 path: normalize(value),
@@ -282,7 +281,6 @@ export const confined = (fileSystem, root) => Effect.gen(function* () {
                 options
             }),
             readFile: (value) => run({ operation: "readFile", path: normalize(value) }),
-            readDirectoryEntries: (value) => refuse("readDirectoryEntries", value),
             readLink: (value) => run({ operation: "readLink", path: normalize(value) }),
             realPath: (value) => run({ operation: "realPath", path: normalize(value) }),
             remove: (value, options) => run({
@@ -292,6 +290,7 @@ export const confined = (fileSystem, root) => Effect.gen(function* () {
             }),
             rename: (from, to) => run({ operation: "rename", from: normalize(from), to: normalize(to) }),
             stat: (value) => run({ operation: "stat", path: normalize(value) }),
+            lstat: (value) => run({ operation: "stat", path: normalize(value) }),
             symlink: (_from, to) => refuse("symlink", to),
             truncate: (value) => refuse("truncate", value),
             utimes: (value) => refuse("utimes", value),
@@ -311,7 +310,8 @@ export const confined = (fileSystem, root) => Effect.gen(function* () {
                     data: Base64.encode(data),
                     options
                 });
-            }
+            },
+            readDirectoryEntries: (value) => Effect.map(view.readDirectory(value), (names) => names.map((name) => ({ name, type: "Unknown" })))
         }),
         glob: (pattern, options) => {
             const base = options?.root === undefined ? logicalRoot : normalize(options.root);
@@ -692,7 +692,7 @@ export const layer = Layer.effect(EffectFileSystem.FileSystem, Effect.gen(functi
         };
     };
     // `EffectFileSystem.make` brands the implementation with Effect's own
-    // (non-exported) type id. The six operations `make` would derive from
+    // (non-exported) type id. The five operations `make` would derive from
     // the primitives are overridden below with guarded delegates to the host
     // implementation, so delegation semantics do not change.
     const guarded = {
@@ -713,7 +713,6 @@ export const layer = Layer.effect(EffectFileSystem.FileSystem, Effect.gen(functi
                 options: { uid, gid }
             })),
             link: Effect.fn("FileSystem.link")((from, to) => isolatedTwo(["fs:read", from], ["fs:write", to], "link", (host) => host.link(normalize(from), normalize(to)))),
-            lstat: Effect.fn("FileSystem.lstat")((value) => isolatedOne("fs:read", value, "lstat", (host) => host.lstat(normalize(value)))),
             makeDirectory: Effect.fn("FileSystem.makeDirectory")((value, options) => {
                 const captured = snapshotOptions(options);
                 return atomicOne("fs:write", value, "makeDirectory", {
@@ -759,7 +758,6 @@ export const layer = Layer.effect(EffectFileSystem.FileSystem, Effect.gen(functi
                     // names it before delegating to the descriptor.
                     Effect.flatMap((file) => file.stat.pipe(Effect.map((info) => wrapFile(isolated, file, value, identityOf(info))))));
             }),
-            readDirectoryEntries: Effect.fn("FileSystem.readDirectoryEntries")((value) => isolatedOne("fs:read", value, "readDirectoryEntries", (host) => host.readDirectoryEntries(normalize(value)))),
             readDirectory: Effect.fn("FileSystem.readDirectory")((value, options) => {
                 const captured = snapshotOptions(options);
                 return atomicOne("fs:read", value, "readDirectory", {
@@ -797,6 +795,15 @@ export const layer = Layer.effect(EffectFileSystem.FileSystem, Effect.gen(functi
                 operation: "stat",
                 path: normalize(value)
             })),
+            lstat: Effect.fn("FileSystem.lstat")((value) => 
+            // Descriptor-relative stat never follows links and refuses them.
+            // An isolated volume supports links, so use its actual lstat.
+            atomic?.isolated === undefined
+                ? atomicOne("fs:read", value, "lstat", {
+                    operation: "stat",
+                    path: normalize(value)
+                })
+                : isolatedOne("fs:read", value, "lstat", (host) => host.lstat(normalize(value)))),
             symlink: Effect.fn("FileSystem.symlink")((from, to) => isolatedOne("fs:write", to, "symlink", (host) => host.symlink(from, normalize(to)))),
             truncate: Effect.fn("FileSystem.truncate")((value, length) => isolatedOne("fs:write", value, "truncate", (host) => host.truncate(normalize(value), length))),
             utimes: Effect.fn("FileSystem.utimes")((value, atime, mtime) => isolatedOne("fs:write", value, "utimes", (host) => host.utimes(normalize(value), atime, mtime))),
@@ -831,7 +838,8 @@ export const layer = Layer.effect(EffectFileSystem.FileSystem, Effect.gen(functi
                     data: Base64.encode(bytes),
                     options: captured
                 });
-            })
+            }),
+            readDirectoryEntries: (value) => Effect.map(guarded.readDirectory(value), (names) => names.map((name) => ({ name, type: "Unknown" })))
         }),
         glob: Effect.fn("FileSystem.glob")((pattern, options) => {
             const captured = snapshotOptions(options);

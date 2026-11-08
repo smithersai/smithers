@@ -15,7 +15,7 @@ import type * as Option from "effect/Option"
 import * as Decode from "effect/Result"
 import type { Action } from "./Overlap.ts"
 import type { Trigger } from "./Trigger.ts"
-import { TriggerError } from "./TriggerError.vibe"
+import { TriggerError } from "./TriggerError.ts"
 
 /**
  * A stored trigger, with the revision that fences concurrent edits and

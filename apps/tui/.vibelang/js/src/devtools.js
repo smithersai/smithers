@@ -8,7 +8,7 @@
  */
 import { lines } from "@smthrs/gateway/RunDevTools";
 import { traceFromJournal } from "@smthrs/gateway/RunTrace";
-import * as Activity from "#vibelang/emitted/src/activity";
+import * as Activity from "./activity.js";
 /** The trace status of a flow run's lifecycle word: the run card's words for settled and waiting, else its own. */
 const statusOf = (status) => status === "done" ? "completed" : status === "waiting" ? "waiting-approval" : status;
 /** The trace of a flow run, folded from its events exactly as the app's run card folds them. */

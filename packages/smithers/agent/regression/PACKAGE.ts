@@ -107,7 +107,7 @@ const securityReview = Smithers.SecurityReview({
         "A `Cause.pretty`, `CHARACTER_DEBUG` detail, or `--trace` output that prints request headers, env values, or `$CODEX_HOME/auth.json` contents.",
         "A results JSON or REGRESSION-LOG row that serializes the seat, route, or env rather than only usage counts."
       ],
-      paths: ["character/subject.ts", "character/run.ts", "character/rubric.vibe"]
+      paths: ["character/subject.ts", "character/run.ts", "character/rubric.ts"]
     },
     {
       id: "live-seat-grants",
@@ -118,7 +118,7 @@ const securityReview = Smithers.SecurityReview({
         "A world tool handler in `world.ts` that touches the real filesystem, spawns a process, or performs a real fetch (e.g. `web_fetch` not answering from `world.data.web`).",
         "The `Workspace.layer(root)` root set to the repository or home directory in a way the QuickJS cell can write through."
       ],
-      paths: ["character/subject.ts", "character/world.vibe", "subject.ts"]
+      paths: ["character/subject.ts", "character/world.ts", "subject.ts"]
     },
     {
       id: "judge-prompt-injection",
@@ -129,7 +129,7 @@ const securityReview = Smithers.SecurityReview({
         "A judge verdict parsed with `JSON.parse` from free text where an embedded JSON object in the role's reply could be taken as the verdict.",
         "A deterministic check (leakage, calls) whose failure the judge's pass can override in the final `pass` computation."
       ],
-      paths: ["character/rubric.vibe", "character/run.ts", "character/score.ts"]
+      paths: ["character/rubric.ts", "character/run.ts", "character/score.ts"]
     },
     {
       id: "private-marker-leakage",
@@ -141,7 +141,7 @@ const securityReview = Smithers.SecurityReview({
         "`wiki_search`/`wiki_read` or `notes_read` returning private content to a role other than `personal-assistant`.",
         "A case that sets `leakage: false` without a stated reason."
       ],
-      paths: ["character/world.vibe", "character/score.ts", "character/example/**"]
+      paths: ["character/world.ts", "character/score.ts", "character/example/**"]
     },
     {
       id: "suite-path-containment",
@@ -152,7 +152,7 @@ const securityReview = Smithers.SecurityReview({
         "A world `repo/` walk in `world.ts` following symlinks out of the world directory and exposing file text to the model via `repo_read`.",
         "A case id or `--label` flowing into `join(suite.dir, \"results\", ...)` without restricting path separators."
       ],
-      paths: ["character/suite.ts", "character/world.vibe", "character/run.ts", "character/profile.ts"]
+      paths: ["character/suite.ts", "character/world.ts", "character/run.ts", "character/profile.ts"]
     },
     {
       id: "baseline-gate-integrity",

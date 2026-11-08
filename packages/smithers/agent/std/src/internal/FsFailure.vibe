@@ -11,7 +11,7 @@
  */
 
 import type * as PlatformError from "effect/PlatformError"
-import * as StdError from "../StdError.vibe"
+import * as StdError from "../StdError.ts"
 
 /**
  * The failure for a path the host or the kernel guard refused.

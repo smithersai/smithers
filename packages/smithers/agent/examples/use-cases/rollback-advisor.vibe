@@ -22,23 +22,23 @@ import * as Schema from "effect/Schema"
 const seat = "anthropic:claude-sonnet-5-5"
 
 /** What the evidence agent found. */
-export schema Evidence {
-  readonly deployment: string
-  readonly errorRate: number
-  readonly affectedEndpoints: ReadonlyArray<string>
-  readonly timeline: string
-  readonly severity: "critical" | "high" | "medium" | "low"
-  readonly rawFindings: string
-}
+export const Evidence = Schema.Struct({
+  deployment: Schema.String,
+  errorRate: Schema.Number,
+  affectedEndpoints: Schema.Array(Schema.String),
+  timeline: Schema.String,
+  severity: Schema.Literals(["critical", "high", "medium", "low"]),
+  rawFindings: Schema.String
+})
 
 /** The advisor's recommendation. */
-export schema Advice {
-  readonly shouldRollback: boolean
-  readonly reason: string
-  readonly mitigation: string
-  readonly rollbackSafe: boolean
-  readonly risks: ReadonlyArray<string>
-}
+export const Advice = Schema.Struct({
+  shouldRollback: Schema.Boolean,
+  reason: Schema.String,
+  mitigation: Schema.String,
+  rollbackSafe: Schema.Boolean,
+  risks: Schema.Array(Schema.String)
+})
 
 /** The action the flow settles with. */
 export const Outcome = Schema.Struct({

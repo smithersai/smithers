@@ -44,16 +44,8 @@
       "vibelang-source": "./src/BrowserOtel.vibe",
       "default": "./.vibelang/js/src/BrowserOtel.js"
     },
-    "./Endpoint": {
-      "types": "./src/Endpoint.ts",
-      "vibelang-source": "./src/Endpoint.ts",
-      "default": "./.vibelang/js/src/Endpoint.js"
-    },
-    "./FetchFailures": {
-      "types": "./src/FetchFailures.ts",
-      "vibelang-source": "./src/FetchFailures.ts",
-      "default": "./.vibelang/js/src/FetchFailures.js"
-    },
+    "./Endpoint": "./src/Endpoint.ts",
+    "./FetchFailures": "./src/FetchFailures.ts",
     "./JournalLogger": {
       "types": "./.vibe/declarations/src/JournalLogger.d.vibe.ts",
       "vibelang-source": "./src/JournalLogger.vibe",

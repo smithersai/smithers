@@ -7,13 +7,13 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
 import { repoId } from "../../src/features/repo/contract.js";
 import { MAX_PUT_BODY_BYTES, parseSecretRoute, SECRETS_SHAPE_COLUMNS, SECRETS_SHAPE_ROUTE, SECRETS_TABLE, writeExecutionId, } from "../../src/features/secrets/contract.js";
-import { canAsk, refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor";
+import { canAsk, refusesPersonOnly, Sessions } from "../Actor.js";
 import { readBounded } from "#vibelang/emitted/worker/Body";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
-import * as Flows from "#vibelang/emitted/worker/Flows";
-import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess";
+import { codeOf } from "../ErrorCode.js";
+import * as Flows from "../Flows.js";
+import * as ShapeAccess from "../ShapeAccess.js";
 import { SecretKeys } from "./Keys.js";
-import * as SecretFlows from "#vibelang/emitted/worker/secrets/SecretFlows";
+import * as SecretFlows from "./SecretFlows.js";
 // The secrets routes (decision 0005 §4, docs/features/secrets.md#routes). Values are write-only: no route answers one.
 //
 // - `PUT /api/repos/<owner>/<name>/secrets/<NAME> { value, hosts, methods? }`: sets or replaces a secret. It admits the

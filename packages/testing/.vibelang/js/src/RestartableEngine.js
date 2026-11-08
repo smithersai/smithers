@@ -11,11 +11,13 @@ import * as Effect from "effect/Effect";
 import * as Scope from "effect/Scope";
 import { EngineSubject as EngineSubjectTag } from "./EngineSubject.js";
 import { make as makeMemoryEngine, makeStore } from "./MemoryEngine.js";
-const buildInstance = Effect_1.fnUntraced(function* buildInstance(store) {
-    const scope = yield* Scope.make();
-    const engine = yield* (Scope.provide(makeMemoryEngine(store), scope));
-    return { engine, scope };
-});
+const buildInstance = (store) => {
+    return Effect_1.gen(function* buildInstance() {
+        const scope = yield* Scope.make();
+        const engine = yield* (Scope.provide(makeMemoryEngine(store), scope));
+        return { engine, scope };
+    });
+};
 /**
  * Constructs a restartable engine over one persistent `MemoryEngine` store.
  *
@@ -29,47 +31,51 @@ const buildInstance = Effect_1.fnUntraced(function* buildInstance(store) {
  * @category constructors
  * @since 0.0.0
  */
-export const make = Effect_1.fnUntraced(function* make() {
-    const store = yield* makeStore();
-    const initial = yield* buildInstance(store);
-    const current = yield* Ref.make(initial);
-    /**
-     * Instances dropped by {@link Restartable.kill}. A killed instance is
-     * deliberately left running for the rest of the test, so the harness — not
-     * the kill — owns closing it, and nothing survives the harness scope.
-     */
-    const abandoned = yield* Ref.make([]);
-    yield* Effect.addFinalizer(Effect_1.fnUntraced(function* (exit) {
-        const instance = yield* Ref.get(current);
-        yield* Scope.close(instance.scope, exit);
-        yield* Effect.forEach(yield* Ref.get(abandoned), (scope) => Scope.close(scope, exit), { discard: true });
-    }));
-    const restart = Effect_1.gen(function* restart() {
-        const previous = yield* Ref.get(current);
-        yield* Scope.close(previous.scope, Exit.void);
-        const next = yield* buildInstance(store);
-        yield* Ref.set(current, next);
+export const make = () => {
+    return Effect_1.gen(function* make() {
+        const store = yield* makeStore();
+        const initial = yield* buildInstance(store);
+        const current = yield* Ref.make(initial);
+        /**
+         * Instances dropped by {@link Restartable.kill}. A killed instance is
+         * deliberately left running for the rest of the test, so the harness — not
+         * the kill — owns closing it, and nothing survives the harness scope.
+         */
+        const abandoned = yield* Ref.make([]);
+        yield* Effect.addFinalizer((exit) => {
+            return Effect_1.gen(function* () {
+                const instance = yield* Ref.get(current);
+                yield* Scope.close(instance.scope, exit);
+                yield* Effect.forEach(yield* Ref.get(abandoned), (scope) => Scope.close(scope, exit), { discard: true });
+            });
+        });
+        const restart = Effect_1.gen(function* restart() {
+            const previous = yield* Ref.get(current);
+            yield* Scope.close(previous.scope, Exit.void);
+            const next = yield* buildInstance(store);
+            yield* Ref.set(current, next);
+        });
+        const kill = Effect_1.gen(function* kill() {
+            const previous = yield* Ref.get(current);
+            yield* Ref.update(abandoned, (scopes) => [...scopes, previous.scope]);
+            const next = yield* buildInstance(store);
+            yield* Ref.set(current, next);
+        });
+        const withEngine = (f) => Effect.flatMap(Ref.get(current), (instance) => f(instance.engine));
+        const engine = EngineSubjectTag.of({
+            name: "RestartableEngine",
+            run: (options) => withEngine((subject) => subject.run(options)),
+            result: (executionId) => withEngine((subject) => subject.result(executionId)),
+            interrupt: (executionId) => withEngine((subject) => subject.interrupt(executionId)),
+            resume: (executionId) => withEngine((subject) => subject.resume(executionId)),
+            journal: (executionId) => withEngine((subject) => subject.journal(executionId))
+        });
+        return {
+            engine,
+            restart,
+            kill,
+            restartAndResume: (executionId) => Effect.andThen(restart, withEngine((subject) => subject.resume(executionId))),
+            killAndResume: (executionId) => Effect.andThen(kill, withEngine((subject) => subject.resume(executionId)))
+        };
     });
-    const kill = Effect_1.gen(function* kill() {
-        const previous = yield* Ref.get(current);
-        yield* Ref.update(abandoned, (scopes) => [...scopes, previous.scope]);
-        const next = yield* buildInstance(store);
-        yield* Ref.set(current, next);
-    });
-    const withEngine = (f) => Effect.flatMap(Ref.get(current), (instance) => f(instance.engine));
-    const engine = EngineSubjectTag.of({
-        name: "RestartableEngine",
-        run: (options) => withEngine((subject) => subject.run(options)),
-        result: (executionId) => withEngine((subject) => subject.result(executionId)),
-        interrupt: (executionId) => withEngine((subject) => subject.interrupt(executionId)),
-        resume: (executionId) => withEngine((subject) => subject.resume(executionId)),
-        journal: (executionId) => withEngine((subject) => subject.journal(executionId))
-    });
-    return {
-        engine,
-        restart,
-        kill,
-        restartAndResume: (executionId) => Effect.andThen(restart, withEngine((subject) => subject.resume(executionId))),
-        killAndResume: (executionId) => Effect.andThen(kill, withEngine((subject) => subject.resume(executionId)))
-    };
-});
+};

@@ -14,6 +14,7 @@ import { PatternError } from "../PatternError.js";
  *
  * @since 1.0.0
  * @private
+ * @throws {never}
  */
 export const resolve = (pattern, options) => {
     if (options === undefined)

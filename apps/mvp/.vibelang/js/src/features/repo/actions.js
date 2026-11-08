@@ -8,7 +8,9 @@ import { BUSY, COULDNT_LOAD, GITHUB_DOWN, GITHUB_LIMIT, isRepository, NOT_FOUND,
 import { aboutLoadMs, blobLoadMs, cloneClicks, headLoadMs, locateMs, opens, refsLoadMs, roleAnswers, treeLoadMs } from "./metrics";
 import { blobKey, copyPayloadOf, readmeOf, refsKey, resolveRef, treeKey } from "./paths";
 import { VIEW } from "./rows";
-import { RepoStore } from "./store";
+import { AuthStore } from "../auth/store";
+import { grantsNothing } from "./visibility";
+import { replaceRole, RepoStore } from "./store";
 // What a person does in the repository view, and what the tab does for them. Each action returns once the tab's rows
 // say so; a request it starts runs in the store's scope and settles the rows when RepoApi answers.
 //
@@ -112,14 +114,17 @@ export const ensureTree = (repository, sha, again) => Effect.gen(function* () {
     const found = yield* store.trees.get(key);
     if (Option.isSome(found) && (found.value.state !== "failed" || !again))
         return;
-    yield* put(store.trees, key, { key, state: "loading", paths: [], truncated: false, message: null });
+    if (store.isRefused(repository.id))
+        return;
+    const fence = store.fenceOf(repository.id);
+    yield* put(store.trees, key, { key, repoId: repository.id, state: "loading", paths: [], truncated: false, message: null });
     const load = Effect.gen(function* () {
         const startedAt = yield* Clock.currentTimeMillis;
         const result = yield* Effect.result((yield* RepoClient).tree(repository.owner, repository.name, sha));
         const row = result._tag === "Success"
-            ? { key, state: "ready", paths: result.success.paths, truncated: result.success.truncated, message: null }
-            : { key, state: "failed", paths: [], truncated: false, message: readFailure(result.failure) };
-        yield* put(store.trees, key, row);
+            ? { key, repoId: repository.id, state: "ready", paths: result.success.paths, truncated: result.success.truncated, message: null }
+            : { key, repoId: repository.id, state: "failed", paths: [], truncated: false, message: readFailure(result.failure) };
+        yield* store.fenced(repository.id, fence, put(store.trees, key, row));
         yield* observeLoad("repo.tree.load", treeLoadMs, row.state, startedAt, result);
     });
     yield* Effect.forkIn(load, store.scope, { startImmediately: true });
@@ -130,21 +135,25 @@ const ensureRefs = (repository, key) => Effect.gen(function* () {
     const found = yield* store.refs.get(key);
     if (Option.isSome(found) && found.value.state !== "failed")
         return;
-    yield* put(store.refs, key, { key, state: "loading", branches: [], tags: [], truncated: false, message: null });
+    if (store.isRefused(repository.id))
+        return;
+    const fence = store.fenceOf(repository.id);
+    yield* put(store.refs, key, { key, repoId: repository.id, state: "loading", branches: [], tags: [], truncated: false, message: null });
     const load = Effect.gen(function* () {
         const startedAt = yield* Clock.currentTimeMillis;
         const result = yield* Effect.result((yield* RepoClient).refs(repository.owner, repository.name));
         const row = result._tag === "Success"
             ? {
                 key,
+                repoId: repository.id,
                 state: "ready",
                 branches: result.success.branches,
                 tags: result.success.tags,
                 truncated: result.success.truncated,
                 message: null,
             }
-            : { key, state: "failed", branches: [], tags: [], truncated: false, message: readFailure(result.failure) };
-        yield* put(store.refs, key, row);
+            : { key, repoId: repository.id, state: "failed", branches: [], tags: [], truncated: false, message: readFailure(result.failure) };
+        yield* store.fenced(repository.id, fence, put(store.refs, key, row));
         yield* observeLoad("repo.refs.load", refsLoadMs, row.state, startedAt, result);
     });
     yield* Effect.forkIn(load, store.scope, { startImmediately: true });
@@ -169,7 +178,10 @@ const ensureAbout = (owner, name, id, door = "view") => Effect.gen(function* () 
     const found = yield* store.abouts.get(id);
     if (Option.isSome(found) && (found.value.state !== "failed" || door !== "button"))
         return;
-    yield* put(store.abouts, id, { key: id, state: "loading", about: null, message: null });
+    if (store.isRefused(id))
+        return;
+    const fence = store.fenceOf(id);
+    yield* put(store.abouts, id, { key: id, repoId: id, state: "loading", about: null, message: null });
     const load = Effect.gen(function* () {
         const startedAt = yield* Clock.currentTimeMillis;
         const dispatched = yield* Effect.result((yield* FlowDispatch).dispatch("repo/about", { repo: `${owner}/${name}` }, { door }));
@@ -177,11 +189,11 @@ const ensureAbout = (owner, name, id, door = "view") => Effect.gen(function* () 
             ? dispatched.success.error
             : undefined;
         const row = dispatched._tag === "Success" && dispatched.success._tag === "Done"
-            ? { key: id, state: "ready", about: dispatched.success.value, message: null }
+            ? { key: id, repoId: id, state: "ready", about: dispatched.success.value, message: null }
             : failure?._tag === "@smthrs/mvp/repo/RepoNotFound"
-                ? { key: id, state: "missing", about: null, message: NOT_FOUND }
-                : { key: id, state: "failed", about: null, message: aboutFailure(failure) };
-        yield* put(store.abouts, id, row);
+                ? { key: id, repoId: id, state: "missing", about: null, message: NOT_FOUND }
+                : { key: id, repoId: id, state: "failed", about: null, message: aboutFailure(failure) };
+        yield* store.fenced(id, fence, put(store.abouts, id, row));
         const durationMs = (yield* Clock.currentTimeMillis) - startedAt;
         yield* Metric.update(Metric.withAttributes(aboutLoadMs, { outcome: row.state }), durationMs);
         yield* Effect.logWithLevel(row.state === "failed" ? "Warn" : "Info")("repo.about.load").pipe(Effect.annotateLogs({
@@ -220,7 +232,7 @@ export const role = (owner, name, reuse = false) => Effect.gen(function* () {
         const held = yield* store.roles.get(id);
         // Only a role ChatApi answered is kept: neither a failure nor a refusal (401, 403), so access that came back is
         // read again on the next route.
-        if (Option.isSome(held) && held.value.failure === undefined && held.value.refused === undefined) {
+        if (Option.isSome(held) && held.value.failure === undefined && held.value.refused === undefined && !store.isStale(id)) {
             yield* Metric.update(Metric.withAttributes(roleAnswers, { outcome: "kept", role: held.value.role ?? "none" }), 1);
             return yield* Effect.logInfo("repo.role").pipe(Effect.annotateLogs({ outcome: "kept", role: held.value.role ?? "none" }));
         }
@@ -241,19 +253,54 @@ export const role = (owner, name, reuse = false) => Effect.gen(function* () {
 const readRole = (owner, name, id) => Effect.gen(function* () {
     const store = yield* RepoStore;
     const startedAt = yield* Clock.currentTimeMillis;
+    const fence = store.fenceOf(id);
+    const marks = store.refusalSnapshot(id);
     const result = yield* Effect.result((yield* RepoClient).role(owner, name));
     const durationMs = (yield* Clock.currentTimeMillis) - startedAt;
+    // Sent before a refusal, so it says nothing after it: the next route asks again.
+    if (store.fenceOf(id) !== fence) {
+        yield* Metric.update(Metric.withAttributes(roleAnswers, { outcome: "fenced", role: "unknown" }), 1);
+        return yield* Effect.logInfo("repo.role").pipe(Effect.annotateLogs({ outcome: "fenced", durationMs }));
+    }
     if (result._tag === "Failure") {
-        // A real refusal (401 or 403) is an answer: no role there. Anything else (a 5xx, a 429, the network) is ChatApi
-        // not answering now: unavailable, until Try again asks once more.
         const status = result.failure.status;
-        yield* replaceRole(store, status === 401 || status === 403
-            ? { id, role: null, own: false, refused: status === 401 ? "authentication" : "forbidden" }
-            : { id, role: null, own: false, failure: result.failure.code ?? "unavailable" });
+        // A 403 is a refusal of this person here. A 401 wipes nothing on its own: the session check decides (`wipeStatusOf`).
+        // Anything else (a 5xx, a 429, the network) is ChatApi not answering now, and doesn't undo a refusal.
+        if (status === 401)
+            yield* Effect.serviceOption(AuthStore).pipe(Effect.flatMap(Option.match({ onNone: () => Effect.void, onSome: (auth) => auth.askCheck })));
+        if (status === 403)
+            yield* store.refuse(id);
+        else if (!store.isRefused(id)) {
+            // A network or server failure says nothing new: a role this tab already has an answer for stands, so a stack read
+            // offline keeps showing (Astra on c64fd4bc). Only a repository never answered reads unavailable.
+            const held = Option.getOrUndefined(yield* store.roles.get(id));
+            const answered = held !== undefined && held.failure === undefined && held.refused === undefined;
+            const denied = grantsNothing(held) || held?.refused === "forbidden";
+            if (!denied) {
+                if (status === 401)
+                    yield* replaceRole(store, { id, role: null, own: false, refused: "authentication" });
+                else if (!answered)
+                    yield* replaceRole(store, { id, role: null, own: false, failure: result.failure.code ?? "unavailable" });
+            }
+        }
         yield* Metric.update(Metric.withAttributes(roleAnswers, { outcome: "refused", role: "unknown" }), 1);
         return yield* Effect.logWarning("repo.role").pipe(Effect.annotateLogs({ outcome: "refused", status: result.failure.status ?? 0, durationMs }));
     }
     const { role: held, workspaceRole, own, readable, synced } = result.success;
+    // Counted before the row changes, so a stack refused under the last answer reads this one.
+    yield* store.answered(id);
+    // Only an affirmative read grant clears the refusal mark: a role, or a public read. One that grants nothing (a 200
+    // with no role and no public read) keeps it: the row stays the refusal, and the gate stays closed (Astra on
+    // c64fd4bc). `own` says only that the repository is the deployment's own (worker/home/Api.ts), never that this
+    // person may read it (Astra on b978c783).
+    if (held !== null || readable === true) {
+        if (!(yield* store.clearRefusal(id, marks)) || store.fenceOf(id) !== fence)
+            return;
+    }
+    else if (store.isRefused(id)) {
+        yield* replaceRole(store, { id, role: null, own: false, refused: "forbidden" });
+        return yield* Effect.logInfo("repo.role").pipe(Effect.annotateLogs({ outcome: "still_refused", durationMs }));
+    }
     yield* replaceRole(store, {
         id,
         role: held,
@@ -265,21 +312,6 @@ const readRole = (owner, name, id) => Effect.gen(function* () {
     yield* Metric.update(Metric.withAttributes(roleAnswers, { outcome: "answered", role: held ?? "none" }), 1);
     yield* Effect.logInfo("repo.role").pipe(Effect.annotateLogs({ outcome: "answered", role: held ?? "none", own, durationMs }));
 });
-/**
- * Writes `row` as the whole of what this tab knows of the person's authority on its repository: nothing of an earlier
- * answer stays (an earlier `readable` would still let a refused person read).
- */
-const replaceRole = (store, row) => Effect.gen(function* () {
-    if (Option.isNone(yield* store.roles.get(row.id)))
-        return yield* store.roles.insert(row);
-    yield* store.roles.update(row.id, (draft) => {
-        const fields = draft;
-        for (const key of Object.keys(fields))
-            if (key !== "id")
-                delete fields[key];
-        Object.assign(fields, row);
-    });
-}).pipe(Effect.orDie);
 /**
  * What GitHub says of `owner/name`, once this tab has loaded it: loads it unless this tab has it or is loading it, then
  * waits for the load to end, `ready`, `missing` or `failed`. The home reads a repository's own home from it before a
@@ -297,29 +329,32 @@ export const ensureBlob = (repository, sha, path, again) => Effect.gen(function*
     const found = yield* store.blobs.get(key);
     if (Option.isSome(found) && (found.value.state !== "failed" || !again))
         return;
-    yield* put(store.blobs, key, { key, state: "loading", contents: null, size: null, message: null });
+    if (store.isRefused(repository.id))
+        return;
+    const fence = store.fenceOf(repository.id);
+    yield* put(store.blobs, key, { key, repoId: repository.id, state: "loading", contents: null, size: null, message: null });
     const load = Effect.gen(function* () {
         const startedAt = yield* Clock.currentTimeMillis;
         const result = yield* Effect.result((yield* RepoClient).blob(repository.owner, repository.name, sha, path));
-        const row = blobRow(key, result);
-        yield* put(store.blobs, key, row);
+        const row = blobRow(key, repository.id, result);
+        yield* store.fenced(repository.id, fence, put(store.blobs, key, row));
         yield* observeLoad("repo.blob.load", blobLoadMs, row.state, startedAt, result);
     });
     yield* Effect.forkIn(load, store.scope, { startImmediately: true });
 });
 /** A loaded file's row: its text, binary or too large with its size, or why it failed. */
-const blobRow = (key, result) => {
+const blobRow = (key, repoId, result) => {
     if (result._tag === "Failure") {
         const { status, size } = result.failure;
         return status === 413 && size !== undefined
-            ? { key, state: "too-large", contents: null, size, message: null }
-            : { key, state: "failed", contents: null, size: null, message: readFailure(result.failure) };
+            ? { key, repoId, state: "too-large", contents: null, size, message: null }
+            : { key, repoId, state: "failed", contents: null, size: null, message: readFailure(result.failure) };
     }
     const bytes = result.success.bytes;
     const contents = textOf(bytes);
     return contents === undefined
-        ? { key, state: "binary", contents: null, size: bytes.byteLength, message: null }
-        : { key, state: "text", contents, size: bytes.byteLength, message: null };
+        ? { key, repoId, state: "binary", contents: null, size: bytes.byteLength, message: null }
+        : { key, repoId, state: "text", contents, size: bytes.byteLength, message: null };
 };
 /** One load's records: its duration by outcome, and a log line with the outcome and RepoApi's status. */
 const observeLoad = (message, histogram, outcome, startedAt, result) => Effect.gen(function* () {
@@ -375,19 +410,22 @@ const ensureHead = (repository, again) => Effect.gen(function* () {
     const found = yield* store.heads.get(id);
     if (Option.isSome(found) && (found.value.state === "loading" || found.value.state === "ready" || !again))
         return;
-    yield* put(store.heads, id, { key: id, state: "loading", defaultBranch: null, headSha: null, refsChangedAt: null });
+    if (store.isRefused(id))
+        return;
+    const fence = store.fenceOf(id);
+    yield* put(store.heads, id, { key: id, repoId: id, state: "loading", defaultBranch: null, headSha: null, refsChangedAt: null });
     const load = Effect.gen(function* () {
         const startedAt = yield* Clock.currentTimeMillis;
         const result = yield* Effect.result((yield* RepoClient).refs(repository.owner, repository.name));
         if (result._tag === "Success") {
             const { head, refsChangedAt, branches, tags, truncated } = result.success;
             const key = refsKey(id, head, refsChangedAt);
-            yield* put(store.refs, key, { key, state: "ready", branches, tags, truncated, message: null });
+            yield* store.fenced(id, fence, put(store.refs, key, { key, repoId: id, state: "ready", branches, tags, truncated, message: null }));
         }
         const row = result._tag === "Success"
-            ? { key: id, state: "ready", defaultBranch: result.success.defaultBranch, headSha: result.success.head, refsChangedAt: result.success.refsChangedAt ?? null }
-            : { key: id, state: result.failure.status === 404 ? "absent" : "failed", defaultBranch: null, headSha: null, refsChangedAt: null };
-        yield* put(store.heads, id, row);
+            ? { key: id, repoId: id, state: "ready", defaultBranch: result.success.defaultBranch, headSha: result.success.head, refsChangedAt: result.success.refsChangedAt ?? null }
+            : { key: id, repoId: id, state: result.failure.status === 404 ? "absent" : "failed", defaultBranch: null, headSha: null, refsChangedAt: null };
+        yield* store.fenced(id, fence, put(store.heads, id, row));
         yield* observeLoad("repo.head.load", headLoadMs, row.state, startedAt, result);
     });
     yield* Effect.forkIn(load, store.scope, { startImmediately: true });

@@ -17,8 +17,9 @@
  *
  * @since 0.1.0
  */
-import { $catchExpression } from "vibelang-runtime";
+import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
+import * as runtime from "vibelang-runtime/internal";
 import * as Effect from "effect/Effect";
 import { error } from "../TimeTravelError.js";
 /**
@@ -41,27 +42,32 @@ export const Stop = Symbol.for("@smthrs/time-travel/JournalPages/Stop");
  * @since 0.1.0
  * @category constructors
  */
-export const forEachPage = Effect_1.fnUntraced(function* forEachPage(journal, options, onPage) {
-    let after = options.after;
-    while (true) {
-        const page = yield* $catchExpression(() => journal.entries({
-            runId: options.runId,
-            ...(after === undefined ? {} : { after: after }),
-            ...(options.eventTypes === undefined ? {} : { eventTypes: options.eventTypes }),
-            limit: options.pageSize
-        }), (cause) => Effect_1.suspend(() => { return Effect_1.fail(error("unknown", options.readFailure, cause)); }));
-        if ((yield* onPage(page.entries)) === Stop)
-            return;
-        if (!page.hasMore)
-            return;
-        if (page.entries.length === 0) {
-            return yield* Effect_1.fail(error("invalid", `${options.label} returned an empty continuation page for ${options.runId}`));
+export const forEachPage = (journal, options, onPage) => {
+    return Effect_1.gen(function* forEachPage() {
+        let after = options.after;
+        while (true) {
+            const page = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return journal.entries({
+                runId: options.runId,
+                ...(after === undefined ? {} : { after: after }),
+                ...(options.eventTypes === undefined ? {} : { eventTypes: options.eventTypes }),
+                limit: options.pageSize
+            }); }); })(), (cause) => (_tail_1 => { return Effect_1.gen(function* () {
+                const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+                return _completion_1[0] ? yield* _value_1 : _value_1;
+            }); })(() => { return [true, Effect_1.fail(error("unknown", options.readFailure, cause))]; }));
+            if ((yield* onPage(page.entries)) === Stop)
+                return;
+            if (!page.hasMore)
+                return;
+            if (page.entries.length === 0) {
+                return yield* Effect_1.fail(error("invalid", `${options.label} returned an empty continuation page for ${options.runId}`));
+            }
+            const previous = after ?? -1;
+            const next = page.entries.reduce((tail, entry) => entry.seq > tail ? entry.seq : tail, previous);
+            if (next <= previous) {
+                return yield* Effect_1.fail(error("invalid", `${options.label} pagination did not advance for ${options.runId}`));
+            }
+            after = next;
         }
-        const previous = after ?? -1;
-        const next = page.entries.reduce((tail, entry) => entry.seq > tail ? entry.seq : tail, previous);
-        if (next <= previous) {
-            return yield* Effect_1.fail(error("invalid", `${options.label} pagination did not advance for ${options.runId}`));
-        }
-        after = next;
-    }
-});
+    });
+};

@@ -78,33 +78,35 @@ const describeFailure = (error) => {
  * @since 0.1.0
  * @slop
  */
-export const make = Effect_1.fnUntraced(function* make(config) {
-    const model = yield* Model.Model;
-    const request = requestFor(config);
-    return Author.make({
-        author: Effect.fn("ModelAuthor.author")((input) => Effect.mapError((Effect_1.gen(function* () {
-            const events = Array.from(yield* Stream.runCollect(model.stream(request(input))));
-            const settled = ModelEvent.ModelEvent.settledMessage(events);
-            // `settledMessage` folds an unsettled stream to stopReason
-            // "aborted", so one guard covers interruption, truncation
-            // ("length"), filtering, and provider errors alike — none of
-            // them may pass as a complete authored output.
-            if (settled.message.stopReason !== "stop") {
-                return yield* Effect_1.fail(unavailable(`the model stream settled with stopReason "${settled.message.stopReason}"`, settled.message.stopReason));
-            }
-            const text = visibleText(settled.message);
-            if (text.trim() === "") {
-                // A reasoning-only response is a seat failure, not an empty
-                // authored script (the harness's sealed steps in
-                // packages/smithers/agent/harness/src/CellTurn.ts fail the same way).
-                return yield* Effect_1.fail(unavailable("the model returned no visible text", "no_text"));
-            }
-            return text;
-        })), (error) => error instanceof Author.AuthorError
-            ? error
-            : unavailable(describeFailure(error), causeOf(error))))
+export const make = (config) => {
+    return Effect_1.gen(function* make() {
+        const model = yield* Model.Model;
+        const request = requestFor(config);
+        return Author.make({
+            author: Effect.fn("ModelAuthor.author")((input) => Effect.mapError((Effect_1.gen(function* () {
+                const events = Array.from(yield* Stream.runCollect(model.stream(request(input))));
+                const settled = ModelEvent.ModelEvent.settledMessage(events);
+                // `settledMessage` folds an unsettled stream to stopReason
+                // "aborted", so one guard covers interruption, truncation
+                // ("length"), filtering, and provider errors alike — none of
+                // them may pass as a complete authored output.
+                if (settled.message.stopReason !== "stop") {
+                    return yield* Effect_1.fail(unavailable(`the model stream settled with stopReason "${settled.message.stopReason}"`, settled.message.stopReason));
+                }
+                const text = visibleText(settled.message);
+                if (text.trim() === "") {
+                    // A reasoning-only response is a seat failure, not an empty
+                    // authored script (the harness's sealed steps in
+                    // packages/smithers/agent/harness/src/CellTurn.ts fail the same way).
+                    return yield* Effect_1.fail(unavailable("the model returned no visible text", "no_text"));
+                }
+                return text;
+            })), (error) => error instanceof Author.AuthorError
+                ? error
+                : unavailable(describeFailure(error), causeOf(error))))
+        });
     });
-});
+};
 /**
  * The production author layer: `Author` from `Model.Model`.
  *

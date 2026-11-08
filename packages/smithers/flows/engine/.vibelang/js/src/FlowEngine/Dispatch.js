@@ -21,6 +21,7 @@ import { renderDiagnostic } from "../internal/Diagnostic.js";
 import { toJsonExit } from "../internal/JsonExit.js";
 import { actionKey, ActionKeyEncoding, keyEncodings, ordinalScope, uncanonicalKey } from "./ActionKey.js";
 import { SnapshotBoundary, SnapshotBoundaryRequired } from "./SnapshotBoundary.js";
+import { FailureSite } from "./FailureSite.js";
 // An action can open an independent child flow. Only invocations in this same
 // execution inherit its allocation scope; a child must replay the same keys
 // when a different process resumes it without its original caller's context.
@@ -277,11 +278,18 @@ const encodeEngineFailures = (options, exit) => {
         if (!Cause.isFailReason(reason))
             return reason;
         const encoded = encode(reason.error);
-        return Option.isSome(encoded) ? Cause.makeDieReason(encoded.value) : reason;
+        return Option.isSome(encoded)
+            ? Cause.makeDieReason(encoded.value).annotate(Cause.reasonAnnotations(reason))
+            : reason;
     })));
 };
 /** Decodes a recorded outcome through the action's declared schemas. */
-const decodeOutcome = (options, action, recorded) => Effect.orDie(Schema.decodeEffect(action.exitSchemaPartial)(toJsonExit(encodeEngineFailures(options, recorded))).pipe(
+const decodeOutcome = (options, action, recorded) => Effect.orDie(Schema.decodeEffect(action.exitSchemaPartial)(toJsonExit(encodeEngineFailures(options, recorded))).pipe(Effect.map((decoded) => Exit.isFailure(recorded) && Exit.isFailure(decoded)
+    ? Exit.failCause(Cause.fromReasons(decoded.cause.reasons.map((reason, index) => {
+        // Exit encoding preserves one reason for each original reason.
+        return reason.annotate(Cause.reasonAnnotations(recorded.cause.reasons[index]));
+    })))
+    : decoded), 
 // `orDie` alone reports only the schema mismatch, never the failure that
 // actually occurred. Name the action and its recorded exit.
 Effect.tapError(() => Effect.annotateLogs(Effect.logError("A recorded action outcome does not match the action's declared schemas"), { action: action.name, exit: renderDiagnostic(toJsonExit(recorded)) }))));
@@ -355,15 +363,27 @@ export const makeActionExecute = (options) => {
         const latest = yield* durableLatestAttempt(options, key);
         let attempt = yield* resumedAttempt(action.name, callerAttempt, latest);
         yield* refuseIrreversibleRetry(action, attempt);
+        const nodeId = yield* Effect.serviceOption(StepIdentity.DispatchSite);
+        const annotateFailure = (cause) => Cause.fromReasons(cause.reasons.map((reason) => Context.getOrUndefined(Cause.reasonAnnotations(reason), FailureSite) !== undefined
+            ? reason
+            : reason.annotate(Context.make(FailureSite, {
+                executionId: instance.executionId,
+                action: action.name,
+                attempts: attempt,
+                ...(Option.isSome(nodeId) ? { nodeId: nodeId.value } : {})
+            }))));
         while (true) {
-            const result = yield* runAttempt(options, instance, action, key, attempt);
+            const result = yield* runAttempt(options, instance, action, key, attempt).pipe(Effect.catchCause((cause) => Effect.failCause(annotateFailure(cause))));
             if (result._tag !== "Complete")
                 return result;
-            const exit = yield* decodeOutcome(options, action, result.exit);
+            const exit = yield* decodeOutcome(options, action, result.exit).pipe(Effect.catchCause((cause) => Effect.failCause(annotateFailure(cause))));
             const error = retry === undefined ? Option.none() : retryableError(options, result.exit, exit);
             const delay = yield* retryDelay(retry, attempt, retryStartMs, error);
-            if (Option.isNone(delay))
-                return new Flow.Complete({ exit });
+            if (Option.isNone(delay)) {
+                return new Flow.Complete({
+                    exit: Exit.isSuccess(exit) ? exit : Exit.failCause(annotateFailure(exit.cause))
+                });
+            }
             attempt++;
             yield* refuseIrreversibleRetry(action, attempt);
             yield* Effect.sleep(delay.value);

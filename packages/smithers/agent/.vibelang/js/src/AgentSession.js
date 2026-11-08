@@ -1594,7 +1594,7 @@ export const budgetParking = (journal, runtime) => (runId, envelope) => {
         failure: new HarnessError.HarnessError({
             code: "engine_failed",
             message: `Budget approval required: ${question}`,
-            cause: Schema.encodeUnknownSync(Permission.PermissionRequired)(new Permission.PermissionRequired({
+            cause: Schema.encodeUnknownSync(Permission.PermissionRequired)(Permission.PermissionRequired.new({
                 code: "permission_required",
                 requestId,
                 runId,
@@ -2519,7 +2519,7 @@ export const make = (options) => Effect.gen(function* () {
         return yield* Effect.fail(new HarnessError.HarnessError({
             code: "engine_failed",
             message: `Approval required: ${input.question}`,
-            cause: Schema.encodeUnknownSync(Permission.PermissionRequired)(new Permission.PermissionRequired({
+            cause: Schema.encodeUnknownSync(Permission.PermissionRequired)(Permission.PermissionRequired.new({
                 code: "permission_required",
                 requestId: identity.requestId,
                 runId,
@@ -3829,7 +3829,9 @@ export const make = (options) => Effect.gen(function* () {
         // Pre-body reads and control claims fail through this same boundary.
         // Preserve their typed fields in the engine's JSON settlement too.
         // `settle` still observes the body's original failure before conversion.
-        Effect.mapError(settlementFailure));
+        Effect.catchCause((cause) => Effect.failCause(Cause.fromReasons(cause.reasons.map((reason) => Cause.isFailReason(reason)
+            ? Cause.makeFailReason(settlementFailure(reason.error)).annotate(Cause.reasonAnnotations(reason))
+            : reason)))));
     })).pipe(Scope.provide(scope));
     // Added after `agent/run` is registered, so a closing scope runs them
     // BEFORE that registration is released. A parked drive is still following
@@ -3982,7 +3984,7 @@ export const make = (options) => Effect.gen(function* () {
             let run = yield* runtime.getRun(input.runId);
             let waiting = yield* engineState.waiting(input.runId);
             // Native polling briefly clears the wait while the control projection
-            // still says parked. Observe an eligible durable wait; never invent it.
+            // can briefly fall back to accepted. Observe an eligible durable wait; never invent it.
             for (let poll = 0; poll < 100; poll++) {
                 if (["completed", "failed", "cancelled"].includes(run.status)) {
                     break;
@@ -3990,7 +3992,8 @@ export const make = (options) => Effect.gen(function* () {
                 if (run.status === "parked" && Option.isSome(waiting) && waiting.value.reason === "event") {
                     break;
                 }
-                if (!options.reenterModules?.includes(run.flowId) || !["parked", "running"].includes(run.status) ||
+                if (!options.reenterModules?.includes(run.flowId) ||
+                    !["accepted", "parked", "running"].includes(run.status) ||
                     Option.isSome(waiting) && waiting.value.reason !== "event")
                     break;
                 yield* Effect.sleep("10 millis");

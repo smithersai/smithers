@@ -48,7 +48,6 @@
 import * as Schema from "effect/Schema";
 import { withSpan } from "effect/Effect";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import { capability, envelope, rootSubtree } from "./internal/Declaration.js";
 import { invalidInput } from "./internal/SearchContract.js";
 import { MAX_GREP_MATCHES } from "./internal/Text.js";
@@ -272,21 +271,25 @@ const empty = (output) => output.matches.length === 0 && output.files.length ===
  * @category handlers
  * @since 1.0.0
  */
-export const run = (input) => Effect_1.suspend({ run: () => { return withSpan((Effect_1.fnUntraced(runtime.$joinedFrame(function* () {
-        const normalized = normalize(input);
-        if (normalized instanceof StdError.StdError)
-            return yield* Effect_1.fail(normalized);
-        const search = yield* Search.Search;
-        const result = yield* search.grep(normalized);
-        if (normalized.fixedStrings || !empty(result) || !metacharacters.test(normalized.pattern))
-            return result;
-        const literal = yield* search.grep({ ...normalized, fixedStrings: true });
-        if (empty(literal))
-            return result;
-        const explanation = `The pattern found nothing as a regular expression and these results come from re-running it literally (fixedStrings: true).`;
-        return {
-            ...literal,
-            retriedAsLiteral: true,
-            notice: literal.notice === undefined ? explanation : `${explanation} ${literal.notice}`
-        };
-    })))(), "Grep.run"); } }.run);
+export const run = (input) => {
+    return Effect_1.gen(function* run() { return yield* withSpan((() => {
+        return Effect_1.gen(function* () {
+            const normalized = normalize(input);
+            if (normalized instanceof StdError.StdError)
+                return yield* Effect_1.fail(normalized);
+            const search = yield* Search.Search;
+            const result = yield* search.grep(normalized);
+            if (normalized.fixedStrings || !empty(result) || !metacharacters.test(normalized.pattern))
+                return result;
+            const literal = yield* search.grep({ ...normalized, fixedStrings: true });
+            if (empty(literal))
+                return result;
+            const explanation = `The pattern found nothing as a regular expression and these results come from re-running it literally (fixedStrings: true).`;
+            return {
+                ...literal,
+                retriedAsLiteral: true,
+                notice: literal.notice === undefined ? explanation : `${explanation} ${literal.notice}`
+            };
+        });
+    })(), "Grep.run"); });
+};

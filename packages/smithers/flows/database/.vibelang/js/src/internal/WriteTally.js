@@ -7,7 +7,6 @@
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 /**
  * Every tally the current fiber runs inside, innermost last. A fiber forked
  * inside a tally inherits it, so its writes count too.
@@ -26,31 +25,15 @@ export const Current = Context.Reference("@smthrs/database/WriteTally", {
  * @category internal
  * @since 1.0.0
  */
-export const record = Effect_1.fnUntraced(runtime.$joinedFrame(function* record(waited, wait) {
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const accumulator of yield* Current) {
-                try {
-                    {
-                        if (wait === "schema" || wait === "partition")
-                            accumulator.transactions += 1;
-                        if (wait === "schema" || wait === "widen")
-                            accumulator.schemaWide += 1;
-                        accumulator.lockWait = Duration.sum(accumulator.lockWait, waited);
-                        accumulator.maxLockWait = Duration.millis(Math.max(Duration.toMillis(accumulator.maxLockWait), Duration.toMillis(waited)));
-                    }
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
-            }
+export const record = (waited, wait) => {
+    return Effect_1.gen(function* record() {
+        for (const accumulator of yield* Current) {
+            if (wait === "schema" || wait === "partition")
+                accumulator.transactions += 1;
+            if (wait === "schema" || wait === "widen")
+                accumulator.schemaWide += 1;
+            accumulator.lockWait = Duration.sum(accumulator.lockWait, waited);
+            accumulator.maxLockWait = Duration.millis(Math.max(Duration.toMillis(accumulator.maxLockWait), Duration.toMillis(waited)));
         }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
-        }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
-    }
-}));
+    });
+};

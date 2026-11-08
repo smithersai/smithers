@@ -33,35 +33,35 @@ export const DocumentFamily = Schema.Literals([
 ])
 
 /** Who sent the document, for whom, and what kind of document it is. */
-export schema Context {
-  readonly source: string
-  readonly tenant: string
-  readonly documentFamily: DocumentFamily
-  readonly rawContent: string
-  readonly detectedLanguage: string
-  readonly summary: string
-}
+export const Context = Schema.Struct({
+  source: Schema.String,
+  tenant: Schema.String,
+  documentFamily: DocumentFamily,
+  rawContent: Schema.String,
+  detectedLanguage: Schema.String,
+  summary: Schema.String
+})
 
 /** One field of a resolved schema. */
-export schema FieldSpec {
-  readonly name: string
-  readonly type: "string" | "number" | "boolean" | "date" | "array" | "object"
-  readonly required: boolean
-  readonly description: string
-}
+export const FieldSpec = Schema.Struct({
+  name: Schema.String,
+  type: Schema.Literals(["string", "number", "boolean", "date", "array", "object"]),
+  required: Schema.Boolean,
+  description: Schema.String
+})
 
 /** A tenant's rule for one field. */
-export schema TenantOverride { readonly field: string; readonly rule: string }
+export const TenantOverride = Schema.Struct({ field: Schema.String, rule: Schema.String })
 
 /** The output schema the resolver chose for this document. */
-export schema ResolvedSchema {
-  readonly schemaId: string
-  readonly schemaFamily: string
-  readonly fields: ReadonlyArray<FieldSpec>
-  readonly tenantOverrides: ReadonlyArray<TenantOverride>
-  readonly confidence: Fraction
-  readonly summary: string
-}
+export const ResolvedSchema = Schema.Struct({
+  schemaId: Schema.String,
+  schemaFamily: Schema.String,
+  fields: Schema.Array(FieldSpec),
+  tenantOverrides: Schema.Array(TenantOverride),
+  confidence: Fraction,
+  summary: Schema.String
+})
 
 /** The fields the extractor filled. */
 export const Extraction = Schema.Struct({

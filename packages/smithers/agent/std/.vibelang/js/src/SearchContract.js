@@ -11,9 +11,9 @@
  *
  * @since 1.0.0
  */
-import { $catchExpression } from "vibelang-runtime";
+import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import { Effect } from "effect";
 import * as LinearRegex from "./internal/LinearRegex.js";
 import { escapeRegex, invalidPattern, rejectionPrefix } from "./internal/SearchContract.js";
@@ -391,47 +391,31 @@ const rootRelativeSuffix = (pattern, root, path) => {
     const stem = patternRoot.replace(/^\/+/, "").replace(/\/+$/, "");
     return stem.length > 0 && anchored.startsWith(`${stem}/`) ? anchored.slice(stem.length + 1) : undefined;
 };
-const unsatisfiedReason = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* unsatisfiedReason(options, pattern) {
-    const reasons = [];
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const alternative of expandBraces(pattern)) {
-                try {
-                    {
-                        const segments = literalDirectory(alternative);
-                        if (segments.length === 0)
-                            return undefined;
-                        const skipped = segments.find((segment) => Walk.skippedDirectories.has(segment));
-                        if (skipped !== undefined) {
-                            reasons.push(`${skipped} is never descended into; name it as the search root to look inside it`);
-                            continue;
-                        }
-                        if (!options.hidden && segments.some((segment) => segment.startsWith("."))) {
-                            reasons.push("hidden paths are excluded unless hidden is true");
-                            continue;
-                        }
-                        const directory = segments.join("/");
-                        const present = yield* $catchExpression(() => (Effect.map(options.fileSystem.stat(options.path.join(options.root, directory)), (info) => info.type === "Directory")), () => Effect_1.sync(() => { return false; }));
-                        if (present)
-                            return undefined;
-                        reasons.push(`there is no ${directory} directory there`);
-                    }
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
+const unsatisfiedReason = (options, pattern) => {
+    return Effect_1.gen(function* unsatisfiedReason() {
+        const reasons = [];
+        for (const alternative of expandBraces(pattern)) {
+            const segments = literalDirectory(alternative);
+            if (segments.length === 0)
+                return undefined;
+            const skipped = segments.find((segment) => Walk.skippedDirectories.has(segment));
+            if (skipped !== undefined) {
+                reasons.push(`${skipped} is never descended into; name it as the search root to look inside it`);
+                continue;
             }
+            if (!options.hidden && segments.some((segment) => segment.startsWith("."))) {
+                reasons.push("hidden paths are excluded unless hidden is true");
+                continue;
+            }
+            const directory = segments.join("/");
+            const present = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return (Effect.map(options.fileSystem.stat(options.path.join(options.root, directory)), (info) => info.type === "Directory")); }); })(), () => Effect_1.sync(() => { return false; }));
+            if (present)
+                return undefined;
+            reasons.push(`there is no ${directory} directory there`);
         }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
-        }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
-    }
-    return reasons[0];
-})));
+        return reasons[0];
+    });
+};
 /**
  * Explains the positive globs that no file under the root could ever match.
  *
@@ -448,53 +432,37 @@ const unsatisfiedReason = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$jo
  * @category diagnostics
  * @since 1.0.0
  */
-export const unsatisfiableNotice = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* unsatisfiableNotice(options) {
-    // Globs filter a walk. A root that names one file is searched whatever the
-    // globs say — `rg` always searches a path given on the command line — so
-    // there is no unsatisfiable pattern to report and no directory to stat.
-    const walkable = yield* $catchExpression(() => (Effect.map(options.fileSystem.stat(options.root), (info) => info.type === "Directory")), () => Effect_1.sync(() => { return false; }));
-    if (!walkable)
-        return undefined;
-    const sentences = [];
-    {
-        let pending_2 = runtime.$normal;
-        try {
-            for (const glob of options.globs) {
-                try {
-                    {
-                        if (glob.startsWith("!"))
-                            continue;
-                        const canonical = canonicalGlob(glob);
-                        const reason = yield* unsatisfiedReason(options, canonical);
-                        if (reason === undefined)
-                            continue;
-                        const suffix = rootRelativeSuffix(canonical, options.root, options.path);
-                        sentences.push(`No file under ${options.root} can match "${glob}": ${suffix === undefined
-                            ? reason
-                            : `glob patterns are relative to the search root, so use "${suffix}" instead`}.`);
-                    }
-                }
-                catch (thrown_3) {
-                    pending_2 = thrown_3;
-                    break;
-                }
-            }
+export const unsatisfiableNotice = (options) => {
+    return Effect_1.gen(function* unsatisfiableNotice() {
+        // Globs filter a walk. A root that names one file is searched whatever the
+        // globs say — `rg` always searches a path given on the command line — so
+        // there is no unsatisfiable pattern to report and no directory to stat.
+        const walkable = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return (Effect.map(options.fileSystem.stat(options.root), (info) => info.type === "Directory")); }); })(), () => Effect_1.sync(() => { return false; }));
+        if (!walkable)
+            return undefined;
+        const sentences = [];
+        for (const glob of options.globs) {
+            if (glob.startsWith("!"))
+                continue;
+            const canonical = canonicalGlob(glob);
+            const reason = yield* unsatisfiedReason(options, canonical);
+            if (reason === undefined)
+                continue;
+            const suffix = rootRelativeSuffix(canonical, options.root, options.path);
+            sentences.push(`No file under ${options.root} can match "${glob}": ${suffix === undefined
+                ? reason
+                : `glob patterns are relative to the search root, so use "${suffix}" instead`}.`);
         }
-        catch (thrown_4) {
-            throw runtime.$finallyFailure(pending_2, thrown_4);
+        // An impossible glob cannot be repaired by opting out of ignores.
+        if (sentences.length > 0 && sentences.length === options.globs.filter((glob) => !glob.startsWith("!")).length) {
+            return sentences.join(" ");
         }
-        if (pending_2 !== runtime.$normal)
-            throw pending_2;
-    }
-    // An impossible glob cannot be repaired by opting out of ignores.
-    if (sentences.length > 0 && sentences.length === options.globs.filter((glob) => !glob.startsWith("!")).length) {
-        return sentences.join(" ");
-    }
-    const included = (relative, basename) => includedByGlobs(options.globs, relative, basename);
-    const ignored = options.noIgnore ? false : options.ignored ??
-        (yield* $catchExpression(() => (Effect.map(Walk.files(options.fileSystem, options.path, options.root, options.hidden, false, included), (walked) => walked.ignored)), () => Effect_1.sync(() => { return false; })));
-    if (ignored) {
-        sentences.push("No results; ignore files excluded paths. Retry with noIgnore: true to include them.");
-    }
-    return sentences.length === 0 ? undefined : sentences.join(" ");
-})));
+        const included = (relative, basename) => includedByGlobs(options.globs, relative, basename);
+        const ignored = options.noIgnore ? false : options.ignored ??
+            (yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return (Effect.map(Walk.files(options.fileSystem, options.path, options.root, options.hidden, false, included), (walked) => walked.ignored)); }); })(), () => Effect_1.sync(() => { return false; })));
+        if (ignored) {
+            sentences.push("No results; ignore files excluded paths. Retry with noIgnore: true to include them.");
+        }
+        return sentences.length === 0 ? undefined : sentences.join(" ");
+    });
+};

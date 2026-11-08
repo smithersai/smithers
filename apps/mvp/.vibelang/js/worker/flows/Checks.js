@@ -10,10 +10,10 @@ import { HttpClient } from "effect/http";
 import { SqlClient } from "effect/sql";
 import { CHECK_NAME, CHECK_RUN_NAMESPACE, CHECKS_DIRECTORY, checkExecutionId, checkFlowOf, MAX_PATCH_CHARS, REVIEW_CHECK, SHA, statusContextOf, } from "../../src/features/pulls/contract.js";
 import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.js";
-import { Machines } from "#vibelang/emitted/worker/branch/Machines";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
-import { classify, withToken } from "#vibelang/emitted/worker/github/Calls";
-import { repositoryOf } from "#vibelang/emitted/worker/github/Config";
+import { Machines } from "../branch/Machines.js";
+import { codeOf } from "../ErrorCode.js";
+import { classify, withToken } from "../github/Calls.js";
+import { repositoryOf } from "../github/Config.js";
 import { fetchPull, projectPull } from "../github/Pulls.js";
 import { TokenUnavailable } from "../github/Tokens.js";
 import * as SandboxCommand from "./SandboxCommand.js";
@@ -282,6 +282,7 @@ export const steps = (services, commandSeconds = COMMAND_LIMIT_SECONDS, stepWait
         return { checks: done };
     }).pipe(Effect.provide(services.database), Effect.mapError(() => new ChecksUnavailable()), Effect.withSpan("checks.scripts", { attributes: { "smithers.checks.sha": request.sha } }));
     const review = ({ request }) => Effect.gen(function* () {
+        const failure = {};
         const id = yield* checkRunIdOf(request, REVIEW_CHECK);
         yield* started(request, id, REVIEW_CHECK);
         yield* pending(request, REVIEW_CHECK);
@@ -293,12 +294,17 @@ export const steps = (services, commandSeconds = COMMAND_LIMIT_SECONDS, stepWait
                 // The judge's findings come from a durable model step, so a step run again after a lost answer replays them.
                 const compared = yield* GitHub.Commits.compare(repository.owner, repository.name, request.baseSha, request.sha);
                 const result = yield* ModelStep.run({ name: "checks/Review/model", ...services.reviewerFor(request.ownerId), request: reviewRequest(compared.files) });
-                if (result.error !== undefined)
+                if (result.error !== undefined) {
+                    Object.assign(failure, { stage: "model", errorCode: result.error.code,
+                        ...(result.error.httpStatus === undefined ? {} : { providerStatus: result.error.httpStatus }) });
                     return "failed";
+                }
                 const message = ModelEvent.settledMessage(result.events).message;
                 const findings = message.content.filter((part) => part.type === "text").map((part) => part.text).join("");
-                if (findings.trim() === "")
+                if (findings.trim() === "") {
+                    Object.assign(failure, { stage: "model", errorCode: "empty_answer" });
                     return "failed";
+                }
                 // One review, keyed by this run's check: a step run again after a lost answer finds it by that key.
                 yield* Action.once("review", GitHub.Once.review(repository.owner, repository.name, request.prNumber, {
                     commitId: request.sha,
@@ -322,7 +328,11 @@ export const steps = (services, commandSeconds = COMMAND_LIMIT_SECONDS, stepWait
         }));
         yield* ended(id, reviewed);
         yield* Metric.update(Metric.withAttributes(checks, { check: "review", outcome: reviewed }), 1);
-        yield* Effect.logInfo("checks.review").pipe(Effect.annotateLogs({ repoId: request.repoId, sha: request.sha, prNumber: request.prNumber, outcome: reviewed }));
+        yield* Effect.annotateCurrentSpan({
+            "smithers.review.outcome": reviewed,
+            ...(failure.errorCode === undefined ? {} : { "smithers.review.error_code": failure.errorCode }),
+        });
+        yield* Effect.logWithLevel(reviewed === "failed" ? "Warn" : "Info")("checks.review").pipe(Effect.annotateLogs({ repoId: request.repoId, sha: request.sha, prNumber: request.prNumber, outcome: reviewed, ...failure }));
         return { checks: [{ name: REVIEW_CHECK, status: reviewed }] };
     }).pipe(Effect.provideService(HttpClient.HttpClient, services.http), Effect.provide(services.database), Effect.mapError(() => new ChecksUnavailable()), Effect.withSpan("checks.review", { attributes: { "smithers.checks.sha": request.sha } }));
     /**

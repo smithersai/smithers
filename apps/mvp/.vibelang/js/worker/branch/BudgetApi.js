@@ -5,10 +5,10 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
 import { MAX_SANDBOX_LIMITS_BODY_BYTES, SANDBOX_LIMIT_COLUMNS, SANDBOX_LIMITS_TABLE, } from "../../src/features/spend/contract.js";
 import { SandboxLimitsRequest } from "../../src/features/spend/schema.js";
-import { refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor";
+import { refusesPersonOnly, Sessions } from "../Actor.js";
 import { readBounded } from "#vibelang/emitted/worker/Body";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
-import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess";
+import { codeOf } from "../ErrorCode.js";
+import * as ShapeAccess from "../ShapeAccess.js";
 import * as Budget from "./Budget.js";
 // The sandbox limits as Admins set them (ruling AUTH-5, decision 0103, docs/features/sandbox-budgets.md#the-limits):
 //

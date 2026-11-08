@@ -15,7 +15,7 @@ import * as Deadline from "./deadline.js";
 import * as Extension from "./extension.js";
 import * as Failures from "./failures.js";
 import * as Lifecycle from "./lifecycle.js";
-import { TabError } from "#vibelang/emitted/src/tab-error";
+import { TabError } from "./tab-error.js";
 import * as Transcript from "./transcript.js";
 /** Registry infrastructure failed; the last successful catalog remains available. */
 export class FlowDiscoveryFailed extends Data.TaggedError("FlowDiscoveryFailed") {

@@ -52,26 +52,10 @@
       "vibelang-source": "./src/Channel.vibe",
       "default": "./.vibelang/js/src/Channel.js"
     },
-    "./Cron": {
-      "types": "./.vibe/declarations/src/Cron.d.vibe.ts",
-      "vibelang-source": "./src/Cron.vibe",
-      "default": "./.vibelang/js/src/Cron.js"
-    },
-    "./DispatchReader": {
-      "types": "./.vibe/declarations/src/DispatchReader.d.vibe.ts",
-      "vibelang-source": "./src/DispatchReader.vibe",
-      "default": "./.vibelang/js/src/DispatchReader.js"
-    },
-    "./Overlap": {
-      "types": "./src/Overlap.ts",
-      "vibelang-source": "./src/Overlap.ts",
-      "default": "./.vibelang/js/src/Overlap.js"
-    },
-    "./Schedule": {
-      "types": "./.vibe/declarations/src/Schedule.d.vibe.ts",
-      "vibelang-source": "./src/Schedule.vibe",
-      "default": "./.vibelang/js/src/Schedule.js"
-    },
+    "./Cron": "./src/Cron.ts",
+    "./DispatchReader": "./src/DispatchReader.ts",
+    "./Overlap": "./src/Overlap.ts",
+    "./Schedule": "./src/Schedule.ts",
     "./Scheduler": {
       "types": "./src/Scheduler.ts",
       "vibelang-source": "./src/Scheduler.ts",
@@ -82,21 +66,9 @@
       "vibelang-source": "./src/SqlTriggerStore.ts",
       "default": "./.vibelang/js/src/SqlTriggerStore.js"
     },
-    "./Trigger": {
-      "types": "./src/Trigger.ts",
-      "vibelang-source": "./src/Trigger.ts",
-      "default": "./.vibelang/js/src/Trigger.js"
-    },
-    "./TriggerError": {
-      "types": "./.vibe/declarations/src/TriggerError.d.vibe.ts",
-      "vibelang-source": "./src/TriggerError.vibe",
-      "default": "./.vibelang/js/src/TriggerError.js"
-    },
-    "./TriggerStore": {
-      "types": "./src/TriggerStore.ts",
-      "vibelang-source": "./src/TriggerStore.ts",
-      "default": "./.vibelang/js/src/TriggerStore.js"
-    },
+    "./Trigger": "./src/Trigger.ts",
+    "./TriggerError": "./src/TriggerError.ts",
+    "./TriggerStore": "./src/TriggerStore.ts",
     "./Webhook": {
       "types": "./.vibe/declarations/src/Webhook.d.vibe.ts",
       "vibelang-source": "./src/Webhook.vibe",
@@ -107,11 +79,7 @@
       "vibelang-source": "./src/index.ts",
       "default": "./.vibelang/js/src/index.js"
     },
-    "./test/TestTriggers": {
-      "types": "./src/test/TestTriggers.ts",
-      "vibelang-source": "./src/test/TestTriggers.ts",
-      "default": "./.vibelang/js/src/test/TestTriggers.js"
-    }
+    "./test/TestTriggers": "./src/test/TestTriggers.ts"
   },
   "files": [
     "src/**/*.ts",

@@ -164,9 +164,9 @@
     },
     "./MemoryEntries": {
       "types": {
-        "default": "./.vibe/declarations/src/MemoryEntries.d.vibe.ts"
+        "default": "./src/MemoryEntries.ts"
       },
-      "vibelang-source": "./src/MemoryEntries.vibe",
+      "vibelang-source": "./src/MemoryEntries.ts",
       "default": "./.vibelang/js/src/MemoryEntries.js"
     },
     "./ModelAuthor": {
@@ -192,9 +192,9 @@
     },
     "./internal/QuickJsJobs": {
       "types": {
-        "default": "./.vibe/declarations/src/internal/QuickJsJobs.d.vibe.ts"
+        "default": "./src/internal/QuickJsJobs.ts"
       },
-      "vibelang-source": "./src/internal/QuickJsJobs.vibe",
+      "vibelang-source": "./src/internal/QuickJsJobs.ts",
       "default": "./.vibelang/js/src/internal/QuickJsJobs.js"
     },
     "./QuickJsRunner": {

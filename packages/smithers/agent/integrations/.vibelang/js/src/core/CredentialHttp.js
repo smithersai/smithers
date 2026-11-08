@@ -28,6 +28,7 @@ const ANSWER_REDIRECTS = { redirect: "manual" };
  *
  * @since 1.0.0
  * @private
+ * @throws {never}
  */
 export const forCredentials = (client) => HttpClient.transform(client, (effect) => effect.pipe(Effect.provideService(FetchHttpClient.RequestInit, ANSWER_REDIRECTS), Effect.provideService(HttpClient.TracerPropagationEnabled, false)));
 /**
@@ -47,6 +48,7 @@ export const webHeaders = (headers) => new globalThis.Headers(Object.entries(hea
  *
  * @since 1.0.0
  * @private
+ * @throws {never}
  */
 export const transportCause = (error) => error.cause ?? error;
 /**
@@ -66,6 +68,7 @@ export const MAX_RETRY_AFTER_MS = 60_000;
  *
  * @since 1.0.0
  * @private
+ * @throws {never}
  */
 export const retryAfterHeader = (headers) => {
     const retryAfter = headers.get("retry-after")?.trim();

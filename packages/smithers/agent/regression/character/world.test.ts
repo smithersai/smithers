@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as World from "./world.vibe"
+import * as World from "./world.ts"
 
 const example = join(import.meta.dirname, "example", "world")
 

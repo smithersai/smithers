@@ -81,13 +81,13 @@ export const make = (options) => Effect.gen(function* () {
         isTransaction: (conn) => conn.isTransaction()
     });
     return yield* Client.make({
+        driver: "sqlite-bun",
         acquirer,
         compiler: Statement.makeCompilerSqlite(options.transformQueryNames),
         transactionAcquirer,
         onCommitFailure,
         releaseSavepoint: (name) => `RELEASE SAVEPOINT ${name}`,
         beginTransaction: readonly ? "BEGIN" : "BEGIN IMMEDIATE",
-        driver: "sqlite-bun",
         spanAttributes: [
             ...(options.spanAttributes ? Object.entries(options.spanAttributes) : []),
             ["db.system.name", "sqlite"]

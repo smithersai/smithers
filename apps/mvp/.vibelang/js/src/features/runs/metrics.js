@@ -7,7 +7,7 @@ export const steersQueued = Metric.counter("smithers_run_steers_queued", {
     description: "Steers queued in the device's outbox, by door and outcome",
     incremental: true,
 });
-/** Sends of a queued steer, by `outcome` (`taken`, `existing`, `retry`, `refused`). */
+/** Sends of a queued steer, by `outcome` (`taken`, `existing`, `held`, `retry`, `refused`). */
 export const steerSends = Metric.counter("smithers_run_steer_sends", {
     description: "Steers sent to ChatApi, by outcome",
     incremental: true,

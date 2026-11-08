@@ -8,7 +8,6 @@
 import * as Effect from "effect/Effect";
 import * as Metric from "effect/Metric";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import { ArtifactMissing } from "./ArtifactStoreError.js";
 import * as ArtifactStoreMetrics from "./ArtifactStoreMetrics.js";
 import { measureBytes } from "./measureBytes.js";
@@ -41,47 +40,33 @@ export const makeMemory = () => {
             blobs.set(digest, snapshot);
             return digest;
         })), (digest) => Effect.annotateCurrentSpan({ digest })), () => Metric.update(ArtifactStoreMetrics.puts, 1))),
-        get: Effect.fn("ArtifactStore.get")(Effect_1.fnUntraced(function* (digest) {
-            const validated = yield* validateDigest(digest);
-            yield* Effect.annotateCurrentSpan({ digest: validated });
-            const bytes = blobs.get(validated);
-            if (bytes === undefined) {
-                return yield* Effect_1.fail(new ArtifactMissing({ code: "artifact_missing", digest: validated }));
-            }
-            yield* Metric.update(ArtifactStoreMetrics.gets, 1);
-            // A copy for the same reason `put` stores one: handing out the stored
-            // array would let one reader's mutation corrupt every later read of
-            // the digest.
-            return bytes.slice();
-        })),
+        get: Effect.fn("ArtifactStore.get")((digest) => {
+            return Effect_1.gen(function* () {
+                const validated = yield* validateDigest(digest);
+                yield* Effect.annotateCurrentSpan({ digest: validated });
+                const bytes = blobs.get(validated);
+                if (bytes === undefined) {
+                    return yield* Effect_1.fail(new ArtifactMissing({ code: "artifact_missing", digest: validated }));
+                }
+                yield* Metric.update(ArtifactStoreMetrics.gets, 1);
+                // A copy for the same reason `put` stores one: handing out the stored
+                // array would let one reader's mutation corrupt every later read of
+                // the digest.
+                return bytes.slice();
+            });
+        }),
         has,
-        findMissing: Effect.fn("ArtifactStore.findMissing")(Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* (digests) {
-            const requested = [...new Set(digests)];
-            yield* Effect.annotateCurrentSpan({ count: requested.length });
-            const missing = [];
-            {
-                let pending_1 = runtime.$normal;
-                try {
-                    for (const digest of requested) {
-                        try {
-                            {
-                                if (!(yield* has(digest)))
-                                    missing.push(digest);
-                            }
-                        }
-                        catch (thrown_1) {
-                            pending_1 = thrown_1;
-                            break;
-                        }
-                    }
+        findMissing: Effect.fn("ArtifactStore.findMissing")((digests) => {
+            return Effect_1.gen(function* () {
+                const requested = [...new Set(digests)];
+                yield* Effect.annotateCurrentSpan({ count: requested.length });
+                const missing = [];
+                for (const digest of requested) {
+                    if (!(yield* has(digest)))
+                        missing.push(digest);
                 }
-                catch (thrown_2) {
-                    throw runtime.$finallyFailure(pending_1, thrown_2);
-                }
-                if (pending_1 !== runtime.$normal)
-                    throw pending_1;
-            }
-            return missing;
-        }))))
+                return missing;
+            });
+        })
     };
 };

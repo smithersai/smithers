@@ -37,7 +37,7 @@ const securityReview = Smithers.SecurityReview({
         "A refusal message that forwards a custom verify or expected() error text instead of the fixed 'did not verify' message.",
         "An Unauthorized or TriggerError returned to the caller whose message or cause includes the CredentialRef or the resolved secret."
       ],
-      paths: ["src/Webhook.vibe", "src/TriggerError.vibe"]
+      paths: ["src/Webhook.vibe", "src/TriggerError.ts"]
     },
     {
       id: "channel-no-authority",
@@ -92,7 +92,7 @@ const securityReview = Smithers.SecurityReview({
         "An unsatisfiable cron that throws a defect instead of unsatisfiable_cron.",
         "A fires page size or cursor from Control that is not range-checked before the store read."
       ],
-      paths: ["src/Cron.vibe", "src/CatchUp.vibe", "src/internal/**", "src/DispatchReader.vibe"]
+      paths: ["src/Cron.ts", "src/CatchUp.vibe", "src/internal/**", "src/DispatchReader.ts"]
     },
     {
       id: "fire-claim-exactly-once",

@@ -2,7 +2,7 @@ import { FlowDispatch } from "../../flows/dispatch"
 import type { ShareAccess } from "../branch/contract"
 import type { ShareError } from "./contract"
 import { DIALOG, type Change, type Dialog, type ShareRow } from "./schema"
-import { SharingStore } from "./store.vibe"
+import { SharingStore } from "./store.ts"
 
 // What the owner does in a branch's share dialog (decision 0013 §5, docs/features/branch-workspace.md#sharing): open
 // it, add people by login, change or remove what each may do, and set what anyone in the repository with the link may

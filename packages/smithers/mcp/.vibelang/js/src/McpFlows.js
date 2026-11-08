@@ -144,27 +144,29 @@ export const mcp = (client, options = {}) => {
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const connected = Effect_1.fnUntraced(function* connected(options) {
-    if (options.namePrefix === "") {
-        return yield* Effect_1.fail(new McpError({
-            code: "protocol_error",
-            message: `MCP server "${options.server}" option "namePrefix" must not be empty`,
-            server: options.server
-        }));
-    }
-    return yield* Effect.acquireUseRelease(Effect.flatMap(Effect.scope, Scope.fork), (scope) => Scope.provide((Effect_1.gen(function* () {
-        const client = yield* McpClient.connect(options);
-        const offered = new Set(client.tools.map((tool) => tool.name));
-        const missing = options.include?.find((name) => !offered.has(name));
-        if (missing !== undefined) {
+export const connected = (options) => {
+    return Effect_1.gen(function* connected() {
+        if (options.namePrefix === "") {
             return yield* Effect_1.fail(new McpError({
-                code: "tool_not_found",
-                message: `MCP server "${client.server}" offers no requested include tool`,
-                server: client.server
+                code: "protocol_error",
+                message: `MCP server "${options.server}" option "namePrefix" must not be empty`,
+                server: options.server
             }));
         }
-        return mcp(client, options);
-    })), scope), 
-    // Projection rejection must release the successfully initialized client.
-    (scope, exit) => Exit.isFailure(exit) ? Scope.close(scope, exit) : Effect.void);
-});
+        return yield* Effect.acquireUseRelease(Effect.flatMap(Effect.scope, Scope.fork), (scope) => Scope.provide((Effect_1.gen(function* () {
+            const client = yield* McpClient.connect(options);
+            const offered = new Set(client.tools.map((tool) => tool.name));
+            const missing = options.include?.find((name) => !offered.has(name));
+            if (missing !== undefined) {
+                return yield* Effect_1.fail(new McpError({
+                    code: "tool_not_found",
+                    message: `MCP server "${client.server}" offers no requested include tool`,
+                    server: client.server
+                }));
+            }
+            return mcp(client, options);
+        })), scope), 
+        // Projection rejection must release the successfully initialized client.
+        (scope, exit) => Exit.isFailure(exit) ? Scope.close(scope, exit) : Effect.void);
+    });
+};

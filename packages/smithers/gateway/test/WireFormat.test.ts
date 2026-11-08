@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest"
 import { GatewayError } from "../src/GatewayError.vibe"
 import * as GatewayProjection from "../src/GatewayProjection.ts"
 import * as GatewaySchema from "../src/GatewaySchema.vibe"
-import { Projections } from "../src/Projections.vibe"
+import { Projections } from "../src/Projections.ts"
 
 const encode = <A, I, R>(schema: Schema.Codec<A, I, R>, value: A): unknown =>
   JSON.parse(JSON.stringify(Schema.encodeUnknownSync(schema)(value)))

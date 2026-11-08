@@ -28,10 +28,10 @@ export type Kind = typeof Kind.Type
  * @category schemas
  * @since 0.1.0
  */
-export schema Namespace {
-  readonly kind: Kind
-  readonly id: Schema.NonEmptyString
-}
+export const Namespace = Schema.Struct({
+  kind: Kind,
+  id: Schema.NonEmptyString
+})
 
 /**
  * Structured memory namespace.

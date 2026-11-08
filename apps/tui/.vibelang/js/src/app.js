@@ -10,7 +10,7 @@ import { flushSync, useKeyboard, usePaste, useRenderer, useTerminalDimensions } 
 import * as CloudSession from "@smthrs/cli/CloudSession";
 import * as FailureCopy from "@smthrs/model/FailureCopy";
 import * as Form from "@smthrs/ui/flow-form";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { basename } from "node:path";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ActivityView } from "./activity-view.js";
@@ -36,14 +36,14 @@ import * as Files from "./files.js";
 import { actions as flowActions, discoveryNotice, FlowRuns } from "./flows.js";
 import * as Home from "./home.js";
 import * as Inbox from "./inbox.js";
-import * as Dispatch from "#vibelang/emitted/src/key-dispatch";
+import * as Dispatch from "./key-dispatch.js";
 import * as Keys from "./keys.js";
 import { settled } from "./lifecycle.js";
 import * as Models from "./models.js";
 import * as Monitors from "./monitors.js";
 import * as Palette from "./palette.js";
 import { PanelView } from "./panel-view.js";
-import * as Panels from "#vibelang/emitted/src/panels";
+import * as Panels from "./panels.js";
 import * as Pickers from "./picker.js";
 import { ReviewView } from "./review-view.js";
 import * as RunCard from "./run-card.js";
@@ -498,6 +498,7 @@ export function App(props) {
     const homeApps = useMemo(() => Home.read(props.host.cwd), [props.host.cwd]);
     // The factory's issue list, read from Cloud as the signed-in person while the Smithers tab shows.
     const [factory, setFactory] = useState();
+    const [identity, setIdentity] = useState();
     const factoryRepo = useMemo(() => Factory.repository(props.host.cwd, process.env), [props.host.cwd]);
     // `/todo` files through the session it resolves; the filer keeps a request id per unanswered TODO.
     const todoCloud = useRef(undefined);
@@ -506,17 +507,33 @@ export function App(props) {
     useEffect(() => {
         if (!smithersShown)
             return;
+        setIdentity(undefined);
         const controller = new AbortController();
         // One read at a time; a failed read clears the list rather than leaving it stale. The session is
         // resolved once (it may ask the keyring) and again only after Cloud refuses it.
         let reading = false;
         let cloud;
-        const read = async () => {
-            if (reading || factoryRepo === undefined)
+        const authentication = CloudSession.layerAuthentication(process.env);
+        const readIdentity = async () => {
+            try {
+                const status = await Effect.runPromise(Smithers.readIdentity.pipe(Effect.provide(authentication)), {
+                    signal: controller.signal
+                });
+                if (!controller.signal.aborted)
+                    setIdentity(status);
+            }
+            catch {
+                if (!controller.signal.aborted)
+                    setIdentity(undefined);
+            }
+        };
+        const readFactory = async () => {
+            if (factoryRepo === undefined)
                 return;
-            reading = true;
             try {
                 cloud ??= await CloudSession.signedIn(process.env);
+                if (controller.signal.aborted)
+                    return;
                 if (cloud === undefined)
                     return setFactory("signed-out");
                 const stack = await Factory.load(cloud.get, factoryRepo, controller.signal);
@@ -533,6 +550,14 @@ export function App(props) {
                 setFactory(refused ? "signed-out" : undefined);
                 Log.write("factory.read", error);
             }
+        };
+        const read = async () => {
+            if (reading)
+                return;
+            reading = true;
+            try {
+                await Promise.all([readIdentity(), readFactory()]);
+            }
             finally {
                 reading = false;
             }
@@ -546,7 +571,7 @@ export function App(props) {
     }, [smithersShown, factoryRepo]);
     const smithersPanel = homeApps.length === 0 && factoryRepo === undefined
         ? undefined
-        : Smithers.panel(homeApps, new Set(runs.listed().map((flow) => flow.name)), factory);
+        : Smithers.panel(homeApps, new Set(runs.listed().map((flow) => flow.name)), factory, identity);
     const smithersKey = smithersPanel === undefined ? "" : JSON.stringify(smithersPanel);
     useEffect(() => {
         contributions.plugin("smithers", smithersPanel === undefined ? [] : [{ kind: "panel", placement: "tab", panel: smithersPanel }]);

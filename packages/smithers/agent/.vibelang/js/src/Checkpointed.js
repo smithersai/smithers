@@ -46,7 +46,7 @@ import * as Checkpoints from "@smthrs/std/Checkpoints";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 /** A refusal the cell observes as an ordinary catchable failure. */
-const refused = (code, message) => new Cell.CallResult({ outcome: "failure", value: null, code, message });
+const refused = (code, message) => Cell.CallResult.new({ outcome: "failure", value: null, code, message });
 /**
  * The refusal a flow that cannot be pointed at a tree answers with.
  *

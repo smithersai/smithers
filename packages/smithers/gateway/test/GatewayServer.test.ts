@@ -46,7 +46,7 @@ import { GatewayError, GatewayErrorCode, type GatewayErrorCode as GatewayErrorCo
 import { GatewayRpcs } from "../src/GatewayRpcs.ts"
 import * as GatewayServer from "../src/GatewayServer.ts"
 import * as NodeGateway from "../src/node/NodeGateway.vibe"
-import { make as makeProjections, maxProjectionBytes, Projections } from "../src/Projections.vibe"
+import { make as makeProjections, maxProjectionBytes, Projections } from "../src/Projections.ts"
 import { traceFromJournal } from "../src/RunTrace.vibe"
 import { defaultCadenceStack, emit, stack } from "./GatewayStack.ts"
 

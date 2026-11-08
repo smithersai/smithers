@@ -24,7 +24,7 @@ import * as PortableSearch from "../src/PortableSearch.ts"
 import * as RemoteSearch from "../src/RemoteSearch.ts"
 import type * as Search from "../src/Search.vibe"
 import * as SearchConformance from "../src/SearchConformance.vibe"
-import type * as StdError from "../src/StdError.vibe"
+import type * as StdError from "../src/StdError.ts"
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "flows-remote-search-")))
 afterAll(() => {

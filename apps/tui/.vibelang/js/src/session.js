@@ -18,7 +18,7 @@ import { basename, join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import * as Debug from "./debug.js";
 import * as Failures from "./failures.js";
-import * as Panels from "#vibelang/emitted/src/panels";
+import * as Panels from "./panels.js";
 import * as Shell from "./shell.js";
 import * as Transcript from "./transcript.js";
 export const root = () => process.env.SMITHERS_TUI_SESSION_DIR ?? join(homedir(), ".smithers", "tui", "sessions");

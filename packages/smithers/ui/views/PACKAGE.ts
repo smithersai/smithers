@@ -84,7 +84,7 @@ const securityReview = Smithers.SecurityReview({
         "Module text written into `ViewCodeError.message` or any field other than the redacted `detail` and `problems`.",
         "A metric attribute other than `limit`."
       ],
-      paths: ["src/PresentationRealm.ts", "src/ViewCode.vibe"]
+      paths: ["src/PresentationRealm.ts", "src/ViewCode.ts"]
     },
     {
       id: "frame-policy",

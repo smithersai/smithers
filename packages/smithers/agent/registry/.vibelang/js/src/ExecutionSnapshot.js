@@ -6,8 +6,8 @@
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore";
 import * as FileLease from "@smthrs/artifacts/FileLease";
 import * as Digest from "@smthrs/core/Digest";
-import { Crypto } from "@smthrs/crypto";
 import * as Context from "effect/Context";
+import * as EffectDigest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -64,13 +64,13 @@ const verifiedCompilation = (filename, module, descriptor) => Effect.gen(functio
 export const makeFileSystem = (options) => Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* EffectDigest.Digest;
     const root = path.resolve(options.root);
     const directory = path.join(root, ".flows", "executions");
     const store = options.store ??
         ArtifactStore.makeFileSystem(fs, path, { directory: path.join(root, ".flows", "objects") });
-    const put = (bytes) => store.put(bytes).pipe(Effect.provideService(Crypto.Crypto, crypto));
-    const get = (digest) => store.get(digest).pipe(Effect.provideService(Crypto.Crypto, crypto));
+    const put = (bytes) => store.put(bytes).pipe(Effect.provideService(EffectDigest.Digest, crypto));
+    const get = (digest) => store.get(digest).pipe(Effect.provideService(EffectDigest.Digest, crypto));
     const syncDirectories = Effect.gen(function* () {
         for (const parent of [directory, path.dirname(directory), root]) {
             yield* Effect.scoped(Effect.flatMap(fs.open(parent, { flag: "r" }), (file) => file.sync));

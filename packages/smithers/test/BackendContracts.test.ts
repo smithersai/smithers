@@ -1,6 +1,8 @@
-import { readFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import ts from "typescript"
+import { compileProjectSync } from "vibelang/project"
 import { describe, expect, it } from "vitest"
 import { Client } from "../src/internal/backend/Client.ts"
 import { definitions } from "../src/internal/backend/Definitions.ts"
@@ -38,19 +40,33 @@ describe("backend trust and authoring contracts", () => {
 
   it("requires a procedure-specific RPC body and preserves its response type", () => {
     const file = fileURLToPath(new URL("./fixtures/workflow-rpc-types.ts", import.meta.url))
-    const options: ts.CompilerOptions = {
-      noEmit: true,
-      strict: true,
-      skipLibCheck: true,
-      target: ts.ScriptTarget.ESNext,
-      module: ts.ModuleKind.NodeNext,
-      moduleResolution: ts.ModuleResolutionKind.NodeNext,
-      allowImportingTsExtensions: true
+    // The VibeLang checker compiles the fixture: the modules it imports reach
+    // .vibe sources, which a stock TypeScript program cannot read.
+    const root = fileURLToPath(new URL("../../../", import.meta.url))
+    const directory = mkdtempSync(join(fileURLToPath(new URL(".", import.meta.url)), ".workflow-rpc-types-"))
+    let errors: Array<string>
+    try {
+      writeFileSync(
+        join(directory, "tsconfig.json"),
+        JSON.stringify({
+          compilerOptions: {
+            noEmit: true,
+            strict: true,
+            skipLibCheck: true,
+            target: "esnext",
+            module: "nodenext",
+            moduleResolution: "nodenext",
+            allowImportingTsExtensions: true
+          },
+          files: [file]
+        })
+      )
+      errors = compileProjectSync({ project: join(directory, "tsconfig.json"), root, cache: false }).errors
+        .filter((diagnostic) => diagnostic.file !== undefined && resolve(root, diagnostic.file) === file)
+        .map((diagnostic) => diagnostic.text)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
     }
-    const program = ts.createProgram([file], options)
-    const source = program.getSourceFile(file)!
-    const errors = program.getSemanticDiagnostics(source)
-      .map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"))
     expect(errors).toEqual([])
   }, 30_000)
 })

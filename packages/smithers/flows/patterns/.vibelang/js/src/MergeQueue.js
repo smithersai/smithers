@@ -40,7 +40,7 @@ const bound = (value) => Number.isSafeInteger(value) && value >= 1;
 export const ordered = (members, priority) => {
     const refusal = priorityRefusal(members, priority);
     if (refusal !== undefined)
-        throw refusal;
+        $raise(refusal);
     return members
         .map((member, index) => ({
         id: member.id,
@@ -133,7 +133,7 @@ export const make = (options) => {
     const failurePolicy = options.failurePolicy;
     const invalid = validate(snapshot, concurrency, priority, failurePolicy);
     if (invalid !== undefined)
-        throw invalid;
+        $raise(invalid);
     const queue = ordered(snapshot, priority);
     // Priority is deliberately absent: it reaches the plan as an annotation, and
     // an annotation never enters key material. What it changes, the order and
@@ -270,3 +270,4 @@ export const run = (input, options) => {
         order: queue.map((entry) => entry.id)
     }));
 };
+import { raise as $raise } from "./MergeQueue.vibe.-24-throw-24-ts.js";

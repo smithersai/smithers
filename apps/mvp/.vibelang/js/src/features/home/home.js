@@ -21,7 +21,10 @@ export class Home extends Context.Service()("@smthrs/mvp/home/Home") {
                 items: (repoId) => opened(repoId)?.itemRows.tanstack ?? store.noItems.tanstack,
                 syncs: (repoId) => opened(repoId)?.syncRows.tanstack ?? store.noSyncs.tanstack,
                 runs: store.runs.tanstack,
-                stack: (repoId) => Option.isSome(todos) ? (todos.value.opened(repoId) ?? todos.value.empty).todos.tanstack : store.noTodos.tanstack,
+                stack: (repoId) => Option.isSome(todos)
+                    ? (todos.value.opened(repoId) ?? todos.value.empty).todos.tanstack
+                    // No TODOs at all: the same rows, none, typed as a stack's.
+                    : store.noTodos.tanstack,
                 stackAccess: Option.isSome(todos) ? todos.value.accessQuery.tanstack : store.noAccess.tanstack,
             },
             actions: {

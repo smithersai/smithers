@@ -9,11 +9,12 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
-import { exit, logDebug } from "effect/Effect";
-import { $catchExpression, $extract, $is, $provideService } from "vibelang-runtime";
+import { exit, failCause, logDebug } from "effect/Effect";
+import { $catchExpression, $extract, $is, $matchCache, $provideService } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import * as Exit_1 from "effect/Exit";
+var $tdz;
 import * as CommandTree from "./CommandTree.js";
 import * as FlowInvoker from "./FlowInvoker.js";
 import { FsError } from "./FsError.js";
@@ -21,101 +22,88 @@ import * as IncurHost from "./internal/IncurHost.js";
 import * as SchemaBridge from "./internal/SchemaBridge.js";
 import * as Route from "./Route.js";
 export { selfSegment } from "./internal/IncurHost.js";
-const mapError = (context, error) => context.error({ code: error.code, exitCode: 1, message: error.description });
-// Incur's ok and error callbacks throw transport control signals, so each
-// settles the call as a defect, outside the program whose failures are
-// sanitized.
-function execute(arg_1, arg_2) {
-    return Effect_1.fnUntraced(function* execute(selected, context) {
-        const outcome = yield* exit(Effect_1.gen(function* () {
-            const input = yield* selected.schema.decode(selected.schema.assemble(context.args, context.options));
-            const output = yield* (yield* FlowInvoker.FlowInvoker).invoke(Object.freeze({
-                name: selected.route.name,
-                flow: selected.flow,
-                input
-            }));
-            return yield* SchemaBridge.encodeOutput(selected.flow.output, output);
-        }));
-        let $is1;
-        let $extracted2;
-        let output;
-        if (((($is1 = outcome), true) && (($extracted2 = (subject_1 => Exit_1.isExit(subject_1) && Exit_1.isSuccess(subject_1) && [subject_1.value])($is1)), true) && $extracted2 !== false && $extracted2.length === 1 && ((output = $extracted2[0]), true)))
-            return context.ok(output);
-        const cause = outcome.cause;
-        let $is3;
-        let $match4;
-        let $match5;
-        let error;
-        if (((($is3 = cause.reasons), true) && Array.isArray($is3) && $is3.length === 1 && (($match4 = $is3[0]), true) && (typeof $match4 === "function" || typeof $match4 === "object") && $match4 !== null && "_tag" in $match4 && $match4._tag === "Fail" && "error" in $match4 && (($match5 = $match4.error), true) && $is(FsError, $match5) && ((error = $match5), true)))
-            return mapError(context, error);
-        // Host diagnostics stay in Effect's logger, never in Incur's response.
-        yield* runtime.$provideEntries(Effect_1.fnUntraced(function* execute$provide() {
-            yield* logDebug("Incur invocation failed", cause);
-        })(), [$provideService(Logger.LogToStderr, "LogToStderr", true)]);
-        if (Cause.hasInterrupts(cause)) {
-            return yield* Effect.failCause(Cause.fromReasons(cause.reasons.filter(Cause.isInterruptReason)));
-        }
-        return mapError(context, new FsError({
-            code: "invocation_unavailable",
-            method: "Incur.execute",
-            description: "The flow invocation failed"
-        }));
-    }).apply(this, arguments);
-}
+// Incur's callbacks throw transport control signals, so settle outside the
+// program whose typed failures are sanitized.
 function refuse(context, error) {
-    return Effect_1.sync({ refuse: () => mapError(context, error) }.refuse);
+    return Effect_1.gen(function* refuse() {
+        return yield* Effect_1.sync(() => context.error({ code: error.code, exitCode: 1, message: error.description }));
+    });
 }
-function project(arg_3) {
-    return Effect_1.fnUntraced(function* project(route) {
-        const completion_1 = yield* runtime.$catch(Effect_1.fnUntraced(function* project$try() {
-            const selected = yield* Effect.timeoutOrElse(Effect_1.gen(function* () {
-                const flow = yield* Route.load(route);
-                const schema = yield* SchemaBridge.toCommandSchema(route.input, flow.input);
-                return { route, flow, schema };
-            }), {
-                duration: "5 seconds",
-                orElse: () => Effect_1.suspend({ orElse: () => { return (() => Effect_1.suspend(() => Effect_1.fail(new FsError({
+function execute(selected, context) {
+    return Effect_1.gen(function* execute() {
+        const $matchCache4 = $matchCache();
+        try {
+            const outcome = yield* exit(Effect_1.gen(function* () {
+                const input = yield* selected.schema.decode(selected.schema.assemble(context.args, context.options));
+                const output = yield* (yield* FlowInvoker.FlowInvoker).invoke(Object.freeze({
+                    name: selected.route.name,
+                    flow: selected.flow,
+                    input
+                }));
+                return yield* SchemaBridge.encodeOutput(selected.flow.output, output);
+            }));
+            let $is1;
+            let $extracted2;
+            let output = $tdz ??= runtime.$uninitializedBinding();
+            if (((($is1 = outcome), true) && (($extracted2 = (subject_1 => Exit_1.isExit(subject_1) && Exit_1.isSuccess(subject_1) && [subject_1.value])($is1)), true) && $extracted2 !== false && $extracted2.length === 1 && ((output = $extracted2[0]), true)))
+                return yield* Effect_1.sync(() => context.ok(runtime.$readBinding(output, $tdz)));
+            const cause = outcome.cause;
+            let $is3;
+            let $match5;
+            let $match6;
+            let error = $tdz ??= runtime.$uninitializedBinding();
+            if ((((($matchCache4.start() && ((($is3 = cause.reasons), true) && $matchCache4.iterable($is3) && $matchCache4.has($is3, 0) && (($match5 = $matchCache4.at($is3, 0)), true) && (typeof $match5 === "function" || typeof $match5 === "object") && $match5 !== null && $matchCache4.propertyHas($match5, "_tag") && $matchCache4.get($match5, "_tag") === "Fail" && $matchCache4.propertyHas($match5, "error") && (($match6 = $matchCache4.get($match5, "error")), true) && runtime.$is(FsError, $match6, null, true) && ((error = $match6), true) && $matchCache4.end($is3, 1))) && ($matchCache4.finish(), true)) || ($matchCache4.finish(), false))))
+                return yield* refuse(context, runtime.$readBinding(error, $tdz));
+            yield* runtime.$provideEntries(Effect_1.fnUntraced(function* execute$provide() {
+                yield* logDebug("Incur invocation failed", cause);
+            })(), [$provideService(Logger.LogToStderr, "LogToStderr", true)]);
+            if (Cause.hasInterrupts(cause))
+                return yield* failCause(Cause.fromReasons(cause.reasons.filter(Cause.isInterruptReason)));
+            return yield* refuse(context, new FsError({
+                code: "invocation_unavailable",
+                method: "Incur.execute",
+                description: "The flow invocation failed"
+            }));
+        }
+        catch (matchError_1) {
+            $matchCache4.threw(matchError_1);
+            throw matchError_1;
+        }
+        finally {
+            $matchCache4.finish();
+        }
+    });
+}
+function project(route) {
+    return Effect_1.gen(function* project() {
+        return yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return Effect.timeoutOrElse(Effect_1.gen(function* () {
+            const flow = yield* Route.load(route);
+            const schema = yield* SchemaBridge.toCommandSchema(route.input, flow.input);
+            return { _tag: "Ready", selected: { route, flow, schema } };
+        }), {
+            duration: "5 seconds",
+            orElse: () => (_tail_1 => { return Effect_1.gen(function* orElse() {
+                const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+                return _completion_1[0] ? yield* _value_1 : _value_1;
+            }); })({ orElse: () => { return [true, Effect_1.fail(new FsError({
                         code: "load_failed",
                         method: "Incur.project",
                         description: "The route metadata load timed out",
                         path: route.name
-                    }))))(); } }.orElse)
-            });
-            return { kind: "return", value: { _tag: "Ready", selected } };
-        })(), Effect_1.fnUntraced(function* project$catch(error) {
-            return { kind: "return", value: { _tag: "Failed", error } };
-        }));
-        if (completion_1.kind === "return")
-            return completion_1.value;
-    }).apply(this, arguments);
+                    }))]; } }.orElse)
+        }); }); })(), (error) => Effect_1.sync(() => { return ({ _tag: "Failed", error }); }));
+    });
 }
-function projectAll(arg_4) {
-    return Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* projectAll(tree) {
+function projectAll(tree) {
+    return Effect_1.gen(function* projectAll() {
         const projections = new Map();
-        {
-            let pending_1 = runtime.$normal;
-            try {
-                for (const route of CommandTree.traverse(tree)) {
-                    try {
-                        projections.set(route, yield* project(route));
-                    }
-                    catch (thrown_1) {
-                        pending_1 = thrown_1;
-                        break;
-                    }
-                }
-            }
-            catch (thrown_2) {
-                throw runtime.$finallyFailure(pending_1, thrown_2);
-            }
-            if (pending_1 !== runtime.$normal)
-                throw pending_1;
-        }
+        for (const route of CommandTree.traverse(tree))
+            projections.set(route, yield* project(route));
         return projections;
-    }))).apply(this, arguments);
+    });
 }
-function groupedRoutes(arg_5) {
-    return Effect_1.fnUntraced(runtime.$joinedFrame(function* groupedRoutes(tree) {
+function groupedRoutes(tree) {
+    return Effect_1.gen(function* groupedRoutes() {
         const grouped = new Set();
         const stack = [tree];
         while (stack.length > 0) {
@@ -132,38 +120,23 @@ function groupedRoutes(arg_5) {
                 }
                 grouped.add(route);
             }
-            {
-                let pending_2 = runtime.$normal;
-                try {
-                    for (const child of node.children.values()) {
-                        try {
-                            stack.push(child);
-                        }
-                        catch (thrown_3) {
-                            pending_2 = thrown_3;
-                            break;
-                        }
-                    }
-                }
-                catch (thrown_4) {
-                    throw runtime.$finallyFailure(pending_2, thrown_4);
-                }
-                if (pending_2 !== runtime.$normal)
-                    throw pending_2;
-            }
+            for (const child of node.children.values())
+                stack.push(child);
         }
         return grouped;
-    })).apply(this, arguments);
+    });
 }
-function hydrate(arg_6, arg_7, arg_8, arg_9) {
-    return Effect_1.fnUntraced(function* hydrate(tree, grouped, tokens, dispatchTokens) {
-        // Only an unmatched name may fall back to metadata: every other typed
-        // failure has to reach the caller.
-        const resolved = yield* $catchExpression(() => CommandTree.resolve(tree, tokens), (error) => Effect_1.suspend(() => { return error.code === "unknown_command" ? Effect_1.succeed(undefined) : (() => Effect_1.suspend(() => Effect_1.fail(error)))(); }));
+function hydrate(tree, grouped, tokens, dispatchTokens) {
+    return Effect_1.gen(function* hydrate() {
+        const resolved = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return CommandTree.resolve(tree, tokens); }); })(), (error) => {
+            return Effect_1.gen(function* () {
+                if (error.code === "unknown_command")
+                    return undefined;
+                return yield* Effect_1.fail(error);
+            });
+        });
         if (resolved === undefined)
             return Option.none();
-        // A name that resolves but cannot be loaded or projected keeps its typed
-        // failure: it is reported, never softened into help output.
         const consumed = tokens.length - resolved.rest.length;
         const viaSelf = resolved.rest[0] === IncurHost.selfSegment && grouped.has(resolved.route);
         const flow = yield* Route.load(resolved.route);
@@ -174,18 +147,14 @@ function hydrate(arg_6, arg_7, arg_8, arg_9) {
             schema,
             dispatch: Object.freeze(dispatchTokens.slice(0, viaSelf ? consumed + 1 : consumed))
         });
-    }).apply(this, arguments);
+    });
 }
-function select(arg_10, arg_11, arg_12, arg_13) {
-    return Effect_1.fnUntraced(function* select(tree, grouped, tokens, dispatchTokens) {
-        const completion_2 = yield* runtime.$catch(Effect_1.fnUntraced(function* select$try() {
-            return { kind: "return", value: { _tag: "Selection", selection: yield* hydrate(tree, grouped, tokens, dispatchTokens) } };
-        })(), Effect_1.fnUntraced(function* select$catch(error) {
-            return { kind: "return", value: { _tag: "Error", error } };
-        }));
-        if (completion_2.kind === "return")
-            return completion_2.value;
-    }).apply(this, arguments);
+function select(tree, grouped, tokens, dispatchTokens) {
+    return Effect_1.gen(function* select() {
+        return yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return Effect_1.gen(function* () {
+            return { _tag: "Selection", selection: yield* hydrate(tree, grouped, tokens, dispatchTokens) };
+        }); }); })(), (error) => Effect_1.sync(() => { return ({ _tag: "Error", error }); }));
+    });
 }
 /**
  * Projects routes onto an Incur CLI while preserving metadata-only discovery.
@@ -200,14 +169,14 @@ function select(arg_10, arg_11, arg_12, arg_13) {
  * @category constructors
  * @since 0.1.0
  */
-export function createCli(arg_14, arg_15) {
-    return Effect_1.fnUntraced(runtime.$joinedFrame(function* createCli(name, routes) {
+export function createCli(name, routes) {
+    return Effect_1.gen(function* createCli() {
         const validated = yield* CommandTree.make(routes);
         const executable = CommandTree.traverse(validated).filter(Route.isCommandRoute);
         const tree = yield* CommandTree.make(executable);
         const grouped = yield* groupedRoutes(tree);
         const services = yield* Effect.context();
-        return IncurHost.mount({
+        return yield* Effect_1.sync(() => IncurHost.mount({
             name,
             tree,
             run: Effect.runPromiseWith(services),
@@ -215,8 +184,8 @@ export function createCli(arg_14, arg_15) {
                 execute,
                 refuse,
                 projectAll,
-                select: (tokens, dispatchTokens) => Effect_1.suspend({ select: () => { return select(tree, grouped, tokens, dispatchTokens); } }.select)
+                select: (tokens, dispatchTokens) => select(tree, grouped, tokens, dispatchTokens)
             }
-        });
-    })).apply(this, arguments);
+        }));
+    });
 }

@@ -9,9 +9,9 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { exit, forEach } from "effect/Effect";
-import { $extract } from "vibelang-runtime";
+import { $extract } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import * as Exit_1 from "effect/Exit";
 import { z } from "incur";
 import { FsError } from "../FsError.js";
@@ -32,8 +32,8 @@ const schemaFailure = (code, method) => new FsError({
  * @private
  * @since 0.1.0
  */
-export function recover(arg_1, arg_2) {
-    return Effect_1.fnUntraced(function* recover(program, failure) {
+export function recover(program, failure) {
+    return Effect_1.gen(function* recover() {
         // @vibelang-diagnostics-next-line EK4810:off
         {
             const $match3 = yield* exit(program);
@@ -44,9 +44,12 @@ export function recover(arg_1, arg_2) {
                     return value;
                 }
             }
-            return yield* (Effect_1.fnUntraced(function* () { return yield* Effect_1.fail(yield* failure()); }))();
+            return yield* (() => { return (_tail_1 => { return Effect_1.gen(function* () {
+                const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+                return _completion_1[0] ? yield* _value_1 : _value_1;
+            }); })(() => { return [true, Effect_1.fail(failure())]; }); })();
         }
-    }).apply(this, arguments);
+    });
 }
 const jsonValue = (value) => {
     if (typeof value !== "string")
@@ -66,112 +69,128 @@ const unsupportedSchema = () => new FsError({
     method: "SchemaBridge.toCommandSchema",
     description: "The flow input schema cannot be projected into command input"
 });
-const resolveReference = Effect_1.fnUntraced({ *resolveReference(input, definitions, seen = new Set()) {
-        const schema = record(input);
-        if (schema === undefined || seen.has(schema))
-            return yield* Effect_1.fail(unsupportedSchema());
-        if (schema.$ref === undefined)
-            return schema;
-        const reference = schema.$ref;
-        if (typeof reference !== "string" || !reference.startsWith("#/$defs/"))
-            return yield* Effect_1.fail(unsupportedSchema());
-        seen.add(schema);
-        const name = reference.slice("#/$defs/".length).replace(/~1/g, "/").replace(/~0/g, "~");
-        return yield* resolveReference(Object.hasOwn(definitions, name) ? definitions[name] : undefined, definitions, seen);
-    } }.resolveReference);
-const objectFor = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* objectFor(schema, definitions, ancestors) {
-    const properties = record(schema.properties) ?? {};
-    const required = new Set(Array.isArray(schema.required) ? schema.required : []);
-    const shape = Object.create(null);
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const value_1 of Object.entries(properties)) {
-                try {
-                    const [name, property] = value_1;
-                    {
-                        const field = yield* zodFor(property, definitions, ancestors);
-                        shape[name] = required.has(name) ? field : field.optional();
-                    }
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
-            }
-        }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
-        }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
+function construct(build) {
+    return Effect_1.gen(function* construct() {
+        return yield* Effect.try({ try: build, catch: unsupportedSchema });
+    });
+}
+const resolveReference = (arg_1, arg_2, ...args_1) => {
+    try {
+        return ((input, definitions, seen = new Set()) => Effect_1.gen({ *resolveReference() {
+                const schema = record(input);
+                if (schema === undefined || seen.has(schema))
+                    return yield* Effect_1.fail(unsupportedSchema());
+                if (schema.$ref === undefined)
+                    return schema;
+                const reference = schema.$ref;
+                if (typeof reference !== "string" || !reference.startsWith("#/$defs/"))
+                    return yield* Effect_1.fail(unsupportedSchema());
+                seen.add(schema);
+                const name = reference.slice("#/$defs/".length).replace(/~1/g, "/").replace(/~0/g, "~");
+                return yield* resolveReference(Object.hasOwn(definitions, name) ? definitions[name] : undefined, definitions, seen);
+            } }.resolveReference))(arg_1, arg_2, ...runtime.$spreadItems(args_1));
     }
-    const object = z.object(shape);
-    return schema.additionalProperties === false
-        ? object.strict()
-        : object.catchall(yield* zodFor(schema.additionalProperties ?? true, definitions, ancestors));
-})));
-const zodFor = Effect_1.fnUntraced({ *zodFor(input, definitions, ancestors = new Set()) {
-        if (input === true)
-            return z.unknown();
-        if (input === false)
-            return z.never();
-        const schema = yield* resolveReference(input, definitions);
-        // Recursive definitions cannot be expanded into finite command descriptors.
-        // Refuse them here rather than overflowing during discovery.
-        if (ancestors.has(schema))
-            return yield* Effect_1.fail(unsupportedSchema());
-        const next = new Set(ancestors).add(schema);
-        const project = (node) => Effect_1.suspend({ project: () => { return zodFor(node, definitions, next); } }.project);
-        const variants = schema.anyOf ?? schema.oneOf;
-        if (Array.isArray(variants))
-            return z.union(yield* forEach(variants, project));
-        if (Object.hasOwn(schema, "const")) {
-            const literal = z.literal(schema.const);
-            return typeof schema.const === "string" ? literal : z.preprocess(jsonValue, literal);
+    catch (e_1) {
+        return Effect_1.die(e_1);
+    }
+};
+const objectFor = (schema, definitions, ancestors) => {
+    return Effect_1.gen(function* objectFor() {
+        const properties = record(schema.properties) ?? {};
+        const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+        const shape = Object.create(null);
+        for (const [name, property] of Object.entries(properties)) {
+            const field = yield* zodFor(property, definitions, ancestors);
+            shape[name] = required.has(name) ? field : yield* construct(() => field.optional());
         }
-        if (Array.isArray(schema.enum)) {
-            const values = schema.enum;
-            return values.every((value) => typeof value === "string")
-                ? z.enum(values)
-                : z.union(yield* forEach(values, (value) => Effect_1.suspend(() => { return project({ const: value }); })));
-        }
-        const type = schema.type;
-        if (Array.isArray(type))
-            return z.union(yield* forEach(type, (type) => Effect_1.suspend(() => { return project({ ...schema, type }); })));
-        if (type === "string")
-            return z.string();
-        if (type === "integer")
-            return z.preprocess(jsonValue, z.int());
-        // `jsonValue` rather than `z.coerce`: coercion turns `""`, `null`, and `[]`
-        // into `0`, which would silently invent input for a durable run.
-        if (type === "number")
-            return z.preprocess(jsonValue, z.number());
-        if (type === "boolean")
-            return z.preprocess(jsonValue, z.boolean());
-        if (type === "null")
-            return z.preprocess(jsonValue, z.null());
-        if (type === "array") {
-            if (Array.isArray(schema.prefixItems)) {
-                const items = yield* forEach(schema.prefixItems, Effect_1.fnUntraced(function* (item, index) {
-                    const field = yield* project(item);
-                    return index < Number(schema.minItems ?? 0) ? field : field.optional();
-                }));
-                const tuple = z.tuple(items);
-                // Effect omits `items` even for an unconstrained rest. A fixed tuple
-                // instead carries `maxItems`, so that bound decides whether to add rest.
-                return schema.items === false || Number(schema.maxItems) <= items.length
-                    ? tuple
-                    : tuple.rest(yield* project(schema.items ?? true));
-            }
-            return z.array(yield* project(schema.items ?? true));
-        }
-        if (type === "object")
-            return z.preprocess(jsonValue, yield* objectFor(schema, definitions, next));
-        if (type !== undefined || schema.allOf !== undefined || schema.not !== undefined)
-            return yield* Effect_1.fail(unsupportedSchema());
-        return z.preprocess(jsonValue, z.unknown());
-    } }.zodFor);
+        const object = yield* construct(() => z.object(shape));
+        if (schema.additionalProperties === false)
+            return yield* construct(() => object.strict());
+        const additional = yield* zodFor(schema.additionalProperties ?? true, definitions, ancestors);
+        return yield* construct(() => object.catchall(additional));
+    });
+};
+const zodFor = (arg_3, arg_4, ...args_2) => {
+    try {
+        return ((input, definitions, ancestors = new Set()) => Effect_1.gen({ *zodFor() {
+                if (input === true)
+                    return yield* construct(() => z.unknown());
+                if (input === false)
+                    return yield* construct(() => z.never());
+                const schema = yield* resolveReference(input, definitions);
+                if (ancestors.has(schema))
+                    return yield* Effect_1.fail(unsupportedSchema());
+                const next = new Set(ancestors).add(schema);
+                const project = (node) => {
+                    return Effect_1.gen(function* project() { return yield* zodFor(node, definitions, next); });
+                };
+                const variants = schema.anyOf ?? schema.oneOf;
+                if (Array.isArray(variants)) {
+                    const choices = yield* forEach(variants, project);
+                    return yield* construct(() => z.union(choices));
+                }
+                if (Object.hasOwn(schema, "const")) {
+                    const literal = yield* construct(() => z.literal(schema.const));
+                    return typeof schema.const === "string" ? literal : yield* construct(() => z.preprocess(jsonValue, literal));
+                }
+                if (Array.isArray(schema.enum)) {
+                    const values = schema.enum;
+                    if (values.every((value) => typeof value === "string")) {
+                        return yield* construct(() => z.enum(values));
+                    }
+                    const choices = yield* forEach(values, (value) => {
+                        return Effect_1.gen(function* () { return yield* project({ const: value }); });
+                    });
+                    return yield* construct(() => z.union(choices));
+                }
+                const type = schema.type;
+                if (Array.isArray(type)) {
+                    const choices = yield* forEach(type, (type) => {
+                        return Effect_1.gen(function* () { return yield* project({ ...schema, type }); });
+                    });
+                    return yield* construct(() => z.union(choices));
+                }
+                if (type === "string")
+                    return yield* construct(() => z.string());
+                if (type === "integer")
+                    return yield* construct(() => z.preprocess(jsonValue, z.int()));
+                // Coercion would silently invent input such as zero for an empty string.
+                if (type === "number")
+                    return yield* construct(() => z.preprocess(jsonValue, z.number()));
+                if (type === "boolean")
+                    return yield* construct(() => z.preprocess(jsonValue, z.boolean()));
+                if (type === "null")
+                    return yield* construct(() => z.preprocess(jsonValue, z.null()));
+                if (type === "array") {
+                    if (Array.isArray(schema.prefixItems)) {
+                        const items = yield* forEach(schema.prefixItems, (item, index) => {
+                            return Effect_1.gen(function* () {
+                                const field = yield* project(item);
+                                return index < Number(schema.minItems ?? 0) ? field : yield* construct(() => field.optional());
+                            });
+                        });
+                        const tuple = yield* construct(() => z.tuple(items));
+                        if (schema.items === false || Number(schema.maxItems) <= items.length)
+                            return tuple;
+                        const rest = yield* project(schema.items ?? true);
+                        return yield* construct(() => tuple.rest(rest));
+                    }
+                    const item = yield* project(schema.items ?? true);
+                    return yield* construct(() => z.array(item));
+                }
+                if (type === "object") {
+                    const object = yield* objectFor(schema, definitions, next);
+                    return yield* construct(() => z.preprocess(jsonValue, object));
+                }
+                if (type !== undefined || schema.allOf !== undefined || schema.not !== undefined)
+                    return yield* Effect_1.fail(unsupportedSchema());
+                return yield* construct(() => z.preprocess(jsonValue, z.unknown()));
+            } }.zodFor))(arg_3, arg_4, ...runtime.$spreadItems(args_2));
+    }
+    catch (e_2) {
+        return Effect_1.die(e_2);
+    }
+};
 const documentOf = (schema) => {
     // Objects are advertised closed. Effect's default (`"ignore"`) leaves every
     // struct open, which `objectFor` would project as `catchall(unknown)`; an
@@ -184,17 +203,19 @@ const documentOf = (schema) => {
         definitions: document.definitions
     };
 };
-const objectDescriptors = Effect_1.fnUntraced(function* objectDescriptors(root, definitions) {
-    const options = yield* objectFor(root, definitions, new Set([root]));
-    const shape = options.shape;
-    // Positionals are advertised only when the flow schema really has an `args`
-    // field. Mounting one anywhere else would publish a parameter that the strict
-    // options object is guaranteed to refuse.
-    return {
-        args: Object.hasOwn(shape, "args") ? z.object({ args: shape.args }) : undefined,
-        options
-    };
-});
+const objectDescriptors = (root, definitions) => {
+    return Effect_1.gen(function* objectDescriptors() {
+        const options = yield* objectFor(root, definitions, new Set([root]));
+        const shape = options.shape;
+        // Positionals are advertised only when the flow schema really has an `args`
+        // field. Mounting one anywhere else would publish a parameter that the strict
+        // options object is guaranteed to refuse.
+        return {
+            args: Object.hasOwn(shape, "args") ? yield* construct(() => z.object({ args: shape.args })) : undefined,
+            options
+        };
+    });
+};
 const positionalRecord = (args) => {
     if (!Array.isArray(args))
         return args;
@@ -244,13 +265,13 @@ const scalarRecord = (args, options) => {
     }
     return merged;
 };
-function decodeWith(arg_3, arg_4, arg_5) {
-    return Effect_1.fnUntraced(function* decodeWith(schema, zodSchema, assembly) {
-        const parsed = zodSchema.safeParse(assembly.value);
+function decodeWith(schema, zodSchema, assembly) {
+    return Effect_1.gen(function* decodeWith() {
+        const parsed = yield* Effect.try({ try: () => zodSchema.safeParse(assembly.value), catch: () => schemaFailure("decode_failed", "SchemaBridge.decodeInput") });
         if (!parsed.success)
             return yield* Effect_1.fail(schemaFailure("decode_failed", "SchemaBridge.decodeInput"));
         return yield* decodeInput(schema, parsed.data);
-    }).apply(this, arguments);
+    });
 }
 /**
  * Authoritatively decodes and snapshots one loaded flow input.
@@ -258,56 +279,59 @@ function decodeWith(arg_3, arg_4, arg_5) {
  * @private
  * @since 0.1.0
  */
-export function decodeInput(arg_6, arg_7) {
-    return Effect_1.fnUntraced(function* decodeInput(schema, value) {
-        const decoded = yield* recover(Schema.decodeUnknownEffect(schema)(value), () => Effect_1.sync(() => { return schemaFailure("decode_failed", "SchemaBridge.decodeInput"); }));
+export function decodeInput(schema, value) {
+    return Effect_1.gen(function* decodeInput() {
+        const decoded = yield* recover(Schema.decodeUnknownEffect(schema)(value), () => schemaFailure("decode_failed", "SchemaBridge.decodeInput"));
         if (decoded === undefined)
             return undefined;
-        const admitted = Boundary.admitJson(decoded);
+        const admitted = yield* Effect_1.sync(() => Boundary.admitJson(decoded));
         if (!admitted.ok)
             return yield* Effect_1.fail(schemaFailure("decode_failed", "SchemaBridge.decodeInput"));
         return admitted.value;
-    }).apply(this, arguments);
+    });
 }
 // Projects a schema with a JSON Schema document; anything it cannot project throws.
-const projectSchema = Effect_1.fnUntraced(runtime.$joinedFrame(function* projectSchema(schema) {
-    // Effect.try's arguments are plain TypeScript, not VibeLang.
-    const { definitions, root } = yield* Effect.try({ try: () => documentOf(schema), catch: unsupportedSchema });
-    const resolved = yield* resolveReference(root, definitions);
-    if (record(resolved.properties) !== undefined) {
-        const descriptors = yield* objectDescriptors(resolved, definitions);
-        const command = descriptors.options;
+const projectSchema = (schema) => {
+    return Effect_1.gen(function* projectSchema() {
+        const { definitions, root } = yield* construct(() => documentOf(schema));
+        const resolved = yield* resolveReference(root, definitions);
+        if (record(resolved.properties) !== undefined) {
+            const descriptors = yield* objectDescriptors(resolved, definitions);
+            const command = descriptors.options;
+            const projected = {
+                args: descriptors.args,
+                options: descriptors.options,
+                assemble: (args, options) => Object.freeze({ value: { ...positionalRecord(args), ...options } }),
+                decode: (assembly) => decodeWith(schema, command, assembly)
+            };
+            return Object.freeze(projected);
+        }
+        const value = yield* zodFor(resolved, definitions);
+        const command = yield* construct(() => z.object({ input: value }).strict());
         const projected = {
-            args: descriptors.args,
-            options: descriptors.options,
-            assemble: (args, options) => Object.freeze({ value: { ...positionalRecord(args), ...options } }),
-            decode: (assembly) => Effect_1.suspend({ decode: () => { return decodeWith(schema, command, assembly); } }.decode)
+            args: yield* construct(() => z.object({ input: value.optional() })),
+            options: yield* construct(() => z.object({ input: value.optional() }).strict()),
+            assemble: (args, options) => Object.freeze({ value: scalarRecord(args, options) }),
+            decode: (assembly) => {
+                return Effect_1.gen(function* decode() {
+                    const parsed = yield* Effect.try({ try: () => command.safeParse(assembly.value), catch: () => schemaFailure("decode_failed", "SchemaBridge.decodeInput") });
+                    if (!parsed.success)
+                        return yield* Effect_1.fail(schemaFailure("decode_failed", "SchemaBridge.decodeInput"));
+                    return yield* decodeInput(schema, parsed.data.input);
+                });
+            }
         };
         return Object.freeze(projected);
-    }
-    const value = yield* zodFor(resolved, definitions);
-    const command = z.object({ input: value }).strict();
-    const projected = {
-        args: z.object({ input: value.optional() }),
-        options: z.object({ input: value.optional() }).strict(),
-        assemble: (args, options) => Object.freeze({ value: scalarRecord(args, options) }),
-        decode: Effect_1.fnUntraced(function* decode(assembly) {
-            const parsed = command.safeParse(assembly.value);
-            if (!parsed.success)
-                return yield* Effect_1.fail(schemaFailure("decode_failed", "SchemaBridge.decodeInput"));
-            return yield* decodeInput(schema, parsed.data.input);
-        })
-    };
-    return Object.freeze(projected);
-}));
+    });
+};
 /**
  * Projects a loaded route input schema onto command-line args and options.
  *
  * @private
  * @since 0.1.0
  */
-export function toCommandSchema(arg_8, arg_9) {
-    return Effect_1.fnUntraced(function* toCommandSchema(ref, schema) {
+export function toCommandSchema(ref, schema) {
+    return Effect_1.gen(function* toCommandSchema() {
         if (ref._tag === "MarkdownOutput") {
             return yield* Effect_1.fail(new FsError({
                 code: "unsupported_schema",
@@ -316,33 +340,35 @@ export function toCommandSchema(arg_8, arg_9) {
             }));
         }
         if (ref._tag === "None") {
-            const empty = z.object({}).strict();
+            const empty = yield* construct(() => z.object({}).strict());
             const none = {
                 // A schema-free command takes nothing, so it advertises no positionals.
                 args: undefined,
                 options: empty,
                 assemble: (args, options) => Object.freeze({ value: { ...positionalRecord(args), ...options } }),
-                decode: Effect_1.fnUntraced(function* decode(assembly) {
-                    if (Object.keys(assembly.value).length !== 0) {
-                        return yield* Effect_1.fail(schemaFailure("decode_failed", "SchemaBridge.decodeInput"));
-                    }
-                    return yield* recover(Schema.decodeUnknownEffect(schema)(undefined), () => Effect_1.sync(() => { return schemaFailure("decode_failed", "SchemaBridge.decodeInput"); }));
-                })
+                decode: (assembly) => {
+                    return Effect_1.gen(function* decode() {
+                        if (Object.keys(assembly.value).length !== 0) {
+                            return yield* Effect_1.fail(schemaFailure("decode_failed", "SchemaBridge.decodeInput"));
+                        }
+                        return yield* recover(Schema.decodeUnknownEffect(schema)(undefined), () => schemaFailure("decode_failed", "SchemaBridge.decodeInput"));
+                    });
+                }
             };
             return Object.freeze(none);
         }
         if (ref._tag === "MarkdownArgs") {
-            const command = z.object({ args: z.string() }).strict();
+            const command = yield* construct(() => z.object({ args: z.string() }).strict());
             const markdown = {
-                args: z.object({ args: z.array(z.string()).optional() }),
-                options: z.object({}).strict(),
+                args: yield* construct(() => z.object({ args: z.array(z.string()).optional() })),
+                options: yield* construct(() => z.object({}).strict()),
                 assemble: (args, options) => Object.freeze({ value: { args: positionalText(args), ...options } }),
-                decode: (assembly) => Effect_1.suspend({ decode: () => { return decodeWith(schema, command, assembly); } }.decode)
+                decode: (assembly) => decodeWith(schema, command, assembly)
             };
             return Object.freeze(markdown);
         }
-        return yield* recover(projectSchema(schema), () => Effect_1.sync(() => { return unsupportedSchema(); }));
-    }).apply(this, arguments);
+        return yield* recover(projectSchema(schema), () => unsupportedSchema());
+    });
 }
 /**
  * Encodes and snapshots a flow output through its declared schema.
@@ -350,16 +376,16 @@ export function toCommandSchema(arg_8, arg_9) {
  * @private
  * @since 0.1.0
  */
-export function encodeOutput(arg_10, arg_11) {
-    return Effect_1.fnUntraced(function* encodeOutput(schema, value) {
-        const encoded = yield* recover(Schema.encodeUnknownEffect(schema)(value), () => Effect_1.sync(() => { return schemaFailure("encode_failed", "SchemaBridge.encodeOutput"); }));
+export function encodeOutput(schema, value) {
+    return Effect_1.gen(function* encodeOutput() {
+        const encoded = yield* recover(Schema.encodeUnknownEffect(schema)(value), () => schemaFailure("encode_failed", "SchemaBridge.encodeOutput"));
         if (encoded === undefined)
             return undefined;
-        const admitted = Boundary.admitJson(encoded);
+        const admitted = yield* Effect_1.sync(() => Boundary.admitJson(encoded));
         if (!admitted.ok)
             return yield* Effect_1.fail(schemaFailure("encode_failed", "SchemaBridge.encodeOutput"));
         return admitted.value;
-    }).apply(this, arguments);
+    });
 }
 /**
  * Snapshots programmatic input before any module-loading await.
@@ -367,13 +393,13 @@ export function encodeOutput(arg_10, arg_11) {
  * @private
  * @since 0.1.0
  */
-export function snapshotInput(arg_12) {
-    return Effect_1.fnUntraced(function* snapshotInput(input) {
+export function snapshotInput(input) {
+    return Effect_1.gen(function* snapshotInput() {
         if (input === undefined)
             return undefined;
-        const admitted = Boundary.admitJson(input);
+        const admitted = yield* Effect_1.sync(() => Boundary.admitJson(input));
         if (!admitted.ok)
             return yield* Effect_1.fail(schemaFailure("decode_failed", "SchemaBridge.snapshotInput"));
         return admitted.value;
-    }).apply(this, arguments);
+    });
 }

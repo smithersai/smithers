@@ -8,16 +8,16 @@ import { HttpClient } from "effect/http";
 import { SqlClient } from "effect/sql";
 import { MAX_PUBLISH_BYTES, MAX_PUBLISH_FILES, } from "../../src/features/branch/contract.js";
 import { agentAttribution } from "../../src/features/issues/contract.js";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { codeOf } from "../ErrorCode.js";
 import { roleOf } from "../GitHubAuth.js";
-import { classify, statusOf, withToken } from "#vibelang/emitted/worker/github/Calls";
-import { repositoryOf } from "#vibelang/emitted/worker/github/Config";
-import * as Metrics from "#vibelang/emitted/worker/github/Metrics";
+import { classify, statusOf, withToken } from "../github/Calls.js";
+import { repositoryOf } from "../github/Config.js";
+import * as Metrics from "../github/Metrics.js";
 import { fetchPull, projectPull } from "../github/Pulls.js";
 import { permissionOf } from "../github/RepoRoles.js";
 import * as Store from "../github/Store.js";
 import { base64Of, collect } from "#vibelang/emitted/worker/branch/Change";
-import { Machines } from "#vibelang/emitted/worker/branch/Machines";
+import { Machines } from "./Machines.js";
 import { resync } from "./Resync.js";
 // Publish and Update branch (docs/features/branch-publish.md; rulings GH-6 and GH-11). A Smithers-only branch lives in
 // Code Storage's ephemeral namespace, and its edits in its machine's working copy; nothing reaches GitHub until a person

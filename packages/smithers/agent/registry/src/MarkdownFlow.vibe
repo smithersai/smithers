@@ -40,7 +40,7 @@ import * as Names from "./internal/Names.vibe"
  * @category schemas
  * @since 0.1.0
  */
-export schema Input { readonly args: string }
+export const Input = Schema.Struct({ args: Schema.String })
 
 /**
  * The decoded input accepted by every markdown flow.

@@ -70,20 +70,20 @@ class Stop {
 }
 const node = (walk, schema, path) => {
     if (!isObject(schema))
-        throw new Stop("invalid", path, "a schema is a JSON object");
+        $raise(new Stop("invalid", path, "a schema is a JSON object"));
     if (++walk.nodes > maximumBytes / 2) {
-        throw new Stop("invalid", path, `the schema exceeds ${maximumBytes} bytes once its references are inlined`);
+        $raise(new Stop("invalid", path, `the schema exceeds ${maximumBytes} bytes once its references are inlined`));
     }
     if (schema["format"] === "password" || schema["writeOnly"] === true) {
-        throw new Stop("secret_field", path, "a plugin schema never collects a secret");
+        $raise(new Stop("secret_field", path, "a plugin schema never collects a secret"));
     }
     for (const key of Object.keys(schema)) {
         if (!keywords.has(key)) {
-            throw new Stop("schema_unresolved", Path.append(path, key), "the keyword is outside the closed subset");
+            $raise(new Stop("schema_unresolved", Path.append(path, key), "the keyword is outside the closed subset"));
         }
     }
     if (walk.depth >= maximumDepth)
-        throw new Stop("invalid", path, `a schema nests at most ${maximumDepth} deep`);
+        $raise(new Stop("invalid", path, `a schema nests at most ${maximumDepth} deep`));
     walk.depth++;
     const ref = schema["$ref"];
     const resolved = ref === undefined
@@ -96,15 +96,15 @@ const inline = (walk, schema, ref, path) => {
     const at = Path.append(path, "$ref");
     const match = typeof ref === "string" ? reference.exec(ref) : null;
     if (match === null)
-        throw new Stop("schema_unresolved", at, "a $ref names only this manifest's #/$defs/<Name>");
+        $raise(new Stop("schema_unresolved", at, "a $ref names only this manifest's #/$defs/<Name>"));
     if (Object.keys(schema).some((key) => key !== "$ref" && key !== "title" && key !== "description")) {
-        throw new Stop("schema_unresolved", at, "a $ref stands alone, beside only title and description");
+        $raise(new Stop("schema_unresolved", at, "a $ref stands alone, beside only title and description"));
     }
     const name = match[1];
     if (!Object.hasOwn(walk.defs, name))
-        throw new Stop("schema_unresolved", at, `no $defs entry ${name}`);
+        $raise(new Stop("schema_unresolved", at, `no $defs entry ${name}`));
     if (walk.stack.includes(name))
-        throw new Stop("schema_unresolved", at, `the $defs entry ${name} refers to itself`);
+        $raise(new Stop("schema_unresolved", at, `the $defs entry ${name} refers to itself`));
     walk.stack.push(name);
     const resolved = node(walk, walk.defs[name], Path.append("$defs", name));
     walk.stack.pop();
@@ -112,7 +112,7 @@ const inline = (walk, schema, ref, path) => {
 };
 const schemas = (walk, value, path) => {
     if (!Array.isArray(value) || value.length === 0) {
-        throw new Stop("invalid", path, "expected a non-empty array of schemas");
+        $raise(new Stop("invalid", path, "expected a non-empty array of schemas"));
     }
     return value.map((member, index) => node(walk, member, Path.append(path, index)));
 };
@@ -121,41 +121,41 @@ const keyword = (walk, key, value, path) => {
         case "type": {
             const names = Array.isArray(value) ? value : [value];
             if (names.length === 0 || !names.every((name) => typeof name === "string" && typeNames.has(name))) {
-                throw new Stop("invalid", path, "expected a JSON type name or a non-empty array of them");
+                $raise(new Stop("invalid", path, "expected a JSON type name or a non-empty array of them"));
             }
             return value;
         }
         case "properties": {
             if (!isObject(value))
-                throw new Stop("invalid", path, "expected an object of schemas");
+                $raise(new Stop("invalid", path, "expected an object of schemas"));
             return Object.fromEntries(Object.entries(value).map(([name, member]) => {
                 const at = Path.append(path, name);
                 if (secretName.test(name))
-                    throw new Stop("secret_field", at, "a plugin schema never collects a secret");
+                    $raise(new Stop("secret_field", at, "a plugin schema never collects a secret"));
                 return [name, node(walk, member, at)];
             }));
         }
         case "required":
             if (!Array.isArray(value) || !value.every((name) => typeof name === "string")) {
-                throw new Stop("invalid", path, "expected an array of property names");
+                $raise(new Stop("invalid", path, "expected an array of property names"));
             }
             return value;
         case "additionalProperties":
             if (typeof value !== "boolean")
-                throw new Stop("schema_unresolved", path, "additionalProperties is a boolean");
+                $raise(new Stop("schema_unresolved", path, "additionalProperties is a boolean"));
             return value;
         case "items":
             if (Array.isArray(value))
-                throw new Stop("schema_unresolved", path, "items is one schema, never a tuple");
+                $raise(new Stop("schema_unresolved", path, "items is one schema, never a tuple"));
             return node(walk, value, path);
         case "enum":
             if (!Array.isArray(value) || value.length === 0)
-                throw new Stop("invalid", path, "expected a non-empty array");
+                $raise(new Stop("invalid", path, "expected a non-empty array"));
             return value;
         case "minimum":
         case "maximum":
             if (typeof value !== "number")
-                throw new Stop("invalid", path, "expected a number");
+                $raise(new Stop("invalid", path, "expected a number"));
             return value;
         case "oneOf":
         case "anyOf":
@@ -163,11 +163,11 @@ const keyword = (walk, key, value, path) => {
         case "title":
         case "description":
             if (typeof value !== "string")
-                throw new Stop("invalid", path, "expected a string");
+                $raise(new Stop("invalid", path, "expected a string"));
             return value;
         default:
             if (counts.has(key) && !(Number.isInteger(value) && value >= 0)) {
-                throw new Stop("invalid", path, "expected a non-negative integer");
+                $raise(new Stop("invalid", path, "expected a non-negative integer"));
             }
             // `const`, `default` and the counts carry any JSON value as is.
             return value;
@@ -349,3 +349,4 @@ export const at = (resolved, path) => {
     }
     return current;
 };
+import { raise as $raise } from "./JsonSchema.vibe.-24-throw-24-ts.js";

@@ -2,7 +2,7 @@
 import { AgentRunner } from "@smthrs/agent";
 import { Cause, Config, Effect, Metric, Schema } from "effect";
 import { SqlClient } from "effect/sql";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { codeOf } from "../ErrorCode.js";
 /**
  * The defaults: 10-minute stalls, 5-minute waits, a runner offline as soon as the view reads it, no cost alert. An
  * outage reaches the bell within 90 s of the runner's death: this, then the next probe, up to 38 s apart on production.

@@ -65,7 +65,7 @@ export type Origin = typeof Origin.Type
  * @category models
  * @since 0.1.0
  */
-export schema Requires { readonly smithers: string }
+export const Requires = Schema.Struct({ smithers: Schema.String })
 
 /**
  * The runtime range a pack declares it needs.

@@ -5,13 +5,13 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
 import { DOMAINS_SHAPE_COLUMNS, DOMAINS_SHAPE_ROUTE, DOMAINS_TABLE, isUnder, MAX_DOMAIN_BODY_BYTES, normalizeHostname, parseDomainRoute, writeExecutionId, } from "../../src/features/domains/contract.js";
 import { repoId } from "../../src/features/repo/contract.js";
-import { refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor";
+import { refusesPersonOnly, Sessions } from "../Actor.js";
 import { readBounded } from "#vibelang/emitted/worker/Body";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
-import * as Flows from "#vibelang/emitted/worker/Flows";
-import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess";
+import { codeOf } from "../ErrorCode.js";
+import * as Flows from "../Flows.js";
+import * as ShapeAccess from "../ShapeAccess.js";
 import * as DomainFlows from "./DomainFlows.js";
-import { DomainProvider } from "#vibelang/emitted/worker/domains/Provider";
+import { DomainProvider } from "./Provider.js";
 import * as Store from "./Store.js";
 // The custom-domain routes (decision 0039, docs/features/domains.md#routes). Every one is a Maintainer's or an Admin's,
 // acting in person, on the repository sign-in reads roles on (`GITHUB_REPOSITORY`, since a session carries one role):

@@ -8,6 +8,7 @@ import { redact } from "./Redact.js";
  * arbitrary properties that can contain request headers and response bodies.
  * @private
  * @since 1.0.0
+ * @throws {never}
  */
 export const redactedError = (secrets) => (...[reason, summary, details, options]) => {
     const seen = new WeakMap();

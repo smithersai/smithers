@@ -12,7 +12,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { vi } from "vitest"
 import { Jj } from "../src/Jj.vibe"
-import * as NodeJj from "../src/node/NodeJj.vibe"
+import * as NodeJj from "../src/node/NodeJj.ts"
 
 // Observe cleanup at the real spawn boundary. Every invocation still starts
 // the fixture executable, and every signal is forwarded to the actual child.

@@ -29,20 +29,20 @@ import * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 
 /** The rewrite an intervention is asked to perform. */
-export schema Job {
-  readonly path: string
-  readonly from: string
-  readonly to: string
-}
+export const Job = Schema.Struct({
+  path: Schema.String,
+  from: Schema.String,
+  to: Schema.String
+})
 
 /** The envelope `Intervene` hands its read flow. */
 schema ReadCall { readonly phase: string; readonly input: Job }
 
 /** The envelope `Intervene` hands its propose flow. */
-schema ProposeCall { readonly phase: string; readonly input: Job; readonly context: Read.Output }
+const ProposeCall = Schema.Struct({ phase: Schema.String, input: Job, context: Read.Output })
 
 /** The envelope `Intervene` hands its apply flow, and the approval that gates it. */
-schema ApplyCall { readonly phase: string; readonly input: Job; readonly proposal: Edit.Input }
+const ApplyCall = Schema.Struct({ phase: Schema.String, input: Job, proposal: Edit.Input })
 
 /** The envelope `Intervene` hands its report flow. */
 const ReportCall = Schema.Struct({

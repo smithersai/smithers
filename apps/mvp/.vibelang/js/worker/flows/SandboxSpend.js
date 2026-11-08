@@ -4,9 +4,10 @@ import { Channels } from "@smthrs/notifications";
 import { Node } from "@smthrs/plan";
 import { Clock, Duration, Effect, Layer, Metric, Option, Schema } from "effect";
 import { SqlClient } from "effect/sql";
+import { sessionLive } from "../SessionStore.js";
 import * as Budget from "../branch/Budget.js";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
-import * as Flows from "#vibelang/emitted/worker/Flows";
+import { codeOf } from "../ErrorCode.js";
+import * as Flows from "../Flows.js";
 import * as AlertDelivery from "./AlertDelivery.js";
 // `ops/SandboxSpend { from, until }` (ruling AUTH-5, decision 0103, docs/features/sandbox-budgets.md#the-spend-alert):
 // once an hour, the month's sandbox spend so far, priced from the sandbox ledger (worker/branch/Budget.ts). Once it
@@ -193,7 +194,7 @@ export const bell = (alert) => Effect.gen(function* () {
     const rows = yield* sql `
       INSERT INTO notifications (recipient, subject, kind, state, title, href)
       SELECT DISTINCT person_id::text, ${subject}, 'spend', 'update', ${detailOf(alert)}, ${SETTINGS_HREF}
-      FROM sessions WHERE role = 'admin' AND revoked_at IS NULL AND expires_at > now()
+      FROM sessions s WHERE role = 'admin' AND ${yield* sessionLive(sql, sql `s`)}
       ON CONFLICT (recipient, subject) DO NOTHING
       RETURNING recipient`;
     return { admins: rows.length };

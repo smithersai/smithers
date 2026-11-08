@@ -518,6 +518,7 @@ export const serve = (
 
 module $call$ts {
 export function invoke<T extends {"decode":Function}>(target:T):ReturnType<Extract<T["decode"],(...args:any[])=>any>> { return target["decode"]() }
+/** @throws {never} */
 export function decodeChunk(decoder: TextDecoder, chunk: Uint8Array): string { return decoder.decode(chunk, { stream: true }) }
 }
 import { decodeChunk as $decodeChunk, invoke as $invoke } from $call$ts

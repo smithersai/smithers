@@ -127,6 +127,7 @@ export const receivedBy = (service: string): string =>
  *
  * @category conversions
  * @since 1.0.0
+ * @throws {never}
  */
 export const toSignalPayload = (event: ExternalEvent): SignalPayload => ({
   name: event.eventName,

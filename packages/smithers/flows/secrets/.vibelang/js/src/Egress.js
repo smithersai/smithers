@@ -54,8 +54,9 @@ import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Url from "effect/http/Url";
 import { withSpan } from "effect/Effect";
+import { $catchExpression, $matchCache } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -302,7 +303,7 @@ const headerBytes = (headers) => {
  * @category egress
  * @since 0.1.0
  */
-export const execute = (request, policy) => withSpan((Effect_1.gen(runtime.$iteratorFrame(runtime.$joinedFrame(function* () {
+export const execute = (request, policy) => withSpan((Effect_1.gen(function* () {
     const startedAt = yield* Clock.currentTimeMillis;
     // The caller's services: its logger, metrics and span, for the outcome an answer's body settles once it has
     // streamed, which a host may do outside the request's services.
@@ -315,22 +316,26 @@ export const execute = (request, policy) => withSpan((Effect_1.gen(runtime.$iter
         headers: request.headers
     }, policy);
     const audit = yield* Audit;
-    const settle = Effect_1.fnUntraced(function* settle(outcome, status, secrets) {
-        var topic_1;
-        const durationMs = (yield* Clock.currentTimeMillis) - startedAt;
-        yield* Metric.update(Metric.withAttributes(requests, { outcome }), 1);
-        yield* ((topic_1 = Effect.logWithLevel(outcome === "forwarded" ? "Info" : "Warn")("secrets.egress"), Effect.annotateLogs({ outcome, host: decision.host, method, status, secrets, durationMs })(topic_1)));
-    });
+    const settle = (outcome, status, secrets) => {
+        return Effect_1.gen(function* settle() {
+            var topic_1;
+            const durationMs = (yield* Clock.currentTimeMillis) - startedAt;
+            yield* Metric.update(Metric.withAttributes(requests, { outcome }), 1);
+            yield* ((topic_1 = Effect.logWithLevel(outcome === "forwarded" ? "Info" : "Warn")("secrets.egress"), Effect.annotateLogs({ outcome, host: decision.host, method, status, secrets, durationMs })(topic_1)));
+        });
+    };
     yield* Effect.annotateCurrentSpan({ "server.address": decision.host, "http.request.method": method });
     /** The span's outcome and status, while the span is open: a body ends after it closed. */
     const mark = (outcome, status) => Effect.annotateCurrentSpan({ "smithers.egress.outcome": outcome, "http.response.status_code": status });
-    const refuse = Effect_1.fnUntraced(function* refuse(code, secrets) {
-        yield* mark(code, refusals[code]);
-        // A refusal stands whether or not it is recorded: nothing is sent either way.
-        yield* (Effect.ignore(audit.record({ host: decision.host, method, outcome: code, secrets })));
-        yield* settle(code, refusals[code], secrets.length);
-        return yield* Effect_1.fail(new Refused({ code }));
-    });
+    const refuse = (code, secrets) => {
+        return Effect_1.gen(function* refuse() {
+            yield* mark(code, refusals[code]);
+            // A refusal stands whether or not it is recorded: nothing is sent either way.
+            yield* (Effect.ignore(audit.record({ host: decision.host, method, outcome: code, secrets })));
+            yield* settle(code, refusals[code], secrets.length);
+            return yield* Effect_1.fail(new Refused({ code }));
+        });
+    };
     const unavailable = (code, secrets) => {
         const status = code === "upstream" ? 502 : 503;
         return Effect.andThen(Effect.andThen(mark(`unavailable_${code}`, status), settle(`unavailable_${code}`, status, secrets)), Effect.fail(new Unavailable({ code })));
@@ -346,57 +351,19 @@ export const execute = (request, policy) => withSpan((Effect_1.gen(runtime.$iter
         return yield* unavailable("secret", used.length);
     }
     const values = new Map();
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const value_1 of revealed) {
-                try {
-                    const { secret, value } = value_1;
-                    {
-                        if (!used.includes(secret)) {
-                            continue;
-                        }
-                        if (valueProblem(Redacted.value(value)) !== undefined) {
-                            return yield* unavailable("value", used.length);
-                        }
-                        values.set(secret.placeholder, Redacted.value(value));
-                    }
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
-            }
+    for (const { secret, value } of revealed) {
+        if (!used.includes(secret)) {
+            continue;
         }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
+        if (valueProblem(Redacted.value(value)) !== undefined) {
+            return yield* unavailable("value", used.length);
         }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
+        values.set(secret.placeholder, Redacted.value(value));
     }
     const scrubber = Scrub.make(revealed.map(({ secret, value }) => ({ value, replacement: secret.placeholder })));
     const headers = {};
-    {
-        let pending_2 = runtime.$normal;
-        try {
-            for (const value_2 of Object.entries(forwardable(request.headers))) {
-                try {
-                    const [name, value] = value_2;
-                    {
-                        headers[name] = substituted(name, value, values);
-                    }
-                }
-                catch (thrown_3) {
-                    pending_2 = thrown_3;
-                    break;
-                }
-            }
-        }
-        catch (thrown_4) {
-            throw runtime.$finallyFailure(pending_2, thrown_4);
-        }
-        if (pending_2 !== runtime.$normal)
-            throw pending_2;
+    for (const [name, value] of Object.entries(forwardable(request.headers))) {
+        headers[name] = substituted(name, value, values);
     }
     if (scrubber.active) {
         headers["accept-encoding"] = "identity";
@@ -417,12 +384,7 @@ export const execute = (request, policy) => withSpan((Effect_1.gen(runtime.$iter
     }
     const client = yield* HttpClient.HttpClient;
     const init = yield* Effect.serviceOption(FetchHttpClient.RequestInit);
-    // Effect 4.1 types a request's method as any string and HttpClientRequest.make as taking an
-    // HttpMethod; 4.0 typed both as HttpMethod. The method goes upstream unchanged, as it did.
-    const outgoing = HttpClientRequest.make(method)(Result.getOrThrow(url), {
-        headers,
-        body: request.body
-    });
+    const outgoing = requestWithMethod(method, Result.getOrThrow(url), headers, request.body);
     const sent = yield* (Effect.catchCause(Effect.provideService(Effect.provideService(client.execute(outgoing), FetchHttpClient.RequestInit, {
         ...Option.getOrUndefined(init),
         redirect: "manual"
@@ -434,36 +396,17 @@ export const execute = (request, policy) => withSpan((Effect_1.gen(runtime.$iter
     }
     yield* mark("forwarded", sent.status);
     const answered = {};
-    {
-        let pending_3 = runtime.$normal;
-        try {
-            for (const value_3 of Object.entries(sent.headers)) {
-                try {
-                    const [name, value] = value_3;
-                    {
-                        if (!droppedAnswer.has(name)) {
-                            answered[name] = scrubber.text(value);
-                        }
-                    }
-                }
-                catch (thrown_5) {
-                    pending_3 = thrown_5;
-                    break;
-                }
-            }
+    for (const [name, value] of Object.entries(sent.headers)) {
+        if (!droppedAnswer.has(name)) {
+            answered[name] = scrubber.text(value);
         }
-        catch (thrown_6) {
-            throw runtime.$finallyFailure(pending_3, thrown_6);
-        }
-        if (pending_3 !== runtime.$normal)
-            throw pending_3;
     }
     const body = scrubber.stream(sent.stream.pipe(
     // The client's error holds the request: dropped here. Fetch answers a bodiless response, such as a
     // redirect's, with no body at all, which reaches the guest as an empty one.
     Stream.catch((error) => error.reason._tag === "EmptyBodyError" ? Stream.empty : Stream.fail(new Broken())))).pipe(Stream.onExit((exit) => Effect.provideContext(settle(Exit.isSuccess(exit) ? "forwarded" : "broken", sent.status, used.length), services)));
     return { status: sent.status, headers: answered, body };
-})))), "Egress.execute", { kind: "client" });
+})), "Egress.execute", { kind: "client" });
 /** Statuses whose answer has no body (RFC 9110 §6.4.1). */
 const bodiless = new Set([204, 205, 304]);
 /**
@@ -481,16 +424,47 @@ export const forward = (request, policy) => {
     const body = method === "GET" || method === "HEAD"
         ? HttpBody.empty
         : HttpBody.stream(request.stream, request.headers["content-type"]);
-    // Effect 4.1 types a request's method as any string and HttpClientRequest.make as taking an
-    // HttpMethod; 4.0 typed both as HttpMethod. The method goes upstream unchanged, as it did.
-    const outgoing = HttpClientRequest.make(method)(request.originalUrl, {
-        headers: request.headers,
-        body
-    });
-    return Effect.catchTags(Effect.map(execute(outgoing, policy), (answer) => method === "HEAD" || bodiless.has(answer.status)
-        ? HttpServerResponse.empty({ status: answer.status, headers: answer.headers })
-        : HttpServerResponse.stream(answer.body, { status: answer.status, headers: answer.headers })), {
-        "@smthrs/secrets/Egress/Refused": (refused) => Effect.succeed(HttpServerResponse.text(refused.code, { status: refusals[refused.code] })),
-        "@smthrs/secrets/Egress/Unavailable": (failed) => Effect.succeed(HttpServerResponse.text(failed.code, { status: failed.code === "upstream" ? 502 : 503 }))
-    });
+    const outgoing = requestWithMethod(method, request.originalUrl, request.headers, body);
+    let $do1;
+    {
+        const catchProgram = (Effect.map(execute(outgoing, policy), (answer) => method === "HEAD" || bodiless.has(answer.status)
+            ? HttpServerResponse.empty({ status: answer.status, headers: answer.headers })
+            : HttpServerResponse.stream(answer.body, { status: answer.status, headers: answer.headers })));
+        $do1
+            =
+                Effect_1.gen(function* () {
+                    return yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return catchProgram; }); })(), (e) => Effect_1.sync(() => { return (() => {
+                        const $matchCache2 = $matchCache();
+                        try {
+                            const $match1 = e;
+                            {
+                                if ((typeof $match1 === "function" || typeof $match1 === "object") && $match1
+                                    !== null && $matchCache2.propertyHas($match1, "_tag") && $matchCache2.get($match1, "_tag") === "@smthrs/secrets/Egress/Refused") {
+                                    return HttpServerResponse.text(e.code, { status: refusals[e.code] });
+                                }
+                            }
+                            {
+                                {
+                                    runtime.$assertMatch((typeof $match1 === "function" || typeof $match1 === "object") && $match1
+                                        !== null && $matchCache2.propertyHas($match1, "_tag") && $matchCache2.get($match1, "_tag") === "@smthrs/secrets/Egress/Unavailable", $match1);
+                                    return HttpServerResponse.text(e.code, { status: e.code === "upstream" ? 502 : 503 });
+                                }
+                            }
+                        }
+                        catch (matchError_1) {
+                            $matchCache2.threw(matchError_1);
+                            throw matchError_1;
+                        }
+                        finally {
+                            $matchCache2.finish();
+                        }
+                    })(); }));
+                });
+    }
+    return $do1;
+};
+/** Preserves extension methods while normalizing request components through Effect. */
+const requestWithMethod = (method, url, headers, body) => {
+    const normalized = HttpClientRequest.get(url, { headers, body });
+    return HttpClientRequest.makeWith(method, normalized.url, normalized.urlParams, normalized.hash, normalized.headers, normalized.body);
 };

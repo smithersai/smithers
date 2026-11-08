@@ -16,8 +16,8 @@ import { BudgetCeiling, FlowBudget, ModelSelection } from "../Descriptor.js";
 export const Declared = Schema.Struct({
     name: Schema.optional(Schema.String),
     description: Schema.optional(Schema.String),
-    input: Schema.declare(Schema.isSchema),
-    output: Schema.declare(Schema.isSchema),
+    input: Schema.declare((u) => Schema.isSchema(u)),
+    output: Schema.declare((u) => Schema.isSchema(u)),
     capabilities: Schema.Array(Schema.String),
     effects: Schema.Union([
         Schema.Undefined,

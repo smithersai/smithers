@@ -6,7 +6,7 @@
 
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { createServer } from "node:http"
-import * as NativeGateway from "../internal/NativeGateway.vibe"
+import * as NativeGateway from "../internal/NativeGateway.ts"
 
 /** Hosts the existing workspace gateway on Node's scoped HTTP server.
  * @since 1.0.0

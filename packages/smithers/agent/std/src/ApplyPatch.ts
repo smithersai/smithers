@@ -20,7 +20,7 @@ import * as Diagnostics from "./internal/Diagnostics.vibe"
 import * as FileMutation from "./internal/FileMutation.vibe"
 import * as FsFailure from "./internal/FsFailure.vibe"
 import * as Preserve from "./internal/Preserve.vibe"
-import * as StdError from "./StdError.vibe"
+import * as StdError from "./StdError.ts"
 
 /**
  * Registry name for the apply_patch flow. Matches the Codex CLI tool name.

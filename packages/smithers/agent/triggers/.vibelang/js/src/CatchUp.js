@@ -5,7 +5,6 @@
  * @since 0.1.0
  */
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as Effect from "effect/Effect";
 import * as CronSchedule from "./Cron.js";
 import { TriggerError } from "./TriggerError.js";
@@ -23,32 +22,44 @@ import { TriggerError } from "./TriggerError.js";
  * @category computation
  * @since 0.1.0
  */
-export const occurrences = Effect_1.fnUntraced(runtime.$joinedFrame(function* occurrences(policy, maxCatchUp, lastFiredAt, now, cron) {
-    if (!Number.isSafeInteger(maxCatchUp) || maxCatchUp < 0) {
-        return yield* Effect_1.fail(new TriggerError({
-            code: "catch_up_bound_exceeded",
-            message: `maxCatchUp must be a non-negative safe integer, received ${maxCatchUp}`,
-            path: "maxCatchUp"
-        }));
-    }
-    if (lastFiredAt === undefined)
-        return [];
-    if (policy === "none")
-        return [];
-    if (policy === "one") {
-        return yield* Effect.flatMap(CronSchedule.previousAtOrBefore(cron, now), (latest) => Effect_1.suspend(() => { return latest.getTime() <= lastFiredAt.getTime()
-            ? Effect.succeed([])
-            : maxCatchUp < 1
-                ? (() => Effect_1.suspend(() => Effect_1.fail(new TriggerError({
-                    code: "catch_up_bound_exceeded",
-                    message: `missed 1 occurrence; maxCatchUp is ${maxCatchUp}`
-                }))))()
-                : Effect.succeed([latest]); }));
-    }
-    return yield* Effect.flatMap(CronSchedule.occurrencesBetween(cron, lastFiredAt, now, maxCatchUp + 1), (missed) => Effect_1.suspend(() => { return missed.length > maxCatchUp
-        ? (() => Effect_1.suspend(() => Effect_1.fail(new TriggerError({
-            code: "catch_up_bound_exceeded",
-            message: `missed ${missed.length} occurrences; maxCatchUp is ${maxCatchUp}`
-        }))))()
-        : Effect_1.succeed(missed); }));
-}));
+export const occurrences = (policy, maxCatchUp, lastFiredAt, now, cron) => {
+    return Effect_1.gen(function* occurrences() {
+        if (!Number.isSafeInteger(maxCatchUp) || maxCatchUp < 0) {
+            return yield* Effect_1.fail(new TriggerError({
+                code: "catch_up_bound_exceeded",
+                message: `maxCatchUp must be a non-negative safe integer, received ${maxCatchUp}`,
+                path: "maxCatchUp"
+            }));
+        }
+        if (lastFiredAt === undefined)
+            return [];
+        if (policy === "none")
+            return [];
+        if (policy === "one") {
+            return yield* Effect.flatMap(CronSchedule.previousAtOrBefore(cron, now), (latest) => {
+                return Effect_1.gen(function* () {
+                    return latest.getTime() <= lastFiredAt.getTime()
+                        ? yield* Effect.succeed([]) : maxCatchUp < 1
+                        ? yield* (() => { return (_tail_1 => { return Effect_1.gen(function* () {
+                            const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+                            return _completion_1[0] ? yield* _value_1 : _value_1;
+                        }); })(() => { return [true, Effect_1.fail(new TriggerError({
+                                code: "catch_up_bound_exceeded",
+                                message: `missed 1 occurrence; maxCatchUp is ${maxCatchUp}`
+                            }))]; }); })() : yield* Effect.succeed([latest]);
+                });
+            });
+        }
+        return yield* Effect.flatMap(CronSchedule.occurrencesBetween(cron, lastFiredAt, now, maxCatchUp + 1), (missed) => (_tail_2 => { return Effect_1.gen(function* () {
+            const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
+            return _completion_2[0] ? yield* _value_2 : _value_2;
+        }); })(() => { return missed.length > maxCatchUp
+            ? [true, (() => { return (_tail_3 => { return Effect_1.gen(function* () {
+                    const _completion_3 = _tail_3(), _value_3 = _completion_3[1];
+                    return _completion_3[0] ? yield* _value_3 : _value_3;
+                }); })(() => { return [true, Effect_1.fail(new TriggerError({
+                        code: "catch_up_bound_exceeded",
+                        message: `missed ${missed.length} occurrences; maxCatchUp is ${maxCatchUp}`
+                    }))]; }); })()] : [false, missed]; }));
+    });
+};

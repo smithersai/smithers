@@ -259,7 +259,9 @@ export const apply = (change, options) => Effect.gen(function* () {
             moved,
             lanes: lanesOf(after),
         };
-    }), () => linkWork(change.repoId)));
+    }), result => result.kind === "applied" || result.kind === "repeated"
+        ? linkWork(change.repoId).pipe(Effect.andThen(WriteAuthority.requireAtCommit(options.session)))
+        : Effect.void)).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed({ kind: "stale" })));
     const outcome = applied.kind === "applied"
         ? applied.receipt.outcome
         : applied.kind === "repeated"

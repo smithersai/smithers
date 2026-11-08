@@ -63,17 +63,9 @@
       "default": "./.vibelang/js/src/ProviderConformance/index.js"
     },
     "./ProviderConformance/*": null,
-    "./RemoteChildProcessSpawner": {
-      "types": "./src/RemoteChildProcessSpawner/index.ts",
-      "vibelang-source": "./src/RemoteChildProcessSpawner/index.ts",
-      "default": "./.vibelang/js/src/RemoteChildProcessSpawner/index.js"
-    },
+    "./RemoteChildProcessSpawner": "./src/RemoteChildProcessSpawner/index.ts",
     "./RemoteChildProcessSpawner/*": null,
-    "./TerminalProtocol": {
-      "types": "./src/TerminalProtocol/index.ts",
-      "vibelang-source": "./src/TerminalProtocol/index.ts",
-      "default": "./.vibelang/js/src/TerminalProtocol/index.js"
-    },
+    "./TerminalProtocol": "./src/TerminalProtocol/index.ts",
     "./TerminalProtocol/*": null,
     "./Sandbox": {
       "types": "./src/Sandbox/index.ts",

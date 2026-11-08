@@ -31,10 +31,9 @@ export interface Event {
  * @category services
  * @since 1.0.0-rc.0
  */
-export service Diagnostics {
-  static readonly key = "@smthrs/mcp/Diagnostics"
-  report: (event: Event) => void
-}
+export service Diagnostics: {
+  readonly report: (event: Event) => void
+} { static readonly key = "@smthrs/mcp/Diagnostics" }
 
 /**
  * Installs a trusted host observer. Inspecting detail requires an explicit

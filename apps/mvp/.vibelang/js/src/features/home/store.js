@@ -3,6 +3,7 @@ import { Collection, LiveQuery, Query } from "@smthrs/effect-tanstack-db";
 import { Context, Effect, FiberHandle, Layer, Option } from "effect";
 import { CuratedHomesStore, HomesStore } from "../../device/registry";
 import { ItemSummary, SyncRow, syncKey } from "../issues/schema";
+import { RepoStore } from "../repo/store";
 import { Run } from "../status/schema";
 import { StatusStore } from "../status/store";
 import { Access, Todo } from "../todos/schema";
@@ -20,6 +21,23 @@ export const filesQuery = (current, files) => LiveQuery.make((q) => q
     .from({ file: files.tanstack })
     .innerJoin({ current: current.tanstack }, ({ file, current }) => Query.eq(file.home, current.key))
     .select(({ file }) => ({ path: file.path, state: file.state, text: file.text })));
+/**
+ * The shown repository's declared and curated homes, while it may show (the data gate, repo/gate.ts): a home and a
+ * curated home name their repository only in their key, and the page reads only the current repository's, so each is
+ * joined through the current row's repository to its visibility row.
+ */
+const shownHomesQuery = (current, homes, visible) => LiveQuery.make((q) => q
+    .from({ home: homes.tanstack })
+    .innerJoin({ current: current.tanstack }, ({ home, current }) => Query.eq(home.key, current.key))
+    .innerJoin({ seen: visible.tanstack }, ({ current, seen }) => Query.eq(current.repoId, seen.id))
+    .where(({ seen }) => Query.eq(seen.show, true))
+    .select(({ home }) => home));
+const shownCuratedQuery = (current, curated, visible) => LiveQuery.make((q) => q
+    .from({ curated: curated.tanstack })
+    .innerJoin({ current: current.tanstack }, ({ curated, current }) => Query.eq(curated.key, current.repoId))
+    .innerJoin({ seen: visible.tanstack }, ({ current, seen }) => Query.eq(current.repoId, seen.id))
+    .where(({ seen }) => Query.eq(seen.show, true))
+    .select(({ curated }) => curated));
 /** Every row of a collection, live. */
 const rowsOf = (collection) => LiveQuery.make((q) => q.from({ row: collection.tanstack }));
 /**
@@ -35,16 +53,36 @@ const make = Effect.gen(function* () {
     const homes = yield* Collection.persisted(HomesStore);
     const curated = yield* Collection.persisted(CuratedHomesStore);
     const files = yield* Collection.local({ id: "home-files", schema: FileRow, getKey: (row) => row.key });
+    // A refused repository's homes, which hold its README and manifest, leave the device with its other rows.
+    const repos = yield* RepoStore;
+    yield* repos.registerCache(["homes", "curated-homes", "home-files"], (id) => Effect.gen(function* () {
+        // After the device's rows are back: a wipe that ran first would see none, and they'd return after it.
+        yield* Effect.all([homes.restored, curated.restored], { discard: true });
+        yield* Effect.forEach(yield* files.toArray, (row) => row.key.startsWith(`${id}@`) ? Effect.ignore(files.delete(row.key)) : Effect.void, { discard: true });
+        yield* Effect.forEach(yield* homes.toArray, (row) => row.key.startsWith(`${id}@`) ? Effect.ignore(homes.delete(row.key)) : Effect.void, { discard: true });
+        yield* Effect.ignore(curated.delete(id));
+    }));
     const current = yield* Collection.local({
         id: "home-current",
         schema: CurrentRow,
         getKey: rowId,
         initialData: [emptyCurrent],
     });
-    // The live blocks' rows, from the stores that sync them: this person's runs. A `stack` block's rows are the TODOs
-    // store's own (`TodosStore.opened`), and an `issues` block's the issues store's (`IssuesStore.opened`).
+    const shownFiles = yield* repos.gate(files);
+    const { track, visible } = repos;
+    // The shown repository gets a visibility row as the route names it.
+    yield* Effect.acquireRelease(Effect.sync(() => current.tanstack.subscribeChanges((changes) => {
+        for (const change of changes)
+            if (change.type !== "delete")
+                track(change.value.repoId);
+    }, { includeInitialState: true })), (subscription) => Effect.sync(() => subscription.unsubscribe()));
+    const shownHomes = (yield* shownHomesQuery(current, homes, visible));
+    const shownCurated = (yield* shownCuratedQuery(current, curated, visible));
+    // The live blocks' rows, from the stores that sync them: this person's runs, only those whose conversation may show
+    // (the data gate, `StatusStore.shownRuns`), so one repository's home never lists a refused one's runs. A `stack`
+    // block's rows are the TODOs store's own (`TodosStore.opened`), and an `issues` block's the issues store's.
     const status = yield* Effect.serviceOption(StatusStore);
-    const runs = yield* liveRows(status, (store) => store.runs, { id: "home-no-runs", schema: Run, getKey: rowId });
+    const runs = yield* liveRows(status, (store) => store.shownRuns, { id: "home-no-runs", schema: Run, getKey: rowId });
     // What an `issues` block reads on a tab with no issues store: no issues, and no sync.
     const noItems = yield* rowsOf(yield* Collection.local({ id: "home-no-items", schema: ItemSummary, getKey: rowId }));
     const noSyncs = yield* rowsOf(yield* Collection.local({ id: "home-no-syncs", schema: SyncRow, getKey: syncKey }));
@@ -65,8 +103,9 @@ const make = Effect.gen(function* () {
         noAccess,
         files,
         current,
-        homeState: yield* homeQuery(current, homes, curated),
-        fileState: yield* filesQuery(current, files),
+        // The data gate (repo/gate.ts): the page reads a repository's homes and files only while it may show.
+        homeState: yield* homeQuery(current, shownHomes, shownCurated),
+        fileState: yield* filesQuery(current, shownFiles),
         /** The one load the routed page runs: opening another repository interrupts it. */
         loader: yield* FiberHandle.make(),
         /** Where the loads an action starts run, closed with the store. */

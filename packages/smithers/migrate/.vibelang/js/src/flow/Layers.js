@@ -31,7 +31,6 @@ import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge";
 import * as Seat from "@smthrs/agent/Seat";
 import * as SeatResolver from "@smthrs/agent/SeatResolver";
 import * as SeatRouter from "@smthrs/agent/SeatRouter";
-import { Crypto } from "@smthrs/crypto";
 import { FlowEngine } from "@smthrs/engine";
 import { Action } from "@smthrs/flow";
 import { Capability, GrantStore, Permission, Workspace } from "@smthrs/kernel";
@@ -306,7 +305,7 @@ export const layerSnapshotBoundary = Layer.succeed(FlowEngine.SnapshotBoundary)(
  * @category layers
  * @since 1.0.0-rc.0
  */
-export const layerPlan = MigrateFlow.layerPlan.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(layerSnapshotBoundary), Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)), Layer.provideMerge(NodeServices.layer));
+export const layerPlan = MigrateFlow.layerPlan.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(layerSnapshotBoundary), Layer.provideMerge(NodeCrypto.layer), Layer.provideMerge(NodeServices.layer));
 const grantsFor = (config) => GrantStore.layer({
     attended: false,
     rules: rules({
@@ -388,7 +387,7 @@ export const layerNode = (config) => {
             seat: config.seat,
             executor: request
         }))).pipe(Layer.provide(executorFor(validated)));
-        return MigrateFlow.layer.pipe(Layer.provideMerge(Layer.mergeAll(hostFor(validated), seats, catalogFor(seats), Agent.layer)), Layer.provideMerge(agentPolicy), Layer.provideMerge(Agent.layerDefaults), Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(layerSnapshotBoundary), Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)), Layer.provideMerge(NodeServices.layer), Layer.provideMerge(evaluator));
+        return MigrateFlow.layer.pipe(Layer.provideMerge(Layer.mergeAll(hostFor(validated), seats, catalogFor(seats), Agent.layer)), Layer.provideMerge(agentPolicy), Layer.provideMerge(Agent.layerDefaults), Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(layerSnapshotBoundary), Layer.provideMerge(NodeCrypto.layer), Layer.provideMerge(NodeServices.layer), Layer.provideMerge(evaluator));
     }));
 };
 /**
@@ -511,7 +510,7 @@ export const layerScripted = (config) => Layer.unwrap(Effect.gen(function* () {
             contextWindowTokens: 200_000
         }))
     });
-    return MigrateFlow.layer.pipe(Layer.provideMerge(Layer.mergeAll(hostFor(validated), seats, catalogFor(seats), Agent.layer)), Layer.provideMerge(agentPolicy), Layer.provideMerge(Agent.layerDefaults), Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(layerSnapshotBoundary), Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)), Layer.provideMerge(NodeServices.layer), 
+    return MigrateFlow.layer.pipe(Layer.provideMerge(Layer.mergeAll(hostFor(validated), seats, catalogFor(seats), Agent.layer)), Layer.provideMerge(agentPolicy), Layer.provideMerge(Agent.layerDefaults), Layer.provideMerge(Action.layerImplementations), Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(layerSnapshotBoundary), Layer.provideMerge(NodeCrypto.layer), Layer.provideMerge(NodeServices.layer), 
     // The model is scripted, so the judge is too, and it answers every
     // classifier a judged step asks: the completion brake never falls
     // back, and a scripted composition that reached for a gateway key

@@ -2,9 +2,9 @@
 import { Cause, Clock, Effect, Metric, Option, Ref } from "effect";
 import { SqlClient } from "effect/sql";
 import { applyExecutionId, itemId, reconcileBucketStart } from "../../src/features/issues/contract.js";
-import { FlowStarter } from "#vibelang/emitted/worker/Flows";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
-import { Apply } from "#vibelang/emitted/worker/github/Apply";
+import { FlowStarter } from "../Flows.js";
+import { codeOf } from "../ErrorCode.js";
+import { Apply } from "./Apply.js";
 export const refreshes = Metric.counter("smithers_pull_refresh_starts", { incremental: true });
 export const receipts = Metric.counter("smithers_pull_absence_receipts", { incremental: true });
 /** A detail read recovers its subject through the existing durable reader, once per five-minute bucket. */

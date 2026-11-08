@@ -9,23 +9,25 @@ const decode = Schema.decodeUnknownOption(Receipt);
 /** Detail shapes carry their routed subject; only a matching, newer server receipt can certify its absence. */
 export const refreshingSource = (source, view, id) => ({
     ...source,
-    request: Effect_1.fnUntraced(function* request(url, init) {
-        const current = (yield* view.toArray)[0];
-        const number = current.repoId === id ? current.number : null;
-        const target = new URL(url);
-        if (number !== null)
-            target.searchParams.set("refresh", String(number));
-        const response = yield* source.request(target.href, init);
-        const receipt = decode(response.headers.get(PULL_RECEIPT_HEADER));
-        if (response.ok && receipt._tag === "Some" && receipt.value.number === number) {
-            const read = receipt.value;
-            yield* (Effect.orDie(view.update(VIEW, (row) => {
-                if (row.repoId !== id || row.number !== number || read.checkedAt < (row.pullCheckedAt ?? 0))
-                    return;
-                row.pullAbsent = read.missing;
-                row.pullCheckedAt = read.checkedAt;
-            })));
-        }
-        return response;
-    }),
+    request: (url, init) => {
+        return Effect_1.gen(function* request() {
+            const current = (yield* view.toArray)[0];
+            const number = current.repoId === id ? current.number : null;
+            const target = new URL(url);
+            if (number !== null)
+                target.searchParams.set("refresh", String(number));
+            const response = yield* source.request(target.href, init);
+            const receipt = decode(response.headers.get(PULL_RECEIPT_HEADER));
+            if (response.ok && receipt._tag === "Some" && receipt.value.number === number) {
+                const read = receipt.value;
+                yield* (Effect.orDie(view.update(VIEW, (row) => {
+                    if (row.repoId !== id || row.number !== number || read.checkedAt < (row.pullCheckedAt ?? 0))
+                        return;
+                    row.pullAbsent = read.missing;
+                    row.pullCheckedAt = read.checkedAt;
+                })));
+            }
+            return response;
+        });
+    },
 });

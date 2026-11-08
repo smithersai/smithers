@@ -3,7 +3,7 @@ import { Uuid, WebCrypto } from "@smthrs/crypto";
 import { Action, FlowRuntime, RetryPolicy } from "@smthrs/flow";
 import { Clock, Duration, Effect, Layer, Option, Schema } from "effect";
 import { CODING_AGENTS } from "../../src/features/personal-model/contract.js";
-import { Machines } from "#vibelang/emitted/worker/branch/Machines";
+import { Machines } from "../branch/Machines.js";
 import * as Agents from "../personal/Agents.js";
 import * as Codex from "../personal/Codex.js";
 import * as Subscriptions from "../personal/Subscriptions.js";

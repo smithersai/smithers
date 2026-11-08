@@ -7,12 +7,12 @@ import { Cause, Clock, Duration, Effect, Exit, Layer, Metric, Option, Redacted, 
 import { FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
 import { checkSave, CODEX_LINK_ROUTE, JEV_ROUTE, jevOf, keyTail, LINK_SECONDS, MAX_JEV_BODY_BYTES, MAX_PUT_BODY_BYTES, PERSONAL_MODEL_ROUTE, PERSONAL_MODEL_SHAPE_COLUMNS, PERSONAL_MODEL_SHAPE_ROUTE, PERSONAL_MODEL_TEST_ROUTE, PERSONAL_MODELS_TABLE, TEST_MAX_TOKENS, TEST_PROMPT, writeExecutionId, } from "../../src/features/personal-model/contract.js";
-import { refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor";
+import { refusesPersonOnly, Sessions } from "../Actor.js";
 import { readBounded } from "#vibelang/emitted/worker/Body";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
-import * as Flows from "#vibelang/emitted/worker/Flows";
+import { codeOf } from "../ErrorCode.js";
+import * as Flows from "../Flows.js";
 import { SecretKeys } from "../secrets/Keys.js";
-import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess";
+import * as ShapeAccess from "../ShapeAccess.js";
 import * as Codex from "./Codex.js";
 import * as ModelFlows from "./ModelFlows.js";
 import { PersonalModels, PersonalModelUnusable, sealContext } from "./Models.js";

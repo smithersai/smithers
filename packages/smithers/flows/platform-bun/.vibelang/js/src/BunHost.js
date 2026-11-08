@@ -25,7 +25,6 @@
 import * as BunChildProcessSpawner from "@effect/platform-bun/BunChildProcessSpawner";
 import * as BunCrypto from "@effect/platform-bun/BunCrypto";
 import * as BunPath from "@effect/platform-bun/BunPath";
-import { Crypto } from "@smthrs/crypto";
 import * as BunJj from "@smthrs/jj/bun/BunJj";
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem";
 import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient";
@@ -164,7 +163,7 @@ const reaping = (options) => ({
     system: options?.system
 });
 /** The two services `BunChildProcessSpawner` resolves paths and files with. */
-const platform = Layer.mergeAll(BunFileSystem.layer, BunPath.layer, Crypto.layerFromDigest(BunCrypto.layerDigest));
+const platform = Layer.mergeAll(BunFileSystem.layer, BunPath.layer, BunCrypto.layer);
 /**
  * The network slot on its own: the shared egress client, which never follows a
  * redirect. A `3xx` comes back to the caller with its `location` intact and the

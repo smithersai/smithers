@@ -21,6 +21,8 @@ export const PublicationRow = Schema.Struct({
 /** The title of a published branch's pull request, from its repository's issues once the device has its row. */
 export const PullTitle = Schema.Struct({
     branchId: Schema.String,
+    /** The pull request's repository: what the data gate joins (repo/gate.ts). */
+    repoId: Schema.String,
     title: Schema.String,
 });
 /**

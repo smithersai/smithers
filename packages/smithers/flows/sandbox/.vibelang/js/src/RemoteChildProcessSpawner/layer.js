@@ -19,6 +19,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 import { ChildProcessSpawner, ExitCode, make as makeSpawner, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner";
+import * as Redacted from "effect/Redacted";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { concat } from "../internal/concat.js";
@@ -64,7 +65,7 @@ const guestEnvironment = (env) => {
         const hostAmbient = host !== undefined && (ambient.has(upper) || upper.startsWith("LC_"))
             && value !== undefined && host[name] === value;
         if (!hostAmbient)
-            guest[name] = value;
+            guest[name] = Redacted.isRedacted(value) ? Redacted.value(value) : value;
     }
     return guest;
 };

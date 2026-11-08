@@ -7,14 +7,14 @@ import { SqlClient } from "effect/sql";
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.js";
 import { MAX_RUN_BODY_BYTES, RUNS_TABLE } from "../src/features/status/contract.js";
 import { Decision, Report as ReportSchema, RunAnswer as RunAnswerSchema, } from "../src/features/status/schema.js";
-import { boundTo, refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor";
+import { boundTo, refusesPersonOnly, Sessions } from "./Actor.js";
 import { askingOnAnswer } from "./branch/Access.js";
 import { readBounded } from "#vibelang/emitted/worker/Body";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { codeOf } from "./ErrorCode.js";
 import { withAnswerConversation } from "./Messages.js";
 import * as Notifications from "./Notifications.js";
 import * as RunCredentials from "./RunCredentials.js";
-import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess";
+import * as ShapeAccess from "./ShapeAccess.js";
 // Agent status in ChatApi (decision 0015, docs/features/agent-status.md#the-routes): the `runs` rows a run's own steps
 // report its status to, the answer a person gives its open question, and Electric's `runs` shape.
 //
@@ -44,7 +44,10 @@ export const shapes = Metric.counter("smithers_run_shape_requests", {
     description: "GET /api/shapes/runs requests, by status and live",
     incremental: true,
 });
-/** The `runs` columns a device syncs: all of them but `launched_by`, which the shape filters on. */
+/**
+ * The `runs` columns a device syncs: `launched_by`, which the shape filters on, never. `conversation_id` is where the
+ * run works: a device shows its wait only while that conversation's repository may show (decision 0110, the data gate).
+ */
 export const SYNCED_RUN_COLUMNS = [
     "id",
     "flow",
@@ -56,6 +59,7 @@ export const SYNCED_RUN_COLUMNS = [
     "answered_at",
     "created_at",
     "updated_at",
+    "conversation_id",
 ];
 /** The flow of every run that reports in this slice: an agent's answer. */
 const AGENT_RUN_FLOW = "chat/Answer";

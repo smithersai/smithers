@@ -9,7 +9,7 @@
  * @since 1.0.0
  */
 
-import * as StdError from "./StdError.vibe"
+import * as StdError from "./StdError.ts"
 
 /**
  * Normalized grep input shared by both implementations.

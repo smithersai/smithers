@@ -15,9 +15,9 @@
  *
  * @since 1.0.0-rc.0
  */
-import { $catchExpression } from "vibelang-runtime";
+import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import { Digest } from "@smthrs/core";
 import { Fault, SpanFailure } from "@smthrs/flow";
 import * as Effect from "effect/Effect";
@@ -217,35 +217,18 @@ const decodeOne = (id, question, raw) => {
  * @category decoding
  * @since 1.0.0-rc.0
  */
-export const decodeAnswers = (questions, raw) => Effect.suspend(Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* () {
-    const answers = Object.create(null);
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const value_1 of Object.entries(questions)) {
-                try {
-                    const [id, question] = value_1;
-                    {
-                        const decoded = decodeOne(id, question, Object.hasOwn(raw, id) ? raw[id] : undefined);
-                        if (Result.isFailure(decoded))
-                            return yield* Effect_1.fail(decoded.failure);
-                        answers[id] = decoded.success;
-                    }
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
-            }
+export const decodeAnswers = (questions, raw) => Effect.suspend(() => {
+    return Effect_1.gen(function* () {
+        const answers = Object.create(null);
+        for (const [id, question] of Object.entries(questions)) {
+            const decoded = decodeOne(id, question, Object.hasOwn(raw, id) ? raw[id] : undefined);
+            if (Result.isFailure(decoded))
+                return yield* Effect_1.fail(decoded.failure);
+            answers[id] = decoded.success;
         }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
-        }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
-    }
-    return answers;
-}))));
+        return answers;
+    });
+});
 /**
  * How sure an answer is, from 0 to 1: a boolean's distance from even odds,
  * doubled; a choice's or score's `confidence`.
@@ -305,25 +288,39 @@ export const make = (id, options) => {
     // The encoded questions, not the questions: a class instance is not JSON,
     // and hashing the wire form is what keeps a digest — and every durable call
     // key and sealed-key preimage that folds it in — where it already is.
-    const digest = Digest.digest(CanonicalJson.stringify({ id, questions: Evaluator.encodeQuestions(questions) }));
+    const digest = $invoke(Digest, () => (CanonicalJson.stringify({ id, questions: Evaluator.encodeQuestions(questions) })));
     const encodeState = Schema.encodeEffect(state);
-    const read = SpanFailure.fn(Effect.fn(`Classifier.evaluate(${id})`)(Effect_1.fnUntraced(runtime.$joinedFrame(function* (value) {
-        const evaluator = yield* Evaluator.Evaluator;
-        const encoded = yield* $catchExpression(() => encodeState(value), (error) => Effect_1.suspend(() => { return Effect_1.fail(new ClassifierError({ code: "invalid_question", message: error.message })); }));
-        const response = yield* $catchExpression(() => evaluator.evaluate({
-            state: encoded,
-            questions,
-            ...(seatNote === undefined ? {} : { seatNote })
-        }), (e) => Effect_1.suspend(() => { return Effect_1.fail(fromEvaluatorError(e)); }));
-        // An answer this classifier cannot decode was still paid for.
-        const answers = yield* $catchExpression(() => decodeAnswers(questions, response.answers), (error) => Effect_1.suspend(() => { return Effect_1.fail(response.usage === undefined
-            ? error
-            : new ClassifierError({ code: error.code, message: error.message, usage: response.usage })); }));
-        return { ...response, answers };
-    }))));
+    const read = SpanFailure.fn(Effect.fn(`Classifier.evaluate(${id})`)((value) => {
+        return Effect_1.gen(function* () {
+            const evaluator = yield* Evaluator.Evaluator;
+            const encoded = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return encodeState(value); }); })(), (error) => (_tail_1 => { return Effect_1.gen(function* () {
+                const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+                return _completion_1[0] ? yield* _value_1 : _value_1;
+            }); })(() => { return [true, Effect_1.fail(new ClassifierError({ code: "invalid_question", message: error.message }))]; }));
+            const response = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return evaluator.evaluate({
+                state: encoded,
+                questions,
+                ...(seatNote === undefined ? {} : { seatNote })
+            }); }); })(), (e) => (_tail_2 => { return Effect_1.gen(function* () {
+                const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
+                return _completion_2[0] ? yield* _value_2 : _value_2;
+            }); })(() => { return [true, Effect_1.fail(fromEvaluatorError(e))]; })
+            // An answer this classifier cannot decode was still paid for.
+            );
+            // An answer this classifier cannot decode was still paid for.
+            const answers = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return decodeAnswers(questions, response.answers); }); })(), (error) => (_tail_3 => { return Effect_1.gen(function* () {
+                const _completion_3 = _tail_3(), _value_3 = _completion_3[1];
+                return _completion_3[0] ? yield* _value_3 : _value_3;
+            }); })(() => { return [true, Effect_1.fail(response.usage === undefined
+                    ? error
+                    : new ClassifierError({ code: error.code, message: error.message, usage: response.usage }))]; }));
+            return { ...response, answers };
+        });
+    }));
     const evaluate = (value) => Effect.map(read(value), (reading) => reading.answers);
     const evaluateAll = (states, all = {}) => Effect.forEach(states, (value) => Effect.result(evaluate(value)), {
         concurrency: all.concurrency ?? defaultConcurrency
     });
     return { id, description, state, questions, digest, evaluate, read, evaluateAll };
 };
+import { invoke as $invoke } from "./Classifier.vibe.-24-call-24-ts.js";

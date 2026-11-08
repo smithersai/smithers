@@ -4,10 +4,10 @@ import { Clipboard } from "../../clipboard";
 import { codeOf } from "../../errorCode";
 import { FlowDispatch } from "../../flows/dispatch";
 import { MAX_QUESTION_LENGTH } from "./contract";
-import { persistDraft } from "#vibelang/emitted/src/features/chat/draftWrite";
-import { askFailures, composerOpens, historyLoads, questionsAsked, syncRetries, unsentActions } from "#vibelang/emitted/src/features/chat/metrics";
+import { persistDraft } from "./draftWrite.js";
+import { askFailures, composerOpens, historyLoads, questionsAsked, syncRetries, unsentActions } from "./metrics.js";
 import { COMPOSER, CONNECTION, HISTORY, HOME_DRAFT, PLACE, } from "./schema";
-import { SharedPrompt } from "#vibelang/emitted/src/features/chat/sharedPrompt";
+import { SharedPrompt } from "./sharedPrompt.js";
 import { ChatStore, keepUnsent, timeFirstText } from "./store";
 const composerNow = Effect.gen(function* () {
     const { composer } = yield* ChatStore;

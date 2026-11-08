@@ -829,14 +829,17 @@ export const makePnpm = (options) => Effect.gen(function* () {
     // against the project root, so the store the fetch boundary declares and
     // the store the child writes are the same tree.
     const storeDirectory = normalized.storeDirectory ?? `${storeRoot}/pnpm`;
-    const storeArgs = [
-        "--store-dir",
-        normalized.storeDirectory ?? `${projectRoot}/${storeDirectory}`
-    ];
-    const command = (args, output) => Effect.gen(function* () {
+    const absoluteStoreDirectory = normalized.storeDirectory ?? `${projectRoot}/${storeDirectory}`;
+    const storeArgs = ["--store-dir", absoluteStoreDirectory];
+    // Fetch deliberately empties pnpm's hoisting metadata. Sharing its modules
+    // directory with install therefore purges the linked tree on every fetch.
+    // Stage under the declared store instead; install still reconciles the
+    // real tree offline against the same content-addressed store and settings.
+    const fetchModules = `${absoluteStoreDirectory}/fetch/node_modules`;
+    const command = (args, output, settings = {}) => Effect.gen(function* () {
         const { env } = yield* environment;
         const { executable, prefix } = yield* invocation;
-        return managerCommand(executable, [...prefix, ...args], projectRoot, env, output);
+        return managerCommand(executable, [...prefix, ...args], projectRoot, { ...env, ...settings }, output);
     });
     const version = yield* Effect.cached(Effect.flatMap(command(["--version"], "capture"), (child) => capture(spawner, "pnpm --version", child, timeoutMs)));
     const verify = verified("pnpm", normalized.requirement, version);
@@ -844,10 +847,10 @@ export const makePnpm = (options) => Effect.gen(function* () {
     // measured default file turns those off; with no default file, hooks are
     // off entirely.
     const hookArgs = pnpmfileOf(projectRoot).pipe(Effect.provideService(FileSystem.FileSystem, fs), Effect.map((name) => name === null ? ["--ignore-pnpmfile"] : ["--pnpmfile", `${projectRoot}/${name}`, "--global-pnpmfile="]));
-    const execute = (label, args) => Effect.gen(function* () {
+    const execute = (label, args, settings = {}) => Effect.gen(function* () {
         yield* verify;
         const { transportArgs } = yield* environment;
-        const child = yield* command([...args, ...transportArgs, ...(yield* hookArgs), ...storeArgs], "inherit");
+        const child = yield* command([...args, ...transportArgs, ...(yield* hookArgs), ...storeArgs], "inherit", settings);
         yield* run(spawner, label, child, timeoutMs);
     });
     return Object.freeze({
@@ -859,7 +862,10 @@ export const makePnpm = (options) => Effect.gen(function* () {
         requirement: normalized.requirement,
         version,
         verify,
-        fetch: execute("pnpm fetch", ["fetch", "--frozen-lockfile", "--ignore-scripts", "--reporter=append-only"]),
+        fetch: execute("pnpm fetch", ["fetch", "--frozen-lockfile", "--ignore-scripts", "--reporter=append-only"], {
+            pnpm_config_modules_dir: fetchModules,
+            pnpm_config_virtual_store_dir: `${fetchModules}/.pnpm`
+        }),
         link: execute("pnpm install --offline", [
             "install",
             "--offline",

@@ -97,7 +97,7 @@ export const lines = (server, maxLineBytes, stream, options = {}) => {
             offset += piece.byteLength;
         }
         const end = joined[partial.bytes - 1] === 0x0d ? partial.bytes - 1 : partial.bytes;
-        return decoder.decode(joined.subarray(0, end));
+        return $invoke(decoder, () => (joined.subarray(0, end)));
     };
     const terminator = (chunk, from) => {
         if (!crTerminates)
@@ -145,3 +145,4 @@ export const lines = (server, maxLineBytes, stream, options = {}) => {
         return Effect.succeed([partial, complete]);
     }, { onHalt: (partial) => partial.bytes === 0 ? [] : [decode(partial)] }));
 };
+import { invoke as $invoke } from "./Transport.vibe.-24-call-24-ts.js";

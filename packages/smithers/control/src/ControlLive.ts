@@ -42,7 +42,7 @@ import {
 } from "./ControlError.vibe"
 import type { CancelRecord, Launch } from "./ControlExecutor.vibe"
 import { ControlExecutor } from "./ControlExecutor.vibe"
-import * as ControlFacts from "./ControlFacts.vibe"
+import * as ControlFacts from "./ControlFacts.ts"
 import { ControlRuntime, type IdPage, type IdPageRequest, launchedByMatches, type RunPage } from "./ControlRuntime.ts"
 import type {
   ControlEvent,

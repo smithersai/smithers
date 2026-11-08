@@ -35,10 +35,10 @@ export const Dependency = Schema.Struct({
 })
 
 /** The scanner's answer. */
-export schema Scan {
-  readonly outdated: ReadonlyArray<Dependency>
-  readonly totalOutdated: number
-}
+export const Scan = Schema.Struct({
+  outdated: Schema.Array(Dependency),
+  totalOutdated: Schema.Number
+})
 
 /** What one updater did. */
 export const UpdateResult = Schema.Struct({
@@ -50,13 +50,13 @@ export const UpdateResult = Schema.Struct({
 })
 
 /** The verification suite's outcome. */
-export schema Verification {
-  readonly passed: boolean
-  readonly typecheck: boolean
-  readonly tests: boolean
-  readonly build: boolean
-  readonly errors: ReadonlyArray<string>
-}
+export const Verification = Schema.Struct({
+  passed: Schema.Boolean,
+  typecheck: Schema.Boolean,
+  tests: Schema.Boolean,
+  build: Schema.Boolean,
+  errors: Schema.Array(Schema.String)
+})
 
 /** The report the flow settles with. */
 export const Report = Schema.Struct({

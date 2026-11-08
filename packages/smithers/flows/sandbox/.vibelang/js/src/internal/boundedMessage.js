@@ -28,6 +28,7 @@ export const messageBound = 512;
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const boundedMessage = (message) => {
     let flat = "";

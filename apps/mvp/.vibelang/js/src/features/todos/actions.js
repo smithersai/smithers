@@ -9,7 +9,7 @@ import { startOperation } from "../commands/admission";
 import { followRun } from "../../resumeAdmissions";
 import { repoId } from "../repo/contract";
 import { isPrompt, isTitle, OP_ID_NAMESPACE, stackPath } from "./contract";
-import { pendingActions } from "#vibelang/emitted/src/features/todos/metrics";
+import { pendingActions } from "./metrics.js";
 import { VIEW } from "./schema";
 import { TodosStore } from "./store";
 // TODO writes await local durable admission (decision 0016 §3, docs/features/todos.md). Commit

@@ -11,7 +11,7 @@ import { hostname, tmpdir } from "node:os"
 import { join } from "node:path"
 import { vi } from "vitest"
 import { Jj, RepositoryMutation } from "../src/Jj.vibe"
-import * as NodeJj from "../src/node/NodeJj.vibe"
+import * as NodeJj from "../src/node/NodeJj.ts"
 
 // Fault injection stays at the filesystem boundary; all unaffected calls use
 // real temporary directories and the public layer still spawns its CLI shim.

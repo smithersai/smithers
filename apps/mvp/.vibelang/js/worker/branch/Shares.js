@@ -5,16 +5,16 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { SqlClient } from "effect/sql";
 import { isLogin, MAX_SHARE_BODY_BYTES, MAX_SHARES, REPOSITORY_GRANTEE, SHARE_ACCESSES, SHARES_TABLE, } from "../../src/features/branch/contract.js";
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
-import { refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor";
+import { refusesPersonOnly, Sessions } from "../Actor.js";
 import { readBounded } from "#vibelang/emitted/worker/Body";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { codeOf } from "../ErrorCode.js";
 import * as Repos from "../Repos.js";
-import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess";
+import * as ShapeAccess from "../ShapeAccess.js";
 import { branchAccess, canView, policyOf, underPolicy } from "./Access.js";
-import { Directory } from "#vibelang/emitted/worker/branch/People";
-import { Rooms } from "#vibelang/emitted/worker/branch/Rooms";
+import { Directory } from "./People.js";
+import { Rooms } from "./Rooms.js";
 import { enforceRooms } from "./Texts.js";
-import { TerminalSockets } from "#vibelang/emitted/worker/branch/Sandboxes";
+import { TerminalSockets } from "./Sandboxes.js";
 // Sharing a branch, Google Docs style (decision 0013 §2 and §4, docs/features/branch-workspace.md#sharing):
 //
 // - `POST /api/branches/<id>/shares`: the write path of the client flow `branch/share`, its owner's, but for anyone

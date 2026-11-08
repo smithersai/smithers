@@ -43,7 +43,7 @@ export const parse = (bytes, root, path) => {
         const end = bytes.indexOf(0, offset);
         if (end === -1)
             return undefined;
-        const record = decoder.decode(bytes.subarray(offset, end));
+        const record = $invoke(decoder, () => (bytes.subarray(offset, end)));
         offset = end + 1;
         if (record === "E")
             break;
@@ -77,7 +77,7 @@ const types = {
 };
 const info = (type, size) => ({
     type,
-    size: ByteSize.bytes(BigInt(size)),
+    size: ByteSize.bytes($invoke2(BigInt, size)),
     mtime: Option.none(),
     atime: Option.none(),
     birthtime: Option.none(),
@@ -101,34 +101,50 @@ const info = (type, size) => ({
  */
 export const fileSystem = (tree, path) => {
     const kindOf = (value) => tree.kinds.get(path.resolve(value));
-    const readFile = Effect_1.fnUntraced(function* readFile(value) {
-        const bytes = tree.contents.get(path.resolve(value));
-        if (bytes !== undefined)
-            return bytes;
-        const type = types[kindOf(value) ?? "L"];
-        return yield* Effect_1.fail(refusal(type === "File" ? "PermissionDenied" : type === undefined ? "NotFound" : "BadResource", "readFile", value));
-    });
-    return FileSystem.makeNoop({
-        stat: Effect_1.fnUntraced(function* stat(value) {
+    const readFile = (value) => {
+        return Effect_1.gen(function* readFile() {
+            const bytes = tree.contents.get(path.resolve(value));
+            if (bytes !== undefined)
+                return bytes;
             const type = types[kindOf(value) ?? "L"];
-            return type === undefined
-                ? yield* (() => Effect_1.suspend(() => Effect_1.fail(refusal("NotFound", "stat", value))))() : info(type, tree.contents.get(path.resolve(value))?.length ?? 0);
-        }),
-        readDirectory: Effect_1.fnUntraced(function* readDirectory(value) {
-            const kind = kindOf(value);
-            if (kind === "d")
-                return [...tree.children.get(path.resolve(value)) ?? []];
-            const tag = kind === "u" ? "PermissionDenied" : kind === undefined || kind === "L" ? "NotFound" : "BadResource";
-            return yield* Effect_1.fail(refusal(tag, "readDirectory", value));
-        }),
-        readLink: Effect_1.fnUntraced(function* readLink(value) {
-            const kind = kindOf(value);
-            return kind === "D" || kind === "F" || kind === "L"
-                ? ""
-                : yield* (() => Effect_1.suspend(() => Effect_1.fail(refusal(kind === undefined ? "NotFound" : "BadResource", "readLink", value))))();
-        }),
+            return yield* Effect_1.fail(refusal(type === "File" ? "PermissionDenied" : type === undefined ? "NotFound" : "BadResource", "readFile", value));
+        });
+    };
+    return FileSystem.makeNoop({
+        stat: (value) => {
+            return Effect_1.gen(function* stat() {
+                const type = types[kindOf(value) ?? "L"];
+                return type === undefined
+                    ? yield* (() => { return (_tail_1 => { return Effect_1.gen(function* () {
+                        const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+                        return _completion_1[0] ? yield* _value_1 : _value_1;
+                    }); })(() => { return [true, Effect_1.fail(refusal("NotFound", "stat", value))]; }); })() : info(type, tree.contents.get(path.resolve(value))?.length ?? 0);
+            });
+        },
+        readDirectory: (value) => {
+            return Effect_1.gen(function* readDirectory() {
+                const kind = kindOf(value);
+                if (kind === "d")
+                    return [...tree.children.get(path.resolve(value)) ?? []];
+                const tag = kind === "u" ? "PermissionDenied" : kind === undefined || kind === "L" ? "NotFound" : "BadResource";
+                return yield* Effect_1.fail(refusal(tag, "readDirectory", value));
+            });
+        },
+        readLink: (value) => {
+            return Effect_1.gen(function* readLink() {
+                const kind = kindOf(value);
+                return kind === "D" || kind === "F" || kind === "L"
+                    ? ""
+                    : yield* (() => { return (_tail_2 => { return Effect_1.gen(function* () {
+                        const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
+                        return _completion_2[0] ? yield* _value_2 : _value_2;
+                    }); })(() => { return [true, Effect_1.fail(refusal(kind === undefined ? "NotFound" : "BadResource", "readLink", value))]; }); })();
+            });
+        },
         readFile,
-        readFileString: (value) => Effect.map(readFile(value), (bytes) => new TextDecoder().decode(bytes)),
+        readFileString: (value) => Effect.map(readFile(value), (bytes) => $invoke(new TextDecoder(), () => (bytes))),
         stream: (value) => Stream.fromEffect(readFile(value))
     });
 };
+import { invoke as $invoke } from "./RemoteTree.vibe.-24-call-24-ts.js";
+import { invoke as $invoke2 } from "./RemoteTree.vibe.-24-call-24-ts2.js";

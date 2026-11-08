@@ -28,8 +28,9 @@ export const put = (write) => Effect.gen(function* () {
         yield* sql `
         INSERT INTO secret_events (repo_id, action, names, actor_id, invocation_key)
         VALUES (${write.repoId}, ${change}, ARRAY[${write.name}]::text[], ${write.actorId}, ${write.invocationKey})`;
+        yield* ProtectedAuthority.requireAtCommit(write.authority);
         return change;
-    }));
+    })).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed("stale")));
 });
 /** Deletes a secret and records `delete` once: whether it was there, or nothing again (`repeat`). */
 export const remove = (write) => Effect.gen(function* () {
@@ -45,8 +46,9 @@ export const remove = (write) => Effect.gen(function* () {
         yield* sql `
         INSERT INTO secret_events (repo_id, action, names, actor_id, invocation_key)
         VALUES (${write.repoId}, 'delete', ARRAY[${write.name}]::text[], ${write.actorId}, ${write.invocationKey})`;
+        yield* ProtectedAuthority.requireAtCommit(write.authority);
         return deleted.length > 0 ? "deleted" : "missing";
-    }));
+    })).pipe(Effect.catchTag("WriteAuthorityExpired", () => Effect.succeed("stale")));
 });
 /** A repository's bindings, by name: never a ciphertext. */
 export const bindings = (repoId) => Effect.flatMap(SqlClient.SqlClient, (sql) => sql `SELECT name, hosts, methods FROM secrets WHERE repo_id = ${repoId} ORDER BY name`);

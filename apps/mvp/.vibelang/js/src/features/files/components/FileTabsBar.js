@@ -12,6 +12,7 @@ import { useFiles } from "./FilesContext";
 export function FileTabsBar() {
     const { queries, actions } = useFiles();
     const repo = useRepo();
+    // Only the tabs of a repository that may show: the store's query holds no other (the data gate).
     const { data: tabs } = useLiveQuery(queries.tabs);
     const { data: current } = useLiveQuery(repo.queries.view);
     const pathname = useRouterState({ select: (state) => state.location.pathname });

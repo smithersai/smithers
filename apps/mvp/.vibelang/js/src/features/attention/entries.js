@@ -114,6 +114,7 @@ export const feedOf = (notices, pending, nowMs, place) => {
             mine: notice.mine,
             runId: notice.runId,
             conversationId: notice.conversationId,
+            repoId: notice.repoId,
             actor: notice.actor,
             // When it happened, as the row says: GitHub's time for a repository's event, the latest report for a run.
             atMs: timeOf(notice.occurredAt) || updatedAtMs,

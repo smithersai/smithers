@@ -3,7 +3,7 @@ import { NativeReviewAgentOutput } from "../workflow/nativeReviewAgentOutputSche
 import { NativeReviewPrompt } from "../workflow/nativeReviewPromptSchema.ts"
 import { normalizeOpenCodeReviewInput } from "../workflow/normalizeOpenCodeReviewInput.ts"
 import type { OpenCodeReviewInput } from "../workflow/openCodeReviewInputSchema.ts"
-import type { PreviewOutput } from "../workflow/previewOutputSchema.vibe"
+import type { PreviewOutput } from "../workflow/previewOutputSchema.ts"
 import type { ReviewComment } from "../workflow/reviewCommentSchema.ts"
 import { ReviewRunOutput } from "../workflow/reviewRunOutputSchema.ts"
 import { ReviewSummary } from "../workflow/reviewSummarySchema.ts"

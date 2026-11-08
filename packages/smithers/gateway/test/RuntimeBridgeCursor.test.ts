@@ -3,7 +3,7 @@ import { Control } from "@smthrs/control/Control"
 import type { ControlEvent, RunSummary } from "@smthrs/control/ControlSchema"
 import { Effect, Schema, Stream } from "effect"
 import { readFileSync } from "node:fs"
-import * as RuntimeBridge from "../src/RuntimeBridge.vibe"
+import * as RuntimeBridge from "../src/RuntimeBridge.ts"
 import { emit, stack } from "./GatewayStack.ts"
 
 const runId = "bridge-cursor-run"

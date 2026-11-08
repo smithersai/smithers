@@ -54,15 +54,17 @@
  */
 import { Permission } from "@smthrs/capability";
 import { Digest } from "@smthrs/core";
-import { Crypto } from "@smthrs/crypto";
 import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow";
 import { Cell, EngineLike, HarnessError } from "@smthrs/harness";
 import { CallFact } from "@smthrs/journal";
 import { CanonicalJson, Evaluator, ModelError, ModelEvent, Route } from "@smthrs/model";
 import { StepKey } from "@smthrs/plan";
 import { Checkpoints } from "@smthrs/std";
+import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as EffectDigest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -241,48 +243,52 @@ export const callMaterial = (call, layers = []) => ({
  * @category constructors
  * @since 0.1.0
  */
-export const sandboxed = (sandbox, runner, options = {}) => Effect.map(Crypto.Crypto, (crypto) => ({
-    ...(runner.authorize === undefined ? {} : { authorize: runner.authorize }),
-    run: (call) => Effect.gen(function* () {
-        const environment = yield* Action.CurrentCacheEnvironment;
-        const instance = yield* Effect.serviceOption(FlowRuntime.FlowInstance);
-        const cacheEnvironment = environment ?? (Option.isSome(instance)
-            ? { run: `${instance.value.flow._tag}/${instance.value.executionId}` }
-            : undefined);
-        const material = callMaterial(call, [...(options.layers ?? []), ...(environment?.layers ?? [])]);
-        const cacheKey = call.effects.tier === "sealed" && cacheEnvironment !== undefined
-            ? yield* StepKey.fromKeyMaterial({
-                ...material,
-                body: {
-                    call: material.body,
-                    // A sandbox memo hit bypasses the workflow entirely. Its key
-                    // needs the same effective authority as the durable activity;
-                    // unknown authority confines reuse to this execution.
-                    environment: cacheEnvironment
-                }
-            }, {}).pipe(Effect.provideService(Crypto.Crypto, crypto), Effect.mapError((cause) => engineFailed(`Cell call ${call.flowName} could not be keyed`, cause)))
-            : undefined;
-        const outcome = yield* sandbox.execute({
-            descriptor: callBoundary(call),
-            ...(cacheKey === undefined ? {} : { cacheKey }),
-            workflow: runner.run(call)
-        }).pipe(Effect.provideService(Crypto.Crypto, crypto), Effect.mapError((cause) => cause instanceof HarnessError.HarnessError
-            ? cause
-            : engineFailed(`Cell call ${call.flowName} could not run in its workspace sandbox`, cause)));
-        if (outcome._tag === "Invalidated") {
-            const violated = outcome.violations
-                .map((violation) => `${violation.kind} ${violation.resource.id}`)
-                .join(", ");
-            return new Cell.CallResult({
-                outcome: "failure",
-                value: null,
-                message: `Flow ${call.flowName} touched what it did not declare (${violated}); its changes were discarded.`
-            });
-        }
-        yield* sandbox.materialize(outcome).pipe(Effect.provideService(Crypto.Crypto, crypto), Effect.mapError((cause) => engineFailed(`Cell call ${call.flowName} could not materialize its workspace changes`, cause)));
-        return outcome.result.output;
-    })
-}));
+export const sandboxed = (sandbox, runner, options = {}) => Effect.gen(function* () {
+    const crypto = yield* EffectDigest.Digest;
+    const random = yield* SecureRandom.SecureRandom;
+    return {
+        ...(runner.authorize === undefined ? {} : { authorize: runner.authorize }),
+        run: (call) => Effect.gen(function* () {
+            const environment = yield* Action.CurrentCacheEnvironment;
+            const instance = yield* Effect.serviceOption(FlowRuntime.FlowInstance);
+            const cacheEnvironment = environment ?? (Option.isSome(instance)
+                ? { run: `${instance.value.flow._tag}/${instance.value.executionId}` }
+                : undefined);
+            const material = callMaterial(call, [...(options.layers ?? []), ...(environment?.layers ?? [])]);
+            const cacheKey = call.effects.tier === "sealed" && cacheEnvironment !== undefined
+                ? yield* StepKey.fromKeyMaterial({
+                    ...material,
+                    body: {
+                        call: material.body,
+                        // A sandbox memo hit bypasses the workflow entirely. Its key
+                        // needs the same effective authority as the durable activity;
+                        // unknown authority confines reuse to this execution.
+                        environment: cacheEnvironment
+                    }
+                }, {}).pipe(Effect.provideService(EffectDigest.Digest, crypto), Effect.provideService(SecureRandom.SecureRandom, random), Effect.mapError((cause) => engineFailed(`Cell call ${call.flowName} could not be keyed`, cause)))
+                : undefined;
+            const outcome = yield* sandbox.execute({
+                descriptor: callBoundary(call),
+                ...(cacheKey === undefined ? {} : { cacheKey }),
+                workflow: runner.run(call)
+            }).pipe(Effect.provideService(EffectDigest.Digest, crypto), Effect.provideService(SecureRandom.SecureRandom, random), Effect.mapError((cause) => cause instanceof HarnessError.HarnessError
+                ? cause
+                : engineFailed(`Cell call ${call.flowName} could not run in its workspace sandbox`, cause)));
+            if (outcome._tag === "Invalidated") {
+                const violated = outcome.violations
+                    .map((violation) => `${violation.kind} ${violation.resource.id}`)
+                    .join(", ");
+                return Cell.CallResult.new({
+                    outcome: "failure",
+                    value: null,
+                    message: `Flow ${call.flowName} touched what it did not declare (${violated}); its changes were discarded.`
+                });
+            }
+            yield* sandbox.materialize(outcome).pipe(Effect.provideService(EffectDigest.Digest, crypto), Effect.provideService(SecureRandom.SecureRandom, random), Effect.mapError((cause) => engineFailed(`Cell call ${call.flowName} could not materialize its workspace changes`, cause)));
+            return outcome.result.output;
+        })
+    };
+});
 /**
  * The correction ordinal the model calls made under it belong to.
  *
@@ -598,7 +604,7 @@ export const make = (options) => Effect.gen(function* () {
             // and stays fixed through accounting's transaction retries. The
             // write runs uninterruptibly before releasing the reservation; a
             // failed write remains pending and blocks fresh admission.
-            unsealedUsage: crypto.randomUUIDv4().pipe(Effect.mapError((cause) => engineFailed("Could not allocate a model usage receipt", cause)), Effect.map((receipt) => (usage) => budget.record(`unsealed-model/${key}/${receipt}`, usage, step.request.modelId).pipe(Effect.mapError(accountingFailed)))),
+            unsealedUsage: random.uuidV4().pipe(Effect.catchCause((cause) => Effect.fail(engineFailed("Could not allocate a model usage receipt", Cause.squash(cause)))), Effect.map((receipt) => (usage) => budget.record(`unsealed-model/${key}/${receipt}`, usage, step.request.modelId).pipe(Effect.mapError(accountingFailed)))),
             settle: (recorded) => unlessParked(quota)(recorded).pipe(Effect.flatMap(unlessGuarded(guard !== undefined)))
         }).pipe(Effect.catchIf((error) => guard !== undefined && error instanceof ModelError.ModelError && error.code === "call_timeout", (error) => guard.trip(new RunawayGuard.Timeout({
             source: "model-call",
@@ -654,7 +660,7 @@ export const make = (options) => Effect.gen(function* () {
      * still escape, so the run parks or fails exactly as it would from `call`.
      */
     const authorize = options.calls?.authorize;
-    const admit = authorize === undefined ? undefined : (request) => authorize(request).pipe(Effect.tap(() => Effect.sync(() => admitted.add(admission(request)))), Effect.as(undefined), Effect.catchIf((error) => error.cause instanceof Permission.PermissionDenied, (error) => Effect.succeed(new Cell.CallResult({
+    const admit = authorize === undefined ? undefined : (request) => authorize(request).pipe(Effect.tap(() => Effect.sync(() => admitted.add(admission(request)))), Effect.as(undefined), Effect.catchIf((error) => error.cause instanceof Permission.PermissionDenied, (error) => Effect.succeed(Cell.CallResult.new({
         outcome: "failure",
         value: null,
         code: "capability_refused",
@@ -696,7 +702,7 @@ export const make = (options) => Effect.gen(function* () {
                     // What this execution's evaluator readings paid is charged under
                     // a receipt of its own, as an unsealed model invocation is: an
                     // execution that re-runs after a crash paid again (#3010).
-                    const receipt = yield* crypto.randomUUIDv4().pipe(Effect.mapError((cause) => engineFailed("Could not allocate a call reading receipt", cause)));
+                    const receipt = yield* random.uuidV4().pipe(Effect.catchCause((cause) => Effect.fail(engineFailed("Could not allocate a call reading receipt", Cause.squash(cause)))));
                     const readings = CallReadings.of({
                         admit: budget.admitReading(`${callReadingPrefix}${key}/${receipt}`).pipe(Effect.flatMap((verdict) => verdict._tag === "refuse"
                             ? Effect.fail(verdict.failure)
@@ -783,7 +789,7 @@ export const make = (options) => Effect.gen(function* () {
     const accountedResume = Effect.suspend(() => resumed ? Effect.void : budget.resume(resumedAt).pipe(Effect.tap(() => Effect.sync(() => {
         resumed = true;
     })), Effect.mapError(accountingFailed)));
-    const crypto = yield* Crypto.Crypto;
+    const random = yield* SecureRandom.SecureRandom;
     const observe = Option.match(observer, {
         onNone: () => Effect.succeed(Option.none()),
         // Timed here, around whichever observer the host provides, so the

@@ -120,21 +120,23 @@ export const columns = (sql, table) => isPostgres(sql)
  * @category migrations
  * @since 1.0.0
  */
-export const trigger = Effect_1.fnUntraced(function* trigger(sql, options) {
-    const { name, table, event, when, body = "", reject, ignore } = options;
-    if (!isPostgres(sql)) {
-        yield* sql.unsafe(`CREATE TRIGGER ${name} ${event} ON ${table}
+export const trigger = (sql, options) => {
+    return Effect_1.gen(function* trigger() {
+        const { name, table, event, when, body = "", reject, ignore } = options;
+        if (!isPostgres(sql)) {
+            yield* sql.unsafe(`CREATE TRIGGER ${name} ${event} ON ${table}
       ${when ? `WHEN ${when}` : ""} BEGIN ${reject ? `SELECT RAISE(ABORT, '${reject}');` : ignore ? "SELECT RAISE(IGNORE);" : body} END`);
-        return;
-    }
-    yield* sql.unsafe(`CREATE OR REPLACE FUNCTION ${name}_fn() RETURNS trigger LANGUAGE plpgsql AS $trigger$
+            return;
+        }
+        yield* sql.unsafe(`CREATE OR REPLACE FUNCTION ${name}_fn() RETURNS trigger LANGUAGE plpgsql AS $trigger$
     BEGIN ${when ? `IF ${when} THEN` : ""}
       ${reject ? `RAISE EXCEPTION '${reject}' USING ERRCODE = '23514';` : ignore ? "RETURN NULL;" : body}
       ${when ? "END IF;" : ""}
       RETURN ${event.includes("DELETE") ? "OLD" : "NEW"};
     END $trigger$`);
-    yield* sql.unsafe(`CREATE TRIGGER ${name} ${event} ON ${table} FOR EACH ROW EXECUTE FUNCTION ${name}_fn()`);
-});
+        yield* sql.unsafe(`CREATE TRIGGER ${name} ${event} ON ${table} FOR EACH ROW EXECUTE FUNCTION ${name}_fn()`);
+    });
+};
 /**
  * Drops the trigger `name` that {@link trigger} created on `table`. Fails when
  * the trigger does not exist. On PostgreSQL its `<name>_fn` function stays.
@@ -144,6 +146,48 @@ export const trigger = Effect_1.fnUntraced(function* trigger(sql, options) {
  * @since 1.0.0
  */
 export const dropTrigger = (sql, name, table) => sql.unsafe(`DROP TRIGGER ${name}${isPostgres(sql) ? ` ON ${table}` : ""}`);
+// One SET CONSTRAINTS names every trigger: PostgreSQL then fires their queued
+// events in the order the writes queued them. One command per trigger would fire
+// them grouped by trigger, and a run deleted and recreated beside a run created
+// and deleted would keep the wrong tombstone.
+const modeStatement = (triggers, modes) => `DO $mode$ DECLARE names text; BEGIN
+    SELECT string_agg(format('%I.%I', current_schema(), t.tgname), ', ') INTO names
+      FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+      WHERE c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())
+        AND t.tgdeferrable AND (c.relname, t.tgname) IN (${triggers.map(([table, name]) => `('${table}', '${name}')`).join(", ")});
+    IF names IS NOT NULL THEN
+      ${modes.map((mode) => `EXECUTE 'SET CONSTRAINTS ' || names || ' ${mode}';`).join(" ")}
+    END IF;
+  END $mode$`;
+/**
+ * Sets the PostgreSQL constraint mode of `triggers` for the rest of the
+ * current transaction, in one round trip. Only the named triggers change, and
+ * only those that exist in the current schema as deferrable triggers when this
+ * runs, so a caller may name triggers a later migration creates. `IMMEDIATE`
+ * also fires their events already queued in the transaction, in the order they
+ * were queued. SQLite has no deferred triggers, so this does nothing there.
+ *
+ * Every name is spliced into SQL unescaped, so it must be a constant.
+ *
+ * @category transactions
+ * @since 1.0.0
+ */
+export const setTriggerMode = (sql, triggers, mode) => !isPostgres(sql) || triggers.length === 0 ? Effect.void : Effect.asVoid(sql.unsafe(modeStatement(triggers, [mode])));
+/**
+ * Fires the events `triggers` have queued in the current transaction now, in
+ * the order they were queued, then defers the triggers, in one round trip: a
+ * read that joins a writer's transaction sees what those triggers will have
+ * written by COMMIT. It overwrites a mode the transaction set explicitly. A
+ * lock those triggers take stays held until the transaction ends, so a writer
+ * that flushes run revisions holds the shared revision row from here to its
+ * COMMIT. Same scope as {@link setTriggerMode}; nothing on SQLite.
+ *
+ * @category transactions
+ * @since 1.0.0
+ */
+export const flushDeferredTriggers = (sql, triggers) => !isPostgres(sql) || triggers.length === 0 ?
+    Effect.void :
+    Effect.asVoid(sql.unsafe(modeStatement(triggers, ["IMMEDIATE", "DEFERRED"])));
 /**
  * Pins a query to the index `name` on SQLite (`INDEXED BY name`), and is empty
  * on PostgreSQL, whose planner picks its own index. SQLite fails the query
@@ -186,6 +230,16 @@ export const query = (sql, template, values) => {
     let index = 0;
     return sql.unsafe(isPostgres(sql) ? template.replaceAll("?", () => `$${++index}`) : template, values);
 };
+/**
+ * Records how `sql` opens a read transaction, for a driver whose SQL cannot
+ * say `BEGIN`, such as a Durable Object's SQLite storage, which runs every
+ * transaction in `storage.transaction()`. {@link readTransaction} on `sql`
+ * then runs `open(effect)`. A driver calls this once, on the client it made.
+ *
+ * @category transactions
+ * @since 1.0.0-rc.17
+ */
+export const registerReadTransaction = (sql, open) => ReadTransaction.register(sql, open);
 /**
  * Runs `effect` as one read transaction: every statement in it reads one
  * snapshot, and it takes no writer lock, so a writer may commit while it

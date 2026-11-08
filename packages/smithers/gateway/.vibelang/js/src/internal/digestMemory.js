@@ -7,6 +7,7 @@ const encoder = new TextEncoder();
 /** Measures retained JSON-shaped data without keeping another copy.
  * @category utilities
  * @since 1.0.0
+ * @throws {never}
  */
 export const encodedBytes = (value) => encoder.encode(JSON.stringify(value)).byteLength;
 /** Associates a digest with its compact identity ledger's byte budget.
@@ -19,5 +20,6 @@ export const recordDigestBytes = (digest, bytes) => {
 /** Includes private scalar contributions in the projection retention budget.
  * @category utilities
  * @since 1.0.0
+ * @throws {never}
  */
 export const retainedDigestBytes = (digest) => digest === undefined ? 0 : sizes.get(digest) ?? encodedBytes(digest);

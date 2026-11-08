@@ -33,7 +33,7 @@ export const Conversation = Schema.Struct({
 })
 
 /** The classifier's answer. */
-export schema Classification { readonly conversations: ReadonlyArray<Conversation> }
+export const Classification = Schema.Struct({ conversations: Schema.Array(Conversation) })
 
 /** One opportunity pulled from a flagged conversation. */
 export const Opportunity = Schema.Struct({
@@ -49,22 +49,22 @@ export const Opportunity = Schema.Struct({
 })
 
 /** The extractor's answer. */
-export schema Extraction { readonly opportunities: ReadonlyArray<Opportunity> }
+export const Extraction = Schema.Struct({ opportunities: Schema.Array(Opportunity) })
 
 /** The handoff the flow settles with. */
-export schema Handoff {
-  readonly totalScanned: number
-  readonly opportunitiesFound: number
-  readonly routedToCrm: number
-  readonly bySignalType: Readonly<Record<string, number>>
-  readonly handoffs: ReadonlyArray<{
-    readonly conversationId: string
-    readonly assignedRep: string
-    readonly priority: "hot" | "warm" | "cool"
-    readonly nextStep: string
-  }>
-  readonly summary: string
-}
+export const Handoff = Schema.Struct({
+  totalScanned: Schema.Number,
+  opportunitiesFound: Schema.Number,
+  routedToCrm: Schema.Number,
+  bySignalType: Schema.Record(Schema.String, Schema.Number),
+  handoffs: Schema.Array(Schema.Struct({
+    conversationId: Schema.String,
+    assignedRep: Schema.String,
+    priority: Schema.Literals(["hot", "warm", "cool"]),
+    nextStep: Schema.String
+  })),
+  summary: Schema.String
+})
 
 /** Marks each conversation with a revenue signal or none. */
 export const Classify = AgentAction.make("examples/RevenueScout/Classify", {

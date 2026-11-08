@@ -703,7 +703,7 @@ export const make = (options: Options): AccessTokenSource!IntegrationError!HttpC
         return Effect.succeed(build(options, forCredentials(http)))
       } catch (error) {
         if (isIntegrationError(error)) return Effect.fail(error)
-        $raise(error)
+        return Effect.die(error)
       }
     }))
 

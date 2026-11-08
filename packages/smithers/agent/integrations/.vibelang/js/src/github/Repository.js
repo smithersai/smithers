@@ -80,7 +80,7 @@ export const Repo = Schema.String.check(Schema.isPattern(REPO_PATTERN, { expecte
  */
 export const IssueNumber = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
 const refuse = (field, value) => {
-    throw new IntegrationError("invalid-config", `GitHub ${field} is not a valid name, so it cannot be part of a request path.`, { field, retryable: false, [field]: typeof value === "string" ? value.slice(0, 64) : typeof value });
+    $raise(new IntegrationError("invalid-config", `GitHub ${field} is not a valid name, so it cannot be part of a request path.`, { field, retryable: false, [field]: typeof value === "string" ? value.slice(0, 64) : typeof value }));
 };
 /**
  * The `owner/repo` path segment pair, validated and then encoded.
@@ -126,3 +126,4 @@ export const requireFullNamePath = (fullName) => Effect.try({ try: () => fullNam
  * @since 1.0.0
  */
 export const requireRepositoryPath = (owner, repo) => Effect.try({ try: () => repositoryPath(owner, repo), catch: (cause) => cause });
+import { raise as $raise } from "./Repository.vibe.-24-throw-24-ts.js";

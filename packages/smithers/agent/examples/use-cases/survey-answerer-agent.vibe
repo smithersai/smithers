@@ -22,59 +22,59 @@ const seat = "anthropic:claude-sonnet-5-5"
 const Severity = Schema.Literals(["low", "medium", "high"])
 
 /** The sources, indexed by topic with provenance. */
-export schema SourceContext {
-  readonly documentSummaries: ReadonlyArray<{
-    readonly sourceId: string
-    readonly title: string
-    readonly relevantExcerpts: ReadonlyArray<string>
-    readonly topics: ReadonlyArray<string>
-  }>
-  readonly keyFacts: Readonly<Record<string, string>>
-  readonly summary: string
-}
+export const SourceContext = Schema.Struct({
+  documentSummaries: Schema.Array(Schema.Struct({
+    sourceId: Schema.String,
+    title: Schema.String,
+    relevantExcerpts: Schema.Array(Schema.String),
+    topics: Schema.Array(Schema.String)
+  })),
+  keyFacts: Schema.Record(Schema.String, Schema.String),
+  summary: Schema.String
+})
 
 /** Every answered question with its sources, and every question left unanswered. */
-export schema SurveyAnswers {
-  readonly answers: ReadonlyArray<{
-    readonly questionId: string
-    readonly questionText: string
-    readonly answer: string
-    readonly confidence: "high" | "medium" | "low"
-    readonly sourceRefs: ReadonlyArray<string>
-    readonly reasoning: string
-  }>
-  readonly unanswered: ReadonlyArray<{
-    readonly questionId: string
-    readonly questionText: string
-    readonly reason: string
-  }>
-  readonly summary: string
-}
+export const SurveyAnswers = Schema.Struct({
+  answers: Schema.Array(Schema.Struct({
+    questionId: Schema.String,
+    questionText: Schema.String,
+    answer: Schema.String,
+    confidence: Schema.Literals(["high", "medium", "low"]),
+    sourceRefs: Schema.Array(Schema.String),
+    reasoning: Schema.String
+  })),
+  unanswered: Schema.Array(Schema.Struct({
+    questionId: Schema.String,
+    questionText: Schema.String,
+    reason: Schema.String
+  })),
+  summary: Schema.String
+})
 
 /** The audit of the answers. */
-export schema Validation {
-  readonly overallConsistency: "pass" | "warn" | "fail"
-  readonly contradictions: ReadonlyArray<{
-    readonly questionIds: ReadonlyArray<string>
-    readonly description: string
-    readonly severity: Severity
-  }>
-  readonly unsupportedClaims: ReadonlyArray<{
-    readonly questionId: string
-    readonly claim: string
-    readonly issue: string
-  }>
-  readonly revisedAnswers: ReadonlyArray<{
-    readonly questionId: string
-    readonly originalAnswer: string
-    readonly revisedAnswer: string
-    readonly reason: string
-  }>
-  readonly summary: string
-}
+export const Validation = Schema.Struct({
+  overallConsistency: Schema.Literals(["pass", "warn", "fail"]),
+  contradictions: Schema.Array(Schema.Struct({
+    questionIds: Schema.Array(Schema.String),
+    description: Schema.String,
+    severity: Severity
+  })),
+  unsupportedClaims: Schema.Array(Schema.Struct({
+    questionId: Schema.String,
+    claim: Schema.String,
+    issue: Schema.String
+  })),
+  revisedAnswers: Schema.Array(Schema.Struct({
+    questionId: Schema.String,
+    originalAnswer: Schema.String,
+    revisedAnswer: Schema.String,
+    reason: Schema.String
+  })),
+  summary: Schema.String
+})
 
 /** What the flow settles with: the answers and their audit. */
-export schema Output { readonly answers: SurveyAnswers; readonly validation: Validation }
+export const Output = Schema.Struct({ answers: SurveyAnswers, validation: Validation })
 
 /** Indexes the sources against the questions. */
 export const GatherContext = AgentAction.make("examples/SurveyAnswererAgent/GatherContext", {

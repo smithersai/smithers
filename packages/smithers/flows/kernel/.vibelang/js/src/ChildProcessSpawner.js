@@ -141,7 +141,8 @@ const snapshotCommand = (command) => {
         const executable = data(command, "command");
         const args = data(command, "args");
         const options = data(command, "options");
-        if (typeof executable !== "string" || !Array.isArray(args) || !args.every((arg) => typeof arg === "string")) {
+        if (typeof executable !== "string" || !Array.isArray(args) ||
+            !args.every((arg) => typeof arg === "string" || (Redacted.isRedacted(arg) && typeof Redacted.value(arg) === "string"))) {
             throw new TypeError("standard command executable and arguments are invalid");
         }
         if (typeof options !== "object" || options === null)
@@ -170,7 +171,7 @@ const replaceEnvironment = (command) => {
     if (command._tag !== "StandardCommand") {
         return ChildProcess.pipeTo(replaceEnvironment(command.right), command.options)(replaceEnvironment(command.left));
     }
-    const environment = ChildProcessEnvironment.make(command.options.extendEnv === false ? {} : ambientEnvironment(), CommandLine.env(command));
+    const environment = ChildProcessEnvironment.make(command.options.extendEnv === false ? {} : ambientEnvironment(), command.options.env);
     // libuv restores an absent Windows PATH from the parent. An explicit empty
     // value preserves the caller's request to withhold executable search paths.
     const platform = globalThis.process?.platform;

@@ -29,16 +29,16 @@ export const CollectedLogs = Schema.Struct({
 })
 
 /** The digest the flow settles with. */
-export schema Digest {
-  readonly rootCauseHypotheses: ReadonlyArray<{
-    readonly hypothesis: string
-    readonly confidence: "high" | "medium" | "low"
-    readonly evidence: ReadonlyArray<string>
-  }>
-  readonly likelyOwner: { readonly team: string; readonly reasoning: string }
-  readonly nextCommands: ReadonlyArray<{ readonly command: string; readonly purpose: string }>
-  readonly summary: string
-}
+export const Digest = Schema.Struct({
+  rootCauseHypotheses: Schema.Array(Schema.Struct({
+    hypothesis: Schema.String,
+    confidence: Schema.Literals(["high", "medium", "low"]),
+    evidence: Schema.Array(Schema.String)
+  })),
+  likelyOwner: Schema.Struct({ team: Schema.String, reasoning: Schema.String }),
+  nextCommands: Schema.Array(Schema.Struct({ command: Schema.String, purpose: Schema.String })),
+  summary: Schema.String
+})
 
 /** Gathers the logs and pulls out the lines that matter. */
 export const Collect = AgentAction.make("examples/LogDigest/Collect", {

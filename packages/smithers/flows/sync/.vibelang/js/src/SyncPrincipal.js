@@ -31,6 +31,7 @@ export const anonymous = { _tag: "Anonymous" };
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const workspace = (capabilityId, expiresAtMs = Number.POSITIVE_INFINITY) => ({ _tag: "Workspace", capabilityId, expiresAtMs });
 /**

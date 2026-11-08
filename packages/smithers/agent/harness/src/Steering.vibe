@@ -176,19 +176,19 @@ export interface BoundaryInput {
   } | undefined
 }
 
-schema SeatChangeRecord {
-  _tag: "SeatChange"
-  delivery: "steer"
-  admittedAt: number
-  seat: string
-}
+const SeatChangeRecord = Schema.Struct({
+  _tag: Schema.Literal("SeatChange"),
+  delivery: Schema.Literal("steer"),
+  admittedAt: Schema.Number,
+  seat: Schema.String
+})
 
-schema ThinkingChangeRecord {
-  _tag: "ThinkingChange"
-  delivery: "steer"
-  admittedAt: number
+const ThinkingChangeRecord = Schema.Struct({
+  _tag: Schema.Literal("ThinkingChange"),
+  delivery: Schema.Literal("steer"),
+  admittedAt: Schema.Number,
   thinking: ModelRequest.ReasoningEffort
-}
+})
 
 /**
  * The journaled record of one turn-boundary drain.

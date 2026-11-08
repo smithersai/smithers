@@ -17,6 +17,7 @@
  *
  * @since 0.1.0
  */
+import * as runtime from "vibelang-runtime/internal";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -38,7 +39,7 @@ export { make, rebuildHeads } from "./internal/SqlCacheStore.js";
  * @category services
  * @since 0.1.0
  */
-export class CacheStore extends Context.Service()("@smthrs/step-cache/CacheStore") {
+export class CacheStore extends runtime.$service("@smthrs/step-cache/CacheStore") {
 }
 /**
  * Creates a cache store whose every operation fails as unavailable, with

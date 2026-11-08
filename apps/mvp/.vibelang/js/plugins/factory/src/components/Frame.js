@@ -22,5 +22,5 @@ function Framed({ tab, repository, view, children }) {
                 ? null
                 : feed._tag === "Refused" || feed.documents === 0
                     ? _jsx(EmptyState, { title: "No feed yet" })
-                    : _jsx("div", { className: "factory-grid", children: children(feed.status, feed.status.at ?? 0) }), _jsx(OpenedPanel, { tab: tab })] }));
+                    : _jsx("div", { className: "factory-grid", children: children(feed.status, feed.status.at ?? 0) }), _jsx(OpenedPanel, { tab: tab, repository: repository })] }));
 }

@@ -5,9 +5,8 @@
  * @since 0.1.0
  */
 import * as Layer from "effect/Layer";
-import { withSpan } from "effect/Effect";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import { FsError } from "./FsError.js";
 /**
  * Executes a materialized flow.
@@ -18,7 +17,7 @@ import { FsError } from "./FsError.js";
  * @category services
  * @since 0.1.0
  */
-export class FlowInvoker extends runtime.$service("/fs/FlowInvoker") {
+export class FlowInvoker extends runtime.$service("@smthrs/fs/src/FlowInvoker#FlowInvoker") {
 }
 /**
  * Constructs a flow invoker from an implementation.
@@ -37,11 +36,14 @@ export const make = (implementation) => {
  */
 export const makeNoop = (overrides = {}) => {
     return make({
-        invoke: overrides.invoke ?? ((_invocation) => Effect_1.suspend(() => { return withSpan(Effect_1.suspend(() => Effect_1.fail(new FsError({
-            code: "invocation_unavailable",
-            method: "FlowInvoker.invoke",
-            description: "No flow invoker is installed"
-        }))), "FlowInvoker.invoke"); }))
+        invoke: overrides.invoke ?? ((_invocation) => (_tail_1 => { return Effect_1.gen(function* () {
+            const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+            return _completion_1[0] ? yield* _value_1 : _value_1;
+        }); })(() => { return [true, Effect_1.fail(new FsError({
+                code: "invocation_unavailable",
+                method: "FlowInvoker.invoke",
+                description: "No flow invoker is installed"
+            }))]; }))
     });
 };
 /**

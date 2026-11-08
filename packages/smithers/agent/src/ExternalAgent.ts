@@ -1,0 +1,304 @@
+/**
+ * External agents: a durable step whose work an external agent does on a
+ * runner machine.
+ *
+ * {@link make} declares the host side of {@link module:AgentRunner}: one
+ * `ExternalJob` from `@smthrs/flow` over the {@link AgentRunner.AgentJobs}
+ * port. Its start queues generation `<origin>#g<n>` of the step's
+ * {@link AgentRunner.Task} once, parked probes read how the job stands, a
+ * retryable end is replaced by the next generation on the same runner (which
+ * continues the same checkout), and the step ends with the files the agent
+ * changed, or with an {@link AgentFailed} that names why.
+ *
+ * The step is the whole session's durable unit: its journal holds the start,
+ * each probe, each generation and the result, never the agent's transcript.
+ * Inside the session the runner checkpoints what the agent's own protocol
+ * records and resumes from the last checkpoint after a crash; nothing on the
+ * host needs to know.
+ *
+ * @since 1.0.0
+ */
+
+import { ExternalJob, Fault, type Flow, SpanFailure } from "@smthrs/flow"
+import * as Effect from "effect/Effect"
+import * as Metric from "effect/Metric"
+import * as Schema from "effect/Schema"
+import * as AgentRunner from "./AgentRunner.ts"
+
+/**
+ * Why an external agent step failed: a runner's {@link AgentRunner.FAILURES}
+ * code, or `cancelled` when the job was stopped before it ended.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const REASONS = [...AgentRunner.FAILURES, "cancelled"] as const
+
+/**
+ * The step's job ended without a change. `reason` is a code, never the agent's
+ * own text, which can carry the task's content.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export class AgentFailed extends Schema.TaggedError<AgentFailed>()("@smthrs/agent/ExternalAgent/AgentFailed", {
+  reason: Schema.Literals(REASONS)
+}) {}
+
+// None is `infra`: the engine would repeat a collect that reads the same
+// settled outcome again. An agent that stopped short or a change too large is
+// the factory's to replan; a runner that refused, lost its checkout or ran out
+// of time or generations is a dependency; a cancellation was someone's choice.
+Fault.register(
+  "@smthrs/agent/ExternalAgent/AgentFailed",
+  {
+    agent: "factory",
+    refused: "dependency",
+    workspace: "dependency",
+    too_large: "factory",
+    timeout: "dependency",
+    machine_lost: "dependency",
+    exhausted: "dependency",
+    cancelled: "user"
+  } satisfies Fault.Rows<AgentFailed["reason"]>,
+  "reason"
+)
+
+/**
+ * What an external agent step answers: the files the agent changed, its last
+ * message, what it cost as far as it said, and the generation that finished.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Result = Schema.Struct({
+  changes: AgentRunner.Changes,
+  summary: Schema.String,
+  usage: AgentRunner.Usage,
+  generation: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
+})
+
+/**
+ * What an external agent step answers, decoded.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Result = typeof Result.Type
+
+/**
+ * The journaled handle of one generation: the job's key and the agent it went
+ * to, so every later probe is traced and counted by it.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Handle = Schema.Struct({ key: Schema.String, agent: AgentRunner.Name })
+
+/**
+ * The journaled handle of one generation, decoded.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Handle = typeof Handle.Type
+
+/**
+ * Counts external agent jobs by `agent` and `outcome`: `started`, `again` (a
+ * retryable end, replaced if the agent has restarts left), `abandoned`
+ * (cancelled by key before its start answered), `done`, or `failed` with the
+ * failure's `reason`.
+ *
+ * @category metrics
+ * @since 1.0.0
+ */
+export const jobs = Metric.counter("smithers_external_agent_jobs", {
+  description: "External agent jobs by agent and outcome"
+})
+
+/**
+ * The step's deadline: the longest an agent may work ({@link AgentRunner.MAX_HOURS})
+ * and ten minutes for the runner to settle. The job store ends a job at its
+ * own agent's hours, so a shorter agent never waits for this.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const TIMEOUT = `${AgentRunner.MAX_HOURS * 60 + 10} minutes`
+
+/** What a step declares, with the payload's decoded type. */
+type PayloadOf<P extends Schema.Struct.Fields | Flow.AnyStructSchema> = P extends Schema.Struct.Fields
+  ? Schema.Struct<P>["Type"] :
+  P["Type"]
+
+/**
+ * The declaration of an external agent step.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Options<P extends Schema.Struct.Fields | Flow.AnyStructSchema> {
+  /** The step's typed input. */
+  readonly payload: P
+  /** The job for one payload. Pure: every generation of a step recomputes it from the journaled payload. */
+  readonly task: (payload: PayloadOf<P>) => AgentRunner.Task
+}
+
+const attributes = (handle: Handle) => ({
+  "smithers.external_agent.key": handle.key,
+  "smithers.external_agent.agent": handle.agent,
+  "smithers.external_agent.generation": AgentRunner.parseKey(handle.key).generation
+})
+
+/** Runs `self` in the operation's span, with the job's key on every log line it writes. */
+const traced = (operation: string, handle: Handle) => <A, E, R>(self: Effect.Effect<A, E, R>) =>
+  self.pipe(
+    Effect.annotateLogs({ key: handle.key, agent: handle.agent }),
+    SpanFailure.withSpan(`agent.external.${operation}`, { attributes: attributes(handle) })
+  )
+
+const count = (handle: Handle, outcome: string, reason?: string) =>
+  Metric.update(
+    Metric.withAttributes(jobs, { agent: handle.agent, outcome, ...(reason === undefined ? {} : { reason }) }),
+    1
+  )
+
+const isTask = Schema.is(AgentRunner.Task)
+
+const exitCodeOf = (outcome: AgentRunner.Outcome): number =>
+  outcome._tag === "Done" ? 0 : outcome._tag === "Cancelled" ? 2 : 1
+
+/**
+ * Declares a durable step whose work an external agent does on a runner.
+ *
+ * `call(payload)` runs it inside a flow body as its own child execution, and
+ * `flows` lists the declarations a host that resolves executions by tag must
+ * register. `toLayer()` implements it over the host's
+ * {@link AgentRunner.AgentJobs}.
+ *
+ * The step fails with {@link AgentFailed} when the job ends without a change,
+ * and `ExternalJobTimedOut` when {@link TIMEOUT} passes first. A cancelled
+ * step cancels its job, by key when the store's start had not answered yet.
+ * {@link AgentRunner.AgentJobsUnavailable} is an `infra` fault, so the engine
+ * retries the store operation that raised it.
+ *
+ * @example
+ * ```ts
+ * import { ExternalAgent } from "@smthrs/agent"
+ * import * as Schema from "effect/Schema"
+ *
+ * const Session = ExternalAgent.make("agent/Session", {
+ *   payload: { prompt: Schema.String, base: Schema.String },
+ *   task: ({ prompt, base }) => ({
+ *     agent: { name: "coder", labels: ["linux"], profile: "coder", maxHours: 4, restarts: 1 },
+ *     repository: "github/acme/app",
+ *     base,
+ *     system: [],
+ *     prompt,
+ *     limits: { files: 50, bytes: 1024 * 1024 }
+ *   })
+ * })
+ * ```
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const make = <const Tag extends string, P extends Schema.Struct.Fields | Flow.AnyStructSchema>(
+  tag: Tag,
+  options: Options<P>
+) => {
+  const job = ExternalJob.make(tag, {
+    payload: options.payload,
+    handle: Handle,
+    success: Result,
+    error: Schema.Union([AgentFailed, AgentRunner.AgentJobsUnavailable]),
+    probe: { every: "2 seconds", max: "30 seconds" },
+    timeout: TIMEOUT,
+    restarts: AgentRunner.MAX_RESTARTS
+  })
+  const implement = job.toLayer
+  const handleOf = (payload: PayloadOf<P>, key: string) => {
+    const task = options.task(payload)
+    return { task, handle: { key, agent: task.agent.name } satisfies Handle }
+  }
+  const start = (payload: PayloadOf<P>, key: string) =>
+    Effect.suspend(() => {
+      const { handle, task } = handleOf(payload, key)
+      return Effect.gen(function*() {
+        if (!isTask(task)) {
+          return yield* Effect.die(new TypeError(`ExternalAgent ${tag}: task(payload) is not an AgentRunner.Task`))
+        }
+        const store = yield* AgentRunner.AgentJobs
+        yield* store.start(task, key)
+        yield* count(handle, "started")
+        yield* Effect.logInfo("An external agent job was queued")
+        return handle
+      }).pipe(traced("start", handle))
+    })
+  const status = (handle: Handle) =>
+    Effect.gen(function*() {
+      const store = yield* AgentRunner.AgentJobs
+      const standing = yield* store.status(handle.key)
+      yield* Effect.annotateCurrentSpan({ "smithers.external_agent.standing": standing._tag })
+      if (standing._tag === "Running") return { _tag: "Running" as const }
+      if (standing._tag === "Again") {
+        yield* count(handle, "again")
+        yield* Effect.logInfo("An external agent job ended retryable")
+        return { _tag: "Lost" as const }
+      }
+      return { _tag: "Exited" as const, exitCode: exitCodeOf(standing.outcome) }
+    }).pipe(traced("status", handle))
+  const collect = (handle: Handle) =>
+    Effect.gen(function*() {
+      const store = yield* AgentRunner.AgentJobs
+      const standing = yield* store.status(handle.key)
+      if (standing._tag !== "Ended") {
+        return yield* new ExternalJob.Again({ message: `Job ${handle.key} read as open after it ended` })
+      }
+      const outcome = standing.outcome
+      if (outcome._tag === "Done") {
+        yield* count(handle, "done")
+        yield* Effect.logInfo("An external agent job finished").pipe(Effect.annotateLogs({ outcome: "done" }))
+        return {
+          changes: outcome.changes,
+          summary: outcome.summary,
+          usage: outcome.usage,
+          generation: AgentRunner.parseKey(handle.key).generation
+        }
+      }
+      // The store answers Retryable only as Again, so an ended job is Failed or Cancelled here.
+      const reason = outcome._tag === "Failed" ? outcome.reason : "cancelled"
+      yield* count(handle, "failed", reason)
+      yield* Effect.logWarning("An external agent job failed").pipe(Effect.annotateLogs({ outcome: reason }))
+      return yield* new AgentFailed({ reason })
+    }).pipe(traced("collect", handle))
+  const cancel = (handle: Handle) =>
+    Effect.gen(function*() {
+      const store = yield* AgentRunner.AgentJobs
+      yield* store.cancel(handle.key)
+      yield* Effect.logInfo("An external agent job was cancelled")
+    }).pipe(traced("cancel", handle))
+  // The store may have queued a key whose start never answered. Its cancel of a key not yet started wins over a
+  // later start of it.
+  const abandon = (payload: PayloadOf<P>, key: string) =>
+    Effect.suspend(() => {
+      const { handle } = handleOf(payload, key)
+      return Effect.gen(function*() {
+        const store = yield* AgentRunner.AgentJobs
+        yield* store.cancel(key)
+        yield* count(handle, "abandoned")
+        yield* Effect.logInfo("An external agent job was abandoned before its start answered")
+      }).pipe(traced("abandon", handle))
+    })
+  const toLayer = () =>
+    implement({
+      // ExternalJob erases the payload's field modifiers; it is the same decoded payload.
+      start: (payload, key) => start(payload as PayloadOf<P>, key),
+      status: (handle) => status(handle),
+      collect: (handle) => collect(handle),
+      cancel: (handle) => cancel(handle),
+      abandon: (payload, key) => abandon(payload as PayloadOf<P>, key)
+    })
+  // An intersection, not `Omit`: the step must stay a `Flow` a host can list and run.
+  return Object.assign(job, { toLayer }) as typeof job & { readonly toLayer: typeof toLayer }
+}

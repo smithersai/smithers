@@ -224,7 +224,7 @@ export type StepResult = typeof StepResult.Type
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export schema Result { readonly outcome: Outcome; readonly steps: ReadonlyArray<StepResult> }
+export const Result = Schema.Struct({ outcome: Outcome, steps: Schema.Array(StepResult) })
 
 /**
  * How a job ended.
@@ -265,10 +265,9 @@ export class MachineUnavailable extends Schema.TaggedError<MachineUnavailable>()
  * @category services
  * @since 1.0.0-rc.17
  */
-export service Machine {
-  static readonly key = "@smthrs/sandbox/CiJob/Machine"
-  checkout: (target: Target, job: JobRef) => boolean!MachineUnavailable
-  run: (
+export service Machine: {
+  readonly checkout: (target: Target, job: JobRef) => boolean!MachineUnavailable
+  readonly run: (
     target: Target,
     job: JobRef,
     index: number,
@@ -278,8 +277,8 @@ export service Machine {
       readonly timedOut: boolean
       readonly output?: { readonly stdout: string; readonly stderr: string; readonly truncated: boolean }
     }!MachineUnavailable
-  release: (target: Target, job: JobRef) => void!!
-}
+  readonly release: (target: Target, job: JobRef) => void!!
+} { static readonly key = "@smthrs/sandbox/CiJob/Machine" }
 
 /**
  * How a step's action retries a machine that didn't answer: 1 s doubling to

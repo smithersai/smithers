@@ -21,7 +21,9 @@
 import * as Clock from "effect/Clock";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { $extract } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
+import * as Option_1 from "effect/Option";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Action from "./Action/index.js";
@@ -72,37 +74,59 @@ const origin = Action.make({
  * @category constructors
  * @since 1.0.0
  */
-export const start = Effect_1.fnUntraced(function* start(options) {
-    const instance = yield* FlowInstance;
-    let lineage = instance.lineageDeadline;
-    if (lineage === undefined) {
-        if (options.deadline === undefined)
-            return undefined;
-        const deadlineMs = Option.match(Duration.fromInput(options.deadline), {
-            onNone: () => Number.NaN,
-            onSome: Duration.toMillis
-        });
-        if (!Number.isFinite(deadlineMs) || deadlineMs <= 0) {
-            return yield* Effect.die(new RangeError(`Deadline.start: "${options.flowName}" deadline must be a positive finite duration`));
+export const start = (options) => {
+    return Effect_1.gen(function* start() {
+        const instance = yield* FlowInstance;
+        let lineage = instance.lineageDeadline;
+        if (lineage === undefined) {
+            if (options.deadline === undefined)
+                return undefined;
+            let $do1;
+            {
+                const $optionSubject = Duration.fromInput(options.deadline);
+                const $optionHandlers = {
+                    onNone: () => Number.NaN,
+                    onSome: Duration.toMillis
+                };
+                const { onNone: $optionNone, onSome: $optionSome } = $optionHandlers;
+                $match3: {
+                    const $match4 = $optionSubject;
+                    {
+                        const $extracted5 = (subject_1 => Option_1.isOption(subject_1) && Option_1.isSome(subject_1) && [subject_1.value])($match4);
+                        $do1 = void 0;
+                        if ($extracted5 !== false && $extracted5.length === 1) {
+                            let $optionValue = $extracted5[0];
+                            $do1 = $optionSome($optionValue);
+                            break $match3;
+                        }
+                    }
+                    $do1 = $optionNone();
+                    break $match3;
+                }
+            }
+            const deadlineMs = $do1;
+            if (!Number.isFinite(deadlineMs) || deadlineMs <= 0) {
+                return yield* Effect.die(new RangeError(`Deadline.start: "${options.flowName}" deadline must be a positive finite duration`));
+            }
+            const startedAtMs = options.startedAtMs ?? (yield* origin);
+            // The clock armed below is due at `startedAtMs + deadlineMs`, and a
+            // durable store records a due time as a safe integer.
+            if (!Number.isFinite(startedAtMs) || startedAtMs + deadlineMs > Number.MAX_SAFE_INTEGER) {
+                return yield* Effect.die(new RangeError(`Deadline.start: "${options.flowName}" deadline must expire by epoch millisecond ` +
+                    `${Number.MAX_SAFE_INTEGER}, and a ${deadlineMs} ms deadline from ${startedAtMs} does not`));
+            }
+            lineage = { startedAtMs, deadlineMs };
         }
-        const startedAtMs = options.startedAtMs ?? (yield* origin);
-        // The clock armed below is due at `startedAtMs + deadlineMs`, and a
-        // durable store records a due time as a safe integer.
-        if (!Number.isFinite(startedAtMs) || startedAtMs + deadlineMs > Number.MAX_SAFE_INTEGER) {
-            return yield* Effect.die(new RangeError(`Deadline.start: "${options.flowName}" deadline must expire by epoch millisecond ` +
-                `${Number.MAX_SAFE_INTEGER}, and a ${deadlineMs} ms deadline from ${startedAtMs} does not`));
+        const remaining = yield* remainingMs(lineage);
+        if (remaining > 0) {
+            yield* (yield* FlowRuntime).scheduleClock(instance.flow, {
+                executionId: instance.executionId,
+                clock: DurableClock.make({ name: "@smthrs/engine/deadline", duration: remaining })
+            });
         }
-        lineage = { startedAtMs, deadlineMs };
-    }
-    const remaining = yield* remainingMs(lineage);
-    if (remaining > 0) {
-        yield* (yield* FlowRuntime).scheduleClock(instance.flow, {
-            executionId: instance.executionId,
-            clock: DurableClock.make({ name: "@smthrs/engine/deadline", duration: remaining })
-        });
-    }
-    return lineage;
-});
+        return lineage;
+    });
+};
 /**
  * The whole milliseconds left before `deadline` passes, as the durable clock
  * row stores its due time; zero or less once it has passed.

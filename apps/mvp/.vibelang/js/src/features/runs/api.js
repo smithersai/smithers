@@ -3,6 +3,7 @@ import { BrowserEngine } from "@smthrs/platform-browser";
 import { Context, Data, Effect, Layer, Option, Schema } from "effect";
 import { HttpClient, HttpClientRequest } from "effect/http";
 import { renewed, withBearer, withoutCookie } from "../../flows/bearer";
+import { CONFIRM_401_HEADER, sessionCheckOf } from "../auth/contract";
 import { CLOUD_RUNS_LIMIT, CLOUD_RUNS_ROUTE, remoteRunRoute, steersRoute, stopRoute } from "./contract";
 import { flowInputsRoute, repoFlowsRoute, repoRunsRoute } from "../actions/contract";
 import { CloudRunList } from "./schema";
@@ -62,7 +63,8 @@ export const getCloudRuns = (origin, within) => Effect.gen(function* () {
 }).pipe(Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new RemoteReadFailed({})) }), Effect.withSpan("run.list.cloud"));
 /**
  * ChatApi didn't take a steer: no whole answer within the deadline, or no network (`status` absent), or any status but
- * 200 and 202 (`status`, and the refusal's `code` when its body names one).
+ * 200 and 202 (`status`, and the refusal's `code` when its body names one). A session steer's `401` the page's transport
+ * checked against the session carries what it found (`sessionCheck`).
  */
 export class SteerFailed extends Data.TaggedError("SteerFailed") {
 }
@@ -76,8 +78,10 @@ export const postSteer = (origin, runId, steer, within, credential) => Effect.ge
         ? undefined
         : yield* renewed(origin, credential).pipe(Effect.mapError(({ status }) => new SteerFailed(status === undefined ? {} : { status })));
     const request = HttpClientRequest.post(`${origin}${steersRoute(runId)}`).pipe(HttpClientRequest.bodyJsonUnsafe(steer));
+    // A 401 in the session is checked against the session first, so a queued steer can be held (writes.ts); a run's
+    // 401 is about the run, and stands.
     const response = yield* (authority === undefined
-        ? client.execute(request)
+        ? client.execute(HttpClientRequest.setHeader(request, CONFIRM_401_HEADER, "1"))
         : withoutCookie(client.execute(withBearer(request, authority))))
         .pipe(Effect.mapError(() => new SteerFailed({})));
     yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status });
@@ -88,6 +92,7 @@ export const postSteer = (origin, runId, steer, within, credential) => Effect.ge
     return yield* new SteerFailed({
         status: response.status,
         ...(Option.isSome(refused) ? { code: refused.value.code } : {}),
+        ...sessionCheckOf(response.headers),
     });
 }).pipe(Effect.timeoutOrElse({ duration: within, orElse: () => Effect.fail(new SteerFailed({})) }), Effect.withSpan("run.steer.post"));
 /**

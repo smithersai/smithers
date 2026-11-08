@@ -118,55 +118,67 @@ export const defaultSweeps: ReadonlyArray<Sweep> = [
 // ---------------------------------------------------------------------------
 
 /** One pointer-bearing struct field and its ownership class. */
-export schema LifetimeField {
-  readonly struct: string
-  readonly field: string
-  readonly zigType: string
-  readonly class: "OWNED" | "SHARED" | "BORROW_PARAM" | "BORROW_FIELD" | "STATIC" | "JSC_BORROW" | "BACKREF" | "INTRUSIVE" | "FFI" | "ARENA" | "UNKNOWN"
-  readonly rustType: string
-  readonly evidence: string
-  readonly confidence: "high" | "low"
-}
+export const LifetimeField = Schema.Struct({
+  struct: Schema.String,
+  field: Schema.String,
+  zigType: Schema.String,
+  class: Schema.Literals([
+    "OWNED",
+    "SHARED",
+    "BORROW_PARAM",
+    "BORROW_FIELD",
+    "STATIC",
+    "JSC_BORROW",
+    "BACKREF",
+    "INTRUSIVE",
+    "FFI",
+    "ARENA",
+    "UNKNOWN"
+  ]),
+  rustType: Schema.String,
+  evidence: Schema.String,
+  confidence: Schema.Literals(["high", "low"])
+})
 
 /** Every classified field of one Zig file. */
-export schema LifetimeClassification {
-  readonly file: string
-  readonly crate: string
-  readonly fields: ReadonlyArray<LifetimeField>
-}
+export const LifetimeClassification = Schema.Struct({
+  file: Schema.String,
+  crate: Schema.String,
+  fields: Schema.Array(LifetimeField)
+})
 
 /** A field picked for adversarial verification. */
-export schema SelectedField {
-  readonly key: string
-  readonly file: string
-  readonly struct: string
-  readonly field: string
-  readonly class: string
-  readonly rustType: string
-}
+export const SelectedField = Schema.Struct({
+  key: Schema.String,
+  file: Schema.String,
+  struct: Schema.String,
+  field: Schema.String,
+  class: Schema.String,
+  rustType: Schema.String
+})
 
 /** One verifier's vote on one field. */
-export schema LifetimeVote {
-  readonly key: string
-  readonly voter: string
-  readonly refuted: boolean
-  readonly correctClass: string
-  readonly reason: string
-}
+export const LifetimeVote = Schema.Struct({
+  key: Schema.String,
+  voter: Schema.String,
+  refuted: Schema.Boolean,
+  correctClass: Schema.String,
+  reason: Schema.String
+})
 
 /** A file's planned Rust output. */
-export schema PortFile { readonly zig: string; readonly rs: string; readonly loc: Count; readonly crate: string }
+export const PortFile = Schema.Struct({ zig: Schema.String, rs: Schema.String, loc: Count, crate: Schema.String })
 
 /** One Phase A draft. */
-export schema PhaseAImplement {
-  readonly zig: string
-  readonly rs: string
-  readonly status: "drafted" | "skipped" | "failed"
-  readonly confidence: "high" | "medium" | "low"
-  readonly todos: Count
-  readonly rsLoc: Count
-  readonly note: string
-}
+export const PhaseAImplement = Schema.Struct({
+  zig: Schema.String,
+  rs: Schema.String,
+  status: Schema.Literals(["drafted", "skipped", "failed"]),
+  confidence: Schema.Literals(["high", "medium", "low"]),
+  todos: Count,
+  rsLoc: Count,
+  note: Schema.String
+})
 
 /** One review finding. */
 export const Issue = Schema.Struct({
@@ -177,23 +189,23 @@ export const Issue = Schema.Struct({
 })
 
 /** One Phase A review. */
-export schema Review {
-  readonly subject: string
-  readonly reviewer: string
-  readonly approved: boolean
-  readonly ok: boolean
-  readonly issues: ReadonlyArray<Issue>
-  readonly feedback: string
-}
+export const Review = Schema.Struct({
+  subject: Schema.String,
+  reviewer: Schema.String,
+  approved: Schema.Boolean,
+  ok: Schema.Boolean,
+  issues: Schema.Array(Issue),
+  feedback: Schema.String
+})
 
 /** One Phase A fix pass. */
-export schema PhaseAFix {
-  readonly zig: string
-  readonly rs: string
-  readonly applied: Count
-  readonly remaining: Count
-  readonly note: string
-}
+export const PhaseAFix = Schema.Struct({
+  zig: Schema.String,
+  rs: Schema.String,
+  applied: Count,
+  remaining: Count,
+  note: Schema.String
+})
 
 /** One `cargo check` round for one crate. */
 export const CrateCheck = Schema.Struct({
@@ -208,34 +220,34 @@ export const CrateCheck = Schema.Struct({
 })
 
 /** One proper-port patch. */
-export schema PatchResult {
-  readonly targetId: string
-  readonly status: "patched" | "skipped" | "failed"
-  readonly filesChanged: ReadonlyArray<string>
-  readonly summary: string
-}
+export const PatchResult = Schema.Struct({
+  targetId: Schema.String,
+  status: Schema.Literals(["patched", "skipped", "failed"]),
+  filesChanged: Schema.Array(Schema.String),
+  summary: Schema.String
+})
 
 /** One spec reviewer's vote. */
-export schema SpecReview {
-  readonly targetId: string
-  readonly reviewer: string
-  readonly approved: boolean
-  readonly issues: ReadonlyArray<Issue>
-  readonly feedback: string
-}
+export const SpecReview = Schema.Struct({
+  targetId: Schema.String,
+  reviewer: Schema.String,
+  approved: Schema.Boolean,
+  issues: Schema.Array(Issue),
+  feedback: Schema.String
+})
 
 /** The decider's verdict on one target. */
-export schema SpecDecision {
-  readonly targetId: string
-  readonly approved: boolean
-  readonly approvals: Count
-  readonly rejections: Count
-  readonly issues: ReadonlyArray<Issue>
-  readonly feedback: string
-}
+export const SpecDecision = Schema.Struct({
+  targetId: Schema.String,
+  approved: Schema.Boolean,
+  approvals: Count,
+  rejections: Count,
+  issues: Schema.Array(Issue),
+  feedback: Schema.String
+})
 
 /** One build of `bun_bin`. */
-export schema BuildResult { readonly ok: boolean; readonly command: string; readonly summary: string }
+export const BuildResult = Schema.Struct({ ok: Schema.Boolean, command: Schema.String, summary: Schema.String })
 
 /** One probe run. */
 export const ProbeResult = Schema.Struct({
@@ -259,12 +271,12 @@ export const Failure = Schema.Struct({
 })
 
 /** One failure fix. */
-export schema FailureFix {
-  readonly failureKey: string
-  readonly status: "fixed" | "skipped" | "failed"
-  readonly filesChanged: ReadonlyArray<string>
-  readonly summary: string
-}
+export const FailureFix = Schema.Struct({
+  failureKey: Schema.String,
+  status: Schema.Literals(["fixed", "skipped", "failed"]),
+  filesChanged: Schema.Array(Schema.String),
+  summary: Schema.String
+})
 
 /** One round of a test area. */
 export const TestAreaResult = Schema.Struct({
@@ -280,19 +292,19 @@ export const TestAreaResult = Schema.Struct({
 })
 
 /** One area's merge onto the integration branch. */
-export schema MergeResult {
-  readonly id: string
-  readonly picked: Count
-  readonly conflicts: Count
-  readonly notes: string
-}
+export const MergeResult = Schema.Struct({
+  id: Schema.String,
+  picked: Count,
+  conflicts: Count,
+  notes: Schema.String
+})
 
 /** What external CI reports when it signals the test swarm. */
-export schema CiSignal {
-  readonly status: "passed" | "failed" | "cancelled"
-  readonly url: string
-  readonly summary: string
-}
+export const CiSignal = Schema.Struct({
+  status: Schema.Literals(["passed", "failed", "cancelled"]),
+  url: Schema.String,
+  summary: Schema.String
+})
 
 /** One round of one audit sweep. */
 export const SweepResult = Schema.Struct({

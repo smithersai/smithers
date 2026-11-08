@@ -9,7 +9,7 @@ import { Deferred, Effect, Fiber, Schema, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as GatewayProjection from "../src/GatewayProjection.ts"
-import * as Projections from "../src/Projections.vibe"
+import * as Projections from "../src/Projections.ts"
 import { driverFence, emit, stack } from "./GatewayStack.ts"
 
 const summary: RunSummary = {

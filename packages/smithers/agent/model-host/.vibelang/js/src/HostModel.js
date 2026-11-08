@@ -11,7 +11,9 @@
  * @since 1.0.0
  */
 import * as Option from "effect/Option";
+import { $catchExpression, $matchCache } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
+import * as runtime from "vibelang-runtime/internal";
 import { ConfiguredModel } from "@smthrs/rpc";
 import { Config, Context, Effect, Layer, Redacted, Schema } from "effect";
 import { toModel } from "./ConfiguredModelRoute.js";
@@ -64,27 +66,76 @@ export class HostModel extends Context.Service()("@smthrs/model-host/HostModel")
      * @category constructors
      * @since 1.0.0
      */
-    static make = (record, options = {}) => Effect.catchTag((Effect_1.gen(function* () {
-        const keyName = yield* Effect.orDie(Effect.try({ try: () => ConfiguredModel.modelCredentialEnvName(record.credential), catch: (error) => error }));
-        const originName = `${keyName}${ConfiguredModel.MODEL_CREDENTIAL_ORIGIN_SUFFIX}`;
-        const apiKey = yield* Config.option(Config.Redacted(keyName));
-        const origin = yield* Config.option(Config.String(originName));
-        const planned = yield* Effect.orDie(Effect.try({
-            try: () => ConfiguredModel.planModelBinding(record, ConfiguredModel.hostModelCredentials({
-                [keyName]: Option.match(apiKey, { onNone: () => undefined, onSome: Redacted.value }),
-                [originName]: Option.getOrUndefined(origin)
-            }), { kind: "generation" }),
-            catch: (error) => error
-        }));
-        if (!planned.ok)
-            return yield* Effect_1.fail(new HostModelUnusable({ reason: planned.failure.code })
-            // The planner refuses a record whose key is missing, so a usable plan has one.
-            );
-        // The planner refuses a record whose key is missing, so a usable plan has one.
-        const key = Option.getOrThrow(apiKey);
-        const { model, route } = yield* Effect.orDie(toModel(planned.plan, key, { fetch: options.fetch }));
-        return HostModel.of({ modelId: planned.plan.modelId, model, route });
-    })), "ConfigError", () => Effect.fail(new HostModelUnusable({ reason: "config" })));
+    static make = (record, options = {}) => {
+        let $do1;
+        {
+            const catchProgram = (Effect_1.gen(function* () {
+                const keyName = yield* Effect.orDie(Effect.try({ try: () => ConfiguredModel.modelCredentialEnvName(record.credential), catch: (error) => error }));
+                const originName = `${keyName}${ConfiguredModel.MODEL_CREDENTIAL_ORIGIN_SUFFIX}`;
+                const apiKey = yield* Config.option(Config.Redacted(keyName));
+                const origin = yield* Config.option(Config.String(originName));
+                const planned = yield* Effect.orDie(Effect.try({
+                    try: () => ConfiguredModel.planModelBinding(record, ConfiguredModel.hostModelCredentials({
+                        [keyName]: Option.match(apiKey, { onNone: () => undefined, onSome: Redacted.value }),
+                        [originName]: Option.getOrUndefined(origin)
+                    }), { kind: "generation" }),
+                    catch: (error) => error
+                }));
+                if (!planned.ok)
+                    return yield* Effect_1.fail(new HostModelUnusable({ reason: planned.failure.code })
+                    // The planner refuses a record whose key is missing, so a usable plan has one.
+                    );
+                // The planner refuses a record whose key is missing, so a usable plan has one.
+                const key = Option.getOrThrow(apiKey);
+                const { model, route } = yield* Effect.orDie(toModel(planned.plan, key, { fetch: options.fetch }));
+                return HostModel.of({ modelId: planned.plan.modelId, model, route });
+            }));
+            $do1
+                =
+                    Effect_1.gen(function* () {
+                        return yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return catchProgram; }); })(), (e) => (_tail_1 => { return Effect_1.gen(function* () {
+                            const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+                            return _completion_1[0] ? yield* _value_1 : _value_1;
+                        }); })(() => { return [true, (Effect_1.fnUntraced(function* () {
+                                const $matchCache2 = $matchCache();
+                                try {
+                                    const $match1 = e;
+                                    {
+                                        if ((typeof $match1 === "function" || typeof $match1 === "object") && $match1
+                                            !== null && $matchCache2.propertyHas($match1, "_tag") && $matchCache2.get($match1, "_tag") === "ConfigError") {
+                                            return yield* (() => { return (_tail_2 => { return Effect_1.gen(function* () {
+                                                const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
+                                                return _completion_2[0] ? yield* _value_2 : _value_2;
+                                            }); })(() => { return [true, Effect_1.fail(new HostModelUnusable({ reason: "config" }))]; }); })();
+                                        }
+                                    }
+                                    return yield* (() => { return (_tail_3 => { return Effect_1.gen(function* () {
+                                        const _completion_3 = _tail_3(), _value_3 = _completion_3[1];
+                                        return _completion_3[0] ? yield* _value_3 : _value_3;
+                                    }); })(() => { return [true, Effect_1.fail(e)]; }); })();
+                                }
+                                catch (matchError_1) {
+                                    $matchCache2.threw(matchError_1);
+                                    throw matchError_1;
+                                }
+                                finally {
+                                    $matchCache2.finish();
+                                }
+                            }))()]; }));
+                    });
+        }
+        return $do1;
+        /**
+         * Provides the model a configured-model record names. The record is JSON
+         * under `name` (or `fallback` when unset). A built-in credential's key is
+         * read under its own name (`CEREBRAS_API_KEY`); a custom credential `NAME`
+         * reads `SMITHERS_MODEL_KEY_NAME` and its origin `SMITHERS_MODEL_KEY_NAME_ORIGIN`. A record this host cannot use stops the host with
+         * the planner's reason.
+         *
+         * @category layers
+         * @since 1.0.0
+         */
+    };
     /**
      * Provides the model a configured-model record names. The record is JSON
      * under `name` (or `fallback` when unset). A built-in credential's key is

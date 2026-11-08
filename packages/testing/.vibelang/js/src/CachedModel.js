@@ -13,9 +13,14 @@
  *
  * @since 0.0.0
  */
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
+import { $extract } from "vibelang-runtime/internal";
+import * as Option_1 from "effect/Option";
 import * as Model from "@smthrs/model/Model";
 import { ModelError } from "@smthrs/model/ModelError";
-import { Effect, Option, Stream } from "effect";
+import {} from "effect";
 import { canonicalRequestDigest, index, recordedRequest } from "./Fixture.js";
 import * as RecordingModel from "./RecordingModel.js";
 import { UnscriptedModelError } from "./TestingError.js";
@@ -73,10 +78,17 @@ export const make = (options) => {
             .stream;
     return Model.make({
         ...(options.live?.providerName === undefined ? {} : { providerName: options.live.providerName }),
-        stream: (request) => Stream.unwrap(Effect.map(options.fixture.load(), (loaded) => Option.match(Option.flatMap(loaded, (fixture) => hit(fixture, normalize(recordedRequest(request)))), {
-            onNone: () => miss(request),
-            onSome: replay
-        })))
+        stream: (request) => Stream.unwrap(Effect.map(options.fixture.load(), (loaded) => (() => {
+            const $match1 = Option.flatMap(loaded, (fixture) => hit(fixture, normalize(recordedRequest(request))));
+            {
+                const $extracted2 = (subject_1 => Option_1.isOption(subject_1) && Option_1.isSome(subject_1) && [subject_1.value])($match1);
+                if ($extracted2 !== false && $extracted2.length === 1) {
+                    let call = $extracted2[0];
+                    return replay(call);
+                }
+            }
+            return miss(request);
+        })()))
     });
 };
 /**

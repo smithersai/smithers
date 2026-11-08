@@ -37,56 +37,58 @@ const isJournal = (value) => Array.isArray(value) &&
     value.every((entry, index) => isWellFormedEntry(entry) && entry.index === index);
 const interruptInFlight = {
     name: interruptPin,
-    run: Effect_1.fnUntraced({ *run(engine) {
-            var topic_1, topic_2;
-            const executionId = "testing/interrupt/in-flight/execution";
-            const stepKey = "interrupt/in-flight/step";
-            const started = yield* Latch.make();
-            const release = yield* Latch.make();
-            const observedInterruption = yield* Ref.make(false);
-            const flow = {
-                name: "testing/interrupt/in-flight",
-                steps: [{
-                        key: stepKey,
-                        sealed: false,
-                        kind: "step",
-                        run: () => Effect.onInterrupt(Effect.andThen(started.open, release.await), () => Ref.set(observedInterruption, true))
-                    }]
-            };
-            const virtualTimeBefore = yield* Clock.currentTimeMillis;
-            const runFiber = yield* ((topic_1 = invoke("run(fork)", () => engine.run({
-                flow,
-                payload: { command: "wait" },
-                executionId
-            })), Effect.forkChild({ startImmediately: true })(topic_1)));
-            yield* waitUntil(() => started.isOpen(), "The subject did not start the in-flight step promptly.");
-            const interruptFiber = yield* ((topic_2 = invoke("interrupt(fork)", () => engine.interrupt(executionId)), Effect.forkChild({ startImmediately: true })(topic_2)));
-            const interruptExit = yield* awaitFiber(interruptFiber, "Interrupt did not settle promptly; a retry-on-interrupt storm may be active.");
-            yield* assert(Exit.isSuccess(interruptExit), "Interrupt failed instead of settling successfully.", "successful interrupt", interruptExit);
-            const runExit = yield* awaitFiber(runFiber, "The interrupted execution did not settle promptly.");
-            if (Exit.isFailure(runExit)) {
-                return yield* fail("The interrupted execution escaped as a failure or defect instead of an aborted result.", { executionId, status: "aborted" }, runExit.cause);
-            }
-            const runResult = runExit.value;
-            if (!isExecutionResult(runResult)) {
-                return yield* fail("The interrupted execution returned a malformed result.", { executionId, status: "aborted" }, runResult);
-            }
-            const storedResult = yield* invoke("result", () => engine.result(executionId));
-            if (!isExecutionResult(storedResult)) {
-                return yield* fail("The interrupted execution stored a malformed result.", { executionId, status: "aborted" }, storedResult);
-            }
-            const journal = yield* invoke("journal", () => engine.journal(executionId));
-            if (!isJournal(journal)) {
-                return yield* fail("Interruption left a malformed journal transcript.", "contiguous, well-formed journal entries", journal);
-            }
-            const virtualTimeAfter = yield* Clock.currentTimeMillis;
-            const interruptionObserved = yield* Ref.get(observedInterruption);
-            yield* assert(runResult.executionId === executionId && runResult.status === "aborted", "The in-flight run must settle as a well-formed aborted result.", { executionId, status: "aborted" }, runResult);
-            yield* assert(storedResult.executionId === executionId && storedResult.status === "aborted", "The stored result must remain a well-formed aborted result.", { executionId, status: "aborted" }, storedResult);
-            yield* assert(interruptionObserved, "EngineSubject.interrupt must interrupt the running step fiber.", true, interruptionObserved);
-            yield* assert(journal.some((entry) => entry.stepKey === stepKey && entry.outcome === "aborted"), "The journal must record the interrupted step as an aborted outcome.", { stepKey, outcome: "aborted" }, journal);
-            yield* assert(virtualTimeAfter === virtualTimeBefore, "Interrupt handling must not advance TestClock through a retry storm.", virtualTimeBefore, virtualTimeAfter);
-        } }.run)
+    run: (engine) => {
+        return Effect_1.gen({ *run() {
+                var topic_1, topic_2;
+                const executionId = "testing/interrupt/in-flight/execution";
+                const stepKey = "interrupt/in-flight/step";
+                const started = yield* Latch.make();
+                const release = yield* Latch.make();
+                const observedInterruption = yield* Ref.make(false);
+                const flow = {
+                    name: "testing/interrupt/in-flight",
+                    steps: [{
+                            key: stepKey,
+                            sealed: false,
+                            kind: "step",
+                            run: () => Effect.onInterrupt(Effect.andThen(started.open, release.await), () => Ref.set(observedInterruption, true))
+                        }]
+                };
+                const virtualTimeBefore = yield* Clock.currentTimeMillis;
+                const runFiber = yield* ((topic_1 = invoke("run(fork)", () => engine.run({
+                    flow,
+                    payload: { command: "wait" },
+                    executionId
+                })), Effect.forkChild({ startImmediately: true })(topic_1)));
+                yield* waitUntil(() => started.isOpen(), "The subject did not start the in-flight step promptly.");
+                const interruptFiber = yield* ((topic_2 = invoke("interrupt(fork)", () => engine.interrupt(executionId)), Effect.forkChild({ startImmediately: true })(topic_2)));
+                const interruptExit = yield* awaitFiber(interruptFiber, "Interrupt did not settle promptly; a retry-on-interrupt storm may be active.");
+                yield* assert(Exit.isSuccess(interruptExit), "Interrupt failed instead of settling successfully.", "successful interrupt", interruptExit);
+                const runExit = yield* awaitFiber(runFiber, "The interrupted execution did not settle promptly.");
+                if (Exit.isFailure(runExit)) {
+                    return yield* fail("The interrupted execution escaped as a failure or defect instead of an aborted result.", { executionId, status: "aborted" }, runExit.cause);
+                }
+                const runResult = runExit.value;
+                if (!isExecutionResult(runResult)) {
+                    return yield* fail("The interrupted execution returned a malformed result.", { executionId, status: "aborted" }, runResult);
+                }
+                const storedResult = yield* invoke("result", () => engine.result(executionId));
+                if (!isExecutionResult(storedResult)) {
+                    return yield* fail("The interrupted execution stored a malformed result.", { executionId, status: "aborted" }, storedResult);
+                }
+                const journal = yield* invoke("journal", () => engine.journal(executionId));
+                if (!isJournal(journal)) {
+                    return yield* fail("Interruption left a malformed journal transcript.", "contiguous, well-formed journal entries", journal);
+                }
+                const virtualTimeAfter = yield* Clock.currentTimeMillis;
+                const interruptionObserved = yield* Ref.get(observedInterruption);
+                yield* assert(runResult.executionId === executionId && runResult.status === "aborted", "The in-flight run must settle as a well-formed aborted result.", { executionId, status: "aborted" }, runResult);
+                yield* assert(storedResult.executionId === executionId && storedResult.status === "aborted", "The stored result must remain a well-formed aborted result.", { executionId, status: "aborted" }, storedResult);
+                yield* assert(interruptionObserved, "EngineSubject.interrupt must interrupt the running step fiber.", true, interruptionObserved);
+                yield* assert(journal.some((entry) => entry.stepKey === stepKey && entry.outcome === "aborted"), "The journal must record the interrupted step as an aborted outcome.", { stepKey, outcome: "aborted" }, journal);
+                yield* assert(virtualTimeAfter === virtualTimeBefore, "Interrupt handling must not advance TestClock through a retry storm.", virtualTimeBefore, virtualTimeAfter);
+            } }.run);
+    }
 };
 /**
  * In-flight fiber interruption conformance cases.

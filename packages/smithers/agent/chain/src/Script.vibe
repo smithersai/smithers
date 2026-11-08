@@ -19,10 +19,10 @@ import * as Digest from "@smthrs/core/Digest"
  * @since 0.1.0
  * @slop
  */
-export schema Script {
-  readonly text: string
-  readonly digest: string
-}
+export const Script = Schema.Struct({
+  text: Schema.String,
+  digest: Schema.String
+})
 
 /**
  * The decoded form of {@link Script}.

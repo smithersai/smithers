@@ -40,6 +40,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Migrator from "effect/sql/Migrator";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as Dialect from "./Dialect.js";
 import * as WriteRetry from "./internal/WriteRetry.js";
 /**
  * The single table every Smithers package records its applied migrations in.
@@ -51,6 +52,7 @@ export const table = "flows_migrations";
 /** Captures both the set list and every record entry before execution starts. */
 const snapshotMigrationSets = (sets) => Array.from(sets, (set) => ({
     idOffset: set.idOffset,
+    immediateTriggers: [...(set.immediateTriggers ?? [])],
     migrations: Object.entries(set.migrations),
     namespace: set.namespace,
     previousNames: Object.entries(set.previousNames ?? {}).map(([key, names]) => [key, [...names]])
@@ -104,7 +106,7 @@ const appliedIds = Effect.gen(function* () {
  *
  * The loader runs inside the migrator's transaction, so this application
  * commits and rolls back with the rest of the run. Failures follow the
- * migrator's own convention for a failed migration: they die with a `Failed`
+ * migrator's own convention for a failed migration: they fail with a `Failed`
  * `MigrationError` that keeps the cause, so a transient lock conflict stays
  * classifiable by {@link run}'s retry while a real failure surfaces loudly.
  *
@@ -114,7 +116,7 @@ const applyZero = (zero) => Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     yield* zero.migration;
     yield* sql `INSERT INTO ${sql(table)} ${sql.insert([{ migration_id: 0, name: zero.name }])}`.withoutTransform;
-}).pipe(Effect.catch((cause) => Effect.die(new Migrator.MigrationError({ cause, kind: "Failed", message: `Migration "0_${zero.name}" failed` }))));
+}).pipe(Effect.catch((cause) => Effect.fail(new Migrator.MigrationError({ cause, kind: "Failed", message: `Migration "0_${zero.name}" failed` }))));
 /**
  * Rejects a set whose migration would be silently skipped.
  *
@@ -191,13 +193,22 @@ const finish = (resolved, zero, previousNames, onLoaderApplied) => Effect.gen(fu
         yield* Effect.gen(function* () {
             yield* migration;
             yield* sql `INSERT INTO ${sql(table)} ${sql.insert([{ migration_id: id, name }])}`.withoutTransform;
-        }).pipe(Effect.catch((cause) => Effect.die(new Migrator.MigrationError({ cause, kind: "Failed", message: `Migration "${id}_${name}" failed` }))));
+        }).pipe(Effect.catch((cause) => Effect.fail(new Migrator.MigrationError({ cause, kind: "Failed", message: `Migration "${id}_${name}" failed` }))));
         applied.add(id);
         installed.set(block, id);
         yield* onLoaderApplied([id, name]);
     }
     return yield* rejectSkipped(resolved, applied);
 });
+/**
+ * Runs `migration` with `triggers` firing at the end of each statement, then
+ * defers them, as they are declared. A pass nested in a caller's transaction
+ * therefore overwrites an `IMMEDIATE` the caller set on them. See
+ * {@link MigrationSet.immediateTriggers}.
+ *
+ * @private
+ */
+const immediately = (triggers, migration) => triggers.length === 0 ? migration : Effect.flatMap(SqlClient.SqlClient, (sql) => Effect.andThen(Dialect.setTriggerMode(sql, triggers, "IMMEDIATE"), Effect.andThen(migration, Dialect.setTriggerMode(sql, triggers, "DEFERRED"))));
 /** @private */
 const loaderFromPlan = (sets, onLoaderApplied) => Effect.suspend(() => Effect.flatMap(resolvePlan(sets), ({ previousNames, resolved, zero }) => finish(resolved, zero, previousNames, onLoaderApplied)));
 /**
@@ -213,6 +224,9 @@ const resolvePlan = (sets) => Effect.suspend(() => {
     const resolved = [];
     const previousNames = new Map();
     let zero;
+    // A trigger one set declares binds every set's migrations: engine-store's write
+    // `flows_runs`, whose revision triggers run-store owns.
+    const triggers = sets.flatMap((set) => set.immediateTriggers);
     for (const set of sets) {
         if (namespaces.has(set.namespace)) {
             return Effect.fail(fail(`Duplicate migration namespace: ${set.namespace}`));
@@ -278,9 +292,9 @@ const resolvePlan = (sets) => Effect.suspend(() => {
                 previousNames.set(id, new Set(oldNames.map((name) => `${set.namespace}_${name}`)));
             }
             if (id === 0) {
-                zero = { migration, name: `${set.namespace}_${match[2]}` };
+                zero = { migration: immediately(triggers, migration), name: `${set.namespace}_${match[2]}` };
             }
-            resolved.push([id, `${set.namespace}_${match[2]}`, Effect.succeed(migration)]);
+            resolved.push([id, `${set.namespace}_${match[2]}`, Effect.succeed(immediately(triggers, migration))]);
         }
     }
     return Effect.succeed({ resolved: resolved.sort(migrationOrder), zero, previousNames });
@@ -343,10 +357,7 @@ export const run = (sets) => {
             // a lower-block append must not report rolled-back applications.
             loader: Ref.set(loaderApplied, []).pipe(Effect.andThen(loaderFromPlan(plan, (entry) => Ref.update(loaderApplied, (entries) => [...entries, entry])))),
             table
-        }).pipe(
-        // Effect 4.0's migrator died with a failed migration; 4.1 fails with it.
-        // Keep it a defect, as this module's own lower-block appends raise it.
-        Effect.catchTag("MigrationError", (error) => error.kind === "Failed" ? Effect.die(error) : Effect.fail(error))));
+        }));
         const appliedByLoader = yield* Ref.get(loaderApplied);
         return [...appliedByLoader, ...completed];
     });

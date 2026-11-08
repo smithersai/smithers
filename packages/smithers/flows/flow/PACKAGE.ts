@@ -278,7 +278,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/Sleep.vibe",
-        "src/Poll.vibe",
+        "src/Poll.ts",
         "src/RetryPolicy.vibe",
         "src/Stall.vibe",
         "src/DurableClock.vibe",

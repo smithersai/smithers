@@ -2,7 +2,7 @@
 import { Uuid, WebCrypto } from "@smthrs/crypto";
 import { Effect, Metric, Option, Schema } from "effect";
 import { SqlClient } from "effect/sql";
-import * as RepoFlow from "#vibelang/emitted/worker/ci/RepoFlow";
+import * as RepoFlow from "./ci/RepoFlow.js";
 import { LINEAGE_DEPTH, REPO_RUN_NAMESPACE, settledState, } from "../src/features/actions/contract.js";
 /** Repository runs' rows written, by `op` (`record`, `settle`) and `outcome`. */
 export const writes = Metric.counter("smithers_repo_run_writes", {

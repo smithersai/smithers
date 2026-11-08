@@ -4,7 +4,7 @@ import { Config, Context, Effect, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 import { CONVERSATION_NAMESPACE, HOME_BRANCH, REPOSITORY_GRANTEE } from "../../src/features/branch/contract.js";
 import { repoId } from "../../src/features/repo/contract.js";
-import { DEFAULT_REPOSITORY } from "../SignIn.js";
+import { DEFAULT_REPOSITORY } from "../defaultRepository.js";
 // The statements behind a branch's conversation (decision 0013 §1, docs/features/branch-workspace.md#postgres): each
 // branch has one conversation, whose id is the version 5 UUID of the branch's id, created with the branch in one
 // transaction. Everything chat-scoped names its conversation; a request that names none means the home conversation,

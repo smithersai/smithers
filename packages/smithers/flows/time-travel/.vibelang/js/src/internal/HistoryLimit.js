@@ -35,14 +35,16 @@ export const defaultMaxHistoryEntries = 100_000;
  * @since 0.1.0
  * @category validators
  */
-export const resolve = Effect_1.fnUntraced(function* resolve(value, fallback) {
-    if (value === undefined)
-        return fallback;
-    if (!Number.isSafeInteger(value) || value < 1) {
-        return yield* Effect_1.fail(error("invalid", `maxHistoryEntries must be a positive integer, not ${String(value)}`));
-    }
-    return value;
-});
+export const resolve = (value, fallback) => {
+    return Effect_1.gen(function* resolve() {
+        if (value === undefined)
+            return fallback;
+        if (!Number.isSafeInteger(value) || value < 1) {
+            return yield* Effect_1.fail(error("invalid", `maxHistoryEntries must be a positive integer, not ${String(value)}`));
+        }
+        return value;
+    });
+};
 /**
  * The refusal an operation raises once its read would pass the cap.
  *

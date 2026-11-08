@@ -167,9 +167,8 @@ export const make = Effect.gen(function* () {
         }
     }
     yield* migrate.pipe(
-    // The SQL migrator raises failed DDL as defects; store construction
-    // exposes these through the same typed channel as prerequisite errors.
-    Effect.catchDefect((cause) => Effect.fail(cause)), Effect.mapError((cause) => error("unknown", "time-travel schema migration failed", cause)));
+    // Effect 4.1 migrator failures already use the typed error channel.
+    Effect.mapError((cause) => error("unknown", "time-travel schema migration failed", cause)));
     /**
      * The lineage edges under one run, forks and engine child spawns as ONE
      * tree.

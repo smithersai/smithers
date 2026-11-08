@@ -77,15 +77,15 @@ export const Reconciliation = Schema.Struct({
 })
 
 /** The reviewer's decision on the high-severity exceptions. */
-export schema Approval { readonly approved: boolean; readonly reviewer: string; readonly note: string }
+export const Approval = Schema.Struct({ approved: Schema.Boolean, reviewer: Schema.String, note: Schema.String })
 
 /** What the export wrote. The flow settles with it. */
-export schema ExportRecord {
-  readonly normalizedJsonPath: string
-  readonly exceptionQueuePath: string
-  readonly passThrough: boolean
-  readonly summary: string
-}
+export const ExportRecord = Schema.Struct({
+  normalizedJsonPath: Schema.String,
+  exceptionQueuePath: Schema.String,
+  passThrough: Schema.Boolean,
+  summary: Schema.String
+})
 
 /** The failure a denied review settles with. */
 export const ReviewDenied = Schema.TaggedStruct("examples/DocumentExceptionQueue/ReviewDenied", {

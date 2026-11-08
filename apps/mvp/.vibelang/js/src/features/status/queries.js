@@ -51,6 +51,20 @@ export const waitsQuery = (home, runs) => LiveQuery.make((q) => q
     approval: Query.caseWhen(Query.eq(run.wait.kind, "approval"), true, false),
     createdAt: run.createdAt,
 })));
+/**
+ * The person's runs whose wait may show (decision 0110, the data gate): a run of the home conversation, which is theirs
+ * (its answer is one of `home`), or of a conversation whose repository may show now (`conversations`,
+ * ConversationOwners' `shown`). A run neither proves, such as one of a refused repository's conversation, or of a
+ * conversation this device has no row of, is hidden.
+ */
+export const shownRunsQuery = (home, runs, conversations) => LiveQuery.make((q) => q
+    .from({ run: runs.tanstack })
+    .leftJoin({ message: home.tanstack }, ({ run, message }) => Query.eq(run.id, message.id))
+    .leftJoin({ owner: conversations.tanstack }, ({ run, owner }) => Query.eq(run.conversationId, owner.conversationId))
+    .where(({ message, owner }) => Query.or(Query.not(Query.isUndefined(message?.id)), Query.not(Query.isUndefined(owner?.conversationId))))
+    .select(({ run }) => run), 
+// Each row keeps its run's id as its key, as the runs collection does.
+{ getKey: (run) => run.id });
 /** The latest answer's status in one conversation: what the header shows while it shows that conversation. */
 export const latestQuery = (statuses) => LiveQuery.make((q) => q
     .from({ status: statuses.tanstack })

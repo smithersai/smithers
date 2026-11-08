@@ -5,8 +5,9 @@
  * @since 1.0.0
  */
 import { withSpan } from "effect/Effect";
-import { $catchExpression } from "vibelang-runtime";
+import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
+import * as runtime from "vibelang-runtime/internal";
 import * as Path from "@smthrs/kernel/Path";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -115,33 +116,37 @@ const writeError = (path, message) => new StdError.StdError({ code: "command_fai
  * @category handlers
  * @since 1.0.0
  */
-export const run = (input) => Effect_1.suspend({ run: () => { return withSpan((Effect_1.fnUntraced(function* () {
-        const fileSystem = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        yield* FileMutation.validate(fileSystem, [input.path]);
-        if (!FileMutation.isVersioned(fileSystem)) {
-            yield* (Effect.mapError(fileSystem.makeDirectory(path.dirname(input.path), { recursive: true }), FsFailure.denied(input.path, () => writeError(input.path, `Could not create the parent directory of ${input.path}`))));
-        }
-        return yield* Effect.scoped(Effect_1.gen(function* () {
-            const mutation = yield* FileMutation.acquire(fileSystem, [input.path], path);
-            const existed = yield* $catchExpression(() => fileSystem.exists(input.path), () => Effect_1.sync(() => { return false; }));
-            if (existed) {
-                const info = yield* (Effect.mapError(fileSystem.stat(input.path), FsFailure.denied(input.path, () => writeError(input.path, `Could not inspect ${input.path} before writing`))));
-                if (info.type === "Directory") {
-                    return yield* Effect_1.fail(writeError(input.path, `Cannot write a file over directory ${input.path}`));
-                }
+export const run = (input) => {
+    return Effect_1.gen(function* run() { return yield* withSpan((() => {
+        return Effect_1.gen(function* () {
+            const fileSystem = yield* FileSystem.FileSystem;
+            const path = yield* Path.Path;
+            yield* FileMutation.validate(fileSystem, [input.path]);
+            if (!FileMutation.isVersioned(fileSystem)) {
+                yield* (Effect.mapError(fileSystem.makeDirectory(path.dirname(input.path), { recursive: true }), FsFailure.denied(input.path, () => writeError(input.path, `Could not create the parent directory of ${input.path}`))));
             }
-            yield* mutation.commit([{
+            return yield* Effect.scoped(Effect_1.gen(function* () {
+                const mutation = yield* FileMutation.acquire(fileSystem, [input.path], path);
+                const existed = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return fileSystem.exists(input.path); }); })(), () => Effect_1.sync(() => { return false; }));
+                if (existed) {
+                    const info = yield* (Effect.mapError(fileSystem.stat(input.path), FsFailure.denied(input.path, () => writeError(input.path, `Could not inspect ${input.path} before writing`))));
+                    if (info.type === "Directory") {
+                        return yield* Effect_1.fail(writeError(input.path, `Cannot write a file over directory ${input.path}`));
+                    }
+                }
+                yield* mutation.commit([{
+                        path: input.path,
+                        content: new TextEncoder().encode(input.content)
+                    }], Effect.mapError(Preserve.writeFileString(fileSystem, input.path, input.content), (error) => error.reason.method === "chmod"
+                    ? writeError(input.path, `Could not preserve the mode of ${input.path} before replacement by chmod`)
+                    : FsFailure.denied(input.path, () => writeError(input.path, `Could not write ${input.path}`))(error)));
+                yield* Diagnostics.sync(path.resolve(input.path), input.content);
+                return {
                     path: input.path,
-                    content: new TextEncoder().encode(input.content)
-                }], Effect.mapError(Preserve.writeFileString(fileSystem, input.path, input.content), (error) => error.reason.method === "chmod"
-                ? writeError(input.path, `Could not preserve the mode of ${input.path} before replacement by chmod`)
-                : FsFailure.denied(input.path, () => writeError(input.path, `Could not write ${input.path}`))(error)));
-            yield* Diagnostics.sync(path.resolve(input.path), input.content);
-            return {
-                path: input.path,
-                bytesWritten: new TextEncoder().encode(input.content).byteLength,
-                created: !existed
-            };
-        }));
-    }))(), "Write.run"); } }.run);
+                    bytesWritten: new TextEncoder().encode(input.content).byteLength,
+                    created: !existed
+                };
+            }));
+        });
+    })(), "Write.run"); });
+};

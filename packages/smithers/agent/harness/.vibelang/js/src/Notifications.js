@@ -20,7 +20,7 @@ import * as Steering from "./Steering.js";
  * runner, gets the same text.
  *
  * @category rendering
- * @since 1.0.0
+ * @since 1.0.0-rc.17
  */
 export const text = (notification) => {
     const payload = notification.payload;

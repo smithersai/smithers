@@ -2,18 +2,13 @@
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow";
 import { Node } from "@smthrs/plan";
 import { Effect, Layer, Metric, Option, Schema } from "effect";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { codeOf } from "../ErrorCode.js";
 import { GitHubRefused } from "../GitHubAuth.js";
 import * as SessionStore from "../SessionStore.js";
-// `auth/RevokeGitHubToken { sessionId }` (docs/features/sign-in.md#signing-out): signs a session out. It ends the
-// session, then revokes its GitHub token on GitHub and forgets the session's GitHub tokens. Sign-in starts it when a
-// person signs out, or signs in again in the same browser, which ends the session they held, and answers only once the
-// start is recorded: the flow then owns the whole sign-out, so a session can't end with tokens nothing will revoke. The
-// handler ends the session too, so it is refused at once; ending it again changes nothing. A session GitHub refused
-// needs no revocation: its tokens are already dead and forgotten. It runs on any host; the host injects Postgres and
-// GitHub through `registration`. GitHub or Postgres failing fails a step, which its retry policy repeats; after the
-// revocation's last attempt `auth/ForgetTokens` forgets the tokens anyway, and the access token lapses within its 8
-// hours.
+import * as Cleanup from "./RevokeReplacedGitHubToken.js";
+import { SqlClient as Sql } from "effect/sql";
+// Preserve this flow and its action names for existing durable histories. EndSession now moves credentials into
+// cleanup in its transaction. RevokeToken drains that cleanup; exhausted attempts leave it for the durable sweeper.
 /** The execution that signs session `sessionId` out: one per session, so starting it again is a no-op. */
 export const revokeExecutionId = (sessionId) => `auth-revoke-${sessionId}`;
 /**
@@ -26,7 +21,7 @@ const Revoked = Schema.Struct({
 });
 /** The revocation couldn't finish: GitHub was unavailable or refused the App, or Postgres failed. The step retries. */
 export class RevocationFailed extends Schema.TaggedError()("@smthrs/mvp/auth/RevocationFailed", {
-    reason: Schema.Literals(["github_unavailable", "github_misconfigured", "database"]),
+    reason: Schema.Literals(["github_unavailable", "github_misconfigured", "database", "unreadable"]),
 }) {
 }
 /** What ending the session did: ended it, or found it over already. */
@@ -41,14 +36,14 @@ export const revocations = Metric.counter("smithers_auth_token_revocations", {
 });
 const payload = { sessionId: Schema.String };
 /**
- * The first step: end the session, keeping its sealed GitHub tokens for the revocation. Only Postgres can fail it, and
+ * The first step ends the session and transfers its sealed tokens to durable cleanup. Only Postgres can fail it, and
  * the revocation waits for it, so its retry policy never gives up.
  */
 export const EndSession = Action.make("auth/EndSession", {
     payload,
     success: Ended,
     error: RevocationFailed,
-    capabilities: ["db:write:sessions"],
+    capabilities: ["db:write:sessions", "db:write:host_sessions", "db:write:github_token_cleanups", "db:write:session_end_receipts"],
     retryPolicy: RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000 }),
 });
 /** The step: revoke the ended session's GitHub access token on GitHub, then forget its tokens. */
@@ -56,24 +51,24 @@ export const RevokeToken = Action.make("auth/RevokeToken", {
     payload,
     success: Revoked,
     error: RevocationFailed,
-    capabilities: ["db:write:sessions"],
+    capabilities: ["db:write:sessions", "db:write:host_sessions", "db:write:github_token_cleanups", "db:write:session_end_receipts"],
     retryPolicy: RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000, maxAttempts: 5 }),
 });
 /**
- * The step after a revocation that failed every attempt: forgets the tokens without revoking them. Only Postgres can
+ * The step after exhausted attempts preserves cleanup for the sweeper. Only Postgres can
  * fail it, so its retry policy never gives up.
  */
 export const ForgetTokens = Action.make("auth/ForgetTokens", {
     payload,
     success: Revoked,
     error: RevocationFailed,
-    capabilities: ["db:write:sessions"],
+    capabilities: ["db:write:sessions", "db:write:host_sessions", "db:write:github_token_cleanups", "db:write:session_end_receipts"],
     retryPolicy: RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 60_000 }),
 });
 /** `auth/RevokeGitHubToken`: signs a session out, revoking its GitHub token and forgetting it. */
 export const RevokeGitHubToken = Flow.make("auth/RevokeGitHubToken", {
     description: "Sign a session out: end it, revoke its GitHub token on GitHub, then forget its GitHub tokens.",
-    capabilities: ["db:write:sessions"],
+    capabilities: ["db:write:sessions", "db:write:host_sessions", "db:write:github_token_cleanups", "db:write:session_end_receipts"],
     modelInvocable: false,
     payload,
     success: Revoked,
@@ -87,21 +82,19 @@ const outcome = (value) => ({ outcome: value });
  */
 export const revoke = (sessionId, services) => Effect.gen(function* () {
     const found = yield* SessionStore.held(sessionId);
-    if (Option.isNone(found))
-        return outcome("none");
-    if (found.value.live)
+    if (Option.isSome(found) && found.value.live)
         return outcome("live");
-    if (found.value.access === null)
-        return outcome("none");
-    const access = yield* Effect.option(services.keys.open(found.value.access, { id: sessionId, name: "github_access", version: 1 }));
-    if (Option.isSome(access))
-        yield* services.github.revoke(access.value);
+    // Old durable runs still call this action. Cleanup rows now own tokens even after retention removes the session.
     yield* SessionStore.forgetTokens(sessionId);
-    return outcome(Option.isSome(access) ? "revoked" : "unreadable");
+    const sql = yield* Sql.SqlClient;
+    const rows = yield* sql `SELECT id FROM github_token_cleanups WHERE session_id = ${sessionId} AND finished_at IS NULL ORDER BY id`;
+    for (const row of rows)
+        yield* Cleanup.revoke(row.id, services);
+    return outcome(rows.length > 0 ? "revoked" : "none");
 });
 /** A failure as a step reports it, by reason only: GitHub's failure, or anything Postgres did. */
 const failed = (error) => new RevocationFailed({
-    reason: !(error instanceof GitHubRefused)
+    reason: error instanceof Cleanup.CleanupFailed ? error.reason : !(error instanceof GitHubRefused)
         ? "database"
         : error.reason === "misconfigured"
             ? "github_misconfigured"

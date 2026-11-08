@@ -5,7 +5,7 @@ import { Effect, Layer, Metric, Option, Schema } from "effect";
 import { SqlClient } from "effect/sql";
 import { repoId } from "../../src/features/repo/contract.js";
 import * as Repos from "../Repos.js";
-import { CloneUnavailable, STEP_RETRY, SYNC_RETRY } from "#vibelang/emitted/worker/flows/RepoClone";
+import { CloneUnavailable, STEP_RETRY, SYNC_RETRY } from "./RepoClone.js";
 const Request = { owner: Schema.String, name: Schema.String };
 const Target = Schema.Struct({ ready: Schema.Boolean, id: Schema.String, branch: Schema.String, sha: Schema.String, owner: Schema.String, name: Schema.String });
 const outcomes = Metric.counter("repo_refresh_steps", { description: "Mirror refresh steps by stage and outcome" });

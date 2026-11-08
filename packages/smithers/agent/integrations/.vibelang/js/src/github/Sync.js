@@ -49,7 +49,6 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { withSpan } from "effect/Effect";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import { IntegrationError } from "../core/IntegrationError.js";
 import { MAX_PER_PAGE } from "./GitHubClient.js";
 import { repositoryPath } from "./Repository.js";
@@ -68,11 +67,11 @@ const Position = Schema.Struct({
     page: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
 });
 const Cursor = Schema.Struct({
-    v: Schema.Literal(1),
-    phase: Schema.Literals(["issues", "comments"]),
-    full: Schema.Boolean,
-    issues: Position,
-    comments: Position,
+    v: Schema.mutableKey(Schema.Literal(1)),
+    phase: Schema.mutableKey(Schema.Literals(["issues", "comments"])),
+    full: Schema.mutableKey(Schema.Boolean),
+    issues: Schema.mutableKey(Position),
+    comments: Schema.mutableKey(Position),
 });
 const start = { since: null, page: 1 };
 const initial = (full) => ({ v: 1, phase: "issues", full, issues: start, comments: start });
@@ -98,7 +97,7 @@ const Comment = Schema.Struct({
     updated_at: Schema.String
 });
 const Repository = Schema.Struct({
-    id: Schema.Number, private: Schema.Boolean,
+    id: Schema.mutableKey(Schema.Number), private: Schema.mutableKey(Schema.Boolean),
 });
 /**
  * The external id of an issue or pull request.
@@ -128,7 +127,7 @@ export const make = (options) => {
     const path = repositoryPath(options.owner, options.repo);
     const perPage = options.perPage ?? MAX_PER_PAGE;
     if (!Number.isSafeInteger(perPage) || perPage < 1 || perPage > MAX_PER_PAGE) {
-        throw new IntegrationError("invalid-config", `GitHub sync perPage must be an integer between 1 and ${MAX_PER_PAGE}.`, { perPage, retryable: false });
+        $raise(new IntegrationError("invalid-config", `GitHub sync perPage must be an integer between 1 and ${MAX_PER_PAGE}.`, { perPage, retryable: false }));
     }
     const stream = options.stream ?? `${options.owner}/${options.repo}`;
     const { client, connectionId } = options;
@@ -168,7 +167,7 @@ export const make = (options) => {
             query.set("page", String(position.page));
         return `/repos/${path}/${endpoint === "issues" ? "issues" : "issues/comments"}?${query.toString()}`;
     };
-    const changes = (stored) => withSpan((Effect_1.gen(runtime.$iteratorFrame(runtime.$joinedFrame(function* () {
+    const changes = (stored) => withSpan((Effect_1.gen(function* () {
         const decoded = stored === null ? initial(options.fullListing === true) : yield* readCursor(stored);
         const reset = options.fullListing === true && (stored === null || !decoded.full);
         const cursor = reset ? initial(true) : decoded;
@@ -194,82 +193,44 @@ export const make = (options) => {
         });
         const author = (user) => user === null ? null : { id: String(user.id), label: user.login };
         if (cursor.phase === "issues") {
-            {
-                let pending_1 = runtime.$normal;
-                try {
-                    for (const value_1 of yield* decodeItems(Issue, page.items, "an issue")) {
-                        try {
-                            const { decoded: issue, raw } = value_1;
-                            {
-                                const createdAtMs = yield* time(issue.created_at, "created_at", issue.id);
-                                const updatedAtMs = yield* time(issue.updated_at, "updated_at", issue.id);
-                                latestMs = Math.max(latestMs ?? updatedAtMs, updatedAtMs);
-                                const id = issueId(repository.id, issue.number);
-                                const body = issue.body ?? "";
-                                records.push({
-                                    ...base(id, raw),
-                                    kind: issue.pull_request === undefined ? "issue" : "pull-request",
-                                    url: issue.html_url,
-                                    author: author(issue.user),
-                                    createdAtMs,
-                                    updatedAtMs,
-                                    thread: { containerId: repositoryId, threadId: id, parentId: null },
-                                    text: body.length === 0 ? issue.title : `${issue.title}\n\n${body}`
-                                });
-                            }
-                        }
-                        catch (thrown_1) {
-                            pending_1 = thrown_1;
-                            break;
-                        }
-                    }
-                }
-                catch (thrown_2) {
-                    throw runtime.$finallyFailure(pending_1, thrown_2);
-                }
-                if (pending_1 !== runtime.$normal)
-                    throw pending_1;
+            for (const { decoded: issue, raw } of yield* decodeItems(Issue, page.items, "an issue")) {
+                const createdAtMs = yield* time(issue.created_at, "created_at", issue.id);
+                const updatedAtMs = yield* time(issue.updated_at, "updated_at", issue.id);
+                latestMs = Math.max(latestMs ?? updatedAtMs, updatedAtMs);
+                const id = issueId(repository.id, issue.number);
+                const body = issue.body ?? "";
+                records.push({
+                    ...base(id, raw),
+                    kind: issue.pull_request === undefined ? "issue" : "pull-request",
+                    url: issue.html_url,
+                    author: author(issue.user),
+                    createdAtMs,
+                    updatedAtMs,
+                    thread: { containerId: repositoryId, threadId: id, parentId: null },
+                    text: body.length === 0 ? issue.title : `${issue.title}\n\n${body}`
+                });
             }
         }
         else {
-            {
-                let pending_2 = runtime.$normal;
-                try {
-                    for (const value_2 of yield* decodeItems(Comment, page.items, "an issue comment")) {
-                        try {
-                            const { decoded: comment, raw } = value_2;
-                            {
-                                const createdAtMs = yield* time(comment.created_at, "created_at", comment.id);
-                                const updatedAtMs = yield* time(comment.updated_at, "updated_at", comment.id);
-                                latestMs = Math.max(latestMs ?? updatedAtMs, updatedAtMs);
-                                const issueNumber = ISSUE_NUMBER.exec(comment.issue_url)?.[1];
-                                if (issueNumber === undefined) {
-                                    return yield* Effect_1.fail(decodeFailed("GitHub returned an issue comment whose issue_url names no issue.", { id: comment.id }));
-                                }
-                                const parent = issueId(repository.id, Number(issueNumber));
-                                records.push({
-                                    ...base(commentId(repository.id, comment.id), raw),
-                                    kind: "issue-comment",
-                                    url: comment.html_url,
-                                    author: author(comment.user),
-                                    createdAtMs,
-                                    updatedAtMs,
-                                    thread: { containerId: repositoryId, threadId: parent, parentId: parent },
-                                    text: comment.body ?? ""
-                                });
-                            }
-                        }
-                        catch (thrown_3) {
-                            pending_2 = thrown_3;
-                            break;
-                        }
-                    }
+            for (const { decoded: comment, raw } of yield* decodeItems(Comment, page.items, "an issue comment")) {
+                const createdAtMs = yield* time(comment.created_at, "created_at", comment.id);
+                const updatedAtMs = yield* time(comment.updated_at, "updated_at", comment.id);
+                latestMs = Math.max(latestMs ?? updatedAtMs, updatedAtMs);
+                const issueNumber = ISSUE_NUMBER.exec(comment.issue_url)?.[1];
+                if (issueNumber === undefined) {
+                    return yield* Effect_1.fail(decodeFailed("GitHub returned an issue comment whose issue_url names no issue.", { id: comment.id }));
                 }
-                catch (thrown_4) {
-                    throw runtime.$finallyFailure(pending_2, thrown_4);
-                }
-                if (pending_2 !== runtime.$normal)
-                    throw pending_2;
+                const parent = issueId(repository.id, Number(issueNumber));
+                records.push({
+                    ...base(commentId(repository.id, comment.id), raw),
+                    kind: "issue-comment",
+                    url: comment.html_url,
+                    author: author(comment.user),
+                    createdAtMs,
+                    updatedAtMs,
+                    thread: { containerId: repositoryId, threadId: parent, parentId: parent },
+                    text: comment.body ?? ""
+                });
             }
         }
         const more = page.truncated;
@@ -285,6 +246,7 @@ export const make = (options) => {
             done = true;
         }
         return { records, cursor: JSON.stringify(following), reset, done };
-    })))), "GitHub.Sync.changes", { attributes: { "integration.stream": stream } });
+    })), "GitHub.Sync.changes", { attributes: { "integration.stream": stream } });
     return { provider: PROVIDER, connectionId, stream, changes };
 };
+import { raise as $raise } from "./Sync.vibe.-24-throw-24-ts.js";

@@ -19,7 +19,9 @@
 import * as Metric from "effect/Metric";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
+import * as runtime from "vibelang-runtime/internal";
 import { Redaction } from "@smthrs/journal";
 import * as Effect from "effect/Effect";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
@@ -242,9 +244,9 @@ const readText = (stream, limit) => Effect.suspend(() => {
         bytes += chunk.byteLength;
         if (bytes > limit)
             return Effect.fail(413);
-        text += decoder.decode(chunk, { stream: true });
+        text += $decodeChunk(decoder, chunk);
         return Effect.void;
-    }), () => text + decoder.decode());
+    }), () => text + $invoke(decoder));
 });
 const answer = (status) => HttpServerResponse.empty({ status, headers: status === 405 ? { allow: "POST" } : {} });
 /**
@@ -301,36 +303,42 @@ export const serve = (options = {}) => {
         records: new Set(options.allow.records),
         fields: new Set(options.allow.fields)
     };
-    return Effect.catch((Effect_1.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest;
-        const signal = route.exec(request.url.split("?")[0])?.[1];
-        if (signal === undefined)
-            return yield* Effect_1.fail(404);
-        if (request.method !== "POST")
-            return yield* Effect_1.fail(405);
-        const text = yield* readText(request.stream, maxBodyBytes);
-        if (nestedTooDeep(text))
-            return yield* Effect_1.fail(400);
-        const relay = relays[signal];
-        const drafts = yield* relay.drafts(text);
-        const listedDrafts = drafts.filter((record) => listed(allowed, record));
-        const kept = listedDrafts.slice(0, maxRecords);
-        const notAllowed = drafts.length - listedDrafts.length;
-        const overLimit = listedDrafts.length - kept.length;
-        yield* Effect.forEach(kept, (record) => {
-            var topic_1;
-            const line = finish(allowed, record);
-            return (topic_1 = Effect.logWithLevel(line.level)(line.message), Effect.annotateLogs(line.annotations)(topic_1));
-        }, { discard: true });
-        yield* Metric.update(Metric.withAttributes(FlowsMetric.relayedRecords, { signal }), kept.length);
-        yield* Metric.update(Metric.withAttributes(FlowsMetric.relayDroppedRecords, { signal, reason: "not_allowed" }), notAllowed);
-        yield* Metric.update(Metric.withAttributes(FlowsMetric.relayDroppedRecords, { signal, reason: "over_limit" }), overLimit);
-        const reasons = [
-            ...(notAllowed === 0 ? [] : [`dropped ${notAllowed} records off the allowlist`]),
-            ...(overLimit === 0 ? [] : [`relayed the first ${maxRecords} records`])
-        ];
-        return HttpServerResponse.jsonUnsafe(reasons.length === 0 ? {} : {
-            partialSuccess: { [relay.rejected]: notAllowed + overLimit, errorMessage: reasons.join("; ") }
-        });
-    })), (status) => Effect.succeed(answer(status)));
+    let $do1;
+    {
+        const catchProgram = (Effect_1.gen(function* () {
+            const request = yield* HttpServerRequest.HttpServerRequest;
+            const signal = route.exec(request.url.split("?")[0])?.[1];
+            if (signal === undefined)
+                return yield* Effect_1.fail(404);
+            if (request.method !== "POST")
+                return yield* Effect_1.fail(405);
+            const text = yield* readText(request.stream, maxBodyBytes);
+            if (nestedTooDeep(text))
+                return yield* Effect_1.fail(400);
+            const relay = relays[signal];
+            const drafts = yield* relay.drafts(text);
+            const listedDrafts = drafts.filter((record) => listed(allowed, record));
+            const kept = listedDrafts.slice(0, maxRecords);
+            const notAllowed = drafts.length - listedDrafts.length;
+            const overLimit = listedDrafts.length - kept.length;
+            yield* Effect.forEach(kept, (record) => {
+                var topic_1;
+                const line = finish(allowed, record);
+                return (topic_1 = Effect.logWithLevel(line.level)(line.message), Effect.annotateLogs(line.annotations)(topic_1));
+            }, { discard: true });
+            yield* Metric.update(Metric.withAttributes(FlowsMetric.relayedRecords, { signal }), kept.length);
+            yield* Metric.update(Metric.withAttributes(FlowsMetric.relayDroppedRecords, { signal, reason: "not_allowed" }), notAllowed);
+            yield* Metric.update(Metric.withAttributes(FlowsMetric.relayDroppedRecords, { signal, reason: "over_limit" }), overLimit);
+            const reasons = [
+                ...(notAllowed === 0 ? [] : [`dropped ${notAllowed} records off the allowlist`]),
+                ...(overLimit === 0 ? [] : [`relayed the first ${maxRecords} records`])
+            ];
+            return HttpServerResponse.jsonUnsafe(reasons.length === 0 ? {} : {
+                partialSuccess: { [relay.rejected]: notAllowed + overLimit, errorMessage: reasons.join("; ") }
+            });
+        }));
+        $do1 = Effect_1.gen(function* () { return yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return catchProgram; }); })(), (status) => Effect_1.sync(() => { return answer(status); })); });
+    }
+    return $do1;
 };
+import { decodeChunk as $decodeChunk, invoke as $invoke } from "./OtlpRelay.vibe.-24-call-24-ts.js";

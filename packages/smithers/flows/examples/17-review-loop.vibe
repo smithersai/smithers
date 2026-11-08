@@ -25,10 +25,10 @@ export const Draft = Action.make("examples/Draft", {
 })
 
 /** The reviewer's verdict: whether it passes, and what to fix if it does not. */
-export schema Verdict {
-  readonly approved: boolean
-  readonly feedback: string
-}
+export const Verdict = Schema.Struct({
+  approved: Schema.Boolean,
+  feedback: Schema.String
+})
 
 /** One review of one draft. */
 export const Review = Action.make("examples/Review", {
@@ -43,11 +43,11 @@ export const Revise = Action.make("examples/Revise", {
 })
 
 /** What the loop settles with: the text, whether it passed, and when. */
-export schema Outcome {
-  readonly text: string
-  readonly approved: boolean
-  readonly rounds: number
-}
+export const Outcome = Schema.Struct({
+  text: Schema.String,
+  approved: Schema.Boolean,
+  rounds: Schema.Number
+})
 
 /** The terminal step. Both exits go through it, so both are in the plan. */
 export const Publish = Action.make("examples/Publish", {

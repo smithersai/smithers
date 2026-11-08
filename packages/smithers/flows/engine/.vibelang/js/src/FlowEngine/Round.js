@@ -69,7 +69,7 @@ const validate = (round) => {
 export const initial = (executionId) => {
     const id = executionId;
     if (!validRoot(id))
-        throw invalid(rootRefusal);
+        $raise(invalid(rootRefusal));
     return { rootExecutionId: id, ordinal: 0 };
 };
 /**
@@ -120,17 +120,20 @@ const budgetRefusal = (maxRounds) => maxRounds !== undefined && (!Number.isSafeI
  * @since 0.1.0
  * @category constructors
  */
-export const next = Effect_1.fnUntraced(function* next(round, options) {
-    const budget = options.maxRounds;
-    const refusal = validate(round) ?? budgetRefusal(budget);
-    if (refusal !== undefined)
-        return yield* Effect_1.fail(refusal);
-    if (round.ordinal === Number.MAX_SAFE_INTEGER) {
-        return yield* Effect_1.fail(invalid("Round ordinal cannot be advanced beyond Number.MAX_SAFE_INTEGER"));
-    }
-    const advanced = { rootExecutionId: round.rootExecutionId, ordinal: round.ordinal + 1 };
-    if (budget !== undefined && advanced.ordinal >= budget) {
-        return yield* Effect_1.fail(roundsExceeded(options.flowName, advanced, budget));
-    }
-    return { round: advanced, executionId: yield* executionId(advanced) };
-});
+export const next = (round, options) => {
+    return Effect_1.gen(function* next() {
+        const budget = options.maxRounds;
+        const refusal = validate(round) ?? budgetRefusal(budget);
+        if (refusal !== undefined)
+            return yield* Effect_1.fail(refusal);
+        if (round.ordinal === Number.MAX_SAFE_INTEGER) {
+            return yield* Effect_1.fail(invalid("Round ordinal cannot be advanced beyond Number.MAX_SAFE_INTEGER"));
+        }
+        const advanced = { rootExecutionId: round.rootExecutionId, ordinal: round.ordinal + 1 };
+        if (budget !== undefined && advanced.ordinal >= budget) {
+            return yield* Effect_1.fail(roundsExceeded(options.flowName, advanced, budget));
+        }
+        return { round: advanced, executionId: yield* executionId(advanced) };
+    });
+};
+import { raise as $raise } from "./Round.vibe.-24-throw-24-ts.js";

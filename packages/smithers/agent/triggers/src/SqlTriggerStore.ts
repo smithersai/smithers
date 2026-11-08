@@ -18,9 +18,9 @@ import * as SqlClient from "effect/sql/SqlClient"
 import * as ClaimDecision from "./ClaimDecision.ts"
 import * as Migrations from "./migrations/index.vibe"
 import * as Overlap from "./Overlap.ts"
-import * as Schedule from "./Schedule.vibe"
+import * as Schedule from "./Schedule.ts"
 import * as Trigger from "./Trigger.ts"
-import { fromSchemaError, TriggerError } from "./TriggerError.vibe"
+import { fromSchemaError, TriggerError } from "./TriggerError.ts"
 import {
   type ClaimFire,
   type FireRecord,

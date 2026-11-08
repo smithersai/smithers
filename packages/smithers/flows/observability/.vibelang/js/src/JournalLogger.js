@@ -8,8 +8,9 @@ import * as Effect from "effect/Effect";
 import * as Logger from "effect/Logger";
 import * as Queue from "effect/Queue";
 import * as References from "effect/References";
+import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import { Journal, JournalEvent, TelemetryLog as Telemetry } from "@smthrs/journal";
 import * as Cause from "effect/Cause";
 import * as Layer from "effect/Layer";
@@ -172,19 +173,34 @@ const makeLog = (options, runId) => new JournalEvent.Input({
  * @category layers
  * @since 1.0.0-rc.0
  */
-export const layerJournalForwarding = (options) => Layer.unwrap(Effect.map(validateOptions(options), (configured) => Layer.merge(Layer.effect(Logger.CurrentLoggers, Effect_1.gen(runtime.$joinedFrame(function* () {
+export const layerJournalForwarding = (options) => Layer.unwrap(Effect.map(validateOptions(options), (configured) => Layer.merge(Layer.effect(Logger.CurrentLoggers, Effect_1.gen(function* () {
     const journal = yield* Journal.Journal;
     const queue = yield* Queue.bounded(configured.capacity ?? 256);
-    const dropped = Effect_1.suspend({ dropped: () => EffectMetric.update(droppedLogRecords, 1) }.dropped);
+    const dropped = Effect_1.gen(function* dropped() {
+        return yield* EffectMetric.update(droppedLogRecords, 1);
+    });
     // This worker is forked before the logger it feeds is installed, so
     // its ambient logger set cannot contain that logger and a warning
     // here cannot enqueue itself. Delivery stays lossy; the loss is
     // reported and counted instead of vanishing. Warning annotations
     // use fixed codes so ambient sinks never receive raw failures.
-    const forward = Effect.fn("JournalLogger.forward")((input) => Effect.catch(Effect.tap(journal.emitLossy(input), (receipt) => receipt._tag === "Dropped" ? dropped : Effect.void), () => Effect.andThen(dropped, Effect.annotateLogs(Effect.logWarning("A telemetry log record could not be forwarded"), {
-        runId: configured.runId,
-        code: "journal_forwarding_failed"
-    }))));
+    const forward = Effect.fn("JournalLogger.forward")((input) => {
+        let $do1;
+        {
+            const catchProgram = (Effect.tap(journal.emitLossy(input), (receipt) => receipt._tag === "Dropped" ? dropped : Effect.void));
+            $do1
+                =
+                    Effect_1.gen(function* () {
+                        return yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return catchProgram; }); })(), () => {
+                            return Effect_1.gen(function* () { return yield* (Effect.andThen(dropped, Effect.annotateLogs(Effect.logWarning("A telemetry log record could not be forwarded"), {
+                                runId: configured.runId,
+                                code: "journal_forwarding_failed"
+                            }))); });
+                        });
+                    });
+        }
+        return $do1;
+    });
     yield* (Effect.forkScoped(Effect.forever(Effect.catchCause(Effect.flatMap(Queue.take(queue), forward)
     // A defect from a journal implementation would otherwise end
     // this fiber for the rest of the run, silently, while the layer
@@ -206,6 +222,6 @@ export const layerJournalForwarding = (options) => Layer.unwrap(Effect.map(valid
     });
     const current = yield* Effect.withFiber((fiber) => Effect_1.sync(() => { return fiber.getRef(Logger.CurrentLoggers); }));
     return new Set(configured.mergeWithExisting === true ? current : []).add(logger);
-}))), configured.minimumLogLevel === undefined
+})), configured.minimumLogLevel === undefined
     ? Layer.empty
     : Layer.succeed(References.MinimumLogLevel, configured.minimumLogLevel))));

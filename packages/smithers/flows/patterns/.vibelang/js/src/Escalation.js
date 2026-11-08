@@ -14,7 +14,6 @@
  * @since 0.1.0
  */
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as Flow from "@smthrs/flow/Flow";
 import * as Node from "@smthrs/plan/Node";
 import * as Effect from "effect/Effect";
@@ -75,7 +74,7 @@ const operational = (rung) => typeof rung === "function" ? { run: rung } : { run
  */
 export const make = (options) => {
     if (options.rungs.length === 0) {
-        throw new PatternError({ code: "invalid_decorator", message: "Escalation requires at least one rung" });
+        $raise(new PatternError({ code: "invalid_decorator", message: "Escalation requires at least one rung" }));
     }
     // The body runs when the graph builds, later than this call, so it reads
     // these snapshots and never the caller's options again.
@@ -161,35 +160,17 @@ export const run = (input, options) => {
     if (rungs.length === 0) {
         return Effect.fail(new PatternError({ code: "invalid_decorator", message: "Escalation requires at least one rung" }));
     }
-    return Effect_1.gen(runtime.$iteratorFrame(runtime.$joinedFrame(function* () {
+    return Effect_1.gen(function* () {
         let last;
         let level = 0;
-        {
-            let pending_1 = runtime.$normal;
-            try {
-                for (const rung of rungs) {
-                    try {
-                        {
-                            const result = yield* rung.run(input);
-                            last = result;
-                            if (!(yield* escalates(rung, accept, result, level))) {
-                                const settled = { level, result, exhausted: false };
-                                return settled;
-                            }
-                            level = level + 1;
-                        }
-                    }
-                    catch (thrown_1) {
-                        pending_1 = thrown_1;
-                        break;
-                    }
-                }
+        for (const rung of rungs) {
+            const result = yield* rung.run(input);
+            last = result;
+            if (!(yield* escalates(rung, accept, result, level))) {
+                const settled = { level, result, exhausted: false };
+                return settled;
             }
-            catch (thrown_2) {
-                throw runtime.$finallyFailure(pending_1, thrown_2);
-            }
-            if (pending_1 !== runtime.$normal)
-                throw pending_1;
+            level = level + 1;
         }
         if (fallback !== undefined) {
             const settled = { level: rungs.length, result: yield* fallback(input), exhausted: false };
@@ -197,5 +178,6 @@ export const run = (input, options) => {
         }
         const spent = { level: rungs.length - 1, result: last, accepted: false, exhausted: true };
         return spent;
-    })));
+    });
 };
+import { raise as $raise } from "./Escalation.vibe.-24-throw-24-ts.js";

@@ -7,14 +7,15 @@ import { SqlClient } from "effect/sql";
 import { HOME_HREF, MAX_ATTENTION_BODY_BYTES, MAX_TITLE_LENGTH, NOTIFICATIONS_TABLE, } from "../src/features/attention/contract.js";
 import { AckRequest, WatchRequest } from "../src/features/attention/schema.js";
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.js";
-import { memberOrAbove, refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor";
+import { memberOrAbove, refusesPersonOnly, Sessions } from "./Actor.js";
 import { branchAccess, branchAccessAs, BranchRoles, canView, isMember, policyOf, underPolicy, roleOn as workRoleOn } from "./branch/Access.js";
 import * as Conversations from "./branch/Conversations.js";
 import { readBounded } from "#vibelang/emitted/worker/Body";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
+import { codeOf } from "./ErrorCode.js";
 import * as FeedLocks from "./FeedLocks.js";
 import * as SessionStore from "./SessionStore.js";
-import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess";
+import * as NotificationPolicy from "./NotificationPolicy.js";
+import * as ShapeAccess from "./ShapeAccess.js";
 import { FRESH_SECONDS } from "./github/RoleAge.js";
 import { TTL_MS } from "./github/Visibility.js";
 import * as FleetAudience from "./runners/FleetAudience.js";
@@ -40,9 +41,14 @@ export const shapes = Metric.counter("smithers_notification_shape_requests", {
     description: "GET /api/shapes/notifications requests, by status and live",
     incremental: true,
 });
-/** Repository checks made for a feed read, by authorization outcome, never by private repository name. */
+/** Repository checks made for a feed read, by authorization outcome and decision reuse, never by private repository name. */
 export const repositoryChecks = Metric.counter("smithers_notification_repository_checks", {
-    description: "Repository access checks for a feed read, by outcome",
+    description: "Repository access checks for a feed read, by outcome and reuse",
+    incremental: true,
+});
+/** Actual emit projection transitions, by direction; repeated withholding writes and counts nothing. */
+export const emissionTransitions = Metric.counter("smithers_notification_emission_transitions", {
+    description: "Notification emit projection transitions, by direction",
     incremental: true,
 });
 /** Notification rows written, by `kind` (`run`, `main`, `release`) and `state`. */
@@ -166,7 +172,7 @@ export const foldRun = (runId, launcherLogin, locked) => Effect.gen(function* ()
     // runs locked them all already. Someone who started watching since is left for the next fold.
     const held = locked ?? (yield* lockRuns([runId]));
     const [run] = yield* sql `
-      SELECT r.status, r.answered_at IS NOT NULL AS answered, a.status AS answer, r.launched_by AS "launchedBy",
+      SELECT r.status, r.version, r.answered_at IS NOT NULL AS answered, a.status AS answer, r.launched_by AS "launchedBy",
         r.conversation_id AS "conversationId", r.branch_id AS "branchId", r.repo_id AS "repoId",
         b.name AS "branchName", r.wait->>'prompt' AS prompt, q.text AS question
       FROM runs r
@@ -190,22 +196,35 @@ export const foldRun = (runId, launcherLogin, locked) => Effect.gen(function* ()
     const before = new Map(existing.map((row) => [row.recipient, row]));
     // Feed locks serialize this check with recorded denials and their deletion of private rows. A failed first
     // lookup (-infinity) is not a denial. Every recipient is checked, including muted existing recipients.
-    const policy = run.branchId === null ? undefined : yield* policyOf(run.branchId);
-    const denied = new Set((run.repoId === null ? [] : yield* sql `
+    let policy = run.branchId === null ? undefined : yield* policyOf(run.branchId);
+    const deniedOf = () => run.repoId === null ? Effect.succeed([]) : sql `
       SELECT person_id AS "personId" FROM github_repo_roles
       WHERE repo_id = ${run.repoId} AND checked_at <> '-infinity'
         AND (role IS NULL OR role NOT IN ('member', 'maintainer', 'admin'))
         AND ${sql.in("person_id", [...new Set([run.launchedBy, ...watchers.map((w) => w.principal), ...existing.map((r) => r.recipient)])])}
-    `).map((row) => row.personId));
+    `;
+    let denied = new Set((yield* deniedOf()).map((row) => row.personId));
     const mayRead = (principal) => !denied.has(principal) && (run.branchId === null
         ? principal === run.launchedBy
         : policy !== undefined && canView(underPolicy(policy, principal, "member")));
-    const deliveries = Inbox.route({
+    const defaults = Inbox.route({
         launcher: run.launchedBy,
         state,
         watchers,
         mayRead,
     });
+    // The plugin can narrow the existing audience; access and settlement remain core responsibilities.
+    const selection = run.repoId === null ? undefined : yield* NotificationPolicy.select({
+        repoId: run.repoId, kind: state, subject, revision: String(run.version), owner: run.launchedBy,
+        candidates: defaults.map((delivery) => delivery.recipient), defaults: defaults.map((delivery) => delivery.recipient),
+    });
+    if (selection !== undefined) {
+        policy = run.branchId === null ? undefined : yield* policyOf(run.branchId);
+        denied = new Set((yield* deniedOf()).map((row) => row.personId));
+    }
+    const selected = selection === undefined ? undefined : new Set(selection.recipients);
+    const deliveries = defaults.filter((delivery) => selected === undefined || selected.has(delivery.recipient))
+        .map((delivery) => ({ ...delivery, quiet: selection?.quiet ?? delivery.quiet }));
     const routedTo = new Set(deliveries.map((delivery) => delivery.recipient));
     // A muted recipient with branch access still sees their existing row settle.
     const all = [
@@ -337,11 +356,12 @@ export const repoEventOf = (event, payload, repository, now) => {
 export const recordRepoEvent = (event, localPeople = []) => Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     // A person's watch names their id, a UUID; any other principal has no session, so no role GitHub confirmed.
+    const liveSession = yield* SessionStore.sessionLive(sql, sql `live`);
     const watchersOf = () => sql `
       SELECT w.principal_id AS principal, w.level,
         COALESCE(${SessionStore.latestRole(sql, sql `person.id`)} IN ('admin', 'maintainer', 'member') AND EXISTS (
           SELECT 1 FROM sessions live
-          WHERE live.person_id = person.id AND live.revoked_at IS NULL AND live.expires_at > now()
+          WHERE live.person_id = person.id AND ${liveSession}
         ), false) AS "mayRead"
       FROM watches w
       CROSS JOIN LATERAL (
@@ -359,30 +379,38 @@ export const recordRepoEvent = (event, localPeople = []) => Effect.gen(function*
             .map((watcher) => watcher.principal));
         return { readers, audience: Inbox.audience(watchers, (principal) => readers.has(principal)) };
     };
-    // Who may hear it, read without locking anything; then their feed locks, sorted, before any notification row
-    // (worker/FeedLocks.ts); then, read again after the locks, those locked who may still hear it.
-    const held = yield* FeedLocks.lock(sql, audienceOf(yield* watchersOf()).audience.map((principal) => ({ repoId: event.repoId, personId: principal })));
-    const watchers = yield* watchersOf();
-    const { readers, audience } = audienceOf(watchers);
     const subject = event.kind === "main" ? `main:${event.repoId}` : `release:${event.repoId}:${event.ref}`;
+    const defaults = audienceOf(yield* watchersOf()).audience;
+    const selection = yield* NotificationPolicy.select({
+        repoId: event.repoId, kind: event.kind, subject, revision: `${event.ref}:${event.occurredAt.toISOString()}`,
+        candidates: defaults, defaults,
+    });
+    const selected = new Set(selection.recipients);
+    // The decision grants nothing. Lock only its eligible recipients, then re-read watches, sessions and recorded
+    // repository denials after the policy and locks, before touching any notification row (worker/FeedLocks.ts).
+    const held = yield* FeedLocks.lock(sql, defaults.filter((principal) => selected.has(principal)).map((principal) => ({ repoId: event.repoId, personId: principal })));
+    const watchers = yield* watchersOf();
+    const eligible = audienceOf(watchers);
+    const readers = eligible.readers;
+    const audience = eligible.audience.filter((principal) => selected.has(principal));
     let written = 0;
     for (const recipient of audience.filter((principal) => FeedLocks.holds(held, { repoId: event.repoId, personId: principal }))) {
         const rows = event.kind === "main"
             ? yield* sql `
-          INSERT INTO notifications AS n (recipient, subject, kind, state, repo_id, actor, title, ref, href, occurred_at)
+          INSERT INTO notifications AS n (recipient, subject, kind, state, repo_id, actor, title, ref, href, occurred_at, quiet)
           VALUES (${recipient}, ${subject}, 'main', 'update', ${event.repoId}, ${event.actor}, ${event.title}, ${event.ref},
-            ${event.href}, ${event.occurredAt})
+            ${event.href}, ${event.occurredAt}, ${selection.quiet ?? false})
           ON CONFLICT (recipient, subject) DO UPDATE SET
-            actor = EXCLUDED.actor, title = EXCLUDED.title, ref = EXCLUDED.ref, href = EXCLUDED.href,
+            actor = EXCLUDED.actor, title = EXCLUDED.title, ref = EXCLUDED.ref, href = EXCLUDED.href, quiet = EXCLUDED.quiet,
             occurred_at = EXCLUDED.occurred_at, version = n.version + 1, updated_at = now()
           WHERE EXCLUDED.occurred_at >= n.occurred_at AND EXCLUDED.ref IS DISTINCT FROM n.ref
           RETURNING 1`
             : yield* sql `
-          INSERT INTO notifications AS n (recipient, subject, kind, state, repo_id, actor, title, ref, href, occurred_at)
+          INSERT INTO notifications AS n (recipient, subject, kind, state, repo_id, actor, title, ref, href, occurred_at, quiet)
           VALUES (${recipient}, ${subject}, 'release', 'update', ${event.repoId}, ${event.actor}, ${event.title},
-            ${event.ref}, ${event.href}, ${event.occurredAt})
+            ${event.ref}, ${event.href}, ${event.occurredAt}, ${selection.quiet ?? false})
           ON CONFLICT (recipient, subject) DO UPDATE SET
-            actor = EXCLUDED.actor, title = EXCLUDED.title, href = EXCLUDED.href, occurred_at = EXCLUDED.occurred_at,
+            actor = EXCLUDED.actor, title = EXCLUDED.title, href = EXCLUDED.href, quiet = EXCLUDED.quiet, occurred_at = EXCLUDED.occurred_at,
             version = n.version + 1, updated_at = now()
           WHERE EXCLUDED.occurred_at > n.occurred_at
           RETURNING 1`;
@@ -522,7 +550,6 @@ export const make = (database) => Effect.gen(function* () {
         let retryAfterSeconds = 0;
         let unavailableRepositories = 0;
         let allowedSubjects = {};
-        let replaySubjects = new Set();
         let validateAccess = Effect.succeed(true);
         return ShapeProxy.make({
             ...connection,
@@ -532,12 +559,19 @@ export const make = (database) => Effect.gen(function* () {
                 const startedAt = yield* Clock.currentTimeMillis;
                 const actor = yield* ShapeAccess.actor;
                 const member = isMember(actor);
+                const policy = yield* BranchRoles;
                 const params = { "1": Option.isSome(actor) ? actor.value.subject.id : NOBODY };
                 const base = member ? "recipient = $1" : "recipient = $1 AND mine = true";
-                const repositories = Option.isNone(actor) ? [] : yield* Effect.flatMap(SqlClient.SqlClient, (sql) => sql `
+                const candidates = Option.isNone(actor) ? [] : yield* Effect.flatMap(SqlClient.SqlClient, (sql) => sql `
             SELECT candidates."repoId", EXISTS (SELECT 1 FROM github_repositories g
               WHERE g.repo_id = candidates."repoId" AND g.installation_id IS NOT NULL) AS installed,
-              coalesce(a.denial_sequence, 0)::text AS "denialSequence"
+              coalesce(a.denial_sequence, 0)::text AS "denialSequence", a.readable,
+              coalesce(a.checked_at BETWEEN clock_timestamp() - make_interval(secs => ${TTL_MS / 1000})
+                AND clock_timestamp(), false) AS reused,
+              coalesce(r.checked_at BETWEEN clock_timestamp() - make_interval(secs => ${policy.grantFreshSeconds ?? FRESH_SECONDS})
+                AND clock_timestamp(), false) AS "permissionFresh",
+              coalesce(g.private IS NOT NULL AND g.visibility_verified_at BETWEEN
+                clock_timestamp() - make_interval(secs => ${TTL_MS / 1000}) AND clock_timestamp(), false) AS "visibilityFresh"
             FROM (SELECT repo_id AS "repoId" FROM notifications
             WHERE recipient = ${actor.value.subject.id} AND repo_id IS NOT NULL AND (${member} OR mine = true)
             UNION SELECT substring(subject FROM 6) AS "repoId" FROM watches
@@ -546,26 +580,42 @@ export const make = (database) => Effect.gen(function* () {
               WHERE w.principal_id = ${actor.value.subject.id} AND w.level <> 'muted' AND b.deleted_at IS NULL
             ) candidates LEFT JOIN notification_repository_access a
               ON a.recipient = ${actor.value.subject.id} AND a.repo_id = candidates."repoId"
+            LEFT JOIN github_repo_roles r ON r.person_id = ${actor.value.subject.id} AND r.repo_id = candidates."repoId"
+            LEFT JOIN github_repositories g ON g.repo_id = candidates."repoId"
             ORDER BY candidates."repoId"`).pipe(Effect.provide(database), Effect.mapError(() => ShapeAccess.unavailable));
+                // A projection is not an authority receipt. Its cache must not outlive the permission or visibility
+                // that the configured resolver actually uses; otherwise repeated polls skip the renewal they need.
+                const repositories = candidates.map(row => {
+                    const basis = policy.grantBasis?.(row.repoId, row.installed) ?? (row.installed ? "repository" : "public");
+                    const authorityFresh = basis === "repository" ? row.permissionFresh : basis === "public" ? row.visibilityFresh : true;
+                    return { ...row, reused: row.reused && authorityFresh };
+                });
                 const denialSequences = new Map(repositories.map(({ repoId, denialSequence }) => [repoId, denialSequence]));
+                const reused = repositories.filter(row => row.reused);
+                const unresolved = repositories.filter(row => !row.reused);
+                yield* Effect.forEach(reused, row => Metric.update(Metric.withAttributes(repositoryChecks, {
+                    outcome: row.readable === true ? "allowed" : "denied", reused: "true",
+                }), 1));
                 // The observation orders concurrent projections; an older read cannot undo a newer outage or denial.
                 const [observation] = yield* Effect.flatMap(SqlClient.SqlClient, (sql) => sql `SELECT clock_timestamp()::text AS at`).pipe(Effect.provide(database), Effect.mapError(() => ShapeAccess.unavailable));
                 // Reuse branch policy, but project access into rows rather than changing Electric's definition.
-                const checked = yield* Effect.forEach(repositories, ({ repoId, installed }) => workRoleOn(Option.getOrThrow(actor), repoId, installed).pipe(Effect.tap((role) => Metric.update(Metric.withAttributes(repositoryChecks, { outcome: memberOrAbove(role) ? "allowed" : "denied" }), 1)), Effect.map((role) => ({ repoId, role, permitted: memberOrAbove(role) })), Effect.catch((refused) => Effect.gen(function* () {
+                // At two seconds per resolver, 36 cold candidates take three batches instead of nine.
+                const resolved = yield* Effect.forEach(unresolved, ({ repoId, installed }) => workRoleOn(Option.getOrThrow(actor), repoId, installed).pipe(Effect.tap((role) => Metric.update(Metric.withAttributes(repositoryChecks, { outcome: memberOrAbove(role) ? "allowed" : "denied", reused: "false" }), 1)), Effect.map((role) => ({ repoId, role, permitted: memberOrAbove(role) })), Effect.catch((refused) => Effect.gen(function* () {
                     unavailableRepositories++;
                     retryAfterSeconds = Math.max(retryAfterSeconds, refused.retryAfterSeconds ?? ShapeAccess.RETRY_AFTER_SECONDS);
-                    yield* Metric.update(Metric.withAttributes(repositoryChecks, { outcome: "unavailable" }), 1);
+                    yield* Metric.update(Metric.withAttributes(repositoryChecks, { outcome: "unavailable", reused: "false" }), 1);
                     return { repoId, role: null, permitted: false };
-                }))), { concurrency: 4 });
+                }))), { concurrency: 16 });
+                const checked = [...resolved, ...reused.map(row => ({ repoId: row.repoId, permitted: row.readable === true }))];
                 const permitted = checked.filter(result => result.permitted).map(result => result.repoId);
-                if (Option.isSome(actor) && repositories.length > 0) {
+                if (Option.isSome(actor) && resolved.length > 0) {
                     const personId = actor.value.subject.id;
                     const allowed = new Set(permitted);
                     yield* Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
-                        yield* FeedLocks.lock(sql, repositories.map(({ repoId }) => ({ repoId, personId })));
+                        yield* FeedLocks.lock(sql, resolved.map(({ repoId }) => ({ repoId, personId })));
                         // A resolver may itself record denial. Adopt its fence only for withheld repositories; a permitted
                         // result must retain the sequence it started with, even if another tab already restored access.
-                        const withheld = repositories.filter(({ repoId }) => !allowed.has(repoId)).map(({ repoId }) => repoId);
+                        const withheld = resolved.filter(({ repoId }) => !allowed.has(repoId)).map(({ repoId }) => repoId);
                         if (withheld.length > 0) {
                             const denials = yield* sql `
                 SELECT repo_id AS "repoId", denial_sequence::text AS "denialSequence"
@@ -573,7 +623,7 @@ export const make = (database) => Effect.gen(function* () {
                             for (const row of denials)
                                 denialSequences.set(row.repoId, row.denialSequence);
                         }
-                        for (const { repoId } of checked) {
+                        for (const { repoId } of resolved) {
                             const updated = yield* sql `
                 INSERT INTO notification_repository_access (recipient, repo_id, readable, checked_at, denial_sequence)
                 VALUES (${personId}, ${repoId}, ${allowed.has(repoId)}, ${observation.at}::timestamptz,
@@ -594,7 +644,6 @@ export const make = (database) => Effect.gen(function* () {
                 if (Option.isSome(actor)) {
                     const personId = actor.value.subject.id;
                     const repoIds = repositories.map(({ repoId }) => repoId);
-                    const policy = yield* BranchRoles;
                     // One MVCC statement after the body is buffered: deployment authority, repository decisions, subjects
                     // and cursor fences agree. Neither the request's old actor nor a cached log entry grants disclosure.
                     validateAccess = Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
@@ -612,10 +661,11 @@ export const make = (database) => Effect.gen(function* () {
               WITH identity AS (
                 SELECT ${actor.value.session === undefined} OR EXISTS (
                   SELECT 1 FROM sessions live WHERE live.id::text = ${actor.value.session ?? ""}
-                    AND live.person_id::text = ${personId} AND live.revoked_at IS NULL AND live.expires_at > now()
+                    AND live.person_id::text = ${personId}
+                    AND ${yield* SessionStore.sessionLive(sql, sql `live`, undefined, actor.value.alias === undefined ? actor.value.cookieKey : undefined)}
                     AND (${actor.value.alias ?? null}::uuid IS NULL OR EXISTS (
                       SELECT 1 FROM host_sessions h WHERE h.id = ${actor.value.alias ?? null}::uuid
-                        AND h.parent_id = live.id AND h.revoked_at IS NULL))) AS active
+                        AND h.parent_id = live.id AND ${yield* SessionStore.sessionLive(sql, sql `live`, sql `h`, actor.value.cookieKey)}))) AS active
               ), deployment AS (
                 SELECT active, CASE WHEN ${actor.value.session === undefined} THEN ${actor.value.role}::text
                   WHEN active AND ${SessionStore.latestRoleVerifiedAt(sql, sql `(SELECT id FROM people WHERE id::text = ${personId})`)}
@@ -652,6 +702,7 @@ export const make = (database) => Effect.gen(function* () {
                 RETURNING n.subject
               ), readable AS (
                 SELECT n.subject, n.repo_id,
+                  n.repo_id IS NOT NULL AND a.role IS NULL AS authority_unknown,
                   d.active AND (d.role IN ('member', 'maintainer', 'admin') OR n.mine = true)
                     AND (n.repo_id IS NULL OR a.readable = true AND a.role IN ('member', 'maintainer', 'admin'))
                     AND (n.kind <> 'fleet' OR ${FleetAudience.permits(sql, {
@@ -661,39 +712,63 @@ export const make = (database) => Effect.gen(function* () {
                 LEFT JOIN authority a ON a.repo_id = n.repo_id
                 WHERE n.recipient = ${personId} AND n.feed_readable = true
                   AND NOT EXISTS (SELECT 1 FROM pruned WHERE pruned.subject = n.subject)
+              ), projected AS (
+                -- This transition commits AFTER Electric captured its offset. Withheld values can be dropped:
+                -- Electric will publish their deletes, and restoration publishes inserts at a later offset.
+                -- Keep scanning suppressed subjects so renewal alone restores them; unchanged decisions write nothing.
+                UPDATE notifications n SET emit_readable = r.permitted IS TRUE
+                FROM readable r WHERE n.recipient = ${personId} AND n.subject = r.subject
+                  AND n.emit_readable IS DISTINCT FROM (r.permitted IS TRUE)
+                RETURNING n.emit_readable
               ), permitted AS (
                 SELECT subject, repo_id FROM readable WHERE permitted = true
               )
               SELECT coalesce((SELECT jsonb_object_agg(subject, repo_id) FROM permitted), '{}'::jsonb) AS subjects,
                 ARRAY(SELECT DISTINCT repo_id FROM permitted WHERE repo_id IS NOT NULL) AS repositories,
-                ARRAY(SELECT subject FROM readable WHERE permitted IS NOT TRUE) AS "replaySubjects",
+                (SELECT count(*)::int FROM readable WHERE permitted IS NOT TRUE AND authority_unknown) AS "authorityUnknownSubjects",
+                (SELECT count(*)::int FROM readable WHERE permitted IS NOT TRUE) AS "withheldSubjects",
+                (SELECT count(*)::int FROM projected WHERE NOT emit_readable) AS "withdrawnSubjects",
+                (SELECT count(*)::int FROM projected WHERE emit_readable) AS "restoredSubjects",
                 ARRAY(SELECT subject FROM pruned) AS "prunedSubjects",
                 coalesce((SELECT jsonb_agg(jsonb_build_object('repoId', repo_id, 'denialSequence', denial_sequence::text)) FROM access WHERE repo_id = ANY(${repoIds}::text[])), '[]'::jsonb) AS access`;
                     }))).pipe(Effect.map(([current]) => {
                         allowedSubjects = current.subjects;
-                        replaySubjects = new Set(current.replaySubjects);
                         // Only reductions/pruning need a cursor fence. Restoration can emit its inserts immediately using
                         // this snapshot; comparing old readability would unnecessarily refuse that safe recovery.
                         const cursorStable = current.access.length === repoIds.length && current.access.every((row) => row.denialSequence === denialSequences.get(row.repoId));
-                        return { cursorStable, subjects: Object.keys(allowedSubjects).length, replaySubjects: replaySubjects.size,
+                        const reason = current.access.length !== repoIds.length ? "cursor_unstable"
+                            : cursorStable ? undefined : "denial_sequence_moved";
+                        return { cursorStable, reason, subjects: Object.keys(allowedSubjects).length,
+                            authorityUnknownSubjects: current.authorityUnknownSubjects,
+                            withheldSubjects: current.withheldSubjects, withdrawnSubjects: current.withdrawnSubjects,
+                            restoredSubjects: current.restoredSubjects, replaySubjects: 0,
                             prunedSubjects: current.prunedSubjects.length, repositories: current.repositories.length };
-                    }), Effect.tap(fields => Metric.update(Metric.withAttributes(repositoryPruned, { scope: "fleet" }), fields.prunedSubjects)), Effect.tap(fields => Effect.logInfo("notifications.access.emit").pipe(Effect.annotateLogs(fields))), Effect.map(fields => fields.cursorStable), Effect.provide(database), Effect.mapError(() => ShapeAccess.unavailable));
+                    }), Effect.tap(fields => Effect.all([
+                        Metric.update(Metric.withAttributes(emissionTransitions, { direction: "withdrawn" }), fields.withdrawnSubjects),
+                        Metric.update(Metric.withAttributes(emissionTransitions, { direction: "restored" }), fields.restoredSubjects),
+                        Effect.annotateCurrentSpan({ "notifications.withheld": fields.withheldSubjects,
+                            "notifications.withdrawn": fields.withdrawnSubjects, "notifications.restored": fields.restoredSubjects }),
+                    ])), Effect.tap(fields => Metric.update(Metric.withAttributes(repositoryPruned, { scope: "fleet" }), fields.prunedSubjects)), Effect.tap(({ reason: _reason, ...fields }) => Effect.logInfo("notifications.access.emit").pipe(Effect.annotateLogs(fields))), Effect.tap(fields => fields.reason === undefined ? Effect.void :
+                        Effect.logWarning("notifications.access.refused").pipe(Effect.annotateLogs({
+                            reason: fields.reason, subjects: fields.subjects, repositories: fields.repositories,
+                        }))), Effect.map(fields => fields.cursorStable), Effect.provide(database), Effect.tapError(() => Effect.logWarning("notifications.access.refused").pipe(Effect.annotateLogs({
+                        reason: "read_failed", subjects: Object.keys(allowedSubjects).length, repositories: repoIds.length,
+                    }))), Effect.mapError(() => ShapeAccess.unavailable));
                 }
                 yield* Effect.logInfo("notifications.access").pipe(Effect.annotateLogs({
-                    repositories: repositories.length, permitted: permitted.length,
+                    repositories: repositories.length, reused: reused.length, permitted: permitted.length,
                     unavailable: unavailableRepositories, retryAfterSeconds,
                     durationMs: (yield* Clock.currentTimeMillis) - startedAt,
                 }));
                 return {
                     table: NOTIFICATIONS_TABLE,
-                    where: `${base} AND feed_readable = true`,
+                    where: `${base} AND feed_readable = true AND emit_readable = true`,
                     params,
                     columns: SYNCED_NOTIFICATION_COLUMNS,
                 };
             }).pipe(Effect.withSpan("notifications.access")),
             rowAccess: { keyColumns: ["recipient", "subject"], validate: Effect.suspend(() => validateAccess).pipe(Effect.withSpan("notifications.access.emit")), allows: (row) => typeof row["subject"] === "string" && Object.hasOwn(allowedSubjects, row["subject"])
                     && (!Object.hasOwn(row, "repo_id") || row["repo_id"] === allowedSubjects[row["subject"]]),
-                retryIfDenied: (row) => typeof row["subject"] === "string" && replaySubjects.has(row["subject"]),
             },
             name: "notifications.shape",
             metric: shapes,

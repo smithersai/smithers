@@ -35,7 +35,7 @@
  * @since 0.1.0
  */
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -85,11 +85,13 @@ export const layerImplementations = Layer.effect(Implementations)(Effect_1.gen(f
             const entry = { implementation };
             entries.push(entry);
             registered.set(implementation.name, entries);
-            return Effect.addFinalizer(Effect_1.fnUntraced(function* () {
-                entries.splice(entries.indexOf(entry), 1);
-                if (entries.length === 0)
-                    registered.delete(implementation.name);
-            }));
+            return Effect.addFinalizer(() => {
+                return Effect_1.gen(function* () {
+                    entries.splice(entries.indexOf(entry), 1);
+                    if (entries.length === 0)
+                        registered.delete(implementation.name);
+                });
+            });
         }),
         get: (name) => Effect_1.sync({ get: () => { return Option.fromNullishOr(registered.get(name)?.at(-1)?.implementation); } }.get)
     });

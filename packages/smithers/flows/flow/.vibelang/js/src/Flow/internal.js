@@ -7,8 +7,9 @@
  */
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect_1 from "effect/Effect";
-import { Crypto, Sha256 } from "@smthrs/crypto";
+import { Sha256 } from "@smthrs/crypto";
 import * as Node from "@smthrs/plan/Node";
 import * as Context from "effect/Context";
 import * as Schema from "effect/Schema";
@@ -122,21 +123,22 @@ const Proto = {
         })))))), SpanFailure.withSpan(`${this._tag}.execute`, { captureStackTrace: false })(topic_1)));
     },
     start(payload) {
-        return Effect.flatMap(Crypto.Crypto, (crypto) => Effect.flatMap(Effect.orDie(crypto.randomUUIDv4()), (executionId) => this.execute(payload, { executionId, discard: true })));
+        return Effect.flatMap(SecureRandom.SecureRandom, (random) => Effect.flatMap(random.uuidV4(), (executionId) => this.execute(payload, { executionId, discard: true })));
     },
     ensure(payload, options) {
         return Effect.flatMap(Effect.flatMap(Schema.decodeUnknownEffect(Schema.String)(options.key), (key) => Effect.orDie(Schema.decodeUnknownEffect(Sha256)(JSON.stringify([this._tag, key])))), (executionId) => this.execute(payload, { executionId, discard: true }));
     },
     retryFrom(source, options) {
+        const getThis_1 = () => this;
         var topic_2;
-        return (topic_2 = Effect_1.gen({ self: this }, function* () {
+        return (topic_2 = Effect_1.gen(function* () {
             const engine = yield* FlowRuntime;
             if (engine.retryFrom === undefined) {
                 return yield* Effect_1.fail(new RetryFromRefused({ code: "unsupported", executionId: source, step: options.step }));
             }
-            const executionId = options.executionId ?? (yield* Effect.orDie((yield* Crypto.Crypto).randomUUIDv4()));
+            const executionId = options.executionId ?? (yield* Effect.orDie((yield* SecureRandom.SecureRandom).uuidV4()));
             yield* Effect.annotateCurrentSpan({ executionId, source });
-            yield* identityConflictAsFailure(engine.retryFrom(this, { source, step: options.step, executionId }));
+            yield* identityConflictAsFailure(engine.retryFrom(getThis_1(), { source, step: options.step, executionId }));
             return executionId;
         }), SpanFailure.withSpan(`${this._tag}.retryFrom`, { captureStackTrace: false })(topic_2));
     },

@@ -26,7 +26,6 @@
  * @since 0.1.0
  */
 import * as Result from "effect/Result";
-import * as Schema_1 from "effect/Schema";
 import * as Schema from "effect/Schema";
 /**
  * The file a repository declares its home in, at its default branch's head.
@@ -242,9 +241,7 @@ export const IsoDate = Schema.String.check(Schema.makeFilter((value) => {
  * @category schemas
  * @since 0.1.0
  */
-export const Link = Schema_1.Struct({
-    label: Title, url: Url,
-});
+export const Link = Schema.Struct({ label: Title, url: Url });
 /**
  * Who may see a section:
  *
@@ -335,11 +332,11 @@ export const AppPicture = Schema.Literals(["issue", "review", "wiki", "schedule"
  * @category schemas
  * @since 0.1.0
  */
-export const AppBlock = Schema_1.Struct({
-    type: Schema_1.Literal("app"),
+export const AppBlock = Schema.Struct({
+    type: Schema.Literal("app"),
     flow: FlowName,
     title: Title,
-    picture: AppPicture,
+    picture: AppPicture
 });
 /**
  * A Markdown file of the repository, read at the home's own commit.
@@ -369,9 +366,9 @@ export const StackBlock = Schema.Struct({
  * @category schemas
  * @since 0.1.0
  */
-export const ViewBlock = Schema_1.Struct({
-    type: Schema_1.Literal("view"),
-    flow: FlowName,
+export const ViewBlock = Schema.Struct({
+    type: Schema.Literal("view"),
+    flow: FlowName
 });
 /**
  * A project's opening: its name, a tagline, a paragraph, the command that
@@ -435,9 +432,7 @@ export const CardsBlock = Schema.Struct({
  * @category schemas
  * @since 0.1.0
  */
-export const Stat = Schema_1.Struct({
-    value: Title, label: Title,
-});
+export const Stat = Schema.Struct({ value: Title, label: Title });
 /**
  * A row of up to {@link maximumStats} declared facts. They are the
  * repository's own words, never counted by the page.

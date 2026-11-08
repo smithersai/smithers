@@ -48,16 +48,16 @@ export class PermissionRequired extends Schema.TaggedError()("@smthrs/capability
      */
     meta: PermissionMeta
 }) {
-    constructor(props) {
+    static new(props) {
         const meta = permissionMetaSnapshot(props.meta);
-        super({ ...props, code: "permission_required", meta });
-        Object.defineProperty(this, "capability", {
+        const error = new PermissionRequired({ ...props, code: "permission_required", meta });
+        Object.defineProperty(error, "capability", {
             value: capabilitySnapshot(props.capability),
             enumerable: true,
             writable: false,
             configurable: false
         });
-        Object.defineProperty(this, "meta", {
+        Object.defineProperty(error, "meta", {
             value: meta,
             enumerable: true,
             writable: false,
@@ -65,6 +65,7 @@ export class PermissionRequired extends Schema.TaggedError()("@smthrs/capability
         });
         // Do not freeze a Schema.Class instance: Effect needs to populate its
         // symbol-keyed hash and equality caches after construction.
+        return error;
     }
 }
 /**
@@ -74,7 +75,7 @@ export class PermissionRequired extends Schema.TaggedError()("@smthrs/capability
  * @since 0.1.0
  * @slop
  */
-export const permissionRequired = (options) => new PermissionRequired({
+export const permissionRequired = (options) => PermissionRequired.new({
     code: "permission_required",
     requestId: options.requestId,
     runId: options.runId,

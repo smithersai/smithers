@@ -23,5 +23,6 @@ export const append = (path, segment) => typeof segment === "number"
  *
  * @private
  * @since 1.1.0
+ * @throws {never}
  */
 export const join = (segments) => segments.reduce((path, segment) => append(path, segment), "");

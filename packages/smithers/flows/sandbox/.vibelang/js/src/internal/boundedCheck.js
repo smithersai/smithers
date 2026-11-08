@@ -20,7 +20,9 @@ import { expired } from "./deadline.js";
  * @category constructors
  * @since 0.1.0
  */
-export const boundedCheck = (effect, deadline) => Effect.uninterruptibleMask(Effect_1.fnUntraced(function* (restore) {
-    const running = yield* Effect.forkDetach(Effect.exit(restore(effect)));
-    return yield* (Effect.ensuring(restore(Effect.raceFirst(Fiber.join(running), Effect.exit(expired(deadline)))), Effect.forkDetach(Fiber.interrupt(running), { startImmediately: true })));
-}));
+export const boundedCheck = (effect, deadline) => Effect.uninterruptibleMask((restore) => {
+    return Effect_1.gen(function* () {
+        const running = yield* Effect.forkDetach(Effect.exit(restore(effect)));
+        return yield* (Effect.ensuring(restore(Effect.raceFirst(Fiber.join(running), Effect.exit(expired(deadline)))), Effect.forkDetach(Fiber.interrupt(running), { startImmediately: true })));
+    });
+});

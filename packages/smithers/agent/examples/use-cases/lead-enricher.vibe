@@ -22,15 +22,15 @@ const seat = "anthropic:claude-sonnet-5-5"
 const Segment = Schema.Literals(["startup", "smb", "mid-market", "enterprise"])
 
 /** The normalized lead. */
-export schema Intake {
-  readonly leadId: string
-  readonly company: string
-  readonly contactName: string
-  readonly contactEmail: string
-  readonly source: "inbound-form" | "webinar" | "referral" | "cold-outbound" | "marketplace" | "other"
-  readonly rawNotes: string
-  readonly summary: string
-}
+export const Intake = Schema.Struct({
+  leadId: Schema.String,
+  company: Schema.String,
+  contactName: Schema.String,
+  contactEmail: Schema.String,
+  source: Schema.Literals(["inbound-form", "webinar", "referral", "cold-outbound", "marketplace", "other"]),
+  rawNotes: Schema.String,
+  summary: Schema.String
+})
 
 schema Firmographics {
   industry: string
@@ -46,13 +46,13 @@ schema NewsItem {
 }
 
 /** What the enrichment agent found about the company. */
-export schema Enrichment {
-  readonly firmographics: Firmographics
-  readonly techStack: ReadonlyArray<string>
-  readonly recentNews: ReadonlyArray<NewsItem>
-  readonly competitors: ReadonlyArray<string>
-  readonly summary: string
-}
+export const Enrichment = Schema.Struct({
+  firmographics: Firmographics,
+  techStack: Schema.Array(Schema.String),
+  recentNews: Schema.Array(NewsItem),
+  competitors: Schema.Array(Schema.String),
+  summary: Schema.String
+})
 
 /** The profiler's scored profile. */
 export const Profile = Schema.Struct({
@@ -66,17 +66,17 @@ export const Profile = Schema.Struct({
 })
 
 /** The CRM record the flow settles with. */
-export schema CrmRecord {
-  readonly leadId: string
-  readonly company: string
-  readonly segment: Segment
-  readonly icpFit: number
-  readonly owner: string
-  readonly nextAction: string
-  readonly status: "new" | "enriched" | "qualified" | "disqualified" | "routed"
-  readonly profileSummary: string
-  readonly summary: string
-}
+export const CrmRecord = Schema.Struct({
+  leadId: Schema.String,
+  company: Schema.String,
+  segment: Segment,
+  icpFit: Schema.Number,
+  owner: Schema.String,
+  nextAction: Schema.String,
+  status: Schema.Literals(["new", "enriched", "qualified", "disqualified", "routed"]),
+  profileSummary: Schema.String,
+  summary: Schema.String
+})
 
 /** Normalizes the raw lead. */
 export const NormalizeLead = AgentAction.make("examples/LeadEnricher/Intake", {

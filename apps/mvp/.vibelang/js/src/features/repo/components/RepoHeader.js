@@ -4,11 +4,9 @@ import { Button, PageHeader } from "@smthrs/ui";
 import { useLiveQuery } from "@tanstack/react-db";
 import { Link, useLocation } from "@tanstack/react-router";
 import { Notices } from "../../attention/components/Notices";
-import { NotificationsBell } from "../../attention/components/NotificationsBell";
 import { useAuth } from "../../auth/components/AuthContext";
 import { mayManageDomains, signInHref } from "../../auth/contract";
 import { ownRepository } from "../../auth/viewer";
-import { ConnectionPill } from "../../chat/components/ConnectionPill";
 import { SETTINGS } from "../../domains/copy";
 import { ISSUES } from "../../issues/contract";
 import { SecretsLink } from "../../secrets/components/SecretsLink";
@@ -20,6 +18,7 @@ import { minimizedOf } from "../embedView";
 import { aboutOf, headerOf } from "../view";
 import { Slot } from "../../../plugins/components/Slot";
 import { useRepo, useRepoAnswer } from "./RepoContext";
+import { RepoHeaderControls } from "./RepoHeaderControls";
 // Back to chat, which minimizes the repository's page into the chat (ruling FE-9, src/features/views/minimize.ts); the
 // repository's name, which opens its home or root, its Issues, its Stack, for a Member or above its Secrets and,
 // for a Maintainer or Admin, its Settings (decision 0039), each by the person's role on this repository where it
@@ -52,5 +51,5 @@ export function RepoHeader({ backTarget, notices = true } = {}) {
                     ? (_jsx(Button, { asChild: true, variant: "solid", children: _jsx("a", { href: signInHref(`${location.pathname}${location.searchStr}`), children: header.text }) }))
                     : null, header.kind === "refused"
                     ? (_jsxs(_Fragment, { children: [_jsx("span", { role: "status", children: header.text }), header.retry === false ? null : _jsx(Button, { variant: "outline", onClick: () => actions.retryClone(view.owner, view.name), children: TRY_AGAIN })] }))
-                    : null, _jsx("div", { role: "status", "aria-label": "Connection", "aria-live": "polite", children: _jsx(ConnectionPill, {}) }), _jsx("span", { className: "repo-header-bell", children: _jsx(NotificationsBell, {}) })] }), children: notices ? _jsx(Notices, { surface: "page" }) : null }));
+                    : null, _jsx(RepoHeaderControls, {})] }), children: notices ? _jsx(Notices, { surface: "page" }) : null }));
 }

@@ -5,6 +5,7 @@
  * @since 0.1.0
  */
 import * as Dialect from "@smthrs/database/Dialect";
+import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import { canonicalJson } from "./Canonical.js";
@@ -19,7 +20,7 @@ const DELETE_MESSAGES_CHUNK_SIZE = 900;
  * @category constructors
  * @since 0.1.0
  */
-export const make = (database, crypto) => {
+export const make = (database, random) => {
     const { sql } = database;
     const threadColumns = sql.literal(THREAD_COLUMNS);
     const messageColumns = sql.literal(MESSAGE_COLUMNS);
@@ -31,7 +32,7 @@ export const make = (database, crypto) => {
     });
     const createThread = (input) => Effect.gen(function* () {
         const { namespace } = yield* resolveNamespace(input.namespace);
-        const id = input.id ?? (yield* crypto.randomUUIDv4().pipe(Effect.mapError((cause) => error("store", "could not generate memory thread id", cause))));
+        const id = input.id ?? (yield* random.uuidV4().pipe(Effect.catchCause((cause) => Effect.fail(error("store", "could not generate memory thread id", Cause.squash(cause))))));
         yield* validateNonEmpty(id, "threadId", ["id"]);
         const metadataJson = input.metadata === undefined
             ? null

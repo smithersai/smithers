@@ -4,7 +4,7 @@ import { Effect, Metric, Schema } from "effect";
 import { HttpServerRequest } from "effect/http";
 import { PUBLICATION_COLUMNS, PUBLICATIONS_TABLE } from "../../src/features/branch/contract.js";
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
-import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess";
+import * as ShapeAccess from "../ShapeAccess.js";
 import { branchAccess, canView } from "./Access.js";
 // `GET /api/shapes/branch-publications?branch=<id>` (docs/features/branch-publish.md#the-branch-page): a branch's
 // publication on GitHub, its pull request and how its last Update branch ended, for anyone who may view the branch, so

@@ -10,7 +10,7 @@ import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import type * as Path from "effect/Path"
 import type * as Scope from "effect/Scope"
-import * as StdError from "../StdError.vibe"
+import * as StdError from "../StdError.ts"
 import * as FsFailure from "./FsFailure.vibe"
 
 /**

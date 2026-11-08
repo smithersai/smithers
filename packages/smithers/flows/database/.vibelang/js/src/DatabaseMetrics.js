@@ -116,22 +116,24 @@ export const loginFailures = Metric.counter("flows_db_login_failures", {
  * @category metrics
  * @since 1.0.0
  */
-export const tally = Effect_1.fnUntraced(function* tally(effect) {
-    const accumulator = {
-        transactions: 0,
-        schemaWide: 0,
-        lockWait: Duration.zero,
-        maxLockWait: Duration.zero
-    };
-    const open = yield* Tallies.Current;
-    const result = yield* Effect.provideService(effect, Tallies.Current, [...open, accumulator]);
-    return [
-        {
-            transactions: accumulator.transactions,
-            schemaWide: accumulator.schemaWide,
-            lockWait: accumulator.lockWait,
-            maxLockWait: accumulator.maxLockWait
-        },
-        result
-    ];
-});
+export const tally = (effect) => {
+    return Effect_1.gen(function* tally() {
+        const accumulator = {
+            transactions: 0,
+            schemaWide: 0,
+            lockWait: Duration.zero,
+            maxLockWait: Duration.zero
+        };
+        const open = yield* Tallies.Current;
+        const result = yield* Effect.provideService(effect, Tallies.Current, [...open, accumulator]);
+        return [
+            {
+                transactions: accumulator.transactions,
+                schemaWide: accumulator.schemaWide,
+                lockWait: accumulator.lockWait,
+                maxLockWait: accumulator.maxLockWait
+            },
+            result
+        ];
+    });
+};

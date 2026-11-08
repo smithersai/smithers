@@ -662,7 +662,8 @@ const recordRejection = (task, attempt, reason) => Action.make({
  * @category layers
  * @since 0.1.0
  */
-export const layer = action.toLayer((payload) => Effect.gen(function* () {
+export const layer = action
+    .toLayer((payload) => Effect.gen(function* () {
     const instance = yield* FlowInstance;
     const maxAttempts = yield* budgetOf(payload);
     const deadline = yield* deadlineOf(payload);

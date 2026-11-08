@@ -10,9 +10,9 @@
  *
  * @since 0.1.0
  */
-import * as Context from "effect/Context";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as runtime from "vibelang-runtime/internal";
 /**
  * One row of an opening memory snapshot, unrendered: a note primed from
  * `bank`, or a row recall answered from it. `key` identifies the row to a
@@ -41,7 +41,7 @@ export const Snapshot = Schema.Struct({ rows: Schema.Array(Row) });
  * @category services
  * @since 0.1.0
  */
-export class SnapshotRecorder extends Context.Service()("flows/memory/SnapshotRecorder") {
+export class SnapshotRecorder extends runtime.$service("flows/memory/SnapshotRecorder") {
 }
 /**
  * Provides a snapshot recorder.

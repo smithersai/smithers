@@ -137,7 +137,7 @@ export const hostSuite = (bundle, profile) => {
             const jj = yield* JjTag;
             const status = yield* jj.status();
             if (typeof status !== "string")
-                yield* failure("Jj", "status");
+                return yield* failure("Jj", "status");
         }), bundle)
         : provide(Effect.gen(function* () {
             const jj = yield* JjTag;
@@ -160,7 +160,7 @@ export const hostSuite = (bundle, profile) => {
             const first = yield* Clock.currentTimeMillis;
             const second = yield* Clock.currentTimeMillis;
             if (!Number.isInteger(first) || !Number.isInteger(second) || second < first) {
-                yield* failure("Clock", "currentTimeMillis");
+                return yield* failure("Clock", "currentTimeMillis");
             }
         }), bundle)
         : provideNoAmbient(assertCapabilityError(Clock.currentTimeMillis, "Clock", "currentTimeMillis", capabilityCode(clockExpectation)), bundle);
@@ -169,7 +169,7 @@ export const hostSuite = (bundle, profile) => {
         ? provideNoAmbient(Effect.gen(function* () {
             const value = yield* Random.next;
             if (!Number.isFinite(value) || value < 0 || value >= 1)
-                yield* failure("Random", "next");
+                return yield* failure("Random", "next");
         }), bundle)
         : provideNoAmbient(assertCapabilityError(Random.next, "Random", "next", capabilityCode(randomExpectation)), bundle);
     const cleanup = shellExpectation.supported

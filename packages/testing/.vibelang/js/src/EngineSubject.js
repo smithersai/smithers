@@ -48,11 +48,41 @@ const unavailable = (operation) => new EngineUnavailableError({ message: `no eng
  */
 export const makeNoop = (overrides = {}) => EngineSubject.of({
     name: "unavailable",
-    run: () => Effect_1.suspend({ run: () => { return (() => Effect_1.suspend(() => Effect_1.fail(unavailable("run"))))(); } }.run),
-    result: () => Effect_1.suspend({ result: () => { return (() => Effect_1.suspend(() => Effect_1.fail(unavailable("result"))))(); } }.result),
-    interrupt: () => Effect_1.suspend({ interrupt: () => { return (() => Effect_1.suspend(() => Effect_1.fail(unavailable("interrupt"))))(); } }.interrupt),
-    resume: () => Effect_1.suspend({ resume: () => { return (() => Effect_1.suspend(() => Effect_1.fail(unavailable("resume"))))(); } }.resume),
-    journal: () => Effect_1.suspend({ journal: () => { return (() => Effect_1.suspend(() => Effect_1.fail(unavailable("journal"))))(); } }.journal),
+    run: () => (_tail_1 => { return Effect_1.gen(function* run() {
+        const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+        return _completion_1[0] ? yield* _value_1 : _value_1;
+    }); })({ run: () => { return [true, (() => { return (_tail_2 => { return Effect_1.gen(function* () {
+                const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
+                return _completion_2[0] ? yield* _value_2 : _value_2;
+            }); })(() => { return [true, Effect_1.fail(unavailable("run"))]; }); })()]; } }.run),
+    result: () => (_tail_3 => { return Effect_1.gen(function* result() {
+        const _completion_3 = _tail_3(), _value_3 = _completion_3[1];
+        return _completion_3[0] ? yield* _value_3 : _value_3;
+    }); })({ result: () => { return [true, (() => { return (_tail_4 => { return Effect_1.gen(function* () {
+                const _completion_4 = _tail_4(), _value_4 = _completion_4[1];
+                return _completion_4[0] ? yield* _value_4 : _value_4;
+            }); })(() => { return [true, Effect_1.fail(unavailable("result"))]; }); })()]; } }.result),
+    interrupt: () => (_tail_5 => { return Effect_1.gen(function* interrupt() {
+        const _completion_5 = _tail_5(), _value_5 = _completion_5[1];
+        return _completion_5[0] ? yield* _value_5 : _value_5;
+    }); })({ interrupt: () => { return [true, (() => { return (_tail_6 => { return Effect_1.gen(function* () {
+                const _completion_6 = _tail_6(), _value_6 = _completion_6[1];
+                return _completion_6[0] ? yield* _value_6 : _value_6;
+            }); })(() => { return [true, Effect_1.fail(unavailable("interrupt"))]; }); })()]; } }.interrupt),
+    resume: () => (_tail_7 => { return Effect_1.gen(function* resume() {
+        const _completion_7 = _tail_7(), _value_7 = _completion_7[1];
+        return _completion_7[0] ? yield* _value_7 : _value_7;
+    }); })({ resume: () => { return [true, (() => { return (_tail_8 => { return Effect_1.gen(function* () {
+                const _completion_8 = _tail_8(), _value_8 = _completion_8[1];
+                return _completion_8[0] ? yield* _value_8 : _value_8;
+            }); })(() => { return [true, Effect_1.fail(unavailable("resume"))]; }); })()]; } }.resume),
+    journal: () => (_tail_9 => { return Effect_1.gen(function* journal() {
+        const _completion_9 = _tail_9(), _value_9 = _completion_9[1];
+        return _completion_9[0] ? yield* _value_9 : _value_9;
+    }); })({ journal: () => { return [true, (() => { return (_tail_10 => { return Effect_1.gen(function* () {
+                const _completion_10 = _tail_10(), _value_10 = _completion_10[1];
+                return _completion_10[0] ? yield* _value_10 : _value_10;
+            }); })(() => { return [true, Effect_1.fail(unavailable("journal"))]; }); })()]; } }.journal),
     ...overrides
 });
 /**

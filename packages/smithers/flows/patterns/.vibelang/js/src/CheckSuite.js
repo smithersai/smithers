@@ -125,17 +125,17 @@ export const make = (options) => {
     const concurrency = options.concurrency;
     const continueOnFail = options.continueOnFail;
     if (declared.length === 0) {
-        throw new PatternError({ code: "invalid_decorator", message: "CheckSuite requires at least one check" });
+        $raise(new PatternError({ code: "invalid_decorator", message: "CheckSuite requires at least one check" }));
     }
     if (!bound(concurrency)) {
-        throw new PatternError({
+        $raise(new PatternError({
             code: "invalid_decorator",
             message: "CheckSuite concurrency must be a positive safe integer"
-        });
+        }));
     }
     const ids = declared.map(([id]) => id);
     if (ids.some((id) => id === "")) {
-        throw new PatternError({ code: "invalid_decorator", message: "CheckSuite check ids must not be empty" });
+        $raise(new PatternError({ code: "invalid_decorator", message: "CheckSuite check ids must not be empty" }));
     }
     const captures = {
         checks: ids,
@@ -228,3 +228,4 @@ export const run = (input, options) => {
             : attempt;
     }, { concurrency }), (results) => verdict(results, strategy));
 };
+import { raise as $raise } from "./CheckSuite.vibe.-24-throw-24-ts.js";

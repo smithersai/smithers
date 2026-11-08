@@ -5,6 +5,8 @@ import { DocsClient } from "./api";
 import { recordLoad } from "./records";
 import { CURRENT, pageKeyOf, repoKeyOf, searchKeyOf } from "./rows";
 import { DocsStore } from "./store";
+import { repoId } from "../repo/contract";
+import { RepoStore } from "../repo/store";
 // What the Docs tab does (docs/features/docs.md#the-docs-tab). A route opens a repository's docs: its index, and the
 // page it names; the searchbox searches as the person types. Each is one read of ChatApi's docs routes, kept in this
 // tab's rows and read once: a refused one is read again on the next open. Loads run in the store's scope, so leaving
@@ -25,36 +27,47 @@ const load = (kind, rows, key, loading, read, done, refused) => Effect.gen(funct
     const kept = yield* collection.get(key);
     if (Option.isSome(kept) && kept.value.state !== "refused")
         return;
+    // Whose repository: every key starts `owner/name`. One that refused this person reads nothing more, and a read
+    // already on its way when it did writes nothing after.
+    const repos = Option.getOrUndefined(yield* Effect.serviceOption(RepoStore));
+    const id = `github/${key.split(/[:?]/, 1)[0]}`;
+    if (repos?.isRefused(id) === true)
+        return;
+    const fence = repos?.fenceOf(id) ?? 0;
+    const fenced = (write) => repos === undefined ? write : repos.fenced(id, fence, write);
     yield* put(collection, key, loading);
     const startedAt = yield* Clock.currentTimeMillis;
     const result = yield* Effect.result(read);
     const durationMs = (yield* Clock.currentTimeMillis) - startedAt;
     if (result._tag === "Failure") {
         const code = codeOf(result.failure);
-        yield* put(collection, key, refused(code));
+        yield* fenced(put(collection, key, refused(code)));
         return yield* recordLoad(kind, code, durationMs, { status: result.failure.status });
     }
     const answered = done(result.success);
-    yield* put(collection, key, answered.row);
+    yield* fenced(put(collection, key, answered.row));
     yield* recordLoad(kind, "ok", durationMs, { results: answered.results });
 }).pipe(Effect.onInterrupt(() => Effect.flatMap(DocsStore, (store) => Effect.ignore(rows(store).delete(key)))), Effect.withSpan("docs.tab"));
 /** `owner/name`'s docs index. */
 const loadIndex = (owner, name) => Effect.flatMap(DocsClient, (client) => {
+    const id = repoId(owner, name);
     const key = repoKeyOf(owner, name);
-    return load("index", (store) => store.indexes, key, { key, state: "loading", title: "", summary: null, pages: [], code: null }, client.search(owner, name, ""), (listing) => ({
-        row: { key, state: "ready", title: listing.title, summary: listing.summary ?? null, pages: listing.pages, code: null },
+    return load("index", (store) => store.indexes, key, { key, repoId: id, state: "loading", title: "", summary: null, pages: [], code: null }, client.search(owner, name, ""), (listing) => ({
+        row: { key, repoId: id, state: "ready", title: listing.title, summary: listing.summary ?? null, pages: listing.pages, code: null },
         results: listing.pages.length,
-    }), (code) => ({ key, state: "refused", title: "", summary: null, pages: [], code }));
+    }), (code) => ({ key, repoId: id, state: "refused", title: "", summary: null, pages: [], code }));
 });
 /** One page of `owner/name`'s docs. */
 const loadPage = (owner, name, path) => Effect.flatMap(DocsClient, (client) => {
+    const id = repoId(owner, name);
     const key = pageKeyOf(repoKeyOf(owner, name), path);
-    return load("page", (store) => store.pages, key, { key, state: "loading", title: "", url: "", text: "", code: null }, client.page(owner, name, path), (page) => ({ row: { key, state: "text", title: page.title, url: page.url, text: page.text, code: null } }), (code) => ({ key, state: "refused", title: "", url: "", text: "", code }));
+    return load("page", (store) => store.pages, key, { key, repoId: id, state: "loading", title: "", url: "", text: "", code: null }, client.page(owner, name, path), (page) => ({ row: { key, repoId: id, state: "text", title: page.title, url: page.url, text: page.text, code: null } }), (code) => ({ key, repoId: id, state: "refused", title: "", url: "", text: "", code }));
 });
 /** A search of `owner/name`'s docs for `query`'s words. */
 const loadSearch = (owner, name, query) => Effect.flatMap(DocsClient, (client) => {
+    const id = repoId(owner, name);
     const key = searchKeyOf(repoKeyOf(owner, name), query);
-    return load("search", (store) => store.searches, key, { key, state: "loading", pages: [], code: null }, client.search(owner, name, query.trim()), (listing) => ({ row: { key, state: "ready", pages: listing.pages, code: null }, results: listing.pages.length }), (code) => ({ key, state: "refused", pages: [], code }));
+    return load("search", (store) => store.searches, key, { key, repoId: id, state: "loading", pages: [], code: null }, client.search(owner, name, query.trim()), (listing) => ({ row: { key, repoId: id, state: "ready", pages: listing.pages, code: null }, results: listing.pages.length }), (code) => ({ key, repoId: id, state: "refused", pages: [], code }));
 });
 /** Starts the reads `owner/name`'s docs page needs in the store's scope: its index, and the page at `path`. */
 const start = (owner, name, path) => Effect.gen(function* () {

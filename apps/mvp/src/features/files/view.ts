@@ -43,7 +43,11 @@ export const stripOf = (rows: ReadonlyArray<FileTabRow>, here: Here | undefined)
     active: here.kind === "blob" && here.path === row.path,
   }))
 
-/** Lines as `?L=` writes them, from the repository view's anchor; `null` for none. */
+/**
+ * Lines as `?L=` writes them, from the repository view's anchor; `null` for none.
+ *
+ * @throws {never}
+ */
 export const linesOf = (line: number | null, lineEnd: number | null): string | null =>
   line === null ? null : lineEnd === null || lineEnd <= line ? `${line}` : `${line}-${lineEnd}`
 

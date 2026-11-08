@@ -114,6 +114,7 @@ export const receivedBy = (service) => `${INTEGRATION_SIGNAL_PREFIX}${requireSeg
  *
  * @category conversions
  * @since 1.0.0
+ * @throws {never}
  */
 export const toSignalPayload = (event) => ({
     name: event.eventName,

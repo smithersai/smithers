@@ -104,9 +104,11 @@ export const lost = (code) => Metric.withAttributes(lostEntries, { channel: "los
  * @category metrics
  * @since 1.0.0
  */
-export const tally = Effect_1.fnUntraced(function* tally(effect) {
-    const accumulator = { events: 0 };
-    const open = yield* EventTally.Current;
-    const result = yield* Effect.provideService(effect, EventTally.Current, [...open, accumulator]);
-    return [{ events: accumulator.events }, result];
-});
+export const tally = (effect) => {
+    return Effect_1.gen(function* tally() {
+        const accumulator = { events: 0 };
+        const open = yield* EventTally.Current;
+        const result = yield* Effect.provideService(effect, EventTally.Current, [...open, accumulator]);
+        return [{ events: accumulator.events }, result];
+    });
+};

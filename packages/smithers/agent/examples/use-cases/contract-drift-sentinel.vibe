@@ -65,13 +65,13 @@ export const Analysis = Schema.Struct({
 const Status = Schema.Literals(["approve", "block", "warn"])
 
 /** The PR status and comment the flow settles with. */
-export schema Output {
-  readonly status: Status
-  readonly prComment: string
-  readonly breakingCount: number
-  readonly riskScore: number
-  readonly summary: string
-}
+export const Output = Schema.Struct({
+  status: Status,
+  prComment: Schema.String,
+  breakingCount: Schema.Number,
+  riskScore: Schema.Number,
+  summary: Schema.String
+})
 
 /** Reads both revisions and detects the format. */
 export const Load = AgentAction.make("examples/ContractDriftSentinel/Load", {

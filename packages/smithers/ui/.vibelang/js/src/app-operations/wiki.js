@@ -5,7 +5,7 @@ import * as Schema from "effect/Schema";
  * World to Wiki (2026-09-07). Only what a person reads or types says Wiki;
  * the GUI keeps its `world` ids so persisted sessions load unchanged.
  */
-import { NoInput, operation } from "#vibelang/emitted/src/app-operations/index";
+import { NoInput, operation } from "./index.js";
 /** The product name of Smithers' understanding of a repository. */
 export const WIKI_DISPLAY_NAME = "Wiki";
 /** Why `wiki.heading` is the human's alone: it scrolls their editor, which is focus. */

@@ -105,6 +105,7 @@ export const admit = (input, limits = defaultLimits) => {
  *
  * @private
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const record = (input, limits = defaultLimits) => {
     const admitted = admit(input, limits);

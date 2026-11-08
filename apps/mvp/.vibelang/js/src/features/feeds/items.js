@@ -32,6 +32,7 @@ export const itemsOf = (repo, document, body) => Effect.gen(function* () {
         items.push({
             key: `${repo}:${document}:${item}`,
             repo,
+            repoId: `github/${repo}`,
             owner,
             name,
             document,

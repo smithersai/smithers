@@ -9,7 +9,7 @@ import { join } from "node:path"
 import { test } from "node:test"
 import * as MemoryStore from "../../../packages/smithers/agent/memory/src/MemoryStore.ts"
 import * as TestMemory from "../../../packages/smithers/agent/memory/src/test/TestMemory.ts"
-import * as NodeJj from "../../../packages/smithers/flows/jj/src/node/NodeJj.vibe"
+import * as NodeJj from "../../../packages/smithers/flows/jj/src/node/NodeJj.ts"
 import { correctionLayers, CorrectPlan } from "../coding/correction.ts"
 import {
   acceptedLearnings,

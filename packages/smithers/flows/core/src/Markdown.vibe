@@ -34,7 +34,7 @@ import * as Placement from "./Placement.ts"
  */
 export { split as splitFrontmatter } from "./internal/skillFrontmatter.vibe"
 
-schema input { args: string }
+const input = Schema.Struct({ args: Schema.String })
 const output = Schema.String
 
 /**

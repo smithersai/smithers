@@ -34,7 +34,7 @@ const previous = new Map();
  */
 export const line = (prepared, history = previous) => {
     // Every built-in protocol body is a JSON object; `bodyText` is its bytes.
-    const body = JSON.parse(prepared.bodyText);
+    const body = $invoke(JSON, () => (prepared.bodyText));
     const list = body.input ?? body.messages;
     const input = Array.isArray(list) ? list : [];
     const items = input.map((item) => CanonicalJson.shortHash(JSON.stringify(item)));
@@ -64,7 +64,9 @@ export const line = (prepared, history = previous) => {
 };
 const append = (sink, value) => {
     const budget = sink.writeTimeoutMs ?? 1_000;
-    return Effect.catchCause(Effect.timeout(Effect_1.suspend(() => sink.write(value)), Number.isFinite(budget) && budget > 0 ? budget : 1_000), (cause) => Cause.hasInterrupts(cause)
+    return Effect.catchCause(Effect.timeout(Effect_1.gen(function* () {
+        return yield* sink.write(value);
+    }), Number.isFinite(budget) && budget > 0 ? budget : 1_000), (cause) => Cause.hasInterrupts(cause)
         ? Effect.failCause(Cause.fromReasons(cause.reasons.filter(Cause.isInterruptReason)))
         : Effect.logDebug("Model wire trace write failed"));
 };
@@ -126,4 +128,7 @@ export const responseLine = (call, answered, at) => ({
  * @category tracing
  * @since 1.0.0
  */
-export const recordResponse = (call, answered, at) => Effect_1.suspend({ recordResponse: () => { return (call === undefined ? Effect.void : append(call.sink, responseLine(call.id, answered(), at))); } }.recordResponse);
+export const recordResponse = (call, answered, at) => {
+    return Effect_1.gen(function* recordResponse() { return yield* (call === undefined ? Effect.void : append(call.sink, responseLine(call.id, answered(), at))); });
+};
+import { invoke as $invoke } from "./WireTrace.vibe.-24-call-24-ts.js";

@@ -1,7 +1,7 @@
 import type { DiffRecord } from "../git/diffRecord.ts"
 import { diffStatus } from "../git/diffStatus.ts"
 import { effectivePath } from "../git/effectivePath.ts"
-import type { PreviewOutput } from "../workflow/previewOutputSchema.vibe"
+import type { PreviewOutput } from "../workflow/previewOutputSchema.ts"
 import type { Changes } from "./changesSchema.ts"
 
 /**

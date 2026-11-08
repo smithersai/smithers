@@ -8,6 +8,7 @@ const encoder = new TextEncoder()
 /** Measures retained JSON-shaped data without keeping another copy.
  * @category utilities
  * @since 1.0.0
+ * @throws {never}
  */
 export const encodedBytes = (value: unknown): number => encoder.encode(JSON.stringify(value)).byteLength
 
@@ -22,6 +23,7 @@ export const recordDigestBytes = (digest: object, bytes: number): void => {
 /** Includes private scalar contributions in the projection retention budget.
  * @category utilities
  * @since 1.0.0
+ * @throws {never}
  */
 export const retainedDigestBytes = (digest: object | undefined): number =>
   digest === undefined ? 0 : sizes.get(digest) ?? encodedBytes(digest)

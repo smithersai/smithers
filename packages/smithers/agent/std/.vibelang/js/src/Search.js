@@ -34,10 +34,16 @@ export const make = (service) => Search.of(service);
  * @since 1.0.0
  */
 export const makeNoop = () => {
-    const unavailable = () => Effect_1.suspend({ unavailable: () => { return (() => Effect_1.suspend(() => Effect_1.fail(new StdError.StdError({
-            code: "provider_unavailable",
-            message: "No search implementation is configured"
-        }))))(); } }.unavailable);
+    const unavailable = () => (_tail_1 => { return Effect_1.gen(function* unavailable() {
+        const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+        return _completion_1[0] ? yield* _value_1 : _value_1;
+    }); })({ unavailable: () => { return [true, (() => { return (_tail_2 => { return Effect_1.gen(function* () {
+                const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
+                return _completion_2[0] ? yield* _value_2 : _value_2;
+            }); })(() => { return [true, Effect_1.fail(new StdError.StdError({
+                    code: "provider_unavailable",
+                    message: "No search implementation is configured"
+                }))]; }); })()]; } }.unavailable);
     return make({ grep: unavailable, glob: unavailable });
 };
 /**

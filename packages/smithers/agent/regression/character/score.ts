@@ -25,7 +25,7 @@
 import * as Checks from "../../scorers/src/Checks.ts"
 import type * as Subject from "./subject.ts"
 import type * as Suite from "./suite.ts"
-import type * as World from "./world.vibe"
+import type * as World from "./world.ts"
 
 type Check = Checks.Check
 

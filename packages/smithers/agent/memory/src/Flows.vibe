@@ -124,7 +124,7 @@ export const RememberInput = Schema.Struct({
  * @category schemas
  * @since 0.1.0
  */
-export schema RememberOutput { readonly key: string }
+export const RememberOutput = Schema.Struct({ key: Schema.String })
 
 /**
  * Input schema for the `recall` flow: `Recall.Input`, re-exported beside

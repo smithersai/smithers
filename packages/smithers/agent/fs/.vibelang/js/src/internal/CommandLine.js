@@ -6,7 +6,6 @@
  * @since 0.1.0
  */
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import { FsError } from "../FsError.js";
 import * as Boundary from "./Boundary.js";
 /**
@@ -46,10 +45,10 @@ const resourceLimit = (description) => new FsError({ code: "resource_limit", met
  * @private
  * @since 0.1.0
  */
-export function lex(arg_1) {
-    return Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* lex(commandString) {
-        if (typeof commandString !== "string" || !Boundary.isWellFormedText(commandString)
-            || encoder.encode(commandString).byteLength > maximumCommandBytes) {
+export function lex(commandString) {
+    return Effect_1.gen(function* lex() {
+        if (typeof commandString !== "string" || !(yield* Effect_1.sync(() => Boundary.isWellFormedText(commandString))) ||
+            (yield* Effect_1.sync(() => encoder.encode(commandString))).byteLength > maximumCommandBytes) {
             return yield* Effect_1.fail(resourceLimit(`A command may contain at most ${maximumCommandBytes} UTF-8 bytes`));
         }
         const argv = [];
@@ -57,80 +56,64 @@ export function lex(arg_1) {
         let quote;
         let started = false;
         let escaping = false;
-        const push = Effect_1.fnUntraced(function* push() {
-            if (current.length > maximumTokenLength) {
-                return yield* Effect_1.fail(resourceLimit(`A command token may contain at most ${maximumTokenLength} characters`));
+        const push = () => {
+            return Effect_1.gen(function* push() {
+                if (current.length > maximumTokenLength) {
+                    return yield* Effect_1.fail(resourceLimit(`A command token may contain at most ${maximumTokenLength} characters`));
+                }
+                argv.push(current);
+                if (argv.length > maximumCommandTokens) {
+                    return yield* Effect_1.fail(resourceLimit(`A command may contain at most ${maximumCommandTokens} tokens`));
+                }
+            });
+        };
+        for (const character of commandString) {
+            // Single quotes suppress escaping, as in every POSIX shell, so a Windows
+            // path or a regular expression survives `'...'` unchanged.
+            if (quote === "single") {
+                if (character === "'")
+                    quote = undefined;
+                else
+                    current += character;
+                continue;
             }
-            argv.push(current);
-            if (argv.length > maximumCommandTokens) {
-                return yield* Effect_1.fail(resourceLimit(`A command may contain at most ${maximumCommandTokens} tokens`));
+            if (escaping) {
+                current += character;
+                started = true;
+                escaping = false;
+                continue;
             }
-        });
-        {
-            let pending_1 = runtime.$normal;
-            try {
-                for (const character of commandString) {
-                    try {
-                        {
-                            // Single quotes suppress escaping, as in every POSIX shell, so a Windows
-                            // path or a regular expression survives `'...'` unchanged.
-                            if (quote === "single") {
-                                if (character === "'")
-                                    quote = undefined;
-                                else
-                                    current += character;
-                                continue;
-                            }
-                            if (escaping) {
-                                current += character;
-                                started = true;
-                                escaping = false;
-                                continue;
-                            }
-                            if (character === "\\") {
-                                escaping = true;
-                                started = true;
-                                continue;
-                            }
-                            if (quote === "double") {
-                                if (character === "\"")
-                                    quote = undefined;
-                                else
-                                    current += character;
-                                continue;
-                            }
-                            if (character === "'") {
-                                quote = "single";
-                                started = true;
-                            }
-                            else if (character === "\"") {
-                                quote = "double";
-                                started = true;
-                            }
-                            else if (/\s/.test(character)) {
-                                if (started) {
-                                    yield* push();
-                                    current = "";
-                                    started = false;
-                                }
-                            }
-                            else {
-                                current += character;
-                                started = true;
-                            }
-                        }
-                    }
-                    catch (thrown_1) {
-                        pending_1 = thrown_1;
-                        break;
-                    }
+            if (character === "\\") {
+                escaping = true;
+                started = true;
+                continue;
+            }
+            if (quote === "double") {
+                if (character === "\"")
+                    quote = undefined;
+                else
+                    current += character;
+                continue;
+            }
+            if (character === "'") {
+                quote = "single";
+                started = true;
+            }
+            else if (character === "\"") {
+                quote = "double";
+                started = true;
+            }
+            else if (/\s/.test(character)) {
+                if (started) {
+                    yield* push();
+                    current = "";
+                    started = false;
                 }
             }
-            catch (thrown_2) {
-                throw runtime.$finallyFailure(pending_1, thrown_2);
+            else {
+                current += character;
+                started = true;
             }
-            if (pending_1 !== runtime.$normal)
-                throw pending_1;
         }
         if (escaping)
             current += "\\";
@@ -139,28 +122,30 @@ export function lex(arg_1) {
         if (started)
             yield* push();
         return Object.freeze(argv);
-    }))).apply(this, arguments);
+    });
 }
 const validFlagName = (name) => flagName.test(name) && !reservedNames.has(name);
-const append = Effect_1.fnUntraced(function* append(options, name, value) {
-    if (!validFlagName(name))
-        return yield* Effect_1.fail(parseError("The command contains an invalid option name", `$.options.${name}`));
-    const current = Object.hasOwn(options, name) ? options[name] : undefined;
-    options[name] = current === undefined ? value : Array.isArray(current) ? [...current, value] : [current, value];
-});
+const append = (options, name, value) => {
+    return Effect_1.gen(function* append() {
+        if (!validFlagName(name))
+            return yield* Effect_1.fail(parseError("The command contains an invalid option name", `$.options.${name}`));
+        const current = Object.hasOwn(options, name) ? options[name] : undefined;
+        options[name] = current === undefined ? value : Array.isArray(current) ? [...current, value] : [current, value];
+    });
+};
 /**
  * Parses long options from an argv tail using a small deterministic grammar.
  *
  * @private
  * @since 0.1.0
  */
-export function parseFlags(arg_2) {
-    return Effect_1.fnUntraced(runtime.$joinedFrame(function* parseFlags(input) {
-        const captured = Boundary.stringArray(input, {
+export function parseFlags(input) {
+    return Effect_1.gen(function* parseFlags() {
+        const captured = yield* Effect_1.sync(() => Boundary.stringArray(input, {
             maxItems: maximumCommandTokens,
             maxLength: maximumTokenLength,
             allowEmpty: true
-        });
+        }));
         if (!captured.ok) {
             if (captured.kind === "invalid_text") {
                 return yield* Effect_1.fail(parseError("The command arguments must be well-formed text without NUL", captured.path));
@@ -203,32 +188,13 @@ export function parseFlags(arg_2) {
                 yield* append(options, flag, true);
             }
         }
-        {
-            let pending_2 = runtime.$normal;
-            try {
-                for (const value_1 of Object.entries(options)) {
-                    try {
-                        const [name, value] = value_1;
-                        {
-                            if (Array.isArray(value))
-                                options[name] = Object.freeze(value);
-                        }
-                    }
-                    catch (thrown_3) {
-                        pending_2 = thrown_3;
-                        break;
-                    }
-                }
-            }
-            catch (thrown_4) {
-                throw runtime.$finallyFailure(pending_2, thrown_4);
-            }
-            if (pending_2 !== runtime.$normal)
-                throw pending_2;
+        for (const [name, value] of Object.entries(options)) {
+            if (Array.isArray(value))
+                options[name] = Object.freeze(value);
         }
         return Object.freeze({
             args: Object.freeze(args),
             options: Object.freeze(options)
         });
-    })).apply(this, arguments);
+    });
 }

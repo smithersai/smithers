@@ -15,7 +15,7 @@ import type { CredentialRef } from "@smthrs/control/Credential"
 import type * as Effect from "effect/Effect"
 import type * as Redacted from "effect/Redacted"
 import type * as Schema from "effect/Schema"
-import type { TriggerError } from "./TriggerError.vibe"
+import type { TriggerError } from "./TriggerError.ts"
 
 /**
  * Opaque inbound transport data. Verification must inspect this value before

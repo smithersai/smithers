@@ -32,27 +32,27 @@ export const Article = Schema.Struct({
 })
 
 /** What the ingester read. */
-export schema Ingest {
-  readonly articles: ReadonlyArray<Article>
-  readonly totalIngested: number
-  readonly errors: ReadonlyArray<string>
-}
+export const Ingest = Schema.Struct({
+  articles: Schema.Array(Article),
+  totalIngested: Schema.Number,
+  errors: Schema.Array(Schema.String)
+})
 
 /** One article's analysis. */
-export schema Insight {
-  readonly articleId: string
-  readonly categories: ReadonlyArray<string>
-  readonly sentiment: "positive" | "neutral" | "negative"
-  readonly keyTopics: ReadonlyArray<string>
-  readonly readabilityScore: number
-}
+export const Insight = Schema.Struct({
+  articleId: Schema.String,
+  categories: Schema.Array(Schema.String),
+  sentiment: Schema.Literals(["positive", "neutral", "negative"]),
+  keyTopics: Schema.Array(Schema.String),
+  readabilityScore: Schema.Number
+})
 
 /** What the analyst found. */
-export schema Analysis {
-  readonly insights: ReadonlyArray<Insight>
-  readonly totalAnalyzed: number
-  readonly topCategories: ReadonlyArray<{ readonly category: string; readonly count: number }>
-}
+export const Analysis = Schema.Struct({
+  insights: Schema.Array(Insight),
+  totalAnalyzed: Schema.Number,
+  topCategories: Schema.Array(Schema.Struct({ category: Schema.String, count: Schema.Number }))
+})
 
 /** The editorial report the flow settles with. */
 export const Report = Schema.Struct({

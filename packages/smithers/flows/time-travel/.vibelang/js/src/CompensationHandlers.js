@@ -35,6 +35,7 @@
  *
  * @since 0.1.0
  */
+import * as runtime from "vibelang-runtime/internal";
 import * as Context from "effect/Context";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -70,7 +71,7 @@ export const Assessment = Schema.Struct({
  * @since 0.1.0
  * @category services
  */
-export class CompensationHandlers extends Context.Service()("@smthrs/time-travel/CompensationHandlers") {
+export class CompensationHandlers extends runtime.$service("@smthrs/time-travel/CompensationHandlers") {
 }
 /**
  * Provides a set of handlers.

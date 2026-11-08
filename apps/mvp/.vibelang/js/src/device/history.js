@@ -51,6 +51,13 @@ export const IssueSendingV1 = Schema.Struct({
 export const ChatDraftV1 = Schema.Struct({ id: Schema.String, text: Schema.String });
 /** Last confirmed identity before stable person ownership (version 1). */
 export const AuthConfirmedV1 = Schema.Struct({ id: Schema.Literal("session"), login: Schema.String, role: Schema.NullOr(Schema.Literals(["admin", "maintainer", "member", "guest"])) });
+/** Last confirmed identity before it named the person's home conversation (version 2, decision 0110, the data gate). */
+export const AuthConfirmedV2 = Schema.Struct({
+    id: Schema.Literal("session"),
+    login: Schema.String,
+    personId: Schema.optional(Schema.String),
+    role: Schema.NullOr(Schema.Literals(["admin", "maintainer", "member", "guest"])),
+});
 /** Issue outbox authority before delivery-time renewal (version 2). */
 export const IssueSendingV2 = Schema.Struct({
     id: Schema.String, repo: Schema.String,
@@ -163,4 +170,14 @@ export const TodoRequestedV4 = Schema.Struct({
     reason: Schema.NullOr(Schema.Literals(TODO_NOT_SENT_6AF5494F)),
     taken: Schema.NullOr(Schema.Number),
     answeredAt: Schema.optional(Schema.Number),
+});
+/** An open file's tab before it named its repository (version 1; decision 0110, the data gate). */
+export const FileTabRowV1 = Schema.Struct({
+    key: Schema.String,
+    owner: Schema.String,
+    name: Schema.String,
+    revision: Schema.String,
+    path: Schema.String,
+    lines: Schema.NullOr(Schema.String),
+    position: Schema.Number,
 });

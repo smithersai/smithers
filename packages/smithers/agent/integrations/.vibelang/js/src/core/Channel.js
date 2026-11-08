@@ -22,6 +22,9 @@
  */
 import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
+import { $catchExpression } from "vibelang-runtime/internal";
+import * as Effect_1 from "effect/Effect";
+import * as runtime from "vibelang-runtime/internal";
 import { InvalidInput, Unauthorized } from "@smthrs/control/ControlError";
 import * as WebhookChannel from "@smthrs/control/WebhookChannel";
 import { Effect, Redacted } from "effect";
@@ -107,7 +110,20 @@ export const make = (config) => {
         // The decoder's own output is validated here, at the ingress
         // boundary, so a decoder bug fails loudly on the delivery that
         // triggered it rather than as a malformed signal three hops later.
-        , (event) => Effect.catch(decodeExternalEvent(event), () => Effect.andThen(Effect.logWarning(`${config.name} webhook decoder produced a malformed event`), Effect.fail(new InvalidInput({ issue: `${config.name} webhook decoder produced a malformed event.` })))))),
+        , (event) => {
+            let $do1;
+            {
+                const catchProgram = decodeExternalEvent(event);
+                $do1
+                    =
+                        Effect_1.gen(function* () {
+                            return yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return catchProgram; }); })(), () => {
+                                return Effect_1.gen(function* () { return yield* (Effect.andThen(Effect.logWarning(`${config.name} webhook decoder produced a malformed event`), Effect.fail(new InvalidInput({ issue: `${config.name} webhook decoder produced a malformed event.` })))); });
+                            });
+                        });
+            }
+            return $do1;
+        })),
         map,
         project: json.project
     };

@@ -16,7 +16,7 @@
 //      the repository reads with its token wherever the viewer stage refuses; stages 1 and 2 still apply to it.
 import { Effect, Fiber, Option } from "effect";
 import { HttpServerRequest } from "effect/http";
-import { Sessions } from "#vibelang/emitted/worker/Actor";
+import { Sessions } from "../Actor.js";
 import * as RepoRoles from "./RepoRoles.js";
 import * as Store from "./Store.js";
 import * as WorkLinks from "./WorkLinks.js";
@@ -56,9 +56,13 @@ export const make = (options) => {
         const actor = yield* actorOf(source).pipe(Effect.option);
         if (Option.isNone(actor))
             return refusedAt(target, "viewer", "unavailable", 503, { retryAfterSeconds: 5 });
-        const viewer = Option.isSome(actor.value) ? { kind: "person", actor: actor.value.value } : { kind: "anonymous" };
-        if (Option.isSome(actor.value)) {
-            const resolved = yield* roles.resolve(actor.value.value, target).pipe(Effect.result);
+        return yield* accessAs(target, actor.value);
+    });
+    /** Stage 3 for `actor`, whom the caller already resolved. */
+    const accessAs = (target, actor) => Effect.gen(function* () {
+        const viewer = Option.isSome(actor) ? { kind: "person", actor: actor.value } : { kind: "anonymous" };
+        if (Option.isSome(actor)) {
+            const resolved = yield* roles.resolve(actor.value, target).pipe(Effect.result);
             if (resolved._tag === "Failure") {
                 // Where the App can't act, nobody has a role there: the public check below decides, as for anyone. Every
                 // other refusal is GitHub or Postgres not answering now.
@@ -80,7 +84,7 @@ export const make = (options) => {
             if (current.value)
                 return { _tag: "Readable", target, viewer, role: null, via: "public" };
         }
-        return Option.isNone(actor.value)
+        return Option.isNone(actor)
             ? refusedAt(target, "viewer", "authentication", 401, { viewer })
             : refusedAt(target, "viewer", "forbidden", 403, { viewer });
     });
@@ -110,5 +114,19 @@ export const make = (options) => {
         const proof = yield* viewerAccess(target, source);
         return { proof, settled: beside === undefined ? Effect.void : Effect.asVoid(Fiber.join(beside)) };
     });
-    return { repositoryReadable, viewerAccess };
+    /**
+     * Each of `targets` as `repositoryReadable` answers it, one proof each in their order, for one reader: who asks is
+     * resolved once, so a read across repositories costs one session read and one role read per repository. Sessions not
+     * answering refuses every one.
+     */
+    const readableAmong = (targets) => Effect.gen(function* () {
+        const actor = yield* actorOf("session").pipe(Effect.option);
+        return yield* Effect.forEach(targets, (target) => Effect.gen(function* () {
+            const early = yield* deploymentAccess(target);
+            if (Option.isSome(early))
+                return early.value;
+            return Option.isNone(actor) ? refusedAt(target, "viewer", "unavailable", 503) : yield* accessAs(target, actor.value);
+        }), { concurrency: 8 });
+    });
+    return { repositoryReadable, readableAmong, viewerAccess };
 };

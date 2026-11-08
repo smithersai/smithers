@@ -81,19 +81,19 @@ export type Decided = typeof Decided.Type
  * @category schemas
  * @since 1.0.0
  */
-export schema Thresholds {
-  readonly version: Schema.Int
-  readonly model: string
-  readonly decisions: {
-    readonly page: Decided
-    readonly skill: Decided
-    readonly dep: Decided
-    readonly descend: Decided
-    readonly file: Decided
-    readonly commit: Decided
-    readonly fact: Decided
-  }
-}
+export const Thresholds = Schema.Struct({
+  version: Schema.Int,
+  model: Schema.String,
+  decisions: Schema.Struct({
+    page: Decided,
+    skill: Decided,
+    dep: Decided,
+    descend: Decided,
+    file: Decided,
+    commit: Decided,
+    fact: Decided
+  })
+})
 
 /**
  * The decoded form of {@link Thresholds}.

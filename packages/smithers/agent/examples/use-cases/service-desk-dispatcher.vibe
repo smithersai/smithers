@@ -23,18 +23,18 @@ import * as Schema from "effect/Schema"
 const seat = "anthropic:claude-sonnet-5-5"
 
 /** One normalized ticket. */
-export schema Ticket {
-  readonly id: string
-  readonly title: string
-  readonly description: string
-  readonly submitter: string
-}
+export const Ticket = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  description: Schema.String,
+  submitter: Schema.String
+})
 
 /** What intake gathered. */
-export schema IntakeResult {
-  readonly tickets: ReadonlyArray<Ticket>
-  readonly totalReceived: number
-}
+export const IntakeResult = Schema.Struct({
+  tickets: Schema.Array(Ticket),
+  totalReceived: Schema.Number
+})
 
 /** One ticket as the classifier labelled it. */
 export const Classified = Schema.Struct({
@@ -46,7 +46,7 @@ export const Classified = Schema.Struct({
 })
 
 /** The classifier's answer. */
-export schema Classification { readonly classified: ReadonlyArray<Classified> }
+export const Classification = Schema.Struct({ classified: Schema.Array(Classified) })
 
 /** What one handler did with its ticket. */
 export const HandlerResult = Schema.Struct({
@@ -57,16 +57,16 @@ export const HandlerResult = Schema.Struct({
 })
 
 /** The report the flow settles with. */
-export schema DispatchReport {
-  readonly totalTickets: number
-  readonly incidents: number
-  readonly requests: number
-  readonly policyQuestions: number
-  readonly resolved: number
-  readonly escalated: number
-  readonly pending: number
-  readonly summary: string
-}
+export const DispatchReport = Schema.Struct({
+  totalTickets: Schema.Number,
+  incidents: Schema.Number,
+  requests: Schema.Number,
+  policyQuestions: Schema.Number,
+  resolved: Schema.Number,
+  escalated: Schema.Number,
+  pending: Schema.Number,
+  summary: Schema.String
+})
 
 type Classified = typeof Classified.Type
 type HandlerResult = typeof HandlerResult.Type

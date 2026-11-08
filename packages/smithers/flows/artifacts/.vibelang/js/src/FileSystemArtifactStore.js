@@ -171,14 +171,14 @@ export const makeFileSystem = (fs, platformPath, options = {}) => {
         }
     });
     const put = Effect.fn("ArtifactStore.put")((bytes) => Effect.flatMap(snapshotBytes(bytes), (snapshot) => Effect.flatMap(measureBytes(snapshot), (digest) => Effect.gen(function* () {
-        yield* ArtifactPath.guard(fs, directory).pipe(Effect.mapError(hostFailure));
+        yield* Effect.asVoid(ArtifactPath.guard(fs, directory).pipe(Effect.mapError(hostFailure)));
         yield* fs.makeDirectory(directory, { recursive: true, mode: directoryMode }).pipe(Effect.mapError(hostFailure));
         const checkRoot = yield* ArtifactPath.guard(fs, directory).pipe(Effect.mapError(hostFailure));
         return yield* ArtifactLocks.withDigest(fs, directory, digest, Effect.gen(function* () {
             yield* Effect.annotateCurrentSpan({ digest });
             const blob = fanout(directory, digest);
             yield* checkRoot.pipe(Effect.mapError(hostFailure));
-            yield* ArtifactPath.guard(fs, blob.parent).pipe(Effect.mapError(hostFailure));
+            yield* Effect.asVoid(ArtifactPath.guard(fs, blob.parent).pipe(Effect.mapError(hostFailure)));
             yield* fs.makeDirectory(blob.parent, { mode: directoryMode, recursive: true }).pipe(Effect.mapError(hostFailure));
             const checkParent = yield* ArtifactPath.guard(fs, blob.parent).pipe(Effect.mapError(hostFailure));
             const checkBlob = yield* ArtifactPath.guard(fs, blob.path, "File", undefined, "allow").pipe(Effect.mapError(hostFailure));
@@ -318,7 +318,7 @@ export const makeFileSystem = (fs, platformPath, options = {}) => {
         const validated = yield* validateDigest(digest);
         yield* Effect.annotateCurrentSpan({ digest: validated });
         const blob = fanout(directory, validated);
-        yield* guardBlob(blob);
+        yield* Effect.asVoid(guardBlob(blob));
         return yield* fs.exists(blob.path).pipe(Effect.mapError(hostFailure));
     }));
     const findMissing = Effect.fn("ArtifactStore.findMissing")((digests) => Effect.gen(function* () {

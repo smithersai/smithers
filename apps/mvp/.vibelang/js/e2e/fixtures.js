@@ -18,7 +18,7 @@ export { COULDNT_ANSWER, NOT_SENT, OFFLINE, PAGE_SIZE, QUEUED, SYNC_FAILED } fro
 export const visibleText = (scope, text) => scope.getByText(text, { exact: false }).filter({ visible: true });
 /**
  * The no-spinner observer (0002 §7), an init script: it records every loading marker the page ever shows, `aria-busy`
- * true or a progress bar, on `window.__busy`. Shows means paints: @smthrs/ui's loading pattern stays invisible for its
+ * true, a progress bar or a skeleton, on `window.__busy`. Shows means paints: @smthrs/ui's loading pattern stays invisible for its
  * first LOADING_DELAY_MS, so a marker counts only once a frame draws it with every ancestor's opacity above 0. A
  * streaming answer's pending line, inside `[data-answer=streaming]`, is exempt, and so is the router's own bar
  * (`[data-placement=page]`), which shows only while a navigation waits on the network past that delay. The app has no
@@ -27,10 +27,13 @@ export const visibleText = (scope, text) => scope.getByText(text, { exact: false
 export const watchForSpinners = () => {
     const seen = [];
     Object.assign(window, { __busy: seen });
-    const busy = '[aria-busy="true"], [role="progressbar"]:not([data-placement="page"])';
+    const busy = '[aria-busy="true"], [role="progressbar"]:not([data-placement="page"]), [data-slot="skeleton"]';
     const watched = new WeakSet();
     const painted = (element) => {
         if (element.getClientRects().length === 0)
+            return false;
+        const { width, height } = element.getBoundingClientRect();
+        if (width === 0 || height === 0 || getComputedStyle(element).visibility !== "visible")
             return false;
         for (let node = element; node !== null; node = node.parentElement) {
             if (Number(getComputedStyle(node).opacity) === 0)

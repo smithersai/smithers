@@ -9,12 +9,12 @@
  *
  * @since 0.1.0
  */
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Effect_1 from "effect/Effect";
+import * as runtime from "vibelang-runtime/internal";
 /**
  * A failure of the author seat: the seat is unreachable, or a scripted mock
  * ran out of outputs.
@@ -75,7 +75,7 @@ export const contextOf = (payload) => {
  * @since 0.1.0
  * @slop
  */
-export class Author extends Context.Service()("/chain/Author") {
+export class Author extends runtime.$service("/chain/Author") {
 }
 /**
  * Builds a seat from an implementation.
@@ -133,16 +133,18 @@ export const layerMock = (outputs) => {
     return Layer.effect(Author)(Effect_1.gen(function* () {
         const remaining = yield* Ref.make(snapshot);
         return make({
-            author: Effect.fn("Author.author")(Effect_1.fnUntraced(function* () {
-                const next = yield* Ref.modify(remaining, (queue) => [queue[0], queue.slice(1)]);
-                if (next === undefined) {
-                    return yield* Effect_1.fail(new AuthorError({
-                        code: "exhausted",
-                        message: `the mock author ran out of outputs after ${snapshot.length}`
-                    }));
-                }
-                return next;
-            }))
+            author: Effect.fn("Author.author")(() => {
+                return Effect_1.gen(function* () {
+                    const next = yield* Ref.modify(remaining, (queue) => [queue[0], queue.slice(1)]);
+                    if (next === undefined) {
+                        return yield* Effect_1.fail(new AuthorError({
+                            code: "exhausted",
+                            message: `the mock author ran out of outputs after ${snapshot.length}`
+                        }));
+                    }
+                    return next;
+                });
+            })
         });
     }));
 };

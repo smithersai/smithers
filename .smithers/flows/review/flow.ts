@@ -2,7 +2,7 @@
 import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { PrepareReview } from "./src/workflow/reviewActions.ts"
-import { ReviewFailure } from "./src/workflow/reviewFailureSchema.vibe"
+import { ReviewFailure } from "./src/workflow/reviewFailureSchema.ts"
 import { ReviewFiles } from "./src/workflow/reviewFlow.ts"
 import { ReviewInput } from "./src/workflow/reviewInputSchema.ts"
 import { ReviewResult } from "./src/workflow/reviewSchemas.ts"

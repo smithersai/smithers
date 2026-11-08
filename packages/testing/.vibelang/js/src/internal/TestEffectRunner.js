@@ -12,7 +12,9 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Effect_1 from "effect/Effect";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-const evaluate = (body) => Effect_1.suspend({ evaluate: () => { return (typeof body === "function" ? body() : body); } }.evaluate);
+const evaluate = (body) => {
+    return Effect_1.gen(function* evaluate() { return yield* (typeof body === "function" ? body() : body); });
+};
 /**
  * Runs one layered body and converts signal abortion to fiber interruption.
  *

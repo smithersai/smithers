@@ -5,7 +5,6 @@
  * @since 1.0.0
  */
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as Dialect from "@smthrs/database/Dialect";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -19,34 +18,15 @@ import { postgresSearchColumn, postgresSearchIndex } from "./Fts.js";
  * @category migrations
  * @since 1.0.0
  */
-export const ftsFold = Effect_1.gen(runtime.$iteratorFrame(runtime.$joinedFrame(function* ftsFold() {
+export const ftsFold = Effect_1.gen(function* ftsFold() {
     const sql = yield* SqlClient.SqlClient;
     if (!Dialect.isPostgres(sql))
         return;
     const kinds = yield* sql `SELECT namespace_kind FROM memory_fts_kinds`;
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const value_1 of kinds) {
-                try {
-                    const { namespace_kind: kind } = value_1;
-                    {
-                        const table = sql.literal(`memory_fts_${kind}`);
-                        yield* sql `ALTER TABLE ${table} DROP COLUMN search`;
-                        yield* sql `ALTER TABLE ${table} ADD COLUMN ${postgresSearchColumn(sql)}`;
-                        yield* postgresSearchIndex(sql, kind);
-                    }
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
-            }
-        }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
-        }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
+    for (const { namespace_kind: kind } of kinds) {
+        const table = sql.literal(`memory_fts_${kind}`);
+        yield* sql `ALTER TABLE ${table} DROP COLUMN search`;
+        yield* sql `ALTER TABLE ${table} ADD COLUMN ${postgresSearchColumn(sql)}`;
+        yield* postgresSearchIndex(sql, kind);
     }
-})));
+});

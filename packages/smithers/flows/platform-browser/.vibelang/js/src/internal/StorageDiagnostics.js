@@ -37,21 +37,23 @@ export const openings = Metric.counter("smithers_browser_sqlite_openings", { inc
  * @since 1.0.0
  */
 export const observe = (stage, effect) => {
-    const record = Effect_1.fnUntraced(function* record(outcome, error) {
-        var topic_1;
-        const native = error?.reason?.cause ?? error;
-        const name = native?.name;
-        const fields = {
-            stage,
-            outcome,
-            ...(outcome === "failed"
-                ? { "error.type": typeof name === "string" && names.has(name) ? name : "unknown" }
-                : {})
-        };
-        yield* Metric.update(Metric.withAttributes(openings, { stage, outcome }), 1);
-        yield* ((topic_1 = Effect.logInfo("browser.sqlite.open"), Effect.annotateLogs(fields)(topic_1)));
-        yield* Effect.annotateCurrentSpan(fields);
-    });
+    const record = (outcome, error) => {
+        return Effect_1.gen(function* record() {
+            var topic_1;
+            const native = error?.reason?.cause ?? error;
+            const name = native?.name;
+            const fields = {
+                stage,
+                outcome,
+                ...(outcome === "failed"
+                    ? { "error.type": typeof name === "string" && names.has(name) ? name : "unknown" }
+                    : {})
+            };
+            yield* Metric.update(Metric.withAttributes(openings, { stage, outcome }), 1);
+            yield* ((topic_1 = Effect.logInfo("browser.sqlite.open"), Effect.annotateLogs(fields)(topic_1)));
+            yield* Effect.annotateCurrentSpan(fields);
+        });
+    };
     return Effect.uninterruptibleMask((restore) => Effect.flatMap(withSpan(Effect.tap(Effect.andThen(record("opening")
     // The diagnostic span receives only a value, never the caller's original
     // failure. Exporters otherwise serialize its message, name and stack.

@@ -2,8 +2,8 @@
 import { Action, Flow, Interpreter, Poll, RetryPolicy } from "@smthrs/flow";
 import { Node } from "@smthrs/plan";
 import { Effect, Layer, Metric, Option, Schema } from "effect";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
-import { DomainProvider } from "#vibelang/emitted/worker/domains/Provider";
+import { codeOf } from "../ErrorCode.js";
+import { DomainProvider } from "./Provider.js";
 import * as Store from "./Store.js";
 // The custom-domain flows (decision 0039 §4, docs/features/domains.md#flows). The route admits the write (signed in;
 // a Maintainer or Admin acting in person) and starts one of them:

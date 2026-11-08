@@ -130,7 +130,7 @@ export * as Optimizer from "./Optimizer.ts"
  * @category patterns
  * @since 0.1.0
  */
-export * as Runbook from "./Runbook.vibe"
+export * as Runbook from "./Runbook.ts"
 
 /**
  * @category patterns

@@ -60,9 +60,9 @@
  *
  * @since 0.1.0
  */
-import { $catchExpression } from "vibelang-runtime";
+import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime_1 from "vibelang-runtime";
+import * as runtime_1 from "vibelang-runtime/internal";
 import { Action, Flow } from "@smthrs/flow";
 import { FileInput } from "@smthrs/flow/FileInput";
 import * as Node from "@smthrs/plan/Node";
@@ -343,11 +343,16 @@ const verifyManagerContract = (manager) => {
  *
  * @private
  */
-const verifyEnvironment = Effect_1.fnUntraced(function* verifyEnvironment(manager, runtime) {
-    yield* verifyManagerContract(manager);
-    yield* $catchExpression(() => runtime.verify, (cause) => Effect_1.suspend(() => { return Effect_1.fail(environmentMismatch(cause.message)); }));
-    return yield* manager.verify;
-});
+const verifyEnvironment = (manager, runtime) => {
+    return Effect_1.gen(function* verifyEnvironment() {
+        yield* verifyManagerContract(manager);
+        yield* runtime_1.$catch(yield* (() => { return Effect_1.sync(() => { return runtime.verify; }); })(), (cause) => (_tail_1 => { return Effect_1.gen(function* () {
+            const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+            return _completion_1[0] ? yield* _value_1 : _value_1;
+        }); })(() => { return [true, Effect_1.fail(environmentMismatch(cause.message))]; }));
+        return yield* manager.verify;
+    });
+};
 /**
  * Refuses to link a store with a different manager implementation.
  *
@@ -370,51 +375,43 @@ const inputDrift = (path) => new PackageManager.PackageManagerError({
     code: "input_drift",
     message: `install input ${path} changed since measurement or could not be reverified`
 });
-const optionalInput = Effect_1.fnUntraced(function* optionalInput(root, path) {
-    const fs = yield* FileSystem.FileSystem;
-    const present = yield* $catchExpression(() => fs.exists(`${root}/${path}`), () => Effect_1.suspend(() => { return Effect_1.fail(new PackageManager.PackageManagerError({
-        code: "manifest_unreadable",
-        message: `cannot inspect ${path}`
-    })); }));
-    return present ? { path, digest: yield* PackageManager.lockfileDigest(root, path) } : null;
-});
+const optionalInput = (root, path) => {
+    return Effect_1.gen(function* optionalInput() {
+        const fs = yield* FileSystem.FileSystem;
+        const present = yield* runtime_1.$catch(yield* (() => { return Effect_1.sync(() => { return fs.exists(`${root}/${path}`); }); })(), () => (_tail_2 => { return Effect_1.gen(function* () {
+            const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
+            return _completion_2[0] ? yield* _value_2 : _value_2;
+        }); })(() => { return [true, Effect_1.fail(new PackageManager.PackageManagerError({
+                code: "manifest_unreadable",
+                message: `cannot inspect ${path}`
+            }))]; }));
+        return present ? { path, digest: yield* PackageManager.lockfileDigest(root, path) } : null;
+    });
+};
 /** Digests the one default hook file pnpm will load, which every pnpm command names. */
 const pnpmfileInput = (root) => Effect.flatMap(PackageManager.pnpmfileOf(root), (name) => name === null
     ? Effect.succeed(null)
     : Effect.map(PackageManager.lockfileDigest(root, name), (digest) => ({ path: name, digest })));
 /** Re-read fixed manager paths, never paths supplied by a recorded payload. */
-const verifyContent = Effect_1.fnUntraced(runtime_1.$iteratorFrame(runtime_1.$joinedFrame(function* verifyContent(manager, content) {
-    const current = yield* $catchExpression(() => (Effect.provideService(executeMeasure(), PackageManager.PackageManager, manager)), (error) => Effect_1.suspend(() => { return Effect_1.fail(inputDrift(error.message)); }));
-    {
-        let pending_1 = runtime_1.$normal;
-        try {
-            for (const field of ["lockfile", "npmrc", "pnpmfile", "workspace"]) {
-                try {
-                    {
-                        const expected = content[field];
-                        const actual = current[field];
-                        if (expected === null && actual === null)
-                            continue;
-                        if (expected?.path !== actual?.path || expected?.digest !== actual?.digest || expected === undefined) {
-                            const path = actual?.path ?? expected?.path ?? field;
-                            return yield* Effect_1.fail(inputDrift(path));
-                        }
-                    }
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
+const verifyContent = (manager, content) => {
+    return Effect_1.gen(function* verifyContent() {
+        const current = yield* runtime_1.$catch(yield* (() => { return Effect_1.sync(() => { return (Effect.provideService(executeMeasure(), PackageManager.PackageManager, manager)); }); })(), (error) => (_tail_3 => { return Effect_1.gen(function* () {
+            const _completion_3 = _tail_3(), _value_3 = _completion_3[1];
+            return _completion_3[0] ? yield* _value_3 : _value_3;
+        }); })(() => { return [true, Effect_1.fail(inputDrift(error.message))]; }));
+        for (const field of ["lockfile", "npmrc", "pnpmfile", "workspace"]) {
+            const expected = content[field];
+            const actual = current[field];
+            if (expected === null && actual === null)
+                continue;
+            if (expected?.path !== actual?.path || expected?.digest !== actual?.digest || expected === undefined) {
+                const path = actual?.path ?? expected?.path ?? field;
+                return yield* Effect_1.fail(inputDrift(path));
             }
         }
-        catch (thrown_2) {
-            throw runtime_1.$finallyFailure(pending_1, thrown_2);
-        }
-        if (pending_1 !== runtime_1.$normal)
-            throw pending_1;
-    }
-    return current;
-})));
+        return current;
+    });
+};
 /**
  * The implementation of {@link Measure}.
  *
@@ -436,18 +433,20 @@ const verifyContent = Effect_1.fnUntraced(runtime_1.$iteratorFrame(runtime_1.$jo
  * @category layers
  * @since 0.1.0
  */
-export const executeMeasure = Effect_1.fnUntraced(function* executeMeasure() {
-    const manager = yield* PackageManager.PackageManager;
-    yield* verifyManagerContract(manager);
-    const lockfile = yield* PackageManager.lockfileDigest(manager.projectRoot, manager.lockfileName);
-    const npmrc = yield* PackageManager.npmrcDigest(manager.projectRoot);
-    return {
-        lockfile: { path: manager.lockfileName, digest: lockfile },
-        npmrc: npmrc === null ? null : { path: ".npmrc", digest: npmrc },
-        pnpmfile: manager.name === "pnpm" ? yield* pnpmfileInput(manager.projectRoot) : null,
-        workspace: manager.name === "pnpm" ? yield* optionalInput(manager.projectRoot, "pnpm-workspace.yaml") : null
-    };
-});
+export const executeMeasure = () => {
+    return Effect_1.gen(function* executeMeasure() {
+        const manager = yield* PackageManager.PackageManager;
+        yield* verifyManagerContract(manager);
+        const lockfile = yield* PackageManager.lockfileDigest(manager.projectRoot, manager.lockfileName);
+        const npmrc = yield* PackageManager.npmrcDigest(manager.projectRoot);
+        return {
+            lockfile: { path: manager.lockfileName, digest: lockfile },
+            npmrc: npmrc === null ? null : { path: ".npmrc", digest: npmrc },
+            pnpmfile: manager.name === "pnpm" ? yield* pnpmfileInput(manager.projectRoot) : null,
+            workspace: manager.name === "pnpm" ? yield* optionalInput(manager.projectRoot, "pnpm-workspace.yaml") : null
+        };
+    });
+};
 /**
  * Implements {@link Measure}.
  *
@@ -548,7 +547,10 @@ export const executeLink = ({ content, store }) => Effect_1.gen(function* () {
     yield* manager.link;
     const managerEvidence = yield* manager.linkManifest;
     yield* verifyContent(manager, content);
-    const currentPackageJsonDigest = yield* $catchExpression(() => PackageManager.packageJsonDigest(manager.projectRoot), () => Effect_1.suspend(() => { return Effect_1.fail(inputDrift("package.json")); }));
+    const currentPackageJsonDigest = yield* runtime_1.$catch(yield* (() => { return Effect_1.sync(() => { return PackageManager.packageJsonDigest(manager.projectRoot); }); })(), () => (_tail_4 => { return Effect_1.gen(function* () {
+        const _completion_4 = _tail_4(), _value_4 = _completion_4[1];
+        return _completion_4[0] ? yield* _value_4 : _value_4;
+    }); })(() => { return [true, Effect_1.fail(inputDrift("package.json"))]; }));
     if (currentPackageJsonDigest !== packageJsonDigest)
         return yield* Effect_1.fail(inputDrift("package.json"));
     const manifest = yield* PackageManager.linkedTreeManifest({

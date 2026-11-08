@@ -11,12 +11,14 @@ import { TodosStore } from "../todos/store";
 import { signedInShapeSource } from "../auth/source";
 import { AuthStore, SESSION } from "../auth/store";
 import { ChatStore } from "../chat/store";
+import { ConversationOwners } from "../conversations/owners";
+import { RepoStore } from "../repo/store";
 import { StatusStore } from "../status/store";
 import { LISTED_FOR_MS, NOTIFICATIONS_SHAPE_ROUTE } from "./contract";
 import { detailOf } from "./detail";
 import { feedOf, follows, landed } from "./entries";
 import { shown } from "./metrics";
-import { detailQuery, feedQuery, listQuery, needsQuery, panelQuery, stackQuery, unreadQuery } from "./queries";
+import { detailQuery, feedQuery, listQuery, needsQuery, ofConversationQuery, panelQuery, shownQuery, stackQuery, unreadQuery } from "./queries";
 import { merged, OPERATION_RUNS, OPERATION_WRITES, progressOf, repoOf } from "./progress";
 import { Detail, Dismissed, Entry, Notice, PANEL, Panel, Pending } from "./schema";
 // The personal feed on this tab (decision 0009, docs/features/notifications.md#the-browser): the person's
@@ -140,7 +142,7 @@ export class AttentionStore extends Context.Service()("@smthrs/mvp/attention/Att
             // A synced TODO is the commit's own durable result, even after the outbox and recovery rows leave.
             // Read only this person's commits from stacks already opened; this opens no new shapes.
             const session = Option.getOrThrow(yield* auth.session.get(SESSION));
-            const committed = yield* Effect.forEach(todos.openedStacks(), (stack) => stack.todos.toArray);
+            const committed = yield* Effect.forEach(todos.openedStacks(), (stack) => stack.stored);
             const mine = committed.flat().filter((todo) => session.status === "signed_in" && todo.createdLogin === session.login);
             const progress = progressOf({
                 inputs: stagedInputs,
@@ -301,23 +303,27 @@ export class AttentionStore extends Context.Service()("@smthrs/mvp/attention/Att
             Stream.map(status.runs.changes(), () => undefined),
             Stream.map(status.local.changes(), () => undefined),
         ], { concurrency: "unbounded" }).pipe(Stream.runForEach(() => explain), Effect.forkIn(scope, { startImmediately: true }));
+        // The data gate (decision 0110, 2026-11-03): an entry shows only while its repository, or its conversation's
+        // repository, may show, from the change that hides it; one naming neither is the person's own.
+        const shownEntries = yield* shownQuery(entries, (yield* (yield* RepoStore).gate(entries)), (yield* (yield* ConversationOwners).ofShown((yield* ofConversationQuery(entries)), "conversationId")));
         return AttentionStore.of({
             notices,
             launches,
             pending,
             dismissed,
             entries,
-            stack: yield* stackQuery(entries, "stack"),
-            stackHere: yield* stackQuery(entries, "stackHere"),
-            list: yield* listQuery(entries, "stack"),
-            listHere: yield* listQuery(entries, "stackHere"),
+            shown: shownEntries,
+            stack: yield* stackQuery(shownEntries, "stack"),
+            stackHere: yield* stackQuery(shownEntries, "stackHere"),
+            list: yield* listQuery(shownEntries, "stack"),
+            listHere: yield* listQuery(shownEntries, "stackHere"),
             panel,
             details,
-            feed: yield* feedQuery(entries),
-            unread: yield* unreadQuery(entries),
-            needs: yield* needsQuery(entries),
+            feed: yield* feedQuery(shownEntries),
+            unread: yield* unreadQuery(shownEntries),
+            needs: yield* needsQuery(shownEntries),
             panelState: yield* panelQuery(panel),
-            detail: yield* detailQuery(details),
+            detail: yield* detailQuery(details, shownEntries),
             scope,
             retryInput: (subject) => retryInput(subject).pipe(Effect.provideContext(admitting)),
         });

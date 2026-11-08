@@ -32,7 +32,6 @@
  */
 import * as Option from "effect/Option";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import { Action } from "@smthrs/flow";
 import { Effect } from "effect";
 import { IntegrationError } from "../core/IntegrationError.js";
@@ -101,19 +100,23 @@ const incomplete = (operation) => new IntegrationError("poll-failed", `${operati
  * @since 1.0.0
  */
 export const branch = (owner, repo, input) => Action.keyed({
-    find: Effect_1.fnUntraced(function* find(key) {
-        const suffix = key.slice(0, BRANCH_KEY_LENGTH);
-        const listed = yield* Refs.listBranches(owner, repo, input.prefix);
-        // GitHub lists refs by name, so the first match is the same on every run.
-        const found = listed.items.find((candidate) => candidate.name === `${input.prefix}${suffix}` || candidate.name.endsWith(`-${suffix}`));
-        if (found === undefined && listed.truncated)
-            return yield* Effect_1.fail(incomplete("GitHub.Once.branch"));
-        return Option.fromUndefinedOr(found);
-    }),
-    perform: Effect_1.fnUntraced(function* perform(key) {
-        const sha = yield* input.at;
-        return yield* Refs.createBranch(owner, repo, { name: branchName(input.prefix, input.label, key), sha });
-    })
+    find: (key) => {
+        return Effect_1.gen(function* find() {
+            const suffix = key.slice(0, BRANCH_KEY_LENGTH);
+            const listed = yield* Refs.listBranches(owner, repo, input.prefix);
+            // GitHub lists refs by name, so the first match is the same on every run.
+            const found = listed.items.find((candidate) => candidate.name === `${input.prefix}${suffix}` || candidate.name.endsWith(`-${suffix}`));
+            if (found === undefined && listed.truncated)
+                return yield* Effect_1.fail(incomplete("GitHub.Once.branch"));
+            return Option.fromUndefinedOr(found);
+        });
+    },
+    perform: (key) => {
+        return Effect_1.gen(function* perform() {
+            const sha = yield* input.at;
+            return yield* Refs.createBranch(owner, repo, { name: branchName(input.prefix, input.label, key), sha });
+        });
+    }
 });
 /**
  * One commit appended to `branch`, fenced by `expectedHeadOid`, whose message
@@ -128,15 +131,17 @@ export const branch = (owner, repo, input) => Action.keyed({
  * @since 1.0.0
  */
 export const commitOnBranch = (owner, repo, input) => Action.keyed({
-    find: Effect_1.fnUntraced(runtime.$joinedFrame(function* find(key) {
-        const head = yield* Refs.getBranch(owner, repo, input.branch);
-        if (Option.isNone(head) || head.value.sha === input.expectedHeadOid)
-            return Option.none();
-        const commit = yield* Commits.getCommit(owner, repo, head.value.sha);
-        if (trailerKeyOf(commit.message) === key)
-            return Option.some(head.value.sha);
-        return yield* Effect_1.fail(new IntegrationError("delivery-failed", "The branch moved past the expected head, and its head is not this write's commit.", { status: 409, stale: true, retryable: false, outcomeUnknown: false }));
-    })),
+    find: (key) => {
+        return Effect_1.gen(function* find() {
+            const head = yield* Refs.getBranch(owner, repo, input.branch);
+            if (Option.isNone(head) || head.value.sha === input.expectedHeadOid)
+                return Option.none();
+            const commit = yield* Commits.getCommit(owner, repo, head.value.sha);
+            if (trailerKeyOf(commit.message) === key)
+                return Option.some(head.value.sha);
+            return yield* Effect_1.fail(new IntegrationError("delivery-failed", "The branch moved past the expected head, and its head is not this write's commit.", { status: 409, stale: true, retryable: false, outcomeUnknown: false }));
+        });
+    },
     perform: (key) => Commits.createOnBranch(owner, repo, { ...input, body: withTrailer(input.body ?? "", key) })
 });
 /**
@@ -204,15 +209,17 @@ export const review = (owner, repo, number, input) => Action.keyed({
  * @since 1.0.0
  */
 export const merge = (owner, repo, number, input) => Action.keyed({
-    find: Effect_1.fnUntraced(runtime.$joinedFrame(function* find(key) {
-        const pull = yield* Pulls.getPull(owner, repo, number);
-        if (input.method === "rebase" || !pull.merged || pull.merge_commit_sha === null)
-            return Option.none();
-        const commit = yield* Commits.getCommit(owner, repo, pull.merge_commit_sha);
-        return trailerKeyOf(commit.message) === key
-            ? Option.some({ sha: pull.merge_commit_sha, merged: true })
-            : Option.none();
-    })),
+    find: (key) => {
+        return Effect_1.gen(function* find() {
+            const pull = yield* Pulls.getPull(owner, repo, number);
+            if (input.method === "rebase" || !pull.merged || pull.merge_commit_sha === null)
+                return Option.none();
+            const commit = yield* Commits.getCommit(owner, repo, pull.merge_commit_sha);
+            return trailerKeyOf(commit.message) === key
+                ? Option.some({ sha: pull.merge_commit_sha, merged: true })
+                : Option.none();
+        });
+    },
     perform: (key) => Pulls.mergePull(owner, repo, number, {
         sha: input.sha,
         method: input.method,
@@ -237,15 +244,17 @@ export const merge = (owner, repo, number, input) => Action.keyed({
  * @since 1.0.0
  */
 export const mergeInto = (owner, repo, input) => Action.keyed({
-    find: Effect_1.fnUntraced(runtime.$joinedFrame(function* find(key) {
-        const branch = yield* Refs.getBranch(owner, repo, input.base);
-        if (Option.isNone(branch))
-            return Option.none();
-        const commit = yield* Commits.getCommit(owner, repo, branch.value.sha);
-        return trailerKeyOf(commit.message) === key
-            ? Option.some({ kind: "merged", sha: branch.value.sha })
-            : Option.none();
-    })),
+    find: (key) => {
+        return Effect_1.gen(function* find() {
+            const branch = yield* Refs.getBranch(owner, repo, input.base);
+            if (Option.isNone(branch))
+                return Option.none();
+            const commit = yield* Commits.getCommit(owner, repo, branch.value.sha);
+            return trailerKeyOf(commit.message) === key
+                ? Option.some({ kind: "merged", sha: branch.value.sha })
+                : Option.none();
+        });
+    },
     perform: (key) => Commits.mergeInto(owner, repo, {
         base: input.base,
         head: input.head,

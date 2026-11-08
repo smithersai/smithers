@@ -69,11 +69,7 @@
       "vibelang-source": "./src/EngineSubject.vibe",
       "default": "./.vibelang/js/src/EngineSubject.js"
     },
-    "./Faults": {
-      "types": "./src/Faults.ts",
-      "vibelang-source": "./src/Faults.ts",
-      "default": "./.vibelang/js/src/Faults.js"
-    },
+    "./Faults": "./src/Faults.ts",
     "./Fixture": {
       "types": "./.vibe/declarations/src/Fixture.d.vibe.ts",
       "vibelang-source": "./src/Fixture.vibe",
@@ -109,11 +105,7 @@
       "vibelang-source": "./src/ModelLike.vibe",
       "default": "./.vibelang/js/src/ModelLike.js"
     },
-    "./ModelServer": {
-      "types": "./src/ModelServer.ts",
-      "vibelang-source": "./src/ModelServer.ts",
-      "default": "./.vibelang/js/src/ModelServer.js"
-    },
+    "./ModelServer": "./src/ModelServer.ts",
     "./ModelServerCli": {
       "types": "./src/ModelServerCli.ts",
       "vibelang-source": "./src/ModelServerCli.ts",
@@ -129,11 +121,7 @@
       "vibelang-source": "./src/PlanAssertions.vibe",
       "default": "./.vibelang/js/src/PlanAssertions.js"
     },
-    "./PlanLike": {
-      "types": "./src/PlanLike.ts",
-      "vibelang-source": "./src/PlanLike.ts",
-      "default": "./.vibelang/js/src/PlanLike.js"
-    },
+    "./PlanLike": "./src/PlanLike.ts",
     "./RecordedModel": {
       "types": "./.vibe/declarations/src/RecordedModel.d.vibe.ts",
       "vibelang-source": "./src/RecordedModel.vibe",
@@ -149,16 +137,8 @@
       "vibelang-source": "./src/RestartableEngine.vibe",
       "default": "./.vibelang/js/src/RestartableEngine.js"
     },
-    "./ScoreGate": {
-      "types": "./src/ScoreGate.ts",
-      "vibelang-source": "./src/ScoreGate.ts",
-      "default": "./.vibelang/js/src/ScoreGate.js"
-    },
-    "./TestHost": {
-      "types": "./src/TestHost.ts",
-      "vibelang-source": "./src/TestHost.ts",
-      "default": "./.vibelang/js/src/TestHost.js"
-    },
+    "./ScoreGate": "./src/ScoreGate.ts",
+    "./TestHost": "./src/TestHost.ts",
     "./TestLayers": {
       "types": "./.vibe/declarations/src/TestLayers.d.vibe.ts",
       "vibelang-source": "./src/TestLayers.vibe",
@@ -194,11 +174,7 @@
       "vibelang-source": "./src/pins/Replay.ts",
       "default": "./.vibelang/js/src/pins/Replay.js"
     },
-    "./ProcessTable": {
-      "types": "./src/ProcessTable.ts",
-      "vibelang-source": "./src/ProcessTable.ts",
-      "default": "./.vibelang/js/src/ProcessTable.js"
-    },
+    "./ProcessTable": "./src/ProcessTable.ts",
     "./TurnLog": {
       "types": "./src/TurnLog.ts",
       "vibelang-source": "./src/TurnLog.ts",
@@ -221,7 +197,6 @@
     "CHANGELOG.md",
     "docs/",
     ".vibelang/js",
-    "src/BuiltinScript.vibe",
     "src/TestingError.vibe",
     "src/FlowEngineLike.vibe",
     "src/MemoryEngine.vibe"

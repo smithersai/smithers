@@ -13,8 +13,9 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as Metric from "effect/Metric";
 import * as Stream from "effect/Stream";
 import { withSpan } from "effect/Effect";
+import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -47,7 +48,7 @@ export const headOf = (text, limit) => {
     const bytes = encoder.encode(text);
     if (bytes.byteLength <= limit)
         return text;
-    return decoder.decode(bytes.slice(0, limit)).replace(/�$/, "");
+    return $invoke(decoder, () => (bytes.slice(0, limit))).replace(/�$/, "");
 };
 /**
  * A path that is not there is absence, answered with `value`; any other
@@ -72,15 +73,22 @@ export const size = (text) => encoder.encode(text).byteLength;
  * @since 1.0.0
  * @private
  */
-export const run = (command, args, cwd) => Effect.catch(Effect.scoped(Effect_1.gen(function* () {
-    const spawner = yield* ChildProcessSpawner;
-    const handle = yield* spawner.spawn(ChildProcess.make(command, args, { cwd }));
-    const [stdout, , code] = yield* Effect.all([collect(handle.stdout), Stream.runDrain(handle.stderr), handle.exitCode], { concurrency: 3 });
-    return code === 0 ? stdout : undefined;
-})), () => Effect.succeed(undefined));
+export const run = (command, args, cwd) => {
+    let $do1;
+    {
+        const catchProgram = Effect.scoped(Effect_1.gen(function* () {
+            const spawner = yield* ChildProcessSpawner;
+            const handle = yield* spawner.spawn(ChildProcess.make(command, args, { cwd }));
+            const [stdout, , code] = yield* Effect.all([collect(handle.stdout), Stream.runDrain(handle.stderr), handle.exitCode], { concurrency: 3 });
+            return code === 0 ? stdout : undefined;
+        }));
+        $do1 = Effect_1.gen(function* () { return yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return catchProgram; }); })(), () => Effect_1.sync(() => { return undefined; })); });
+    }
+    return $do1;
+};
 const collect = (stream) => Effect.suspend(() => {
     const decoder = new TextDecoder();
-    return Effect.map(Stream.runFold(stream, () => "", (text, chunk) => text + decoder.decode(chunk, { stream: true })), (text) => text + decoder.decode());
+    return Effect.map(Stream.runFold(stream, () => "", (text, chunk) => text + $invoke2(decoder, () => (chunk), () => ({ stream: true }))), (text) => text + $invoke3(decoder));
 });
 /**
  * A repository-relative path, normalized, or `null` for an absolute or
@@ -167,7 +175,7 @@ export const unreadable = (value) => (error) => error.reason._tag === "Permissio
  * @since 1.0.0
  * @private
  */
-export const tree = (root, limit = maxWalkFiles) => Effect_1.gen(runtime.$iteratorFrame(runtime.$joinedFrame(function* () {
+export const tree = (root, limit = maxWalkFiles) => Effect_1.gen(function* () {
     // `.` scopes the listing to `root`, and jj prints paths relative to the
     // directory it runs in, so a root below the workspace root lists no `../`.
     const listed = yield* run("jj", ["--ignore-working-copy", "file", "list", "."], root);
@@ -185,29 +193,11 @@ export const tree = (root, limit = maxWalkFiles) => Effect_1.gen(runtime.$iterat
     if (directory === undefined)
         return fromPaths([]);
     while (true) {
-        {
-            let pending_1 = runtime.$normal;
-            try {
-                for (const marker of [".jj", ".git"]) {
-                    try {
-                        {
-                            if (yield* (Effect.catch(fs.exists(path.join(directory, marker)), unreadable(true)))) {
-                                yield* withSpan(Effect.tap(Effect.logWarning("memory.repo.listing_unavailable"), () => Metric.update(Metric.counter("memory.repo.listing_unavailable"), 1)), "memory.repo.listing_unavailable");
-                                return fromPaths([]);
-                            }
-                        }
-                    }
-                    catch (thrown_1) {
-                        pending_1 = thrown_1;
-                        break;
-                    }
-                }
+        for (const marker of [".jj", ".git"]) {
+            if (yield* (Effect.catch(fs.exists(path.join(directory, marker)), unreadable(true)))) {
+                yield* withSpan(Effect.tap(Effect.logWarning("memory.repo.listing_unavailable"), () => Metric.update(Metric.counter("memory.repo.listing_unavailable"), 1)), "memory.repo.listing_unavailable");
+                return fromPaths([]);
             }
-            catch (thrown_2) {
-                throw runtime.$finallyFailure(pending_1, thrown_2);
-            }
-            if (pending_1 !== runtime.$normal)
-                throw pending_1;
         }
         const parent = path.dirname(directory);
         if (parent === directory)
@@ -215,46 +205,30 @@ export const tree = (root, limit = maxWalkFiles) => Effect_1.gen(runtime.$iterat
         directory = parent;
     }
     const files = [];
-    const walk = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame({ *walk(dir) {
-            const names = yield* (Effect.catch(fs.readDirectory(path.join(root, dir)), unreadable([])));
-            {
-                let pending_2 = runtime.$normal;
-                try {
-                    for (const name of names.sort()) {
-                        try {
-                            {
-                                if (files.length >= limit)
-                                    return;
-                                if (name.startsWith(".") || pruned.has(name))
-                                    continue;
-                                const relative = dir === "" ? name : `${dir}/${name}`;
-                                // A link is never followed, as jj tracks it: a link to an ancestor
-                                // would walk forever and a link outward would leave the root.
-                                if (yield* linked(fs, path.join(root, relative)))
-                                    continue;
-                                const info = yield* (Effect.catch(fs.stat(path.join(root, relative)), absent(undefined)));
-                                if (info?.type === "Directory")
-                                    yield* walk(relative);
-                                else if (info?.type === "File")
-                                    files.push(relative);
-                            }
-                        }
-                        catch (thrown_3) {
-                            pending_2 = thrown_3;
-                            break;
-                        }
-                    }
+    const walk = (dir) => {
+        return Effect_1.gen({ *walk() {
+                const names = yield* (Effect.catch(fs.readDirectory(path.join(root, dir)), unreadable([])));
+                for (const name of names.sort()) {
+                    if (files.length >= limit)
+                        return;
+                    if (name.startsWith(".") || pruned.has(name))
+                        continue;
+                    const relative = dir === "" ? name : `${dir}/${name}`;
+                    // A link is never followed, as jj tracks it: a link to an ancestor
+                    // would walk forever and a link outward would leave the root.
+                    if (yield* linked(fs, path.join(root, relative)))
+                        continue;
+                    const info = yield* (Effect.catch(fs.stat(path.join(root, relative)), absent(undefined)));
+                    if (info?.type === "Directory")
+                        yield* walk(relative);
+                    else if (info?.type === "File")
+                        files.push(relative);
                 }
-                catch (thrown_4) {
-                    throw runtime.$finallyFailure(pending_2, thrown_4);
-                }
-                if (pending_2 !== runtime.$normal)
-                    throw pending_2;
-            }
-        } }.walk)));
+            } }.walk);
+    };
     yield* walk("");
     return fromPaths(files.filter((file) => normalizePath(file) !== null));
-})));
+});
 /**
  * The first `limit` bytes of a repository file; `undefined` when absent,
  * unreadable (`PermissionDenied`, which `denied: "fail"` surfaces instead) or
@@ -283,3 +257,6 @@ export const head = (root, relative, limit, options = { denied: "skip" }) => Eff
     const text = yield* (Effect.catch(fs.readFileString(real), skip(undefined)));
     return text === undefined || text.includes("\u0000") ? undefined : headOf(text, limit);
 });
+import { invoke as $invoke } from "./repo.vibe.-24-call-24-ts.js";
+import { invoke as $invoke2 } from "./repo.vibe.-24-call-24-ts2.js";
+import { invoke as $invoke3 } from "./repo.vibe.-24-call-24-ts3.js";

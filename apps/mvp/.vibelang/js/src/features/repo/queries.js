@@ -5,9 +5,11 @@ import { blobKey, readmeOf, treeKey } from "./paths";
 /** The view, with its repository as Postgres has it and this tab's clone request for it, when there are. */
 export const viewQuery = (view, repositories, clones, abouts) => LiveQuery.make((q) => q
     .from({ view: view.tanstack })
-    .leftJoin({ repository: repositories.tanstack }, ({ view, repository }) => Query.eq(view.repoId, repository.id))
+    // A gated side's key is an expression: TanStack DB then reads the whole gated query rather than load it lazily
+    // by key, which held this query back while the repositories' shape hadn't answered (repo/gate.ts).
+    .leftJoin({ repository: repositories.tanstack }, ({ view, repository }) => Query.eq(view.repoId, Query.coalesce(repository.id, "")))
     .leftJoin({ clone: clones.tanstack }, ({ view, clone }) => Query.eq(view.repoId, clone.id))
-    .leftJoin({ about: abouts.tanstack }, ({ view, about }) => Query.eq(view.repoId, about.key))
+    .leftJoin({ about: abouts.tanstack }, ({ view, about }) => Query.eq(view.repoId, Query.coalesce(about.key, "")))
     .findOne());
 /** The view, with the file list at its commit when this tab has loaded or is loading it. */
 export const treeQuery = (view, trees) => LiveQuery.make((q) => q
@@ -45,23 +47,28 @@ export const readmeQuery = (view, blobs) => LiveQuery.make((q) => q
  */
 export const embedsQuery = (embeds, repositories, abouts, trees, blobs) => LiveQuery.make((q) => q
     .from({ embed: embeds.tanstack })
-    .leftJoin({ repository: repositories.tanstack }, ({ embed, repository }) => Query.eq(embed.repoId, repository.id))
-    .leftJoin({ about: abouts.tanstack }, ({ embed, about }) => Query.eq(embed.repoId, about.key))
+    .leftJoin({ repository: repositories.tanstack }, ({ embed, repository }) => Query.eq(embed.repoId, Query.coalesce(repository.id, "")))
+    .leftJoin({ about: abouts.tanstack }, ({ embed, about }) => Query.eq(embed.repoId, Query.coalesce(about.key, "")))
     .leftJoin({ tree: trees.tanstack }, ({ embed, tree }) => Query.eq(embed.treeKey, tree.key))
     .leftJoin({ body: blobs.tanstack }, ({ embed, body }) => Query.eq(embed.bodyKey, body.key)));
+/** The row at `key` of a gated query, once the query runs: `None` while its repository may not show. */
+const shownAt = (rows, key) => Effect.sync(() => {
+    rows.tanstack.startSyncImmediate();
+    return Option.fromNullishOr(rows.tanstack.get(key));
+});
 /**
  * Reads of any repository on this device (decision 0006 §2): its row, its file list at a commit, a file there, and a
- * directory's README there. Each is `None` until the device has it.
+ * directory's README there. Each is `None` until the device has it, or while the repository may not show (gate.ts).
  */
 export const reads = (store) => {
-    const tree = (id, sha) => store.trees.get(treeKey(id, sha));
+    const tree = (id, sha) => shownAt(store.shownTrees, treeKey(id, sha));
     return {
-        repository: (id) => store.repositories.get(id),
+        repository: (id) => shownAt(store.shownRepositories, id),
         tree,
-        file: (id, sha, path) => store.blobs.get(blobKey(id, sha, path)),
+        file: (id, sha, path) => shownAt(store.shownBlobs, blobKey(id, sha, path)),
         readme: (id, sha, dir) => Effect.flatMap(tree(id, sha), (found) => {
             const path = Option.isSome(found) && found.value.state === "ready" ? readmeOf(found.value.paths, dir) : undefined;
-            return path === undefined ? Effect.succeedNone : store.blobs.get(blobKey(id, sha, path));
+            return path === undefined ? Effect.succeedNone : shownAt(store.shownBlobs, blobKey(id, sha, path));
         }),
     };
 };

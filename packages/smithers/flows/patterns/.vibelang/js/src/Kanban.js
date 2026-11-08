@@ -9,7 +9,6 @@
  * @since 0.1.0
  */
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as Flow from "@smthrs/flow/Flow";
 import * as Node from "@smthrs/plan/Node";
 import * as Effect from "effect/Effect";
@@ -96,24 +95,24 @@ export const make = (options) => {
     const concurrency = options.concurrency;
     const onComplete = options.onComplete;
     if (columns.length === 0) {
-        throw new PatternError({ code: "invalid_decorator", message: "Kanban requires at least one column" });
+        $raise(new PatternError({ code: "invalid_decorator", message: "Kanban requires at least one column" }));
     }
     if (items.length === 0) {
-        throw new PatternError({ code: "invalid_decorator", message: "Kanban requires at least one item" });
+        $raise(new PatternError({ code: "invalid_decorator", message: "Kanban requires at least one item" }));
     }
     if (!bound(concurrency)) {
-        throw new PatternError({
+        $raise(new PatternError({
             code: "invalid_decorator",
             message: "Kanban concurrency must be a positive safe integer"
-        });
+        }));
     }
     const ids = items.map((item) => item.id);
     if (new Set(ids).size !== ids.length) {
-        throw new PatternError({ code: "invalid_decorator", message: "Kanban item ids must be unique" });
+        $raise(new PatternError({ code: "invalid_decorator", message: "Kanban item ids must be unique" }));
     }
     const names = columns.map((column) => column.name);
     if (new Set(names).size !== names.length) {
-        throw new PatternError({ code: "invalid_decorator", message: "Kanban column names must be unique" });
+        $raise(new PatternError({ code: "invalid_decorator", message: "Kanban column names must be unique" }));
     }
     const captures = { columns: names, items: ids, concurrency };
     // What one column hands the next: each live card's latest output, and every
@@ -186,70 +185,36 @@ export const make = (options) => {
         body: Node.capture(captures, body)
     });
 };
-const pass = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* pass(cards, columns, concurrency) {
-    const board = new Map();
-    const failed = [];
-    const latest = new Map();
-    let active = cards;
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const column of columns) {
-                try {
-                    {
-                        const outcomes = yield* Effect.forEach(active, (card) => Effect.catch(Effect.map(column.run({ item: card.item, column: column.name, previous: latest.get(card.id) }), (output) => ({ ok: true, card, output })), (error) => Effect.succeed({ ok: false, card, error })), { concurrency });
-                        const next = [];
-                        {
-                            let pending_2 = runtime.$normal;
-                            try {
-                                for (const outcome of outcomes) {
-                                    try {
-                                        {
-                                            if (outcome.ok) {
-                                                const row = board.get(outcome.card.id) ?? new Map();
-                                                row.set(column.name, outcome.output);
-                                                board.set(outcome.card.id, row);
-                                                latest.set(outcome.card.id, outcome.output);
-                                                next.push(outcome.card);
-                                            }
-                                            else {
-                                                failed.push({ id: outcome.card.id, column: column.name, error: outcome.error });
-                                            }
-                                        }
-                                    }
-                                    catch (thrown_1) {
-                                        pending_2 = thrown_1;
-                                        break;
-                                    }
-                                }
-                            }
-                            catch (thrown_2) {
-                                throw runtime.$finallyFailure(pending_2, thrown_2);
-                            }
-                            if (pending_2 !== runtime.$normal)
-                                throw pending_2;
-                        }
-                        active = next;
-                    }
+const pass = (cards, columns, concurrency) => {
+    return Effect_1.gen(function* pass() {
+        const board = new Map();
+        const failed = [];
+        const latest = new Map();
+        let active = cards;
+        for (const column of columns) {
+            const outcomes = yield* Effect.forEach(active, (card) => Effect.catch(Effect.map(column.run({ item: card.item, column: column.name, previous: latest.get(card.id) }), (output) => ({ ok: true, card, output })), (error) => Effect.succeed({ ok: false, card, error })), { concurrency });
+            const next = [];
+            for (const outcome of outcomes) {
+                if (outcome.ok) {
+                    const row = board.get(outcome.card.id) ?? new Map();
+                    row.set(column.name, outcome.output);
+                    board.set(outcome.card.id, row);
+                    latest.set(outcome.card.id, outcome.output);
+                    next.push(outcome.card);
                 }
-                catch (thrown_3) {
-                    pending_1 = thrown_3;
-                    break;
+                else {
+                    failed.push({ id: outcome.card.id, column: column.name, error: outcome.error });
                 }
             }
+            active = next;
         }
-        catch (thrown_4) {
-            throw runtime.$finallyFailure(pending_1, thrown_4);
-        }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
-    }
-    return {
-        board: Object.fromEntries(Array.from(board, ([id, columns]) => [id, Object.fromEntries(columns)])),
-        completed: active.map((card) => card.id),
-        failed
-    };
-})));
+        return {
+            board: Object.fromEntries(Array.from(board, ([id, columns]) => [id, Object.fromEntries(columns)])),
+            completed: active.map((card) => card.id),
+            failed
+        };
+    });
+};
 /**
  * Moves every item through the columns in order.
  *
@@ -333,3 +298,4 @@ export const run = (items, options) => {
         }
     });
 };
+import { raise as $raise } from "./Kanban.vibe.-24-throw-24-ts.js";

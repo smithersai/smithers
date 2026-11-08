@@ -30,7 +30,6 @@
  * @since 1.0.0-rc.17
  */
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 import * as Effect from "effect/Effect";
 import * as Metric from "effect/Metric";
 import * as Schema from "effect/Schema";
@@ -114,12 +113,14 @@ export const wake = (machine, options) => ((effect) => Observed.observed(effect,
     attribute: "smithers.sandbox.wake",
     counter: wakes,
     log: "cloudflare.sandbox.wake"
-}))(Effect_1.gen(runtime.$iteratorFrame(runtime.$joinedFrame(function* () {
+}))(Effect_1.gen(function* () {
     const running = yield* machine.running;
     if (!running) {
-        const start = Effect_1.suspend({ start: () => machine.start(options.instance === undefined
+        const start = Effect_1.gen(function* start() {
+            return yield* machine.start(options.instance === undefined
                 ? { enableInternet: false }
-                : { enableInternet: false, instance: options.instance }) }.start);
+                : { enableInternet: false, instance: options.instance });
+        });
         const timeoutMs = options.startTimeoutMs;
         yield* (timeoutMs === undefined ? start : (Effect.timeoutOrElse(start, {
             duration: timeoutMs,
@@ -127,33 +128,15 @@ export const wake = (machine, options) => ((effect) => Observed.observed(effect,
         })));
     }
     yield* machine.setInactivityTimeout(options.inactivityTimeoutMs ?? defaultInactivityTimeoutMs);
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const intercept of options.intercepts) {
-                try {
-                    {
-                        yield* machine.interceptOutboundHttp(intercept.host, intercept.fetcher);
-                    }
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
-            }
-        }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
-        }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
+    for (const intercept of options.intercepts) {
+        yield* machine.interceptOutboundHttp(intercept.host, intercept.fetcher);
     }
     if (options.egress !== undefined) {
         yield* machine.interceptAllOutboundHttp(options.egress);
         yield* machine.interceptOutboundHttps("*", options.egress);
     }
     return running ? "running" : "started";
-}))));
+}));
 /**
  * Re-arms the inactivity timeout of a container that runs, to
  * `inactivityTimeoutMs` ({@link defaultInactivityTimeoutMs} unless given),

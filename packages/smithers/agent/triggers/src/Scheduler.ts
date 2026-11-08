@@ -23,7 +23,7 @@ import type * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 import * as ActiveRuns from "./internal/ActiveRuns.vibe"
 import * as DueOccurrences from "./internal/DueOccurrences.vibe"
-import { TriggerError } from "./TriggerError.vibe"
+import { TriggerError } from "./TriggerError.ts"
 import {
   type Claim,
   type Held,

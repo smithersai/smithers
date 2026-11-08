@@ -1267,9 +1267,26 @@ export const catalog = (options) => Effect.gen(function* () {
     const descriptors = yield* registry.list();
     const executables = [];
     const refused = [];
+    const deferred = [];
+    const eager = options.initialFlows === undefined ? undefined : new Set(options.initialFlows);
+    if (eager !== undefined) {
+        // Set iteration also visits added names; cycles and repeated collaborators terminate.
+        for (const name of eager) {
+            for (const descriptor of descriptors.filter((entry) => entry.name === name)) {
+                for (const collaborator of descriptor.flows)
+                    eager.add(collaborator);
+            }
+        }
+    }
     const configured = options.loadTimeoutMs ?? (yield* Config.String("SMITHERS_FLOW_LOAD_TIMEOUT_MS").pipe(Effect.map(Number), Effect.catch(() => Effect.succeed(30_000))));
     const loadTimeoutMs = Number.isFinite(configured) && configured > 0 ? configured : 30_000;
     for (const descriptor of descriptors) {
+        if (eager !== undefined && !eager.has(descriptor.name)) {
+            deferred.push(descriptor);
+            continue;
+        }
+        const startedAt = yield* Clock.currentTimeMillis;
+        yield* Effect.logDebug("Loading flow body", { flow: descriptor.name });
         const result = yield* Effect.result(fromDescriptor(descriptor, options).pipe(Effect.timeoutOrElse({
             duration: loadTimeoutMs,
             orElse: () => Effect.fail(refuse({
@@ -1279,6 +1296,11 @@ export const catalog = (options) => Effect.gen(function* () {
                 message: `the body of flow "${descriptor.name}" timed out after ${loadTimeoutMs}ms while loading "${descriptor.body.path}" (load_timeout; SMITHERS_FLOW_LOAD_TIMEOUT_MS catalog limit)`
             }))
         })));
+        yield* Effect.logDebug("Flow body load finished", {
+            flow: descriptor.name,
+            outcome: result._tag,
+            elapsedMs: (yield* Clock.currentTimeMillis) - startedAt
+        });
         if (result._tag === "Success") {
             executables.push(result.success);
             continue;
@@ -1300,8 +1322,14 @@ export const catalog = (options) => Effect.gen(function* () {
             cause: causeLine(failure.cause)
         });
     }
-    return { executables, refused };
-});
+    yield* Effect.logDebug("Flow catalog ready", {
+        loaded: executables.length,
+        refused: refused.length,
+        deferred: deferred.length
+    });
+    // Preserve the eager catalog's public shape for callers that did not opt into deferral.
+    return eager === undefined ? { executables, refused } : { executables, refused, deferred };
+}).pipe(Effect.withSpan("smithers.registry.catalog"));
 /**
  * Service tag for rebuilding one catalog entry after startup.
  *
@@ -1381,6 +1409,9 @@ export const layerRefreshable = (built, options) => Layer.unwrap(Effect.gen(func
         get refused() {
             return snapshot.refused;
         },
+        get deferred() {
+            return snapshot.deferred;
+        },
         load: refresh.load
     };
     return Layer.merge(Layer.succeed(Catalog)(live), Layer.succeed(Refresh)(refresh));
@@ -1412,7 +1443,11 @@ const makeRefresh = (options, read, swap) => Effect.gen(function* () {
                 ? current.executables.map((entry) => entry.descriptor.name === name ? executable : entry)
                 : [...current.executables, executable];
         const without = current.refused.filter((entry) => entry.flow !== name);
-        swap({ executables, refused: failure === undefined ? without : [...without, failure] });
+        swap({
+            executables,
+            refused: failure === undefined ? without : [...without, failure],
+            deferred: current.deferred?.filter((entry) => entry.name !== name)
+        });
     };
     const register = (descriptor) => {
         const name = descriptor.name;
@@ -1481,8 +1516,9 @@ const makeRefresh = (options, read, swap) => Effect.gen(function* () {
         const registry = yield* Registry.Registry;
         // No refresh: first use retries the already measured descriptor, never
         // adopts edited bytes or imports a newly authored entry implicitly.
-        const descriptor = yield* registry.get(name);
-        if (refusal === undefined) {
+        const deferred = snapshot.deferred?.find((entry) => entry.name === name);
+        const descriptor = deferred ?? (yield* registry.get(name));
+        if (refusal === undefined && deferred === undefined) {
             return yield* Effect.fail(refuse({
                 code: "body_unavailable",
                 flow: name,

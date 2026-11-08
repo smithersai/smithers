@@ -6,7 +6,6 @@
  */
 import * as Context from "effect/Context";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
 /**
  * Every tally the current fiber runs inside, innermost last. A fiber forked
  * inside a tally inherits it, so its entries count too.
@@ -23,24 +22,9 @@ export const Current = Context.Reference("@smthrs/journal/EventTally", {
  * @category internal
  * @since 1.0.0
  */
-export const record = Effect_1.fnUntraced(runtime.$joinedFrame(function* record(events) {
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const accumulator of yield* Current) {
-                try {
-                    accumulator.events += events;
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
-            }
-        }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
-        }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
-    }
-}));
+export const record = (events) => {
+    return Effect_1.gen(function* record() {
+        for (const accumulator of yield* Current)
+            accumulator.events += events;
+    });
+};

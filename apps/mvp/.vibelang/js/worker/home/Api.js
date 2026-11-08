@@ -6,8 +6,8 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { audienceOf, HOME_SEGMENT } from "../../src/features/home/contract.js";
 import { REPO_ROLE_SEGMENT } from "../../src/features/auth/contract.js";
 import { isRepository, REPOS_ROUTE } from "../../src/features/repo/contract.js";
-import { Sessions } from "#vibelang/emitted/worker/Actor";
-import { repositoryOf } from "#vibelang/emitted/worker/github/Config";
+import { Sessions } from "../Actor.js";
+import { repositoryOf } from "../github/Config.js";
 import * as RepoRoles from "../github/RepoRoles.js";
 import * as Curated from "./Curated.js";
 // `GET /api/repos/<owner>/<name>/home` (docs/features/home.md#who-sees-what): who the asker is on the repository, and
@@ -160,13 +160,20 @@ export const make = ({ roles, files = Curated.files, mayRead, maySync }) => {
         const workspaceRole = decided.success.source === "no_role_here" && Option.isSome(actor.success)
             ? RepoRoles.uninstalledRole(roles, actor.success.value, repositoryOf(`${target.owner}/${target.name}`))
             : decided.success.role;
+        // Any role there reads its shapes: only a person with none needs the shapes' own check (a public repository),
+        // which resolves the role again.
+        const readable = mayRead === undefined ? undefined
+            : decided.success.role !== null ? true
+                : yield* mayRead(repositoryOf(`${target.owner}/${target.name}`));
+        if (typeof readable === "object") {
+            return yield* record(HttpServerResponse.jsonUnsafe({ code: "unavailable" }, {
+                status: 503,
+                headers: { ...headers, "retry-after": String(readable.retryAfterSeconds ?? 5) },
+            }), { outcome: "readable_unavailable", own, ...decided.success });
+        }
         const answer = { role: decided.success.role, own,
             ...(workspaceRole === decided.success.role ? {} : { workspaceRole }),
-            // Any role there reads its shapes: only a person with none needs the shapes' own check (a public repository),
-            // which resolves the role again.
-            ...(mayRead === undefined ? {} : {
-                readable: decided.success.role !== null ? true : yield* mayRead(repositoryOf(`${target.owner}/${target.name}`)),
-            }),
+            ...(readable === undefined ? {} : { readable }),
             ...(maySync === undefined ? {} : { synced: yield* maySync(repositoryOf(`${target.owner}/${target.name}`)) }),
         };
         return yield* record(HttpServerResponse.jsonUnsafe(answer, { headers }), { outcome: "answered", own, ...decided.success });

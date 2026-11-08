@@ -11,12 +11,12 @@
  *
  * @since 0.1.0
  */
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Effect_1 from "effect/Effect";
+import * as runtime from "vibelang-runtime/internal";
 /**
  * A steering queue that cannot be admitted to or drained.
  *
@@ -36,7 +36,7 @@ export class SteeringError extends Schema.TaggedError()("/chain/SteeringError", 
  * @since 0.1.0
  * @slop
  */
-export class Steering extends Context.Service()("/chain/Steering") {
+export class Steering extends runtime.$service("/chain/Steering") {
 }
 /**
  * Builds a steering port from an implementation.

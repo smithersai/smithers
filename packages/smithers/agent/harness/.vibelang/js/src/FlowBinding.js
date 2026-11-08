@@ -242,7 +242,7 @@ export const make = (options) => {
             if (json._tag === "Failure") {
                 return refusal("flow_failed", `Flow ${descriptor.name} produced output that is not serializable.`);
             }
-            return new CallResult({ outcome: "success", value: json.success });
+            return CallResult.new({ outcome: "success", value: json.success });
         })
     };
 };

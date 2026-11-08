@@ -40,11 +40,7 @@
       "vibelang-source": "./src/index.ts",
       "default": "./.vibelang/js/src/index.js"
     },
-    "./Directive": {
-      "types": "./src/Directive.ts",
-      "vibelang-source": "./src/Directive.ts",
-      "default": "./.vibelang/js/src/Directive.js"
-    },
+    "./Directive": "./src/Directive.ts",
     "./*": {
       "vibelang-source": "./src/*.vibe",
       "default": "./.vibelang/js/src/*.js"

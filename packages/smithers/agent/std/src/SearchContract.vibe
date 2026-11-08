@@ -17,7 +17,7 @@ import type * as FileSystem from "effect/FileSystem"
 import * as LinearRegex from "./internal/LinearRegex.ts"
 import { escapeRegex, invalidPattern, rejectionPrefix } from "./internal/SearchContract.vibe"
 import * as Walk from "./internal/Walk.vibe"
-import type * as StdError from "./StdError.vibe"
+import type * as StdError from "./StdError.ts"
 
 /**
  * Validates Smithers Ripgrep ASCII v1. It is deliberately the intersection of

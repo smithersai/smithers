@@ -5,7 +5,7 @@ import { Effect, Layer, Metric } from "effect";
 import { requesterOf } from "../../flows/requests";
 import { SandboxClient } from "./api";
 import { CALL_ID_NAMESPACE } from "./contract";
-import { Diff, List, Read, Run, SandboxCallFailed, SandboxCallRefused, SandboxCallRunning, SandboxCallUnavailable, SandboxCommandTooLong, Status, Write, } from "./flows";
+import { Diff, List, Read, Run, SandboxCallFailed, SandboxCallRefused, SandboxCallRunning, SandboxCallUnavailable, SandboxCommandTooLong, Status, Write } from "./flows";
 import { calls } from "./metrics";
 // The sandbox tools' steps (docs/features/sandbox-tools.md#the-flows): `start` asks ChatApi to run the call, `result`
 // reads how it stands until the machine settles it, both through `SandboxClient`, on this device's engine. The call's
@@ -20,8 +20,9 @@ const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9
  */
 const targetOf = (conversationId) => Effect.map(FlowRuntime.FlowInstance, ({ executionId }) => {
     const requester = requesterOf(executionId);
-    if (requester !== executionId && isUuid(requester))
+    if (requester !== executionId && isUuid(requester)) {
         return { target: { answerId: requester.toLowerCase() }, door: "agent" };
+    }
     return conversationId === undefined
         ? { door: "person" }
         : { target: { conversationId: conversationId.toLowerCase() }, door: "person" };
@@ -66,8 +67,9 @@ export const start = (tool) => (input) => Effect.gen(function* () {
     const answer = yield* Effect.result((yield* SandboxClient).start({ callId, call, ...target }));
     if (answer._tag === "Failure")
         return yield* fail(refusalOf(answer.failure));
-    if (answer.success.status === "failed")
+    if (answer.success.status === "failed") {
         return yield* fail(new SandboxCallFailed({ failure: answer.success.failure }));
+    }
     return { callId };
 }).pipe(Effect.withSpan("sandbox.call.start"));
 /**

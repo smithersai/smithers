@@ -7,7 +7,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { Jj as JjService, Snapshot } from "../src/Jj.vibe"
 import { Jj } from "../src/Jj.vibe"
-import * as NodeJj from "../src/node/NodeJj.vibe"
+import * as NodeJj from "../src/node/NodeJj.ts"
 import { budgeted } from "./budgeted.ts"
 
 const packageRoot = fileURLToPath(new URL("../", import.meta.url))

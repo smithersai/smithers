@@ -17,10 +17,14 @@ import { COULDNT_ANSWER, MODEL_QUOTA_SPENT } from "./contract";
  * - `createdAt` is a synced row's or a view's time, as Postgres prints it; this device's own rows are timed by `at`,
  *   when they were asked (src/features/chat/view.ts `timeOf`).
  */
-export const conversationQuery = (messages, unsent, asking, views, 
+export const conversationQuery = (
+// A branch conversation's synced rows reach it only through the data gate (src/features/conversations/owners.ts).
+messages, unsent, asking, views, 
 // The branch conversation this is (decision 0013 §1): this device's own rows count only when asked in it. `undefined`
 // is the home conversation, whose rows name none.
-conversationId) => LiveQuery.make((q) => q
+conversationId, 
+// Deduplication follows delivery receipts, even when their display is hidden. A hidden receipt never resurrects a copy.
+stored = { messages, unsent }) => LiveQuery.make((q) => q
     .unionAll(q.from({ synced: messages.tanstack }).select(({ synced }) => ({
     id: synced.id,
     questionId: Query.coalesce(synced.questionId, ""),
@@ -57,7 +61,7 @@ conversationId) => LiveQuery.make((q) => q
     // Postgres' answer to a question with this id. When it is the answer this device made for it, Postgres has
     // this very question, and its synced row shows instead: an unsent copy the device couldn't drop never shows
     // twice. A question whose id another message took has another answer, and stays.
-    .leftJoin({ answer: messages.tanstack }, ({ refused, answer }) => Query.eq(refused.id, answer.questionId))
+    .leftJoin({ answer: stored.messages.tanstack }, ({ refused, answer }) => Query.eq(refused.id, answer.questionId))
     .where(({ refused, answer }) => Query.and(conversationId === undefined
     ? Query.isUndefined(refused.conversationId)
     : Query.eq(refused.conversationId, conversationId), Query.or(Query.isUndefined(answer?.id), Query.not(Query.eq(answer?.id, refused.answerId)))))
@@ -72,8 +76,8 @@ conversationId) => LiveQuery.make((q) => q
     createdAt: "",
 })), q
     .from({ queued: asking.tanstack })
-    .leftJoin({ inPostgres: messages.tanstack }, ({ queued, inPostgres }) => Query.eq(queued.id, inPostgres.id))
-    .leftJoin({ inUnsent: unsent.tanstack }, ({ queued, inUnsent }) => Query.eq(queued.id, inUnsent.id))
+    .leftJoin({ inPostgres: stored.messages.tanstack }, ({ queued, inPostgres }) => Query.eq(queued.id, inPostgres.id))
+    .leftJoin({ inUnsent: stored.unsent.tanstack }, ({ queued, inUnsent }) => Query.eq(queued.id, inUnsent.id))
     .where(({ queued, inPostgres, inUnsent }) => Query.and(conversationId === undefined
     ? Query.isUndefined(queued.conversationId)
     : Query.eq(queued.conversationId, conversationId), Query.isUndefined(inPostgres?.id), Query.isUndefined(inUnsent?.id)))

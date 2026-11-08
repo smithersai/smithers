@@ -603,11 +603,12 @@ const transportError = (error, redactedNames) => {
  * values redacted and its appended parameters folded in, the headers redacted,
  * and no body.
  */
-const redactedRequest = (request, redactedNames) => 
-// Effect 4.1 types a client request's method as any string; every constructor takes an HttpMethod.
-HttpClientRequest.make(request.method)(redactedRequestUrl(request), {
-    headers: redactHeaders(request.headers, redactedNames)
-});
+const redactedRequest = (request, redactedNames) => (() => {
+    const sanitized = HttpClientRequest.get(redactedRequestUrl(request), {
+        headers: redactHeaders(request.headers, redactedNames)
+    });
+    return HttpClientRequest.makeWith(request.method, sanitized.url, sanitized.urlParams, sanitized.hash, sanitized.headers, sanitized.body);
+})();
 /**
  * The tracer a request opens its HTTP span on: the caller's own, with the
  * credential values a url can carry kept off the span.
@@ -691,6 +692,7 @@ export const rebuildAfter = 3;
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const fixed = (client) => ({
     client,

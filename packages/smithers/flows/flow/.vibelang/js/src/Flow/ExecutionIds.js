@@ -17,9 +17,10 @@
  * @since 0.1.0
  */
 import * as Schema from "effect/Schema";
-import { Crypto, Sha256 } from "@smthrs/crypto";
+import { Sha256 } from "@smthrs/crypto";
 import { DerivedKey } from "@smthrs/keys";
 import * as Context from "effect/Context";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { ExecutionIdRequired } from "./ExecutionIdRequired.js";
@@ -63,7 +64,7 @@ export const derived = {
  * @since 0.1.0
  */
 export const fresh = {
-    mint: () => Effect.flatMap(Crypto.Crypto, (crypto) => Effect.orDie(crypto.randomUUIDv4()))
+    mint: () => Effect.flatMap(SecureRandom.SecureRandom, (random) => random.uuidV4())
 };
 /**
  * Context reference carrying the host's execution-id source, defaulting to

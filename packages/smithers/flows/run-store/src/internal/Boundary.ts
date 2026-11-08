@@ -78,6 +78,7 @@ export type JsonResult =
  *
  * @since 1.0.0-rc.0
  * @private
+ * @throws {never}
  */
 export const isDurableText = (value: unknown, maximum = maximumIdentifierLength): value is string => {
   if (typeof value !== "string" || value.length === 0 || value.length > maximum || value.includes("\0")) return false
@@ -95,6 +96,7 @@ export const isDurableText = (value: unknown, maximum = maximumIdentifierLength)
  * Copies an inert JSON tree with a cumulative member budget for run state.
  * @private
  * @since 1.0.0
+ * @throws {never}
  */
 export const admitJson = (input: unknown, limits: JsonLimits): JsonResult => {
   const result = BoundedJson.admit(input, { ...limits, maxTotalMembers: limits.maxMembers })
@@ -106,6 +108,7 @@ export const admitJson = (input: unknown, limits: JsonLimits): JsonResult => {
  *
  * @since 1.0.0-rc.0
  * @private
+ * @throws {never}
  */
 export const admitJsonText = (
   input: unknown,

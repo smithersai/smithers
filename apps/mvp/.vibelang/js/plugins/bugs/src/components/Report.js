@@ -2,7 +2,7 @@
 import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { Button, Card, Textarea } from "@smthrs/ui";
 import { useSyncExternalStore } from "react";
-import { MAX_WHAT, reasonOf } from "#vibelang/emitted/plugins/bugs/src/tab";
+import { MAX_WHAT, reasonOf } from "../tab.js";
 import "../../../../../../plugins/bugs/src/components/bugs.css";
 // The form (docs/features/bugs.md#the-form): one field and Send. The report also carries the page before this
 // one, the build, and the tab's latest run ids, trace ids and failure codes, never chat. Once it is filed, Sent and

@@ -56,7 +56,7 @@ export * as GatewayServer from "./GatewayServer.ts"
 /**
  * @since 1.0.0 @category services
  */
-export * as Projections from "./Projections.vibe"
+export * as Projections from "./Projections.ts"
 
 /**
  * @since 1.0.0 @category rpc
@@ -66,7 +66,7 @@ export * as RunHistory from "./RunHistory.ts"
 /**
  * @since 1.0.0 @category runtime bridge
  */
-export * as RuntimeBridge from "./RuntimeBridge.vibe"
+export * as RuntimeBridge from "./RuntimeBridge.ts"
 
 /**
  * The canonical durable journal synchronization package.

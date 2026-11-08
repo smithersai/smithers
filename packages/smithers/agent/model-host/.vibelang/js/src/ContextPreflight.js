@@ -9,6 +9,7 @@ import { ModelError, ModelRequest } from "@smthrs/model";
 import { ContextPreflight } from "@smthrs/rpc";
 import { Effect, Stream } from "effect";
 import { z } from "zod";
+import { fastModelFallback } from "./FastModelFallback.js";
 import { StreamingCredentialCutter } from "./ModelTurnHost.js";
 const Choices = z.array(z.object({ index: z.number().int().nonnegative(), reason: z.string().min(1) }).strict());
 const invalid = () => new ModelError.ModelError({ code: "invalid_provider_output", message: "context preflight returned invalid choices" });
@@ -27,6 +28,7 @@ export const runContextPreflight = (raw, model, options) => Effect.gen(function*
         return yield* Effect.fail(invalid());
     const input = decoded.data;
     const started = performance.now();
+    const durableContext = yield* Effect.context();
     const candidates = input.candidates.filter(({ item }) => !input.wikiOnly || item.kind === "page");
     const terms = RecallKeyword.normalizeQueryTerms(input.prompt);
     const bank = `flow-context:${input.branch}`;
@@ -72,7 +74,7 @@ export const runContextPreflight = (raw, model, options) => Effect.gen(function*
         let output = "";
         const cutter = new StreamingCredentialCutter(options.credential, options.additionalCredentials);
         let settled = false;
-        yield* Stream.runForEach(model.stream(request), (event) => {
+        yield* Stream.runForEach(fastModelFallback([{ model, ...options }, ...(options.fallbacks ?? [])], options.onFallback, "model-host/context").stream(request), (event) => {
             // A selector has no tools, and settlement ends its one response.
             // Usage may arrive after settlement (OpenAI include_usage). It
             // carries accounting, never another selector response.
@@ -101,7 +103,7 @@ export const runContextPreflight = (raw, model, options) => Effect.gen(function*
             if (!reasons.has(choice.index))
                 reasons.set(choice.index, choice.reason);
         return choices.map((choice) => choice.index);
-    }), (row) => {
+    }).pipe(Effect.provideContext(durableContext)), (row) => {
         const index = recalledRows.findIndex((candidate) => candidate.key === row.key);
         // Recall may shorten its preview to its public byte ceiling. The answer
         // receives the original pinned snapshot, so charge that full content.

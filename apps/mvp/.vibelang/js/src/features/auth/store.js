@@ -34,9 +34,10 @@ export class AuthStore extends Context.Service()("@smthrs/mvp/auth/AuthStore") {
             id: "auth-confirmed",
             schema: Confirmed,
             getKey: (row) => row.id,
-            schemaVersion: 2,
+            schemaVersion: 3,
         });
         const confirmations = yield* PubSub.unbounded();
+        const checksAsked = yield* PubSub.unbounded();
         let confirmation = 0;
         return {
             session,
@@ -49,6 +50,8 @@ export class AuthStore extends Context.Service()("@smthrs/mvp/auth/AuthStore") {
             scope: yield* Effect.scope,
             checking: yield* Semaphore.make(1),
             refreshing: yield* Ref.make(false),
+            askCheck: Effect.sync(() => { PubSub.publishUnsafe(checksAsked, undefined); }),
+            checksAsked: Stream.fromPubSub(checksAsked),
         };
     }));
 }

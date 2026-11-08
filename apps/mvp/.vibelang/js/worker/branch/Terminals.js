@@ -6,14 +6,14 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { SqlClient } from "effect/sql";
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
 import { MAX_OPEN_BODY_BYTES, ADMIT_WAIT_SECONDS, OPEN_DEADLINE_SECONDS, openExecutionId, TERMINALS_TABLE, } from "../../src/features/terminal/contract.js";
-import { refusesPersonOnly, canAsk, Sessions } from "#vibelang/emitted/worker/Actor";
+import { refusesPersonOnly, canAsk, Sessions } from "../Actor.js";
 import { readBounded } from "#vibelang/emitted/worker/Body";
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode";
-import * as Flows from "#vibelang/emitted/worker/Flows";
+import { codeOf } from "../ErrorCode.js";
+import * as Flows from "../Flows.js";
 import { TerminalOpen } from "../flows/TerminalOpen.js";
-import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess";
+import * as ShapeAccess from "../ShapeAccess.js";
 import { branchAccess, canEdit, canView } from "./Access.js";
-import { TerminalSockets } from "#vibelang/emitted/worker/branch/Sandboxes";
+import { TerminalSockets } from "./Sandboxes.js";
 import { isUpgrade, sameOrigin } from "#vibelang/emitted/worker/branch/Upgrade";
 import * as SocketAccess from "../SocketAccess.js";
 // The terminal routes (decision 0013 §2-§3, docs/features/branch-workspace.md#the-terminal):
@@ -34,6 +34,11 @@ import * as SocketAccess from "../SocketAccess.js";
 /** Terminal route requests, by `route` (`open`, `connect`) and `outcome`. */
 export const requests = Metric.counter("smithers_terminal_requests", {
     description: "Requests to the terminal routes, by route and outcome",
+    incremental: true,
+});
+/** A new open recovered an owned row whose shell has already ended. No terminal bytes are recorded. */
+export const recoveries = Metric.counter("smithers_terminal_recoveries", {
+    description: "Terminal opens that recovered a lost shell's stale row",
     incremental: true,
 });
 /** `GET /api/shapes/terminals` requests, by `status` and `live`. */
@@ -166,6 +171,17 @@ export const make = (database) => Effect.gen(function* () {
             // No terminal on a locked branch, nor yet on a restricted one, whose writers come with 0007's modes.
             if (branch.mode !== "open")
                 return refuse(fields, 409, "locked");
+            // A shell's exit reaches the browser socket immediately, but its row can still say open. A new open
+            // checks only this person's existing shell before admission; otherwise the unique live-row fence would
+            // keep returning the dead terminal forever. A resend of the same id retains its idempotency contract.
+            const live = yield* liveOf(branchId, actor.value.subject.id).pipe(Effect.provide(database));
+            if (live?.status === "open" && live.id !== terminalId &&
+                !(yield* (yield* TerminalSockets).alive(branchId, live.id, actor.value.subject.id))) {
+                yield* markLost(live.id).pipe(Effect.provide(database));
+                fields.recoveredTerminalId = live.id;
+                yield* Metric.update(recoveries, 1);
+                yield* Effect.annotateCurrentSpan({ "smithers.terminal.recovered": true });
+            }
             // The terminal keeps the role on the branch's repository its host re-checks shares with (decision 0079).
             const admitted = yield* admit(terminalId, branchId, { ...actor.value, role: branch.role }).pipe(Effect.provide(database));
             if (admitted === undefined)

@@ -4,9 +4,9 @@
  *
  * @since 0.1.0
  */
-import { $catchExpression } from "vibelang-runtime";
+import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime";
+import * as runtime from "vibelang-runtime/internal";
 import * as Effect from "effect/Effect";
 import { attemptIn } from "../internal/attempt.js";
 import { removeMachine } from "../internal/microsandboxRemove.js";
@@ -60,63 +60,47 @@ const isNotFound = (error) => Reflect.get(Object(error.cause), "code") === "sand
  * @category constructors
  * @since 0.1.0
  */
-export const reap = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* reap(options) {
-    const listed = [];
-    let cursor;
-    do {
-        const after = cursor;
-        const page = yield* attempt(() => options.sdk.Sandbox.listWith((list) => {
-            const scoped = list.label(providerLabel, providerName).label(ownerLabel, options.owner);
-            return after === undefined ? scoped : scoped.cursor(after);
-        }), "unavailable", `the microVMs of owner ${options.owner} could not be listed`);
-        listed.push(...page.sandboxes);
-        cursor = page.nextCursor;
-    } while (cursor !== undefined);
-    const reaped = [];
-    const failed = [];
-    {
-        let pending_1 = runtime.$normal;
-        try {
-            for (const handle of listed) {
-                try {
-                    {
-                        const labels = labelsOf(handle);
-                        const holder = labels?.[holderLabel];
-                        if (labels === undefined || holder === undefined || (yield* options.isAlive(holder)))
-                            continue;
-                        if (options.retain !== undefined && (yield* options.retain(labels)))
-                            continue;
-                        const outcome = yield* $catchExpression(() => (Effect_1.gen(function* () {
-                            const current = yield* attempt(() => handle.refresh(), "unavailable", `${handle.name} could not be read`);
-                            if (holderOf(current) !== holder)
-                                return "skipped";
-                            yield* attempt(() => removeMachine(current, options.stopTimeoutMs ?? defaultStopTimeoutMs), "unavailable", `${handle.name} could not be removed`);
-                            return "removed";
-                        })), (error) => Effect_1.sync(() => { return isNotFound(error) ? "skipped" : error; }));
-                        if (outcome === "removed")
-                            reaped.push({ name: handle.name, holder, status: handle.status });
-                        else if (outcome !== "skipped")
-                            failed.push({ name: handle.name, error: outcome });
-                    }
-                }
-                catch (thrown_1) {
-                    pending_1 = thrown_1;
-                    break;
-                }
-            }
+export const reap = (options) => {
+    return Effect_1.gen(function* reap() {
+        const listed = [];
+        let cursor;
+        do {
+            const after = cursor;
+            const page = yield* attempt(() => options.sdk.Sandbox.listWith((list) => {
+                const scoped = list.label(providerLabel, providerName).label(ownerLabel, options.owner);
+                return after === undefined ? scoped : scoped.cursor(after);
+            }), "unavailable", `the microVMs of owner ${options.owner} could not be listed`);
+            listed.push(...page.sandboxes);
+            cursor = page.nextCursor;
+        } while (cursor !== undefined);
+        const reaped = [];
+        const failed = [];
+        for (const handle of listed) {
+            const labels = labelsOf(handle);
+            const holder = labels?.[holderLabel];
+            if (labels === undefined || holder === undefined || (yield* options.isAlive(holder)))
+                continue;
+            if (options.retain !== undefined && (yield* options.retain(labels)))
+                continue;
+            const outcome = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return (Effect_1.gen(function* () {
+                const current = yield* attempt(() => handle.refresh(), "unavailable", `${handle.name} could not be read`);
+                if (holderOf(current) !== holder)
+                    return "skipped";
+                yield* attempt(() => removeMachine(current, options.stopTimeoutMs ?? defaultStopTimeoutMs), "unavailable", `${handle.name} could not be removed`);
+                return "removed";
+            })); }); })(), (error) => Effect_1.sync(() => { return (isNotFound(error) ? "skipped" : error); }));
+            if (outcome === "removed")
+                reaped.push({ name: handle.name, holder, status: handle.status });
+            else if (outcome !== "skipped")
+                failed.push({ name: handle.name, error: outcome });
         }
-        catch (thrown_2) {
-            throw runtime.$finallyFailure(pending_1, thrown_2);
+        if (failed.length > 0) {
+            return yield* Effect_1.fail(new ProviderError({
+                code: "unavailable",
+                message: `microsandbox: ${failed.length} orphaned microVM(s) could not be reaped: ${failed.map(({ name }) => name).join(", ")}`,
+                cause: failed.map(({ error }) => error)
+            }));
         }
-        if (pending_1 !== runtime.$normal)
-            throw pending_1;
-    }
-    if (failed.length > 0) {
-        return yield* Effect_1.fail(new ProviderError({
-            code: "unavailable",
-            message: `microsandbox: ${failed.length} orphaned microVM(s) could not be reaped: ${failed.map(({ name }) => name).join(", ")}`,
-            cause: failed.map(({ error }) => error)
-        }));
-    }
-    return reaped;
-})));
+        return reaped;
+    });
+};

@@ -212,7 +212,7 @@ export { TodoDraftCard, todoDraftCardCss } from "./stack";
 // An outside web page: in a sandboxed frame, or as a card that opens a tab.
 export { framedPageTarget, WEB_PAGE_SANDBOX, WebLinkCard, WebPageView, webPageCss, webPageTarget, } from "./web-page";
 export { DocsPageView, docsPageCss, docsPageTarget } from "./docs-page";
-export { declaredInput, formFieldsFor, } from "#vibelang/emitted/src/flow-form";
+export { declaredInput, formFieldsFor, } from "./flow-form.js";
 export * from "./flow-graph";
 export { ChatTimeline, timelineKey, timelineLabel, timelineBlocks, timelineCapacity, timelineExchanges, timelineLevelCount, timelineWidths, TIMELINE_ROOM } from "./chat/ChatTimeline";
 export { NotFound } from "./not-found";

@@ -27,7 +27,6 @@ import * as StandardFlows from "@smthrs/agent/StandardFlows";
 import * as WorkspaceObservation from "@smthrs/agent/WorkspaceObservation";
 import * as Capability from "@smthrs/capability/Capability";
 import * as NodeControl from "@smthrs/cli/NodeControl";
-import { Crypto } from "@smthrs/crypto";
 import { FlowEngine } from "@smthrs/engine";
 import { Flow, FlowRuntime } from "@smthrs/flow";
 import * as CompletionClaim from "@smthrs/harness/CompletionClaim";
@@ -54,10 +53,10 @@ import * as Approvals from "./approvals.js";
 import * as Box from "./box.js";
 import * as Changes from "./changes.js";
 import * as Context from "./context.js";
-import * as Credit from "#vibelang/emitted/src/credit";
+import * as Credit from "./credit.js";
 import { delegateModels, detectWithoutClaude, routedSeats, routing, workerFallbackSeats } from "./models.js";
 import * as Monitors from "./monitors.js";
-import * as Panels from "#vibelang/emitted/src/panels";
+import * as Panels from "./panels.js";
 import * as Reads from "./reads.js";
 import * as Replay from "./replay.js";
 import * as Runtime from "./runtime.js";
@@ -159,7 +158,7 @@ export const make = (options) => {
     }), 
     // Model HTTP keeps the noop store `executor` provides; this one only
     // answers `authorize` below.
-    Approvals.layer(options.cwd, approvalMode), Crypto.layerFromDigest(NodeCrypto.layerDigest), 
+    Approvals.layer(options.cwd, approvalMode), NodeCrypto.layer, 
     // Relative flow paths and commands resolve against `cwd`, never the process's own.
     Rooted.layer(options.cwd).pipe(Layer.provideMerge(
     // Every Node platform service except `NodeTerminal`: OpenTUI owns stdin, and

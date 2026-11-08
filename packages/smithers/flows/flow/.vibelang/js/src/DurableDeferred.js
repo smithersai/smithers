@@ -6,6 +6,17 @@ import * as Filter from "effect/Filter";
 import * as Option from "effect/Option";
 import * as SchemaGetter from "effect/SchemaGetter";
 import * as Effect_1 from "effect/Effect";
+/**
+ * Defines named wait points for durable flow executions.
+ *
+ * A `DurableDeferred` has a stable name and schemas for the value that will be
+ * recorded later. Flows can await it, suspend when no result exists yet, and
+ * resume after its result is recorded. Tokens identify the flow name,
+ * execution id, and deferred name so external code can complete the correct
+ * wait point later.
+ *
+ * @since 0.1.0
+ */
 import * as Arr from "effect/Array";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -61,15 +72,17 @@ export const make = (name, options) => {
 };
 const await_ = 
 // Untraced because deferred polling participates in the flow scheduler hot path.
-Effect_1.fnUntraced(function* await_(self) {
-    const engine = yield* FlowRuntime;
-    const instance = yield* FlowInstance;
-    const exit = yield* Flow.wrapActionResult(engine.deferredResult(self), Option.isNone);
-    if (Option.isNone(exit)) {
-        return yield* Flow.suspend(instance);
-    }
-    return yield* replayExit(instance, exit.value);
-});
+(self) => {
+    return Effect_1.gen(function* await_() {
+        const engine = yield* FlowRuntime;
+        const instance = yield* FlowInstance;
+        const exit = yield* Flow.wrapActionResult(engine.deferredResult(self), Option.isNone);
+        if (Option.isNone(exit)) {
+            return yield* Flow.suspend(instance);
+        }
+        return yield* replayExit(instance, exit.value);
+    });
+};
 /** Restores the terminal classification shared by every deferred replay. */
 const replayExit = (instance, value) => {
     // A recorded interruption is a durable *outcome*, not a request to
@@ -106,29 +119,31 @@ export const into = dual(2, (effect, self) => Effect.contextWith((context) => {
     // by reference, and suspension metadata belongs to the enclosing flow.
     return Effect.onExit(effect, 
     // Untraced because completion encoding is called for each deferred result.
-    Effect_1.fnUntraced(function* (exit) {
-        if (Exit.isFailure(exit)) {
-            const [interrupts, reasons] = Arr.partition(exit.cause.reasons, Filter.fromPredicate(Cause.isInterruptReason));
-            const hasInterruptsOnly = interrupts.length === exit.cause.reasons.length;
-            if (hasInterruptsOnly) {
-                // An interrupt-only exit is never a result: the effect was
-                // suspended, preempted, or interrupted, so record nothing.
-                // Recording here would durably persist the empty non-interrupt
-                // partition, and first-writer-wins would replay that empty
-                // cause forever instead of the real completion.
-                return;
+    (exit) => {
+        return Effect_1.gen(function* () {
+            if (Exit.isFailure(exit)) {
+                const [interrupts, reasons] = Arr.partition(exit.cause.reasons, Filter.fromPredicate(Cause.isInterruptReason));
+                const hasInterruptsOnly = interrupts.length === exit.cause.reasons.length;
+                if (hasInterruptsOnly) {
+                    // An interrupt-only exit is never a result: the effect was
+                    // suspended, preempted, or interrupted, so record nothing.
+                    // Recording here would durably persist the empty non-interrupt
+                    // partition, and first-writer-wins would replay that empty
+                    // cause forever instead of the real completion.
+                    return;
+                }
+                else if (interrupts.length > 0) {
+                    exit = Exit.failCause(Cause.fromReasons(reasons));
+                }
             }
-            else if (interrupts.length > 0) {
-                exit = Exit.failCause(Cause.fromReasons(reasons));
-            }
-        }
-        yield* engine.deferredDone(self, {
-            flowName: instance.flow._tag,
-            executionId: instance.executionId,
-            deferredName: self.name,
-            exit
+            yield* engine.deferredDone(self, {
+                flowName: instance.flow._tag,
+                executionId: instance.executionId,
+                deferredName: self.name,
+                exit
+            });
         });
-    }));
+    });
 }));
 /**
  * Runs effects as a durable race, returning a previously persisted result when
@@ -260,10 +275,12 @@ const tokenExcerpt = (token, maxChars = maxTokenExcerptChars) => {
  */
 export const token = 
 // Untraced because token allocation is on the durable-deferred hot path.
-Effect_1.fnUntraced(function* token(self) {
-    const instance = yield* FlowInstance;
-    return tokenFromExecutionId(self, instance);
-});
+(self) => {
+    return Effect_1.gen(function* token() {
+        const instance = yield* FlowInstance;
+        return tokenFromExecutionId(self, instance);
+    });
+};
 /**
  * Creates a durable deferred token from an explicit flow, execution ID,
  * and deferred name.
@@ -306,23 +323,25 @@ export const tokenFromPayload = dual(2, (self, options) => Effect.map(options.fl
  */
 export const done = dual(2, 
 // Untraced because awaiting a deferred re-enters the scheduler recursively.
-Effect_1.fnUntraced(function* (self, options) {
-    const token = yield* TokenParsed.parse(options.token);
-    if (token.deferredName !== self.name) {
-        return yield* Effect_1.fail(new TokenInvalid({
-            code: "deferred_mismatch",
-            message: `The token addresses deferred "${tokenExcerpt(token.deferredName)}", but it was submitted through ` +
-                `deferred "${self.name}".`
-        }));
-    }
-    const engine = yield* FlowRuntime;
-    yield* engine.deferredDone(self, {
-        flowName: token.flowName,
-        executionId: token.executionId,
-        deferredName: token.deferredName,
-        exit: options.exit
+(self, options) => {
+    return Effect_1.gen(function* () {
+        const token = yield* TokenParsed.parse(options.token);
+        if (token.deferredName !== self.name) {
+            return yield* Effect_1.fail(new TokenInvalid({
+                code: "deferred_mismatch",
+                message: `The token addresses deferred "${tokenExcerpt(token.deferredName)}", but it was submitted through ` +
+                    `deferred "${self.name}".`
+            }));
+        }
+        const engine = yield* FlowRuntime;
+        yield* engine.deferredDone(self, {
+            flowName: token.flowName,
+            executionId: token.executionId,
+            deferredName: token.deferredName,
+            exit: options.exit
+        });
     });
-}));
+});
 /**
  * Completes the durable deferred identified by a token with a successful
  * value.

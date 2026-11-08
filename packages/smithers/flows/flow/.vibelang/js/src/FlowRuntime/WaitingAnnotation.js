@@ -48,7 +48,9 @@ export const WaitingAnnotation = Schema.Struct({
  * @category combinators
  * @since 0.1.0
  */
-export const annotateWaiting = Effect_1.fnUntraced(function* annotateWaiting(waiting) {
-    const instance = yield* FlowInstance;
-    instance.waiting = waiting;
-});
+export const annotateWaiting = (waiting) => {
+    return Effect_1.gen(function* annotateWaiting() {
+        const instance = yield* FlowInstance;
+        instance.waiting = waiting;
+    });
+};

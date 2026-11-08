@@ -66,6 +66,11 @@ export const Run = Schema.Struct({
     answeredAt: Schema.NullOr(Schema.String),
     createdAt: Schema.String,
     updatedAt: Schema.String,
+    /**
+     * The conversation the run works in: its wait shows only while that conversation's repository may (decision 0110, the
+     * data gate). A row synced before the shape carried it has none.
+     */
+    conversationId: Schema.optional(Schema.NullOr(Schema.String)),
 });
 /** Whether a run's row holds a question still open: it needs the person, and nobody has answered it. */
 export const isOpen = (run) => run.status === "needs_you" && run.answeredAt === null;

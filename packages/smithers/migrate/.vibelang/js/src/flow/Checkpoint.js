@@ -24,6 +24,7 @@
  * @since 1.0.0-rc.0
  */
 import { Action } from "@smthrs/flow";
+import { NodeHost } from "@smthrs/platform-node";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -31,8 +32,6 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { createHash } from "node:crypto";
-import { constants } from "node:fs";
-import { lstat, mkdir, open, rename, rm } from "node:fs/promises";
 import * as Fs from "../internal/Fs.js";
 import { io, make, MigrateError } from "../MigrateError.js";
 import * as Exec from "./internal/Exec.js";
@@ -199,79 +198,20 @@ const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const verifiedBytes = (fs, file, expected, description) => fs.readFile(file).pipe(Effect.mapError(io(`could not read ${description}`)), Effect.flatMap((bytes) => sha256(bytes) === expected
     ? Effect.succeed(bytes)
     : Effect.fail(make("checkpoint-failed", `${description} no longer matches its checkpoint digest`))));
-/** Prepare each destination component without following links, including dangling links. */
+/** The host pins the root and prepares every component without following aliases. */
 const privateDirectory = (root, directory) => Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const relative = path.relative(path.resolve(root), path.resolve(directory));
-    if (relative === "" || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-        return yield* Effect.fail(make("checkpoint-failed", `backup directory must be inside the project: ${directory}`));
-    }
-    // Resolve the trusted root once: /tmp itself is a symlink on macOS.
-    const realRoot = yield* fs.realPath(root).pipe(Effect.mapError(io(`could not resolve ${root}`)));
-    return yield* Effect.tryPromise({
-        try: async () => {
-            let current = realRoot;
-            for (const component of relative.split(path.sep)) {
-                current = path.join(current, component);
-                const info = await lstat(current).catch((cause) => {
-                    if (cause.code === "ENOENT")
-                        return undefined;
-                    throw cause;
-                });
-                if (info === undefined)
-                    await mkdir(current, { mode: 0o700 });
-                else if (!info.isDirectory() || info.isSymbolicLink()) {
-                    throw new Error(`backup component is not a real directory: ${current}`);
-                }
-                // FileSystem.open has no numeric flags. Use a no-follow directory
-                // handle so tightening an existing report directory cannot chmod a link target.
-                const handle = await open(current, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
-                try {
-                    await handle.chmod(0o700);
-                }
-                finally {
-                    await handle.close();
-                }
-            }
-            return current;
-        },
-        catch: io(`could not prepare private backup directory ${directory}`)
-    });
+    const owner = yield* NodeHost.AtomicFileSystem.ownerPrivate;
+    return yield* owner.directory(root, directory).pipe(Effect.mapError(io(`could not prepare private backup directory ${directory}`)));
 });
-let backupCounter = 0;
-/** Write through an exclusive private file; replacing a completed checkpoint never follows its old inode. */
+/** Publish a synced private inode and its parent before recording a checkpoint. */
 const writeBackup = (root, directory, file, bytes) => Effect.gen(function* () {
     const path = yield* Path.Path;
     if (path.isAbsolute(file) || file.split(/[\\/]/).some((part) => part === ".." || part === "" || part === ".")) {
         return yield* Effect.fail(make("checkpoint-failed", `invalid backup path: ${file}`));
     }
     const target = path.join(directory, ...file.split("/"));
-    const parent = yield* privateDirectory(root, path.dirname(target));
-    yield* Effect.tryPromise({
-        try: async () => {
-            const destination = path.join(parent, path.basename(target));
-            const existing = await lstat(destination).catch((cause) => {
-                if (cause.code === "ENOENT")
-                    return undefined;
-                throw cause;
-            });
-            if (existing !== undefined && (!existing.isFile() || existing.isSymbolicLink())) {
-                throw new Error(`backup destination is not a regular file: ${destination}`);
-            }
-            const temporary = path.join(parent, `.${path.basename(target)}.tmp-${process.pid}-${backupCounter++}`);
-            const handle = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-            try {
-                await handle.writeFile(bytes);
-                await rename(temporary, destination);
-            }
-            finally {
-                await handle.close();
-                await rm(temporary, { force: true });
-            }
-        },
-        catch: io(`could not back up ${file}`)
-    });
+    const owner = yield* NodeHost.AtomicFileSystem.ownerPrivate;
+    yield* owner.write(root, target, bytes).pipe(Effect.mapError(io(`could not back up ${file}`)));
 });
 /** Copies every existing declared path into the backup directory, byte for byte. */
 const backup = (root, files, directory) => Effect.gen(function* () {

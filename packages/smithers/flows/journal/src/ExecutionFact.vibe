@@ -42,20 +42,20 @@ export type Observation = typeof Observation.Type
  * @category schemas
  * @since 1.0.0
  */
-export schema Fact {
-  readonly version: 1
-  readonly baseline: "created" | "legacy"
-  readonly observation: Observation
-}
+export const Fact = Schema.Struct({
+  version: Schema.Literal(1),
+  baseline: Schema.Literals(["created", "legacy"]),
+  observation: Observation
+})
 
 /** A corrupt/legacy row can still settle, but cannot establish a replay baseline.
  * @category schemas
  * @since 1.0.0
  */
-export schema UnavailableFact {
-  readonly version: 1
-  readonly unavailable: "invalid-observation"
-}
+export const UnavailableFact = Schema.Struct({
+  version: Schema.Literal(1),
+  unavailable: Schema.Literal("invalid-observation")
+})
 
 /** Root identity stays fixed while lifecycle follows its latest trampoline round.
  * @category schemas
