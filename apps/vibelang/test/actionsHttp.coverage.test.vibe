@@ -1,0 +1,226 @@
+// @vitest-environment node
+// worker/ActionsHttp.vibe's public protocol over a real loopback server with an injected ActionsApi and identity:
+// routing, body admission, role policy, origin checks and refusal mapping. Plus worker/ActionIdentity.vibe's
+// trusted/session adapters.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import * as ActionsHttp from "../worker/ActionsHttp.vibe"
+import * as ActionIdentity from "../worker/ActionIdentity.vibe"
+import { SESSION } from "../worker/Accounts.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import type { Registered, Run } from "../src/actions/Actions.vibe"
+
+function originOf(server: HttpServer.HttpServer["Service"]): string {
+  const address = server.address
+  return address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+}
+
+/** The status and JSON body of one answer. */
+effect function answerOf(http: HttpClient.HttpClient, request: HttpClientRequest.HttpClientRequest) {
+  const response = try http.execute(request)
+  const text = try response.text
+  return { status: response.status, body: text === "" ? undefined : try Effect.try(() => JSON.parse(text) as unknown) }
+}
+
+const post = (origin: string, path: string, body: unknown) =>
+  HttpClientRequest.post(`${origin}${path}`).pipe(HttpClientRequest.bodyText(JSON.stringify(body)))
+
+/** Serves `handle(api, ·)` for `ask`, with the identity `role`'s person when given. */
+effect function serving(api: ActionsHttp.ActionsApi, role: "viewer" | "maintainer", ask: (http: HttpClient.HttpClient, origin: string) => void!unknown) {
+  const identity = Layer.succeed(ActionIdentity.ActionIdentity, {
+    request: () => succeed(role === "viewer" ? { owner: "", role: "viewer" as const } : { owner: "1", role: "maintainer" as const, name: "Ada" }),
+    role: () => succeed(role),
+  })
+  provide NodeHttpServer.layerTest {
+    try HttpServer.serveEffect(effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      return try Effect.provide(ActionsHttp.handle(api, new URL(request.originalUrl, `http://${request.headers["host"] ?? "actions.test"}`)), identity)
+    })
+    const origin = originOf(try HttpServer.HttpServer)
+    provide FetchHttpClient.layer {
+      const http = try HttpClient.HttpClient
+      try ask(http, origin)
+    }
+  }
+}
+
+const run: Run = { id: "a-1", flow: "vibelang/Post", door: "button", actor: "person", state: "passed", started: 1, at: 2, result: "done", steps: [] }
+
+/** An api that records its calls and answers `refusals` for the named verbs. */
+function fakeApi(refusals: Record<string, string | null> = {}) {
+  const calls: Array<string> = []
+  const api: ActionsHttp.ActionsApi = {
+    list: (flow) => {
+      calls.push(`list:${flow}`)
+      return succeed([run])
+    },
+    start: (request, role) => {
+      calls.push(`start:${request.id}:${request.flow}:${request.owner ?? ""}:${request.actor}:${role}`)
+      return succeed(refusals["start"] ?? null)
+    },
+    rerun: (id, next, role, owner) => {
+      calls.push(`rerun:${id}:${next}:${role}:${owner}`)
+      return succeed(refusals["rerun"] ?? null)
+    },
+    cancel: (id, role, owner) => {
+      calls.push(`cancel:${id}:${role}:${owner}`)
+      return succeed(refusals["cancel"] ?? null)
+    },
+    read: (id) => {
+      calls.push(`read:${id}`)
+      return succeed([run])
+    },
+    events: (id) => {
+      calls.push(`events:${id}`)
+      return succeed(HttpServerResponse.text(`data: {}\n\n`))
+    },
+  }
+  return { calls, api }
+}
+
+describe("the actions protocol", () => {
+  it.live("lists the catalog and the commands a role may run", () => scoped(effect {
+    const { api } = fakeApi()
+    try serving(api, "viewer", (http, origin) => effect {
+      const all = try answerOf(http, HttpClientRequest.get(`${origin}/api/actions`))
+      const commandsViewer = try answerOf(http, HttpClientRequest.get(`${origin}/api/actions/commands`))
+      try Effect.try(() => {
+        expect(all.status).toBe(200)
+        expect((all.body as Array<Registered>).some((entry) => entry.title === "Docs")).toBe(true)
+        const names = (commandsViewer.body as Array<Registered>).map((entry) => entry.command)
+        expect(names).toContain("/tour")
+        expect(names).not.toContain("/plan")
+      })
+    })
+  }), 30_000)
+
+  it.live("a maintainer's commands include the contributor ones", () => scoped(effect {
+    const { api } = fakeApi()
+    try serving(api, "maintainer", (http, origin) => effect {
+      const commands = try answerOf(http, HttpClientRequest.get(`${origin}/api/actions/commands`))
+      try Effect.try(() => {
+        const names = (commands.body as Array<Registered>).map((entry) => entry.command)
+        expect(names).toContain("/plan")
+        expect(names).toContain("/sandbox")
+      })
+    })
+  }), 30_000)
+
+  it.live("starts, reads, reruns, cancels and streams a run, with the origin guard and body limits", () => scoped(effect {
+    const { calls, api } = fakeApi()
+    try serving(api, "maintainer", (http, origin) => effect {
+      const listed = try answerOf(http, HttpClientRequest.get(`${origin}/api/actions/runs?flow=vibelang/Post`))
+      const started = try answerOf(http, post(origin, "/api/actions/runs", { id: "a-1", flow: "vibelang/Post", input: { text: "hi" }, door: "button" }).pipe(HttpClientRequest.setHeader("origin", origin)))
+      const crossOrigin = try answerOf(http, post(origin, "/api/actions/runs", { id: "a-2", flow: "vibelang/Post", input: {}, door: "button" }).pipe(HttpClientRequest.setHeader("origin", "http://evil.test")))
+      const huge = try answerOf(http, HttpClientRequest.post(`${origin}/api/actions/runs`).pipe(HttpClientRequest.bodyText("x".repeat(32_001))))
+      const broken = try answerOf(http, HttpClientRequest.post(`${origin}/api/actions/runs`).pipe(HttpClientRequest.bodyText("{")))
+      const badId = try answerOf(http, post(origin, "/api/actions/runs", { id: "b-1", flow: "vibelang/Post", input: {}, door: "button" }))
+      const found = try answerOf(http, HttpClientRequest.get(`${origin}/api/actions/runs/a-1`))
+      const missing = try answerOf(http, HttpClientRequest.get(`${origin}/api/actions/runs/a-9`).pipe(HttpClientRequest.setHeader("x", "y")))
+      const badName = try answerOf(http, HttpClientRequest.get(`${origin}/api/actions/runs/zz`))
+      const rerun = try answerOf(http, post(origin, "/api/actions/runs/a-1/rerun", { id: "a-5" }))
+      const rerunBad = try answerOf(http, post(origin, "/api/actions/runs/a-1/rerun", { id: "x" }))
+      const events = try http.execute(HttpClientRequest.get(`${origin}/api/actions/runs/a-1/events`))
+      const cancelled = try answerOf(http, HttpClientRequest.make("DELETE")(`${origin}/api/actions/runs/a-1`))
+      const nowhere = try answerOf(http, HttpClientRequest.get(`${origin}/api/actions/runs/a-1/nope`))
+      try Effect.try(() => {
+        expect([listed.status, started.status]).toEqual([200, 202])
+        expect(started.body).toEqual({ id: "a-1" })
+        expect([crossOrigin.status, huge.status, broken.status, badId.status]).toEqual([403, 413, 400, 400])
+        expect([found.status, missing.status, badName.status]).toEqual([200, 404, 404])
+        expect([rerun.status, rerunBad.status]).toEqual([202, 400])
+        expect(events.status).toBe(200)
+        expect(cancelled.status).toBe(200)
+        expect(nowhere.status).toBe(404)
+        expect(calls).toEqual([
+          "list:vibelang/Post",
+          "start:a-1:vibelang/Post:1:person:maintainer",
+          "read:a-1", "read:a-9", "rerun:a-1:a-5:maintainer:1", "events:a-1", "cancel:a-1:maintainer:1",
+        ])
+      })
+    })
+  }), 30_000)
+
+  it.live("maps a start, rerun or cancel refusal to its status", () => scoped(effect {
+    const { api } = fakeApi({ start: "busy", rerun: "gone", cancel: "forbidden" })
+    try serving(api, "maintainer", (http, origin) => effect {
+      const started = try answerOf(http, post(origin, "/api/actions/runs", { id: "a-1", flow: "vibelang/Post", input: {}, door: "agent" }))
+      const reran = try answerOf(http, post(origin, "/api/actions/runs/a-1/rerun", { id: "a-2" }))
+      const cancelled = try answerOf(http, HttpClientRequest.make("DELETE")(`${origin}/api/actions/runs/a-1`))
+      try Effect.try(() => {
+        expect([started.status, started.body]).toEqual([409, { code: "busy" }])
+        expect([reran.status, reran.body]).toEqual([404, { code: "gone" }])
+        expect([cancelled.status, cancelled.body]).toEqual([403, { code: "forbidden" }])
+      })
+    })
+  }), 30_000)
+
+  it.live("refuses a start the role may not run", () => scoped(effect {
+    const { calls, api } = fakeApi()
+    try serving(api, "viewer", (http, origin) => effect {
+      const started = try answerOf(http, post(origin, "/api/actions/runs", { id: "a-1", flow: "vibelang/Post", input: {}, door: "button" }))
+      try Effect.try(() => {
+        expect(started.status).toBe(403)
+        expect(calls).toEqual([])
+      })
+    })
+  }), 30_000)
+})
+
+describe("ActionIdentity", () => {
+  const accounts: ActionIdentity.Authority = {
+    current: (cookie) => cookie === "s1"
+      ? succeed({ id: "7", login: "ada", role: "contributor" as const })
+      : fail(new Unreachable({ what: "accounts" })),
+    role: (owner) => succeed(owner === "1" ? "maintainer" as const : "contributor" as const),
+    allowed: (actor) => succeed(actor === "1" || actor === "7"),
+  }
+
+  it.effect("a trusted entrypoint names its owner; an untrusted request reads its session", () => effect {
+    const trusted = ActionIdentity.fromAccounts(accounts, { owner: "1", name: "Ada" })
+    const request = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(HttpClientRequest.get("https://a.test/")))
+    const mine = try trusted.request().pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request))
+    const role = try trusted.role("1")
+    const deniedRole = try trusted.role("9")
+    try Effect.try(() => {
+      expect(mine).toEqual({ owner: "1", name: "Ada", role: "maintainer" })
+      expect(role).toBe("maintainer")
+      expect(deniedRole).toBe("viewer")
+    })
+  })
+
+  it.effect("the session path resolves the signed-in person, degrading to viewer when not allowed", () => effect {
+    const untrusted = ActionIdentity.fromAccounts(accounts)
+    const request = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(HttpClientRequest.get("https://a.test/api/actions").pipe(HttpClientRequest.setHeader("cookie", `${SESSION}=s1`))))
+    const done = try effect {
+      const mine = try untrusted.request()
+      const role = try untrusted.role("7")
+      const outsider = try untrusted.role("9")
+      const blank = try untrusted.role("")
+      try Effect.try(() => {
+        expect(mine).toEqual({ owner: "7", name: "ada", role: "contributor" })
+        expect(role).toBe("contributor")
+        expect(outsider).toBe("viewer")
+        expect(blank).toBe("viewer")
+      })
+    }.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request))
+    void done
+  })
+
+  it.effect("a trusted principal the accounts deny acts as a viewer", () => effect {
+    const trusted = ActionIdentity.fromAccounts(accounts, { owner: "9" })
+    const request = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(HttpClientRequest.get("https://a.test/")))
+    const mine = try trusted.request().pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request))
+    try Effect.try(() => expect(mine).toEqual({ owner: "9", name: "Guest", role: "viewer" }))
+  })
+
+  it.effect("reads the trusted principal only from entrypoint props", () => effect {
+    try Effect.try(() => {
+      expect(ActionIdentity.trustedOf({ actionOwner: "1", actionName: "Ada" })).toEqual({ owner: "1", name: "Ada" })
+      expect(ActionIdentity.trustedOf({ actionOwner: "1" })).toEqual({ owner: "1", name: "Guest" })
+      expect(ActionIdentity.trustedOf({})).toBeUndefined()
+      expect(ActionIdentity.trustedOf({ actionOwner: 7 })).toBeUndefined()
+    })
+  })
+})
