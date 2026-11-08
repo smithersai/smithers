@@ -124,8 +124,20 @@ describe("test-file ownership", () => {
     for (const label of ["//.smithers/flows:issueClaim", "//.smithers/flows:evidenceBindings", "//.smithers/flows:releaseRehearsal", "//.smithers/flows:releaseVersion"]) {
       assert.ok(scripts.includes(`smthrs test '${label}'`), label)
     }
-    const test = workflow.jobs.test.steps.flatMap((step) => step.run ? [step.run] : []).join("\n")
-    assert.match(test, /smthrs ci '\/\/packages\/\.\.\.'/)
+    const inventory = JSON.parse(readFileSync(join(root, ".smithers/target-index.json"), "utf8"))
+    const expected = [...new Set(inventory.filter(target =>
+      target.package.startsWith("packages/") &&
+      target.kinds.some(kind => ["build", "test", "lint", "docs"].includes(kind))
+    ).map(target => "//" + target.package + ":*"))].sort()
+    const selected = Object.entries(workflow.jobs).filter(([name]) => /^test(?:-[2-8])?$/.test(name))
+    assert.equal(selected.length, 8, "all package shards remain required jobs")
+    const patterns = selected.flatMap(([name, job]) => {
+      assert.notEqual(job["continue-on-error"], true, name)
+      const commands = job.steps.flatMap(step => step.run?.includes("pnpm exec smthrs ci ") ? [step.run] : [])
+      assert.equal(commands.length, 1, name + " selects one package partition")
+      return [...commands[0].matchAll(/'(\/\/packages\/[^']+:\*)'/g)].map(match => match[1])
+    })
+    assert.deepEqual(patterns.sort(), expected, "each package's complete target set runs once across the required CI shards")
     assert.notEqual(workflow.jobs.repository["continue-on-error"], true)
   })
 })
