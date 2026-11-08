@@ -1,0 +1,63 @@
+import { describe, expect, it } from "@effect/vitest"
+import { apply, decide, empty, leastRole, may, roleOf, type Conversation, type Intent } from "../src/core/conversation.vibe"
+
+function accepted(state: Conversation, intent: Intent) {
+  const decision = decide(state, intent)
+  expect(decision.ok).toBe(true)
+  return decision.ok ? apply(state, decision.event) : state
+}
+
+describe("the project's role policy", () => {
+  it("names the least role for each action, with a boundary on both sides", () => {
+    const roles = ["viewer", "new", "community", "contributor", "maintainer"] as const
+    const actions = { read: "viewer", ask: "viewer", tour: "viewer", people: "new", issue: "new", comment: "new", vip: "community", action: "contributor", sandbox: "contributor", triage: "contributor", merge: "maintainer", settings: "maintainer", roles: "maintainer" } as const
+    for (const [action, required] of Object.entries(actions)) {
+      expect(leastRole(action as keyof typeof actions)).toBe(required)
+      for (const role of roles) expect(may(role, action as keyof typeof actions)).toBe(roles.indexOf(role) >= roles.indexOf(required))
+    }
+  })
+  it("numbers bootstrap and manual promotions; unprivileged actors receive a typed refusal", () => {
+    let state = accepted(empty, { type: "GrantRole", id: "will", by: "", role: "maintainer", mode: "bootstrap" })
+    for (const role of ["community", "contributor", "maintainer"] as const) {
+      const decision = decide(state, { type: "GrantRole", id: "alice", by: "will", role, mode: "person" })
+      expect(decision.ok && decision.event.seq).toBe(state.seq + 1)
+      state = decision.ok ? apply(state, decision.event) : state
+      expect(roleOf(state.roles, "alice")).toBe(role)
+    }
+    expect(decide(state, { type: "GrantRole", id: "bob", by: "bob", role: "contributor", mode: "person" })).toEqual({ ok: false, refusal: "forbidden" })
+    expect(decide(state, { type: "Authorize", id: "work", by: "bob", action: "sandbox" })).toEqual({ ok: false, refusal: "forbidden" })
+  })
+  it("promotes a new participant once; an explicit demotion cannot be undone by participation", () => {
+    let state = accepted(empty, { type: "GrantRole", id: "will", by: "", role: "maintainer", mode: "bootstrap" })
+    expect(roleOf(state.roles, "alice")).toBe("new")
+    state = accepted(state, { type: "GrantRole", id: "alice", by: "alice", role: "community", mode: "participation" })
+    expect(decide(state, { type: "GrantRole", id: "alice", by: "alice", role: "community", mode: "participation" })).toEqual({ ok: false, refusal: "forbidden" })
+    state = accepted(state, { type: "GrantRole", id: "alice", by: "will", role: "new", mode: "person" })
+    expect(decide(state, { type: "GrantRole", id: "alice", by: "alice", role: "community", mode: "participation" })).toEqual({ ok: false, refusal: "forbidden" })
+    expect(roleOf(state.roles, "alice")).toBe("new")
+  })
+  it("refuses self promotion, unnamed people and removal of the final maintainer", () => {
+    const state = accepted(empty, { type: "GrantRole", id: "will", by: "", role: "maintainer", mode: "bootstrap" })
+    for (const intent of [
+      { type: "GrantRole", id: "alice", by: "alice", role: "maintainer", mode: "person" },
+      { type: "GrantRole", id: "", by: "will", role: "community", mode: "person" },
+      { type: "GrantRole", id: "will", by: "will", role: "new", mode: "person" },
+      { type: "GrantRole", id: "alice", by: "", role: "maintainer", mode: "bootstrap" },
+    ] as const) expect(decide(state, intent).ok).toBe(false)
+    expect(roleOf(state.roles, "")).toBe("viewer")
+  })
+  it("permits self demotion and peer demotion while preserving an independent maintainer", () => {
+    let state = accepted(empty, { type: "GrantRole", id: "will", by: "", role: "maintainer", mode: "bootstrap" })
+    state = accepted(state, { type: "GrantRole", id: "alice", by: "will", role: "maintainer", mode: "person" })
+    state = accepted(state, { type: "GrantRole", id: "alice", by: "alice", role: "community", mode: "person" })
+    state = accepted(state, { type: "GrantRole", id: "alice", by: "will", role: "maintainer", mode: "person" })
+    state = accepted(state, { type: "GrantRole", id: "will", by: "alice", role: "contributor", mode: "person" })
+    expect(roleOf(state.roles, "will")).toBe("contributor")
+    expect(roleOf(state.roles, "alice")).toBe("maintainer")
+  })
+})
+
+it("authorizes People and its event stream from New through the policy seam", () => {
+  expect(decide(empty, { type: "Authorize", id: "people-read", by: "", action: "people" })).toEqual({ ok: false, refusal: "forbidden" })
+  expect(decide(empty, { type: "Authorize", id: "people-read", by: "signed", action: "people" }).ok).toBe(true)
+})

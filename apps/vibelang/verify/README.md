@@ -45,3 +45,7 @@ adds the exact selected module and resolves its dependencies; it does not reload
 mutation. Strict checking still runs separately over every selected source. The history probe emitted byte-identical
 Dafny and reduced generation from25.795s to2.506s on the loaded shared host; this is a diagnostic measurement, not
 a reproducible application benchmark claim.
+
+Production verification allows 60 seconds per Dafny assertion batch, one solver core. The expanded role aggregate
+proved unchanged at 27M solver resources but its prior 30-second wall limit became contention-sensitive. Mutation
+verification keeps 30 seconds; a timeout never counts as a rejected mutation. No proof obligation is omitted.

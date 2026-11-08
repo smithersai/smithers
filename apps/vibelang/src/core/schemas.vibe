@@ -7,7 +7,7 @@ import { nonnegativeCursor } from "./protocolDecision.vibe"
 export const Seq = Schema.Int.check(Schema.makeFilter(nonnegativeCursor, Schema.isGreaterThanOrEqualTo(0).annotations))
 
 /** Why the sequencer refused an intent (`Refusal` in conversation.vibe). */
-export const RefusalReason = Schema.Literals(["empty", "too-long", "duplicate", "busy", "not-replying"])
+export const RefusalReason = Schema.Literals(["empty", "too-long", "duplicate", "busy", "not-replying", "forbidden"])
 
 export schema Entry {
   readonly id: string
@@ -21,12 +21,15 @@ export schema Entry {
   readonly error: string
 }
 
+export schema RoleGrant { readonly id: string; readonly role: "viewer" | "new" | "community" | "contributor" | "maintainer"; readonly blocked: boolean }
+
 export schema Conversation {
   readonly seq: Seq
   readonly entries: ReadonlyArray<Entry>
   readonly agent: "idle" | "working" | "failed"
   readonly replying: string
   readonly pane: string
+  readonly roles: ReadonlyArray<RoleGrant>
 }
 
 export schema Pending {
@@ -59,9 +62,12 @@ export schema TourStarted { readonly type: "TourStarted"; readonly seq: Seq; rea
 export schema TourEnded { readonly type: "TourEnded"; readonly seq: Seq; readonly id: string }
 export schema PaneOpened { readonly type: "PaneOpened"; readonly seq: Seq; readonly id: string; readonly url: string }
 
+export schema RoleGranted { readonly type: "RoleGranted"; readonly seq: Seq; readonly id: string; readonly by: string; readonly role: "viewer" | "new" | "community" | "contributor" | "maintainer"; readonly mode: "person" | "participation" | "bootstrap" }
+export schema ActionAuthorized { readonly type: "ActionAuthorized"; readonly seq: Seq; readonly id: string; readonly by: string; readonly action: "read" | "ask" | "tour" | "people" | "issue" | "comment" | "vip" | "action" | "sandbox" | "triage" | "merge" | "settings" | "roles" }
+
 /** Decodes one event off the wire. */
 export const EventSchema = Schema.Union([
-  Posted, ReplyStarted, ReplyDelta, ReplyRestarted, ReplyFinished, ReplyFailed, TourStarted, TourEnded, PaneOpened,
+  RoleGranted, ActionAuthorized, Posted, ReplyStarted, ReplyDelta, ReplyRestarted, ReplyFinished, ReplyFailed, TourStarted, TourEnded, PaneOpened,
 ])
 
 /** A finite read: current copies of entries touched after `after`, and the event cursor. */

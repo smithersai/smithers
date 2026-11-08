@@ -40,6 +40,8 @@ export interface Entry {
 
 /** The sequencer's numbered events. `seq` starts at 1 and counts up by one. */
 export type Event =
+  | { readonly type: "RoleGranted"; readonly seq: number; readonly id: string; readonly by: string; readonly role: Role; readonly mode: GrantMode }
+  | { readonly type: "ActionAuthorized"; readonly seq: number; readonly id: string; readonly by: string; readonly action: Action }
   | {
     readonly type: "Posted"
     readonly seq: number
@@ -68,10 +70,11 @@ export interface Conversation {
   readonly agent: AgentPhase
   readonly replying: string
   readonly pane: string
+  readonly roles: ReadonlyArray<RoleGrant>
 }
 
 /** A conversation before its first event. */
-export const empty: Conversation = { seq: 0, entries: [], agent: "idle", replying: "", pane: "" }
+export const empty: Conversation = { seq: 0, entries: [], agent: "idle", replying: "", pane: "", roles: [] }
 
 /** The most characters one message may hold. */
 export const MAX_TEXT = 8000
@@ -115,10 +118,16 @@ export const AGENT_NAME = "VibeLang agent"
 //@ ensures event.seq == conversation.seq + 1 && event.type == "ReplyDelta" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" ==> \result.entries.length == conversation.entries.length && forall(i, 0 <= i && i < \result.entries.length ==> (conversation.entries[i].id == event.id ? \result.entries[i].text == conversation.entries[i].text + event.text : \result.entries[i] == conversation.entries[i]))
 //@ ensures event.seq == conversation.seq + 1 && event.type == "ReplyFinished" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" ==> \result.agent == "idle" && \result.replying == "" && \result.entries.length == conversation.entries.length && forall(i, 0 <= i && i < \result.entries.length ==> \result.entries[i].text == conversation.entries[i].text && (conversation.entries[i].id == event.id ==> \result.entries[i].done))
 //@ ensures event.seq == conversation.seq + 1 && event.type == "ReplyFailed" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" ==> \result.agent == "failed" && \result.replying == "" && \result.entries.length == conversation.entries.length && forall(i, 0 <= i && i < \result.entries.length && conversation.entries[i].id == event.id ==> \result.entries[i].done && \result.entries[i].error == (event.reason == "" ? "failed" : event.reason))
+//@ ensures event.seq == conversation.seq + 1 && event.type == "RoleGranted" && event.id != "" && event.role != "viewer" ==> \result.roles.length == conversation.roles.length + 1 && \result.roles[0].id == event.id && \result.roles[0].role == event.role && \result.roles[0].blocked == (event.mode == "person")
 export function apply(conversation: Conversation, event: Event): Conversation {
   if (event.seq !== conversation.seq + 1) return conversation
   const next = { ...conversation, seq: event.seq }
   switch (event.type) {
+    case "RoleGranted":
+      if (event.id === "" || event.role === "viewer") return next
+      return { ...next, roles: [{ id: event.id, role: event.role, blocked: event.mode === "person" }, ...conversation.roles] }
+    case "ActionAuthorized":
+      return next
     case "Posted": {
       if (event.text === "" || event.clientId === "" || hasClientId(conversation.entries, event.clientId) || hasEntryId(conversation.entries, event.id)) return next
       const entry: Entry = {
@@ -317,6 +326,8 @@ export function canReplyTo(entries: ReadonlyArray<Entry>, id: string): boolean {
  * narrates as it would a reply and in which it opens pages in the docs pane, and ends it to take control back.
  */
 export type Intent =
+  | { readonly type: "GrantRole"; readonly id: string; readonly by: string; readonly role: Role; readonly mode: GrantMode }
+  | { readonly type: "Authorize"; readonly id: string; readonly by: string; readonly action: Action }
   | { readonly type: "Post"; readonly id: string; readonly clientId: string; readonly name: string; readonly text: string }
   | { readonly type: "StartReply"; readonly id: string; readonly inReplyTo: string }
   | { readonly type: "AppendReply"; readonly id: string; readonly text: string }
@@ -328,7 +339,7 @@ export type Intent =
   | { readonly type: "OpenPane"; readonly id: string; readonly url: string }
 
 /** Why the sequencer refused an intent. */
-export type Refusal = "empty" | "too-long" | "duplicate" | "busy" | "not-replying"
+export type Refusal = "empty" | "too-long" | "duplicate" | "busy" | "not-replying" | "forbidden"
 
 /** The sequencer's answer: the next event, or why there is none. */
 export type Decision =
@@ -354,6 +365,9 @@ function refused(refusal: Refusal): Decision {
  */
 //@ verify
 //@ requires 0 <= conversation.seq && conversation.seq < 9007199254740991
+//@ ensures \result.ok && intent.type == "GrantRole" ==> intent.id != "" && intent.role != "viewer"
+//@ ensures \result.ok && intent.type == "GrantRole" && intent.mode == "person" && intent.by != intent.id ==> intent.by != "" && exists(i, 0 <= i && i < conversation.roles.length && conversation.roles[i].id == intent.by && conversation.roles[i].role == "maintainer" && forall(j, 0 <= j && j < i ==> conversation.roles[j].id != intent.by))
+//@ ensures \result.ok && intent.type == "Authorize" && (intent.action == "merge" || intent.action == "settings" || intent.action == "roles") ==> intent.by != "" && exists(i, 0 <= i && i < conversation.roles.length && conversation.roles[i].id == intent.by && conversation.roles[i].role == "maintainer" && forall(j, 0 <= j && j < i ==> conversation.roles[j].id != intent.by))
 //@ ensures \result.ok ==> \result.event.seq == conversation.seq + 1
 //@ ensures \result.ok && \result.event.type == "ReplyStarted" ==> conversation.agent != "working" && \result.event.id != ""
 //@ ensures \result.ok && \result.event.type == "Posted" ==> \result.event.clientId != "" && \result.event.text != ""
@@ -380,6 +394,12 @@ function refused(refusal: Refusal): Decision {
 export function decide(conversation: Conversation, intent: Intent): Decision {
   const seq = conversation.seq + 1
   switch (intent.type) {
+    case "GrantRole":
+      if (!canGrant(conversation.roles, intent.id, intent.by, intent.role, intent.mode)) return refused("forbidden")
+      return accepted({ type: "RoleGranted", seq, id: intent.id, by: intent.by, role: intent.role, mode: intent.mode })
+    case "Authorize":
+      if (!may(roleOf(conversation.roles, intent.by), intent.action)) return refused("forbidden")
+      return accepted({ type: "ActionAuthorized", seq, id: intent.id, by: intent.by, action: intent.action })
     case "Post": {
       const text = intent.text.trim()
       if (text === "") return refused("empty")
@@ -530,4 +550,125 @@ export function receive(client: Client, event: Event): Client {
 //@ ensures \result.conversation == client.conversation && \result.pending == client.pending
 export function resume(client: Client): Client {
   return client.gap ? { ...client, gap: false } : client
+}
+
+// ── Policy: one action, one least role; replaceable by workflow policy later (0019). ───────────────────────────────
+export type Role = "viewer" | "new" | "community" | "contributor" | "maintainer"
+export type SignedRole = Exclude<Role, "viewer">
+export type GrantMode = "person" | "participation" | "bootstrap"
+export type Action = "read" | "ask" | "tour" | "people" | "issue" | "comment" | "vip" | "action" | "sandbox" | "triage" | "merge" | "settings" | "roles"
+export interface RoleGrant {
+  readonly id: string
+  readonly role: Role
+  readonly blocked: boolean
+}
+
+//@ verify
+//@ ensures role == "viewer" ==> \result == 0
+//@ ensures role == "new" ==> \result == 1
+//@ ensures role == "community" ==> \result == 2
+//@ ensures role == "contributor" ==> \result == 3
+//@ ensures role == "maintainer" ==> \result == 4
+export function rank(role: Role): number {
+  switch (role) {
+    case "viewer": return 0
+    case "new": return 1
+    case "community": return 2
+    case "contributor": return 3
+    case "maintainer": return 4
+  }
+}
+
+//@ verify
+//@ ensures (action == "read" || action == "ask" || action == "tour") ==> \result == "viewer"
+//@ ensures (action == "people" || action == "issue" || action == "comment") ==> \result == "new"
+//@ ensures action == "vip" ==> \result == "community"
+//@ ensures (action == "action" || action == "sandbox" || action == "triage") ==> \result == "contributor"
+//@ ensures (action == "merge" || action == "settings" || action == "roles") ==> \result == "maintainer"
+export function leastRole(action: Action): Role {
+  switch (action) {
+    case "read": case "ask": case "tour": return "viewer"
+    case "people": case "issue": case "comment": return "new"
+    case "vip": return "community"
+    case "action": case "sandbox": case "triage": return "contributor"
+    case "merge": case "settings": case "roles": return "maintainer"
+  }
+}
+
+//@ verify
+//@ ensures \result == ((action == "read" || action == "ask" || action == "tour") || ((action == "people" || action == "issue" || action == "comment") && role != "viewer") || (action == "vip" && (role == "community" || role == "contributor" || role == "maintainer")) || ((action == "action" || action == "sandbox" || action == "triage") && (role == "contributor" || role == "maintainer")) || ((action == "merge" || action == "settings" || action == "roles") && role == "maintainer"))
+export function may(role: Role, action: Action): boolean {
+  return rank(role) >= rank(leastRole(action))
+}
+
+/** The newest grant wins. No identity means viewer; a signed-in person without a grant is new. */
+//@ verify
+//@ ensures id == "" ==> \result == "viewer"
+//@ ensures id != "" && forall(i, 0 <= i && i < roles.length ==> roles[i].id != id) ==> \result == "new"
+//@ ensures forall(i, 0 <= i && i < roles.length && roles[i].id == id && forall(j, 0 <= j && j < i ==> roles[j].id != id) && id != "" ==> \result == roles[i].role)
+//@ ensures (\result == "maintainer") == (id != "" && exists(i, 0 <= i && i < roles.length && roles[i].id == id && roles[i].role == "maintainer" && forall(j, 0 <= j && j < i ==> roles[j].id != id)))
+export function roleOf(roles: ReadonlyArray<RoleGrant>, id: string): Role {
+  if (id === "") return "viewer"
+  let i = 0
+  while (i < roles.length) {
+    //@ invariant 0 <= i && i <= roles.length
+    //@ invariant forall(j, 0 <= j && j < i ==> roles[j].id != id)
+    //@ decreases roles.length - i
+    if (roles[i]!.id === id) return roles[i]!.role
+    i++
+  }
+  return "new"
+}
+
+/** Any explicit grant suppresses automatic promotion, including an explicit demotion to new. */
+//@ verify
+//@ ensures \result == forall(i, 0 <= i && i < roles.length ==> roles[i].id != id)
+export function ungranted(roles: ReadonlyArray<RoleGrant>, id: string): boolean {
+  let i = 0
+  while (i < roles.length) {
+    //@ invariant 0 <= i && i <= roles.length
+    //@ invariant forall(j, 0 <= j && j < i ==> roles[j].id != id)
+    //@ decreases roles.length - i
+    if (roles[i]!.id === id) return false
+    i++
+  }
+  return true
+}
+
+//@ verify
+//@ ensures \result == exists(i, 0 <= i && i < roles.length && roles[i].id != id && roles[i].id != "" && roles[i].role == "maintainer" && forall(j, 0 <= j && j < i ==> roles[j].id != roles[i].id))
+export function otherMaintainer(roles: ReadonlyArray<RoleGrant>, id: string): boolean {
+  let i = 0
+  while (i < roles.length) {
+    //@ invariant 0 <= i && i <= roles.length
+    //@ invariant forall(j, 0 <= j && j < i ==> !(roles[j].id != id && roles[j].id != "" && roles[j].role == "maintainer" && forall(k, 0 <= k && k < j ==> roles[k].id != roles[j].id)))
+    //@ decreases roles.length - i
+    if (roles[i]!.id !== id && roleOf(roles, roles[i]!.id) === "maintainer") return true
+    i++
+  }
+  return false
+}
+
+/** Inputs named by the host, never roles or grant modes supplied by an HTTP caller. */
+//@ verify
+//@ ensures (id == "" || role == "viewer") ==> !\result
+//@ ensures mode == "bootstrap" ==> (\result == (id != "" && by == "" && roles.length == 0 && role == "maintainer"))
+//@ ensures mode == "participation" ==> (\result == (id != "" && by == id && role == "community" && forall(i, 0 <= i && i < roles.length ==> roles[i].id != id)))
+//@ ensures mode == "person" && \result && by != id ==> by != "" && exists(i, 0 <= i && i < roles.length && roles[i].id == by && roles[i].role == "maintainer" && forall(j, 0 <= j && j < i ==> roles[j].id != by))
+export function canGrant(roles: ReadonlyArray<RoleGrant>, id: string, by: string, role: Role, mode: GrantMode): boolean {
+  return grantPolicy(id, by, roleOf(roles, id), roleOf(roles, by), role, mode, ungranted(roles, id), roles.length === 0, otherMaintainer(roles, id))
+}
+
+/** Scalar policy keeps each guard's proof independent of roster lookup and replay. */
+//@ verify
+//@ ensures \result == (id != "" && role != "viewer" && ((mode == "bootstrap" && by == "" && ledgerEmpty && role == "maintainer") || (mode == "participation" && by == id && role == "community" && fresh) || (mode == "person" && by != "" && current != role && ((by == id && (role == "new" && (current == "community" || current == "contributor" || current == "maintainer") || role == "community" && (current == "contributor" || current == "maintainer") || role == "contributor" && current == "maintainer")) || (by != id && actor == "maintainer")) && (current != "maintainer" || other))))
+export function grantPolicy(id: string, by: string, current: Role, actor: Role, role: Role, mode: GrantMode, fresh: boolean, ledgerEmpty: boolean, other: boolean): boolean {
+  if (id === "" || role === "viewer") return false
+  if (mode === "bootstrap") return by === "" && ledgerEmpty && role === "maintainer"
+  if (mode === "participation") return by === id && role === "community" && fresh
+  if (by === "" || current === role) return false
+  if (by === id && rank(role) >= rank(current)) return false
+  if (by !== id && actor !== "maintainer") return false
+  if (current === "maintainer" && !other) return false
+  return true
 }

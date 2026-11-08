@@ -84,6 +84,8 @@ function hasEffect(before: Conversation, event: Event, after: Conversation): boo
   const grew = after.entries.length === before.entries.length + 1
   const reply = after.entries.find((entry) => entry.id === event.id)
   switch (event.type) {
+    case "RoleGranted": return after.roles[0]?.id === event.id && after.roles[0]?.role === event.role
+    case "ActionAuthorized": return after.roles === before.roles
     case "Posted":
       return grew && after.entries[after.entries.length - 1]!.clientId === event.clientId
     case "ReplyStarted":
