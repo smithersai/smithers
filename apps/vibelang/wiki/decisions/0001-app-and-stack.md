@@ -25,6 +25,8 @@ line says which:
 | `alchemy.run.ts` | the Alchemy CLI's entry; it re-exports `infra/Stack.vibe` |
 | `PACKAGE.ts` | `smthrs` discovers targets only in files of that name |
 | `verify/bugs/*.ts` | LemmaScript defect reproductions, in the TypeScript LemmaScript reads |
+| Desktop `electrobun.config.ts`, `vite.config.ts`, `playwright.config.ts`, `PACKAGE.ts` and `e2e/desktop.spec.ts` | the named build/config loaders and Playwright discovery read JS/TS files only; first-line comments name them |
+| Host `Electrobun.d.ts` | TypeScript resolves the foreign native API from declaration files; no implementation lives in this port |
 | `test/viewport.test.ts`, `test/support/browser.ts`, `test/support/scrollHost.ts` | they drive happy-dom through DOM globals, EK4402 in VibeLang, which no Effect service provides |
 
 The last row and the specs' page callbacks (`page.evaluate(() => window.scrollY)`, also EK4402) are VibeLang gaps,
@@ -41,3 +43,9 @@ Workers.
 `workspace:*`, and `PACKAGE.ts` declares its targets.
 
 **0024 SDK declaration.** The app now declares `@smthrs/sandbox` directly (it was already in the `@smthrs/platform-cloudflare` transitive closure) to use its command fences and bounded tools. No external runtime library is added. `@smthrs/fuzz` is a monorepo development tool; 0008 records its VL-5 review status.
+
+The SDK native test's `test/native/config.ts` remains TypeScript because Vite loads its global setup configuration
+before installing the VibeLang plugin. It also holds the foreign synchronous constructor transport and X11 tooling.
+The native host and its behavioral tests remain VibeLang.
+
+The desktop designer's reference directory, including its source helpers and rendered examples, is preserved verbatim under `wiki/designs/desktop/`; those archival artifacts are not application modules.

@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Desktop app — vibelang.smithers.sh design</title>
+<style>/*__LIVE_APP_CSS__*/</style>
+<style>
+  /* Design-review bar (not app UI) */
+  .dz-bar { position: sticky; top: 0; z-index: 100; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px 10px; border-bottom: 2px dashed var(--vl-magenta); background: #16101d; font-size: 12px; }
+  .dz-label { margin-right: 6px; color: #b7a8cc; font-family: var(--font-mono); font-size: 11px; }
+  .dz-btn { min-height: 26px; padding: 0 9px; border: 1px solid #3a2d4d; border-radius: 6px; background: transparent; color: #cbbdea; font-size: 12px; cursor: pointer; }
+  .dz-btn:hover { background: #241a33; }
+  .dz-btn[aria-current="true"] { border-color: var(--vl-magenta); background: color-mix(in srgb, var(--vl-magenta) 18%, transparent); color: #fff; font-weight: 650; }
+  .screen[hidden] { display: none; }
+
+  /* The native window: everything above .vl-top is Electrobun's; the app below is unchanged */
+  .dt-window { min-height: 100dvh; display: flex; flex-direction: column; }
+  .dt-titlebar { position: relative; display: flex; align-items: center; gap: 12px; min-height: 38px; padding: 0 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .dt-lights { display: flex; gap: 8px; }
+  .dt-light { width: 12px; height: 12px; border-radius: 999px; }
+  .dt-light[data-c="close"] { background: #ff5f57; }
+  .dt-light[data-c="min"] { background: #febc2e; }
+  .dt-light[data-c="max"] { background: #28c840; }
+  .dt-title { position: absolute; left: 50%; transform: translateX(-50%); max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: 13px; font-weight: 650; }
+  .dt-title code { font-family: var(--font-mono); font-size: 12px; color: var(--text-faint); }
+  .dt-side { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+  /* Composer: the folder chip and the model picker are the desktop additions */
+  .dt-chip { min-height: 24px; display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; cursor: pointer; }
+  .dt-chip:hover { background: var(--hover); color: var(--text); }
+  .dt-chip:focus-visible { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 22%, transparent); }
+  .dt-chip code { font-family: var(--font-mono); }
+  .dt-chip-x { display: inline-flex; color: var(--text-faint); font-size: 12px; }
+  .dt-modelsel { position: relative; display: inline-flex; }
+  .dt-modelsel-pop { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 50; min-width: 260px; }
+
+  /* Models pane */
+  .dt-pane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .dt-pane-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+  .vl-docs.dt-pane[data-maximized="true"] { position: static; inset: auto; z-index: auto; border-width: 1px 0 0; border-radius: 0; }
+  .dt-model-row td { vertical-align: middle; }
+  .dt-model-name { font-family: var(--font-mono); font-size: 13px; font-weight: 650; }
+  .dt-progress-cell { min-width: 140px; }
+
+  @media (max-width: 600px) {
+    .dt-title code, .dt-title .dt-dot { display: none; }
+    .dt-side .sui-model-badge { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="dz-bar" aria-label="Design screens">
+  <span class="dz-label">desktop</span>
+  <button class="dz-btn" data-go="chat">Local work</button>
+  <button class="dz-btn" data-go="pick">Pick a model</button>
+  <button class="dz-btn" data-go="models">Models</button>
+  <button class="dz-btn" data-go="folder">No folder</button>
+  <button class="dz-btn" data-go="offline">Offline</button>
+  <button class="dz-btn" data-go="error">Model error</button>
+  <button class="dz-btn" data-go="loading">Loading</button>
+</nav>
+
+<template id="tpl-titlebar">
+  <div class="dt-titlebar">
+    <span class="dt-lights" aria-hidden="true"><i class="dt-light" data-c="close"></i><i class="dt-light" data-c="min"></i><i class="dt-light" data-c="max"></i></span>
+    <span class="dt-title">VibeLang</span>
+    <span class="dt-side"></span>
+  </div>
+</template>
+
+<template id="tpl-top">
+  <header class="vl-top">
+    <button class="vl-home" type="button" aria-label="Home"><span class="vl-logo"><img src="media/logo-dark.svg" alt="VibeLang"></span></button>
+    <nav class="vl-nav">
+      <span class="vl-pill">Mock</span>
+      <a class="vl-nav-link" href="https://vibelang.sh">Docs<span aria-hidden="true" class="vl-away">↗</span></a>
+      <a class="vl-nav-link" href="https://github.com/smithersai/vibelang">GitHub<span aria-hidden="true" class="vl-away">↗</span></a>
+    </nav>
+  </header>
+</template>
+
+<!-- ============ Local work (main) ============ -->
+<section class="screen" data-screen="chat">
+  <div class="dt-window">
+    <div class="vl-app">
+      <div class="vl-chat">
+        <div class="sui-chat-transcript">
+          <div class="sui-msg-scroller"><div class="sui-msg-scroller-viewport"><div class="sui-msg-scroller-content">
+            <div class="sui-chat-messages">
+
+              <div class="sui-chat-message" data-role="system">
+                <div class="sui-chat-bubble">Opened <code>~/code/river</code> · 214 files</div>
+              </div>
+
+              <div class="sui-chat-message" data-role="user">
+                <div class="sui-chat-bubble">Rename startServer to bootServer everywhere</div>
+              </div>
+
+              <div class="sui-chat-message" data-role="assistant">
+                <div class="sui-chat-message-label">VibeLang agent · Qwen3 8B · local</div>
+                <div class="sui-agent-output">
+                  <div class="sui-toolcall">
+                    <button class="sui-toolcall-trigger" type="button" aria-expanded="false">
+                      <span class="sui-toolcall-chevron">▸</span>
+                      <span class="sui-toolcall-name">fs.search · "startServer"</span>
+                      <span class="sui-toolcall-duration">9 matches · 6 files</span>
+                    </button>
+                  </div>
+                  <div class="sui-toolcall" data-layout="expanded">
+                    <div class="sui-toolcall-header">
+                      <span class="sui-toolcall-name">fs.edit · src/server.vibe</span>
+                      <span class="sui-toolcall-duration">0.4s</span>
+                    </div>
+                    <div class="sui-toolcall-body">
+                      <div class="sui-diff" style="border-width:0;border-radius:0">
+                        <div class="sui-diff-line"><span class="sui-diff-ln sui-diff-ln-old">12</span><span class="sui-diff-ln sui-diff-ln-new">12</span><span class="sui-diff-sign"> </span><span class="sui-diff-text">import { listen } from "./net"</span></div>
+                        <div class="sui-diff-line sui-diff-del"><span class="sui-diff-ln sui-diff-ln-old">13</span><span class="sui-diff-ln sui-diff-ln-new"></span><span class="sui-diff-sign">−</span><span class="sui-diff-text">export const startServer = (port: number) =&gt;</span></div>
+                        <div class="sui-diff-line sui-diff-add"><span class="sui-diff-ln sui-diff-ln-old"></span><span class="sui-diff-ln sui-diff-ln-new">13</span><span class="sui-diff-sign">+</span><span class="sui-diff-text">export const bootServer = (port: number) =&gt;</span></div>
+                        <div class="sui-diff-line"><span class="sui-diff-ln sui-diff-ln-old">14</span><span class="sui-diff-ln sui-diff-ln-new">14</span><span class="sui-diff-sign"> </span><span class="sui-diff-text">  listen({ port })</span></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="sui-chat-bubble" style="max-width:100%">
+                    <p>Renamed in 6 files.</p>
+                  </div>
+                  <ul class="sui-commit-files">
+                    <li class="sui-commit-file"><span class="sui-commit-file-status" data-tone="warn">M</span><span class="sui-commit-file-path">src/server.vibe</span><span class="sui-commit-file-counts"><span class="sui-commit-add">+4</span> <span class="sui-commit-del">−4</span></span></li>
+                    <li class="sui-commit-file"><span class="sui-commit-file-status" data-tone="warn">M</span><span class="sui-commit-file-path">src/main.vibe</span><span class="sui-commit-file-counts"><span class="sui-commit-add">+2</span> <span class="sui-commit-del">−2</span></span></li>
+                    <li class="sui-commit-file"><span class="sui-commit-file-status" data-tone="warn">M</span><span class="sui-commit-file-path">test/server.test.vibe</span><span class="sui-commit-file-counts"><span class="sui-commit-add">+3</span> <span class="sui-commit-del">−3</span></span></li>
+                  </ul>
+                </div>
+              </div>
+
+            </div>
+          </div></div></div>
+        </div>
+        <form class="sui-chat-composer" data-docked="true">
+          <textarea class="sui-chat-composer-input" rows="1" placeholder="Describe what to change in ~/code/river" aria-label="Message"></textarea>
+          <div class="sui-chat-composer-toolbar">
+            <span class="sui-chat-composer-status" style="display:inline-flex;align-items:center;gap:6px">
+              <button class="dt-chip" type="button" aria-label="Folder">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2l1.5 2h5.5A1.5 1.5 0 0 1 14 6.5v5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5v-7Z"/></svg>
+                <code>~/code/river</code><span class="dt-chip-x" aria-hidden="true">×</span>
+              </button>
+              <button class="dt-chip" type="button" data-go="pick" aria-label="Model">
+                <span class="sui-model-badge-name">Qwen3 8B</span> <span class="sui-model-badge-provider">local</span> ▾
+              </button>
+            </span>
+            <div class="sui-chat-composer-actions"><button class="vl-send sui-chat-composer-send" type="submit" aria-label="Send">↑</button></div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Pick a model (dropdown open) ============ -->
+<section class="screen" data-screen="pick" hidden>
+  <div class="dt-window">
+    <div class="vl-app">
+      <div class="vl-chat">
+        <div class="sui-chat-transcript">
+          <div class="sui-msg-scroller"><div class="sui-msg-scroller-viewport"><div class="sui-msg-scroller-content">
+            <div class="sui-chat-messages">
+              <div class="sui-chat-message" data-role="system"><div class="sui-chat-bubble">Opened <code>~/code/river</code> · 214 files</div></div>
+            </div>
+          </div></div></div>
+        </div>
+        <form class="sui-chat-composer" data-docked="true">
+          <textarea class="sui-chat-composer-input" rows="1" placeholder="Describe what to change in ~/code/river" aria-label="Message"></textarea>
+          <div class="sui-chat-composer-toolbar">
+            <span class="sui-chat-composer-status" style="display:inline-flex;align-items:center;gap:6px;overflow:visible">
+              <button class="dt-chip" type="button" aria-label="Folder"><code>~/code/river</code></button>
+              <span class="dt-modelsel">
+                <button class="dt-chip" type="button" aria-expanded="true" aria-label="Model"><span class="sui-model-badge-name">Qwen3 8B</span> <span class="sui-model-badge-provider">local</span> ▾</button>
+                <span class="sui-select-content dt-modelsel-pop">
+                  <span class="sui-select-viewport" style="display:block">
+                    <span class="sui-select-label" style="display:block">Local</span>
+                    <span class="sui-select-item sui-model-sel-item" data-highlighted style="display:flex"><span class="sui-select-item-indicator">✓</span><span class="sui-model-sel-item-body"><span class="sui-model-sel-item-row"><span class="sui-model-sel-item-name">Qwen3 8B</span><span class="sui-provider-badge">local</span></span><span class="sui-model-sel-item-description">4.9 GB · downloaded</span></span></span>
+                    <span class="sui-select-item sui-model-sel-item" style="display:flex"><span class="sui-model-sel-item-body"><span class="sui-model-sel-item-row"><span class="sui-model-sel-item-name">Qwen3 1.7B</span><span class="sui-provider-badge">local</span></span><span class="sui-model-sel-item-description">1.1 GB · downloaded</span></span></span>
+                    <span class="sui-select-separator" style="display:block"></span>
+                    <span class="sui-select-label" style="display:block">Cloud</span>
+                    <span class="sui-select-item sui-model-sel-item" style="display:flex"><span class="sui-model-sel-item-body"><span class="sui-model-sel-item-row"><span class="sui-model-sel-item-name">Claude Opus</span><span class="sui-provider-badge">anthropic</span></span></span></span>
+                    <span class="sui-select-separator" style="display:block"></span>
+                    <span class="sui-select-item" style="display:flex" data-go="models">Manage models…</span>
+                  </span>
+                </span>
+              </span>
+            </span>
+            <div class="sui-chat-composer-actions"><button class="vl-send sui-chat-composer-send" type="submit" aria-label="Send">↑</button></div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Models (pane) ============ -->
+<section class="screen" data-screen="models" hidden>
+  <div class="dt-window">
+    <div class="vl-app">
+      <div class="vl-docs dt-pane" data-maximized="true">
+        <div class="vl-docs-bar">
+          <span class="vl-docs-page">Models</span>
+          <button class="vl-docs-toggle" type="button" aria-label="Minimize" data-go="chat">−</button>
+        </div>
+        <div class="dt-pane-body">
+          <div class="sui-page-body">
+            <div class="sui-section-header">
+              <div class="sui-section-header-main"><span class="sui-section-header-title">Local</span></div>
+              <div class="sui-section-header-actions"><span class="sui-badge sui-badge-secondary">6.0 GB free</span></div>
+            </div>
+            <div class="sui-table-container" data-variant="card">
+              <table class="sui-table">
+                <tbody>
+                  <tr class="dt-model-row">
+                    <td><span class="dt-model-name">qwen3-8b</span></td>
+                    <td>4.9 GB</td>
+                    <td><span class="sui-badge sui-badge-success"><span class="sui-status-dot"></span>Downloaded</span></td>
+                    <td style="text-align:right"><button class="sui-button sui-button-sm sui-button-ghost" type="button">Delete</button></td>
+                  </tr>
+                  <tr class="dt-model-row">
+                    <td><span class="dt-model-name">qwen3-1.7b</span></td>
+                    <td>1.1 GB</td>
+                    <td><span class="sui-badge sui-badge-success"><span class="sui-status-dot"></span>Downloaded</span></td>
+                    <td style="text-align:right"><button class="sui-button sui-button-sm sui-button-ghost" type="button">Delete</button></td>
+                  </tr>
+                  <tr class="dt-model-row">
+                    <td><span class="dt-model-name">llama3.1-8b</span></td>
+                    <td>4.7 GB</td>
+                    <td class="dt-progress-cell"><div class="sui-progress"><div class="sui-progress-indicator" style="transform:scaleX(.42);transform-origin:left"></div></div></td>
+                    <td style="text-align:right"><span class="sui-chat-composer-status">42%</span></td>
+                  </tr>
+                  <tr class="dt-model-row">
+                    <td><span class="dt-model-name">mistral-7b</span></td>
+                    <td>4.1 GB</td>
+                    <td><span class="sui-badge sui-badge-secondary">Not downloaded</span></td>
+                    <td style="text-align:right"><button class="sui-button sui-button-sm sui-button-default" type="button">Download</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="sui-section-header">
+              <div class="sui-section-header-main"><span class="sui-section-header-title">Cloud</span></div>
+            </div>
+            <div class="sui-table-container" data-variant="card">
+              <table class="sui-table">
+                <tbody>
+                  <tr class="dt-model-row">
+                    <td><span class="dt-model-name">claude-opus</span></td>
+                    <td><span class="sui-provider-badge">anthropic</span></td>
+                    <td><span class="sui-badge sui-badge-success"><span class="sui-status-dot"></span>Signed in</span></td>
+                    <td></td>
+                  </tr>
+                  <tr class="dt-model-row">
+                    <td><span class="dt-model-name">gpt-5</span></td>
+                    <td><span class="sui-provider-badge">openai</span></td>
+                    <td><span class="sui-badge sui-badge-warning">Not signed in</span></td>
+                    <td style="text-align:right"><button class="sui-button sui-button-sm" type="button">Sign in</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ No folder ============ -->
+<section class="screen" data-screen="folder" hidden>
+  <div class="dt-window">
+    <div class="vl-app">
+      <div class="vl-chat">
+        <div class="sui-chat-transcript">
+          <div class="sui-chat-empty">
+            <div class="sui-empty">
+              <div class="sui-empty-title">No folder open</div>
+              <div class="sui-empty-action"><button class="sui-button sui-button-default" type="button">Open folder<kbd class="vl-kbd">⌘O</kbd></button></div>
+            </div>
+          </div>
+        </div>
+        <form class="sui-chat-composer" data-docked="true">
+          <textarea class="sui-chat-composer-input" rows="1" placeholder="Ask about VibeLang" aria-label="Message"></textarea>
+          <div class="sui-chat-composer-toolbar">
+            <span class="sui-chat-composer-status" style="display:inline-flex;align-items:center;gap:6px">
+              <button class="dt-chip" type="button" aria-label="Model"><span class="sui-model-badge-name">Qwen3 8B</span> <span class="sui-model-badge-provider">local</span> ▾</button>
+            </span>
+            <div class="sui-chat-composer-actions"><button class="vl-send sui-chat-composer-send" type="submit" aria-label="Send">↑</button></div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Offline ============ -->
+<section class="screen" data-screen="offline" hidden>
+  <div class="dt-window">
+    <div class="vl-app">
+      <div class="vl-chat">
+        <div class="sui-chat-transcript">
+          <div class="sui-msg-scroller"><div class="sui-msg-scroller-viewport"><div class="sui-msg-scroller-content">
+            <div class="sui-chat-messages">
+              <div class="sui-chat-message" data-role="system"><div class="sui-chat-bubble">Opened <code>~/code/river</code> · 214 files</div></div>
+            </div>
+          </div></div></div>
+        </div>
+        <form class="sui-chat-composer" data-docked="true">
+          <textarea class="sui-chat-composer-input" rows="1" placeholder="Describe what to change in ~/code/river" aria-label="Message"></textarea>
+          <div class="sui-chat-composer-toolbar">
+            <span class="sui-chat-composer-status">Offline · local models only</span>
+            <div class="sui-chat-composer-actions"><button class="vl-send sui-chat-composer-send" type="submit" aria-label="Send">↑</button></div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Model error ============ -->
+<section class="screen" data-screen="error" hidden>
+  <div class="dt-window">
+    <div class="vl-app">
+      <div class="vl-chat">
+        <div class="sui-chat-transcript">
+          <div class="sui-msg-scroller"><div class="sui-msg-scroller-viewport"><div class="sui-msg-scroller-content">
+            <div class="sui-chat-messages">
+              <div class="sui-chat-message" data-role="user"><div class="sui-chat-bubble">Rename startServer to bootServer everywhere</div></div>
+              <div class="sui-chat-message" data-role="assistant">
+                <div class="sui-chat-message-label">VibeLang agent</div>
+                <div class="sui-alert sui-alert-destructive">
+                  <div class="sui-alert-title">Qwen3 8B couldn't load.</div>
+                  <div class="sui-alert-description">Not enough free memory.</div>
+                  <div><button class="sui-button sui-button-sm" type="button" data-go="models">Choose a model</button></div>
+                </div>
+              </div>
+            </div>
+          </div></div></div>
+        </div>
+        <form class="sui-chat-composer" data-docked="true">
+          <textarea class="sui-chat-composer-input" rows="1" placeholder="Describe what to change in ~/code/river" aria-label="Message" disabled></textarea>
+          <div class="sui-chat-composer-toolbar">
+            <span class="sui-chat-composer-status">No model loaded</span>
+            <div class="sui-chat-composer-actions"><button class="vl-send sui-chat-composer-send" type="submit" aria-label="Send" disabled>↑</button></div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Loading ============ -->
+<section class="screen" data-screen="loading" hidden>
+  <div class="dt-window">
+    <div class="vl-app">
+      <div class="vl-chat">
+        <div class="sui-chat-transcript">
+          <div class="sui-chat-messages">
+            <span class="sui-skeleton" style="width:38%;height:44px;justify-self:end"></span>
+            <span class="sui-skeleton" style="width:62%;height:88px"></span>
+            <span class="sui-skeleton" style="width:45%;height:44px"></span>
+          </div>
+        </div>
+        <form class="sui-chat-composer" data-docked="true">
+          <textarea class="sui-chat-composer-input" rows="1" placeholder="Describe what to change in ~/code/river" aria-label="Message"></textarea>
+          <div class="sui-chat-composer-toolbar">
+            <span class="sui-chat-composer-status">Loading Qwen3 8B…</span>
+            <div class="sui-chat-composer-actions"><button class="vl-send sui-chat-composer-send" type="submit" aria-label="Send" disabled>↑</button></div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+const screens = [...document.querySelectorAll(".screen")];
+const btns = [...document.querySelectorAll(".dz-btn[data-go]")];
+
+const tplBar = document.getElementById("tpl-titlebar");
+const tplTop = document.getElementById("tpl-top");
+for (const s of screens) {
+  const win = s.querySelector(".dt-window");
+  const bar = tplBar.content.cloneNode(true);
+  if (s.dataset.screen === "offline") {
+    bar.querySelector(".dt-side").innerHTML = '<span class="sui-badge sui-badge-warning"><span class="sui-status-dot"></span>Offline</span>';
+  } else if (!["models"].includes(s.dataset.screen)) {
+    bar.querySelector(".dt-side").innerHTML = '<span class="sui-model-badge"><span class="sui-model-badge-name">Qwen3 8B</span><span class="sui-model-badge-provider">local</span></span>';
+  }
+  if (!["folder", "loading"].includes(s.dataset.screen)) {
+    bar.querySelector(".dt-title").innerHTML = 'VibeLang <span class="dt-dot">·</span> <code>~/code/river</code>';
+  }
+  win.prepend(bar);
+  win.querySelector(".vl-app").prepend(tplTop.content.cloneNode(true));
+}
+
+function show(name) {
+  for (const s of screens) s.hidden = s.dataset.screen !== name;
+  for (const b of btns) b.setAttribute("aria-current", String(b.dataset.go === name));
+  window.scrollTo(0, 0);
+}
+document.addEventListener("click", e => {
+  const go = e.target.closest("[data-go]");
+  if (go) location.hash = go.dataset.go;
+});
+window.addEventListener("hashchange", () => show(location.hash.slice(1) || "chat"));
+show(screens.some(x => x.dataset.screen === location.hash.slice(1)) ? location.hash.slice(1) : "chat");
+</script>
+</body>
+</html>

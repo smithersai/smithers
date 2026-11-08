@@ -5,7 +5,7 @@ from sources import production_sources, VERIFY
 from proof_additions import add_proof_steps
 from mutation_targets import POSTCONDITIONS, ASSERTIONS, postcondition_line, case_assertion_line
 ROOT=pathlib.Path(__file__).resolve().parent
-APP=ROOT.parent
+APP=pathlib.Path(os.environ.get("VIBELANG_VERIFY_ROOT", str(ROOT.parent))).resolve()
 if len(sys.argv)>1:
  sources=[pathlib.Path(arg).resolve() for arg in sys.argv[1:]]
  selected=[]
@@ -20,7 +20,7 @@ else:
  selected=production_sources(APP)
 started=time.monotonic()
 # A run owns its artifacts and cannot use a previously successful proof.
-(ROOT/'.checks').mkdir(exist_ok=True); run=pathlib.Path(tempfile.mkdtemp(prefix='run-',dir=ROOT/'.checks'))
+checks=APP/'verify'/'.checks'; checks.mkdir(parents=True,exist_ok=True); run=pathlib.Path(tempfile.mkdtemp(prefix='run-',dir=checks))
 # The proof sources strictly typecheck separately. Keep identical compiler options while
 # excluding unrelated application files from each ts-morph generation project.
 proof_sources=run/'source'

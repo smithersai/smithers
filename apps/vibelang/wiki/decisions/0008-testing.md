@@ -216,3 +216,26 @@ optional peers differently. This lane adds no dependency version, coverage thres
 **Seed replay capacity (0018).** Two behavioral regressions fail when replay starts at the maximum safe cursor or
 accepts its final safe event before another intent. The seed helper now uses the shared capacity decision; the
 valid final event remains and the next intent is refused. No dependency is added.
+
+**Desktop (0025).** The native app reuses VibeLang 0.0.12, Vite 8.3.4, Vitest 5.0.0, Effect Vitest 4.1.1,
+esbuild 0.28.2, Playwright 1.62.1, happy-dom 20.13.2 and workspace `@smthrs/std`. These reused tools remain awaiting
+Will's VL-5 review. Desktop units include a 1,000-case Effect Arbitrary property. Actual Electrobun/GTK/CEF cases
+use a real Effect HTTP model server. Native wrapper coverage runs under V8 against actual foreign APIs through a
+native test transport: no own-code mocks, interception, production exclusions or lowered SDK thresholds.
+
+A fresh install exposed duplicate Vitest peer graphs. Both apps use the root's Node types 26.4.1 and happy-dom
+20.13.2, with the patched Vitest/provider 5.0.0. Refresh the desktop's retained optional peer with a scoped pnpm
+update, then verify its physical runner matches Effect Vitest. The desktop declares that DOM peer for resolution;
+its service suite still uses Node. These are test-only choices, not browser runtime changes.
+
+The shared keyboard stream ignores handled key events: a native picker consumes Escape once, preserving the
+command palette. Native tests cover both composers and returning focus. Real GTK drivers select only mapped dialogs;
+both fixtures retain one advisory OS lock through bounded teardown. The setup budget includes the lock wait; browser
+case deadlines are unchanged. The sandbox alarm test awaits an actual meter signal with a bounded live-clock timeout,
+retaining real WebCrypto and the idle/running/stopped assertions instead of racing a fixed number of scheduler yields.
+
+The retained stale-edit red reproduced overwriting a person's file. `fs.edit` now requires its reader's exact
+`before`; stale and unchanged requests return false, and replay validates its original request before cached success.
+Five marked policy functions prove ten Dafny obligations, with five unchanged-contract negative controls.
+
+A native role regression first reproduced a nonfunctional Mock identity picker after 0019 landed. The shared Accounts seam now follows the selected Factory, refreshes identity on model-mode changes and restores Viewer for local project operations. The real native case opens People in Mock and verifies that local sign-in reports unavailable without navigation.

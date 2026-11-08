@@ -1,0 +1,44 @@
+// The desktop's sole process boundary: native window, Effect HTTP server and SQLite runtime on this machine.
+import { BunDesktop, BunFileSystem, BunHost, BunRuntime, BunServer } from "@smthrs/platform-bun"
+import { Ownership } from "@smthrs/run-store"
+import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
+import { HttpServer } from "effect/http"
+import { ExperimentalBunServices } from "vibelang-runtime/experimental/platform-bun"
+import { Unavailable } from "../../../vibelang/src/core/Factory.vibe"
+import { registration, Preferences } from "./Factory.vibe"
+import { folderLayer } from "./Folder.vibe"
+import { localModelsLayer } from "./LocalModel.vibe"
+import { handler } from "./Http.vibe"
+
+export effect function main() {
+  try Effect.logInfo("vibelang.desktop.start")
+  const window = try BunDesktop.DesktopWindow
+  const path = try Path.Path
+  const fs = try FileSystem.FileSystem
+  const directory = try Config.withDefault(Config.String("VIBELANG_DESKTOP_DATA"), path.join(try Config.String("HOME"), ".local", "share", "vibelang"))
+  const assets = try Config.withDefault(Config.String("VIBELANG_DESKTOP_ASSETS"), path.join(window.resources, "app", "views", "mainview"))
+  const port = try Config.withDefault(Config.Int("VIBELANG_DESKTOP_PORT"), 0)
+  try fs.makeDirectory(directory, { recursive: true }).pipe(Effect.orDie)
+  const preferences = Layer.succeed(Preferences, { directory, openExternal: (url: string) => window.openExternal(url).pipe(Effect.mapError(() => new Unavailable({ reason: "Browser unavailable" }))), chooseDirectory: () => window.chooseDirectory().pipe(Effect.mapError(() => new Unavailable({ reason: "Folder picker unavailable" }))) })
+  const services = Layer.mergeAll(folderLayer, localModelsLayer, preferences)
+  const registered = registration.pipe(Layer.provide(services))
+  const runtime = BunRuntime.layer({ filename: path.join(directory, "flows.sqlite"), workspaceRoot: directory, owner: { hostId: "vibelang-desktop" }, isAlive: Ownership.sameHostPidProbe }, StepBoundary.layerUnsupported, WorkspaceSandbox.layerUnsupported, registered)
+  try Effect.logInfo("vibelang.desktop.runtime")
+  provide runtime, BunServer.layer(port) {
+    const server = try HttpServer.HttpServer
+    const origin = try orDie(Effect.try(() => HttpServer.formatAddress(server.address)))
+    try server.serve(handler(origin, assets))
+    try window.open(origin)
+    try Effect.logInfo("vibelang.desktop.ready")
+    try Effect.never
+  }
+}
+
+const files = Layer.unwrap(effect {
+  const native = try BunDesktop.DesktopWindow
+  const path = try Path.Path
+  const executable = try Config.withDefault(Config.String("SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"), path.join(native.resources, "app", "native", "smithers-jj-export"))
+  return BunFileSystem.layerWith({ executable })
+}).pipe(Layer.provide(Layer.merge(BunDesktop.layer, BunHost.layer)))
+
+await runPromise(scoped(main()).pipe(Effect.provide(Layer.mergeAll(BunDesktop.layer, BunHost.layer, BunHost.BunCrypto.layer, ExperimentalBunServices.layer, files))))

@@ -1,0 +1,66 @@
+// Both hosts supply the same Factory service. This composition alone adds desktop settings and local transport.
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
+import { Factory, Unavailable } from "../../../vibelang/src/core/Factory.vibe"
+import { LiveFactory } from "../../../vibelang/src/core/LiveFactory.vibe"
+import { MockFactory } from "../../../vibelang/src/core/MockFactory.vibe"
+import { Snapshot, type Operation } from "../protocol.vibe"
+
+export service DesktopClient {
+  external(url: string): void!Unavailable
+  snapshot(): Snapshot!Unavailable
+  change(operation: Operation, endpoint?: string, model?: string): Snapshot!Unavailable
+  models(endpoint: string): ReadonlyArray<string>!Unavailable
+}
+
+export function clientLayer(origin: string, forcedMock: boolean) {
+  return Layer.effectContext(effect {
+    const client = try HttpClient.HttpClient
+    const scope = try Effect.scope
+    const http = Layer.succeed(HttpClient.HttpClient, client)
+    const mock = Context.get(try Layer.buildWithScope(MockFactory, scope), Factory)
+    const local = Context.get(try Layer.buildWithScope(LiveFactory(origin).pipe(Layer.provide(http)), scope), Factory)
+    let mocked = true
+    const backend = (conversation: string) => forcedMock || mocked || conversation.startsWith("tour-") ? mock : local
+    effect function snapshot() {
+      const response = try client.get(`${origin}/desktop/state`).pipe(Effect.mapError(() => new Unavailable({ reason: "Desktop unavailable" })))
+      const state = try HttpClientResponse.schemaBodyJson(Snapshot)(response).pipe(Effect.mapError(() => new Unavailable({ reason: "Desktop unavailable" })))
+      mocked = state.mock
+      return forcedMock ? { ...state, mock: true } : state
+    }
+    const desktop: DesktopClient.Shape = {
+      external: effect (url) => {
+        const request = try orDie(HttpClientRequest.bodyJson(HttpClientRequest.post(`${origin}/desktop/external`), { url }))
+        const response = try client.execute(request).pipe(Effect.mapError(() => new Unavailable({ reason: "Browser unavailable" })))
+        if (response.status !== 200) throw new Unavailable({ reason: "Browser unavailable" })
+      },
+      snapshot,
+      change: effect (operation, endpoint = "", model = "") => {
+        const request = try orDie(HttpClientRequest.bodyJson(HttpClientRequest.post(`${origin}/desktop/change`), { operation, endpoint, model }))
+        const response = try client.execute(request).pipe(Effect.mapError(() => new Unavailable({ reason: "Desktop unavailable" })))
+        if (response.status !== 200) throw new Unavailable({ reason: operation === "model" ? "Model unavailable" : "Folder unavailable" })
+        const state = try HttpClientResponse.schemaBodyJson(Snapshot)(response).pipe(Effect.mapError(() => new Unavailable({ reason: "Desktop unavailable" })))
+        mocked = state.mock
+        return forcedMock ? { ...state, mock: true } : state
+      },
+      models: effect (endpoint) => {
+        const response = try client.get(`${origin}/desktop/models?endpoint=${encodeURIComponent(endpoint)}`).pipe(Effect.mapError(() => new Unavailable({ reason: "Model unavailable" })))
+        if (response.status !== 200) throw new Unavailable({ reason: "Model unavailable" })
+        return (try HttpClientResponse.schemaBodyJson(Schema.Struct({ models: Schema.Array(Schema.String) }))(response).pipe(Effect.mapError(() => new Unavailable({ reason: "Model unavailable" })))).models
+      },
+    }
+    const factory: Factory.Shape = {
+      get mode() { return forcedMock || mocked ? "mock" : "live" },
+      get accounts() { return backend("home").accounts! },
+      post: (conversation, clientId, name, text) => backend(conversation).post(conversation, clientId, name, text),
+      read: (conversation, after) => backend(conversation).read(conversation, after),
+      events: (conversation, after) => backend(conversation).events(conversation, after),
+      sandbox: (conversation) => backend(conversation).sandbox(conversation),
+      startSandbox: (conversation, operationId) => backend(conversation).startSandbox(conversation, operationId),
+      stopSandbox: (conversation, operationId, generation) => backend(conversation).stopSandbox(conversation, operationId, generation),
+      sandboxCommand: (conversation, operationId, command, generation) => backend(conversation).sandboxCommand(conversation, operationId, command, generation),
+      tour: (conversation) => mock.tour(conversation),
+      endTour: (conversation) => mock.endTour(conversation),
+    }
+    return Context.make(Factory, factory).pipe(Context.add(DesktopClient, desktop))
+  })
+}

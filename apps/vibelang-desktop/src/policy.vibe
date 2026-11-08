@@ -1,0 +1,54 @@
+// Desktop admission rules. Parsing uses the platform URL parser; the admission decisions below are proven.
+/** A person chooses a local OpenAI-compatible origin; paths and credentials never hide in it. */
+export function endpointOf(input: string): string {
+  try {
+    const url = new URL(input)
+    return localAddress(url.protocol, url.hostname, url.username, url.password, url.pathname, url.search, url.hash) ? url.origin : ""
+  } catch { return "" }
+}
+
+/** The origin is loopback, with no embedded credential, query, fragment, or unrelated endpoint path. */
+//@ verify
+//@ ensures \result ==> (host === "localhost" || host === "127.0.0.1" || host === "[::1]")
+//@ ensures \result ==> (protocol === "http:" || protocol === "https:")
+//@ ensures \result ==> username === "" && password === "" && query === "" && hash === ""
+//@ ensures \result ==> (path === "/" || path === "/v1" || path === "/v1/")
+export function localAddress(protocol: string, host: string, username: string, password: string, path: string, query: string, hash: string): boolean {
+  return (protocol === "http:" || protocol === "https:") &&
+    (host === "localhost" || host === "127.0.0.1" || host === "[::1]") &&
+    username === "" && password === "" && query === "" && hash === "" &&
+    (path === "/" || path === "/v1" || path === "/v1/")
+}
+
+/** Mock needs no model; a local model must be selected and ready. */
+//@ verify
+//@ ensures \result === (mock || (model !== "" && state === "ready"))
+export function modelReady(mock: boolean, model: string, state: string): boolean {
+  return mock || (model !== "" && state === "ready")
+}
+
+/** Relative names only. The SDK additionally pins the root and rejects symlinks and hard links atomically. */
+//@ verify
+//@ ensures \result ==> name !== ""
+//@ ensures \result ==> !name.startsWith("/") && !name.includes("\\") && !name.includes("\0")
+//@ ensures name === ".." || name.startsWith("../") || name.includes("/../") || name.endsWith("/..") ==> !\result
+export function relativeFile(name: string): boolean {
+  return name !== "" && !name.startsWith("/") && !name.includes("\\") && !name.includes("\0") &&
+    name !== ".." && !name.startsWith("../") && !name.includes("/../") && !name.endsWith("/..") &&
+    !name.includes("//") && !name.endsWith("/")
+}
+
+/** Only the same known selection may be disabled by an old reply's failure. */
+//@ verify
+//@ ensures \result ==> selected !== "" && selected === original
+//@ ensures selected === "" || selected !== original ==> !\result
+export function choiceCurrent(selected: string, original: string): boolean {
+  return selected !== "" && selected === original
+}
+
+/** A write may replace only the original supplied by its reader, and must actually change it. */
+//@ verify
+//@ ensures \result === (current === expected && current !== replacement)
+export function editAllowed(expected: string, current: string, replacement: string): boolean {
+  return current === expected && current !== replacement
+}

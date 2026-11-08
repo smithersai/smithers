@@ -1,0 +1,6 @@
+// The host/view protocol contains only serializable product state, never platform capabilities or credentials.
+export schema FolderInfo { readonly path: string; readonly files: number; readonly token: string; readonly identity: string }
+export schema ModelInfo { readonly selection?: string; readonly endpoint: string; readonly model: string; readonly state: "ready" | "failed" | "loading" }
+export schema ToolReceipt { readonly model?: string; readonly id?: string; readonly conversation: string; readonly reply: string; readonly operation: string; readonly path: string; readonly before: string; readonly after: string }
+export schema Snapshot { readonly mock: boolean; readonly folder: FolderInfo | null; readonly model: ModelInfo | null; readonly tools: ReadonlyArray<ToolReceipt> }
+export type Operation = "open" | "close" | "model" | "mock"

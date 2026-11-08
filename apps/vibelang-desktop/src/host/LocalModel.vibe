@@ -1,0 +1,76 @@
+// Person-selected local models over the SDK's OpenAI Chat Completions route. No model call bypasses ModelStep.
+import { SecureRandom } from "effect/crypto"
+import { Endpoint, OpenAIChatCompletions, Framing, RequestExecutor, Route } from "@smthrs/model"
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
+import { endpointOf } from "../policy.vibe"
+
+export schema error ModelUnavailable { code: "endpoint" | "unavailable" | "model" }
+import { ModelInfo } from "../protocol.vibe"
+export { ModelInfo } from "../protocol.vibe"
+export service LocalModels {
+  models(endpoint: string): ReadonlyArray<string>!ModelUnavailable
+  select(endpoint: string, model: string): ModelInfo!ModelUnavailable
+  restore(info: ModelInfo): ModelInfo!ModelUnavailable
+  current(): (ModelInfo | null)!!
+  selected(): { readonly modelId: string; readonly model: import("@smthrs/model").Model.Model; readonly route: import("@smthrs/agent").FlowEngineLike.RouteResolver }!ModelUnavailable
+  resolve(info: ModelInfo): { readonly modelId: string; readonly model: import("@smthrs/model").Model.Model; readonly route: import("@smthrs/agent").FlowEngineLike.RouteResolver }!ModelUnavailable
+}
+
+schema Listing { readonly data: ReadonlyArray<{ readonly id: string }> }
+
+export const localModelsLayer = Layer.effect(LocalModels, effect {
+  const client = try HttpClient.HttpClient
+  const random = try SecureRandom.SecureRandom
+  const timeout = try Config.withDefault(Config.Int("VIBELANG_DESKTOP_DISCOVERY_MS"), 10000)
+  const selected = try Ref.make<ModelInfo | null>(null)
+  const executor = try RequestExecutor.makeWith(try orDie(Effect.try(() => RequestExecutor.fixed(client))), { maxRetries: 0 })
+  effect function discover(input: string) {
+    const endpoint = endpointOf(input)
+    if (endpoint === "") throw new ModelUnavailable({ code: "endpoint" })
+    const response = try client.get(`${endpoint}/v1/models`).pipe(Effect.mapError(() => new ModelUnavailable({ code: "unavailable" })))
+    if (response.status !== 200) throw new ModelUnavailable({ code: "unavailable" })
+    const body = try HttpClientResponse.schemaBodyJson(Listing)(response).pipe(Effect.mapError(() => new ModelUnavailable({ code: "unavailable" })))
+    return [...new Set(body.data.map((item) => item.id).filter((id) => id !== ""))]
+  }
+  function observed<A, E, R>(operation: string, body: A!E!R) {
+    return withSpan(effect {
+      const result = try exit(body)
+      const outcome = Exit.isSuccess(result) ? "done" : "failed"
+      try Effect.logInfo("vibelang.desktop.model").pipe(Effect.annotateLogs({ operation, outcome }))
+      try Metric.update(Metric.withAttributes(Metric.counter("vibelang_desktop_models", { incremental: true }), { operation, outcome }), 1)
+      return try result
+    }, `vibelang.desktop.model.${operation}`)
+  }
+  function list(input: string) { return observed("discover", discover(input).pipe(Effect.timeout(timeout), Effect.mapError(() => new ModelUnavailable({ code: "unavailable" })))) }
+  effect function resolve(info: ModelInfo) {
+      if (info.state !== "ready") throw new ModelUnavailable({ code: "model" })
+      const endpoint = try Effect.fromResult(try orDie(Effect.try(() => Endpoint.make({ url: info.endpoint, path: "/v1/chat/completions" })))).pipe(Effect.mapError(() => new ModelUnavailable({ code: "endpoint" })))
+      const route = try orDie(Effect.try(() => Route.make({
+        id: "desktop-local", providerName: "local", endpoint,
+        protocol: OpenAIChatCompletions.protocol, framing: Framing.sse,
+        auth: { sign: (headers: Record<string, string>) => Effect.succeed(headers), credentialHeaders: [] },
+      })))
+      const model = try Route.toModel(route).pipe(Effect.provideService(RequestExecutor.RequestExecutor, executor))
+      return { modelId: info.model, model, route: { prepare: (request: import("@smthrs/model").ModelRequest.ModelRequest) => Route.prepare(route, request) } }
+  }
+  effect function select(input: string, model: string, selection?: string) {
+    const endpoint = endpointOf(input)
+    if (endpoint === "") throw new ModelUnavailable({ code: "endpoint" })
+    if (!(try list(endpoint)).includes(model)) throw new ModelUnavailable({ code: "model" })
+    const info: ModelInfo = { endpoint, model, state: "ready", selection: selection ?? (try random.uuidV4()) }
+    try Ref.set(selected, info)
+    return info
+  }
+  return {
+    models: list,
+    current: () => Ref.get(selected),
+    select: (input: string, model: string) => observed("select", select(input, model)),
+    restore: (info: ModelInfo) => observed("restore", select(info.endpoint, info.model, info.selection)),
+    resolve,
+    selected: effect () => {
+      const info = try Ref.get(selected)
+      if (info === null) throw new ModelUnavailable({ code: "model" })
+      return try resolve(info)
+    },
+  }
+})

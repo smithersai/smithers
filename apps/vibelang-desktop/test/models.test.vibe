@@ -1,0 +1,43 @@
+// A faulty external HTTP service: provider failures cannot leak their messages or turn into successful selection.
+import { BunHost } from "@smthrs/platform-bun"
+import { expect, it } from "@effect/vitest"
+import { HttpClient, HttpClientError } from "effect/http"
+import { LocalModels, localModelsLayer } from "../src/host/LocalModel.vibe"
+
+it.effect("rejects invalid origins before HTTP and keeps failed discovery unselected", () => effect {
+  let calls = 0
+  const client = HttpClient.make(effect (request) => {
+    calls++
+    const fault = try orDie(Effect.try(() => new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, description: "private provider detail" }) })))
+    throw fault
+  })
+  provide localModelsLayer.pipe(Layer.provide(Layer.merge(BunHost.BunCrypto.layer, Layer.succeed(HttpClient.HttpClient, client)))) {
+    const models = try LocalModels
+    const invalid = try exit(models.models("https://elsewhere.invalid"))
+    const afterInvalid = calls
+    const unselected = try exit(models.selected())
+    const refused = try exit(models.select("http://localhost:11434", "unavailable"))
+    const current = try models.current()
+    try Effect.try(() => {
+      expect(Exit.isFailure(invalid)).toBe(true)
+      expect(afterInvalid).toBe(0)
+      expect(Exit.isFailure(unselected)).toBe(true)
+      expect(Exit.isFailure(refused)).toBe(true)
+      if (Exit.isFailure(refused)) expect(String(Cause.squash(refused.cause))).not.toContain("private provider detail")
+      expect(calls).toBe(1)
+      expect(current).toBeNull()
+    })
+  }
+})
+
+it.effect("a stalled endpoint finishes discovery with a safe failure and remains unselected", () => effect {
+  const client = HttpClient.make(() => Effect.never)
+  provide localModelsLayer.pipe(Layer.provide(Layer.merge(BunHost.BunCrypto.layer, Layer.succeed(HttpClient.HttpClient, client)))) {
+    const models = try LocalModels
+    const discovery = fork models.models("http://localhost:11434")
+    try TestClock.adjust("10 seconds")
+    const outcome = discovery.pollUnsafe()
+    const current = try models.current()
+    try Effect.try(() => { expect(outcome).toBeDefined(); expect(outcome !== undefined && Exit.isFailure(outcome)).toBe(true); expect(current).toBeNull() })
+  }
+})

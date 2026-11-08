@@ -1,0 +1,63 @@
+// The shared history page with its real no-backend service. Local model choice belongs to the chat, not project identity.
+import { Command, Subscription, Runtime } from "foldkit"
+import { defineMessageUnion } from "foldkit/message"
+import type { Document, HtmlBuilder } from "foldkit/html"
+import { FetchHttpClient } from "effect/http"
+import { ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
+import * as History from "../../../vibelang/src/web/historyApp.vibe"
+import { view as historyView } from "../../../vibelang/src/web/historyView.vibe"
+import { mockRole } from "../../../vibelang/src/web/historyStartup.vibe"
+import { MockMythical } from "../../../vibelang/src/history/MockMythical.vibe"
+import { stylesheet } from "../../../vibelang/src/web/styles.vibe"
+import { DesktopClient, clientLayer } from "./Client.vibe"
+import desktopCss from "./styles.css?raw"
+
+const Native = defineMessageUnion({ External: { url: Schema.String }, Opened: {}, Failed: {} })
+type Message = History.HistoryMessage | typeof Native.Type
+const MessageSchema = Schema.Union([History.HistoryMessage, Native])
+const Model = Schema.Struct({ ...History.HistoryModel.fields, externalError: Schema.Boolean })
+type Model = typeof Model.Type
+const Open = Command.define("Desktop.History.External", { args: { url: Schema.String }, messages: [Native.Opened, Native.Failed], execute: effect ({ url }) => {
+  const desktop = try DesktopClient
+  const result = try exit(desktop.external(url))
+  return try orDie(Effect.try(() => Exit.isSuccess(result) ? Native.Opened() : Native.Failed()))
+} })
+function update(model: Model, message: Message) {
+  if (message._tag === "External") return { model: { ...model, externalError: false }, commands: [Open({ url: message.url })] }
+  if (message._tag === "Opened" || message._tag === "Failed") return { model: { ...model, externalError: message._tag === "Failed" } }
+  const result = History.update(model, message)
+  return { ...result, model: { ...model, ...result.model } }
+}
+function view(model: Model, h: HtmlBuilder<Message>): Document {
+  const decorated: HtmlBuilder<Message> = {
+    ...h,
+    a: (attributes, children = []) => {
+      const href = attributes.find((attribute) => "_tag" in attribute && attribute._tag === "Href")
+      const url = href !== undefined && "value" in href && typeof href.value === "string" ? href.value : ""
+      return h.a([...attributes, ...(url.startsWith("https://") ? [h.OnClick(Native.External({ url }), { defaultAction: "Prevent" })] : [])], children)
+    },
+  }
+  const page = historyView(model, decorated as unknown as HtmlBuilder<History.HistoryMessage>)
+  return { ...page, body: h.div([h.Class("dt-host")], [
+    h.header([h.Class("dt-titlebar electrobun-webkit-app-region-drag")], [h.span([h.Class("dt-title")], ["VibeLang"])]),
+    page.body,
+    ...(model.externalError ? [h.div([h.Class("sui-alert sui-alert-destructive dt-browser-error"), h.Role("alert")], ["Browser unavailable"])] : []),
+  ]) }
+}
+export effect function main() {
+  const window = try (try Experimental.Window.Window).current
+  const document = try (try Experimental.Document.Document).current
+  const css = (try stylesheet()) + "\n" + desktopCss
+  const root = try Effect.try(() => { const style = document.createElement("style"); style.textContent = css; document.head.append(style); return document.getElementById("root")! })
+  const role = mockRole(window)
+  const resources = Layer.mergeAll(MockMythical({ role, name: "Guest", agent: false }), ExperimentalBrowserWindow.layer, clientLayer(window.location.origin, true).pipe(Layer.provide(FetchHttpClient.layer)))
+  const flags: History.HistoryFlags = { mode: "mock", role, hash: window.location.hash.slice(1) }
+  const application = try Effect.try(() => Runtime.makeApplication({
+    Model, Flags: History.HistoryFlags,
+    init: (flags: History.HistoryFlags) => { const result = History.init(flags); return { ...result, model: { ...result.model, externalError: false } } },
+    update, view,
+    subscriptions: Subscription.lift(History.subscriptions(window))<Model, Message>({ read: (model) => Option.some(model), toParentMessage: (message) => message }),
+    resources, container: root, devTools: { Message: MessageSchema },
+  }))
+  return { application, flags }
+}

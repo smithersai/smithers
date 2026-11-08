@@ -1,0 +1,128 @@
+// The native additions wrap the unchanged Foldkit application; its conversation machine and commands stay shared.
+import { Command, Dom, Render, Subscription, type Update } from "foldkit"
+import { defineMessageUnion } from "foldkit/message"
+import * as Web from "../../../vibelang/src/web/main.vibe"
+import { newClient } from "../../../vibelang/src/core/conversation.vibe"
+import { Factory } from "../../../vibelang/src/core/Factory.vibe"
+import { viewer } from "../../../vibelang/src/core/roles.vibe"
+const localViewer = { ...viewer, available: false }
+import { Snapshot, type Operation } from "../protocol.vibe"
+import { modelReady } from "../policy.vibe"
+import { DesktopClient } from "./Client.vibe"
+
+export const Model = Schema.Struct({
+  ...Web.Model.fields,
+  desktop: Snapshot, manager: Schema.Boolean, maximized: Schema.Boolean, picker: Schema.Boolean,
+  endpoint: Schema.String, available: Schema.Array(Schema.String), highlighted: Schema.Number,
+  busy: Schema.Boolean, error: Schema.String, offline: Schema.Boolean,
+})
+export type Model = typeof Model.Type
+const DesktopMessage = defineMessageUnion({
+  OpenExternal: { url: Schema.String }, ExternalOpened: {},
+  OpenFolder: {}, CloseFolder: {}, TogglePicker: {}, OpenModels: {}, CloseModels: {}, MaximizeModels: {},
+  Snapshot: { state: Snapshot }, Failed: { reason: Schema.String }, UpdatedEndpoint: { value: Schema.String },
+  Connect: {}, Listed: { models: Schema.Array(Schema.String) }, Select: { model: Schema.String }, Mock: {},
+  PickerKey: { key: Schema.String }, Network: { offline: Schema.Boolean },
+})
+export const Message = { ...Web.Message, ...DesktopMessage }
+export type Message = Web.Message | typeof DesktopMessage.Type
+export const MessageSchema = Schema.Union([Web.Message, DesktopMessage])
+
+const FocusPicker = Command.define("Desktop.FocusPicker", { args: {}, messages: [Web.Message.FocusedPrompt], execute: effect () => {
+  try Render.afterCommit
+  Dom.focus("#dt-model-options", { preventScroll: true }) catch () => undefined
+  return try orDie(Effect.try(() => Web.Message.FocusedPrompt()))
+} })
+const FocusActive = Command.define("Desktop.FocusComposer", { args: { palette: Schema.Boolean }, messages: [Web.Message.FocusedPrompt], execute: effect ({ palette }) => {
+  try Render.afterCommit
+  Dom.focus(`#${palette ? Web.PALETTE_PROMPT_ID : Web.PROMPT_ID}`, { preventScroll: true }) catch () => undefined
+  return try orDie(Effect.try(() => Web.Message.FocusedPrompt()))
+} })
+const External = Command.define("Desktop.External", { args: { url: Schema.String }, messages: [Message.ExternalOpened, Message.Failed], execute: effect ({ url }) => {
+  const desktop = try DesktopClient
+  const result = try exit(desktop.external(url))
+  return try orDie(Effect.try(() => Exit.isSuccess(result) ? Message.ExternalOpened() : Message.Failed({ reason: "Browser unavailable" })))
+} })
+const Refresh = Command.define("Desktop.Refresh", { args: {}, messages: [Message.Snapshot, Message.Failed], execute: effect () => {
+  const desktop = try DesktopClient
+  const result = try exit(desktop.snapshot())
+  return try orDie(Effect.try(() => Exit.isSuccess(result) ? Message.Snapshot({ state: result.value }) : Message.Failed({ reason: "Desktop unavailable" })))
+} })
+const Change = Command.define("Desktop.Change", { args: { operation: Schema.Literals(["open", "close", "model", "mock"]), endpoint: Schema.String, model: Schema.String }, messages: [Message.Snapshot, Message.Failed], execute: effect ({ operation, endpoint, model }) => {
+  const desktop = try DesktopClient
+  const result = try exit(desktop.change(operation, endpoint, model))
+  return try orDie(Effect.try(() => Exit.isSuccess(result) ? Message.Snapshot({ state: result.value }) : Message.Failed({ reason: "Unavailable" })))
+} })
+const Connect = Command.define("Desktop.Connect", { args: { endpoint: Schema.String }, messages: [Message.Listed, Message.Failed], execute: effect ({ endpoint }) => {
+  const desktop = try DesktopClient
+  const result = try exit(desktop.models(endpoint))
+  return try orDie(Effect.try(() => Exit.isSuccess(result) ? Message.Listed({ models: result.value }) : Message.Failed({ reason: "Model unavailable" })))
+} })
+
+export function init(flags: Web.Flags): Update.Return<Model, Message, DesktopClient | Factory> {
+  const base = Web.init(flags)
+  return { model: { ...base.model, surface: "chat", desktop: { mock: true, folder: null, model: null, tools: [] }, manager: false, maximized: false, picker: false, endpoint: "", available: [], highlighted: 0, busy: false, error: "", offline: false }, commands: [Refresh({}), Web.LoadAccount({})] }
+}
+
+function change(model: Model, operation: Operation, selected = ""): Update.Return<Model, Message, DesktopClient> {
+  return { model: { ...model, busy: true, error: "", picker: false }, commands: [Change({ operation, endpoint: model.endpoint, model: selected }), ...(model.picker ? [FocusActive({ palette: model.palette })] : [])] }
+}
+export function canSend(model: Model): boolean { return !model.busy && (model.conversation.startsWith("tour-") || modelReady(model.desktop.mock, model.desktop.model?.model ?? "", model.desktop.model?.state ?? "failed")) }
+
+export function update(model: Model, message: Message): Update.Return<Model, Message, DesktopClient | Factory> {
+  switch (message._tag) {
+    case "OpenExternal": return { model, commands: [External({ url: message.url })] }
+    case "ExternalOpened": return { model }
+    case "OpenFolder": return change(model, "open")
+    case "CloseFolder": return change(model, "close")
+    case "TogglePicker": return { model: { ...model, picker: !model.picker, highlighted: 0 }, commands: [model.picker ? FocusActive({ palette: model.palette }) : FocusPicker({})] }
+    case "OpenModels": {
+      const closed = model.palette ? Web.update(model, Web.Message.PressedEscape()) : { model }
+      return { model: { ...model, ...closed.model, manager: true, picker: false }, commands: closed.commands ?? [] }
+    }
+    case "CloseModels": return { model: { ...model, manager: false, maximized: false }, commands: [Web.FocusComposer({})] }
+    case "MaximizeModels": return { model: { ...model, maximized: !model.maximized } }
+    case "UpdatedEndpoint": return { model: { ...model, endpoint: message.value, available: [], error: "" } }
+    case "Connect": return { model: { ...model, busy: true, error: "" }, commands: [Connect({ endpoint: model.endpoint })] }
+    case "Listed": return { model: { ...model, available: message.models, busy: false, error: "" } }
+    case "Select": return change(model.conversation.startsWith("tour-") ? { ...model, conversation: "home", client: newClient, epoch: model.epoch + 1, from: 0, stream: "open" } : model, "model", message.model)
+    case "Mock": return change(model, "mock")
+    case "Failed": return { model: { ...model, busy: false, error: message.reason } }
+    case "Network": return { model: { ...model, offline: message.offline } }
+    case "Snapshot": {
+      const switched = model.desktop.mock !== message.state.mock
+      const reset = switched && !message.state.mock ? Web.update(model, Web.Message.AccountLoaded({ identity: localViewer })) : { model }
+      return { model: { ...model, ...reset.model, desktop: message.state, endpoint: message.state.model?.endpoint ?? model.endpoint, mode: message.state.mock ? "mock" : "live", busy: false, error: "", ...(switched ? { epoch: model.epoch + 1, from: 0, client: newClient, stream: "open" as const } : {}) }, commands: [...(reset.commands ?? []), ...(switched ? [Web.LoadAccount({})] : [])] }
+    }
+    case "PickerKey": {
+      if (message.key === "Escape") return { model: { ...model, picker: false }, commands: [FocusActive({ palette: model.palette })] }
+      const count = model.available.length + 1
+      if (message.key === "ArrowDown" || message.key === "ArrowUp") return { model: { ...model, highlighted: (model.highlighted + (message.key === "ArrowDown" ? 1 : count - 1)) % count } }
+      if (message.key === "Enter") return model.highlighted === model.available.length ? change(model, "mock") : update(model, Message.Select({ model: model.available[model.highlighted] ?? "" }))
+      return { model }
+    }
+    default: {
+      if (model.desktop.mock && message._tag === "AccountLoaded" && message.identity.available === false) return { model }
+      if (message._tag === "SubmittedDraft" && !canSend(model)) return { model }
+      if (message._tag === "PressedEscape" && model.picker) return update(model, Message.PickerKey({ key: "Escape" }))
+      if (message._tag === "PressedEscape" && model.manager) return update(model, Message.CloseModels())
+      // Native local project access is Viewer even before session I/O settles or a stale Mock response arrives.
+      const guarded = !model.desktop.mock && message._tag === "ClickedSignIn" ? { ...model, account: { ...Web.accountOf(model), identity: localViewer } } : model
+      const intent = !model.desktop.mock && message._tag === "AccountLoaded" ? Web.Message.AccountLoaded({ identity: localViewer }) : message
+      const result = Web.update(guarded, intent)
+      return { model: { ...model, ...result.model }, commands: [ ...(result.commands ?? []), ...(message._tag === "ReceivedEvent" && ["ReplyFinished", "ReplyFailed"].includes(message.event.type) ? [Refresh({})] : []) ] }
+    }
+  }
+}
+
+export function subscriptions(document: Document) {
+  const web = Subscription.lift(Web.subscriptions(document, document))<Model, Message>({ read: (model) => Option.some(model), toParentMessage: (message) => message })
+  const native = Subscription.make<Model, Message>()(() => ({
+    folderKeyboard: Subscription.persistentEntry(Dom.streamFromEventFilterMapPreventDefault({ target: document, type: "keydown", filterMapEvent: (event: Event) => {
+      const key = event as KeyboardEvent
+      return (key.metaKey || key.ctrlKey) && key.key.toLowerCase() === "o" ? Option.some(Message.OpenFolder()) : Option.none()
+    } })),
+    offline: Subscription.persistentEntry(Stream.merge(Dom.streamFromEventFilterMap({ target: document.defaultView!, type: "offline", filterMapEvent: () => Option.some(Message.Network({ offline: true })) }), Dom.streamFromEventFilterMap({ target: document.defaultView!, type: "online", filterMapEvent: () => Option.some(Message.Network({ offline: false })) }))),
+  }))
+  return Subscription.aggregate(web, native)
+}

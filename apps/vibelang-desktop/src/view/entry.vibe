@@ -1,0 +1,36 @@
+// Browser boundary for the native window. The web entry and its build are untouched.
+import { Runtime } from "foldkit"
+import { SecureRandom } from "effect/crypto"
+import { FetchHttpClient } from "effect/http"
+import { page } from "../../../vibelang/src/web/startup.vibe"
+import { Flags, viewTransition } from "../../../vibelang/src/web/main.vibe"
+import { stylesheet } from "../../../vibelang/src/web/styles.vibe"
+import { clientLayer } from "./Client.vibe"
+import { init, Message, MessageSchema, Model, subscriptions, update } from "./main.vibe"
+import { view } from "./view.vibe"
+import { main as historyMain } from "./history.vibe"
+import desktopCss from "./styles.css?raw"
+
+const pathname = await runPromise(effect { return (try (try Experimental.Window.Window).current).location.pathname }.pipe(Effect.provide(page)))
+if (pathname === "/history" || pathname.startsWith("/history/")) {
+  const started = await runPromise(historyMain().pipe(Effect.provide(page), Effect.orDie))
+  Runtime.run(started.application, { flags: succeed(started.flags) })
+} else {
+const started = await runPromise(effect {
+  const window = try (try Experimental.Window.Window).current
+  const document = try (try Experimental.Document.Document).current
+  const session = try (try SecureRandom.SecureRandom).uuidV4()
+  const css = (try stylesheet()) + "\n" + desktopCss
+  const root = try Effect.try(() => {
+    const style = document.createElement("style")
+    style.textContent = css
+    document.head.append(style)
+    return document.getElementById("root")!
+  })
+  const resources = clientLayer(window.location.origin, new URLSearchParams(window.location.search).get("agent") === "mock").pipe(Layer.provide(FetchHttpClient.layer))
+  const application = try Effect.try(() => Runtime.makeApplication({ Model, Flags, init, update, view, subscriptions: subscriptions(document), resources, container: root, devTools: { Message: MessageSchema }, viewTransition: ({ previousModel, model }) => viewTransition({ previousModel, model, message: Message.FocusedPrompt() }) }))
+  return { application, flags: { session, name: "Guest", mode: "mock" as const, reducedMotion: try (try Experimental.MediaQuery.MediaQuery).matches("(prefers-reduced-motion: reduce)") } }
+}.pipe(Effect.provide(page), Effect.orDie))
+Runtime.run(started.application, { flags: succeed(started.flags) })
+
+}

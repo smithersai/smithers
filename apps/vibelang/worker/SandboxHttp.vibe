@@ -15,12 +15,12 @@ export effect function emptySnapshot() {
   return { id: "", generation: 0, sequence: 0, role: "viewer" as const, status: "stopped" as const, allowance: 0, used: 0, remaining: 0, resetAt: nextMonth(monthOf(now)), output: "" }
 }
 /** Safe until decision 0019 supplies a verified principal. No HTTP request can choose its role. */
-export const signedOutGateway: Gateway = {
-  sandbox: () => emptySnapshot(),
-  startSandbox: () => fail(new Refused({ refusal: "forbidden" })),
-  stopSandbox: () => fail(new Refused({ refusal: "forbidden" })),
-  sandboxCommand: () => fail(new Refused({ refusal: "forbidden" })),
-}
+export const signedOutGateway = {
+  sandbox: (_conversation: string) => emptySnapshot(),
+  startSandbox: (_conversation: string, _operationId: string) => fail(new Refused({ refusal: "forbidden" })),
+  stopSandbox: (_conversation: string, _operationId: string, _generation: number) => fail(new Refused({ refusal: "forbidden" })),
+  sandboxCommand: (_conversation: string, _operationId: string, _command: string, _generation: number) => fail(new Refused({ refusal: "forbidden" })),
+} satisfies Gateway
 const Body = Schema.Struct({ operationId: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9._/-]{1,160}$/)), generation: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))), command: Schema.optional(Schema.String.check(Schema.isMaxLength(16384))) })
 const decode = Schema.decodeUnknownEffect(Schema.fromJsonString(Body))
 const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status, headers: { "cache-control": "no-store" } })

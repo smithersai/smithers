@@ -141,6 +141,14 @@ export effect function handle<R = never>(conversations: Conversations, histories
     try Effect.logInfo("vibelang.api").pipe(Effect.annotateLogs({ route: history.kind, status: answered.status }))
     return answered
   }
+  return try handleConversations(conversations)
+}
+
+/** The conversation transport shared by hosts that supply Factory but no project-history backend. */
+export effect function handleConversations(conversations: Conversations) {
+  const request = try HttpServerRequest.HttpServerRequest
+  const url = new URL(request.url, "http://api.invalid")
+  if (url.pathname === HEALTH_PATH) return json({ ok: true, agent: "live" })
   const route = routeOf(request.method, url.pathname)
   if (route === undefined) return json({ error: "not found" }, 404)
   const answered = try withSpan(effect {

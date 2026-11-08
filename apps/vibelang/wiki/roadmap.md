@@ -28,7 +28,7 @@ brick                                   state         proof
                                                       bootstrap of 6,737 real commits, the flows, the live object and /history;
                                                       read by page (lane vl-mythical2); live writes wait for 0019's policy
 6   sandboxes with minutes              in progress   0024: mock UI and shared flows; durable allowance/Container hosts; live policy and binding gated
-7   Electrobun desktop app              later         VL-6
+7   Electrobun desktop app              done (local)  0025: shared Foldkit UI, native folder picker and local model; Linux native e2e; macOS build is the lead's
 ```
 
 - **Proofs of all logic (0018, lane vl-proveall): in progress.** The inventory contains 1,582 executable items. Twelve modules carry proved contracts and 451 current mutations reject; unproved logic and tool boundaries remain explicit.

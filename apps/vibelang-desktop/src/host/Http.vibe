@@ -1,0 +1,74 @@
+import { sandboxRequest, signedOutGateway } from "../../../vibelang/worker/SandboxHttp.vibe"
+// Loopback desktop API and bundled assets. Local privileges never follow web navigation.
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Factory } from "../../../vibelang/src/core/Factory.vibe"
+import { viewer } from "../../../vibelang/src/core/roles.vibe"
+import { handleConversations as factoryHttp, eventStream, afterOf } from "../../../vibelang/worker/Http.vibe"
+import { Desktop } from "./Factory.vibe"
+
+schema ChangeBody { readonly operation: "open" | "close" | "model" | "mock"; readonly endpoint?: string; readonly model?: string }
+const CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self'; connect-src 'self'; frame-src https://vibelang.sh; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status, headers: { "cache-control": "no-store" } })
+
+effect function handle(origin: string, assets: string) {
+  const request = try HttpServerRequest.HttpServerRequest
+  const factory = try Factory
+  const desktop = try Desktop
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const url = new URL(request.url, origin)
+  if (request.headers.host !== new URL(origin).host) return json({ error: "host" }, 403)
+  if (request.headers["sec-fetch-site"] === "cross-site") return json({ error: "origin" }, 403)
+  if (request.method !== "GET" && request.method !== "HEAD" && request.headers.origin !== origin) return json({ error: "origin" }, 403)
+  if (url.pathname === "/desktop/state" && request.method === "GET") return json(try desktop.snapshot())
+  if (url.pathname === "/desktop/models" && request.method === "GET") {
+    const listed = desktop.models(url.searchParams.get("endpoint") ?? "") catch () => undefined
+    return listed === undefined ? json({ error: "Model unavailable" }, 503) : json({ models: listed })
+  }
+  if (url.pathname === "/desktop/external" && request.method === "POST") {
+    const body = request.json catch () => undefined
+    if (typeof body !== "object" || body === null || !("url" in body) || typeof body.url !== "string" || body.url.length > 4096) return json({ error: "body" }, 400)
+    const opened = try exit(desktop.external(body.url))
+    return Exit.isSuccess(opened) ? json({}) : json({ error: "Unavailable" }, 503)
+  }
+  if (url.pathname === "/desktop/change" && request.method === "POST") {
+    if (!(request.headers["content-type"] ?? "").startsWith("application/json")) return json({ error: "body" }, 415)
+    const raw = request.text catch () => ""
+    if (raw.length > 4096) return json({ error: "body" }, 413)
+    const body = Schema.decodeUnknownEffect(Schema.fromJsonString(ChangeBody))(raw) catch () => undefined
+    if (body === undefined) return json({ error: "body" }, 400)
+    const changed = try exit(desktop.change(body.operation, body.endpoint, body.model))
+    return Exit.isSuccess(changed) ? json(changed.value) : json({ error: "Unavailable" }, 503)
+  }
+  if (url.pathname === "/api/auth/session" && request.method === "GET") return json({ ...viewer, available: false })
+  if (url.pathname.startsWith("/api/sandboxes/")) return try sandboxRequest(signedOutGateway)
+  if (url.pathname.startsWith("/api/")) return try factoryHttp({
+    post: effect (conversation, body) => { return Effect.as(factory.post(conversation, body.clientId, body.name, body.text), null) catch (error) => error._tag === "Refused" ? error.refusal : "busy" },
+    read: (conversation, after) => factory.read(conversation, after).pipe(Effect.orDie),
+    tour: effect (conversation) => { return Effect.as(factory.tour(conversation), null) catch () => "not-replying" },
+    endTour: effect (conversation) => { return Effect.as(factory.endTour(conversation), null) catch () => "not-replying" },
+    events: effect (conversation) => {
+      const after = afterOf(url)
+      return after === undefined ? json({ error: "after" }, 400) : eventStream(factory.events(conversation, after).pipe(Stream.orDie))
+    },
+  })
+  if (request.method !== "GET" && request.method !== "HEAD") return json({ error: "not found" }, 404)
+  const asset = (url.pathname === "/" || url.pathname === "/history" || url.pathname.startsWith("/history/")) ? "index.html" : url.pathname.slice(1)
+  if (asset !== "index.html" && !/^(assets|media)\/[a-zA-Z0-9_./-]+$/.test(asset)) return json({ error: "not found" }, 404)
+  if (asset.split("/").some((part) => part === ".." || part === "." || part === "")) return json({ error: "not found" }, 404)
+  const content = fs.readFile(path.join(assets, asset)) catch () => undefined
+  if (content === undefined) return json({ error: "not found" }, 404)
+  const extension = asset.split(".").at(-1)
+  const types: Record<string, string> = { html: "text/html", js: "text/javascript", css: "text/css", svg: "image/svg+xml", png: "image/png", mp4: "video/mp4", webp: "image/webp" }
+  return HttpServerResponse.uint8Array(content, { contentType: types[extension ?? ""] ?? "application/octet-stream", headers: { "content-security-policy": CSP, "x-content-type-options": "nosniff" } })
+}
+
+export function handler(origin: string, assets: string) {
+  return withSpan(effect {
+    const result = try exit(handle(origin, assets))
+    const status = Exit.isSuccess(result) ? result.value.status : 500
+    try Effect.logInfo("vibelang.desktop.http").pipe(Effect.annotateLogs({ status }))
+    try Metric.update(Metric.withAttributes(Metric.counter("vibelang_desktop_requests", { incremental: true }), { status: String(status) }), 1)
+    return try result
+  }, "vibelang.desktop.http")
+}

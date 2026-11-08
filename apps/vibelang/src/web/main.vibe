@@ -554,7 +554,7 @@ export function subscriptions(keys: EventTarget, page?: Document) {
         type: "keydown",
         filterMapEvent: (event: Event) => {
           const keyboard = event as KeyboardEvent
-          return keyMessage(keyboard.key, keyboard.metaKey, keyboard.ctrlKey)
+          return keyboard.defaultPrevented ? Option.none() : keyMessage(keyboard.key, keyboard.metaKey, keyboard.ctrlKey)
         },
       }),
     ),
