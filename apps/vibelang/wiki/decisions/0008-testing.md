@@ -196,3 +196,13 @@ created two Vitest 5.0.0 instances; Effect's test helpers registered against the
 load after a fresh install. These are version alignments of existing test tools, with no runtime dependency added.
 
 **Marketing media (0026).** `e2e/media.spec.ts` checks every tour placement in dark, light-preferring and phone browsers, decoded images/videos, native loading posters, loop policy, silence, reduced-motion stills, native decode failures through a faulty `MediaAssets` Effect service, and failed empty-state images. The compiler-card scene fails on the old view. Both designer-reported CSS bugs pass on current main (390px header and computed gradient); no CSS fix is needed. Existing monorepo tool versions `@types/node` 26.4.1 and `happy-dom` 20.13.2 share one Vitest runtime; this adds no dependency. `E2E_4516=4516` selects this lane’s local host across all fault suites.
+
+**Conversation storage and proof harness (0018).** A faulty Effect Log supplies invalid cursors, text and variants;
+replay must fail before writes or dispatch and redact stored content. The failing-first harness regressions reject
+mixed union-destructor/tool failures and ambiguous assertion targets, and enforce additions-only checked induction
+in a fresh empty lemma. No dependency is added. Exact gate counts and exits are in 0018 and the lane report.
+
+**Alarm observation (0018).** The real mock sandbox alarm test now awaits a meter event observed after start returns,
+instead of assuming fifty scheduler yields complete native asynchronous flow work. Startup's own metering cannot
+satisfy the observer. The merged host regression retains its five-second live deadline and removes the fixed yields.
+Idle and post-stop counts remain unchanged, and the post-start count must increase.

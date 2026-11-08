@@ -5,12 +5,12 @@ import { selectModelTurns } from "../src/core/sequenceDecision.vibe"
 // published to every follower. The Durable Object that hosts it (Objects.vibe) supplies the log and the dispatch; nothing here names
 // Cloudflare.
 import {
-  apply, decide, empty, isReplying, isTouring,
+  apply, decide, empty, isReplying, isTouring, replayLog,
   type Conversation, type Entry, type Event, type Intent, type Refusal,
 } from "../src/core/conversation.vibe"
 import { endsTour, replyIdOf, touring, unanswered } from "../src/core/flows.vibe"
 import { appends, startAnswer } from "../src/core/flowDecision.vibe"
-import type { ReadSnapshot } from "../src/core/schemas.vibe"
+import { EventSchema, type ReadSnapshot } from "../src/core/schemas.vibe"
 
 /** Where the conversation's numbered events persist, in order. `write` returns once the event is durable. */
 export interface Log {
@@ -56,8 +56,10 @@ export effect function make(log: Log, dispatch: Dispatch) {
   effect function state() {
     const current = try Ref.get(loaded)
     if (current !== undefined) return current
-    const events = try log.read()
-    const restored: State = { conversation: events.reduce(apply, empty), log: events }
+    const events = try Schema.decodeUnknownEffect(Schema.Array(EventSchema))(try log.read()).pipe(
+      Effect.mapError(() => new Error("Invalid conversation events")), Effect.orDie,
+    )
+    const restored: State = { conversation: replayLog(empty, events), log: events }
     try Ref.set(loaded, restored)
     return restored
   }

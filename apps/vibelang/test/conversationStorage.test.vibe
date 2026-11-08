@@ -1,0 +1,36 @@
+// A faulty persistence service must not bypass the machine's wire and arithmetic domains.
+import { expect, it } from "@effect/vitest"
+import type { Event } from "../src/core/conversation.vibe"
+import { make, type Log } from "../worker/Sequencer.vibe"
+
+const privateText = "PRIVATE_STORED_MESSAGE"
+it.effect("invalid stored events fail before replay, writes or dispatch and redact their contents", () => effect {
+  for (const invalid of [
+    { type: "Posted", seq: -1, id: "m1", clientId: "a", name: "Ada", text: privateText },
+    { type: "Posted", seq: 1.5, id: "m1", clientId: "a", name: "Ada", text: privateText },
+    { type: "Posted", seq: Number.MAX_SAFE_INTEGER + 1, id: "m1", clientId: "a", name: "Ada", text: privateText },
+    { type: "Posted", seq: 1, id: "m1", clientId: "a", name: privateText, text: 17 },
+    { type: "Unknown", seq: 1, id: "m1", text: privateText },
+  ]) {
+    const writes = try Ref.make(0)
+    const dispatches = try Ref.make(0)
+    const faulty: Log = {
+      read: () => succeed([invalid] as ReadonlyArray<Event>),
+      write: () => Ref.update(writes, (n) => n + 1),
+    }
+    const sequencer = try make(faulty, {
+      start: () => Ref.update(dispatches, (n) => n + 1),
+      tour: () => Ref.update(dispatches, (n) => n + 1),
+    })
+    const result = try Effect.exit(sequencer.post("new", "Ada", "safe"))
+    const calls = [try Ref.get(writes), try Ref.get(dispatches)]
+    try Effect.try(() => {
+      expect(Exit.isFailure(result)).toBe(true)
+      expect(calls).toEqual([0, 0])
+      if (Exit.isFailure(result)) {
+        expect(Cause.pretty(result.cause)).toContain("Invalid conversation events")
+        expect(Cause.pretty(result.cause)).not.toContain(privateText)
+      }
+    })
+  }
+})

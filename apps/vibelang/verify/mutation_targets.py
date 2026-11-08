@@ -326,3 +326,276 @@ def postcondition_line(generated, function, contains):
     matches=[i+1 for i in range(start,end) if lines[i].lstrip().startswith('ensures ') and contains in lines[i]]
     if len(matches)!=1: raise ValueError(f'Expected one production postcondition, got {len(matches)}: {contains}')
     return matches[0]
+
+# Exact full-result clauses; all production assertions remain checked by the positive gate.
+POSTCONDITIONS.update({'apply-frame-author': 'forall i: int :: ((0 <= i) ==> (i < |conversation.entries|) ==> (res.entries[i].author == '
+                       'conversation.entries[i].author))',
+ 'apply-frame-clientId': 'forall i: int :: ((0 <= i) ==> (i < |conversation.entries|) ==> (res.entries[i].clientId == '
+                         'conversation.entries[i].clientId))',
+ 'apply-frame-error': 'forall i: int :: ((0 <= i) ==> (i < |conversation.entries|) ==> (res.entries[i].error == (if '
+                      '((((((event.seq_ == (conversation.seq_ + 1)) && conversation.agent.working?) && '
+                      '(conversation.replying == event.id)) && (event.id != "")) && (conversation.entries[i].id == '
+                      'event.id)) && event.ReplyFailed?) then (if (event.reason == "") then "failed" else event.reason) '
+                      'else conversation.entries[i].error)))',
+ 'apply-frame-id': 'forall i: int :: ((0 <= i) ==> (i < |conversation.entries|) ==> (res.entries[i].id == '
+                   'conversation.entries[i].id))',
+ 'apply-frame-inReplyTo': 'forall i: int :: ((0 <= i) ==> (i < |conversation.entries|) ==> (res.entries[i].inReplyTo == '
+                          'conversation.entries[i].inReplyTo))',
+ 'apply-frame-name': 'forall i: int :: ((0 <= i) ==> (i < |conversation.entries|) ==> (res.entries[i].name == '
+                     'conversation.entries[i].name))',
+ 'apply-frame-seq': 'forall i: int :: ((0 <= i) ==> (i < |conversation.entries|) ==> (res.entries[i].seq_ == '
+                    'conversation.entries[i].seq_))',
+ 'apply-post-done': '((event.seq_ == (conversation.seq_ + 1)) ==> event.Posted? ==> (event.text != "") ==> (event.clientId '
+                    '!= "") ==> (event.id != "") ==> (forall j: int :: ((0 <= j) ==> (j < |conversation.entries|) ==> '
+                    '(conversation.entries[j].id != event.id))) ==> (forall j: int :: ((0 <= j) ==> (j < '
+                    '|conversation.entries|) ==> (conversation.entries[j].clientId != event.clientId))) ==> '
+                    '(((((((((res.entries[|conversation.entries|].id == event.id) && '
+                    '(res.entries[|conversation.entries|].seq_ == event.seq_)) && '
+                    '(res.entries[|conversation.entries|].clientId == event.clientId)) && '
+                    '(res.entries[|conversation.entries|].inReplyTo == "")) && '
+                    'res.entries[|conversation.entries|].author.person?) && (res.entries[|conversation.entries|].name == '
+                    'event.name)) && (res.entries[|conversation.entries|].text == event.text)) && '
+                    '(res.entries[|conversation.entries|].done == true)) && (res.entries[|conversation.entries|].error == '
+                    '"")))',
+ 'apply-post-name': '((event.seq_ == (conversation.seq_ + 1)) ==> event.Posted? ==> (event.text != "") ==> (event.clientId '
+                    '!= "") ==> (event.id != "") ==> (forall j: int :: ((0 <= j) ==> (j < |conversation.entries|) ==> '
+                    '(conversation.entries[j].id != event.id))) ==> (forall j: int :: ((0 <= j) ==> (j < '
+                    '|conversation.entries|) ==> (conversation.entries[j].clientId != event.clientId))) ==> '
+                    '(((((((((res.entries[|conversation.entries|].id == event.id) && '
+                    '(res.entries[|conversation.entries|].seq_ == event.seq_)) && '
+                    '(res.entries[|conversation.entries|].clientId == event.clientId)) && '
+                    '(res.entries[|conversation.entries|].inReplyTo == "")) && '
+                    'res.entries[|conversation.entries|].author.person?) && (res.entries[|conversation.entries|].name == '
+                    'event.name)) && (res.entries[|conversation.entries|].text == event.text)) && '
+                    '(res.entries[|conversation.entries|].done == true)) && (res.entries[|conversation.entries|].error == '
+                    '"")))',
+ 'apply-post-text': '((event.seq_ == (conversation.seq_ + 1)) ==> event.Posted? ==> (event.text != "") ==> (event.clientId '
+                    '!= "") ==> (event.id != "") ==> (forall j: int :: ((0 <= j) ==> (j < |conversation.entries|) ==> '
+                    '(conversation.entries[j].id != event.id))) ==> (forall j: int :: ((0 <= j) ==> (j < '
+                    '|conversation.entries|) ==> (conversation.entries[j].clientId != event.clientId))) ==> '
+                    '(((((((((res.entries[|conversation.entries|].id == event.id) && '
+                    '(res.entries[|conversation.entries|].seq_ == event.seq_)) && '
+                    '(res.entries[|conversation.entries|].clientId == event.clientId)) && '
+                    '(res.entries[|conversation.entries|].inReplyTo == "")) && '
+                    'res.entries[|conversation.entries|].author.person?) && (res.entries[|conversation.entries|].name == '
+                    'event.name)) && (res.entries[|conversation.entries|].text == event.text)) && '
+                    '(res.entries[|conversation.entries|].done == true)) && (res.entries[|conversation.entries|].error == '
+                    '"")))',
+ 'apply-unmatched-done': 'forall i: int :: ((0 <= i) ==> (i < |conversation.entries|) ==> (res.entries[i].done == '
+                         '(conversation.entries[i].done || (((event.seq_ == (conversation.seq_ + 1)) && '
+                         '(conversation.entries[i].id == event.id)) && ((((conversation.agent.working? && '
+                         '(conversation.replying == event.id)) && (event.id != "")) && (event.ReplyFinished? || '
+                         'event.ReplyFailed?)) || ((((event.TourEnded? && conversation.agent.working?) && '
+                         '(conversation.replying == event.id)) && (event.id != "")) && exists j: int :: (((((0 <= j) && (j '
+                         '< |conversation.entries|)) && (conversation.entries[j].id == event.id)) && '
+                         'conversation.entries[j].author.agent?) && (conversation.entries[j].inReplyTo == ""))))))))',
+ 'receive-agent-frame': '(res.conversation.agent == (if ((event.seq_ == (client.conversation.seq_ + 1)) && '
+                        '(((((((event.ReplyStarted? && (!client.conversation.agent.working?)) && (event.id != "")) && '
+                        'forall j: int :: ((0 <= j) ==> (j < |client.conversation.entries|) ==> '
+                        '(client.conversation.entries[j].id != event.id))) && (event.inReplyTo != "")) && exists j: int :: '
+                        '((((0 <= j) && (j < |client.conversation.entries|)) && '
+                        'client.conversation.entries[j].author.person?) && (client.conversation.entries[j].id == '
+                        'event.inReplyTo))) && forall j: int :: ((0 <= j) ==> (j < |client.conversation.entries|) ==> '
+                        'client.conversation.entries[j].author.agent? ==> (client.conversation.entries[j].inReplyTo != '
+                        'event.inReplyTo))) || (((event.TourStarted? && (!client.conversation.agent.working?)) && (event.id '
+                        '!= "")) && forall j: int :: ((0 <= j) ==> (j < |client.conversation.entries|) ==> '
+                        '(client.conversation.entries[j].id != event.id))))) then AgentPhase.working else (if '
+                        '(((((event.seq_ == (client.conversation.seq_ + 1)) && event.ReplyFailed?) && '
+                        'client.conversation.agent.working?) && (client.conversation.replying == event.id)) && (event.id != '
+                        '"")) then AgentPhase.failed else (if ((event.seq_ == (client.conversation.seq_ + 1)) && '
+                        '((((event.ReplyFinished? && client.conversation.agent.working?) && (client.conversation.replying '
+                        '== event.id)) && (event.id != "")) || ((((event.TourEnded? && client.conversation.agent.working?) '
+                        '&& (client.conversation.replying == event.id)) && (event.id != "")) && exists j: int :: (((((0 <= '
+                        'j) && (j < |client.conversation.entries|)) && (client.conversation.entries[j].id == event.id)) && '
+                        'client.conversation.entries[j].author.agent?) && (client.conversation.entries[j].inReplyTo == '
+                        '""))))) then AgentPhase.idle else client.conversation.agent))))',
+ 'receive-entries-frame': '(|res.conversation.entries| == (|client.conversation.entries| + (if ((event.seq_ == '
+                          '(client.conversation.seq_ + 1)) && (((((((event.Posted? && (event.text != "")) && '
+                          '(event.clientId != "")) && (event.id != "")) && forall j: int :: ((0 <= j) ==> (j < '
+                          '|client.conversation.entries|) ==> (client.conversation.entries[j].id != event.id))) && forall '
+                          'j: int :: ((0 <= j) ==> (j < |client.conversation.entries|) ==> '
+                          '(client.conversation.entries[j].clientId != event.clientId))) || ((((((event.ReplyStarted? && '
+                          '(!client.conversation.agent.working?)) && (event.id != "")) && forall j: int :: ((0 <= j) ==> (j '
+                          '< |client.conversation.entries|) ==> (client.conversation.entries[j].id != event.id))) && '
+                          '(event.inReplyTo != "")) && exists j: int :: ((((0 <= j) && (j < |client.conversation.entries|)) '
+                          '&& client.conversation.entries[j].author.person?) && (client.conversation.entries[j].id == '
+                          'event.inReplyTo))) && forall j: int :: ((0 <= j) ==> (j < |client.conversation.entries|) ==> '
+                          'client.conversation.entries[j].author.agent? ==> (client.conversation.entries[j].inReplyTo != '
+                          'event.inReplyTo)))) || (((event.TourStarted? && (!client.conversation.agent.working?)) && '
+                          '(event.id != "")) && forall j: int :: ((0 <= j) ==> (j < |client.conversation.entries|) ==> '
+                          '(client.conversation.entries[j].id != event.id))))) then 1 else 0)))',
+ 'receive-field-author': 'forall i: int :: ((0 <= i) ==> (i < |client.conversation.entries|) ==> '
+                         '(res.conversation.entries[i].author == client.conversation.entries[i].author))',
+ 'receive-field-clientId': 'forall i: int :: ((0 <= i) ==> (i < |client.conversation.entries|) ==> '
+                           '(res.conversation.entries[i].clientId == client.conversation.entries[i].clientId))',
+ 'receive-field-done': 'forall i: int :: ((0 <= i) ==> (i < |client.conversation.entries|) ==> '
+                       '(res.conversation.entries[i].done == (client.conversation.entries[i].done || (((event.seq_ == '
+                       '(client.conversation.seq_ + 1)) && (client.conversation.entries[i].id == event.id)) && '
+                       '((((client.conversation.agent.working? && (client.conversation.replying == event.id)) && (event.id '
+                       '!= "")) && (event.ReplyFinished? || event.ReplyFailed?)) || ((((event.TourEnded? && '
+                       'client.conversation.agent.working?) && (client.conversation.replying == event.id)) && (event.id != '
+                       '"")) && exists j: int :: (((((0 <= j) && (j < |client.conversation.entries|)) && '
+                       '(client.conversation.entries[j].id == event.id)) && client.conversation.entries[j].author.agent?) '
+                       '&& (client.conversation.entries[j].inReplyTo == ""))))))))',
+ 'receive-field-error': 'forall i: int :: ((0 <= i) ==> (i < |client.conversation.entries|) ==> '
+                        '(res.conversation.entries[i].error == (if ((((((event.seq_ == (client.conversation.seq_ + 1)) && '
+                        'client.conversation.agent.working?) && (client.conversation.replying == event.id)) && (event.id != '
+                        '"")) && (client.conversation.entries[i].id == event.id)) && event.ReplyFailed?) then (if '
+                        '(event.reason == "") then "failed" else event.reason) else client.conversation.entries[i].error)))',
+ 'receive-field-id': 'forall i: int :: ((0 <= i) ==> (i < |client.conversation.entries|) ==> '
+                     '(res.conversation.entries[i].id == client.conversation.entries[i].id))',
+ 'receive-field-inReplyTo': 'forall i: int :: ((0 <= i) ==> (i < |client.conversation.entries|) ==> '
+                            '(res.conversation.entries[i].inReplyTo == client.conversation.entries[i].inReplyTo))',
+ 'receive-field-name': 'forall i: int :: ((0 <= i) ==> (i < |client.conversation.entries|) ==> '
+                       '(res.conversation.entries[i].name == client.conversation.entries[i].name))',
+ 'receive-field-seq': 'forall i: int :: ((0 <= i) ==> (i < |client.conversation.entries|) ==> '
+                      '(res.conversation.entries[i].seq_ == client.conversation.entries[i].seq_))',
+ 'receive-field-text': 'forall i: int :: ((0 <= i) ==> (i < |client.conversation.entries|) ==> '
+                       '(res.conversation.entries[i].text == (if ((((((event.seq_ == (client.conversation.seq_ + 1)) && '
+                       'client.conversation.agent.working?) && (client.conversation.replying == event.id)) && (event.id != '
+                       '"")) && (client.conversation.entries[i].id == event.id)) && event.ReplyDelta?) then '
+                       '(client.conversation.entries[i].text + event.text) else (if ((((((event.seq_ == '
+                       '(client.conversation.seq_ + 1)) && client.conversation.agent.working?) && '
+                       '(client.conversation.replying == event.id)) && (event.id != "")) && '
+                       '(client.conversation.entries[i].id == event.id)) && event.ReplyRestarted?) then "" else '
+                       'client.conversation.entries[i].text))))',
+ 'receive-pane-frame': '(res.conversation.pane == (if ((((((event.seq_ == (client.conversation.seq_ + 1)) && '
+                       'event.PaneOpened?) && client.conversation.agent.working?) && (client.conversation.replying == '
+                       'event.id)) && (event.id != "")) && (event.url != "")) then event.url else '
+                       'client.conversation.pane))',
+ 'receive-replying-frame': '(res.conversation.replying == (if ((event.seq_ == (client.conversation.seq_ + 1)) && '
+                           '(((((((event.ReplyStarted? && (!client.conversation.agent.working?)) && (event.id != "")) && '
+                           'forall j: int :: ((0 <= j) ==> (j < |client.conversation.entries|) ==> '
+                           '(client.conversation.entries[j].id != event.id))) && (event.inReplyTo != "")) && exists j: int '
+                           ':: ((((0 <= j) && (j < |client.conversation.entries|)) && '
+                           'client.conversation.entries[j].author.person?) && (client.conversation.entries[j].id == '
+                           'event.inReplyTo))) && forall j: int :: ((0 <= j) ==> (j < |client.conversation.entries|) ==> '
+                           'client.conversation.entries[j].author.agent? ==> (client.conversation.entries[j].inReplyTo != '
+                           'event.inReplyTo))) || (((event.TourStarted? && (!client.conversation.agent.working?)) && '
+                           '(event.id != "")) && forall j: int :: ((0 <= j) ==> (j < |client.conversation.entries|) ==> '
+                           '(client.conversation.entries[j].id != event.id))))) then event.id else (if ((event.seq_ == '
+                           '(client.conversation.seq_ + 1)) && ((((client.conversation.agent.working? && '
+                           '(client.conversation.replying == event.id)) && (event.id != "")) && (event.ReplyFinished? || '
+                           'event.ReplyFailed?)) || ((((event.TourEnded? && client.conversation.agent.working?) && '
+                           '(client.conversation.replying == event.id)) && (event.id != "")) && exists j: int :: (((((0 <= '
+                           'j) && (j < |client.conversation.entries|)) && (client.conversation.entries[j].id == event.id)) '
+                           '&& client.conversation.entries[j].author.agent?) && (client.conversation.entries[j].inReplyTo '
+                           '== ""))))) then "" else client.conversation.replying)))'})
+
+# A checked assertion must be selected before it can mask a later isolated postcondition.
+ASSERTIONS = {
+    'apply-unmatched-done': ('ReplyDelta', 'forall i: int :: ((0 <= i) ==> (i < |conversation.entries|) ==> (entries[i].done == conversation.entries[i].done))'),
+    'apply-delta-done': ('ReplyDelta', 'forall i: int :: ((0 <= i) ==> (i < |conversation.entries|) ==> (entries[i].done == conversation.entries[i].done))'),
+    'apply-prefix': ('Posted', 'forall i: int :: ((0 <= i) ==> (i < |conversation.entries|) ==> (entries[i] == conversation.entries[i]))'),
+}
+for _name in ASSERTIONS:
+    POSTCONDITIONS.pop(_name, None)
+
+def case_assertion_line(generated, function, case, clause):
+    import re
+    lines = generated.splitlines()
+    starts = [i for i, line in enumerate(lines) if re.match(r'(?:ghost )?(?:method|function) '+re.escape(function)+r'\(', line)]
+    if len(starts) != 1: raise ValueError('Missing or ambiguous target function '+function)
+    start = starts[0]
+    end = next((i for i in range(start+1, len(lines)) if re.match(r'(?:ghost )?(?:method|function|lemma) ', lines[i])), len(lines))
+    if case is None:
+        branch, branch_end = start, end
+    else:
+        branches = [i for i in range(start, end) if re.match(r'\s+case '+re.escape(case)+r'\(', lines[i])]
+        if len(branches) != 1: raise ValueError('Missing or ambiguous case '+case)
+        branch = branches[0]
+        indent = lines[branch][:len(lines[branch])-len(lines[branch].lstrip())]
+        branch_end = next((i for i in range(branch+1, end) if lines[i].startswith(indent+'case ') or lines[i] == '}'), end)
+    matches = [i+1 for i in range(branch+1, branch_end) if lines[i].strip() == 'assert '+clause+';']
+    if len(matches) != 1: raise ValueError('Missing or ambiguous checked assertion '+clause)
+    return matches[0]
+
+# Small redundant production guarantees precede the complete relational clauses.
+POSTCONDITIONS.update({'apply-post-done': '(event.Posted? ==> (|res.entries| > |conversation.entries|) ==> '
+                    '(res.entries[|conversation.entries|].done == true))',
+ 'apply-post-name': '(event.Posted? ==> (|res.entries| > |conversation.entries|) ==> '
+                    '(res.entries[|conversation.entries|].name == event.name))',
+ 'apply-post-text': '(event.Posted? ==> (|res.entries| > |conversation.entries|) ==> '
+                    '(res.entries[|conversation.entries|].text == event.text))',
+ 'receive-agent-frame': '(match event { case Posted(i_event_seq, i_event_id, i_event_clientId, i_event_name, i_event_text) '
+                        '=> (res.conversation.agent == client.conversation.agent) case _ => true })',
+ 'receive-field-author': '((|client.conversation.entries| > 1) ==> (res.conversation.entries[1].author == '
+                         'client.conversation.entries[1].author))',
+ 'receive-field-clientId': '((|client.conversation.entries| > 0) ==> (res.conversation.entries[0].clientId == '
+                           'client.conversation.entries[0].clientId))',
+ 'receive-field-done': '((|client.conversation.entries| > 0) ==> event.ReplyDelta? ==> (res.conversation.entries[0].done == '
+                       'client.conversation.entries[0].done))',
+ 'receive-field-error': '((|client.conversation.entries| > 0) ==> (!event.ReplyFailed?) ==> '
+                        '(res.conversation.entries[0].error == client.conversation.entries[0].error))',
+ 'receive-field-id': '((|client.conversation.entries| > 0) ==> (res.conversation.entries[0].id == '
+                     'client.conversation.entries[0].id))',
+ 'receive-field-inReplyTo': '((|client.conversation.entries| > 0) ==> (res.conversation.entries[0].inReplyTo == '
+                            'client.conversation.entries[0].inReplyTo))',
+ 'receive-field-name': '((|client.conversation.entries| > 0) ==> (res.conversation.entries[0].name == '
+                       'client.conversation.entries[0].name))',
+ 'receive-field-seq': '((|client.conversation.entries| > 0) ==> (res.conversation.entries[0].seq_ == '
+                      'client.conversation.entries[0].seq_))',
+ 'receive-field-text': '((|client.conversation.entries| > 0) ==> (!event.ReplyDelta?) ==> (!event.ReplyRestarted?) ==> '
+                       '(res.conversation.entries[0].text == client.conversation.entries[0].text))'})
+
+# First affected role-ledger and admission clauses; positive checks remain unfiltered.
+POSTCONDITIONS.update({'apply-action-roles': '(|res.roles| == (|conversation.roles| + (if ((((event.seq_ == (conversation.seq_ + '
+                       '1)) && event.RoleGranted?) && (event.id != "")) && (!event.role.viewer?)) then 1 '
+                       'else 0)))',
+ 'apply-role': '((event.seq_ == (conversation.seq_ + 1)) ==> event.RoleGranted? ==> (event.id != "") ==> '
+               '(!event.role.viewer?) ==> (((res.roles[0].id == event.id) && (res.roles[0].role == '
+               'event.role)) && (res.roles[0].blocked == event.mode.person?)))',
+ 'apply-role-blocked': '((event.seq_ == (conversation.seq_ + 1)) ==> event.RoleGranted? ==> (event.id != "") '
+                       '==> (!event.role.viewer?) ==> (((res.roles[0].id == event.id) && (res.roles[0].role '
+                       '== event.role)) && (res.roles[0].blocked == event.mode.person?)))',
+ 'apply-role-empty': '(|res.roles| == (|conversation.roles| + (if ((((event.seq_ == (conversation.seq_ + 1)) '
+                     '&& event.RoleGranted?) && (event.id != "")) && (!event.role.viewer?)) then 1 else 0)))',
+ 'apply-role-id': '((event.seq_ == (conversation.seq_ + 1)) ==> event.RoleGranted? ==> (event.id != "") ==> '
+                  '(!event.role.viewer?) ==> (((res.roles[0].id == event.id) && (res.roles[0].role == '
+                  'event.role)) && (res.roles[0].blocked == event.mode.person?)))',
+ 'apply-role-prefix': '(|res.roles| == (|conversation.roles| + (if ((((event.seq_ == (conversation.seq_ + '
+                      '1)) && event.RoleGranted?) && (event.id != "")) && (!event.role.viewer?)) then 1 else '
+                      '0)))',
+ 'apply-role-viewer': '(|res.roles| == (|conversation.roles| + (if ((((event.seq_ == (conversation.seq_ + '
+                      '1)) && event.RoleGranted?) && (event.id != "")) && (!event.role.viewer?)) then 1 else '
+                      '0)))',
+ 'decide-action-guard': '(res.true_? ==> intent.Authorize? ==> ((intent.action.merge? || '
+                        'intent.action.settings?) || intent.action.roles?) ==> ((intent.by_ != "") && exists '
+                        'i: int :: (((((0 <= i) && (i < |conversation.roles|)) && (conversation.roles[i].id '
+                        '== intent.by_)) && conversation.roles[i].role.maintainer?) && forall j: int :: ((0 '
+                        '<= j) ==> (j < i) ==> (conversation.roles[j].id != intent.by_)))))',
+ 'decide-role-guard': '(res.true_? ==> intent.GrantRole? ==> ((intent.id != "") && (!intent.role.viewer?)))',
+ 'receive-role-head': 'forall i: int :: ((0 <= i) ==> (i < |client.conversation.roles|) ==> '
+                      '(res.conversation.roles[(i + (if ((((event.seq_ == (client.conversation.seq_ + 1)) && '
+                      'event.RoleGranted?) && (event.id != "")) && (!event.role.viewer?)) then 1 else 0))] '
+                      '== client.conversation.roles[i]))',
+ 'receive-role-ledger': '(|res.conversation.roles| == (|client.conversation.roles| + (if ((((event.seq_ == '
+                        '(client.conversation.seq_ + 1)) && event.RoleGranted?) && (event.id != "")) && '
+                        '(!event.role.viewer?)) then 1 else 0)))'})
+
+# Receiver mutations select the first affected contract or checked membership assertion.
+POSTCONDITIONS.update({'receive-next-gap': '((event.seq_ == (client.conversation.seq_ + 1)) ==> ((res.conversation.seq_ == '
+                     'event.seq_) && !(res.gap)))',
+ 'receive-next-seq': '((event.seq_ == (client.conversation.seq_ + 1)) ==> ((res.conversation.seq_ == '
+                     'event.seq_) && !(res.gap)))',
+ 'receive-stale': '((event.seq_ <= client.conversation.seq_) ==> (res == client))'})
+ASSERTIONS.update({'receive-pending-filter': (None,
+                            '((!event.Posted?) || forall i: int :: ((0 <= i) ==> (i < |pending|) ==> '
+                            '((pending[i] in client.pending) && (pending[i].clientId != event.clientId))))'),
+ 'receive-pending-other': (None,
+                           '((!event.Posted?) || forall i: int :: ((0 <= i) ==> (i < |client.pending|) ==> '
+                           '(client.pending[i].clientId != event.clientId) ==> (client.pending[i] in '
+                           'pending)))')})
+
+# Initial pending is replaced for Posted; its mutation breaks the non-Posted frame.
+ASSERTIONS.pop("receive-pending-other", None)
+POSTCONDITIONS["receive-pending-other"] = '((event.seq_ == (client.conversation.seq_ + 1)) ==> (!event.Posted?) ==> (res.pending == client.pending))'
+
+# Derived empty-input frame clauses make concrete counterexamples tractable; full relations stay proved.
+POSTCONDITIONS.update({'receive-agent-frame': '(event.Posted? ==> client.conversation.agent.idle? ==> (|client.conversation.roles| '
+                        '== 0) ==> (|client.conversation.entries| == 0) ==> (|client.pending| == 0) ==> '
+                        'res.conversation.agent.idle?)',
+ 'receive-replying-frame': '(event.Posted? ==> client.conversation.agent.idle? ==> '
+                           '(|client.conversation.roles| == 0) ==> (|client.conversation.entries| == 0) ==> '
+                           '(|client.pending| == 0) ==> (res.conversation.replying == '
+                           'client.conversation.replying))'})

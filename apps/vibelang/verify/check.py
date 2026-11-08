@@ -2,7 +2,8 @@
 """Fresh lsc generation + Dafny verification. Never trusts saved .dfy files."""
 import atexit, concurrent.futures, hashlib, json, os, pathlib, re, shutil, subprocess, sys, tempfile, time
 from sources import production_sources, VERIFY
-from mutation_targets import POSTCONDITIONS, postcondition_line
+from proof_additions import add_proof_steps
+from mutation_targets import POSTCONDITIONS, ASSERTIONS, postcondition_line, case_assertion_line
 ROOT=pathlib.Path(__file__).resolve().parent
 APP=ROOT.parent
 if len(sys.argv)>1:
@@ -41,15 +42,15 @@ config.write_text(json.dumps({'string-semantics':'javascript-utf16','dafny-libra
 atexit.register(lambda: config.unlink(missing_ok=True))
 
 commands=[]
-def command(args, cwd):
+def command(args, cwd, wall_seconds=180):
  t=time.monotonic()
  try:
-  p=subprocess.run(args,cwd=cwd,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=180)
+  p=subprocess.run(args,cwd=cwd,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=wall_seconds)
   commands.append({'argv':args,'cwd':str(cwd),'exit':p.returncode,'seconds':round(time.monotonic()-t,3),'last_lines':p.stdout.splitlines()[-8:]})
   return p.returncode,p.stdout
  except subprocess.TimeoutExpired as e:
   out=e.stdout or b''
-  return 124,(out.decode(errors='replace') if isinstance(out,bytes) else out)+'\nERROR: wall timeout 180s\n'
+  return 124,(out.decode(errors='replace') if isinstance(out,bytes) else out)+f'\nERROR: wall timeout {wall_seconds}s\n'
  except OSError as e: return 127,str(e)+'\n'
 
 def verify(item):
@@ -66,6 +67,17 @@ def verify(item):
   shutil.copyfile(dfy.with_suffix('.dfy.gen'),dfy)
  if code==0:
   text=dfy.read_text() if dfy.exists() else ''
+  proof_source=origin.relative_to(APP).as_posix()
+  proof_manifest=os.environ.get('VERIFY_MUTATION_MANIFEST')
+  if proof_manifest:
+   manifest_path=pathlib.Path(proof_manifest).resolve()
+   if ts.parent != manifest_path.parent: raise SystemExit('Proof additions only apply to generated mutants')
+   proof_source=json.loads(manifest_path.read_text())[ts.stem]['source']
+  raw=text
+  text=add_proof_steps(raw,proof_source)
+  if text != raw:
+   dfy.write_text(text)
+   dfy.with_suffix('.proof.json').write_text(json.dumps({'source':proof_source,'lemma':'pendingCount_ensures','raw_sha256':hashlib.sha256(raw.encode()).hexdigest(),'checked_sha256':hashlib.sha256(text.encode()).hexdigest()}))
   marked=[]
   before=''
   for n,line in enumerate(lines):
@@ -90,10 +102,17 @@ def verify(item):
     if ts.parent != mutations.parent: raise SystemExit('Mutation symbol filter only applies to generated mutants')
     target=json.loads(mutations.read_text())[ts.stem]['function']
     flags.extend(['--filter-symbol',target])
-    if ts.stem in POSTCONDITIONS:
+    if ts.stem in ASSERTIONS:
+     case, clause = ASSERTIONS[ts.stem]
+     line = case_assertion_line(text, target, case, clause)
+     flags.extend(['--isolate-assertions','--filter-position',':'+str(line)])
+    elif ts.stem in POSTCONDITIONS:
      line=postcondition_line(text,target,POSTCONDITIONS[ts.stem])
      flags.extend(['--isolate-assertions','--filter-position',':'+str(line)])
-   c,o=command([str(ROOT/'.tools/bin/dafny'),'verify','--cores','1','--verification-time-limit','30' if mutations else '60','--error-limit','0','--log-format',f'csv;LogFileName={work / (ts.stem + chr(46) + chr(99) + chr(115) + chr(118))}',*flags,str(dfy)],work)
+   # Every assertion in the full conversation relation is checked, without a symbol/position filter.
+   isolate = not mutations and origin == APP/'src/core/conversation.vibe'
+   if isolate: flags.append('--isolate-assertions')
+   c,o=command([str(ROOT/'.tools/bin/dafny'),'verify','--cores','8' if isolate else '1','--verification-time-limit','30' if mutations else '60','--error-limit','0','--log-format',f'csv;LogFileName={work / (ts.stem + chr(46) + chr(99) + chr(115) + chr(118))}',*flags,str(dfy)],work,600 if isolate else 180)
    code=c;out+=o
  if hashlib.sha256(original).hexdigest() != initial_hashes[ts]:
   code=2;out+='ERROR: source changed after strict typechecking started\n'

@@ -17,14 +17,14 @@ const shellBoundaries = {
   'src/core/mockReplies.vibe': 'First matching script is proved in mockDecision; Unicode casing and slicing chunks remain unproved (unicode-case.ts, slice-clamp reproduction).',
   'src/core/wire.vibe': 'Length and method/subroute admission are proved in protocolDecision; URI codecs remain unproved (uri-codec.ts).',
   'src/core/LiveFactory.vibe': 'HTTP outcome choice is proved in protocolDecision; HTTP/SSE and Schema codecs remain runtime boundaries (json-codec.ts).',
-  'src/surfaces/commands.vibe': 'Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved.',
+  'src/surfaces/commands.vibe': 'Conversation/cursor admission calls proved protocolDecision; commandDecision proves reply accumulation and outcome/error mapping. Schema decoding, stream execution and formatting remain boundaries.',
   'src/surfaces/backend.vibe': 'Host choice calls proved prefersMock/liveHealth policies; URL normalization and layer execution remain unproved.',
   'src/web/backend.vibe': 'Health choice calls proved liveHealth; deadlines, cancellation and layer loading remain runtime behavior.',
   'worker/Http.vibe': 'Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries.',
   'worker/Budget.vibe': 'Calls proved admission/charge decisions; semaphore, ledger I/O and finite-round normalization are runtime boundaries (finite-round.ts).',
-  'worker/Reply.vibe': 'Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved.',
-  'src/core/flows.vibe': 'Dispatch and terminal-event decisions are proved in flowDecision.vibe; conversation guards in conversation.vibe. The reading-time policy is proved too; flow execution, word tokenization, docs regexp and reply-id slice remain unproved.',
-  'worker/Sequencer.vibe': 'Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved.',
+  'worker/Reply.vibe': 'Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved.',
+  'src/core/flows.vibe': 'Dispatch, terminal-event and reading-time policies call flowDecision; unanswered source order and conversation guards call conversation. Flow execution, word tokenization, docs regexp and reply-id slice remain unproved.',
+  'worker/Sequencer.vibe': 'Calls proved conversation/append/start decisions, retained-log replay and ordered model-context selection. Stored events are decoded before replay. Locking, writer/log composition, follow ordering and restart iteration remain unproved.',
   'src/history/flows.vibe': 'Who may act and the order of authorize and record steps run the proved flowMachine.vibe (authorize, canRecord, record); the sequencer decides through mythical.vibe. Engine execution, journaling, metrics and logs remain runtime boundaries (0020).',
   'src/history/roles.vibe': 'may, leastRole, peopleOnly and standing are proved in flowMachine.vibe; this module re-exports them and builds the role tables from them (0020).',
 };
@@ -37,10 +37,19 @@ const boundaries = {
   'src/web/screenDecision.vibe': 'Escape/palette/minimize/scroll/focus intent/tour-stream/announcement/shortcut decisions; proved in Dafny integer model, not fractional DOM or IEEE-754.',
   'src/history/mythical.vibe': 'Exact history transitions and unchanged fields, refusal precedence, first-match lookup, rank-bound induction and sequence capacity; notes are retained and trailers fold only into approved or landed commits; proved over validated safe integers (0020, unsafe-integer.ts).',
   'src/history/flowMachine.vibe': 'Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020).',
-  'src/core/conversation.vibe': 'Production state machine; contracts and executable mutations.',
+  'src/core/conversation.vibe': 'Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain.',
   'worker/replyReasons.vibe': 'Failure precedence and model reason codes; proved.',
   'worker/budgetDecision.vibe': 'Strict admission, nonnegative integer charge and exact total; proved under safe-sum precondition.',
-  'src/core/flowDecision.vibe': 'Dispatch admission, append ordering, tour terminal events and reading-time policy; proved.',
+  'src/core/flowDecision.vibe': 'Dispatch admission, append ordering, tour terminal events, reading-time policy and first undispatched source index; proved.',
+};
+const functionBoundaries = {
+  "src/core/conversation.vibe:applyIssues": "Exact next-numbered observation replacement and stale/future no-op; requires a safe sequence below capacity. The host cursor domain remains to audit (0022).",
+  "src/core/conversation.vibe:issuePermission": "Exact least-role permission for each issue operation, through the shared role policy (0022).",
+  "src/core/conversation.vibe:issuePolicyAction": "Exact mapping of each issue operation to the shared authorization action (0022).",
+  "src/core/conversation.vibe:canLinkIssues": "Termination, positive distinct identities and existence of the child only; acyclicity and parent-path completeness remain unproved (0022).",
+  "src/core/conversation.vibe:setCommitment": "Exact commit/uncommit assignment and task state; all issue identity, tree, content and review fields preserved. Commit requires nonempty assignee (0022).",
+  "src/core/conversation.vibe:setVipReview": "Exact accepted/declined review and closed-on-decline state, with every other field preserved; requires an in-review input (0022).",
+  "src/core/conversation.vibe:reviewActions": "Exact admissibility and remaining label/close actions after a partial review; GitHub action execution is outside this decision (0022)."
 };
 const functions = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression']);
 const logicNodes = new Set(['IfStatement', 'SwitchStatement', 'WhileStatement', 'DoWhileStatement',
@@ -100,7 +109,7 @@ function inventorySource(file, source) {
       const header = source.slice(range[0], node.body.range[0]);
       const effectful = /^(?:(?:export|default|static|public|private|protected|override)\s+)*effect\b/.test(header.trim()) || node.async || containsEffects(node.body);
       const category = effectful ? 'effectful shell' : (containsLogic(node.body) || boundaries[rel] ? 'pure logic' : 'wiring');
-      const why = boundaries[rel] || shellBoundaries[rel] || (category === 'wiring'
+      const why = functionBoundaries[`${rel}:${parents[0] ?? name}`] || boundaries[rel] || shellBoundaries[rel] || (category === 'wiring'
         ? 'Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision.'
         : 'Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof.');
       const label = [...parents, name].join('/');

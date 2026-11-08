@@ -63,11 +63,49 @@ class TargetedPostconditions(unittest.TestCase):
         for text in ['method target()\n{\n}', 'method target()\n ensures valid\n ensures valid\n{\n}']:
             with self.assertRaises(ValueError): postcondition_line(text, 'target', 'valid')
 
+class TargetedAssertions(unittest.TestCase):
+    def test_assertions_are_selected_inside_the_named_function_and_case(self):
+        from mutation_targets import case_assertion_line
+        source = 'method target()\n{\n  match event {\n    case Delta() =>\n      assert valid;\n    case Restart() =>\n      assert valid;\n  }\n}\nmethod other()\n{\n  assert valid;\n}\n'
+        self.assertEqual(case_assertion_line(source, 'target', 'Delta', 'valid'), 5)
+        self.assertEqual(case_assertion_line(source, 'target', 'Restart', 'valid'), 7)
+        for function, case, clause in [('missing', 'Delta', 'valid'), ('target', 'missing', 'valid'), ('target', 'Delta', 'different')]:
+            with self.assertRaises(ValueError): case_assertion_line(source, function, case, clause)
+        ambiguous = source.replace('      assert valid;', '      assert valid;\n      assert valid;', 1)
+        with self.assertRaises(ValueError): case_assertion_line(ambiguous, 'target', 'Delta', 'valid')
+
+class FunctionAssertions(unittest.TestCase):
+    def test_unguarded_assertion_is_confined_to_one_function(self):
+        from mutation_targets import case_assertion_line
+        source = 'method target()\n{\n  assert kept;\n}\nmethod other()\n{\n  assert kept;\n}\n'
+        self.assertEqual(case_assertion_line(source, 'target', None, 'kept'), 3)
+        with self.assertRaises(ValueError): case_assertion_line(source, 'missing', None, 'kept')
+        with self.assertRaises(ValueError): case_assertion_line(source, 'target', None, 'missing')
+        with self.assertRaises(ValueError): case_assertion_line(source.replace('  assert kept;', '  assert kept;\n  assert kept;', 1), 'target', None, 'kept')
+
+class CheckedProofAdditions(unittest.TestCase):
+    def test_induction_only_adds_checked_steps_to_the_named_empty_lemma(self):
+        from proof_additions import add_proof_steps, PENDING_COUNT_STEPS
+        source = 'function f(): int { 0 }\nlemma pendingCount_ensures(pending: seq<Pending>, clientId: string, end: int)\n  requires 0 <= end\n  ensures valid\n{\n}\n'
+        result = add_proof_steps(source, 'src/core/conversation.vibe')
+        self.assertEqual(result.replace(PENDING_COUNT_STEPS, '', 1), source)
+        self.assertEqual(result.count(PENDING_COUNT_STEPS), 1)
+        self.assertEqual(add_proof_steps(source, 'src/other.vibe'), source)
+        for invalid in [source.replace('pendingCount_ensures', 'other'), source+source, source.replace('{\n}', '{\n  assert valid;\n}')]:
+            with self.assertRaises(ValueError): add_proof_steps(invalid, 'src/core/conversation.vibe')
+
 class MutationContractFailures(unittest.TestCase):
     def test_a_broken_capacity_guard_fails_the_callee_domain_contract(self):
         from mutation_results import validate_rejection
         validate_rejection({'exit': 4, 'output': 'Error: a precondition for this call could not be proved',
                             'mapped': ['source.vibe:12: function decideWithinCapacity [decideWithinCapacity; generated line 679]']}, 'decideWithinCapacity')
+
+    def test_invalid_union_destructor_cannot_hide_behind_a_postcondition_failure(self):
+        from mutation_results import validate_rejection
+        with self.assertRaises(ValueError):
+            validate_rejection({'exit': 4,
+                'output': "Error: destructor 'clientId' can only be applied to datatype values constructed by 'Posted'\nError: a postcondition could not be proved",
+                'mapped': ['function receive [receive]']}, 'receive')
 
     def test_success_tool_failures_and_unrelated_functions_are_never_rejections(self):
         from mutation_results import validate_rejection

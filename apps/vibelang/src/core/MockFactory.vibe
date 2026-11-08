@@ -1,3 +1,4 @@
+import { firstUndispatched } from "./flowDecision.vibe"
 // The factory with no backend and no model (wiki/decisions/0004-mock-mode.md). It runs the live factory's flows
 // (flows.vibe, 0011) on `@smthrs/engine`'s engine in memory, one engine per conversation as the live one has one per
 // conversation object: a post is a `vibelang/Post` execution whose steps record it and dispatch its reply, and each
@@ -167,8 +168,10 @@ return Layer.effect(Factory, effect {
           try ensuring(Effect.orDie(engine.execute(Tour, { executionId: `tour/${tour}`, payload: { tour } })), Ref.set(activeTour, ""))
           continue
         }
-        const post = unanswered((try Ref.get(state)).conversation).find((id) => !dispatched.has(id))
-        if (post === undefined) break
+        const posts = unanswered((try Ref.get(state)).conversation)
+        const index = firstUndispatched(posts, dispatched)
+        if (index === posts.length) break
+        const post = posts[index]!
         dispatched.add(post)
         try Effect.orDie(engine.execute(Reply, { executionId: `reply/${post}`, payload: { post } }))
       }

@@ -136,3 +136,9 @@ the exact receipt composition and the remaining proof boundaries.
 **Shared surfaces and model context (0018).** The twelve-module gate now proves 182 obligations and rejects 346
 mutations. Ordered index witnesses establish exact model-context selection; shared CLI/MCP accumulation and safe
 budget admission/addition are proved and integrated into their Effect shells.
+
+**Exact conversation and ordered selection (0018).** Every apply entry field and state frame is specified and
+lifted to receive, including role-ledger prepend order. Pending removal and unanswered posts carry source-position
+witnesses; replay carries a retained-log bound. The fresh Dafny proof adds only a checked recursive lemma call for
+the pending-count measure. Every positive assertion is checked, with conversation assertions split for tractability;
+its batch count is recorded separately from ordinary obligations. Stored conversation rows are decoded before replay.

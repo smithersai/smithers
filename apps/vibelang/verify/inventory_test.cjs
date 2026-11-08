@@ -14,14 +14,16 @@ test('non-ASCII prefixes retain exact original function and callback lines', () 
   ]);
 });
 
-test('real flows include endsTour and pure unanswered without generated wrappers', () => {
+test('real flows and extracted selection retain original declarations without generated wrappers', () => {
   const file = path.join(app, 'src/core/flows.vibe');
   const source = fs.readFileSync(file, 'utf8');
   const rows = inventorySource(file, source);
   const expectedLine = source.slice(0, source.indexOf('export function endsTour')).split('\n').length;
   assert.equal(rows.find(row => row.label === 'endsTour')?.line, expectedLine);
-  assert.equal(rows.find(row => row.label === 'unanswered')?.category, 'pure logic');
-  assert.equal(rows.filter(row => row.label.startsWith('unanswered/')).length, 2);
+  assert.equal(rows.find(row => row.label === 'unanswered')?.category, 'wiring');
+  const decision = path.join(app, 'src/core/conversation.vibe');
+  assert.equal(inventorySource(decision, fs.readFileSync(decision, 'utf8')).find(row => row.label === 'unansweredIndexes')?.category, 'pure logic');
+  assert.equal(rows.filter(row => row.label.startsWith('unanswered/')).length, 0);
   assert.equal(rows.some(row => /\$gen|callback@85\/callback@85/.test(row.label)), false);
 });
 

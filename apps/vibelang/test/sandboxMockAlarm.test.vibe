@@ -11,9 +11,13 @@ effect function seconds(count: number) {
 
 it.effect("meters only while a sandbox runs", () => effect {
   const meters = try Ref.make(0)
+  let metered: Deferred.Deferred<void> | undefined
   const counting = Logger.layer([Logger.make((options) => {
     const annotations = options.fiber.getRef(References.CurrentLogAnnotations)
-    if (JSON.stringify(options.message).includes("vibelang.sandbox") && annotations["step"] === "meter") Effect.runSync(Ref.update(meters, (count) => count + 1))
+    if (JSON.stringify(options.message).includes("vibelang.sandbox") && annotations["step"] === "meter") {
+      Effect.runSync(Ref.update(meters, (count) => count + 1))
+      if (metered !== undefined) Effect.runSync(Deferred.succeed(metered, undefined))
+    }
   })])
   provide counting {
     try scoped(effect {
@@ -21,12 +25,13 @@ it.effect("meters only while a sandbox runs", () => effect {
       try seconds(10)
       try Effect.try(() => expect(Effect.runSync(Ref.get(meters))).toBe(0))
       const box = try sandboxes.startSandbox("home", "start-1")
+      // Admission itself meters usage. Observe only a later alarm, after start has returned.
+      const nextMeter = try Deferred.make<void>()
+      metered = nextMeter
       const started = try Ref.get(meters)
       try seconds(3)
-      // The engine's native work can outlive a scheduler turn; await its observed completion.
-      try TestClock.withLive(Effect.repeat(Ref.get(meters), {
-        until: (count) => count > started, schedule: Schedule.spaced(Duration.millis(1)),
-      }).pipe(Effect.timeout("5 seconds")))
+      // Observe a post-start alarm with the same bounded live wait as the host regression.
+      try TestClock.withLive(Deferred.await(nextMeter).pipe(Effect.timeout("5 seconds")))
       try Effect.try(() => expect(Effect.runSync(Ref.get(meters)) - started).toBeGreaterThan(0))
       try sandboxes.stopSandbox("home", "stop-1", box.generation)
       const stopped = try Ref.get(meters)

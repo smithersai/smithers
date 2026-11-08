@@ -107,7 +107,8 @@ const verifyBroken = Smithers.Shell.Test({
   summary: "Check that every generated mutation of a production decision fails a proof obligation.",
   shell: "cd apps/vibelang && pnpm verify:broken",
   data: proofs,
-  timeout: "60m",
+  // Preserve per-obligation limits; allow the full expanding suite with the two-worker default.
+  timeout: "120m",
 })
 
 export const Package = Smithers.Package({ targets: { typecheck, test, workerd, verify, verifyBroken } })

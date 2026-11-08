@@ -92,7 +92,13 @@ export const AGENT_NAME = "VibeLang agent"
 // Invariant preservation is stated as implication, so sequence checks cover arbitrary records.
 // A creation the sequencer would refuse (empty client id, empty or reused entry id) only advances seq.
 //@ verify
+//@ ensures \result.roles.length == conversation.roles.length + ((event.seq == conversation.seq + 1 && event.type == "RoleGranted" && event.id != "" && event.role != "viewer") ? 1 : 0)
+//@ ensures forall(i, 0 <= i && i < conversation.roles.length ==> \result.roles[i + ((event.seq == conversation.seq + 1 && event.type == "RoleGranted" && event.id != "" && event.role != "viewer") ? 1 : 0)] == conversation.roles[i])
+//@ ensures event.seq == conversation.seq + 1 && event.type == "RoleGranted" && event.id != "" && event.role != "viewer" ==> \result.roles[0].id == event.id && \result.roles[0].role == event.role && \result.roles[0].blocked == (event.mode == "person")
 //@ requires 0 <= conversation.seq && conversation.seq < 9007199254740991
+//@ ensures event.type == "Posted" && \result.entries.length > conversation.entries.length ==> \result.entries[conversation.entries.length].name == event.name
+//@ ensures event.type == "Posted" && \result.entries.length > conversation.entries.length ==> \result.entries[conversation.entries.length].text == event.text
+//@ ensures event.type == "Posted" && \result.entries.length > conversation.entries.length ==> \result.entries[conversation.entries.length].done == true
 //@ ensures \result.seq == conversation.seq || \result.seq == conversation.seq + 1
 //@ ensures event.seq != conversation.seq + 1 ==> \result == conversation
 //@ ensures event.seq == conversation.seq + 1 ==> \result.seq == event.seq
@@ -119,6 +125,22 @@ export const AGENT_NAME = "VibeLang agent"
 //@ ensures event.seq == conversation.seq + 1 && event.type == "ReplyFinished" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" ==> \result.agent == "idle" && \result.replying == "" && \result.entries.length == conversation.entries.length && forall(i, 0 <= i && i < \result.entries.length ==> \result.entries[i].text == conversation.entries[i].text && (conversation.entries[i].id == event.id ==> \result.entries[i].done))
 //@ ensures event.seq == conversation.seq + 1 && event.type == "ReplyFailed" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" ==> \result.agent == "failed" && \result.replying == "" && \result.entries.length == conversation.entries.length && forall(i, 0 <= i && i < \result.entries.length && conversation.entries[i].id == event.id ==> \result.entries[i].done && \result.entries[i].error == (event.reason == "" ? "failed" : event.reason))
 //@ ensures event.seq == conversation.seq + 1 && event.type == "RoleGranted" && event.id != "" && event.role != "viewer" ==> \result.roles.length == conversation.roles.length + 1 && \result.roles[0].id == event.id && \result.roles[0].role == event.role && \result.roles[0].blocked == (event.mode == "person")
+//@ ensures \result.entries.length == conversation.entries.length + ((event.seq == conversation.seq + 1 && ((event.type == "Posted" && event.text != "" && event.clientId != "" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id) && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].clientId != event.clientId)) || (event.type == "ReplyStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id) && event.inReplyTo != "" && exists(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].author == "person" && conversation.entries[j].id == event.inReplyTo) && forall(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].author == "agent" ==> conversation.entries[j].inReplyTo != event.inReplyTo)) || (event.type == "TourStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id)))) ? 1 : 0)
+//@ ensures forall(i, 0 <= i && i < conversation.entries.length ==> \result.entries[i].id == conversation.entries[i].id)
+//@ ensures forall(i, 0 <= i && i < conversation.entries.length ==> \result.entries[i].seq == conversation.entries[i].seq)
+//@ ensures forall(i, 0 <= i && i < conversation.entries.length ==> \result.entries[i].clientId == conversation.entries[i].clientId)
+//@ ensures forall(i, 0 <= i && i < conversation.entries.length ==> \result.entries[i].inReplyTo == conversation.entries[i].inReplyTo)
+//@ ensures forall(i, 0 <= i && i < conversation.entries.length ==> \result.entries[i].author == conversation.entries[i].author)
+//@ ensures forall(i, 0 <= i && i < conversation.entries.length ==> \result.entries[i].name == conversation.entries[i].name)
+//@ ensures forall(i, 0 <= i && i < conversation.entries.length ==> \result.entries[i].text == ((event.seq == conversation.seq + 1 && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && conversation.entries[i].id == event.id && event.type == "ReplyDelta") ? conversation.entries[i].text + event.text : (event.seq == conversation.seq + 1 && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && conversation.entries[i].id == event.id && event.type == "ReplyRestarted") ? "" : conversation.entries[i].text))
+//@ ensures forall(i, 0 <= i && i < conversation.entries.length ==> \result.entries[i].done == (conversation.entries[i].done || (event.seq == conversation.seq + 1 && conversation.entries[i].id == event.id && ((conversation.agent == "working" && conversation.replying == event.id && event.id != "" && (event.type == "ReplyFinished" || event.type == "ReplyFailed")) || (event.type == "TourEnded" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && exists(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].id == event.id && conversation.entries[j].author == "agent" && conversation.entries[j].inReplyTo == ""))))))
+//@ ensures forall(i, 0 <= i && i < conversation.entries.length ==> \result.entries[i].error == ((event.seq == conversation.seq + 1 && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && conversation.entries[i].id == event.id && event.type == "ReplyFailed") ? (event.reason == "" ? "failed" : event.reason) : conversation.entries[i].error))
+//@ ensures \result.pane == ((event.seq == conversation.seq + 1 && event.type == "PaneOpened" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && event.url != "") ? event.url : conversation.pane)
+//@ ensures \result.agent == ((event.seq == conversation.seq + 1 && ((event.type == "ReplyStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id) && event.inReplyTo != "" && exists(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].author == "person" && conversation.entries[j].id == event.inReplyTo) && forall(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].author == "agent" ==> conversation.entries[j].inReplyTo != event.inReplyTo)) || (event.type == "TourStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id)))) ? "working" : (event.seq == conversation.seq + 1 && event.type == "ReplyFailed" && conversation.agent == "working" && conversation.replying == event.id && event.id != "") ? "failed" : (event.seq == conversation.seq + 1 && ((event.type == "ReplyFinished" && conversation.agent == "working" && conversation.replying == event.id && event.id != "") || (event.type == "TourEnded" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && exists(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].id == event.id && conversation.entries[j].author == "agent" && conversation.entries[j].inReplyTo == "")))) ? "idle" : conversation.agent)
+//@ ensures \result.replying == ((event.seq == conversation.seq + 1 && ((event.type == "ReplyStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id) && event.inReplyTo != "" && exists(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].author == "person" && conversation.entries[j].id == event.inReplyTo) && forall(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].author == "agent" ==> conversation.entries[j].inReplyTo != event.inReplyTo)) || (event.type == "TourStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id)))) ? event.id : (event.seq == conversation.seq + 1 && ((conversation.agent == "working" && conversation.replying == event.id && event.id != "" && (event.type == "ReplyFinished" || event.type == "ReplyFailed")) || (event.type == "TourEnded" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && exists(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].id == event.id && conversation.entries[j].author == "agent" && conversation.entries[j].inReplyTo == "")))) ? "" : conversation.replying)
+//@ ensures event.seq == conversation.seq + 1 && event.type == "Posted" && event.text != "" && event.clientId != "" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id) && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].clientId != event.clientId) ==> \result.entries[conversation.entries.length].id == event.id && \result.entries[conversation.entries.length].seq == event.seq && \result.entries[conversation.entries.length].clientId == event.clientId && \result.entries[conversation.entries.length].inReplyTo == "" && \result.entries[conversation.entries.length].author == "person" && \result.entries[conversation.entries.length].name == event.name && \result.entries[conversation.entries.length].text == event.text && \result.entries[conversation.entries.length].done == true && \result.entries[conversation.entries.length].error == ""
+//@ ensures event.seq == conversation.seq + 1 && event.type == "ReplyStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id) && event.inReplyTo != "" && exists(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].author == "person" && conversation.entries[j].id == event.inReplyTo) && forall(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].author == "agent" ==> conversation.entries[j].inReplyTo != event.inReplyTo) ==> \result.entries[conversation.entries.length].id == event.id && \result.entries[conversation.entries.length].seq == event.seq && \result.entries[conversation.entries.length].clientId == "" && \result.entries[conversation.entries.length].inReplyTo == event.inReplyTo && \result.entries[conversation.entries.length].author == "agent" && \result.entries[conversation.entries.length].name == AGENT_NAME && \result.entries[conversation.entries.length].text == "" && \result.entries[conversation.entries.length].done == false && \result.entries[conversation.entries.length].error == ""
+//@ ensures event.seq == conversation.seq + 1 && event.type == "TourStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id) ==> \result.entries[conversation.entries.length].id == event.id && \result.entries[conversation.entries.length].seq == event.seq && \result.entries[conversation.entries.length].clientId == "" && \result.entries[conversation.entries.length].inReplyTo == "" && \result.entries[conversation.entries.length].author == "agent" && \result.entries[conversation.entries.length].name == AGENT_NAME && \result.entries[conversation.entries.length].text == "" && \result.entries[conversation.entries.length].done == false && \result.entries[conversation.entries.length].error == ""
 export function apply(conversation: Conversation, event: Event): Conversation {
   if (event.seq !== conversation.seq + 1) return conversation
   const next = { ...conversation, seq: event.seq }
@@ -521,7 +543,23 @@ export function retryPost(client: Client, clientId: string): Client {
  * nothing else; the next one is applied, and a post it confirms leaves `pending`.
  */
 //@ verify
+//@ ensures event.type == "Posted" && client.conversation.agent == "idle" && client.conversation.roles.length == 0 && client.conversation.entries.length == 0 && client.pending.length == 0 ==> \result.conversation.agent == "idle"
+//@ ensures event.type == "Posted" && client.conversation.agent == "idle" && client.conversation.roles.length == 0 && client.conversation.entries.length == 0 && client.pending.length == 0 ==> \result.conversation.replying == client.conversation.replying
+//@ ensures \result.conversation.roles.length == client.conversation.roles.length + ((event.seq == client.conversation.seq + 1 && event.type == "RoleGranted" && event.id != "" && event.role != "viewer") ? 1 : 0)
+//@ ensures forall(i, 0 <= i && i < client.conversation.roles.length ==> \result.conversation.roles[i + ((event.seq == client.conversation.seq + 1 && event.type == "RoleGranted" && event.id != "" && event.role != "viewer") ? 1 : 0)] == client.conversation.roles[i])
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "RoleGranted" && event.id != "" && event.role != "viewer" ==> \result.conversation.roles[0].id == event.id && \result.conversation.roles[0].role == event.role && \result.conversation.roles[0].blocked == (event.mode == "person")
 //@ requires 0 <= client.conversation.seq && client.conversation.seq < 9007199254740991
+//@ ensures \result.conversation.entries.length >= client.conversation.entries.length
+//@ ensures event.type == "Posted" ==> \result.conversation.agent == client.conversation.agent
+//@ ensures client.conversation.entries.length > 0 ==> \result.conversation.entries[0].id == client.conversation.entries[0].id
+//@ ensures client.conversation.entries.length > 0 ==> \result.conversation.entries[0].seq == client.conversation.entries[0].seq
+//@ ensures client.conversation.entries.length > 0 ==> \result.conversation.entries[0].clientId == client.conversation.entries[0].clientId
+//@ ensures client.conversation.entries.length > 0 ==> \result.conversation.entries[0].inReplyTo == client.conversation.entries[0].inReplyTo
+//@ ensures client.conversation.entries.length > 1 ==> \result.conversation.entries[1].author == client.conversation.entries[1].author
+//@ ensures client.conversation.entries.length > 0 ==> \result.conversation.entries[0].name == client.conversation.entries[0].name
+//@ ensures client.conversation.entries.length > 0 && event.type != "ReplyDelta" && event.type != "ReplyRestarted" ==> \result.conversation.entries[0].text == client.conversation.entries[0].text
+//@ ensures client.conversation.entries.length > 0 && event.type == "ReplyDelta" ==> \result.conversation.entries[0].done == client.conversation.entries[0].done
+//@ ensures client.conversation.entries.length > 0 && event.type != "ReplyFailed" ==> \result.conversation.entries[0].error == client.conversation.entries[0].error
 //@ ensures event.seq <= client.conversation.seq ==> \result == client
 //@ ensures event.seq > client.conversation.seq + 1 ==> \result.gap
 //@ ensures event.seq > client.conversation.seq + 1 ==> \result.conversation == client.conversation && \result.pending == client.pending
@@ -529,14 +567,31 @@ export function retryPost(client: Client, clientId: string): Client {
 //@ ensures event.seq == client.conversation.seq + 1 && event.type != "Posted" ==> \result.pending == client.pending
 //@ ensures event.seq == client.conversation.seq + 1 && event.type == "Posted" ==> \result.pending.length <= client.pending.length && forall(i, 0 <= i && i < \result.pending.length ==> \result.pending[i].clientId != event.clientId && exists(j, 0 <= j && j < client.pending.length && \result.pending[i] == client.pending[j]))
 //@ ensures event.seq == client.conversation.seq + 1 && event.type == "Posted" ==> forall(i, 0 <= i && i < client.pending.length && client.pending[i].clientId != event.clientId ==> exists(j, 0 <= j && j < \result.pending.length && client.pending[i] == \result.pending[j]))
+//@ ensures \result.conversation.entries.length == client.conversation.entries.length + ((event.seq == client.conversation.seq + 1 && ((event.type == "Posted" && event.text != "" && event.clientId != "" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id) && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].clientId != event.clientId)) || (event.type == "ReplyStarted" && client.conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id) && event.inReplyTo != "" && exists(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].author == "person" && client.conversation.entries[j].id == event.inReplyTo) && forall(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].author == "agent" ==> client.conversation.entries[j].inReplyTo != event.inReplyTo)) || (event.type == "TourStarted" && client.conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id)))) ? 1 : 0)
+//@ ensures forall(i, 0 <= i && i < client.conversation.entries.length ==> \result.conversation.entries[i].id == client.conversation.entries[i].id)
+//@ ensures forall(i, 0 <= i && i < client.conversation.entries.length ==> \result.conversation.entries[i].seq == client.conversation.entries[i].seq)
+//@ ensures forall(i, 0 <= i && i < client.conversation.entries.length ==> \result.conversation.entries[i].clientId == client.conversation.entries[i].clientId)
+//@ ensures forall(i, 0 <= i && i < client.conversation.entries.length ==> \result.conversation.entries[i].inReplyTo == client.conversation.entries[i].inReplyTo)
+//@ ensures forall(i, 0 <= i && i < client.conversation.entries.length ==> \result.conversation.entries[i].author == client.conversation.entries[i].author)
+//@ ensures forall(i, 0 <= i && i < client.conversation.entries.length ==> \result.conversation.entries[i].name == client.conversation.entries[i].name)
+//@ ensures forall(i, 0 <= i && i < client.conversation.entries.length ==> \result.conversation.entries[i].text == ((event.seq == client.conversation.seq + 1 && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && client.conversation.entries[i].id == event.id && event.type == "ReplyDelta") ? client.conversation.entries[i].text + event.text : (event.seq == client.conversation.seq + 1 && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && client.conversation.entries[i].id == event.id && event.type == "ReplyRestarted") ? "" : client.conversation.entries[i].text))
+//@ ensures forall(i, 0 <= i && i < client.conversation.entries.length ==> \result.conversation.entries[i].done == (client.conversation.entries[i].done || (event.seq == client.conversation.seq + 1 && client.conversation.entries[i].id == event.id && ((client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && (event.type == "ReplyFinished" || event.type == "ReplyFailed")) || (event.type == "TourEnded" && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && exists(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].id == event.id && client.conversation.entries[j].author == "agent" && client.conversation.entries[j].inReplyTo == ""))))))
+//@ ensures forall(i, 0 <= i && i < client.conversation.entries.length ==> \result.conversation.entries[i].error == ((event.seq == client.conversation.seq + 1 && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && client.conversation.entries[i].id == event.id && event.type == "ReplyFailed") ? (event.reason == "" ? "failed" : event.reason) : client.conversation.entries[i].error))
+//@ ensures \result.conversation.pane == ((event.seq == client.conversation.seq + 1 && event.type == "PaneOpened" && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && event.url != "") ? event.url : client.conversation.pane)
+//@ ensures \result.conversation.agent == ((event.seq == client.conversation.seq + 1 && ((event.type == "ReplyStarted" && client.conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id) && event.inReplyTo != "" && exists(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].author == "person" && client.conversation.entries[j].id == event.inReplyTo) && forall(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].author == "agent" ==> client.conversation.entries[j].inReplyTo != event.inReplyTo)) || (event.type == "TourStarted" && client.conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id)))) ? "working" : (event.seq == client.conversation.seq + 1 && event.type == "ReplyFailed" && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "") ? "failed" : (event.seq == client.conversation.seq + 1 && ((event.type == "ReplyFinished" && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "") || (event.type == "TourEnded" && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && exists(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].id == event.id && client.conversation.entries[j].author == "agent" && client.conversation.entries[j].inReplyTo == "")))) ? "idle" : client.conversation.agent)
+//@ ensures \result.conversation.replying == ((event.seq == client.conversation.seq + 1 && ((event.type == "ReplyStarted" && client.conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id) && event.inReplyTo != "" && exists(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].author == "person" && client.conversation.entries[j].id == event.inReplyTo) && forall(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].author == "agent" ==> client.conversation.entries[j].inReplyTo != event.inReplyTo)) || (event.type == "TourStarted" && client.conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id)))) ? event.id : (event.seq == client.conversation.seq + 1 && ((client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && (event.type == "ReplyFinished" || event.type == "ReplyFailed")) || (event.type == "TourEnded" && client.conversation.agent == "working" && client.conversation.replying == event.id && event.id != "" && exists(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].id == event.id && client.conversation.entries[j].author == "agent" && client.conversation.entries[j].inReplyTo == "")))) ? "" : client.conversation.replying)
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "Posted" && event.text != "" && event.clientId != "" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id) && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].clientId != event.clientId) ==> \result.conversation.entries[client.conversation.entries.length].id == event.id && \result.conversation.entries[client.conversation.entries.length].seq == event.seq && \result.conversation.entries[client.conversation.entries.length].clientId == event.clientId && \result.conversation.entries[client.conversation.entries.length].inReplyTo == "" && \result.conversation.entries[client.conversation.entries.length].author == "person" && \result.conversation.entries[client.conversation.entries.length].name == event.name && \result.conversation.entries[client.conversation.entries.length].text == event.text && \result.conversation.entries[client.conversation.entries.length].done == true && \result.conversation.entries[client.conversation.entries.length].error == ""
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "ReplyStarted" && client.conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id) && event.inReplyTo != "" && exists(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].author == "person" && client.conversation.entries[j].id == event.inReplyTo) && forall(j, 0 <= j && j < client.conversation.entries.length && client.conversation.entries[j].author == "agent" ==> client.conversation.entries[j].inReplyTo != event.inReplyTo) ==> \result.conversation.entries[client.conversation.entries.length].id == event.id && \result.conversation.entries[client.conversation.entries.length].seq == event.seq && \result.conversation.entries[client.conversation.entries.length].clientId == "" && \result.conversation.entries[client.conversation.entries.length].inReplyTo == event.inReplyTo && \result.conversation.entries[client.conversation.entries.length].author == "agent" && \result.conversation.entries[client.conversation.entries.length].name == AGENT_NAME && \result.conversation.entries[client.conversation.entries.length].text == "" && \result.conversation.entries[client.conversation.entries.length].done == false && \result.conversation.entries[client.conversation.entries.length].error == ""
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "TourStarted" && client.conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < client.conversation.entries.length ==> client.conversation.entries[j].id != event.id) ==> \result.conversation.entries[client.conversation.entries.length].id == event.id && \result.conversation.entries[client.conversation.entries.length].seq == event.seq && \result.conversation.entries[client.conversation.entries.length].clientId == "" && \result.conversation.entries[client.conversation.entries.length].inReplyTo == "" && \result.conversation.entries[client.conversation.entries.length].author == "agent" && \result.conversation.entries[client.conversation.entries.length].name == AGENT_NAME && \result.conversation.entries[client.conversation.entries.length].text == "" && \result.conversation.entries[client.conversation.entries.length].done == false && \result.conversation.entries[client.conversation.entries.length].error == ""
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "Posted" ==> \result.pending.length == pendingCount(client.pending, event.clientId, client.pending.length)
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "Posted" ==> forall(i, 0 <= i && i < client.pending.length && client.pending[i].clientId != event.clientId ==> 0 <= pendingCount(client.pending, event.clientId, i) && pendingCount(client.pending, event.clientId, i) < \result.pending.length && \result.pending[pendingCount(client.pending, event.clientId, i)] == client.pending[i])
 export function receive(client: Client, event: Event): Client {
   const seq = client.conversation.seq
   if (event.seq <= seq) return client
   if (event.seq > seq + 1) return client.gap ? client : { ...client, gap: true }
   const conversation = apply(client.conversation, event)
-  const pending = event.type === "Posted"
-    ? client.pending.filter((waiting) => waiting.clientId !== event.clientId)
-    : client.pending
+  let pending = client.pending
+  if (event.type === "Posted") pending = acknowledgedPending(client.pending, event.clientId)
   //@ assert event.type != "Posted" || forall(i, 0 <= i && i < pending.length ==> client.pending.includes(pending[i]) && pending[i].clientId != event.clientId)
   //@ assert event.type != "Posted" || forall(i, 0 <= i && i < client.pending.length && client.pending[i].clientId != event.clientId ==> pending.includes(client.pending[i]))
   return { conversation, pending, gap: false }
@@ -789,4 +844,95 @@ export function setVipReview(issue: IssueRecord, accepted: boolean): IssueRecord
 export function reviewActions(vip: "" | "In review" | "Accepted" | "Declined", state: "open" | "closed", accepted: boolean): { readonly allowed: boolean; readonly label: boolean; readonly close: boolean } {
   const allowed = vip === "In review" || vip === (accepted ? "Accepted" : "Declined")
   return { allowed, label: allowed && vip === "In review", close: allowed && !accepted && state === "open" }
+}
+
+export interface UnansweredSelection { readonly indexes: ReadonlyArray<number>; readonly posts: ReadonlyArray<string> }
+/** Source positions make first-in-order selection and multiplicity explicit. */
+//@ verify
+//@ ensures conversation.agent == "working" ==> \result.length == 0
+//@ ensures \result.length <= conversation.entries.length
+//@ ensures forall(a, forall(b, 0 <= a && a < b && b < \result.length ==> \result[a] < \result[b]))
+//@ ensures forall(j, 0 <= j && j < \result.length ==> 0 <= \result[j] && \result[j] < conversation.entries.length && (conversation.entries[\result[j]].author == "person" && conversation.entries[\result[j]].id != "" && forall(k, 0 <= k && k < conversation.entries.length && conversation.entries[k].author == "agent" ==> conversation.entries[k].inReplyTo != conversation.entries[\result[j]].id)))
+//@ ensures conversation.agent != "working" ==> forall(j, 0 <= j && j < conversation.entries.length && (conversation.entries[j].author == "person" && conversation.entries[j].id != "" && forall(k, 0 <= k && k < conversation.entries.length && conversation.entries[k].author == "agent" ==> conversation.entries[k].inReplyTo != conversation.entries[j].id)) ==> \result.includes(j))
+export function unansweredIndexes(conversation: Conversation): ReadonlyArray<number> {
+  if (conversation.agent === "working") return []
+  const indexes: Array<number> = []
+  let i = 0
+  while (i < conversation.entries.length) {
+    //@ invariant 0 <= i && i <= conversation.entries.length
+    //@ invariant indexes.length <= i
+    //@ invariant forall(a, forall(b, 0 <= a && a < b && b < indexes.length ==> indexes[a] < indexes[b]))
+    //@ invariant forall(j, 0 <= j && j < indexes.length ==> 0 <= indexes[j] && indexes[j] < i && (conversation.entries[indexes[j]].author == "person" && conversation.entries[indexes[j]].id != "" && forall(k, 0 <= k && k < conversation.entries.length && conversation.entries[k].author == "agent" ==> conversation.entries[k].inReplyTo != conversation.entries[indexes[j]].id)))
+    //@ invariant forall(j, 0 <= j && j < i && (conversation.entries[j].author == "person" && conversation.entries[j].id != "" && forall(k, 0 <= k && k < conversation.entries.length && conversation.entries[k].author == "agent" ==> conversation.entries[k].inReplyTo != conversation.entries[j].id)) ==> indexes.includes(j))
+    //@ decreases conversation.entries.length - i
+    const entry = conversation.entries[i]!
+    if (entry.author === "person" && canReplyTo(conversation.entries, entry.id)) indexes.push(i)
+    i++
+  }
+  return indexes
+}
+
+//@ verify
+//@ ensures conversation.agent == "working" ==> \result.posts.length == 0
+//@ ensures \result.posts.length == \result.indexes.length && \result.indexes.length <= conversation.entries.length
+//@ ensures forall(a, forall(b, 0 <= a && a < b && b < \result.indexes.length ==> \result.indexes[a] < \result.indexes[b]))
+//@ ensures forall(j, 0 <= j && j < \result.indexes.length ==> 0 <= \result.indexes[j] && \result.indexes[j] < conversation.entries.length && (conversation.entries[\result.indexes[j]].author == "person" && conversation.entries[\result.indexes[j]].id != "" && forall(k, 0 <= k && k < conversation.entries.length && conversation.entries[k].author == "agent" ==> conversation.entries[k].inReplyTo != conversation.entries[\result.indexes[j]].id)))
+//@ ensures conversation.agent != "working" ==> forall(j, 0 <= j && j < conversation.entries.length && (conversation.entries[j].author == "person" && conversation.entries[j].id != "" && forall(k, 0 <= k && k < conversation.entries.length && conversation.entries[k].author == "agent" ==> conversation.entries[k].inReplyTo != conversation.entries[j].id)) ==> \result.indexes.includes(j))
+//@ ensures forall(j, 0 <= j && j < \result.posts.length ==> \result.posts[j] == conversation.entries[\result.indexes[j]].id)
+export function unansweredSelection(conversation: Conversation): UnansweredSelection {
+  const indexes = unansweredIndexes(conversation)
+  return { indexes, posts: indexes.map((i) => conversation.entries[i]!.id) }
+}
+
+/** Replay a retained JavaScript array from a zero cursor; each entry advances by at most one. */
+//@ verify
+//@ requires initial.seq == 0
+//@ requires events.length <= 4294967295
+//@ ensures 0 <= \result.seq && \result.seq <= events.length
+//@ ensures forall(j, 0 <= j && j < events.length ==> events[j].seq == j + 1) ==> \result.seq == events.length
+export function replayLog(initial: Conversation, events: ReadonlyArray<Event>): Conversation {
+  let current = initial
+  let i = 0
+  while (i < events.length) {
+    //@ invariant 0 <= i && i <= events.length
+    //@ invariant 0 <= current.seq && current.seq <= i
+    //@ invariant forall(j, 0 <= j && j < events.length ==> events[j].seq == j + 1) ==> current.seq == i
+    //@ decreases events.length - i
+    current = apply(current, events[i]!)
+    i++
+  }
+  return current
+}
+
+/** Specification-only prefix measure; executable removal never calls this recursion. */
+//@ verify
+//@ requires 0 <= end && end <= pending.length
+//@ ensures 0 <= \result && \result <= end
+//@ ensures end == 0 ==> \result == 0
+//@ ensures end > 0 ==> \result == pendingCount(pending, clientId, end - 1) + (pending[end - 1].clientId != clientId ? 1 : 0)
+//@ decreases end
+export function pendingCount(pending: ReadonlyArray<Pending>, clientId: string, end: number): number {
+  return end === 0 ? 0 : pendingCount(pending, clientId, end - 1) + (pending[end - 1]!.clientId !== clientId ? 1 : 0)
+}
+
+/** Stable removal preserves every retained occurrence's position, including repeated values. */
+//@ verify
+//@ ensures \result.length <= pending.length
+//@ ensures \result.length == pendingCount(pending, clientId, pending.length)
+//@ ensures forall(i, 0 <= i && i < pending.length && pending[i].clientId != clientId ==> 0 <= pendingCount(pending, clientId, i) && pendingCount(pending, clientId, i) < \result.length && \result[pendingCount(pending, clientId, i)] == pending[i])
+//@ ensures forall(i, 0 <= i && i < \result.length ==> \result[i].clientId != clientId && pending.includes(\result[i]))
+export function acknowledgedPending(pending: ReadonlyArray<Pending>, clientId: string): ReadonlyArray<Pending> {
+  const result: Array<Pending> = []
+  let i = 0
+  while (i < pending.length) {
+    //@ invariant 0 <= i && i <= pending.length
+    //@ invariant result.length <= i
+    //@ invariant result.length == pendingCount(pending, clientId, i)
+    //@ invariant forall(j, 0 <= j && j < i && pending[j].clientId != clientId ==> 0 <= pendingCount(pending, clientId, j) && pendingCount(pending, clientId, j) < result.length && result[pendingCount(pending, clientId, j)] == pending[j])
+    //@ invariant forall(j, 0 <= j && j < result.length ==> result[j].clientId != clientId && pending.includes(result[j]))
+    //@ decreases pending.length - i
+    if (pending[i]!.clientId !== clientId) result.push(pending[i]!)
+    i++
+  }
+  return result
 }

@@ -13,7 +13,7 @@
 // nothing here decides anything.
 import { Action, DurableClock, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { canReplyTo, type Conversation, type Event, isTour, type Refusal } from "./conversation.vibe"
+import { unansweredSelection, type Conversation, type Event, isTour, type Refusal } from "./conversation.vibe"
 import { dispatches, endsTourEvent, readingHold } from "./flowDecision.vibe"
 import { STOPS } from "./tourStops.vibe"
 export { STOPS, type Stop } from "./tourStops.vibe"
@@ -48,10 +48,7 @@ export function replyIdOf(post: string): string {
 
 /** The person posts no reply targets, oldest first, when the agent isn't replying: the ones to answer next. */
 export function unanswered(conversation: Conversation): ReadonlyArray<string> {
-  if (conversation.agent === "working") return []
-  return conversation.entries
-    .filter((entry) => entry.author === "person" && canReplyTo(conversation.entries, entry.id))
-    .map((entry) => entry.id)
+  return unansweredSelection(conversation).posts
 }
 
 /** The conversation's sequencer, as a Post's steps reach it. */

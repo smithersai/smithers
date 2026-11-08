@@ -20,7 +20,7 @@ and contracts remain present and are unchanged from the production module. Their
 a direct check of a broken copy checks all functions. This avoids repeating unrelated proofs for every mutation.
 The selftest requires exit 4, an actual failed precondition/postcondition/invariant/assertion, and a diagnostic in the intended
 function; a backend error or timeout fails the selftest. It uses two workers by default; set `CHECK_JOBS=1` to limit
-it further. Every solver uses one core and the whole pipeline runs under `nice`.
+it further. Negative solvers use one core and the whole pipeline runs under `nice`.
 
 Artifacts, source hashes, command/exit transcripts, CSV proof timings and summaries stay in `.checks/run-*`. The
 runner uses no saved proof artifacts. `python3 verify/mutations.py OUT [NAME ...]` writes the
@@ -37,9 +37,13 @@ against a local server that answers 504.
 
 Expensive negatives select exact production postconditions using `mutation_targets.py`; source changes that remove
 or duplicate a selected clause fail closed. Select the earliest broken contract: an earlier assumed postcondition or
-checked assertion can hide a later failure in an isolated check. Prefix and delta-field mutations that break an
-earlier assertion retain whole-function checks. A surviving mutation fails the gate. Positive checks verify every
-contract, without isolation. Timeouts and backend errors never count as proofs or rejections.
+checked assertion can hide a later failure in an isolated check. A few prefix and delta-field mutations select that exact earlier assertion within its function or named switch case;
+missing or duplicate functions, cases and clauses fail closed. Other cases retain whole-function checks. A surviving mutation fails the gate. Positive checks verify every
+contract, without symbol or position filters. The conversation module isolates every assertion with eight solver
+workers, a 60-second limit per batch and a 600-second process limit; other positives retain one core and a
+180-second process limit. [Dafny assertion batching](https://dafny.org/latest/HowToFAQ/FAQSplitHere) changes how
+obligations are grouped, never which obligations are checked. Its reported assertion-batch count is not comparable
+to earlier unsplit counts. Timeouts and backend errors never count as proofs or rejections.
 
 The runner rechecks source hashes at completion and rejects production source-set changes. Inventory is generated
 from original-source ESTree, including methods and Effect blocks: `node verify/inventory.cjs --write` refreshes the
@@ -51,6 +55,17 @@ mutation. Strict checking still runs separately over every selected source. The 
 Dafny and reduced generation from25.795s to2.506s on the loaded shared host; this is a diagnostic measurement, not
 a reproducible application benchmark claim.
 
-Production verification allows 60 seconds per Dafny assertion batch, one solver core. The expanded role aggregate
+Production verification allows 60 seconds per Dafny assertion batch; conversation uses the assertion splitting
+described above, while other modules use one solver core. The expanded role aggregate
 proved unchanged at 27M solver resources but its prior 30-second wall limit became contention-sensitive. Mutation
 verification keeps 30 seconds; a timeout never counts as a rejected mutation. No proof obligation is omitted.
+
+`proof_additions.py` supplies an explicit recursive induction step in the freshly generated empty
+`pendingCount_ensures` lemma. Dafny checks the recursive call, its preconditions, termination and every original
+postcondition. This follows LemmaScript's additions-only proof workflow: all generated text remains byte-identical,
+with only the lemma body inserted; no assumptions, axioms or saved proof results are used. The exact source identity,
+lemma signature and empty body are checked before insertion. Each `.proof.json` records raw and checked SHA-256
+hashes, and both fresh files remain in the run artifacts. The same insertion runs for mutation copies.
+
+The mutation CI target allows 120 minutes for the complete growing suite with the conservative two-worker default.
+Per-obligation and per-source solver/process limits are unchanged; a timeout still fails the gate.

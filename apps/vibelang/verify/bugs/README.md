@@ -45,3 +45,6 @@ claims. Both sources strictly typecheck.
 - `record-literal-union.ts`: a correct literal-union field in a returned record emits a string instead of its datatype constructor. Exposed by a wrong-reason mutation; the typed-local version of that same mutation reaches and fails its unchanged contract.
 - `sort-membership.ts`: comparator sorting proves order and length but both membership-preservation assertions fail, despite the emitted multiset-permutation axiom. Sort itself is supported; exact membership remains pending.
 - `record-identity.ts`: object equality is structural in the backend and reference-based in JavaScript; the tool warns and the correct fresh-copy identity contract fails. Structural frame proofs do not establish object identity.
+
+- `readonly-set.ts`: ReadonlySet.has is not lowered, while the same Set contract verifies. The mock dispatcher owns and passes an actual Set.
+- `conditional-method.ts`: a guarded method call in a ternary is hoisted before its discriminant guard. The receiver uses an equivalent guarded statement, preserving all specifications; the malformed lowering remains reproduced.

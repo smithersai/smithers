@@ -13,8 +13,8 @@ brick                                   state         proof
 1c  dogfooding surfaces                 done (mock)   CLI, MCP server and skill over Factory; 21 surface tests plus the existing
                                                       25 tests; emitted CLI + stdio McpClient + exact schema parity (0009).
                                                       Live mode uses LiveFactory at VIBELANG_FACTORY_URL (0010).
-1d  formal proofs                      done (local)  `pnpm verify`: 28 contracts on conversation.vibe; `pnpm verify:broken`: 48/48
-                                                      mutations rejected. Running them in CI comes with the app's PACKAGE.ts.
+1d  formal proof gates                 done (local)  0018: twelve marked production modules, 435/435 rejected mutations;
+                                                      proof, mutation and inventory gates run in PACKAGE.ts. Whole-app work is 1g.
 1f  Learn more: the agent's tour         done (local)  0014: the agent opens the docs in a pane and narrates, glow and Esc;
                                                       mock and live run one tour flow; scene, flow, workerd and browser tests
 1g  every suite covers the whole app    started       VL-29: unit, fuzz and benchmark coverage at 100% each; proofs of
@@ -31,7 +31,7 @@ brick                                   state         proof
 7   Electrobun desktop app              later         VL-6
 ```
 
-- **Proofs of all logic (0018, lane vl-proveall): in progress.** Inventory every executable function; prove extracted decisions, retain tool gaps, and run proofs plus mutations in normal CI.
+- **Proofs of all logic (0018, lane vl-proveall): in progress.** The inventory contains 1,380 executable items. Twelve modules carry proved contracts and 435 executable mutations reject; unproved logic and tool boundaries remain explicit.
 
 ## Open work outside this app
 

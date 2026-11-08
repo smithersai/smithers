@@ -6,5 +6,5 @@ def validate_rejection(result, function):
         raise ValueError('not a Dafny contract failure')
     if not any(f'function {function} [' in location for location in result['mapped']):
         raise ValueError('failure outside the mutated function')
-    if re.search(r'(resolution/type errors|timed out|ERROR:|unresolved identifier)', result['output']):
+    if re.search(r'(resolution/type errors|timed out|ERROR:|unresolved identifier|destructor .* can only be applied)', result['output']):
         raise ValueError('tool error or timeout')
