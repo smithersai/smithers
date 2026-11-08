@@ -136,3 +136,7 @@ pins Vitest 5.0.0's optional `happy-dom` to the monorepo's 20.13.2: two optional
 peer contexts otherwise create separate runner copies even at Vitest 5.0.0,
 and Effect suites fail to register with “failed to find the current suite”.
 Apps on another runner version keep their own peer context.
+
+App consumers of the shared Effect runner must also declare the same optional peers
+(`happy-dom` 20.13.2, `@types/node` 26.4.1). pnpm uses a consumer's direct peers
+even when a narrower transitive override requests a different version.
