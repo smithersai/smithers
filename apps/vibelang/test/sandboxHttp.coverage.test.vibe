@@ -1,0 +1,142 @@
+// @vitest-environment node
+// worker/SandboxHttp.vibe's public sandbox protocol over a real loopback server with injected gateways: routing,
+// body admission, and the refusal/unavailable status mapping. No object, no container.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpServer } from "effect/http"
+import { Refused, Unavailable } from "../src/core/Factory.vibe"
+import { emptySnapshot, sandboxRequest, signedOutGateway, type Gateway } from "../worker/SandboxHttp.vibe"
+
+function originOf(server: HttpServer.HttpServer["Service"]): string {
+  const address = server.address
+  return address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+}
+
+function write(origin: string, path: string, body: unknown): HttpClientRequest.HttpClientRequest {
+  return HttpClientRequest.post(`${origin}${path}`).pipe(HttpClientRequest.bodyText(JSON.stringify(body)))
+}
+
+/** The status and JSON body of one answer. */
+effect function answerOf(http: HttpClient.HttpClient, request: HttpClientRequest.HttpClientRequest) {
+  const response = try http.execute(request)
+  const text = try response.text
+  return { status: response.status, body: text === "" ? undefined : try Effect.try(() => JSON.parse(text) as unknown) }
+}
+
+/** Serves `gateway` on a real loopback server for `ask`. */
+effect function serving(gateway: Gateway, ask: (http: HttpClient.HttpClient, origin: string) => void!unknown) {
+  provide NodeHttpServer.layerTest {
+    try HttpServer.serveEffect(sandboxRequest(gateway))
+    const origin = originOf(try HttpServer.HttpServer)
+    provide FetchHttpClient.layer {
+      const http = try HttpClient.HttpClient
+      try ask(http, origin)
+    }
+  }
+}
+
+/** One POST through a fresh server for `gateway`. */
+effect function posted(gateway: Gateway, path: string, payload: unknown) {
+  return try scoped(effect {
+    let answer = { status: 0, body: undefined as unknown }
+    try serving(gateway, (http, origin) => effect {
+      answer = try answerOf(http, write(origin, path, payload))
+    })
+    return answer
+  })
+}
+
+/** A gateway that records its calls and answers the empty snapshot, failing the named actions as asked. */
+effect function fakeGateway(failures: ReadonlyArray<"start" | "stop" | "command"> = [], how = "forbidden") {
+  const calls: Array<string> = []
+  const snapshot = try emptySnapshot()
+  effect function answer(kind: "start" | "stop" | "command") {
+    if (failures.includes(kind)) {
+      if (how === "unavailable") throw new Unavailable({ reason: "sandbox down" })
+      throw new Refused({ refusal: how })
+    }
+    return snapshot
+  }
+  const gateway: Gateway = {
+    sandbox: (conversation) => Effect.andThen(sync(() => calls.push(`sandbox:${conversation}`)), succeed(snapshot)),
+    startSandbox: (conversation, operationId) => Effect.andThen(sync(() => calls.push(`start:${conversation}:${operationId}`)), answer("start")),
+    stopSandbox: (conversation, operationId, generation) => Effect.andThen(sync(() => calls.push(`stop:${conversation}:${operationId}:${generation}`)), answer("stop")),
+    sandboxCommand: (conversation, operationId, command, generation) => Effect.andThen(sync(() => calls.push(`command:${conversation}:${operationId}:${command}:${generation}`)), Effect.map(answer("command"), () => "did it")),
+  }
+  return { calls, gateway }
+}
+
+describe("the sandbox protocol", () => {
+  it.live("routes reads and each action to the gateway, and answers 404 for everything else", () => scoped(effect {
+    const { calls, gateway } = try fakeGateway()
+    try serving(gateway, (http, origin) => effect {
+      const missing = try answerOf(http, HttpClientRequest.get(`${origin}/api/other`))
+      const noAction = try answerOf(http, write(origin, "/api/sandboxes/c-1", { operationId: "op-1" }))
+      const getAction = try answerOf(http, HttpClientRequest.get(`${origin}/api/sandboxes/c-1/start`))
+      const snapshot = try answerOf(http, HttpClientRequest.get(`${origin}/api/sandboxes/c-1`))
+      const started = try answerOf(http, write(origin, "/api/sandboxes/c-1/start", { operationId: "op-1" }))
+      const stopped = try answerOf(http, write(origin, "/api/sandboxes/c-1/stop", { operationId: "op-2", generation: 3 }))
+      const ran = try answerOf(http, write(origin, "/api/sandboxes/c-1/command", { operationId: "op-3", generation: 3, command: "ls" }))
+      try Effect.try(() => {
+        expect([missing.status, noAction.status, getAction.status]).toEqual([404, 404, 404])
+        expect(snapshot.status).toBe(200)
+        expect(snapshot.body).toMatchObject({ role: "viewer", status: "stopped" })
+        expect([started.status, stopped.status, ran.status]).toEqual([200, 200, 200])
+        expect(ran.body).toEqual({ output: "did it" })
+        expect(calls).toEqual(["sandbox:c-1", "start:c-1:op-1", "stop:c-1:op-2:3", "command:c-1:op-3:ls:3"])
+      })
+    })
+  }), 30_000)
+
+  it.live("refuses missing, oversized and malformed bodies before the gateway", () => scoped(effect {
+    const { calls, gateway } = try fakeGateway()
+    try serving(gateway, (http, origin) => effect {
+      const none = try answerOf(http, HttpClientRequest.post(`${origin}/api/sandboxes/c-1/start`))
+      const huge = try answerOf(http, HttpClientRequest.post(`${origin}/api/sandboxes/c-1/start`).pipe(HttpClientRequest.bodyText("x".repeat(20_001))))
+      const broken = try answerOf(http, HttpClientRequest.post(`${origin}/api/sandboxes/c-1/start`).pipe(HttpClientRequest.bodyText("{")))
+      const wrongShape = try answerOf(http, write(origin, "/api/sandboxes/c-1/start", { operationId: 5 }))
+      const badId = try answerOf(http, write(origin, "/api/sandboxes/c-1/start", { operationId: "op id" }))
+      const noGeneration = try answerOf(http, write(origin, "/api/sandboxes/c-1/stop", { operationId: "op-1" }))
+      const noCommand = try answerOf(http, write(origin, "/api/sandboxes/c-1/command", { operationId: "op-1", generation: 1 }))
+      try Effect.try(() => {
+        expect([none.status, huge.status, broken.status, wrongShape.status, badId.status, noGeneration.status, noCommand.status]).toEqual([413, 413, 400, 400, 400, 400, 400])
+        expect(calls).toEqual([])
+      })
+    })
+  }), 30_000)
+
+  it.live("maps a refusal to 403 or 409 and an unavailable gateway to 503", () => effect {
+    const forbidden = try fakeGateway(["start"])
+    const conflict = try fakeGateway(["stop"], "stale")
+    const down = try fakeGateway(["command"], "unavailable")
+    const refused = try posted(forbidden.gateway, "/api/sandboxes/c-1/start", { operationId: "op-1" })
+    const stale = try posted(conflict.gateway, "/api/sandboxes/c-1/stop", { operationId: "op-1", generation: 0 })
+    const unavailable = try posted(down.gateway, "/api/sandboxes/c-1/command", { operationId: "op-1", generation: 0, command: "ls" })
+    try Effect.try(() => {
+      expect([refused.status, stale.status, unavailable.status]).toEqual([403, 409, 503])
+      expect(refused.body).toEqual({ refusal: "forbidden" })
+      expect(stale.body).toEqual({ refusal: "stale" })
+      expect(unavailable.body).toEqual({ error: "sandbox unavailable" })
+    })
+  }, 30_000)
+
+  it.live("the signed-out gateway answers an empty viewer snapshot and forbids every write", () => effect {
+    const snapshot = try emptySnapshot()
+    const readAnswer = try scoped(effect {
+      let answer = { status: 0, body: undefined as unknown }
+      try serving(signedOutGateway, (http, origin) => effect {
+        answer = try answerOf(http, HttpClientRequest.get(`${origin}/api/sandboxes/c-1`))
+      })
+      return answer
+    })
+    const writeAnswer = try posted(signedOutGateway, "/api/sandboxes/c-1/start", { operationId: "op-1" })
+    try Effect.try(() => {
+      expect(snapshot).toMatchObject({ id: "", generation: 0, role: "viewer", status: "stopped", allowance: 0, used: 0, remaining: 0, output: "" })
+      expect(snapshot.resetAt).toBeGreaterThan(0)
+      expect(readAnswer.status).toBe(200)
+      expect((readAnswer.body as { role: string }).role).toBe("viewer")
+      expect(writeAnswer.status).toBe(403)
+      expect(writeAnswer.body).toEqual({ refusal: "forbidden" })
+    })
+  }, 30_000)
+})

@@ -1,0 +1,136 @@
+// worker/MainLog.vibe's GitHub main walk against a canned HttpClient: pagination, cursor and side-commit
+// handling, and every failure mapped to MainUnavailable. No network.
+import { describe, expect, it } from "@effect/vitest"
+import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServerResponse } from "effect/http"
+import { githubMain, newCommits, MAX_PAGES, PER_PAGE, type GitHubCommit } from "../worker/MainLog.vibe"
+import { SHA_LENGTH } from "../src/history/seed.vibe"
+
+/** Commit `n` with `parents`, as GitHub's list carries it. */
+function commit(n: number, parents: ReadonlyArray<number>): GitHubCommit {
+  return {
+    sha: n.toString(16).padStart(8, "0") + "f".repeat(32),
+    commit: { message: `change ${n}\n\nbody ${n}` },
+    parents: parents.map((parent) => ({ sha: parent.toString(16).padStart(8, "0") + "f".repeat(32) })),
+  }
+}
+
+const short = (n: number) => (n.toString(16).padStart(8, "0") + "f".repeat(32)).slice(0, SHA_LENGTH)
+
+/** A linear run of `count` commits, newest first: ids `from + count - 1` down to `from`. */
+function pageOf(from: number, count: number): ReadonlyArray<GitHubCommit> {
+  return Array.from({ length: count }, (_, index) => {
+    const n = from + count - 1 - index
+    return commit(n, n === 0 ? [] : [n - 1])
+  })
+}
+
+const json = (commits: ReadonlyArray<GitHubCommit>) => JSON.stringify(commits)
+
+/** A client that answers `pages` by their `page` query and records each request's page and authorization. */
+function clientWith(pages: ReadonlyArray<{ readonly status: number; readonly body: string }>, seen: Array<string>): HttpClient.HttpClient {
+  return HttpClient.make((request) => {
+    const page = Number(new URL(request.url).searchParams.get("page") ?? "1")
+    seen.push(`${page} ${request.headers["authorization"] ?? ""}`)
+    const answer = pages[page - 1] ?? { status: 200, body: "[]" }
+    return succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(answer.body, { status: answer.status }))))
+  })
+}
+
+/** The reason `since` fails with, or `defect`/`ok` when it does not fail with MainUnavailable. */
+effect function reasonOf(client: HttpClient.HttpClient, cursor: string, token?: string) {
+  const result = try Effect.exit(githubMain("o/r", client, token).since(cursor))
+  if (result._tag === "Success") return "ok"
+  const error = Cause.findErrorOption(result.cause)
+  return Option.isSome(error) ? error.value.reason : "defect"
+}
+
+describe("newCommits", () => {
+  it.effect("answers an empty walk for an empty list and no cursor, undefined when a cursor names one", () => effect {
+    try Effect.try(() => {
+      expect(newCommits([], "")).toEqual([])
+      expect(newCommits([], "abcdef01")).toBeUndefined()
+    })
+  })
+
+  it.effect("stops at the cursor commit itself, excluding it", () => effect {
+    const fetched = [commit(2, [1]), commit(1, [0]), commit(0, [])]
+    try Effect.try(() => {
+      expect(newCommits(fetched, short(2).slice(0, 8))?.map((commit) => commit.sha)).toEqual([])
+      expect(newCommits(fetched, short(1).slice(0, 8))?.map((commit) => commit.sha)).toEqual([short(2)])
+    })
+  })
+
+  it.effect("lists each merge's side commits once, ahead of the step that brought them", () => effect {
+    // 5 merges 4 and 7; 4 merges 3 and the same 7. Newest first, as GitHub lists them.
+    const fetched = [commit(5, [4, 7]), commit(4, [3, 7]), commit(7, [2]), commit(3, [2]), commit(2, [1]), commit(1, [0]), commit(0, [])]
+    const found = newCommits(fetched, short(0).slice(0, 8))
+    try Effect.try(() => {
+      expect(found?.map((commit) => commit.sha)).toEqual([1, 2, 3, 7, 4, 5].map(short))
+      expect(found?.map((commit) => commit.title)).toEqual([1, 2, 3, 7, 4, 5].map((n) => `change ${n}`))
+    })
+  })
+})
+
+describe("githubMain", () => {
+  it.effect("answers the first-parent walk until the cursor, without a token header", () => effect {
+    const seen: Array<string> = []
+    const fetched = [commit(4, [3, 8]), commit(8, [2]), commit(3, [2]), commit(2, [1]), commit(1, [0]), commit(0, [])]
+    const main = githubMain("smithersai/vibelang", clientWith([{ status: 200, body: json(fetched) }], seen), undefined)
+    const commits = try main.since(short(0).slice(0, 8))
+    try Effect.try(() => {
+      expect(commits.map((commit) => commit.sha)).toEqual([1, 2, 3, 8, 4].map(short))
+      expect(seen).toEqual(["1 "])
+    })
+  })
+
+  it.effect("takes the whole walk for an empty cursor", () => effect {
+    const main = githubMain("o/r", clientWith([{ status: 200, body: json([commit(1, [0]), commit(0, [])]) }], []), undefined)
+    const commits = try main.since("")
+    try Effect.try(() => expect(commits.map((commit) => commit.sha)).toEqual([0, 1].map(short)))
+  })
+
+  it.effect("reads pages until the cursor is within reach, sending the token on each", () => effect {
+    const seen: Array<string> = []
+    const pages = [
+      { status: 200, body: json(pageOf(PER_PAGE, PER_PAGE)) },
+      { status: 200, body: json(pageOf(0, PER_PAGE)) },
+    ]
+    const main = githubMain("o/r", clientWith(pages, seen), "secret-token")
+    const commits = try main.since(short(50).slice(0, 8))
+    try Effect.try(() => {
+      expect(commits.length).toBe(149)
+      expect(commits[0]?.sha).toBe(short(51))
+      expect(commits[148]?.sha).toBe(short(199))
+      expect(seen).toEqual(["1 Bearer secret-token", "2 Bearer secret-token"])
+    })
+  })
+
+  it.effect("gives up when the cursor stays out of reach past the last page", () => effect {
+    const seen: Array<string> = []
+    const pages = Array.from({ length: MAX_PAGES }, (_, index) => ({
+      status: 200,
+      body: json(pageOf((MAX_PAGES - 1 - index) * PER_PAGE, PER_PAGE)),
+    }))
+    const reason = try reasonOf(clientWith(pages, seen), short(5000).slice(0, 8))
+    try Effect.try(() => {
+      expect(reason).toBe("main's last folded commit is not within reach")
+      expect(seen.length).toBe(MAX_PAGES)
+    })
+  })
+
+  it.effect("maps a transport failure, a bad status, a non-JSON answer and a wrong shape", () => effect {
+    const broken = HttpClient.make((request) => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) })))
+    const transport = try reasonOf(broken, "abcd")
+    const status = try reasonOf(clientWith([{ status: 500, body: "{}" }], []), "abcd")
+    const notJson = try reasonOf(clientWith([{ status: 200, body: "not json" }], []), "abcd")
+    const wrongShape = try reasonOf(clientWith([{ status: 200, body: "[{\"sha\":1}]" }], []), "abcd")
+    try Effect.try(() => {
+      expect([transport, status, notJson, wrongShape]).toEqual([
+        "GitHub unreachable",
+        "GitHub answered 500",
+        "GitHub's answer is not JSON",
+        "GitHub's answer is not a commit list",
+      ])
+    })
+  })
+})
