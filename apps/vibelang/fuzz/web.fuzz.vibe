@@ -40,7 +40,9 @@ it.live("web/keys-and-transition", () => run("web/keys-and-transition", Schema.S
   const result = keyMessage(key, meta, control)
   const expected = ((meta || control) && key.toLowerCase() === "k") || key === "Escape"
   const transition = viewTransition({ previousModel: before, model: after, message: Message.FocusedPrompt() })
-  return Option.isSome(result) === expected && (before.surface === after.surface ? transition === false : same(transition, { types: [after.surface === "chat" ? "to-chat" : "to-splash"] }))
+  const issuesChanged = Boolean(before.issues?.open) !== Boolean(after.issues?.open)
+  const wanted = issuesChanged ? { types: [after.issues?.open ? "to-issues" : "from-issues"] } : before.surface === after.surface ? false : { types: [after.surface === "chat" ? "to-chat" : "to-splash"] }
+  return Option.isSome(result) === expected && same(transition, wanted)
 }))
 
 it.live("web/markdown-and-reasons", () => run("web/markdown-and-reasons", Schema.Union([TextOrBoundary, Schema.Literals(["failed", "```\n\n```", "```vibe\nhello", "one\n\ntwo", "a``b`c"]) ]), (text) => {
