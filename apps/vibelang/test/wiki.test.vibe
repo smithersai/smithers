@@ -8,7 +8,7 @@ import { toHtml, compile, safeLink } from "../src/web/markdown.vibe"
 
 describe("wiki documents", () => {
   it("ships current source, stable Markdown links and every design and decision", () => {
-    expect(wikiPage("/wiki/index")?.html).toContain("VL-29")
+    expect(wikiPage("/wiki/index")?.html).toContain("VL-30")
     expect(wikiPage("/wiki/index")?.html).toMatch(/<td[^>]*><a[^>]*href="\/wiki\/decisions\/0021-wiki"/)
     expect(wikiPath("decisions/0014-agent-tour.md")).toBe("/wiki/decisions/0014-agent-tour")
     expect(wikiPath("/wiki/rulings#vl-28")).toBe("/wiki/rulings#vl-28")
