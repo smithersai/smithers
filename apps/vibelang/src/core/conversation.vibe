@@ -672,3 +672,121 @@ export function grantPolicy(id: string, by: string, current: Role, actor: Role, 
   if (current === "maintainer" && !other) return false
   return true
 }
+
+// ── GitHub's issue projection (0022). GitHub owns content and edges; these numbered observations drive every surface.
+export type IssueOperation = "read" | "new" | "comment" | "link" | "split" | "commit" | "uncommit" | "propose" | "accept" | "decline" | "draft"
+export interface IssueNote { readonly author: string; readonly text: string; readonly event: boolean }
+export interface IssueRecord {
+  readonly number: number
+  readonly githubId: number
+  readonly title: string
+  readonly body: string
+  readonly author: string
+  readonly age: string
+  readonly state: "open" | "closed"
+  readonly labels: ReadonlyArray<string>
+  readonly parent: number
+  readonly task: "" | "Queued" | "Running" | "Done"
+  readonly assignee: string
+  readonly vip: "" | "In review" | "Accepted" | "Declined"
+  readonly review: string
+  readonly path: string
+  readonly comments: number
+  readonly notes: ReadonlyArray<IssueNote>
+}
+export interface IssuesState { readonly seq: number; readonly items: ReadonlyArray<IssueRecord> }
+export interface IssuesEvent { readonly type: "IssuesObserved"; readonly seq: number; readonly items: ReadonlyArray<IssueRecord> }
+export const emptyIssues: IssuesState = { seq: 0, items: [] }
+
+/** Ordered GitHub observations; a stale response cannot replace a newer projection. */
+//@ verify
+//@ requires 0 <= state.seq && state.seq < 9007199254740991
+//@ ensures event.seq != state.seq + 1 ==> \result == state
+//@ ensures event.seq == state.seq + 1 ==> \result.seq == event.seq && \result.items == event.items
+//@ ensures \result.seq == state.seq || \result.seq == state.seq + 1
+export function applyIssues(state: IssuesState, event: IssuesEvent): IssuesState {
+  if (event.seq !== state.seq + 1) return state
+  return { seq: event.seq, items: event.items }
+}
+
+/** Every issue gate delegates to 0019: shaping is triage; commitments and review are maintainer decisions. */
+//@ verify
+//@ ensures op == "read" ==> \result
+//@ ensures (op == "commit" || op == "uncommit" || op == "accept" || op == "decline") ==> (\result == (role == "maintainer"))
+//@ ensures role == "viewer" && op != "read" ==> !\result
+//@ ensures (op == "propose" || op == "draft") ==> (\result == (role == "community" || role == "contributor" || role == "maintainer"))
+//@ ensures (op == "link" || op == "split") ==> (\result == (role == "contributor" || role == "maintainer"))
+//@ ensures (op == "new" || op == "comment") ==> (\result == (role != "viewer"))
+export function issuePermission(role: Role, op: IssueOperation): boolean {
+  return may(role, issuePolicyAction(op))
+}
+
+/** One policy name for UI affordances, live authorization and delegated flows. */
+//@ verify
+//@ ensures op == "read" ==> \result == "read"
+//@ ensures op == "new" ==> \result == "issue"
+//@ ensures op == "comment" ==> \result == "comment"
+//@ ensures (op == "link" || op == "split") ==> \result == "triage"
+//@ ensures (op == "propose" || op == "draft") ==> \result == "vip"
+//@ ensures (op == "commit" || op == "uncommit" || op == "accept" || op == "decline") ==> \result == "merge"
+export function issuePolicyAction(op: IssueOperation): Action {
+  if (op === "read") return "read"
+  if (op === "new") return "issue"
+  if (op === "comment") return "comment"
+  if (op === "link" || op === "split") return "triage"
+  if (op === "propose" || op === "draft") return "vip"
+  return "merge"
+}
+
+/** Each issue has one parent. Reject self links, missing parents and any cycle, including malformed input trees. */
+//@ verify
+//@ ensures \result ==> child > 0 && parent > 0 && child != parent
+//@ ensures \result ==> exists(i, 0 <= i && i < items.length && items[i].number == child)
+export function canLinkIssues(items: ReadonlyArray<IssueRecord>, child: number, parent: number): boolean {
+  if (parent <= 0 || child <= 0 || child === parent || !items.some((i) => i.number === child)) return false
+  let next = parent
+  let steps = 0
+  while (next !== 0 && steps <= items.length) {
+    //@ invariant 0 <= steps && steps <= items.length + 1
+    //@ decreases items.length + 1 - steps
+    if (next === child) return false
+    const found = items.find((i) => i.number === next)
+    if (found === undefined) return false
+    next = found.parent
+    steps += 1
+  }
+  return next === 0
+}
+
+/** Commitment changes neither the issue identity nor its tree or content. */
+//@ verify
+//@ requires !committed || assignee != ""
+//@ ensures \result.number == issue.number && \result.githubId == issue.githubId && \result.parent == issue.parent
+//@ ensures \result.title == issue.title && \result.body == issue.body && \result.state == issue.state && \result.vip == issue.vip && \result.notes == issue.notes
+//@ ensures \result.author == issue.author && \result.age == issue.age && \result.labels == issue.labels && \result.comments == issue.comments && \result.review == issue.review && \result.path == issue.path
+//@ ensures committed ==> \result.task == "Queued" && \result.assignee == assignee
+//@ ensures !committed ==> \result.task == "" && \result.assignee == ""
+export function setCommitment(issue: IssueRecord, assignee: string, committed: boolean): IssueRecord {
+  return { ...issue, task: committed ? "Queued" : "", assignee: committed ? assignee : "" }
+}
+
+/** A review records a person's decision; it never merges a change or commits a task. */
+//@ verify
+//@ requires issue.vip == "In review"
+//@ ensures \result.number == issue.number && \result.githubId == issue.githubId && \result.parent == issue.parent && \result.task == issue.task
+//@ ensures \result.title == issue.title && \result.body == issue.body && \result.assignee == issue.assignee && \result.labels == issue.labels && \result.notes == issue.notes && \result.review == issue.review && \result.path == issue.path && \result.author == issue.author && \result.age == issue.age && \result.comments == issue.comments
+//@ ensures accepted ==> \result.vip == "Accepted" && \result.state == issue.state
+//@ ensures !accepted ==> \result.vip == "Declined" && \result.state == "closed"
+export function setVipReview(issue: IssueRecord, accepted: boolean): IssueRecord {
+  return { ...issue, vip: accepted ? "Accepted" : "Declined", state: accepted ? issue.state : "closed" }
+}
+
+/** Reconcile a human review after any prefix of its GitHub writes has completed. */
+//@ verify
+//@ ensures \result.allowed == (vip == "In review" || vip == (accepted ? "Accepted" : "Declined"))
+//@ ensures \result.label == (\result.allowed && vip == "In review")
+//@ ensures \result.close == (\result.allowed && !accepted && state == "open")
+export function reviewActions(vip: "" | "In review" | "Accepted" | "Declined", state: "open" | "closed", accepted: boolean): { readonly allowed: boolean; readonly label: boolean; readonly close: boolean } {
+  const allowed = vip === "In review" || vip === (accepted ? "Accepted" : "Declined")
+  return { allowed, label: allowed && vip === "In review", close: allowed && !accepted && state === "open" }
+}

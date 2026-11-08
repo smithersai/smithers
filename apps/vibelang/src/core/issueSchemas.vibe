@@ -1,0 +1,27 @@
+// GitHub projection and action protocol; no credential, role or actor is accepted in an action payload.
+export const IssueOperation = Schema.Literals(["read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft"])
+export const IssueNote = Schema.Struct({ author: Schema.String, text: Schema.String, event: Schema.Boolean })
+export const IssueRecord = Schema.Struct({
+  number: Schema.Number, githubId: Schema.Number, title: Schema.String, body: Schema.String, author: Schema.String,
+  age: Schema.String, state: Schema.Literals(["open", "closed"]), labels: Schema.Array(Schema.String), parent: Schema.Number,
+  task: Schema.Literals(["", "Queued", "Running", "Done"]), assignee: Schema.String,
+  vip: Schema.Literals(["", "In review", "Accepted", "Declined"]), review: Schema.String, path: Schema.String,
+  comments: Schema.Number, notes: Schema.Array(IssueNote),
+})
+export const IssueRequest = Schema.Struct({
+  resumeRecovery: Schema.optionalKey(Schema.String), resumeOp: Schema.optionalKey(Schema.String), resumeKey: Schema.optionalKey(Schema.String), recovery: Schema.optionalKey(Schema.String), op: IssueOperation, number: Schema.Number, parent: Schema.Number, title: Schema.String, text: Schema.String,
+  assignee: Schema.String, example: Schema.String, prior: Schema.String, key: Schema.String,
+})
+export const IssuesState = Schema.Struct({ saved: Schema.optionalKey(Schema.Struct({ request: IssueRequest, status: Schema.Literals(["running", "failed", "completed"]), unwritten: Schema.Boolean, selected: Schema.Number })), absoluteDates: Schema.optionalKey(Schema.Boolean), reviewers: Schema.optionalKey(Schema.Array(Schema.String)), seq: Schema.Number, connected: Schema.optionalKey(Schema.Boolean), selected: Schema.optionalKey(Schema.Number), assignees: Schema.optionalKey(Schema.Array(Schema.Struct({ login: Schema.String, label: Schema.String }))), items: Schema.Array(IssueRecord), role: Schema.optionalKey(Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])), draft: Schema.optionalKey(Schema.Struct({ title: Schema.String, summary: Schema.String, example: Schema.String, prior: Schema.String })) })
+
+export type IssueRequest = typeof IssueRequest.Type
+export schema error IssueFailure { reason: string; unwritten?: boolean; code?: string; retryAfterMillis?: number }
+export interface IssuesApi {
+  readonly read: () => typeof IssuesState.Type!IssueFailure
+  readonly act: (request: IssueRequest) => typeof IssuesState.Type!IssueFailure
+}
+
+/** Person-readable Markdown, persisted in the repository, one feature per review. */
+export function vipDocument(request: IssueRequest): string {
+  return `# ${request.title.trim()}\n\n## Summary\n\n${request.text.trim()}\n\n## Example\n\n\`\`\`vibe\n${request.example.trim()}\n\`\`\`\n\n## Prior art\n\n${request.prior.trim()}\n`
+}

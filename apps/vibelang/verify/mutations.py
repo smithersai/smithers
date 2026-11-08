@@ -104,6 +104,19 @@ cases=[
 ('apply-role', 'apply', 'role: event.role, blocked: event.mode === "person"', 'role: "viewer", blocked: event.mode === "person"', 'the numbered grant preserves the role'),
 ]
 cases=[('src/core/conversation.vibe', *case) for case in cases] + extended_cases
+cases.extend([("src/core/conversation.vibe", *case) for case in [
+('issues-review-replay','reviewActions','vip === "In review" || vip === (accepted ? "Accepted" : "Declined")','vip === "In review"','a partially completed human review can resume'),
+('issues-decline-close','reviewActions','close: allowed && !accepted && state === "open"','close: false','a declined open VIP must still be closed'),
+('issues-stale','applyIssues','if (event.seq !== state.seq + 1) return state','if (false) return state','stale observations cannot replace the projection'),
+('issues-content','applyIssues','items: event.items','items: state.items','the next observation projects exactly GitHub records'),
+('issues-commit-role','issuePermission','return may(role, issuePolicyAction(op))','return true','only maintainers commit work or review VIPs'),
+('issues-new-vip','issuePolicyAction','if (op === "propose" || op === "draft") return "vip"','if (op === "propose" || op === "draft") return "issue"','a new identity cannot propose a VIP'),
+('issues-commit-identity','setCommitment','...issue, task:','...issue, number: issue.number + 1, task:','a task keeps its GitHub identity'),
+('issues-commit-assignee','setCommitment','assignee: committed ? assignee : ""','assignee: ""','a committed task names the assigned worker'),
+('issues-uncommit','setCommitment','task: committed ? "Queued" : ""','task: "Queued"','uncommit restores a plain issue'),
+('issues-decline','setVipReview','state: accepted ? issue.state : "closed"','state: issue.state','a declined VIP is closed'),
+('issues-review-task','setVipReview','...issue, vip:','...issue, task: "Queued", vip:','accepting a VIP does not silently commit work'),
+]])
 if len(sys.argv) < 2: raise SystemExit('Usage: mutations.py OUT [NAME ...]')
 out=pathlib.Path(sys.argv[1]).resolve()
 selected=set(sys.argv[2:])

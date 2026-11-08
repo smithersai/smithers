@@ -1,0 +1,65 @@
+// Every issue operation is the same flow for the browser and the agent. Hosts inject identity and storage.
+import { Digest, SecureRandom } from "effect/crypto"
+import { Action, Flow, FlowRuntime, RetryPolicy, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { IssueFailure, IssueRequest, IssuesState } from "./issueSchemas.vibe"
+import { issuePermission, type Role, type IssueOperation } from "./conversation.vibe"
+
+export service IssueHost {
+  perform(request: IssueRequest): typeof IssuesState.Type!IssueFailure!(FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom)
+}
+const operations: ReadonlyArray<IssueOperation> = ["read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft"]
+const retries = RetryPolicy.make({ initialMs: 1000, factor: 2, maxMs: 60_000, expirationMs: 120_000, retryable: [{ tag: "IssueFailure", code: "unavailable" }, { tag: "IssueFailure", code: "rate-limited" }, { tag: "IssueFailure", code: "unknown" }] })
+const steps = Metric.counter("vibelang_issue_steps", { incremental: true })
+const definitions = operations.map((op) => {
+  const action = Action.make(`vibelang/issues/${op}/perform`, {
+    payload: IssueRequest.fields, success: IssuesState, error: IssueFailure,
+    tier: op === "read" || op === "draft" ? "sealed" : "irreversible",
+    implementationVersion: "issues/v1", retryPolicy: retries,
+    ...(op === "read" || op === "draft" ? {} : { idempotencyKey: (payload: IssueRequest) => ({ request: payload.key, operation: payload.op }) }),
+  })
+  const flow = Flow.make(`vibelang/issues/${op}`, {
+    description: `VibeLang issues: ${op}. Runs with the current person's policy and GitHub identity.`,
+    modelInvocable: op !== "accept" && op !== "decline",
+    payload: IssueRequest.fields, success: IssuesState, error: IssueFailure,
+    body: Node.capture({}, (request) => action.call(request)),
+  })
+  return { action, flow, op }
+})
+export const issueFlows = definitions.map(({ flow }) => flow)
+export const issueRegistration = Layer.unwrap(effect {
+  const host = try IssueHost
+  return Layer.mergeAll(Layer.empty, ...definitions.map(({ action, flow, op }) => Interpreter.layerWithImplementations(flow,
+    action.toLayer((request) => withSpan(effect {
+      const result = try Effect.result(host.perform(request))
+      const outcome = result._tag === "Success" ? "accepted" : result.failure.reason
+      try Metric.update(Metric.withAttributes(steps, { op, outcome }), 1)
+      try Effect.logInfo("vibelang.issues.step").pipe(Effect.annotateLogs({ op, outcome }))
+      if (result._tag === "Failure") throw result.failure
+      return result.success
+    }, `vibelang.issues.${op}`), { implementationVersion: "issues/v1" }),
+  )))
+})
+
+/** A cached receipt never bypasses today's least-role check. No payload or write identity enters telemetry. */
+export const authorizeIssue = (role: Role, op: IssueOperation) => withSpan(effect {
+  const allowed = issuePermission(role, op)
+  const outcome = allowed ? "accepted" : "forbidden"
+  try Metric.update(Metric.withAttributes(Metric.counter("vibelang_issue_access", { incremental: true }), { op, outcome }), 1)
+  try Effect.logInfo("vibelang.issues.access").pipe(Effect.annotateLogs({ op, outcome }))
+  if (!allowed) throw new IssueFailure({ reason: "forbidden" })
+}, "vibelang.issues.authorize")
+
+/** Runtime telemetry sees a digest, never a caller-supplied request key. */
+export effect function issueExecutionId(actor: string, op: IssueOperation, key: string) {
+  provide Digest.layerWebCrypto {
+    const hash = try (try Digest.Digest).digestHex(Digest.sha256, new TextEncoder().encode(JSON.stringify(["vibelang/issues/run/v1", actor, op, key])))
+    return `issues/${actor}/${op}/${hash}`
+  }
+}
+export effect function issueRecoveryId(root: string, recovery: string) {
+  provide Digest.layerWebCrypto {
+    const hash = try (try Digest.Digest).digestHex(Digest.sha256, new TextEncoder().encode(JSON.stringify(["vibelang/issues/recovery/v1", root, recovery])))
+    return `${root}/retry/${hash}`
+  }
+}
