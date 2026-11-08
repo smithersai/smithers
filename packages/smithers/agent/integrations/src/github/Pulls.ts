@@ -38,7 +38,31 @@ import { RECONCILE_PAGES } from "./Actions.ts"
 import { GitHubClient } from "./GitHubClient.ts"
 import { IssueUser, WRITE_ID_PATTERN, writeIdOf } from "./Issues.ts"
 import { requireBranch } from "./Refs.ts"
-import { IssueNumber, requireRepositoryPath } from "./Repository.ts"
+import { isOwner, IssueNumber, requireRepositoryPath } from "./Repository.ts"
+
+/**
+ * A pull request head as GitHub takes it: a branch of the repository itself,
+ * or `owner:branch` for a fork's branch. Each side is validated as its own
+ * coordinate; a colon never reaches a path unchecked.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const requireHead = (head: string): Effect.Effect<string, IntegrationError> => Effect.gen(function*() {
+  const parts = head.split(":")
+  if (parts.length === 1) return yield* requireBranch(head)
+  if (parts.length === 2 && isOwner(parts[0])) {
+    const branch = yield* requireBranch(parts[1]!)
+    return `${parts[0]}:${branch}`
+  }
+  return yield* Effect.fail(
+    new IntegrationError("invalid-config", "A pull request head is a branch or a fork's owner:branch.", {
+      field: "head",
+      branch: head.slice(0, 64),
+      retryable: false
+    })
+  )
+})
 
 /**
  * One end of a pull request: its branch and the commit it points at.
@@ -308,8 +332,11 @@ export const listPulls = (
     const client = yield* GitHubClient
     const repository = yield* requireRepositoryPath(owner, repo)
     const search = new URLSearchParams({ state: options?.state ?? "all", sort: "updated", direction: "desc" })
-    // The owner was validated with the repository path above.
-    if (options?.head !== undefined) search.set("head", `${owner}:${yield* requireBranch(options.head)}`)
+    // A bare branch is this repository's; owner:branch names a fork's, already validated either way.
+    if (options?.head !== undefined) {
+      const head = yield* requireHead(options.head)
+      search.set("head", head.includes(":") ? head : `${owner}:${head}`)
+    }
     const path = `/repos/${repository}/pulls`
     const page = yield* client.paginate(`${path}?${search.toString()}`, { maxPages: options?.maxPages })
     const items = yield* decodeAll(PullRequest, page.items, path)
@@ -367,7 +394,7 @@ export const createPull = (
   Effect.gen(function*() {
     const client = yield* GitHubClient
     const repository = yield* requireRepositoryPath(owner, repo)
-    const head = yield* requireBranch(input.head)
+    const head = yield* requireHead(input.head)
     const base = yield* requireBranch(input.base)
     if (typeof input.title !== "string" || input.title.trim().length === 0) {
       return yield* Effect.fail(invalid("title", "A pull request needs a title."))
