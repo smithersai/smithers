@@ -96,10 +96,17 @@ Native touch assertions use the actual first touchmove position. Under instrumen
 the earlier CDP measurement (1425) and first move (1743); the valid swipe ended at 1508 with following paused.
 Comparing to the stale pre-gesture position was incorrect. Read-only native event evidence retains that failure.
 
-History startup now has57 boundary cases over a real window and the mounted Foldkit application: query/stored-role combinations, missing/empty/invalid/duplicate role input, unavailable storage through a faulty
+History startup now has 57 boundary cases over a real window and the mounted Foldkit application: query/stored-role combinations, missing/empty/invalid/duplicate role input, unavailable storage through a faulty
 Window service, unavailable health through a faulty HttpClient, cancellation on disposal, role-specific controls,
 direct epic/commit hashes and native link navigation back to the outline. Happy paths use the product MockMythical
 flows and real browser-host services. The module independently measures100% lines, branches, functions and
 statements (27/27,10/10,9/9,32/32); that per-module validation does not replace the red whole-app gate.
 
 The startup matrix includes all 25 query/stored-role combinations, each of the five query-only and storage-only roles, and the invalid, empty and duplicate-query boundaries. Native runtime navigation separately checks New and Community: both can read the history and have no planning or folding control.
+
+Native form tests run the history update, view, subscriptions and commands over the actual MockMythical durable
+flows. They cover an empty-title refusal and recovery, a new or existing epic, every note section, Start, Approve,
+Fold, insertion, cancellation and amendment without a duplicate commit. Folding intentionally clears the completed
+task/lane; its real commit remains linked. An amendment focused the close button because ShowPlan requested the
+absent title field. The failed-first runtime regression and Chromium check now require Task focus; one selector
+chooses the title or task field present in that dialog.

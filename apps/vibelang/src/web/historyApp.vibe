@@ -336,7 +336,7 @@ export const ShowPlan = Command.define("ShowPlan", {
   args: {},
   messages: [HistoryMessage.Settled],
   execute: effect () => {
-    Dom.showDialog(`#${PLAN_ID}`, { isModal: true, focusSelector: "#mh-plan-title" }) catch () => false
+    Dom.showDialog(`#${PLAN_ID}`, { isModal: true, focusSelector: "#mh-plan-title, #mh-plan-task" }) catch () => false
     return try message(() => HistoryMessage.Settled())
   },
 })
