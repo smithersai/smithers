@@ -22,12 +22,16 @@ const shellBoundaries = {
   'worker/Reply.vibe': 'Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved.',
   'src/core/flows.vibe': 'Dispatch and terminal-event decisions are proved in flowDecision.vibe; conversation guards in conversation.vibe. The reading-time policy is proved too; flow execution, word tokenization, docs regexp and reply-id slice remain unproved.',
   'worker/Sequencer.vibe': 'Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved.',
+  'src/history/flows.vibe': 'Who may act and the order of authorize and record steps run the proved flowMachine.vibe (authorize, canRecord, record); the sequencer decides through mythical.vibe. Engine execution, journaling, metrics and logs remain runtime boundaries (0020).',
+  'src/history/Sequencer.vibe': 'Calls the proved decide, apply and foldTarget. Locking, store-before-publish, epic opening for untrailered folds, title truncation and the trailer regexp remain unproved (0020).',
+  'src/history/roles.vibe': 'may, leastRole, peopleOnly and standing are proved in flowMachine.vibe; this module re-exports them and builds the role tables from them (0020).',
 };
 const boundaries = {
   'src/core/mockDecision.vibe': 'Exact keyword membership, first-match priority and fallback; proved for normalized prompts.',
   'src/core/protocolDecision.vibe': 'Conversation/cursor/body validation, exact route and HTTP outcomes, explicit backend choice; proved.',
   'src/web/screenDecision.vibe': 'Escape/palette/minimize/scroll/focus intent/tour-stream/announcement/shortcut decisions; proved in Dafny integer model, not fractional DOM or IEEE-754.',
-  'src/history/mythical.vibe': 'Inherited mythical-history machine contracts; checked by the shared proof gate (0020). Mutation coverage is being extended in this lane.',
+  'src/history/mythical.vibe': 'Mythical-history machine: numbering, linearity, no lost epic, commit, real commit or note, exactly-one folds, and a trailer folds only into an approved or landed commit; proved, with executable mutations (0020).',
+  'src/history/flowMachine.vibe': 'Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020).',
   'src/core/conversation.vibe': 'Production state machine; contracts and executable mutations.',
   'worker/replyReasons.vibe': 'Failure precedence and model reason codes; proved.',
   'worker/budgetDecision.vibe': 'Strict admission, nonnegative integer charge and exact total; proved under safe-sum precondition.',

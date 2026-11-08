@@ -3,7 +3,7 @@
 // under one lock, is written to the store before anyone sees it, and is then published to every follower. The mock
 // keeps its store in memory; the live History object (worker/HistoryObject.vibe) keeps it in its own storage. Nothing
 // here names a host.
-import { apply, decide, type Decision, empty, epicOf, hasSha, type History, type Event, type Intent, MAX_TITLE } from "./mythical.vibe"
+import { apply, decide, type Decision, empty, epicOf, foldTarget, hasSha, type History, type Event, type Intent, MAX_TITLE } from "./mythical.vibe"
 import type { Stack } from "./flows.vibe"
 import { areaOf } from "./seed.vibe"
 
@@ -155,9 +155,10 @@ export effect function make(store: Store) {
       }),
 
     /**
-     * Folds one commit of main into the stack: into the commit its `Mythical:` trailer names, else appended as a new
-     * commit to the epic its scope belongs to, opened at the stack's end when the history has none by that title.
-     * A commit already folded answers `duplicate` and changes nothing.
+     * Folds one commit of main into the stack: into the commit its `Mythical:` trailer names once a person approved
+     * it (or it landed: `foldTarget`, proved), else appended as a new commit to the epic its scope belongs to, opened
+     * at the stack's end when the history has none by that title. A commit already folded answers `duplicate` and
+     * changes nothing.
      */
     fold: (commit: MainCommit) =>
       locked(effect {
@@ -167,8 +168,8 @@ export effect function make(store: Store) {
           return already
         }
         const title = commit.title.length <= MAX_TITLE ? commit.title : commit.title.slice(0, MAX_TITLE - 1) + "…"
-        let into = trailerOf(commit.message)
-        if (into === "" || !history.commits.some((mythical) => mythical.id === into)) {
+        let into = foldTarget(history.commits, trailerOf(commit.message))
+        if (into === "") {
           const area = areaOf(title)
           let epic = history.epics.find((each) => each.title === area)?.id ?? ""
           if (epic === "") {

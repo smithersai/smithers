@@ -2,51 +2,35 @@
 // roles lane's policy interface replaces `Caller`'s source when it lands; every flow already reads its least role from
 // `HISTORY_ROLES` and the caller from `Caller`, so switching is one change here.
 
-/** The project's roles, least first (VL-21). */
-export type Role = "viewer" | "new" | "community" | "contributor" | "maintainer"
+import { type Action, leastRole, peopleOnly, type Principal, type Role, standing } from "./flowMachine.vibe"
+
+// Roles, actions and `may` are the proved flow machine's (flowMachine.vibe); this module names them for the app.
+export type { Action, Principal, Role }
+export { may } from "./flowMachine.vibe"
 
 /** The roles in order, least first. */
 export const ROLES: ReadonlyArray<Role> = ["viewer", "new", "community", "contributor", "maintainer"]
 
-/**
- * What a person or the agent can do with the mythical history. The bootstrap is no one's: its host runs it once, on
- * first start, and no request reaches it.
- */
-export type Action = "show" | "append" | "retell" | "start" | "note" | "approve" | "fold"
+/** Every action on the mythical history. */
+export const ACTIONS: ReadonlyArray<Action> = ["show", "append", "retell", "start", "note", "approve", "fold"]
 
-/**
- * Each action's least role. Appending adds to the story; retelling (an insert or an amend) changes where others'
- * work sits or what it says, so it is a maintainer's.
- */
+/** Each action's least role, as the proved `leastRole` gives it. */
 export const HISTORY_ROLES: Readonly<Record<Action, Role>> = {
-  show: "viewer",
-  append: "contributor",
-  retell: "maintainer",
-  start: "contributor",
-  note: "contributor",
-  approve: "maintainer",
-  fold: "maintainer",
+  show: leastRole("show"),
+  append: leastRole("append"),
+  retell: leastRole("retell"),
+  start: leastRole("start"),
+  note: leastRole("note"),
+  approve: leastRole("approve"),
+  fold: leastRole("fold"),
 }
 
-/** Actions only a person takes: people approve; the agent never does, and never folds what landed. */
-export const PEOPLE_ONLY: ReadonlyArray<Action> = ["approve", "fold"]
+/** Actions only a person takes, as the proved `peopleOnly` gives them: approve and fold. */
+export const PEOPLE_ONLY: ReadonlyArray<Action> = ACTIONS.filter(peopleOnly)
 
 /** Whether `role` is `least` or above. */
 export function atLeast(role: Role, least: Role): boolean {
-  return ROLES.indexOf(role) >= ROLES.indexOf(least)
-}
-
-/** Who asks: their role, the name notes carry, and whether the agent acts for them. */
-export interface Principal {
-  readonly role: Role
-  readonly name: string
-  readonly agent: boolean
-}
-
-/** Whether `principal` may take `action`. */
-export function may(principal: Principal, action: Action): boolean {
-  if (principal.agent && PEOPLE_ONLY.includes(action)) return false
-  return atLeast(principal.role, HISTORY_ROLES[action])
+  return standing(role) >= standing(least)
 }
 
 /** The one place a flow learns who runs it. */

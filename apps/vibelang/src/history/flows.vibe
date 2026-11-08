@@ -12,11 +12,14 @@
 //   vibelang/history/Bootstrap   load          the first start loads the bootstrapped history          its host only
 //   vibelang/history/show        (a read)      the agent reads the history                               viewer
 //
-// The steps reach the history's one state machine (mythical.vibe) through `Stack`; nothing here decides anything.
+// The steps reach the history's one state machine (mythical.vibe) through `Stack`. The order of each flow's steps is
+// the proved flow machine's (flowMachine.vibe): `authorized` journals its `Run`, and a record step runs only when
+// `canRecord` says so; nothing here decides anything.
 import { Action as Step, Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
+import { authorize, begin, canRecord, record, type Run } from "./flowMachine.vibe"
 import type { History } from "./mythical.vibe"
-import { type Action, Caller, may, type Principal } from "./roles.vibe"
+import { type Action, ACTIONS, Caller, type Principal, ROLES } from "./roles.vibe"
 import type { Answer, MainCommit, PlanRequest } from "./Sequencer.vibe"
 
 /** A write's answer: the commit it wrote, or why it was refused (a sequencer refusal, or `forbidden`). */
@@ -26,6 +29,14 @@ export const HistoryAnswer = Schema.Struct({ id: Schema.String, refusal: Schema.
 export const FoldAnswer = Schema.Struct({ folded: Schema.Number, refusal: Schema.NullOr(Schema.String) })
 
 schema MainCommitSchema { readonly sha: string; readonly change: string; readonly title: string; readonly message: string }
+
+/** A flow's run as its authorize step journals it (flowMachine.vibe `Run`). */
+const RunSchema = Schema.Struct({
+  action: Schema.Literals(ACTIONS),
+  principal: Schema.Struct({ role: Schema.Literals(ROLES), name: Schema.String, agent: Schema.Boolean }),
+  phase: Schema.Literals(["begun", "authorized", "forbidden", "recorded"]),
+  records: Schema.Number,
+})
 
 /** The history's sequencer, as the flows' steps reach it. */
 export service Stack {
@@ -64,22 +75,22 @@ export function signature(principal: Principal): string {
   return principal.agent ? `${principal.name} (agent)` : principal.name
 }
 
-/** Whether the caller may take `action`: a journaled step, so a refusal is on the record as an acceptance is. */
+/** The flow's run once the caller asked to take `action`: a journaled step, so a refusal is on the record as an acceptance is. */
 effect function authorized(action: Action) {
   const { principal } = try Caller
-  const allowed = try Step.make({ name: `vibelang/history/${action}/authorize`, success: Schema.Boolean, execute: Effect.succeed(may(principal, action)) })
-  return { principal, allowed }
+  const run: Run = try Step.make({ name: `vibelang/history/${action}/authorize`, success: RunSchema, execute: Effect.succeed(authorize(begin(action, principal))) })
+  return run
 }
 
-/** Runs `write` as the flow's journaled step when the caller may take `action`; else `forbidden`. */
+/** Runs `write` as the flow's journaled record step when the machine lets the run record; else `forbidden`. */
 effect function guarded(action: Action, write: (principal: Principal) => Answer!!) {
-  const { principal, allowed } = try authorized(action)
-  if (!allowed) {
+  const run = try authorized(action)
+  if (!canRecord(run)) {
     try counted(action, "forbidden")
     const forbidden: Answer = { id: "", refusal: "forbidden" }
     return forbidden
   }
-  const answer = try Step.make({ name: `vibelang/history/${action}/record`, success: HistoryAnswer, execute: write(principal) })
+  const answer = try Step.make({ name: `vibelang/history/${action}/record`, success: HistoryAnswer, execute: write(run.principal) })
   try counted(action, answer.refusal ?? "accepted")
   return answer
 }
@@ -164,8 +175,8 @@ export effect function approved(id: string) {
  * own journaled step, so a resumed fold never folds one twice.
  */
 export effect function folded() {
-  const { allowed } = try authorized("fold")
-  if (!allowed) {
+  let run = try authorized("fold")
+  if (!canRecord(run)) {
     try counted("fold", "forbidden")
     return { folded: 0, refusal: "forbidden" }
   }
@@ -183,7 +194,9 @@ export effect function folded() {
   }
   let count = 0
   for (const commit of read) {
+    if (!canRecord(run)) break
     const answer = try Step.make({ name: `vibelang/history/fold/${commit.sha}`, success: HistoryAnswer, execute: stack.fold(commit) })
+    run = record(run)
     if (answer.refusal === null) count++
   }
   try counted("fold", count === 0 ? "current" : "folded")

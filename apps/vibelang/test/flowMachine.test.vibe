@@ -1,0 +1,235 @@
+// The history flows' state machine (src/history/flowMachine.vibe) and the fold's target (mythical.vibe `foldTarget`),
+// as properties against an oracle written from 0020's table, then the same rules in the running code: the flows on
+// `@smthrs/engine`'s engine in memory and the real sequencer (wiki/decisions/0020-mythical-history.md, "Proofs").
+import { describe, expect, it } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { Digest } from "effect/crypto"
+import { type Action, authorize, begin, lawful, type Principal, record, type Role, type Run } from "../src/history/flowMachine.vibe"
+import { Approve, Fold, historyRegistration, MainLog, Note, Plan, Stack, Start } from "../src/history/flows.vibe"
+import { apply, type CommitState, decide, empty, foldTarget, type History, type Intent } from "../src/history/mythical.vibe"
+import { Caller } from "../src/history/roles.vibe"
+import { make, memoryStore } from "../src/history/Sequencer.vibe"
+
+// ── the oracle: 0020's "Flows and their least roles" table, written out independently of the machine ─────────────
+
+const ORDER: ReadonlyArray<Role> = ["viewer", "new", "community", "contributor", "maintainer"]
+const LEAST: Readonly<Record<Action, Role>> = {
+  show: "viewer", append: "contributor", retell: "maintainer", start: "contributor", note: "contributor",
+  approve: "maintainer", fold: "maintainer",
+}
+
+/** Whether the table lets `principal` take `action`: the agent never approves or folds. */
+function allowed(principal: Principal, action: Action): boolean {
+  if (principal.agent && (action === "approve" || action === "fold")) return false
+  return ORDER.indexOf(principal.role) >= ORDER.indexOf(LEAST[action])
+}
+
+const ActionSchema = Schema.Literals(["show", "append", "retell", "start", "note", "approve", "fold"])
+schema PrincipalSchema { readonly role: "viewer" | "new" | "community" | "contributor" | "maintainer"; readonly name: "Ada"; readonly agent: boolean }
+
+effect function holds<A, E>(arbitrary: Arbitrary.Arbitrary<A>, property: (value: A) => boolean | (boolean!E), runs = 400) {
+  const result = try Arbitrary.checkEffect(arbitrary, property, { runs })
+  try Effect.try(() => expect(Arbitrary.formatCheckFailure(result)).toBeUndefined())
+}
+
+// ── the machine ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** A flow's run as any order of steps drives it: every run it passes through, and when it was first authorized. */
+const Walk = Arbitrary.schema(Schema.Struct({
+  action: ActionSchema,
+  principal: PrincipalSchema,
+  steps: Schema.Array(Schema.Literals(["authorize", "record"])),
+}))
+
+function walk(action: Action, principal: Principal, steps: ReadonlyArray<"authorize" | "record">) {
+  const runs: Array<Run> = [begin(action, principal)]
+  for (const step of steps) {
+    const run = runs[runs.length - 1]!
+    runs.push(step === "authorize" ? authorize(run) : record(run))
+  }
+  return runs
+}
+
+describe("a history flow's steps", () => {
+  it.effect("record only after an authorize step that the table allows, and never once refused", () =>
+    holds(Walk, ({ action, principal, steps }) => {
+      const runs = walk(action, principal, steps)
+      const firstAuthorize = steps.indexOf("authorize")
+      // runs[index] is the run after steps[0 .. index - 1]: a record counted there came after the first authorize.
+      return runs.every((run, index) =>
+        run.records === 0 || (allowed(principal, action) && firstAuthorize >= 0 && firstAuthorize <= index - 2)
+      )
+    }))
+
+  it.effect("never let the agent reach Approve's or Fold's record, whatever its role", () =>
+    holds(Walk, ({ action, principal, steps }) =>
+      !(principal.agent && (action === "approve" || action === "fold")) ||
+      walk(action, principal, steps).every((run) => run.records === 0 && run.phase !== "authorized")))
+
+  it.effect("record once, but for a fold, which records each new commit of main", () =>
+    holds(Walk, ({ action, principal, steps }) => {
+      const runs = walk(action, principal, steps)
+      const last = runs[runs.length - 1]!
+      const firstAuthorize = steps.indexOf("authorize")
+      if (!allowed(principal, action) || firstAuthorize < 0) return last.records === 0
+      const after = steps.slice(firstAuthorize + 1).filter((step) => step === "record").length
+      return last.records === (action === "fold" ? after : Math.min(after, 1))
+    }))
+
+  it.effect("keep every run it reaches lawful", () =>
+    holds(Walk, ({ action, principal, steps }) => walk(action, principal, steps).every(lawful)))
+})
+
+// ── the fold's target ────────────────────────────────────────────────────────────────────────────────────────────
+
+const Id = Schema.Literals(["m1", "m2", "m3", "m4", ""])
+const Steps = Arbitrary.schema(Schema.Struct({
+  intents: Schema.Array(Schema.Union([
+    Schema.Struct({ type: Schema.Literal("Start"), id: Id, lane: Schema.Literal("lane-a") }),
+    Schema.Struct({ type: Schema.Literal("Approve"), id: Id, by: Schema.Literal("Ada") }),
+    Schema.Struct({ type: Schema.Literal("Fold"), sha: Schema.Literals(["a1", "b2", "c3", "d4"]), change: Schema.Literal(""), title: Schema.Literal("fix(compiler): x"), into: Id }),
+    Schema.Struct({ type: Schema.Literal("Amend"), id: Id, task: Schema.Literal("t") }),
+  ])),
+  trailers: Schema.Array(Id),
+}))
+
+/** Three planned commits in one epic, then `intents`, each recorded only when `decide` accepts it. */
+const PRELUDE: ReadonlyArray<Intent> = [
+  { type: "OpenEpic", id: "e1", title: "The compiler" },
+  ...["m1", "m2", "m3"].map((id): Intent => ({ type: "Plan", id, epic: "e1", before: "", title: `fix(compiler): ${id}`, task: "" })),
+]
+
+function historyOf(intents: ReadonlyArray<Intent>): History {
+  return [...PRELUDE, ...intents].reduce((history, intent) => {
+    const decision = decide(history, intent)
+    return decision.ok ? apply(history, decision.event) : history
+  }, empty)
+}
+
+function stateOf(history: History, id: string): CommitState | undefined {
+  return history.commits.find((commit) => commit.id === id)?.state
+}
+
+describe("the commit a trailer folds into", () => {
+  it.effect("is the commit it names once a person approved it or it landed, else none", () =>
+    holds(Steps, ({ intents, trailers }) => {
+      const history = historyOf(intents)
+      return trailers.every((trailer) => {
+        const state = stateOf(history, trailer)
+        const ready = trailer !== "" && (state === "approved" || state === "landed")
+        return foldTarget(history.commits, trailer) === (ready ? trailer : "")
+      })
+    }))
+})
+
+// ── the running code ─────────────────────────────────────────────────────────────────────────────────────────────
+
+const message = (id: string) => `fix(compiler): x\n\nMythical: ${id}\n`
+
+describe("the sequencer's fold", () => {
+  it.effect("folds into the commit a trailer names only after its approval; before, it appends a new commit", () => effect {
+    const sequencer = try make(try memoryStore())
+    for (const intent of [
+      { type: "OpenEpic", id: "e1", title: "The compiler" },
+      { type: "Plan", id: "m1", epic: "e1", before: "", title: "fix(compiler): one", task: "" },
+      { type: "Start", id: "m1", lane: "lane-a" },
+    ] satisfies ReadonlyArray<Intent>) try sequencer.record(intent)
+    const early = try sequencer.fold({ sha: "a1", change: "", title: "fix(compiler): early", message: message("m1") })
+    const afterEarly = try sequencer.read()
+    try sequencer.record({ type: "Approve", id: "m1", by: "Ada" })
+    const approved = try sequencer.fold({ sha: "b2", change: "", title: "fix(compiler): one", message: message("m1") })
+    const again = try sequencer.fold({ sha: "c3", change: "", title: "fix(compiler): one, side", message: message("m1") })
+    const history = try sequencer.read()
+    try Effect.try(() => {
+      expect(early).toEqual({ id: "m2", refusal: null })
+      expect(stateOf(afterEarly, "m1")).toBe("working")
+      expect(afterEarly.real.map((real) => real.mythical)).toEqual(["m2"])
+      expect([approved, again]).toEqual([{ id: "m1", refusal: null }, { id: "m1", refusal: null }])
+      expect(history.real.map((real) => real.mythical)).toEqual(["m2", "m1", "m1"])
+      expect(stateOf(history, "m1")).toBe("landed")
+    })
+  })
+
+  it.effect("never folds into an existing commit named by a trailer before that commit's approval", () =>
+    holds(Steps, ({ intents, trailers }) => effect {
+      const sequencer = try make(try memoryStore())
+      const start = historyOf(intents)
+      for (const intent of [...PRELUDE, ...intents]) try sequencer.record(intent)
+      let ok = JSON.stringify(try sequencer.read()) === JSON.stringify(start)
+      for (const [index, trailer] of trailers.entries()) {
+        const before = try sequencer.read()
+        const answer = try sequencer.fold({ sha: `f${index}`, change: "", title: "fix(compiler): x", message: message(trailer) })
+        const state = stateOf(before, trailer)
+        if (state !== undefined && answer.id === trailer && state !== "approved" && state !== "landed") ok = false
+        if (state !== undefined && (state === "approved" || state === "landed") && answer.id !== trailer) ok = false
+      }
+      return ok
+    }, 200))
+})
+
+/** A history service that fails the test if any step reaches it: every member dies. */
+const unreachable: Stack.Shape = {
+  read: () => Effect.die("read before authorization"),
+  plan: () => Effect.die("plan recorded"),
+  start: () => Effect.die("start recorded"),
+  note: () => Effect.die("note recorded"),
+  approve: () => Effect.die("approve recorded"),
+  fold: () => Effect.die("fold recorded"),
+  bootstrap: () => Effect.die("bootstrap"),
+}
+const unreadable: MainLog.Shape = { since: () => Effect.die("main read before authorization") }
+
+effect function digestOf() {
+  provide WebCrypto.layer {
+    return try Digest.Digest
+  }
+}
+
+/** The history flows on the engine in memory for `principal`, every step reaching the faulty `unreachable` stack. */
+effect function engineFor(principal: Principal) {
+  const digest = try digestOf()
+  const flows = historyRegistration.pipe(
+    Layer.provideMerge(FlowEngine.layerMemory),
+    Layer.provide(Layer.mergeAll(
+      Layer.succeed(Stack, unreachable),
+      Layer.succeed(MainLog, unreadable),
+      Layer.succeed(Caller, { principal }),
+    )),
+    Layer.provide(Layer.succeed(Digest.Digest, digest)),
+  )
+  return Context.get(try Layer.build(flows), FlowRuntime.FlowRuntime)
+}
+
+const FlowSchema = Schema.Literals(["append", "insert", "start", "note", "approve", "fold"])
+
+/** Runs one flow: `reached` when a step reached the faulty stack or main (it died), else the flow's refusal. */
+function reachedRecord(principal: Principal, flow: "append" | "insert" | "start" | "note" | "approve" | "fold", n: number) {
+  return Effect.scoped(effect {
+  const engine = try engineFor(principal)
+  const executionId = `${flow}/${n}`
+  const plan = { how: flow === "insert" ? "insert" as const : "append" as const, epic: "e1", newEpic: "", target: "m1", title: "x", task: "" }
+  const run = flow === "append" || flow === "insert" ? engine.execute(Plan, { executionId, payload: plan })
+    : flow === "start" ? engine.execute(Start, { executionId, payload: { id: "m1", lane: "lane" } })
+    : flow === "note" ? engine.execute(Note, { executionId, payload: { id: "m1", section: "tried" as const, text: "x" } })
+    : flow === "approve" ? engine.execute(Approve, { executionId, payload: { id: "m1" } })
+    : Effect.map(engine.execute(Fold, { executionId, payload: {} }), (answer) => ({ id: "", refusal: answer.refusal }))
+  const exit = try Effect.exit(run)
+  return Exit.isSuccess(exit) ? `${exit.value.refusal}` : "reached"
+  })
+}
+
+const ACTION_OF = { append: "append", insert: "retell", start: "start", note: "note", approve: "approve", fold: "fold" } as const
+
+describe("the flows as they run", () => {
+  it.effect("answer the agent's Approve and Fold forbidden without reaching the history or main", () => effect {
+    const agent: Principal = { role: "maintainer", name: "Ada", agent: true }
+    const reached = [try reachedRecord(agent, "approve", 1), try reachedRecord(agent, "fold", 2)]
+    try Effect.try(() => expect(reached).toEqual(["forbidden", "forbidden"]))
+  })
+
+  it.effect("reach a record step exactly when the table allows the caller", () =>
+    holds(Arbitrary.schema(Schema.Struct({ principal: PrincipalSchema, flow: FlowSchema })), ({ principal, flow }) =>
+      Effect.map(reachedRecord(principal, flow, 0), (outcome) => outcome === (allowed(principal, ACTION_OF[flow]) ? "reached" : "forbidden")), 60))
+})

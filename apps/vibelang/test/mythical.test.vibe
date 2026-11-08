@@ -104,6 +104,15 @@ describe("the history's sequencer", () => {
       return states.every((state, index) => index === 0 || keeps(states[index - 1]!, state))
     }))
 
+  it.effect("keeps every commit's notes as a prefix and appends at most one note to a commit per event", () =>
+    holds(intents, (list) => {
+      const { states } = run(list)
+      return states.every((state, index) => index === 0 || states[index - 1]!.commits.every((commit, at) => {
+        const now = state.commits[at]!.notes
+        return now.length <= commit.notes.length + 1 && commit.notes.every((note, k) => now[k] === note)
+      }) && state.commits.slice(states[index - 1]!.commits.length).every((commit) => commit.notes.length === 0))
+    }))
+
   it.effect("keeps the stack's order but for the commit an event plans", () =>
     holds(intents, (list) => {
       const { states, log } = run(list)
@@ -171,6 +180,25 @@ describe("planning onto the stack", () => {
     history = apply(history, (amend as { readonly event: Event }).event)
     expect(history.commits.find((commit) => commit.id === "m3")).toMatchObject({ state: "planned", task: "t9" })
     expect(decide(history, { type: "Amend", id: "m3", task: "t10" })).toEqual({ ok: false, refusal: "state" })
+  })
+
+  it("keeps every note in order as a commit is noted, worked, approved, folded and amended", () => {
+    const history = built([
+      ...base,
+      { type: "AddNote", id: "m3", section: "tried", text: "A table first.", by: "Ada" },
+      { type: "Start", id: "m3", lane: "lane-a" },
+      { type: "AddNote", id: "m3", section: "evidence", text: "Tests: 3 passed", by: "Ada (agent)" },
+      { type: "Approve", id: "m3", by: "Bea" },
+      { type: "Fold", sha: "abc", change: "", title: "fix(compiler): three", into: "m3" },
+      { type: "Amend", id: "m3", task: "t9" },
+      { type: "AddNote", id: "m3", section: "superseded", text: "Three, as first told.", by: "Bea" },
+    ])
+    expect(history.commits.find((commit) => commit.id === "m3")!.notes).toEqual([
+      { section: "tried", text: "A table first.", by: "Ada" },
+      { section: "evidence", text: "Tests: 3 passed", by: "Ada (agent)" },
+      { section: "evidence", text: "approved", by: "Bea" },
+      { section: "superseded", text: "Three, as first told.", by: "Bea" },
+    ])
   })
 
   it("refuses to approve what no lane worked, and to fold a sha twice or into nothing", () => {

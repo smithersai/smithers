@@ -129,6 +129,8 @@ export const MAX_NOTE = 1000
 //@ ensures event.seq == history.seq + 1 && event.type == "Planned" && event.title != "" && event.rank >= 0 && event.epic != "" && event.id != "" && !(exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id)) && exists(k, 0 <= k && k < history.epics.length && history.epics[k].id == event.epic) ==> \result.commits.length == history.commits.length + 1 && \result.commits[history.commits.length].id == event.id && \result.commits[history.commits.length].state == "planned"
 //@ ensures \result.real.length == history.real.length + 1 ==> event.type == "Folded" && \result.real[history.real.length].sha == event.sha && \result.real[history.real.length].mythical == event.into && \result.main == event.sha
 //@ ensures event.seq == history.seq + 1 && event.type == "Folded" && event.sha != "" && event.into != "" && !(exists(i, 0 <= i && i < history.real.length && history.real[i].sha == event.sha)) && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.into) ==> \result.real.length == history.real.length + 1
+//@ ensures forall(i, 0 <= i && i < history.commits.length ==> \result.commits[i].notes.length >= history.commits[i].notes.length && \result.commits[i].notes.length <= history.commits[i].notes.length + 1 && forall(k, 0 <= k && k < history.commits[i].notes.length ==> \result.commits[i].notes[k] == history.commits[i].notes[k]))
+//@ ensures forall(i, history.commits.length <= i && i < \result.commits.length ==> \result.commits[i].notes.length == 0)
 export function apply(history: History, event: Event): History {
   if (event.seq !== history.seq + 1) return history
   const next = { ...history, seq: event.seq }
@@ -186,31 +188,46 @@ export function apply(history: History, event: Event): History {
     case "Noted": {
       if (event.text === "" || event.by === "" || !hasCommit(history.commits, event.id)) return next
       const note: Note = { section: event.section, text: event.text, by: event.by }
-      return { ...next, commits: history.commits.map((commit) => commit.id === event.id ? { ...commit, notes: [...commit.notes, note] } : commit) }
+      return { ...next, commits: history.commits.map((commit) => commit.id === event.id ? noted(commit, note) : commit) }
     }
   }
 }
 
-/** A landed commit reopened for the task that amends it. */
+/** A landed commit reopened for the task that amends it; its notes stay as they were. */
 //@ verify
+//@ ensures \result.id == commit.id && \result.epic == commit.epic && \result.notes == commit.notes
 function amended(commit: Commit, task: string): Commit {
   return { ...commit, state: "planned", task }
 }
 
-/** A planned commit as its lane starts working it. */
+/** A planned commit as its lane starts working it; its notes stay as they were. */
 //@ verify
+//@ ensures \result.id == commit.id && \result.epic == commit.epic && \result.notes == commit.notes
 function started(commit: Commit, lane: string): Commit {
   return { ...commit, state: "working", lane }
 }
 
-/** A worked commit a person approved, with the approval in its evidence. */
+/** A worked commit a person approved, with the approval appended to its evidence: every earlier note stays. */
 //@ verify
+//@ ensures \result.id == commit.id && \result.epic == commit.epic
+//@ ensures \result.notes.length == commit.notes.length + 1 && \result.notes[commit.notes.length] == approval
+//@ ensures forall(k, 0 <= k && k < commit.notes.length ==> \result.notes[k] == commit.notes[k])
 function approved(commit: Commit, approval: Note): Commit {
   return { ...commit, state: "approved", notes: [...commit.notes, approval] }
 }
 
-/** A commit that a real commit of main folded into: landed, with no open task or lane. */
+/** A commit with `note` appended: every earlier note stays, in order. */
 //@ verify
+//@ ensures \result.id == commit.id && \result.epic == commit.epic
+//@ ensures \result.notes.length == commit.notes.length + 1 && \result.notes[commit.notes.length] == note
+//@ ensures forall(k, 0 <= k && k < commit.notes.length ==> \result.notes[k] == commit.notes[k])
+function noted(commit: Commit, note: Note): Commit {
+  return { ...commit, notes: [...commit.notes, note] }
+}
+
+/** A commit that a real commit of main folded into: landed, with no open task or lane; its notes stay as they were. */
+//@ verify
+//@ ensures \result.id == commit.id && \result.epic == commit.epic && \result.notes == commit.notes
 function landed(commit: Commit): Commit {
   return { ...commit, state: "landed", task: "", lane: "" }
 }
@@ -338,6 +355,22 @@ export function endOf(commits: ReadonlyArray<Commit>, epic: string): number {
     i++
   }
   return end
+}
+
+/**
+ * The mythical commit a real commit of main folds into when its message's `Mythical:` trailer names `trailer`: that
+ * commit once a person approved it, or once it has landed; `""` otherwise (no trailer, no such commit, or one still
+ * planned or working), and the fold appends a new commit instead. So a fold into the commit a trailer names never
+ * runs before that commit's approval (0020, "Proofs").
+ */
+//@ verify
+//@ ensures \result == "" || \result == trailer
+//@ ensures \result != "" ==> exists(j, 0 <= j && j < commits.length && commits[j].id == \result && (commits[j].state == "approved" || commits[j].state == "landed"))
+//@ ensures trailer != "" && exists(j, 0 <= j && j < commits.length && commits[j].id == trailer && (commits[j].state == "approved" || commits[j].state == "landed")) ==> \result == trailer
+export function foldTarget(commits: ReadonlyArray<Commit>, trailer: string): string {
+  if (trailer === "") return ""
+  if (isIn(commits, trailer, "approved") || isIn(commits, trailer, "landed")) return trailer
+  return ""
 }
 
 // ── decide: the sequencer ──────────────────────────────────────────────────────────────────────────────────────────

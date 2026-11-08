@@ -154,7 +154,7 @@ vibelang-factory note m5704 --section tried "A cache; it went stale."
 
 ## Proofs
 
-`pnpm verify src/history/mythical.vibe` (0005's harness) proves, for every input:
+`pnpm verify src/history/mythical.vibe src/history/flowMachine.vibe` (0005's harness) proves, for every input:
 
 1. `seq` advances by exactly one per accepted event; any other event changes nothing.
 2. **Linear:** commit ids unique; `(epic, rank)` unique; every commit's epic exists; ranks nonnegative.
@@ -162,16 +162,79 @@ vibelang-factory note m5704 --section tried "A cache; it went stale."
    index, id and epic.
 4. **Exactly one:** real shas are unique and every `real[i].mythical` names an existing commit, whose id is unique.
 5. Non-vacuity (Sol): an admitted fold appends exactly one real commit and moves `main` to it.
+6. **No note is lost or rewritten** (`apply`, with `approved`, `noted`, `amended`, `started`, `landed`): every event
+   keeps each existing commit's notes as a prefix and appends at most one; a newly planned commit has none.
+7. **Who may** (`flowMachine.vibe` `may`, which `roles.vibe` exports): the agent never approves or folds, whatever its
+   role; an approval or fold needs a maintainer; any action needs at least its least role (the table below).
+8. **Each flow's steps** (`begin`, `authorize`, `canRecord`, `record`, invariant `lawful`): a run is authorized at most
+   once; a record step changes the run only after an authorization the caller is allowed, never before it and never
+   after a refusal; only a fold records more than once. So the agent never reaches Approve's or Fold's record.
+   `flows.vibe` runs this machine: the authorize step journals `authorize(begin(action, principal))`, and every record
+   step, including each `fold/<sha>`, runs only when `canRecord` holds.
+9. **A fold never runs before its approval** (`foldTarget`, which `Sequencer.fold` calls): defined below.
 
-**Receipts (nyc-01, 2026-11-07).** `pnpm verify`: `src/history/mythical.vibe` **19 verified, 0 errors** (25.6 s;
-the whole app 5/5 files). `pnpm verify:broken myth-…`: **11/11** executable mutations of it rejected by Dafny in
-147 s, each failing a contract in its intended function (`verify/extended_mutations.py`: rank shift, id and epic
-guards, the real-commit prefix, duplicate and missing fold targets, `decide`'s numbering, its fold and approve guards,
-`hasSha`, `endOf`). `test/mythical.test.vibe`'s properties (400 runs of 32 to 82 intents) fail on five further
-mutations, each checked by hand. Two LemmaScript lowering defects found on the way are reproduced in `verify/bugs/`.
+**"A fold never runs before its approval", precisely.** The property is about the Fold flow, which maps a commit of
+`main` onto the stack. A real commit whose message carries `Mythical: m<n>` folds into `m<n>` only if `m<n>` exists
+and is `approved` (a person approved it) or already `landed` (an earlier real commit of the same approved change, such
+as a merge's side commit, landed it). Otherwise (no trailer, a trailer naming no commit, or naming one still `planned`
+or `working`) the fold appends a new mythical commit to the epic of the commit's scope and folds into that; the named
+commit is unchanged. A real commit on `main` is never dropped: it lands somewhere, but it never lands an unapproved
+commit. Two paths fold into commits no person approved, by design: the **bootstrap**, which replays main's past
+through `decide` and folds into commits it planned the step before (that past predates approval), and an
+**untrailered** real commit's own new commit, which is planned and folded at once. Before this rule, a trailer naming
+a `working` commit landed it (`test/flowMachine.test.vibe`, "folds into the commit a trailer names only after its
+approval", failed first).
+
+**Receipts (nyc-01, 2026-11-07).** `pnpm verify`: `src/history/mythical.vibe` **28 verified, 0 errors**,
+`src/history/flowMachine.vibe` **9 verified, 0 errors**; the whole app **9/9 files, 119 verified, 0 errors** (228 s). `pnpm verify:broken myth-… flow-…`:
+**25/25** executable mutations rejected by Dafny (367.9 s), each failing a contract in its intended function
+(`verify/extended_mutations.py`). The eleven earlier ones: rank shift, id and epic guards, the real-commit prefix,
+duplicate and missing fold targets, `decide`'s numbering, its fold and approve guards, `hasSha`, `endOf`. The fourteen
+new ones (128.8 s): a note that drops earlier notes, a note appended twice, an approval that drops notes, a fold that
+clears notes (`myth-note-prefix`, `myth-note-once`, `myth-approve-notes`, `myth-landed-notes`); a trailer folding into
+any existing commit, or never into a landed one (`myth-fold-target-approval`, `myth-fold-target-landed`); the agent
+allowed to approve or fold, a role one below its least allowed, a contributor approving (`flow-may-agent`,
+`flow-may-role`, `flow-least-approve`); re-authorizing a recorded run, authorizing a refused caller, recording
+before authorization or after a refusal, an uncounted record, a second record outside a fold (`flow-authorize-once`,
+`flow-authorize-refusal`, `flow-record-gate`, `flow-record-count`, `flow-can-record-once`).
+
+Property tests (Effect `Arbitrary`, VL-15) fail on each of the fourteen applied by hand. `test/mythical.test.vibe`'s
+properties (400 runs of 32 to 82 intents) check note prefixes and at most one note per event; `myth-note-prefix` is
+caught by its case test "keeps every note in order", because random intents rarely note one commit twice.
+`test/flowMachine.test.vibe` checks the machine against an oracle written from the roles table (400 random step
+orders), `foldTarget` over random histories, the real sequencer's fold (200 random runs), and the flows on the
+engine in memory: a history service and a main whose every member dies prove that a refused caller's flow reaches
+neither, and the flows reach a record step exactly when the table allows (60 random callers). Two LemmaScript
+lowering defects found earlier are reproduced in `verify/bugs/`.
 
 The proof found two bugs before any test did: `apply` accepted a plan into the epic `""` and a fold into the commit
 `""`, because the "taken" lookups count `""` as taken. Both are fixed.
+
+**What stays unproved and why.**
+
+- **Transport** (`/api/history`, Server-Sent Events, `LiveMythical`, `wire.vibe`) and the **web page**: Effect and
+  HTTP code outside LemmaScript's subset; a protocol proof belongs with roadmap 1b (TLA+), as for conversations
+  (0005). `apply` ignoring all but the next event is proved, which is what makes replay and gaps safe; delivery
+  itself is tested, not proved.
+- **The engine's durability and journal replay** (`@smthrs/engine`, the History object's SQLite and storage): the
+  machine proves what each step decides; that a journaled `Run` replays as written, and that a stored event survives,
+  is the engine's and Cloudflare's guarantee; `test/history.workerd.test.vibe` runs the flows on the live object in
+  local workerd.
+- **`Sequencer.vibe`'s Effect shell**: the lock, the store write before publication, opening an epic for an
+  untrailered fold, and title truncation. It calls the proved `decide`, `apply` and `foldTarget`; the rest is tested.
+- **`trailerOf`** (a regular expression) and **`areaOf`** (scope to epic): LemmaScript 0.6.6 can't lower a RegExp
+  (`verify/bugs/regexp.ts`); both are tested.
+- **Reading main** (`worker/MainLog.vibe`, GitHub's API): an external system; its first-parent walk is tested in
+  `test/mainLog.test.vibe`.
+- **The bootstrap** (`seed.vibe`, `scripts/mythical-seed.vibe`): its grouping is a heuristic over git history with
+  no specification to prove; every intent it emits goes through the proved `decide` and `apply`, and
+  `test/seed.test.vibe` replays the snapshot.
+- **The read pages** (`src/history/pages.vibe`: `outline`, `epic`, `commit`, `search`): Map, sort and slice
+  projections outside LemmaScript's subset; `test/pages.test.vibe`'s properties check that the pages put back
+  together equal the stack and that the outline's counts equal the history's.
+- **The git export**: not built.
+- **The roles' source** (`Caller`, decision 0019): who the caller is comes from sign-in; the proof covers what each
+  role may do, not who has it.
 
 ## Alternatives
 

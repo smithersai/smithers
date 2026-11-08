@@ -1,0 +1,147 @@
+// The mythical history's flows as a state machine (wiki/decisions/0020-mythical-history.md, "Proofs"): who may take
+// each action, and the order one run of a flow takes its journaled steps in. `flows.vibe` threads this machine's `Run`
+// through its steps, journaling what `authorize` answers and gating every record step on `canRecord`, so the proof
+// covers the steps that run, not a model beside them.
+//
+//   begun ──authorize──▶ authorized ──record──▶ recorded ──record (Fold only: one per commit of main)──▶ recorded
+//        └────────────▶ forbidden          (record changes nothing; authorize happens once)
+//
+// VibeLang in LemmaScript's verifiable subset, as mythical.vibe: TypeScript syntax with no Effect code, so `pnpm verify`
+// proves this file's own text (0005). Every function is total.
+
+/** The project's roles, least first (VL-21). */
+export type Role = "viewer" | "new" | "community" | "contributor" | "maintainer"
+
+/**
+ * What a person or the agent can do with the mythical history. The bootstrap is no one's: its host runs it once, on
+ * first start, and no request reaches it.
+ */
+export type Action = "show" | "append" | "retell" | "start" | "note" | "approve" | "fold"
+
+/** Who asks: their role, the name notes carry, and whether the agent acts for them. */
+export interface Principal {
+  readonly role: Role
+  readonly name: string
+  readonly agent: boolean
+}
+
+/** A role's place in the order, least first: `viewer` is 0, `maintainer` 4. */
+//@ verify
+//@ ensures 0 <= \result && \result <= 4
+export function standing(role: Role): number {
+  switch (role) {
+    case "viewer": return 0
+    case "new": return 1
+    case "community": return 2
+    case "contributor": return 3
+    case "maintainer": return 4
+  }
+}
+
+/**
+ * Each action's least role. Appending adds to the story; retelling (an insert or an amend) changes where others'
+ * work sits or what it says, so it is a maintainer's.
+ */
+//@ verify
+//@ ensures action == "approve" || action == "fold" || action == "retell" ==> \result == "maintainer"
+//@ ensures action == "show" ==> \result == "viewer"
+export function leastRole(action: Action): Role {
+  switch (action) {
+    case "show": return "viewer"
+    case "append": return "contributor"
+    case "retell": return "maintainer"
+    case "start": return "contributor"
+    case "note": return "contributor"
+    case "approve": return "maintainer"
+    case "fold": return "maintainer"
+  }
+}
+
+/** Actions only a person takes: people approve; the agent never does, and never folds what landed. */
+//@ verify
+//@ ensures \result == (action == "approve" || action == "fold")
+export function peopleOnly(action: Action): boolean {
+  return action === "approve" || action === "fold"
+}
+
+/** Whether `principal` may take `action`: never the agent for a person-only action, else at least its least role. */
+//@ verify
+//@ ensures \result == (!(principal.agent && peopleOnly(action)) && standing(principal.role) >= standing(leastRole(action)))
+//@ ensures principal.agent && (action == "approve" || action == "fold") ==> !\result
+//@ ensures \result && (action == "approve" || action == "fold") ==> principal.role == "maintainer"
+export function may(principal: Principal, action: Action): boolean {
+  if (principal.agent && peopleOnly(action)) return false
+  return standing(principal.role) >= standing(leastRole(action))
+}
+
+/** Where one run of a history flow is. */
+export type Phase = "begun" | "authorized" | "forbidden" | "recorded"
+
+/** One run of a history flow: its action, who runs it, where it is, and how many record steps it has taken. */
+export interface Run {
+  readonly action: Action
+  readonly principal: Principal
+  readonly phase: Phase
+  readonly records: number
+}
+
+/** A run as its flow begins: nothing authorized, nothing recorded. */
+//@ verify
+//@ ensures \result.action == action && \result.principal == principal && \result.phase == "begun" && \result.records == 0
+//@ ensures lawful(\result)
+export function begin(action: Action, principal: Principal): Run {
+  return { action, principal, phase: "begun", records: 0 }
+}
+
+/**
+ * The authorize step: a run that has begun becomes `authorized` when its principal may take its action, else
+ * `forbidden`. Any other run is unchanged, so a run is authorized at most once and a refusal is final.
+ */
+//@ verify
+//@ ensures run.phase != "begun" ==> \result == run
+//@ ensures \result.action == run.action && \result.principal == run.principal && \result.records == run.records
+//@ ensures run.phase == "begun" ==> (\result.phase == "authorized" || \result.phase == "forbidden")
+//@ ensures run.phase == "begun" ==> ((\result.phase == "authorized") == may(run.principal, run.action))
+//@ ensures lawful(run) ==> lawful(\result)
+export function authorize(run: Run): Run {
+  if (run.phase !== "begun") return run
+  const phase: Phase = may(run.principal, run.action) ? "authorized" : "forbidden"
+  return { ...run, phase }
+}
+
+/**
+ * Whether the run's record step may run now: once authorized, never before and never after a refusal, and once only,
+ * but for a fold, which records each new commit of main.
+ */
+//@ verify
+//@ ensures \result == (run.phase == "authorized" || (run.phase == "recorded" && run.action == "fold"))
+export function canRecord(run: Run): boolean {
+  return run.phase === "authorized" || (run.phase === "recorded" && run.action === "fold")
+}
+
+/** The record step: taken only when `canRecord`; otherwise the run is unchanged. */
+//@ verify
+//@ ensures !canRecord(run) ==> \result == run
+//@ ensures canRecord(run) ==> \result.phase == "recorded" && \result.records == run.records + 1
+//@ ensures \result.action == run.action && \result.principal == run.principal
+//@ ensures lawful(run) ==> lawful(\result)
+export function record(run: Run): Run {
+  if (!canRecord(run)) return run
+  return { ...run, phase: "recorded", records: run.records + 1 }
+}
+
+/**
+ * What every run reachable from `begin` through `authorize` and `record` keeps: it has recorded exactly when it is
+ * `recorded`; it is authorized or recorded only for a principal who may take its action; and only a fold records more
+ * than once. So a record step never runs before its authorization or after a refusal, and the agent never reaches
+ * Approve's or Fold's record.
+ */
+//@ verify
+//@ ensures \result == (run.records >= 0 && (run.phase == "recorded") == (run.records > 0) && ((run.phase == "authorized" || run.phase == "recorded") ==> may(run.principal, run.action)) && (run.action != "fold" ==> run.records <= 1))
+//@ ensures \result && run.records > 0 ==> may(run.principal, run.action)
+//@ ensures \result && run.principal.agent && (run.action == "approve" || run.action == "fold") ==> run.records == 0 && run.phase != "authorized"
+export function lawful(run: Run): boolean {
+  if (run.records < 0 || (run.phase === "recorded") !== (run.records > 0)) return false
+  if ((run.phase === "authorized" || run.phase === "recorded") && !may(run.principal, run.action)) return false
+  return run.action === "fold" || run.records <= 1
+}
