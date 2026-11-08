@@ -2671,9 +2671,6 @@ importers:
       '@smthrs/registry':
         specifier: 1.0.0-rc.16
         version: link:../registry
-      vibelang-runtime:
-        specifier: file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.13-89b143f8885a.tgz
-        version: file:.vibelang-toolchain/vibelang-runtime-0.0.13-89b143f8885a.tgz(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1))(@effect/platform-bun@4.1.1(effect@4.1.1))(@effect/platform-node@4.1.1(effect@4.1.1)(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1)
     devDependencies:
       '@effect/language-service':
         specifier: 0.87.2
@@ -3994,9 +3991,6 @@ importers:
       '@smthrs/plan':
         specifier: 1.0.0-rc.16
         version: link:../plan
-      vibelang-runtime:
-        specifier: file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.13-89b143f8885a.tgz
-        version: file:.vibelang-toolchain/vibelang-runtime-0.0.13-89b143f8885a.tgz(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1))(@effect/platform-bun@4.1.1(effect@4.1.1))(@effect/platform-node@4.1.1(effect@4.1.1)(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1)
       yaml:
         specifier: 2.9.0
         version: 2.9.0
@@ -4929,9 +4923,6 @@ importers:
       '@smthrs/plan':
         specifier: 1.0.0-rc.16
         version: link:../plan
-      vibelang-runtime:
-        specifier: file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.13-89b143f8885a.tgz
-        version: file:.vibelang-toolchain/vibelang-runtime-0.0.13-89b143f8885a.tgz(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1))(@effect/platform-bun@4.1.1(effect@4.1.1))(@effect/platform-node@4.1.1(effect@4.1.1)(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1)
     devDependencies:
       '@effect/language-service':
         specifier: 0.87.2
@@ -6163,9 +6154,6 @@ importers:
       undici:
         specifier: 8.11.2
         version: 8.11.2
-      vibelang-runtime:
-        specifier: file:../../../.vibelang-toolchain/vibelang-runtime-0.0.13-89b143f8885a.tgz
-        version: file:.vibelang-toolchain/vibelang-runtime-0.0.13-89b143f8885a.tgz(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1))(@effect/platform-bun@4.1.1(effect@4.1.1))(@effect/platform-node@4.1.1(effect@4.1.1)(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1)
       ws:
         specifier: 8.22.0
         version: 8.22.0
