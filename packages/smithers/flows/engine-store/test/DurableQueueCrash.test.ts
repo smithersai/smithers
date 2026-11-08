@@ -11,7 +11,7 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
  *
  * Two workers stand for two processes: each runs over its own engine incarnation on one SQLite file, and the queue
  * is the SQL `PersistedQueue` store in that file. The completion store's failures are the engine runtime's own
- * `deferredDone`, wrapped; the first worker's death is the interruption of its fiber. Nothing is mocked.
+ * `deferredDone`, wrapped; a worker's death interrupts its fiber and closes its engine before replacement. Nothing is mocked.
  */
 import { Action, DurableQueue, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
@@ -26,7 +26,7 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as PersistedQueue from "effect/persistence/PersistedQueue"
 import * as Schema from "effect/Schema"
-import type * as Scope from "effect/Scope"
+import * as Scope from "effect/Scope"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -204,13 +204,18 @@ describe("DurableQueue on the durable engine", () => {
     run(Effect.gen(function*() {
       const observed: Observed = { handled: [], writes: [] }
       const parked = yield* Deferred.make<void>()
-      const dying = yield* incarnation(first, observed, { parkCompletion: parked })
+      const dyingScope = yield* Effect.acquireRelease(Scope.make(), (scope) => Scope.close(scope, Exit.void))
+      const dying = yield* incarnation(first, observed, { parkCompletion: parked }).pipe(
+        Effect.provideService(Scope.Scope, dyingScope)
+      )
       const runtime = Context.get(dying as Context.Context<FlowRuntime.FlowRuntime>, FlowRuntime.FlowRuntime)
       const dead = yield* worker(dying, first, observed)
       yield* runtime.execute(Caller, { executionId: "recorded", payload: { id: "recorded", value: 41 }, discard: true })
       yield* Deferred.await(parked)
       // The first worker dies while recording the completion, after the handler's exit was recorded.
       yield* Fiber.interrupt(dead)
+      // The single-instance liveness check is valid only after the old engine has stopped.
+      yield* Scope.close(dyingScope, Exit.void)
 
       const next = yield* incarnation(second, observed)
       yield* worker(next, second, observed)
@@ -223,7 +228,8 @@ describe("DurableQueue on the durable engine", () => {
     run(Effect.gen(function*() {
       const observed: Observed = { handled: [], writes: [] }
       const entered = yield* Deferred.make<void>()
-      const dying = yield* incarnation(first, observed)
+      const dyingScope = yield* Effect.acquireRelease(Scope.make(), (scope) => Scope.close(scope, Exit.void))
+      const dying = yield* incarnation(first, observed).pipe(Effect.provideService(Scope.Scope, dyingScope))
       const runtime = Context.get(dying as Context.Context<FlowRuntime.FlowRuntime>, FlowRuntime.FlowRuntime)
       const dead = yield* worker(
         dying,
@@ -234,6 +240,8 @@ describe("DurableQueue on the durable engine", () => {
       yield* runtime.execute(Caller, { executionId: "died", payload: { id: "died", value: 41 }, discard: true })
       yield* Deferred.await(entered)
       yield* Fiber.interrupt(dead)
+      // The single-instance liveness check is valid only after the old engine has stopped.
+      yield* Scope.close(dyingScope, Exit.void)
 
       const next = yield* incarnation(second, observed)
       yield* worker(next, second, observed)

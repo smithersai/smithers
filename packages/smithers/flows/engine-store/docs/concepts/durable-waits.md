@@ -207,3 +207,23 @@ Hosted wake publication records readiness and notifies the host, but never
 starts an idle or stopping drain. Only an active, non-stopping drive coalesces
 a wake. Registration recovery and signal delivery therefore cannot execute
 steps before the host applies admission, cancellation and its drive budget.
+
+## Resuming from a control runtime
+
+An explicit `FlowRuntime.resume` persists a wake even when the caller has no
+registration for the flow. The same applies to an authorized delegated resume.
+The caller can close its runtime before the host's next drive: `EngineStore.nextWake`
+and a polling resume still see the request. A request arriving while a running body
+is finishing its suspension survives the transition into its timer park.
+
+The wake uses the existing durable completion table, named by the committed
+resume decision's journal sequence. Its admission and consumption are journalled
+with the row changes, so restore preserves them. Activation consumes the request
+once; a flow that parks again does not spin, and a later request at the same clock
+instant gets its own wake. Cancellation and terminal runs remain terminal, and a
+delegated resume still cannot clear a quarantine park. Hosts remain responsible
+for arranging their next invocation after delivering the control request.
+
+`test/HostedEngine.test.ts` covers separate runtimes over a persistent database,
+both sides of the parking transition, repeated requests on a fixed TestClock, and
+rebuilding the admission and consumption records from the journal.

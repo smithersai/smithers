@@ -803,6 +803,7 @@ const recordResume = (
  * another process whose suspended execution discovers it by polling.
  */
 const parentWakePrefix = "@smthrs/engine/parent-settled/"
+const controlWakePrefix = "@smthrs/engine/control-resume/"
 
 const recordParentResume = (driver: Driver, parentExecutionId: string, childExecutionId: string): Effect.Effect<void> =>
   Effect.gen(function*() {
@@ -2805,11 +2806,26 @@ const enterRunning = (
     return activeState
   })
 
-/** Activation consumes child and clock wakes; their durable results remain readable by later awaits. */
+/** Activation consumes control, child and clock wakes; durable results remain readable by later awaits. */
 const consumeActivationWakes = (driver: Driver, flowName: string, executionId: string): Effect.Effect<void> =>
   Effect.gen(function*() {
     for (const wake of yield* driver.engineState.completedDeferreds(flowName, executionId)) {
-      if (wake.deferredName.startsWith(parentWakePrefix) || wake.deferredName.startsWith("DurableClock/")) {
+      if (wake.deferredName.startsWith(controlWakePrefix)) {
+        // Keep the completion fold consistent with the row, even if this activation dies before its body starts.
+        yield* driver.transactState(
+          Effect.gen(function*() {
+            const consumedAtMs = yield* Clock.currentTimeMillis
+            if (!(yield* driver.engineState.consumeDeferred(wake, consumedAtMs))) return
+            yield* driver.journal.emitDurableUnfenced(JournalRecords.deferredConsumed({
+              runId: executionId,
+              lineageId: FlowEngine.Lineage.root(executionId),
+              sourceId: `${driver.dependencies.journalSource}:control-consumed:${wake.deferredName}`,
+              sourceSeq: 0
+            }, { ...wake, consumedAtMs })).pipe(Effect.orDie)
+          }),
+          { partition: executionId }
+        ).pipe(Effect.orDie)
+      } else if (wake.deferredName.startsWith(parentWakePrefix) || wake.deferredName.startsWith("DurableClock/")) {
         yield* driver.engineState.consumeDeferred(wake, yield* Clock.currentTimeMillis)
       }
     }
@@ -4507,10 +4523,36 @@ const recordWake = (
         // queued drive cannot consume quarantined evidence before consent.
         yield* driver.engineState.wake(executionId)
       }
-      yield* emitDecision(driver, executionId, {
+      const receipt = yield* driver.journal.emitDurableUnfenced(decisionRecord(driver, executionId, {
         decision: "wake-scheduled",
         reason
-      }, sourceId)
+      }, sourceId ?? driver.dependencies.journalSource)).pipe(Effect.orDie)
+      if (reason === "operator" || reason === "delegated") {
+        // A control runtime may not register this flow, and may leave before the running body finishes parking.
+        // Keep the wake in the existing durable completion table until the next activation consumes it. The
+        // committed decision sequence distinguishes later requests even at the same clock instant.
+        const completion = yield* driver.engineState.completeDeferred({
+          flowName,
+          executionId,
+          deferredName: controlWakePrefix + receipt.seq,
+          exit: { _tag: "Success", value: null },
+          completedAtMs: yield* Clock.currentTimeMillis
+        })
+        const wake = completion.row
+        yield* driver.journal.emitDurableUnfenced(JournalRecords.deferredCompleted({
+          runId: executionId,
+          lineageId: FlowEngine.Lineage.root(executionId),
+          sourceId: `${driver.dependencies.journalSource}:control-completed:${wake.deferredName}`,
+          sourceSeq: 0
+        }, {
+          flowName: wake.flowName,
+          executionId: wake.executionId,
+          deferredName: wake.deferredName,
+          completedAtMs: wake.completedAtMs,
+          exitDigest: completion.digest.exit,
+          metadataDigest: completion.digest.metadata
+        })).pipe(Effect.orDie)
+      }
       return { parked: row.status === "suspended" }
     }),
     { partition: executionId }

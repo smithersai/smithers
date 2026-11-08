@@ -32,6 +32,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import * as DeferredClockFold from "../src/DeferredClockFold.ts"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as EngineStore from "../src/EngineStore.ts"
 import * as RunDriver from "../src/internal/RunDriver.ts"
@@ -162,6 +163,97 @@ describe("registration under a hosted sweep", () => {
       )
       expect(theirs).toBe("completed")
     })))
+})
+
+describe("operator resume from an unregistered control runtime", () => {
+  it.each([
+    { duringPark: false, delegated: false },
+    { duringPark: true, delegated: false },
+    { duringPark: false, delegated: true },
+    { duringPark: true, delegated: true }
+  ])(
+    "survives timer parking and is consumed once (duringPark=$duringPark, delegated=$delegated)",
+    ({ duringPark, delegated }) =>
+      run(Effect.gen(function*() {
+        const executionId = "operator-wake"
+        const flow = Flow.make("HostedEngine/OperatorWake", {
+          payload: {},
+          success: Schema.String,
+          body: opaqueHandlerBody
+        })
+        const parking = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        let starts = 0
+        let finished = false
+        const registered = (owner: Ownership.OwnerId) =>
+          Layer.effectDiscard(Effect.flatMap(FlowRuntime.FlowRuntime, (runtime) =>
+            runtime.register(flow, () =>
+              Effect.gen(function*() {
+                starts++
+                if (finished) return "ended"
+                yield* DurableClock.sleep({ name: "reading", duration: "10 minutes", inMemoryThreshold: 0 }).pipe(
+                  Effect.ensuring(Effect.gen(function*() {
+                    if (!duringPark || starts !== 1) return
+                    yield* Deferred.succeed(parking, undefined)
+                    yield* Deferred.await(release)
+                  }))
+                )
+                return "read"
+              })))).pipe(Layer.provideMerge(engine(filename, owner, { host: executionId, flow: flow._tag })))
+        const control = Effect.scoped(
+          Effect.gen(function*() {
+            // This runtime has no handler and goes away before the next alarm.
+            yield* (yield* FlowRuntime.FlowRuntime).resume(flow, executionId, { delegated })
+          }).pipe(Effect.provide(engine(filename, second, { host: executionId, flow: flow._tag })))
+        )
+        const drive = (owner: Ownership.OwnerId) =>
+          Effect.scoped(
+            EngineStore.drive(flow, { executionId, payload: {} }).pipe(Effect.provide(registered(owner)))
+          )
+        if (duringPark) {
+          const firstDrive = yield* Effect.forkChild(drive(first))
+          yield* Deferred.await(parking)
+          expect(yield* statusOf(executionId).pipe(Effect.provide(TestStores.layerAt(filename)))).toBe("running")
+          yield* control
+          yield* Deferred.succeed(release, undefined)
+          yield* Fiber.join(firstDrive)
+        } else {
+          expect(yield* drive(first)).toMatchObject({ _tag: "Parked", wakeAtMs: 600_000 })
+          yield* control
+        }
+        if (!duringPark) {
+          expect(yield* EngineStore.nextWake(executionId).pipe(Effect.provide(TestStores.layerAt(filename))))
+            .toEqual(Option.some(0))
+          expect(yield* drive(second)).toMatchObject({ _tag: "Parked", wakeAtMs: 600_000 })
+        }
+        // An active hosted drive takes up the boundary wake before returning; an idle one takes its next alarm.
+        // Either way one wake buys one re-drive, not a spin until the timer is due.
+        expect(starts).toBe(2)
+        expect(yield* EngineStore.nextWake(executionId).pipe(Effect.provide(TestStores.layerAt(filename))))
+          .toEqual(Option.some(600_000))
+        // A later request at the SAME TestClock instant must still get a new wake.
+        finished = true
+        yield* control
+        expect(yield* drive(second)).toEqual({ _tag: "Settled", status: "completed" })
+        expect(starts).toBe(3)
+        // Restore must preserve both wake admissions and their consumption, not resurrect a spent control request.
+        yield* Effect.scoped(
+          Effect.gen(function*() {
+            const sql = yield* SqlClient.SqlClient
+            const rows = sql`SELECT deferred_name, completed_at_ms, consumed_at_ms FROM flows_deferred_completions
+          WHERE execution_id = ${executionId} ORDER BY deferred_name`
+            const before = yield* rows
+            expect(before).toHaveLength(2)
+            expect(before.every((row) =>
+              row.consumed_at_ms !== null
+            )).toBe(true)
+            yield* sql`UPDATE flows_deferred_completions SET consumed_at_ms = NULL WHERE execution_id = ${executionId}`
+            yield* DeferredClockFold.rebuild()
+            expect(yield* rows).toEqual(before)
+          }).pipe(Effect.provide(TestStores.layerAt(filename)))
+        )
+      }))
+  )
 })
 
 // Kept catalog-scaling benchmark: real store, 32 registrations, one hosted flow.

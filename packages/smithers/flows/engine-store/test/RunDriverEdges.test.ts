@@ -688,6 +688,43 @@ describe("RunDriver requestResume", () => {
       yield* store.transitionOwned(runId, owner, "suspended", undefined)
     })
 
+  it.effect("does not journal a second consumption when a peer consumed an enumerated control wake", () =>
+    withCrypto(provideJournal(Effect.gen(function*() {
+      const state = yield* DurableEngineState.DurableEngineState
+      const journal = yield* Journal.Journal
+      const store = yield* RunStore.RunStore
+      const executionId = "control-wake-consumption-race"
+      yield* store.create(executionId, stateJson(EdgeFlow._tag))
+      let raced = 0
+      const driver = yield* makeDriver().pipe(Effect.provideService(DurableEngineState.DurableEngineState, {
+        ...state,
+        completedDeferreds: (flowName, id) =>
+          Effect.gen(function*() {
+            const wakes = yield* state.completedDeferreds(flowName, id)
+            for (const wake of wakes) {
+              if (!wake.deferredName.startsWith("@smthrs/engine/control-resume/")) continue
+              // Faulty service delivers a stale enumeration: a peer committed consumption before the caller's CAS.
+              if (!(yield* state.consumeDeferred(wake, 0))) continue
+              raced++
+              yield* journal.emitDurableUnfenced(JournalRecords.deferredConsumed({
+                runId: executionId,
+                lineageId: FlowEngine.Lineage.root(executionId),
+                sourceId: "peer-control-consumption",
+                sourceSeq: 0
+              }, { ...wake, consumedAtMs: 0 })).pipe(Effect.orDie)
+            }
+            return wakes
+          })
+      }))
+      yield* driver.scheduleResume(EdgeFlow._tag, executionId, "operator")
+      yield* driver.register(EdgeFlow, () => Effect.succeed("done"))
+      yield* driver.resume(EdgeFlow, executionId, { poll: true })
+      expect((yield* store.get(executionId)).status).toBe("completed")
+      expect(raced).toBe(1)
+      const entries = yield* JournalRecords.entries(executionId, undefined, 100)
+      expect(entries.entries.filter((entry) => entry.eventType === "flows.engine.deferred-consumed")).toHaveLength(1)
+    }))))
+
   it.effect("reports every scheduled wake for a parked run, and never the operator's own", () =>
     Effect.gen(function*() {
       const result = yield* withCrypto(provideJournal(Effect.gen(function*() {
