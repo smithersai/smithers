@@ -13,7 +13,7 @@
  */
 
 import { type ModelPrice, modelPrices } from "./internal/prices.generated.ts"
-import type * as ModelEvent from "./ModelEvent.vibe"
+import type * as ModelEvent from "./ModelEvent.ts"
 
 /**
  * USD per million tokens for each token class a provider reports.

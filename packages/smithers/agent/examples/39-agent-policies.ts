@@ -28,13 +28,17 @@ import type * as Route from "@smthrs/model/Route"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Registry from "@smthrs/registry/Registry"
 import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
+import * as Layer from "effect/Layer"
+import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
+import * as Stream from "effect/Stream"
 
 /** The declared answer shape. Nothing downstream parses model text. */
-schema Review {
-  approved: boolean
-  issues: ReadonlyArray<string>
-}
+const Review = Schema.Struct({
+  approved: Schema.Boolean,
+  issues: Schema.Array(Schema.String)
+})
 
 /**
  * The step. `corrections: 1` says one re-prompt, and the re-prompt repeats the
@@ -171,14 +175,15 @@ const engine = (filename: string, hostId: string, calls: Array<string>) =>
   )
 
 /** Waits for the parked run to appear in the operator's own view of waits. */
-const waitForPark = effect (state: DurableEngineState.Service) => {
-  for (let poll = 0; poll < 400; poll++) {
-    const rows = try state.waitingRuns({ reason: "quota" })
-    if (rows.length > 0) return rows
-    try Effect.sleep("10 millis")
-  }
-  return try state.waitingRuns({ reason: "quota" })
-}
+const waitForPark = (state: DurableEngineState.Service) =>
+  Effect.gen(function*() {
+    for (let poll = 0; poll < 400; poll++) {
+      const rows = yield* state.waitingRuns({ reason: "quota" })
+      if (rows.length > 0) return rows
+      yield* Effect.sleep("10 millis")
+    }
+    return yield* state.waitingRuns({ reason: "quota" })
+  })
 
 /** What the run left behind, read back from its own durable trail. */
 export interface Summary {
@@ -193,32 +198,33 @@ export interface Summary {
 
 const executionId = "policy-review-1"
 
-export const main = (filename: string): Summary!! =>
-  effect {
+export const main = (filename: string): Effect.Effect<Summary> =>
+  Effect.gen(function*() {
     const calls: Array<string> = []
 
     // Phase one: the provider refuses, the run parks under the quota reason,
     // and the engine is then killed while the run is still waiting.
-    const waiting = try Effect.scoped(
-      (effect {
-        const state = try DurableEngineState.DurableEngineState
-        const running = try (ReviewFlow.execute({ diff: "-  old\n+  new" }, { executionId })
-          |> Effect.forkChild({ startImmediately: true })(%))
-        const rows = try waitForPark(state)
-        try Fiber.interrupt(running)
+    const waiting = yield* Effect.scoped(
+      Effect.gen(function*() {
+        const state = yield* DurableEngineState.DurableEngineState
+        const running = yield* ReviewFlow.execute({ diff: "-  old\n+  new" }, { executionId }).pipe(
+          Effect.forkChild({ startImmediately: true })
+        )
+        const rows = yield* waitForPark(state)
+        yield* Fiber.interrupt(running)
         return rows
-      }) |> Effect.provide(%, engine(filename, "worker-a", calls))
+      }).pipe(Effect.provide(engine(filename, "worker-a", calls)))
     )
     const callsBeforeTheRestart = calls.length
 
     // Phase two: a second engine over the same file waits out the deadline the
     // first one recorded, spends the correction, and finishes the run.
-    const finished = try Effect.scoped(
-      (effect {
-        const review = try ReviewFlow.execute({ diff: "-  old\n+  new" }, { executionId })
-        const journal = try Journal.Journal
-        try journal.flush
-        const page = try journal.entries({ runId: executionId as JournalEvent.RunId, limit: 500 })
+    const finished = yield* Effect.scoped(
+      Effect.gen(function*() {
+        const review = yield* ReviewFlow.execute({ diff: "-  old\n+  new" }, { executionId })
+        const journal = yield* Journal.Journal
+        yield* journal.flush
+        const page = yield* journal.entries({ runId: executionId as JournalEvent.RunId, limit: 500 })
         const count = (eventType: string) => page.entries.filter((entry) => entry.eventType === eventType).length
         return {
           review,
@@ -226,7 +232,7 @@ export const main = (filename: string): Summary!! =>
           corrections: count(AgentAction.structuredOutputRejectedEvent),
           budgetWarnings: count(Budget.budgetWarningEvent)
         }
-      }) |> Effect.provide(%, engine(filename, "worker-b", calls))
+      }).pipe(Effect.provide(engine(filename, "worker-b", calls)))
     )
 
     return {
@@ -235,4 +241,4 @@ export const main = (filename: string): Summary!! =>
       callsBeforeTheRestart,
       wakeAt: waiting[0]?.wakeAt ?? 0
     }
-  } |> Effect.orDie(%)
+  }).pipe(Effect.orDie)

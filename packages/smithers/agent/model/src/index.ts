@@ -84,7 +84,7 @@ export * as ModelError from "./ModelError.vibe"
  * @since 0.1.0
  * @slop
  */
-export * as ModelEvent from "./ModelEvent.vibe"
+export * as ModelEvent from "./ModelEvent.ts"
 
 /**
  * @since 1.0.0

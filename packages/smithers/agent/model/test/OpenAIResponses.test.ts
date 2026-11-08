@@ -2,7 +2,7 @@ import { Effect, Schema } from "effect"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as CanonicalJson from "../src/CanonicalJson.ts"
-import * as Events from "../src/ModelEvent.vibe"
+import * as Events from "../src/ModelEvent.ts"
 import * as Request from "../src/ModelRequest.ts"
 import * as OpenAIResponses from "../src/OpenAIResponses.ts"
 

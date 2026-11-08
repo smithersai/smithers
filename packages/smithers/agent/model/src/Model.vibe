@@ -14,7 +14,7 @@ import { Context, Effect, Layer, Stream } from "effect"
 import * as CallTiming from "./internal/CallTiming.vibe"
 import type { ModelError } from "./ModelError.vibe"
 import { ModelError as ModelErrorClass } from "./ModelError.vibe"
-import type { ModelEvent, Usage } from "./ModelEvent.vibe"
+import type { ModelEvent, Usage } from "./ModelEvent.ts"
 import type { ModelRequest } from "./ModelRequest.ts"
 import * as Pricing from "./Pricing.vibe"
 

@@ -10,7 +10,7 @@ import * as DeferredTools from "./DeferredTools.ts"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
 import * as ModelCatalog from "./ModelCatalog.ts"
 import { ModelError, type ModelErrorCode } from "./ModelError.vibe"
-import { ModelEvent, type Usage } from "./ModelEvent.vibe"
+import { ModelEvent, type Usage } from "./ModelEvent.ts"
 import {
   JsonObject,
   type Message,

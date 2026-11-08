@@ -10,7 +10,7 @@ import * as CanonicalJson from "./CanonicalJson.ts"
 import * as DeferredTools from "./DeferredTools.ts"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
 import { ModelError } from "./ModelError.vibe"
-import * as ModelEvent from "./ModelEvent.vibe"
+import * as ModelEvent from "./ModelEvent.ts"
 import {
   JsonObject,
   type Message,

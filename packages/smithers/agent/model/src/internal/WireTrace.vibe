@@ -22,7 +22,7 @@
  */
 
 import * as CanonicalJson from "../CanonicalJson.ts"
-import type { Timing, Usage } from "../ModelEvent.vibe"
+import type { Timing, Usage } from "../ModelEvent.ts"
 import type * as Sink from "../WireTrace.vibe"
 
 interface Traced {

@@ -51,7 +51,7 @@ import * as FailureCopy from "./FailureCopy.vibe"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
 import * as Model from "./Model.vibe"
 import { faults, ModelError, ModelErrorCode } from "./ModelError.vibe"
-import { ModelEvent, type Usage } from "./ModelEvent.vibe"
+import { ModelEvent, type Usage } from "./ModelEvent.ts"
 import { ModelRequest } from "./ModelRequest.ts"
 import type { PreparedRequest } from "./Route.ts"
 

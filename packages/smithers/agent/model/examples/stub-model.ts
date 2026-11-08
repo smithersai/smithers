@@ -5,6 +5,7 @@
  * the quickstart's "Run a stub model" step; `test/examples.test.ts` runs it.
  */
 import { Model, ModelEvent, ModelRequest, Pricing } from "@smthrs/model"
+import { Effect, Stream } from "effect"
 
 const request = ModelRequest.ModelRequest.make({
   modelId: "claude-sonnet-4-5",
@@ -27,13 +28,13 @@ const stub = Model.layer({
 
 /** Streams the request through the stub and returns the reply, its stop reason, and its cost. */
 export const runStubModel = () =>
-  (effect {
-    const model = try Model.Model
-    const events = try Stream.runCollect(model.stream(request))
+  Effect.gen(function*() {
+    const model = yield* Model.Model
+    const events = yield* Stream.runCollect(model.stream(request))
     const { message, usage } = ModelEvent.settledMessage(events)
     return {
       content: message.content,
       stopReason: message.stopReason,
       cost: Pricing.cost(usage, request.modelId)
     }
-  }) |> Effect.provide(%, stub) |> Effect.runPromise(%)
+  }).pipe(Effect.provide(stub), Effect.runPromise)

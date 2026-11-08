@@ -19,7 +19,7 @@ import { describe, expect, it } from "vitest"
 import * as FailureCopy from "../src/FailureCopy.vibe"
 import * as Model from "../src/Model.vibe"
 import { ModelError } from "../src/ModelError.vibe"
-import { ModelEvent } from "../src/ModelEvent.vibe"
+import { ModelEvent } from "../src/ModelEvent.ts"
 import * as ModelProxy from "../src/ModelProxy.ts"
 import { GenerationParams, Message, ModelRequest, SystemPart, ToolDefinition } from "../src/ModelRequest.ts"
 

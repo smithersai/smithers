@@ -15,7 +15,7 @@ import { SpanFailure } from "@smthrs/flow"
 import { Effect, Option, Schema } from "effect"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
 import { ModelError } from "./ModelError.vibe"
-import * as ModelEvent from "./ModelEvent.vibe"
+import * as ModelEvent from "./ModelEvent.ts"
 import {
   JsonObject,
   type Message,

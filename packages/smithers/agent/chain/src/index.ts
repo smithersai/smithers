@@ -90,7 +90,7 @@ export * as MemoryEntries from "./MemoryEntries.ts"
  * @since 0.1.0
  * @slop
  */
-export * as ModelAuthor from "./ModelAuthor.vibe"
+export * as ModelAuthor from "./ModelAuthor.ts"
 
 /**
  * The append-only journal port and its in-memory layer.

@@ -32,7 +32,7 @@ import * as Endpoint from "./Endpoint.ts"
 import * as CallTiming from "./internal/CallTiming.vibe"
 import type * as Model from "./Model.vibe"
 import { ModelError } from "./ModelError.vibe"
-import * as ModelEvent from "./ModelEvent.vibe"
+import * as ModelEvent from "./ModelEvent.ts"
 import { ModelRequest } from "./ModelRequest.ts"
 
 /**

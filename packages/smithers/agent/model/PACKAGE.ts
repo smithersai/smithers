@@ -152,7 +152,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/ToolStream.vibe",
-        "src/ModelEvent.vibe",
+        "src/ModelEvent.ts",
         "src/DeferredTools.ts",
         "src/AnthropicMessages.ts",
         "src/OpenAI*.{ts,vibe}"

@@ -16,7 +16,7 @@
  */
 
 import type * as Clock from "effect/Clock"
-import type { FailedTry, ModelEvent, Timing } from "../ModelEvent.vibe"
+import type { FailedTry, ModelEvent, Timing } from "../ModelEvent.ts"
 import type * as RequestExecutor from "../RequestExecutor.ts"
 
 /**

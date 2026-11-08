@@ -171,9 +171,9 @@
     },
     "./ModelAuthor": {
       "types": {
-        "default": "./.vibe/declarations/src/ModelAuthor.d.vibe.ts"
+        "default": "./src/ModelAuthor.ts"
       },
-      "vibelang-source": "./src/ModelAuthor.vibe",
+      "vibelang-source": "./src/ModelAuthor.ts",
       "default": "./.vibelang/js/src/ModelAuthor.js"
     },
     "./internal/prompts": {

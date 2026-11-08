@@ -8,6 +8,7 @@
  * @since 0.1.0
  */
 
+import { Effect, Schema } from "effect"
 import { AssistantMessage, StopReason, ToolCallPart } from "./ModelRequest.ts"
 
 /**
@@ -449,19 +450,19 @@ export const ModelEvent = Object.assign(
     Settle
   ]).pipe(Schema.toTaggedUnion("type")),
   {
-    TextStart: ((input, options?) => TextStart.make(input, options)) satisfies typeof TextStart.make,
-    TextDelta: ((input, options?) => TextDelta.make(input, options)) satisfies typeof TextDelta.make,
-    TextEnd: ((input, options?) => TextEnd.make(input, options)) satisfies typeof TextEnd.make,
-    ThinkingStart: ((input, options?) => ThinkingStart.make(input, options)) satisfies typeof ThinkingStart.make,
-    ThinkingDelta: ((input, options?) => ThinkingDelta.make(input, options)) satisfies typeof ThinkingDelta.make,
-    ThinkingEnd: ((input, options?) => ThinkingEnd.make(input, options)) satisfies typeof ThinkingEnd.make,
-    ToolCallStart: ((input, options?) => ToolCallStart.make(input, options)) satisfies typeof ToolCallStart.make,
-    ToolCallDelta: ((input, options?) => ToolCallDelta.make(input, options)) satisfies typeof ToolCallDelta.make,
-    ToolCallEnd: ((input, options?) => ToolCallEnd.make(input, options)) satisfies typeof ToolCallEnd.make,
-    ToolResult: ((input, options?) => ToolResult.make(input, options)) satisfies typeof ToolResult.make,
+    TextStart: TextStart.make,
+    TextDelta: TextDelta.make,
+    TextEnd: TextEnd.make,
+    ThinkingStart: ThinkingStart.make,
+    ThinkingDelta: ThinkingDelta.make,
+    ThinkingEnd: ThinkingEnd.make,
+    ToolCallStart: ToolCallStart.make,
+    ToolCallDelta: ToolCallDelta.make,
+    ToolCallEnd: ToolCallEnd.make,
+    ToolResult: ToolResult.make,
     Usage: (input: Usage): UsageEvent => ({ type: "usage", ...input }),
-    Retry: ((input, options?) => Retry.make(input, options)) satisfies typeof Retry.make,
-    Settle: ((input, options?) => Settle.make(input, options)) satisfies typeof Settle.make,
+    Retry: Retry.make,
+    Settle: Settle.make,
     settledMessage
   }
 )

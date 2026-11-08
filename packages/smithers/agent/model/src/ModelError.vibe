@@ -9,7 +9,7 @@
  */
 
 import { Fault } from "@smthrs/flow"
-import type { Timing } from "./ModelEvent.vibe"
+import type { Timing } from "./ModelEvent.ts"
 
 /**
  * The provider-neutral failure vocabulary. A consumer branches on these

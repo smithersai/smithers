@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll } from "vitest"
-import { main } from "../../examples/39-agent-policies.vibe"
+import { main } from "../../examples/39-agent-policies.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-examples-"))
 
