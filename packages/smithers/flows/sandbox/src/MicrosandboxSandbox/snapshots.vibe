@@ -335,10 +335,7 @@ export const captureSnapshot = (options: CaptureOptions): string!ProviderError =
             // it under the vendor's open default, which nobody asked for.
             if (
               handle.status !== "running" &&
-              (try Effect.orDie(Effect.try({
-                  try: () => recordedNetwork(handle.configJson),
-                  catch: (error) => error
-                }))) === undefined
+              (try Effect.sync(() => recordedNetwork(handle.configJson))) === undefined
             ) {
               throw new ProviderError({
                 code: "unavailable",

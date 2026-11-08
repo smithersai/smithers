@@ -181,12 +181,8 @@ const declarationDigest = effect (action: Action.AnyWithProps, encoding: 1 | 2 |
   const cached = errors?.get(error)
   if (cached !== undefined) return cached
   const digest = try Schema.decodeUnknownEffect(DerivedKey)({
-    success: try Effect.orDie(
-      Effect.try({ try: () => Node.representationIdentity(action.successSchema, version), catch: (error) => error })
-    ),
-    error: try Effect.orDie(
-      Effect.try({ try: () => Node.representationIdentity(action.errorSchema, version), catch: (error) => error })
-    )
+    success: try Effect.sync(() => Node.representationIdentity(action.successSchema, version)),
+    error: try Effect.sync(() => Node.representationIdentity(action.errorSchema, version))
   })
   if (errors === undefined) {
     errors = new WeakMap()

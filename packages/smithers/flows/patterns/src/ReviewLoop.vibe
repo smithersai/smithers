@@ -257,9 +257,7 @@ export const run = <I, A, Review, E, R, E2, R2, E3, R3>(
   if (stall instanceof PatternError) return Effect.fail(stall)
   const signals = options.stall?.signals ?? ((output: A) => ({ output }))
   return effect {
-    const observe = try Effect.orDie(
-      Effect.try({ try: () => Stalling.tracker(stall, signals), catch: (error) => error })
-    )
+    const observe = try Effect.sync(() => Stalling.tracker(stall, signals))
     let output = try stages.produce(input)
     let round = 1
     while (true) {
@@ -272,12 +270,10 @@ export const run = <I, A, Review, E, R, E2, R2, E3, R3>(
         const spent: Exhausted<A, Review> = { _tag: "Exhausted", output, review }
         return spent
       }
-      const stalled = try Effect.orDie(Effect.try({ try: () => observe(output), catch: (error) => error }))
+      const stalled = try Effect.sync(() => observe(output))
       if (stalled !== undefined) {
         if (stalled.on === "escalate") {
-          throw try Effect.orDie(
-            Effect.try({ try: () => Stalling.escalated("ReviewLoop", stalled.rounds), catch: (error) => error })
-          )
+          throw try Effect.sync(() => Stalling.escalated("ReviewLoop", stalled.rounds))
         }
         const parked: Stalled<A, Review> = { _tag: "Stalled", output, review, stalled }
         return parked

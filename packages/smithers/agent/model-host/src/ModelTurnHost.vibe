@@ -273,8 +273,8 @@ export const runModelTurn = <E>(
           }
           settled = event
           return effect {
-            try emitDelta("reasoning", try Effect.orDie(Effect.try({ try: () => reasoning.finish(), catch: (e) => e })))
-            try emitDelta("text", try Effect.orDie(Effect.try({ try: () => text.finish(), catch: (e) => e })))
+            try emitDelta("reasoning", try Effect.sync(() => reasoning.finish()))
+            try emitDelta("text", try Effect.sync(() => text.finish()))
           }
         case "usage":
           usage = mergeUsage(usage, event)

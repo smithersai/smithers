@@ -57,9 +57,7 @@ export const idempotencyKey: (
       name,
       idempotency: parentScope
     }) |> Effect.orDie(%))
-    const ordinal = try Effect.orDie(
-      Effect.try({ try: () => instance.actionState.nextOrdinal(scope), catch: (error) => error })
-    )
+    const ordinal = try Effect.sync(() => instance.actionState.nextOrdinal(scope))
     const identityScope = JSON.stringify([name, parentScope ?? null])
     return try (StepIdentity.invocationKey({
       runId: instance.executionId,

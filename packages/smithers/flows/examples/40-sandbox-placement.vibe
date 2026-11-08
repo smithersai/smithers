@@ -65,9 +65,7 @@ export const main = (options: MainOptions): Promise<number> =>
       const fs = try FileSystem.FileSystem
       const spawner = try ChildProcessSpawner.ChildProcessSpawner
       const placedHost = Sandbox.layerHost(
-        try Effect.orDie(
-          Effect.try({ try: () => DirectorySandbox.make({ fs, spawner, root: options.root }), catch: (e) => e })
-        ),
+        try Effect.sync(() => DirectorySandbox.make({ fs, spawner, root: options.root })),
         { session: "examples/sandbox-placement" }
       )
       const stack = Layer.mergeAll(

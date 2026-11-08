@@ -128,9 +128,7 @@ export const files = (
           : Effect.succeed<ReadonlyArray<string>>([]))
       if (!noIgnore && children.includes(".gitignore")) {
         const content = fileSystem.readFileString(path.join(directory, ".gitignore")) catch () => ""
-        const scope = try Effect.orDie(
-          Effect.try({ try: () => Ignore.parse(directory, content), catch: (error) => error })
-        )
+        const scope = try Effect.sync(() => Ignore.parse(directory, content))
         if (scope.rules.length > 0) scopes = [...scopes, scope]
       }
       const candidates = children
@@ -147,17 +145,13 @@ export const files = (
       for (const entry of entries) {
         if (
           entry.type !== undefined &&
-          (try Effect.orDie(Effect.try({
-            try: () =>
-              Ignore.ignored(
-                scopes,
-                entry.candidate,
-                path.basename(entry.candidate),
-                entry.type === "Directory",
-                (from, to) => relativeForPattern(path, from, to)
-              ),
-            catch: (error) => error
-          })))
+          (try Effect.sync(() => Ignore.ignored(
+            scopes,
+            entry.candidate,
+            path.basename(entry.candidate),
+            entry.type === "Directory",
+            (from, to) => relativeForPattern(path, from, to)
+          )))
         ) {
           if (
             entry.type === "Directory" ||

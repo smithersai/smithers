@@ -60,7 +60,7 @@ export const postQuestion = effect (
           return { _tag: "existing" } satisfies Taken
         }
         if (response.status !== 202) {
-          const sessionCheck = try Effect.orDie(Effect.try({ try: () => sessionCheckOf(response.headers), catch: (e) => e }))
+          const sessionCheck = try Effect.sync(() => sessionCheckOf(response.headers))
           throw new QuestionNotTaken({ reason: "refused", status: response.status, ...sessionCheck })
         }
         HttpClientResponse.schemaBodyJson(Inserted)(response) catch effect () => {

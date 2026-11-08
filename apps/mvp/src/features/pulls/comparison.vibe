@@ -27,17 +27,17 @@ export const readComparison = (
   effect {
     if (!SHA.test(base) || !SHA.test(head)) return
     const repoId = `github/${owner}/${name}`.toLowerCase()
-    const id = try Effect.orDie(Effect.try({ try: () => comparisonKey(repoId, base, head), catch: (e) => e }))
+    const id = try Effect.sync(() => comparisonKey(repoId, base, head))
     const repos = try Effect.serviceOption(RepoStore)
     if (
       Option.isSome(repos)
-      && try Effect.orDie(Effect.try({ try: () => repos.value.isRefused(repoId), catch: (e) => e }))
+      && try Effect.sync(() => repos.value.isRefused(repoId))
     ) return
     const fence = Option.isSome(repos)
-      ? try Effect.orDie(Effect.try({ try: () => repos.value.fenceOf(repoId), catch: (e) => e }))
+      ? try Effect.sync(() => repos.value.fenceOf(repoId))
       : 0
     // `crypto.randomUUID()`: a UUIDv4 from `globalThis.crypto`.
-    const requestId = try Effect.orDie(Effect.try({ try: () => SecureRandom.uuidV4Unsafe(), catch: (e) => e }))
+    const requestId = try Effect.sync(() => SecureRandom.uuidV4Unsafe())
     read?.(repoId, id)
     // Independent repository keys, and independent request identities after a wipe or retry.
     const held = try rows.get(id)

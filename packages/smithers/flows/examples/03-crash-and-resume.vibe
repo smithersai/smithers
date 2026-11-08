@@ -41,19 +41,15 @@ export const main = (filename: string): Summary!! =>
     let readDispatches = 0
     let stepEntries = 0
 
-    const ReadDocument = try Effect.orDie(Effect.try({
-      try: () =>
-        Action.make({
-          name: "examples/ReadDocument",
-          success: Schema.String,
-          tier: "sealed",
-          idempotencyKey: "examples/read-document/v1",
-          execute: Effect.sync(() => {
-            readDispatches += 1
-            return "draft body"
-          })
-        }),
-      catch: (error) => error
+    const ReadDocument = try Effect.sync(() => Action.make({
+      name: "examples/ReadDocument",
+      success: Schema.String,
+      tier: "sealed",
+      idempotencyKey: "examples/read-document/v1",
+      execute: Effect.sync(() => {
+        readDispatches += 1
+        return "draft body"
+      })
     }))
 
     const assess = ({ document }: { readonly document: string }) =>

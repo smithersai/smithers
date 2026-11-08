@@ -228,16 +228,12 @@ export const main = (filename: string): Summary!! =>
      * drains. An executor that started the run would answer `accepted`.
      */
     const executor = ControlExecutor.layer(
-      try Effect.orDie(Effect.try({
-        try: () =>
-          ControlExecutor.makeNoop({
-            launch: () =>
-              Effect.sync(() => {
-                launches += 1
-                return "pending" as const
-              })
-          }),
-        catch: (e) => e
+      try Effect.sync(() => ControlExecutor.makeNoop({
+        launch: () =>
+          Effect.sync(() => {
+            launches += 1
+            return "pending" as const
+          })
       }))
     )
 

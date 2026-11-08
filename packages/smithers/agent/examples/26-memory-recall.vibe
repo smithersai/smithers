@@ -223,14 +223,10 @@ export const main = (filename: string): Summary!! =>
         )
     })
 
-    const registry = try Effect.orDie(Effect.try({
-      try: () =>
-        Registry.makeNoop({
-          list: () => Effect.succeed([]),
-          visible: () => Effect.succeed([]),
-          getOption: () => Effect.succeed(Option.none())
-        }),
-      catch: (error) => error
+    const registry = try Effect.sync(() => Registry.makeNoop({
+      list: () => Effect.succeed([]),
+      visible: () => Effect.succeed([]),
+      getOption: () => Effect.succeed(Option.none())
     }))
 
     return try Effect.scoped(

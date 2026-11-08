@@ -110,10 +110,7 @@ export const main = (filename: string): Summary!! =>
           // versioned encoding, so build it with the constructor rather than
           // spelling one out.
           frame: {
-            lineageId: try Effect.orDie(Effect.try({
-              try: () => FlowEngine.Lineage.root("analyse-1"),
-              catch: (e) => e
-            })),
+            lineageId: try Effect.sync(() => FlowEngine.Lineage.root("analyse-1")),
             seq
           }
         })

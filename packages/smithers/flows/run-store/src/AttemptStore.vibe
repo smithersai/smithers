@@ -955,7 +955,7 @@ export const makeWith = (
 
     const listRun: NonNullable<Service["listRun"]> = Effect.fn("AttemptStore.listRun")((runId) =>
       effect {
-        if (!(try Effect.orDie(Effect.try({ try: () => Boundary.isDurableText(runId), catch: (error) => error })))) {
+        if (!(try Effect.sync(() => Boundary.isDurableText(runId)))) {
           throw error("listRun", "invalid_attempt", "run id violates the durable identifier contract")
         }
         try Effect.annotateCurrentSpan({ runId })
@@ -1043,9 +1043,7 @@ export const makeWith = (
         })
         if (
           inProgressStates.includes(attempt.state) ||
-          !(try Effect.orDie(
-            Effect.try({ try: () => Boundary.isDurableText(attempt.state), catch: (error) => error })
-          ))
+          !(try Effect.sync(() => Boundary.isDurableText(attempt.state)))
         ) {
           throw error("finish", "invalid_attempt", "finish requires a terminal state and valid timestamp")
         }

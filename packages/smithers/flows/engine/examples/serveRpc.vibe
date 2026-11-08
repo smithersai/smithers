@@ -73,7 +73,7 @@ export const runServeRpc = (): Promise<{
 
   const program = effect {
     const client = try RpcTest.makeClient(
-      try Effect.orDie(Effect.try({ try: () => FlowProxy.toRpcGroup(flows, { prefix }), catch: (e) => e }))
+      try Effect.sync(() => FlowProxy.toRpcGroup(flows, { prefix }))
     )
     const call = client["flows_docs/Review"]
     const first = try call({ payload: { id: "spec-1" }, executionId: "review-spec-1" })

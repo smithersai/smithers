@@ -68,7 +68,7 @@ export const quickstart = (): Promise<{
           invocable: entry.modelInvocable
         })),
         warnings: warnings.map(({ code, path }) => ({ code, path })),
-        xml: try Effect.orDie(Effect.try({ try: () => Disclosure.toXml(entries2), catch: (error) => error })),
+        xml: try Effect.sync(() => Disclosure.toXml(entries2)),
         prompt
       }
     })) } }

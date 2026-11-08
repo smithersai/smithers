@@ -132,10 +132,7 @@ export const discovered = (filename: string): DiscoveredSummary!! =>
 
     // The plan, before anything runs. The delegating node carries the priority
     // the file declared, beside the priorities the body states itself.
-    const planned = (try Effect.orDie(Effect.try({
-      try: () => Graph.nodes(Graph.build(executable.flow, { input: { target: "release" } })),
-      catch: (e) => e
-    })))
+    const planned = (try Effect.sync(() => Graph.nodes(Graph.build(executable.flow, { input: { target: "release" } }))))
       .map((node) => node.draft.priority)
       .filter((priority): priority is number => priority !== undefined)
 

@@ -519,7 +519,7 @@ export const resolve = <H = FlowsHooks>(
     const cacheEnvironment = try snapshotCacheEnvironment(raw.cacheEnvironment, orderedEntries)
     return Object.freeze({
       plugins,
-      handlers: try Effect.orDie(Effect.try({ try: () => ImmutableMap.make(entries), catch: (error) => error })),
+      handlers: try Effect.sync(() => ImmutableMap.make(entries)),
       kinds: known,
       parallelConcurrency,
       ...(cacheEnvironment === undefined ? {} : { cacheEnvironment })

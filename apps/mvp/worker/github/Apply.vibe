@@ -156,7 +156,7 @@ export const read = <E, R>(services: Services<E, R>) => (request: typeof Read.pa
       if (services.startApply !== undefined) {
         const delivery = request.deliveryId.split(":")[0]!
         const before = try Store.relationBefore(repository.id, request.number)
-        const parents = try Effect.orDie(Effect.try({ try: () => neighbours(repository.id, before, fetched), catch: (e) => e }))
+        const parents = try Effect.sync(() => neighbours(repository.id, before, fetched))
         for (const parent of parents) {
           if (!services.mayAct(parent.repository.id)) continue
           const known = try candidates(parent.repository.owner, services.allowedRepositories ?? [])

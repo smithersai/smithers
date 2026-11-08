@@ -711,9 +711,7 @@ export const run = <Settled, E1, R1, E2, R2, E3, R3, E4, R4, E5, R5, E6, R6>(
       ))
     const exhausted = derisked._tag === "Exhausted"
     const authored = derisked.output
-    const refusals = try Effect.orDie(
-      Effect.try({ try: () => Trellis.validate(authored, envelope), catch: (error) => error })
-    )
+    const refusals = try Effect.sync(() => Trellis.validate(authored, envelope))
     if (refusals.length > 0) {
       const refusal = refusals[0] as Trellis.TrellisError
       throw new Trellis.TrellisError({
@@ -785,7 +783,7 @@ export const run = <Settled, E1, R1, E2, R2, E3, R3, E4, R4, E5, R5, E6, R6>(
           )
       }
     })
-    const leaves = (try Effect.orDie(Effect.try({ try: () => Trellis.leaves(plan), catch: (error) => error }))).map((
+    const leaves = (try Effect.sync(() => Trellis.leaves(plan))).map((
       leaf
     ) => outputs.get(leaf.path))
     const review = try options.review({ stage: "chain", goal, plan, leaves })

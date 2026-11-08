@@ -35,7 +35,7 @@ const make = effect {
   /** Keeps a tab for `path` at `here` with `lines`: a new one at the strip's end, or the lines of the one it has. */
   const keep = (here: Pick<Here, "owner" | "name" | "revision">, path: string, lines: string | null) =>
     effect {
-      const key = try Effect.orDie(Effect.try({ try: () => tabKey(here, path), catch: (e) => e }))
+      const key = try Effect.sync(() => tabKey(here, path))
       const existing = try tabs.get(key)
       if (Option.isSome(existing)) {
         if (existing.value.lines === lines) return
@@ -44,7 +44,7 @@ const make = effect {
       }
       const rows = try tabs.toArray
       const position = rows.reduce((last, row) => Math.max(last, row.position), 0) + 1
-      const repository = try Effect.orDie(Effect.try({ try: () => repoId(here.owner, here.name), catch: (e) => e }))
+      const repository = try Effect.sync(() => repoId(here.owner, here.name))
       try (try tabs.insert({
         key,
         owner: here.owner,
@@ -64,7 +64,7 @@ const make = effect {
   /** Closes `path`'s tab at `here`; whether it had one. */
   const drop = (here: Pick<Here, "owner" | "name" | "revision">, path: string) =>
     effect {
-      const key = try Effect.orDie(Effect.try({ try: () => tabKey(here, path), catch: (e) => e }))
+      const key = try Effect.sync(() => tabKey(here, path))
       if (Option.isNone(try tabs.get(key))) return false
       try (try tabs.delete(key)).persisted
       return true
