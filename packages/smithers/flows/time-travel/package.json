@@ -60,8 +60,8 @@
       "default": "./.vibelang/js/src/Frame.js"
     },
     "./MemoryTimeTravelStore": {
-      "types": "./src/MemoryTimeTravelStore.ts",
-      "vibelang-source": "./src/MemoryTimeTravelStore.ts",
+      "types": "./.vibe/declarations/src/MemoryTimeTravelStore.d.vibe.ts",
+      "vibelang-source": "./src/MemoryTimeTravelStore.vibe",
       "default": "./.vibelang/js/src/MemoryTimeTravelStore.js"
     },
     "./Migrations": {
@@ -85,8 +85,8 @@
       "default": "./.vibelang/js/src/TimeTravelError.js"
     },
     "./TimeTravelStore": {
-      "types": "./src/TimeTravelStore.ts",
-      "vibelang-source": "./src/TimeTravelStore.ts",
+      "types": "./.vibe/declarations/src/TimeTravelStore.d.vibe.ts",
+      "vibelang-source": "./src/TimeTravelStore.vibe",
       "default": "./.vibelang/js/src/TimeTravelStore.js"
     },
     "./index": {

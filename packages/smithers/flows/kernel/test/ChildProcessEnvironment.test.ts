@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import * as ChildProcessEnvironment from "../src/ChildProcessEnvironment.ts"
+import * as ChildProcessEnvironment from "../src/ChildProcessEnvironment.vibe"
 
 describe("ChildProcessEnvironment", () => {
   const credentialNames = [

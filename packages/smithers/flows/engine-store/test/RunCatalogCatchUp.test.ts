@@ -19,7 +19,7 @@ import * as Effect from "effect/Effect"
 import type * as Scope from "effect/Scope"
 import * as SqlClient from "effect/sql/SqlClient"
 import { join } from "node:path"
-import * as RunCatalogOps from "../src/internal/RunCatalogOps.ts"
+import * as RunCatalogOps from "../src/internal/RunCatalogOps.vibe"
 import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
 

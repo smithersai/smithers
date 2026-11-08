@@ -9,7 +9,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as fc from "fast-check"
 import * as Y from "yjs"
-import * as SharedText from "../src/SharedText.ts"
+import * as SharedText from "../src/SharedText.vibe"
 
 /** Runs `body` with `count` fresh replicas, closed afterwards. */
 const replicas = <A>(count: number, body: (texts: ReadonlyArray<SharedText.SharedText>) => Effect.Effect<A, unknown>) =>

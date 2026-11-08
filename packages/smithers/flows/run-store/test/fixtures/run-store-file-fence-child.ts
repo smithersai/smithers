@@ -4,7 +4,7 @@ import { Clock, Effect, Layer } from "effect"
 import * as AttemptStore from "../../src/AttemptStore.vibe"
 import * as Migrations from "../../src/Migrations.vibe"
 import type { OwnerId } from "../../src/Ownership.ts"
-import * as RunStore from "../../src/RunStore.ts"
+import * as RunStore from "../../src/RunStore.vibe"
 
 const role = process.argv[2]
 const filename = process.argv[3]

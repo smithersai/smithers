@@ -12,7 +12,7 @@
 import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
-import type * as Action from "./Action/Action.ts"
+import type * as Action from "./Action/Action.vibe"
 import { make as makeAction } from "./Action/make.ts"
 import type { FlowInstance } from "./FlowRuntime/FlowInstance.vibe"
 import type { FlowRuntime } from "./FlowRuntime/FlowRuntime.vibe"

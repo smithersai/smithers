@@ -23,7 +23,7 @@ import { actionKey, ActionKeyEncoding, keyEncodings, ordinalScope, uncanonicalKe
 import type { ActionExecuteOptions, Encoded } from "./Encoded.vibe"
 import { SnapshotBoundary, type SnapshotBoundaryOptions, SnapshotBoundaryRequired } from "./SnapshotBoundary.vibe"
 
-import { FailureSite } from "./FailureSite.ts"
+import { FailureSite } from "./FailureSite.vibe"
 
 type Instance = FlowRuntime.FlowInstance["Service"]
 

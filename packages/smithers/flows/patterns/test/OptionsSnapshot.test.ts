@@ -21,7 +21,7 @@ import * as ReviewLoop from "../src/ReviewLoop.vibe"
 import * as Runbook from "../src/Runbook.ts"
 import * as ScanFixVerify from "../src/ScanFixVerify.vibe"
 import * as Sidecar from "../src/Sidecar.vibe"
-import * as Trellis from "../src/Trellis.ts"
+import * as Trellis from "../src/Trellis.vibe"
 
 // Every field any pattern here hands a member, as the one struct a
 // `@smthrs/flow` flow states. Two flows a plan can tell apart: a flow's tag

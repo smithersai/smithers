@@ -22,7 +22,7 @@ import * as Schema from "effect/Schema"
 import { expect } from "vitest"
 import * as DelegationChain from "../src/DelegationChain.vibe"
 import { PatternError } from "../src/PatternError.vibe"
-import * as Trellis from "../src/Trellis.ts"
+import * as Trellis from "../src/Trellis.vibe"
 import { execute, executeExit } from "./Execute.ts"
 import { callsTo, payloadOf } from "./Graphs.ts"
 

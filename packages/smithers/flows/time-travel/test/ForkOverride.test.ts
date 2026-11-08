@@ -21,7 +21,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as Memory from "../src/MemoryTimeTravelStore.ts"
+import * as Memory from "../src/MemoryTimeTravelStore.vibe"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
 import * as TimeTravel from "../src/TimeTravel.ts"
 

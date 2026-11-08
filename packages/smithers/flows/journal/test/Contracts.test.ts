@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Duration, Effect, Schema, Stream } from "effect"
-import * as Consensus from "../src/Consensus.ts"
+import * as Consensus from "../src/Consensus.vibe"
 import * as Journal from "../src/Journal.ts"
 import type { Input, RunId, Seq } from "../src/JournalEvent.vibe"
 import * as OwnerId from "../src/OwnerId.vibe"

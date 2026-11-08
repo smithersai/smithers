@@ -57,7 +57,7 @@ const securityReview = Smithers.SecurityReview({
         "A `kid` lookup that falls back to the active key when the named kid is unknown.",
         "`importHmacKey` or `layerConfig` accepting a short or low-entropy secret with no minimum byte length."
       ],
-      paths: ["src/internal/ShareSigner.ts", "src/BranchShare.ts", "src/WorkspaceShare.ts"]
+      paths: ["src/internal/ShareSigner.ts", "src/BranchShare.ts", "src/WorkspaceShare.vibe"]
     },
     {
       id: "check-order-and-expiry",
@@ -158,7 +158,7 @@ const securityReview = Smithers.SecurityReview({
         "A `makeNoop` authority whose `verify` succeeds, or a `SyncServer.layerNoop` that returns journal data.",
         "The published `./test/TestSync` export `layerTrustAllAsOwner` (trusts every connection as owner) reachable from a non-test composition."
       ],
-      paths: ["src/test/**", "src/WorkspaceShare.ts", "src/BranchShare.ts", "src/SyncServer.ts", "src/SyncAuth.vibe"]
+      paths: ["src/test/**", "src/WorkspaceShare.vibe", "src/BranchShare.ts", "src/SyncServer.ts", "src/SyncAuth.vibe"]
     },
     {
       id: "error-leakage",
@@ -173,7 +173,7 @@ const securityReview = Smithers.SecurityReview({
         "src/SyncError.ts",
         "src/internal/CauseText.ts",
         "src/SyncClient.ts",
-        "src/WorkspaceShare.ts",
+        "src/WorkspaceShare.vibe",
         "src/BranchShare.ts"
       ]
     }

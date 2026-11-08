@@ -23,7 +23,7 @@ const securityReview = Smithers.SecurityReview({
         "isAbsoluteHttpUrl accepting a value with userinfo, query, fragment, backslash, or a code unit at or below 0x20 that new URL repairs.",
         "signalUrl or normalize producing a URL whose host differs from the decoded endpoint's host."
       ],
-      paths: ["src/Endpoint.ts", "src/Otlp.ts", "src/NodeOtel.vibe"]
+      paths: ["src/Endpoint.vibe", "src/Otlp.ts", "src/NodeOtel.vibe"]
     },
     {
       id: "exporter-header-secrecy",
@@ -34,7 +34,7 @@ const securityReview = Smithers.SecurityReview({
         "The otlp_export_discarded warning or any refusal message including request headers, the request URL, or options.headers.",
         "InvalidExporterEndpoint or InvalidResourceConfiguration messages that embed the rejected raw value instead of only its path."
       ],
-      paths: ["src/Otlp.ts", "src/Endpoint.ts", "src/Resource.vibe", "src/internal/schemaIssuePath.ts"]
+      paths: ["src/Otlp.ts", "src/Endpoint.vibe", "src/Resource.vibe", "src/internal/schemaIssuePath.ts"]
     },
     {
       id: "ambient-env-isolation",

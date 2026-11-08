@@ -8,14 +8,14 @@ import * as CacheStore from "@smthrs/step-cache/CacheStore"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts"
+import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.vibe"
 import * as Recovery from "../src/internal/Recovery.ts"
 import * as Rewind from "../src/internal/Rewind.ts"
-import * as Memory from "../src/MemoryTimeTravelStore.ts"
+import * as Memory from "../src/MemoryTimeTravelStore.vibe"
 import * as Migrations from "../src/Migrations.vibe"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
 import { error } from "../src/TimeTravelError.vibe"
-import { TimeTravelStore } from "../src/TimeTravelStore.ts"
+import { TimeTravelStore } from "../src/TimeTravelStore.vibe"
 
 const owner = { hostId: "generation-evidence", pid: 0, nonce: "generation-evidence" } as const
 const frame = { lineageId: "run/root", seq: 1 }

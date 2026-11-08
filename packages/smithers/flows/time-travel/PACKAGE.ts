@@ -59,8 +59,8 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/SqlTimeTravelStore.ts",
-        "src/MemoryTimeTravelStore.ts",
-        "src/internal/Lease.ts",
+        "src/MemoryTimeTravelStore.vibe",
+        "src/internal/Lease.vibe",
         "src/internal/Rewind.ts"
       ]
     },
@@ -74,7 +74,7 @@ const securityReview = Smithers.SecurityReview({
         "A steal from a `running` row without liveness evidence that the recorded owner is dead.",
         "An exit path after the claim that leaves the row `running` under the recovery owner with no heartbeat."
       ],
-      paths: ["src/internal/Recovery.ts", "src/internal/Lease.ts", "src/internal/RunRow.ts"]
+      paths: ["src/internal/Recovery.ts", "src/internal/Lease.vibe", "src/internal/RunRow.ts"]
     },
     {
       id: "compensation-fail-closed",
@@ -89,8 +89,8 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/CompensationHandlers.vibe",
-        "src/internal/EffectHandlerRegistry.ts",
-        "src/internal/Compensation.ts",
+        "src/internal/EffectHandlerRegistry.vibe",
+        "src/internal/Compensation.vibe",
         "src/internal/Rewind.ts",
         "src/TimeTravel.ts"
       ]
@@ -117,7 +117,7 @@ const securityReview = Smithers.SecurityReview({
         "The directory passed to `jj.workspaceAdd` built from anything other than `options.workspaceRoot` and the sanitized name.",
         "A jj change id or operation id read from the journal or audit detail passed to `jj.restore`/`jj.opRestore` without shape validation that rules out a leading `-`."
       ],
-      paths: ["src/internal/Fork.vibe", "src/internal/Compensation.ts", "src/internal/Recovery.ts", "src/TimeTravel.ts"]
+      paths: ["src/internal/Fork.vibe", "src/internal/Compensation.vibe", "src/internal/Recovery.ts", "src/TimeTravel.ts"]
     },
     {
       id: "lineage-edge-provenance",
@@ -132,7 +132,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/EffectBoundary.ts",
         "src/SqlTimeTravelStore.ts",
-        "src/MemoryTimeTravelStore.ts",
+        "src/MemoryTimeTravelStore.vibe",
         "src/internal/LineageTree.ts",
         "src/internal/Rewind.ts"
       ]

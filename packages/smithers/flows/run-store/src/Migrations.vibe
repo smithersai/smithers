@@ -23,7 +23,7 @@ import { lineage } from "./migrations/0002_lineage.vibe"
 import { executionRevisions } from "./migrations/0003_execution_revisions.vibe"
 import { waitingRequest } from "./migrations/0004_waiting_request.vibe"
 import { runProgress } from "./migrations/0005_run_progress.vibe"
-import { deferredRevisions, revisionTriggers } from "./migrations/0006_deferred_revisions.ts"
+import { deferredRevisions, revisionTriggers } from "./migrations/0006_deferred_revisions.vibe"
 
 /**
  * The run store's namespaced migration set, for composition with the other

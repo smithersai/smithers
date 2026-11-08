@@ -9,7 +9,7 @@ import { attenuate } from "../src/CapabilitySet.ts"
 import { emptyPolicy as closedPolicy } from "../src/GrantStore.ts"
 import * as GrantStore from "../src/GrantStore.ts"
 import * as HttpClient from "../src/HttpClient.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as Workspace from "../src/Workspace.vibe"
 
 const recordingStore = () => {
   const checked: Array<string> = []

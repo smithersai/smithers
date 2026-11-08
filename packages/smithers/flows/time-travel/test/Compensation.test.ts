@@ -13,8 +13,8 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { TestClock } from "effect/testing"
 import type { EffectRecord } from "../src/EffectBoundary.ts"
-import * as Compensation from "../src/internal/Compensation.ts"
-import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts"
+import * as Compensation from "../src/internal/Compensation.vibe"
+import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.vibe"
 import { error, TimeTravelError } from "../src/TimeTravelError.vibe"
 
 /**

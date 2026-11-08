@@ -9,10 +9,10 @@ import {
   Sink,
   Stream
 } from "effect"
-import * as FileSystem from "../src/FileSystem.ts"
+import * as FileSystem from "../src/FileSystem.vibe"
 import { emptyPolicy as closedPolicy } from "../src/GrantStore.ts"
 import { GrantStore } from "../src/GrantStore.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as Workspace from "../src/Workspace.vibe"
 
 /**
  * `canonicalResource` is the anti-escape core of the filesystem kernel: it

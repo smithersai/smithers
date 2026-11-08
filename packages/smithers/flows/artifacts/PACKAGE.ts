@@ -78,7 +78,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/FileSystemArtifactStore.ts",
         "src/ArtifactSweep.ts",
-        "src/internal/ArtifactPath.ts",
+        "src/internal/ArtifactPath.vibe",
         "src/internal/ArtifactLocks.ts"
       ]
     },
@@ -92,7 +92,7 @@ const securityReview = Smithers.SecurityReview({
         "sweepOrphanedTemps removing an entry younger than staleScratchMs or whose mtime is unknown.",
         "remove deleting without the ifUnmodifiedSinceMs fence or without ArtifactBackupLease.unlessActive under required coordination."
       ],
-      paths: ["src/ArtifactSweep.ts", "src/FileSystemArtifactStore.ts", "src/ArtifactBackupLease.ts"]
+      paths: ["src/ArtifactSweep.ts", "src/FileSystemArtifactStore.ts", "src/ArtifactBackupLease.vibe"]
     },
     {
       id: "lease-ownership",
@@ -104,7 +104,7 @@ const securityReview = Smithers.SecurityReview({
         "reclaim renaming a lock without winning the wx claim file and re-reading the same stale generation.",
         "A lock or claim path derived from unsanitized owner text."
       ],
-      paths: ["src/FileLease.ts", "src/internal/ArtifactLocks.ts", "src/ArtifactBackupLease.ts"]
+      paths: ["src/FileLease.ts", "src/internal/ArtifactLocks.ts", "src/ArtifactBackupLease.vibe"]
     },
     {
       id: "remote-endpoint-credentials",

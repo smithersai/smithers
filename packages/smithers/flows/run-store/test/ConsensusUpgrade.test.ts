@@ -17,8 +17,8 @@ import { TestClock } from "effect/testing"
 import { heartbeatStaleAfter } from "../src/Heartbeat.ts"
 import * as Migrations from "../src/Migrations.vibe"
 import type { OwnerId } from "../src/Ownership.ts"
-import { RunStore } from "../src/RunStore.ts"
-import * as RunStoreLive from "../src/RunStore.ts"
+import { RunStore } from "../src/RunStore.vibe"
+import * as RunStoreLive from "../src/RunStore.vibe"
 
 const survivor: OwnerId = { hostId: "host-a", pid: 11, nonce: "survivor" }
 const dead: OwnerId = { hostId: "host-a", pid: 12, nonce: "dead" }

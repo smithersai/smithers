@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { forkCreatedEventType, type LineageEdge } from "../src/Frame.vibe"
-import * as Memory from "../src/MemoryTimeTravelStore.ts"
-import { TimeTravelStore } from "../src/TimeTravelStore.ts"
+import * as Memory from "../src/MemoryTimeTravelStore.vibe"
+import { TimeTravelStore } from "../src/TimeTravelStore.vibe"
 
 const records: ReadonlyArray<Memory.JournalRecord> = [
   { runId: "parent", seq: 0, eventId: "parent-0", lineageId: "parent/root", payload: null },

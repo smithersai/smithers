@@ -13,8 +13,8 @@ import type * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as SnapshotProjector from "../src/internal/SnapshotProjector.vibe"
-import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
-import * as TimeTravelStore from "../src/TimeTravelStore.ts"
+import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.vibe"
+import * as TimeTravelStore from "../src/TimeTravelStore.vibe"
 
 const lineageId = "run/root"
 

@@ -14,7 +14,7 @@ import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import * as Semaphore from "effect/Semaphore"
 import * as FileLease from "../FileLease.ts"
-import * as ArtifactPath from "./ArtifactPath.ts"
+import * as ArtifactPath from "./ArtifactPath.vibe"
 
 interface Entry {
   readonly semaphore: Semaphore.Semaphore

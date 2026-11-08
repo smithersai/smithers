@@ -12,8 +12,8 @@ import { describe, expect, it } from "vitest"
 import { AttemptStore } from "../src/AttemptStore.vibe"
 import * as AttemptStoreLive from "../src/AttemptStore.vibe"
 import * as Migrations from "../src/Migrations.vibe"
-import { RunStore } from "../src/RunStore.ts"
-import * as RunStoreLive from "../src/RunStore.ts"
+import { RunStore } from "../src/RunStore.vibe"
+import * as RunStoreLive from "../src/RunStore.vibe"
 
 const migrated = <A, E>(
   effect: Effect.Effect<A, E, DurableWriter.DurableWriter | SqlClient.SqlClient | RunStore | AttemptStore>

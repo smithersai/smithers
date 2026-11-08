@@ -5,9 +5,9 @@ import { Cause, Clock, Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as Statement from "effect/sql/Statement"
 import { TestClock } from "effect/testing"
-import * as Consensus from "../src/Consensus.ts"
+import * as Consensus from "../src/Consensus.vibe"
 import * as Migrations from "../src/Migrations.vibe"
-import * as SqlConsensus from "../src/SqlConsensus.ts"
+import * as SqlConsensus from "../src/SqlConsensus.vibe"
 
 const owner = { hostId: "host", pid: 101, nonce: "first" }
 const other = { ...owner, pid: 202, nonce: "second" }

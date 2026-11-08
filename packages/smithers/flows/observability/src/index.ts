@@ -41,7 +41,7 @@ export * as OtlpRelay from "./OtlpRelay.vibe"
  * @category observability
  * @since 1.0.0-rc.0
  */
-export * as Endpoint from "./Endpoint.ts"
+export * as Endpoint from "./Endpoint.vibe"
 
 /**
  * @category observability

@@ -95,13 +95,13 @@ export * as TimeTravelError from "./TimeTravelError.vibe"
  * @category services
  * @since 0.1.0
  */
-export * as TimeTravelStore from "./TimeTravelStore.ts"
+export * as TimeTravelStore from "./TimeTravelStore.vibe"
 
 /**
  * @category layers
  * @since 0.1.0
  */
-export * as MemoryTimeTravelStore from "./MemoryTimeTravelStore.ts"
+export * as MemoryTimeTravelStore from "./MemoryTimeTravelStore.vibe"
 
 /**
  * @category layers

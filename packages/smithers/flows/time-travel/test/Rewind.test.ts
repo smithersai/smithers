@@ -14,10 +14,10 @@ import * as Option from "effect/Option"
 import { TestClock } from "effect/testing"
 import * as EffectBoundary from "../src/EffectBoundary.ts"
 import type { LineageEdge } from "../src/Frame.vibe"
-import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts"
+import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.vibe"
 import * as Rewind from "../src/internal/Rewind.ts"
-import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
-import { TimeTravelStore } from "../src/TimeTravelStore.ts"
+import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.vibe"
+import { TimeTravelStore } from "../src/TimeTravelStore.vibe"
 import { journalOf, makeRuns, row as makeRow } from "./MemoryHarness.ts"
 
 const owner: OwnerId = { hostId: "test-host", pid: 10, nonce: "rewind-owner" }

@@ -47,7 +47,11 @@
       "vibelang-source": "./src/AttemptStore.vibe",
       "default": "./.vibelang/js/src/AttemptStore.js"
     },
-    "./Heartbeat": "./src/Heartbeat.ts",
+    "./Heartbeat": {
+      "types": "./src/Heartbeat.ts",
+      "vibelang-source": "./src/Heartbeat.ts",
+      "default": "./.vibelang/js/src/Heartbeat.js"
+    },
     "./Migrations": {
       "types": "./.vibe/declarations/src/Migrations.d.vibe.ts",
       "vibelang-source": "./src/Migrations.vibe",
@@ -59,8 +63,8 @@
       "default": "./.vibelang/js/src/Ownership.js"
     },
     "./RunStore": {
-      "types": "./src/RunStore.ts",
-      "vibelang-source": "./src/RunStore.ts",
+      "types": "./.vibe/declarations/src/RunStore.d.vibe.ts",
+      "vibelang-source": "./src/RunStore.vibe",
       "default": "./.vibelang/js/src/RunStore.js"
     },
     "./RunStoreMetrics": {
@@ -74,8 +78,8 @@
       "default": "./.vibelang/js/src/index.js"
     },
     "./test/TestRunStore": {
-      "types": "./src/test/TestRunStore.ts",
-      "vibelang-source": "./src/test/TestRunStore.ts",
+      "types": "./.vibe/declarations/src/test/TestRunStore.d.vibe.ts",
+      "vibelang-source": "./src/test/TestRunStore.vibe",
       "default": "./.vibelang/js/src/test/TestRunStore.js"
     }
   },

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { KeyMaterial, Plan } from "@smthrs/plan"
 import { Effect } from "effect"
-import * as Merges from "../src/internal/PlanMerges.ts"
+import * as Merges from "../src/internal/PlanMerges.vibe"
 import type * as MergeStore from "../src/PlanMergeStore.ts"
 import { withCrypto } from "./Sha256.ts"
 

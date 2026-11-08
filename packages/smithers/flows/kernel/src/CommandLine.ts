@@ -21,7 +21,7 @@
 
 import type * as ChildProcess from "effect/process/ChildProcess"
 import * as Redacted from "effect/Redacted"
-import { isInheritedName } from "./ChildProcessEnvironment.ts"
+import { isInheritedName } from "./ChildProcessEnvironment.vibe"
 
 /** Tokens made only of these characters need no quoting in a POSIX shell. */
 const SAFE = /^[A-Za-z0-9_@%+=:,./-]+$/

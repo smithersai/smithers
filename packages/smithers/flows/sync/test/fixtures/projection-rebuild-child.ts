@@ -20,7 +20,7 @@ import * as Protocol from "../../src/SyncProtocol.ts"
 import * as SyncServer from "../../src/SyncServer.ts"
 import * as TestSocket from "../../src/test/TestSocket.ts"
 import * as TestSync from "../../src/test/TestSync.ts"
-import * as WorkspaceShare from "../../src/WorkspaceShare.ts"
+import * as WorkspaceShare from "../../src/WorkspaceShare.vibe"
 
 const [mode, directory, countText] = process.argv.slice(2)
 const count = Number(countText)

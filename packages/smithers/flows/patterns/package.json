@@ -161,8 +161,8 @@
       "default": "./.vibelang/js/src/Supervisor.js"
     },
     "./Trellis": {
-      "types": "./src/Trellis.ts",
-      "vibelang-source": "./src/Trellis.ts",
+      "types": "./.vibe/declarations/src/Trellis.d.vibe.ts",
+      "vibelang-source": "./src/Trellis.vibe",
       "default": "./.vibelang/js/src/Trellis.js"
     },
     "./TryCatchFinally": null,

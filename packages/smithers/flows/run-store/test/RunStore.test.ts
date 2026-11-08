@@ -14,8 +14,8 @@ import {
   type LivenessEvidence,
   type OwnerId
 } from "../src/Ownership.ts"
-import { type HeartbeatOutcome, type RunRow, type RunSnapshot, type RunStatus, RunStore } from "../src/RunStore.ts"
-import * as RunStoreLive from "../src/RunStore.ts"
+import { type HeartbeatOutcome, type RunRow, type RunSnapshot, type RunStatus, RunStore } from "../src/RunStore.vibe"
+import * as RunStoreLive from "../src/RunStore.vibe"
 
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => effect
 

@@ -5,7 +5,7 @@
  */
 import { expect, it } from "@effect/vitest"
 import { Effect } from "effect"
-import * as Consensus from "../src/Consensus.ts"
+import * as Consensus from "../src/Consensus.vibe"
 import { conformance } from "./ConsensusConformance.ts"
 
 conformance("Consensus.layerLocal", Consensus.layerLocal)

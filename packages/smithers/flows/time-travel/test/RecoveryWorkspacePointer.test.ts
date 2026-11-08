@@ -5,12 +5,12 @@ import type * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as Runs from "@smthrs/run-store/RunStore"
 import * as Cache from "@smthrs/step-cache/CacheStore"
 import * as Effect from "effect/Effect"
-import * as Registry from "../src/internal/EffectHandlerRegistry.ts"
+import * as Registry from "../src/internal/EffectHandlerRegistry.vibe"
 import * as Recovery from "../src/internal/Recovery.ts"
 import * as Rewind from "../src/internal/Rewind.ts"
-import * as Memory from "../src/MemoryTimeTravelStore.ts"
+import * as Memory from "../src/MemoryTimeTravelStore.vibe"
 import { error } from "../src/TimeTravelError.vibe"
-import { type Audit, TimeTravelStore } from "../src/TimeTravelStore.ts"
+import { type Audit, TimeTravelStore } from "../src/TimeTravelStore.vibe"
 
 for (const boundary of ["before-restore", "after-restore"] as const) {
   it(`restores the workspace from the durable image captured ${boundary}`, async () => {

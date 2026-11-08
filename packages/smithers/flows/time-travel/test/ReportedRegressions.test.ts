@@ -1,8 +1,8 @@
 import { expect, it } from "@effect/vitest"
 import { EventTypes } from "@smthrs/engine-store/EventTypes"
 import * as Effect from "effect/Effect"
-import * as Memory from "../src/MemoryTimeTravelStore.ts"
-import type { Snapshot } from "../src/TimeTravelStore.ts"
+import * as Memory from "../src/MemoryTimeTravelStore.vibe"
+import type { Snapshot } from "../src/TimeTravelStore.vibe"
 
 it.effect("isolates seeded records, written anchors, and every snapshot read", () =>
   Effect.gen(function*() {

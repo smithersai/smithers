@@ -13,8 +13,8 @@ import { join } from "node:path"
 import * as ChildProcessSpawner from "../src/ChildProcessSpawner.ts"
 import * as CommandLine from "../src/CommandLine.ts"
 import * as GrantStore from "../src/GrantStore.ts"
-import * as ProcessConfinement from "../src/ProcessConfinement.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as ProcessConfinement from "../src/ProcessConfinement.vibe"
+import * as Workspace from "../src/Workspace.vibe"
 
 const directories = new Set<string>()
 

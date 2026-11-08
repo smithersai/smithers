@@ -22,7 +22,7 @@ import { SyncError } from "../src/SyncError.ts"
 import { SyncRpcs } from "../src/SyncRpcs.ts"
 import * as SyncServer from "../src/SyncServer.ts"
 import * as TestSync from "../src/test/TestSync.ts"
-import * as WorkspaceShare from "../src/WorkspaceShare.ts"
+import * as WorkspaceShare from "../src/WorkspaceShare.vibe"
 
 const engineRun = "flows/engine/run-1" as JournalEvent.RunId
 const branchId = "auth-branch" as BranchProtocol.BranchId

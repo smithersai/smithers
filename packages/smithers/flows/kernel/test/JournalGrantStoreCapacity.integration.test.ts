@@ -15,7 +15,7 @@ import { join } from "node:path"
 import { encode, EnvelopeGrant } from "../src/GrantEvent.vibe"
 import { maximumRules, type Service } from "../src/GrantStore.ts"
 import * as JournalGrantStore from "../src/JournalGrantStore.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as Workspace from "../src/Workspace.vibe"
 
 const directories = new Set<string>()
 const options = {

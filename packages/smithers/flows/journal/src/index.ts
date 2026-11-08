@@ -29,7 +29,7 @@ export * as JournalEvent from "./JournalEvent.vibe"
  * @category events
  * @since 1.0.0
  */
-export * as EngineEvent from "./EngineEvent.ts"
+export * as EngineEvent from "./EngineEvent.vibe"
 
 /**
  * @category events
@@ -64,13 +64,13 @@ export * as SqlJournal from "./SqlJournal.ts"
  * @category services
  * @since 1.0.0
  */
-export * as Consensus from "./Consensus.ts"
+export * as Consensus from "./Consensus.vibe"
 
 /**
  * @category layers
  * @since 1.0.0
  */
-export * as SqlConsensus from "./SqlConsensus.ts"
+export * as SqlConsensus from "./SqlConsensus.vibe"
 
 /**
  * @category metrics

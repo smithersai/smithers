@@ -21,12 +21,12 @@ import {
 import * as NodeFs from "node:fs"
 import * as NodeOs from "node:os"
 import * as NodePathModule from "node:path"
-import * as ChildProcessEnvironment from "../src/ChildProcessEnvironment.ts"
+import * as ChildProcessEnvironment from "../src/ChildProcessEnvironment.vibe"
 import * as ChildProcessSpawner from "../src/ChildProcessSpawner.ts"
 import * as CommandLine from "../src/CommandLine.ts"
 import * as GrantStore from "../src/GrantStore.ts"
-import * as ProcessConfinement from "../src/ProcessConfinement.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as ProcessConfinement from "../src/ProcessConfinement.vibe"
+import * as Workspace from "../src/Workspace.vibe"
 
 const spawned: Array<ChildProcess.Command> = []
 

@@ -73,8 +73,8 @@
       "default": "./.vibelang/js/src/index.js"
     },
     "./test/TestCacheStore": {
-      "types": "./src/test/TestCacheStore.ts",
-      "vibelang-source": "./src/test/TestCacheStore.ts",
+      "types": "./.vibe/declarations/src/test/TestCacheStore.d.vibe.ts",
+      "vibelang-source": "./src/test/TestCacheStore.vibe",
       "default": "./.vibelang/js/src/test/TestCacheStore.js"
     }
   },

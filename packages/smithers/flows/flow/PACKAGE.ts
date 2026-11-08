@@ -216,7 +216,7 @@ const securityReview = Smithers.SecurityReview({
         "The worker completing the deferred named by item.token without checking it is this queue's DurableDeferred name.",
         "A token-invalid or handler failure that logs the full payload or token instead of a bounded excerpt."
       ],
-      paths: ["src/DurableQueue.ts"]
+      paths: ["src/DurableQueue.vibe"]
     },
     {
       id: "human-answer-bounds",
@@ -282,7 +282,7 @@ const securityReview = Smithers.SecurityReview({
         "src/RetryPolicy.vibe",
         "src/Stall.vibe",
         "src/DurableClock.vibe",
-        "src/DurableQueue.ts"
+        "src/DurableQueue.vibe"
       ]
     },
     {

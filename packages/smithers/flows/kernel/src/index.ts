@@ -40,7 +40,7 @@ export * as ChildProcessSpawner from "./ChildProcessSpawner.ts"
  * @category namespace exports
  * @since 1.0.0-rc.0
  */
-export * as ChildProcessEnvironment from "./ChildProcessEnvironment.ts"
+export * as ChildProcessEnvironment from "./ChildProcessEnvironment.vibe"
 
 /**
  * Process containment middleware over Effect's own `ChildProcessSpawner` tag.
@@ -64,7 +64,7 @@ export * as CommandLine from "./CommandLine.ts"
  * @category namespace exports
  * @since 1.0.0-rc.0
  */
-export * as FileSystem from "./FileSystem.ts"
+export * as FileSystem from "./FileSystem.vibe"
 
 /**
  * Durable grant decision schemas.
@@ -99,7 +99,7 @@ export type { HostError } from "./HostError.ts"
  * @category namespace exports
  * @since 1.0.0-rc.0
  */
-export * as HostServices from "./HostServices.ts"
+export * as HostServices from "./HostServices.vibe"
 
 /**
  * The `net:get`/`net:post`/`model:call` middleware over Effect's own
@@ -116,7 +116,7 @@ export * as HttpClient from "./HttpClient.ts"
  * @category namespace exports
  * @since 1.0.0-rc.0
  */
-export * as Jj from "./Jj.ts"
+export * as Jj from "./Jj.vibe"
 
 /**
  * Journal-backed grant persistence.
@@ -132,7 +132,7 @@ export * as JournalGrantStore from "./JournalGrantStore.ts"
  * @category namespace exports
  * @since 1.0.0-rc.0
  */
-export * as Path from "./Path.ts"
+export * as Path from "./Path.vibe"
 
 /**
  * Typed permission errors and policy rules.
@@ -148,7 +148,7 @@ export * as Permission from "@smthrs/capability/Permission"
  * @category namespace exports
  * @since 1.0.0-rc.0
  */
-export * as ProcessLedger from "./ProcessLedger.ts"
+export * as ProcessLedger from "./ProcessLedger.vibe"
 
 /**
  * Filesystem, path and process services bound to one root directory.
@@ -156,7 +156,7 @@ export * as ProcessLedger from "./ProcessLedger.ts"
  * @category namespace exports
  * @since 1.0.0
  */
-export * as Rooted from "./Rooted.ts"
+export * as Rooted from "./Rooted.vibe"
 
 /**
  * The shared workspace-root service.
@@ -164,13 +164,13 @@ export * as Rooted from "./Rooted.ts"
  * @category namespace exports
  * @since 1.0.0-rc.0
  */
-export * as Workspace from "./Workspace.ts"
+export * as Workspace from "./Workspace.vibe"
 
 /** Host process confinement.
  * @category namespace exports
  * @since 1.0.0-rc.1
  */
-export * as ProcessConfinement from "./ProcessConfinement.ts"
+export * as ProcessConfinement from "./ProcessConfinement.vibe"
 
 /**
  * Typed connectivity failures and host command exit classification.

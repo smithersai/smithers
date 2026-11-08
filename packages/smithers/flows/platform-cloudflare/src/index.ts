@@ -56,14 +56,14 @@ export * as ExecutionObject from "./ExecutionObject.ts"
  *
  * @since 1.0.0-rc.17
  */
-export * as ObjectDatabase from "./ObjectDatabase.ts"
+export * as ObjectDatabase from "./ObjectDatabase.vibe"
 
 /**
  * The immutable cache over the Workers Cache API.
  *
  * @since 1.0.0
  */
-export * as EdgeCache from "./EdgeCache.ts"
+export * as EdgeCache from "./EdgeCache.vibe"
 
 /**
  * A browser terminal attached to a tmux session in a Durable Object's

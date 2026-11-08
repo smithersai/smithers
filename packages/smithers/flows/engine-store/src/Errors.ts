@@ -25,4 +25,4 @@ export {
   CacheCorruptionDetected
 } from "./internal/ActionPersistence.ts"
 export { RetentionError, RetentionErrorCode } from "./internal/RetentionOps.ts"
-export { RunCatalogError, RunCatalogErrorCode } from "./internal/RunCatalogOps.ts"
+export { RunCatalogError, RunCatalogErrorCode } from "./internal/RunCatalogOps.vibe"

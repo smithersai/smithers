@@ -9,11 +9,11 @@ import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as Frame from "../src/Frame.vibe"
 import * as TimeTravel from "../src/index.vibe"
-import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts"
+import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.vibe"
 import * as Fork from "../src/internal/Fork.vibe"
-import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
+import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.vibe"
 import { error, TimeTravelError, TimeTravelErrorCode } from "../src/TimeTravelError.vibe"
-import { TimeTravelStore } from "../src/TimeTravelStore.ts"
+import { TimeTravelStore } from "../src/TimeTravelStore.vibe"
 
 /**
  * A fork now assesses the boundary before it copies anything, so it reads the

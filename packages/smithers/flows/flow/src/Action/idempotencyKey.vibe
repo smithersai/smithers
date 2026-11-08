@@ -9,7 +9,7 @@
 import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import { FlowInstance } from "../FlowRuntime/FlowInstance.vibe"
-import { CurrentAttempt } from "./Context.ts"
+import { CurrentAttempt } from "./Context.vibe"
 import * as StepIdentity from "./StepIdentity.ts"
 
 /**

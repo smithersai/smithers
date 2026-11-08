@@ -3,7 +3,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
-import * as ArtifactBackupLease from "../../src/ArtifactBackupLease.ts"
+import * as ArtifactBackupLease from "../../src/ArtifactBackupLease.vibe"
 import * as ArtifactStore from "../../src/ArtifactStore.ts"
 import { hostPath } from "../HostPath.ts"
 

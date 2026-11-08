@@ -2,7 +2,7 @@ import * as Journal from "@smthrs/journal/Journal"
 import type * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import * as Effect from "effect/Effect"
-import type * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
+import type * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.vibe"
 
 /**
  * The in-memory doubles the unit suites build the time-travel service over.

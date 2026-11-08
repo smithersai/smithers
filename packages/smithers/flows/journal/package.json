@@ -53,8 +53,8 @@
       "default": "./.vibelang/js/src/JournalEvent.js"
     },
     "./EngineEvent": {
-      "types": "./src/EngineEvent.ts",
-      "vibelang-source": "./src/EngineEvent.ts",
+      "types": "./.vibe/declarations/src/EngineEvent.d.vibe.ts",
+      "vibelang-source": "./src/EngineEvent.vibe",
       "default": "./.vibelang/js/src/EngineEvent.js"
     },
     "./JournalMetrics": {
@@ -102,10 +102,14 @@
       "vibelang-source": "./src/index.ts",
       "default": "./.vibelang/js/src/index.js"
     },
-    "./test/Notifying": "./src/test/Notifying.ts",
+    "./test/Notifying": {
+      "types": "./src/test/Notifying.ts",
+      "vibelang-source": "./src/test/Notifying.ts",
+      "default": "./.vibelang/js/src/test/Notifying.js"
+    },
     "./test/TestJournal": {
-      "types": "./src/test/TestJournal.ts",
-      "vibelang-source": "./src/test/TestJournal.ts",
+      "types": "./.vibe/declarations/src/test/TestJournal.d.vibe.ts",
+      "vibelang-source": "./src/test/TestJournal.vibe",
       "default": "./.vibelang/js/src/test/TestJournal.js"
     },
     "./JournalGeneration": {
@@ -114,13 +118,13 @@
       "default": "./.vibelang/js/src/JournalGeneration.js"
     },
     "./Consensus": {
-      "types": "./src/Consensus.ts",
-      "vibelang-source": "./src/Consensus.ts",
+      "types": "./.vibe/declarations/src/Consensus.d.vibe.ts",
+      "vibelang-source": "./src/Consensus.vibe",
       "default": "./.vibelang/js/src/Consensus.js"
     },
     "./SqlConsensus": {
-      "types": "./src/SqlConsensus.ts",
-      "vibelang-source": "./src/SqlConsensus.ts",
+      "types": "./.vibe/declarations/src/SqlConsensus.d.vibe.ts",
+      "vibelang-source": "./src/SqlConsensus.vibe",
       "default": "./.vibelang/js/src/SqlConsensus.js"
     }
   },

@@ -8,9 +8,9 @@ import * as GuardedSpawner from "../src/ChildProcessSpawner.ts"
 import * as ContainedSpawner from "../src/ContainedSpawner.ts"
 import { emptyPolicy as closedPolicy } from "../src/GrantStore.ts"
 import { GrantStore } from "../src/GrantStore.ts"
-import * as ProcessConfinement from "../src/ProcessConfinement.ts"
-import * as ProcessLedger from "../src/ProcessLedger.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as ProcessConfinement from "../src/ProcessConfinement.vibe"
+import * as ProcessLedger from "../src/ProcessLedger.vibe"
+import * as Workspace from "../src/Workspace.vibe"
 
 const bytes = (text: string) => Stream.make(new TextEncoder().encode(text))
 const textOf = (stream: Stream.Stream<Uint8Array, PlatformError.PlatformError>) =>

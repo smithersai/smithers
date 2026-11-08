@@ -12,7 +12,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import * as AttemptStore from "../src/AttemptStore.vibe"
 import * as Migrations from "../src/Migrations.vibe"
-import * as RunStore from "../src/RunStore.ts"
+import * as RunStore from "../src/RunStore.vibe"
 
 describe("durable run state redaction", () => {
   // Executable state must round-trip verbatim: a field whose name merely ends

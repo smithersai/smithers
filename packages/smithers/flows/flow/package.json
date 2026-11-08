@@ -72,7 +72,11 @@
       "default": "./.vibelang/js/src/FlowRuntime/index.js"
     },
     "./FlowRuntime/*": null,
-    "./StepIdentity": "./src/Action/StepIdentity.ts",
+    "./StepIdentity": {
+      "types": "./src/Action/StepIdentity.ts",
+      "vibelang-source": "./src/Action/StepIdentity.ts",
+      "default": "./.vibelang/js/src/Action/StepIdentity.js"
+    },
     "./internal/*": null,
     "./*/index": null,
     "./Deadline": {
@@ -91,8 +95,8 @@
       "default": "./.vibelang/js/src/DurableDeferred.js"
     },
     "./DurableQueue": {
-      "types": "./src/DurableQueue.ts",
-      "vibelang-source": "./src/DurableQueue.ts",
+      "types": "./.vibe/declarations/src/DurableQueue.d.vibe.ts",
+      "vibelang-source": "./src/DurableQueue.vibe",
       "default": "./.vibelang/js/src/DurableQueue.js"
     },
     "./ExternalJob": {

@@ -15,7 +15,7 @@
 export { ActionKeyEncoding, type KeyEncoding, keyEncodings } from "./ActionKey.vibe"
 export * from "./Authority.vibe"
 export * from "./Encoded.vibe"
-export * from "./FailureSite.ts"
+export * from "./FailureSite.vibe"
 export * from "./FlowInstance.vibe"
 export * from "./layerMemory.ts"
 /**

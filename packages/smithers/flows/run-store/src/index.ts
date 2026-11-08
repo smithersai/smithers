@@ -24,7 +24,7 @@
  * @category services
  * @since 0.1.0
  */
-export * as RunStore from "./RunStore.ts"
+export * as RunStore from "./RunStore.vibe"
 
 /**
  * @category metrics

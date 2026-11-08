@@ -49,13 +49,13 @@ describe("@smthrs/sync barrel", () => {
     expect(Sync.BranchRpcs).toBe(await import("../src/BranchRpcs.ts"))
     expect(Sync.BranchServer).toBe(await import("../src/BranchServer.ts"))
     expect(Sync.BranchIds).toBe(await import("../src/BranchIds.ts"))
-    expect(Sync.WorkspaceShare).toBe(await import("../src/WorkspaceShare.ts"))
+    expect(Sync.WorkspaceShare).toBe(await import("../src/WorkspaceShare.vibe"))
     expect(Sync.SyncPrincipal).toBe(await import("../src/SyncPrincipal.ts"))
     expect(Sync.SyncAuth).toBe(await import("../src/SyncAuth.vibe"))
     expect(Sync.PresenceProtocol).toBe(await import("../src/PresenceProtocol.vibe"))
     expect(Sync.PresenceRoom).toBe(await import("../src/PresenceRoom.ts"))
     expect(Sync.PresenceSocket).toBe(await import("../src/PresenceSocket.ts"))
-    expect(Sync.SharedText).toBe(await import("../src/SharedText.ts"))
+    expect(Sync.SharedText).toBe(await import("../src/SharedText.vibe"))
   })
 
   it("maps a branch onto exactly one journal run, reversibly", () => {

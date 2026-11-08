@@ -3,7 +3,7 @@ import type { JjError } from "@smthrs/jj"
 import { Effect, PlatformError, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import * as ChildProcessSpawner from "../src/ChildProcessSpawner.ts"
-import * as Jj from "../src/Jj.ts"
+import * as Jj from "../src/Jj.vibe"
 
 /**
  * The kernel stubs exist so a program can be wired without a host at all: an

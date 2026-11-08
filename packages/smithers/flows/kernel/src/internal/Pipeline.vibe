@@ -1,0 +1,81 @@
+/**
+ * Pipeline wiring around a per-process spawner, so every leg has its own lifecycle.
+ * @since 1.0.0
+ */
+
+import * as Effect from "effect/Effect"
+import type * as PlatformError from "effect/PlatformError"
+import * as ChildProcess from "effect/process/ChildProcess"
+import { type ChildProcessHandle, makeHandle } from "effect/process/ChildProcessSpawner"
+import type * as Scope from "effect/Scope"
+
+type Spawn = (
+  command: ChildProcess.StandardCommand
+) => ChildProcessHandle!PlatformError.PlatformError!Scope.Scope
+
+const source = (handle: ChildProcessHandle, from: ChildProcess.PipeFromOption | undefined) => {
+  if (from === "stderr") return handle.stderr
+  if (from === "all") return handle.all
+  const fd = from === undefined ? undefined : ChildProcess.parseFdName(from)
+  return fd === undefined ? handle.stdout : handle.getOutputFd(fd)
+}
+
+/** An edge feeds the first process of its destination, including a nested pipeline. */
+const withInput = (
+  command: ChildProcess.Command,
+  stream: Stream.Stream<Uint8Array, PlatformError.PlatformError>,
+  to: ChildProcess.PipeToOption | undefined
+): ChildProcess.Command => {
+  if (command._tag === "PipedCommand") {
+    return ChildProcess.pipeTo(withInput(command.left, stream, to), command.right, command.options)
+  }
+  const fd = to === undefined ? undefined : ChildProcess.parseFdName(to)
+  if (fd !== undefined) {
+    return ChildProcess.make(command.command, command.args, {
+      ...command.options,
+      additionalFds: {
+        ...command.options.additionalFds,
+        [ChildProcess.fdName(fd)]: { type: "input", stream }
+      }
+    })
+  }
+  const stdin = command.options.stdin
+  return ChildProcess.make(command.command, command.args, {
+    ...command.options,
+    stdin: {
+      ...(typeof stdin === "object" && !Stream.isStream(stdin) ? stdin : {}),
+      stream
+    }
+  })
+}
+
+/**
+ * Preserve Effect's rightmost output/status and reverse-order kill/reref semantics.
+ * @private
+ * @since 1.0.0
+ */
+export const spawn = effect (
+  command: ChildProcess.Command,
+  standard: Spawn
+): ChildProcessHandle!PlatformError.PlatformError!Scope.Scope => {
+  if (command._tag === "StandardCommand") return try standard(command)
+  const left = try spawn(command.left, standard)
+  const right = try spawn(
+    withInput(command.right, source(left, command.options.from), command.options.to),
+    standard
+  )
+  return makeHandle({
+    ...right,
+    kill: effect (options) => {
+      const rightExit = try Effect.exit(right.kill(options))
+      const leftExit = try Effect.exit(left.kill(options))
+      if (Exit.isFailure(rightExit)) return try Effect.failCause(rightExit.cause)
+      return try leftExit
+    },
+    unref: effect {
+      const leftReref = try left.unref
+      const rightReref = try right.unref
+      return Effect.andThen(rightReref, leftReref)
+    }
+  })
+}

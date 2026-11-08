@@ -31,7 +31,7 @@ export * as Identity from "./Identity.ts"
  * @category services
  * @since 1.0.0
  */
-export * as WebCrypto from "./WebCrypto.ts"
+export * as WebCrypto from "./WebCrypto.vibe"
 
 /**
  * Name-based (version 5) UUIDs over the injected `Crypto` service.
@@ -39,4 +39,4 @@ export * as WebCrypto from "./WebCrypto.ts"
  * @category identity
  * @since 1.0.0-rc.17
  */
-export * as Uuid from "./Uuid.ts"
+export * as Uuid from "./Uuid.vibe"

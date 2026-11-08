@@ -12,7 +12,7 @@ import { attenuate } from "../src/CapabilitySet.ts"
 import * as GrantEvent from "../src/GrantEvent.vibe"
 import { GrantStore, maximumRules } from "../src/GrantStore.ts"
 import * as JournalGrantStore from "../src/JournalGrantStore.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as Workspace from "../src/Workspace.vibe"
 
 /**
  * Journal replay is how kernel authority survives a restart, which makes the

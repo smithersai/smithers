@@ -6,8 +6,8 @@ import type * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import * as Migrations from "../src/Migrations.vibe"
 import { heartbeatStaleAfter, type LivenessEvidence, type OwnerId } from "../src/Ownership.ts"
-import { type RunSnapshot, RunStore } from "../src/RunStore.ts"
-import * as RunStoreLive from "../src/RunStore.ts"
+import { type RunSnapshot, RunStore } from "../src/RunStore.vibe"
+import * as RunStoreLive from "../src/RunStore.vibe"
 
 const ownerA: OwnerId = { hostId: "host-a", pid: 101, nonce: "owner-a" }
 const ownerB: OwnerId = { hostId: "host-a", pid: 202, nonce: "owner-b" }

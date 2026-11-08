@@ -12,11 +12,11 @@ import * as CommandLine from "../src/CommandLine.ts"
 import * as ContainedSpawner from "../src/ContainedSpawner.ts"
 import { emptyPolicy as closedPolicy } from "../src/GrantStore.ts"
 import { GrantStore } from "../src/GrantStore.ts"
-import * as KernelPath from "../src/Path.ts"
-import * as ProcessConfinement from "../src/ProcessConfinement.ts"
-import * as ProcessLedger from "../src/ProcessLedger.ts"
-import * as Rooted from "../src/Rooted.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as KernelPath from "../src/Path.vibe"
+import * as ProcessConfinement from "../src/ProcessConfinement.vibe"
+import * as ProcessLedger from "../src/ProcessLedger.vibe"
+import * as Rooted from "../src/Rooted.vibe"
+import * as Workspace from "../src/Workspace.vibe"
 
 const roots: Array<string> = []
 afterEach(() => {

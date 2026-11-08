@@ -16,7 +16,7 @@ import * as ReviewLoop from "../src/ReviewLoop.vibe"
 import * as ScanFixVerify from "../src/ScanFixVerify.vibe"
 import * as Sidecar from "../src/Sidecar.vibe"
 import * as Supervisor from "../src/Supervisor.ts"
-import * as Trellis from "../src/Trellis.ts"
+import * as Trellis from "../src/Trellis.vibe"
 import { execute, member } from "./Execute.ts"
 
 // Every field any pattern in this file hands a member, as the one struct a

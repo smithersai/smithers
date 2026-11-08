@@ -18,7 +18,7 @@ import * as Schema from "effect/Schema"
 import * as Semaphore from "effect/Semaphore"
 import { decode, type GrantEvent, GrantEventSchema } from "./GrantEvent.vibe"
 import * as GrantStore from "./GrantStore.ts"
-import { Workspace } from "./Workspace.ts"
+import { Workspace } from "./Workspace.vibe"
 
 /**
  * Configuration for a journal-backed grant store.

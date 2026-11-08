@@ -10,10 +10,10 @@ import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { forkCreatedEventType, type LineageEdge } from "../src/Frame.vibe"
-import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
+import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.vibe"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
 import { TimeTravelError } from "../src/TimeTravelError.vibe"
-import type * as TimeTravelStore from "../src/TimeTravelStore.ts"
+import type * as TimeTravelStore from "../src/TimeTravelStore.vibe"
 
 const owner = { hostId: "owner-host", pid: 10, nonce: "owner-nonce" } as const
 const stranger = { hostId: "stranger-host", pid: 11, nonce: "stranger-nonce" } as const

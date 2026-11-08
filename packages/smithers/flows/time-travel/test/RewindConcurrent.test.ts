@@ -12,10 +12,10 @@ import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import { TestClock } from "effect/testing"
-import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts"
+import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.vibe"
 import * as Rewind from "../src/internal/Rewind.ts"
-import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
-import { TimeTravelStore } from "../src/TimeTravelStore.ts"
+import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.vibe"
+import { TimeTravelStore } from "../src/TimeTravelStore.vibe"
 
 const ownerA: OwnerId = { hostId: "test-host", pid: 30, nonce: "owner-a" }
 const ownerB: OwnerId = { hostId: "test-host", pid: 31, nonce: "owner-b" }

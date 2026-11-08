@@ -9,7 +9,7 @@
 import * as Effect from "effect/Effect"
 import { dual } from "effect/Function"
 import type * as Types from "effect/Types"
-import { CurrentAttempt, CurrentOrdinal, type OrdinalSlot } from "./Context.ts"
+import { CurrentAttempt, CurrentOrdinal, type OrdinalSlot } from "./Context.vibe"
 
 /**
  * Retries an effect with `Effect.retry` while updating `CurrentAttempt` for

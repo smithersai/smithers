@@ -27,7 +27,7 @@ import * as RunCatalog from "../src/RunCatalog.ts"
 import * as SyncClient from "../src/SyncClient.ts"
 import * as SyncProtocol from "../src/SyncProtocol.ts"
 import * as TestSocket from "../src/test/TestSocket.ts"
-import * as WorkspaceShare from "../src/WorkspaceShare.ts"
+import * as WorkspaceShare from "../src/WorkspaceShare.vibe"
 
 /** A transport no construction-time refusal ever reaches. */
 const client = {} as Parameters<typeof SyncClient.make>[0]["client"]

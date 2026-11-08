@@ -31,7 +31,7 @@ import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
-import type * as TimeTravelStore from "../src/TimeTravelStore.ts"
+import type * as TimeTravelStore from "../src/TimeTravelStore.vibe"
 import { joinDrive } from "./JoinDrive.ts"
 
 const rootRunId = "trampoline-lineage"

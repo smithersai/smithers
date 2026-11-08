@@ -1,0 +1,230 @@
+/**
+ * Cross-process exclusion between a filesystem artifact backup and garbage
+ * collection.
+ *
+ * A backup holds one heartbeat-backed marker for the duration of its database
+ * snapshot and blob copy. Sweep deletion checks that marker while holding the
+ * same short-lived global gate. Publication remains unconstrained: new blobs
+ * may appear during a backup, but a blob already referenced by the frozen
+ * database cannot disappear underneath it.
+ *
+ * @since 1.0.0-rc.0
+ */
+
+import * as Effect from "effect/Effect"
+import type * as FileSystem from "effect/FileSystem"
+import * as Option from "effect/Option"
+import * as ArtifactLocks from "./internal/ArtifactLocks.ts"
+
+import { ArtifactStoreError } from "./ArtifactStoreError.vibe"
+
+const markerName = ".backup-lease"
+const gateName = ".backup-lease-gate"
+const heartbeatEvery = "10 seconds"
+const staleAfterMs = 60_000
+const acquireWithin = "2 minutes"
+const retryEvery = "25 millis"
+
+const isReason = (cause: unknown, tag: PlatformError.SystemErrorTag): boolean =>
+  cause instanceof PlatformError.PlatformError && cause.reason._tag === tag
+
+const token = effect {
+  const first = try Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER, { halfOpen: true })
+  const second = try Random.nextIntBetween(0, Number.MAX_SAFE_INTEGER, { halfOpen: true })
+  return `${first.toString(36)}-${second.toString(36)}-${try Clock.currentTimeMillis}`
+}
+
+const gate = <A, E, R, E2>(
+  fs: FileSystem.FileSystem,
+  directory: string,
+  effect: A!E!R,
+  failure: (cause: unknown) => E2
+): A!(E | E2)!R => ArtifactLocks.withDigest(fs, directory, gateName, effect, failure)
+
+const activeMarker = effect <E>(
+  fs: FileSystem.FileSystem,
+  directory: string,
+  failure: (cause: unknown) => E
+): boolean!E => {
+  const path = `${directory}/${markerName}`
+  const info = try (fs.stat(path)
+    |> Effect.map(%, Option.some)
+    |> Effect.catch(%, (cause): Option.Option<FileSystem.File.Info>!E =>
+      isReason(cause, "NotFound") ? Effect.succeed(Option.none()) : Effect.fail(failure(cause))
+    ))
+  if (Option.isNone(info)) return false
+  const modified = Option.getOrUndefined(info.value.mtime)
+  const now = try Clock.currentTimeMillis
+  if (modified === undefined || now - modified.getTime() <= staleAfterMs) return true
+  try (fs.remove(path)
+    |> Effect.catch(%, (cause): void!E =>
+      isReason(cause, "NotFound") ? Effect.void : Effect.fail(failure(cause))
+    ))
+  return false
+}
+
+/**
+ * Runs `effect` while sweep deletion is fenced across every process using
+ * this objects directory. A crashed holder is recovered after its heartbeat
+ * becomes stale.
+ *
+ * @category combinators
+ * @since 1.0.0-rc.0
+ */
+export const withLease = effect <A, E, R, E2>(
+  fs: FileSystem.FileSystem,
+  directory: string,
+  effect: A!E!R,
+  failure: (cause: unknown) => E2
+): A!(E | E2)!R => {
+  const owner = try token
+  const marker = `${directory}/${markerName}`
+  fs.makeDirectory(directory, { recursive: true }) catch effect (e) => { throw failure(e) }
+
+  let ownsMarker = false
+  let protectedUntil = 0
+  const acquire = effect {
+    while (true) {
+      const acquired = try gate(
+        fs,
+        directory,
+        effect {
+          if (try activeMarker(fs, directory, failure)) return false
+          const startedAt = try Clock.currentTimeMillis
+          return try Effect.uninterruptible(
+            fs.writeFileString(marker, owner, { flag: "wx", mode: 0o600 })
+              |> Effect.andThen(%, Effect.sync(() => {
+                ownsMarker = true
+                protectedUntil = startedAt + 50_000
+                return true
+              }))
+              |> Effect.catch(%, (cause): boolean!E2 =>
+                isReason(cause, "AlreadyExists") ? Effect.succeed(false) : Effect.fail(failure(cause))
+              )
+          )
+        },
+        failure
+      )
+      if (acquired) return
+      try Effect.sleep(retryEvery)
+    }
+  }
+    |> Effect.timeout(%, acquireWithin)
+    |> Effect.catchTag(%, "TimeoutError", (cause) => Effect.fail(failure(cause)))
+
+  // Install marker cleanup before acquisition, including gate release. The
+  // marker write and ownership bookkeeping complete in one interruption mask.
+  return try Effect.acquireUseRelease(
+    Effect.void,
+    () =>
+      acquire |> Effect.andThen(
+        %, Effect.scoped(effect {
+          const expired = () =>
+            failure(
+              new ArtifactStoreError({ code: "unavailable", message: "Artifact backup lease heartbeat expired" })
+            )
+          // The marker ages during gate cleanup too. Bound protection by
+          // the timestamp actually requested, not by heartbeat completion.
+          if ((try Clock.currentTimeMillis) >= protectedUntil) throw expired()
+          const lost = try Deferred.make<never, E2>()
+          const deadline = effect {
+            while (true) {
+              const remaining = protectedUntil - (try Clock.currentTimeMillis)
+              if (remaining <= 0) {
+                try Effect.logWarning("Artifact backup lease heartbeat deadline exceeded")
+                throw expired()
+              }
+              try Effect.sleep(remaining)
+            }
+          }
+          const heartbeat = effect {
+            while (true) {
+              try Effect.sleep(heartbeatEvery)
+              try (gate(
+                fs,
+                directory,
+                (do { const catchProgram = (fs.readFileString(marker)
+                  |> Effect.map(%, Option.some)); effect { return catchProgram catch effect (cause) => try (isReason(cause, "NotFound") ? Effect.succeed(Option.none<string>()) : Effect.fail(cause)) } })
+                  |> Effect.flatMap(%, (found): void!(PlatformError.PlatformError | ArtifactStoreError)! => {
+                    if (Option.getOrUndefined(found) !== owner) {
+                      return Effect.logWarning(
+                        "Artifact backup lease was reclaimed while its backup was still running"
+                      )
+                        |> Effect.andThen(
+                          %, Effect.fail(
+                            new ArtifactStoreError({
+                              code: "unavailable",
+                              message: "Artifact backup lease ownership lost"
+                            })
+                          )
+                        )
+                    }
+                    return Effect.flatMap(Clock.currentTimeMillis, (now) => {
+                      const timestamp = new Date(now)
+                      return fs.utimes(marker, timestamp, timestamp) |> Effect.tap(%, () =>
+                        Effect.sync(() => {
+                          protectedUntil = now + 50_000
+                        })
+                      )
+                    })
+                  })
+                  |> Effect.mapError(%, failure)
+                  // Signal before the gate finalizer: stopping the copy
+                  // must not wait for filesystem cleanup to complete.
+                  |> Effect.tapError(%, (cause) => Deferred.fail(lost, cause)),
+                failure
+              )
+                // A host refusal means continued protection cannot be
+                // established. Stop the backup before the marker expires.
+                |> Effect.tapError(%, () => Effect.logWarning("Artifact backup lease heartbeat failed")))
+            }
+          }
+
+          try Effect.forkScoped(do { const catchProgram = heartbeat; effect { return catchProgram catch effect (cause) => try Deferred.fail(lost, cause) } })
+          return try (effect |> Effect.raceFirst(%, Deferred.await(lost)) |> Effect.raceFirst(%, deadline))
+        })
+      ),
+    () =>
+      ownsMarker
+        ? (do { const catchProgram = gate(
+          fs,
+          directory,
+          fs.readFileString(marker)
+            |> Effect.flatMap(%, (found) => found === owner ? fs.remove(marker) : Effect.void)
+            // A backup whose heartbeat lapsed has its marker reaped by whoever
+            // noticed, so `NotFound` is the ordinary end of a slow lease, not a
+            // fault: there is nothing left to release and nothing left to leak.
+            // The sibling release in `internal/ArtifactLocks.ts` classifies the
+            // same cause the same way.
+            |> Effect.catch(%, (cause): void!PlatformError.PlatformError =>
+              isReason(cause, "NotFound") ? Effect.void : Effect.fail(cause)
+            ),
+          failure
+        ); effect { return catchProgram catch effect (cause) => try Effect.logWarning("Artifact backup lease release failed", cause) } })
+        : Effect.void
+  )
+}
+
+/**
+ * Runs one sweep deletion only when no live backup lease exists. The marker
+ * check and `effect` share the global gate, closing the check/delete race.
+ * `None` means a backup deliberately fenced the operation.
+ *
+ * @category combinators
+ * @since 1.0.0-rc.0
+ */
+export const unlessActive = <A, E, R, E2>(
+  fs: FileSystem.FileSystem,
+  directory: string,
+  effect: A!E!R,
+  failure: (cause: unknown) => E2
+): Option.Option<A>!(E | E2)!R =>
+  gate(
+    fs,
+    directory,
+    effect {
+      if (try activeMarker(fs, directory, failure)) return Option.none<A>()
+      return Option.some(try effect)
+    },
+    failure
+  )

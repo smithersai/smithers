@@ -19,7 +19,7 @@ import type * as RetryPolicy from "../RetryPolicy.vibe"
 import { CurrentExecutionIds } from "./ExecutionIds.vibe"
 import type { Any, AnyStructSchema, AnyWithProps, BodySuccess, DeclarationMetadata, Flow } from "./Flow.vibe"
 import type { To } from "./Outcome.vibe"
-import { withRollback } from "./Runtime.ts"
+import { withRollback } from "./Runtime.vibe"
 import { TypeId } from "./TypeId.ts"
 
 /**

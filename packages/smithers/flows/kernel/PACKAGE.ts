@@ -26,7 +26,7 @@ const securityReview = Smithers.SecurityReview({
         "A spawner method (string, lines, exitCode, stream*) or pipeline leg that reaches the host spawner without passing the guarded spawn.",
         "An env override the child would not inherit (a name outside ChildProcessEnvironment.isInheritedName such as LD_PRELOAD, GIT_*, NODE_OPTIONS, or a PATH/HOME value that differs from the ambient one) missing from the CommandLine.resource env prefix, or a cwd outside Workspace.root missing its cwd prefix, so it changes what a granted line executes while staying outside the grant."
       ],
-      paths: ["src/ChildProcessSpawner.ts", "src/CommandLine.ts", "src/Rooted.ts", "src/internal/Pipeline.ts"]
+      paths: ["src/ChildProcessSpawner.ts", "src/CommandLine.ts", "src/Rooted.vibe", "src/internal/Pipeline.vibe"]
     },
     {
       id: "child-env-least-authority",
@@ -37,7 +37,7 @@ const securityReview = Smithers.SecurityReview({
         "A path that passes extendEnv or merges process.env instead of the null-prototype record from ChildProcessEnvironment.make.",
         "Case-variant or duplicate names letting an ambient value survive a declared undefined removal."
       ],
-      paths: ["src/ChildProcessEnvironment.ts", "src/ChildProcessSpawner.ts", "src/ContainedSpawner.ts"]
+      paths: ["src/ChildProcessEnvironment.vibe", "src/ChildProcessSpawner.ts", "src/ContainedSpawner.ts"]
     },
     {
       id: "fs-confinement",
@@ -50,7 +50,7 @@ const securityReview = Smithers.SecurityReview({
         "An operation in confined() (glob root, temp directory, rename/copy destination, open flags) that is not refused or not routed through the atomic host.",
         "Rooted.fileSystem mistaken for confinement: absolute paths and symlink targets pass through it unchanged."
       ],
-      paths: ["src/FileSystem.ts", "src/FileSystemBatch.vibe", "src/Rooted.ts", "src/Path.ts", "src/Workspace.ts"]
+      paths: ["src/FileSystem.vibe", "src/FileSystemBatch.vibe", "src/Rooted.vibe", "src/Path.vibe", "src/Workspace.vibe"]
     },
     {
       id: "http-grant-per-hop",
@@ -98,7 +98,7 @@ const securityReview = Smithers.SecurityReview({
         "Records keyed by pid alone so pid reuse retires or signals the wrong process.",
         "commandDigest storing arguments (credentials) instead of CommandLine.executable."
       ],
-      paths: ["src/ProcessLedger.ts", "src/ContainedSpawner.ts", "src/internal/Containment.vibe", "src/CommandLine.ts"]
+      paths: ["src/ProcessLedger.vibe", "src/ContainedSpawner.ts", "src/internal/Containment.vibe", "src/CommandLine.ts"]
     },
     {
       id: "jj-capability-resource",
@@ -109,7 +109,7 @@ const securityReview = Smithers.SecurityReview({
         "A Jj method that reaches @smthrs/jj without a GrantStore check, or a write operation checked as a read.",
         "A repository path passed to makeCapability without canonicalResource."
       ],
-      paths: ["src/Jj.ts"]
+      paths: ["src/Jj.vibe"]
     },
     {
       id: "allow-all-layers-not-production",
@@ -123,12 +123,12 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/test/**",
         "src/GrantStore.ts",
-        "src/HostServices.ts",
+        "src/HostServices.vibe",
         "src/index.ts",
         "src/ChildProcessSpawner.ts",
         "src/HttpClient.ts",
-        "src/Workspace.ts",
-        "src/Jj.ts"
+        "src/Workspace.vibe",
+        "src/Jj.vibe"
       ]
     }
   ]

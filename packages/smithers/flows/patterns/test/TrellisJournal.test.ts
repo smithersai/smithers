@@ -24,7 +24,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import * as Trellis from "../src/Trellis.ts"
+import * as Trellis from "../src/Trellis.vibe"
 
 const step = Action.make("trellis-journal/step", {
   payload: { role: Schema.String, payload: Schema.Unknown },

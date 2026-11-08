@@ -26,10 +26,10 @@ import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
-import * as ArtifactBackupLease from "./ArtifactBackupLease.ts"
+import * as ArtifactBackupLease from "./ArtifactBackupLease.vibe"
 import * as ArtifactStore from "./ArtifactStore.ts"
 import * as ArtifactLocks from "./internal/ArtifactLocks.ts"
-import * as ArtifactPath from "./internal/ArtifactPath.ts"
+import * as ArtifactPath from "./internal/ArtifactPath.vibe"
 
 /**
  * One enumerated blob: its content address, when it was last written or

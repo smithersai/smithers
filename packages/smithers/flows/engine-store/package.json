@@ -34,44 +34,184 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./migrations/*": null,
     "./*/index": null,
-    "./ArtifactGc": "./src/ArtifactGc.ts",
-    "./ArtifactSync": "./src/ArtifactSync.ts",
-    "./CacheSync": "./src/CacheSync.ts",
-    "./DisasterRecovery": "./src/DisasterRecovery.ts",
-    "./DurableEngineState": "./src/DurableEngineState.ts",
-    "./EngineStore": "./src/EngineStore.ts",
-    "./EngineStoreMetrics": "./src/EngineStoreMetrics.ts",
-    "./Errors": "./src/Errors.ts",
-    "./ExecutionSnapshot": "./src/ExecutionSnapshot.ts",
-    "./RunChangeFeed": "./src/RunChangeFeed.ts",
-    "./RunInspection": "./src/RunInspection.ts",
-    "./Inconsistency": "./src/Inconsistency.ts",
-    "./Migrations": "./src/Migrations.ts",
-    "./OwnerIdentity": "./src/OwnerIdentity.ts",
-    "./PlanScheduler": "./src/PlanScheduler.ts",
-    "./PlanInputStore": "./src/PlanInputStore.ts",
-    "./PlanMergeStore": "./src/PlanMergeStore.ts",
-    "./Reconciliation": "./src/Reconciliation.ts",
-    "./ReplayOnly": "./src/ReplayOnly.ts",
-    "./Retention": "./src/Retention.ts",
-    "./RunCatalogRead": "./src/RunCatalogRead.ts",
-    "./RunState": "./src/RunState.ts",
-    "./Selection": "./src/Selection.ts",
-    "./SelectionStore": "./src/SelectionStore.ts",
-    "./StepBoundary": "./src/StepBoundary.ts",
-    "./StepLogs": "./src/StepLogs.ts",
-    "./DeferredClockFold": "./src/DeferredClockFold.ts",
-    "./StepCacheFold": "./src/StepCacheFold.ts",
-    "./StepSandbox": "./src/StepSandbox.ts",
-    "./WakeBus": "./src/WakeBus.ts",
-    "./WorkspaceSandbox": "./src/WorkspaceSandbox.ts",
-    "./index": "./src/index.ts",
-    "./test/TestStores": "./src/test/TestStores.ts",
-    "./EventTypes": "./src/EventTypes.ts"
+    "./ArtifactGc": {
+      "types": "./.vibe/declarations/src/ArtifactGc.d.vibe.ts",
+      "vibelang-source": "./src/ArtifactGc.vibe",
+      "default": "./.vibelang/js/src/ArtifactGc.js"
+    },
+    "./ArtifactSync": {
+      "types": "./src/ArtifactSync.ts",
+      "vibelang-source": "./src/ArtifactSync.ts",
+      "default": "./.vibelang/js/src/ArtifactSync.js"
+    },
+    "./CacheSync": {
+      "types": "./src/CacheSync.ts",
+      "vibelang-source": "./src/CacheSync.ts",
+      "default": "./.vibelang/js/src/CacheSync.js"
+    },
+    "./DisasterRecovery": {
+      "types": "./src/DisasterRecovery.ts",
+      "vibelang-source": "./src/DisasterRecovery.ts",
+      "default": "./.vibelang/js/src/DisasterRecovery.js"
+    },
+    "./DurableEngineState": {
+      "types": "./src/DurableEngineState.ts",
+      "vibelang-source": "./src/DurableEngineState.ts",
+      "default": "./.vibelang/js/src/DurableEngineState.js"
+    },
+    "./EngineStore": {
+      "types": "./src/EngineStore.ts",
+      "vibelang-source": "./src/EngineStore.ts",
+      "default": "./.vibelang/js/src/EngineStore.js"
+    },
+    "./EngineStoreMetrics": {
+      "types": "./src/EngineStoreMetrics.ts",
+      "vibelang-source": "./src/EngineStoreMetrics.ts",
+      "default": "./.vibelang/js/src/EngineStoreMetrics.js"
+    },
+    "./Errors": {
+      "types": "./src/Errors.ts",
+      "vibelang-source": "./src/Errors.ts",
+      "default": "./.vibelang/js/src/Errors.js"
+    },
+    "./ExecutionSnapshot": {
+      "types": "./src/ExecutionSnapshot.ts",
+      "vibelang-source": "./src/ExecutionSnapshot.ts",
+      "default": "./.vibelang/js/src/ExecutionSnapshot.js"
+    },
+    "./RunChangeFeed": {
+      "types": "./.vibe/declarations/src/RunChangeFeed.d.vibe.ts",
+      "vibelang-source": "./src/RunChangeFeed.vibe",
+      "default": "./.vibelang/js/src/RunChangeFeed.js"
+    },
+    "./RunInspection": {
+      "types": "./.vibe/declarations/src/RunInspection.d.vibe.ts",
+      "vibelang-source": "./src/RunInspection.vibe",
+      "default": "./.vibelang/js/src/RunInspection.js"
+    },
+    "./Inconsistency": {
+      "types": "./src/Inconsistency.ts",
+      "vibelang-source": "./src/Inconsistency.ts",
+      "default": "./.vibelang/js/src/Inconsistency.js"
+    },
+    "./Migrations": {
+      "types": "./src/Migrations.ts",
+      "vibelang-source": "./src/Migrations.ts",
+      "default": "./.vibelang/js/src/Migrations.js"
+    },
+    "./OwnerIdentity": {
+      "types": "./src/OwnerIdentity.ts",
+      "vibelang-source": "./src/OwnerIdentity.ts",
+      "default": "./.vibelang/js/src/OwnerIdentity.js"
+    },
+    "./PlanScheduler": {
+      "types": "./src/PlanScheduler.ts",
+      "vibelang-source": "./src/PlanScheduler.ts",
+      "default": "./.vibelang/js/src/PlanScheduler.js"
+    },
+    "./PlanInputStore": {
+      "types": "./src/PlanInputStore.ts",
+      "vibelang-source": "./src/PlanInputStore.ts",
+      "default": "./.vibelang/js/src/PlanInputStore.js"
+    },
+    "./PlanMergeStore": {
+      "types": "./src/PlanMergeStore.ts",
+      "vibelang-source": "./src/PlanMergeStore.ts",
+      "default": "./.vibelang/js/src/PlanMergeStore.js"
+    },
+    "./Reconciliation": {
+      "types": "./.vibe/declarations/src/Reconciliation.d.vibe.ts",
+      "vibelang-source": "./src/Reconciliation.vibe",
+      "default": "./.vibelang/js/src/Reconciliation.js"
+    },
+    "./ReplayOnly": {
+      "types": "./src/ReplayOnly.ts",
+      "vibelang-source": "./src/ReplayOnly.ts",
+      "default": "./.vibelang/js/src/ReplayOnly.js"
+    },
+    "./Retention": {
+      "types": "./src/Retention.ts",
+      "vibelang-source": "./src/Retention.ts",
+      "default": "./.vibelang/js/src/Retention.js"
+    },
+    "./RunCatalogRead": {
+      "types": "./src/RunCatalogRead.ts",
+      "vibelang-source": "./src/RunCatalogRead.ts",
+      "default": "./.vibelang/js/src/RunCatalogRead.js"
+    },
+    "./RunState": {
+      "types": "./src/RunState.ts",
+      "vibelang-source": "./src/RunState.ts",
+      "default": "./.vibelang/js/src/RunState.js"
+    },
+    "./Selection": {
+      "types": "./.vibe/declarations/src/Selection.d.vibe.ts",
+      "vibelang-source": "./src/Selection.vibe",
+      "default": "./.vibelang/js/src/Selection.js"
+    },
+    "./SelectionStore": {
+      "types": "./.vibe/declarations/src/SelectionStore.d.vibe.ts",
+      "vibelang-source": "./src/SelectionStore.vibe",
+      "default": "./.vibelang/js/src/SelectionStore.js"
+    },
+    "./StepBoundary": {
+      "types": "./src/StepBoundary.ts",
+      "vibelang-source": "./src/StepBoundary.ts",
+      "default": "./.vibelang/js/src/StepBoundary.js"
+    },
+    "./StepLogs": {
+      "types": "./src/StepLogs.ts",
+      "vibelang-source": "./src/StepLogs.ts",
+      "default": "./.vibelang/js/src/StepLogs.js"
+    },
+    "./DeferredClockFold": {
+      "types": "./src/DeferredClockFold.ts",
+      "vibelang-source": "./src/DeferredClockFold.ts",
+      "default": "./.vibelang/js/src/DeferredClockFold.js"
+    },
+    "./StepCacheFold": {
+      "types": "./.vibe/declarations/src/StepCacheFold.d.vibe.ts",
+      "vibelang-source": "./src/StepCacheFold.vibe",
+      "default": "./.vibelang/js/src/StepCacheFold.js"
+    },
+    "./StepSandbox": {
+      "types": "./src/StepSandbox.ts",
+      "vibelang-source": "./src/StepSandbox.ts",
+      "default": "./.vibelang/js/src/StepSandbox.js"
+    },
+    "./WakeBus": {
+      "types": "./src/WakeBus.ts",
+      "vibelang-source": "./src/WakeBus.ts",
+      "default": "./.vibelang/js/src/WakeBus.js"
+    },
+    "./WorkspaceSandbox": {
+      "types": "./src/WorkspaceSandbox.ts",
+      "vibelang-source": "./src/WorkspaceSandbox.ts",
+      "default": "./.vibelang/js/src/WorkspaceSandbox.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./test/TestStores": {
+      "types": "./src/test/TestStores.ts",
+      "vibelang-source": "./src/test/TestStores.ts",
+      "default": "./.vibelang/js/src/test/TestStores.js"
+    },
+    "./EventTypes": {
+      "types": "./src/EventTypes.ts",
+      "vibelang-source": "./src/EventTypes.ts",
+      "default": "./.vibelang/js/src/EventTypes.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -83,7 +223,22 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    "src/ArtifactGc.vibe",
+    "src/Reconciliation.vibe",
+    "src/RunChangeFeed.vibe",
+    "src/RunInspection.vibe",
+    "src/Selection.vibe",
+    "src/SelectionStore.vibe",
+    "src/StepCacheFold.vibe",
+    "src/internal/AttemptLifecycle.vibe",
+    "src/internal/ExecutionSnapshotRelations.vibe",
+    "src/internal/PlanInputs.vibe",
+    "src/internal/PlanMerges.vibe",
+    "src/internal/ResultEnvelope.vibe",
+    "src/internal/RunCatalogOps.vibe",
+    "src/internal/RunListingError.vibe",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

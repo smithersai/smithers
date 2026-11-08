@@ -28,7 +28,7 @@ import * as shareSigner from "./internal/ShareSigner.ts"
 import { SyncError } from "./SyncError.ts"
 import * as SyncPrincipal from "./SyncPrincipal.ts"
 import { SyncAuth } from "./SyncRpcs.ts"
-import * as WorkspaceShare from "./WorkspaceShare.ts"
+import * as WorkspaceShare from "./WorkspaceShare.vibe"
 
 /**
  * The request header a connection presents its workspace capability in.

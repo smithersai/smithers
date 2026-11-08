@@ -31,7 +31,7 @@ export * as DurableDeferred from "./DurableDeferred.vibe"
  *
  * @since 0.1.0
  */
-export * as DurableQueue from "./DurableQueue.ts"
+export * as DurableQueue from "./DurableQueue.vibe"
 
 /**
  * Durable flow definitions.

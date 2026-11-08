@@ -27,13 +27,13 @@ import {
 } from "effect/process/ChildProcessSpawner"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { isAbsolute, join, relative } from "node:path"
-import * as FileSystem from "../src/FileSystem.ts"
+import * as FileSystem from "../src/FileSystem.vibe"
 import { emptyPolicy as closedPolicy } from "../src/GrantStore.ts"
 import * as GrantStore from "../src/GrantStore.ts"
-import * as HostServices from "../src/HostServices.ts"
+import * as HostServices from "../src/HostServices.vibe"
 import * as KernelHttpClient from "../src/HttpClient.ts"
-import * as ProcessConfinement from "../src/ProcessConfinement.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as ProcessConfinement from "../src/ProcessConfinement.vibe"
+import * as Workspace from "../src/Workspace.vibe"
 
 const allowAll = GrantStore.GrantStore.of({
   policy: closedPolicy,

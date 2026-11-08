@@ -14,7 +14,7 @@ import { join } from "node:path"
 import * as Migrations from "../src/Migrations.vibe"
 import { initial } from "../src/migrations/0001_initial.vibe"
 import { lineage } from "../src/migrations/0002_lineage.vibe"
-import * as RunStore from "../src/RunStore.ts"
+import * as RunStore from "../src/RunStore.vibe"
 
 const owner = { hostId: "driver", pid: 42, nonce: "one" }
 const onFile = <A, E>(

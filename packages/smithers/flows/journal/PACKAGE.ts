@@ -110,7 +110,7 @@ const securityReview = Smithers.SecurityReview({
         "A public method that reaches the Unfenced fence without being emitDurableUnfenced or a documented internal path.",
         "Owner fields matched loosely (empty hostId or nonce accepted as a wildcard)."
       ],
-      paths: ["src/SqlJournal.ts", "src/OwnerId.vibe", "src/Consensus.ts", "src/SqlConsensus.ts"]
+      paths: ["src/SqlJournal.ts", "src/OwnerId.vibe", "src/Consensus.vibe", "src/SqlConsensus.vibe"]
     },
     {
       id: "sql-parameterization",

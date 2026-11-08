@@ -64,7 +64,7 @@ describe("randomness is read only on demand", () => {
   it("reads none while the module evaluates or make builds the service", async () => {
     const getRandomValues = vi.spyOn(globalThis.crypto, "getRandomValues")
     vi.resetModules()
-    const fresh = await import("../src/WebCrypto.ts")
+    const fresh = await import("../src/WebCrypto.vibe")
     const service = fresh.make()
     expect(getRandomValues).not.toHaveBeenCalled()
     Effect.runSync(SecureRandom.SecureRandom.use((random) => random.randomBytes(16)).pipe(Effect.provide(service)))

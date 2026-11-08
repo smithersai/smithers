@@ -6,7 +6,7 @@ import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Effect } from "effect"
 import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
-import * as ProcessLedger from "../src/ProcessLedger.ts"
+import * as ProcessLedger from "../src/ProcessLedger.vibe"
 
 const run = <A, E>(effect: Effect.Effect<A, E, Journal | Scope.Scope>) =>
   effect.pipe(Effect.provide(TestJournal.layer()), Effect.scoped)

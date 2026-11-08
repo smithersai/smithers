@@ -28,7 +28,7 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Semaphore from "effect/Semaphore"
 import { FlowInstance } from "../FlowRuntime/FlowInstance.vibe"
-import { CurrentInvocationKey } from "./Context.ts"
+import { CurrentInvocationKey } from "./Context.vibe"
 
 /**
  * A write that carries its key and can be found by it.

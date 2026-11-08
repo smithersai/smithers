@@ -43,7 +43,7 @@ export * as ArtifactStoreMetrics from "./ArtifactStoreMetrics.vibe"
  * @category services
  * @since 1.0.0-rc.0
  */
-export * as ArtifactBackupLease from "./ArtifactBackupLease.ts"
+export * as ArtifactBackupLease from "./ArtifactBackupLease.vibe"
 
 /**
  * @category services

@@ -5,8 +5,8 @@ import * as HostJj from "@smthrs/jj"
 import { Deferred, Effect, Fiber, FileSystem as EffectFileSystem, Path } from "effect"
 import { emptyPolicy as closedPolicy } from "../src/GrantStore.ts"
 import { GrantStore } from "../src/GrantStore.ts"
-import * as Jj from "../src/Jj.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as Jj from "../src/Jj.vibe"
+import * as Workspace from "../src/Workspace.vibe"
 
 const itEffect = (name: string, effect: () => Effect.Effect<void, unknown, never>) => it.effect(name, () => effect())
 

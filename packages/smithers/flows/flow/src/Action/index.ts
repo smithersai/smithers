@@ -6,12 +6,12 @@
  * @since 0.1.0
  */
 
-export * from "./Action.ts"
+export * from "./Action.vibe"
 export * from "./AttemptTimedOut.vibe"
 export * from "./BoundaryMode.ts"
 export * from "./CacheEnvironment.vibe"
 export * from "./ConcurrentKeylessDispatch.vibe"
-export * from "./Context.ts"
+export * from "./Context.vibe"
 export * from "./DuplicateImplementation.vibe"
 export * from "./FileBoundary.vibe"
 export * as Filegroup from "./Filegroup.ts"

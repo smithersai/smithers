@@ -76,7 +76,7 @@ export * as Saga from "./Saga.vibe"
  * @category patterns
  * @since 0.1.0
  */
-export * as Trellis from "./Trellis.ts"
+export * as Trellis from "./Trellis.vibe"
 
 /**
  * @category patterns

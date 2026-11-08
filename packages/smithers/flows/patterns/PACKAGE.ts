@@ -106,7 +106,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/Supervisor.ts",
-        "src/Trellis.ts",
+        "src/Trellis.vibe",
         "src/DelegationChain.vibe",
         "src/Recursion.vibe",
         "src/MapReduce.vibe",

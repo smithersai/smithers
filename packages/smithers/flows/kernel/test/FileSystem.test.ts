@@ -16,10 +16,10 @@ import {
 } from "effect"
 import * as ByteSize from "effect/ByteSize"
 import { Base64 } from "effect/encoding"
-import * as FileSystem from "../src/FileSystem.ts"
+import * as FileSystem from "../src/FileSystem.vibe"
 import { emptyPolicy as closedPolicy } from "../src/GrantStore.ts"
 import { GrantStore } from "../src/GrantStore.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as Workspace from "../src/Workspace.vibe"
 
 const itEffect = (name: string, effect: () => Effect.Effect<void, unknown, never>) => it.effect(name, () => effect())
 

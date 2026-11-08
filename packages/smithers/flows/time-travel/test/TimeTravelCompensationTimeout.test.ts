@@ -12,9 +12,9 @@ import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import { TestClock } from "effect/testing"
 import * as CompensationHandlers from "../src/CompensationHandlers.vibe"
-import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
+import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.vibe"
 import { layerWith } from "../src/TimeTravel.ts"
-import { TimeTravelStore } from "../src/TimeTravelStore.ts"
+import { TimeTravelStore } from "../src/TimeTravelStore.vibe"
 
 const dependencies = (store: TimeTravelStore["Service"]) =>
   Layer.mergeAll(

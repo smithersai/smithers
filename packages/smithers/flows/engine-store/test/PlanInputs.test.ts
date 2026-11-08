@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { FileSet, KeyMaterial, Plan } from "@smthrs/plan"
 import { Effect } from "effect"
-import * as PlanInputs from "../src/internal/PlanInputs.ts"
+import * as PlanInputs from "../src/internal/PlanInputs.vibe"
 import type * as PlanInputStore from "../src/PlanInputStore.ts"
 import { withCrypto } from "./Sha256.ts"
 

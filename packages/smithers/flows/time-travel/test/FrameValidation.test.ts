@@ -14,12 +14,12 @@ import * as Layer from "effect/Layer"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as EffectBoundary from "../src/EffectBoundary.ts"
 import * as Rewind from "../src/internal/Rewind.ts"
-import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
+import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.vibe"
 import * as Migrations from "../src/Migrations.vibe"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
 import { makeWith, ReadOnlyTimeTravel, TimeTravel } from "../src/TimeTravel.ts"
 import type { TimeTravelError } from "../src/TimeTravelError.vibe"
-import { TimeTravelStore } from "../src/TimeTravelStore.ts"
+import { TimeTravelStore } from "../src/TimeTravelStore.vibe"
 
 const entries: ReadonlyArray<JournalEvent.Entry> = [
   {

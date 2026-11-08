@@ -5,8 +5,8 @@ import { Effect, Fiber, Path } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import * as CapabilitySet from "../src/CapabilitySet.ts"
 import * as GrantStore from "../src/GrantStore.ts"
-import * as ProcessConfinement from "../src/ProcessConfinement.ts"
-import * as Workspace from "../src/Workspace.ts"
+import * as ProcessConfinement from "../src/ProcessConfinement.vibe"
+import * as Workspace from "../src/Workspace.vibe"
 
 const scoped = (name: string, body: () => Effect.Effect<void, unknown, import("effect").Scope.Scope>) =>
   it.effect(name, () => Effect.scoped(body()))
