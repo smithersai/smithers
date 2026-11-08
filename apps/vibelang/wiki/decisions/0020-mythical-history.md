@@ -1,0 +1,121 @@
+# 0020. The mythical history
+
+**Status:** accepted, 2026-11-07; Will may override. **Rulings:** VL-22 (and VL-9, VL-11, VL-13, VL-17, VL-18, VL-21);
+Smithers D-09a, D-20; repository rules FLOW-3, "people merge; agents never approve or merge". **Brings back** what
+`apps/mvp/docs/rulings.md` TODO-2 deferred, for this app only. **Designed twice:** Claude Opus
+(`~/vl/mythical/design-opus.md`) and Codex Sol (`~/vl/mythical/design-sol.md`), independently; Opus merged them. **Built so far:** the machine, its proofs, the bootstrap, the flows and the mock; the live History
+object, its routes, the surfaces and the view land next, each with this record updated.
+
+**Decision.** VibeLang's mythical history is a second state machine beside the conversation's (0003): one linear stack
+of mythical commits grouped into epics, written only by its sequencer in one Durable Object, `History`, bootstrapped
+from every commit reachable from VibeLang's `main` and the merge queue's records, and advanced only by the flows below,
+which people and the agent run alike.
+
+```
+issue ─▶ task ─▶ Plan (append | insert | amend) ─▶ Start (lane) ─▶ Note* ─▶ Approve (a person) ─▶ merge queue ─▶ main
+                    planned                         working                  approved                          │
+                                    landed ◀── Fold: each new commit of main maps onto exactly one mythical commit
+```
+
+## What it is and where it lives
+
+- **The store of record is the app's History object** (`worker/HistoryObject.vibe`), the "stack service" D-09a names:
+  a sequencer exactly like a conversation's: `decide` numbers intents, `apply` folds events, each event is stored
+  before anyone sees it and published to followers. The mock runs the same sequencer over memory
+  (`src/history/Sequencer.vibe`).
+- **The data** (`src/history/mythical.vibe`, no Effect, proved): epics (appended only); mythical commits, each with a
+  stable id `m<n>`, its epic, its rank inside the epic, its title, its state (`planned`, `working`, `approved`,
+  `landed`), its open task and lane, and its notes; and `real`, every commit of `main` in order, each with the one
+  mythical commit it folds into. The stack's order is (epic order, rank): an insert shifts the ranks after it, so
+  nothing is spliced and the order stays strict.
+- **Notes** hold what a rebase would lose: `tried` (queue attempts that were rejected, superseded or withdrawn, with
+  their reasons; reverts), `evidence` (how it landed; the message's `Validation`, `Tests`, `Regression`, `Before`,
+  `After` lines; a person's approval), `superseded`. The view shows a fourth section, `Folded`, derived from `real`,
+  so it can't drift.
+- **The git export is not built.** A `mythical` bookmark plus `refs/notes/mythical` in VibeLang's repository is
+  derivable from this state at any time, because every mythical commit lists the real commits it folds. Sol's
+  conditions for building it stand: an atomic multi-ref compare-and-swap through a jj-backed SDK service (no git CLI),
+  planned commits as empty reservations, and tree equality checked by a repository action, never asserted by a payload.
+
+## Bootstrap
+
+`pnpm mythical-seed` (on nyc-01, `scripts/mythical-seed.vibe`) reads every commit reachable from `main@github` and
+`~/vibe/mq/queue.jsonl`, resolves each queue entry's commits to titles in the lanes' repository, groups
+(`src/history/seed.vibe`), records every resulting intent through `decide` and `apply`, fails if any is refused, and
+writes the history they built (`src/history/seed/vibelang.vibe`, generated, never edited).
+
+- Each first-parent step of `main` is one bucket; a merge's side commits fold into the merge's mythical commit
+  (Sol), so **every reachable commit** maps to exactly one: 6,737 real commits on `220b47743b88`.
+- The commits one landed queue entry carried form one mythical commit; `chore(docs): regenerate …` folds into the one
+  before it; `Revert "X"` folds into X's and adds a `tried` line: 5,703 mythical commits.
+- Epics by scope (`AREAS`), in the order the project first touched them: 11.
+- The queue lands copies under new change ids, so a commit finds its queue entries **by title**. That is an evidence
+  citation, never an attribution (Sol): it only writes notes, and the landing line says "(matched by title)".
+- The live object loads the snapshot once, on first start (`vibelang/history/Bootstrap`), so the deployed view shows
+  the real history. `test/seed.test.vibe` replays the snapshot's intents and requires the same history.
+
+## Flows and their least roles
+
+Roles come from `src/history/roles.vibe`: each flow reads its least role from `HISTORY_ROLES` and its caller from the
+`Caller` service, the one place to swap for decision 0019's policy interface when it lands. A refused caller gets
+`forbidden`; the history is unchanged.
+
+| Flow | Steps | Least role | Agent |
+| --- | --- | --- | --- |
+| `vibelang/history/Plan`, `how: append` | `plan/record` (opens a new epic first when asked) | contributor | yes |
+| `vibelang/history/Plan`, `how: insert` or `amend` | `plan/record` | maintainer (Sol, designer: they retell others' work) | yes, for a maintainer |
+| `vibelang/history/Start` | `start/record` | contributor | yes |
+| `vibelang/history/Note` | `note/record` | contributor | yes |
+| `vibelang/history/Approve` | `approve/record` | maintainer | **never** |
+| `vibelang/history/Fold` | `fold/main`, `fold/read`, `fold/<sha>` per commit | maintainer | **never** |
+| `vibelang/history/Bootstrap` | `bootstrap/load` | its host, on first start; no route | no |
+| read: `history` | `GET /api/history`, `GET /api/history/events` | viewer | `vibelang/history/show` |
+
+Landing stays the merge queue's: Approve is the person's decision; the lane enqueues the approved commit with a
+`Mythical: m<n>` trailer; the queue lands it on `vibe`; the green cut moves `main`; Fold maps it back, into the commit
+the trailer names, else as a new commit appended to the epic of its scope.
+
+## Proofs
+
+`pnpm verify src/history/mythical.vibe` (0005's harness) proves, for every input:
+
+1. `seq` advances by exactly one per accepted event; any other event changes nothing.
+2. **Linear:** commit ids unique; `(epic, rank)` unique; every commit's epic exists; ranks nonnegative.
+3. **A fold never loses a change:** every event keeps every epic, every real commit (as a prefix) and every commit's
+   index, id and epic.
+4. **Exactly one:** real shas are unique and every `real[i].mythical` names an existing commit, whose id is unique.
+5. Non-vacuity (Sol): an admitted fold appends exactly one real commit and moves `main` to it.
+
+The proof found two bugs before any test did: `apply` accepted a plan into the epic `""` and a fold into the commit
+`""`, because the "taken" lookups count `""` as taken. Both are fixed.
+
+## Alternatives
+
+| Alternative | Why not |
+| --- | --- |
+| Sol: a real `mythical` bookmark and notes ref as the published authority now, with publication generations | Needs jj on a host (brick 6), an atomic ref seam the SDK lacks, and a GitHub write this app has never been granted. Kept as the export's conditions. |
+| Sol: the full task lifecycle (proposed, accepted, checking, queued, integrated, on main, folded) with operation receipts and HumanTask merges | Needs issues (brick 3), sandboxes (brick 6) and a queue adapter that pins candidates; none exists. The four states here map onto a subset. |
+| Opus first draft: first-parent commits only | 248 side commits of green-cut merges would map to nothing. Sol's buckets fix it. |
+| Grouping by jj change id | The queue lands copies under new change ids: 0 of 6,490 matched. Titles matched 3,954. |
+| Splicing an array to insert | Outside LemmaScript's subset; ranks shifted by `map` keep the proof. |
+| Replaying 17,668 intents when the mock opens | 2.3 s on Node, blocking the page. The generator replays once and the test re-checks it. |
+
+## What each designer contributed
+
+- **Opus:** the History object as the store of record; ranks within epics; the four-state machine and its proofs;
+  the bootstrap from the queue's records; the six flows and the mock's merge queue (approved commits land).
+- **Sol:** buckets so every reachable commit maps once; title matches as citations, not bindings; insert and amend
+  as maintainer acts; the export's conditions; non-vacuity contracts; "Folded through `<sha>`" instead of a claimed
+  "Current".
+- **Designer** (`wiki/designs/mythical/`): the GitHub commits page regrouped by epic, the note's fixed sections with
+  `(none)`, Plan work's dialog, the follow-work timeline, the empty state's words.
+
+## Not yet, and why
+
+- The git export (above).
+- Live writes: until decision 0019's sign-in lands every HTTP caller is a viewer, so Plan, Start, Note, Approve and
+  Fold answer `forbidden` live; reads and the mock work.
+- A push webhook for Fold, and lane reports as notes: the queue lives on a private server; both need tokens (0019).
+- Moving or dropping a planned commit, splitting or reordering epics: no ruling asks; the log has room for them.
+- Diffs on a commit's page: the projection holds no trees; the page links each real commit on GitHub.
+- Paging: `read` returns the whole history (3 MB of JSON, about 0.5 MB compressed).

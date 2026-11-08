@@ -16,6 +16,7 @@
     "deploy": "NODE_OPTIONS=\"${NODE_OPTIONS:-} --import=vibelang/register\" alchemy deploy --stage prod",
     "build:surfaces": "vibelang -p tsconfig.surfaces.json && chmod +x dist-factory/surfaces/*-entry.js",
     "agent-context": "node --import=vibelang/register scripts/agent-context.vibe",
+    "mythical-seed": "node --import=vibelang/register scripts/mythical-seed.vibe",
     "cli": "pnpm build:surfaces && node dist-factory/surfaces/cli-entry.js",
     "mcp": "pnpm build:surfaces >&2 && node dist-factory/surfaces/mcp-entry.js",
     "verify": "bash verify/check.sh",

@@ -1,0 +1,82 @@
+// Schemas for the mythical history's state, events and seed (mythical.vibe, seed.vibe), so the wire, the store, the
+// Foldkit Model and the tests decode and encode them. Each one matches the TypeScript type of the same name.
+
+/** A safe, nonnegative event cursor. */
+export const Seq = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+
+export const CommitState = Schema.Literals(["planned", "working", "approved", "landed"])
+export const Section = Schema.Literals(["tried", "evidence", "superseded"])
+
+/** Why the history's sequencer refused an intent (`Refusal` in mythical.vibe). */
+export const RefusalReason = Schema.Literals(["empty", "too-long", "duplicate", "unknown", "state"])
+
+export schema Note { readonly section: "tried" | "evidence" | "superseded"; readonly text: string; readonly by: string }
+export schema Epic { readonly id: string; readonly title: string }
+
+export schema Commit {
+  readonly id: string
+  readonly epic: string
+  readonly rank: number
+  readonly title: string
+  readonly state: "planned" | "working" | "approved" | "landed"
+  readonly task: string
+  readonly lane: string
+  readonly notes: ReadonlyArray<Note>
+}
+
+export schema Real { readonly sha: string; readonly change: string; readonly title: string; readonly mythical: string }
+
+export schema History {
+  readonly seq: Seq
+  readonly epics: ReadonlyArray<Epic>
+  readonly commits: ReadonlyArray<Commit>
+  readonly real: ReadonlyArray<Real>
+  readonly main: string
+}
+
+export schema EpicOpened { readonly type: "EpicOpened"; readonly seq: Seq; readonly id: string; readonly title: string }
+export schema Planned {
+  readonly type: "Planned"
+  readonly seq: Seq
+  readonly id: string
+  readonly epic: string
+  readonly rank: number
+  readonly title: string
+  readonly task: string
+}
+export schema Amended { readonly type: "Amended"; readonly seq: Seq; readonly id: string; readonly task: string }
+export schema Started { readonly type: "Started"; readonly seq: Seq; readonly id: string; readonly lane: string }
+export schema Approved { readonly type: "Approved"; readonly seq: Seq; readonly id: string; readonly by: string }
+export schema Folded {
+  readonly type: "Folded"
+  readonly seq: Seq
+  readonly sha: string
+  readonly change: string
+  readonly title: string
+  readonly into: string
+}
+export schema Noted {
+  readonly type: "Noted"
+  readonly seq: Seq
+  readonly id: string
+  readonly section: "tried" | "evidence" | "superseded"
+  readonly text: string
+  readonly by: string
+}
+
+/** Decodes one history event off the wire or out of the store. */
+export const HistoryEvent = Schema.Union([EpicOpened, Planned, Amended, Started, Approved, Folded, Noted])
+
+export schema SeedNote { readonly section: "tried" | "evidence" | "superseded"; readonly text: string }
+export schema SeedCommit { readonly id: string; readonly title: string; readonly notes: ReadonlyArray<SeedNote> }
+export schema SeedEpic { readonly id: string; readonly title: string; readonly commits: ReadonlyArray<SeedCommit> }
+export schema SeedReal { readonly sha: string; readonly change: string; readonly title: string; readonly into: string }
+export schema Seed {
+  readonly repository: string
+  readonly main: string
+  readonly epics: ReadonlyArray<SeedEpic>
+  readonly real: ReadonlyArray<SeedReal>
+}
+
+/** A seed as the generator writes it: JSON text. */
+export const SeedJson = Schema.fromJsonString(Seed)

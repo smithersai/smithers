@@ -1,0 +1,448 @@
+// The mythical history's state machine (wiki/decisions/0020-mythical-history.md), shared by every client and by the
+// history's sequencer, as the conversation's is (0003).
+//
+//   intent ──decide──▶ event (numbered seq = last + 1) ──apply──▶ history      on the sequencer
+//                      event ──apply──▶ history                                  on every client
+//
+// The history is one linear stack of mythical commits grouped into epics. Its order is (epic order, rank within the
+// epic): epics are only appended, and an insert shifts the ranks after it, so the stack stays a strict total order
+// without splicing an array. `real` is main's first-parent history in order, each real commit with the one mythical
+// commit it folds into. Nothing is ever removed: a fold, a plan or an amend keeps every commit and every real commit.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Every function is total.
+
+/** Where a mythical commit is: planned onto the stack, worked in a lane, approved by a person, or landed on main. */
+export type CommitState = "planned" | "working" | "approved" | "landed"
+
+/** What a note holds: attempts that failed or were abandoned, evidence it works, or an intent an amend replaced. */
+export type Section = "tried" | "evidence" | "superseded"
+
+/** One line of a mythical commit's notes: what a rebase would lose. */
+export interface Note {
+  readonly section: Section
+  readonly text: string
+  /** Who or what wrote it: a person's name, the agent, or a flow such as `bootstrap`. */
+  readonly by: string
+}
+
+/** A run of adjacent mythical commits that tells one part of the story. */
+export interface Epic {
+  readonly id: string
+  readonly title: string
+}
+
+/** One mythical commit: one intent, in one epic, at one rank. */
+export interface Commit {
+  /** Stable for ever; a real commit's `Mythical: <id>` trailer names it. */
+  readonly id: string
+  readonly epic: string
+  /** Its place inside its epic; unique among the epic's commits. */
+  readonly rank: number
+  readonly title: string
+  readonly state: CommitState
+  /** The open task that planned or amends it; `""` when none is open. */
+  readonly task: string
+  /** The lane working it; `""` when none is. */
+  readonly lane: string
+  readonly notes: ReadonlyArray<Note>
+}
+
+/** A commit on main's first-parent history, and the one mythical commit it folds into. */
+export interface Real {
+  readonly sha: string
+  /** Its jj change id; `""` when unknown. */
+  readonly change: string
+  readonly title: string
+  readonly mythical: string
+}
+
+/** The mythical history as of event `seq`. `main` is the last real commit folded into it, `""` before the first. */
+export interface History {
+  readonly seq: number
+  readonly epics: ReadonlyArray<Epic>
+  readonly commits: ReadonlyArray<Commit>
+  readonly real: ReadonlyArray<Real>
+  readonly main: string
+}
+
+/** The sequencer's numbered events. `seq` starts at 1 and counts up by one. */
+export type Event =
+  | { readonly type: "EpicOpened"; readonly seq: number; readonly id: string; readonly title: string }
+  | {
+    readonly type: "Planned"
+    readonly seq: number
+    readonly id: string
+    readonly epic: string
+    readonly rank: number
+    readonly title: string
+    readonly task: string
+  }
+  | { readonly type: "Amended"; readonly seq: number; readonly id: string; readonly task: string }
+  | { readonly type: "Started"; readonly seq: number; readonly id: string; readonly lane: string }
+  | { readonly type: "Approved"; readonly seq: number; readonly id: string; readonly by: string }
+  | {
+    readonly type: "Folded"
+    readonly seq: number
+    readonly sha: string
+    readonly change: string
+    readonly title: string
+    readonly into: string
+  }
+  | { readonly type: "Noted"; readonly seq: number; readonly id: string; readonly section: Section; readonly text: string; readonly by: string }
+
+/** A history before its first event. */
+export const empty: History = { seq: 0, epics: [], commits: [], real: [], main: "" }
+
+/** The most characters an id may hold. */
+export const MAX_ID = 64
+
+/** The most characters a title, task or lane may hold. */
+export const MAX_TITLE = 200
+
+/** The most characters one note line may hold. */
+export const MAX_NOTE = 1000
+
+// ── apply: every copy ──────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The history after `event`. An event other than the next one changes nothing. The next one always advances `seq`,
+ * even when its content doesn't fit, so one bad event can't stall every later one; the sequencer never numbers such an
+ * event (`decide`). Nothing is removed: every commit keeps its index and id, and every real commit stays.
+ */
+//@ verify
+//@ requires 0 <= history.seq && history.seq < 9007199254740991
+//@ ensures \result.seq == history.seq || \result.seq == history.seq + 1
+//@ ensures event.seq != history.seq + 1 ==> \result == history
+//@ ensures event.seq == history.seq + 1 ==> \result.seq == event.seq
+//@ ensures \result.epics.length >= history.epics.length && forall(i, 0 <= i && i < history.epics.length ==> \result.epics[i] == history.epics[i])
+//@ ensures \result.commits.length >= history.commits.length && forall(i, 0 <= i && i < history.commits.length ==> \result.commits[i].id == history.commits[i].id && \result.commits[i].epic == history.commits[i].epic)
+//@ ensures \result.real.length >= history.real.length && forall(i, 0 <= i && i < history.real.length ==> \result.real[i] == history.real[i])
+//@ ensures \result.real.length <= history.real.length + 1
+//@ ensures (forall(i, forall(j, 0 <= i && i < j && j < history.commits.length ==> history.commits[i].id != history.commits[j].id))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.commits.length ==> \result.commits[i].id != \result.commits[j].id)))
+//@ ensures (forall(i, forall(j, 0 <= i && i < j && j < history.epics.length ==> history.epics[i].id != history.epics[j].id))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.epics.length ==> \result.epics[i].id != \result.epics[j].id)))
+//@ ensures (forall(i, forall(j, 0 <= i && i < j && j < history.commits.length && history.commits[i].epic == history.commits[j].epic ==> history.commits[i].rank != history.commits[j].rank))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.commits.length && \result.commits[i].epic == \result.commits[j].epic ==> \result.commits[i].rank != \result.commits[j].rank)))
+//@ ensures (forall(i, 0 <= i && i < history.commits.length ==> history.commits[i].rank >= 0)) ==> (forall(i, 0 <= i && i < \result.commits.length ==> \result.commits[i].rank >= 0))
+//@ ensures (forall(i, 0 <= i && i < history.commits.length ==> exists(k, 0 <= k && k < history.epics.length && history.epics[k].id == history.commits[i].epic))) ==> (forall(i, 0 <= i && i < \result.commits.length ==> exists(k, 0 <= k && k < \result.epics.length && \result.epics[k].id == \result.commits[i].epic)))
+//@ ensures (forall(i, forall(j, 0 <= i && i < j && j < history.real.length ==> history.real[i].sha != history.real[j].sha))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.real.length ==> \result.real[i].sha != \result.real[j].sha)))
+//@ ensures (forall(i, 0 <= i && i < history.real.length ==> exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == history.real[i].mythical))) ==> (forall(i, 0 <= i && i < \result.real.length ==> exists(j, 0 <= j && j < \result.commits.length && \result.commits[j].id == \result.real[i].mythical)))
+//@ ensures event.seq == history.seq + 1 && event.type == "Planned" && event.title != "" && event.rank >= 0 && event.epic != "" && event.id != "" && !(exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.id)) && exists(k, 0 <= k && k < history.epics.length && history.epics[k].id == event.epic) ==> \result.commits.length == history.commits.length + 1 && \result.commits[history.commits.length].id == event.id && \result.commits[history.commits.length].state == "planned"
+//@ ensures \result.real.length == history.real.length + 1 ==> event.type == "Folded" && \result.real[history.real.length].sha == event.sha && \result.real[history.real.length].mythical == event.into && \result.main == event.sha
+//@ ensures event.seq == history.seq + 1 && event.type == "Folded" && event.sha != "" && event.into != "" && !(exists(i, 0 <= i && i < history.real.length && history.real[i].sha == event.sha)) && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == event.into) ==> \result.real.length == history.real.length + 1
+export function apply(history: History, event: Event): History {
+  if (event.seq !== history.seq + 1) return history
+  const next = { ...history, seq: event.seq }
+  switch (event.type) {
+    case "EpicOpened": {
+      if (event.title === "" || hasEpic(history.epics, event.id)) return next
+      const epics = [...history.epics, { id: event.id, title: event.title }]
+      //@ assert forall(i, 0 <= i && i < history.epics.length ==> epics[i] == history.epics[i])
+      return { ...next, epics }
+    }
+    case "Planned": {
+      if (event.title === "" || event.rank < 0 || event.epic === "" || hasCommit(history.commits, event.id) || !hasEpic(history.epics, event.epic)) return next
+      // Every commit of the epic at or after the new rank moves up one, so the new commit takes the rank alone.
+      const shifted = history.commits.map((commit) =>
+        commit.epic === event.epic && commit.rank >= event.rank ? { ...commit, rank: commit.rank + 1 } : commit
+      )
+      const commit: Commit = {
+        id: event.id,
+        epic: event.epic,
+        rank: event.rank,
+        title: event.title,
+        state: "planned",
+        task: event.task,
+        lane: "",
+        notes: [],
+      }
+      const commits = [...shifted, commit]
+      //@ assert forall(i, 0 <= i && i < history.commits.length ==> commits[i].id == history.commits[i].id && commits[i].epic == history.commits[i].epic)
+      return { ...next, commits }
+    }
+    case "Amended": {
+      if (event.task === "" || !isIn(history.commits, event.id, "landed") || taskOf(history.commits, event.id) !== "") return next
+      return { ...next, commits: history.commits.map((commit) => commit.id === event.id ? amended(commit, event.task) : commit) }
+    }
+    case "Started": {
+      if (event.lane === "" || !isIn(history.commits, event.id, "planned")) return next
+      return { ...next, commits: history.commits.map((commit) => commit.id === event.id ? started(commit, event.lane) : commit) }
+    }
+    case "Approved": {
+      if (event.by === "" || !isIn(history.commits, event.id, "working")) return next
+      const approval: Note = { section: "evidence", text: "approved", by: event.by }
+      return {
+        ...next,
+        commits: history.commits.map((commit) => commit.id === event.id ? approved(commit, approval) : commit),
+      }
+    }
+    case "Folded": {
+      if (event.sha === "" || event.into === "" || hasSha(history.real, event.sha) || !hasCommit(history.commits, event.into)) return next
+      const real = [...history.real, { sha: event.sha, change: event.change, title: event.title, mythical: event.into }]
+      //@ assert forall(i, 0 <= i && i < history.real.length ==> real[i] == history.real[i])
+      const commits = history.commits.map((commit) => commit.id === event.into ? landed(commit) : commit)
+      //@ assert forall(i, 0 <= i && i < history.commits.length ==> commits[i].id == history.commits[i].id)
+      return { ...next, real, commits, main: event.sha }
+    }
+    case "Noted": {
+      if (event.text === "" || event.by === "" || !hasCommit(history.commits, event.id)) return next
+      const note: Note = { section: event.section, text: event.text, by: event.by }
+      return { ...next, commits: history.commits.map((commit) => commit.id === event.id ? { ...commit, notes: [...commit.notes, note] } : commit) }
+    }
+  }
+}
+
+/** A landed commit reopened for the task that amends it. */
+//@ verify
+function amended(commit: Commit, task: string): Commit {
+  return { ...commit, state: "planned", task }
+}
+
+/** A planned commit as its lane starts working it. */
+//@ verify
+function started(commit: Commit, lane: string): Commit {
+  return { ...commit, state: "working", lane }
+}
+
+/** A worked commit a person approved, with the approval in its evidence. */
+//@ verify
+function approved(commit: Commit, approval: Note): Commit {
+  return { ...commit, state: "approved", notes: [...commit.notes, approval] }
+}
+
+/** A commit that a real commit of main folded into: landed, with no open task or lane. */
+//@ verify
+function landed(commit: Commit): Commit {
+  return { ...commit, state: "landed", task: "", lane: "" }
+}
+
+/**
+ * Whether an epic already has `id`. `""` always counts as taken, so no epic is opened without an id.
+ */
+//@ verify
+//@ ensures \result == (id == "" || exists(j, 0 <= j && j < epics.length && epics[j].id == id))
+export function hasEpic(epics: ReadonlyArray<Epic>, id: string): boolean {
+  if (id === "") return true
+  let i = 0
+  while (i < epics.length) {
+    //@ invariant 0 <= i && i <= epics.length
+    //@ invariant forall(j, 0 <= j && j < i ==> epics[j].id != id)
+    //@ decreases epics.length - i
+    if (epics[i]!.id === id) return true
+    i++
+  }
+  return false
+}
+
+/**
+ * Whether a mythical commit already has `id`. `""` always counts as taken.
+ */
+//@ verify
+//@ ensures \result == (id == "" || exists(j, 0 <= j && j < commits.length && commits[j].id == id))
+export function hasCommit(commits: ReadonlyArray<Commit>, id: string): boolean {
+  if (id === "") return true
+  let i = 0
+  while (i < commits.length) {
+    //@ invariant 0 <= i && i <= commits.length
+    //@ invariant forall(j, 0 <= j && j < i ==> commits[j].id != id)
+    //@ decreases commits.length - i
+    if (commits[i]!.id === id) return true
+    i++
+  }
+  return false
+}
+
+/**
+ * Whether a real commit with `sha` is already folded.
+ */
+//@ verify
+//@ ensures \result == exists(j, 0 <= j && j < real.length && real[j].sha == sha)
+export function hasSha(real: ReadonlyArray<Real>, sha: string): boolean {
+  let i = 0
+  while (i < real.length) {
+    //@ invariant 0 <= i && i <= real.length
+    //@ invariant forall(j, 0 <= j && j < i ==> real[j].sha != sha)
+    //@ decreases real.length - i
+    if (real[i]!.sha === sha) return true
+    i++
+  }
+  return false
+}
+
+/** Whether a mythical commit with `id` is in `state`. */
+//@ verify
+//@ ensures \result == exists(j, 0 <= j && j < commits.length && commits[j].id == id && commits[j].state == state)
+export function isIn(commits: ReadonlyArray<Commit>, id: string, state: CommitState): boolean {
+  let i = 0
+  while (i < commits.length) {
+    //@ invariant 0 <= i && i <= commits.length
+    //@ invariant forall(j, 0 <= j && j < i ==> !(commits[j].id == id && commits[j].state == state))
+    //@ decreases commits.length - i
+    if (commits[i]!.id === id && commits[i]!.state === state) return true
+    i++
+  }
+  return false
+}
+
+/** A mythical commit's open task, `""` when it has none or doesn't exist. */
+//@ verify
+export function taskOf(commits: ReadonlyArray<Commit>, id: string): string {
+  let i = 0
+  while (i < commits.length) {
+    //@ invariant 0 <= i && i <= commits.length
+    //@ decreases commits.length - i
+    if (commits[i]!.id === id) return commits[i]!.task
+    i++
+  }
+  return ""
+}
+
+/** The epic of a mythical commit, `""` when there is none with `id`. */
+//@ verify
+export function epicOf(commits: ReadonlyArray<Commit>, id: string): string {
+  let i = 0
+  while (i < commits.length) {
+    //@ invariant 0 <= i && i <= commits.length
+    //@ decreases commits.length - i
+    if (commits[i]!.id === id) return commits[i]!.epic
+    i++
+  }
+  return ""
+}
+
+/** A mythical commit's rank, `-1` when there is none with `id`. */
+//@ verify
+export function rankOf(commits: ReadonlyArray<Commit>, id: string): number {
+  let i = 0
+  while (i < commits.length) {
+    //@ invariant 0 <= i && i <= commits.length
+    //@ decreases commits.length - i
+    if (commits[i]!.id === id) return commits[i]!.rank
+    i++
+  }
+  return -1
+}
+
+/** The rank after the last commit of `epic`: where an appended commit goes. */
+//@ verify
+//@ ensures \result >= 0
+//@ ensures forall(j, 0 <= j && j < commits.length && commits[j].epic == epic ==> commits[j].rank < \result)
+export function endOf(commits: ReadonlyArray<Commit>, epic: string): number {
+  let end = 0
+  let i = 0
+  while (i < commits.length) {
+    //@ invariant 0 <= i && i <= commits.length
+    //@ invariant end >= 0
+    //@ invariant forall(j, 0 <= j && j < i && commits[j].epic == epic ==> commits[j].rank < end)
+    //@ decreases commits.length - i
+    if (commits[i]!.epic === epic && commits[i]!.rank >= end) end = commits[i]!.rank + 1
+    i++
+  }
+  return end
+}
+
+// ── decide: the sequencer ──────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What the history's sequencer is asked to record. A flow opens an epic, plans a commit onto the stack (appended to
+ * its epic when `before` is `""`, else inserted just before that commit of the same epic), reopens a landed commit for
+ * an amending task, starts it in a lane, has a person approve it, folds a real commit of main into it, or adds a note.
+ */
+export type Intent =
+  | { readonly type: "OpenEpic"; readonly id: string; readonly title: string }
+  | { readonly type: "Plan"; readonly id: string; readonly epic: string; readonly before: string; readonly title: string; readonly task: string }
+  | { readonly type: "Amend"; readonly id: string; readonly task: string }
+  | { readonly type: "Start"; readonly id: string; readonly lane: string }
+  | { readonly type: "Approve"; readonly id: string; readonly by: string }
+  | { readonly type: "Fold"; readonly sha: string; readonly change: string; readonly title: string; readonly into: string }
+  | { readonly type: "AddNote"; readonly id: string; readonly section: Section; readonly text: string; readonly by: string }
+
+/** Why the sequencer refused an intent. */
+export type Refusal = "empty" | "too-long" | "duplicate" | "unknown" | "state"
+
+/** The sequencer's answer: the next event, or why there is none. */
+export type Decision =
+  | { readonly ok: true; readonly event: Event }
+  | { readonly ok: false; readonly refusal: Refusal }
+
+// Typed constructors keep nested union construction explicit for LemmaScript.
+//@ verify
+function accepted(event: Event): Decision {
+  return { ok: true, event }
+}
+
+//@ verify
+function refused(refusal: Refusal): Decision {
+  return { ok: false, refusal }
+}
+
+/**
+ * The event that records `intent` as the next one, or a refusal. Every event it returns is one `apply` takes as is.
+ */
+//@ verify
+//@ requires 0 <= history.seq && history.seq < 9007199254740991
+//@ ensures \result.ok ==> \result.event.seq == history.seq + 1
+//@ ensures \result.ok && \result.event.type == "Folded" ==> \result.event.sha != "" && !(exists(i, 0 <= i && i < history.real.length && history.real[i].sha == \result.event.sha)) && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == \result.event.into)
+//@ ensures \result.ok && \result.event.type == "Planned" ==> \result.event.id != "" && \result.event.rank >= 0 && \result.event.title != "" && !(exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == \result.event.id)) && exists(k, 0 <= k && k < history.epics.length && history.epics[k].id == \result.event.epic)
+//@ ensures \result.ok && \result.event.type == "Planned" ==> \result.event.id.length <= MAX_ID && \result.event.title.length <= MAX_TITLE && \result.event.task.length <= MAX_TITLE
+//@ ensures \result.ok && \result.event.type == "Folded" ==> \result.event.sha.length <= MAX_ID && \result.event.title.length <= MAX_TITLE
+//@ ensures \result.ok && \result.event.type == "Noted" ==> \result.event.text != "" && \result.event.text.length <= MAX_NOTE && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == \result.event.id)
+//@ ensures \result.ok && \result.event.type == "Approved" ==> \result.event.by != "" && exists(j, 0 <= j && j < history.commits.length && history.commits[j].id == \result.event.id && history.commits[j].state == "working")
+export function decide(history: History, intent: Intent): Decision {
+  const seq = history.seq + 1
+  switch (intent.type) {
+    case "OpenEpic": {
+      if (intent.id === "" || intent.title.trim() === "") return refused("empty")
+      if (intent.id.length > MAX_ID || intent.title.length > MAX_TITLE) return refused("too-long")
+      if (hasEpic(history.epics, intent.id)) return refused("duplicate")
+      return accepted({ type: "EpicOpened", seq, id: intent.id, title: intent.title.trim() })
+    }
+    case "Plan": {
+      const title = intent.title.trim()
+      if (intent.id === "" || title === "") return refused("empty")
+      if (intent.id.length > MAX_ID || title.length > MAX_TITLE || intent.task.length > MAX_TITLE) return refused("too-long")
+      if (hasCommit(history.commits, intent.id)) return refused("duplicate")
+      if (intent.epic === "" || !hasEpic(history.epics, intent.epic)) return refused("unknown")
+      if (intent.before === "") {
+        return accepted({ type: "Planned", seq, id: intent.id, epic: intent.epic, rank: endOf(history.commits, intent.epic), title, task: intent.task })
+      }
+      if (epicOf(history.commits, intent.before) !== intent.epic) return refused("unknown")
+      const rank = rankOf(history.commits, intent.before)
+      if (rank < 0) return refused("unknown")
+      return accepted({ type: "Planned", seq, id: intent.id, epic: intent.epic, rank, title, task: intent.task })
+    }
+    case "Amend": {
+      if (intent.task.trim() === "") return refused("empty")
+      if (intent.task.length > MAX_TITLE) return refused("too-long")
+      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")
+      if (!isIn(history.commits, intent.id, "landed") || taskOf(history.commits, intent.id) !== "") return refused("state")
+      return accepted({ type: "Amended", seq, id: intent.id, task: intent.task })
+    }
+    case "Start": {
+      if (intent.lane.trim() === "") return refused("empty")
+      if (intent.lane.length > MAX_TITLE) return refused("too-long")
+      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")
+      if (!isIn(history.commits, intent.id, "planned")) return refused("state")
+      return accepted({ type: "Started", seq, id: intent.id, lane: intent.lane })
+    }
+    case "Approve": {
+      if (intent.by === "") return refused("empty")
+      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")
+      if (!isIn(history.commits, intent.id, "working")) return refused("state")
+      return accepted({ type: "Approved", seq, id: intent.id, by: intent.by })
+    }
+    case "Fold": {
+      if (intent.sha === "") return refused("empty")
+      if (intent.sha.length > MAX_ID || intent.change.length > MAX_ID || intent.title.length > MAX_TITLE) return refused("too-long")
+      if (hasSha(history.real, intent.sha)) return refused("duplicate")
+      if (intent.into === "" || !hasCommit(history.commits, intent.into)) return refused("unknown")
+      return accepted({ type: "Folded", seq, sha: intent.sha, change: intent.change, title: intent.title, into: intent.into })
+    }
+    case "AddNote": {
+      const text = intent.text.trim()
+      if (text === "" || intent.by === "") return refused("empty")
+      if (text.length > MAX_NOTE || intent.by.length > MAX_TITLE) return refused("too-long")
+      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")
+      return accepted({ type: "Noted", seq, id: intent.id, section: intent.section, text, by: intent.by })
+    }
+  }
+}

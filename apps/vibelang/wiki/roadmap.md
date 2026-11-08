@@ -23,7 +23,8 @@ brick                                   state         proof
 2   sign-in and roles                   in progress         GitHub sign-in; viewer, new, community, contributor, maintainer (VL-21)
 3   issues as a tree, tasks, VIPs       later         VL-20
 4   actions and slash commands          later         VL-24
-5   mythical history                    later         VL-22
+5   mythical history                    started       0020: the History machine proved (linearity, no loss, exactly one), the
+                                                      bootstrap of 6,737 real commits, the flows on the mock; live object and view next
 6   sandboxes with minutes              later         VL-25
 7   Electrobun desktop app              later         VL-6
 ```

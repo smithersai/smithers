@@ -27,6 +27,7 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0012](decisions/0012-smithers-agent.md) | The reply is smithers.sh's agent: `@smthrs/agent`'s `AgentAction` on a workerd QuickJS sandbox, VibeLang's skill as context |
 | [0013](decisions/0013-dark-only.md) | Dark only, for now: the marketing media are dark and have no light versions (VL-27) |
 | [0014](decisions/0014-agent-tour.md) | Learn more is a tour the agent drives: its pane actions are numbered events of the one state machine (VL-28) |
+| [0020](decisions/0020-mythical-history.md) | The mythical history: one linear stack of epics and mythical commits in a History object, bootstrapped from VibeLang's real history; plan, start, note, approve and fold are flows people and the agent share (VL-22) |
 
 | [0019](decisions/0019-sign-in-and-roles.md) | GitHub identity; five project roles, first participation, explicit grants and demotions |
 
@@ -38,6 +39,8 @@ apps/vibelang/
                   and the HTTP protocol (wire.vibe)
   src/surfaces/   the shared command registry, CLI, MCP server and discovery manifest
   skills/         agent instructions for the Factory CLI
+  src/history/    the mythical history: its state machine (mythical.vibe), sequencer, flows, API (MythicalHistory.vibe), mock
+                  and the bootstrapped snapshot (seed/)
   src/web/        the Foldkit program (main.vibe), its view (view.vibe) and styles
   worker/         the site Worker (index.vibe) and the API Worker (Api.vibe): sequencer, reply flow, budget
   infra/          the Alchemy stack (Stack.vibe; alchemy.run.ts re-exports it)

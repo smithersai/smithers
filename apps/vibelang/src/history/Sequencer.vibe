@@ -1,0 +1,224 @@
+// The mythical history's sequencer (wiki/decisions/0020-mythical-history.md): the only writer of its numbered events,
+// as a conversation's is (0003). Every intent, a step of one of the history's flows, goes through `decide` and `apply`
+// under one lock, is written to the store before anyone sees it, and is then published to every follower. The mock
+// keeps its store in memory; the live History object (worker/HistoryObject.vibe) keeps it in its own storage. Nothing
+// here names a host.
+import { apply, decide, type Decision, empty, epicOf, hasSha, type History, type Event, type Intent, MAX_TITLE } from "./mythical.vibe"
+import type { Stack } from "./flows.vibe"
+import { areaOf } from "./seed.vibe"
+
+/** What a store holds: the snapshot a bootstrap loaded, if any, and every event numbered after it, in order. */
+export interface Stored {
+  readonly base: History | undefined
+  readonly events: ReadonlyArray<Event>
+}
+
+/** Where the history persists. `append` and `seed` return once what they write is durable. */
+export interface Store {
+  load(): Stored!!
+  append(event: Event): void!!
+  /** Writes the snapshot a bootstrap loads; only ever into an empty store. */
+  seed(history: History): void!!
+}
+
+/** How a plan puts its commit onto the stack: at its epic's end, just before another commit, or into a landed one. */
+export type How = "append" | "insert" | "amend"
+
+/** A task planned onto the stack. `target` is the commit an insert goes before or an amend reopens. */
+export interface PlanRequest {
+  readonly how: How
+  /** The epic an append goes to; ignored when `newEpic` names a new one. */
+  readonly epic: string
+  /** The title of a new epic to open at the stack's end and append to; `""` for none. */
+  readonly newEpic: string
+  readonly target: string
+  readonly title: string
+  readonly task: string
+}
+
+/** What a write answers: the commit it wrote, or why the sequencer refused. */
+export interface Answer {
+  readonly id: string
+  readonly refusal: string | null
+}
+
+/** A commit on main that a fold reads: its id, change id, title and whole message. */
+export interface MainCommit {
+  readonly sha: string
+  readonly change: string
+  readonly title: string
+  readonly message: string
+}
+
+/** A mythical commit a real commit's message names: `Mythical: m<n>`. */
+export function trailerOf(message: string): string {
+  const match = /^Mythical:\s*(m\d+)\s*$/m.exec(message)
+  return match === null ? "" : match[1]!
+}
+
+function answered(id: string, decision: Decision): Answer {
+  return { id: decision.ok ? id : "", refusal: decision.ok ? null : decision.refusal }
+}
+
+/** The sequencer over `store`. */
+export effect function make(store: Store) {
+  const lock = try Semaphore.make(1)
+  const published = try PubSub.unbounded<Event>()
+  const loaded = try Ref.make<History | undefined>(undefined)
+
+  effect function current() {
+    const known = try Ref.get(loaded)
+    if (known !== undefined) return known
+    const stored = try store.load()
+    const history = stored.events.reduce(apply, stored.base ?? empty)
+    try Ref.set(loaded, history)
+    return history
+  }
+
+  /** Decides `intent`; an accepted event is written, applied and published. Call under the lock. */
+  effect function record(intent: Intent) {
+    const history = try current()
+    const decision = decide(history, intent)
+    if (!decision.ok) return decision
+    try store.append(decision.event)
+    try Ref.set(loaded, apply(history, decision.event))
+    try PubSub.publish(published, decision.event)
+    return decision
+  }
+
+  function locked<A, E, R>(body: A!E!R) {
+    return Semaphore.withPermits(lock, 1)(Effect.uninterruptible(body))
+  }
+
+  /** Opens an epic titled `title` at the stack's end: its id, or the refusal. Call under the lock. */
+  effect function openEpic(title: string) {
+    const id = `e${(try current()).epics.length + 1}`
+    return answered(id, try record({ type: "OpenEpic", id, title }))
+  }
+
+  /** Appends a commit to `epic`, or inserts it before `before`: its id, or the refusal. Call under the lock. */
+  effect function planned(epic: string, before: string, title: string, task: string) {
+    const id = `m${(try current()).commits.length + 1}`
+    return answered(id, try record({ type: "Plan", id, epic, before, title, task }))
+  }
+
+  return {
+    /** The whole history now. */
+    read: () => locked(current()),
+
+    /** Every event after `after`, then each new one as it is numbered. Subscribing first loses none between. */
+    follow: (after: number) =>
+      Stream.unwrap(effect {
+        const live = try PubSub.subscribe(published)
+        const stored = try locked(effect {
+          const history = try current()
+          return { seq: history.seq, events: (try store.load()).events }
+        })
+        const replay = stored.events.filter((event) => event.seq > after)
+        const replayedTo = Math.max(after, stored.seq)
+        return Stream.concat(
+          Stream.fromIterable(replay),
+          Stream.fromSubscription(live).pipe(Stream.filter((event) => event.seq > replayedTo)),
+        )
+      }),
+
+    /** Records one intent. */
+    record: (intent: Intent) => locked(record(intent)),
+
+    /** Plans a task onto the stack: append (to an epic, or a new one), insert before a commit, or amend one. */
+    plan: (request: PlanRequest) =>
+      locked(effect {
+        const title = request.title.trim()
+        if (request.how === "amend") {
+          return answered(request.target, try record({ type: "Amend", id: request.target, task: request.task }))
+        }
+        if (title === "") {
+          const empty: Answer = { id: "", refusal: "empty" }
+          return empty
+        }
+        if (title.length > MAX_TITLE) {
+          const long: Answer = { id: "", refusal: "too-long" }
+          return long
+        }
+        if (request.how === "insert") {
+          return try planned(epicOf((try current()).commits, request.target), request.target, title, request.task)
+        }
+        let epic = request.epic
+        if (request.newEpic.trim() !== "") {
+          const opened = try openEpic(request.newEpic)
+          if (opened.refusal !== null) return opened
+          epic = opened.id
+        }
+        return try planned(epic, "", title, request.task)
+      }),
+
+    /**
+     * Folds one commit of main into the stack: into the commit its `Mythical:` trailer names, else appended as a new
+     * commit to the epic its scope belongs to, opened at the stack's end when the history has none by that title.
+     * A commit already folded answers `duplicate` and changes nothing.
+     */
+    fold: (commit: MainCommit) =>
+      locked(effect {
+        const history = try current()
+        if (hasSha(history.real, commit.sha)) {
+          const already: Answer = { id: "", refusal: "duplicate" }
+          return already
+        }
+        const title = commit.title.length <= MAX_TITLE ? commit.title : commit.title.slice(0, MAX_TITLE - 1) + "…"
+        let into = trailerOf(commit.message)
+        if (into === "" || !history.commits.some((mythical) => mythical.id === into)) {
+          const area = areaOf(title)
+          let epic = history.epics.find((each) => each.title === area)?.id ?? ""
+          if (epic === "") {
+            const opened = try openEpic(area)
+            if (opened.refusal !== null) return opened
+            epic = opened.id
+          }
+          const appended = try planned(epic, "", title, "")
+          if (appended.refusal !== null) return appended
+          into = appended.id
+        }
+        return answered(into, try record({ type: "Fold", sha: commit.sha, change: commit.change, title, into }))
+      }),
+
+    /** Loads a bootstrapped history into an empty store: `false`, changing nothing, when the store has any. */
+    bootstrap: (history: History) =>
+      locked(effect {
+        if ((try current()).seq !== 0) return false
+        try store.seed(history)
+        try Ref.set(loaded, history)
+        return true
+      }),
+  }
+}
+
+/** A sequencer, as `make` builds it. */
+export type Sequencer = Effect.Success<ReturnType<typeof make>>
+
+/** The sequencer as the history flows' steps reach it; `seed` gives the bootstrapped history. */
+export function stackOf(sequencer: Sequencer, seed: () => History!!): Stack.Shape {
+  const recorded = (id: string, intent: Intent) => Effect.map(sequencer.record(intent), (decision) => answered(id, decision))
+  return {
+    read: sequencer.read,
+    plan: sequencer.plan,
+    start: (id, lane) => recorded(id, { type: "Start", id, lane }),
+    note: (id, section, text, by) => recorded(id, { type: "AddNote", id, section, text, by }),
+    approve: (id, by) => recorded(id, { type: "Approve", id, by }),
+    fold: sequencer.fold,
+    bootstrap: effect () => {
+      const history = try seed()
+      return try sequencer.bootstrap(history)
+    },
+  }
+}
+
+/** A store in memory, for the mock. */
+export effect function memoryStore() {
+  const state = try Ref.make<Stored>({ base: undefined, events: [] })
+  const store: Store = {
+    load: () => Ref.get(state),
+    append: (event) => Ref.update(state, (stored) => ({ ...stored, events: [...stored.events, event] })),
+    seed: (history) => Ref.set(state, { base: history, events: [] }),
+  }
+  return store
+}
