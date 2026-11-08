@@ -256,6 +256,95 @@ describe("operator resume from an unregistered control runtime", () => {
   )
 })
 
+describe("an operator resume whose process dies between its decision and its wake", () => {
+  it.each([false, true])(
+    "commits both or neither, so a retried request still wakes the run (delegated=%s)",
+    (delegated) =>
+      run(Effect.gen(function*() {
+        const executionId = "torn-wake"
+        const flow = Flow.make("HostedEngine/TornWake", {
+          payload: {},
+          success: Schema.String,
+          body: opaqueHandlerBody
+        })
+        let starts = 0
+        const registered = (owner: Ownership.OwnerId) =>
+          Layer.effectDiscard(Effect.flatMap(FlowRuntime.FlowRuntime, (runtime) =>
+            runtime.register(flow, () =>
+              Effect.gen(function*() {
+                starts++
+                if (starts > 1) return "woke"
+                yield* DurableClock.sleep({ name: "reading", duration: "10 minutes", inMemoryThreshold: 0 })
+                return "read"
+              })))).pipe(Layer.provideMerge(engine(filename, owner, { host: executionId, flow: flow._tag })))
+        const drive = (owner: Ownership.OwnerId) =>
+          Effect.scoped(EngineStore.drive(flow, { executionId, payload: {} }).pipe(Effect.provide(registered(owner))))
+        const control = (stores: Layer.Layer<any, any, any>) =>
+          Effect.scoped(
+            Effect.flatMap(FlowRuntime.FlowRuntime, (runtime) =>
+              runtime.resume(flow, executionId, { delegated })).pipe(
+                Effect.provide(
+                  EngineStore.layer({
+                    owner: { hostId: second.hostId },
+                    journalSource: `${second.hostId}-engine`,
+                    isAlive: singleInstance,
+                    sweep: { host: executionId, flow: flow._tag }
+                  }).pipe(
+                    Layer.provide(OwnerIdentity.layerConstant(second)),
+                    Layer.provideMerge(Layer.mergeAll(stores, StepBoundary.layerUnsupported, jj))
+                  )
+                )
+              )
+          )
+        // The store as the control runtime's process sees it until it dies: the real one, except that storing the
+        // control wake is where the process ends, after the decision was written in the same transaction.
+        const dying = Layer.effectContext(Effect.gen(function*() {
+          const context = yield* Layer.build(TestStores.layerAt(filename))
+          const state = Context.get(context, DurableEngineState.DurableEngineState)
+          return Context.add(context, DurableEngineState.DurableEngineState, {
+            ...state,
+            completeDeferred: (row) =>
+              row.deferredName.startsWith("@smthrs/engine/control-resume/")
+                ? Effect.die(new Error("process died between the decision and the wake"))
+                : state.completeDeferred(row)
+          })
+        }))
+        const recorded = Effect.scoped(
+          Effect.gen(function*() {
+            const sql = yield* SqlClient.SqlClient
+            const decisions = yield* sql<
+              { readonly payload_json: string }
+            >`SELECT payload_json FROM flows_journal_events
+              WHERE run_id = ${executionId} AND event_type = 'flows.engine.run-decision' ORDER BY seq`
+            const wakes = yield* sql`SELECT deferred_name FROM flows_deferred_completions
+              WHERE execution_id = ${executionId} AND deferred_name LIKE '@smthrs/engine/control-resume/%'`
+            return {
+              decisions: decisions.filter((row) => JSON.parse(row.payload_json).decision === "wake-scheduled").length,
+              wakes: wakes.length,
+              nextWake: yield* EngineStore.nextWake(executionId)
+            }
+          }).pipe(Effect.provide(TestStores.layerAt(filename)))
+        )
+
+        expect(yield* drive(first)).toMatchObject({ _tag: "Parked", wakeAtMs: 600_000 })
+        const before = yield* recorded
+        const died = yield* Effect.exit(control(dying))
+        expect(
+          Exit.isFailure(died) && Cause.pretty(died.cause).includes("process died between the decision and the wake")
+        )
+          .toBe(true)
+        // Neither half survived: no journal decision claims a wake the store never kept.
+        expect(yield* recorded).toEqual(before)
+        expect(before.nextWake).toEqual(Option.some(600_000))
+        // The caller saw the failure and asks again; this time the wake is kept and the run wakes on its next alarm.
+        yield* control(TestStores.layerAt(filename))
+        expect(yield* recorded).toEqual({ decisions: before.decisions + 1, wakes: 1, nextWake: Option.some(0) })
+        expect(yield* drive(second)).toEqual({ _tag: "Settled", status: "completed" })
+        expect(starts).toBe(2)
+      }))
+  )
+})
+
 // Kept catalog-scaling benchmark: real store, 32 registrations, one hosted flow.
 // Span counts are the deterministic gate; elapsed time is an observation only.
 it.each([false, true])(
