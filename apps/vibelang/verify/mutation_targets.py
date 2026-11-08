@@ -462,10 +462,10 @@ POSTCONDITIONS.update({'apply-frame-author': 'forall i: int :: ((0 <= i) ==> (i 
                        '(client.conversation.replying == event.id)) && (event.id != "")) && '
                        '(client.conversation.entries[i].id == event.id)) && event.ReplyRestarted?) then "" else '
                        'client.conversation.entries[i].text))))',
- 'receive-pane-frame': '(res.conversation.pane == (if ((((((event.seq_ == (client.conversation.seq_ + 1)) && '
-                       'event.PaneOpened?) && client.conversation.agent.working?) && (client.conversation.replying == '
-                       'event.id)) && (event.id != "")) && (event.url != "")) then event.url else '
-                       'client.conversation.pane))',
+ 'receive-pane-frame': '(res.conversation.pane == (if ((((event.seq_ == (client.conversation.seq_ + 1)) && '
+                       'event.PaneOpened?) && ((event.id == "") || '
+                       '((client.conversation.agent.working? && (client.conversation.replying == event.id)) && '
+                       '(event.id != "")))) && (event.url != "")) then event.url else client.conversation.pane))',
  'receive-replying-frame': '(res.conversation.replying == (if ((event.seq_ == (client.conversation.seq_ + 1)) && '
                            '(((((((event.ReplyStarted? && (!client.conversation.agent.working?)) && (event.id != "")) && '
                            'forall j: int :: ((0 <= j) ==> (j < |client.conversation.entries|) ==> '
@@ -602,3 +602,4 @@ POSTCONDITIONS.update({'receive-agent-frame': '(event.Posted? ==> client.convers
                            '(|client.conversation.roles| == 0) ==> (|client.conversation.entries| == 0) ==> '
                            '(|client.pending| == 0) ==> (res.conversation.replying == '
                            'client.conversation.replying))'})
+

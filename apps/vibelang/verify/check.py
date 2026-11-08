@@ -2,7 +2,7 @@
 """Fresh lsc generation + Dafny verification. Never trusts saved .dfy files."""
 import atexit, concurrent.futures, hashlib, json, os, pathlib, re, shutil, subprocess, sys, tempfile, time
 from sources import production_sources, VERIFY
-from proof_additions import add_proof_steps
+from proof_additions import add_proof_steps, insertion_names
 from mutation_targets import POSTCONDITIONS, ASSERTIONS, postcondition_line, case_assertion_line
 ROOT=pathlib.Path(__file__).resolve().parent
 APP=pathlib.Path(os.environ.get("VIBELANG_VERIFY_ROOT", str(ROOT.parent))).resolve()
@@ -77,7 +77,7 @@ def verify(item):
   text=add_proof_steps(raw,proof_source)
   if text != raw:
    dfy.write_text(text)
-   dfy.with_suffix('.proof.json').write_text(json.dumps({'source':proof_source,'lemma':'pendingCount_ensures','raw_sha256':hashlib.sha256(raw.encode()).hexdigest(),'checked_sha256':hashlib.sha256(text.encode()).hexdigest()}))
+   dfy.with_suffix('.proof.json').write_text(json.dumps({'source':proof_source,'insertions':insertion_names(proof_source),'raw_sha256':hashlib.sha256(raw.encode()).hexdigest(),'checked_sha256':hashlib.sha256(text.encode()).hexdigest()}))
   marked=[]
   before=''
   for n,line in enumerate(lines):

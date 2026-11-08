@@ -273,3 +273,8 @@ and emoji/reserved-character conversation IDs are independently exercised over r
 on SQLite with product role/history services, then drive their public alarms, replay, cancellation and permission
 changes. An unadmitted cancellation no longer crashes receipt polling. The optional Container resource graph is
 compiled without deployment. The emitted wiki generator is exercised against actual fixture files and failed reads.
+
+**Sandbox proof refactor regression (0018).** Two 20,000-entry ledger cases fail with native stack overflow on the
+unlanded recursive candidate and pass with the original iterative traversals. Stronger contracts remain proved;
+no runtime implementation change or dependency is needed. The exact admission, refusal, event and replacement
+fields have executable contract-preserving mutations.

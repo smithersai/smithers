@@ -78,7 +78,7 @@ cases=[
 ('is-touring','isTouring','return isTour(conversation.entries, id)','return true','only a tour entry is a running tour'),
 ('decide-tour-busy','decide','if ("working" === conversation.agent) return refused("busy")','if (false) return refused("busy")','a second tour waits while the agent works'),
 ('decide-tour-id','decide','return accepted({ type: "TourStarted", seq, id: intent.id })','return accepted({ type: "TourStarted", seq, id: intent.id + "x" })','a started tour carries the requested id'),
-('decide-end-tour','decide','if (!isTouring(conversation, intent.id)) return refused("not-replying")','if (!isReplying(conversation, intent.id)) return refused("not-replying")','a person ends only a tour, never a reply'),
+('decide-end-tour','decide','case "EndTour":\n      if (!isTouring(conversation, intent.id)) return refused("not-replying")','case "EndTour":\n      if (!isReplying(conversation, intent.id)) return refused("not-replying")','a person ends only a tour, never a reply'),
 ('decide-pane-guard','decide','if (intent.id !== "" && !isReplying(conversation, intent.id)) return refused("not-replying")\n      if (intent.url','if (false) return refused("not-replying")\n      if (intent.url','only the agent that streams opens a page'),
 ('decide-pane-empty','decide','if (intent.url === "") return refused("empty")','if (false) return refused("empty")','an opened page has a url'),
 ('role-rank', 'rank', 'case "viewer": return 0', 'case "viewer": return 1', 'viewer has zero rank'),

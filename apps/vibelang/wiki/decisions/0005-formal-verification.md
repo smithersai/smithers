@@ -150,3 +150,7 @@ or full replay-state equivalence. Every decide clause is retained through the wr
 Web decisions (0018) now include exact six-field screen projections and presentation/media guards. Finite coordinate
 comparisons use the backend's real type; native subtraction remains outside the proof, with a retained rounding
 counterexample. Host Model composition and account/People transitions are not inferred from the projection proof.
+
+Sandbox guard/frame proofs (0018) use quantified first-match source positions while retaining iterative runtime
+traversals. The newly exact running-count measure has an additions-only, checked induction call in its fresh empty
+Dafny lemma. No original contract, emitted statement or generated condition is removed.

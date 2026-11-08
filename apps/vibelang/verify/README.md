@@ -71,3 +71,8 @@ The mutation CI target allows 120 minutes for the complete growing suite with th
 Per-obligation and per-source solver/process limits are unchanged; a timeout still fails the gate.
 
 The full conversation relation has a finite 1,200-second pipeline budget after the walkthrough adds four event variants. Per-assertion positive solver limits remain 60 seconds, with every assertion isolated and checked; negative limits remain 30 seconds. The prior 600-second pipeline bound expired while checking the larger relation, without reporting a counterexample. The unchanged main baseline freshly verified 6,810 batches in 281 seconds on this host; the walkthrough apply relation alone generates 9,746 batches. This changes scheduling time, never obligations or accepted solver outcomes.
+
+Sandbox exact admission and frame clauses use quantified first-match source positions; their runtime loops are
+unchanged. `proof_additions.py` also inserts the checked recursive step into the specification-only
+`runningCountPrefix_ensures` lemma. Every insertion name is recorded in the fresh `.proof.json`; the harness rejects
+a missing, duplicate or already populated lemma.

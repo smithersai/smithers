@@ -94,6 +94,17 @@ class CheckedProofAdditions(unittest.TestCase):
         for invalid in [source.replace('pendingCount_ensures', 'other'), source+source, source.replace('{\n}', '{\n  assert valid;\n}')]:
             with self.assertRaises(ValueError): add_proof_steps(invalid, 'src/core/conversation.vibe')
 
+    def test_sandbox_induction_only_adds_a_step_to_the_specification_measure(self):
+        from proof_additions import add_proof_steps, LEMMA_STEPS, insertion_names
+        signature, steps = LEMMA_STEPS['src/core/sandboxDecision.vibe'][0]
+        source = signature + '\n  requires 0 <= end\n  ensures valid\n{\n}\n'
+        result = add_proof_steps(source, 'src/core/sandboxDecision.vibe')
+        self.assertEqual(result.replace(steps, '', 1), source)
+        self.assertEqual(result.count(steps), 1)
+        self.assertEqual(insertion_names('src/core/sandboxDecision.vibe'), ['runningCountPrefix_ensures'])
+        for invalid in [source + source, source.replace('{\n}', '{\n  assert valid;\n}')]:
+            with self.assertRaises(ValueError): add_proof_steps(invalid, 'src/core/sandboxDecision.vibe')
+
 class MutationContractFailures(unittest.TestCase):
     def test_a_broken_capacity_guard_fails_the_callee_domain_contract(self):
         from mutation_results import validate_rejection

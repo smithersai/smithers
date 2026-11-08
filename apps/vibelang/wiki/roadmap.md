@@ -13,7 +13,7 @@ brick                                   state         proof
 1c  dogfooding surfaces                 done (mock)   CLI, MCP server and skill over Factory; 21 surface tests plus the existing
                                                       25 tests; emitted CLI + stdio McpClient + exact schema parity (0009).
                                                       Live mode uses LiveFactory at VIBELANG_FACTORY_URL (0010).
-1d  formal proof gates                 done (local)  0018: twelve marked production modules, 435/435 rejected mutations;
+1d  formal proof gates                 done (local)  0018: thirteen marked production modules, 652/652 current mutations rejected;
                                                       proof, mutation and inventory gates run in PACKAGE.ts. Whole-app work is 1g.
 1f  Learn more: live app tutorial        done (local)  0014/VL-31: ten theatre steps, exact subtitles, optional sound, pause and seek;
                                                       Mock/live share one durable flow; scene, flow, workerd and browser checks
@@ -33,7 +33,7 @@ brick                                   state         proof
 7   Electrobun desktop app              done (local)  0025: shared Foldkit UI, native folder picker and local model; Linux native e2e; macOS build is the lead's
 ```
 
-- **Proofs of all logic (0018, lane vl-proveall): in progress.** The inventory contains 1,822 executable items. Twelve modules carry proved contracts and 451 current mutations reject; unproved logic and tool boundaries remain explicit.
+- **Proofs of all logic (0018, lane vl-proveall): in progress.** The inventory contains 2,458 executable items. Thirteen modules carry contracts and 652 current mutant copies match actual Dafny rejections; unproved logic and tool boundaries remain explicit.
 
 - **CLI and MCP sign-in (VL-26).** Since sign-in (0019) the server names posts from the session, so the CLI's and
   MCP server's posts read "Guest". They need a person's sign-in (GitHub device flow) so the agent's posts carry

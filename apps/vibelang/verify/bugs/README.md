@@ -1,6 +1,6 @@
 # LemmaScript 0.6.6 backend reproductions
 
-All four files strictly typecheck. `pnpm verify verify/bugs/<name>.ts` fails before proof checking: three during
+The original four reproductions strictly typecheck. `pnpm verify verify/bugs/<name>.ts` fails before proof checking: three during
 Dafny resolution and `array-literal-map.ts` during emission. They are tool bugs, not successful negative-contract
 tests; no Dafny/Z3 defect was observed.
 
@@ -59,3 +59,9 @@ claims. Both sources strictly typecheck.
   behind budget charge keys cannot be proved by the backend's string reasoning, with or without length hints.
   The production contract states exact construction; the two-conversation workerd regression demonstrates uniqueness.
 
+
+The resumed lane retains stronger, production-shaped variants: `json-roundtrip.ts` specifies every message field;
+`uri-roundtrip.ts` restricts input to printable ASCII so native unpaired-surrogate exceptions cannot explain the
+failure; `markdown-safe-link.ts` retains the exact production scheme filter and specifies rejection of JavaScript
+links. All three strictly typecheck and fail in emission/resolution, not a proof counterexample. Host directories
+are `~/vl/vibelang-bugs/lemmascript-<fixture-name>/`; receipts are in the lane report.
