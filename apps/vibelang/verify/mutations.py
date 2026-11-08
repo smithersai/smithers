@@ -62,6 +62,21 @@ cases=[
 ('retry-post-clear','retryPost','error: ""','error: "failed"','retry clears only the matching pending failure'),
 ('apply-restart-text','apply','{ ...entry, text: "" }','{ ...entry, text: entry.text }','a restart empties the streaming reply and keeps every entry'),
 ('decide-restart-guard','decide','      if (!isReplying(conversation, intent.id)) return refused("not-replying")\n      return accepted({ type: "ReplyRestarted"','      return accepted({ type: "ReplyRestarted"','an accepted restart names the reply that streams'),
+('tour-entry','tourEntry','inReplyTo: "", author: "agent"','inReplyTo: id, author: "agent"','a tour is an agent entry that answers no post'),
+('apply-tour-phase','apply','replying: event.id, agent: "working" }','replying: "", agent: "working" }','a started tour is the entry that streams'),
+('apply-tour-busy','apply','if (conversation.agent === "working" || hasEntryId(conversation.entries, event.id)) return next','if (hasEntryId(conversation.entries, event.id)) return next','a tour starts only while no reply streams'),
+('apply-tour-end-guard','apply','if (!isTouring(conversation, event.id)) return next','if (false) return next','only the running tour ends'),
+('apply-tour-end-idle','apply','agent: "idle", replying: "" }','agent: "working", replying: "" }','ending the tour stops the agent'),
+('apply-tour-end-text','apply','{ ...entry, done: true } : entry)\n      return { ...next, entries: ended','{ ...entry, done: true, text: "" } : entry)\n      return { ...next, entries: ended','ending the tour keeps what the agent said'),
+('apply-pane','apply','return { ...next, pane: event.url }','return { ...next, pane: conversation.pane }','an opened page shows in the pane'),
+('apply-pane-guard','apply','if (!isReplying(conversation, event.id) || event.url === "") return next','if (event.url === "") return next','only the agent that streams moves the pane'),
+('is-tour','isTour','&& entries[i]!.inReplyTo === "") return true',') return true','a tour answers no post'),
+('is-touring','isTouring','return isTour(conversation.entries, id)','return true','only a tour entry is a running tour'),
+('decide-tour-busy','decide','if ("working" === conversation.agent) return refused("busy")','if (false) return refused("busy")','a second tour waits while the agent works'),
+('decide-tour-id','decide','return accepted({ type: "TourStarted", seq, id: intent.id })','return accepted({ type: "TourStarted", seq, id: intent.id + "x" })','a started tour carries the requested id'),
+('decide-end-tour','decide','if (!isTouring(conversation, intent.id)) return refused("not-replying")','if (!isReplying(conversation, intent.id)) return refused("not-replying")','a person ends only a tour, never a reply'),
+('decide-pane-guard','decide','if (!isReplying(conversation, intent.id)) return refused("not-replying")\n      if (intent.url','if (false) return refused("not-replying")\n      if (intent.url','only the agent that streams opens a page'),
+('decide-pane-empty','decide','if (intent.url === "") return refused("empty")','if (false) return refused("empty")','an opened page has a url'),
 ]
 if len(sys.argv) < 2: raise SystemExit('Usage: mutations.py OUT [NAME ...]')
 out=pathlib.Path(sys.argv[1]).resolve()

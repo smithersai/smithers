@@ -53,17 +53,25 @@ export type Event =
   | { readonly type: "ReplyRestarted"; readonly seq: number; readonly id: string }
   | { readonly type: "ReplyFinished"; readonly seq: number; readonly id: string }
   | { readonly type: "ReplyFailed"; readonly seq: number; readonly id: string; readonly reason: string }
+  | { readonly type: "TourStarted"; readonly seq: number; readonly id: string }
+  | { readonly type: "TourEnded"; readonly seq: number; readonly id: string }
+  | { readonly type: "PaneOpened"; readonly seq: number; readonly id: string; readonly url: string }
 
-/** A conversation as of event `seq`. `replying` is the id of the reply that streams, `""` when none does. */
+/**
+ * A conversation as of event `seq`. `replying` is the id of the reply that streams, `""` when none does. A tour is an
+ * agent entry that answers no post (`inReplyTo` is `""`): the agent speaks on its own. `pane` is the page the agent
+ * last opened in the conversation's docs pane, `""` before it opened one.
+ */
 export interface Conversation {
   readonly seq: number
   readonly entries: ReadonlyArray<Entry>
   readonly agent: AgentPhase
   readonly replying: string
+  readonly pane: string
 }
 
 /** A conversation before its first event. */
-export const empty: Conversation = { seq: 0, entries: [], agent: "idle", replying: "" }
+export const empty: Conversation = { seq: 0, entries: [], agent: "idle", replying: "", pane: "" }
 
 /** The most characters one message may hold. */
 export const MAX_TEXT = 8000
@@ -98,6 +106,10 @@ export const AGENT_NAME = "VibeLang agent"
 //@ ensures (forall(i, forall(j, 0 <= i && i < j && j < conversation.entries.length && conversation.entries[i].author == "person" && conversation.entries[j].author == "person" ==> conversation.entries[i].clientId != conversation.entries[j].clientId))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.entries.length && \result.entries[i].author == "person" && \result.entries[j].author == "person" ==> \result.entries[i].clientId != \result.entries[j].clientId)))
 //@ ensures (forall(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "person" ==> conversation.entries[i].clientId != "")) ==> (forall(i, 0 <= i && i < \result.entries.length && \result.entries[i].author == "person" ==> \result.entries[i].clientId != ""))
 //@ ensures event.seq == conversation.seq + 1 && event.type == "ReplyRestarted" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" ==> \result.entries.length == conversation.entries.length && forall(i, 0 <= i && i < \result.entries.length && \result.entries[i].id == event.id ==> \result.entries[i].text == "")
+//@ ensures event.seq == conversation.seq + 1 && event.type == "TourStarted" && conversation.agent != "working" && event.id != "" && forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].id != event.id) ==> \result.entries.length == conversation.entries.length + 1 && \result.entries[conversation.entries.length].author == "agent" && \result.entries[conversation.entries.length].inReplyTo == "" && \result.entries[conversation.entries.length].name == AGENT_NAME && \result.agent == "working" && \result.replying == event.id
+//@ ensures event.seq == conversation.seq + 1 && event.type == "TourEnded" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].id == event.id && conversation.entries[i].author == "agent" && conversation.entries[i].inReplyTo == "") ==> \result.agent == "idle" && \result.replying == "" && \result.entries.length == conversation.entries.length && forall(i, 0 <= i && i < \result.entries.length ==> \result.entries[i].text == conversation.entries[i].text && (\result.entries[i].id == event.id ==> \result.entries[i].done))
+//@ ensures event.seq == conversation.seq + 1 && event.type == "PaneOpened" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" && event.url != "" ==> \result.pane == event.url && \result.entries == conversation.entries && \result.agent == conversation.agent
+//@ ensures \result.pane != conversation.pane ==> event.type == "PaneOpened" && conversation.agent == "working" && conversation.replying == event.id && event.url != ""
 export function apply(conversation: Conversation, event: Event): Conversation {
   if (event.seq !== conversation.seq + 1) return conversation
   const next = { ...conversation, seq: event.seq }
@@ -169,7 +181,61 @@ export function apply(conversation: Conversation, event: Event): Conversation {
         replying: "",
       }
     }
+    case "TourStarted": {
+      // The agent speaks unprompted: an agent entry that answers no post, streaming like a reply.
+      if (conversation.agent === "working" || hasEntryId(conversation.entries, event.id)) return next
+      const toured = [...conversation.entries, tourEntry(event.id, event.seq)]
+      //@ assert !toured[conversation.entries.length].done
+      return { ...next, entries: toured, replying: event.id, agent: "working" }
+    }
+    case "TourEnded": {
+      // The person took control back: what the agent said stays, and the agent stops.
+      if (!isTouring(conversation, event.id)) return next
+      const ended = conversation.entries.map((entry) => entry.id === event.id ? { ...entry, done: true } : entry)
+      return { ...next, entries: ended, agent: "idle", replying: "" }
+    }
+    case "PaneOpened": {
+      // Only the agent's entry that streams moves the pane, and only to a page.
+      if (!isReplying(conversation, event.id) || event.url === "") return next
+      return { ...next, pane: event.url }
+    }
   }
+}
+
+/**
+ * A tour's entry as it starts: the agent's, answering no post, with nothing said yet.
+ */
+//@ verify
+//@ ensures \result.id == id && \result.seq == seq && \result.clientId == "" && \result.inReplyTo == "" && \result.author == "agent" && \result.name == AGENT_NAME && \result.text == "" && !\result.done && \result.error == ""
+export function tourEntry(id: string, seq: number): Entry {
+  return { id, seq, clientId: "", inReplyTo: "", author: "agent", name: AGENT_NAME, text: "", done: false, error: "" }
+}
+
+/**
+ * Whether the tour with this id runs now: the entry that streams is an agent entry answering no post.
+ */
+//@ verify
+//@ ensures \result == (conversation.agent == "working" && conversation.replying == id && id != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].id == id && conversation.entries[i].author == "agent" && conversation.entries[i].inReplyTo == ""))
+export function isTouring(conversation: Conversation, id: string): boolean {
+  if (!isReplying(conversation, id)) return false
+  return isTour(conversation.entries, id)
+}
+
+/**
+ * Whether an agent entry with this id answers no post: a tour.
+ */
+//@ verify
+//@ ensures \result == exists(i, 0 <= i && i < entries.length && entries[i].id == id && entries[i].author == "agent" && entries[i].inReplyTo == "")
+export function isTour(entries: ReadonlyArray<Entry>, id: string): boolean {
+  let i = 0
+  while (i < entries.length) {
+    //@ invariant 0 <= i && i <= entries.length
+    //@ invariant forall(j, 0 <= j && j < i ==> !(entries[j].id == id && entries[j].author == "agent" && entries[j].inReplyTo == ""))
+    //@ decreases entries.length - i
+    if (entries[i]!.id === id && entries[i]!.author === "agent" && entries[i]!.inReplyTo === "") return true
+    i++
+  }
+  return false
 }
 
 /**
@@ -242,7 +308,8 @@ export function canReplyTo(entries: ReadonlyArray<Entry>, id: string): boolean {
 
 /**
  * What the sequencer is asked to record. A person posts; the agent's flow starts, extends, ends or fails a reply, and
- * restarts it when its model call retries, discarding what streamed so far.
+ * restarts it when its model call retries, discarding what streamed so far. A person starts a tour, which the agent
+ * narrates as it would a reply and in which it opens pages in the docs pane, and ends it to take control back.
  */
 export type Intent =
   | { readonly type: "Post"; readonly id: string; readonly clientId: string; readonly name: string; readonly text: string }
@@ -251,6 +318,9 @@ export type Intent =
   | { readonly type: "RestartReply"; readonly id: string }
   | { readonly type: "FinishReply"; readonly id: string }
   | { readonly type: "FailReply"; readonly id: string; readonly reason: string }
+  | { readonly type: "StartTour"; readonly id: string }
+  | { readonly type: "EndTour"; readonly id: string }
+  | { readonly type: "OpenPane"; readonly id: string; readonly url: string }
 
 /** Why the sequencer refused an intent. */
 export type Refusal = "empty" | "too-long" | "duplicate" | "busy" | "not-replying"
@@ -283,11 +353,15 @@ function refused(refusal: Refusal): Decision {
 //@ ensures \result.ok && \result.event.type == "ReplyStarted" ==> conversation.agent != "working" && \result.event.id != ""
 //@ ensures \result.ok && \result.event.type == "Posted" ==> \result.event.clientId != "" && \result.event.text != ""
 //@ ensures \result.ok && \result.event.type == "Posted" ==> \result.event.text.length <= MAX_TEXT
-//@ ensures \result.ok && (\result.event.type == "Posted" || \result.event.type == "ReplyStarted") ==> \result.event.id != "" && forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].id != \result.event.id)
+//@ ensures \result.ok && (\result.event.type == "Posted" || \result.event.type == "ReplyStarted" || \result.event.type == "TourStarted") ==> \result.event.id != "" && forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].id != \result.event.id)
 //@ ensures \result.ok && \result.event.type == "Posted" ==> forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].clientId != \result.event.clientId)
 //@ ensures \result.ok && \result.event.type == "ReplyStarted" ==> \result.event.inReplyTo != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "person" && conversation.entries[i].id == \result.event.inReplyTo) && forall(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "agent" ==> conversation.entries[i].inReplyTo != \result.event.inReplyTo)
 //@ ensures intent.type == "StartReply" && \result.ok ==> \result.event.type == "ReplyStarted" && \result.event.inReplyTo == intent.inReplyTo
 //@ ensures \result.ok && \result.event.type == "ReplyRestarted" ==> conversation.agent == "working" && conversation.replying == \result.event.id && \result.event.id != ""
+//@ ensures \result.ok && \result.event.type == "TourStarted" ==> conversation.agent != "working"
+//@ ensures intent.type == "StartTour" && \result.ok ==> \result.event.type == "TourStarted" && \result.event.id == intent.id
+//@ ensures \result.ok && \result.event.type == "TourEnded" ==> conversation.agent == "working" && conversation.replying == \result.event.id && \result.event.id != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].id == \result.event.id && conversation.entries[i].author == "agent" && conversation.entries[i].inReplyTo == "")
+//@ ensures \result.ok && \result.event.type == "PaneOpened" ==> conversation.agent == "working" && conversation.replying == \result.event.id && \result.event.id != "" && \result.event.url != ""
 export function decide(conversation: Conversation, intent: Intent): Decision {
   const seq = conversation.seq + 1
   switch (intent.type) {
@@ -319,6 +393,18 @@ export function decide(conversation: Conversation, intent: Intent): Decision {
     case "FailReply":
       if (!isReplying(conversation, intent.id)) return refused("not-replying")
       return accepted({ type: "ReplyFailed", seq, id: intent.id, reason: intent.reason })
+    case "StartTour":
+      if ("working" === conversation.agent) return refused("busy")
+      if (intent.id === "") return refused("not-replying")
+      if (hasEntryId(conversation.entries, intent.id)) return refused("duplicate")
+      return accepted({ type: "TourStarted", seq, id: intent.id })
+    case "EndTour":
+      if (!isTouring(conversation, intent.id)) return refused("not-replying")
+      return accepted({ type: "TourEnded", seq, id: intent.id })
+    case "OpenPane":
+      if (!isReplying(conversation, intent.id)) return refused("not-replying")
+      if (intent.url === "") return refused("empty")
+      return accepted({ type: "PaneOpened", seq, id: intent.id, url: intent.url })
   }
 }
 

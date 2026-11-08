@@ -19,7 +19,7 @@ import {
 } from "../src/core/conversation.vibe"
 
 // Small domains, so ids, client ids and texts collide often.
-const Id = Schema.Literals(["", "r1", "r2", "m1", "m2"])
+const Id = Schema.Literals(["", "r1", "r2", "m1", "m2", "t1"])
 const ClientId = Schema.Literals(["", "a", "b", "c"])
 const LONG = "x".repeat(MAX_TEXT + 1)
 const Text = Schema.Literals(["", "   ", "hi", " padded ", "a longer message", LONG])
@@ -31,6 +31,9 @@ const IntentSchema = Schema.Union([
   Schema.Struct({ type: Schema.Literal("RestartReply"), id: Id }),
   Schema.Struct({ type: Schema.Literal("FinishReply"), id: Id }),
   Schema.Struct({ type: Schema.Literal("FailReply"), id: Id, reason: Schema.Literals(["", "timeout"]) }),
+  Schema.Struct({ type: Schema.Literal("StartTour"), id: Id }),
+  Schema.Struct({ type: Schema.Literal("EndTour"), id: Id }),
+  Schema.Struct({ type: Schema.Literal("OpenPane"), id: Id, url: Schema.Literals(["", "https://vibelang.sh/", "https://vibelang.sh/setup"]) }),
 ])
 
 const intents = Arbitrary.array(Arbitrary.schema(IntentSchema), { maxLength: 40 })
@@ -61,7 +64,8 @@ function invariant(state: Conversation): boolean {
   if (ids.some((id) => id === "") || new Set(ids).size !== ids.length) return false
   const clientIds = state.entries.filter((entry) => entry.author === "person").map((entry) => entry.clientId)
   if (clientIds.some((id) => id === "") || new Set(clientIds).size !== clientIds.length) return false
-  const replies = state.entries.filter(entry => entry.author === "agent")
+  // A tour is an agent entry that answers no post; every other agent entry answers exactly one.
+  const replies = state.entries.filter(entry => entry.author === "agent" && entry.inReplyTo !== "")
   if (new Set(replies.map(entry => entry.inReplyTo)).size !== replies.length) return false
   if (!replies.every(reply => state.entries.some(post => post.author === "person" && post.id === reply.inReplyTo && post.seq < reply.seq))) return false
   return state.entries.every((entry) => entry.seq <= state.seq)
@@ -73,8 +77,10 @@ function hasEffect(before: Conversation, event: Event, after: Conversation): boo
   for (let i = 0; i < before.entries.length; i++) {
     const entry = before.entries[i]!
     if (entry.id !== event.id && JSON.stringify(after.entries[i]) !== JSON.stringify(entry)) return false
-    if ((event.type === "Posted" || event.type === "ReplyStarted") && entry.id === event.id) return false
+    if ((event.type === "Posted" || event.type === "ReplyStarted" || event.type === "TourStarted") && entry.id === event.id) return false
   }
+  // Only an opened page moves the pane.
+  if (event.type !== "PaneOpened" && after.pane !== before.pane) return false
   const grew = after.entries.length === before.entries.length + 1
   const reply = after.entries.find((entry) => entry.id === event.id)
   switch (event.type) {
@@ -90,6 +96,13 @@ function hasEffect(before: Conversation, event: Event, after: Conversation): boo
       return reply !== undefined && reply.done && after.agent === "idle" && after.replying === ""
     case "ReplyFailed":
       return reply !== undefined && reply.done && reply.error !== "" && after.agent === "failed"
+    case "TourStarted":
+      return grew && after.agent === "working" && after.replying === event.id && reply?.inReplyTo === "" && reply.author === "agent"
+    case "TourEnded":
+      return reply !== undefined && reply.done && reply.error === "" && after.agent === "idle" && after.replying === "" &&
+        reply.text === before.entries.find((entry) => entry.id === event.id)?.text
+    case "PaneOpened":
+      return after.pane === event.url && event.url !== "" && after.entries === before.entries && after.agent === "working"
   }
 }
 
@@ -180,6 +193,43 @@ describe("the sequencer", () => {
     expect(decide(finished, { type: "RestartReply", id: "r1" })).toEqual({ ok: false, refusal: "not-replying" })
     // A restart nobody is streaming only advances the cursor.
     expect(apply(finished, { type: "ReplyRestarted", seq: 7, id: "r1" })).toEqual({ ...finished, seq: 7 })
+  })
+
+  it("runs one tour at a time, which only its own entry moves the pane in, and which a person ends", () => {
+    const one = apply(empty, { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "hi" })
+    expect(decide(one, { type: "OpenPane", id: "t2", url: "https://vibelang.sh/" })).toEqual({ ok: false, refusal: "not-replying" })
+    expect(decide(one, { type: "EndTour", id: "t2" })).toEqual({ ok: false, refusal: "not-replying" })
+    expect(decide(one, { type: "StartTour", id: "" })).toEqual({ ok: false, refusal: "not-replying" })
+    expect(decide(one, { type: "StartTour", id: "m1" })).toEqual({ ok: false, refusal: "duplicate" })
+    expect(decide(one, { type: "StartTour", id: "t2" })).toEqual({ ok: true, event: { type: "TourStarted", seq: 2, id: "t2" } })
+    const touring = apply(one, { type: "TourStarted", seq: 2, id: "t2" })
+    expect(touring.entries[1]).toEqual({ id: "t2", seq: 2, clientId: "", inReplyTo: "", author: "agent", name: "VibeLang agent", text: "", done: false, error: "" })
+    // A second Learn more, or a reply, waits while the tour runs; the post stays unanswered.
+    expect(decide(touring, { type: "StartTour", id: "t3" })).toEqual({ ok: false, refusal: "busy" })
+    expect(decide(touring, { type: "StartReply", id: "r1", inReplyTo: "m1" })).toEqual({ ok: false, refusal: "busy" })
+    expect(decide(touring, { type: "OpenPane", id: "t2", url: "" })).toEqual({ ok: false, refusal: "empty" })
+    expect(decide(touring, { type: "OpenPane", id: "t2", url: "https://vibelang.sh/" })).toEqual({
+      ok: true, event: { type: "PaneOpened", seq: 3, id: "t2", url: "https://vibelang.sh/" },
+    })
+    const opened = apply(apply(touring, { type: "PaneOpened", seq: 3, id: "t2", url: "https://vibelang.sh/" }), { type: "ReplyDelta", seq: 4, id: "t2", text: "VibeLang is" })
+    expect(opened.pane).toBe("https://vibelang.sh/")
+    // A stray pane event from anyone else only advances the cursor.
+    expect(apply(opened, { type: "PaneOpened", seq: 5, id: "r9", url: "https://evil.example/" })).toEqual({ ...opened, seq: 5 })
+    const ended = apply(opened, { type: "TourEnded", seq: 5, id: "t2" })
+    expect(ended).toMatchObject({ agent: "idle", replying: "", pane: "https://vibelang.sh/" })
+    expect(ended.entries[1]).toMatchObject({ text: "VibeLang is", done: true, error: "" })
+    expect(decide(ended, { type: "EndTour", id: "t2" })).toEqual({ ok: false, refusal: "not-replying" })
+    expect(decide(ended, { type: "OpenPane", id: "t2", url: "https://vibelang.sh/setup" })).toEqual({ ok: false, refusal: "not-replying" })
+    // Once the tour ends, the post asked meanwhile can be answered, and a new tour can start.
+    expect(decide(ended, { type: "StartReply", id: "r1", inReplyTo: "m1" }).ok).toBe(true)
+    expect(decide(ended, { type: "StartTour", id: "t6" }).ok).toBe(true)
+  })
+
+  it("never lets a person end a reply as if it were a tour", () => {
+    const one = apply(empty, { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "hi" })
+    const started = apply(one, { type: "ReplyStarted", seq: 2, id: "r1", inReplyTo: "m1" })
+    expect(decide(started, { type: "EndTour", id: "r1" })).toEqual({ ok: false, refusal: "not-replying" })
+    expect(apply(started, { type: "TourEnded", seq: 3, id: "r1" })).toEqual({ ...started, seq: 3 })
   })
 
   it("takes one reply at a time", () => {

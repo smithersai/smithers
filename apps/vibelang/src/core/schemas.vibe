@@ -24,6 +24,7 @@ export schema Conversation {
   readonly entries: ReadonlyArray<Entry>
   readonly agent: "idle" | "working" | "failed"
   readonly replying: string
+  readonly pane: string
 }
 
 export schema Pending {
@@ -52,9 +53,14 @@ export schema ReplyDelta { readonly type: "ReplyDelta"; readonly seq: Seq; reado
 export schema ReplyRestarted { readonly type: "ReplyRestarted"; readonly seq: Seq; readonly id: string }
 export schema ReplyFinished { readonly type: "ReplyFinished"; readonly seq: Seq; readonly id: string }
 export schema ReplyFailed { readonly type: "ReplyFailed"; readonly seq: Seq; readonly id: string; readonly reason: string }
+export schema TourStarted { readonly type: "TourStarted"; readonly seq: Seq; readonly id: string }
+export schema TourEnded { readonly type: "TourEnded"; readonly seq: Seq; readonly id: string }
+export schema PaneOpened { readonly type: "PaneOpened"; readonly seq: Seq; readonly id: string; readonly url: string }
 
 /** Decodes one event off the wire. */
-export const EventSchema = Schema.Union([Posted, ReplyStarted, ReplyDelta, ReplyRestarted, ReplyFinished, ReplyFailed])
+export const EventSchema = Schema.Union([
+  Posted, ReplyStarted, ReplyDelta, ReplyRestarted, ReplyFinished, ReplyFailed, TourStarted, TourEnded, PaneOpened,
+])
 
 /** A finite read: current copies of entries touched after `after`, and the event cursor. */
 export schema ReadSnapshot { readonly seq: Seq; readonly entries: ReadonlyArray<Entry> }
