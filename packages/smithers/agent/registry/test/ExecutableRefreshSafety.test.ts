@@ -75,7 +75,7 @@ const reserved = (site: string): string => fileURLToPath(new URL(site))
 /**
  * The name a load `delta` sequence values later would try, given one it took.
  *
- * A reserved name is `.smithers-<content digest>-<sequence>-<clock>` plus the
+ * A reserved name is `smithers-<content digest>-<sequence>-<clock>` plus the
  * source's extension. The digest and the clock are pinned by the caller, so
  * the sequence is the only part that moves and a later name is predictable —
  * which is exactly what makes a collision plantable.

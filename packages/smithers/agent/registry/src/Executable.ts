@@ -568,8 +568,8 @@ const reserveSibling = (
  */
 const staleSiblingAgeMs = 10 * 60 * 1000
 
-/** `.smithers-<digest>-<sequence>-<base-36 epoch ms><extension>`, as {@link reserveSibling} names it. */
-const loadSibling = /^\.smithers-.+-[0-9a-z]+-([0-9a-z]+)\.[A-Za-z0-9]+$/
+/** `smithers-<digest>-<sequence>-<base-36 epoch ms><extension>`, as {@link reserveSibling} names it. */
+const loadSibling = /^\.?smithers-.+-[0-9a-z]+-([0-9a-z]+)\.[A-Za-z0-9]+$/
 
 /**
  * Removes the load siblings a crash left in `directory`. Best effort: a
@@ -624,6 +624,9 @@ const importModule = (
     const modules = source.modules
     const swept = new Set<string>()
     const siblings = new Map<string, string>()
+    // Compiler project globs omit dotfiles. Visible private siblings keep the
+    // measured entry and its VibeLang helpers in the host compiler's project.
+    // Exclusive creation, measured bytes and scoped cleanup remain unchanged.
     for (const original of modules.keys()) {
       const directory = platformPath.dirname(original)
       yield* fs.makeDirectory(directory, { recursive: true })
@@ -634,7 +637,7 @@ const importModule = (
       const reserved = yield* Effect.acquireRelease(
         reserveSibling(
           fs,
-          platformPath.join(directory, `.smithers-${source.contentDigest}-`),
+          platformPath.join(directory, `smithers-${source.contentDigest}-`),
           original.endsWith(".mdx") ? ".mjs" : platformPath.extname(original) || ".mjs"
         ),
         // The module is already evaluated; a sibling that will not unlink

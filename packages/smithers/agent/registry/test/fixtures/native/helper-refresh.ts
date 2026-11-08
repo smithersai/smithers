@@ -31,7 +31,11 @@ const program = Effect.gen(function*() {
   const fs = yield* FileSystem.FileSystem
   const registry = yield* Registry.Registry
   const before = yield* load
-  yield* fs.writeFileString(helper, "export const priority: number = 9\n")
+  yield* fs.writeFileString(
+    helper,
+    "export const priority: number = 9\n" +
+      (helper.endsWith(".vibe") ? "export effect function read() { return priority }\n" : "")
+  )
   yield* registry.refresh()
   const after = yield* load
   return { before, after }

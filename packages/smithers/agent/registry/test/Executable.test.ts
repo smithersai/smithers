@@ -1303,7 +1303,7 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
       const executable = yield* Executable.fromDescriptor(yield* descriptorIn(root, "pinned"), options())
       expect(executable.lowered.priority).toBe(7)
       for (const directory of [".smithers/flows/pinned", ".smithers/flows/shared"]) {
-        expect((yield* fs.readDirectory(`${root}/${directory}`)).filter((name) => name.startsWith(".smithers-")))
+        expect((yield* fs.readDirectory(`${root}/${directory}`)).filter((name) => /^\.?smithers-/.test(name)))
           .toEqual([])
       }
     }).pipe(Effect.scoped, Effect.provide(platform)))
@@ -1324,7 +1324,7 @@ export default Flow.make("pinned", { description:"Retained", payload, success:Sc
       const stubborn = FileSystem.FileSystem.of({
         ...fs,
         remove: (target, options) =>
-          basename(target).startsWith(".smithers-") && !target.endsWith(stale)
+          /^\.?smithers-/.test(basename(target)) && !target.endsWith(stale)
             ? Effect.sync(() => refused.push(target)).pipe(
               Effect.andThen(Effect.fail(PlatformError.systemError({
                 _tag: "Busy",
