@@ -291,3 +291,7 @@ Guard and field mutations preserve all production contracts.
 real native storage and host APIs. The first two and then three strengthened cases fail before shape validation;
 all sixteen pass after it. Browser speech counters wrap and delegate the native APIs rather than replacing them.
 The 30 affected browser cases retain pause, seek, mute, finish and Escape assertions.
+
+**Live dispatch extraction (0018).** Public workerd sequencing, duplicate/replay, retained execution and conversation
+isolation cases run the same host with the proved scan/attempt/done decisions. Guard and field mutants include
+skipping an unmarked post, attempting a marked/exhausted position, and continuing after a busy refusal.

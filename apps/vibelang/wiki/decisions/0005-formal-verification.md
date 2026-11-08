@@ -160,3 +160,7 @@ navigation call it; native storage/URL operations and their failure fallbacks re
 
 Theatre presentation (0018) now calls a proved kernel for speech decisions, selectors and keyboard focus wrapping.
 Actual speech, DOM layout and persisted-state decoding remain host/library boundaries.
+
+The live dispatcher (0018) threads a proved scan/attempt/done model through actual storage observations and engine
+attempts. It stops on the first unmarked post even when busy; engine execution and journal/lock correctness remain
+library/host assumptions.

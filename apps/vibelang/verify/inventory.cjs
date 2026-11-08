@@ -9,6 +9,7 @@ function scan(folder) {
     e.isDirectory() ? scan(path.join(folder,e.name)) : e.name.endsWith('.vibe') ? [path.join(folder,e.name)] : []);
 }
 const shellBoundaries = {
+  'worker/Objects.vibe': 'The live dispatcher uses the proved scan/attempt/done transition; only a successful engine start writes a mark. Intent/storage codecs, engine execution, alarms and runtime composition remain host boundaries.',
   'src/web/theatre.vibe': 'Calls the proved selector, speech action, audio identity, outcome and focus-index policies. DOM geometry and native number subtraction, speech APIs, persisted JSON decoding and host execution remain boundaries.',
   'src/history/Sequencer.vibe': 'Calls the proved history machine, rank validation and capacity guard. Decodes storage/replay/follow/bootstrap with redacted errors. Fold targets call the proved foldTarget. Locking, store-before-publish, epic opening for untrailered folds, title truncation and trailer regexp remain unproved.',
   'src/history/schemas.vibe': 'Rank bounds call proved validRank/validRanks; Schema safe-integer and JSON decoding remain runtime boundaries (unsafe-integer.ts, json-codec.ts).',
@@ -33,6 +34,7 @@ const shellBoundaries = {
   'src/history/roles.vibe': 'may, leastRole, peopleOnly and standing are proved in flowMachine.vibe; this module re-exports them and builds the role tables from them (0020).',
 };
 const boundaries = {
+  'worker/liveDispatchDecision.vibe': 'Proved exact scan cursor and first-unmarked selection, no skipped unmarked post, terminal idempotency and one engine attempt per invocation, including refusal; storage-mark truth and engine execution are host boundaries.',
   'src/web/theatreDecision.vibe': 'Proved exact target selectors, speech cancellation/pause/resume/replacement priority, no duplicate speech on redraw, audio identity invalidation, bounded outcome labels and keyboard focus wrapping; native speech, DOM and persistence remain host boundaries.',
   'src/web/startupDecision.vibe': 'Proved explicit query precedence, preference writes, authoritative role-list membership/default, saved tutorial controls and the opposite-mode switch; native URL/storage effects and storage-failure fallback remain host boundaries.',
   'src/web/viewDecision.vibe': 'Proved refusal/status labels, entry display flags, send/transition choices, sandbox pane/response/action guards and media failure/motion choices. Rendering, asset lookup and actual DOM execution remain host boundaries.',

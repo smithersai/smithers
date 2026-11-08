@@ -1,3 +1,4 @@
+import { initialDispatch, probeDispatch, finishDispatch } from "./liveDispatchDecision.vibe"
 // What each Durable Object runs, whoever hosts it: the Alchemy objects the API Worker deploys (Api.vibe) and the plain
 // ones the workerd test runs (test/workerd/worker.vibe). Both hosts hand it the object's own storage and the budget's
 // caller, so they run the same code.
@@ -71,16 +72,21 @@ function dispatcher(storage: KeyValue): Sequencer.Dispatch {
       if (started) try promise(() => storage.put(dispatchedKey(executionId), true))
     },
     start: effect (posts: ReadonlyArray<string>) => {
-      for (const post of posts) {
-        if ((try promise(() => storage.get(dispatchedKey(post)))) !== undefined) continue
+      let scan = initialDispatch()
+      while (scan.phase === "scan") {
+        const current = posts[scan.index]
+        const marked = current === undefined ? false : (try promise(() => storage.get(dispatchedKey(current)))) !== undefined
+        scan = probeDispatch(scan, posts, marked)
+        if (scan.phase !== "attempt") continue
+        const post = scan.post
         const intent = try Effect.orDie(ExecutionObject.intent(Reply, { executionId: executionIdOf(post), payload: { post } }))
         const started = try Effect.match(ExecutionObject.start(executions, intent, Effect.void), {
           onFailure: () => false,
           onSuccess: () => true,
         })
-        try Effect.logInfo("vibelang.dispatch").pipe(Effect.annotateLogs({ outcome: started ? "started" : "waiting", post }))
-        if (started) try promise(() => storage.put(dispatchedKey(post), true))
-        return
+        scan = finishDispatch(scan, started)
+        try Effect.logInfo("vibelang.dispatch").pipe(Effect.annotateLogs({ outcome: scan.started ? "started" : "waiting", post }))
+        if (scan.started) try promise(() => storage.put(dispatchedKey(post), true))
       }
     },
   }
