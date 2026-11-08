@@ -18,6 +18,7 @@ import { type PageRequest, pageOf } from "../src/history/pages.vibe"
 import type { Write } from "../src/history/wire.vibe"
 import type { Principal } from "../src/history/roles.vibe"
 import * as HistoryObject from "./HistoryObject.vibe"
+import { chargeKeyOf } from "./budgetDecision.vibe"
 import { afterOf, eventStream, handle, type Conversations, type Histories } from "./Http.vibe"
 import { githubMain } from "./MainLog.vibe"
 import * as Objects from "./Objects.vibe"
@@ -83,7 +84,7 @@ const AccountsLive = ProjectAccounts.make(effect {
       ...accounts,
       fetch: effect {
         const runtime = try RuntimeContext
-        const spend = spendOf(runtime, budgets)
+        const spend = spendOf(runtime, budgets, hostId)
         return try accounts.fetch.pipe(Effect.provide(writerLayer.pipe(Layer.provide(Layer.succeed(ChatModel, model)), Layer.provide(Layer.succeed(IssueSpend, spend)))))
       },
     }
@@ -103,7 +104,7 @@ function reached<A, E>(runtime: RuntimeContext["Service"], what: string, call: A
 }
 
 /** The same daily token ledger serves conversation answers and explicit VIP drafts. */
-function spendOf(runtime: RuntimeContext["Service"], budgets: Namespace<BudgetShape>): Spend.Shape {
+function spendOf(runtime: RuntimeContext["Service"], budgets: Namespace<BudgetShape>, hostId: string): Spend.Shape {
   return {
     admit: (day) => effect {
       const object = try objectOf(budgets, day, "budget")
@@ -111,7 +112,8 @@ function spendOf(runtime: RuntimeContext["Service"], budgets: Namespace<BudgetSh
     },
     spend: (day, reply, tokens) => effect {
       const object = try objectOf(budgets, day, "budget")
-      try reached(runtime, "budget", object.spend(reply, tokens))
+      // The day's object is shared by every conversation and account; the host's own id namespaces the charge.
+      try reached(runtime, "budget", object.spend(chargeKeyOf(hostId, reply), tokens))
     },
   }
 }
@@ -174,7 +176,7 @@ const ConversationLive = Conversation.make(effect {
       },
       alarm: () => effect {
         const runtime = try RuntimeContext
-        const spend = spendOf(runtime, budgets)
+        const spend = spendOf(runtime, budgets, hostId)
         // The agent's history tools reach VibeLang's History object, as the API's routes do.
         const history = HistoryObject.readerOver(
           (request) => effect {

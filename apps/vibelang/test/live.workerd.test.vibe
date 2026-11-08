@@ -11,7 +11,7 @@ import { apply, empty, type Event } from "../src/core/conversation.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import { health, LiveFactory } from "../src/core/LiveFactory.vibe"
 import { AgentBackend, BrowserFactory } from "../src/web/backend.vibe"
-import { REASONS } from "../worker/Reply.vibe"
+import { dayOf, REASONS } from "../worker/Reply.vibe"
 import { modelKey, room, serveApi, type Served } from "./support/workerd.vibe"
 
 /** The live Factory at `origin`, over this process's fetch. */
@@ -282,6 +282,39 @@ describe("the live Factory in local workerd, with a model nobody answers", () =>
         expect(events.at(-1)!.seq).toBeGreaterThan(post.seq)
         expect(events.filter((event) => event.type === "PaneOpened" && event.seq > end.seq)).toEqual([])
         expect(runs.find((run) => run.run_id === "tour/t1")?.status).toBe("completed")
+      })
+    }
+  }, 300_000)
+})
+
+/** The day's charge keys in the shared budget object, from the test host's window. */
+effect function chargeKeys(origin: string, day: string) {
+  provide FetchHttpClient.layer {
+    const response = try HttpClient.get(`${origin}/budget/${encodeURIComponent(day)}/ledger`)
+    return try HttpClientResponse.schemaBodyJson(Schema.Array(Schema.String))(response)
+  }
+}
+
+describe("the live Factory in local workerd, two conversations in one day", () => {
+  let api: Served | undefined
+  beforeAll(async () => { api = await runPromise(serveApi({ CHAT_MODEL: UNREACHABLE_MODEL, ...UNANSWERED })) }, 120_000)
+  afterAll(async () => { await api?.dispose() })
+
+  it.live("charges each conversation's first reply under its own key, though both replies are r1", () => effect {
+    const origin = api!.origin
+    provide live(origin) {
+      const factory = try Factory
+      const first = try room("budget-one")
+      const second = try room("budget-two")
+      try factory.post(first, "a", "Ada", "one")
+      try factory.post(second, "a", "Ada", "two")
+      const settled = try Effect.all([untilSettled(first, 1), untilSettled(second, 1)], { concurrency: "unbounded" })
+      const keys = try chargeKeys(origin, dayOf(Date.now()))
+      try Effect.try(() => {
+        expect(settled[0]!.at(-1)).toMatchObject({ type: "ReplyFailed", id: "r1", reason: REASONS.unavailable })
+        expect(settled[1]!.at(-1)).toMatchObject({ type: "ReplyFailed", id: "r1", reason: REASONS.unavailable })
+        expect(keys).toHaveLength(2)
+        expect(keys).not.toContain("reply/r1")
       })
     }
   }, 300_000)

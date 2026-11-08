@@ -54,3 +54,8 @@ claims. Both sources strictly typecheck.
 
 - `real-rounding.ts`: exact-real subtraction proves a threshold result that native IEEE-754 rounding violates.
   The proof succeeds and the native assertion intentionally fails; no native arithmetic theorem is claimed.
+
+- `string-concat-unique.ts`: exact concatenation verifies, but the true concat-cancellation uniqueness theorem
+  behind budget charge keys cannot be proved by the backend's string reasoning, with or without length hints.
+  The production contract states exact construction; the two-conversation workerd regression demonstrates uniqueness.
+

@@ -27,3 +27,10 @@ export function charge(spent: number, used: number, recorded: boolean): Charge {
 export function canCharge(spent: number, used: number): boolean {
   return spent >= 0 && used >= 0 && used <= 9007199254740991 - spent
 }
+
+/** One conversation's charge key in the day's shared ledger: the object's identity namespaces it. */
+//@ verify
+//@ ensures \result == host + ":" + reply
+export function chargeKeyOf(host: string, reply: string): string {
+  return host + ":" + reply
+}

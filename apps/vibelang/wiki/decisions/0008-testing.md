@@ -256,3 +256,8 @@ The strict all-four thresholds and Playwright coverage collector remain in the r
 **Web decision extraction (0018).** Existing scene, media, viewport, tour and roles tests check the production
 callbacks after pure decision extraction. Executable mutations cover every new projected field and guard. The
 real-rounding fixture intentionally disagrees with native execution and remains a tool-boundary reproduction.
+
+**Budget charge keys (0018).** The two-conversation ledger regression fails while a shared reply id merges both
+conversations' charges and passes once the proved key decision namespaces each charge by its conversation object.
+The test host gains a ledger window route; no dependency is added.
+

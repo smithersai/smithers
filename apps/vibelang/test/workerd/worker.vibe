@@ -23,6 +23,7 @@ import { githubMain } from "../../worker/MainLog.vibe"
 import type { ReadSnapshot } from "../../src/core/schemas.vibe"
 import { chatModel, dailyTokens } from "../../worker/AgentModel.vibe"
 import { afterOf, eventStream, handle, type Conversations, type Histories } from "../../worker/Http.vibe"
+import { chargeKeyOf } from "../../worker/budgetDecision.vibe"
 import * as Objects from "../../worker/Objects.vibe"
 import type { Spend } from "../../worker/Reply.vibe"
 import type { Sequencer } from "../../worker/Sequencer.vibe"
@@ -152,9 +153,10 @@ export class Conversation {
       return
     }
     const env = this.env
+    const hostId = this.state.id.toString()
     const spend: Spend.Shape = {
       admit: (day) => reach("budget", () => call(env.BUDGET, day, "admit", {}) as Promise<boolean>),
-      spend: (day, reply, tokens) => reach("budget", () => call(env.BUDGET, day, "spend", { reply, tokens }).then(() => undefined)),
+      spend: (day, reply, tokens) => reach("budget", () => call(env.BUDGET, day, "spend", { reply: chargeKeyOf(hostId, reply), tokens }).then(() => undefined)),
     }
     const model = await Effect.runPromise(Effect.orDie(configured(env, chatModel())))
     await Effect.runPromise(Objects.alarm(this.state.id.toString(), this.state.storage, sequencer, spend, model, historyOf(env)))
@@ -209,6 +211,8 @@ export class Budget {
     const url = new URL(request.url)
     const args = await request.json() as { readonly reply: string; readonly tokens: number }
     if (url.pathname === "/admit") return json(await Effect.runPromise(budget.admit()))
+    // The suite's window into the day's charge keys, so a cross-conversation collision is visible.
+    if (url.pathname === "/ledger") return json([...(await this.state.storage.list({ prefix: "reply/" })).keys()])
     await Effect.runPromise(budget.spend(args.reply, args.tokens))
     return json(null)
   }
@@ -258,6 +262,9 @@ export default {
     // The suite's window into a conversation object's engine: /runs/<conversation>.
     const boundary = new URL(request.url).pathname.match(/^\/(reading-tour|parked|release-park)\/(.+)$/)
     if (boundary !== null) return json(await call(env.CONVERSATION, decodeURIComponent(boundary[2]!), boundary[1]!, {}))
+    // The day's budget charge keys: /budget/<day>/ledger.
+    const ledger = new URL(request.url).pathname.match(/^\/budget\/(.+)\/ledger$/)
+    if (ledger !== null) return json(await call(env.BUDGET, decodeURIComponent(ledger[1]!), "ledger", {}))
     const runs = new URL(request.url).pathname.match(/^\/runs\/(.+)$/)
     if (runs !== null) {
       // /runs/history is the History object's (it is named by its repository); any other name is a conversation's.
