@@ -33,3 +33,8 @@ notes. Runnable known-red coverage qualifications and refreshed records remain p
 stubs; those need replacement/removal before a no-mocks or 100% claim. Actual GitHub writes are outside this lane's
 authorization. Live model/Container cases lack authorized test-binding references and receive no coverage credit.
 No agents were started and no deployment was performed.
+
+A further real HTTP issue regression found approval fields surviving an untrusted projection's downgrade and
+becoming trusted gate receipts on a later read. The fix strips those external fields before saving projections.
+Its focused regression fails first; four real SQLite/offline HTTP issue cases cover repeated reads, replay,
+permission changes, comments, links, commitment and unchanged truth after invalid operations.

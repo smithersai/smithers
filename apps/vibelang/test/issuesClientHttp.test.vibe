@@ -6,25 +6,35 @@ import { HttpServer } from "effect/http"
 import { fixtureHost, makeIssueStore } from "../src/core/IssuesFactory.vibe"
 import * as MockAccounts from "../src/core/MockAccounts.vibe"
 import { IssueHost } from "../src/core/issueFlows.vibe"
+import type { IssueRequest } from "../src/core/issueSchemas.vibe"
 import { liveIssues } from "../src/core/LiveIssues.vibe"
 import { IssueAuthority, serveIssues } from "../worker/Issues.vibe"
 import { objectStorage } from "./support/objectStorage.ts"
 import type { Storage } from "../worker/Objects.vibe"
 
+effect function serving() {
+  const accounts = try MockAccounts.make()
+  try accounts.choose("maintainer")
+  const selected = effect () => {
+    const person = try Effect.orDie(accounts.current())
+    return { id: person.id, login: person.login, role: person.role, kind: "person" as const }
+  }
+  const store = try makeIssueStore()
+  const host = try fixtureHost(selected, store.state, store.lock)
+  const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Storage
+  const authority: IssueAuthority.Shape = { current: effect () => { const person = try selected(); return person.id === "" ? undefined : { ...person, token: Redacted.make("fixture-only") } } }
+  try HttpServer.serveEffect(serveIssues("issues-client-http", storage).pipe(Effect.provideService(IssueHost, host), Effect.provideService(IssueAuthority, authority)))
+  const client = try liveIssues("")
+  return { accounts, client }
+}
+
+function intent(over: Partial<IssueRequest>): IssueRequest {
+  return { op: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "read", ...over }
+}
+
 it.live("reads, writes and replays a real offline issue over HTTP, then enforces the current role", () => scoped(effect {
   provide NodeHttpServer.layerTest {
-    const accounts = try MockAccounts.make()
-    try accounts.choose("maintainer")
-    const selected = effect () => {
-      const person = try Effect.orDie(accounts.current())
-      return { id: person.id, login: person.login, role: person.role, kind: "person" as const }
-    }
-    const store = try makeIssueStore()
-    const host = try fixtureHost(selected, store.state, store.lock)
-    const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Storage
-    const authority: IssueAuthority.Shape = { current: effect () => { const person = try selected(); return person.id === "" ? undefined : { ...person, token: Redacted.make("fixture-only") } } }
-    try HttpServer.serveEffect(serveIssues("issues-client-http", storage).pipe(Effect.provideService(IssueHost, host), Effect.provideService(IssueAuthority, authority)))
-    const client = try liveIssues("")
+    const { accounts, client } = try serving()
     const before = try client.read()
     const request = { op: "new" as const, number: 0, parent: 0, title: "Real HTTP issue", text: "Persist once", assignee: "", example: "", prior: "", key: "new-http-issue" }
     const written = try client.act(request)
@@ -40,6 +50,68 @@ it.live("reads, writes and replays a real offline issue over HTTP, then enforces
       expect(after.items.filter(issue => issue.title === request.title)).toHaveLength(1)
       expect(denied.reason).toBe("forbidden")
       expect(publicRead.items.filter(issue => issue.title === request.title)).toHaveLength(1)
+    })
+  }
+}), 60_000)
+
+
+it.live("persists comments, parent links and task assignment through the real offline HTTP host", () => scoped(effect {
+  provide NodeHttpServer.layerTest {
+    const { client } = try serving()
+    const parent = try client.act(intent({ op: "new", title: "HTTP parent", text: "Parent body", key: "parent" }))
+    const child = try client.act(intent({ op: "new", title: "HTTP child", text: "Child body", key: "child" }))
+    const parentNumber = parent.selected!
+    const childNumber = child.selected!
+    const noted = try client.act(intent({ op: "comment", number: parentNumber, text: "Observed through HTTP", key: "note" }))
+    const linked = try client.act(intent({ op: "link", number: childNumber, parent: parentNumber, key: "link" }))
+    const committed = try client.act(intent({ op: "commit", number: parentNumber, assignee: "will", key: "commit" }))
+    const uncommitted = try client.act(intent({ op: "uncommit", number: parentNumber, key: "uncommit" }))
+    const after = try client.read()
+    try Effect.try(() => {
+      expect(parentNumber).not.toBe(childNumber)
+      expect(noted.items.find(issue => issue.number === parentNumber)?.notes.some(note => note.text === "Observed through HTTP" && note.event === false)).toBe(true)
+      expect(linked.items.find(issue => issue.number === childNumber)?.parent).toBe(parentNumber)
+      expect(committed.items.find(issue => issue.number === parentNumber)).toMatchObject({ task: "Queued", assignee: "will" })
+      expect(uncommitted.items.find(issue => issue.number === parentNumber)).toMatchObject({ task: "", assignee: "" })
+      expect(after.items.find(issue => issue.number === childNumber)?.parent).toBe(parentNumber)
+      expect(after.items.find(issue => issue.number === parentNumber)?.notes.filter(note => note.text === "Observed through HTTP")).toHaveLength(1)
+    })
+  }
+}), 60_000)
+
+it.live("refuses empty content, missing issues and self-parent links without mutating issue truth", () => scoped(effect {
+  provide NodeHttpServer.layerTest {
+    const { client } = try serving()
+    const before = try client.read()
+    const number = before.items[0]!.number
+    const failures = [
+      try Effect.flip(client.act(intent({ op: "new", title: " ", key: "empty-title" }))),
+      try Effect.flip(client.act(intent({ op: "comment", number, text: " ", key: "empty-comment" }))),
+      try Effect.flip(client.act(intent({ op: "comment", number: 999999, text: "missing", key: "missing" }))),
+      try Effect.flip(client.act(intent({ op: "link", number, parent: number, key: "self-link" }))),
+    ]
+    const after = try client.read()
+    try Effect.try(() => {
+      expect(failures.map(failure => failure.reason)).toEqual(["title", "empty", "missing", "tree"])
+      expect(after.items).toEqual(before.items)
+    })
+  }
+}), 60_000)
+
+
+it.live("repeated HTTP reads never turn untrusted approval fields into a durable gate receipt", () => scoped(effect {
+  provide NodeHttpServer.layerTest {
+    const { client } = try serving()
+    const first = try client.read()
+    const second = try client.read()
+    const third = try client.read()
+    try Effect.try(() => {
+      for (const snapshot of [first, second, third]) {
+        const proposal = snapshot.items.find(issue => issue.number === 44)!
+        expect(proposal.vip).toBe("In review")
+        expect(proposal.approvedBy).toBeUndefined()
+        expect(proposal.approvedAt).toBeUndefined()
+      }
     })
   }
 }), 60_000)

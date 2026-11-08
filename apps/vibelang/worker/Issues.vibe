@@ -276,8 +276,11 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
     }
     const observed = try issueHost.perform(request)
     let items = observed.items.map(item => {
+      // Approval fields from an external projection are not receipts. Do not persist them even while downgrading
+      // an accepted label: otherwise the next read would trust those same fields as a local approval.
+      const { approvedBy: _approvedBy, approvedAt: _approvedAt, ...projection } = item
       const receipt = saved.items.find(old => old.number === item.number && old.approvedBy !== undefined)
-      return item.vip !== "Accepted" ? item : receipt === undefined ? { ...item, vip: "In review" as const } : { ...item, approvedBy: receipt.approvedBy ?? "", approvedAt: receipt.approvedAt ?? "" }
+      return item.vip !== "Accepted" ? projection : receipt === undefined ? { ...projection, vip: "In review" as const } : { ...projection, approvedBy: receipt.approvedBy ?? "", approvedAt: receipt.approvedAt ?? "" }
     })
     if (request.op === "accept" && current !== undefined) {
       const at = new Date(try Clock.currentTimeMillis).toISOString()

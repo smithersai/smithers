@@ -326,3 +326,8 @@ including59new constructor, stage-admission, field-frame and reachable-invariant
 admission, exact phase/outcome and invariant cases. Existing real sequencer/engine tests assert end-before-next-reply,
 speaker interruption, no late text, and unchanged content-free step observations. The three browser suites run on
 4504 and retain pause/back/seek/exit, live app surface driving and both control themes/phone.
+
+**Issue approval persistence (0016).** Repeated real HTTP reads must not turn external approval fields into saved
+local gate receipts. The focused regression fails before the fix. Projections now drop external approvedBy and
+approvedAt fields before persisting; only saved local receipts restore them. Actual SQLite/offline HTTP issue flows
+also cover comments, parent links, task commitment, invalid content, missing targets and unchanged issue truth.
