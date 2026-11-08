@@ -46,11 +46,7 @@
       "vibelang-source": "./src/Descriptor.vibe",
       "default": "./.vibelang/js/src/Descriptor.js"
     },
-    "./Disclosure": {
-      "types": "./src/Disclosure.ts",
-      "vibelang-source": "./src/Disclosure.ts",
-      "default": "./.vibelang/js/src/Disclosure.js"
-    },
+    "./Disclosure": "./src/Disclosure.ts",
     "./Discovery": {
       "types": "./src/Discovery.ts",
       "vibelang-source": "./src/Discovery.ts",
@@ -99,11 +95,7 @@
         "default": "./.vibelang/js/src/Prompt.js"
       }
     },
-    "./Prompt/jsx-runtime": {
-      "types": "./src/Prompt/jsx-runtime.ts",
-      "vibelang-source": "./src/Prompt/jsx-runtime.ts",
-      "default": "./.vibelang/js/src/Prompt/jsx-runtime.js"
-    },
+    "./Prompt/jsx-runtime": "./src/Prompt/jsx-runtime.ts",
     "./ExecutionSnapshot": {
       "types": "./src/ExecutionSnapshot.ts",
       "vibelang-source": "./src/ExecutionSnapshot.ts",

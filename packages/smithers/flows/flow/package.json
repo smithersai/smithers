@@ -72,11 +72,7 @@
       "default": "./.vibelang/js/src/FlowRuntime/index.js"
     },
     "./FlowRuntime/*": null,
-    "./StepIdentity": {
-      "types": "./src/Action/StepIdentity.ts",
-      "vibelang-source": "./src/Action/StepIdentity.ts",
-      "default": "./.vibelang/js/src/Action/StepIdentity.js"
-    },
+    "./StepIdentity": "./src/Action/StepIdentity.ts",
     "./internal/*": null,
     "./*/index": null,
     "./Deadline": {
