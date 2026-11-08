@@ -14,7 +14,8 @@ import * as QuickJSWorkerd from "@smthrs/harness/QuickJSWorkerd"
 import { Evaluator, ModelRequest } from "@smthrs/model"
 import type { HostModel } from "@smthrs/model-host"
 import { Registry } from "@smthrs/registry"
-import { patient, Reply, replyIdOf } from "../src/core/flows.vibe"
+import { patient, Reply, replyIdOf, Tours } from "../src/core/flows.vibe"
+import { wikiTools, WIKI_INSTRUCTION } from "./WikiTools.vibe"
 import { AGENT_CONTEXT } from "./agentContext.vibe"
 import { HISTORY_INSTRUCTION, historyTools, HistoryTools, REPLY_CALLS } from "./HistoryTools.vibe"
 import { closed, SandboxAgent, sandboxTools, SANDBOX_INSTRUCTION } from "./SandboxTools.vibe"
@@ -119,7 +120,7 @@ export const Respond = AgentAction.make("vibelang/reply/agent", {
   payload: { turns: Schema.Array(Turn) },
   output: Schema.String,
   seat: AGENT_SEAT,
-  system: [AGENT_CONTEXT, HISTORY_INSTRUCTION, SANDBOX_INSTRUCTION],
+  system: [AGENT_CONTEXT, HISTORY_INSTRUCTION, SANDBOX_INSTRUCTION, WIKI_INSTRUCTION],
   profile: "conversation",
   prompt: promptOf,
   maxFrames: MAX_FRAMES,
@@ -243,17 +244,18 @@ effect function respond(reply: string, model: HostModel["Service"], turns: Reado
       shown = next.text
     }
   }
-  const answered = try exit(run(model, sink, turns))
+  const answered = try exit(run(reply, model, sink, turns))
   try Queue.offer(events, undefined)
   join streamer
   return { answered, progress: try Ref.get(progress) }
 }
 
-/** One run of `vibelang/reply/agent`, as the journaled step its declaration makes, its tools the history's. */
-effect function run(model: HostModel["Service"], sink: EventSink.Service, turns: ReadonlyArray<Turn>) {
+/** One run of the reply agent, with both history and captured pane tools. */
+effect function run(reply: string, model: HostModel["Service"], sink: EventSink.Service, turns: ReadonlyArray<Turn>) {
+  const tours = try Tours
   const { history } = try HistoryTools
   const sandbox = Option.getOrElse(try Effect.serviceOption(SandboxAgent), () => closed)
-  provide agentOf(Respond.layer, model, sink, [historyTools(history), sandboxTools(sandbox.factory, sandbox.conversation)], REPLY_CALLS), EventSink.EventSink = sink {
+  provide agentOf(Respond.layer, model, sink, [historyTools(history), sandboxTools(sandbox.factory, sandbox.conversation), wikiTools(reply, tours)], REPLY_CALLS), EventSink.EventSink = sink {
     const implementation = try Respond.requirement
     return try implementation.action({ turns })
   }

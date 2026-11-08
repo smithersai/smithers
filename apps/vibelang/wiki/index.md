@@ -6,6 +6,7 @@ next. Every decision lands here in the same change as the code it shapes.
 | Page | What it holds |
 | --- | --- |
 | [Rulings](rulings.md) | Will's words, VL-1 to VL-29. The source of truth. |
+| [Designs](designs/index.md) | Designer handoffs and implementation notes. |
 | [Roadmap](roadmap.md) | The bricks: done, in progress, next. |
 | [Rulings status](rulings-status.md) | Each ruling's state, evidence and owner (lane vl-audit). |
 | [Review of 2026-11-08](review-2026-11-08.md) | Findings in the night's changes: fixed, and open with owners (lane vl-review2). |
@@ -36,6 +37,7 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0018](decisions/0018-proofs.md) | Inventory and Dafny proofs of production decisions, executable mutations and explicit tool boundaries |
 | [0019](decisions/0019-sign-in-and-roles.md) | GitHub identity; five project roles, first participation, explicit grants and demotions |
 | [0020](decisions/0020-mythical-history.md) | The mythical history: one linear stack of epics and mythical commits in a History object, bootstrapped from VibeLang's real history; plan, start, note, approve and fold are flows people and the agent share (VL-22) |
+| [0021](decisions/0021-wiki.md) | The working-memory wiki: build-time Markdown in the shared maximizable pane, one numbered opening flow for people and the agent |
 | [0022](decisions/0022-issues-and-vips.md) | GitHub issues and sub-issues, committed tasks, and agent-drafted VIP review changes |
 | [0023](decisions/0023-actions.md) | Registered flows and engine telemetry; Effect Json patch landed, action candidate held at service-spread inference |
 | [0024](decisions/0024-sandboxes.md) | Sandboxes, shared flows, a single durable minute writer and opt-in offline Cloudflare Containers |

@@ -105,7 +105,7 @@ export class Conversation {
       await Effect.runPromise(sequencer.ensureDispatched())
       return HttpServerResponse.toWeb(eventStream(sequencer.follow(afterOf(url) ?? 0)))
     }
-    const args = await request.json() as { readonly clientId: string; readonly name: string; readonly text: string; readonly after: number }
+    const args = await request.json() as { readonly clientId: string; readonly name: string; readonly text: string; readonly after: number; readonly page: string }
     if (url.pathname === "/reading-tour") {
       await this.state.storage.put("test/reading-tour", true)
       return json({ refusal: await Effect.runPromise(Objects.tour(this.state.id.toString(), this.state.storage, sequencer)) })
@@ -121,6 +121,7 @@ export class Conversation {
       )
       return json({ refusal })
     }
+    if (url.pathname === "/wiki") return json({ refusal: await Effect.runPromise(Objects.openWiki(this.state.id.toString(), this.state.storage, sequencer, args.page)) })
     if (url.pathname === "/read") return json(await Effect.runPromise(sequencer.read(args.after)))
     // The agent's history tools as a reply's cell calls them, from this conversation's object.
     if (url.pathname === "/history-tool") {
@@ -291,6 +292,8 @@ export default {
         }),
       read: (conversation, after) =>
         reach("conversation", () => call(env.CONVERSATION, conversation, "read", { after }) as Promise<ReadSnapshot>),
+      openWiki: (conversation, page) =>
+        reach("conversation", async () => ((await call(env.CONVERSATION, conversation, "wiki", { page })) as { refusal: string | null }).refusal),
       tour: (conversation) =>
         reach("conversation", async () => ((await call(env.CONVERSATION, conversation, "tour", {})) as { refusal: string | null }).refusal),
       endTour: (conversation) =>

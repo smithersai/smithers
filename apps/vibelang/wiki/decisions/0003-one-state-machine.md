@@ -1,5 +1,7 @@
 # 0003. One state machine across browser and server
 
+**Extended by [0021](0021-wiki.md):** people and the agent share `PaneOpened` for wiki pages. A person opening has an empty entry id; an agent tool still requires its streaming entry.
+
 **Status:** accepted, 2026-11-07. **Rulings:** VL-8, VL-12.
 
 **Decision.** A conversation is one state machine (`src/core/conversation.vibe`), VibeLang with no Effect code:

@@ -17,6 +17,7 @@ import { unansweredSelection, type Conversation, type Event, isTour, type Refusa
 import { dispatches, endsTourEvent, readingHold } from "./flowDecision.vibe"
 import { STOPS } from "./tourStops.vibe"
 export { STOPS, type Stop } from "./tourStops.vibe"
+import { wikiPath } from "./wiki.vibe"
 import { RefusalReason } from "./schemas.vibe"
 
 /** A contended reply or remote object waits through the engine's journaled retry policy. */
@@ -290,4 +291,39 @@ export const sandboxRegistration = Layer.effectDiscard(effect {
   try engine.register(SandboxStop, (p) => Action.make({ name: "vibelang/sandbox/stop/commit", success: SandboxSnapshot, error: SandboxError, execute: host.stop(p.conversation, p.operationId, p.generation) }))
   try engine.register(SandboxCommand, (p) => Action.make({ name: "vibelang/sandbox/command/commit", success: Schema.String, error: SandboxError, execute: host.command(p.conversation, p.operationId, p.command, p.generation) }))
   try engine.register(SandboxMeter, () => Action.make({ name: "vibelang/sandbox/meter/commit", error: SandboxError, execute: host.tick() }))
+})
+
+
+/** The public docs tool remains available to ordinary replies; the tour controller owns its own page order. */
+export const OpenDocs = Flow.make("vibelang/docs/open", {
+  description: "Opens a VibeLang docs page in the conversation. path is the page path, such as /setup. Returns whether it opened.",
+  modelInvocable: true,
+  payload: { path: Schema.String },
+  success: Schema.Boolean,
+  body: () => Node.succeed(false),
+})
+
+/** Wiki tool and person action: both record OpenPane, through the same sequencer and journaled step. */
+export const OpenWiki = Flow.make("vibelang/wiki/open", {
+  description: "Opens a project wiki page in the conversation. page is index, rulings, roadmap or a decisions/<number>-<slug> page id. Returns whether it opened.",
+  modelInvocable: true,
+  payload: { page: Schema.String },
+  success: Schema.Boolean,
+  body: () => Node.succeed(false),
+})
+export const wikiSteps = Metric.counter("vibelang_wiki_steps", { description: "Wiki steps by outcome", incremental: true })
+export effect function openWiki(actor: string, page: string) {
+  return try withSpan(effect {
+    const tours = try Tours
+    const path = wikiPath(page)
+    const opened = path === undefined ? false : try tours.open(actor, path)
+    const outcome = path === undefined ? "unknown-page" : opened ? "opened" : "ended"
+    try Metric.update(Metric.withAttributes(wikiSteps, { outcome }), 1)
+    try Effect.logInfo("vibelang.wiki.open").pipe(Effect.annotateLogs({ outcome }))
+    return opened
+  }, "vibelang.wiki.open")
+}
+export const wikiRegistration = Layer.effectDiscard(effect {
+  const engine = try FlowRuntime.FlowRuntime
+  try engine.register(OpenWiki, payload => Action.make({ name: "vibelang/wiki/record", success: Schema.Boolean, execute: openWiki("", payload.page) }))
 })

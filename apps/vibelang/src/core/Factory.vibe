@@ -47,6 +47,7 @@ export service Factory {
   /** Starts the agent's tour in `conversation` (Learn more); `busy` while the agent works there. */
   tour(conversation: string): void!(Unavailable | Refused)
   /** Ends the tour that runs in `conversation`; `not-replying` when none runs. */
+  openWiki(conversation: string, page: string): void!(Unavailable | Refused)
   endTour(conversation: string): void!(Unavailable | Refused)
   /** The one sandbox attached to a conversation, or a stopped empty snapshot. */
   sandbox(conversation: string): SandboxSnapshot!(Unavailable | Refused)

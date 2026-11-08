@@ -4,7 +4,7 @@ import type { Event } from "../../src/core/conversation.vibe"
 import { Factory, Refused, Unavailable } from "../../src/core/Factory.vibe"
 import { MockFactory } from "../../src/core/MockFactory.vibe"
 
-export type Fault = "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header"
+export type Fault = "wiki" | "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "issues" | "issue-write" | "live-header"
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -48,6 +48,13 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         try base.post(conversation, clientId, name, text)
       },
       read: base.read,
+      openWiki: effect (conversation, page) => {
+        if (fault === "wiki" && !observation.faulted) {
+          try sync(() => { observation.faulted = true })
+          throw new Unavailable({ reason: "wiki unavailable" })
+        }
+        try base.openWiki(conversation, page)
+      },
       tour: effect (conversation) => {
         if ((fault === "tour-refuse" || fault === "tour-unavailable") && !observation.faulted) {
           observation.faulted = true

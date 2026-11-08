@@ -234,6 +234,7 @@ html { overflow-anchor: none; }
   .vl-people[data-maximized="true"] { inset:calc(var(--vl-header-height, 60px) + 10px) 12px 130px; }
 }
 
+
 /* VIP step indicator */
 .ix-steps { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; }
 .ix-steps li { display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: var(--r-full, 999px); color: var(--text-muted); font-size: 12px; font-weight: 650; }
@@ -310,4 +311,74 @@ html { overflow-anchor: none; }
 @media (max-width:600px) {
   .vl-nav > .vl-nav-links { flex:1 1 auto; min-width:0; overflow-x:auto; scrollbar-width:none; }
   .vl-nav-links > * { flex-shrink:0; }
+}
+
+/* Wiki pane from wiki/designs/wiki/index.html. */
+.vl-wiki { display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-bubble); background: var(--surface); }
+.vl-wiki-bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 16px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 13px; }
+.vl-wiki-crumb { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; display: flex; align-items: baseline; gap: 6px; }
+.vl-wiki-crumb b { color: var(--text); font-weight: 650; }
+.vl-wiki-crumb button { padding: 0; border: 0; background: none; color: var(--text-muted); font: inherit; cursor: pointer; }
+.vl-wiki-crumb button:hover { color: var(--text); text-decoration: underline; }
+.vl-wiki-toggle { display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid var(--border); border-radius: var(--r-1); background: transparent; color: var(--text-muted); cursor: pointer; flex: 0 0 auto; }
+.vl-wiki-toggle:hover { color: var(--text); border-color: var(--border-strong); }
+.vl-wiki-toggle:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--ring); }
+.vl-wiki-body { display: grid; grid-template-columns: 188px minmax(0,1fr); min-height: 0; height: min(56vh, 540px); }
+.vl-wiki-pages { overflow-y: auto; border-right: 1px solid var(--border); padding: 10px 8px; display: grid; align-content: start; gap: 2px; }
+.vl-wiki-find { width: 100%; margin-bottom: 6px; }
+.vl-wiki-page-link { display: block; padding: 5px 8px; border: 0; border-radius: var(--r-1); background: none; color: var(--text-muted); font-size: 13px; text-align: left; text-decoration: none; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vl-wiki-page-link:hover { background: var(--hover); color: var(--text); }
+.vl-wiki-page-link[aria-current="page"] { background: var(--brand-soft); color: var(--brand); font-weight: 650; }
+.vl-wiki-page-link[data-kind="decision"] { font-family: var(--font-mono); font-size: 12px; }
+.vl-wiki-pages-head { padding: 8px 8px 2px; color: var(--text-faint); font-size: 10px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.vl-wiki-content { overflow-y: auto; padding: 16px 20px 24px; }
+.vl-wiki-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 2px 0 10px; }
+.vl-wiki-meta time { color: var(--text-muted); font-size: 12px; }
+/* maximized over the chat, as the docs pane does */
+.vl-wiki[data-maximized="true"] { position: fixed; inset: 60px 0 0; z-index: 45; border-radius: 0; border-width: 1px 0 0; }
+.vl-wiki[data-maximized="true"] .vl-wiki-body { flex: 1; height: auto; }
+@media (max-width: 720px) {
+  .vl-wiki-body { grid-template-columns: 1fr; grid-template-rows: auto minmax(0,1fr); }
+  .vl-wiki-pages { grid-row: 1; display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); padding: 6px 8px; }
+  .vl-wiki-find { width: 140px; margin: 0 6px 0 0; flex: 0 0 auto; }
+  .vl-wiki-pages-head { display: none; }
+  .vl-wiki-page-link { flex: 0 0 auto; }
+  .vl-wiki[data-maximized="true"] { inset: var(--vl-header-height, 56px) 0 0; }
+}
+
+.vl-nav button.vl-nav-link { border: 0; background: none; font: inherit; cursor: pointer; }
+.vl-wiki { flex: 0 0 auto; min-width: 0; scroll-margin-bottom: 156px; }
+.vl-wiki-content { overscroll-behavior: contain; }
+.vl-wiki .sui-md table { width: 100%; table-layout: auto; }
+.vl-wiki .sui-md th, .vl-wiki .sui-md td { min-width: 0; max-width: none; overflow-wrap: anywhere; }
+.vl-wiki .sui-md th { position: static; }
+.vl-wiki .sui-md td:first-child { white-space: normal; }
+.vl-wiki .sui-md pre { white-space: pre; overflow: auto; font-size: 12px; }
+.vl-wiki .sui-md h1 { font-size: 1.5em; line-height: 1.3; margin: 0 0 12px; }
+.vl-wiki .sui-md h2 { font-size: 1.3em; }
+.vl-wiki .sui-md a { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; }
+.vl-wiki .sui-md li { scroll-margin-top: 10px; }
+.vl-wiki .sui-md code { background: var(--code-bg); padding: 2px 5px; border-radius: 4px; font-size: .9em; }
+.vl-wiki .sui-md pre code { padding: 0; font-size: inherit; }
+.vl-wiki .sui-skeleton { height: 20px; background: var(--surface-2); border-radius: 6px; }
+.vl-nav button.vl-nav-link { font-size: 14px; font-weight: 500; }
+@media (max-width: 720px) {
+  .vl-top { gap: 8px; }
+  .vl-nav { gap: 2px; }
+  .vl-nav-link { padding-inline: 6px; }
+}
+.vl-wiki .sui-md { min-width: 0; overflow-wrap: anywhere; font-size: 14px; line-height: 1.6; }
+/* Current wiki has more pages than the prototype; keep rows readable while its list scrolls. */
+.vl-wiki-pages { grid-auto-rows: max-content; }
+.vl-nav .vl-nav-link[aria-current="page"] { background: var(--brand-soft); color: var(--brand); font-weight: 650; }
+
+/* All landed feature links stay reachable on a phone; the header scrolls within the viewport. */
+@media (max-width: 720px) {
+  .vl-home { flex-shrink: 0; }
+  .vl-nav { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .vl-nav > * { flex-shrink: 0; }
+}
+/* Wiki adds a fifth control: keep every landed header control visible at the design's phone width. */
+@media (max-width: 720px) {
+  .vl-top .vl-nav .vl-nav-link { font-size: 13px; padding-inline: 4px; gap: 4px; }
 }

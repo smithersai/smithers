@@ -12,7 +12,6 @@ import type { Principal } from "../src/history/roles.vibe"
 import { serveHistory, unavailableConversations } from "./support/historyHttpHost.vibe"
 import { handle, type Histories } from "../worker/Http.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
-
 const plan = { how: "append" as const, epic: "", newEpic: "Coverage", target: "", title: "docs: boundary", task: "t" }
 const maintainer: Principal = { name: "Ada", role: "maintainer", agent: false }
 

@@ -6,7 +6,7 @@ import { defineConfig, devices } from "@playwright/test"
 // the local host. `E2E_LIVE_URL` opts in to e2e/live.spec.ts, the live agent.
 const deployed = process.env.E2E_BASE_URL
 // Parallel checkouts on one machine each pick their own port.
-const port = Number(process.env.E2E_4508 ?? process.env.E2E_PORT ?? process.env.E2E_4505 ?? process.env.E2E_4501 ?? process.env.E2E_4516 ?? process.env.E2E_4511 ?? process.env.E2E_4502 ?? 4173)
+const port = Number(process.env.E2E_PORT ?? process.env.E2E_4510 ?? process.env.E2E_4508 ?? process.env.E2E_4505 ?? process.env.E2E_4501 ?? process.env.E2E_4516 ?? process.env.E2E_4511 ?? process.env.E2E_4502 ?? 4173)
 // Share the selected lane port with every local fault host.
 process.env.E2E_PORT = String(port)
 

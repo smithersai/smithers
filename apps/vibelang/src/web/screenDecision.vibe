@@ -19,18 +19,18 @@ export function escapeAction(tour: boolean, touring: boolean, palette: boolean, 
   return "splash"
 }
 
-/** A splash shrinks only when a conversation or a pending post exists. */
+/** A splash shrinks when messages, pending posts or a retained pane exist. */
 //@ verify
-//@ ensures \result == (surface == "splash" && (entries > 0 || pending > 0))
-export function canMinimize(surface: string, entries: number, pending: number): boolean {
-  return surface === "splash" && (entries > 0 || pending > 0)
+//@ ensures \result == (surface == "splash" && (entries > 0 || pending > 0 || pane != ""))
+export function canMinimize(surface: string, entries: number, pending: number, pane: string): boolean {
+  return surface === "splash" && (entries > 0 || pending > 0 || pane !== "")
 }
 
-/** Either kind of conversation content makes the chat available. */
+/** Messages, pending posts or a retained pane make the chat available. */
 //@ verify
-//@ ensures \result == (entries > 0 || pending > 0)
-export function hasContent(entries: number, pending: number): boolean {
-  return entries > 0 || pending > 0
+//@ ensures \result == (entries > 0 || pending > 0 || pane != "")
+export function hasContent(entries: number, pending: number, pane: string): boolean {
+  return entries > 0 || pending > 0 || pane !== ""
 }
 
 /** Only the maximized docs shrink; every other docs state maximizes. */
@@ -206,11 +206,11 @@ export function setScreenPalette(state: ScreenState, open: boolean): ScreenState
 }
 
 //@ verify
-//@ ensures !canMinimize(state.surface, entries, pending) ==> \result == state
-//@ ensures canMinimize(state.surface, entries, pending) ==> \result.surface == "chat"
+//@ ensures !canMinimize(state.surface, entries, pending, pane) ==> \result == state
+//@ ensures canMinimize(state.surface, entries, pending, pane) ==> \result.surface == "chat"
 //@ ensures \result.palette == state.palette && \result.tour == state.tour && \result.tourError == state.tourError && \result.docs == state.docs && \result.following == state.following
-export function minimizeScreen(state: ScreenState, entries: number, pending: number): ScreenState {
-  if (!canMinimize(state.surface, entries, pending)) return state
+export function minimizeScreen(state: ScreenState, entries: number, pending: number, pane: string): ScreenState {
+  if (!canMinimize(state.surface, entries, pending, pane)) return state
   return { surface: "chat", palette: state.palette, tour: state.tour, tourError: state.tourError, docs: state.docs, following: state.following }
 }
 

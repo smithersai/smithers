@@ -2,10 +2,10 @@ import { describe, expect, it } from "@effect/vitest"
 import { FlowEngine } from "@smthrs/engine"
 import { FlowRuntime } from "@smthrs/flow"
 import type { Event } from "../src/core/conversation.vibe"
-import { Reply } from "../src/core/flows.vibe"
+import { Reply, Tours } from "../src/core/flows.vibe"
 import { chatModel } from "../worker/AgentModel.vibe"
 import * as Budget from "../worker/Budget.vibe"
-import { repliesOf } from "../worker/Objects.vibe"
+import { repliesOf, toursOf } from "../worker/Objects.vibe"
 import { readerOver } from "../worker/HistoryObject.vibe"
 import { HistoryTools } from "../worker/HistoryTools.vibe"
 import { ChatModel, registration, Replies, REASONS, Spend } from "../worker/Reply.vibe"
@@ -26,7 +26,7 @@ effect function world(limit: number) {
   const flows = registration.pipe(
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provide(Layer.mergeAll(
-      Layer.succeed(Replies, replies), Layer.succeed(Spend, spend), Layer.succeed(ChatModel, model),
+      Layer.succeed(Replies, replies), Layer.succeed(Tours, toursOf(sequencer)), Layer.succeed(Spend, spend), Layer.succeed(ChatModel, model),
       // These replies settle before the agent runs, so its history tools are never called: the History object is unreachable.
       Layer.succeed(HistoryTools, { history: readerOver(() => Effect.fail(new Unreachable({ what: "history" })), () => Effect.fail(new Unreachable({ what: "history" }))) }),
     )),

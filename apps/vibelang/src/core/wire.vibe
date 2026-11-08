@@ -58,6 +58,7 @@ export type Route =
   | { readonly kind: "read"; readonly conversation: string }
   | { readonly kind: "post"; readonly conversation: string }
   | { readonly kind: "events"; readonly conversation: string }
+  | { readonly kind: "wiki"; readonly conversation: string }
   | { readonly kind: "tour"; readonly conversation: string }
   | { readonly kind: "end-tour"; readonly conversation: string }
 
@@ -79,3 +80,5 @@ function decodeSegment(segment: string): string | undefined {
     return undefined
   }
 }
+
+export schema WikiBody { readonly page: string }

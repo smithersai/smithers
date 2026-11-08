@@ -6,6 +6,7 @@ import { afterOf, eventStream, handle, type Conversations, type Histories } from
 import { Unreachable } from "../../worker/Unreachable.vibe"
 
 export const unavailableConversations: Conversations = {
+  openWiki: () => fail(new Unreachable({ what: "conversation" })),
   post: () => fail(new Unreachable({ what: "conversation" })),
   read: () => fail(new Unreachable({ what: "conversation" })),
   tour: () => fail(new Unreachable({ what: "conversation" })),

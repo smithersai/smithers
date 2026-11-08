@@ -13,6 +13,9 @@ root=pathlib.Path(__file__).resolve().parent
 from extended_mutations import cases as extended_cases
 # The mutation cases: name, function, production text, mutated text, the claim the mutation breaks.
 cases=[
+('wiki-person-decide','decide','if (intent.id !== "" && !isReplying(conversation, intent.id)) return refused("not-replying")','if (!isReplying(conversation, intent.id)) return refused("not-replying")','a person can open a wiki page while the agent is idle'),
+('wiki-person-apply','apply','if ((event.id !== "" && !isReplying(conversation, event.id)) || event.url === "") return next','if (!isReplying(conversation, event.id) || event.url === "") return next','a person opening is projected by every client'),
+('wiki-person-url','decide','return accepted({ type: "PaneOpened", seq, id: intent.id, url: intent.url })','return accepted({ type: "PaneOpened", seq, id: intent.id, url: "wrong" })','the accepted pane event preserves the requested page'),
 ('apply-advance','apply','seq: event.seq }','seq: event.seq + 1 }','seq changes by at most one; next event advances exactly once'),
 ('apply-ignore','apply','if (event.seq !== conversation.seq + 1) return conversation','if (event.seq === conversation.seq + 1) return conversation','ignore every event except the next'),
 ('apply-order','apply','seq: event.seq,\n        clientId: event.clientId,','seq: conversation.seq,\n        clientId: event.clientId,','entries remain strictly ordered'),
@@ -70,13 +73,13 @@ cases=[
 ('apply-tour-end-idle','apply','agent: "idle", replying: "" }','agent: "working", replying: "" }','ending the tour stops the agent'),
 ('apply-tour-end-text','apply','{ ...entry, done: true } : entry)\n      return { ...next, entries: ended','{ ...entry, done: true, text: "" } : entry)\n      return { ...next, entries: ended','ending the tour keeps what the agent said'),
 ('apply-pane','apply','return { ...next, pane: event.url }','return { ...next, pane: conversation.pane }','an opened page shows in the pane'),
-('apply-pane-guard','apply','if (!isReplying(conversation, event.id) || event.url === "") return next','if (event.url === "") return next','only the agent that streams moves the pane'),
+('apply-pane-guard','apply','if ((event.id !== "" && !isReplying(conversation, event.id)) || event.url === "") return next','if (event.url === "") return next','only the agent that streams moves the pane'),
 ('is-tour','isTour','&& entries[i]!.inReplyTo === "") return true',') return true','a tour answers no post'),
 ('is-touring','isTouring','return isTour(conversation.entries, id)','return true','only a tour entry is a running tour'),
 ('decide-tour-busy','decide','if ("working" === conversation.agent) return refused("busy")','if (false) return refused("busy")','a second tour waits while the agent works'),
 ('decide-tour-id','decide','return accepted({ type: "TourStarted", seq, id: intent.id })','return accepted({ type: "TourStarted", seq, id: intent.id + "x" })','a started tour carries the requested id'),
 ('decide-end-tour','decide','if (!isTouring(conversation, intent.id)) return refused("not-replying")','if (!isReplying(conversation, intent.id)) return refused("not-replying")','a person ends only a tour, never a reply'),
-('decide-pane-guard','decide','if (!isReplying(conversation, intent.id)) return refused("not-replying")\n      if (intent.url','if (false) return refused("not-replying")\n      if (intent.url','only the agent that streams opens a page'),
+('decide-pane-guard','decide','if (intent.id !== "" && !isReplying(conversation, intent.id)) return refused("not-replying")\n      if (intent.url','if (false) return refused("not-replying")\n      if (intent.url','only the agent that streams opens a page'),
 ('decide-pane-empty','decide','if (intent.url === "") return refused("empty")','if (false) return refused("empty")','an opened page has a url'),
 ('role-rank', 'rank', 'case "viewer": return 0', 'case "viewer": return 1', 'viewer has zero rank'),
 ('least-role', 'leastRole', 'case "read": case "ask": case "tour": return "viewer"', 'case "read": case "ask": case "tour": return "new"', 'public actions remain public'),

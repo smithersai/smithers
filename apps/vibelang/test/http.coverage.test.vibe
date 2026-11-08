@@ -33,6 +33,7 @@ effect function served() {
   const product = try Factory
   const api: Conversations = {
     post: (room, body) => accepted(product.post(room, body.clientId, body.name, body.text)),
+    openWiki: (room, page) => accepted(product.openWiki(room, page)),
     read: (room, after) => Effect.mapError(product.read(room, after), () => new Unreachable({ what: "conversation" })),
     tour: (room) => accepted(product.tour(room)),
     endTour: (room) => accepted(product.endTour(room)),
@@ -137,6 +138,7 @@ describe("the HTTP Factory", () => {
 
   it.live("reports an unreachable conversation as HTTP 503, preserving a safe reason", () => scoped(effect {
     const broken: Conversations = {
+      openWiki: () => fail(new Unreachable({ what: "conversation" })),
       post: () => fail(new Unreachable({ what: "conversation" })),
       read: () => fail(new Unreachable({ what: "conversation" })),
       tour: () => fail(new Unreachable({ what: "conversation" })),

@@ -65,6 +65,7 @@ describe("MockFactory", () => {
         ])
         expect(first.filter((event) => event.type === "ReplyStarted" || event.type === "ReplyFinished").map((event) => event.type)).toEqual(["ReplyStarted", "ReplyFinished", "ReplyStarted", "ReplyFinished"])
         expect(first.map((event) => event.seq)).toEqual(first.map((_, index) => index + 1))
+        expect(replies.map((entry) => entry.name)).toEqual(["VibeLang agent", "VibeLang agent"])
       })
     }
   })

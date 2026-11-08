@@ -24,13 +24,15 @@ export function nonnegativeCursor(value: number): boolean {
 /** Routing after URI decoding: a method and remaining segment identify exactly one operation. */
 //@ verify
 //@ ensures rest == undefined && method == "GET" ==> \result == "read"
+//@ ensures rest == "wiki" && method == "POST" ==> \result == "wiki"
 //@ ensures rest == "posts" && method == "POST" ==> \result == "post"
 //@ ensures rest == "events" && method == "GET" ==> \result == "events"
 //@ ensures rest == "tour" && method == "POST" ==> \result == "tour"
 //@ ensures rest == "tour" && method == "DELETE" ==> \result == "end-tour"
-//@ ensures \result != "" ==> (rest == undefined && method == "GET") || (rest == "posts" && method == "POST") || (rest == "events" && method == "GET") || (rest == "tour" && (method == "POST" || method == "DELETE"))
-export function routeKind(method: string, rest: string | undefined): "read" | "post" | "events" | "tour" | "end-tour" | "" {
+//@ ensures \result != "" ==> (rest == undefined && method == "GET") || (rest == "posts" && method == "POST") || (rest == "wiki" && method == "POST") || (rest == "events" && method == "GET") || (rest == "tour" && (method == "POST" || method == "DELETE"))
+export function routeKind(method: string, rest: string | undefined): "read" | "post" | "events" | "tour" | "end-tour" | "wiki" | "" {
   if (rest === undefined && method === "GET") return "read"
+  if (rest === "wiki" && method === "POST") return "wiki"
   if (rest === "posts" && method === "POST") return "post"
   if (rest === "events" && method === "GET") return "events"
   if (rest === "tour" && method === "POST") return "tour"

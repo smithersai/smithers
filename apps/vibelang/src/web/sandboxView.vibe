@@ -45,7 +45,7 @@ export function sandboxPane(model: Model, h: H): Html {
       h.span([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Sandbox")], [status]),
       ...(starting ? [h.div([h.Class("vl-sb-starting")], ["Starting", h.div([h.Class("sui-progress")], [h.div([h.Class("vl-ind")], [])])])] : []),
       ...(snapshot?.id ? [h.div([h.Class(`vl-term${running ? "" : " vl-term-off"}`)], [
-        h.pre([h.Class("vl-term-body"), h.Tabindex(0), h.AriaLabel("Terminal output")], [snapshot.output]),
+        h.pre([h.Class("vl-term-body"), h.DataAttribute("scroll-surface", "true"), h.Tabindex(0), h.AriaLabel("Terminal output")], [snapshot.output]),
         h.form([h.Class("vl-term-prompt"), h.OnSubmit(Message.SubmittedTerminal())], [h.span([h.Class("vl-term-p"), h.AriaHidden(true)], ["$"]), h.input([h.Class("vl-term-input"), h.Type("text"), h.AriaLabel("Terminal command"), h.Value(model.terminalDraft ?? ""), h.Disabled(!running || !!model.sandboxBusy), h.OnInput((value) => Message.UpdatedTerminal({ value }))])]),
       ])] : []),
     ]),

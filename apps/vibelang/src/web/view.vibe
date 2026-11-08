@@ -8,6 +8,7 @@ import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import type { Entry, Pending } from "../core/conversation.vibe"
 import { CONTRIBUTE_URL, hasConversation, issueStateOf, type Message as AppMessage, Message, type Model, tourConversation, PALETTE_ID, PALETTE_PROMPT_ID, PROMPT_ID } from "./main.vibe"
 import { accountNotice, accountOverlays, identityNav, peoplePane } from "./roleView.vibe"
+import { wikiPane } from "./wikiView.vibe"
 import { render } from "./markdown.vibe"
 import { STOPS, type StopMedia } from "../core/tourStops.vibe"
 import { sandboxPane } from "./sandboxView.vibe"
@@ -29,7 +30,7 @@ export function view(model: Model, h: H): Document {
       [
         top(model, h),
         model.issues?.open ? issuesView(issueStateOf(model), h, (action, value = "") => Message.IssueUi({ action, value })) : model.surface === "splash" ? splash(model, h) : chat(model, h),
-        ...(model.surface === "chat" && model.client.conversation.pane !== "" && (model.tour || model.docs === "max") ? [docsPane(model, h)] : []),
+        ...(model.surface === "chat" && (model.client.conversation.pane !== "" || showsWiki(model)) && (model.tour || model.docs === "max") ? [paneView(model, h)] : []),
         palette(model, h),
         ...accountOverlays(model, h),
         ...(model.tour ? control(h) : []),
@@ -56,6 +57,7 @@ function top(model: Model, h: H): Html {
     h.nav([h.Class("vl-nav")], [
       h.div([h.Class("vl-nav-links")], [
       h.button([h.Class("vl-nav-link"), h.Type("button"), h.AriaLabel("Issues"), h.OnClick(Message.ClickedIssues())], [h.span([h.Class("vl-nav-issue-label")], ["Issues"]), h.svg([h.Class("vl-nav-issue-icon"), h.ViewBox("0 0 16 16"), h.Width("16"), h.Height("16"), h.AriaHidden(true)], [h.circle([h.Cx("8"), h.Cy("8"), h.R("6.75"), h.Fill("none"), h.Stroke("currentColor"), h.StrokeWidth("1.5")], []), h.circle([h.Cx("8"), h.Cy("8"), h.R("2.5"), h.Fill("currentColor")], [])])]),
+      h.button([h.Class("vl-nav-link"), h.Type("button"), ...(model.surface === "chat" && model.client.conversation.pane.startsWith("/wiki/") ? [h.AriaCurrent("page")] : []), h.OnClick(Message.ClickedWiki({ page: "index" }))], ["Wiki"]),
       h.a([h.Class("vl-nav-link"), h.Href("/history")], ["History"]),
       h.a([h.Class("vl-nav-link vl-ext"), h.Href(DOCS_URL)], ["Docs", away(h)]),
       h.a([h.Class("vl-nav-link vl-ext"), h.Href(SOURCE_URL)], [githubMark(h), "GitHub", away(h)]),
@@ -133,6 +135,14 @@ function control(h: H): ReadonlyArray<Html> {
   ]
 }
 
+/** Docs and wiki occupy the same pane slot; maximizing moves it clear of the inactive transcript. */
+function showsWiki(model: Model): boolean {
+  return model.client.conversation.pane.startsWith("/wiki/") || model.wikiStatus === "loading" || model.wikiStatus === "error"
+}
+function paneView(model: Model, h: H): Html {
+  return showsWiki(model) ? wikiPane(model, h) : docsPane(model, h)
+}
+
 /** The page the agent opened, in a pane of the conversation that maximizes over it. */
 function docsPane(model: Model, h: H): Html {
   const page = model.client.conversation.pane
@@ -172,11 +182,15 @@ function chat(model: Model, h: H): Html {
       ...peoplePane(model, h),
       ...accountNotice(model, h),
       h.button([h.Class("vl-pane"), h.Type("button"), h.Style({ viewTransitionName: "issues" }), h.OnClick(Message.ClickedIssues())], [h.span([h.Class("vl-pane-text")], [model.issues?.data === undefined ? "Issues" : `Issues · ${model.issues.data.items.filter(i => i.state === "open").length} open`]), h.span([h.Class("vl-pane-expand")], [paneIcon(h, MAXIMIZE)])]),
-      ...(conversation.pane === "" || model.tour || model.docs === "max" ? [] : [docsPane(model, h)]),
-      ...(conversation.entries.length === 0 && pending.length === 0 ? [h.div([h.Class("sui-chat-empty")], media(model, h, "vl-empty-media", {
+      ...(showsWiki(model) && !model.wikiAfter && !model.tour && model.docs !== "max" ? [wikiPane(model, h)] : []),
+      ...(conversation.pane !== "" && !showsWiki(model) && !model.tour && model.docs !== "max" ? [docsPane(model, h)] : []),
+      ...(conversation.entries.length === 0 && pending.length === 0 && !showsWiki(model) ? [h.div([h.Class("sui-chat-empty")], media(model, h, "vl-empty-media", {
         src: "/media/card-06-compiler.png", alt: "The compiler says what to write instead: VibeLang diagnostics with the fix to write",
       }))] : []),
-      ...conversation.entries.map((entry) => entryView(entry, model, h)),
+      ...conversation.entries.flatMap(entry => [
+        ...(showsWiki(model) && model.wikiAfter === entry.id && !model.tour && model.docs !== "max" ? [wikiPane(model, h)] : []),
+        entryView(entry, model, h),
+      ]),
       ...pending.map((post) => pendingView(post, h)),
       ...(model.stream === "failed"
         ? [h.div([h.Class("sui-chat-message"), h.DataAttribute("role", "system")], [
@@ -187,7 +201,7 @@ function chat(model: Model, h: H): Html {
         : []),
       h.div([h.Id("vl-newest"), h.AriaHidden(true)], []),
     ]),
-    ...(!model.following ? [h.button([h.Class("sui-msg-scroller-jump vl-latest"), h.Type("button"), h.AriaLabel("Latest"), h.OnClick(Message.ClickedLatest())], ["↓"])] : []),
+    ...(!model.following && hasConversation(model) && model.client.conversation.entries.length > 0 ? [h.button([h.Class("sui-msg-scroller-jump vl-latest"), h.Type("button"), h.AriaLabel("Latest"), h.OnClick(Message.ClickedLatest())], ["↓"])] : []),
     composer(model, h),
   ])
 }

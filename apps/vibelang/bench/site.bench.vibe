@@ -18,7 +18,7 @@ it("site routing over real loopback HTTP and repository assets", async ({ bench 
         const home = try fs.readFileString("index.html")
         const logo = try fs.readFileString("public/media/logo-dark.svg")
         const unavailable = () => fail(new Unreachable({ what: "conversation" }))
-        const conversations: Conversations = { read: unavailable, post: unavailable, events: unavailable, tour: unavailable, endTour: unavailable }
+        const conversations: Conversations = { openWiki: unavailable, read: unavailable, post: unavailable, events: unavailable, tour: unavailable, endTour: unavailable }
         const histories: Histories = { page: unavailable, write: unavailable, events: unavailable }
         const server = try HttpServer.HttpServer
         try server.serve(effect {

@@ -16,7 +16,7 @@ import { FlowRuntime } from "@smthrs/flow"
 import { CloudflareRuntime, ExecutionObject, ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { SecureRandom } from "effect/crypto"
 import { PostBody } from "../src/core/wire.vibe"
-import { EndTour, Post, postRegistration, Posts, Reply, StartTour, Tour, tourRegistration, Tours } from "../src/core/flows.vibe"
+import { OpenWiki, wikiRegistration, EndTour, Post, postRegistration, Posts, Reply, StartTour, Tour, tourRegistration, Tours } from "../src/core/flows.vibe"
 import * as Budget from "./Budget.vibe"
 import { ledgerOver, logOver, type KeyValue } from "./ObjectStorage.vibe"
 import type { HistoryReader } from "../src/history/tools.vibe"
@@ -249,4 +249,19 @@ export effect function alarm(
   })
   try sequencer.ensureDispatched()
   return outcome
+}
+
+
+/** The same wiki flow as the mock and agent tools, journaled in the conversation object's store. */
+export effect function openWiki(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, page: string) {
+  const executionId = try postExecutionId("wiki")
+  const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: OpenWiki._tag }, wikiRegistration).pipe(
+    Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(Layer.succeed(Tours, toursOf(sequencer))),
+  )
+  const opened = try Effect.orDie(effect {
+    provide runtime {
+      return try (try FlowRuntime.FlowRuntime).execute(OpenWiki, { executionId, payload: { page } })
+    }
+  })
+  return opened ? null : "empty"
 }

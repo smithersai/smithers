@@ -1,0 +1,59 @@
+// Read-only until decision 0019 supplies authorized editing; no local role imitation.
+// The designer's wiki pane: chrome and navigation stay in Foldkit; Markdown is compiled at build time.
+import type { Html, HtmlBuilder } from "foldkit/html"
+import { pages, wikiPage } from "../core/wiki.vibe"
+import { Message, type Model } from "./main.vibe"
+type H = HtmlBuilder<Message>
+const max = "M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"
+const min = "M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"
+export function wikiPane(model: Model, h: H): Html {
+  const page = wikiPage(model.client.conversation.pane)
+  const loading = model.wikiStatus === "loading"
+  const error = model.wikiStatus === "error"
+  const query = model.wikiQuery ?? ""
+  const filtered = pages.filter(page => `${page.label} ${page.title}`.toLowerCase().includes(query.toLowerCase()))
+  const order = ["index", "rulings", "roadmap", "decisions", "designs/index"]
+  const regular = filtered.filter(page => !page.decision && (order.includes(page.id) || query.trim() !== "")).sort((a, b) => {
+    const rank = (id: string) => order.includes(id) ? order.indexOf(id) : order.length
+    return rank(a.id) - rank(b.id)
+  })
+  const decisions = filtered.filter(page => page.decision).sort((a, b) => b.id.localeCompare(a.id))
+  const maximized = model.tour || model.docs === "max"
+  const link = (id: string, label: string, decision = false) => h.a([
+    h.Class("vl-wiki-page-link"), h.Href(`/wiki/${id}`), h.DataAttribute("kind", decision ? "decision" : "page"),
+    ...(page?.id === id ? [h.AriaCurrent("page")] : []),
+    h.OnClick(Message.ClickedWiki({ page: id }), { defaultAction: "Prevent" }),
+  ], [label])
+  const crumb = (id: string, label: string) => h.button([h.Type("button"), h.OnClick(Message.ClickedWiki({ page: id }))], [label])
+  return h.section([h.Class("vl-wiki"), h.Id("vl-wiki"), h.AriaLabel("Wiki"), h.Tabindex(-1), h.DataAttribute("maximized", String(maximized)), h.AriaBusy(loading)], [
+    h.div([h.Class("vl-wiki-bar")], [
+      h.div([h.Class("vl-wiki-crumb")], [
+        ...((page === undefined || page.id === "index") ? [h.b([], ["Wiki"])] : [crumb("index", "Wiki"), "/"]),
+        ...(page?.decision ? [crumb("decisions", "Decisions"), "/", h.b([], [page.id.slice(10, 14)])] : page && page.id !== "index" ? [h.b([], [page.label])] : []),
+      ]),
+      ...(model.tour ? [] : [h.button([h.Class("vl-wiki-toggle"), h.Type("button"), h.Disabled(loading), h.AriaLabel(maximized ? "Minimize the wiki" : "Maximize the wiki"), h.OnClick(Message.ClickedDocs())], [
+        h.svg([h.Class("vl-icon"), h.ViewBox("0 0 24 24"), h.AriaHidden(true)], [h.path([h.D(maximized ? min : max)], [])]),
+      ])]),
+    ]),
+    h.div([h.Class("vl-wiki-body")], [
+      h.nav([h.Class("vl-wiki-pages"), h.DataAttribute("scroll-surface", "true"), h.AriaLabel("Wiki pages")], [
+        h.input([h.Class("sui-input vl-wiki-find"), h.Placeholder("Find a page"), h.AriaLabel("Find a page"), h.Value(query), h.OnInput(value => Message.FilteredWiki({ value }))]),
+        ...(loading ? [h.div([h.Class("sui-skeleton")], [])] : [
+          ...regular.map(page => link(page.id, page.label)),
+          ...(decisions.length ? [h.div([h.Class("vl-wiki-pages-head")], ["Decisions"])] : []),
+          ...decisions.map(page => link(page.id, page.label, true)),
+        ]),
+      ]),
+      h.div([h.Class("vl-wiki-content"), h.DataAttribute("scroll-surface", "true"), h.Tabindex(0)], loading ? [h.div([h.Class("sui-skeleton")], [])] : error ? [
+        h.div([h.Class("sui-empty")], [h.div([h.Class("sui-empty-title")], ["The wiki didn't load"]), h.button([h.Class("vl-link"), h.Type("button"), h.OnClick(Message.ClickedWiki({ page: model.wikiRequested ?? "index" }))], ["Retry"])]),
+      ] : filtered.length === 0 ? [h.div([h.Class("sui-empty")], [h.div([h.Class("sui-empty-title")], [`No pages match "${query}"`])])] : page ? [
+        ...(page.decision ? [h.div([h.Class("vl-wiki-meta")], [
+          h.span([h.Class(page.status === "Accepted" ? "sui-badge sui-badge-success" : "sui-badge sui-badge-outline")], [page.status]),
+          h.time([], [page.date]),
+          ...page.rulings.map(ruling => h.button([h.Class("sui-badge sui-badge-outline"), h.Type("button"), h.OnClick(Message.ClickedWiki({ page: `rulings#${ruling.toLowerCase()}` }))], [ruling])),
+        ])] : []),
+        h.div([h.Class("sui-md"), h.InnerHTML(page.html)], []),
+      ] : []),
+    ]),
+  ])
+}

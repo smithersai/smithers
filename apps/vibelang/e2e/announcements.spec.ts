@@ -18,7 +18,7 @@ async function send(page: Page) {
 }
 
 test("9: the named log stays quiet during streaming and announces each completed answer politely", async ({ page }) => {
-  const port = process.env.E2E_PORT ?? 4173
+  const port = process.env.E2E_PORT ?? process.env.E2E_4510 ?? process.env.E2E_4508 ?? process.env.E2E_4505 ?? process.env.E2E_4501 ?? process.env.E2E_4516 ?? process.env.E2E_4511 ?? process.env.E2E_4502 ?? 4173
   await page.goto(`http://127.0.0.1:${port}/e2e/runtime/index.html?fault=streaming`)
   const announcement = page.getByRole("status", { name: "Answer" })
   await expect(announcement).toHaveText("")

@@ -10,6 +10,7 @@ import { IssueFailure, IssueRequest, IssuesState, IssueOperation } from "../core
 //
 // Learn more starts the agent's tour in this tab's own conversation (wiki/decisions/0014-agent-tour.md): the agent
 // narrates and opens VibeLang's docs in a pane through the conversation's events, never through this file.
+import { ExperimentalBrowserWindow, ExperimentalBrowserDocument } from "vibelang-runtime/experimental/platform-browser"
 import { Command, Dom, Render, Subscription, type Runtime, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Machine from "../core/conversation.vibe"
@@ -29,6 +30,7 @@ export schema Flags {
   readonly mode: "mock" | "live" | "pending"
   readonly name: string
   readonly mediaSources?: MediaSources
+  readonly wiki?: string
   readonly reducedMotion?: boolean
   readonly signInFailed?: boolean
   readonly openIssues?: boolean
@@ -100,7 +102,7 @@ export schema Model {
   readonly tour: boolean
   /** Why the last Learn more didn't start a tour; `""` when it did. */
   readonly tourError: string
-  /** The docs pane: in the conversation, or maximized over it. */
+  /** Shared docs/wiki pane size: in the conversation, or maximized over it. */
   readonly docs: "pane" | "max"
   readonly sandboxPane?: "closed" | "pane" | "max"
   readonly sandbox?: SandboxSnapshot
@@ -111,6 +113,11 @@ export schema Model {
   readonly terminalDraft?: string
   readonly minuteNotice?: string
   readonly warnedMonth?: number
+  readonly wikiQuery?: string
+  readonly wikiRequested?: string
+  readonly wikiStatus?: "loading" | "ready" | "error"
+  readonly wikiAfter?: string
+  readonly wikiRequest?: number
 }
 
 /** The conversation every visitor of the home page joins until conversations have their own pages. */
@@ -188,13 +195,18 @@ export const Message = defineMessageUnion({
   SubmittedTerminal: {},
   LoadedSandbox: { conversation: Schema.String, request: Schema.Number, snapshot: SandboxSnapshot },
   FailedSandbox: { conversation: Schema.String, request: Schema.Number, reason: Schema.String },
+  ClickedWiki: { page: Schema.String },
+  FilteredWiki: { value: Schema.String },
+  WikiLocationChanged: { page: Schema.String },
+  FailedWiki: { request: Schema.Number },
+  SucceededWiki: {},
 })
 export type Message = typeof Message.Type
 
 // INIT
 
 export function init(flags: Flags): Update.Return<Model, Message, Factory> {
-  return {
+  const initialized: Update.Return<Model, Message, Factory> = {
     model: {
       account: flags.signInFailed ? { ...signedOut, error: "Sign-in failed. GitHub didn’t answer." } : signedOut,
       surface: "splash",
@@ -224,6 +236,7 @@ export function init(flags: Flags): Update.Return<Model, Message, Factory> {
     },
     ...(flags.openIssues ? { commands: [LoadIssues({ ...(flags.resumeRecovery === undefined ? {} : { resumeRecovery: flags.resumeRecovery }), ...(flags.resumeOp === undefined ? {} : { resumeOp: flags.resumeOp }), ...(flags.resumeKey === undefined ? {} : { resumeKey: flags.resumeKey }) })] } : {}),
   }
+  return flags.wiki ? visitWiki(initialized.model, flags.wiki) : initialized
 }
 
 // UPDATE
@@ -259,7 +272,10 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       : ({ model: { ...model, account: { ...accountOf(model), pending: true, error: "", retry: "sign-in" } }, commands: [SignInAccount({ mock: model.mode === "mock" })] }),
     ClickedSignOut: () => ({ model: { ...model, account: { ...accountOf(model), retry: "sign-out" } }, commands: [SignOutAccount({})] }),
     ChoseIdentity: ({ role }) => ({ model, commands: [ChooseIdentity({ role })] }),
-    ClickedPeople: () => ({ model: { ...model, surface: "chat", account: { ...accountOf(model), menu: false, people: "pane", retry: "people" } }, commands: [LoadPeople({})] }),
+    ClickedPeople: () => {
+      const foreground = model.docs === "max"
+      return { model: { ...model, surface: "chat", ...(foreground ? { docs: "pane" as const } : {}), account: { ...accountOf(model), menu: false, people: foreground ? "max" as const : "pane" as const, retry: "people" } }, commands: [LoadPeople({})] }
+    },
     LoadedPeople: ({ members }) => ({ model: { ...model, account: { ...accountOf(model), members, pending: false } } }),
     ClosedPeople: () => ({ model: { ...model, account: { ...accountOf(model), people: "closed" } } }),
     ToggledPeople: () => ({ model: { ...model, account: { ...accountOf(model), people: accountOf(model).people === "max" ? "pane" : "max" } } }),
@@ -340,7 +356,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       if (model.issues?.open) return { model: { ...model, issues: { ...model.issues, open: false } } }
       if (model.sandboxPane === "max") return { model: { ...model, sandboxPane: "pane" } }
       switch (action) {
-        case "docs": return { model: { ...model, docs: "pane" } }
+        case "docs": return { model: { ...model, docs: "pane" }, ...(model.client.conversation.pane.startsWith("/wiki/") ? { commands: [RevealWiki({})] } : {}) }
         case "splash": return minimizeSplash(model)
       }
     },
@@ -365,7 +381,12 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       return { model: { ...model, sandbox: snapshot, sandboxPane: snapshot.status === "running" && model.sandbox?.status !== "running" ? "pane" : model.sandboxPane ?? "closed", sandboxBusy: false, sandboxOperation: "", sandboxError: "", minuteNotice: zero ? `Out of minutes — ${snapshot.id} stopped` : low ? `${snapshot.remaining} minutes left` : model.sandbox?.resetAt !== snapshot.resetAt ? "" : model.minuteNotice ?? "", warnedMonth: low ? snapshot.resetAt : model.warnedMonth ?? 0 } }
     },
     FailedSandbox: ({ conversation, request, reason }) => !currentSandbox(conversation, model.conversation, request, model.sandboxRequest ?? 0) ? { model } : ({ model: { ...model, sandboxBusy: false, sandboxError: reason } }),
-    ClickedDocs: () => ({ model: { ...model, ...toggleScreenDocs(model) } }),
+    ClickedWiki: ({ page }) => visitWiki(model, page),
+    WikiLocationChanged: ({ page }) => page === "/" ? { model: { ...model, surface: "splash", docs: "pane", ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }) } } : visitWiki(model, page),
+    FilteredWiki: ({ value }) => ({ model: { ...model, wikiQuery: value } }),
+    FailedWiki: ({ request }) => ({ model: request === model.wikiRequest && model.wikiStatus === "loading" ? { ...model, wikiStatus: "error" } : model }),
+    SucceededWiki: () => ({ model }),
+    ClickedDocs: () => ({ model: { ...model, ...toggleScreenDocs(model) }, ...(model.docs === "max" && model.client.conversation.pane.startsWith("/wiki/") ? { commands: [RevealWiki({})] } : {}) }),
     ClickedSplash: () => ({ model: { ...model, ...showSplash(model), ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }) } }),
     ClickedChat: () => minimizeSplash(model),
     UpdatedDraft: ({ value }) => ({ model: { ...model, draft: value } }),
@@ -384,6 +405,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       const client = Machine.receive(model.client, event)
       // A missed event: replay from the last one this copy applied.
       if (client.gap) return { model: { ...model, client: Machine.resume(client), epoch: model.epoch + 1, from: client.conversation.seq } }
+      const advanced = client.conversation.seq > model.client.conversation.seq
       const completed = completedEvent(model.client.conversation.seq, client.conversation.seq, event.type)
       // The tour finished, failed or was ended: the agent no longer has control.
       const toured = completed && Machine.isTour(client.conversation.entries, event.id)
@@ -396,8 +418,15 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
           connection: model.stream === "open" ? "Connected" : model.connection,
           answer: answerAnnouncement(answer !== undefined, answer?.error ?? "", answer?.text ?? "", model.answer),
           announced: completed ? model.announced + 1 : model.announced,
+          ...(advanced && event.type === "PaneOpened" ? { sandboxPane: model.sandboxPane === "max" ? "pane" as const : model.sandboxPane ?? "closed" } : {}),
+          ...(advanced && event.type === "PaneOpened" && !event.url.startsWith("/wiki/") ? { wikiStatus: "ready" as const, wikiAfter: "" } : {}),
+          ...(advanced && event.type === "PaneOpened" && event.url.startsWith("/wiki/") ? {
+            following: false, wikiStatus: "ready" as const, wikiAfter: event.id !== "" ? event.id : client.conversation.entries.some(entry => entry.id === model.wikiAfter) ? model.wikiAfter ?? "" : "",
+          } : {}),
+          ...(advanced && event.type === "PaneOpened" && event.url.startsWith("/wiki/") && accountOf(model).people === "max" ? { account: { ...accountOf(model), people: "pane" as const } } : {}),
         },
         ...(completed && /\]\(#issue-[1-9][0-9]*\)/.test(answer?.text ?? "") ? { commands: [RefreshIssueProjection({})] } : {}),
+        ...(advanced && event.type === "PaneOpened" && event.url.startsWith("/wiki/") ? { commands: [WikiLocation({ url: event.url })] } : {}),
       }
     },
     FailedEvents: () => ({ model: { ...model, stream: "failed", connection: "Disconnected" } }),
@@ -420,6 +449,15 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
   return next
 }
 
+/** A click and a browser deep link request the same durable wiki flow; the event alone moves the pane. */
+function visitWiki(model: Model, page: string): Update.Return<Model, Message, Factory> {
+  const opening = model.stream !== "open"
+  const request = (model.wikiRequest ?? 0) + 1
+  return { model: { ...model, wikiRequest: request, sandboxPane: model.sandboxPane === "max" ? "pane" : model.sandboxPane ?? "closed", ...(accountOf(model).people === "max" ? { account: { ...accountOf(model), people: "pane" as const } } : {}), surface: "chat", palette: false, wikiQuery: "", wikiRequested: page, wikiStatus: "loading", following: false,
+    stream: "open", epoch: opening ? model.epoch + 1 : model.epoch, from: opening ? model.client.conversation.seq : model.from,
+  }, commands: [OpenWikiCommand({ conversation: model.conversation, page, request })] }
+}
+
 /**
  * Learn more: the page becomes this tab's tour conversation and the agent takes control. A second Learn more while the
  * tour runs does nothing new.
@@ -437,6 +475,7 @@ function learnMore(model: Model): Update.Return<Model, Message, Factory> {
       ...beginScreenTour(model),
       conversation,
       client: fresh ? Machine.newClient : model.client,
+      wikiAfter: fresh ? "" : model.wikiAfter ?? "",
       epoch: stream.epoch,
       from: stream.from,
       stream: opening ? "open" : model.stream,
@@ -463,19 +502,22 @@ function openPalette(model: Model, open: boolean): Update.Return<Model, Message,
 
 /** Shrink the maximized splash back into the chat's first pane and focus the composer; otherwise nothing changes. */
 function minimizeSplash(model: Model): Update.Return<Model, Message, Factory> {
-  if (!canMinimize(model.surface, model.client.conversation.entries.length, model.client.pending.length)) return { model }
-  return { model: { ...model, ...minimizeScreen(model, model.client.conversation.entries.length, model.client.pending.length) }, commands: [FocusComposer({})] }
+  if (!canMinimize(model.surface, model.client.conversation.entries.length, model.client.pending.length, model.client.conversation.pane)) return { model }
+  return { model: { ...model, ...minimizeScreen(model, model.client.conversation.entries.length, model.client.pending.length, model.client.conversation.pane) }, commands: [FocusComposer({})] }
 }
 
 /** Whether there is a conversation to go back to. */
 export function hasConversation(model: Model): boolean {
-  return hasContent(model.client.conversation.entries.length, model.client.pending.length)
+  return hasContent(model.client.conversation.entries.length, model.client.pending.length, model.client.conversation.pane)
 }
 
 function submit(model: Model): Update.Return<Model, Message, Factory> {
   const text = model.draft.trim()
   if (text === "") return { model }
-  if (text === "/sandbox") return sandboxAction({ ...model, surface: "chat", palette: false, draft: "", sandboxPane: "pane" }, "start")
+  if (text === "/sandbox") {
+    const next = sandboxAction({ ...model, surface: "chat", palette: false, draft: "", sandboxPane: "pane" }, "start")
+    return { ...next, commands: [...(next.commands ?? []), ClosePalette({ dock: true })] }
+  }
   const clientId = `${model.session}-${model.sent + 1}`
   return {
     model: {
@@ -595,6 +637,59 @@ export const EndTourCommand = Command.define("EndTour", {
   },
 })
 
+export const OpenWikiCommand = Command.define("OpenWiki", {
+  args: { conversation: Schema.String, page: Schema.String, request: Schema.Number },
+  messages: [Message.SucceededWiki, Message.FailedWiki],
+  execute: effect ({ conversation, page, request }) => {
+    const factory = try Factory
+    const opened = effect { try factory.openWiki(conversation, page); return true } catch () => false
+    return try message(() => opened ? Message.SucceededWiki() : Message.FailedWiki({ request }))
+  },
+})
+
+/** Resizing puts the inline pane back above the composer without changing its address or explicitly resetting content scroll. */
+export const RevealWiki = Command.define("RevealWiki", {
+  args: {}, messages: [Message.FocusedPrompt],
+  execute: effect () => {
+    provide ExperimentalBrowserDocument.layer {
+      try Render.afterCommit
+      const document = try (try Experimental.Document.Document).current
+      try orDie(Effect.try(() => {
+        const pane = document.getElementById("vl-wiki")
+        if (pane?.getAttribute("data-maximized") === "false") pane.scrollIntoView({ block: "end" })
+      }))
+      return try message(() => Message.FocusedPrompt())
+    }
+  },
+})
+
+/** Keep shareable links and back/forward on the same flow, then reveal the heading or ruling within the pane. */
+export const WikiLocation = Command.define("WikiLocation", {
+  args: { url: Schema.String }, messages: [Message.FocusedPrompt],
+  execute: effect ({ url }) => {
+    provide ExperimentalBrowserWindow.layer, ExperimentalBrowserDocument.layer {
+      const window = try (try Experimental.Window.Window).current
+      const document = try (try Experimental.Document.Document).current
+      try orDie(Effect.try(() => {
+        if (window.location.pathname + window.location.hash !== url) {
+          const [pathname, hash] = url.split("#")
+          window.history.pushState(null, "", `${pathname}${window.location.search}${hash ? `#${hash}` : ""}`)
+        }
+      }))
+      try Render.afterCommit
+      const hash = url.split("#")[1]
+      try orDie(Effect.try(() => {
+        const content = document.querySelector<HTMLElement>(".vl-wiki-content")
+        if (hash) document.getElementById(hash)?.scrollIntoView({ block: "start" })
+        else if (content) content.scrollTop = 0
+        const pane = document.getElementById("vl-wiki")
+        if (pane?.getAttribute("data-maximized") === "false") pane.scrollIntoView({ block: "end" })
+      }))
+      return try message(() => Message.FocusedPrompt())
+    }
+  },
+})
+
 // SUBSCRIPTION
 
 /** The key a keydown means to the app, if any: ⌘K or Ctrl+K toggles the prompt, Escape closes it. */
@@ -611,6 +706,24 @@ export function subscriptions(keys: EventTarget, page?: Document) {
   const scrolled = (value: { bottom: boolean; intent: number } | undefined) =>
     value ? Option.some(Message.ScrolledTranscript(value)) : Option.none()
   return Subscription.make<Model, Message, Factory>()((entry) => ({
+    wikiLinks: Subscription.persistentEntry(Dom.streamFromEventFilterMapPreventDefault({
+      target: keys, type: "click",
+      filterMapEvent: (event: Event) => {
+        const mouse = event as MouseEvent
+        if (mouse.button !== 0 || mouse.metaKey || mouse.ctrlKey || mouse.shiftKey || mouse.altKey) return Option.none()
+        const element = event.target as Element | null
+        const link = element?.closest?.(".vl-wiki-content a")
+        const href = link?.getAttribute("href")
+        return href?.startsWith("/wiki/") ? Option.some(Message.ClickedWiki({ page: href })) : Option.none()
+      },
+    })),
+    wikiHistory: Subscription.persistentEntry(Dom.streamFromEventFilterMap({
+      target: page?.defaultView ?? keys, type: "popstate",
+      filterMapEvent: () => {
+        const location = page?.defaultView?.location
+        return location && (location.pathname.startsWith("/wiki/") || location.pathname === "/") ? Option.some(Message.WikiLocationChanged({ page: location.pathname + location.hash })) : Option.none()
+      },
+    })),
     keyboard: Subscription.persistentEntry(
       Dom.streamFromEventFilterMapPreventDefault({
         target: keys,
@@ -773,7 +886,7 @@ export const viewTransition: Runtime.ViewTransitionConfig<Model, Message> = ({ p
 function sandboxAction(model: Model, kind: "start" | "stop" | "command"): Update.Return<Model, Message, Factory> {
   if (!canSandboxAction(model.sandboxBusy ?? false, kind, model.terminalDraft ?? "")) return { model }
   const request = (model.sandboxRequest ?? 0) + 1
-  return { model: { ...model, surface: "chat", palette: false, sandboxPane: "pane", sandboxOperation: kind, sandboxBusy: true, sandboxError: "", sandboxRequest: request, terminalDraft: "" }, commands: [SandboxAction({ conversation: model.conversation, operationId: `${model.session}/sandbox/${request}`, request, kind, generation: model.sandbox?.generation ?? 0, command: model.terminalDraft ?? "" })] }
+  return { model: { ...model, surface: "chat", palette: false, docs: "pane", sandboxPane: model.docs === "max" ? "max" : "pane", sandboxOperation: kind, sandboxBusy: true, sandboxError: "", sandboxRequest: request, terminalDraft: "" }, commands: [SandboxAction({ conversation: model.conversation, operationId: `${model.session}/sandbox/${request}`, request, kind, generation: model.sandbox?.generation ?? 0, command: model.terminalDraft ?? "" })] }
 }
 export const SandboxAction = Command.define("SandboxAction", {
   args: { conversation: Schema.String, operationId: Schema.String, request: Schema.Number, kind: Schema.Literals(["start", "stop", "command"]), generation: Schema.Number, command: Schema.String },

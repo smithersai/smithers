@@ -19,8 +19,10 @@ brick                                   state         proof
                                                       mock and live run one tour flow; scene, flow, workerd and browser tests
 1g  every suite covers the whole app    started       VL-29: unit, fuzz and benchmark coverage at 100% each; proofs of
                                                       all logic; fuzzing from the Effect fork as @smthrs/fuzz
-1e  wiki in the app                     next          /wiki renders these pages as a maximizable pane (VL-17, VL-23)
-2   sign-in and roles                   done (local)         0019: shared GitHub auth, five mock identities, numbered grants; live callback setup/deploy remain (VL-21)
+1e  wiki in the app                     done (local)  0021: current Markdown at /wiki/<page> in the shared maximizable pane;
+                                                      people and the agent open through vibelang/wiki/open and PaneOpened;
+                                                      source writes require 0019's explicit credential connection; lead deploys
+2   sign-in and roles                   done (local)  0019: shared GitHub auth, five mock identities, numbered grants; live callback setup/deploy remain (VL-21)
 3   issues as a tree, tasks, VIPs       in progress   0022: browser/CLI/MCP, GitHub sub-issues, commitments and repository VIP reviews; live chat held by issues-nested-effect
 4   actions and slash commands          held          0023: registry catalog and engine step telemetry landed; app held at
                                                       actions-service-spread (VibeLang inference); compiler-policy approval pending

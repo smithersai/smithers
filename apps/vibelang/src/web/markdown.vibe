@@ -45,11 +45,129 @@ export function inline(text: string): ReadonlyArray<{ readonly code: boolean; re
   return text.split("`").map((piece, index) => ({ code: index % 2 === 1, text: piece })).filter((piece) => piece.text !== "")
 }
 
-/** The reply as Foldkit nodes. */
+/** A safe HTML tree: Markdown never supplies a tag or an HTML attribute. */
+export interface MarkdownNode {
+  readonly tag: "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "pre" | "code" | "strong" | "em" | "a" | "ul" | "ol" | "li" | "blockquote" | "table" | "thead" | "tbody" | "tr" | "th" | "td"
+  readonly children: ReadonlyArray<MarkdownNode | string>
+  readonly href?: string
+  readonly id?: string
+}
+const node = (tag: MarkdownNode["tag"], children: MarkdownNode["children"]): MarkdownNode => ({ tag, children })
+
+/** Only web links, anchors and relative document links; never executable schemes. */
+export function safeLink(href: string): boolean {
+  if (/[\\\u0000-\u0020]/.test(href)) return false
+  return !/^[a-z][a-z0-9+.-]*:/i.test(href) ? !href.startsWith("//") : /^https?:\/\//i.test(href)
+}
+
+/** Inline Markdown shared by chat rendering and the wiki's build. */
+function richInline(text: string): MarkdownNode["children"] {
+  const result: Array<MarkdownNode | string> = []
+  const pattern = /`([^`]*)(?:`|$)|\*\*([^*]+)\*\*|\[([^\]]+)\]\(([^)]+)\)/g
+  let cursor = 0
+  for (const match of text.matchAll(pattern)) {
+    if (match.index > cursor) result.push(text.slice(cursor, match.index))
+    if (match[1] !== undefined) result.push(node("code", [match[1]]))
+    else if (match[2] !== undefined) result.push(node("strong", richInline(match[2])))
+    else if (safeLink(match[4]!)) result.push({ tag: "a", href: match[4]!, children: richInline(match[3]!) })
+    else result.push(match[3]!)
+    cursor = match.index + match[0].length
+  }
+  if (cursor < text.length) result.push(text.slice(cursor))
+  return result
+}
+
+export function anchor(text: string): string {
+  return text.toLowerCase().replace(/[`*]/g, "").replace(/[^a-z0-9 -]/g, "").trim().replace(/ +/g, "-")
+}
+
+/** Compile Markdown to a safe HTML tree. The wiki calls this at build time; chat uses it while streaming. */
+export function compile(text: string): ReadonlyArray<MarkdownNode> {
+  const result: Array<MarkdownNode> = []
+  const lines = text.split("\n")
+  let index = 0
+  while (index < lines.length) {
+    const line = lines[index]!
+    if (line.trim() === "") { index++; continue }
+    if (line.startsWith("```")) {
+      const code: Array<string> = []
+      index++
+      while (index < lines.length && !lines[index]!.startsWith("```")) code.push(lines[index++]!)
+      index++
+      result.push(node("pre", [node("code", [code.join("\n")])]))
+      continue
+    }
+    const heading = /^(#{1,6}) (.*)$/.exec(line)
+    if (heading) {
+      result.push({ tag: `h${heading[1]!.length}` as MarkdownNode["tag"], id: anchor(heading[2]!), children: richInline(heading[2]!) })
+      index++; continue
+    }
+    if (line.startsWith("|") && /^\|[ :|\-]+\|$/.test(lines[index + 1] ?? "")) {
+      const cells = (row: string) => row.replace(/^\||\|$/g, "").split(/\|(?=(?:[^`]*`[^`]*`)*[^`]*$)/).map(cell => cell.trim())
+      const header = node("tr", cells(line).map(cell => node("th", richInline(cell))))
+      const rows: Array<MarkdownNode> = []
+      index += 2
+      while (index < lines.length && lines[index]!.startsWith("|")) rows.push(node("tr", cells(lines[index++]!).map(cell => node("td", richInline(cell)))))
+      result.push(node("table", [node("thead", [header]), node("tbody", rows)])); continue
+    }
+    const list = /^(?:- |[0-9]+\. )(.*)$/.exec(line)
+    if (list) {
+      const items: Array<MarkdownNode> = []
+      const ordered = /^[0-9]/.test(line)
+      while (index < lines.length) {
+        const item = /^(?:- |[0-9]+\. )(.*)$/.exec(lines[index]!)
+        if (!item) break
+        let words = item[1]!
+        index++
+        while (index < lines.length && /^  +\S/.test(lines[index]!)) words += " " + lines[index++]!.trim()
+        const ruling = /\*\*(VL-[0-9]+)\./.exec(words)
+        items.push({ ...node("li", richInline(words)), ...(ruling ? { id: ruling[1]!.toLowerCase() } : {}) })
+      }
+      result.push(node(ordered ? "ol" : "ul", items)); continue
+    }
+    if (line.startsWith("> ")) {
+      const quote: Array<string> = []
+      while (index < lines.length && lines[index]!.startsWith("> ")) quote.push(lines[index++]!.slice(2))
+      result.push(node("blockquote", richInline(quote.join(" ")))); continue
+    }
+    const prose = [line]
+    index++
+    while (index < lines.length && lines[index]!.trim() !== "" && !/^(?:#|```|\||- |[0-9]+\. |> )/.test(lines[index]!)) prose.push(lines[index++]!)
+    result.push(node("p", richInline(prose.join("\n"))))
+  }
+  return result
+}
+
+/** Smithers' actual Markdown/table classes, shared by live chat and the build-time wiki. */
+function classOf(tag: MarkdownNode["tag"], inPre = false): string {
+  if (/^h[1-6]$/.test(tag)) return `sui-md-heading sui-md-${tag}`
+  if (tag === "a") return "sui-md-link"
+  if (tag === "table") return "sui-table sui-md-table"
+  if (tag === "ul" || tag === "ol") return "sui-md-list"
+  if (tag === "code" && !inPre) return "sui-md-inline-code"
+  return `sui-md-${tag}`
+}
+
+/** The reply as Foldkit nodes, using the same compiler as the build-time wiki renderer. */
 export function render<Message>(h: HtmlBuilder<Message>, text: string): ReadonlyArray<Html> {
-  return blocks(text).map((block) =>
-    block.kind === "code"
-      ? h.pre([h.Class("vl-code"), h.DataAttribute("language", block.language)], [h.code([], [block.text])])
-      : h.p([], inline(block.text).map((piece) => piece.code ? h.code([], [piece.text]) : piece.text))
+  const draw = (item: MarkdownNode | string, inPre = false): Html | string => typeof item === "string" ? item : h[item.tag](
+    [h.Class(item.tag === "pre" ? "vl-code sui-md-pre" : classOf(item.tag, inPre)), ...(item.href ? [h.Href(item.href)] : []), ...(item.id ? [h.Id(item.id)] : [])],
+    item.children.map(child => draw(child, item.tag === "pre")),
   )
+  return compile(text).map(item => draw(item) as Html)
+}
+
+function escape(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+}
+
+/** Build-time HTML. Link resolution receives the file containing the link, so relative wiki links remain stable. */
+export function toHtml(text: string, resolve: (href: string) => string = href => href): string {
+  const draw = (item: MarkdownNode | string, inPre = false): string => {
+    if (typeof item === "string") return escape(item)
+    const href = item.href === undefined ? "" : resolve(item.href)
+    const attributes = ` class="${classOf(item.tag, inPre)}"` + (item.id ? ` id="${escape(item.id)}"` : "") + (href ? ` href="${escape(href)}"` : "")
+    return `<${item.tag}${attributes}>${item.children.map(child => draw(child, item.tag === "pre")).join("")}</${item.tag}>`
+  }
+  return compile(text).map(item => draw(item)).join("\n")
 }

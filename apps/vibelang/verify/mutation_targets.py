@@ -317,6 +317,9 @@ POSTCONDITIONS = {'apply-advance': '((res.seq_ == conversation.seq_) || (res.seq
                     '|res.commits|) ==> (res.commits[i].epic == res.commits[j].epic) ==> (res.commits[i].rank != '
                     'res.commits[j].rank)))'}
 
+# Exact positively verified clauses include person openings as well as guarded agent openings.
+POSTCONDITIONS.update({'apply-pane': '((event.seq_ == (conversation.seq_ + 1)) ==> event.PaneOpened? ==> ((event.id == "") || ((conversation.agent.working? && (conversation.replying == event.id)) && (event.id != ""))) ==> (event.url != "") ==> (((res.pane == event.url) && (res.entries == conversation.entries)) && (res.agent == conversation.agent)))', 'apply-pane-guard': '((res.pane != conversation.pane) ==> ((event.PaneOpened? && ((event.id == "") || (conversation.agent.working? && (conversation.replying == event.id)))) && (event.url != "")))', 'decide-pane-guard': '(res.true_? ==> res.event.PaneOpened? ==> (((res.event.id == "") || ((conversation.agent.working? && (conversation.replying == res.event.id)) && (res.event.id != ""))) && (res.event.url != "")))', 'wiki-person-apply': '((event.seq_ == (conversation.seq_ + 1)) ==> event.PaneOpened? ==> ((event.id == "") || ((conversation.agent.working? && (conversation.replying == event.id)) && (event.id != ""))) ==> (event.url != "") ==> (((res.pane == event.url) && (res.entries == conversation.entries)) && (res.agent == conversation.agent)))'})
+
 def postcondition_line(generated, function, contains):
     import re
     lines=generated.splitlines()

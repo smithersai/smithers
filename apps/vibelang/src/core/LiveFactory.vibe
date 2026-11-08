@@ -69,6 +69,11 @@ export function LiveFactory(origin: string) {
         const response = try Effect.mapError(client.execute(request), unavailable("post unreachable"))
         try refusable(response, "post")
       },
+      openWiki: effect (conversation: string, page: string) => {
+        const request = HttpClientRequest.post(origin + conversationPath(conversation) + "/wiki").pipe(HttpClientRequest.bodyJsonUnsafe({ page }))
+        const response = try Effect.mapError(client.execute(request), unavailable("wiki unreachable"))
+        try refusable(response, "wiki")
+      },
       tour: effect (conversation: string) => {
         const request = HttpClientRequest.post(origin + (try pathOf(conversation)) + TOUR_PATH)
         const response = try Effect.mapError(client.execute(request), unavailable("tour unreachable"))

@@ -22,3 +22,5 @@ bench/results/*
 !bench/results/.gitkeep
 
 fuzz-results/
+
+src/assets/wiki.generated.vibe

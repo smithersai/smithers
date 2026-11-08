@@ -115,12 +115,16 @@ export effect function serveApi(env: Readonly<Record<string, string>> = {}) {
 }
 
 /** The site Worker with no API Worker bound: the mock deployment. */
-export effect function serveSite() {
+export effect function serveSite(withAssets = false) {
   provide NodeServices.layer {
     const modules = try modulesOf(try bundle("../../worker/index.vibe"))
     return try listen({
       name: "site",
       compatibilityDate: "2026-10-01",
+      ...(withAssets ? {
+        assets: { directory: try (try Path.Path).fromFileUrl(new URL("../../dist/", import.meta.url)), hasUserWorker: true, runWorkerFirst: true, notFoundHandling: "single-page-application" },
+        env: { ASSETS: { type: "assets" } },
+      } : {}),
       manifest: { mainModule: "worker.js", modules },
     })
   }

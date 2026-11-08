@@ -29,6 +29,7 @@ import { Unreachable } from "./Unreachable.vibe"
 export interface ConversationShape {
   readonly post: (clientId: string, name: string, text: string) => (string | null)!!RuntimeContext
   readonly read: (after: number) => ReadSnapshot!!RuntimeContext
+  readonly openWiki: (page: string) => (string | null)!!RuntimeContext
   readonly tour: () => (string | null)!!RuntimeContext
   readonly endTour: () => (string | null)!!RuntimeContext
   readonly alarm: () => void!!RuntimeContext
@@ -166,6 +167,7 @@ const ConversationLive = Conversation.make(effect {
       post: (clientId: string, name: string, text: string) =>
         Objects.post(hostId, state.raw.storage, sequencer, clientId, name, text),
       read: sequencer.read,
+      openWiki: (page: string) => Objects.openWiki(hostId, state.raw.storage, sequencer, page),
       tour: () => Objects.tour(hostId, state.raw.storage, sequencer),
       endTour: () => Objects.endTour(hostId, state.raw.storage, sequencer),
       // The event stream of the request the API Worker forwarded, from its `after` cursor.
@@ -258,6 +260,10 @@ const program = effect {
         read: (conversation, after) => effect {
           const object = try objectOf(conversations, conversation, "conversation")
           return try reached(runtime, "conversation", object.read(after))
+        },
+        openWiki: (conversation, page) => effect {
+          const object = try objectOf(conversations, conversation, "conversation")
+          return try reached(runtime, "conversation", object.openWiki(page))
         },
         tour: (conversation) => effect {
           const object = try objectOf(conversations, conversation, "conversation")

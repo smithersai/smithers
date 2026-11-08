@@ -15,6 +15,7 @@ it("HTTP admission, routing, cursor and transport faults", async ({ bench }) => 
       const log = try Ref.make<ReadonlyArray<Event>>([])
       const sequencer = try Sequencer.make({ read: () => Ref.get(log), write: (event) => Ref.update(log, (events) => [...events, event]) }, { start: () => Effect.void, tour: () => Effect.void })
       const conversations: Conversations = {
+        openWiki: () => succeed(null),
         post: (_, body) => sequencer.post(body.clientId, body.name, body.text), read: (_, after) => sequencer.read(after),
         tour: () => sequencer.startTour(), endTour: () => sequencer.endTour(), events: () => succeed(eventStream(sequencer.follow(0))),
       }

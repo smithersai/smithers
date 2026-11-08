@@ -64,6 +64,10 @@ export function BrowserFactory(origin: string, forceMock: boolean, role: import(
         const { factory } = try ready
         return factory.events(conversation, after)
       }),
+      openWiki: effect (conversation, page) => {
+        const { factory } = try ready
+        return try factory.openWiki(conversation, page)
+      },
       tour: effect (conversation) => {
         const { factory } = try ready
         return try factory.tour(conversation)

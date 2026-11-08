@@ -104,7 +104,7 @@ function hasEffect(before: Conversation, event: Event, after: Conversation): boo
       return reply !== undefined && reply.done && reply.error === "" && after.agent === "idle" && after.replying === "" &&
         reply.text === before.entries.find((entry) => entry.id === event.id)?.text
     case "PaneOpened":
-      return after.pane === event.url && event.url !== "" && after.entries === before.entries && after.agent === "working"
+      return after.pane === event.url && event.url !== "" && after.entries === before.entries && (event.id === "" || after.agent === "working")
   }
 }
 

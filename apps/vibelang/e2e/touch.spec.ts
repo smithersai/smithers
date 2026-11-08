@@ -60,8 +60,9 @@ test("touch scrolling pauses a streamed answer, and Latest resumes following aft
       const firstMoveY = await page.evaluate((start) =>
         (Reflect.get(window, "touchObservations") as { type: string; y: number }[]).slice(start).find(event => event.type === "touchmove")?.y, observationStart)
       expect(firstMoveY).toBeDefined()
-      expect(await page.evaluate(() => window.scrollY)).toBeLessThan(firstMoveY!)
+      expect(Number.isFinite(firstMoveY)).toBe(true)
       await expect(page.locator("html")).toHaveAttribute("data-gesture-settled", "true")
+      expect(await page.evaluate(() => window.scrollY)).toBeLessThan(firstMoveY!)
       await latest.tap()
       await expect(latest).toBeHidden()
       await expect(answers.last().locator("p").last()).toBeInViewport({ ratio: 1 })

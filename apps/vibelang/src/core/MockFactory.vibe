@@ -14,9 +14,10 @@ import { Action, FlowRuntime } from "@smthrs/flow"
 import { apply, decide, empty, isTouring, type Conversation, type Decision, type Event, type Intent } from "./conversation.vibe"
 import { Factory, type Mode, Refused, Unavailable } from "./Factory.vibe"
 import {
-  EndTour, endsTour, patient, Post, postRegistration, Posts, Reply, replyIdOf, StartTour, Tour, toured, touring, tourRegistration,
+  OpenWiki, openWiki, wikiRegistration, EndTour, endsTour, patient, Post, postRegistration, Posts, Reply, replyIdOf, StartTour, Tour, toured, touring, tourRegistration,
   Tours, unanswered, walk,
 } from "./flows.vibe"
+import { requestedWiki } from "./wiki.vibe"
 import { Mythical } from "../history/MythicalHistory.vibe"
 import type { Principal } from "../history/roles.vibe"
 import { type HistoryPages, show } from "../history/tools.vibe"
@@ -89,8 +90,10 @@ effect function scripted(
   })
   if (!started) return null
   const prompt = (try Ref.get(state)).conversation.entries.find((entry) => entry.id === post)?.text ?? ""
-  // Asked about the mythical history, the scripted agent reads it through the live agent's tool, as a step.
-  const text = prompt.startsWith("File an issue:") || prompt === "Split #38 into three children, linked under it." ? "" : /\b(start|run|use|spin up)\b.*\bsandbox\b/i.test(prompt) ? (effect {
+  const page = requestedWiki(prompt)
+  if (page !== undefined) try Action.make({ name: "vibelang/wiki/record", success: Schema.Boolean, execute: openWiki(id, page) })
+  // An explicit wiki request wins over action words inside its page title.
+  const text = page !== undefined ? `Opened ${page}.` : prompt.startsWith("File an issue:") || prompt === "Split #38 into three children, linked under it." ? "" : /\b(start|run|use|spin up)\b.*\bsandbox\b/i.test(prompt) ? (effect {
     const snapshot = try sandboxTools.startSandbox(conversation, `agent-${id}`)
     return `Started ${snapshot.id}.`
   } catch () => "Couldn't start a sandbox") : matches(prompt.toLowerCase(), HISTORY_WORDS)
@@ -98,8 +101,8 @@ effect function scripted(
       name: "vibelang/history/show",
       success: Schema.String,
       execute: effect {
-        const page = show(try history, { what: "outline" }) catch () => undefined
-        return page !== undefined && "epics" in page ? historyReply(page) : "The history can't be reached."
+        const result = show(try history, { what: "outline" }) catch () => undefined
+        return result !== undefined && "epics" in result ? historyReply(result) : "The history can't be reached."
       },
     })
     : mockReply(prompt)
@@ -280,6 +283,7 @@ return Layer.effect(Factory, effect {
       const flows = Layer.mergeAll(
         postRegistration,
         tourRegistration,
+        wikiRegistration,
         Layer.effectDiscard(effect {
           const engine = try FlowRuntime.FlowRuntime
           effect function reply(payload: { readonly post: string }) {
@@ -338,6 +342,12 @@ return Layer.effect(Factory, effect {
       const refusal = try Effect.orDie(room.engine.execute(Post, { executionId, payload: { clientId, name: identity.login || name, text, owner: identity.id } }))
       if (refusal !== null) throw new Refused({ refusal })
       try Effect.orDie(accounts.participated(identity.id))
+    },
+    openWiki: effect (conversation: string, page: string) => {
+      const room = try openRoom(conversation)
+      const executionId = `wiki/${try Ref.updateAndGet(executions, value => value + 1)}`
+      const opened = try Effect.orDie(room.engine.execute(OpenWiki, { executionId, payload: { page } }))
+      if (!opened) throw new Refused({ refusal: "empty" })
     },
     tour: effect (conversation: string) => {
       const room = try openRoom(conversation)

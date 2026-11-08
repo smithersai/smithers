@@ -20,6 +20,7 @@ it.live("an idle chat does not read its sandbox every second; a running one does
       get mode() { return factory.mode },
       post: (conversation, clientId, name, text) => factory.post(conversation, clientId, name, text),
       read: (conversation, after) => factory.read(conversation, after),
+      openWiki: (conversation, page) => factory.openWiki(conversation, page),
       events: (conversation, after) => factory.events(conversation, after),
       tour: (conversation) => factory.tour(conversation),
       endTour: (conversation) => factory.endTour(conversation),

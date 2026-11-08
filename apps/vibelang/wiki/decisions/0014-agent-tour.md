@@ -1,5 +1,7 @@
 # 0014. Learn more is a tour the agent drives
 
+**Extended by [0021](0021-wiki.md):** people and the agent share `PaneOpened` for wiki pages. A person opening has an empty entry id; an agent tool still requires its streaming entry.
+
 **Status:** accepted, 2026-11-07. **Rulings:** VL-28 (and VL-13, VL-16, VL-17); repository rules FLOW-3 and FLOW-5.
 **Changes:** 0003 (three intents, three events, `pane`), 0010 and 0011 (two routes, three flows).
 

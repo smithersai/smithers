@@ -48685,6 +48685,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/vibelang/wiki/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/vibelang/package.json"
       },
@@ -48796,6 +48801,11 @@
       {
         "kind": "glob",
         "pattern": "apps/vibelang/scripts/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/wiki/**/*",
         "exclude": []
       },
       {
@@ -49002,6 +49012,11 @@
       {
         "kind": "glob",
         "pattern": "apps/vibelang/scripts/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/wiki/**/*",
         "exclude": []
       },
       {

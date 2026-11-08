@@ -28,6 +28,7 @@ const sources = [
   Smithers.glob("//apps/vibelang/e2e/**/*"),
   Smithers.glob("//apps/vibelang/skills/**/*"),
   Smithers.glob("//apps/vibelang/scripts/**/*"),
+  Smithers.glob("//apps/vibelang/wiki/**/*"),
   Smithers.file("//apps/vibelang/package.json"),
   Smithers.file("//patches/@vitest__coverage-v8@5.0.0.patch"),
   Smithers.file("//apps/vibelang/tsconfig.json"),

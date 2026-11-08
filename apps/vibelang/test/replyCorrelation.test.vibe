@@ -64,6 +64,7 @@ for (const earlier of ["skipped", "later"] as const) {
       read: () => succeed({ seq: state.seq, entries: state.entries }),
       events: () => Stream.fromIterable(log),
       tour: () => die(new Error("Ask never tours")),
+      openWiki: () => die(new Error("Ask opens pages only through its reply")),
       endTour: () => die(new Error("Ask never tours")),
       sandbox: () => die(new Error("Ask never reads a sandbox")),
       startSandbox: () => die(new Error("Ask never starts a sandbox")),

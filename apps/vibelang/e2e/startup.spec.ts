@@ -10,7 +10,7 @@ declare global {
   }
 }
 
-test.use({ baseURL: `http://127.0.0.1:${process.env.E2E_PORT ?? 4173}` })
+test.use({ baseURL: `http://127.0.0.1:${process.env.E2E_PORT ?? process.env.E2E_4510 ?? process.env.E2E_4508 ?? process.env.E2E_4505 ?? process.env.E2E_4501 ?? process.env.E2E_4516 ?? process.env.E2E_4511 ?? process.env.E2E_4502 ?? 4173}` })
 
 for (const input of ["Command K", "Tab"] as const) {
   test(`${input} works while the startup health answer is held open`, async ({ page }) => {
