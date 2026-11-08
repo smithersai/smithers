@@ -268,6 +268,7 @@ describe("the checked-in root files match the declarations", () => {
       extends: { _tag: "File", path: "tsconfig.base.json" },
       compilerOptions: {
         noEmit: true,
+        customConditions: ["vibelang-source"],
         lib: ["ES2024"],
         module: "NodeNext",
         moduleResolution: "NodeNext",
