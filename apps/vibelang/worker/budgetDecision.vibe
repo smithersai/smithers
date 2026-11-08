@@ -20,3 +20,10 @@ export function charge(spent: number, used: number, recorded: boolean): Charge {
   if (recorded) return { spent, added: 0, write: false }
   return { spent: spent + used, added: used, write: true }
 }
+
+/** The integer arithmetic domain a new ledger charge must stay inside. */
+//@ verify
+//@ ensures \result == (0 <= spent && 0 <= used && spent + used <= 9007199254740991)
+export function canCharge(spent: number, used: number): boolean {
+  return spent >= 0 && used >= 0 && used <= 9007199254740991 - spent
+}

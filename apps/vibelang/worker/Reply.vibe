@@ -1,3 +1,4 @@
+import { promptWindow } from "../src/core/sequenceDecision.vibe"
 // The agent's reply to one post, a durable `@smthrs/flow` flow (rulings VL-11; wiki/decisions/0010-live-agent.md,
 // 0012-smithers-agent.md). Every side effect is a journaled step, so a reset Durable Object resumes the reply where it
 // stopped. The answer is smithers.sh's agent: `@smthrs/agent`'s `AgentAction`, the codemode loop apps/mvp's chat runs
@@ -97,7 +98,7 @@ export function dayOf(millis: number): string {
 
 /** The agent's task: the conversation so far, then the post it answers, as smithers.sh's chat asks it. */
 export function promptOf(payload: { readonly turns: ReadonlyArray<Turn> }): string {
-  const turns = payload.turns.slice(-MAX_TURNS)
+  const turns = promptWindow(payload.turns, MAX_TURNS)
   const asked = turns.at(-1)
   const history = turns.slice(0, -1)
   if (asked === undefined) return ""

@@ -29,6 +29,8 @@ const shellBoundaries = {
   'src/history/roles.vibe': 'may, leastRole, peopleOnly and standing are proved in flowMachine.vibe; this module re-exports them and builds the role tables from them (0020).',
 };
 const boundaries = {
+  'src/surfaces/commandDecision.vibe': 'Proved own-post/reply correlation, exact ordered event-number accumulation, text/restart/terminal state, outcome and error mapping; UUID generation, streams and rendering are Effect/host boundaries.',
+  'src/core/sequenceDecision.vibe': 'Proved first matching post prefix, exact eligible source indexes in strict order, role/text projection, exclusion of failed/unfinished/tour answers and latest-turn window; model execution remains an Effect boundary.',
   'src/core/sandboxDecision.vibe': 'Sandbox integer kernel: running counts, exact interval usage and accumulation, remaining allowance, monotone clocks, identity/ownership and transition frames (0024). Date/IEEE-754 normalization, durable shell behavior and complete guard mutation coverage remain outside these clauses.',
   'src/core/mockDecision.vibe': 'Exact keyword membership, first-match priority and fallback; proved for normalized prompts.',
   'src/core/protocolDecision.vibe': 'Conversation/cursor/body validation, exact route and HTTP outcomes, explicit backend choice; proved.',

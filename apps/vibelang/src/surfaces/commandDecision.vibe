@@ -1,0 +1,64 @@
+// The CLI and MCP wait for the reply correlated to their own post.
+export interface AskProgress {
+  readonly post: string
+  readonly reply: string
+  readonly numbers: ReadonlyArray<number>
+  readonly text: string
+  readonly failed: boolean
+  readonly failure: string
+  readonly finished: boolean
+  readonly listening: boolean
+}
+
+//@ verify
+//@ ensures \result == (kind == "Posted" && actual == expected)
+export function isOwnPost(kind: string, actual: string, expected: string): boolean {
+  return kind === "Posted" && actual === expected
+}
+
+//@ verify
+//@ ensures \result == (kind == "ReplyStarted" && post != "" && target == post)
+export function isOwnReply(kind: string, post: string, target: string): boolean {
+  return kind === "ReplyStarted" && post !== "" && target === post
+}
+
+//@ verify
+//@ ensures \result.post == (isOwnPost(kind, actual, expected) ? id : state.post)
+//@ ensures \result.reply == (isOwnReply(kind, state.post, target) ? id : state.reply)
+//@ ensures id != \result.reply ==> \result.text == state.text && \result.failed == state.failed && \result.failure == state.failure && \result.finished == state.finished && \result.listening
+//@ ensures id == \result.reply ==> \result.text == (kind == "ReplyDelta" ? state.text + piece : kind == "ReplyRestarted" ? "" : state.text)
+//@ ensures id == \result.reply ==> \result.failed == (state.failed || kind == "ReplyFailed") && \result.failure == (kind == "ReplyFailed" ? reason : state.failure) && \result.finished == (state.finished || kind == "ReplyFinished")
+//@ ensures \result.listening == (id != \result.reply || (kind != "ReplyFinished" && kind != "ReplyFailed"))
+//@ ensures \result.numbers.length == state.numbers.length + (isOwnPost(kind, actual, expected) ? 1 : 0) + (id == \result.reply ? 1 : 0)
+//@ ensures forall(i, 0 <= i && i < state.numbers.length ==> \result.numbers[i] == state.numbers[i])
+//@ ensures forall(i, state.numbers.length <= i && i < \result.numbers.length ==> \result.numbers[i] == seq)
+export function collectAnswer(state: AskProgress, kind: string, id: string, seq: number, actual: string, expected: string, target: string, piece: string, reason: string): AskProgress {
+  const post = isOwnPost(kind, actual, expected) ? id : state.post
+  const reply = isOwnReply(kind, state.post, target) ? id : state.reply
+  const numbers = isOwnPost(kind, actual, expected) ? [...state.numbers, seq] : state.numbers
+  if (id !== reply) return { ...state, post, reply, numbers, listening: true }
+  return {
+    post, reply, numbers: [...numbers, seq],
+    text: kind === "ReplyDelta" ? state.text + piece : kind === "ReplyRestarted" ? "" : state.text,
+    failed: state.failed || kind === "ReplyFailed",
+    failure: kind === "ReplyFailed" ? reason : state.failure,
+    finished: state.finished || kind === "ReplyFinished",
+    listening: kind !== "ReplyFinished" && kind !== "ReplyFailed",
+  }
+}
+
+//@ verify
+//@ ensures failed ==> \result == "failed"
+//@ ensures !failed && !finished ==> \result == "ended"
+//@ ensures !failed && finished ==> \result == "done"
+export function answerOutcome(failed: boolean, finished: boolean): "failed" | "ended" | "done" {
+  return failed ? "failed" : !finished ? "ended" : "done"
+}
+
+//@ verify
+//@ ensures tag == "Unavailable" ==> \result == reason
+//@ ensures tag != "Unavailable" && tag == "Refused" ==> \result == refused + ": " + refusal
+//@ ensures tag != "Unavailable" && tag != "Refused" ==> \result == message
+export function commandError(tag: string, reason: string, refused: string, refusal: string, message: string): string {
+  return tag === "Unavailable" ? reason : tag === "Refused" ? refused + ": " + refusal : message
+}

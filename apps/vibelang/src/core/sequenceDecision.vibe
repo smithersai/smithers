@@ -1,0 +1,88 @@
+// Pure selection indexes preserve duplicate values and source order without assuming unique entry ids.
+export interface TurnInput { readonly id: string; readonly author: "person" | "agent"; readonly text: string; readonly done: boolean; readonly error: string; readonly inReplyTo: string }
+export interface PromptTurn { readonly author: "person" | "agent"; readonly text: string }
+
+//@ verify
+//@ ensures \result == (entry.author == "person" || (entry.done && entry.error == "" && entry.inReplyTo != ""))
+export function promptEligible(entry: TurnInput): boolean {
+  return entry.author === "person" || (entry.done && entry.error === "" && entry.inReplyTo !== "")
+}
+
+//@ verify
+//@ ensures 0 <= \result && \result <= entries.length
+//@ ensures \result < entries.length ==> entries[\result].id == id
+//@ ensures forall(i, 0 <= i && i < \result ==> entries[i].id != id)
+export function firstEntryIndex(entries: ReadonlyArray<TurnInput>, id: string): number {
+  let i = 0
+  while (i < entries.length) {
+    //@ invariant 0 <= i && i <= entries.length
+    //@ invariant forall(j, 0 <= j && j < i ==> entries[j].id != id)
+    //@ decreases entries.length - i
+    if (entries[i]!.id === id) return i
+    i++
+  }
+  return entries.length
+}
+
+//@ verify
+//@ requires 0 <= end && end <= entries.length
+//@ ensures \result.length <= end
+//@ ensures forall(k, 0 <= k && k < \result.length ==> 0 <= \result[k] && \result[k] < end && (entries[\result[k]].author == "person" || (entries[\result[k]].done && entries[\result[k]].error == "" && entries[\result[k]].inReplyTo != "")))
+//@ ensures forall(j, 0 <= j && j < end && (entries[j].author == "person" || (entries[j].done && entries[j].error == "" && entries[j].inReplyTo != "")) ==> \result.includes(j))
+//@ ensures forall(a, forall(b, 0 <= a && a < b && b < \result.length ==> \result[a] < \result[b]))
+export function eligibleIndexes(entries: ReadonlyArray<TurnInput>, end: number): ReadonlyArray<number> {
+  const indexes: Array<number> = []
+  let i = 0
+  while (i < end) {
+    //@ invariant 0 <= i && i <= end
+    //@ invariant indexes.length <= i
+    //@ invariant forall(k, 0 <= k && k < indexes.length ==> 0 <= indexes[k] && indexes[k] < i && (entries[indexes[k]].author == "person" || (entries[indexes[k]].done && entries[indexes[k]].error == "" && entries[indexes[k]].inReplyTo != "")))
+    //@ invariant forall(j, 0 <= j && j < i && (entries[j].author == "person" || (entries[j].done && entries[j].error == "" && entries[j].inReplyTo != "")) ==> indexes.includes(j))
+    //@ invariant forall(a, forall(b, 0 <= a && a < b && b < indexes.length ==> indexes[a] < indexes[b]))
+    //@ decreases end - i
+    if (promptEligible(entries[i]!)) indexes.push(i)
+    i++
+  }
+  return indexes
+}
+
+//@ verify
+//@ requires 0 <= at && at <= length
+//@ ensures \result == (at < length ? at + 1 : length)
+export function prefixEnd(at: number, length: number): number {
+  return at < length ? at + 1 : length
+}
+
+//@ verify
+//@ requires 0 <= max
+//@ ensures \result == (length > max ? length - max : 0)
+export function windowStart(length: number, max: number): number {
+  return length > max ? length - max : 0
+}
+
+export interface PromptSelection { readonly end: number; readonly indexes: ReadonlyArray<number>; readonly turns: ReadonlyArray<PromptTurn> }
+//@ verify
+//@ ensures 0 <= \result.end && \result.end <= entries.length
+//@ ensures \result.end < entries.length ==> \result.end > 0 && entries[\result.end - 1].id == post
+//@ ensures forall(i, 0 <= i && i < \result.end - 1 ==> entries[i].id != post)
+//@ ensures \result.end == entries.length || entries[\result.end - 1].id == post
+//@ ensures \result.turns.length == \result.indexes.length && \result.indexes.length <= \result.end
+//@ ensures forall(k, 0 <= k && k < \result.indexes.length ==> 0 <= \result.indexes[k] && \result.indexes[k] < \result.end && (entries[\result.indexes[k]].author == "person" || (entries[\result.indexes[k]].done && entries[\result.indexes[k]].error == "" && entries[\result.indexes[k]].inReplyTo != "")))
+//@ ensures forall(j, 0 <= j && j < \result.end && (entries[j].author == "person" || (entries[j].done && entries[j].error == "" && entries[j].inReplyTo != "")) ==> \result.indexes.includes(j))
+//@ ensures forall(a, forall(b, 0 <= a && a < b && b < \result.indexes.length ==> \result.indexes[a] < \result.indexes[b]))
+//@ ensures forall(k, 0 <= k && k < \result.turns.length ==> \result.turns[k].author == entries[\result.indexes[k]].author && \result.turns[k].text == entries[\result.indexes[k]].text)
+export function selectModelTurns(entries: ReadonlyArray<TurnInput>, post: string): PromptSelection {
+  const at = firstEntryIndex(entries, post)
+  const end = prefixEnd(at, entries.length)
+  const indexes = eligibleIndexes(entries, end)
+  const turns = indexes.map((index) => ({ author: entries[index]!.author, text: entries[index]!.text }))
+  return { end, indexes, turns }
+}
+
+//@ verify
+//@ requires 0 <= max
+//@ ensures \result.length == (turns.length > max ? max : turns.length)
+//@ ensures forall(i, 0 <= i && i < \result.length ==> \result[i] == turns[(turns.length > max ? turns.length - max : 0) + i])
+export function promptWindow(turns: ReadonlyArray<PromptTurn>, max: number): ReadonlyArray<PromptTurn> {
+  return turns.slice(windowStart(turns.length, max))
+}

@@ -19,7 +19,9 @@ strictly typecheck, and must fail a Dafny obligation in their named function. To
 | `src/web/screenDecision.vibe` | Escape priority, palette focus choice, minimizing eligibility, docs toggle, scroll revision/pausing/following, tour stream cursor, completion announcements and keyboard decisions | Dafny models numbers as integers. Fractional DOM coordinates, IEEE-754 arithmetic, native DOM effects and actual focus restoration are tested, not proved |
 | `src/core/conversation.vibe` | Conversation sequence, entry identity and correlation, at most one answer per post, terminal replies/tours ignore later text, exact streamed/finished/failed text, admissible intent completeness, pending posts, reply/tour guards and pane ownership | Integer sequences below MAX_SAFE_INTEGER; dense readonly arrays; UTF-16 strings |
 | `worker/replyReasons.vibe` | Content policy → refused; credit and quota → credit; other model failures → unavailable. Agent precedence: unresolved seat, structured-output failure, model failure, generic failure | The observed tag and code are inputs; constant wording lookup and provider parsing are outside this decision |
-| `worker/budgetDecision.vibe` | Strict budget admission; repeated charges add zero; a new charge is nonnegative and total increases by exactly that charge | Nonnegative integer values and a safe sum; storage serialization and floating-point normalization are not proved |
+| `worker/budgetDecision.vibe` | Strict admission, repeated charges add zero, exact nonnegative charge/total relation, and admission to the safe integer sum domain | Runtime guards now establish the integer domain; storage consistency, serialization and host rounding remain boundaries |
+| `src/surfaces/commandDecision.vibe` | Own-post/reply correlation, exact event-number prefix/order, delta/restart/failure/finish accumulation, stream termination, outcome and error mapping | Effect stream execution, UUID generation, schema decoding and display formatting |
+| `src/core/sequenceDecision.vibe` | First matching post prefix, every eligible source position exactly once in order, source role/text projection, exclusion of unfinished/failed/tour answers, and latest-turn window | The model call, storage and provider tokenization |
 | `src/core/flowDecision.vibe` | Only accepted record dispatches; only matching attempt/offset appends; only the addressed terminal event ends a tour; repeated starts remain done; exact reading hold with a four-second floor and 200-word-per-minute rate | Durable engine journaling, scheduling, cancellation, storage and eventual completion are not proved |
 
 A proof of these decisions does not prove Effect, Foldkit, HTTP, JSON, the compiler, Dafny/Z3, or Cloudflare.
@@ -108,6 +110,22 @@ conversation storage rows before replay; replay of a maximum-capacity history sn
 UI epoch/scroll-intent exhaustion and fractional DOM coordinates. History-flow phase proofs do not establish
 journal replay idempotency, main-commit traversal order or arbitrary execution interleavings.
 
+## Fourth module batch: commands, context and accounting
+
+The CLI and MCP now call the same proved reply accumulator and error mapper. The live sequencer's model context
+uses the proved source-index selection, including the existing exclusion of tour narration; Reply uses the proved
+latest-turn window. The index witnesses establish order and multiplicity, including repeated text values.
+
+Budget admission and charging reject corrupt totals and unsafe new sums before writing. A repeated reply ignores
+oversized telemetry and preserves the ledger; the final safe integer charge remains admissible. Three regressions
+fail before the guards and pass afterward. The existing normalization of nonfinite and negative telemetry remains.
+
+The full gate passes **182 obligations in twelve production modules** (100.802 seconds). All **346 executable
+mutations** reject: 44 new cases, four regenerated budget cases, and 298 unchanged inherited inputs. Every current
+source and manifest entry is byte-identical to its actual Dafny failure receipt. Typecheck and **416 unit tests**
+pass, including shared CLI/MCP and model-history regressions. Local workerd passes 22 tests (four opt-in skips).
+The inventory contains 1,317 executable items.
+
 ## Product defects
 
 - **Unsafe history ranks broke distinct insertion positions.** Plain numeric schemas admitted negative, fractional,
@@ -117,6 +135,11 @@ journal replay idempotency, main-commit traversal order or arbitrary execution i
 - **Cached history follow bypassed validation; snapshot errors exposed stored content.** A later store read could
   stream an invalid event, and HistoryObject's early JSON decode could reveal stored text in diagnostics. Follow
   validates each reread; stored JSON uses a redacted decoder. Both new regressions failed before the fixes.
+
+- **Unsafe usage and corrupt totals bypassed accounting's proof domain.** Overflow could replace a valid daily sum
+  with an inexact value; a negative total could be charged or admitted. Admission and spend now check persisted
+  safe integers and a proved sum guard. Overflow and invalid totals fail without writes; exact maximum charging and
+  repeated oversized telemetry are covered by regressions.
 
 - **Non-finite usage poisoned the daily ledger.** A provider's NaN or Infinity made the total unusable. The regression
   `budgetProof.test.vibe` failed first with NaN instead of 13. Non-finite usage now adds zero; finite negative usage
@@ -203,7 +226,7 @@ passes 101 obligations across eight modules; all three new mutations fail their 
 tokenization, rendering and durable execution retain the boundaries stated above.
 
 <!-- inventory:start -->
-1303 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
+1317 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
 
 | File and line | Function | Class | Proof or reason |
 | --- | --- | --- | --- |
@@ -448,6 +471,14 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/core/sandboxPolicy.vibe:9` | `current` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/core/sandboxPolicy.vibe:10` | `mockPolicy` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/core/sandboxPolicy.vibe:11` | `mockPolicy/current` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/core/sequenceDecision.vibe:7` | `promptEligible` | pure logic | Proved first matching post prefix, exact eligible source indexes in strict order, role/text projection, exclusion of failed/unfinished/tour answers and latest-turn window; model execution remains an Effect boundary. |
+| `src/core/sequenceDecision.vibe:15` | `firstEntryIndex` | pure logic | Proved first matching post prefix, exact eligible source indexes in strict order, role/text projection, exclusion of failed/unfinished/tour answers and latest-turn window; model execution remains an Effect boundary. |
+| `src/core/sequenceDecision.vibe:33` | `eligibleIndexes` | pure logic | Proved first matching post prefix, exact eligible source indexes in strict order, role/text projection, exclusion of failed/unfinished/tour answers and latest-turn window; model execution remains an Effect boundary. |
+| `src/core/sequenceDecision.vibe:52` | `prefixEnd` | pure logic | Proved first matching post prefix, exact eligible source indexes in strict order, role/text projection, exclusion of failed/unfinished/tour answers and latest-turn window; model execution remains an Effect boundary. |
+| `src/core/sequenceDecision.vibe:59` | `windowStart` | pure logic | Proved first matching post prefix, exact eligible source indexes in strict order, role/text projection, exclusion of failed/unfinished/tour answers and latest-turn window; model execution remains an Effect boundary. |
+| `src/core/sequenceDecision.vibe:74` | `selectModelTurns` | pure logic | Proved first matching post prefix, exact eligible source indexes in strict order, role/text projection, exclusion of failed/unfinished/tour answers and latest-turn window; model execution remains an Effect boundary. |
+| `src/core/sequenceDecision.vibe:78` | `selectModelTurns/callback@78` | pure logic | Proved first matching post prefix, exact eligible source indexes in strict order, role/text projection, exclusion of failed/unfinished/tour answers and latest-turn window; model execution remains an Effect boundary. |
+| `src/core/sequenceDecision.vibe:86` | `promptWindow` | pure logic | Proved first matching post prefix, exact eligible source indexes in strict order, role/text projection, exclusion of failed/unfinished/tour answers and latest-turn window; model execution remains an Effect boundary. |
 | `src/core/wire.vibe:44` | `conversationPath` | pure logic | Length and method/subroute admission are proved in protocolDecision; URI codecs remain unproved (uri-codec.ts). |
 | `src/core/wire.vibe:57` | `routeOf` | pure logic | Length and method/subroute admission are proved in protocolDecision; URI codecs remain unproved (uri-codec.ts). |
 | `src/core/wire.vibe:67` | `decodeSegment` | wiring | Length and method/subroute admission are proved in protocolDecision; URI codecs remain unproved (uri-codec.ts). |
@@ -692,43 +723,48 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/surfaces/cli.vibe:23` | `cli` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/surfaces/cli.vibe:26` | `cli/callback@26` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/surfaces/cli.vibe:29` | `cli/callback@29` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/surfaces/commands.vibe:29` | `ask` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:40` | `ask/callback@40` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:59` | `read` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:65` | `define` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:75` | `define/invoke` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:80` | `define/run` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:81` | `define/run/callback@81` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:89` | `define/render` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:99` | `callback@99` | pure logic | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:104` | `callback@104` | pure logic | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:105` | `callback@104/callback@105` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:154` | `brief` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:159` | `summaryOf` | pure logic | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commandDecision.vibe:15` | `isOwnPost` | pure logic | Proved own-post/reply correlation, exact ordered event-number accumulation, text/restart/terminal state, outcome and error mapping; UUID generation, streams and rendering are Effect/host boundaries. |
+| `src/surfaces/commandDecision.vibe:21` | `isOwnReply` | pure logic | Proved own-post/reply correlation, exact ordered event-number accumulation, text/restart/terminal state, outcome and error mapping; UUID generation, streams and rendering are Effect/host boundaries. |
+| `src/surfaces/commandDecision.vibe:35` | `collectAnswer` | pure logic | Proved own-post/reply correlation, exact ordered event-number accumulation, text/restart/terminal state, outcome and error mapping; UUID generation, streams and rendering are Effect/host boundaries. |
+| `src/surfaces/commandDecision.vibe:54` | `answerOutcome` | pure logic | Proved own-post/reply correlation, exact ordered event-number accumulation, text/restart/terminal state, outcome and error mapping; UUID generation, streams and rendering are Effect/host boundaries. |
+| `src/surfaces/commandDecision.vibe:62` | `commandError` | pure logic | Proved own-post/reply correlation, exact ordered event-number accumulation, text/restart/terminal state, outcome and error mapping; UUID generation, streams and rendering are Effect/host boundaries. |
+| `src/surfaces/commands.vibe:30` | `ask` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:36` | `ask/callback@36` | pure logic | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:49` | `read` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:55` | `define` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:65` | `define/invoke` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:70` | `define/run` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:71` | `define/run/callback@71` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:79` | `define/render` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:89` | `callback@89` | pure logic | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:94` | `callback@94` | pure logic | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:95` | `callback@94/callback@95` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:144` | `brief` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:149` | `summaryOf` | pure logic | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:154` | `summaryOf/callback@154` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
 | `src/surfaces/commands.vibe:164` | `summaryOf/callback@164` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:174` | `summaryOf/callback@174` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:175` | `summaryOf/callback@175` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:181` | `showHistory` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:184` | `showHistory/callback@184` | pure logic | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:193` | `plan` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:207` | `start` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:212` | `note` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:222` | `callback@222` | pure logic | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:224` | `callback@222/callback@224` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:225` | `callback@222/callback@225` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:226` | `callback@222/callback@226` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:230` | `callback@222/callback@230` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:241` | `callback@241` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:246` | `callback@246` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:252` | `callback@252` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:260` | `callback@260` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:260` | `callback@260` | pure logic | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:261` | `callback@261` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:264` | `callback@264` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:265` | `callback@265` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:268` | `callback@268` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:269` | `callback@269` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
-| `src/surfaces/commands.vibe:272` | `callback@272` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:165` | `summaryOf/callback@165` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:171` | `showHistory` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:174` | `showHistory/callback@174` | pure logic | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:183` | `plan` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:197` | `start` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:202` | `note` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:212` | `callback@212` | pure logic | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:214` | `callback@212/callback@214` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:215` | `callback@212/callback@215` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:216` | `callback@212/callback@216` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:220` | `callback@212/callback@220` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:231` | `callback@231` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:236` | `callback@236` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:242` | `callback@242` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:250` | `callback@250` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:250` | `callback@250` | pure logic | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:251` | `callback@251` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:254` | `callback@254` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:255` | `callback@255` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:258` | `callback@258` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:259` | `callback@259` | effectful shell | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
+| `src/surfaces/commands.vibe:262` | `callback@262` | wiring | Conversation/cursor admission calls proved protocolDecision predicates, retaining schema annotations. Command event accumulation and formatting remain unproved. |
 | `src/surfaces/manifest.vibe:8` | `callback@8` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/surfaces/manifest.vibe:22` | `callback@22` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/surfaces/mcp-entry.vibe:10` | `main` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
@@ -1170,10 +1206,11 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `worker/Budget.vibe:15` | `replyKey` | wiring | Calls proved admission/charge decisions; semaphore, ledger I/O and finite-round normalization are runtime boundaries (finite-round.ts). |
 | `worker/Budget.vibe:24` | `make` | effectful shell | Calls proved admission/charge decisions; semaphore, ledger I/O and finite-round normalization are runtime boundaries (finite-round.ts). |
 | `worker/Budget.vibe:28` | `make/admit` | effectful shell | Calls proved admission/charge decisions; semaphore, ledger I/O and finite-round normalization are runtime boundaries (finite-round.ts). |
-| `worker/Budget.vibe:35` | `make/spend` | effectful shell | Calls proved admission/charge decisions; semaphore, ledger I/O and finite-round normalization are runtime boundaries (finite-round.ts). |
-| `worker/Budget.vibe:36` | `make/spend/callback@36` | effectful shell | Calls proved admission/charge decisions; semaphore, ledger I/O and finite-round normalization are runtime boundaries (finite-round.ts). |
+| `worker/Budget.vibe:38` | `make/spend` | effectful shell | Calls proved admission/charge decisions; semaphore, ledger I/O and finite-round normalization are runtime boundaries (finite-round.ts). |
+| `worker/Budget.vibe:39` | `make/spend/callback@39` | effectful shell | Calls proved admission/charge decisions; semaphore, ledger I/O and finite-round normalization are runtime boundaries (finite-round.ts). |
 | `worker/budgetDecision.vibe:7` | `admits` | pure logic | Strict admission, nonnegative integer charge and exact total; proved under safe-sum precondition. |
 | `worker/budgetDecision.vibe:19` | `charge` | pure logic | Strict admission, nonnegative integer charge and exact total; proved under safe-sum precondition. |
+| `worker/budgetDecision.vibe:27` | `canCharge` | pure logic | Strict admission, nonnegative integer charge and exact total; proved under safe-sum precondition. |
 | `worker/HistoryObject.vibe:33` | `seeded` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
 | `worker/HistoryObject.vibe:38` | `storeOver` | wiring | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
 | `worker/HistoryObject.vibe:40` | `storeOver/load` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
@@ -1304,28 +1341,28 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `worker/ObjectStorage.vibe:43` | `ledgerOver/read/callback@43` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/ObjectStorage.vibe:46` | `ledgerOver/write` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `worker/ObjectStorage.vibe:47` | `ledgerOver/write/callback@47` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `worker/Reply.vibe:63` | `reasonOf` | wiring | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:68` | `failureReason` | wiring | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:94` | `dayOf` | pure logic | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:99` | `promptOf` | pure logic | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:107` | `promptOf/callback@107` | pure logic | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:129` | `tagOf` | pure logic | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:147` | `fold` | pure logic | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:171` | `agentOf` | wiring | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:195` | `agentOf/resolve` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:215` | `respond` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:219` | `respond/emit` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:220` | `respond/callback@220` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:245` | `run` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:247` | `run/callback@247` | wiring | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:255` | `compose` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:264` | `compose/callback@264` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:296` | `answer` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:304` | `answer/callback@304` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:315` | `answer/callback@315` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:322` | `answer/callback@322` | pure logic | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:331` | `callback@331` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:333` | `callback@331/callback@333` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:64` | `reasonOf` | wiring | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:69` | `failureReason` | wiring | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:95` | `dayOf` | pure logic | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:100` | `promptOf` | pure logic | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:108` | `promptOf/callback@108` | pure logic | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:130` | `tagOf` | pure logic | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:148` | `fold` | pure logic | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:172` | `agentOf` | wiring | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:196` | `agentOf/resolve` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:216` | `respond` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:220` | `respond/emit` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:221` | `respond/callback@221` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:246` | `run` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:248` | `run/callback@248` | wiring | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:256` | `compose` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:265` | `compose/callback@265` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:297` | `answer` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:305` | `answer/callback@305` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:316` | `answer/callback@316` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:323` | `answer/callback@323` | pure logic | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:332` | `callback@332` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:334` | `callback@332/callback@334` | effectful shell | Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved. |
 | `worker/replyReasons.vibe:9` | `reasonCode` | pure logic | Failure precedence and model reason codes; proved. |
 | `worker/replyReasons.vibe:22` | `failureCode` | pure logic | Failure precedence and model reason codes; proved. |
 | `worker/SandboxAccounts.vibe:20` | `request` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
@@ -1427,54 +1464,54 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `worker/SandboxTools.vibe:30` | `sandboxTools/handler` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `worker/SandboxTools.vibe:31` | `sandboxTools/handler` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `worker/SandboxTools.vibe:32` | `sandboxTools/handler` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Sequencer.vibe:41` | `attemptOf` | pure logic | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:42` | `attemptOf/callback@42` | pure logic | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:45` | `entryOf` | pure logic | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:46` | `entryOf/callback@46` | pure logic | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:50` | `make` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:55` | `make/state` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:65` | `make/record` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:75` | `make/locked` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:80` | `make/ensureDispatched` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:89` | `make/accepted` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:90` | `make/accepted/callback@90` | wiring | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:94` | `make/follow` | wiring | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:95` | `make/follow/callback@95` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:98` | `make/follow/callback@95/callback@98` | pure logic | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:102` | `make/follow/callback@95/callback@102` | pure logic | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:108` | `make/settle` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:109` | `make/settle/callback@109` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:129` | `make/post` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:130` | `make/post/callback@130` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:139` | `make/read` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:141` | `make/read/callback@141` | wiring | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:141` | `make/read/callback@141` | pure logic | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:144` | `make/read/callback@144` | pure logic | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:152` | `make/history` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:164` | `make/start` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:166` | `make/start/callback@166` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:175` | `make/append` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:176` | `make/append/callback@176` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:186` | `make/restart` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:187` | `make/restart/callback@187` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:201` | `make/finish` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:202` | `make/finish/callback@202` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:210` | `make/finish/callback@210` | pure logic | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:214` | `make/fail` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:215` | `make/fail/callback@215` | pure logic | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:219` | `make/startTour` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:220` | `make/startTour/callback@220` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:229` | `make/endTour` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:230` | `make/endTour/callback@230` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:237` | `make/running` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:237` | `make/running/callback@237` | wiring | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:240` | `make/open` | wiring | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:243` | `make/say` | wiring | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:243` | `make/say/callback@243` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:250` | `make/finishTour` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:252` | `make/finishTour/callback@252` | wiring | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:256` | `make/ended` | wiring | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
-| `worker/Sequencer.vibe:256` | `make/ended/callback@256` | wiring | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:42` | `attemptOf` | pure logic | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:43` | `attemptOf/callback@43` | pure logic | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:46` | `entryOf` | pure logic | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:47` | `entryOf/callback@47` | pure logic | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:51` | `make` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:56` | `make/state` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:66` | `make/record` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:76` | `make/locked` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:81` | `make/ensureDispatched` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:90` | `make/accepted` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:91` | `make/accepted/callback@91` | wiring | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:95` | `make/follow` | wiring | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:96` | `make/follow/callback@96` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:99` | `make/follow/callback@96/callback@99` | pure logic | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:103` | `make/follow/callback@96/callback@103` | pure logic | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:109` | `make/settle` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:110` | `make/settle/callback@110` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:130` | `make/post` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:131` | `make/post/callback@131` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:140` | `make/read` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:142` | `make/read/callback@142` | wiring | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:142` | `make/read/callback@142` | pure logic | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:145` | `make/read/callback@145` | pure logic | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:153` | `make/history` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:159` | `make/start` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:161` | `make/start/callback@161` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:170` | `make/append` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:171` | `make/append/callback@171` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:181` | `make/restart` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:182` | `make/restart/callback@182` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:196` | `make/finish` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:197` | `make/finish/callback@197` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:205` | `make/finish/callback@205` | pure logic | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:209` | `make/fail` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:210` | `make/fail/callback@210` | pure logic | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:214` | `make/startTour` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:215` | `make/startTour/callback@215` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:224` | `make/endTour` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:225` | `make/endTour/callback@225` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:232` | `make/running` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:232` | `make/running/callback@232` | wiring | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:235` | `make/open` | wiring | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:238` | `make/say` | wiring | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:238` | `make/say/callback@238` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:245` | `make/finishTour` | effectful shell | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:247` | `make/finishTour/callback@247` | wiring | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:251` | `make/ended` | wiring | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
+| `worker/Sequencer.vibe:251` | `make/ended/callback@251` | wiring | Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved. |
 | `worker/Tour.vibe:25` | `callback@25` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `worker/Tour.vibe:39` | `prompt` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/Tour.vibe:45` | `guide` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |

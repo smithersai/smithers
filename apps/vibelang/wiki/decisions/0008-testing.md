@@ -165,3 +165,7 @@ refusal. Four initial cases and the two follow-up cases failed before their fixe
 all five stops in exact order. This retains the first/second page and narration assertions without assuming earlier
 glow/layout checks finish before the tour advances. The final iframe, finished answer and released controls remain
 asserted; no request interception or synthetic events are used.
+
+**Accounting bounds and ordered context (0018).** Three failing-first budget regressions cover overflow, corrupt
+persisted totals and admission; the final safe charge/replay stays green. Model-history integration preserves the
+requested prefix and excludes tour narration. The shared CLI/MCP and sequence policies add 44 rejected mutants.

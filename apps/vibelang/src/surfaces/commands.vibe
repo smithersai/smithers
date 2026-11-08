@@ -1,3 +1,4 @@
+import { collectAnswer, answerOutcome, commandError, type AskProgress } from "./commandDecision.vibe"
 import { commandConversation } from "../core/protocolDecision.vibe"
 
 // One command registry; CLI parameters, MCP tools and discovery all derive from it (decision 0009).
@@ -31,29 +32,18 @@ effect function ask(input: AskInput) {
   const clientId = try IdGenerator.defaultIdGenerator.generateId()
   try factory.post(input.conversation, clientId, "Factory CLI", input.text)
   // Correlate by post identity even when an agent skips or reorders prompts.
-  let postId = ""
-  const numbers: Array<number> = []
-  let replyId = ""
-  let text = ""
-  let failure: string | undefined
-  let finished = false
-  try Stream.runForEachWhile(factory.events(input.conversation, 0), effect (event) => {
-    if (event.type === "Posted") {
-      if (event.clientId === clientId) { postId = event.id; numbers.push(event.seq) }
-    } else if (event.type === "ReplyStarted") {
-      if (postId !== "" && event.inReplyTo === postId) replyId = event.id
-    }
-    if (event.id !== replyId) return true
-    numbers.push(event.seq)
-    if (event.type === "ReplyDelta") text += event.text
-    if (event.type === "ReplyRestarted") text = ""
-    if (event.type === "ReplyFailed") failure = event.reason
-    if (event.type === "ReplyFinished") finished = true
-    return event.type !== "ReplyFinished" && event.type !== "ReplyFailed"
+  let progress: AskProgress = { post: "", reply: "", numbers: [], text: "", failed: false, failure: "", finished: false, listening: true }
+  try Stream.runForEachWhile(factory.events(input.conversation, 0), (event) => {
+    progress = collectAnswer(progress, event.type, event.id, event.seq,
+      event.type === "Posted" ? event.clientId : "", clientId,
+      event.type === "ReplyStarted" ? event.inReplyTo : "",
+      event.type === "ReplyDelta" ? event.text : "", event.type === "ReplyFailed" ? event.reason : "")
+    return succeed(progress.listening)
   })
-  if (failure !== undefined) throw new CommandError({ message: `The agent's reply failed: ${failure}` })
-  if (!finished) throw new CommandError({ message: "The conversation ended before the agent's reply finished." })
-  return { conversation: input.conversation, text, events: numbers }
+  const outcome = answerOutcome(progress.failed, progress.finished)
+  if (outcome === "failed") throw new CommandError({ message: `The agent's reply failed: ${progress.failure}` })
+  if (outcome === "ended") throw new CommandError({ message: "The conversation ended before the agent's reply finished." })
+  return { conversation: input.conversation, text: progress.text, events: progress.numbers }
 }
 
 effect function read(input: ReadInput) {
@@ -80,8 +70,8 @@ function define<const Name extends string, I extends Schema.ConstraintCodec<unkn
   const run = effect (value: unknown) => {
     return invoke(value) catch effect (error) => {
       if (error._tag === "CommandError") throw error
-      const message = error._tag === "Unavailable" ? error.reason
-        : error._tag === "Refused" ? `${refused}: ${error.refusal}` : error.message
+      const message = commandError(error._tag, error._tag === "Unavailable" ? error.reason : "",
+        refused, error._tag === "Refused" ? error.refusal : "", error._tag === "Unavailable" || error._tag === "Refused" ? "" : error.message)
       throw new CommandError({ message })
     }
   }

@@ -40,3 +40,57 @@ describe("the daily ledger's accounting", () => {
     })
   })
 })
+
+it.effect("usage overflow cannot corrupt the sum of recorded spends", () => effect {
+  const { storage, values } = try ledger()
+  const budget = try make(storage, Number.MAX_SAFE_INTEGER)
+  try budget.spend("first", Number.MAX_SAFE_INTEGER - 1)
+  const overflow = try Effect.exit(budget.spend("overflow", 3))
+  const unsafe = try Effect.exit(budget.spend("unsafe", Number.MAX_VALUE))
+  const saved = try Ref.get(values)
+  try Effect.try(() => {
+    expect(Exit.isFailure(overflow)).toBe(true)
+    expect(Exit.isFailure(unsafe)).toBe(true)
+    expect(saved).toEqual({ spent: Number.MAX_SAFE_INTEGER - 1, "reply/first": Number.MAX_SAFE_INTEGER - 1 })
+  })
+})
+
+it.effect("invalid persisted totals cannot be used for a new charge", () => effect {
+  const { storage, values } = try ledger()
+  try storage.write({ spent: -5 })
+  const budget = try make(storage, 100)
+  const result = try Effect.exit(budget.spend("reply", 3))
+  const saved = try Ref.get(values)
+  try Effect.try(() => {
+    expect(Exit.isFailure(result)).toBe(true)
+    expect(saved).toEqual({ spent: -5 })
+  })
+})
+
+it.effect("corrupt persisted totals cannot admit a model call", () => effect {
+  for (const total of [-5, -Infinity, NaN, Infinity, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
+    const { storage, values } = try ledger()
+    try storage.write({ spent: total })
+    const budget = try make(storage, 100)
+    const admission = try Effect.exit(budget.admit())
+    const saved = try Ref.get(values)
+    try Effect.try(() => {
+      expect(Exit.isFailure(admission)).toBe(true)
+      expect(saved).toEqual({ spent: total })
+    })
+  }
+})
+
+it.effect("the final safe charge is exact and its replay ignores oversized telemetry", () => effect {
+  const { storage, values } = try ledger()
+  const budget = try make(storage, Number.MAX_SAFE_INTEGER)
+  try budget.spend("first", Number.MAX_SAFE_INTEGER - 1)
+  try budget.spend("last", 1)
+  try budget.spend("last", Number.MAX_VALUE)
+  const admitted = try budget.admit()
+  const saved = try Ref.get(values)
+  try Effect.try(() => {
+    expect(admitted).toBe(false)
+    expect(saved).toEqual({ spent: Number.MAX_SAFE_INTEGER, "reply/first": Number.MAX_SAFE_INTEGER - 1, "reply/last": 1 })
+  })
+})

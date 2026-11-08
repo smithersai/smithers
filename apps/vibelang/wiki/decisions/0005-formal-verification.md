@@ -132,3 +132,7 @@ alone does not establish IEEE-754 behavior. Receiver proofs additionally cover g
 
 The current shared gate passes 161 obligations in ten modules and rejects 302 executable mutations; 0018 records
 the exact receipt composition and the remaining proof boundaries.
+
+**Shared surfaces and model context (0018).** The twelve-module gate now proves 182 obligations and rejects 346
+mutations. Ordered index witnesses establish exact model-context selection; shared CLI/MCP accumulation and safe
+budget admission/addition are proved and integrated into their Effect shells.
