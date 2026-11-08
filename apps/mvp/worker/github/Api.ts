@@ -89,7 +89,7 @@ import { type Actor, canAsk, refusesPersonOnly, Sessions } from "#vibelang/emitt
 import { readBounded } from "#vibelang/emitted/worker/Body"
 import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import * as PersonalStore from "../personal/Store.ts"
-import * as Dispatch from "#vibelang/emitted/worker/ci/Dispatch"
+import * as Dispatch from "../ci/Dispatch.ts"
 import { FlowStarter, StartUnavailable } from "#vibelang/emitted/worker/Flows"
 import * as Notifications from "../Notifications.ts"
 import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess"

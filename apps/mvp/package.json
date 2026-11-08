@@ -122,11 +122,6 @@
       "vibelang-source": "./worker/branch/People.vibe",
       "default": "./.vibelang/js/worker/branch/People.js"
     },
-    "#vibelang/emitted/worker/ci/Dispatch": {
-      "types": "./.vibe/declarations/worker/ci/Dispatch.d.vibe.ts",
-      "vibelang-source": "./worker/ci/Dispatch.vibe",
-      "default": "./.vibelang/js/worker/ci/Dispatch.js"
-    },
     "#vibelang/emitted/worker/ci/RepoFlow": {
       "types": "./.vibe/declarations/worker/ci/RepoFlow.d.vibe.ts",
       "vibelang-source": "./worker/ci/RepoFlow.vibe",
