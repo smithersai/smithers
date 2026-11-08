@@ -1,4 +1,5 @@
 // GitHub projection and action protocol; no credential, role or actor is accepted in an action payload.
+import { DurableText } from "./wire.vibe"
 export const IssueOperation = Schema.Literals(["read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft"])
 export const IssueNote = Schema.Struct({ author: Schema.String, text: Schema.String, event: Schema.Boolean })
 export const IssueRecord = Schema.Struct({
@@ -9,8 +10,8 @@ export const IssueRecord = Schema.Struct({
   comments: Schema.Number, notes: Schema.Array(IssueNote),
 })
 export const IssueRequest = Schema.Struct({
-  resumeRecovery: Schema.optionalKey(Schema.String), resumeOp: Schema.optionalKey(Schema.String), resumeKey: Schema.optionalKey(Schema.String), recovery: Schema.optionalKey(Schema.String), op: IssueOperation, number: Schema.Number, parent: Schema.Number, title: Schema.String, text: Schema.String,
-  assignee: Schema.String, example: Schema.String, prior: Schema.String, key: Schema.String,
+  resumeRecovery: Schema.optionalKey(DurableText), resumeOp: Schema.optionalKey(DurableText), resumeKey: Schema.optionalKey(DurableText), recovery: Schema.optionalKey(DurableText), op: IssueOperation, number: Schema.Number, parent: Schema.Number, title: DurableText, text: DurableText,
+  assignee: DurableText, example: DurableText, prior: DurableText, key: DurableText,
 })
 export const IssuesState = Schema.Struct({ saved: Schema.optionalKey(Schema.Struct({ request: IssueRequest, status: Schema.Literals(["running", "failed", "completed"]), unwritten: Schema.Boolean, selected: Schema.Number })), absoluteDates: Schema.optionalKey(Schema.Boolean), reviewers: Schema.optionalKey(Schema.Array(Schema.String)), seq: Schema.Number, connected: Schema.optionalKey(Schema.Boolean), selected: Schema.optionalKey(Schema.Number), assignees: Schema.optionalKey(Schema.Array(Schema.Struct({ login: Schema.String, label: Schema.String }))), items: Schema.Array(IssueRecord), role: Schema.optionalKey(Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])), draft: Schema.optionalKey(Schema.Struct({ title: Schema.String, summary: Schema.String, example: Schema.String, prior: Schema.String })) })
 

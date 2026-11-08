@@ -102,7 +102,15 @@ export effect function makeIssueFactory(identity: FixtureIdentity = "maintainer"
     try authorizeIssue(person.role, request.op)
     const { recovery: _recovery, ...payload } = request
     const executionId = try issueExecutionId(person.id || "public", request.op, request.key)
-    const result = try engine.execute(flow, { executionId, payload }).pipe(Effect.mapError((error) => error._tag === "IssueFailure" ? error : new IssueFailure({ reason: "failed" })))
+    // A reused key with a changed request is a typed conflict, never an engine defect: the engine refuses a held
+    // identity with an ExecutionIdentityConflict defect, and the caller that chose the id receives it as a failure.
+    const result = try engine.execute(flow, { executionId, payload }).pipe(
+      Effect.catchCause((cause): Effect.Effect<never, IssueFailure | FlowRuntime.ExecutionIdentityConflict | FlowRuntime.FlowCycleDetected> => {
+        const reason = cause.reasons.length === 1 ? cause.reasons.find(Cause.isDieReason) : undefined
+        return reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict ? Effect.fail(reason.defect) : Effect.failCause(cause)
+      }),
+      Effect.mapError((error) => error._tag === "IssueFailure" ? error : new IssueFailure({ reason: error._tag.endsWith("ExecutionIdentityConflict") ? "conflict" : "failed", unwritten: true })),
+    )
     if (participated !== undefined && (request.op === "new" || request.op === "comment")) try participated(person.id)
     return { ...result, reviewers: ["Will"], role: (try personOf(identity)).role }
   }
