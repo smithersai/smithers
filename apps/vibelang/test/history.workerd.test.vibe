@@ -7,7 +7,8 @@ import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { LiveMythical } from "../src/history/LiveMythical.vibe"
 import { Mythical } from "../src/history/MythicalHistory.vibe"
-import { History as HistorySchema } from "../src/history/schemas.vibe"
+import { PAGE } from "../src/history/pages.vibe"
+import { CommitPage, EpicPage, Matches, Outline } from "../src/history/schemas.vibe"
 import { serveApi, type Served } from "./support/workerd.vibe"
 
 const platform = Layer.mergeAll(NodeServices.layer, FetchHttpClient.layer)
@@ -29,15 +30,17 @@ describe("the History object in local workerd", () => {
     provide platform {
       const origin = api!.origin
       const response = try at(origin, "/api/history")
-      const history = try Schema.decodeUnknownEffect(HistorySchema)(try response.json)
-      const again = try Schema.decodeUnknownEffect(HistorySchema)(try (try at(origin, "/api/history")).json)
+      const text = try response.text
+      const outline = try Schema.decodeUnknownEffect(Schema.fromJsonString(Outline))(text)
+      const again = try Schema.decodeUnknownEffect(Outline)(try (try at(origin, "/api/history")).json)
       const runs = try (try at(origin, "/runs/history")).json
       try Effect.try(() => {
         expect(response.status).toBe(200)
-        expect(history.epics.length).toBe(11)
-        expect(history.real.length).toBeGreaterThan(6000)
-        expect(new Set(history.real.map((real) => real.sha)).size).toBe(history.real.length)
-        expect(again.seq).toBe(history.seq)
+        expect(outline.epics.length).toBe(11)
+        expect(outline.epics.reduce((total, epic) => total + epic.folds, 0)).toBeGreaterThan(6000)
+        // The first view is the outline alone, not the 3 MB history.
+        expect(text.length).toBeLessThan(16 * 1024)
+        expect(again.seq).toBe(outline.seq)
         expect(runs).toEqual([{ run_id: "bootstrap/first-start", status: "completed" }])
       })
     }
@@ -72,6 +75,30 @@ describe("the History object in local workerd", () => {
     }
   })
 
+  it.live("reads an epic by page, a commit in full and a search, each small", () => effect {
+    provide platform {
+      const origin = api!.origin
+      const outline = try Schema.decodeUnknownEffect(Outline)(try (try at(origin, "/api/history")).json)
+      const compiler = outline.epics.find((epic) => epic.title === "The compiler")!
+      const firstText = try (try at(origin, `/api/history/epics/${compiler.id}`)).text
+      const first = try Schema.decodeUnknownEffect(Schema.fromJsonString(EpicPage))(firstText)
+      const second = try Schema.decodeUnknownEffect(EpicPage)(try (try at(origin, `/api/history/epics/${compiler.id}?from=${PAGE}`)).json)
+      const commit = try Schema.decodeUnknownEffect(CommitPage)(try (try at(origin, `/api/history/commits/${first.commits[0]!.id}`)).json)
+      const none = try Schema.decodeUnknownEffect(CommitPage)(try (try at(origin, "/api/history/commits/m999999")).json)
+      const found = try Schema.decodeUnknownEffect(Matches)(try (try at(origin, `/api/history/search?q=${encodeURIComponent("register the computed-key match witness once")}`)).json)
+      try Effect.try(() => {
+        expect([first.from, first.total, first.commits.length]).toEqual([0, compiler.commits, PAGE])
+        expect(firstText.length).toBeLessThan(32 * 1024)
+        expect(second.from).toBe(PAGE)
+        expect(second.commits[0]!.rank).toBeGreaterThan(first.commits[PAGE - 1]!.rank)
+        expect(commit.commit!.id).toBe(first.commits[0]!.id)
+        expect(commit.real.length).toBe(first.commits[0]!.folds)
+        expect(none).toEqual({ seq: outline.seq, commit: null, real: [] })
+        expect(found.commits.map((each) => each.title)).toContain("fix(fuzz): register the computed-key match witness once")
+      })
+    }
+  })
+
   it.live("answers the protocol's errors: unknown writes, bad bodies and bad cursors", () => effect {
     provide platform {
       const origin = api!.origin
@@ -82,8 +109,12 @@ describe("the History object in local workerd", () => {
         (try at(origin, "/api/history/note", JSON.stringify({ id: "m1", section: "lies", text: "x" }))).status,
         (try at(origin, "/api/history/events?after=-1")).status,
         (try at(origin, "/api/history/plan", "x".repeat(40_000))).status,
+        (try at(origin, "/api/history/epics/e1?from=-1")).status,
+        (try at(origin, "/api/history/epics/x1")).status,
+        (try at(origin, "/api/history/commits/m1/notes")).status,
+        (try at(origin, "/api/history/plan")).status,
       ]
-      try Effect.try(() => expect(statuses).toEqual([404, 400, 400, 400, 400, 413]))
+      try Effect.try(() => expect(statuses).toEqual([404, 400, 400, 400, 400, 413, 404, 404, 404, 404]))
     }
   })
 
@@ -92,13 +123,16 @@ describe("the History object in local workerd", () => {
       const result = try effect {
         provide LiveMythical(api!.origin) {
           const mythical = try Mythical
-          const history = try mythical.read()
+          const outline = try mythical.outline()
+          const page = try mythical.epic("e1", 0)
+          const commit = try mythical.commit(page.commits[0]!.id)
+          const matches = try mythical.search(page.commits[0]!.title)
           const refusal = mythical.plan({ how: "append", epic: "e1", newEpic: "", target: "", title: "x", task: "" }) catch (error) =>
             error._tag === "Refused" ? error.refusal : error._tag
-          return { epics: history.epics.length, refusal }
+          return { epics: outline.epics.length, page: page.commits.length === Math.min(PAGE, outline.epics[0]!.commits), found: matches.commits.some((each) => each.id === commit.commit?.id), refusal }
         }
       }
-      try Effect.try(() => expect(result).toEqual({ epics: 11, refusal: "forbidden" }))
+      try Effect.try(() => expect(result).toEqual({ epics: 11, page: true, found: true, refusal: "forbidden" }))
     }
   })
 })

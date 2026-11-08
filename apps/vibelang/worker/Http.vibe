@@ -10,6 +10,7 @@ import type { ReadSnapshot } from "../src/core/schemas.vibe"
 import { HEALTH_PATH, MAX_NAME, MAX_POST_BYTES, PostBody, routeOf, type Route } from "../src/core/wire.vibe"
 import { HistoryEvent as HistoryEventSchema } from "../src/history/schemas.vibe"
 import type { Event as HistoryEvent } from "../src/history/mythical.vibe"
+import type { PageRequest } from "../src/history/pages.vibe"
 import {
   ApproveBody, FoldBody, historyRouteOf, MAX_WRITE_BYTES, NoteBody, PlanBody, StartBody, statusOf, type HistoryRoute, type Write,
 } from "../src/history/wire.vibe"
@@ -29,8 +30,8 @@ export interface Conversations {
 
 /** VibeLang's mythical history, as the API reaches its History object (wiki/decisions/0020-mythical-history.md). */
 export interface Histories {
-  /** The whole history, as its schema encodes it. */
-  read(): unknown!Unreachable
+  /** One page of the history (pages.vibe), as its schema encodes it. */
+  page(request: PageRequest): unknown!Unreachable
   /** Runs the write's flow with its decoded body: what it wrote, or why it was refused. */
   write(write: Write, body: unknown): { readonly id: string; readonly folded: number; readonly refusal: string | null }!Unreachable
   /** The object's event stream, answering the current request. */
@@ -104,14 +105,14 @@ function decodeWrite(write: Write, text: string): unknown!Schema.SchemaError {
   }
 }
 
-/** Answers a history request: a read, the event stream, or a write's flow, its body decoded by the write's schema. */
+/** Answers a history request: a page, the event stream, or a write's flow, its body decoded by the write's schema. */
 effect function answerHistory(route: HistoryRoute, url: URL, histories: Histories) {
   const request = try HttpServerRequest.HttpServerRequest
-  if (route.kind === "history-read") return json(try histories.read())
   if (route.kind === "history-events") {
     if (afterOf(url) === undefined) return json({ error: "after" }, 400)
     return try histories.events()
   }
+  if (route.kind !== "history-write") return json(try histories.page(route.page))
   const length = Number(request.headers["content-length"] ?? "0")
   if (!(length >= 0 && length <= MAX_WRITE_BYTES)) return json({ error: "body size" }, 413)
   const text = request.text catch () => ""
@@ -126,7 +127,7 @@ export effect function handle(conversations: Conversations, histories: Histories
   const request = try HttpServerRequest.HttpServerRequest
   const url = new URL(request.url, "http://api.invalid")
   if (url.pathname === HEALTH_PATH) return json({ ok: true, agent: "live" })
-  const history = historyRouteOf(request.method, url.pathname)
+  const history = historyRouteOf(request.method, url.pathname, url.searchParams)
   if (history !== undefined) {
     const answered = try withSpan(effect {
       return answerHistory(history, url, histories) catch (error) => json({ error: error.what }, 503)

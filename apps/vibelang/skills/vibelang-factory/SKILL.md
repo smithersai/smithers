@@ -47,6 +47,8 @@ your lane, and note what you tried:
 ```sh
 vibelang-factory --json history                          # epics and work not landed
 vibelang-factory --json history --commit m4              # one commit's notes and real commits
+vibelang-factory --json history --epic e4 --from 50      # an epic's commits, 50 at a time
+vibelang-factory --json history --search "computed-key"  # commits by title
 vibelang-factory plan "fix(compiler): ..." --epic e4 --task "issue 412"
 vibelang-factory plan "docs: ..." --before m12           # insert; --amend m12 reopens a landed one
 vibelang-factory start m5704 --lane my-lane

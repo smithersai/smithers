@@ -65,10 +65,20 @@ once (execution `bootstrap/first-start`); each write runs its flow in the reques
 the engine in the object's SQLite. `src/history/wire.vibe`:
 
 ```
-GET  /api/history                                  the whole history
+GET  /api/history                                  the outline: epics with counts, work not landed, main
+GET  /api/history/epics/<e>?from=<n>               50 of an epic's commits in stack order, from the n-th
+GET  /api/history/commits/<m>                      one commit in full: its notes and the real commits it folds
+GET  /api/history/search?q=<text>                  at most 100 commits whose title has the text, or whose id it is
 GET  /api/history/events?after=<seq>               Server-Sent Events, as a conversation's (0010)
 POST /api/history/<plan|start|note|approve|fold>   200 {id, folded} | 409 {refusal} | 403 forbidden | 503 unavailable
 ```
+
+**Read by page.** A reader asks only for what it shows (`src/history/pages.vibe`): each page is a pure function of the
+history, computed in the History object beside it, and carries the `seq` it reflects. A follower reads only the events
+after its cursor (`Store.since`), never the snapshot again. Before (production, 2026-11-07 23:10 and 23:34 PST): one
+read of 2,740,828 bytes (567,902 gzipped) in 0.28 to 3.2 s. After: the outline is under 16 KiB, an epic's page and
+a commit under 32 KiB each (`test/pages.test.vibe` checks VibeLang's own history; `test/history.workerd.test.vibe`
+the routes).
 
 `LiveMythical` is the `Mythical` layer over it. A live Fold reads GitHub's commit list of `smithersai/vibelang`
 (`worker/MainLog.vibe`, at most ten pages of 100) and walks first parents back to the last folded commit; a merge's side
@@ -77,8 +87,8 @@ deployment sets it, raises GitHub's rate limit. Authorization is itself a journa
 as an acceptance is.
 
 **Observability.** `vibelang.history.<step>` logs and `vibelang_history_steps{step, outcome}` counts, the flows'
-`vibelang.history.*` spans, and the API's `vibelang_api_requests{route}` with `history-read`, `history-events` and
-`history-write`. None carries a title, a task, a note or a name.
+`vibelang.history.*` spans, and the API's `vibelang_api_requests{route}` with `history-outline`, `history-epic`,
+`history-commit`, `history-search`, `history-events` and `history-write`. None carries a title, a task, a note or a name.
 
 ## Flows and their least roles
 
@@ -105,12 +115,13 @@ the trailer names, else as a new commit appended to the epic of its scope.
 
 `/history` is its own Foldkit program (`src/web/historyApp.vibe`, `historyView.vibe`), the designer's design
 (`wiki/designs/mythical/`) as a maximized pane whose − returns to the chat; the chat's top bar links to it. It reads
-the history once, then applies its events with the machine's `apply`; a gap reads again. Each button runs a flow
+the outline, then each epic's pages, a commit, or a filter's matches as they are shown, and follows events from the
+outline's `seq`; each event reads the outline again, one read at a time, and with it what is shown. Each button runs a flow
 through `Mythical`, which the page selects as the chat selects `Factory` (live when `/api/health` says so, else the
 mock, downloaded only then). Where the reader is lives in the hash: `#e4` an epic, `#m12` a commit, so links and Back
 work.
 
-- **List:** epics as collapsible cards with their counts, 50 commits each until Show all; open work on top
+- **List:** epics as collapsible cards with their counts, 50 commits a page with Show more; open work on top
   (planned, working, approved); a filter over every title; "Folded through `<sha>`" as a badge linking the commit.
 - **Commit:** title, state, id, task and lane; its progress (planned, working, approved, landed on main) with Start
   and Approve where the role allows; the note's four sections with `(none)` when empty; its real commits on GitHub.
@@ -131,6 +142,8 @@ like any agent. Live, the server decides who asks. The in-chat agent gains these
 
 ```sh
 vibelang-factory --json history --commit m4
+vibelang-factory --json history --epic e4 --from 50
+vibelang-factory --json history --search "computed-key"
 vibelang-factory plan "fix(compiler): ..." --epic e4 --task "issue 412"
 vibelang-factory start m5704 --lane my-lane
 vibelang-factory note m5704 --section tried "A cache; it went stale."
@@ -189,4 +202,3 @@ The proof found two bugs before any test did: `apply` accepted a plan into the e
 - A push webhook for Fold, and lane reports as notes: the queue lives on a private server; both need tokens (0019).
 - Moving or dropping a planned commit, splitting or reordering epics: no ruling asks; the log has room for them.
 - Diffs on a commit's page: the projection holds no trees; the page links each real commit on GitHub.
-- Paging: `read` returns the whole history (3 MB of JSON, about 0.5 MB compressed).

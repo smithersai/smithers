@@ -10,7 +10,8 @@ export interface KeyValue {
   put(key: string, value: unknown): Promise<void>
   put(entries: Record<string, unknown>): Promise<void>
   delete(key: string): Promise<boolean>
-  list(options: { readonly prefix: string }): Promise<Map<string, unknown>>
+  /** Keys with `prefix` in order, from `start` when given. */
+  list(options: { readonly prefix: string; readonly start?: string }): Promise<Map<string, unknown>>
   setAlarm(scheduledTime: number): Promise<void>
   deleteAlarm(): Promise<void>
 }

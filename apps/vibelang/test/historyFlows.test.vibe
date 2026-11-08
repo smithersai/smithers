@@ -3,8 +3,9 @@
 // from planned to landed, and what folds where.
 import { describe, expect, it } from "@effect/vitest"
 import { landedSha, MockMythical } from "../src/history/MockMythical.vibe"
-import type { Event, History } from "../src/history/mythical.vibe"
+import type { Commit, Event, History } from "../src/history/mythical.vibe"
 import { Mythical, Refused, Unavailable } from "../src/history/MythicalHistory.vibe"
+import { commitPageOf, outlineOf } from "../src/history/pages.vibe"
 import type { Principal, Role } from "../src/history/roles.vibe"
 import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
 
@@ -32,18 +33,53 @@ effect function refusalOf<A>(write: A!(Refused | Unavailable)) {
   return Effect.map(write, () => "") catch (error) => error._tag === "Refused" ? error.refusal : error._tag
 }
 
-/** The ids of the stack in order. */
-function stack(history: History): ReadonlyArray<string> {
-  const order = new Map(history.epics.map((epic, index) => [epic.id, index]))
-  return [...history.commits].sort((a, b) => (order.get(a.epic)! - order.get(b.epic)!) || a.rank - b.rank).map((commit) => commit.id)
+/** The ids of the stack in order, read as the page reads it: each epic of the outline, page by page. */
+effect function stack() {
+  const mythical = try Mythical
+  const ids: Array<string> = []
+  for (const epic of (try mythical.outline()).epics) {
+    let from = 0
+    while (true) {
+      const page = try mythical.epic(epic.id, from)
+      ids.push(...page.commits.map((commit) => commit.id))
+      from += page.commits.length
+      if (page.commits.length === 0 || from >= page.total) break
+    }
+  }
+  return ids
+}
+
+/** One commit in full, read by its page; it must exist. */
+effect function commit(id: string) {
+  const found = (try (try Mythical).commit(id)).commit
+  if (found === null) return try Effect.die(`no ${id}`)
+  return found as Commit
+}
+
+/** What a reader sees of the whole history: its outline and every commit of `small()` read by its page. */
+effect function seen() {
+  const mythical = try Mythical
+  const outline = try mythical.outline()
+  const pages = [
+    try mythical.commit("m1"),
+    try mythical.commit("m2"),
+    try mythical.commit("m3"),
+  ]
+  return { outline, pages }
+}
+
+/** What a reader sees of `history`, computed as the history computes it. */
+function seenOf(history: History) {
+  return { outline: outlineOf(history), pages: ["m1", "m2", "m3"].map((id) => commitPageOf(history, id)) }
 }
 
 describe("the bootstrap", () => {
   it.effect("loads the bootstrapped history once, as the first start", () => withHistory(as("viewer"), effect {
-    const history = try (try Mythical).read()
+    const read = try seen()
+    const order = try stack()
     try Effect.try(() => {
-      expect(history).toEqual(small())
-      expect(stack(history)).toEqual(["m1", "m2", "m3"])
+      expect(read).toEqual(seenOf(small()))
+      expect(order).toEqual(["m1", "m2", "m3"])
     })
   }))
 })
@@ -53,12 +89,14 @@ describe("planning", () => {
     const mythical = try Mythical
     const appended = try mythical.plan({ how: "append", epic: "e1", newEpic: "", target: "", title: "fix(compiler): four", task: "t1" })
     const opened = try mythical.plan({ how: "append", epic: "", newEpic: "Sandboxes", target: "", title: "feat(sandbox): start", task: "t2" })
-    const history = try mythical.read()
+    const order = try stack()
+    const outline = try mythical.outline()
+    const m4 = try commit("m4")
     try Effect.try(() => {
       expect([appended, opened]).toEqual(["m4", "m5"])
-      expect(stack(history)).toEqual(["m1", "m2", "m4", "m3", "m5"])
-      expect(history.epics.map((epic) => epic.title)).toEqual(["The compiler", "Docs, guides and the site", "Sandboxes"])
-      expect(history.commits.find((commit) => commit.id === "m4")).toMatchObject({ state: "planned", task: "t1", epic: "e1" })
+      expect(order).toEqual(["m1", "m2", "m4", "m3", "m5"])
+      expect(outline.epics.map((epic) => epic.title)).toEqual(["The compiler", "Docs, guides and the site", "Sandboxes"])
+      expect(m4).toMatchObject({ state: "planned", task: "t1", epic: "e1" })
     })
   }))
 
@@ -67,19 +105,19 @@ describe("planning", () => {
     const amend = { how: "amend" as const, epic: "", newEpic: "", target: "m1", title: "", task: "t9" }
     const contributor = try withHistory(as("contributor"), effect {
       const mythical = try Mythical
-      return { insert: try refusalOf(mythical.plan(insert)), amend: try refusalOf(mythical.plan(amend)), history: try mythical.read() }
+      return { insert: try refusalOf(mythical.plan(insert)), amend: try refusalOf(mythical.plan(amend)), seen: try seen() }
     })
     const maintainer = try withHistory(as("maintainer"), effect {
       const mythical = try Mythical
       const id = try mythical.plan(insert)
       try mythical.plan(amend)
-      return { id, history: try mythical.read() }
+      return { id, order: try stack(), m1: try commit("m1") }
     })
     try Effect.try(() => {
-      expect(contributor).toEqual({ insert: "forbidden", amend: "forbidden", history: small() })
+      expect(contributor).toEqual({ insert: "forbidden", amend: "forbidden", seen: seenOf(small()) })
       expect(maintainer.id).toBe("m4")
-      expect(stack(maintainer.history)).toEqual(["m1", "m4", "m2", "m3"])
-      expect(maintainer.history.commits.find((commit) => commit.id === "m1")).toMatchObject({ state: "planned", task: "t9" })
+      expect(maintainer.order).toEqual(["m1", "m4", "m2", "m3"])
+      expect(maintainer.m1).toMatchObject({ state: "planned", task: "t9" })
     })
   })
 
@@ -120,17 +158,18 @@ describe("a task from planned to landed", () => {
     try mythical.approve(id)
     const folded = try mythical.fold()
     const again = try mythical.fold()
-    const history = try mythical.read()
-    const commit = history.commits.find((each) => each.id === id)!
+    const page = try mythical.commit(id)
+    const outline = try mythical.outline()
     try Effect.try(() => {
       expect([before, folded, again]).toEqual([0, 1, 0])
-      expect(commit).toMatchObject({ state: "landed", task: "", lane: "" })
-      expect(commit.notes).toEqual([
+      expect(page.commit).toMatchObject({ state: "landed", task: "", lane: "" })
+      expect(page.commit!.notes).toEqual([
         { section: "tried", text: "A table first; too wide on phones.", by: "Ada" },
         { section: "evidence", text: "approved", by: "Ada" },
       ])
-      expect(history.real[history.real.length - 1]).toMatchObject({ sha: landedSha(id), mythical: id })
-      expect(history.main).toBe(landedSha(id))
+      expect(page.real).toEqual([{ sha: landedSha(id), change: "", title: "docs: four", mythical: id }])
+      expect(outline.main).toBe(landedSha(id))
+      expect(outline.open).toEqual([])
     })
   }))
 
@@ -141,11 +180,11 @@ describe("a task from planned to landed", () => {
     try mythical.note(id, "evidence", "Tests: 3 passed")
     const approve = try refusalOf(mythical.approve(id))
     const fold = try refusalOf(mythical.fold())
-    const history = try mythical.read()
+    const found = try commit(id)
     try Effect.try(() => {
       expect([approve, fold]).toEqual(["forbidden", "forbidden"])
-      expect(history.commits.find((each) => each.id === id)).toMatchObject({ state: "working" })
-      expect(history.commits.find((each) => each.id === id)!.notes).toEqual([{ section: "evidence", text: "Tests: 3 passed", by: "Ada (agent)" }])
+      expect(found).toMatchObject({ state: "working" })
+      expect(found.notes).toEqual([{ section: "evidence", text: "Tests: 3 passed", by: "Ada (agent)" }])
     })
   }))
 })
@@ -153,7 +192,7 @@ describe("a task from planned to landed", () => {
 describe("following", () => {
   it.effect("replays the events after a cursor, then each new one", () => withHistory(as("contributor"), effect {
     const mythical = try Mythical
-    const seq = (try mythical.read()).seq
+    const seq = (try mythical.outline()).seq
     const seen = try Effect.forkChild(Stream.runCollect(Stream.take(mythical.events(seq), 2)))
     try mythical.plan({ how: "append", epic: "e1", newEpic: "", target: "", title: "fix(compiler): four", task: "" })
     try mythical.start("m4", "lane")

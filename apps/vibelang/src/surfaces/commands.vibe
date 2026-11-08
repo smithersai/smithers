@@ -5,8 +5,8 @@ import { Argument, Flag, type Command } from "effect/cli"
 import { IdGenerator, Tool } from "effect/ai"
 import { Factory } from "../core/Factory.vibe"
 import { Entry, Seq } from "../core/schemas.vibe"
-import type { History } from "../history/mythical.vibe"
 import { Mythical } from "../history/MythicalHistory.vibe"
+import type { CommitPage, Head, Outline } from "../history/pages.vibe"
 
 export schema error CommandError { readonly message: string }
 
@@ -112,7 +112,12 @@ export const HISTORY_REFUSED = "The history refused it"
 const Id = Schema.String.check(Schema.isMinLength(1))
 const optional = Schema.String.pipe(Schema.withDecodingDefaultKey(succeed("")))
 
-export schema HistoryInput { readonly commit: optional }
+export schema HistoryInput {
+  readonly commit: optional
+  readonly epic: optional
+  readonly from: after
+  readonly search: optional
+}
 export schema HistoryEpic { readonly id: string; readonly title: string; readonly commits: number }
 export schema HistoryCommit { readonly id: string; readonly state: string; readonly title: string }
 export schema HistoryDetail {
@@ -129,6 +134,9 @@ export schema HistoryOutput {
   readonly main: string
   readonly epics: ReadonlyArray<HistoryEpic>
   readonly open: ReadonlyArray<HistoryCommit>
+  /** An epic's page (`--epic`, `--from`) or a search's matches (`--search`); `total` is how many there are in all. */
+  readonly commits: ReadonlyArray<HistoryCommit>
+  readonly total: number
   readonly commit: HistoryDetail | null
 }
 export schema PlanInput {
@@ -143,33 +151,43 @@ export schema StartInput { readonly id: Id; readonly lane: Id }
 export schema NoteInput { readonly id: Id; readonly section: "tried" | "evidence" | "superseded"; readonly text: string }
 export schema WrittenOutput { readonly id: string }
 
-/** The history as an agent reads it: its epics with counts, the work not yet landed, and one commit in full. */
-export function summaryOf(history: History, commit: string) {
-  const counts = new Map<string, number>()
-  for (const each of history.commits) counts.set(each.epic, (counts.get(each.epic) ?? 0) + 1)
-  const found = history.commits.find((each) => each.id === commit)
-  const brief = (each: History["commits"][number]) => ({ id: each.id, state: each.state, title: each.title })
+function brief(commit: Head) {
+  return { id: commit.id, state: commit.state, title: commit.title }
+}
+
+/** The history as an agent reads it: the outline, an epic's page or a search's matches, and one commit in full. */
+function summaryOf(outline: Outline, commits: ReadonlyArray<Head>, total: number, page: CommitPage | undefined) {
+  const found = page?.commit ?? null
   return {
-    seq: history.seq,
-    main: history.main,
-    epics: history.epics.map((epic) => ({ id: epic.id, title: epic.title, commits: counts.get(epic.id) ?? 0 })),
-    open: history.commits.filter((each) => each.state !== "landed").map(brief),
-    commit: found === undefined ? null : {
-      ...brief(found),
+    seq: outline.seq,
+    main: outline.main,
+    epics: outline.epics.map((epic) => ({ id: epic.id, title: epic.title, commits: epic.commits })),
+    open: outline.open.map(brief),
+    commits: commits.map(brief),
+    total,
+    commit: found === null ? null : {
+      id: found.id,
+      state: found.state,
+      title: found.title,
       task: found.task,
       lane: found.lane,
       notes: found.notes.map((each) => `${each.section}: ${each.text} (${each.by})`),
-      real: history.real.filter((real) => real.mythical === found.id).map((real) => real.sha),
+      real: page!.real.map((real) => real.sha),
     },
   }
 }
 
+/** Reads only what was asked: the outline, then an epic's page or a search, and a commit. */
 effect function showHistory(input: HistoryInput) {
-  const history = try (try Mythical).read()
-  if (input.commit !== "" && !history.commits.some((each) => each.id === input.commit)) {
-    throw new CommandError({ message: `No mythical commit ${input.commit}.` })
-  }
-  return summaryOf(history, input.commit)
+  const mythical = try Mythical
+  const outline = try mythical.outline()
+  if (input.epic !== "" && !outline.epics.some((each) => each.id === input.epic)) throw new CommandError({ message: `No epic ${input.epic}.` })
+  const listed = input.epic === "" ? undefined : try mythical.epic(input.epic, input.from)
+  const matched = input.epic !== "" || input.search === "" ? undefined : try mythical.search(input.search)
+  const page = input.commit === "" ? undefined : try mythical.commit(input.commit)
+  if (page !== undefined && page.commit === null) throw new CommandError({ message: `No mythical commit ${input.commit}.` })
+  const commits = listed?.commits ?? matched?.commits ?? []
+  return summaryOf(outline, commits, listed?.total ?? commits.length, page)
 }
 
 effect function plan(input: PlanInput) {
@@ -196,12 +214,16 @@ effect function note(input: NoteInput) {
   return { id: input.id }
 }
 
-export const ShowHistory = define("history", "Read VibeLang's mythical history: epics, work not landed, one commit in full.", HistoryInput, HistoryOutput, {
+export const ShowHistory = define("history", "Read VibeLang's mythical history: epics, work not landed, an --epic's commits by page (--from), a --search, one --commit in full.", HistoryInput, HistoryOutput, {
   commit: Flag.String("commit").pipe(Flag.withDefault("")),
+  epic: Flag.String("epic").pipe(Flag.withDefault("")),
+  from: Flag.Int("from").pipe(Flag.withDefault(0), Flag.withSchema(Seq)),
+  search: Flag.String("search").pipe(Flag.withDefault("")),
 }, showHistory, (output) => [
   `Folded through ${output.main} (event ${output.seq}).`,
   ...output.epics.map((epic) => `${epic.id}  ${epic.title}  ${epic.commits}`),
   ...output.open.map((commit) => `${commit.id}  ${commit.state}  ${commit.title}`),
+  ...(output.commits.length === 0 ? [] : ["", ...output.commits.map((commit) => `${commit.id}  ${commit.state}  ${commit.title}`), `${output.commits.length} of ${output.total}`]),
   ...(output.commit === null ? [] : [
     "", `${output.commit.id}  ${output.commit.state}  ${output.commit.title}`,
     ...output.commit.notes,

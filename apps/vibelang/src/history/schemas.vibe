@@ -80,3 +80,33 @@ export schema Seed {
 
 /** A seed as the generator writes it: JSON text. */
 export const SeedJson = Schema.fromJsonString(Seed)
+
+// ── pages (pages.vibe): what a reader asks for and gets ─────────────────────────────────────────────────────────────
+
+export schema Head {
+  readonly id: string
+  readonly epic: string
+  readonly rank: number
+  readonly title: string
+  readonly state: "planned" | "working" | "approved" | "landed"
+  readonly task: string
+  readonly lane: string
+  readonly notes: number
+  readonly folds: number
+}
+export schema EpicCount { readonly id: string; readonly title: string; readonly commits: number; readonly folds: number }
+export schema Outline {
+  readonly seq: Seq
+  readonly main: string
+  readonly epics: ReadonlyArray<EpicCount>
+  readonly open: ReadonlyArray<Head>
+}
+export schema EpicPage {
+  readonly seq: Seq
+  readonly epic: string
+  readonly from: number
+  readonly total: number
+  readonly commits: ReadonlyArray<Head>
+}
+export schema CommitPage { readonly seq: Seq; readonly commit: Commit | null; readonly real: ReadonlyArray<Real> }
+export schema Matches { readonly seq: Seq; readonly query: string; readonly commits: ReadonlyArray<Head> }

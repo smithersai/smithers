@@ -32,7 +32,10 @@ export function BrowserMythical(origin: string, forceMock: boolean, principal: P
     const ready = Fiber.join(selected)
     const mythical: Mythical.Shape = {
       get mode() { return current },
-      read: effect () => (try (try ready).mythical.read()),
+      outline: effect () => (try (try ready).mythical.outline()),
+      epic: effect (id, from) => (try (try ready).mythical.epic(id, from)),
+      commit: effect (id) => (try (try ready).mythical.commit(id)),
+      search: effect (query) => (try (try ready).mythical.search(query)),
       events: (after) => Stream.unwrap(Effect.map(ready, ({ mythical }) => mythical.events(after))),
       plan: effect (request) => (try (try ready).mythical.plan(request)),
       start: effect (id, lane) => { try (try ready).mythical.start(id, lane) },

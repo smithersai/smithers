@@ -9,6 +9,7 @@ import { CloudflareRuntime, ExecutionObject, ObjectDatabase } from "@smthrs/plat
 import { Tour, toured, Tours, walk } from "../../src/core/flows.vibe"
 import { FetchHttpClient, HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { Sequencer as HistorySequencer } from "../../src/history/Sequencer.vibe"
+import { type PageRequest, pageOf } from "../../src/history/pages.vibe"
 import type { Write } from "../../src/history/wire.vibe"
 import * as HistoryObject from "../../worker/HistoryObject.vibe"
 import { githubMain } from "../../worker/MainLog.vibe"
@@ -174,7 +175,10 @@ export class History {
     const sequencer = await this.sequencer
     const url = new URL(request.url)
     if (url.pathname.endsWith("/events")) return HttpServerResponse.toWeb(eventStream(sequencer.follow(afterOf(url) ?? 0)))
-    if (url.pathname === "/read") return json(await Effect.runPromise(sequencer.read()))
+    if (url.pathname === "/page") {
+      const page = await request.json() as PageRequest
+      return json(pageOf(await Effect.runPromise(sequencer.read()), page))
+    }
     // The engine's runs in this object's SQLite, so the suite sees each write ran as a flow.
     if (url.pathname === "/runs") {
       return json(this.state.storage.sql.exec("SELECT run_id, status FROM flows_runs ORDER BY created_at_ms, run_id").toArray())
@@ -215,7 +219,7 @@ export default {
           })),
     }
     const histories: Histories = {
-      read: () => reach("history", () => call(env.HISTORY, "vibelang", "read", {})),
+      page: (request) => reach("history", () => call(env.HISTORY, "vibelang", "page", request)),
       write: (name, body) =>
         reach("history", () => call(env.HISTORY, "vibelang", "write", { name, body }) as Promise<HistoryObject.Answered>),
       events: () =>

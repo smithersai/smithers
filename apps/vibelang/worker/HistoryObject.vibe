@@ -41,6 +41,10 @@ export function storeOver(storage: KeyValue): Store {
       const events = [...(try promise(() => storage.list({ prefix: EVENT }))).values()] as ReadonlyArray<Event>
       return { base, events }
     },
+    since: effect (after: number) => {
+      const listed = try promise(() => storage.list({ prefix: EVENT, start: eventKey(after + 1) }))
+      return [...listed.values()] as ReadonlyArray<Event>
+    },
     append: effect (event: Event) => {
       try promise(() => storage.put({ [eventKey(event.seq)]: event }))
     },

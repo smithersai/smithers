@@ -17,6 +17,31 @@ async function open(page: Page, query = "") {
 }
 
 test.describe("the history page", () => {
+  test("shows the outline first, reading only what it shows", async ({ page }) => {
+    // Against a live deployment (E2E_BASE_URL) the page reads the History object; on the preview, the mock.
+    const reads: Array<{ readonly path: string; readonly bytes: number }> = []
+    page.on("response", async (response) => {
+      const url = new URL(response.url())
+      if (!url.pathname.startsWith("/api/history") || url.pathname.endsWith("/events")) return
+      reads.push({ path: url.pathname + url.search, bytes: (await response.body().catch(() => Buffer.alloc(0))).length })
+    })
+    const begin = Date.now()
+    await page.goto("/history")
+    const compiler = page.getByRole("button", { name: /The compiler/ })
+    await expect(compiler).toBeVisible({ timeout: 20_000 })
+    const shown = Date.now() - begin
+    const mode = await page.locator("[data-surface=history]").getAttribute("data-mode")
+    await compiler.click()
+    await expect(page.getByRole("list", { name: "The compiler" }).getByRole("link")).toHaveCount(50)
+    await page.getByRole("list", { name: "The compiler" }).getByRole("link").first().click()
+    await expect(page.locator(".mh-note-sections")).toBeVisible()
+    if (mode !== "live") return
+    expect(shown).toBeLessThan(1000)
+    expect(reads.map((read) => read.path.replace(/\d+/g, "N"))).toEqual(["/api/history", "/api/history/epics/eN?from=N", "/api/history/commits/mN"])
+    for (const read of reads) expect(read.bytes).toBeLessThan(32 * 1024)
+  })
+
+
   test("lists VibeLang's epics, opens one and a commit with its notes and real commits", async ({ page }, testInfo) => {
     await open(page)
     await expect(page.getByText("Mock", { exact: true })).toBeVisible()
@@ -31,8 +56,8 @@ test.describe("the history page", () => {
     await expect(compiler).toHaveAttribute("aria-expanded", "true")
     const commits = page.getByRole("list", { name: "The compiler" }).getByRole("link")
     await expect(commits).toHaveCount(50)
-    await page.getByRole("button", { name: /^Show all \d+/ }).click()
-    await expect.poll(() => commits.count()).toBeGreaterThan(1000)
+    await page.getByRole("button", { name: "Show more" }).click()
+    await expect(commits).toHaveCount(100)
     await shot(page, "epic-open", testInfo.project.name)
 
     await commits.first().click()

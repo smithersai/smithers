@@ -1,13 +1,15 @@
 // The mythical history's page (wiki/decisions/0020-mythical-history.md; design: wiki/designs/mythical/): a Foldkit
-// program at /history, the history as a maximized pane whose − returns to the chat (VL-17). It reads the history once,
-// then applies the history's numbered events with the shared machine's `apply`, as every copy does; each button runs
-// one of the history's flows through `Mythical`. Where you are is the URL's hash: `#e4` an epic, `#m12` a commit.
+// program at /history, the history as a maximized pane whose − returns to the chat (VL-17). It reads only what it shows
+// (pages.vibe): the outline first, an epic's commits a page at a time, a commit in full when it is opened, a filter's
+// matches. It follows the history's events from the outline's `seq`; each event reads again what is shown. Each button
+// runs one of the history's flows through `Mythical`. Where you are is the URL's hash: `#e4` an epic, `#m12` a commit.
 import { Command, Dom, Subscription, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
-import * as Machine from "../history/mythical.vibe"
 import { Mythical } from "../history/MythicalHistory.vibe"
+import { PAGE } from "../history/pages.vibe"
 import { type Role, ROLES } from "../history/roles.vibe"
-import { History as HistorySchema, HistoryEvent } from "../history/schemas.vibe"
+import { CommitPage, EpicPage, HistoryEvent, Matches, Outline } from "../history/schemas.vibe"
+export { PAGE } from "../history/pages.vibe"
 
 // FLAGS
 
@@ -33,30 +35,33 @@ export schema HistoryModel {
   readonly mode: "mock" | "live" | "pending"
   readonly role: "viewer" | "new" | "community" | "contributor" | "maintainer"
   readonly status: "loading" | "ready" | "failed"
-  readonly history: HistorySchema
+  /** The first view: epics with their counts and the work not landed. */
+  readonly outline: Outline
+  /** Each epic read so far: its commits from the first, as many pages as were read. */
+  readonly pages: ReadonlyArray<EpicPage>
+  /** The commit `#m<n>` names, once read; `commitId` is the one it was read for. */
+  readonly commit: CommitPage
+  readonly commitId: string
+  /** The commits matching `filter`, once read. */
+  readonly matches: Matches
   /** Where the reader is: the list, an epic (`e<n>`) or a commit (`m<n>`). */
   readonly hash: string
-  /** Epics shown open on the list, and epics showing every commit rather than the first `PAGE`. */
+  /** Epics shown open on the list. */
   readonly open: ReadonlyArray<string>
-  readonly full: ReadonlyArray<string>
   readonly filter: string
   readonly dialog: boolean
   readonly form: PlanForm
   readonly lane: string
   readonly noteSection: "tried" | "evidence" | "superseded"
   readonly noteText: string
-  /** Why the last write was refused, or `""`. */
+  /** Why the last write or read failed, or `""`. */
   readonly error: string
   readonly busy: boolean
   /** Bumped to read the history and follow its events again. */
   readonly epoch: number
+  /** The last event seen; above the outline's `seq` while a read of it is under way. */
+  readonly latest: number
 }
-
-/** How many commits an open epic shows before Show all. */
-export const PAGE = 50
-
-/** How many commits a filter shows. */
-export const MATCHES = 100
 
 /** The Epic choice that opens a new epic. */
 export const NEW_EPIC = "new"
@@ -70,12 +75,16 @@ const emptyForm: PlanForm = { how: "append", title: "", epic: "", newEpic: "", t
 
 export const HistoryMessage = defineMessageUnion({
   ResolvedMode: { mode: Schema.Literals(["mock", "live"]) },
-  Loaded: { history: HistorySchema },
+  GotOutline: { outline: Outline },
+  GotEpic: { page: EpicPage },
+  GotCommit: { id: Schema.String, page: CommitPage },
+  GotMatches: { matches: Matches },
   FailedLoad: { reason: Schema.String },
+  FailedRead: { reason: Schema.String },
   ClickedRetry: {},
   Navigated: { hash: Schema.String },
   ToggledEpic: { id: Schema.String },
-  ClickedShowAll: { id: Schema.String },
+  ClickedMore: { id: Schema.String },
   UpdatedFilter: { value: Schema.String },
   OpenedPlan: { how: Schema.Literals(["append", "insert", "amend"]), target: Schema.String },
   ClosedPlan: {},
@@ -105,16 +114,24 @@ type Return = Update.Return<HistoryModel, HistoryMessage, Needs>
 
 // INIT
 
+/** An outline before the first read. */
+export const noOutline: Outline = { seq: 0, main: "", epics: [], open: [] }
+
+const noCommit: CommitPage = { seq: 0, commit: null, real: [] }
+
 export function init(flags: HistoryFlags): Return {
   return {
     model: {
       mode: flags.mode,
       role: flags.role,
       status: "loading",
-      history: Machine.empty,
+      outline: noOutline,
+      pages: [],
+      commit: noCommit,
+      commitId: "",
+      matches: { seq: 0, query: "", commits: [] },
       hash: flags.hash,
       open: [],
-      full: [],
       filter: "",
       dialog: false,
       form: emptyForm,
@@ -124,6 +141,7 @@ export function init(flags: HistoryFlags): Return {
       error: "",
       busy: false,
       epoch: 1,
+      latest: 0,
     },
   }
 }
@@ -135,33 +153,39 @@ export function allowed(role: Role, least: Role): boolean {
   return ROLES.indexOf(role) >= ROLES.indexOf(least)
 }
 
-/** The epic's commits in stack order. */
-export function commitsOf(history: Machine.History, epic: string): ReadonlyArray<Machine.Commit> {
-  return history.commits.filter((commit) => commit.epic === epic).sort((a, b) => a.rank - b.rank)
+const COMMIT_HASH = /^m\d+$/
+const EPIC_HASH = /^e\d+$/
+
+/** The epic's commits read so far, `undefined` before its first page. */
+export function pageOf(model: HistoryModel, epic: string): EpicPage | undefined {
+  return model.pages.find((page) => page.epic === epic)
 }
 
-/** The real commits a mythical commit folds, in main's order. */
-export function realOf(history: Machine.History, id: string): ReadonlyArray<Machine.Real> {
-  return history.real.filter((real) => real.mythical === id)
+/** The commit the hash names, once read for it; `undefined` while it is read or when the hash names none. */
+export function shownCommit(model: HistoryModel): CommitPage | undefined {
+  return COMMIT_HASH.test(model.hash) && model.commitId === model.hash ? model.commit : undefined
 }
 
-/** Work on the stack that hasn't landed: planned, working or approved, in stack order. */
-export function openWork(history: Machine.History): ReadonlyArray<Machine.Commit> {
-  return history.epics.flatMap((epic) => commitsOf(history, epic.id).filter((commit) => commit.state !== "landed"))
+/** `pages` with `page` read in: its commits replace those from its `from`; an older or detached page changes nothing. */
+export function merged(pages: ReadonlyArray<EpicPage>, page: EpicPage): ReadonlyArray<EpicPage> {
+  const known = pages.find((each) => each.epic === page.epic)
+  if (known === undefined) return page.from === 0 ? [...pages, page] : pages
+  if (page.seq < known.seq || page.from > known.commits.length) return pages
+  const commits = [...known.commits.slice(0, page.from), ...page.commits, ...known.commits.slice(page.from + page.commits.length)]
+  const next: EpicPage = { seq: page.seq, epic: page.epic, from: 0, total: page.total, commits: commits.slice(0, page.total) }
+  return pages.map((each) => each === known ? next : each)
 }
 
-/** Commits whose title has `filter`, at most `MATCHES`, in stack order. */
-export function matching(history: Machine.History, filter: string): ReadonlyArray<Machine.Commit> {
-  const needle = filter.trim().toLowerCase()
-  if (needle === "") return []
-  const found: Array<Machine.Commit> = []
-  for (const epic of history.epics) {
-    for (const commit of commitsOf(history, epic.id)) {
-      if (found.length >= MATCHES) return found
-      if (commit.title.toLowerCase().includes(needle) || commit.id === needle) found.push(commit)
-    }
+/** The reads that bring what the page shows up to date: the commit or epic in the hash, every epic read, the filter. */
+export function shownReads(model: HistoryModel): ReadonlyArray<Command.Command<HistoryMessage, never, Needs>> {
+  const reads: Array<Command.Command<HistoryMessage, never, Needs>> = []
+  if (COMMIT_HASH.test(model.hash)) reads.push(ReadCommit({ id: model.hash }))
+  if (EPIC_HASH.test(model.hash) && pageOf(model, model.hash) === undefined) reads.push(ReadEpic({ id: model.hash, from: 0 }))
+  for (const page of model.pages) {
+    for (let from = 0; from < Math.max(page.commits.length, 1); from += PAGE) reads.push(ReadEpic({ id: page.epic, from }))
   }
-  return found
+  if (model.filter.trim() !== "") reads.push(ReadMatches({ query: model.filter }))
+  return reads
 }
 
 // UPDATE
@@ -174,17 +198,38 @@ export function update(model: HistoryModel, message: HistoryMessage): Return {
   return HistoryMessage.match<Return>(message, {
     // Live, the server decides who you are: a viewer until sign-in (decision 0019) lands.
     ResolvedMode: ({ mode }) => ({ model: { ...model, mode, role: mode === "live" ? "viewer" : model.role } }),
-    Loaded: ({ history }) => ({ model: { ...model, status: "ready", history } }),
+    // A newer outline reads again what the page shows; an older one, arriving late, changes nothing.
+    GotOutline: ({ outline }) => {
+      if (model.status === "ready" && outline.seq < model.outline.seq) return { model }
+      const next = { ...model, status: "ready" as const, outline, latest: Math.max(model.latest, outline.seq) }
+      // Events that arrived while this read was under way read once more.
+      return { model: next, commands: [...shownReads(next), ...(outline.seq < model.latest ? [ReadOutline({})] : [])] }
+    },
+    GotEpic: ({ page }) => ({ model: { ...model, pages: merged(model.pages, page) } }),
+    GotCommit: ({ id, page }) => {
+      if (id !== model.hash || (id === model.commitId && page.seq < model.commit.seq)) return { model }
+      return { model: { ...model, commit: page, commitId: id } }
+    },
+    GotMatches: ({ matches }) => matches.query === model.filter ? { model: { ...model, matches } } : { model },
     FailedLoad: () => ({ model: { ...model, status: "failed" } }),
-    ClickedRetry: () => ({ model: { ...model, status: "loading", epoch: model.epoch + 1 } }),
-    Navigated: ({ hash }) => ({ model: { ...model, hash, error: "" } }),
-    ToggledEpic: ({ id }) => ({
-      model: { ...model, open: model.open.includes(id) ? model.open.filter((each) => each !== id) : [...model.open, id] },
-    }),
-    ClickedShowAll: ({ id }) => ({ model: { ...model, full: [...model.full, id] } }),
-    UpdatedFilter: ({ value }) => ({ model: { ...model, filter: value } }),
+    // The next event reads again.
+    FailedRead: ({ reason }) => ({ model: { ...model, error: reason, latest: model.outline.seq } }),
+    ClickedRetry: () => ({ model: { ...model, status: "loading", error: "", epoch: model.epoch + 1 } }),
+    Navigated: ({ hash }) => {
+      const next = { ...model, hash, error: "" }
+      if (COMMIT_HASH.test(hash)) return { model: next, commands: [ReadCommit({ id: hash })] }
+      if (EPIC_HASH.test(hash) && pageOf(model, hash) === undefined) return { model: next, commands: [ReadEpic({ id: hash, from: 0 })] }
+      return { model: next }
+    },
+    ToggledEpic: ({ id }) => {
+      if (model.open.includes(id)) return { model: { ...model, open: model.open.filter((each) => each !== id) } }
+      const next = { ...model, open: [...model.open, id] }
+      return pageOf(model, id) === undefined ? { model: next, commands: [ReadEpic({ id, from: 0 })] } : { model: next }
+    },
+    ClickedMore: ({ id }) => ({ model, commands: [ReadEpic({ id, from: pageOf(model, id)?.commits.length ?? 0 })] }),
+    UpdatedFilter: ({ value }) => ({ model: { ...model, filter: value }, commands: value.trim() === "" ? [] : [ReadMatches({ query: value })] }),
     OpenedPlan: ({ how, target }) => {
-      const epic = how === "append" ? (model.history.epics[0]?.id ?? NEW_EPIC) : ""
+      const epic = how === "append" ? (model.outline.epics[0]?.id ?? NEW_EPIC) : ""
       return {
         model: { ...model, dialog: true, error: "", form: { ...emptyForm, how, target, epic } },
         commands: [ShowPlan({})],
@@ -216,11 +261,12 @@ export function update(model: HistoryModel, message: HistoryMessage): Return {
       commands: [ClosePlan({}), ...(hash === "" ? [] : [SetHash({ hash })])],
     }),
     FailedWrite: ({ reason }) => ({ model: { ...model, busy: false, error: reason } }),
+    // The history moved: read the outline again from the server, and with it what the page shows.
+    // One read at a time: events during it are read by the next.
     ReceivedEvent: ({ event }) => {
-      const history = Machine.apply(model.history, event)
-      // A missed event: read the history again and follow from there.
-      if (event.seq > model.history.seq + 1) return { model: { ...model, epoch: model.epoch + 1 } }
-      return { model: { ...model, history } }
+      if (event.seq <= Math.max(model.outline.seq, model.latest)) return { model }
+      const reading = model.latest > model.outline.seq
+      return { model: { ...model, latest: event.seq }, commands: reading ? [] : [ReadOutline({})] }
     },
     FailedEvents: () => ({ model }),
     PressedEscape: () => model.dialog ? { model: { ...model, dialog: false }, commands: [ClosePlan({})] } : { model },
@@ -239,6 +285,47 @@ effect function message<A>(make: () => A) {
 function reasonOf(error: { readonly _tag: string; readonly refusal?: string; readonly reason?: string }): string {
   return error._tag === "Refused" ? error.refusal ?? "refused" : "unavailable"
 }
+
+/** A failed read in the page's words. */
+function failedRead() {
+  return HistoryMessage.FailedRead({ reason: "unavailable" })
+}
+
+export const ReadOutline = Command.define("ReadOutline", {
+  args: {},
+  messages: [HistoryMessage.GotOutline, HistoryMessage.FailedRead],
+  execute: effect () => {
+    const outline = (try Mythical).outline() catch () => undefined
+    return try message(() => outline === undefined ? failedRead() : HistoryMessage.GotOutline({ outline }))
+  },
+})
+
+export const ReadEpic = Command.define("ReadEpic", {
+  args: { id: Schema.String, from: Schema.Number },
+  messages: [HistoryMessage.GotEpic, HistoryMessage.FailedRead],
+  execute: effect ({ id, from }) => {
+    const page = (try Mythical).epic(id, from) catch () => undefined
+    return try message(() => page === undefined ? failedRead() : HistoryMessage.GotEpic({ page }))
+  },
+})
+
+export const ReadCommit = Command.define("ReadCommit", {
+  args: { id: Schema.String },
+  messages: [HistoryMessage.GotCommit, HistoryMessage.FailedRead],
+  execute: effect ({ id }) => {
+    const page = (try Mythical).commit(id) catch () => undefined
+    return try message(() => page === undefined ? failedRead() : HistoryMessage.GotCommit({ id, page }))
+  },
+})
+
+export const ReadMatches = Command.define("ReadMatches", {
+  args: { query: Schema.String },
+  messages: [HistoryMessage.GotMatches, HistoryMessage.FailedRead],
+  execute: effect ({ query }) => {
+    const matches = (try Mythical).search(query) catch () => undefined
+    return try message(() => matches === undefined ? failedRead() : HistoryMessage.GotMatches({ matches }))
+  },
+})
 
 export const PLAN_ID = "mh-plan"
 
@@ -342,7 +429,7 @@ export const FoldCommand = Command.define("Fold", {
 
 // SUBSCRIPTION
 
-/** The page's subscriptions: Escape and the hash on `window`, and the history: read, then its events followed. */
+/** The page's subscriptions: Escape and the hash on `window`, and the history: its outline, then its events followed. */
 export function subscriptions(window: Window) {
   return Subscription.make<HistoryModel, HistoryMessage, Needs>()((entry) => ({
     keyboard: Subscription.persistentEntry(
@@ -367,15 +454,15 @@ export function subscriptions(window: Window) {
         dependenciesToStream: () =>
           Stream.unwrap(effect {
             const mythical = try Mythical
-            const history = mythical.read() catch () => undefined
-            if (history === undefined) {
+            const outline = mythical.outline() catch () => undefined
+            if (outline === undefined) {
               const failed: Stream.Stream<HistoryMessage> = Stream.make(try message(() => HistoryMessage.FailedLoad({ reason: "unavailable" })))
               return failed
             }
-            const loaded = try message(() => HistoryMessage.Loaded({ history }))
+            const loaded = try message(() => HistoryMessage.GotOutline({ outline }))
             const followed: Stream.Stream<HistoryMessage> = Stream.concat(
               Stream.make(loaded),
-              mythical.events(history.seq).pipe(
+              mythical.events(outline.seq).pipe(
                 Stream.map((event) => HistoryMessage.ReceivedEvent({ event })),
                 Stream.catchTag("Unavailable", () => Stream.make(HistoryMessage.FailedEvents())),
               ),

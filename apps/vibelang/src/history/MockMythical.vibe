@@ -11,6 +11,7 @@ import { Approve, Bootstrap, Fold, historyRegistration, MainLog, Note, Plan, Sta
 import { History as HistorySchema } from "./schemas.vibe"
 import type { History } from "./mythical.vibe"
 import { Mythical, settled, Unavailable } from "./MythicalHistory.vibe"
+import { commitPageOf, epicPageOf, matchesOf, outlineOf } from "./pages.vibe"
 import { Caller, type Principal } from "./roles.vibe"
 import { make, memoryStore, type MainCommit, type Sequencer, stackOf } from "./Sequencer.vibe"
 
@@ -71,10 +72,18 @@ export function MockMythical(principal: Principal, seed: () => History!! = seede
     // The first start loads the bootstrapped history, as the live object's does.
     try Effect.orDie(engine.execute(Bootstrap, { executionId: try executionId("bootstrap"), payload: {} }))
 
+    /** A page of the history now, computed where it lives, as the History object does. */
+    function paged<A>(page: (history: History) => A) {
+      return Effect.mapError(Effect.map(sequencer.read(), page), () => new Unavailable({ reason: "history unreadable" }))
+    }
+
     const mode: Mode = "mock"
     const service: Mythical.Shape = {
       mode,
-      read: () => Effect.mapError(sequencer.read(), () => new Unavailable({ reason: "history unreadable" })),
+      outline: () => paged(outlineOf),
+      epic: (id, from) => paged((history) => epicPageOf(history, id, from)),
+      commit: (id) => paged((history) => commitPageOf(history, id)),
+      search: (query) => paged((history) => matchesOf(history, query)),
       events: (after) => sequencer.follow(after),
       plan: effect (request) => {
         return try settled(try Effect.orDie(engine.execute(Plan, { executionId: try executionId("plan"), payload: request })))

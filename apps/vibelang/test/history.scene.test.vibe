@@ -3,10 +3,11 @@
 import { change, click, Command, expect, given, label, role, scene, Subscription, text, type, within } from "foldkit/scene"
 import { describe, expect as assert, it } from "@effect/vitest"
 import { apply, decide, type History, type Intent } from "../src/history/mythical.vibe"
+import { commitPageOf, epicPageOf, matchesOf, outlineOf, PAGE } from "../src/history/pages.vibe"
 import { intentsOf, replay, seedOf } from "../src/history/seed.vibe"
 import {
-  ApproveCommand, ClosePlan, FoldCommand, HistoryMessage, type HistoryModel, init, NEW_EPIC, NoteCommand, PlanCommand, SetHash, ShowPlan,
-  StartCommand, update,
+  ApproveCommand, ClosePlan, FoldCommand, HistoryMessage, type HistoryModel, init, merged, NEW_EPIC, NoteCommand, PlanCommand,
+  ReadCommit, ReadEpic, ReadMatches, ReadOutline, SetHash, ShowPlan, StartCommand, update,
 } from "../src/web/historyApp.vibe"
 import { refusalText, view } from "../src/web/historyView.vibe"
 import { newClient } from "../src/core/conversation.vibe"
@@ -30,8 +31,10 @@ function after(history: History, intent: Intent): History {
   return decision.ok ? apply(history, decision.event) : history
 }
 
-function loaded(role: HistoryModel["role"], hash = ""): HistoryModel {
-  return { ...init({ mode: "mock", role, hash }).model, status: "ready", history: small }
+/** The page for `role` at `hash`, with `history`'s outline read and, at a commit's hash, that commit's page. */
+function loaded(role: HistoryModel["role"], hash = "", history: History = small): HistoryModel {
+  const model: HistoryModel = { ...init({ mode: "mock", role, hash }).model, status: "ready", outline: outlineOf(history), latest: history.seq }
+  return /^m\d+$/.test(hash) ? { ...model, commit: commitPageOf(history, hash), commitId: hash } : model
 }
 
 describe("the list", () => {
@@ -48,6 +51,8 @@ describe("the list", () => {
       expect(text("Mock")).toExist(),
       click(role("button", { name: /The compiler/ })),
       expect(role("button", { name: /The compiler/ })).toHaveAttr("aria-expanded", "true"),
+      Command.expectExact(ReadEpic({ id: "e1", from: 0 })),
+      Command.resolve(ReadEpic, HistoryMessage.GotEpic({ page: epicPageOf(small, "e1", 0) })),
       expect(role("link", { name: /fix\(compiler\): one/ })).toHaveAttr("href", "#m1"),
       expect(role("link", { name: /fix\(compiler\): three/ })).toHaveAttr("href", "#m2"),
     )
@@ -78,11 +83,13 @@ describe("the list", () => {
       { update, view },
       given(loaded("viewer")),
       type(label("Filter commits"), "three"),
+      Command.expectExact(ReadMatches({ query: "three" })),
+      Command.resolve(ReadMatches, HistoryMessage.GotMatches({ matches: matchesOf(small, "three") })),
       expect(role("list", { name: "Matching commits" })).toExist(),
       expect(role("link", { name: /fix\(compiler\): three/ })).toExist(),
       expect(role("link", { name: /fix\(compiler\): one/ })).toBeAbsent(),
     )
-    scene({ update, view }, given({ ...loaded("viewer"), history: { ...small, epics: [], commits: [], real: [] } }), expect(text("No mythical history yet.")).toExist())
+    scene({ update, view }, given(loaded("viewer", "", { ...small, epics: [], commits: [], real: [] })), expect(text("No mythical history yet.")).toExist())
     scene(
       { update, view },
       given({ ...loaded("viewer"), status: "failed" }),
@@ -154,7 +161,7 @@ describe("a commit", () => {
     const working = after(planned, { type: "Start", id: "m4", lane: "lane-a" })
     scene(
       { update, view },
-      given({ ...loaded("maintainer", "m4"), history: planned }),
+      given(loaded("maintainer", "m4", planned)),
       expect(role("button", { name: "Approve" })).toBeAbsent(),
       type(label("Lane"), "lane-a"),
       click(role("button", { name: "Start" })),
@@ -162,6 +169,10 @@ describe("a commit", () => {
       Command.resolve(StartCommand, HistoryMessage.Wrote({ hash: "" })),
       Command.resolve(ClosePlan, HistoryMessage.Settled()),
       Subscription.emit(HistoryMessage.ReceivedEvent({ event: { type: "Started", seq: planned.seq + 1, id: "m4", lane: "lane-a" } })),
+      Command.expectExact(ReadOutline({})),
+      Command.resolve(ReadOutline, HistoryMessage.GotOutline({ outline: outlineOf(working) })),
+      Command.expectExact(ReadCommit({ id: "m4" })),
+      Command.resolve(ReadCommit, HistoryMessage.GotCommit({ id: "m4", page: commitPageOf(working, "m4") })),
       expect(text("working")).toExist(),
       type(label("Note"), "A cache; it went stale."),
       click(role("button", { name: "Add note" })),
@@ -178,21 +189,71 @@ describe("a commit", () => {
 
   it("never offers a contributor Approve or Amend…", () => {
     const working = after(after(small, { type: "Plan", id: "m4", epic: "e1", before: "", title: "x", task: "" }), { type: "Start", id: "m4", lane: "a" })
-    scene({ update, view }, given({ ...loaded("contributor", "m4"), history: working }), expect(role("button", { name: "Approve" })).toBeAbsent())
+    scene({ update, view }, given(loaded("contributor", "m4", working)), expect(role("button", { name: "Approve" })).toBeAbsent())
     scene({ update, view }, given(loaded("contributor", "m1")), expect(role("button", { name: "Amend…" })).toBeAbsent(), expect(role("button", { name: "Add note" })).toExist())
   })
 })
 
 describe("events", () => {
-  it("applies the next event, and reads again after a gap", () => {
-    const model = loaded("viewer")
-    const next = update(model, HistoryMessage.ReceivedEvent({ event: { type: "Noted", seq: small.seq + 1, id: "m1", section: "tried", text: "x", by: "Ada" } })).model
-    assert(next.history.commits.find((commit) => commit.id === "m1")!.notes).toEqual([{ section: "tried", text: "x", by: "Ada" }])
-    const gap = update(model, HistoryMessage.ReceivedEvent({ event: { type: "Noted", seq: small.seq + 5, id: "m1", section: "tried", text: "x", by: "Ada" } })).model
-    assert([gap.epoch, gap.history]).toEqual([model.epoch + 1, small])
+  it("reads the outline again once for a burst of events, then what the page shows", () => {
+    const model = { ...loaded("viewer", "m1"), open: ["e1"], pages: [epicPageOf(small, "e1", 0)] }
+    const noted = (seq: number) => HistoryMessage.ReceivedEvent({ event: { type: "Noted", seq, id: "m1", section: "tried", text: "x", by: "Ada" } })
+    const first = update(model, noted(small.seq + 1))
+    assert(first.commands?.map((command) => command.name)).toEqual([ReadOutline({}).name])
+    // While that read is under way, later events wait for it; an event already read changes nothing.
+    const second = update(first.model, noted(small.seq + 2))
+    assert([second.commands ?? [], update(second.model, noted(small.seq)).commands ?? []]).toEqual([[], []])
+    const noted1 = after(small, { type: "AddNote", id: "m1", section: "tried", text: "x", by: "Ada" })
+    const read = update(second.model, HistoryMessage.GotOutline({ outline: outlineOf(noted1) }))
+    const asked = (commands: ReadonlyArray<{ readonly name: string; readonly args?: Record<string, unknown> }> | undefined) =>
+      (commands ?? []).map((command) => [command.name, command.args ?? {}])
+    assert(asked(read.commands)).toEqual(asked([ReadCommit({ id: "m1" }), ReadEpic({ id: "e1", from: 0 }), ReadOutline({})]))
+    // Matches for a search no longer typed change nothing.
+    const filtering = update(model, HistoryMessage.UpdatedFilter({ value: "three" })).model
+    assert(update(filtering, HistoryMessage.GotMatches({ matches: matchesOf(small, "thr") })).model.matches).toEqual(filtering.matches)
+    // An outline older than the one shown, arriving late, changes nothing.
+    assert(update(read.model, HistoryMessage.GotOutline({ outline: outlineOf(small) })).model.outline.seq).toBe(noted1.seq)
     const folding = update(model, HistoryMessage.ClickedFold())
     assert(folding.model.busy).toBe(true)
     assert(folding.commands?.map((command) => command.name)).toEqual([FoldCommand({}).name])
+  })
+
+  it("keeps an epic's pages in order: a page replaces from its start; an older or detached page changes nothing", () => {
+    const head = (id: string) => ({ ...epicPageOf(small, "e1", 0).commits[0]!, id })
+    const page = (seq: number, from: number, ids: ReadonlyArray<string>, total = 4) => ({ seq, epic: "e1", from, total, commits: ids.map(head) })
+    const two = merged([], page(5, 0, ["a", "b"]))
+    const four = merged(two, page(5, 2, ["c", "d"]))
+    assert(four[0]!.commits.map((commit) => commit.id)).toEqual(["a", "b", "c", "d"])
+    assert(merged(four, page(6, 0, ["A", "B"]))[0]!.commits.map((commit) => commit.id)).toEqual(["A", "B", "c", "d"])
+    assert(merged(four, page(4, 0, ["A", "B"]))).toBe(four)
+    assert(merged(two, page(5, 3, ["d"]))).toBe(two)
+    assert(merged([], page(5, 2, ["c"]))).toEqual([])
+    // A shorter epic drops what is past its end.
+    assert(merged(four, page(6, 0, ["a"], 1))[0]!.commits.map((commit) => commit.id)).toEqual(["a"])
+  })
+
+  it("reads an epic's next page with Show more, and a commit when the hash names one", () => {
+    const many = Array.from({ length: PAGE + 3 }, (_, index) => `fix(compiler): c${index}`)
+    const big = replay(intentsOf(seedOf("o/r", many.map((description, index) => ({
+      sha: `${index + 1}`.padStart(12, "0"), change: "", description, parents: index === 0 ? [] : [`${index}`.padStart(12, "0")],
+    })), []))).history
+    scene(
+      { update, view },
+      given(loaded("viewer", "e1", big)),
+      Subscription.emit(HistoryMessage.Navigated({ hash: "e1" })),
+      Command.expectExact(ReadEpic({ id: "e1", from: 0 })),
+      Command.resolve(ReadEpic, HistoryMessage.GotEpic({ page: epicPageOf(big, "e1", 0) })),
+      expect(role("list", { name: "The compiler" })).toExist(),
+      click(role("button", { name: "Show more" })),
+      Command.expectExact(ReadEpic({ id: "e1", from: PAGE })),
+      Command.resolve(ReadEpic, HistoryMessage.GotEpic({ page: epicPageOf(big, "e1", PAGE) })),
+      expect(role("button", { name: "Show more" })).toBeAbsent(),
+      expect(role("link", { name: /c52/ })).toExist(),
+      Subscription.emit(HistoryMessage.Navigated({ hash: "m2" })),
+      Command.expectExact(ReadCommit({ id: "m2" })),
+      Command.resolve(ReadCommit, HistoryMessage.GotCommit({ id: "m2", page: commitPageOf(big, "m2") })),
+      expect(role("heading", { name: "fix(compiler): c1" })).toExist(),
+    )
   })
 })
 

@@ -16,6 +16,8 @@ export interface Stored {
 /** Where the history persists. `append` and `seed` return once what they write is durable. */
 export interface Store {
   load(): Stored!!
+  /** The events numbered above `after`, in order, without the snapshot: what a follower replays. */
+  since(after: number): ReadonlyArray<Event>!!
   append(event: Event): void!!
   /** Writes the snapshot a bootstrap loads; only ever into an empty store. */
   seed(history: History): void!!
@@ -112,7 +114,7 @@ export effect function make(store: Store) {
         const live = try PubSub.subscribe(published)
         const stored = try locked(effect {
           const history = try current()
-          return { seq: history.seq, events: (try store.load()).events }
+          return { seq: history.seq, events: try store.since(after) }
         })
         const replay = stored.events.filter((event) => event.seq > after)
         const replayedTo = Math.max(after, stored.seq)
@@ -217,6 +219,7 @@ export effect function memoryStore() {
   const state = try Ref.make<Stored>({ base: undefined, events: [] })
   const store: Store = {
     load: () => Ref.get(state),
+    since: (after) => Effect.map(Ref.get(state), (stored) => stored.events.filter((event) => event.seq > after)),
     append: (event) => Ref.update(state, (stored) => ({ ...stored, events: [...stored.events, event] })),
     seed: (history) => Ref.set(state, { base: history, events: [] }),
   }

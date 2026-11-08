@@ -8,6 +8,7 @@ import type { ReadSnapshot } from "../src/core/schemas.vibe"
 import { workerBuild } from "../infra/WorkerBuild.vibe"
 import { chatModel, dailyTokens } from "./AgentModel.vibe"
 import { FetchHttpClient, HttpClient } from "effect/http"
+import { type PageRequest, pageOf } from "../src/history/pages.vibe"
 import type { Write } from "../src/history/wire.vibe"
 import * as HistoryObject from "./HistoryObject.vibe"
 import { afterOf, eventStream, handle, type Conversations, type Histories } from "./Http.vibe"
@@ -30,7 +31,7 @@ export interface BudgetShape {
 }
 
 export interface HistoryShape {
-  readonly read: () => unknown!!RuntimeContext
+  readonly page: (request: PageRequest) => unknown!!RuntimeContext
   readonly write: (name: Write, body: unknown) => HistoryObject.Answered!!RuntimeContext
 }
 
@@ -76,7 +77,8 @@ const HistoryLive = History.make(effect {
     const main = githubMain("smithersai/vibelang", client, token)
     if ((try sequencer.read()).seq === 0) try HistoryObject.bootstrap(hostId, state.raw.storage, sequencer, main)
     return {
-      read: () => Effect.map(sequencer.read(), (history) => history as unknown),
+      // Each page is computed here, beside the history, so a reader gets only what it shows.
+      page: (request: PageRequest) => Effect.map(sequencer.read(), (history) => pageOf(history, request) as unknown),
       write: (name: Write, body: unknown) =>
         HistoryObject.write(hostId, state.raw.storage, sequencer, main, HistoryObject.principalOf(undefined), name, body),
       fetch: effect {
@@ -172,9 +174,9 @@ const program = effect {
         },
       }
       const history: Histories = {
-        read: effect () => {
+        page: effect (request) => {
           const object = try objectOf(histories, REPOSITORY, "history")
-          return try reached(runtime, "history", object.read())
+          return try reached(runtime, "history", object.page(request))
         },
         write: effect (name, body) => {
           const object = try objectOf(histories, REPOSITORY, "history")

@@ -5,10 +5,10 @@ import * as Sse from "effect/encoding/Sse"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import type { Mode } from "../core/Factory.vibe"
 import { Mythical, Refused, Unavailable } from "./MythicalHistory.vibe"
-import { History as HistorySchema, HistoryEvent } from "./schemas.vibe"
-import { HISTORY_PATH, HistoryRefusal, Written } from "./wire.vibe"
+import type { PageRequest } from "./pages.vibe"
+import { CommitPage, EpicPage, HistoryEvent, Matches, Outline } from "./schemas.vibe"
+import { HISTORY_PATH, HistoryRefusal, pathOf, Written } from "./wire.vibe"
 
-const decodeHistory = Schema.decodeUnknownEffect(HistorySchema)
 const decodeEvent = Schema.decodeUnknownEffect(Schema.fromJsonString(HistoryEvent))
 const decodeWritten = Schema.decodeUnknownEffect(Written)
 const decodeRefusal = Schema.decodeUnknownEffect(HistoryRefusal)
@@ -36,15 +36,22 @@ export function LiveMythical(origin: string) {
       throw new Unavailable({ reason: `${name} answered ${response.status}` })
     }
 
+    /** Reads the page `request` names, decoded by `schema`. */
+    effect function page<S extends Schema.Top>(request: PageRequest, schema: S) {
+      const what = `history ${request.what}`
+      const response = try Effect.mapError(client.get(origin + pathOf(request)), unavailable(`${what} unreachable`))
+      if (response.status !== 200) throw new Unavailable({ reason: `${what} answered ${response.status}` })
+      const body = try Effect.mapError(response.json, unavailable(`${what} is not JSON`))
+      return try Effect.mapError(Schema.decodeUnknownEffect(schema)(body), unavailable(`${what} is not the protocol`))
+    }
+
     const mode: Mode = "live"
     const service: Mythical.Shape = {
       mode,
-      read: effect () => {
-        const response = try Effect.mapError(client.get(origin + HISTORY_PATH), unavailable("history unreachable"))
-        if (response.status !== 200) throw new Unavailable({ reason: `history answered ${response.status}` })
-        const body = try Effect.mapError(response.json, unavailable("history is not JSON"))
-        return try Effect.mapError(decodeHistory(body), unavailable("history is not the protocol"))
-      },
+      outline: () => page({ what: "outline" }, Outline),
+      epic: (id, from) => page({ what: "epic", id, from }, EpicPage),
+      commit: (id) => page({ what: "commit", id }, CommitPage),
+      search: (query) => page({ what: "search", query }, Matches),
       events: (after) =>
         Stream.unwrap(effect {
           const request = HttpClientRequest.get(`${origin}${HISTORY_PATH}/events?after=${after}`).pipe(

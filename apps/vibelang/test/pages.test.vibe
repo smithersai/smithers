@@ -1,0 +1,184 @@
+// The mythical history read by page (src/history/pages.vibe, wire.vibe; wiki/decisions/0020-mythical-history.md):
+// pages of random histories put back together are the whole stack, the outline's counts are the history's, each route
+// names exactly one page, VibeLang's own outline and pages stay small, and a follower reads only events after its cursor.
+import { describe, expect, it } from "@effect/vitest"
+import { apply, decide, empty, type History, type Intent } from "../src/history/mythical.vibe"
+import {
+  commitPageOf, epicPageOf, MATCHES, matchesOf, MAX_QUERY, outlineOf, PAGE, type PageRequest, pageOf,
+} from "../src/history/pages.vibe"
+import { History as HistorySchema } from "../src/history/schemas.vibe"
+import { make, memoryStore, type Store } from "../src/history/Sequencer.vibe"
+import { HISTORY_JSON } from "../src/history/seed/vibelang.vibe"
+import { historyRouteOf, pageRequestOf, pathOf } from "../src/history/wire.vibe"
+
+// Small domains, so commits pile into few epics and pages split often.
+const Id = Schema.Literals(["m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8"])
+const EpicId = Schema.Literals(["e1", "e2"])
+const IntentSchema = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("Plan"), id: Id, epic: EpicId, before: Schema.Literals(["", "m1", "m3"]), title: Schema.Literals(["fix(compiler): a", "docs: b"]), task: Schema.Literal("") }),
+  Schema.Struct({ type: Schema.Literal("Start"), id: Id, lane: Schema.Literal("lane") }),
+  Schema.Struct({ type: Schema.Literal("Fold"), sha: Schema.Literals(["a1", "b2", "c3", "d4"]), change: Schema.Literal(""), title: Schema.Literal("t"), into: Id }),
+  Schema.Struct({ type: Schema.Literal("AddNote"), id: Id, section: Schema.Literal("tried"), text: Schema.Literal("x."), by: Schema.Literal("Ada") }),
+])
+const PRELUDE: ReadonlyArray<Intent> = [
+  { type: "OpenEpic", id: "e1", title: "The compiler" },
+  { type: "OpenEpic", id: "e2", title: "Docs" },
+]
+
+function built(list: ReadonlyArray<Intent>): History {
+  let history = empty
+  for (const intent of [...PRELUDE, ...list]) {
+    const decision = decide(history, intent)
+    if (decision.ok) history = apply(history, decision.event)
+  }
+  return history
+}
+
+const histories = Arbitrary.map(Arbitrary.array(Arbitrary.schema(IntentSchema), { minLength: 0, maxLength: 60 }), built)
+
+/** The stack in order, as the machine defines it. */
+function stack(history: History) {
+  const order = new Map(history.epics.map((epic, index) => [epic.id, index]))
+  return [...history.commits].sort((a, b) => order.get(a.epic)! - order.get(b.epic)! || a.rank - b.rank).map((commit) => commit.id)
+}
+
+/** Every page of every epic, put back together, `size` at a time. */
+function paged(history: History) {
+  return history.epics.flatMap((epic) => {
+    const ids: Array<string> = []
+    for (let from = 0; from === 0 || from < epicPageOf(history, epic.id, 0).total; from += PAGE) {
+      ids.push(...epicPageOf(history, epic.id, from).commits.map((commit) => commit.id))
+    }
+    return ids
+  })
+}
+
+effect function holds<A>(arbitrary: Arbitrary.Arbitrary<A>, property: (value: A) => boolean) {
+  const result = try Arbitrary.checkEffect(arbitrary, property, { runs: 300 })
+  try Effect.try(() => expect(Arbitrary.formatCheckFailure(result)).toBeUndefined())
+}
+
+/** A history whose first epic has `count` planned commits, `m1` to `m<count>`. */
+function long(count: number): History {
+  let history = built([])
+  for (let index = 1; index <= count; index++) {
+    const decision = decide(history, { type: "Plan", id: `m${index}`, epic: "e1", before: "", title: `fix(compiler): m${index}`, task: "" })
+    if (decision.ok) history = apply(history, decision.event)
+  }
+  return history
+}
+
+describe("pages of a history", () => {
+  it.effect("put back together are the whole stack, and the outline's counts are the history's", () =>
+    holds(histories, (history) => {
+      const outline = outlineOf(history)
+      const folds = new Map<string, number>()
+      for (const real of history.real) folds.set(real.mythical, (folds.get(real.mythical) ?? 0) + 1)
+      return JSON.stringify(paged(history)) === JSON.stringify(stack(history))
+        && outline.epics.reduce((total, epic) => total + epic.commits, 0) === history.commits.length
+        && outline.epics.reduce((total, epic) => total + epic.folds, 0) === history.real.length
+        && JSON.stringify(outline.open.map((head) => head.id)) === JSON.stringify(stack(history).filter((id) => history.commits.find((commit) => commit.id === id)!.state !== "landed"))
+        && history.commits.every((commit) => {
+          const page = commitPageOf(history, commit.id)
+          return page.commit === commit && page.real.length === (folds.get(commit.id) ?? 0) && page.real.every((real) => real.mythical === commit.id)
+        })
+    }))
+
+  it("pages an epic `PAGE` at a time from any start, and answers none past its end or for an unknown epic", () => {
+    const history = long(PAGE * 2 + 5)
+    const pages = [0, PAGE, PAGE * 2, PAGE * 3].map((from) => epicPageOf(history, "e1", from))
+    expect(pages.map((page) => [page.from, page.total, page.commits.length])).toEqual([
+      [0, PAGE * 2 + 5, PAGE], [PAGE, PAGE * 2 + 5, PAGE], [PAGE * 2, PAGE * 2 + 5, 5], [PAGE * 3, PAGE * 2 + 5, 0],
+    ])
+    expect(pages[1]!.commits[0]!.id).toBe(`m${PAGE + 1}`)
+    expect(epicPageOf(history, "e1", -3).from).toBe(0)
+    expect(epicPageOf(history, "e1", 1.7).commits[0]!.id).toBe("m2")
+    expect(epicPageOf(history, "e9", 0)).toEqual({ seq: history.seq, epic: "e9", from: 0, total: 0, commits: [] })
+    expect(commitPageOf(history, "m999")).toEqual({ seq: history.seq, commit: null, real: [] })
+  })
+
+  it("finds commits by title in any case or by id, at most `MATCHES`, and nothing for a blank search", () => {
+    const history = long(MATCHES + 20)
+    expect(matchesOf(history, "FIX(COMPILER)").commits.length).toBe(MATCHES)
+    expect(matchesOf(history, "m7").commits.map((head) => head.id)).toEqual(["m7", "m70", "m71", "m72", "m73", "m74", "m75", "m76", "m77", "m78", "m79"])
+    expect(matchesOf(history, "  ").commits).toEqual([])
+    expect(matchesOf(history, "x".repeat(MAX_QUERY + 50)).query.length).toBe(MAX_QUERY)
+  })
+
+  it("answers each request with its page", () => {
+    const history = long(3)
+    const requests: ReadonlyArray<PageRequest> = [
+      { what: "outline" }, { what: "epic", id: "e1", from: 1 }, { what: "commit", id: "m2" }, { what: "search", query: "m3" },
+    ]
+    expect(requests.map((request) => pageOf(history, request))).toEqual([
+      outlineOf(history), epicPageOf(history, "e1", 1), commitPageOf(history, "m2"), matchesOf(history, "m3"),
+    ])
+  })
+})
+
+describe("the history's routes", () => {
+  it("name each page by path and query, and ask for it back the same way", () => {
+    const requests: ReadonlyArray<PageRequest> = [
+      { what: "outline" },
+      { what: "epic", id: "e4", from: 0 },
+      { what: "epic", id: "e12", from: 150 },
+      { what: "commit", id: "m5703" },
+      { what: "search", query: "fix(fuzz): a & b?" },
+    ]
+    for (const request of requests) {
+      const url = new URL(pathOf(request), "https://vibelang.invalid")
+      expect(historyRouteOf("GET", url.pathname, url.searchParams)).toEqual({ kind: `history-${request.what}`, page: request })
+    }
+  })
+
+  it("name no page for an unknown path, a bad cursor or the wrong method", () => {
+    const params = (query: string) => new URLSearchParams(query)
+    expect(pageRequestOf("/epics/e1", params("from=-1"))).toBeUndefined()
+    expect(pageRequestOf("/epics/e1", params("from=1.5"))).toBeUndefined()
+    expect(pageRequestOf("/epics/m1", params(""))).toBeUndefined()
+    expect(pageRequestOf("/commits/e1", params(""))).toBeUndefined()
+    expect(pageRequestOf("/commits/m1/notes", params(""))).toBeUndefined()
+    expect(pageRequestOf("/search", params(""))).toEqual({ what: "search", query: "" })
+    expect(historyRouteOf("POST", "/api/history")).toBeUndefined()
+    expect(historyRouteOf("GET", "/api/history/plan")).toBeUndefined()
+    expect(historyRouteOf("GET", "/api/historyx")).toBeUndefined()
+    expect(historyRouteOf("POST", "/api/history/plan")).toEqual({ kind: "history-write", write: "plan" })
+    expect(historyRouteOf("GET", "/api/history/events")).toEqual({ kind: "history-events" })
+  })
+})
+
+describe("VibeLang's history by page", () => {
+  it.effect("is small: the outline under 16 KiB, an epic's page and a commit under 32 KiB", () => effect {
+    const history = try Schema.decodeUnknownEffect(Schema.fromJsonString(HistorySchema))(HISTORY_JSON)
+    const outline = JSON.stringify(outlineOf(history))
+    const largest = Math.max(...history.epics.map((epic) => JSON.stringify(epicPageOf(history, epic.id, 0)).length))
+    const commit = Math.max(...history.commits.map((each) => JSON.stringify(commitPageOf(history, each.id)).length))
+    try Effect.try(() => {
+      expect(HISTORY_JSON.length).toBeGreaterThan(2_000_000)
+      expect(outline.length).toBeLessThan(16 * 1024)
+      expect(largest).toBeLessThan(32 * 1024)
+      expect(commit).toBeLessThan(32 * 1024)
+    })
+  }, 20_000)
+})
+
+describe("a follower", () => {
+  it.effect("reads only the events after its cursor, never the snapshot again", () => effect {
+    const memory = try memoryStore()
+    const loads = try Ref.make(0)
+    const counted: Store = { ...memory, load: () => Effect.tap(memory.load(), () => Ref.update(loads, (n) => n + 1)) }
+    const sequencer = try make(counted)
+    try sequencer.bootstrap(built([{ type: "Plan", id: "m1", epic: "e1", before: "", title: "fix(compiler): a", task: "" }]))
+    try sequencer.record({ type: "AddNote", id: "m1", section: "tried", text: "one.", by: "Ada" })
+    try sequencer.record({ type: "AddNote", id: "m1", section: "tried", text: "two.", by: "Ada" })
+    const loaded = try Ref.get(loads)
+    const seq = (try sequencer.read()).seq
+    const replayed = try Stream.runCollect(Stream.take(sequencer.follow(seq - 1), 1))
+    try Effect.try(() => {
+      expect(replayed.map((event) => event.seq)).toEqual([seq])
+      expect(loaded).toBe(1)
+    })
+    const after = try Ref.get(loads)
+    try Effect.try(() => expect(after).toBe(1))
+  })
+})
