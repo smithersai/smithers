@@ -1,0 +1,44 @@
+import { describe, expect, it } from "@effect/vitest"
+import { HttpClient, HttpClientError } from "effect/http"
+import { GitHub } from "../src/index.ts"
+
+effect function fault() {
+  const calls = try Ref.make(0)
+  const headers = try Ref.make<ReadonlyArray<boolean>>([])
+  const http = HttpClient.make((request) => effect {
+    try Ref.update(calls, (n) => n + 1)
+    try Ref.update(headers, (all) => [...all, request.headers.authorization === "Bearer person-only"])
+    throw new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "injected transport fault" }) })
+  })
+  const layer = Layer.succeed(HttpClient.HttpClient, http)
+  return { calls, headers, layer }
+}
+describe("issue changes through the shared GitHub client", () => {
+  it.effect("validates coordinates before the credential can reach a request", () => effect {
+    const transport = try fault()
+    provide transport.layer {
+      const client = try GitHub.GitHubClient.make({ token: "person-only" }, {})
+      provide GitHub.GitHubClient.GitHubClient = client {
+        for (const [parent, child] of [[0, 1], [1, 0], [1.5, 1], [1, Number.MAX_SAFE_INTEGER + 1]]) {
+          const result = try Effect.result(GitHub.IssueChanges.link("owner", "repo", parent!, child!))
+          try Effect.try(() => expect(result._tag).toBe("Failure"))
+        }
+      }
+    }
+    const calls = try Ref.get(transport.calls)
+    try Effect.try(() => expect(calls).toBe(0))
+  })
+  it.effect("classifies an ambiguous sub-issue write once, with exactly the person's token", () => effect {
+    const transport = try fault()
+    provide transport.layer {
+      const result = try Effect.result(GitHub.IssueChanges.link("owner", "repo", 1, 2).pipe(GitHub.Calls.withToken(Redacted.make("person-only"), "https://api.github.com")))
+      try Effect.try(() => {
+        expect(result._tag).toBe("Failure")
+        if (result._tag === "Failure") expect(result.failure.details?.outcomeUnknown).toBe(true)
+      })
+    }
+    const calls = try Ref.get(transport.calls)
+    const headers = try Ref.get(transport.headers)
+    try Effect.try(() => { expect(calls).toBe(1); expect(headers).toEqual([true]) })
+  })
+})

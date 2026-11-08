@@ -302,3 +302,18 @@ your own `Action.make` over `GitHubClient` for any other endpoint; the client
 carries the rate-limit, pagination, and credential behavior, and the action
 makes it journaled. [Durable actions](../concepts/durable-actions.md) shows
 the shape.
+
+## Issue trees and a person's proposal
+
+`GitHub.Calls.withToken` supplies an explicit redacted user credential and never reads an ambient token.
+Smithers' app reuses this wrapper. `GitHub.IssueChanges.get` reads assignments, `update` changes supplied labels,
+assignees or state, and `link` writes GitHub's sub-issue relationship by the child's database ID. Coordinates are
+validated before a credential-bearing request. An ambiguous link is reported as an unknown outcome; the client
+does not repeat it. Use a durable step and reconcile from GitHub before another write.
+
+`GitHub.Proposals.ensureFork` reuses a person's existing fork only when GitHub confirms its parent, otherwise
+asks GitHub to create a fork. Compose it with `GitHub.Once.branch`, `commitOnBranch` and `pull` inside
+`Action.once` to open the person's review change. People merge. These operations never merge a proposal.
+
+Endpoint contracts: [sub-issues](https://docs.github.com/en/rest/issues/sub-issues) and
+[issue updates](https://docs.github.com/en/rest/issues/issues#update-an-issue).

@@ -114,3 +114,6 @@ export * as Sync from "./github/Sync.ts"
 
 /** GitHub user sign-in, PKCE, refresh and revocation. @since 1.0.0 @category services */
 export * as Auth from "./github/Auth.vibe"
+export * as Calls from "./github/Calls.vibe"
+export * as IssueChanges from "./github/IssueChanges.vibe"
+export * as Proposals from "./github/Proposals.vibe"

@@ -1,0 +1,14 @@
+// Fork support for a person's review change, over the shared GitHub Effect client.
+import { GitHubClient } from "./GitHubClient.ts"
+import { requireRepositoryPath } from "./Repository.ts"
+export const Fork = Schema.Struct({ name: Schema.String, owner: Schema.Struct({ login: Schema.String }), default_branch: Schema.String })
+/** Reuse only this person's actual fork of this repository; never adopt an unrelated repository of the same name. */
+export effect function ensureFork(owner: string, repo: string, login: string) {
+  const client = try GitHubClient
+  const source = try requireRepositoryPath(owner, repo)
+  const target = try requireRepositoryPath(login, repo)
+  const existing = try Effect.result(client.request("GET", `/repos/${target}`, undefined, { schema: Schema.Struct({ ...Fork.fields, fork: Schema.Boolean, parent: Schema.optionalKey(Schema.Struct({ full_name: Schema.String })) }) }))
+  if (existing._tag === "Success" && existing.success.fork && existing.success.parent?.full_name.toLowerCase() === `${owner}/${repo}`.toLowerCase()) return existing.success
+  if (existing._tag === "Failure" && existing.failure.details?.status !== 404) throw existing.failure
+  return try client.request("POST", `/repos/${source}/forks`, { default_branch_only: true }, { schema: Fork })
+}
