@@ -11,12 +11,12 @@
 //
 // The steps reach the conversation's one state machine (conversation.vibe) through the `Posts` and `Tours` services;
 // nothing here decides anything.
-import { Action, DurableClock, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
+import { Action, DurableDeferred, DurableClock, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { unansweredSelection, type Conversation, type Event, isTour, type Refusal } from "./conversation.vibe"
+import { holdRemaining, unansweredSelection, type Conversation, type Event, isTour, type Refusal } from "./conversation.vibe"
 import { dispatches, endsTourEvent, readingHold } from "./flowDecision.vibe"
-import { STOPS } from "./tourStops.vibe"
-export { STOPS, type Stop } from "./tourStops.vibe"
+import { WALKTHROUGH } from "./walkthroughSteps.vibe"
+import { Walkthrough } from "./schemas.vibe"
 import { wikiPath } from "./wiki.vibe"
 import { RefusalReason } from "./schemas.vibe"
 
@@ -101,6 +101,10 @@ export function docsPage(path: string): string | undefined {
 
 /** The conversation's sequencer, as the tour's steps reach it. */
 export service Tours {
+  current?(): (Walkthrough | null)!!
+  drive?(tour: string, step: number, target: string, duration: number): Walkthrough!!
+  control?(action: "pause" | "resume" | "seek", step: number): { readonly tour: string; readonly previous: number; readonly state: Walkthrough | null; readonly refusal: Refusal | null }!!
+
   /** Runs `decide` and `apply` on a new tour and stores its event: `null` once recorded, else the refusal. */
   start(): (Refusal | null)!!
   /** Starts the running tour's `vibelang/Tour` flow, unless it runs. */
@@ -209,26 +213,75 @@ export function readingMillis(text: string): number {
   return readingHold(words)
 }
 
-/** A stop is a journaled paragraph followed by a durable reading hold, including the final stop. */
-export effect function narrate(tour: string, text: string, stop = 0) {
-  const said = try Action.make({ name: `vibelang/tour/say/${stop}`, success: Schema.Boolean, execute: say(tour, text) })
-  if (!said) return false
-  try withSpan(effect {
-    try counted("hold", "started")
-    try DurableClock.sleep({ name: `vibelang/tour/read/${stop}`, duration: readingMillis(text), inMemoryThreshold: 0 })
-    try counted("hold", "finished")
-  }, "vibelang.tour.hold")
-  return true
+/** One durable gate per numbered drive/control event. A signal can arrive before the wait parks. */
+export function walkthroughGate(revision: number) { return DurableDeferred.make(`vibelang/tour/control/${revision}`, { success: Walkthrough }) }
+
+export const PauseTour = Flow.make("vibelang/tour/pause", {
+  description: "Pauses the walkthrough's current reading hold.", modelInvocable: false,
+  payload: {}, success: PostAnswer, body: () => Node.succeed(null),
+})
+export const ResumeTour = Flow.make("vibelang/tour/resume", {
+  description: "Resumes the walkthrough's remaining reading time.", modelInvocable: false,
+  payload: {}, success: PostAnswer, body: () => Node.succeed(null),
+})
+export const SeekTour = Flow.make("vibelang/tour/seek", {
+  description: "Seeks to a walkthrough step.", modelInvocable: false,
+  payload: { step: Schema.Int }, success: PostAnswer, body: () => Node.succeed(null),
+})
+export effect function controlTour(action: "pause" | "resume" | "seek", step: number) {
+  const tours = try Tours
+  if (tours.control === undefined) return "not-replying" as const
+  const result = try Action.make({ name: `vibelang/tour/${action}`, success: Schema.Struct({ tour: Schema.String, previous: Schema.Number, state: Schema.NullOr(Walkthrough), refusal: PostAnswer }), execute: tours.control(action, step) })
+  if (result.state !== null && result.refusal === null) {
+    const gate = walkthroughGate(result.previous)
+    const token = try Effect.orDie(Effect.try(() => DurableDeferred.tokenFromExecutionId(gate, { flow: Tour, executionId: `tour/${result.tour}` })))
+    try Action.make({ name: "vibelang/tour/signal", execute: Effect.orDie(DurableDeferred.succeed(gate, { token, value: result.state })) })
+    try tours.wake()
+  }
+  try counted(action, result.refusal ?? "accepted")
+  return result.refusal
 }
 
-/** The shared tour controller: only it advances pages, after each paragraph's reading hold. */
-export effect function walk(tour: string, words: ReadonlyArray<string>) {
+/** Both hosts run the designer's exact script. Each visit has a journal identity, including back/skip. */
+export effect function walk(tour: string) {
   const tours = try Tours
-  for (let stop = 0; stop < STOPS.length; stop++) {
-    const opened = try Action.make({ name: `vibelang/tour/open/${stop}`, success: Schema.Boolean, execute: openDocs(tour, STOPS[stop]!.path) })
-    if (!opened || !(try narrate(tour, words[stop]!, stop))) return
+  if (tours.drive === undefined) return
+  const restored = try Action.make({ name: "vibelang/tour/restore", success: Schema.NullOr(Walkthrough), execute: effect {
+    const saved = try (tours.current?.() ?? succeed(null))
+    return saved === null || saved.paused ? saved : { ...saved, remaining: holdRemaining(saved.remaining, saved.at, try Clock.currentTimeMillis) }
+  } })
+  let step = restored?.step ?? 1
+  let visit = 0
+  while (step <= WALKTHROUGH.length) {
+    const stop = WALKTHROUGH[step - 1]!
+    let state = visit === 0 && restored !== null && restored.target !== "" ? restored : try Action.make({ name: `vibelang/tour/step/${visit}/${step}`, success: Walkthrough, execute: withSpan(effect {
+      const state = try tours.drive!(tour, step, stop.target, Math.max(stop.duration, readingMillis(stop.subtitle)))
+      try counted("drive", String(step))
+      return state
+    }, "vibelang.tour.drive") })
+    if (!(visit === 0 && restored !== null && restored.target !== "") && !(try narrateLine(tour, stop.subtitle, visit))) return
+    let turn = 0
+    while (true) {
+      const changed = DurableDeferred.await(walkthroughGate(state.revision))
+      const next = state.paused ? try changed : try DurableDeferred.raceAll({
+        name: `vibelang/tour/gate/${visit}/${turn}`, success: Schema.NullOr(Walkthrough), error: Schema.Never,
+        effects: [changed, Effect.as(withSpan(effect {
+          try counted("hold", "started")
+          try DurableClock.sleep({ name: `vibelang/tour/read/${visit}/${turn}`, duration: state.remaining, inMemoryThreshold: 0 })
+          try counted("hold", "finished")
+        }, "vibelang.tour.hold"), null)],
+      })
+      if (next === null) { step++; break }
+      state = next
+      if (state.target === "") { step = state.step; break }
+      turn++
+    }
+    visit++
   }
   try Action.make({ name: "vibelang/tour/finish", execute: tours.finish(tour, "") })
+}
+effect function narrateLine(tour: string, text: string, visit: number) {
+  return try Action.make({ name: `vibelang/tour/say/${visit}`, success: Schema.Boolean, execute: say(tour, text) })
 }
 
 /**
@@ -247,6 +300,9 @@ export effect function toured<E, R>(tour: string, speak: void!E!R) {
 export const tourRegistration = Layer.effectDiscard(effect {
   const engine = try FlowRuntime.FlowRuntime
   try engine.register(StartTour, () => withSpan(startTour(), "vibelang.tour.start"))
+  try engine.register(PauseTour, () => withSpan(controlTour("pause", 0), "vibelang.tour.pause"))
+  try engine.register(ResumeTour, () => withSpan(controlTour("resume", 0), "vibelang.tour.resume"))
+  try engine.register(SeekTour, p => withSpan(controlTour("seek", p.step), "vibelang.tour.seek"))
   try engine.register(EndTour, () => withSpan(endTour(), "vibelang.tour.end"))
 })
 

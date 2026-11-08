@@ -1,0 +1,24 @@
+import { it } from "@effect/vitest"
+import { apply, decide, empty, type Intent } from "../src/core/conversation.vibe"
+import { Steps, run } from "./run.vibe"
+
+it.live("walkthrough/controls", () => run("walkthrough/controls", Steps, steps => {
+  let state = apply(empty, { type: "TourStarted", seq: 1, id: "t1" })
+  for (const [index, input] of steps.entries()) {
+    const id = input.flag ? "t1" : "other"
+    const at = index * 1000
+    const intent: Intent = input.op % 4 === 0 ? { type: "DriveWalkthrough", id, step: input.id, target: "issues", at, duration: 15000 } : input.op % 4 === 1 ? { type: "PauseTour", id, at } : input.op % 4 === 2 ? { type: "ResumeTour", id, at } : { type: "SeekTour", id, step: input.id, at }
+    const decision = decide(state, intent)
+    if (!decision.ok) continue
+    if (id !== "t1") return false
+    const next = apply(state, decision.event)
+    if (next.seq !== state.seq + 1 || next.entries !== state.entries || next.agent !== state.agent) return false
+    if (apply(next, decision.event) !== next) return false
+    if (!next.walkthrough || next.walkthrough.remaining < 0 || next.walkthrough.step < 1 || next.walkthrough.step > 11) return false
+    if (intent.type === "PauseTour" && !next.walkthrough.paused) return false
+    if (intent.type === "ResumeTour" && next.walkthrough.paused) return false
+    if (intent.type === "SeekTour" && next.walkthrough.step !== intent.step) return false
+    state = next
+  }
+  return true
+}))

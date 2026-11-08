@@ -1,4 +1,5 @@
 import { requestedSpecificationReview } from "./specification.vibe"
+import { MockJournal } from "./MockJournal.vibe"
 import { firstUndispatched } from "./flowDecision.vibe"
 import * as MockAccounts from "./MockAccounts.vibe"
 import type { IssuesApi } from "./issueSchemas.vibe"
@@ -15,7 +16,7 @@ import { Action, FlowRuntime } from "@smthrs/flow"
 import { apply, decide, empty, isTouring, type Conversation, type Decision, type Event, type Intent } from "./conversation.vibe"
 import { Factory, type Mode, Refused, Unavailable } from "./Factory.vibe"
 import {
-  OpenWiki, openWiki, wikiRegistration, EndTour, endsTour, patient, Post, postRegistration, Posts, Reply, replyIdOf, StartTour, Tour, toured, touring, tourRegistration,
+  PauseTour, ResumeTour, SeekTour, OpenWiki, openWiki, wikiRegistration, EndTour, endsTour, patient, Post, postRegistration, Posts, Reply, replyIdOf, StartTour, Tour, toured, touring, tourRegistration,
   Tours, unanswered, walk,
 } from "./flows.vibe"
 import { requestedWiki } from "./wiki.vibe"
@@ -28,7 +29,7 @@ import { matches } from "./mockDecision.vibe"
 import { makeMockSandboxes } from "./sandboxMock.vibe"
 import type { Role } from "./sandboxDecision.vibe"
 import { SandboxPolicy } from "./sandboxPolicy.vibe"
-import { chunks, HISTORY_WORDS, historyReply, mockReply, TOUR } from "./mockReplies.vibe"
+import { chunks, HISTORY_WORDS, historyReply, mockReply } from "./mockReplies.vibe"
 
 /** Who the scripted agent reads the mythical history as: the agent for a person who has not signed in. */
 const MOCK_AGENT: Principal = { role: "viewer", name: "Guest", agent: true }
@@ -156,6 +157,7 @@ effect function cryptoOf() {
 /** The mock factory. Each layer build is its own world; closing that layer ends all work and subscriptions. */
 export function mockFactoryFor(role?: Role) {
 return Layer.effect(Factory, effect {
+  const journal = try MockJournal
   const scope = try Effect.scope
   const accounts = try MockAccounts.make()
   if (role !== undefined) try Effect.orDie(accounts.choose(role))
@@ -209,6 +211,7 @@ return Layer.effect(Factory, effect {
         if (!decided.ok) return [decided, current]
         return [decided, { conversation: apply(current.conversation, decided.event), log: [...current.log, decided.event] }]
       })
+      if (decision.ok) try journal.write(conversation, (try Ref.get(state)).log)
       if (decision.ok) try PubSub.publish(published, { conversation, event: decision.event })
       return decision
     }))
@@ -246,7 +249,10 @@ return Layer.effect(Factory, effect {
       const all = try Ref.get(rooms)
       const existing = all.get(conversation)
       if (existing !== undefined) return existing
-      const state = try Ref.make<State>({ conversation: empty, log: [] })
+      const retained = try journal.read(conversation)
+      const restored = retained.reduce(apply, empty)
+      try Ref.update(ids, value => Math.max(value, restored.seq))
+      const state = try Ref.make<State>({ conversation: restored, log: retained })
       const gate = try Semaphore.make(1)
       const wake = try Scope.provide(scope)(acquireRelease(Queue.sliding<void>(1), Queue.shutdown))
       const record = recorder(state, gate, conversation)
@@ -279,6 +285,18 @@ return Layer.effect(Factory, effect {
         wake: effect () => {
           const tour = try Ref.get(activeTour)
           if (tour !== "") try engine.resume(Tour, `tour/${tour}`)
+        },
+        current: () => Effect.map(Ref.get(state), state => state.conversation.walkthrough ?? null),
+        drive: effect (tour, step, target, duration) => {
+          try accepted({ type: "DriveWalkthrough", id: tour, step, target, duration, at: try Clock.currentTimeMillis })
+          return (try Ref.get(state)).conversation.walkthrough!
+        },
+        control: effect (action, step) => {
+          const current = (try Ref.get(state)).conversation
+          const tour = touring(current)
+          const at = try Clock.currentTimeMillis
+          const decision = try record(action === "seek" ? { type: "SeekTour", id: tour, step, at } : { type: action === "pause" ? "PauseTour" : "ResumeTour", id: tour, at })
+          return { tour, previous: current.walkthrough?.revision ?? 0, state: (try Ref.get(state)).conversation.walkthrough ?? null, refusal: decision.ok ? null : decision.refusal }
         },
         running: (tour: string) => Effect.map(Ref.get(state), (current) => isTouring(current.conversation, tour)),
         open: (tour: string, url: string) => accepted({ type: "OpenPane", id: tour, url }),
@@ -314,7 +332,7 @@ return Layer.effect(Factory, effect {
             }, effect () => (try Effect.orDie(accounts.current())).id === (postOwners.get(payload.post) ?? "")), "vibelang.reply"))
           }
           try engine.register(Reply, reply)
-          try engine.register(Tour, (payload) => withSpan(toured(payload.tour, walk(payload.tour, TOUR.map((stop) => stop.words))), "vibelang.tour"))
+          try engine.register(Tour, (payload) => withSpan(toured(payload.tour, walk(payload.tour)), "vibelang.tour"))
         }),
       ).pipe(
         Layer.provide(Layer.succeed(FlowRuntime.FlowRuntime, engine)),
@@ -325,6 +343,7 @@ return Layer.effect(Factory, effect {
       const room: Room = { state, engine }
       try Ref.set(rooms, new Map(all).set(conversation, room))
       try Effect.forkIn(answer(state, engine, wake, activeTour), scope)
+      if (retained.length > 0) try Queue.offer(wake, undefined)
       // Wait for any already-accepted commit/publish before disposal completes. New calls see Closed.
       try Scope.addFinalizer(scope, Semaphore.withPermits(gate, 1)(Effect.void))
       return room
@@ -371,6 +390,12 @@ return Layer.effect(Factory, effect {
       const room = try openRoom(conversation)
       const executionId = `start-tour/${try Ref.updateAndGet(executions, (value) => value + 1)}`
       const refusal = try Effect.orDie(room.engine.execute(StartTour, { executionId, payload: {} }))
+      if (refusal !== null) throw new Refused({ refusal })
+    },
+    controlTour: effect (conversation, action, step) => {
+      const room = try openRoom(conversation)
+      const executionId = `control-tour/${try Ref.updateAndGet(executions, value => value + 1)}`
+      const refusal = try Effect.orDie(action === "pause" ? room.engine.execute(PauseTour, { executionId, payload: {} }) : action === "resume" ? room.engine.execute(ResumeTour, { executionId, payload: {} }) : room.engine.execute(SeekTour, { executionId, payload: { step } }))
       if (refusal !== null) throw new Refused({ refusal })
     },
     endTour: effect (conversation: string) => {

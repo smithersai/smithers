@@ -84,6 +84,10 @@ function hasEffect(before: Conversation, event: Event, after: Conversation): boo
   const grew = after.entries.length === before.entries.length + 1
   const reply = after.entries.find((entry) => entry.id === event.id)
   switch (event.type) {
+    case "WalkthroughDriven": return after.walkthrough?.step === event.step && after.walkthrough?.target === event.target
+    case "TourPaused": return after.walkthrough?.paused === true
+    case "TourResumed": return after.walkthrough?.paused === false
+    case "TourSought": return after.walkthrough?.step === event.step
     case "RoleGranted": return after.roles[0]?.id === event.id && after.roles[0]?.role === event.role
     case "ActionAuthorized": return after.roles === before.roles
     case "ActionRequested":

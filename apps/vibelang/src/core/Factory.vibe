@@ -50,6 +50,7 @@ export service Factory {
   tour(conversation: string): void!(Unavailable | Refused)
   /** Ends the tour that runs in `conversation`; `not-replying` when none runs. */
   openWiki(conversation: string, page: string): void!(Unavailable | Refused)
+  controlTour?(conversation: string, action: "pause" | "resume" | "seek", step: number): void!(Unavailable | Refused)
   endTour(conversation: string): void!(Unavailable | Refused)
   /** The one sandbox attached to a conversation, or a stopped empty snapshot. */
   sandbox(conversation: string): SandboxSnapshot!(Unavailable | Refused)

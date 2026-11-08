@@ -5,6 +5,8 @@ import { expect, type Page, test } from "@playwright/test"
 // asked for." Ruling VL-13: the whole app works in mock mode, with no backend, no model and no sign-in. This test starts
 // as a visitor with nothing saved, switches to Mock with the top bar's switch, and uses every feature there. Against a
 // deployment it starts live; on a local build (no API Worker) the page is already mock, and the switch still shows it.
+test.beforeEach(async ({ page }) => { await page.addInitScript(() => localStorage.setItem("vibelang:toured", "yes")) })
+
 test.use({ storageState: { cookies: [], origins: [] } })
 
 const modeSwitch = (page: Page) => page.locator(".vl-top .vl-mode")
@@ -102,11 +104,14 @@ test("the top bar switches to Mock, the choice persists, and every feature works
   await page.getByRole("button", { name: "Stop", exact: true }).click()
   await expect(page.getByRole("status", { name: "Sandbox" })).toHaveText("Stopped")
 
-  // The tour: Learn more, the glow, the docs, and Esc.
+  // The theatre walkthrough works in Mock too, through its real app drives.
   await page.goto("/")
   await page.getByRole("button", { name: "Learn more", exact: true }).click()
   await expect(page.locator(".vl-glow")).toBeVisible()
-  await expect(page.getByTitle("VibeLang docs")).toBeVisible({ timeout: 15_000 })
+  await expect(page.locator(".vl-theatre-bar")).toHaveAttribute("data-step", "1")
+  await page.getByRole("button", { name: "Skip", exact: true }).click()
+  await expect(page.locator(".vl-theatre-bar")).toHaveAttribute("data-step", "2")
+  await expect(page.locator('.sui-chat-message[data-role="user"]')).toContainText("What makes VibeLang different")
   await page.getByRole("button", { name: "Esc", exact: true }).click()
   await expect(page.locator(".vl-glow")).toBeHidden()
 

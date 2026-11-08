@@ -1,0 +1,15 @@
+// The designer's ten steps, shared by both flow hosts and the theatre view (VL-31).
+export interface WalkthroughStep { readonly target: string; readonly subtitle: string; readonly voice: string; readonly duration: number }
+export const DEMO_QUESTION = "What makes VibeLang different from TypeScript?"
+export const WALKTHROUGH: ReadonlyArray<WalkthroughStep> = [
+  { target: "splash", subtitle: "I'm the VibeLang agent. I'm driving for two minutes — Esc anytime.", voice: "Hi — I'm the VibeLang agent. I'll drive for about two minutes. Press Escape any time to take over.", duration: 7000 },
+  { target: "palette", subtitle: "This is the chat. ⌘K opens it anywhere — ask me about VibeLang.", voice: "This is the chat. Command-K opens it from anywhere. Ask me anything about VibeLang.", duration: 22000 },
+  { target: "issues", subtitle: "Issues grow as a tree. A task is an issue we've committed to — it has an assignee.", voice: "Issues grow as a tree: big problems split into smaller ones. A task is an issue the project committed to, and it always has an assignee.", duration: 15000 },
+  { target: "issue:48", subtitle: "This task is assigned to me. People decide the work; agents do it.", voice: "This task is assigned to me. People decide the work; agents do it.", duration: 12000 },
+  { target: "issues:vips", subtitle: "A change to the language is a VIP: one feature, its examples, its prior art.", voice: "A change to the language starts as a VIP — one feature, with examples and prior art. Community members propose them.", duration: 14000 },
+  { target: "wiki:index", subtitle: "The wiki is the project's memory: Will's rulings and every decision, beside the code.", voice: "The wiki is the project's memory: Will's rulings and every decision, beside the code.", duration: 14000 },
+  { target: "history-nav", subtitle: "History holds every commit of main, folded into epics you can read.", voice: "History is the mythical history — every commit of main, folded into epics you can actually read.", duration: 11000 },
+  { target: "composer", subtitle: "Type / anywhere. Actions are registered workflows — this tour is one. Your role decides which run.", voice: "Type a slash anywhere. Actions are registered workflows — this tour is one of them. Your role decides which ones run.", duration: 15000 },
+  { target: "sandbox-pane", subtitle: "Contributors get a sandbox: a real machine, metered in minutes each month.", voice: "Contributors get a sandbox — a real machine of their own, metered in minutes each month.", duration: 12000 },
+  { target: "finish", subtitle: "That's the factory. Ask me anything — or sign in to file your first issue.", voice: "That's the factory. Ask me anything — or sign in, and file your first issue.", duration: 12000 },
+]

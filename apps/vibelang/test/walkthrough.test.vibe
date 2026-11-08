@@ -1,0 +1,95 @@
+import { describe, expect, it } from "@effect/vitest"
+import { apply, decide, empty } from "../src/core/conversation.vibe"
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
+
+describe("walkthrough state", () => {
+  it("numbers the drive, freezes remaining reading time, resumes and seeks without touching entries", () => {
+    const started = apply(empty, { type: "TourStarted", seq: 1, id: "t1" })
+    const driven = decide(started, { type: "DriveWalkthrough", id: "t1", step: 3, target: "issues", at: 1000, duration: 15000 })
+    expect(driven.ok).toBe(true)
+    if (!driven.ok) return
+    const showing = apply(started, driven.event)
+    expect(showing.walkthrough).toMatchObject({ step: 3, target: "issues", paused: false, remaining: 15000 })
+    const pause = decide(showing, { type: "PauseTour", id: "t1", at: 4000 })
+    if (!pause.ok) return expect(pause.ok).toBe(true)
+    const paused = apply(showing, pause.event)
+    expect(paused.walkthrough).toMatchObject({ paused: true, remaining: 12000 })
+    const resume = decide(paused, { type: "ResumeTour", id: "t1", at: 90000 })
+    if (!resume.ok) return expect(resume.ok).toBe(true)
+    const resumed = apply(paused, resume.event)
+    expect(resumed.walkthrough).toMatchObject({ paused: false, remaining: 12000, at: 90000 })
+    expect(resumed.entries).toEqual(started.entries)
+    const seek = decide(resumed, { type: "SeekTour", id: "t1", step: 2, at: 91000 })
+    if (!seek.ok) return expect(seek.ok).toBe(true)
+    expect(apply(resumed, seek.event).walkthrough).toMatchObject({ step: 2, target: "", paused: false })
+    expect(decide(empty, { type: "PauseTour", id: "t1", at: 0 })).toMatchObject({ ok: false, refusal: "not-replying" })
+    expect(decide(showing, { type: "SeekTour", id: "t1", step: 12, at: 0 })).toMatchObject({ ok: false })
+    expect(apply(showing, driven.event)).toBe(showing)
+  })
+  it("has the designer's ten destinations, subtitles, voices and two-minute holds", () => {
+    expect(WALKTHROUGH.map(step => step.target)).toEqual(["splash", "palette", "issues", "issue:48", "issues:vips", "wiki:index", "history-nav", "composer", "sandbox-pane", "finish"])
+    expect(WALKTHROUGH.reduce((total, step) => total + step.duration, 0)).toBe(134000)
+    for (const step of WALKTHROUGH) expect(step.subtitle.split(/\s+/).length).toBeLessThanOrEqual(65)
+  })
+})
+
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { MockJournal } from "../src/core/MockJournal.vibe"
+import { TestClock } from "effect/testing"
+import type { Event } from "../src/core/conversation.vibe"
+import { Narration } from "../worker/Tour.vibe"
+
+it("checks the shared live subtitle schema's word bound", () => {
+  expect(Schema.decodeUnknownOption(Narration)({ stops: WALKTHROUGH.map(step => step.subtitle) })._tag).toBe("Some")
+  expect(Schema.decodeUnknownOption(Narration)({ stops: WALKTHROUGH.map(() => Array.from({ length: 66 }, () => "word").join(" ")) })._tag).toBe("None")
+})
+
+it.effect("a paused private Mock tour survives rebuilding its host and resumes without repeated narration", () => effect {
+  const retained = new Map<string, ReadonlyArray<Event>>()
+  const journal = Layer.succeed(MockJournal, {
+    read: (room: string) => succeed(retained.get(room) ?? []),
+    write: (room: string, events: ReadonlyArray<Event>) => sync(() => { retained.set(room, events) }),
+  })
+  const layer = mockFactoryFor().pipe(Layer.provide(journal))
+  try scoped(effect {
+    provide layer {
+      const factory = try Factory
+      try factory.tour("tour-reload")
+      try Stream.runDrain(factory.events("tour-reload", 0).pipe(Stream.takeUntil(event => event.type === "ReplyDelta")))
+      try factory.controlTour!("tour-reload", "seek", 4)
+      try Stream.runDrain(factory.events("tour-reload", 0).pipe(Stream.takeUntil(event => event.type === "ReplyDelta" && event.text.endsWith(WALKTHROUGH[3]!.subtitle))))
+      try factory.controlTour!("tour-reload", "pause", 0)
+    }
+  })
+  const count = retained.get("tour-reload")!.filter(event => event.type === "ReplyDelta").length
+  try scoped(effect {
+    provide layer {
+      const factory = try Factory
+      const events = Array.from(try Stream.runCollect(factory.events("tour-reload", 0).pipe(Stream.takeUntil(event => event.type === "TourPaused"))))
+      try TestClock.adjust("5 seconds")
+      const before = try factory.read("tour-reload", 0)
+      try Effect.try(() => {
+        expect(before.seq).toBe(events.at(-1)!.seq)
+        expect(events.reduce(apply, empty).walkthrough).toMatchObject({ step: 4, paused: true })
+        expect(retained.get("tour-reload")!.filter(event => event.type === "ReplyDelta")).toHaveLength(count)
+      })
+      try factory.controlTour!("tour-reload", "resume", 0)
+      try factory.controlTour!("tour-reload", "seek", 5)
+      try Stream.runDrain(factory.events("tour-reload", 0).pipe(Stream.takeUntil(event => event.type === "ReplyDelta" && event.text.endsWith(WALKTHROUGH[4]!.subtitle))))
+      try factory.endTour("tour-reload")
+      const refused = factory.controlTour!("tour-reload", "pause", 0) catch (error) => error._tag === "Refused" ? error.refusal : "unavailable"
+      try Effect.try(() => expect(refused).toBe("not-replying"))
+    }
+  })
+}, 30000)
+
+it("rejects fractional destinations and malformed drives before they can break the controller", () => {
+  const started = apply(empty, { type: "TourStarted", seq: 1, id: "t1" })
+  const driven = { type: "WalkthroughDriven" as const, seq: 2, id: "t1", step: 1, target: "splash", at: 0, duration: 7000 }
+  const showing = apply(started, driven)
+  expect(decide(showing, { type: "SeekTour", id: "t1", step: 1.5, at: 0 })).toMatchObject({ ok: false })
+  for (const payload of [{ step: 1.5 }, { duration: -1 }, { target: "" }]) {
+    expect(apply(started, { ...driven, ...payload }).walkthrough).toBeUndefined()
+  }
+})

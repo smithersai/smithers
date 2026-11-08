@@ -1,110 +1,13 @@
-// The live agent writes five real narration paragraphs as a durable AgentAction. The shared Tour controller then
-// opens and narrates each stop with its durable reading hold, just as in mock mode (decision 0014).
-import { AgentAction, EventSink } from "@smthrs/agent"
+// VL-31: the designer's exact subtitles run through the same durable controller on both hosts.
 import { WebCrypto } from "@smthrs/crypto"
-import { Action, FlowRuntime } from "@smthrs/flow"
-import { type AgentEvent } from "@smthrs/harness"
-import { ModelRequest } from "@smthrs/model"
-import type { HostModel } from "@smthrs/model-host"
-import { openDocs, STOPS, Tour, toured, Tours, walk } from "../src/core/flows.vibe"
-import { AGENT_CONTEXT } from "./agentContext.vibe"
-import {
-  AGENT_SEAT, agentOf, ChatModel, dayOf, failureReason, fold, MAX_ANSWER_TOKENS, MAX_FRAMES, patient, type Progress,
-  REASONS, Spend, started, tagOf,
-} from "./Reply.vibe"
-import { Unreachable } from "./Unreachable.vibe"
+import { FlowRuntime } from "@smthrs/flow"
+import { Tour, toured, walk } from "../src/core/flows.vibe"
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 
-/** Page changes belong to the shared tour controller; the narration agent needs no tools. */
-export const MAX_CALLS = 0
-
-/** What the agent is asked to do, and the stops it walks. */
-export const TOUR_INSTRUCTION = [
-  "You are giving a person a tour of VibeLang and of this site, VibeLang's open-source coding factory, where people and agents work on the language together and everything the agent does runs as a durable flow.",
-  "The person is watching: a docs pane beside the conversation shows the page you open.",
-  "Write one plain paragraph of two or three sentences per stop, in this exact order:",
-  ...STOPS.map((stop, index) => `${index + 1}. ${stop.path}: ${stop.topic}`),
-  "Return an object with a stops array of exactly five paragraphs, one for each stop. Keep each paragraph to at most 65 words. The tour flow opens each page and gives the person time to read before advancing.",
-  "Say only what the page and VibeLang's reference support. Give no instructions to the person. Return those paragraphs with ctx.done; the flow presents them to the person.",
-].join("\n")
-
-export const Narration = Schema.Struct({ stops: Schema.Array(Schema.String.check(Schema.isPattern(/^(?:\S+\s+){0,64}\S+\s*$/), Schema.isMaxLength(560))).check(Schema.isMinLength(STOPS.length), Schema.isMaxLength(STOPS.length)) })
-
-/** `vibelang/tour/agent`: smithers.sh's agent writes each stop's narration. */
-export const Guide = AgentAction.make("vibelang/tour/agent", {
-  payload: {},
-  output: Narration,
-  seat: AGENT_SEAT,
-  system: [AGENT_CONTEXT, TOUR_INSTRUCTION],
-  profile: "conversation",
-  prompt: () => "Give the tour now.",
-  maxFrames: MAX_FRAMES,
-  modelParams: ModelRequest.GenerationParams.make({ maxTokens: MAX_ANSWER_TOKENS }),
-})
-
-/** The agent writes the real narration once; the durable tour controller owns page order and reading time. */
-effect function guide(model: HostModel["Service"], sink: EventSink.Service) {
-  provide agentOf(Guide.layer, model, sink, [], MAX_CALLS), EventSink.EventSink = sink {
-    const implementation = try Guide.requirement
-    return try Schema.decodeUnknownEffect(Narration)(try implementation.action({}))
-  }
-}
-
-/**
- * `run`, with what it spent recorded even when the person ends the tour mid-run: the interruption skips the journaled
- * spend step, so the finalizer records it. The ledger adds a tour's tokens once, so a later spend step adds nothing.
- */
-export function charged<A, E, R>(run: A!E!R, spend: Spend.Shape, day: string, tour: string, progress: Ref.Ref<Progress>) {
-  return Effect.onInterrupt(run, () =>
-    Effect.ignore(Effect.flatMap(Ref.get(progress), (current) => spend.spend(day, tour, current.tokens))))
-}
-
-/** Settles the tour: finished when `reason` is `""`, else failed with it, shown to the person. */
-effect function settle(tour: string, reason: string) {
-  const tours = try Tours
-  try Action.make({ name: "vibelang/tour/settle", execute: tours.finish(tour, reason) })
-}
-
-/** The live tour's speaker: the budget, then the narration agent, then the spend, then the shared tour controller. */
-export effect function spoken(tour: string) {
-  try Action.make({ name: "vibelang/tour/open/initial", success: Schema.Boolean, execute: openDocs(tour, STOPS[0]!.path) })
-  const spend = try Spend
-  const chat = try ChatModel
-  const admission = try Action.make({
-    name: "vibelang/tour/admit",
-    success: Schema.Struct({ day: Schema.String, admitted: Schema.Boolean }),
-    error: Unreachable,
-    retryPolicy: patient,
-    execute: effect {
-      const day = dayOf(try Clock.currentTimeMillis)
-      return { day, admitted: try spend.admit(day) }
-    },
-  })
-  if (!admission.admitted) return try settle(tour, REASONS.budget)
-  const model = chat.model
-  if (model === undefined) {
-    try Effect.logWarning("vibelang.tour.unconfigured").pipe(Effect.annotateLogs({ reason: chat.unusable }))
-    return try settle(tour, REASONS.unconfigured)
-  }
-  const progress = try Ref.make(started)
-  // The sink runs inside the engine's write: it only folds, for the spend and the failure's reason.
-  const sink: EventSink.Service = { emit: (event: AgentEvent.AgentEvent) => Ref.update(progress, (current) => fold(current, event)) }
-  const answered = try exit(charged(guide(model, sink), spend, admission.day, tour, progress))
-  const folded = try Ref.get(progress)
-  try Action.make({
-    name: "vibelang/tour/spend",
-    error: Unreachable,
-    retryPolicy: patient,
-    execute: spend.spend(admission.day, tour, folded.tokens),
-  })
-  if (Exit.isFailure(answered) && Cause.hasInterrupts(answered.cause)) return try Effect.failCause(answered.cause)
-  const tag = Exit.isFailure(answered) ? tagOf(Cause.squash(answered.cause)) : "answered"
-  try Effect.logInfo("vibelang.tour.agent").pipe(Effect.annotateLogs({ outcome: folded.failed ?? tag, tokens: folded.tokens }))
-  if (Exit.isFailure(answered)) return try settle(tour, failureReason(tag, folded))
-  try walk(tour, answered.value.stops)
-}
-
-/** Registers `Tour` with the engine: the agent speaks until it is done or the person ends the tour. */
+/** Every spoken/displayed line remains within the live agent's existing word bound. */
+export const Narration = Schema.Struct({ stops: Schema.Array(Schema.String.check(Schema.isPattern(/^(?:\S+\s+){0,64}\S+\s*$/), Schema.isMaxLength(560))).check(Schema.isMinLength(WALKTHROUGH.length), Schema.isMaxLength(WALKTHROUGH.length)) })
+export effect function spoken(tour: string) { try walk(tour) }
 export const tourAgentRegistration = Layer.effectDiscard(effect {
   const engine = try FlowRuntime.FlowRuntime
-  try engine.register(Tour, (payload) => withSpan(Effect.orDie(toured(payload.tour, spoken(payload.tour))), "vibelang.tour"))
+  try engine.register(Tour, p => withSpan(toured(p.tour, spoken(p.tour)), "vibelang.tour"))
 }).pipe(Layer.provide(WebCrypto.layer))

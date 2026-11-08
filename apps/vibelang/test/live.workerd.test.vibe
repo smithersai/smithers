@@ -1,3 +1,4 @@
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 // The live Factory end to end in local workerd (wiki/decisions/0010-live-agent.md, 0008-testing.md): Miniflare runs
 // the API Worker's Durable Objects over the real sequencer, the real `vibelang/Reply` flow on the engine in each
 // conversation's own SQLite, and the real HTTP protocol (test/workerd/worker.vibe), and `LiveFactory` talks to it over
@@ -136,28 +137,20 @@ describe("the live Factory in local workerd, with no model key", () => {
     }
   })
 
-  it.live("runs Learn more's tour as durable flows that fail saying the agent has no model, then answers a post", () => effect {
-    const origin = api!.origin
-    provide live(origin) {
+  it.live("runs the exact walkthrough without a model, finishes by seek and then answers a post", () => effect {
+    provide live(api!.origin) {
       const factory = try Factory
       const conversation = try room("tour-unconfigured")
       try factory.tour(conversation)
+      const driven = Array.from(try Stream.runCollect(factory.events(conversation, 0).pipe(Stream.takeUntil(event => event.type === "ReplyDelta"))))
+      try factory.controlTour!(conversation, "seek", 11)
       const toured = try untilSettled(conversation, 1)
       try factory.post(conversation, "a", "Ada", "hi")
       const events = try untilSettled(conversation, 2)
-      const none = factory.endTour(conversation) catch (error) => error._tag === "Refused" ? error.refusal : error.reason
-      const runs = try runsOf(origin, conversation)
       try Effect.try(() => {
-        expect(toured).toEqual([
-          { type: "TourStarted", seq: 1, id: "t1" },
-          { type: "PaneOpened", seq: 2, id: "t1", url: "https://vibelang.sh/" },
-          { type: "ReplyFailed", seq: 3, id: "t1", reason: REASONS.unconfigured },
-        ])
-        expect(events.at(-1)).toMatchObject({ type: "ReplyFailed", id: "r4", reason: REASONS.unconfigured })
-        expect(none).toBe("not-replying")
-        expect(runs.filter((run) => run.run_id.startsWith("start-tour/")).map((run) => run.status)).toEqual(["completed"])
-        expect(runs.filter((run) => run.run_id.startsWith("end-tour/")).map((run) => run.status)).toEqual(["completed"])
-        expect(runs.map((run) => run.run_id)).toEqual(expect.arrayContaining(["tour/t1", "reply/m4"]))
+        expect(driven.some(event => event.type === "WalkthroughDriven" && event.target === "splash")).toBe(true)
+        expect(toured.at(-1)?.type).toBe("ReplyFinished")
+        expect(events.at(-1)).toMatchObject({ type: "ReplyFailed", reason: REASONS.unconfigured })
       })
     }
   })
@@ -186,7 +179,7 @@ describe("the live Factory in local workerd, with no model key", () => {
       const snapshot = try factory.read(conversation, 0)
       try Effect.try(() => {
         expect(snapshot.entries[0]).toMatchObject({ done: true })
-        expect(snapshot.entries[0]!.text.split(/\s+/)).toHaveLength(40)
+        expect(snapshot.entries[0]!.text).toBe(WALKTHROUGH[0]!.subtitle)
       })
     }
   }, 30_000)
@@ -355,19 +348,5 @@ describe.skipIf(modelKey === undefined)("the live Factory with the real model (o
     }
   }, 180_000)
 
-  it.live("gives the tour: opens the stops' pages in the docs pane and says what they are", () => effect {
-    provide live(api!.origin) {
-      const factory = try Factory
-      const conversation = try room("model-tour")
-      try factory.tour(conversation)
-      const events = try untilSettled(conversation, 1)
-      const tour = events.reduce(apply, empty)
-      try Effect.try(() => {
-        expect(events.at(-1)!.type).toBe("ReplyFinished")
-        expect(events.filter((event) => event.type === "PaneOpened").length).toBeGreaterThan(0)
-        expect(tour.pane.startsWith("https://vibelang.sh/")).toBe(true)
-        expect(tour.entries[0]!.text).toContain("VibeLang")
-      })
-    }
-  }, 300_000)
+
 })

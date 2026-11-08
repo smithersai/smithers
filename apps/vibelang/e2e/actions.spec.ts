@@ -44,7 +44,8 @@ test("the public slash menu filters, moves, dismisses, and starts its real regis
   await expect(menu).toHaveCount(0)
   await input.fill("/to")
   await input.press("Enter")
-  await expect(page.getByRole("button", { name: /Open Tour run/ })).toBeVisible()
+  await expect(page.locator(".vl-theatre-bar")).toBeVisible()
+  await page.keyboard.press("Escape")
 })
 
 test("a run the scripted agent requests appears as its live card", async ({ page }) => {
@@ -73,8 +74,11 @@ test.describe("local real-engine action faults and role views", () => {
     await page.goto("/e2e/actions-runtime/index.html?role=contributor&fault=fail")
     await page.keyboard.press("ControlOrMeta+k")
     const input = page.getByRole("dialog").getByRole("textbox", { name: "Message", exact: true })
-    await input.fill("/tour")
+    await input.fill("Hello")
     await input.press("Enter")
+    await page.getByRole("button", { name: "Expand Actions", exact: true }).click()
+    await page.getByRole("region", { name: "Actions", exact: true }).getByRole("button", { name: "Tour", exact: true }).click()
+    await page.getByRole("region", { name: "Actions", exact: true }).getByRole("button", { name: "Run", exact: true }).click()
     const card = page.getByRole("button", { name: /Open Tour run/ })
     await expect(card).toContainText("Failed")
     await card.click()

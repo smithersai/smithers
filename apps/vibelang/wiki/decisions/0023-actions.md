@@ -124,3 +124,5 @@ new VibeLang source. The engine's browser proof adds the monorepo's vibelang-unp
 Both SDK suites report 100% statements, branches, functions and lines. Retained JSON receipts name Bundled.vibe
 and StepTrace.vibe explicitly. The initial suspicion of coverage omission was unproven: Vitest's agent-facing
 text report hides fully covered files. Explicit source globs make the measured language scope clear.
+
+**VL-31 cancellation regression.** Ending a registered tutorial could wake its alarm and record Passed before the Cancel receipt. The tour cancellation path now records its terminal cancellation before canceling/waking the execution; the one machine prevents the alarm from overwriting it. The real workerd regression first observed Passed, then requires Cancelled and its retained steps. Normal Learn more still ends through EndTour without canceling its conversation object.

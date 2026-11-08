@@ -12,7 +12,8 @@ import { wikiPane } from "./wikiView.vibe"
 import { actionsPane, actionCards, slashMenu } from "./actionView.vibe"
 import { actionsOf, completions } from "./actionModel.vibe"
 import { render } from "./markdown.vibe"
-import { STOPS, type StopMedia } from "../core/tourStops.vibe"
+import { WALKTHROUGH } from "../core/walkthroughSteps.vibe"
+interface StopMedia { readonly src: string; readonly alt: string; readonly poster?: string; readonly loop?: boolean }
 import { sandboxPane } from "./sandboxView.vibe"
 
 type H = HtmlBuilder<AppMessage>
@@ -32,16 +33,16 @@ export function view(model: Model, h: H): Document {
       [
         top(model, h),
         model.issues?.open ? issuesView(issueStateOf(model), h, (action, value = "") => Message.IssueUi({ action, value })) : model.surface === "splash" ? splash(model, h) : chat(model, h),
-        ...(model.surface === "chat" && (model.client.conversation.pane !== "" || showsWiki(model)) && (model.tour || model.docs === "max") ? [paneView(model, h)] : []),
+        ...(model.surface === "chat" && (model.client.conversation.pane !== "" || showsWiki(model)) && model.docs === "max" ? [paneView(model, h)] : []),
         ...(model.surface === "chat" && actionsOf(model).open && actionsOf(model).maximized ? [actionsPane(model, h)] : []),
         palette(model, h),
         ...accountOverlays(model, h),
-        ...(model.tour ? control(h) : []),
+        ...(model.tour ? control(model, h) : []),
         h.div([h.Id("vl-announcements")], [
           h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Answer"), h.AriaLive("polite"), h.AriaAtomic(true)], [
             h.span([h.Key(String(model.announced))], model.answer === "" ? [] : [`Answer ${model.announced}: ${model.answer}`]),
           ]),
-          h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Tour"), h.AriaLive("polite"), h.AriaAtomic(true)], [model.tour ? "Agent controlling. Escape to stop." : model.conversation === tourConversation(model.session) ? "Tour ended. You have control." : ""]),
+          h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Tour"), h.AriaLive("polite"), h.AriaAtomic(true)], [model.tour ? `Agent controlling. Escape to stop. Step ${model.theatre?.step ?? 1} of 10: ${WALKTHROUGH[(model.theatre?.step ?? 1) - 1]?.subtitle.split(/\s+/).slice(0, 6).join(" ") ?? ""}` : model.toured ? "Tour ended. You have control." : ""]),
           h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Connection"), h.AriaLive("polite"), h.AriaAtomic(true)], [model.connection]),
         ]),
       ],
@@ -131,10 +132,27 @@ function splashPane(h: H): Html {
 // ── the agent in control ─────────────────────────────────────────────────────────────────────────────────────────
 
 /** While the agent drives: a glow around the whole screen, and Esc to take control back. */
-function control(h: H): ReadonlyArray<Html> {
+function control(model: Model, h: H): ReadonlyArray<Html> {
+  const step = model.theatre?.step ?? 1
+  const box = model.theatreBox ?? { x: 16, y: 80, width: 200, height: 100 }
+  const button = (label: string, text: string, message: AppMessage, disabled = false) => h.button([h.Type("button"), h.AriaLabel(label), h.Disabled(disabled), h.OnClick(message)], [text])
   return [
     h.div([h.Class("vl-glow"), h.AriaHidden(true)], []),
-    h.button([h.Class("vl-esc"), h.Type("button"), h.AriaKeyshortcuts("Escape"), h.OnClick(Message.ClickedEndTour())], [h.kbd([], ["Esc"])]),
+    h.div([h.Class("vl-theatre-block"), h.AriaHidden(true)], []),
+    h.div([h.Class("vl-theatre-spotlight"), h.AriaHidden(true), h.Style({ left: `${box.x}px`, top: `${box.y}px`, width: `${box.width}px`, height: `${box.height}px` })], []),
+    h.div([h.Class("vl-theatre-progress"), h.AriaLabel("Tour progress")], WALKTHROUGH.map((_, index) => h.span([h.Class(index + 1 < step ? "done" : index + 1 === step ? "current" : ""), h.Style({ animationPlayState: model.theatre?.paused ? "paused" : "running" })], []))),
+    h.section([h.Class("vl-theatre-bar"), h.AriaLabel("Walkthrough"), h.DataAttribute("step", String(step)), h.DataAttribute("paused", String(model.theatre?.paused ?? false))], [
+      h.div([h.Class("vl-theatre-meta")], [`${step} of 10`]),
+      h.p([h.Class("vl-theatre-subtitle"), h.AriaLive("polite"), h.AriaAtomic(true)], [WALKTHROUGH[step - 1]?.subtitle ?? ""]),
+      h.div([h.Class("vl-theatre-controls")], [
+        button("Back", "⏮", Message.ClickedBackStop(), step === 1),
+        button(model.theatre?.paused ? "Play" : "Pause", model.theatre?.paused ? "▶" : "Ⅱ", Message.ClickedPauseTour()),
+        button("Skip", "⏭", Message.ClickedSkipStop()),
+        h.button([h.Type("button"), h.AriaLabel(model.theatre?.sound ? "Sound off" : "Sound on"), h.AriaPressed(String(model.theatre?.sound ?? false)), h.OnClick(Message.ToggledTourSound())], [model.theatre?.sound ? "🔊" : "🔇"]),
+        button("Exit", "Exit", Message.ClickedEndTour()),
+      ]),
+    ]),
+    h.button([h.Class("vl-esc"), h.Type("button"), h.Tabindex(-1), h.AriaKeyshortcuts("Escape"), h.OnClick(Message.ClickedEndTour())], [h.kbd([], ["Esc"])]),
   ]
 }
 
@@ -149,9 +167,7 @@ function paneView(model: Model, h: H): Html {
 /** The page the agent opened, in a pane of the conversation that maximizes over it. */
 function docsPane(model: Model, h: H): Html {
   const page = model.client.conversation.pane
-  const maximized = model.tour || model.docs === "max"
-  const tour = [...model.client.conversation.entries].reverse().find((entry) => entry.author === "agent" && entry.inReplyTo === "")
-  const current = tour?.text.trim().split(/\n\s*\n/).at(-1) ?? ""
+  const maximized = model.docs === "max"
   return h.section(
     [h.Class("vl-docs"), h.AriaLabel("Docs"), h.DataAttribute("maximized", String(maximized)), h.DataAttribute("driving", String(model.tour))],
     [
@@ -164,11 +180,7 @@ function docsPane(model: Model, h: H): Html {
       ]),
       h.div([h.Class(model.tour ? "vl-docs-body" : "vl-docs-content")], [
         h.iframe([h.Class("vl-docs-frame"), h.Src(page), h.Title("VibeLang docs"), h.Inert(model.tour), h.Tabindex(model.tour ? -1 : 0)], []),
-        ...(model.tour ? [h.div([h.Class("vl-tour-side")], [
-          ...mediaForStop(model, h, page),
-          h.div([h.Class("sui-chat-message-label")], ["VibeLang agent"]),
-          h.section([h.Class("vl-tour-narration sui-chat-bubble"), h.AriaLabel("Current stop")], render(h, current)),
-        ])] : []),
+
       ]),
     ],
   )
@@ -181,19 +193,20 @@ function chat(model: Model, h: H): Html {
   return h.main([h.Class("vl-chat"), h.Inert(model.tour || model.docs === "max" || actionsOf(model).maximized)], [
     h.div([h.Class("sui-chat-messages"), h.DataAttribute("following", String(model.following)), h.Role("log"), h.AriaLabel("Conversation"), h.AriaLive("off")], [
       splashPane(h),
+      ...(model.tourClient?.conversation.entries.length ? [h.div([h.Class("sui-chat-message"), h.DataAttribute("role", "assistant"), h.DataAttribute("walkthrough", "true"), h.DataAttribute("done", String(model.tourClient.conversation.entries.at(-1)?.done ?? false))], [h.div([h.Class("sui-chat-bubble")], [model.tourClient.conversation.entries.at(-1)?.text ?? ""])])] : []),
       sandboxPane(model, h),
       ...peoplePane(model, h),
       ...accountNotice(model, h),
       h.button([h.Class("vl-pane"), h.Type("button"), h.Style({ viewTransitionName: "issues" }), h.OnClick(Message.ClickedIssues())], [h.span([h.Class("vl-pane-text")], [model.issues?.data === undefined ? "Issues" : `Issues · ${model.issues.data.items.filter(i => i.state === "open").length} open`]), h.span([h.Class("vl-pane-expand")], [paneIcon(h, MAXIMIZE)])]),
-      ...(showsWiki(model) && !model.wikiAfter && !model.tour && model.docs !== "max" ? [wikiPane(model, h)] : []),
-      ...(conversation.pane !== "" && !showsWiki(model) && !model.tour && model.docs !== "max" ? [docsPane(model, h)] : []),
+      ...(showsWiki(model) && !model.wikiAfter && model.docs !== "max" ? [wikiPane(model, h)] : []),
+      ...(conversation.pane !== "" && !showsWiki(model) && model.docs !== "max" ? [docsPane(model, h)] : []),
       ...(conversation.entries.length === 0 && pending.length === 0 && !showsWiki(model) ? [h.div([h.Class("sui-chat-empty")], media(model, h, "vl-empty-media", {
         src: "/media/card-06-compiler.png", alt: "The compiler says what to write instead: VibeLang diagnostics with the fix to write",
       }))] : []),
       ...(actionsOf(model).maximized ? [] : [actionsPane(model, h)]),
       ...actionCards(model, h),
       ...conversation.entries.flatMap(entry => [
-        ...(showsWiki(model) && model.wikiAfter === entry.id && !model.tour && model.docs !== "max" ? [wikiPane(model, h)] : []),
+        ...(showsWiki(model) && model.wikiAfter === entry.id && model.docs !== "max" ? [wikiPane(model, h)] : []),
         entryView(entry, model, h),
       ]),
       ...pending.map((post) => pendingView(post, h)),
@@ -315,10 +328,7 @@ function palette(model: Model, h: H): Html {
 }
 
 /** Only the flow's catalog chooses media; narration cannot name a file. */
-function mediaForStop(model: Model, h: H, page: string): ReadonlyArray<Html> {
-  const stop = STOPS.find((stop) => page === DOCS_URL + stop.path)
-  return stop === undefined ? [] : media(model, h, "vl-stop-media", stop.media)
-}
+
 
 /** Loading videos show their native poster. A failed image or video removes its whole figure. */
 function media(model: Model, h: H, className: string, asset: StopMedia, controls = false): ReadonlyArray<Html> {

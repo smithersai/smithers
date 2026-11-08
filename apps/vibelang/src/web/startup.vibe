@@ -1,3 +1,5 @@
+import { MockJournal } from "../core/MockJournal.vibe"
+import { EventSchema } from "../core/schemas.vibe"
 // Browser startup: prepares styles and Foldkit without waiting for backend selection.
 // The live Factory when this origin's `/api/health` says `agent: "live"` (wiki/decisions/0010-live-agent.md); the mock
 // otherwise, with no backend and no model (0004): on `pnpm dev` and `vite preview`, on a deployment without the API
@@ -63,11 +65,27 @@ export effect function main() {
   })
   const selectedRole = new URLSearchParams(window.location.search).get("role")
   const role = ROLES.find((each) => each === selectedRole) ?? "viewer"
-  const resources = BrowserFactory(origin, askedForMock(window), role).pipe(Layer.provide(Layer.merge(Layer.succeed(HttpClient.HttpClient, client), Layer.succeed(Clock.Clock, clock))))
+  const journal: MockJournal.Shape = {
+    read: conversation => effect {
+      if (!/^(tour|demo)-/.test(conversation)) return []
+      const text = try sync(() => { try { return window.localStorage.getItem(`vibelang:walkthrough:${conversation}`) } catch { return null } })
+      return text === null ? [] : (Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(EventSchema)))(text) catch () => [])
+    },
+    write: (conversation, events) => sync(() => { if (/^(tour|demo)-/.test(conversation)) { try { window.localStorage.setItem(`vibelang:walkthrough:${conversation}`, JSON.stringify(events)) } catch { /* Storage denial leaves the current tour usable. */ } } }),
+  }
+  const resources = BrowserFactory(origin, askedForMock(window), role, journal).pipe(Layer.provide(Layer.merge(Layer.succeed(HttpClient.HttpClient, client), Layer.succeed(Clock.Clock, clock))))
   const reducedMotion = try (try Experimental.MediaQuery.MediaQuery).matches("(prefers-reduced-motion: reduce)")
-  const session = try (try SecureRandom.SecureRandom).uuidV4()
+  const freshSession = try (try SecureRandom.SecureRandom).uuidV4()
+  const saved = try sync(() => {
+    try {
+      const session = window.sessionStorage.getItem("vibelang:tour-session") ?? freshSession
+      window.sessionStorage.setItem("vibelang:tour-session", session)
+      return { tutorialSession: session, tourSound: window.localStorage.getItem("vibelang:tour-sound") === "on", resumeTour: window.sessionStorage.getItem("vibelang:tour-active") === "yes", autoTour: !window.localStorage.getItem("vibelang:toured") && window.location.pathname === "/" }
+    } catch { return { tutorialSession: freshSession, tourSound: false, resumeTour: false, autoTour: true } }
+  })
+  const session = freshSession
   const mediaSources = try (try MediaAssets).sources
-  const flags: Flags = { session, mode: "pending", name: "Guest", reducedMotion, mediaSources, ...(new URLSearchParams(window.location.search).has("resume-recovery") ? { resumeRecovery: new URLSearchParams(window.location.search).get("resume-recovery")! } : {}), ...(new URLSearchParams(window.location.search).has("resume-op") ? { resumeOp: new URLSearchParams(window.location.search).get("resume-op")! } : {}), ...(new URLSearchParams(window.location.search).has("resume-key") ? { resumeKey: new URLSearchParams(window.location.search).get("resume-key")! } : {}), openIssues: new URLSearchParams(window.location.search).get("issues") === "1", signInFailed: new URLSearchParams(window.location.search).get("sign-in") === "failed", ...(window.location.pathname.startsWith("/wiki") ? { wiki: window.location.pathname + window.location.hash } : {}) }
+  const flags: Flags = { ...saved, session, mode: "pending", name: "Guest", reducedMotion, mediaSources, ...(new URLSearchParams(window.location.search).has("resume-recovery") ? { resumeRecovery: new URLSearchParams(window.location.search).get("resume-recovery")! } : {}), ...(new URLSearchParams(window.location.search).has("resume-op") ? { resumeOp: new URLSearchParams(window.location.search).get("resume-op")! } : {}), ...(new URLSearchParams(window.location.search).has("resume-key") ? { resumeKey: new URLSearchParams(window.location.search).get("resume-key")! } : {}), openIssues: new URLSearchParams(window.location.search).get("issues") === "1", signInFailed: new URLSearchParams(window.location.search).get("sign-in") === "failed", ...(window.location.pathname.startsWith("/wiki") ? { wiki: window.location.pathname + window.location.hash } : {}) }
   const application = try Effect.try(() => Runtime.makeApplication({
     Model,
     Flags,

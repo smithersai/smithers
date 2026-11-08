@@ -29,7 +29,8 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0011](decisions/0011-post-flow.md) | A person's post is a durable `vibelang/Post` flow: record, then dispatch the reply; the mock runs the same flows in memory |
 | [0012](decisions/0012-smithers-agent.md) | The reply is smithers.sh's agent: `@smthrs/agent`'s `AgentAction` on a workerd QuickJS sandbox, VibeLang's skill as context |
 | [0013](decisions/0013-dark-only.md) | Dark only, for now: the marketing media are dark and have no light versions (VL-27) |
-| [0014](decisions/0014-agent-tour.md) | Learn more is a tour the agent drives: its pane actions are numbered events of the one state machine (VL-28) |
+| [0014](decisions/0014-agent-tour.md) | Learn more is a ten-step theatre tutorial: numbered app drives, sound-off subtitles and durable controls (VL-31) |
+| [0014 theatre walkthrough](decisions/0014-agent-tour.md#vl-31-theatre-walkthrough-2026-11-08-lane-vl-learnmore) | Ten app-driving steps, sound-off subtitles, durable pause/seek and reload (VL-31) |
 | [0014 production fixes](decisions/0014-agent-tour.md#other-choices) | Tour docs and current narration stay in view; durable reading holds, paragraphs, keyboard control, inert background and control announcements |
 | [0015](decisions/0015-fuzzing.md) | Effect fork as `@smthrs/fuzz`, corpus, budgets, whole-app fuzz targets and independent coverage |
 | [0016](decisions/0016-coverage.md) | Boundary tests, prepared source coverage gates and recorded measurement limitations |
@@ -42,7 +43,7 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0023](decisions/0023-actions.md) | Registered actions, slash commands, real run traces, agent/CLI/MCP surfaces and role gates |
 | [0024](decisions/0024-sandboxes.md) | Sandboxes, shared flows, a single durable minute writer and opt-in offline Cloudflare Containers |
 | [0025](decisions/0025-desktop.md) | Electrobun hosts the shared Foldkit app; local models, confined folders and flows run on Bun |
-| [0026](decisions/0026-marketing-media.md) | The Tour flow selects each stop’s media; compiler card in empty chat, silent videos, posters and failure removal (VL-19) |
+| [0026](decisions/0026-marketing-media.md) | Splash and empty-chat media; native posters and failure removal; former tour placements superseded by VL-31 |
 
 | [0027](decisions/0027-acceptance-gates.md) | Human proposal approval and four current-revision LGTM/A specification reviews; shared flows, reset history and suite state (lane vl-gates) |
 

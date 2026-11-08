@@ -15,8 +15,8 @@ brick                                   state         proof
                                                       Live mode uses LiveFactory at VIBELANG_FACTORY_URL (0010).
 1d  formal proof gates                 done (local)  0018: twelve marked production modules, 435/435 rejected mutations;
                                                       proof, mutation and inventory gates run in PACKAGE.ts. Whole-app work is 1g.
-1f  Learn more: the agent's tour         done (local)  0014: the agent opens the docs in a pane and narrates, glow and Esc;
-                                                      mock and live run one tour flow; scene, flow, workerd and browser tests
+1f  Learn more: live app tutorial        done (local)  0014/VL-31: ten theatre steps, exact subtitles, optional sound, pause and seek;
+                                                      Mock/live share one durable flow; scene, flow, workerd and browser checks
 1g  every suite covers the whole app    started       VL-29: unit, fuzz and benchmark coverage at 100% each; proofs of
                                                       all logic; fuzzing from the Effect fork as @smthrs/fuzz
 1e  wiki in the app                     done (local)  0021: current Markdown at /wiki/<page> in the shared maximizable pane;
@@ -79,8 +79,11 @@ brick                                   state         proof
 - **Review (vl-review2):** [review of 2026-11-08](review-2026-11-08.md). Fixed: idle sandbox metering and reads in
   the chat. Open, with owners: Durable Object engine retention, idempotent history tool writes.
 
-- **Marketing media (vl-media, 0026):** all twelve assets placed by the shared Tour catalog or the splash/empty chat; designer source preserved in `designs/media/`; browser loading, reduced motion, native failure and phone checks. Lead deploys.
+- **Marketing media (vl-media, 0026):** splash and empty-chat assets remain; VL-31 supersedes the former per-stop Tour placements; designer source preserved in `designs/media/`; browser loading, reduced motion, native failure and phone checks. Lead deploys.
 
 - **Benchmarks (0017, vl-bench): not done.** Correctness-checked local/live observations and a deterministic 5% work gate are implemented; independent coverage remains below 100%. New issue flows, keyed history calls and media are being integrated. The sandbox SQLite benchmark is deferred by the retained nested-Effect compiler reproduction.
 
 - **Both acceptance gates (0027, lane vl-gates): implemented locally.** Maintainer-person VIP approval; Astra, Sol, Fable and Opus current-revision LGTM/A specification acceptance; mock reset history, real flows, proofs/mutations, scenes, browser and workerd routes. Lead deploys.
+
+- **vl-learnmore (0014, VL-31):** ten-step theatre tutorial, exact subtitles and optional sound, numbered app drives,
+  durable pause/seek and private Mock reload recovery; designer source preserved in `designs/onboarding/`.

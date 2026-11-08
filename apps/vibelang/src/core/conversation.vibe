@@ -40,6 +40,10 @@ export interface Entry {
 
 /** The sequencer's numbered events. `seq` starts at 1 and counts up by one. */
 export type Event =
+  | { readonly type: "WalkthroughDriven"; readonly seq: number; readonly id: string; readonly step: number; readonly target: string; readonly at: number; readonly duration: number }
+  | { readonly type: "TourPaused"; readonly seq: number; readonly id: string; readonly at: number }
+  | { readonly type: "TourResumed"; readonly seq: number; readonly id: string; readonly at: number }
+  | { readonly type: "TourSought"; readonly seq: number; readonly id: string; readonly at: number; readonly step: number }
   | { readonly type: "RoleGranted"; readonly seq: number; readonly id: string; readonly by: string; readonly role: Role; readonly mode: GrantMode }
   | { readonly type: "ActionAuthorized"; readonly seq: number; readonly id: string; readonly by: string; readonly action: Action }
   | {
@@ -67,7 +71,10 @@ export type Event =
  * agent entry that answers no post (`inReplyTo` is `""`): the agent speaks on its own. `pane` is the page the agent
  * last opened in the conversation's docs pane, `""` before it opened one.
  */
+export interface Walkthrough { readonly step: number; readonly target: string; readonly paused: boolean; readonly revision: number; readonly remaining: number; readonly at: number }
+
 export interface Conversation {
+  readonly walkthrough?: Walkthrough
   readonly seq: number
   readonly entries: ReadonlyArray<Entry>
   readonly agent: AgentPhase
@@ -145,6 +152,7 @@ export const AGENT_NAME = "VibeLang agent"
 //@ ensures event.seq == conversation.seq + 1 && event.type == "Posted" && event.text != "" && event.clientId != "" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id) && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].clientId != event.clientId) ==> \result.entries[conversation.entries.length].id == event.id && \result.entries[conversation.entries.length].seq == event.seq && \result.entries[conversation.entries.length].clientId == event.clientId && \result.entries[conversation.entries.length].inReplyTo == "" && \result.entries[conversation.entries.length].author == "person" && \result.entries[conversation.entries.length].name == event.name && \result.entries[conversation.entries.length].text == event.text && \result.entries[conversation.entries.length].done == true && \result.entries[conversation.entries.length].error == ""
 //@ ensures event.seq == conversation.seq + 1 && event.type == "ReplyStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id) && event.inReplyTo != "" && exists(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].author == "person" && conversation.entries[j].id == event.inReplyTo) && forall(j, 0 <= j && j < conversation.entries.length && conversation.entries[j].author == "agent" ==> conversation.entries[j].inReplyTo != event.inReplyTo) ==> \result.entries[conversation.entries.length].id == event.id && \result.entries[conversation.entries.length].seq == event.seq && \result.entries[conversation.entries.length].clientId == "" && \result.entries[conversation.entries.length].inReplyTo == event.inReplyTo && \result.entries[conversation.entries.length].author == "agent" && \result.entries[conversation.entries.length].name == AGENT_NAME && \result.entries[conversation.entries.length].text == "" && \result.entries[conversation.entries.length].done == false && \result.entries[conversation.entries.length].error == ""
 //@ ensures event.seq == conversation.seq + 1 && event.type == "TourStarted" && conversation.agent != "working" && event.id != "" && forall(j, 0 <= j && j < conversation.entries.length ==> conversation.entries[j].id != event.id) ==> \result.entries[conversation.entries.length].id == event.id && \result.entries[conversation.entries.length].seq == event.seq && \result.entries[conversation.entries.length].clientId == "" && \result.entries[conversation.entries.length].inReplyTo == "" && \result.entries[conversation.entries.length].author == "agent" && \result.entries[conversation.entries.length].name == AGENT_NAME && \result.entries[conversation.entries.length].text == "" && \result.entries[conversation.entries.length].done == false && \result.entries[conversation.entries.length].error == ""
+//@ ensures event.seq == conversation.seq + 1 && (event.type == "TourPaused" || event.type == "TourResumed" || event.type == "TourSought") ==> \result.entries == conversation.entries && \result.agent == conversation.agent && \result.replying == conversation.replying
 export function apply(conversation: Conversation, event: Event): Conversation {
   if (event.seq !== conversation.seq + 1) return conversation
   const next = { ...conversation, seq: event.seq }
@@ -240,6 +248,21 @@ export function apply(conversation: Conversation, event: Event): Conversation {
       if (!isTouring(conversation, event.id)) return next
       const ended = conversation.entries.map((entry) => entry.id === event.id ? { ...entry, done: true } : entry)
       return { ...next, entries: ended, agent: "idle", replying: "" }
+    }
+    case "WalkthroughDriven": {
+      if (!isTouring(conversation, event.id) || event.step < 1 || event.step > 10 || event.step % 1 !== 0 || event.target === "" || event.duration < 0 || event.duration % 1 !== 0) return next
+      return { ...next, walkthrough: drivenWalkthrough(event.step, event.target, event.seq, event.duration, event.at) }
+    }
+    case "TourPaused":
+    case "TourResumed":
+    case "TourSought": {
+      const showing = conversation.walkthrough
+      if (!isTouring(conversation, event.id) || showing === undefined) return next
+      if (event.type === "TourSought") {
+        if (event.step < 1 || event.step > 11 || event.step % 1 !== 0) return next
+        return { ...next, walkthrough: soughtWalkthrough(showing, event.step, event.seq, event.at) }
+      }
+      return { ...next, walkthrough: controlledWalkthrough(showing, event.type === "TourPaused", event.seq, event.at) }
     }
     case "PaneOpened": {
       // A person opens directly (empty id); an agent tool is bound to the entry that streams.
@@ -449,6 +472,10 @@ export function mayRun(role: string, tour: boolean, maintainer: boolean, interna
 }
 
 export type Intent =
+  | { readonly type: "DriveWalkthrough"; readonly id: string; readonly step: number; readonly target: string; readonly at: number; readonly duration: number }
+  | { readonly type: "PauseTour"; readonly id: string; readonly at: number }
+  | { readonly type: "ResumeTour"; readonly id: string; readonly at: number }
+  | { readonly type: "SeekTour"; readonly id: string; readonly at: number; readonly step: number }
   | { readonly type: "GrantRole"; readonly id: string; readonly by: string; readonly role: Role; readonly mode: GrantMode }
   | { readonly type: "Authorize"; readonly id: string; readonly by: string; readonly action: Action }
   | { readonly type: "RequestAction"; readonly id: string; readonly flow: string; readonly door: string; readonly actor: string; readonly at: number }
@@ -520,6 +547,8 @@ function refused(refusal: Refusal): Decision {
 //@ ensures conversation.seq < 9007199254740991 ==> (intent.type == "OpenPane" && conversation.agent == "working" && conversation.replying == intent.id && intent.id != "" && intent.url != "" ==> \result.ok && \result.event.id == intent.id && \result.event.type == "PaneOpened" && \result.event.url == intent.url)
 //@ ensures conversation.seq == 9007199254740991 ==> !\result.ok && \result.refusal == "full"
 //@ ensures \result.ok ==> conversation.seq < 9007199254740991 && \result.event.seq == conversation.seq + 1 && \result.event.seq <= 9007199254740991
+//@ ensures \result.ok && intent.type == "DriveWalkthrough" ==> (conversation.agent == "working" && conversation.replying == intent.id && intent.id != "") && 1 <= intent.step && intent.step <= 10 && intent.target != "" && intent.duration >= 0 && \result.event.type == "WalkthroughDriven" && \result.event.step == intent.step && \result.event.target == intent.target
+//@ ensures \result.ok && (intent.type == "PauseTour" || intent.type == "ResumeTour" || intent.type == "SeekTour") ==> (conversation.agent == "working" && conversation.replying == intent.id && intent.id != "") && conversation.walkthrough != undefined
 export function decide(conversation: Conversation, intent: Intent): Decision {
   if (conversation.seq >= 9007199254740991) return refused("full")
   const seq = conversation.seq + 1
@@ -576,6 +605,20 @@ export function decide(conversation: Conversation, intent: Intent): Decision {
     case "EndTour":
       if (!isTouring(conversation, intent.id)) return refused("not-replying")
       return accepted({ type: "TourEnded", seq, id: intent.id })
+    case "DriveWalkthrough":
+      if (!isTouring(conversation, intent.id)) return refused("not-replying")
+      if (intent.step < 1 || intent.step > 10 || intent.step % 1 !== 0 || intent.target === "" || intent.duration < 0 || intent.duration % 1 !== 0) return refused("empty")
+      return accepted({ type: "WalkthroughDriven", seq, id: intent.id, step: intent.step, target: intent.target, at: intent.at, duration: intent.duration })
+    case "PauseTour":
+    case "ResumeTour":
+    case "SeekTour":
+      if (!isTouring(conversation, intent.id) || conversation.walkthrough === undefined) return refused("not-replying")
+      if (intent.type === "SeekTour") {
+        if (intent.step < 1 || intent.step > 11 || intent.step % 1 !== 0) return refused("empty")
+        return accepted({ type: "TourSought", seq, id: intent.id, step: intent.step, at: intent.at })
+      }
+      if (intent.type === "PauseTour") return accepted({ type: "TourPaused", seq, id: intent.id, at: intent.at })
+      return accepted({ type: "TourResumed", seq, id: intent.id, at: intent.at })
     case "OpenPane":
       if (intent.id !== "" && !isReplying(conversation, intent.id)) return refused("not-replying")
       if (intent.url === "") return refused("empty")
@@ -1167,4 +1210,43 @@ export function recordSpecificationReview(spec: Specification, reviewer: string,
   if (reviewer === "fable") return { ...spec, fable: review }
   if (reviewer === "opus") return { ...spec, opus: review }
   return spec
+}
+
+/** Elapsed reading time is clamped at zero and at the saved remainder; clock rollback adds no time. */
+//@ verify
+//@ ensures remaining < 0 ==> \result == 0
+//@ ensures remaining >= 0 ==> 0 <= \result && \result <= remaining
+//@ ensures remaining >= 0 && now <= started ==> \result == remaining
+//@ ensures remaining >= 0 && now > started && now - started >= remaining ==> \result == 0
+//@ ensures remaining >= 0 && now > started && now - started < remaining ==> \result == remaining - (now - started)
+export function holdRemaining(remaining: number, started: number, now: number): number {
+  if (remaining < 0) return 0
+  if (now <= started) return remaining
+  return now - started >= remaining ? 0 : remaining - (now - started)
+}
+
+/** Exact drive projection, returned as a required record for LemmaScript's optional-record boundary. */
+//@ verify
+//@ ensures \result.step == step && \result.target == target && !\result.paused
+//@ ensures \result.revision == revision && \result.remaining == duration && \result.at == at
+export function drivenWalkthrough(step: number, target: string, revision: number, duration: number, at: number): Walkthrough {
+  return { step, target, paused: false, revision, remaining: duration, at }
+}
+
+//@ verify
+//@ ensures \result.step == showing.step && \result.target == showing.target && \result.paused == paused
+//@ ensures \result.revision == revision && \result.at == at
+//@ ensures showing.paused ==> \result.remaining == showing.remaining
+//@ ensures !showing.paused && showing.remaining >= 0 && at <= showing.at ==> \result.remaining == showing.remaining
+//@ ensures !showing.paused && showing.remaining >= 0 && at > showing.at && at - showing.at < showing.remaining ==> \result.remaining == showing.remaining - (at - showing.at)
+//@ ensures !showing.paused && showing.remaining >= 0 && at > showing.at && at - showing.at >= showing.remaining ==> \result.remaining == 0
+export function controlledWalkthrough(showing: Walkthrough, paused: boolean, revision: number, at: number): Walkthrough {
+  return { ...showing, paused, revision, remaining: showing.paused ? showing.remaining : holdRemaining(showing.remaining, showing.at, at), at }
+}
+
+//@ verify
+//@ ensures \result.step == step && \result.target == "" && !\result.paused
+//@ ensures \result.revision == revision && \result.at == at && \result.remaining == showing.remaining
+export function soughtWalkthrough(showing: Walkthrough, step: number, revision: number, at: number): Walkthrough {
+  return { ...showing, step, target: "", paused: false, revision, at }
 }

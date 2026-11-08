@@ -1,0 +1,28 @@
+import { it, expect } from "@effect/vitest"
+import { apply, decide, empty, type Intent } from "../src/core/conversation.vibe"
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+it("walkthrough drive, pause, resume and seek preserve the conversation", async ({ bench }) => {
+  const result = await workload(bench, "walkthrough-controls", () => {
+    let state = apply(empty, { type: "TourStarted", seq: 1, id: "t1" })
+    for (const [index, stop] of WALKTHROUGH.entries()) {
+      const intents: ReadonlyArray<Intent> = [
+        { type: "DriveWalkthrough", id: "t1", step: index + 1, target: stop.target, at: index * 10000, duration: stop.duration },
+        { type: "PauseTour", id: "t1", at: index * 10000 + 1000 },
+        { type: "ResumeTour", id: "t1", at: index * 10000 + 5000 },
+      ]
+      for (const intent of intents) {
+        const decision = decide(state, intent)
+        expect(decision.ok).toBe(true)
+        if (decision.ok) state = apply(state, decision.event)
+      }
+      expect(state.walkthrough).toMatchObject({ step: index + 1, target: stop.target, paused: false, remaining: stop.duration - 1000 })
+      expect(state.entries).toHaveLength(1)
+      const seek = decide(state, { type: "SeekTour", id: "t1", step: index + 1, at: index * 10000 + 5000 })
+      expect(seek.ok).toBe(true)
+      if (seek.ok) state = apply(state, seek.event)
+      expect(state.walkthrough).toMatchObject({ step: index + 1, target: "", paused: false })
+    }
+  }).run(quick)
+  await runPromise(artifact("walkthrough-controls", "Vitest built-in bench; forty real state transitions over the exact ten-step catalog with elapsed reading time, pause and resume. Checks every accepted intent, current destination, preserved agent entry and exact remaining time.", ["Pure transition cost with assertions; no browser layout, network or durable SQLite execution."], result))
+})

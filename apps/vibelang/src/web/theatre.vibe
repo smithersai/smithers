@@ -1,0 +1,71 @@
+// Browser presentation is an injected Effect service. No speech or storage host globals enter the flow or view.
+import { ExperimentalBrowserDocument, ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
+import { WALKTHROUGH } from "../core/walkthroughSteps.vibe"
+export interface Box { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+export service TourPresentation {
+  present(state: { readonly step: number; readonly sound: boolean; readonly active: boolean; readonly paused: boolean; readonly finish?: boolean }): void!!
+  focus(backward: boolean): void!!
+  measure(target: string): Box!!
+}
+export function theatreSelector(target: string): string {
+  if (target === "splash") return ".vl-primary"
+  if (target === "palette") return ".sui-chat-messages"
+  if (target === "issues") return ".ix-surface"
+  if (target.startsWith("issue:") || target === "issues:vips") return ".sui-item-conv"
+  if (target.startsWith("wiki:")) return ".vl-wiki"
+  if (target === "history-nav") return 'a[href="/history"]'
+  if (target === "composer") return 'form.sui-chat-composer[data-docked="true"]'
+  if (target === "sandbox-pane") return ".vl-sandboxes"
+  return ".vl-chat"
+}
+export const presentation = Layer.effect(TourPresentation, effect {
+  const window = try (try Experimental.Window.Window).current
+  const document = try (try Experimental.Document.Document).current
+  return {
+    present: state => withSpan(effect {
+      try sync(() => {
+        try {
+          window.localStorage.setItem("vibelang:tour-sound", state.sound ? "on" : "off")
+          window.localStorage.setItem("vibelang:toured", "yes")
+          window.sessionStorage.setItem("vibelang:tour-active", state.active ? "yes" : "no")
+        } catch { /* Private storage does not prevent control. */ }
+        const speech = window.speechSynthesis
+        let previous = { step: 0, sound: false, active: false, paused: false }
+        try {
+          const raw = window.sessionStorage.getItem("vibelang:tour-audio")
+          if (raw) previous = JSON.parse(raw)
+          // A seek cancels the old line; retain a different identity so the new drive speaks rather than resuming it.
+          window.sessionStorage.setItem("vibelang:tour-audio", JSON.stringify({ ...state, step: state.paused && (previous.step !== state.step || !previous.active || !previous.sound) ? 0 : state.step }))
+        } catch { /* Unavailable storage never prevents sound-off control. */ }
+        if (!state.sound || (!state.active && !state.finish)) speech?.cancel()
+        else if (state.paused) {
+          if (previous.step !== state.step) speech?.cancel()
+          else speech?.pause()
+        } else if (previous.step === state.step && previous.sound && previous.active && previous.paused) speech?.resume()
+        else if (previous.step !== state.step || !previous.sound || !previous.active) {
+          speech?.cancel()
+          const Constructor = (window as Window & { SpeechSynthesisUtterance: new (text: string) => SpeechSynthesisUtterance }).SpeechSynthesisUtterance
+          if (Constructor && speech) speech.speak(new Constructor(WALKTHROUGH[state.step - 1]?.voice ?? ""))
+        }
+      })
+      const outcome = state.active ? state.paused ? "paused" : state.sound ? "sound" : "muted" : "ended"
+      try Metric.update(Metric.withAttributes(Metric.counter("vibelang_theatre_presentations"), { outcome }), 1)
+      try Effect.logInfo("vibelang.theatre.present").pipe(Effect.annotateLogs({ step: state.step, outcome }))
+    }, "vibelang.theatre.present"),
+    focus: backward => sync(() => {
+      const controls = Array.from(document.querySelectorAll<HTMLButtonElement>(".vl-theatre-controls button:not(:disabled)"))
+      const index = controls.findIndex(control => control === document.activeElement)
+      const next = index < 0 ? backward ? controls.length - 1 : 0 : (index + (backward ? -1 : 1) + controls.length) % controls.length
+      controls[next]?.focus()
+    }),
+    measure: target => sync(() => {
+      const rect = document.querySelector(theatreSelector(target))?.getBoundingClientRect()
+      const menu = target === "composer" ? document.querySelector(".sui-completion-list")?.getBoundingClientRect() : undefined
+      const top = Math.max(60, Math.min(rect?.top ?? 80, menu?.top ?? window.innerHeight))
+      const left = Math.max(8, Math.min(rect?.left ?? 16, menu?.left ?? window.innerWidth))
+      const right = Math.min(window.innerWidth - 8, Math.max(rect?.right ?? window.innerWidth - 16, menu?.right ?? 0))
+      const bottom = Math.min(window.innerHeight - 220, Math.max(rect?.bottom ?? top + 200, menu?.bottom ?? 0))
+      return { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) }
+    }),
+  }
+}).pipe(Layer.provide(Layer.merge(ExperimentalBrowserWindow.layer, ExperimentalBrowserDocument.layer)))

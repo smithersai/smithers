@@ -1,8 +1,9 @@
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 import { it } from "@effect/vitest"
 import { Fuzz } from "@smthrs/fuzz"
 import * as Reply from "../worker/Reply.vibe"
-import { chunks, mockReply, TOUR } from "../src/core/mockReplies.vibe"
-import { docsPage, DOCS_ORIGIN, STOPS, endsTour, replyIdOf } from "../src/core/flows.vibe"
+import { chunks, mockReply } from "../src/core/mockReplies.vibe"
+import { DOCS_ORIGIN, docsPage, endsTour, replyIdOf } from "../src/core/flows.vibe"
 import { EventSchema } from "../src/core/schemas.vibe"
 import { run, same, Text, TextOrBoundary, Int } from "./run.vibe"
 
@@ -35,7 +36,7 @@ it.live("reply/prompt", () => run("reply/prompt", Schema.Array(Schema.Struct({ a
 
 it.live("reply/mock-script", () => run("reply/mock-script", TextOrBoundary, (text) => {
   const answer = mockReply(text)
-  return answer.length > 0 && chunks(answer).join("") === answer && chunks(text).join("") === text && TOUR.length === STOPS.length
+  return answer.length > 0 && chunks(answer).join("") === answer && chunks(text).join("") === text && WALKTHROUGH.length === 10
 }))
 
 it.live("tour/pages-and-identity", () => run("tour/pages-and-identity", Schema.Struct({ path: TextOrBoundary, event: EventSchema }), ({ path, event }) => effect {

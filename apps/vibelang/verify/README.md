@@ -69,3 +69,5 @@ hashes, and both fresh files remain in the run artifacts. The same insertion run
 
 The mutation CI target allows 120 minutes for the complete growing suite with the conservative two-worker default.
 Per-obligation and per-source solver/process limits are unchanged; a timeout still fails the gate.
+
+The full conversation relation has a finite 1,200-second pipeline budget after the walkthrough adds four event variants. Per-assertion positive solver limits remain 60 seconds, with every assertion isolated and checked; negative limits remain 30 seconds. The prior 600-second pipeline bound expired while checking the larger relation, without reporting a counterexample. The unchanged main baseline freshly verified 6,810 batches in 281 seconds on this host; the walkthrough apply relation alone generates 9,746 batches. This changes scheduling time, never obligations or accepted solver outcomes.

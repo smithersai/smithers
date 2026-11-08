@@ -148,20 +148,14 @@ html { overflow-anchor: none; }
 .vl-docs-body { flex: 1 1 0%; min-height: 0; display: flex; gap: 20px; padding: 20px; }
 .vl-docs-body .vl-docs-frame { flex: 1.4 1 0%; min-width: 0; height: auto; border: 1px solid var(--border); border-radius: var(--r-2, 10px); }
 .vl-docs[data-driving="true"] .vl-docs-frame { min-height: 0; pointer-events: none; }
-.vl-tour-side { flex: 1 1 0%; min-width: 0; max-width: 470px; display: grid; align-content: center; gap: 14px; }
-.vl-tour-narration { min-width: 0; margin: 0; padding: 16px; font-size: 16px; line-height: 1.65; overflow-wrap: anywhere; }
-.vl-stop-media, .vl-empty-media { margin: 0; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-2, 10px); background: #0e0e11; box-shadow: var(--shadow-2); }
-.vl-stop-media img, .vl-stop-media video, .vl-empty-media img { display: block; width: 100%; height: auto; }
+.vl-empty-media { margin: 0; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-2, 10px); background: #0e0e11; box-shadow: var(--shadow-2); }
+.vl-empty-media img { display: block; width: 100%; height: auto; }
 .vl-empty-media { width: min(100%, 480px); }
 .vl-chat .sui-chat-empty { padding-block: 24px; }
 @media (max-width: 720px) {
   .vl-docs-body { flex-direction: column; gap: 12px; padding: 12px; }
   .vl-docs-body .vl-docs-frame { flex: 1 1 0%; min-height: 0; }
-  .vl-tour-side { max-width: none; flex: 0 1 auto; align-content: start; gap: 12px; }
-  .vl-stop-media { max-height: 30vh; }
-  .vl-stop-media img, .vl-stop-media video { max-height: 30vh; object-fit: contain; }
   .vl-docs[data-driving="true"] .vl-docs-bar { padding-top: 38px; }
-  .vl-tour-narration { padding: 14px; font-size: 14px; line-height: 1.5; }
 }
 
 /* ── sandboxes (new, vl-sb-*) ── */
@@ -448,3 +442,30 @@ html { overflow-anchor: none; }
   .ix-spec-reviews td:first-child { min-width: 70px; }
   .ix-spec-reviews .sui-button { min-width: 0; padding-inline: 8px; font-size: 11px; white-space: nowrap; }
 }
+
+/* VL-31: the real app is the stage. Only theatre controls accept input. */
+.vl-theatre-block{position:fixed;inset:0;z-index:90;touch-action:none}
+.vl-theatre-spotlight{position:fixed;z-index:91;border:2px solid var(--vl-violet);border-radius:10px;box-shadow:0 0 0 9999px rgba(6,10,9,.55),0 0 24px var(--vl-violet);pointer-events:none}
+.vl-theatre-progress{position:fixed;top:6px;left:10px;right:10px;height:3px;display:flex;gap:4px;z-index:101;pointer-events:none}
+.vl-theatre-progress span{flex:1;background:var(--surface-2)}
+.vl-theatre-progress .done{background:var(--brand)}
+.vl-theatre-progress .current{background:var(--vl-violet);animation:vl-theatre-pulse 1.8s ease-in-out infinite}
+.vl-theatre-bar{position:fixed;z-index:102;bottom:24px;left:50%;transform:translateX(-50%);width:min(calc(100% - 32px),640px);padding:16px 20px 12px;border:1px solid var(--border);border-radius:18px;background:var(--surface);box-shadow:0 12px 40px #0008}
+.vl-theatre-meta{font-size:12px;color:var(--text-muted)}
+.vl-theatre-subtitle{font-size:16px;line-height:1.55;min-height:3.1em;margin:8px 0;overflow-wrap:break-word}
+.vl-theatre-controls{display:flex;align-items:center;justify-content:center;gap:8px}
+.vl-theatre-controls button{min-width:44px;min-height:44px;border:0;background:transparent;border-radius:8px;color:var(--text);font:inherit;cursor:pointer}
+.vl-theatre-controls button:hover{background:var(--surface-2)}
+.vl-theatre-controls button:disabled{opacity:.3;cursor:default}
+.vl-theatre-controls button:focus-visible{outline:2px solid var(--ring,var(--brand));outline-offset:2px}
+.vl-app[data-tour=on] .vl-esc{z-index:103}
+.vl-app[data-tour=on] .vl-wiki[data-maximized=true],.vl-app[data-tour=on] .vl-sandboxes[data-maximized=true]{bottom:220px}
+.vl-app[data-tour=on] .ix-surface{max-height:calc(100dvh - 270px);overflow:auto}
+.vl-app[data-tour=on] .sui-chat-composer[data-docked="true"]{bottom:230px}
+@keyframes vl-theatre-pulse{50%{opacity:.5}}
+@media(max-width:640px){
+ .vl-theatre-bar{bottom:0;left:0;transform:none;width:100%;border-radius:18px 18px 0 0;padding:14px 16px max(10px,env(safe-area-inset-bottom));}
+ .vl-theatre-subtitle{font-size:15px;line-height:1.55}
+ .vl-theatre-controls{justify-content:space-between}
+}
+@media(prefers-reduced-motion:reduce){.vl-theatre-progress .current{animation:none}.vl-theatre-spotlight,.vl-theatre-bar{transition:none}}

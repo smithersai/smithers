@@ -26,7 +26,10 @@ export schema RoleGrant { readonly id: string; readonly role: "viewer" | "new" |
 export schema StoredStep { readonly key: string; readonly name: string; readonly attempt: number; readonly state: string; readonly started: number; readonly at: number }
 export schema StoredRun { readonly id: string; readonly flow: string; readonly door: string; readonly actor: string; readonly state: string; readonly started: number; readonly at: number; readonly result: string; readonly steps: ReadonlyArray<StoredStep> }
 
+export schema Walkthrough { readonly step: Seq; readonly target: string; readonly paused: boolean; readonly revision: Seq; readonly remaining: Seq; readonly at: Seq }
+
 export schema Conversation {
+  readonly walkthrough?: Walkthrough
   readonly seq: Seq
   readonly entries: ReadonlyArray<Entry>
   readonly agent: "idle" | "working" | "failed"
@@ -73,9 +76,14 @@ export schema ActionRequested { readonly type: "ActionRequested"; readonly seq: 
 export schema ActionStep { readonly type: "ActionStep"; readonly seq: Seq; readonly id: string; readonly key: string; readonly name: string; readonly attempt: number; readonly state: string; readonly at: number }
 export schema ActionSettled { readonly type: "ActionSettled"; readonly seq: Seq; readonly id: string; readonly state: string; readonly result: string; readonly at: number }
 
+export schema WalkthroughDriven { readonly type: "WalkthroughDriven"; readonly seq: Seq; readonly id: string; readonly step: Seq; readonly target: string; readonly at: Seq; readonly duration: Seq }
+export schema TourPaused { readonly type: "TourPaused"; readonly seq: Seq; readonly id: string; readonly at: Seq }
+export schema TourResumed { readonly type: "TourResumed"; readonly seq: Seq; readonly id: string; readonly at: Seq }
+export schema TourSought { readonly type: "TourSought"; readonly seq: Seq; readonly id: string; readonly at: Seq; readonly step: Seq }
+
 /** Decodes one event off the wire. */
 export const EventSchema = Schema.Union([
-  RoleGranted, ActionAuthorized, Posted, ReplyStarted, ReplyDelta, ReplyRestarted, ReplyFinished, ReplyFailed, TourStarted, TourEnded, PaneOpened, ActionRequested, ActionStep, ActionSettled,
+  WalkthroughDriven, TourPaused, TourResumed, TourSought, RoleGranted, ActionAuthorized, Posted, ReplyStarted, ReplyDelta, ReplyRestarted, ReplyFinished, ReplyFailed, TourStarted, TourEnded, PaneOpened, ActionRequested, ActionStep, ActionSettled,
 ])
 
 /** A finite read: current copies of entries touched after `after`, and the event cursor. */

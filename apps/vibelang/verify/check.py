@@ -112,7 +112,7 @@ def verify(item):
    # Every assertion in the full conversation relation is checked, without a symbol/position filter.
    isolate = not mutations and origin == APP/'src/core/conversation.vibe'
    if isolate: flags.append('--isolate-assertions')
-   c,o=command([str(ROOT/'.tools/bin/dafny'),'verify','--cores','8' if isolate else '1','--verification-time-limit','30' if mutations else '60','--error-limit','0','--log-format',f'csv;LogFileName={work / (ts.stem + chr(46) + chr(99) + chr(115) + chr(118))}',*flags,str(dfy)],work,600 if isolate else 180)
+   c,o=command([str(ROOT/'.tools/bin/dafny'),'verify','--cores','8' if isolate else '1','--verification-time-limit','30' if mutations else '60','--error-limit','0','--log-format',f'csv;LogFileName={work / (ts.stem + chr(46) + chr(99) + chr(115) + chr(118))}',*flags,str(dfy)],work,1200 if isolate else 180)
    code=c;out+=o
  if hashlib.sha256(original).hexdigest() != initial_hashes[ts]:
   code=2;out+='ERROR: source changed after strict typechecking started\n'

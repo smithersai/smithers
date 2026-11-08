@@ -26,21 +26,22 @@ describe("registered actions on real workerd SQLite and alarms", () => {
       })
     }
   })
-  it.live("returns before work settles; follows actual steps, failure and the durable runs list", () => effect {
+  it.live("returns before the tutorial settles; follows actual steps and cancels the durable run", () => effect {
     provide live(api!.origin) {
       const actions = try Actions
       const id = try actions.command("/tour")
-      const result = try timeout(settled(id), "10 seconds")
+      const result = try timeout(Stream.runLast(actions.follow(id).pipe(Stream.takeUntil(run => run.steps.length > 0 && run.state === "running"))), "10 seconds")
+      try actions.cancel(id)
+      try timeout(settled(id), "10 seconds")
       const rows = try actions.runs("vibelang/Tour")
       const read = try actions.read(id)
       try Effect.try(() => {
         expect(Option.isSome(result)).toBe(true)
-        expect(read.state).toBe("failed")
+        expect(read.state).toBe("cancelled")
         expect(read.steps.length).toBeGreaterThan(0)
-        expect(read.steps.some((step) => step.state === "failed")).toBe(true)
-        expect(rows.some((row) => row.id === id && row.state === "failed")).toBe(true)
+        expect(read.steps.some((step) => step.state === "cancelled" || step.state === "passed")).toBe(true)
+        expect(rows.some((row) => row.id === id && row.state === "cancelled")).toBe(true)
         expect(read.door).toBe("slash")
-        expect(read.result).not.toBe("")
       })
     }
   })

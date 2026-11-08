@@ -121,33 +121,6 @@ const SCRIPTS: ReadonlyArray<Script> = [
 /** Every answer the scripted agent can choose, including the fallback; each fenced example is compiler checked. */
 export const scriptedReplies: ReadonlyArray<string> = [...SCRIPTS.map((script) => script.reply), DEFAULT]
 
-/**
- * The mock agent's tour (wiki/decisions/0014-agent-tour.md): at each stop, the docs page it opens and what it says.
- * The paths are `STOPS` in flows.vibe, in order (test/tour.test.vibe checks they match).
- */
-export const TOUR: ReadonlyArray<{ readonly path: string; readonly words: string }> = [
-  {
-    path: "/",
-    words: "VibeLang is Effect as its own language. You write TypeScript syntax: `effect` goes where `async` goes, `try` runs an Effect, and `A!E!R` says what a function returns, how it fails and what it needs. Its compiler, a fork of TypeScript 7 written in Go, builds the same Effect program you would write by hand.",
-  },
-  {
-    path: "/getting-started/002-why-effect",
-    words: "Effect gives a program typed errors, services and layers for its dependencies, and structured concurrency, with retries and timeouts as values. VibeLang keeps all of it and drops the generator boilerplate.",
-  },
-  {
-    path: "/vibelang-features/115-cheat-sheet",
-    words: "The cheat sheet puts every VibeLang form beside the Effect TypeScript it compiles to: `effect { }` is `Effect.gen`, `throw` is `Effect.fail`, and a `service` declaration is a `Context.Service`.",
-  },
-  {
-    path: "/setup",
-    words: "To start a project, run `npm create vibelang@latest my-app`. VibeLang pins Effect to exactly 4.1.1, and `vibelang` checks `.vibe` and `.ts` files together.",
-  },
-  {
-    path: "/vips",
-    words: "A change to the language starts as a VIP: one feature, its examples, the Effect it compiles to and the alternatives rejected. This site is VibeLang's open-source coding factory, where people and agents work on the language together. Everything I do here, this tour included, runs as a durable flow.",
-  },
-]
-
 /** Words that ask about the mythical history: the mock agent reads its outline to answer (0020). */
 export const HISTORY_WORDS: ReadonlyArray<string> = ["mythical", "history", "epic"]
 

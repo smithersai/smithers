@@ -1,9 +1,10 @@
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 // Competing public requests must never lose the post between dispatch and the first reply step.
 import { expect, it } from "@effect/vitest"
 import { Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { readingMillis, replyIdOf } from "../src/core/flows.vibe"
-import { mockReply, TOUR } from "../src/core/mockReplies.vibe"
+import { mockReply } from "../src/core/mockReplies.vibe"
 
 class YieldingScheduler extends Scheduler.MixedScheduler {
   private turns = 0
@@ -48,7 +49,7 @@ for (const period of [6, 7, 11, 17]) {
 }
 
 // Every stop now includes its word-count reading hold; retain room for dispatch and the waiting reply.
-const naturalTourBudget = TOUR.reduce((total, stop) => total + readingMillis(stop.words), 0) + 10_000
+const naturalTourBudget = WALKTHROUGH.reduce((total, stop) => total + stop.duration, 0) + 10_000
 
 it.live("finishes a concurrently accepted tour before answering the waiting post without cancellation", () =>
   provideService(effect {

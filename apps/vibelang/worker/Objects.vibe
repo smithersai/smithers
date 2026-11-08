@@ -16,7 +16,7 @@ import { FlowRuntime } from "@smthrs/flow"
 import { CloudflareRuntime, ExecutionObject, ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { SecureRandom } from "effect/crypto"
 import { PostBody } from "../src/core/wire.vibe"
-import { OpenWiki, wikiRegistration, EndTour, Post, postRegistration, Posts, Reply, StartTour, Tour, tourRegistration, Tours } from "../src/core/flows.vibe"
+import { PauseTour, ResumeTour, SeekTour, OpenWiki, wikiRegistration, EndTour, Post, postRegistration, Posts, Reply, StartTour, Tour, tourRegistration, Tours } from "../src/core/flows.vibe"
 import * as Budget from "./Budget.vibe"
 import { ledgerOver, logOver, type KeyValue } from "./ObjectStorage.vibe"
 import type { HistoryReader } from "../src/history/tools.vibe"
@@ -104,6 +104,9 @@ export function postsOf(sequencer: Sequencer.Sequencer): Posts.Shape {
 /** The sequencer as a tour's steps reach it: record, dispatch, end, open, say, settle and wait for the end. */
 export function toursOf(sequencer: Sequencer.Sequencer, wake: () => void!! = () => Effect.void): Tours.Shape {
   return {
+    current: () => Effect.map(sequencer.snapshot(), state => state.walkthrough ?? null),
+    drive: sequencer.drive,
+    control: sequencer.controlTour,
     start: sequencer.startTour,
     dispatch: sequencer.ensureDispatched,
     end: sequencer.endTour,
@@ -160,6 +163,15 @@ export effect function tour(hostId: string, storage: Storage, sequencer: Sequenc
 /** Runs a person's Escape as a `vibelang/EndTour` execution in the request: `null` once ended, else the refusal. */
 export effect function endTour(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer) {
   return try asked(hostId, storage, sequencer, EndTour, "end-tour")
+}
+
+export effect function controlTour(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, action: "pause" | "resume" | "seek", step: number) {
+  const executionId = try postExecutionId("control-tour")
+  const flow = action === "pause" ? PauseTour : action === "resume" ? ResumeTour : SeekTour
+  const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: flow._tag, retention: EXECUTION_RETENTION }, tourRegistration).pipe(
+    Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(Layer.succeed(Tours, toursOf(sequencer, () => Effect.orDie(wakeTour(hostId, storage))))),
+  )
+  return try Effect.orDie(Effect.provide(effect { const engine = try FlowRuntime.FlowRuntime; return try (action === "pause" ? engine.execute(PauseTour, { executionId, payload: {} }) : action === "resume" ? engine.execute(ResumeTour, { executionId, payload: {} }) : engine.execute(SeekTour, { executionId, payload: { step } })) }, runtime))
 }
 
 effect function asked(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, flow: typeof StartTour | typeof EndTour, prefix: string) {

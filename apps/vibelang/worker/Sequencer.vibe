@@ -243,6 +243,17 @@ export effect function make(log: Log, dispatch: Dispatch) {
       return answer
     },
 
+    drive: (tour: string, step: number, target: string, duration: number) => locked(effect {
+      try record({ type: "DriveWalkthrough", id: tour, step, target, duration, at: try Clock.currentTimeMillis })
+      return (try state()).conversation.walkthrough!
+    }),
+    controlTour: (action: "pause" | "resume" | "seek", step: number) => locked(effect {
+      const current = (try state()).conversation
+      const tour = touring(current)
+      const at = try Clock.currentTimeMillis
+      const decision = try record(action === "seek" ? { type: "SeekTour", id: tour, step, at } : { type: action === "pause" ? "PauseTour" : "ResumeTour", id: tour, at })
+      return { tour, previous: current.walkthrough?.revision ?? 0, state: (try state()).conversation.walkthrough ?? null, refusal: decision.ok ? null : decision.refusal }
+    }),
     running: (tour: string) => locked(Effect.map(state(), (current) => isTouring(current.conversation, tour))),
 
     /** Shows `url` in the docs pane while `tour` runs. */

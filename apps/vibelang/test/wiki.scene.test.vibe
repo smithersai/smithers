@@ -49,7 +49,7 @@ it("only its numbered event finishes loading; a stale failed request cannot repl
 
 it("an agent-opened wiki in another conversation cannot hide a later person opening", () => {
   const old = { ...home, surface: "chat" as const, wikiAfter: "r-old" }
-  const toured = update(old, Message.ClickedLearnMore()).model
+  const toured = { ...update(old, Message.ClickedLearnMore()).model, surface: "chat" as const }
   const opened = update(toured, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: "/wiki/index" } })).model
   assert(opened.wikiAfter).toBe("")
   scene({ update, view }, given(opened), expect(role("region", { name: "Wiki" })).toExist())
@@ -93,7 +93,7 @@ it("a numbered docs opening supersedes a wiki error and its later failed acknowl
 })
 
 it("the tour owns wiki maximizing until Escape returns control", () => {
-  const opened = update({ ...home, surface: "chat", tour: true, docs: "pane" }, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: "/wiki/index" } })).model
+  const opened = update({ ...home, surface: "chat", tour: true, docs: "max" }, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: "/wiki/index" } })).model
   scene({ update, view }, given(opened), expect(role("region", { name: "Wiki" })).toHaveAttr("data-maximized", "true"), expect(role("button", { name: "Minimize the wiki" })).toBeAbsent(), expect(role("button", { name: "Maximize the wiki" })).toBeAbsent())
   const ended = update(opened, Message.PressedEscape()).model
   scene({ update, view }, given(ended), expect(role("region", { name: "Wiki" })).toHaveAttr("data-maximized", "false"), expect(role("button", { name: "Maximize the wiki" })).toExist())

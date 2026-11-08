@@ -74,6 +74,11 @@ export function LiveFactory(origin: string) {
         const response = try Effect.mapError(client.execute(request), unavailable("wiki unreachable"))
         try refusable(response, "wiki")
       },
+      controlTour: effect (conversation, action, step) => {
+        const request = HttpClientRequest.post(origin + (try pathOf(conversation)) + "/tour-control").pipe(HttpClientRequest.bodyJsonUnsafe({ action, step }))
+        const response = try Effect.mapError(client.execute(request), unavailable("tour control unreachable"))
+        try refusable(response, "tour control")
+      },
       tour: effect (conversation: string) => {
         const request = HttpClientRequest.post(origin + (try pathOf(conversation)) + TOUR_PATH)
         const response = try Effect.mapError(client.execute(request), unavailable("tour unreachable"))

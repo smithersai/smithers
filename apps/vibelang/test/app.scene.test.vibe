@@ -252,175 +252,48 @@ describe("product language and authors", () => {
   })
 })
 
-describe("Learn more: the agent's tour", () => {
-  const TOUR = "tour-s1"
-  const started = [
-    Subscription.emit(Message.ReceivedEvent({ event: { type: "TourStarted", seq: 1, id: "t1" } })),
-    Subscription.emit(Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 2, id: "t1", url: "https://vibelang.sh/" } })),
-    Subscription.emit(Message.ReceivedEvent({ event: { type: "ReplyDelta", seq: 3, id: "t1", text: "VibeLang is Effect as its own language." } })),
-  ] as const
-
-  it("turns the page into this tab's tour conversation, with the agent in control: a glow and Esc", () => {
-    scene(
-      { update, view },
-      given(home),
-      click(role("button", { name: "Learn more" })),
-      Command.expectExact(StartTourCommand({ conversation: TOUR })),
-      Command.resolve(StartTourCommand, Message.SucceededTour()),
-      expect(role("log", { name: "Conversation" })).toExist(),
-      expect(role("button", { name: "Esc" })).toHaveAttr("aria-keyshortcuts", "Escape"),
-      expect(text("Esc")).toExist(),
-      expect(role("region", { name: "Docs" })).toBeAbsent(),
-    )
+describe("the theatre walkthrough", () => {
+  it("starts a private controller and demo conversation, displays muted subtitles and controls", () => {
+    const started = update(home, Message.ClickedLearnMore())
+    assert(started.model).toMatchObject({ tour: true, conversation: "demo-s1", theatre: { step: 1, sound: false } })
+    assert(started.commands?.map(command => command.name)).toContain("StartTour")
+    scene({ update, view }, given(started.model), expect(role("region", { name: "Walkthrough" })).toHaveAttr("data-step", "1"), expect(role("button", { name: "Sound on" })).toExist())
+    const repeated = update(started.model, Message.ClickedLearnMore())
+    assert(repeated.model).toBe(started.model)
   })
-
-  it("opens the docs pane where the agent says, moves it, and shows the narration as it arrives", () => {
-    scene(
-      { update, view },
-      given({ ...home, surface: "chat", conversation: TOUR, stream: "open", tour: true }),
-      ...started,
-      expect(role("region", { name: "Docs" })).toExist(),
-      expect(title("VibeLang docs")).toHaveAttr("src", "https://vibelang.sh/"),
-      expect(text("VibeLang is Effect as its own language.")).toExist(),
-      Subscription.emit(Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 4, id: "t1", url: "https://vibelang.sh/setup" } })),
-      expect(title("VibeLang docs")).toHaveAttr("src", "https://vibelang.sh/setup"),
-      expect(text("vibelang.sh/setup")).toExist(),
-      expect(role("button", { name: "Esc" })).toExist(),
-    )
+  it("a numbered drive uses the same issue detail Message and keeps the subtitle", () => {
+    let model = update(home, Message.ClickedLearnMore()).model
+    model = update(model, Message.ReceivedTourEvent({ event: { type: "TourStarted", id: "t1", seq: 1 } })).model
+    model = update(model, Message.ReceivedTourEvent({ event: { type: "WalkthroughDriven", id: "t1", seq: 2, step: 4, target: "issue:48", at: 0, duration: 12000 } })).model
+    assert(model.issues).toMatchObject({ open: true, screen: "detail", selected: 48 })
+    scene({ update, view }, given(model), expect(role("region", { name: "Walkthrough" })).toHaveAttr("data-step", "4"))
+    const ended = update(model, Message.PressedEscape())
+    assert(ended.model.tour).toBe(false)
+    assert(ended.commands?.map(command => command.name)).toContain("FocusComposer")
+    const replayed = update(ended.model, Message.ReceivedTourEvent({ event: { type: "WalkthroughDriven", id: "t1", seq: 3, step: 5, target: "issues:vips", at: 0, duration: 14000 } }))
+    assert(replayed.model.tour).toBe(false)
   })
+})
 
-  it("Escape ends the tour at once: the glow and Esc go, the conversation and the docs pane stay", () => {
-    scene(
-      { update, view },
-      given({ ...home, surface: "chat", conversation: TOUR, stream: "open", tour: true }),
-      ...started,
-      Subscription.emit(Message.PressedEscape()),
-      Command.expectExact(EndTourCommand({ conversation: TOUR }), FocusComposer({})),
-      Command.resolve(EndTourCommand, Message.FocusedPrompt()),
-      Command.resolve(FocusComposer, Message.FocusedPrompt()),
-      expect(role("button", { name: "Esc" })).toBeAbsent(),
-      expect(title("VibeLang docs")).toHaveAttr("src", "https://vibelang.sh/"),
-      expect(text("VibeLang is Effect as its own language.")).toExist(),
-      Subscription.emit(Message.ReceivedEvent({ event: { type: "TourEnded", seq: 4, id: "t1" } })),
-      expect(role("status", { name: "Answer" })).toHaveText("Answer 1: VibeLang is Effect as its own language."),
-      expect(role("button", { name: "Esc" })).toBeAbsent(),
-    )
-  })
+it("first-visit entry leaves an opened issue screen or command palette in control", () => {
+  const issues = update(home, Message.ClickedIssues()).model
+  assert(update(issues, Message.AutoTour()).model.tour).toBe(false)
+  const palette = update(home, Message.PressedCommandK()).model
+  assert(update(palette, Message.AutoTour()).model.tour).toBe(false)
+})
 
-  it("clicking Esc ends the tour the same way", () => {
-    scene(
-      { update, view },
-      given({ ...home, surface: "chat", conversation: TOUR, stream: "open", tour: true }),
-      ...started,
-      click(role("button", { name: "Esc" })),
-      Command.expectExact(EndTourCommand({ conversation: TOUR }), FocusComposer({})),
-      Command.resolve(EndTourCommand, Message.FocusedPrompt()),
-      Command.resolve(FocusComposer, Message.FocusedPrompt()),
-      expect(role("button", { name: "Esc" })).toBeAbsent(),
-      expect(role("region", { name: "Docs" })).toExist(),
-    )
-  })
+it("an unavailable end restores the numbered destination and accepts later drives", () => {
+  let model = update(home, Message.ClickedLearnMore()).model
+  model = update(model, Message.ReceivedTourEvent({ event: { type: "TourStarted", id: "t1", seq: 1 } })).model
+  model = update(model, Message.ReceivedTourEvent({ event: { type: "WalkthroughDriven", id: "t1", seq: 2, step: 4, target: "issue:48", at: 0, duration: 12000 } })).model
+  const ended = update(model, Message.PressedEscape()).model
+  const failed = update(ended, Message.FailedEndTour()).model
+  assert(failed).toMatchObject({ tour: true, tourDismissed: false, issues: { open: true, selected: 48 } })
+  const next = update(failed, Message.ReceivedTourEvent({ event: { type: "WalkthroughDriven", id: "t1", seq: 3, step: 5, target: "issues:vips", at: 0, duration: 14000 } })).model
+  assert(next.theatre?.step).toBe(5)
+})
 
-  it("Escape still stops a tour whose end didn't reach the agent", () => {
-    scene(
-      { update, view },
-      given({ ...home, surface: "chat", conversation: TOUR, stream: "open", tour: false }),
-      ...started,
-      Subscription.emit(Message.PressedEscape()),
-      Command.expectExact(EndTourCommand({ conversation: TOUR }), FocusComposer({})),
-      Command.resolve(EndTourCommand, Message.FocusedPrompt()),
-      Command.resolve(FocusComposer, Message.FocusedPrompt()),
-    )
-  })
-
-  it("a second Learn more while the tour runs does nothing new", () => {
-    scene(
-      { update, view },
-      given({ ...home, conversation: TOUR, stream: "open", tour: true }),
-      ...started,
-      Subscription.emit(Message.ClickedSplash()),
-      click(role("button", { name: "Learn more" })),
-      Command.expectNone(),
-      expect(role("heading", { name: "VibeLang" })).toExist(),
-    )
-  })
-
-  it("the glow goes when the tour finishes on its own, and the docs remain maximized until minimized", () => {
-    scene(
-      { update, view },
-      given(update(home, Message.ClickedLearnMore()).model),
-      ...started,
-      Subscription.emit(Message.ReceivedEvent({ event: { type: "ReplyFinished", seq: 4, id: "t1" } })),
-      Command.expectNone(),
-      expect(role("button", { name: "Esc" })).toBeAbsent(),
-      expect(role("region", { name: "Docs" })).toHaveAttr("data-maximized", "true"),
-      click(role("button", { name: "Minimize the docs" })),
-      expect(role("region", { name: "Docs" })).toHaveAttr("data-maximized", "false"),
-    )
-  })
-
-  it("ending before the tour was recorded ends it once it is", () => {
-    const learning = update(home, Message.ClickedLearnMore())
-    const ended = update(learning.model, Message.PressedEscape())
-    const named = (commands: ReadonlyArray<{ readonly name: string; readonly args?: unknown }> | undefined) =>
-      commands?.map((command) => [command.name, command.args])
-    assert(named(ended.commands)).toEqual([["EndTour", { conversation: TOUR }], ["FocusComposer", {}]])
-    assert(named(update(ended.model, Message.SucceededTour()).commands)).toEqual([["EndTour", { conversation: TOUR }]])
-    assert(update(learning.model, Message.SucceededTour()).commands).toBeUndefined()
-  })
-
-  it("a refused tour gives control back and says why", () => {
-    scene(
-      { update, view },
-      given(home),
-      click(role("button", { name: "Learn more" })),
-      Command.resolve(StartTourCommand, Message.FailedTour({ reason: "busy" })),
-      expect(role("button", { name: "Esc" })).toBeAbsent(),
-      expect(text("Agent busy")).toExist(),
-    )
-  })
-
-  it("the docs pane maximizes, and Escape or its button minimizes it", () => {
-    scene(
-      { update, view },
-      given({ ...home, surface: "chat", conversation: TOUR, stream: "open" }),
-      ...started,
-      Subscription.emit(Message.ReceivedEvent({ event: { type: "ReplyFinished", seq: 4, id: "t1" } })),
-      click(role("button", { name: "Maximize the docs" })),
-      expect(role("region", { name: "Docs" })).toHaveAttr("data-maximized", "true"),
-      Subscription.emit(Message.PressedEscape()),
-      Command.expectNone(),
-      expect(role("region", { name: "Docs" })).toHaveAttr("data-maximized", "false"),
-      click(role("button", { name: "Maximize the docs" })),
-      click(role("button", { name: "Minimize the docs" })),
-      expect(role("region", { name: "Docs" })).toHaveAttr("data-maximized", "false"),
-    )
-  })
-
-  it("an end that never reached the agent gives Esc back while the tour still runs", () => {
-    scene(
-      { update, view },
-      given({ ...home, surface: "chat", conversation: TOUR, stream: "open", tour: true }),
-      ...started,
-      click(role("button", { name: "Esc" })),
-      Command.resolve(EndTourCommand, Message.FailedEndTour()),
-      Command.resolve(FocusComposer, Message.FocusedPrompt()),
-      expect(role("button", { name: "Esc" })).toExist(),
-    )
-  })
-
-  it("Learn more after the stream broke follows the conversation again from where it was", () => {
-    const broken: Model = { ...home, conversation: TOUR, stream: "failed", epoch: 3, from: 0 }
-    const learning = update(broken, Message.ClickedLearnMore())
-    assert(learning.model).toMatchObject({ stream: "open", epoch: 4, from: 0, tour: true })
-  })
-
-  it("a Learn more refused busy by this tab's own running tour keeps that tour in control", () => {
-    const touring = [{ type: "TourStarted", seq: 1, id: "t1" }].reduce(
-      (model: Model, event) => update(model, Message.ReceivedEvent({ event: event as never })).model,
-      { ...home, surface: "chat", conversation: TOUR, stream: "open", tour: true } as Model,
-    )
-    assert(update(touring, Message.FailedTour({ reason: "busy" })).model.tour).toBe(true)
-    assert(update(home, Message.FailedTour({ reason: "busy" })).model.tour).toBe(false)
-  })
+it("Exit minimizes a driven sandbox so the focused composer is available", () => {
+  const model = update({ ...home, surface: "chat", tour: true, sandboxPane: "max" }, Message.PressedEscape()).model
+  assert(model.sandboxPane).toBe("pane")
 })

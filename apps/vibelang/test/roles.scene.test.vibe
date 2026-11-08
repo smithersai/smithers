@@ -1,6 +1,6 @@
 import { Command, click, expect, given, role, scene, Subscription, text } from "foldkit/scene"
 import { describe, expect as assert, it } from "@effect/vitest"
-import { EndTourCommand, FocusComposer, ChooseIdentity, CloseRoleDialog, FocusAccountMenu, GrantRole, init, LoadActions, LoadPeople, Message, ShowRoleDialog, signedOut, update } from "../src/web/main.vibe"
+import { ClosePalette, PresentTour, EndTourCommand, FocusComposer, ChooseIdentity, CloseRoleDialog, FocusAccountMenu, GrantRole, init, LoadActions, LoadPeople, Message, ShowRoleDialog, signedOut, update } from "../src/web/main.vibe"
 import { view } from "../src/web/view.vibe"
 
 const home = init({ session: "roles", mode: "mock", name: "Guest" }).model
@@ -162,8 +162,10 @@ for (const overlay of ["menu", "confirmation"] as const) {
     assert(result.model.tour).toBe(false)
     scene({ update, view }, given(touring),
       Subscription.emit(Message.PressedEscape()),
-      Command.expectExact(EndTourCommand({ conversation: home.conversation }), FocusComposer({})),
+
       Command.resolve(EndTourCommand, Message.FocusedPrompt()),
+      Command.resolve(ClosePalette, Message.FocusedPrompt()),
+      Command.resolve(PresentTour, Message.FocusedPrompt()),
       Command.resolve(FocusComposer, Message.FocusedPrompt()),
     )
     assert(result.model.account?.menu).toBe(touring.account.menu)

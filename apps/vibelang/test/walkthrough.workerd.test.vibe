@@ -1,0 +1,40 @@
+// The production control protocol, sequencer and durable signals on real SQLite/workerd; no model or request interception.
+import { it, expect } from "@effect/vitest"
+import { beforeAll, afterAll } from "vitest"
+import { FetchHttpClient } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
+import { apply, empty } from "../src/core/conversation.vibe"
+import { room, serveApi, type Served } from "./support/workerd.vibe"
+let api: Served | undefined
+beforeAll(async () => { api = await runPromise(serveApi()) })
+afterAll(async () => { await api?.dispose() })
+it.live("live walks the same ten destinations, pauses durably, seeks and cancels through the public API", () => effect {
+  provide LiveFactory(api!.origin).pipe(Layer.provide(FetchHttpClient.layer)) {
+    const factory = try Factory
+    const conversation = try room("walkthrough-controls")
+    try factory.tour(conversation)
+    for (let step = 1; step <= WALKTHROUGH.length; step++) {
+      if (step > 1) try factory.controlTour!(conversation, "seek", step)
+      const events = Array.from(try Stream.runCollect(factory.events(conversation, 0).pipe(Stream.takeUntil(event => event.type === "ReplyDelta" && event.text.endsWith(WALKTHROUGH[step - 1]!.subtitle)))))
+      const state = events.reduce(apply, empty)
+      try Effect.try(() => expect(state.walkthrough).toMatchObject({ step, target: WALKTHROUGH[step - 1]!.target, paused: false }))
+      if (step === 4) {
+        try factory.controlTour!(conversation, "pause", 0)
+        const paused = Array.from(try Stream.runCollect(factory.events(conversation, 0).pipe(Stream.takeUntil(event => event.type === "TourPaused"))))
+        const at = paused.reduce(apply, empty)
+        try sleep("100 millis")
+        const snapshot = try factory.read(conversation, 0)
+        try Effect.try(() => { expect(at.walkthrough?.paused).toBe(true); expect(snapshot.seq).toBe(at.seq) })
+        try factory.controlTour!(conversation, "resume", 0)
+      }
+    }
+    try factory.controlTour!(conversation, "seek", 11)
+    const finished = Array.from(try Stream.runCollect(factory.events(conversation, 0).pipe(Stream.takeUntil(event => event.type === "ReplyFinished"))))
+    try Effect.try(() => {
+      expect(finished.filter(event => event.type === "WalkthroughDriven").map(event => event.target)).toEqual(WALKTHROUGH.map(step => step.target))
+      expect(finished.reduce(apply, empty).entries[0]?.text).toBe(WALKTHROUGH.map(step => step.subtitle).join("\n\n"))
+    })
+  }
+}, 120000)

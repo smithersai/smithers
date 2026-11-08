@@ -1,3 +1,4 @@
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 // @vitest-environment node
 import { it, expect } from "@effect/vitest"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
@@ -8,7 +9,7 @@ import { LiveMythical } from "../src/history/LiveMythical.vibe"
 import { Mythical } from "../src/history/MythicalHistory.vibe"
 import { seeded } from "../src/history/MockMythical.vibe"
 import { outlineOf, epicPageOf, commitPageOf, matchesOf } from "../src/history/pages.vibe"
-import { DOCS_ORIGIN, STOPS } from "../src/core/flows.vibe"
+import {  } from "../src/core/flows.vibe"
 import { apply, empty, type Event } from "../src/core/conversation.vibe"
 import { serveApi, room } from "../test/support/workerd.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
@@ -181,10 +182,10 @@ it("workerd sequencer, post, reply and tour flows", async ({ bench }) => {
           await runPromise(factory.tour(conversation))
           const events = await runPromise(settled(factory, conversation))
           const state = events.reduce(apply, empty)
-          expect(state.entries[0]).toMatchObject({ text: [1, 2, 3, 4, 5].map((stop) => `Deterministic tour ${stop}.`).join("\n\n"), done: true, error: "" })
-          expect(state.pane).toBe(DOCS_ORIGIN + STOPS.at(-1)!.path)
-          const paths = events.filter((event) => event.type === "PaneOpened").map((event) => event.url)
-          expect(paths.filter((path, index) => index === 0 || path !== paths[index - 1])).toEqual(STOPS.map((stop) => DOCS_ORIGIN + stop.path))
+          expect(state.entries[0]).toMatchObject({ text: WALKTHROUGH.map(stop => stop.subtitle).join("\n\n"), done: true, error: "" })
+          expect(state.walkthrough?.step).toBe(10)
+          const paths = events.filter((event) => event.type === "WalkthroughDriven").map((event) => event.target)
+          expect(paths.filter((path, index) => index === 0 || path !== paths[index - 1])).toEqual(WALKTHROUGH.map((stop) => stop.target))
         }))
         results.push(try tryPromise(() => tourBench.run(slow)))
         try artifact("workerd", "Vitest built-in bench; actual local workerd Durable Objects, SQLite engine, alarms, LiveFactory HTTP/SSE, agent and QuickJS; deterministic HTTP model service. Three new conversations each, unwarmed. Bundling/server startup excluded; post-through-settle/read included.", ["Flow/adapter overhead, no model inference, WAN or production contention. Tour includes five real durable reading holds. Test host delegates to production Objects/Http; Alchemy's deploy-only wiring is not run."], results)

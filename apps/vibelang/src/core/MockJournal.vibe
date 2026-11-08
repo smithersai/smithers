@@ -1,0 +1,7 @@
+// The product Mock's retained private walkthrough conversations. Tests use a fresh in-memory world by default.
+import type { Event } from "./conversation.vibe"
+export service MockJournal {
+  static readonly defaultValue = () => ({ read: (_conversation: string) => succeed([] as ReadonlyArray<Event>), write: (_conversation: string, _events: ReadonlyArray<Event>) => Effect.void })
+  read(conversation: string): ReadonlyArray<Event>!!
+  write(conversation: string, events: ReadonlyArray<Event>): void!!
+}

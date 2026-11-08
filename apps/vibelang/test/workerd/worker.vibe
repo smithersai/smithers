@@ -128,7 +128,7 @@ export class Conversation {
       await Effect.runPromise(sequencer.ensureDispatched())
       return HttpServerResponse.toWeb(eventStream(sequencer.follow(afterOf(url) ?? 0)))
     }
-    const args = await request.json() as { readonly clientId: string; readonly name: string; readonly text: string; readonly after: number; readonly page: string }
+    const args = await request.json() as { readonly clientId: string; readonly name: string; readonly text: string; readonly after: number; readonly page: string; readonly action: "pause" | "resume" | "seek"; readonly step: number }
     const action = args as unknown as { readonly request: RunRequest; readonly role: Role; readonly id: string; readonly owner: string }
     if (url.pathname === "/action/crash") {
       const healthy = HistoryActions.make(this.state.id.toString(), this.state.storage)
@@ -173,6 +173,7 @@ export class Conversation {
       return json(await Effect.runPromise(note(history, input.id, "tried", input.text, "test/note")))
     }
     if (url.pathname === "/tour") return json({ refusal: await Effect.runPromise(Objects.tour(this.state.id.toString(), this.state.storage, sequencer)) })
+    if (url.pathname === "/tour-control") return json({ refusal: await Effect.runPromise(Objects.controlTour(this.state.id.toString(), this.state.storage, sequencer, args.action, args.step)) })
     if (url.pathname === "/end-tour") return json({ refusal: await Effect.runPromise(Objects.endTour(this.state.id.toString(), this.state.storage, sequencer)) })
     // The engine's runs in this object's SQLite, so the suite sees every post and reply ran as a flow (0011).
     if (url.pathname === "/runs") {
@@ -219,7 +220,7 @@ effect function readingAlarm(hostId: string, storage: Objects.Storage, sequencer
   const registration = Layer.effectDiscard(effect {
     const engine = try FlowRuntime.FlowRuntime
     const words = Array.from({ length: 40 }, () => "word").join(" ")
-    try engine.register(Tour, ({ tour }) => toured(tour, walk(tour, [words, words, words, words, words])))
+    try engine.register(Tour, ({ tour }) => toured(tour, walk(tour)))
   })
   try ExecutionObject.alarm(Objects.executionStorage(storage), {
     flows: [Tour],
@@ -354,6 +355,7 @@ export default {
         reach("conversation", async () => ((await call(env.CONVERSATION, conversation, "wiki", { page })) as { refusal: string | null }).refusal),
       tour: (conversation) =>
         reach("conversation", async () => ((await call(env.CONVERSATION, conversation, "tour", {})) as { refusal: string | null }).refusal),
+      controlTour: (conversation, action, step) => reach("conversation", async () => ((await call(env.CONVERSATION, conversation, "tour-control", { action, step })) as { refusal: string | null }).refusal),
       endTour: (conversation) =>
         reach("conversation", async () => ((await call(env.CONVERSATION, conversation, "end-tour", {})) as { refusal: string | null }).refusal),
       events: (conversation) =>

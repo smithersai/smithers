@@ -79,13 +79,11 @@ for (const width of [390, 1280]) {
   })
 }
 
-test("maximized docs leave the phone header links visible and clickable", async ({ page }, info) => {
+test("maximized wiki leave the phone header links visible and clickable", async ({ page }, info) => {
   await page.goto("/?agent=mock")
-  await page.getByRole("button", { name: "Learn more" }).click()
-  await expect(page.getByTitle("VibeLang docs")).toBeVisible()
-  await page.getByRole("button", { name: "Esc", exact: true }).click()
-  await page.getByRole("button", { name: "Maximize the docs" }).click()
-  const pane = page.getByRole("region", { name: "Docs" })
+  await page.getByRole("button", { name: "Wiki", exact: true }).click()
+  await page.getByRole("button", { name: "Maximize the wiki" }).click()
+  const pane = page.getByRole("region", { name: "Wiki", exact: true })
   await expect(pane).toHaveAttribute("data-maximized", "true")
   const paneBox = (await pane.boundingBox())!
   const links = page.locator(".vl-nav").getByRole("link")
@@ -95,7 +93,7 @@ test("maximized docs leave the phone header links visible and clickable", async 
     await link.click({ trial: true })
   }
   await page.screenshot({ path: info.outputPath("maximized-docs-header.png") })
-  await page.getByRole("button", { name: "Minimize the docs" }).click()
+  await page.getByRole("button", { name: "Minimize the wiki" }).click()
   await expect(pane).toHaveAttribute("data-maximized", "false")
 })
 

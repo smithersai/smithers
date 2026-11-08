@@ -18,7 +18,7 @@ export function wikiPane(model: Model, h: H): Html {
     return rank(a.id) - rank(b.id)
   })
   const decisions = filtered.filter(page => page.decision).sort((a, b) => b.id.localeCompare(a.id))
-  const maximized = model.tour || model.docs === "max"
+  const maximized = model.docs === "max"
   const link = (id: string, label: string, decision = false) => h.a([
     h.Class("vl-wiki-page-link"), h.Href(`/wiki/${id}`), h.DataAttribute("kind", decision ? "decision" : "page"),
     ...(page?.id === id ? [h.AriaCurrent("page")] : []),

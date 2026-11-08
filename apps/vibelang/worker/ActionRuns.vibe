@@ -136,8 +136,12 @@ export effect function cancel(hostId: string, storage: Objects.Storage, sequence
     const active = snapshot.entries.find(entry => entry.author === "agent" && !entry.done)
     if (active !== undefined) try sequencer.fail(active.id, "Cancelled")
   } else if (run.flow === Tour._tag) {
+    // The cancellation receipt wins before ending the tour wakes its alarm. Otherwise that alarm can observe
+    // the ended agent entry and settle the registered run as passed before cancellation is recorded.
+    try sequencer.action({ type: "SettleAction", id, state: "cancelled", result: "Cancelled", at: try Clock.currentTimeMillis })
     try replyHost.cancel()
     try Objects.endTour(hostId, storage, sequencer)
+    return null
   } else {
     const refusal = historyHost.cancel().pipe(Effect.as(null)) catch () => "cancel-failed"
     if (refusal !== null) return refusal

@@ -9,7 +9,7 @@ import * as Sse from "effect/encoding/Sse"
 import { HttpIncomingMessage, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { Event } from "../src/core/conversation.vibe"
 import type { ReadSnapshot } from "../src/core/schemas.vibe"
-import { HEALTH_PATH, MAX_NAME, MAX_POST_BYTES, PostBody, WikiBody, routeOf, type Route } from "../src/core/wire.vibe"
+import { HEALTH_PATH, MAX_NAME, MAX_POST_BYTES, PostBody, WikiBody, TourControlBody, routeOf, type Route } from "../src/core/wire.vibe"
 import { HistoryEvent as HistoryEventSchema } from "../src/history/schemas.vibe"
 import type { Event as HistoryEvent } from "../src/history/mythical.vibe"
 import type { PageRequest } from "../src/history/pages.vibe"
@@ -25,6 +25,7 @@ export interface Conversations {
   /** Opens a wiki page through its durable flow: `null` once recorded, else the refusal. */
   openWiki(conversation: string, page: string): (string | null)!Unreachable
   /** Starts the agent's tour: `null` once recorded, else the refusal. */
+  controlTour?(conversation: string, action: "pause" | "resume" | "seek", step: number): (string | null)!Unreachable
   tour(conversation: string): (string | null)!Unreachable
   /** Ends the running tour: `null` once ended, else the refusal. */
   endTour(conversation: string): (string | null)!Unreachable
@@ -95,6 +96,14 @@ effect function answer(route: Route, url: URL, conversations: Conversations) {
     const body = decodePost(text) catch () => undefined
     if (body === undefined || body.name.length > MAX_NAME) return json({ error: "body" }, 400)
     const refusal = try conversations.post(route.conversation, body)
+    return refusal === null ? json({}) : json({ refusal }, 409)
+  }
+  if (route.kind === "tour-control") {
+    const text = request.text catch () => ""
+    if (text.length > 1024) return json({ error: "body size" }, 413)
+    const body = Schema.decodeUnknownEffect(Schema.fromJsonString(TourControlBody))(text) catch () => undefined
+    if (body === undefined || !Number.isInteger(body.step) || body.step < 0 || body.step > 11) return json({ error: "body" }, 400)
+    const refusal = conversations.controlTour === undefined ? "not-replying" : try conversations.controlTour(route.conversation, body.action, body.step)
     return refusal === null ? json({}) : json({ refusal }, 409)
   }
   if (route.kind === "tour" || route.kind === "end-tour") {

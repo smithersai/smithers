@@ -27,6 +27,14 @@ cases = [
 ('src/core/conversation.vibe', 'gates-record-verdict', 'recordSpecificationReview', 'review.verdict === "" || ', '', 'record guard verdict'),
 ('src/core/conversation.vibe', 'gates-record-link', 'recordSpecificationReview', ' || review.link === ""', '', 'record guard link'),
 
+ ('src/core/conversation.vibe', 'walkthrough-pause-projection', 'controlledWalkthrough', 'return { ...showing, paused, revision', 'return { ...showing, paused: !paused, revision', 'pause and resume preserve the requested control state'),
+ ('src/core/conversation.vibe', 'walkthrough-seek-projection', 'soughtWalkthrough', 'return { ...showing, step, target: ""', 'return { ...showing, step: 1, target: ""', 'seek preserves the requested step'),
+
+ ('src/core/conversation.vibe', 'walkthrough-step-projection', 'drivenWalkthrough', 'return { step, target, paused: false', 'return { step: 1, target, paused: false', 'numbered drive preserves the requested step'),
+ ('src/core/conversation.vibe', 'walkthrough-target-projection', 'drivenWalkthrough', 'return { step, target, paused: false', 'return { step, target: "wrong", paused: false', 'numbered drive preserves its destination'),
+ ('src/core/conversation.vibe', 'walkthrough-remaining-floor', 'holdRemaining', 'now - started >= remaining ? 0 : remaining - (now - started)', 'remaining - (now - started)', 'paused holds never have a negative remainder'),
+ ('src/core/conversation.vibe', 'walkthrough-clock-rollback', 'holdRemaining', 'if (now <= started) return remaining', 'if (now <= started) return 0', 'rollback does not consume reading time'),
+
 ('src/core/sandboxDecision.vibe', 'clock-highwater', 'elapsedMilliseconds', 'earlier < later ? later - earlier : 0', 'later - earlier', 'rollback never subtracts previously metered usage'),
 ('src/core/sandboxDecision.vibe', 'usage-overdraw', 'remainingMilliseconds', 'spent < allowance ? allowance - spent : 0', 'allowance - spent', 'remaining allowance is never negative after overuse'),
 ('src/core/sandboxDecision.vibe', 'parallel-undercount', 'runningCount', 'if (sandboxes[i]!.running) count++', 'if (sandboxes[i]!.running) count += 0', 'all running containers contribute their concurrent count'),

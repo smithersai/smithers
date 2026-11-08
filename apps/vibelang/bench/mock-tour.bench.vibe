@@ -1,12 +1,13 @@
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 import { it, expect } from "@effect/vitest"
 import { Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { apply, empty } from "../src/core/conversation.vibe"
-import { DOCS_ORIGIN, STOPS, readingMillis } from "../src/core/flows.vibe"
-import { chunks, mockReply, TOUR } from "../src/core/mockReplies.vibe"
+import { readingMillis } from "../src/core/flows.vibe"
+import { chunks, mockReply } from "../src/core/mockReplies.vibe"
 import { artifact, workload, slow, quick } from "./artifact.vibe"
 
-const tourDuration = TOUR.reduce((total, stop) => total + readingMillis(stop.words), 0)
+const tourDuration = WALKTHROUGH.reduce((total, stop) => total + stop.duration, 0)
 
 it("complete mock tour and cancellation", { timeout: tourDuration + 60000 }, async ({ bench }) => {
   const results = []
@@ -24,8 +25,8 @@ it("complete mock tour and cancellation", { timeout: tourDuration + 60000 }, asy
           expect(busy).toBe("busy")
           expect(none).toBe("not-replying")
           expect(events.map((event) => event.seq)).toEqual(events.map((_, i) => i + 1))
-          expect(events.filter((event) => event.type === "PaneOpened").map((event) => event.url)).toEqual(STOPS.map((stop) => DOCS_ORIGIN + stop.path))
-          expect(state.entries[0]).toMatchObject({ text: TOUR.map((stop) => stop.words).join("\n\n"), done: true, error: "" })
+          expect(events.filter((event) => event.type === "WalkthroughDriven").map((event) => event.target)).toEqual(WALKTHROUGH.map((stop) => stop.target))
+          expect(state.entries[0]).toMatchObject({ text: WALKTHROUGH.map((stop) => stop.subtitle).join("\n\n"), done: true, error: "" })
           expect(snapshot).toEqual({ seq: state.seq, entries: state.entries })
         })
       }

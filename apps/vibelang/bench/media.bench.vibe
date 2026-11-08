@@ -1,10 +1,5 @@
 import { it, expect as assert } from "@effect/vitest"
-import { scene, given, expect, selector } from "foldkit/scene"
-import { newClient, empty } from "../src/core/conversation.vibe"
-import { STOPS, DOCS_ORIGIN } from "../src/core/flows.vibe"
-import { MediaAssets, mediaEvents, observeMedia } from "../src/web/media.vibe"
-import { init, update, Message, type Model } from "../src/web/main.vibe"
-import { view } from "../src/web/view.vibe"
+import { mediaEvents, observeMedia } from "../src/web/media.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 
 it("media outcomes expose only bounded dimensions", async ({ bench }) => {
@@ -28,33 +23,3 @@ it("media outcomes expose only bounded dimensions", async ({ bench }) => {
   await runPromise(artifact("media-observe", "Vitest built-in bench; actual media observation service for all image/video loaded/failed outcomes. Each counter dimension increases exactly one; capture and compare complete bounded log messages. Assertions and logger lifecycle included.", ["Effect telemetry boundary only; does not measure image download or video decode."], result))
 })
 
-it("all five tour media scenes, reduced motion and faulty asset fallback", async ({ bench }) => {
-  const sources: Record<string, string> = {}
-  for (const [index, stop] of STOPS.entries()) {
-    sources[stop.media.src] = `/fault/asset-${index}`
-    if (stop.media.poster !== undefined) sources[stop.media.poster] = `/fault/poster-${index}`
-  }
-  const faulty = Layer.succeed(MediaAssets, { sources: succeed(sources) })
-  const result = await workload(bench, "media-scenes", async () => {
-    const mappings = await runPromise(Effect.provide(effect { return try (try MediaAssets).sources }, faulty))
-    assert(STOPS.map((stop) => stop.path)).toEqual(["/", "/getting-started/002-why-effect", "/vibelang-features/115-cheat-sheet", "/setup", "/vips"])
-    for (const stop of STOPS) for (const reducedMotion of [false, true]) {
-      const model: Model = { ...init({ session: "bench", mode: "mock", name: "Bench", mediaSources: mappings, reducedMotion }).model, surface: "chat", tour: true, client: { ...newClient, conversation: { ...empty, pane: DOCS_ORIGIN + stop.path } } }
-      const video = stop.media.poster !== undefined
-      const target = video && !reducedMotion ? ".vl-stop-media video" : ".vl-stop-media img"
-      const src = video && reducedMotion ? stop.media.poster! : stop.media.src
-      scene({ update, view }, given(model), expect(selector(target)).toHaveAttr("src", sources[src]!))
-      if (video && !reducedMotion) scene({ update, view }, given(model), expect(selector(target)).toHaveAttr("poster", sources[stop.media.poster!]!))
-      const loaded = update(model, Message.LoadedMedia({ kind: video && !reducedMotion ? "video" : "image" }))
-      assert(loaded.model).toBe(model)
-      assert(loaded.commands).toHaveLength(1)
-      const failed = update(model, Message.FailedMedia({ src: stop.media.src, kind: video ? "video" : "image" }))
-      assert(failed.model.failedMedia).toEqual([stop.media.src])
-      assert(failed.model.client).toBe(model.client)
-      assert(failed.commands).toHaveLength(1)
-      scene({ update, view }, given(failed.model), expect(selector(".vl-stop-media")).toBeAbsent(), expect(selector("iframe.vl-docs-frame")).toHaveAttr("src", DOCS_ORIGIN + stop.path))
-      assert(update(model, Message.ObservedMedia()).model).toBe(model)
-    }
-  }).run(quick)
-  await runPromise(artifact("media-scenes", "Vitest built-in bench; faulty Effect asset service maps all catalog sources/posters, without request interception. Render all five real tour stops with and without reduced motion, verify exact image/video source mapping, unchanged model on load, command dispatch, whole failed-figure removal and retained docs iframe. Assertions, service read and scene serialization included.", ["VNode scene/model boundary; no network, physical media decoder, layout or paint. Native browser observations separately exercise normal assets."], result))
-})

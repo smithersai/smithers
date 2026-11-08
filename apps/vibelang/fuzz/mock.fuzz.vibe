@@ -1,3 +1,4 @@
+import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 import { it } from "@effect/vitest"
 import { Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
@@ -51,8 +52,7 @@ it.live("mock/room-isolation", () => run("mock/room-isolation", Schema.Tuple([To
   }
 }))
 
-import { DOCS_ORIGIN, STOPS } from "../src/core/flows.vibe"
-import { TOUR } from "../src/core/mockReplies.vibe"
+import {  } from "../src/core/flows.vibe"
 
 it.live("mock/tour-lifecycle", () => run("mock/tour-lifecycle", Schema.Struct({ id: Int, end: Schema.Boolean }), ({ id, end }) => effect {
   provide MockFactory {
@@ -63,15 +63,22 @@ it.live("mock/tour-lifecycle", () => run("mock/tour-lifecycle", Schema.Struct({ 
     const again = try exit(factory.tour(room))
     if (again._tag !== "Failure" || Cause.hasDies(again.cause)) return false
     if (end) {
-      try Stream.runDrain(factory.events(room, 0).pipe(Stream.takeUntil((event) => event.type === "ReplyDelta")))
+      try Stream.runDrain(factory.events(room, 0).pipe(Stream.takeUntil(event => event.type === "ReplyDelta")))
       try factory.endTour(room)
+    } else {
+      // Seek through the actual durable controls: lifecycle fuzzing remains bounded independently of reading pace.
+      // The full holds are exercised by the unit clock and the full, real-time muted browser playback.
+      for (let step = 1; step <= WALKTHROUGH.length; step++) {
+        try Stream.runDrain(factory.events(room, 0).pipe(Stream.takeUntil(event => event.type === "ReplyDelta" && event.text.endsWith(WALKTHROUGH[step - 1]!.subtitle))))
+        try factory.controlTour!(room, "seek", step + 1)
+      }
     }
     const events = Array.from(join followed)
     const state = events.reduce(apply, empty)
     const before = state.seq
     try sleep("50 millis")
     if ((try factory.read(room, 0)).seq !== before || state.agent !== "idle" || !state.entries[0]?.done) return false
-    const opened = events.filter((event) => event.type === "PaneOpened")
-    return end ? opened.length > 0 && opened.length < STOPS.length : opened.map((event) => event.url).join() === STOPS.map((stop) => DOCS_ORIGIN + stop.path).join() && state.entries[0]?.text === TOUR.map((stop) => stop.words).join("\n\n")
+    const opened = events.filter((event) => event.type === "WalkthroughDriven")
+    return end ? opened.length > 0 && opened.length < WALKTHROUGH.length : opened.map((event) => event.target).join() === WALKTHROUGH.map((stop) => stop.target).join() && state.entries[0]?.text === WALKTHROUGH.map((stop) => stop.subtitle).join("\n\n")
   }
 }))

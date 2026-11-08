@@ -49,6 +49,7 @@ export interface ConversationShape {
   readonly read: (after: number) => ReadSnapshot!!RuntimeContext
   readonly openWiki: (page: string) => (string | null)!!RuntimeContext
   readonly tour: () => (string | null)!!RuntimeContext
+  readonly controlTour: (action: "pause" | "resume" | "seek", step: number) => (string | null)!!RuntimeContext
   readonly endTour: () => (string | null)!!RuntimeContext
   readonly alarm: () => void!!RuntimeContext
 }
@@ -213,6 +214,7 @@ const ConversationLive = Conversation.make(effect {
         Objects.post(hostId, state.raw.storage, sequencer, clientId, name, text, owner),
       read: sequencer.read,
       openWiki: (page: string) => Objects.openWiki(hostId, state.raw.storage, sequencer, page),
+      controlTour: (action, step) => Objects.controlTour(hostId, state.raw.storage, sequencer, action, step),
       tour: () => Objects.tour(hostId, state.raw.storage, sequencer),
       endTour: () => Objects.endTour(hostId, state.raw.storage, sequencer),
       // The event stream of the request the API Worker forwarded, from its `after` cursor.
@@ -376,6 +378,10 @@ const program = effect {
         tour: (conversation) => effect {
           const object = try objectOf(conversations, conversation, "conversation")
           return try reached(runtime, "conversation", object.tour())
+        },
+        controlTour: (conversation, action, step) => effect {
+          const object = try objectOf(conversations, conversation, "conversation")
+          return try reached(runtime, "conversation", object.controlTour(action, step))
         },
         endTour: (conversation) => effect {
           const object = try objectOf(conversations, conversation, "conversation")

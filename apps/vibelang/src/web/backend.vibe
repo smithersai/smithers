@@ -1,9 +1,10 @@
+import { MockJournal } from "../core/MockJournal.vibe"
 import { liveHealth } from "../core/protocolDecision.vibe"
 
 // The browser's Factory is available immediately. Only backend operations wait for the one scoped selection.
 import { HttpClient } from "effect/http"
 import { IssueFailure } from "../core/issueSchemas.vibe"
-import { Factory, type Mode } from "../core/Factory.vibe"
+import { Refused, Factory, type Mode } from "../core/Factory.vibe"
 import { AgentActions, deferredActions } from "../actions/agent.vibe"
 import { Actions } from "../actions/Actions.vibe"
 import { LiveActions } from "../actions/LiveActions.vibe"
@@ -14,7 +15,7 @@ export service AgentBackend {
   readonly ready: Mode!!
 }
 
-export function BrowserFactory(origin: string, forceMock: boolean, role: import("../core/sandboxDecision.vibe").Role = "viewer") {
+export function BrowserFactory(origin: string, forceMock: boolean, role: import("../core/sandboxDecision.vibe").Role = "viewer", journal?: MockJournal.Shape) {
   return Layer.effectContext(effect {
     const scope = try Scope.Scope
     const client = try HttpClient.HttpClient
@@ -26,7 +27,7 @@ export function BrowserFactory(origin: string, forceMock: boolean, role: import(
       // The mock carries the flow engine (0011). Live pages never load that module.
       const layer = mode === "live"
         ? LiveFactory(origin)
-        : (try promise(() => import("../core/MockFactory.vibe"))).mockFactoryFor(forceMock ? role : "viewer")
+        : (try promise(() => import("../core/MockFactory.vibe"))).mockFactoryFor(forceMock ? role : "viewer").pipe(Layer.provide(journal === undefined ? Layer.empty : Layer.succeed(MockJournal, journal)))
       const context = try Layer.buildWithScope(layer.pipe(Layer.provide(Layer.merge(Layer.succeed(HttpClient.HttpClient, client), Layer.succeed(AgentActions, { actions: proxy.actions })))), scope)
       const factory = Context.get(context, Factory)
       const actionLayer = mode === "live" ? LiveActions(origin).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client)))
@@ -76,6 +77,11 @@ export function BrowserFactory(origin: string, forceMock: boolean, role: import(
       openWiki: effect (conversation, page) => {
         const { factory } = try ready
         return try factory.openWiki(conversation, page)
+      },
+      controlTour: effect (conversation, action, step) => {
+        const { factory } = try ready
+        if (factory.controlTour === undefined) throw new Refused({ refusal: "not-replying" })
+        return try factory.controlTour(conversation, action, step)
       },
       tour: effect (conversation) => {
         const { factory } = try ready

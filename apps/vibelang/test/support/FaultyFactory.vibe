@@ -64,6 +64,10 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         }
         try base.tour(conversation)
       },
+      controlTour: effect (conversation, action, step) => {
+        if (base.controlTour === undefined) throw new Unavailable({ reason: "control unavailable" })
+        try base.controlTour(conversation, action, step)
+      },
       endTour: effect (conversation) => {
         if (fault === "end-tour-unavailable" && !observation.faulted) {
           observation.faulted = true
