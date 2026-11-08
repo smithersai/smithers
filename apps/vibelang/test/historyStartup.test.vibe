@@ -53,26 +53,15 @@ effect function withoutStorage(window: Window) {
   }
 }
 
+const roles = ["viewer", "new", "community", "contributor", "maintainer"] as const
 const choices = [
+  ...roles.flatMap((asked) => roles.map((stored) => [`?role=${asked}`, stored, asked] as const)),
+  ...roles.map((stored) => ["", stored, stored] as const),
+  ...roles.map((asked) => [`?role=${asked}`, null, asked] as const),
   ["", null, "maintainer"],
   ["", "", "maintainer"],
   ["?role=", null, "maintainer"],
-  ["?role=viewer", null, "viewer"],
-  ["?role=contributor", null, "contributor"],
-  ["?role=maintainer", null, "maintainer"],
-  ["?role=viewer", "viewer", "viewer"],
-  ["?role=viewer", "contributor", "viewer"],
-  ["?role=contributor", "contributor", "contributor"],
-  ["?role=contributor", "maintainer", "contributor"],
-  ["?role=maintainer", "viewer", "maintainer"],
-  ["?role=maintainer", "maintainer", "maintainer"],
-  ["", "viewer", "viewer"],
-  ["", "contributor", "contributor"],
-  ["", "maintainer", "maintainer"],
   ["", "viewer ", "maintainer"],
-  ["?role=viewer", "maintainer", "viewer"],
-  ["?role=contributor", "viewer", "contributor"],
-  ["?role=maintainer", "contributor", "maintainer"],
   ["?role=unknown", "contributor", "maintainer"],
   ["?role=VIEWER", "viewer", "maintainer"],
   ["?role=", "contributor", "contributor"],
@@ -160,7 +149,7 @@ it.live("disposing the mounted history cancels an unresolved health selection", 
   }
 }), 30_000)
 
-for (const [role, force, initialHash] of [["viewer", "query", ""], ["contributor", "storage", ""], ["maintainer", "query", ""], ["viewer", "query", "m1"], ["maintainer", "storage", "e1"]] as const) {
+for (const [role, force, initialHash] of [["viewer", "query", ""], ["new", "query", ""], ["community", "storage", ""], ["contributor", "storage", ""], ["maintainer", "query", ""], ["viewer", "query", "m1"], ["maintainer", "storage", "e1"]] as const) {
   it.live(`starts the ${role}'s history at #${initialHash} through ${force} mock selection and follows real hash navigation`, () => scoped(effect {
     const { node, window } = try host()
     try sync(() => {
@@ -184,7 +173,7 @@ for (const [role, force, initialHash] of [["viewer", "query", ""], ["contributor
         try promise(() => vi.waitFor(() => expect(node.querySelector(".mh-epics [role='button']")).not.toBeNull(), { timeout: 5000 }))
         const buttons = try Effect.try(() => Array.from(node.querySelectorAll("button"), (button) => button.textContent))
         try Effect.try(() => {
-          expect(buttons.includes("Plan work")).toBe(role !== "viewer")
+          expect(buttons.includes("Plan work")).toBe(role === "contributor" || role === "maintainer")
           expect(buttons.includes("Fold")).toBe(role === "maintainer")
         })
         try sync(() => node.querySelector<HTMLElement>(".mh-epics [role='button']")!.click())
