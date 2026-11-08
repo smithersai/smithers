@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VibeLang — onboarding walkthrough prototype</title>
+<style>
+:root{
+  --bg:#0d1514; --surface:#131b1a; --surface-2:#1a2422; --text:#ece7db; --text-muted:#a8a193;
+  --text-faint:#969083; --border:rgba(236,231,219,.1); --border-strong:rgba(236,231,219,.18);
+  --brand:#45c4b2; --inverse:#211d18; --code-bg:#101917; --success:#7fbfb3; --danger:#d97757; --warning:#f0c169;
+  --vl-cyan:#41d1ff; --vl-violet:#747bff; --vl-magenta:#bd34fe;
+  --vl-gradient:linear-gradient(120deg,var(--vl-cyan) 8%,var(--vl-violet) 48%,var(--vl-magenta) 88%);
+  --r-1:6px; --r-2:10px; --r-bubble:18px;
+  --font-sans:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --font-mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:var(--bg);color:var(--text);font-family:var(--font-sans);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+button{font:inherit;color:inherit}
+kbd{font-family:var(--font-mono);font-size:11px;padding:1px 6px;border:1px solid var(--border);border-radius:4px;background:var(--surface-2);color:var(--text-muted)}
+
+/* ── app frame ── */
+.app{min-height:100dvh;display:flex;flex-direction:column}
+.top{position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 24px;background:rgba(13,21,20,.82);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+.home{display:inline-flex;align-items:center;gap:8px;padding:4px;border:0;background:transparent;cursor:pointer;color:var(--text)}
+.logo-v{font-size:22px;font-weight:800;background:var(--vl-gradient);-webkit-background-clip:text;background-clip:text;color:transparent;line-height:1}
+.logo-word{font-size:17px;font-weight:700;letter-spacing:-.01em}
+.nav{display:flex;align-items:center;gap:4px;min-width:0}
+.nav a,.nav .navbtn{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:var(--r-1);color:var(--text-muted);font-size:14px;font-weight:500;text-decoration:none;border:0;background:transparent;cursor:pointer;white-space:nowrap}
+.nav a:hover,.nav .navb:hover{background:var(--surface-2);color:var(--text)}
+.nav a[aria-current="page"]{background:rgba(69,196,178,.1);color:var(--brand);font-weight:650}
+.away{color:var(--text-faint);font-size:12px}
+.pill{padding:2px 8px;border:1px solid rgba(69,196,178,.4);border-radius:999px;background:rgba(69,196,178,.1);color:var(--brand);font-size:11px;font-weight:650}
+.role{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted)}
+.role select{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:var(--r-1);font-size:12px;padding:3px 6px}
+.signin{min-height:32px;padding:0 14px;border:1px solid var(--brand);border-radius:var(--r-1);background:var(--brand);color:var(--inverse);font-size:13px;font-weight:650;cursor:pointer}
+
+/* ── splash ── */
+.splash{flex:1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);align-items:center;gap:48px;width:min(100%,1200px);margin:0 auto;padding:48px 32px 96px}
+.eyebrow{color:var(--text-muted);font-size:13px;font-weight:650;letter-spacing:.08em;text-transform:uppercase}
+.title{margin:12px 0 0;font-size:clamp(56px,9vw,96px);font-weight:750;letter-spacing:-.035em;line-height:.95}
+.grad{background:var(--vl-gradient);-webkit-background-clip:text;background-clip:text;color:transparent}
+.tagline{max-width:34ch;margin:22px 0 0;color:var(--text-muted);font-size:19px;line-height:1.5}
+.actions-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:32px}
+.primary{display:inline-flex;align-items:center;min-height:44px;padding:0 20px;border:1px solid var(--brand);border-radius:var(--r-2);background:var(--brand);color:var(--inverse);font-size:15px;font-weight:650;cursor:pointer}
+.primary:hover{filter:brightness(1.12)}
+.secondary{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 18px;border:1px solid rgba(69,196,178,.4);border-radius:var(--r-2);background:rgba(69,196,178,.06);color:var(--brand);font-size:15px;font-weight:650;cursor:pointer;text-decoration:none}
+.secondary:hover{background:rgba(69,196,178,.12)}
+.install{display:inline-block;margin:24px 0 0;padding:10px 14px;border:1px solid var(--border);border-radius:var(--r-2);background:var(--code-bg);color:var(--text);font-family:var(--font-mono);font-size:14px}
+.install::before{content:"$ ";color:var(--text-muted)}
+.media-card{margin:0;overflow:hidden;border:1px solid var(--border);border-radius:14px;background:#0e0e11;box-shadow:0 24px 60px rgba(0,0,0,.25);padding:32px 28px;font-family:var(--font-mono)}
+.mc-line{padding:10px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:16px;font-size:15px}
+.mc-line:last-child{border-bottom:0}
+.mc-t{color:var(--vl-cyan);font-weight:700}.mc-e{color:#e5484d;font-weight:700}.mc-r{color:var(--vl-magenta);font-weight:700}
+.mc-note{color:var(--text-muted);font-size:12px}
+
+/* ── chat ── */
+.chat{flex:1;display:flex;flex-direction:column;width:min(100%,760px);margin:0 auto;padding:24px 16px 180px}
+.msg{display:grid;gap:6px;margin:0 0 18px;max-width:88%}
+.msg .who{font-size:12px;color:var(--text-faint)}
+.bubble{padding:12px 16px;border-radius:var(--r-bubble);font-size:15px;line-height:1.6}
+.msg.agent .bubble{background:var(--surface);border:1px solid var(--border)}
+.msg.me{justify-items:end}
+.msg.me .bubble{background:rgba(69,196,178,.12);border:1px solid rgba(69,196,178,.3)}
+.code{margin:10px 0;padding:12px 14px;overflow-x:auto;border:1px solid var(--border);border-radius:var(--r-2);background:var(--code-bg);font-family:var(--font-mono);font-size:13px;line-height:1.55;white-space:pre}
+.composer-wrap{position:fixed;left:0;right:0;bottom:0;z-index:25;padding:12px 16px 20px;background:linear-gradient(transparent,var(--bg) 40%)}
+.composer{width:min(100%,720px);margin:0 auto;border:1px solid var(--border-strong);border-radius:var(--r-bubble);background:var(--surface);padding:14px 16px;display:grid;gap:10px}
+.composer .input{min-height:22px;font-size:15px;color:var(--text);outline:none}
+.composer .input:empty::before{content:"Ask about VibeLang";color:var(--text-faint)}
+.composer .foot{display:flex;justify-content:space-between;align-items:center}
+.composer .hint{font-size:11px;color:var(--text-faint)}
+.send{width:34px;height:34px;border-radius:var(--r-2);border:0;background:var(--brand);color:var(--inverse);font-size:16px;cursor:pointer}
+.slash-menu{width:min(100%,720px);margin:0 auto 8px;border:1px solid var(--border-strong);border-radius:var(--r-2);background:var(--surface);overflow:hidden}
+.slash-item{display:flex;gap:10px;padding:9px 12px;font-size:14px;border-bottom:1px solid var(--border)}
+.slash-item:last-child{border-bottom:0}
+.slash-item.hot{background:var(--surface-2)}
+.slash-item code{font-family:var(--font-mono);color:var(--brand);font-size:13px}
+.slash-item span{color:var(--text-muted);font-size:13px}
+
+/* ── palette ── */
+.palette-layer{position:fixed;inset:0;z-index:50;display:grid;justify-items:center;align-content:start;padding:18vh 16px 0}
+.palette-scrim{position:absolute;inset:0;background:rgba(0,0,0,.45);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+.palette{position:relative;width:min(100%,640px);border:1px solid var(--border-strong);border-radius:var(--r-bubble);background:var(--surface);padding:14px 16px;display:grid;gap:10px;box-shadow:0 24px 60px rgba(0,0,0,.4)}
+.palette .input{min-height:24px;font-size:16px;outline:none}
+.palette .input:empty::before{content:"Ask about VibeLang, or describe what to change";color:var(--text-faint)}
+.palette .hint{font-size:11px;color:var(--text-faint)}
+
+/* ── issues ── */
+.surface-view{flex:1;width:min(100%,1000px);margin:0 auto;padding:20px 24px 120px}
+.crumb{display:flex;align-items:center;gap:12px;color:var(--text-muted);font-size:14px;margin-bottom:14px}
+.crumb b{color:var(--text);font-weight:650;font-size:16px}
+.ix-head{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-2) var(--r-2) 0 0;background:var(--surface);border-bottom:0}
+.ix-head .counts{font-size:13px;color:var(--text-muted)}
+.filters{display:inline-flex;border:1px solid var(--border);border-radius:var(--r-1);overflow:hidden;margin-left:auto}
+.filters span{padding:4px 12px;font-size:13px;color:var(--text-muted);cursor:pointer}
+.filters span[aria-current="true"]{background:var(--surface-2);color:var(--text)}
+.search{border:1px solid var(--border);border-radius:var(--r-1);background:var(--bg);color:var(--text-faint);font-size:13px;padding:5px 10px;min-width:120px}
+.ix-list{border:1px solid var(--border);border-radius:0 0 var(--r-2) var(--r-2);background:var(--surface);overflow:hidden}
+.ix-row{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--border);font-size:14px}
+.ix-row:last-child{border-bottom:0}
+.ix-dot{width:14px;height:14px;border:1.5px solid var(--success);border-radius:50%;flex:0 0 auto}
+.ix-main{min-width:0;flex:1}
+.ix-title{color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ix-meta{color:var(--text-faint);font-size:12px;margin-top:2px}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border:1px solid var(--border);border-radius:999px;font-size:11px;font-weight:650;color:var(--text-muted);white-space:nowrap}
+.badge.task{color:var(--brand);border-color:rgba(69,196,178,.4)}
+.badge.vip{color:var(--warning);border-color:rgba(240,193,105,.4)}
+.badge.half{color:var(--brand)}
+.ix-comments{color:var(--text-faint);font-size:12px}
+/* detail */
+.dt-title{font-size:22px;font-weight:700;margin:0 0 8px}
+.dt-sub{display:flex;gap:8px;align-items:center;color:var(--text-muted);font-size:13px;margin-bottom:18px;flex-wrap:wrap}
+.dt-grid{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:24px}
+.comment{border:1px solid var(--border);border-radius:var(--r-2);background:var(--surface);padding:14px 16px;margin-bottom:12px}
+.comment .cwho{font-size:13px;color:var(--text-muted);margin-bottom:6px}
+.comment .cwho b{color:var(--text)}
+.aside{display:grid;gap:14px;align-content:start;font-size:13px}
+.aside h4{margin:0;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-faint)}
+.avatar{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:rgba(69,196,178,.12);color:var(--brand);font-size:10px;font-weight:650}
+.avatar.agent{background:rgba(240,193,105,.12);color:var(--warning)}
+
+/* ── wiki pane ── */
+.wiki-pane{border:1px solid var(--border);border-radius:var(--r-bubble);background:var(--surface);overflow:hidden}
+.wiki-bar{display:flex;align-items:center;gap:8px;padding:8px 8px 8px 16px;border-bottom:1px solid var(--border);color:var(--text-muted);font-size:13px}
+.wiki-bar b{color:var(--text)}
+.wiki-body{display:grid;grid-template-columns:188px minmax(0,1fr);min-height:420px}
+.wiki-pages{border-right:1px solid var(--border);padding:10px 8px;display:grid;gap:2px;align-content:start}
+.wiki-pages .find{border:1px solid var(--border);border-radius:var(--r-1);background:var(--bg);color:var(--text-faint);font-size:12px;padding:5px 8px;margin-bottom:6px}
+.wlink{display:block;padding:5px 8px;border:0;border-radius:var(--r-1);background:none;color:var(--text-muted);font-size:13px;text-align:left;cursor:pointer}
+.wlink[aria-current="page"]{background:rgba(69,196,178,.1);color:var(--brand);font-weight:650}
+.wlink.dec{font-family:var(--font-mono);font-size:12px}
+.wiki-content{padding:16px 20px 24px;font-size:14px;line-height:1.6;overflow-wrap:anywhere}
+.wiki-content h1{font-size:1.5em;margin:0 0 12px}
+.wiki-content table{width:100%;border-collapse:collapse;font-size:13px}
+.wiki-content th{color:var(--text-faint);font-size:11px;text-transform:uppercase;letter-spacing:.06em;text-align:left}
+.wiki-content td,.wiki-content th{padding:8px 6px;border-bottom:1px solid var(--border)}
+.wiki-content a{color:var(--brand)}
+
+/* ── sandbox pane ── */
+.sb-pane{border:1px solid var(--border);border-radius:var(--r-bubble);background:var(--surface);overflow:hidden}
+.sb-body{padding:28px 20px;display:grid;gap:14px;justify-items:center;text-align:center}
+.sb-minutes{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border:1px solid rgba(217,119,87,.5);border-radius:999px;color:var(--danger);font-size:12px;font-weight:650}
+.sb-kpi{display:flex;gap:24px;color:var(--text-muted);font-size:13px}
+.sb-kpi b{color:var(--text);font-size:20px;display:block}
+
+/* ── theatre ── */
+.glow{position:fixed;inset:0;z-index:55;pointer-events:none;box-shadow:inset 0 0 0 2px var(--vl-violet),inset 0 0 56px 8px rgba(116,123,255,.5),inset 0 0 120px 24px rgba(189,52,254,.22);animation:glowp 2.2s ease-in-out infinite alternate}
+@keyframes glowp{from{opacity:.55}to{opacity:1}}
+.spotlight{position:fixed;z-index:56;pointer-events:none;border:2px solid var(--vl-violet);border-radius:var(--r-2);box-shadow:0 0 0 9999px rgba(6,10,9,.55),0 0 24px rgba(116,123,255,.55);transition:top .45s cubic-bezier(.2,.8,.2,1),left .45s cubic-bezier(.2,.8,.2,1),width .45s cubic-bezier(.2,.8,.2,1),height .45s cubic-bezier(.2,.8,.2,1)}
+.escpill{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:60;display:inline-flex;align-items:center;padding:4px 12px;border:1px solid var(--vl-violet);border-radius:999px;background:var(--surface);color:var(--text);font-family:var(--font-mono);font-size:12px;font-weight:650;cursor:pointer;box-shadow:0 0 18px rgba(116,123,255,.45)}
+.escpill:hover{background:var(--surface-2)}
+.progress{position:fixed;top:0;left:0;right:0;z-index:60;display:flex;gap:4px;padding:6px 10px}
+.progress .seg{flex:1;height:3px;border-radius:2px;background:var(--surface-2)}
+.progress .seg.done{background:var(--brand)}
+.progress .seg.now{background:var(--vl-violet);animation:segp 1.6s ease-in-out infinite alternate}
+@keyframes segp{from{opacity:.5}to{opacity:1}}
+.subbar{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:60;width:min(100% - 32px,640px);border:1px solid var(--border-strong);border-radius:var(--r-bubble);background:var(--surface);box-shadow:0 24px 60px rgba(0,0,0,.45);padding:14px 18px 12px;display:grid;gap:10px}
+.subtop{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.subcount{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);white-space:nowrap}
+.subtitle{margin:0;font-size:16px;line-height:1.55;min-height:1.55em}
+.controls{display:flex;align-items:center;justify-content:center;gap:10px}
+.cbtn{display:inline-grid;place-items:center;min-width:44px;min-height:44px;padding:0 10px;border:1px solid var(--border);border-radius:var(--r-2);background:var(--surface-2);cursor:pointer;color:var(--text)}
+.cbtn:hover{border-color:var(--border-strong);background:var(--bg)}
+.cbtn:focus-visible,.escpill:focus-visible,.primary:focus-visible,.secondary:focus-visible{outline:0;box-shadow:0 0 0 3px rgba(69,196,178,.35)}
+.cbtn svg{width:18px;height:18px;fill:currentColor}
+.cbtn.exit{color:var(--danger);border-color:rgba(217,119,87,.4);font-size:13px;font-weight:650}
+.cbtn.sound[aria-pressed="true"]{color:var(--brand);border-color:rgba(69,196,178,.5)}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+
+/* dim the whole app subtly while theatre runs (under the spotlight hole) */
+.theatre .top,.theatre .stage{filter:saturate(.85)}
+
+@media (max-width:900px){
+  .splash{grid-template-columns:1fr;gap:36px;padding:24px 16px 64px}
+  .dt-grid{grid-template-columns:1fr}
+  .wiki-body{grid-template-columns:1fr}
+  .wiki-pages{display:flex;overflow-x:auto;border-right:0;border-bottom:1px solid var(--border)}
+  .wiki-pages .find{width:130px;margin:0 6px 0 0;flex:0 0 auto}
+  .wlink{flex:0 0 auto}
+}
+@media (max-width:720px){
+  .top{padding:12px;gap:8px}
+  .nav a,.nav .navbtn{padding:6px 6px;font-size:13px}
+  .away{display:none}
+  .role{display:none}
+  .escpill{top:64px}
+  .subbar{left:0;transform:none;bottom:0;width:100%;border-radius:var(--r-bubble) var(--r-bubble) 0 0;border-width:1px 0 0;padding:14px 16px calc(12px + env(safe-area-inset-bottom))}
+  .subtitle{font-size:15px}
+  .composer-wrap{bottom:0}
+  .surface-view{padding:14px 12px 160px}
+  .splash{padding-bottom:180px}
+}
+@media (prefers-reduced-motion:reduce){
+  .glow,.progress .seg.now{animation:none!important;opacity:1}
+  .spotlight{transition:none!important}
+  .palette-scrim{animation:none!important}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="top" id="topbar">
+    <button class="home" id="homeBtn" aria-label="VibeLang home"><span class="logo-v">V</span><span class="logo-word">VibeLang</span></button>
+    <nav class="nav" aria-label="Main">
+      <a href="#" data-nav="issues">Issues</a>
+      <a href="#" data-nav="wiki">Wiki</a>
+      <a href="#" data-nav="history">History</a>
+      <a href="#" class="away">Docs ↗</a>
+      <a href="#" class="away">GitHub ↗</a>
+      <span class="pill">Mock</span>
+      <span class="role">Visit as
+        <select aria-label="Visit as role"><option>Viewer</option><option>New</option><option>Community</option><option>Contributor</option><option>Maintainer</option></select>
+      </span>
+      <button class="signin">Sign in</button>
+    </nav>
+  </header>
+
+  <main class="stage" id="stage">
+
+    <!-- SPLASH -->
+    <section class="splash" id="splash">
+      <div>
+        <p class="eyebrow">Effect, as a language</p>
+        <h1 class="title"><span class="grad">Vibe</span>Lang</h1>
+        <p class="tagline">VibeLang gives Effect a simple, readable syntax that compiles to JavaScript with TypeScript declarations.</p>
+        <div class="actions-row">
+          <button class="primary" id="learnMore">Learn more</button>
+          <button class="secondary" id="askAgent">Ask the agent <kbd>⌘K</kbd></button>
+          <a class="secondary" href="#" onclick="return false">Contribute</a>
+        </div>
+        <code class="install">npm create vibelang@latest my-app</code>
+      </div>
+      <div class="media-card" aria-hidden="true">
+        <div style="color:var(--text-faint);font-size:11px;letter-spacing:.08em;margin-bottom:14px">EFFECT FUNCTIONS RETURN EFFECTS</div>
+        <div class="mc-line"><span class="mc-t">User</span><span class="mc-note">returns <b class="mc-t">User</b></span></div>
+        <div class="mc-line"><span class="mc-e">NotFound</span><span class="mc-note">fails with <b class="mc-e">NotFound</b></span></div>
+        <div class="mc-line"><span class="mc-r">Users</span><span class="mc-note">needs <b class="mc-r">Users</b></span></div>
+      </div>
+    </section>
+
+    <!-- CHAT -->
+    <section class="chat" id="chat" hidden>
+      <div id="transcript"></div>
+    </section>
+
+    <!-- ISSUES -->
+    <section class="surface-view" id="issues" hidden>
+      <div class="crumb">‹ Chat <b>Issues</b></div>
+      <div id="issuesList">
+        <div class="ix-head">
+          <span class="counts">● Open 11 &nbsp; ✓ Closed 8</span>
+          <span class="filters" id="ixFilters">
+            <span data-f="all" aria-current="true">All</span><span data-f="issues">Issues</span><span data-f="tasks">Tasks</span><span data-f="vip">VIPs</span>
+          </span>
+          <span class="search">Search</span>
+        </div>
+        <div class="ix-list" id="ixRows"></div>
+      </div>
+      <div id="issueDetail" hidden></div>
+    </section>
+
+    <!-- WIKI -->
+    <section class="surface-view" id="wiki" hidden>
+      <div class="wiki-pane" id="wikiPane">
+        <div class="wiki-bar"><b>Wiki</b><span>· Home</span></div>
+        <div class="wiki-body">
+          <div class="wiki-pages">
+            <span class="find">Find a page</span>
+            <button class="wlink" aria-current="page">Home</button>
+            <button class="wlink">Rulings</button>
+            <button class="wlink">Roadmap</button>
+            <button class="wlink">Decisions</button>
+            <button class="wlink">Designs</button>
+            <button class="wlink dec">0026 marketing-media</button>
+            <button class="wlink dec">0024 sandboxes</button>
+            <button class="wlink dec">0023 actions</button>
+            <button class="wlink dec">0022 issues-and-vips</button>
+            <button class="wlink dec">0019 sign-in-and-roles</button>
+          </div>
+          <div class="wiki-content">
+            <h1>VibeLang factory wiki</h1>
+            <p>The working memory of vibelang.smithers.sh (ruling VL-23): what Will ruled, what we decided and why, and what comes next. Every decision lands here in the same change as the code it shapes.</p>
+            <table>
+            <tr><th>PAGE</th><th>WHAT IT HOLDS</th></tr>
+            <tr><td><a href="#" onclick="return false">Rulings</a></td><td>Will's words, VL-1 to VL-29. The source of truth.</td></tr>
+            <tr><td><a href="#" onclick="return false">Roadmap</a></td><td>The bricks: done, in progress, next.</td></tr>
+            <tr><td><a href="#" onclick="return false">Decisions</a></td><td>One record per consequential choice, numbered.</td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SANDBOXES -->
+    <section class="surface-view" id="sandbox" hidden>
+      <div class="sb-pane" id="sbPane">
+        <div class="wiki-bar"><b>&gt;_ Sandboxes</b><span class="sb-minutes">● 0 min</span></div>
+        <div class="sb-body">
+          <div class="sb-kpi">
+            <span><b>600</b>minutes / month</span>
+            <span><b>Contributor</b>role needed</span>
+            <span><b>0</b>running</span>
+          </div>
+          <p style="color:var(--text-muted);margin:6px 0 0">Sign in to start a sandbox</p>
+          <button class="signin" style="min-height:36px">Sign in</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- composer + slash menu -->
+  <div class="composer-wrap" id="composerWrap" hidden>
+    <div class="slash-menu" id="slashMenu" hidden>
+      <div class="slash-item hot"><code>/tour</code><span>Explore VibeLang</span></div>
+      <div class="slash-item"><code>/live</code><span>Live mode</span></div>
+    </div>
+    <div class="composer" id="composer" tabindex="-1">
+      <div class="input" id="composerInput" contenteditable="true" aria-label="Ask about VibeLang"></div>
+      <div class="foot"><span class="hint">⏎ to send · esc to close</span><button class="send" aria-label="Send">↑</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- palette -->
+<div class="palette-layer" id="paletteLayer" hidden>
+  <div class="palette-scrim"></div>
+  <div class="palette" id="palette">
+    <div class="input" id="paletteInput"></div>
+    <span class="hint">⏎ to send · esc to close</span>
+  </div>
+</div>
+
+<!-- theatre chrome -->
+<div class="glow" id="glow" hidden></div>
+<div class="spotlight" id="spotlight" hidden></div>
+<button class="escpill" id="escPill" hidden>Esc</button>
+<div class="progress" id="progress" hidden></div>
+<div class="subbar" id="subbar" hidden>
+  <div class="subtop"><span class="subcount" id="subcount">1 of 10</span></div>
+  <p class="subtitle" id="subtitle" aria-live="polite"></p>
+  <div class="controls">
+    <button class="cbtn" id="backBtn" aria-label="Back (Left arrow)"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9.5 12z"/></svg></button>
+    <button class="cbtn" id="playBtn" aria-label="Pause (Space)"><svg viewBox="0 0 24 24" id="playIcon"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg></button>
+    <button class="cbtn" id="skipBtn" aria-label="Skip (Right arrow)"><svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM4 5v14l10.5-7z"/></svg></button>
+    <button class="cbtn sound" id="soundBtn" aria-label="Sound off" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path id="soundWaves" d="M16 8a5 5 0 0 1 0 8" stroke="currentColor" stroke-width="2" fill="none" style="display:none"/><line id="soundX" x1="16" y1="9" x2="21" y2="15" stroke="currentColor" stroke-width="2"/><line id="soundX2" x1="21" y1="9" x2="16" y2="15" stroke="currentColor" stroke-width="2"/></svg></button>
+    <button class="cbtn exit" id="exitBtn">Exit</button>
+  </div>
+</div>
+<div class="sr-only" id="status" aria-live="polite" aria-atomic="true"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ---------- app mock state ---------- */
+const ISSUES = [
+  { n:48, t:"Formatter can't resolve its shipped binary on Linux", meta:"opened 2d ago by jun · → VibeLang agent", badges:[["task","⟳ Task · Queued"],["","bug"],["","cli"]], c:4, kind:"tasks" },
+  { n:46, t:"is stops matching a subclass of an error after --fix", meta:"opened 3d ago by maya · → VibeLang agent", badges:[["task","◐ Task · Running"],["","bug"],["","compiler"]], c:6, kind:"tasks" },
+  { n:45, t:"Pattern matching in case", meta:"opened 2d ago by jun", badges:[["vip","VIP · In review"]], c:3, kind:"vip" },
+  { n:44, t:"for-await over streams", meta:"opened 5d ago by maya · 1 child", badges:[["vip","VIP · Accepted"]], c:8, kind:"vip" },
+  { n:42, t:"Case branches on tuples", meta:"opened 3d ago by jun · child of #38 · 2 children", badges:[["","compiler"]], c:6, kind:"issues" },
+  { n:40, t:"Cycle errors read like English", meta:"opened 4d ago by noor · child of #38", badges:[], c:1, kind:"issues" },
+  { n:39, t:"Elide type-only imports", meta:"opened 4d ago by will · child of #38 · → VibeLang agent", badges:[["task","◐ Task · Running"],["","compiler"]], c:5, kind:"tasks" },
+  { n:38, t:"Effect-native modules", meta:"opened 1w ago by will · 4 children", badges:[["","language"]], c:12, kind:"issues" },
+  { n:36, t:"Sandbox minutes show in the prompt footer", meta:"opened 1w ago by noor", badges:[], c:0, kind:"issues" },
+];
+function renderIssues(filter){
+  $("ixRows").innerHTML = ISSUES.filter(i => filter==="all" || i.kind===filter || (filter==="issues"&&i.kind==="issues")).map(i =>
+    `<div class="ix-row"><span class="ix-dot"></span><span class="ix-main"><span class="ix-title">${i.t}</span>
+     <span class="ix-meta">#${i.n} · ${i.meta}</span></span>
+     ${i.badges.map(b=>`<span class="badge ${b[0]}">${b[1]}</span>`).join("")}
+     ${i.c?`<span class="ix-comments"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px"><path d="M21 12a8 8 0 0 1-8 8H4l2-3a8 8 0 1 1 15-5z"/></svg> ${i.c}</span>`:""}</div>`).join("");
+}
+function renderDetail(n){
+  const i = ISSUES.find(x=>x.n===n);
+  $("issuesList").hidden = true;
+  const d = $("issueDetail");
+  d.hidden = false;
+  d.innerHTML = `
+    <div class="crumb">‹ Issues <b>#${i.n}</b></div>
+    <h2 class="dt-title">${i.t} <span style="color:var(--text-faint)">#${i.n}</span></h2>
+    <div class="dt-sub"><span class="badge" style="color:var(--success);border-color:rgba(127,191,179,.4)">◔ Open</span>
+      ${i.badges.map(b=>`<span class="badge ${b[0]}">${b[1]}</span>`).join("")}
+      <span>${i.meta}</span></div>
+    <div class="dt-grid">
+      <div>
+        <div class="comment"><div class="cwho"><span class="avatar">${i.meta.includes("maya")?"M":"J"}</span> <b>${i.meta.includes("maya")?"maya":"jun"}</b> · 2 days ago</div>
+        Case branches on tuples should narrow each element without a cast.
+        <div class="code">match (pair) {
+  when [let name, let count]: name
+}</div></div>
+        <div class="comment"><div class="cwho"><span class="avatar agent">V</span> <b>VibeLang agent</b> · 2 days ago</div>
+        Reproduced on 0.0.12. The narrowing lands in the compiler's pattern checker; I'll open the fix from the sandbox.</div>
+      </div>
+      <div class="aside">
+        <div><h4>Assignees</h4><span class="avatar agent">V</span> VibeLang agent</div>
+        <div><h4>Task</h4>${i.kind==="tasks"?"⟳ Queued":"—"}</div>
+        <div><h4>Labels</h4>${i.badges.filter(b=>!b[0]||b[0]==="").map(b=>`<span class="badge">${b[1]}</span>`).join(" ")||"—"}</div>
+      </div>
+    </div>`;
+}
+const SCREENS = ["splash","chat","issues","wiki","sandbox"];
+function show(name){
+  for (const s of SCREENS) $(s).hidden = s !== name;
+  $("composerWrap").hidden = name === "splash" && !$("composerWrap").dataset.keep;
+  document.querySelectorAll("[data-nav]").forEach(a => a.removeAttribute("aria-current"));
+  const nav = { issues:"issues", wiki:"wiki", history:null }[name];
+  if (nav) document.querySelector(`[data-nav="${nav}"]`).setAttribute("aria-current","page");
+}
+function agentMsg(html){
+  const t = $("transcript");
+  const el = document.createElement("div");
+  el.className = "msg agent";
+  el.innerHTML = `<span class="who">VibeLang agent</span><div class="bubble">${html}</div>`;
+  t.appendChild(el);
+  return el.querySelector(".bubble");
+}
+function meMsg(text){
+  const t = $("transcript");
+  const el = document.createElement("div");
+  el.className = "msg me";
+  el.innerHTML = `<div class="bubble"></div>`;
+  el.querySelector(".bubble").textContent = text;
+  t.appendChild(el);
+}
+function typeInto(el, text, done){
+  el.textContent = "";
+  let i = 0;
+  const tick = () => {
+    el.textContent = text.slice(0, ++i);
+    if (i < text.length) setTimeout(tick, reduced ? 0 : 28);
+    else done && done();
+  };
+  tick();
+}
+
+/* ---------- steps ---------- */
+const QUESTION = "What makes VibeLang different from TypeScript?";
+const ANSWER = `VibeLang <b>is</b> TypeScript syntax, compiled to real Effect programs. <code>effect</code> goes where <code>async</code> goes, <code>try</code> runs an Effect, and <code>A!E!R</code> says what a function returns, how it fails and what it needs — and the compiler checks all three.`;
+
+const steps = [
+  { sub:"I'm the VibeLang agent. I'm driving for two minutes — Esc anytime.",
+    voice:"Hi — I'm the VibeLang agent. I'll drive for about two minutes. Press Escape any time to take over.",
+    hold:7000, spot:"#learnMore",
+    enter(){ show("splash"); } },
+  { sub:"This is the chat. ⌘K opens it anywhere — ask me about VibeLang.",
+    voice:"This is the chat. Command-K opens it from anywhere. Ask me anything about VibeLang.",
+    hold:22000, spot:"#paletteLayer", spotLater:"#composer",
+    enter(){
+      show("splash");
+      $("paletteLayer").hidden = false;
+      setTimeout(() => typeInto($("paletteInput"), QUESTION, () => {
+        setTimeout(() => {
+          $("paletteLayer").hidden = true;
+          $("paletteInput").textContent = "";
+          show("chat");
+          $("composerWrap").hidden = false;
+          meMsg(QUESTION);
+          const b = agentMsg("…");
+          setTimeout(() => { b.innerHTML = ANSWER; moveSpot(); }, reduced ? 50 : 1800);
+        }, reduced ? 50 : 500);
+      }), reduced ? 50 : 700);
+    } },
+  { sub:"Issues grow as a tree. A task is an issue we've committed to — it has an assignee.",
+    voice:"Issues grow as a tree: big problems split into smaller ones. A task is an issue the project committed to, and it always has an assignee.",
+    hold:15000, spot:"#issuesList",
+    enter(){ show("issues"); $("issueDetail").hidden = true; $("issuesList").hidden = false; renderIssues("all"); setFilter("all"); } },
+  { sub:"This task is assigned to me. People decide the work; agents do it.",
+    voice:"This task is assigned to me. People decide the work; agents do it.",
+    hold:12000, spot:"#issueDetail",
+    enter(){ show("issues"); renderDetail(48); } },
+  { sub:"A change to the language is a VIP: one feature, its examples, its prior art.",
+    voice:"A change to the language starts as a VIP — one feature, with examples and prior art. Community members propose them.",
+    hold:14000, spot:"#issueDetail",
+    enter(){ show("issues"); setFilter("vip"); renderDetail(45); } },
+  { sub:"The wiki is the project's memory: Will's rulings and every decision, beside the code.",
+    voice:"The wiki is the project's memory: Will's rulings and every decision, beside the code.",
+    hold:14000, spot:"#wikiPane",
+    enter(){ show("wiki"); } },
+  { sub:"History holds every commit of main, folded into epics you can read.",
+    voice:"History is the mythical history — every commit of main, folded into epics you can actually read.",
+    hold:11000, spot:'[data-nav="history"]',
+    enter(){ show("chat"); } },
+  { sub:"Type / anywhere. Actions are registered workflows — this tour is one. Your role decides which run.",
+    voice:"Type a slash anywhere. Actions are registered workflows — this tour is one of them. Your role decides which ones run.",
+    hold:15000, spot:"#composer",
+    enter(){ show("chat"); $("composerInput").textContent = "/"; $("slashMenu").hidden = false; } },
+  { sub:"Contributors get a sandbox: a real machine, metered in minutes each month.",
+    voice:"Contributors get a sandbox — a real machine of their own, metered in minutes each month.",
+    hold:12000, spot:"#sbPane",
+    enter(){ show("sandbox"); $("composerInput").textContent = ""; $("slashMenu").hidden = true; } },
+  { sub:"That's the factory. Ask me anything — or sign in to file your first issue.",
+    voice:"That's the factory. Ask me anything — or sign in, and file your first issue.",
+    hold:12000, spot:"#composer",
+    enter(){ show("chat"); $("composerInput").textContent = ""; $("slashMenu").hidden = true;
+      agentMsg("That's the factory. Ask me anything — or sign in to file your first issue."); } },
+];
+function setFilter(f){
+  document.querySelectorAll("#ixFilters span").forEach(s => s.setAttribute("aria-current", String(s.dataset.f===f)));
+}
+
+/* ---------- theatre engine ---------- */
+let cur = -1, playing = true, sound = false, timer = null, deadline = 0, remaining = 0, active = false;
+
+function buildProgress(){
+  $("progress").innerHTML = steps.map((_,i)=>`<span class="seg" data-i="${i}"></span>`).join("");
+}
+function paintProgress(){
+  document.querySelectorAll(".progress .seg").forEach((s,i)=>{
+    s.className = "seg" + (i<cur?" done":i===cur?" now":"");
+  });
+}
+function moveSpot(){
+  const sel = steps[cur].spotLater && steps[cur]._later ? steps[cur].spotLater : steps[cur].spot;
+  const el = document.querySelector(sel);
+  if (!el) { $("spotlight").hidden = true; return; }
+  const r = el.getBoundingClientRect();
+  const pad = 6;
+  const sp = $("spotlight");
+  sp.hidden = false;
+  sp.style.top = (r.top - pad) + "px";
+  sp.style.left = (r.left - pad) + "px";
+  sp.style.width = (r.width + pad*2) + "px";
+  sp.style.height = (r.height + pad*2) + "px";
+}
+function speak(text){
+  if (!sound || !("speechSynthesis" in window)) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 1.02;
+  speechSynthesis.speak(u);
+}
+function go(i){
+  cur = Math.max(0, Math.min(steps.length - 1, i));
+  steps[cur]._later = false;
+  clearTimeout(timer);
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  $("subcount").textContent = `${cur+1} of ${steps.length}`;
+  const sub = $("subtitle");
+  sub.textContent = steps[cur].sub;
+  $("status").textContent = `Step ${cur+1} of ${steps.length}: ${steps[cur].sub.split(" ").slice(0,6).join(" ")}…`;
+  steps[cur].enter();
+  paintProgress();
+  requestAnimationFrame(moveSpot);
+  if (steps[cur].spotLater) setTimeout(() => { steps[cur]._later = true; moveSpot(); }, reduced ? 100 : 3200);
+  speak(steps[cur].voice);
+  playing = true; paintPlay();
+  remaining = steps[cur].hold;
+  deadline = Date.now() + remaining;
+  timer = setTimeout(onAdvance, remaining);
+}
+function onAdvance(){
+  if (cur === steps.length - 1) finish();
+  else go(cur + 1);
+}
+function pause(){
+  if (!playing) return;
+  playing = false;
+  clearTimeout(timer);
+  remaining = Math.max(0, deadline - Date.now());
+  if ("speechSynthesis" in window) speechSynthesis.pause();
+  paintPlay();
+}
+function resume(){
+  if (playing) return;
+  playing = true;
+  deadline = Date.now() + remaining;
+  timer = setTimeout(onAdvance, remaining);
+  if ("speechSynthesis" in window && sound) speechSynthesis.resume();
+  paintPlay();
+}
+function paintPlay(){
+  $("playIcon").innerHTML = playing ? '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>' : '<path d="M8 5v14l11-7z"/>';
+  $("playBtn").setAttribute("aria-label", playing ? "Pause (Space)" : "Play (Space)");
+}
+function start(){
+  active = true;
+  document.body.classList.add("theatre");
+  buildProgress();
+  for (const id of ["glow","escPill","progress","subbar"]) $(id).hidden = false;
+  $("status").textContent = "Agent controlling. Escape to stop.";
+  go(0);
+}
+function finish(){ exit(true); }
+function exitTour(){
+  exit(true);
+}
+function exit(natural){
+  if (!active) return;
+  active = false;
+  clearTimeout(timer);
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  document.body.classList.remove("theatre");
+  for (const id of ["glow","escPill","progress","subbar","spotlight","paletteLayer"]) $(id).hidden = true;
+  $("slashMenu").hidden = true;
+  $("composerInput").textContent = "";
+  show("chat");
+  $("composerWrap").hidden = false;
+  if ($("transcript").children.length === 0)
+    agentMsg("That's the factory. Ask me anything — or sign in to file your first issue.");
+  $("status").textContent = "Tour ended. You have control.";
+  try { localStorage.setItem("vibelang:toured","1"); } catch(e){}
+  $("composer").focus();
+}
+
+/* ---------- wiring ---------- */
+$("learnMore").addEventListener("click", start);
+$("askAgent").addEventListener("click", () => { $("paletteLayer").hidden = false; });
+$("escPill").addEventListener("click", () => exitTour());
+$("exitBtn").addEventListener("click", () => exitTour());
+$("playBtn").addEventListener("click", () => playing ? pause() : resume());
+$("backBtn").addEventListener("click", () => go(cur - 1));
+$("skipBtn").addEventListener("click", () => cur === steps.length - 1 ? finish() : go(cur + 1));
+$("soundBtn").addEventListener("click", () => {
+  sound = !sound;
+  $("soundBtn").setAttribute("aria-pressed", String(sound));
+  $("soundBtn").setAttribute("aria-label", sound ? "Sound on" : "Sound off");
+  $("soundWaves").style.display = sound ? "" : "none";
+  $("soundX").style.display = $("soundX2").style.display = sound ? "none" : "";
+  try { localStorage.setItem("vibelang:tour-sound", sound ? "on" : "off"); } catch(e){}
+  if (!sound && "speechSynthesis" in window) speechSynthesis.cancel();
+  if (sound && active) speak(steps[cur].voice);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape"){
+    if (active) { e.preventDefault(); exitTour(); }
+    else $("paletteLayer").hidden = true;
+    return;
+  }
+  if (!active){
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k"){ e.preventDefault(); $("paletteLayer").hidden = !$("paletteLayer").hidden; }
+    return;
+  }
+  if (e.key === " "){ e.preventDefault(); playing ? pause() : resume(); }
+  else if (e.key === "ArrowLeft"){ e.preventDefault(); go(cur - 1); }
+  else if (e.key === "ArrowRight"){ e.preventDefault(); cur === steps.length - 1 ? finish() : go(cur + 1); }
+});
+addEventListener("resize", () => { if (active) moveSpot(); });
+addEventListener("scroll", () => { if (active) moveSpot(); }, true);
+document.querySelectorAll("[data-nav]").forEach(a => a.addEventListener("click", (e) => {
+  e.preventDefault();
+  if (active) return;
+  if (a.dataset.nav === "issues"){ show("issues"); $("issueDetail").hidden = true; $("issuesList").hidden = false; renderIssues("all"); $("composerWrap").hidden = false; $("composerWrap").dataset.keep = "1"; }
+  if (a.dataset.nav === "wiki"){ show("wiki"); $("composerWrap").hidden = false; $("composerWrap").dataset.keep = "1"; }
+}));
+$("homeBtn").addEventListener("click", () => { if (!active){ show("splash"); $("composerWrap").hidden = true; delete $("composerWrap").dataset.keep; } });
+
+/* first visit: the walkthrough introduces itself, once */
+let seen = null, soundPref = null;
+try { seen = localStorage.getItem("vibelang:toured"); soundPref = localStorage.getItem("vibelang:tour-sound"); } catch(e){}
+if (soundPref === "on") $("soundBtn").click();
+if (!seen) setTimeout(() => { if (!active) start(); }, 1200);
+</script>
+</body>
+</html>

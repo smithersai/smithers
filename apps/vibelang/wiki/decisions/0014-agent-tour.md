@@ -1,5 +1,9 @@
 # 0014. Learn more is a tour the agent drives
 
+**Current decision: VL-31, 2026-11-08.** Learn more and `/tour` start the ten-step live app walkthrough in
+[theatre mode](#vl-31-theatre-walkthrough-2026-11-08-lane-vl-learnmore), with exact sound-off subtitles, optional
+speech and durable pause/seek. The former docs-only tour below is superseded where it differs.
+
 **Extended by [0021](0021-wiki.md):** people and the agent share `PaneOpened` for wiki pages. A person opening has an empty entry id; an agent tool still requires its streaming entry.
 
 **Status:** accepted, 2026-11-07. **Rulings:** VL-28 (and VL-13, VL-16, VL-17); repository rules FLOW-3 and FLOW-5.
@@ -153,3 +157,45 @@ The other behavioral timeouts are unchanged.
 screenshot checks ran on a busy host. The browser test records actual paired pane/narration DOM states from before
 Learn more and requires the complete five-path order, retaining active glow geometry, control placement and final
 completion assertions. This observation changes no event, request, reading hold or product timing.
+
+## VL-31: theatre walkthrough (2026-11-08, lane vl-learnmore)
+
+The [designer handoff](../designs/onboarding/design.md), prototype and reference shots are preserved verbatim in
+`wiki/designs/onboarding/`. VL-31 replaces the five docs stops and generated narration with the ten exact subtitles
+and optional voice lines in `src/core/walkthroughSteps.vibe`. Learn more and `/tour` enter the same private durable
+controller. The public docs-opening tool remains available to ordinary chat replies.
+
+The controller records `WalkthroughDriven` before each subtitle and hold. The browser dispatches the same Messages
+that people use for Issues, issue detail, VIP filtering, wiki, slash commands and Sandboxes. Pause, resume and seek
+are numbered events. Each numbered drive/control has a `DurableDeferred` gate; controls complete the previous gate
+and wake the execution, including the Cloudflare park boundary. A pause stores the exact remainder and consumes no
+reading time until resumed. Each visit has a distinct journaled Action; stable post identity prevents duplicate chat
+questions on back/replay. Entry, drive, hold, controls and speech presentation log, trace and count bounded outcomes
+or step numbers, never subtitle text, prompts, names or credentials.
+
+The theatre uses the app's screens, violet spotlight/screen ring, segmented progress and subtitle controls. Audio is
+off by default, uses an injected Effect presentation service over the browser's injected Window, and persists its
+single toggle. Escape/Exit cancel speech, release control and focus the composer. First-visit entry waits 1.2 s and
+checks that no chat/palette has started. Private Mock tour/demo event logs are retained through the injected
+`MockJournal`; ordinary core tests still build independent memory worlds. The tab session and active flag survive
+reload; settled walkthroughs never auto-restart.
+
+Design inconsistencies resolved without changing the archived handoff:
+
+- The layout says nine segments; section 4 supplies ten steps. The product consistently counts ten.
+- The table's specified holds sum to 134 seconds; the short exact subtitles' formula alone sums to much less than
+  two minutes. Holds use the larger of the table duration and `readingMillis`, preserving the designer's reading
+  pace and the existing four-second floor.
+- The tour owns a working agent entry, so a normal Post in that conversation waits until the tour ends (0014).
+  Step 2 uses the normal Post/Reply flows in a separate private `demo-<session>` conversation, while the controller
+  stays in `tour-<session>`. The view follows both numbered streams. No reply bypasses the working-agent guard.
+- The existing issue kind Message takes `VIPs`, not the table's `vip`; the drive sends its actual control value.
+- A signed-out Viewer has no compute allowance. The sandbox step maximizes the real pane and shows its existing
+  role allowance table; it does not grant a sandbox or switch identity.
+- Exact final subtitles are deterministic on both hosts; no model rewrites the designer's words. The retained live
+  narration schema still enforces the ten-line, 65-word limit. Step 2's actual answer alone needs the live model.
+
+Library catalog entries: `@smthrs/flow` (journaled Actions, durable clock and deferred), `@smthrs/engine` (product
+Mock), `@smthrs/ui-css` (existing chat). No dependency added. No deployment from this lane.
+
+The controls use the explicitly named `vibelang/tour/pause`, `vibelang/tour/resume` and `vibelang/tour/seek` flows. Malformed fractional destinations are refused and wire state uses safe integer step/time schemas. Regression tests also cover sound-on seek restarting the next voice exactly once, pause/resume retaining speech, and first-visit entry leaving an already opened Issues screen alone.
