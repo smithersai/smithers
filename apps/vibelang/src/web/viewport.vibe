@@ -29,11 +29,21 @@ export function transcriptViewport(page?: Document) {
   return {
     wheel: (event: WheelEvent) => wheelPauses(event.deltaY, event.ctrlKey) ? pause() : undefined,
     key: (event: KeyboardEvent) => {
-      if (!keyPauses(event.key, event.defaultPrevented, false)) return undefined
+      const pageTop = event.key === "Home" || event.key === "ArrowUp" && event.metaKey
+      if (event.altKey || (event.ctrlKey || event.metaKey) && !pageTop ||
+        !keyPauses(event.key, event.defaultPrevented, false)) return undefined
       const target = event.target as Element | null
       // Cursor navigation and scrolling inside an editor belong to that control.
       if (target?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable='false']), [role='textbox']")) return undefined
-      return pause()
+      const position = pause()
+      // Own this page scroll once it has paused following. Native keyboard animations can otherwise continue after
+      // Latest and pull the reader away again. Editors and inactive surfaces keep their browser default behavior.
+      if (position !== undefined && page?.defaultView) {
+        event.preventDefault()
+        if (pageTop) page.defaultView.scrollTo({ top: 0, behavior: "instant" })
+        else page.defaultView.scrollBy({ top: event.key === "PageUp" ? -Math.max(40, Math.floor(page.documentElement.clientHeight * 0.875)) : -40, behavior: "instant" })
+      }
+      return position
     },
     touchStart: (event: TouchEvent) => {
       const first = event.touches[0]
@@ -51,11 +61,13 @@ export function transcriptViewport(page?: Document) {
       if (!active()) return undefined
       const y = position()
       const next = nativeScroll(!page || atBottom(page), paused, y, previousY, intent)
+      // Repeated position-only pauses cannot overwrite Latest while its follow is waiting to commit.
+      const repeatedPause = page !== undefined && paused && !next.bottom
       const bottom = next.bottom
       paused = next.paused
       intent = next.intent
       previousY = y
-      return { bottom, intent }
+      return repeatedPause ? undefined : { bottom, intent }
     },
     follow: (authorizedIntent: number) => {
       // Check permission and perform the native write in one synchronous body: no fiber yield between them.

@@ -276,3 +276,7 @@ The proof found two bugs before any test did: `apply` accepted a plan into the e
 - A push webhook for Fold, and lane reports as notes: the queue lives on a private server; both need tokens (0019).
 - Moving or dropping a planned commit, splitting or reordering epics: no ruling asks; the log has room for them.
 - Diffs on a commit's page: the projection holds no trees; the page links each real commit on GitHub.
+
+**Route regression (0017).** The production site Worker serves `/history` and `/history/…` through the same asset
+fallback as home, matching the browser entry. Its real loopback/file-backed benchmark failed with 404 before this
+allowlist fix; the Worker unit test also covers both paths. No other route is widened.

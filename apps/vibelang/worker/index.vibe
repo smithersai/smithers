@@ -23,10 +23,10 @@ export default {
       if (url.pathname === "/api/health") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe({ ok: true, agent: "mock" }))
       return notFound()
     }
-    // Only home and built assets exist. Reject before the asset service's SPA fallback can turn a miss into 200.
-    const home = url.pathname === "/" || url.pathname === "/index.html"
+    // Only the chat/history pages and built assets exist. Reject before the asset service's SPA fallback can turn a miss into 200.
+    const page = url.pathname === "/" || url.pathname === "/index.html" || url.pathname === "/history" || url.pathname.startsWith("/history/")
     const asset = /^\/(?:assets|media)\/[^?]+\.[^/]+$/.test(url.pathname)
-    if (!home && !asset) return notFound()
+    if (!page && !asset) return notFound()
     const response = await env.ASSETS.fetch(request)
     if (asset && response.headers.get("Content-Type")?.includes("text/html")) return notFound()
     return response

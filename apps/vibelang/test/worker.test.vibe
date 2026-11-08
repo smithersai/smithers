@@ -41,10 +41,14 @@ it.effect("never serves the splash for unknown routes or production fault pages"
 
 it.effect("serves the home, health and known assets", () => effect {
   const home = try text(try get("/"))
+  const history = try text(try get("/history"))
+  const historySlash = try text(try get("/history/"))
   const health = try text(try get("/api/health"))
   const logo = try text(try get("/media/logo-dark.svg"))
   try Effect.try(() => {
     expect(home).toContain("splash")
+    expect(history).toBe(home)
+    expect(historySlash).toBe(home)
     expect(JSON.parse(health)).toEqual({ ok: true, agent: "mock" })
     expect(logo).toBe("<svg/>")
   })
