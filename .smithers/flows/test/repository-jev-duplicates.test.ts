@@ -8,10 +8,10 @@ import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
-import { NativeCoding } from "../coding/native.ts"
-import { executionLayers } from "../repository/execution.ts"
-import { inspectionLayers } from "../repository/inspection.ts"
-import { batches } from "../repository/jev-checks.ts"
+import { NativeCoding } from "../coding/native.vibe"
+import { executionLayers } from "../repository/execution.vibe"
+import { inspectionLayers } from "../repository/inspection.vibe"
+import { batches } from "../repository/jev-checks.vibe"
 import {
   DUPLICATE_CONFIDENCE,
   duplicateCandidates,
@@ -22,7 +22,7 @@ import {
   MAX_STATE_BYTES,
   pairClassifier,
   type PairState
-} from "../repository/jev-duplicates.ts"
+} from "../repository/jev-duplicates.vibe"
 import {
   failureLayer,
   InvestigateStep,
@@ -31,8 +31,8 @@ import {
   Research,
   Review,
   type Work
-} from "../repository/jobs.ts"
-import type { Record as PriorRecord, StepResult } from "../repository/schema.ts"
+} from "../repository/jobs.vibe"
+import type { Record as PriorRecord, StepResult } from "../repository/schema.vibe"
 
 const [distinct, related, same] = levels
 const source = {

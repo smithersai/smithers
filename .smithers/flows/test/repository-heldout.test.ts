@@ -2,9 +2,9 @@ import { Schema } from "effect"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { initialSetup, setupCandidate } from "../../../packages/rpc/src/RepositorySetup.ts"
-import { assessScore, evaluatedCandidate } from "../repository/evaluation.ts"
-import { JobInput, type JobResult, SetupInput } from "../repository/schema.ts"
-import { candidateFiles } from "../repository/setup.ts"
+import { assessScore, evaluatedCandidate } from "../repository/evaluation.vibe"
+import { JobInput, type JobResult, SetupInput } from "../repository/schema.vibe"
+import { candidateFiles } from "../repository/setup.vibe"
 
 const heldOut = "HELD_OUT_EXPECTATION: cite greeting.mjs and identify hello"
 const sourceRevision = "a".repeat(40)

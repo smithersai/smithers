@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import * as Models from "../src/models.ts"
+import * as Models from "../src/models.vibe"
 
 test("real HTTP pool discovery permits only served routes and actual TUI startup uses its seat", async () => {
   const scratch = mkdtempSync(join(tmpdir(), "tui-pool-startup-"))

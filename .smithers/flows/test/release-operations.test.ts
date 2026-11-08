@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { test, type TestContext } from "node:test"
 import { commandRunner, type RunCommand } from "../release-support/io.ts"
 import { type ReleaseGateSet, runReleaseGates } from "../release-support/operations.ts"
-import { GateEvidence } from "../release-support/schema.ts"
+import { GateEvidence } from "../release-support/schema.vibe"
 import { releaseGateArgs, releaseGateCommand, releaseGates } from "../release/release-gates.mjs"
 
 // The real command runner launches a verifier that reads and advances a disk

@@ -41,9 +41,9 @@ full host; real restart tests use one VM with a test-only disk floor.
 ## Validation
 
 ```sh
-node --test .smithers/flows/issue-sweep/test/{accounts,vm,receipts,work,remote-job,remote-job-restart}.test.ts
-SMITHERS_VM_JOB_RESTART=1 node --test --test-name-pattern='vm job survives' .smithers/flows/issue-sweep/test/job-restart.real.test.ts
-SMITHERS_CLOUD_JOB_RESTART=1 node --test --test-name-pattern='cloud job survives' .smithers/flows/issue-sweep/test/job-restart.real.test.ts
+node --import vibelang/register --test .smithers/flows/issue-sweep/test/{accounts,vm,receipts,work,remote-job,remote-job-restart}.test.ts
+SMITHERS_VM_JOB_RESTART=1 node --import vibelang/register --test --test-name-pattern='vm job survives' .smithers/flows/issue-sweep/test/job-restart.real.test.ts
+SMITHERS_CLOUD_JOB_RESTART=1 node --import vibelang/register --test --test-name-pattern='cloud job survives' .smithers/flows/issue-sweep/test/job-restart.real.test.ts
 ```
 
 The fake transport tests exercise the real job protocol and a real SQLite

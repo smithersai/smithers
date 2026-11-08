@@ -10,7 +10,7 @@ import * as ControlDatabasePath from "../../../packages/smithers/src/internal/Co
 import * as ExecutionDatabasePath from "../../../packages/smithers/src/internal/ExecutionDatabasePath.ts"
 import { platform } from "../../../packages/smithers/src/internal/NodeControlHost.ts"
 import { layer } from "../coding/host.ts"
-import { changedPaths, driftOf, staleRevisionMessage } from "../coding/planning.ts"
+import { changedPaths, driftOf, staleRevisionMessage } from "../coding/planning.vibe"
 import * as CodingState from "../coding/state.ts"
 import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 import { systemFlows } from "./fixtures/system-flows.ts"

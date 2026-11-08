@@ -13,9 +13,9 @@
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Schema } from "effect"
-import { atomError } from "./atoms.ts"
+import { atomError } from "./atoms.vibe"
 import { Check, CodingError, Finding, Implementation, Receipt, receiptMatches } from "./schema.ts"
-import { RunCheck } from "./workflow.ts"
+import { RunCheck } from "./workflow.vibe"
 
 const Id = Check.fields.id
 /** The most Changes one search takes, the last green included. */
@@ -341,7 +341,7 @@ export const FirstRed = Flow.make("coding/FirstRed", {
   )
 })
 
-/** Compose with the host's `coding/check` implementation (checks.ts's `checkLayers` or another delegate). */
+/** Compose with the host's `coding/check` implementation (checks.vibe's `checkLayers` or another delegate). */
 export const firstRedLayers = Layer.mergeAll(
   Interpreter.layer(FirstRed),
   Interpreter.layer(Round),

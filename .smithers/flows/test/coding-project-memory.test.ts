@@ -6,10 +6,10 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import * as MemorySource from "../../../packages/smithers/agent/memory/src/Source.ts"
 import * as NotificationQueue from "../../../packages/smithers/notifications/src/NotificationQueue.vibe"
-import { ApplyNative, EditAtom, Entry, Observe, Prepare } from "../coding/atoms.ts"
-import { ownerRepair, repairContext } from "../coding/correction.ts"
+import { ApplyNative, EditAtom, Entry, Observe, Prepare } from "../coding/atoms.vibe"
+import { ownerRepair, repairContext } from "../coding/correction.vibe"
 import ImplementAtoms, { atomFlows } from "../coding/implementation/flow.ts"
-import { finalize, type PlanningContext } from "../coding/planning.ts"
+import { finalize, type PlanningContext } from "../coding/planning.vibe"
 import {
   commitsBank,
   maxBytes,
@@ -20,8 +20,8 @@ import {
   withoutMemory
 } from "../coding/project-memory.ts"
 import { type Check, type Plan, ProjectMemory, type Revision } from "../coding/schema.ts"
-import { feedbackLayer } from "../coding/steering.ts"
-import { recalled } from "../coding/workflow.ts"
+import { feedbackLayer } from "../coding/steering.vibe"
+import { recalled } from "../coding/workflow.vibe"
 
 /*
  * #2779: planning's evidence (accepted notes, commit notes, wiki pages) becomes

@@ -8,7 +8,7 @@
  */
 import { Action, Flow } from "@smthrs/flow"
 import { Context, Effect, Layer } from "effect"
-import * as Mine from "../mine.ts"
+import * as Mine from "../mine.vibe"
 
 export const Run = Action.make("memory/mine/run", {
   payload: Mine.Payload,

@@ -4,7 +4,7 @@ import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
 import { test } from "node:test"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
-import { files, judge, MAX_QUESTIONS, Rules } from "../coding/jev-check.ts"
+import { files, judge, MAX_QUESTIONS, Rules } from "../coding/jev-check.vibe"
 import type { Check, Implementation, Revision } from "../coding/schema.ts"
 
 const revision = (commit: string): Revision => ({

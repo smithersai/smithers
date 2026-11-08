@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { blocking, isDocsSource, packageOf, packagesOf, readChecks, testTargets } from "../land.ts"
+import { blocking, isDocsSource, packageOf, packagesOf, readChecks, testTargets } from "../land.vibe"
 
 const index = [
   { label: "//:backendGo", kinds: ["test"] },
@@ -37,7 +37,7 @@ test("testTargets runs only the test targets of the touched packages", () => {
     "//packages/smithers/flows/patterns:circular",
     "//packages/smithers/flows/patterns:test"
   ])
-  assert.deepEqual(testTargets([".smithers/flows/issue-sweep/land.ts", "docs/blog/x.md"], index), [
+  assert.deepEqual(testTargets([".smithers/flows/issue-sweep/land.vibe", "docs/blog/x.md"], index), [
     "//.smithers/flows:test"
   ])
   assert.deepEqual(testTargets(["WORKSPACE.ts"], index), [])

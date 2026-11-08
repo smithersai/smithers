@@ -10,9 +10,9 @@ import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
-import { Poc, type PocResult } from "../coding/poc.ts"
+import { Poc, type PocResult } from "../coding/poc.vibe"
 import { PrepareRequest } from "../coding/preparation.ts"
-import { Coordinate, Request, RequestFeedback } from "../coding/request.ts"
+import { Coordinate, Request, RequestFeedback } from "../coding/request.vibe"
 import {
   checkInputDigest,
   CodingError,
@@ -22,8 +22,8 @@ import {
   RequestResult,
   type Revision
 } from "../coding/schema.ts"
-import { leafFeedback } from "../coding/todo-route.ts"
-import { readTodoDelivery, readVibeRequest } from "../coding/vibe-evidence.ts"
+import { leafFeedback } from "../coding/todo-route.vibe"
+import { readTodoDelivery, readVibeRequest } from "../coding/vibe-evidence.vibe"
 
 const revision = (name: string, parent?: string): Revision => ({
   changeId: `jj-${name}`,

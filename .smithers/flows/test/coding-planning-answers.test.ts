@@ -17,9 +17,9 @@ import {
   PreparePlan,
   ReviewRequest,
   VerifyContext
-} from "../coding/planning.ts"
+} from "../coding/planning.vibe"
 import type { CarriedAnswer, Revision } from "../coding/schema.ts"
-import { feedbackLayer } from "../coding/steering.ts"
+import { feedbackLayer } from "../coding/steering.vibe"
 
 /*
  * A person's answer to an agent's question reaches every later attempt of

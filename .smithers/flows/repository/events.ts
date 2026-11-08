@@ -1,6 +1,6 @@
 /** Signed event payloads name source; a workspace tip cannot substitute for it. */
 import { CodingError } from "../coding/schema.ts"
-import type { Event } from "./schema.ts"
+import type { Event } from "./schema.vibe"
 const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
 const object = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}

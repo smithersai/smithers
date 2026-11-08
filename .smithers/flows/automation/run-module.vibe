@@ -1,0 +1,97 @@
+/**
+ * Runs one of this repository's automation modules as a child process, for a
+ * flow action.
+ *
+ * Repository automation (release steps, check receipts, benchmarks, docs sync)
+ * is ordinary Node code that a flow's action starts with an argument array.
+ * The child inherits stdio, so a step's logs reach the terminal or CI log
+ * exactly as before, and nothing it prints is captured: the failure a run
+ * records holds the module and exit code only, so no output, and therefore no
+ * secret a step prints, reaches the run store.
+ *
+ * @since 1.0.0
+ */
+import * as Fault from "@smthrs/flow/Fault"
+import { locateModule, startChild, vibeLangLoader } from "./run-module.platform.ts"
+
+export { repositoryRoot, vibeLangLoader } from "./run-module.platform.ts"
+
+/**
+ * A module exited non-zero, was killed, or could not start.
+ *
+ * @since 1.0.0
+ * @category errors
+ */
+export class ModuleFailed extends Schema.TaggedError<ModuleFailed>()("automation/ModuleFailed", {
+  module: Schema.String,
+  exitCode: Schema.NullOr(Schema.Number),
+  signal: Schema.NullOr(Schema.String)
+}) {
+  override get message() {
+    return this.signal === null
+      ? `${this.module} exited ${this.exitCode}`
+      : `${this.module} stopped by ${this.signal}`
+  }
+}
+// The module reported a failing gate or a refused step: the subject, not the host.
+Fault.register("automation/ModuleFailed", "user")
+
+/**
+ * Options for {@link runModule}.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export interface RunModuleOptions {
+  /** Extra environment; the child otherwise inherits this process's. */
+  readonly env?: Readonly<Record<string, string>>
+  /** Working directory; defaults to this process's, as `node <module>` had. */
+  readonly cwd?: string
+  /** Interpreter arguments placed before the module, such as `--expose-gc`. */
+  readonly nodeArgs?: ReadonlyArray<string>
+  /**
+   * The program that runs the module, found on `PATH`; this Node binary when
+   * omitted. A shell script names its shell, such as `bash`.
+   */
+  readonly interpreter?: string
+}
+
+/**
+ * Run `node <module> ...args`, or `<interpreter> <module> ...args`, and succeed
+ * on exit 0. Node runs the module with VibeLang's loader when the checkout
+ * installs it. A module outside any checkout is a defect, as the thrown
+ * `repositoryRoot` was.
+ *
+ * Interrupting the effect stops the child's process group.
+ *
+ * @since 1.0.0
+ * @category constructors
+ */
+export effect function runModule(
+  module: URL,
+  args: ReadonlyArray<string>,
+  options: RunModuleOptions = {}
+): void!ModuleFailed {
+  const { path, name } = try orDie(Effect.try(() => locateModule(module)))
+  try Effect.callback<void, ModuleFailed>((resume) => {
+    const stop = startChild(
+      {
+        path,
+        interpreter: options.interpreter,
+        loaders: options.interpreter === undefined ? vibeLangLoader() : [],
+        nodeArgs: options.nodeArgs ?? [],
+        args,
+        cwd: options.cwd,
+        env: options.env
+      },
+      () => resume(Effect.fail(new ModuleFailed({ module: name, exitCode: null, signal: null }))),
+      ({ code, signal }) =>
+        resume(
+          code === 0
+            ? Effect.void
+            : Effect.fail(new ModuleFailed({ module: name, exitCode: code, signal }))
+        )
+    )
+    return sync(() => stop())
+  })
+}

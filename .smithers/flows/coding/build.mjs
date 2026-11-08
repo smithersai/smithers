@@ -5,11 +5,11 @@ import { chmod, mkdir, writeFile, readFile, readdir } from "node:fs/promises"
 import { createHash } from "node:crypto"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import { policySources } from "../wiki/reuse.ts"
+import { policySources } from "../wiki/reuse.vibe"
 import { builtinDefaults, shipsWithDefault } from "../repository/builtin-defaults.ts"
 import { hostModulesSource } from "./host-modules-build.mjs"
 import { typecheckInputs, typecheckSource } from "./flow-typecheck-build.mjs"
-import { wikiPolicyIdentity } from "./wiki-policy.ts"
+import { wikiPolicyIdentity } from "./wiki-policy-identity.ts"
 
 /**
  * The largest coding host Plue stages into a hosted workspace: eight base64

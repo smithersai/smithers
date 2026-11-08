@@ -20,7 +20,7 @@ import {
   workspaceName,
   workspaceOf,
   workspaces
-} from "../host.ts"
+} from "../host.vibe"
 
 import { withRetryInstance, withRetryRuntime } from "./retry-runtime.ts"
 

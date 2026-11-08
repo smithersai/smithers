@@ -11,7 +11,7 @@ The Issue card holds an editable draft reply. A maintainer approves its exact te
 ## Scope
 
 In:
-- Reuse .smithers/flows/repository/replies.ts and retained approvals. Store target issue/PR identity, evidence revision, draft revision and text digest with approval.
+- Reuse .smithers/flows/repository/replies.vibe and retained approvals. Store target issue/PR identity, evidence revision, draft revision and text digest with approval.
 - The requesting owner or maintainer edits and approves in their session. A delegated agent can request confirmation but cannot approve.
 - A changed draft, changed source evidence or changed subject revision invalidates approval. A refusal or timeout keeps the draft with an honest receipt.
 - Outsider replies enter passive incoming context; no await-author/continue-author action resumes credentialed work without another maintainer admission.
@@ -24,9 +24,9 @@ Out:
 
 ## Changes
 
-- Reshape `.smithers/flows/repository/replies.ts:108,137,152` (ConfirmReply, PublishReply and the automatic branch): require session authorization and digest-bound approval on every publication. Reuse `packages/backend/internal/services/approvals.go:290` and `packages/backend/db/product/queries/approvals.sql:42` for the retained decision CAS, and the decision route in `packages/backend/internal/routes/approvals.go:119`. No Boolean human-task answer alone authorizes a write.
+- Reshape `.smithers/flows/repository/replies.vibe:108,137,152` (ConfirmReply, PublishReply and the automatic branch): require session authorization and digest-bound approval on every publication. Reuse `packages/backend/internal/services/approvals.go:290` and `packages/backend/db/product/queries/approvals.sql:42` for the retained decision CAS, and the decision route in `packages/backend/internal/routes/approvals.go:119`. No Boolean human-task answer alone authorizes a write.
 - Reuse `apps/app/src/mainview/cards/IssueCards.tsx:246` for the Issue draft binding and `apps/app/src/mainview/cards/views/ConfirmView.tsx:14` for confirmation. Engineering owns contracts/containers and `cardActions` → `flowAction`; smithers-06 owns View changes. Handlers use `onAction(action.tag)` and `data-flow` (§14.2.1).
-- Reshape the retained reply adapter in `.smithers/flows/repository/replies.ts:68` and keyed comment code in `packages/backend/internal/services/mythical_github.go:438,452,484` for canonical App identity and a persisted GitHub comment receipt. The current adapter uses Cloud receipts; the current lookup accepts any App bot. Neither is sufficient. Publish the approved reply bytes with the deterministic App marker and attribution shown in the confirmation; store the wire-body digest. Recheck the requesting person’s live authority and bound target/draft/evidence/subject before send. After a lost response, lookup the marker and verify canonical App identity, target and wire-body digest before retry; a conflicting body refuses. No outbound queue or machine-held GitHub token (C-MNT-03).
+- Reshape the retained reply adapter in `.smithers/flows/repository/replies.vibe:68` and keyed comment code in `packages/backend/internal/services/mythical_github.go:438,452,484` for canonical App identity and a persisted GitHub comment receipt. The current adapter uses Cloud receipts; the current lookup accepts any App bot. Neither is sufficient. Publish the approved reply bytes with the deterministic App marker and attribution shown in the confirmation; store the wire-body digest. Recheck the requesting person’s live authority and bound target/draft/evidence/subject before send. After a lost response, lookup the marker and verify canonical App identity, target and wire-body digest before retry; a conflicting body refuses. No outbound queue or machine-held GitHub token (C-MNT-03).
 - A lost HTTP response leaves publication pending reconciliation, never safe to blindly post again. Preserve the returned GitHub comment identity and authorship receipt (C-MNT-03).
 
 ## Tests

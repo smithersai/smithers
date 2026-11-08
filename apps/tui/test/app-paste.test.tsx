@@ -8,7 +8,7 @@ import { join } from "node:path"
 import { setImmediate } from "node:timers/promises"
 import { act } from "react"
 import { App } from "../src/app.tsx"
-import type * as Host from "../src/host.ts"
+import type * as Host from "../src/host.vibe"
 
 // The real renderer parses terminal bytes and pastes into its native editor.
 // Controlled Host turns keep workers running without provider/model calls.

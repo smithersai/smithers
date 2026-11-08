@@ -1,9 +1,9 @@
 import { Effect, Layer } from "effect"
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { NativeCoding, type NativeRevision } from "../coding/native.ts"
+import { NativeCoding, type NativeRevision } from "../coding/native.vibe"
 import { CodingError } from "../coding/schema.ts"
-import { observeStackBase, prepareStackBase } from "../coding/stack.ts"
+import { observeStackBase, prepareStackBase } from "../coding/stack.vibe"
 
 /*
  * A stack request stands on a fresh working change on the retained stack
@@ -117,9 +117,9 @@ test(
     const { FlowEngine } = await import("@smthrs/engine")
     const { Action, Interpreter } = await import("@smthrs/flow")
     const { ManagedRuntime } = await import("effect")
-    const { Verify } = await import("../coding/verify.ts")
-    const { AdmitVerifySource, verifyChecksRefusal } = await import("../coding/verify-schema.ts")
-    const { RunCheck } = await import("../coding/workflow.ts")
+    const { Verify } = await import("../coding/verify.vibe")
+    const { AdmitVerifySource, verifyChecksRefusal } = await import("../coding/verify-schema.vibe")
+    const { RunCheck } = await import("../coding/workflow.vibe")
     const { checkInputDigest } = await import("../coding/schema.ts")
     const head = resolved("l", tip, ["b".repeat(40)])
     const checks = [
@@ -157,7 +157,7 @@ test(
     }
     const ran: string[] = []
     const handed: Array<ReadonlyArray<string>> = []
-    const writes = [".smithers/flows/coding/verify.ts", "packages/rpc/src/Mythical.ts"]
+    const writes = [".smithers/flows/coding/verify.vibe", "packages/rpc/src/Mythical.ts"]
     let failing = ["slow"]
     let outages: string[] = []
     const layer = Layer.mergeAll(
@@ -203,7 +203,7 @@ test(
     assert.deepEqual(result.failed, ["slow"])
     // Each receipt's input digest binds those paths: the same commit checked
     // for different paths is different evidence.
-    const { verifyImplementation } = await import("../coding/verify-schema.ts")
+    const { verifyImplementation } = await import("../coding/verify-schema.vibe")
     const verified = verifyImplementation(admitted, writes)
     for (const receipt of result.receipts) {
       const check = checks.find((value) => value.id === receipt.checkId)!
@@ -281,7 +281,7 @@ for (
     const { ManagedRuntime } = await import("effect")
     const { ModuleOwner } = await import("../../../packages/smithers/src/internal/ModuleOwner.ts")
     const { Revision } = await import("../coding/schema.ts")
-    const { CreateStackBase, stackBaseLayer } = await import("../coding/stack.ts")
+    const { CreateStackBase, stackBaseLayer } = await import("../coding/stack.vibe")
     const current = resolved("z", "d".repeat(40), ["e".repeat(40)])
     const native = fake(conflicted ? { ...current, kind: "conflicted", treeTerms: [] } as NativeRevision : current)
     const operation = await Effect.runPromise(prepareStackBase(base, "base-setup").pipe(Effect.provide(native.layer)))

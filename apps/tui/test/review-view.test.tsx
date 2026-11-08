@@ -1,7 +1,7 @@
 import { testRender } from "@opentui/react/test-utils"
 import { afterEach, expect, test } from "bun:test"
 import { act, createRef } from "react"
-import * as Changes from "../src/changes.ts"
+import * as Changes from "../src/changes.vibe"
 import { ReviewView } from "../src/review-view.tsx"
 import * as Transcript from "../src/transcript.ts"
 import * as Undo from "../src/undo.ts"

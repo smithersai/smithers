@@ -4,7 +4,7 @@
  *   node .smithers/flows/issue-sweep/test/vm-exec.ts 'go version && cargo --version'
  */
 import { Effect } from "effect"
-import { make, sh } from "../vm.ts"
+import { make, sh } from "../vm.vibe"
 
 const line = process.argv[2] ?? "true"
 const ran = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {

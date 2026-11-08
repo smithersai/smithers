@@ -10,7 +10,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
 import * as NotificationQueue from "../../../packages/smithers/notifications/src/NotificationQueue.vibe"
-import { contractFailure } from "../coding/planning-memory.ts"
+import { contractFailure } from "../coding/planning-memory.vibe"
 import {
   declineLayer,
   Draft,
@@ -24,10 +24,10 @@ import {
   preparePlanLayer,
   ReviewRequest,
   VerifyContext
-} from "../coding/planning.ts"
-import { detectChecks } from "../coding/project-config.ts"
+} from "../coding/planning.vibe"
+import { detectChecks } from "../coding/project-config.vibe"
 import { type Check, CodingError, type Revision, validatePlan } from "../coding/schema.ts"
-import { feedbackLayer } from "../coding/steering.ts"
+import { feedbackLayer } from "../coding/steering.vibe"
 
 /*
  * Plans place work anywhere in the mythical stack: a new change may be

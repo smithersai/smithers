@@ -43,7 +43,7 @@ import {
   run,
   withheld,
   WrappedFailed
-} from "../wrapped/launch.ts"
+} from "../wrapped/launch.vibe"
 import {
   extraPrompt,
   maxExtraBytes,
@@ -52,7 +52,7 @@ import {
   rules,
   sha256,
   wrappedBrief
-} from "../wrapped/prompt.ts"
+} from "../wrapped/prompt.vibe"
 
 // wrapped/main.ts and its imports reach `.vibe` modules, which a child Node loads through VibeLang.
 const vibeLoader = ["--import", import.meta.resolve("vibelang/register")]

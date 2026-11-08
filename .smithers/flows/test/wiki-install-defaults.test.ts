@@ -9,7 +9,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
-import { operations } from "../wiki/operations.ts"
+import { operations } from "../wiki/operations.vibe"
 
 const platform = EffectLayer.mergeAll(
   process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer,

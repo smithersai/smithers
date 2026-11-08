@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import * as Agents from "../src/agents.ts"
 import type * as Extension from "../src/extension.ts"
-import * as Models from "../src/models.ts"
+import * as Models from "../src/models.vibe"
 
 const agent = (overrides: Partial<Extension.Descriptor> = {}): Extension.Descriptor => ({
   name: "review",

@@ -24,10 +24,10 @@
 import { Action, Flow, RetryPolicy, Sleep } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Schema } from "effect"
-import { FileRefused } from "./errors.ts"
+import { FileRefused } from "./errors.vibe"
 import { STAGES, step, verify } from "./steps.mjs"
 
-export { FileRefused } from "./errors.ts"
+export { FileRefused } from "./errors.vibe"
 
 const FileError = Schema.Union([FileRefused, Sleep.SleepRequestInvalid])
 

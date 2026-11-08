@@ -1,0 +1,13 @@
+/**
+ * Names one source refusal site. The refusal's message carries only the site;
+ * the compared native identities, never credentials, go to the current
+ * `Console` beside it.
+ */
+export effect function sourceRefusal(
+  reason: string,
+  values: Readonly<Record<string, unknown>> = {}
+): string!! {
+  const message = `source_refused: ${reason}`
+  try Console.warn(message, JSON.stringify(values))
+  return message
+}

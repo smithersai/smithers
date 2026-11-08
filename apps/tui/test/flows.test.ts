@@ -17,7 +17,7 @@ import {
   type Settled,
   steps
 } from "../src/flows.ts"
-import type * as Host from "../src/host.ts"
+import type * as Host from "../src/host.vibe"
 import * as Session from "../src/session.ts"
 import { Workspace } from "../src/workspace.ts"
 

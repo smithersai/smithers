@@ -11,7 +11,7 @@ import * as fs from "node:fs"
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Reads from "../src/reads.ts"
+import * as Reads from "../src/reads.vibe"
 
 const roots: Array<string> = []
 afterEach(() => {

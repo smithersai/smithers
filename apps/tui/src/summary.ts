@@ -1,6 +1,6 @@
 /** Evidence-first summary, projected onto exactly the same panel contract agents publish. */
 import type * as Panels from "./panels.vibe"
-import * as Runtime from "./runtime.ts"
+import * as Runtime from "#vibelang/emitted/src/runtime"
 import * as Transcript from "./transcript.ts"
 import * as Undo from "./undo.ts"
 

@@ -159,7 +159,7 @@ export type OperationResult = typeof OperationResult.Type
  * Every code a native coding failure can carry.
  *
  * It used to be `Schema.String`. The guest adapter's JSON error envelope is
- * decoded straight onto this field (`native.ts`), so an unconstrained `code`
+ * decoded straight onto this field (`native.vibe`), so an unconstrained `code`
  * let a program outside this repo choose the code on a `{ code, message }`
  * record — and that record is what `agent/internal/FailureSummary.ts` puts on
  * a run's first journal line, off which a run card picks the sentence a person
@@ -171,13 +171,13 @@ export type OperationResult = typeof OperationResult.Type
  * So the field is closed, and the boundary decodes into it. The set is the
  * union of three declarations this repo already holds:
  *
- * - what this repo's own native paths raise (`native.ts`, `.smithers/flows/repository`),
+ * - what this repo's own native paths raise (`native.vibe`, `.smithers/flows/repository`),
  * - what the guest adapter answers, as Plue's own failure registry spells it
  *   without the `coding_` prefix (`packages/rpc/src/PlueFailureCodes.ts`),
  * - and what the same adapter answers in its `--engine` mode, as
- *   `.smithers/flows/coding/snapshots.ts` `ENGINE_CODES` admits it.
+ *   `.smithers/flows/coding/snapshots.vibe` `ENGINE_CODES` admits it.
  *
- * A code outside the set is not lost: `native.ts` raises `invalid_receipt` and
+ * A code outside the set is not lost: `native.vibe` raises `invalid_receipt` and
  * keeps the guest's own code and sentence in the message, which is where a
  * foreign sentence already belonged. That is a smaller failure than the one it
  * replaces — the adapter's word is still on the card, and it can no longer be

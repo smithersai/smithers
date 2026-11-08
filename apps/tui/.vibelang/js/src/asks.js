@@ -8,7 +8,7 @@
  * blocked in an ask of its own), hands the ask one level up, and past the
  * root it reaches the person, who answers through the answer form (`a` in
  * the chat when it is the only one, the overview or the worker's tab). A
- * park (`ctx.park`) asks the person the same way (`steering.ts`). Asks live
+ * park (`ctx.park`) asks the person the same way (`steering.vibe`). Asks live
  * in memory.
  */
 import { randomUUID } from "node:crypto";

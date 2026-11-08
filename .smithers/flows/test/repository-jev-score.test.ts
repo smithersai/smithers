@@ -7,9 +7,9 @@ import { Effect, Layer, ManagedRuntime, Schema } from "effect"
 import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { evaluationLayers, ScoreCase, ScoreExecution, SeatScore } from "../repository/evaluation.ts"
-import { caseClassifier, SCORE_CONFIDENCE, scoreState, verdicts } from "../repository/jev-score.ts"
-import type { EvalCase, EvalResult, JobResult, RepositoryEvidence } from "../repository/schema.ts"
+import { evaluationLayers, ScoreCase, ScoreExecution, SeatScore } from "../repository/evaluation.vibe"
+import { caseClassifier, SCORE_CONFIDENCE, scoreState, verdicts } from "../repository/jev-score.vibe"
+import type { EvalCase, EvalResult, JobResult, RepositoryEvidence } from "../repository/schema.vibe"
 
 const sourceRevision = "a".repeat(40)
 const event = {

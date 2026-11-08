@@ -20,12 +20,12 @@ import type * as EffectDigest from "effect/crypto/Digest"
 import { randomUUID } from "node:crypto"
 import { appendFile, readdir } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
-import { capacity, perAccount, type Pools, readPools } from "./accounts.ts"
-import { configureDiskReaper, DiskAdmission, diskLayer, makeSettledWorkspaceReaper, workspaceBytes } from "./disk.ts"
-import { api, issue as readIssue, openIssues } from "./github.ts"
-import { HostFailed, repository, run, tail, workspaces } from "./host.ts"
+import { capacity, perAccount, type Pools, readPools } from "./accounts.vibe"
+import { configureDiskReaper, DiskAdmission, diskLayer, makeSettledWorkspaceReaper, workspaceBytes } from "./disk.vibe"
+import { api, issue as readIssue, openIssues } from "./github.vibe"
+import { HostFailed, repository, run, tail, workspaces } from "./host.vibe"
 import { terminalIdentityConflict } from "./identity.vibe"
-import { landChange, LandFailed } from "./land.ts"
+import { landChange, LandFailed } from "./land.vibe"
 import {
   cachePath,
   classify,
@@ -35,10 +35,10 @@ import {
   type Seams,
   type Text,
   type TriageFailed
-} from "./triage.ts"
-import { infraCaused, noChangeLabel, recordVerdict, requalified } from "./verdict.ts"
-import { vmFields, vmOptions } from "./vm-options.ts"
-import { statfsFree } from "./vm.ts"
+} from "./triage.vibe"
+import { infraCaused, noChangeLabel, recordVerdict, requalified } from "./verdict.vibe"
+import { vmFields, vmOptions } from "./vm-options.vibe"
+import { statfsFree } from "./vm.vibe"
 import Work, { AgentFailed, checkoutIssue, type NoChange, removeWorkspace, type Report, requeue } from "./work/flow.ts"
 
 // The most landings one round runs at once; `landers` picks fewer.

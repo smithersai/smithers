@@ -7,7 +7,7 @@
 import type { MicrosandboxSandbox } from "@smthrs/sandbox"
 import { Effect } from "effect"
 import * as Microsandbox from "microsandbox"
-import { latestImage } from "../vm.ts"
+import { latestImage } from "../vm.vibe"
 
 const sdk = Microsandbox as unknown as MicrosandboxSandbox.Sdk
 const n = Number(process.argv[2] ?? 8)

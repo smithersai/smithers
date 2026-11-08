@@ -15,12 +15,12 @@ import { test, type TestContext } from "node:test"
 import { initialSetup, setupCandidate } from "../../../packages/rpc/src/RepositorySetup.ts"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
 import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
-import { NativeCoding } from "../coding/native.ts"
+import { NativeCoding } from "../coding/native.vibe"
 import { CodingError } from "../coding/schema.ts"
-import { RepositoryJob } from "../repository/jobs.ts"
-import { RepositoryRemote } from "../repository/remote.ts"
-import { Draft, JobInput, JobResult, OperationResult, SetupInput } from "../repository/schema.ts"
-import { setupLayers } from "../repository/setup.ts"
+import { RepositoryJob } from "../repository/jobs.vibe"
+import { RepositoryRemote } from "../repository/remote.vibe"
+import { Draft, JobInput, JobResult, OperationResult, SetupInput } from "../repository/schema.vibe"
+import { setupLayers } from "../repository/setup.vibe"
 
 /*
  * Walk run 3, defect C3-N3: the paused `feature` registration held revision 6,

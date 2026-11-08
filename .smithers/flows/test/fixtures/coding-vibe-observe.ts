@@ -4,7 +4,7 @@ import * as RunCatalogRead from "@smthrs/engine-store/RunCatalogRead"
 import { Effect, Layer } from "effect"
 import * as NativeControl from "../../../../packages/smithers/src/internal/NativeControl.ts"
 import { ModuleOwner } from "../../../../packages/smithers/src/internal/ModuleOwner.ts"
-import { readVibeRequest } from "../../coding/vibe-evidence.ts"
+import { readVibeRequest } from "../../coding/vibe-evidence.vibe"
 
 export const observeCompletedRequest = async (platform: NativeControl.Platform, root: string, originalCommitId: string,
   // The host keeps `control.db` and `engine.db` outside the working copy it

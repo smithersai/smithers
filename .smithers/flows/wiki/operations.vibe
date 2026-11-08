@@ -1,0 +1,640 @@
+import * as SecureRandom from "effect/crypto/SecureRandom"
+/** Files, hashing and publication checks use injected Effect platform services. */
+import { canonical } from "@smthrs/core/Digest"
+import * as EffectDigest from "effect/crypto/Digest"
+import { reviewEvidence, visibleLine } from "./evidence.ts"
+import type { Provenance } from "./reuse.vibe"
+import { type PageSpec, type Receipt, type ReviewedPage, WikiError } from "./schema.vibe"
+
+const maxFileBytes = 512_000
+const maxPageBytes = 300_000
+const maxGeneratedSources = 32
+const assessmentPolicy = "exact-single-line-ascii-boundary-trim-v1"
+const fail = (code: WikiError["code"], message: string) => new WikiError({ code, message })
+export effect function digest(text: string) {
+  const crypto = try EffectDigest.Digest
+  const bytes = try crypto.digest(EffectDigest.sha256, new TextEncoder().encode(text))
+  return hex(bytes)
+}
+const hex = (bytes: Uint8Array) => [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("")
+/** The digest of `value`'s canonical JSON; a value canonical JSON cannot encode is a defect, as it was before. */
+export effect function digestCanonical(value: unknown) {
+  return try digest(try orDie(Effect.try(() => canonical(value))))
+}
+/** HMAC-SHA256 (RFC 2104) over the injected Crypto digest; the key is 32 bytes. */
+effect function hmac(key: Uint8Array, message: string) {
+  const crypto = try EffectDigest.Digest
+  const block = new Uint8Array(64)
+  block.set(key)
+  const text = new TextEncoder().encode(message)
+  const inner = new Uint8Array(64 + text.length)
+  inner.set(block.map((value) => value ^ 0x36))
+  inner.set(text, 64)
+  const outer = new Uint8Array(96)
+  outer.set(block.map((value) => value ^ 0x5c))
+  outer.set(try crypto.digest(EffectDigest.sha256, inner), 64)
+  return hex(try crypto.digest(EffectDigest.sha256, outer))
+}
+const sealMessage = (artifactDigest: string) => `smithers-wiki-verified-v1\n${artifactDigest}`
+const privateSegment = /^(?:node_modules|Smithers-Ops)$/i
+const privateFile =
+  /^(?:id_(?:rsa|dsa|ecdsa|ed25519)(?:\..*)?|credentials\.json|service-account.*\.json|secrets?(?:\..*)?\.(?:json|ya?ml|toml)|.*\.(?:env|token|pem|key|p8|p12|pfx|jks|ppk|keystore|asc|gpg|tfvars|tfvars\.json|tfstate(?:\.backup)?|db|sqlite))$/i
+// Hidden names are private by default: `.git`, `.jj`, `.flows`, `.env*`,
+// `.alchemy`, `.wrangler`, `.claude` and every future tool's state dir.
+// Only these committed public names pass (compared case-sensitively).
+const publicHiddenDirectory = new Set([".github", ".agents", ".changeset"])
+const publicHiddenFile = new Set([".gitignore", ".gitattributes", ".editorconfig", ".node-version"])
+// `.smithers` holds committed declarations beside gitignored engine state
+// (runs, executions, cache, *.db), so only its declarations pass: the
+// repository's flows (M-49) among them.
+const smithersDeclarationFile =
+  /^(?:WORKSPACE\.ts|FACTORY\.ts|factory\.json|home\.json|target-index\.json|environment\.nix|coding-project\.json|agents\.ts|sandbox\.ts|smithers\.config\.ts)$/
+const smithersDeclarationDirectory = new Set(["workflows", "prompts", "agents", "components", "wiki", "flows"])
+const privateHidden = (parts: ReadonlyArray<string>) =>
+  parts.some((part, index) => {
+    if (!part.startsWith(".")) return false
+    const last = index === parts.length - 1
+    if (last) return !publicHiddenFile.has(part)
+    if (publicHiddenDirectory.has(part)) return false
+    if (part !== ".smithers") return true
+    const rest = parts.slice(index + 1)
+    return rest.length === 1
+      ? !smithersDeclarationFile.test(rest[0]!)
+      : !smithersDeclarationDirectory.has(rest[0]!)
+  })
+/** The refusal a declared source path earns, or `undefined` when it is a plain repository-relative path. */
+const invalidPath = (value: string): WikiError | undefined => {
+  if (
+    !/^[A-Za-z0-9_./@-]+$/.test(value) || value.startsWith("/") ||
+    value.split("/").some((part) => part === "." || part === ".." || part === "")
+  ) {
+    return fail("invalid-input", `Expected a repository-relative source path: ${value}`)
+  }
+  return privatePath(value, value)
+}
+// At any depth, and applied to the declared name and to the symlink-resolved
+// target. Hidden names use an allowlist, so `.ENV` or `.JJ` on a
+// case-insensitive disk is refused like any other hidden name.
+const privatePath = (relative: string, declared: string): WikiError | undefined => {
+  const parts = relative.split(/[\\/]/)
+  if (privateHidden(parts) || parts.some((part) => privateSegment.test(part)) || privateFile.test(parts.at(-1)!)) {
+    return fail("invalid-input", `Private/runtime path is not a wiki input: ${declared}`)
+  }
+  return undefined
+}
+/** `value` when it is a safe source path; its refusal otherwise. */
+effect function safePath(value: string) {
+  const refusal = invalidPath(value)
+  if (refusal !== undefined) throw refusal
+  return value
+}
+/** `declared` when its resolved `relative` path is not private; its refusal otherwise. */
+effect function refusePrivate(relative: string, declared: string) {
+  const refusal = privatePath(relative, declared)
+  if (refusal !== undefined) throw refusal
+  return declared
+}
+
+/** Heading sections keep the review obligation small and explicit. */
+export const sections = (markdown: string) => {
+  const result: Array<{ id: string; markdown: string }> = []
+  let lines: Array<string> = [], fence = false
+  const flush = () => {
+    if (lines.join("\n").trim()) result.push({ id: `section-${result.length + 1}`, markdown: lines.join("\n").trim() })
+    lines = []
+  }
+  for (const line of markdown.split("\n")) {
+    if (/^```/.test(line)) fence = !fence
+    if (!fence && /^#{1,3} /.test(line)) flush()
+    lines.push(line)
+  }
+  flush()
+  return result
+}
+
+export const operations = (
+  options: {
+    readonly root: string
+    readonly output: string
+    readonly fs?: FileSystem.FileSystem | undefined
+    /** Host policy is reevaluated at publication, after potentially slow review. */
+    readonly publicationRoot?: (string!Error!(FileSystem.FileSystem | Path.Path)) | undefined
+  }
+) => {
+  // Native action execution may replace construction-time context services.
+  // A host-owned recipe can retain its explicitly injected filesystem here;
+  // canonical source/output boundaries below still apply to every operation.
+  effect function read(relative: string) {
+    const fs = options.fs ?? (try FileSystem.FileSystem), path = try Path.Path
+    const root = try fs.realPath(options.root)
+    const name = try safePath(relative)
+    const file = try fs.realPath(path.resolve(root, name))
+    if (!file.startsWith(root + path.sep)) throw fail("invalid-input", `Source escapes repository: ${relative}`)
+    try refusePrivate(path.relative(root, file), relative)
+    const stat = try fs.stat(file)
+    if (stat.type !== "File" || Number(stat.size) > maxFileBytes) {
+      throw fail("invalid-input", `Source is not a bounded text file: ${relative}`)
+    }
+    const text = try fs.readFileString(file)
+    if (text.includes("\0")) throw fail("invalid-input", `Binary source is not a wiki input: ${relative}`)
+    return { path: relative, digest: try digest(text), text }
+  }
+  effect function inventory(directory: string) {
+    const fs = options.fs ?? (try FileSystem.FileSystem), path = try Path.Path
+    const root = try fs.realPath(options.root)
+    if (directory !== ".") try safePath(directory)
+    const files: Array<string> = []
+    const pending = [directory]
+    while (pending.length) {
+      const current = pending.shift()!
+      const absolute = path.resolve(root, current)
+      if ((try fs.realPath(absolute)) !== absolute) {
+        throw fail("invalid-input", "Wiki source directories cannot be symlinks")
+      }
+      for (const entry of (try fs.readDirectory(absolute)).sort()) {
+        const relative = current === "." ? entry : `${current}/${entry}`
+        if (invalidPath(relative) !== undefined) continue
+        const info = try fs.stat(path.join(absolute, entry))
+        if (info.type === "Directory") {
+          pending.push(relative)
+        } else if (info.type === "File" && /\.(?:md|mdx|ts|tsx|js|jsx|go|rs|py|json|toml|yaml|yml)$/.test(entry)) {
+          files.push(relative)
+        }
+      }
+    }
+    return files.sort()
+  }
+  const generatedMarkdown = (
+    spec: PageSpec,
+    sources: ReadonlyArray<{ path: string; text: string }>,
+    summary: boolean
+  ) => {
+    const sections = sources.flatMap((source) => {
+      const symbols = source.text.split(/\r?\n/).flatMap((line, index) =>
+        /^\s*(?:export\s+(?:default\s+)?(?:async\s+)?(?:function|class|const|interface|type)|func\s|pub\s|(?:async\s+)?def\s|class\s)/
+            .test(line)
+          ? [
+            `- \`${line.trim().replace(/`/g, "'")}\` [${source.path}:${index + 1}](../sources/${source.path}#L${
+              index + 1
+            })`
+          ] :
+          []
+      )
+      const first = source.text.split(/\r?\n/).findIndex((line) => line.trim() !== "")
+      const fallback = first < 0
+        ? []
+        : [
+          `- \`${source.text.split(/\r?\n/)[first]!.trim().replace(/`/g, "'")}\` [${source.path}:${
+            first + 1
+          }](../sources/${source.path}#L${first + 1})`
+        ]
+      const bullets = symbols.length ? (summary ? symbols.slice(0, 3) : symbols) : fallback
+      // A source with no nonblank line stays captured, but no line could cite
+      // a section for it, so the page would never verify.
+      return bullets.length ? [`## ${source.path}\n\n${bullets.join("\n")}`] : []
+    })
+    return `# ${spec.title}\n\n${summary ? "Source summary; selected files and exports.\n\n" : ""}${
+      sections.join("\n\n")
+    }\n`
+  }
+  effect function collect(spec: PageSpec) {
+    if (!/^[a-z][a-z0-9-]{0,80}$/.test(spec.id)) throw fail("invalid-input", "Invalid wiki page id")
+    const names = spec.sourceDirectory === undefined
+      ? [...new Set([spec.document, ...spec.inputs])].sort()
+      : try inventory(spec.sourceDirectory)
+    // Generated pages summarize a deterministic spread across the inventory.
+    // Explicit author-owned pages still capture every declared input in full.
+    const selected = spec.sourceDirectory === undefined || names.length <= maxGeneratedSources
+      ? names
+      : Array.from({ length: maxGeneratedSources }, (_, i) =>
+        names[Math.floor(i * (names.length - 1) / (maxGeneratedSources - 1))]!)
+    const sources: Array<{ path: string; digest: string; text: string }> = []
+    let capturedBytes = 0
+    for (const name of selected) {
+      if (spec.sourceDirectory !== undefined) {
+        const fs = options.fs ?? (try FileSystem.FileSystem), path = try Path.Path
+        const info = try fs.stat(path.resolve(options.root, name))
+        // Keep complete archived files and the reviewer prompt bounded. Large
+        // files belong in focused, explicitly excerpted pages instead.
+        if (Number(info.size) > 40_000 - capturedBytes) {
+          continue
+        }
+      }
+      const source = try read(name)
+      sources.push(source)
+      capturedBytes += new TextEncoder().encode(source.text).length
+    }
+    const summary = sources.length < names.length
+    if (
+      sources.reduce((total, source) =>
+        total + new TextEncoder().encode(source.text).length, 0) > maxPageBytes
+    ) {
+      throw fail(
+        "invalid-input",
+        `Page evidence exceeds ${maxPageBytes} bytes: ${spec.id}; split the page or narrow its owning files`
+      )
+    }
+    const markdown = spec.sourceDirectory === undefined ?
+      sources.find((source) => source.path === spec.document)!.text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "")
+        .trim() + "\n" :
+      generatedMarkdown(spec, sources, summary)
+    const contentDigest = try digest(markdown)
+    const inputDigest = try digestCanonical({
+      policy: spec.sourceDirectory === undefined ? 2 : 3,
+      spec,
+      ...(spec.sourceDirectory === undefined ? {} : { inventory: names }),
+      sources: sources.map(({ path, digest }) => ({ path, digest }))
+    })
+    const evidence = { spec, sources, markdown, contentDigest, inputDigest, sections: sections(markdown) }
+    try Effect.try({ try: () => reviewEvidence(evidence), catch: (error) => error as WikiError })
+    return evidence
+  }
+  effect function assess(page: ReviewedPage) {
+    if (page.review === null) return page
+    const expected = page.evidence.sections.map((section) => section.id)
+    if (JSON.stringify(page.review.sections.map((section) => section.id)) !== JSON.stringify(expected)) {
+      throw fail("review-failed", `Review must assess every section exactly once: ${page.evidence.spec.id}`)
+    }
+    const invalidCitations: Array<{ section: string; path: string; line: number; quote: string }> = []
+    let invalidCitationCount = 0
+    for (const section of page.review.sections) {
+      if (!section.explanation.trim()) throw fail("review-failed", "Review explanations cannot be empty")
+      if (section.verdict === "supported" && section.citations.length === 0) {
+        throw fail("review-failed", "Supported sections require source citations")
+      }
+      if (
+        section.verdict === "supported" && page.evidence.spec.kind === "current" &&
+        !section.citations.some((citation) => citation.path !== page.evidence.spec.document)
+      ) {
+        throw fail("review-failed", "Current behavior cannot be verified by citing only its own explanation")
+      }
+      for (const citation of section.citations) {
+        const source = page.evidence.sources.find((entry) => entry.path === citation.path)
+        const lines = source?.text.split("\n") ?? []
+        // Preserve the raw receipt. Boundary padding is not part of the selected
+        // fragment; interior bytes, the source line and excerpt must stay exact.
+        const fragment = citation.quote.replace(/^[ \t]+|[ \t]+$/g, "")
+        const visible = try sync(() => visibleLine(page.evidence, citation.path, citation.line))
+        if (
+          !source || !Number.isSafeInteger(citation.line) || citation.line < 1 || citation.line > lines.length ||
+          !fragment || /[\r\n]/.test(fragment) || !lines[citation.line - 1]!.includes(fragment) ||
+          !visible
+        ) {
+          invalidCitationCount++
+          if (invalidCitations.length < 24) {
+            invalidCitations.push({
+              section: section.id.slice(0, 80),
+              path: citation.path.slice(0, 320),
+              line: citation.line,
+              quote: citation.quote.slice(0, 320)
+            })
+          }
+        }
+      }
+    }
+    // One bounded repair needs all detected problems, not just the first one.
+    // The original review remains unchanged; no inferred replacement is supplied.
+    if (invalidCitationCount) {
+      throw fail(
+        "review-failed",
+        `Review citation is not exact source evidence: ${page.evidence.spec.id}/${invalidCitations[0]!.section}; ${
+          JSON.stringify({ invalidCitationCount, citations: invalidCitations })
+        }`
+      )
+    }
+    return page
+  }
+  // A verified pointer carries an HMAC of its artifact digest. The key is a
+  // host secret beside (never inside) the output directory, so whoever can
+  // write or copy the output cannot mint a snapshot this host calls verified.
+  effect function sealKey(fs: FileSystem.FileSystem, root: string, create: boolean) {
+    const path = try Path.Path
+    const location = path.join(path.dirname(root), `.${path.basename(root)}.seal-key`)
+    if (create && !(try fs.exists(location))) {
+      const random = try SecureRandom.SecureRandom
+      fs.writeFileString(location, hex(try random.randomBytes(32)) + "\n", { flag: "wx", mode: 0o600 })
+        catch effect (error) => {
+          if (!(try fs.exists(location))) throw error
+        }
+    }
+    if (!(try fs.exists(location))) throw fail("output-conflict", "Verified snapshot has no seal key on this host")
+    if ((try fs.realPath(location)) !== location) throw fail("output-conflict", "Seal key cannot be a symlink")
+    const text = (try fs.readFileString(location)).trim()
+    if (!/^[a-f0-9]{64}$/.test(text)) throw fail("output-conflict", "Invalid seal key")
+    return Uint8Array.from(text.match(/../g)!, (pair) =>
+      parseInt(pair, 16))
+  }
+  effect function write(
+    pages: ReadonlyArray<ReviewedPage>,
+    mode: "preview" | "verified",
+    provenance: Readonly<Record<string, Provenance>> = {}
+  ) {
+    const fs = options.fs ?? (try FileSystem.FileSystem), path = try Path.Path
+    if (
+      !pages.length || new Set(pages.map((page) => page.evidence.spec.id)).size !== pages.length
+    ) throw fail("invalid-input", "Wiki page ids must be nonempty and unique")
+    const allIds = new Set(pages.map((page) => page.evidence.spec.id))
+    for (const page of pages) {
+      try assess(page)
+      if (page.evidence.spec.related.some((id) => !allIds.has(id))) {
+        throw fail("invalid-input", `Broken related-page link: ${page.evidence.spec.id}`)
+      }
+      const current = try collect(page.evidence.spec)
+      if (current.inputDigest !== page.evidence.inputDigest) {
+        throw fail("stale-source", `Source changed during review: ${page.evidence.spec.id}`)
+      }
+    }
+    const verified = pages.every((page) =>
+      page.review !== null && page.reviewer &&
+      page.review.sections.every((section) => section.verdict === "supported")
+    )
+    const verification = verified
+      ? "verified" as const
+      : pages.some((page) => page.review !== null)
+      ? "needs-changes" as const
+      : "unreviewed" as const
+    const inputDigest = try digestCanonical(
+      pages.map((page) => ({ id: page.evidence.spec.id, digest: page.evidence.inputDigest }))
+    )
+    const sourceRevision = `sha256:${inputDigest}`
+    const rendered = try forEach(pages, (page) =>
+      effect {
+        const { evidence, review, reviewer } = page
+        const reviewDigest = review
+          ? try digestCanonical({
+            policy: 3,
+            assessmentPolicy,
+            inputDigest: evidence.inputDigest,
+            contentDigest: evidence.contentDigest,
+            reviewer,
+            review
+          })
+          : null
+        const status = review === null
+          ? "unreviewed"
+          : review.sections.every((section) => section.verdict === "supported")
+          ? "verified"
+          : "needs-changes"
+        const header = `---\nsmithers_generated: true\nschema_version: 1\nsource_revision: ${
+          JSON.stringify(sourceRevision)
+        }\ninput_digest: ${evidence.inputDigest}\ncontent_digest: ${evidence.contentDigest}\nverification_status: ${status}\nreview_digest: ${
+          reviewDigest ?? "null"
+        }\n---\n\n`
+        const notice = `> ${
+          evidence.spec.kind === "intent"
+            ? "Product intent; this page does not assert implementation."
+            : "Current behavior from the captured source snapshot."
+        } ${
+          status === "verified"
+            ? "Model-reviewed against the cited source; this is not a formal proof or deployment receipt."
+            : "Semantic review has not passed. Treat explanations as a draft."
+        }\n\n`
+        const links = evidence.spec.related.map((id) =>
+          `[${pages.find((entry) => entry.evidence.spec.id === id)!.evidence.spec.title}](./${id}.md)`
+        ).join(" · ")
+        const sourceLinks = evidence.sources.map((source) =>
+          `- [${source.path}](../sources/${source.path}) — \`${source.digest}\``
+        ).join("\n")
+        // These are the citations already assessed against each section, not
+        // another model pass. Keep them beside the prose in every projection.
+        const explained = review === null ? evidence.markdown : evidence.sections.map((section, index) => {
+          const citations = [
+            ...new Set(
+              review.sections[index]!.citations.map(({ path, line }) =>
+                `[${path}:${line}](../sources/${path}#L${line})`
+              )
+            )
+          ].join(" · ")
+          return section.markdown + (citations ? `\n\n${citations}` : "")
+        }).join("\n\n") + "\n"
+        const body = header + notice + explained +
+          `\n## Related pages\n\n${links}\n\n## Exact source inputs\n\n${sourceLinks}\n`
+        return {
+          id: evidence.spec.id,
+          slug: `generated-${evidence.spec.id}`,
+          title: evidence.spec.title,
+          purpose: evidence.spec.purpose,
+          kind: evidence.spec.kind,
+          spec: evidence.spec,
+          body,
+          contentDigest: evidence.contentDigest,
+          bodyDigest: try digest(body),
+          inputDigest: evidence.inputDigest,
+          sources: evidence.sources.map(({ path, digest }) => ({ path, digest })),
+          verification: {
+            status,
+            reviewer,
+            reviewDigest,
+            review,
+            ...(provenance[evidence.spec.id] ? { provenance: provenance[evidence.spec.id] } : {})
+          }
+        }
+      })
+    const snapshot = {
+      schemaVersion: 1,
+      digestPolicy: "canonical-json-v2",
+      assessmentPolicy,
+      sourceRevision,
+      sourceKind: "content-addressed-working-tree",
+      inputDigest,
+      verification,
+      pages: rendered
+    }
+    const files: Record<string, string> = { "snapshot.json": JSON.stringify(snapshot, null, 2) + "\n" }
+    for (const page of pages) {
+      for (const source of page.evidence.sources) files[`sources/${source.path}`] = source.text
+    }
+    for (const page of rendered) files[`pages/${page.id}.md`] = page.body
+    files["README.md"] =
+      `# Smithers engineering wiki\n\nSnapshot: \`${sourceRevision}\`. Semantic verification: **${verification}**.\n\nThe source snapshot is immutable content evidence, not a claim about the current main branch or production. Canonical human-authored pages are not overwritten; explicitly catalogued intent may appear as generated copies and archived source evidence.\n\n` +
+      rendered.map((page) => `- [${page.title}](pages/${page.id}.md) — ${page.purpose}`).join("\n") + "\n"
+    const requestedRoot = options.publicationRoot === undefined
+      ? path.resolve(options.output)
+      : try options.publicationRoot
+    try fs.makeDirectory(requestedRoot, { recursive: true })
+    const root = try fs.realPath(requestedRoot)
+    if (
+      root !== path.join(try fs.realPath(path.dirname(requestedRoot)), path.basename(requestedRoot))
+    ) throw fail("output-conflict", "Output must be a real, dedicated directory")
+    const artifactDigest = try digest(
+      JSON.stringify(Object.entries(files).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))
+    )
+    const version = path.join(root, "snapshots", artifactDigest)
+    const currentPath = path.join(root, "current.json")
+    // A single atomic pointer is the acceptance point. All pages and captured
+    // sources live in an immutable version directory installed before it.
+    try fs.makeDirectory(path.join(root, "snapshots"), { recursive: true })
+    if ((try fs.realPath(path.join(root, "snapshots"))) !== path.join(root, "snapshots")) {
+      throw fail("output-conflict", "Snapshot directory cannot be a symlink")
+    }
+    if (try fs.exists(currentPath)) {
+      if ((try fs.realPath(currentPath)) !== currentPath) {
+        throw fail("output-conflict", "Current pointer cannot be a symlink")
+      }
+      const previousText = try fs.readFileString(currentPath)
+      const previous = try Effect.try({
+        try: () => JSON.parse(previousText) as { smithersWikiProjection?: boolean; artifactDigest?: string },
+        catch: () => fail("output-conflict", "Current pointer is not a Smithers projection")
+      })
+      if (
+        previous.smithersWikiProjection !== true || !/^[a-f0-9]{64}$/.test(previous.artifactDigest ?? "")
+      ) throw fail("output-conflict", "Refusing to overwrite an unowned current pointer")
+    }
+    const seal = verification === "verified"
+      ? { seal: try hmac(try sealKey(fs, root, true), sealMessage(artifactDigest)) }
+      : {}
+    const stage = path.join(root, `.staging-${try (try SecureRandom.SecureRandom).uuidV4()}`)
+    try fs.makeDirectory(stage)
+    try ensuring(
+      effect {
+        for (const [name, text] of Object.entries(files)) {
+          const target = path.join(stage, name)
+          try fs.makeDirectory(path.dirname(target), { recursive: true })
+          try fs.writeFileString(target, text)
+        }
+        const verifyExisting = effect {
+          for (const [name, text] of Object.entries(files)) {
+            const target = path.join(version, name)
+            if (
+              (try fs.realPath(target)) !== target || (try fs.readFileString(target)) !== text
+            ) throw fail("output-conflict", `Immutable snapshot was edited: ${name}`)
+          }
+        }
+        if (try fs.exists(version)) try verifyExisting
+        else {
+          fs.rename(stage, version) catch effect (error) => {
+            // Another writer may install this exact content-addressed artifact
+            // after our existence check. Accept only its complete expected bytes;
+            // unrelated rename errors and edited snapshots remain failures.
+            if (!(try fs.exists(version))) throw error
+            try verifyExisting
+          }
+        }
+        const pointer = path.join(root, `.current-${try (try SecureRandom.SecureRandom).uuidV4()}.json`)
+        try fs.writeFileString(
+          pointer,
+          JSON.stringify(
+            {
+              smithersWikiProjection: true,
+              artifactDigest,
+              directory: `snapshots/${artifactDigest}`,
+              ...seal,
+              ...snapshot
+            },
+            null,
+            2
+          ) + "\n"
+        )
+        try fs.rename(pointer, currentPath)
+      },
+      Effect.ignore(fs.remove(stage, { recursive: true, force: true }))
+    )
+    if (mode === "verified" && !verified) {
+      throw fail("review-failed", `Semantic review did not pass; inspect ${currentPath}`)
+    }
+    return {
+      schemaVersion: 1,
+      sourceRevision,
+      inputDigest,
+      output: root,
+      pages: pages.length,
+      verification
+    } satisfies Receipt
+  }
+  effect function check(specs: ReadonlyArray<PageSpec>, requireVerified = false) {
+    const fs = options.fs ?? (try FileSystem.FileSystem), path = try Path.Path
+    // A workspace root can have a logical OS alias (for example /var on
+    // macOS). Compare immutable files under the same canonical output root
+    // used by publication, while still refusing a linked output directory.
+    const requestedRoot = path.resolve(options.output)
+    const root = try fs.realPath(requestedRoot)
+    if (root !== path.join(try fs.realPath(path.dirname(requestedRoot)), path.basename(requestedRoot))) {
+      throw fail("output-conflict", "Output must be a real, dedicated directory")
+    }
+    const text = try fs.readFileString(path.join(root, "current.json"))
+    const current = try Effect.try({
+      try: () =>
+        JSON.parse(text) as {
+          artifactDigest: string
+          directory: string
+          seal?: unknown
+          verification: string
+          pages: Array<{ id: string; inputDigest: string; body: string }>
+        },
+      catch: () => fail("output-conflict", "Invalid snapshot pointer")
+    })
+    if (
+      !/^[a-f0-9]{64}$/.test(current.artifactDigest) || current.directory !== `snapshots/${current.artifactDigest}`
+    ) throw fail("output-conflict", "Invalid snapshot directory")
+    if (
+      JSON.stringify(current.pages.map((page) => page.id)) !== JSON.stringify(specs.map((spec) => spec.id))
+    ) throw fail("stale-source", "The wiki catalog changed")
+    const capturedNames: Array<string> = []
+    for (const spec of specs) {
+      const page = current.pages.find((page) => page.id === spec.id)!
+      const source = try collect(spec)
+      if (source.inputDigest !== page.inputDigest) throw fail("stale-source", `Stale wiki page: ${spec.id}`)
+      if (
+        (try fs.readFileString(path.resolve(root, current.directory, "pages", `${spec.id}.md`))) !== page.body
+      ) throw fail("output-conflict", `Generated page was edited: ${spec.id}`)
+      for (const input of source.sources) {
+        capturedNames.push(`sources/${input.path}`)
+        if (
+          (try fs.readFileString(path.resolve(root, current.directory, "sources", input.path))) !== input.text
+        ) throw fail("output-conflict", `Captured source was edited: ${input.path}`)
+      }
+    }
+    const archiveRoot = path.resolve(root, current.directory)
+    // The archived snapshot and the pointer were written by this projection; a
+    // pointer or snapshot that is not JSON is a defect, as it was before.
+    const archivedText = try fs.readFileString(path.join(archiveRoot, "snapshot.json"))
+    const archived = try orDie(Effect.try(() => JSON.parse(archivedText) as Record<string, unknown>))
+    const pointer = try orDie(Effect.try(() => JSON.parse(text) as Record<string, unknown>))
+    for (const key of ["smithersWikiProjection", "artifactDigest", "directory", "seal"]) delete pointer[key]
+    if (JSON.stringify(pointer) !== JSON.stringify(archived)) {
+      throw fail("output-conflict", "Current pointer differs from its immutable snapshot")
+    }
+    const names = new Set([
+      "README.md",
+      "snapshot.json",
+      ...specs.map((spec) => `pages/${spec.id}.md`),
+      ...capturedNames
+    ])
+    const entries = try forEach([...names].sort(), (name) =>
+      effect {
+        const target = path.join(archiveRoot, name)
+        if ((try fs.realPath(target)) !== target) throw fail("output-conflict", "Snapshot files cannot be symlinks")
+        return [name, try fs.readFileString(target)] as const
+      })
+    if ((try digest(JSON.stringify(entries))) !== current.artifactDigest) {
+      throw fail("output-conflict", "Snapshot content does not match its artifact digest")
+    }
+    if (current.verification === "verified") {
+      const expected = try hmac(try sealKey(fs, root, false), sealMessage(current.artifactDigest))
+      const actual = typeof current.seal === "string" ? current.seal : ""
+      let difference = actual.length ^ expected.length
+      for (let index = 0; index < expected.length; index++) {
+        difference |= expected.charCodeAt(index) ^ actual.charCodeAt(index)
+      }
+      if (difference !== 0) throw fail("output-conflict", "Verified snapshot was not sealed by this host")
+    }
+    if (requireVerified && current.verification !== "verified") {
+      throw fail("review-failed", "The current snapshot has not passed semantic review")
+    }
+    return { pages: specs.length, verification: current.verification }
+  }
+  const boundary = <A, E, R>(program: A!E!R) =>
+    Effect.mapError(program, (error) =>
+      error instanceof WikiError ? error : fail("io", error instanceof Error ? error.message : String(error))
+    )
+  return {
+    check: (specs: ReadonlyArray<PageSpec>, requireVerified = false) => boundary(check(specs, requireVerified)),
+    collect: (spec: PageSpec) => boundary(collect(spec)),
+    assess,
+    write: (
+      pages: ReadonlyArray<ReviewedPage>,
+      mode: "preview" | "verified",
+      provenance?: Readonly<Record<string, Provenance>>
+    ) => boundary(write(pages, mode, provenance))
+  }
+}

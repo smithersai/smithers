@@ -15,7 +15,7 @@
 import { Action, Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
-import { ModuleFailed, runModule } from "../../automation/run-module.ts"
+import { ModuleFailed, runModule } from "../../automation/run-module.vibe"
 
 /**
  * The release and commit range to render, and whether to check rather than write.

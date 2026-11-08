@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import assert from "node:assert/strict"
 import test from "node:test"
-import { type Checked, LandFailed, makeBaselines } from "../land.ts"
+import { type Checked, LandFailed, makeBaselines } from "../land.vibe"
 
 const labels = ["//a:test", "//b:test"]
 

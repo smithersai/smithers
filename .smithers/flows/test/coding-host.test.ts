@@ -13,8 +13,8 @@ import { platform } from "../../../packages/smithers/src/internal/NodeControlHos
 import { expandSeat } from "../../../packages/smithers/src/Providers.ts"
 import { configuredCodingRoutes, layer, reviewSeats, roleResolver, roleSeats, seatProvider } from "../coding/host.ts"
 import * as CodingHost from "../coding/host.ts"
-import { Landing } from "../coding/landing.ts"
-import { loadProject } from "../coding/project-config.ts"
+import { Landing } from "../coding/landing.vibe"
+import { loadProject } from "../coding/project-config.vibe"
 import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 import { systemFlows } from "./fixtures/system-flows.ts"
 

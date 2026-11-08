@@ -17,12 +17,12 @@ import {
   templateClassifier,
   templates,
   templateState
-} from "../release-content/jev-template.ts"
+} from "../release-content/jev-template.vibe"
 import * as Content from "../release-content/workflow.vibe"
 import { contentInput } from "../release-support/input.ts"
 import { actionLayers } from "../release-support/operations.ts"
 import { agentLayers } from "../release-support/runtime.ts"
-import { type Analysis, type Evidence, Outline } from "../release-support/schema.ts"
+import { type Analysis, type Evidence, Outline } from "../release-support/schema.vibe"
 import { analysis, evidence, repository, scriptedSeats } from "./fixtures.ts"
 
 /** A scripted Jev that names one narrative with one confidence, with the rest

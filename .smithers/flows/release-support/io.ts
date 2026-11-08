@@ -4,7 +4,7 @@ import { existsSync } from "node:fs"
 import { mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises"
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
 import { StringDecoder } from "node:string_decoder"
-import { ReleaseError } from "./schema.ts"
+import { ReleaseError } from "./schema.vibe"
 
 export interface CommandOptions {
   readonly env?: Readonly<Record<string, string>>

@@ -28,7 +28,7 @@ import ReleaseContent from "../release-content/flow.ts"
 import * as Content from "../release-content/workflow.vibe"
 import ReleaseFlow from "../release/flow.ts"
 import * as Release from "../release/workflow.vibe"
-import { evaluatorLayer } from "../repository/jev-checks.ts"
+import { evaluatorLayer } from "../repository/jev-checks.vibe"
 import { relativePath } from "./io.ts"
 import { actionLayers } from "./operations.ts"
 

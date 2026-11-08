@@ -1,6 +1,6 @@
 /**
  * Review and undo a run: the file changes captured at the flow boundary
- * (`changes.ts`) for a worker's whole transcript, or one chat turn. `changes`
+ * (`changes.vibe`) for a worker's whole transcript, or one chat turn. `changes`
  * is the run's combined diff per file; `plan` reads the disk and works out
  * each file's restored content, or why it stays; `commit` writes the files the
  * person kept checked, rolling back on an IO error.
@@ -10,7 +10,7 @@ import { applyPatch, reversePatch } from "diff"
 import { chmod, mkdir, stat, unlink, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { within } from "./approvals.ts"
-import * as Changes from "./changes.ts"
+import * as Changes from "#vibelang/emitted/src/changes"
 import * as Log from "./log.ts"
 import type * as Transcript from "./transcript.ts"
 

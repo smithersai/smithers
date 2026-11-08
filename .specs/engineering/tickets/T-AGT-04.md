@@ -26,7 +26,7 @@ Out:
 ## Changes
 
 - Read the forwarded documents as references; do not port prototype code or invent their contents.
-- Reuse `.smithers/flows/repository/registry.ts:315` (`repositoryRegistration`) and `apps/app/src/mainview/flows/entries/flow.ts:101` (`flow.run`); no ceo-specific dispatcher.
+- Reuse `.smithers/flows/repository/registry.vibe:315` (`repositoryRegistration`) and `apps/app/src/mainview/flows/entries/flow.ts:101` (`flow.run`); no ceo-specific dispatcher.
 - Reuse T-APP-05’s shared Flow card and T-FLW-07’s §11.6.2 presentation path through `apps/app/src/mainview/cards/RunTraceCard.tsx` and `CardRenderers.tsx`. Emit serializable presentation data from the machine; render only with install-shipped components. No app or library seam is added here.
 - Add only `flows/ceo/flow.ts`, default-exporting `Flow.make("ceo", ...)` from `@smthrs/flow`, and reference-derived data/fixtures beside it. The existing registry and presentation path supply execution and UI; the new composition supplies the internal brief they do not contain. Reuse the installed APIs; do not port prototype components.
 - Keep /ceo out of shipped catalog, default navigation and product API surfaces.

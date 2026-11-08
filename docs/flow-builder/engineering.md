@@ -18,7 +18,7 @@ projection (D-020) and the duration predictor (D-030).
   Delegating modules use a plain record checked with `satisfies FlowBinding.Declared`.
 - `Action.make(name, { payload, success, error, nondeterministic })` and
   `AgentAction.make(...)` give every node a typed payload/success/error contract
-  — `.smithers/flows/coding/atoms.ts:12`.
+  — `.smithers/flows/coding/atoms.vibe:12`.
 - `effects: { reads, writes, mode, onConflict, tier }` means the graph already
   carries side-effect tiers (`"irreversible"`) a canvas can render.
 - Control flow is explicit and DAG-shaped. From `.smithers/flows/create-flow/design/flow.mdx`:

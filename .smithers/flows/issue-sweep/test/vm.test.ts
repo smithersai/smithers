@@ -17,7 +17,7 @@ import {
   refreshLine,
   sh,
   sizing
-} from "../vm.ts"
+} from "../vm.vibe"
 
 const fakeFreeBytes = () => 100 * 1024 ** 3
 
@@ -942,7 +942,7 @@ test("loading and constructing providers leave machine configuration untouched",
       return exists(path)
     }
     syncBuiltinESMExports()
-    const vm = await import(${JSON.stringify(new URL("../vm.ts", import.meta.url).href)})
+    const vm = await import(${JSON.stringify(new URL("../vm.vibe", import.meta.url).href)})
     vm.make()
     vm.makeJob()
     vm.provider()

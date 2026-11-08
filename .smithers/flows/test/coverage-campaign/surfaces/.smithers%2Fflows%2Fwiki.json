@@ -27,7 +27,7 @@
     {
       "path": ".smithers/flows/wiki/PACKAGE.ts",
       "sha256": "f97c69902acb5af73b15bf461d58763688214d34d3a66e5c1eb88cba8924eab2",
-      "source": "/** Exact code dependencies: no cross-package globs silently expanding to nothing. */\nimport { Smithers as S } from \"@smthrs/targets\"\nimport project from \"../../coding-project.json\" with { type: \"json\" }\n// The page catalog is the `pages` of the coding project; each page's document and inputs invalidate the wiki.\nconst sourceFiles = project.pages.flatMap((page) => [page.document, ...page.inputs])\nconst data = [\n  ...new Set([\n    ...sourceFiles,\n    \".smithers/coding-project.json\",\n    \".smithers/flows/wiki/schema.ts\",\n    \".smithers/flows/wiki/evidence.ts\",\n    \".smithers/flows/wiki/flow.ts\",\n    \".smithers/flows/wiki/workflow.ts\",\n    \".smithers/flows/wiki/operations.ts\",\n    \".smithers/flows/wiki/main.ts\",\n    \".smithers/flows/wiki/runtime.ts\",\n    \".smithers/flows/wiki/reuse.ts\",\n    \".smithers/flows/wiki/jev-citations.ts\",\n    \".smithers/flows/repository/jev-checks.ts\",\n    \".smithers/flows/coding/schema.ts\",\n    \".smithers/flows/coding/wiki-output.ts\",\n    \".smithers/flows/release-support/runtime.ts\"\n  ])\n].map((file) => S.file(`//${file}`))\nconst preview = S.Shell.Build({\n  bin: S.Runtime.bin,\n  args: [\"--import=vibelang/register\", \".smithers/flows/wiki/main.ts\"],\n  data,\n  timeout: \"10m\",\n  // main.ts runs from the workspace root and writes --root/.flows/wiki.\n  outDirs: [\"//.flows/wiki\"]\n})\nconst verify = S.Shell.Run({\n  bin: S.Runtime.bin,\n  args: [\"--import=vibelang/register\", \".smithers/flows/wiki/main.ts\", \"--verified\"],\n  data,\n  timeout: \"30m\"\n})\nconst freshness = S.Shell.Test({\n  bin: S.Runtime.bin,\n  args: [\"--import=vibelang/register\", \".smithers/flows/wiki/main.ts\", \"--check\"],\n  data: [preview, ...data],\n  timeout: \"5m\"\n})\nconst securityReview = S.SecurityReview({\n  cwd: \".smithers/flows/wiki\",\n  include: [\"*.ts\"],\n  checks: [\n    {\n      id: \"wiki-source-confinement\",\n      title: \"Page sources are repository-relative, non-private text files inside the root\",\n      threat:\n        \"A catalog entry or symlink in a contributed change copies a maintainer's secrets or files outside the repository into the published wiki snapshot and the reviewer prompt.\",\n      lookFor: [\n        \"safePath denying .env with a case-sensitive regex (no /i), so .ENV on a case-insensitive disk, .envrc, .npmrc, .dev.vars, *.pem, id_rsa, or a nested .git/.jj dir still pass.\",\n        \"read resolving realPath of root and file but comparing with a prefix check that a sibling directory such as <root>-other can pass.\",\n        \"check() reading pages/ or sources/ files via path.resolve(current.directory, input.path) and following a symlink before the realPath comparison runs.\"\n      ],\n      paths: [\"operations.ts\", \"main.ts\"]\n    },\n    {\n      id: \"wiki-output-confinement\",\n      title: \"Generation writes only inside a dedicated output directory under --root\",\n      threat:\n        \"A symlinked .flows or output parent committed in a contributed change makes a wiki run write snapshots and current.json outside the repository on the runner.\",\n      lookFor: [\n        \"main.ts relative() and write() realPath checks covering only the last output segment, so a symlinked .flows parent lets output resolve outside --root.\",\n        \"write() installing the snapshot, staging dir, or current.json pointer through a symlinked snapshots/ or output root without the realPath equality check.\",\n        \"Capability rules in main.ts granting fs:read on the whole root or resolve(output, \\\"..\\\") or fs:write beyond output/**.\",\n        \"flow.ts declaring capabilities fs:read:** and fs:write:** wider than its effects.writes .flows/wiki/**, so a host that trusts the declaration grants every path.\"\n      ],\n      paths: [\"main.ts\", \"operations.ts\", \"flow.ts\"]\n    },\n    {\n      id: \"reviewer-prompt-injection\",\n      title: \"Repository text cannot steer the reviewer into certifying a page\",\n      threat:\n        \"A contributor who edits a catalogued page or source file makes the model reviewer mark false documentation as verified.\",\n      lookFor: [\n        \"ReviewPage prompt interpolating evidence, prior review, or correction text outside JSON.stringify so it can close the data frame.\",\n        \"A supported verdict accepted without assess() proving each quote is on the cited line and that a current-behavior section cites a non-self file.\",\n        \"The Jev citation classifier state carrying excerpt lines that the page excerpts hid, or a low-confidence answer counted as supported.\",\n        \"agentLayers in runtime.ts giving the reviewer a nonempty capabilityEnvelope or registry tools, so injected page text can act instead of only answer.\"\n      ],\n      paths: [\"workflow.ts\", \"evidence.ts\", \"jev-citations.ts\", \"operations.ts\", \"runtime.ts\"]\n    },\n    {\n      id: \"reused-review-trust\",\n      title: \"Reused reviews come only from intact, same-policy receipts\",\n      threat:\n        \"Whoever supplies a carried pool or a prior run id publishes a verified wiki whose reviews no model produced against the current source.\",\n      lookFor: [\n        \"load() accepting a caller pool whose policyDigest is computable from public files and whose candidates are not re-verified against a stored attempt.\",\n        \"loadRun() reading attempts from another execution or a non-terminal run, or picking between two successful receipts for one page.\",\n        \"select() reusing a review when inputDigest, contentDigest, sections, or reviewer changed, or when assess() fails.\"\n      ],\n      paths: [\"reuse.ts\"]\n    },\n    {\n      id: \"verification-status-integrity\",\n      title: \"A snapshot says verified only when every section passed review and the source is unchanged\",\n      threat:\n        \"A stale or partly reviewed wiki is published as verified and readers trust documentation that contradicts the code.\",\n      lookFor: [\n        \"write() computing verified without requiring a non-null reviewer and every section supported, or skipping the recollect digest comparison.\",\n        \"check() accepting a current.json whose pages, sources, or artifactDigest differ from the immutable snapshot, or --verified passing a non-verified snapshot.\",\n        \"check() accepting a verified pointer without a valid seal (HMAC of artifactDigest under the host key beside, never inside, the output), or write() placing that key where the output writer can read it.\",\n        \"The reviewer label in main.ts taken from SMITHERS_OPENAI_AUTH so a different provider route can reuse a prior approval.\"\n      ],\n      paths: [\"operations.ts\", \"main.ts\", \"reuse.ts\"]\n    }\n  ]\n})\nexport const Package = S.Package({ targets: { preview, freshness, verify, ...securityReview } })\n",
+      "source": "/** Exact code dependencies: no cross-package globs silently expanding to nothing. */\nimport { Smithers as S } from \"@smthrs/targets\"\nimport project from \"../../coding-project.json\" with { type: \"json\" }\n// The page catalog is the `pages` of the coding project; each page's document and inputs invalidate the wiki.\nconst sourceFiles = project.pages.flatMap((page) => [page.document, ...page.inputs])\nconst data = [\n  ...new Set([\n    ...sourceFiles,\n    \".smithers/coding-project.json\",\n    \".smithers/flows/wiki/schema.vibe\",\n    \".smithers/flows/wiki/evidence.ts\",\n    \".smithers/flows/wiki/flow.ts\",\n    \".smithers/flows/wiki/workflow.vibe\",\n    \".smithers/flows/wiki/operations.vibe\",\n    \".smithers/flows/wiki/main.ts\",\n    \".smithers/flows/wiki/runtime.vibe\",\n    \".smithers/flows/wiki/reuse.vibe\",\n    \".smithers/flows/wiki/jev-citations.vibe\",\n    \".smithers/flows/repository/jev-checks.vibe\",\n    \".smithers/flows/coding/schema.ts\",\n    \".smithers/flows/coding/wiki-output.vibe\",\n    \".smithers/flows/release-support/runtime.ts\"\n  ])\n].map((file) => S.file(`//${file}`))\nconst preview = S.Shell.Build({\n  bin: S.Runtime.bin,\n  args: [\"--import=vibelang/register\", \".smithers/flows/wiki/main.ts\"],\n  data,\n  timeout: \"10m\",\n  // main.ts runs from the workspace root and writes --root/.flows/wiki.\n  outDirs: [\"//.flows/wiki\"]\n})\nconst verify = S.Shell.Run({\n  bin: S.Runtime.bin,\n  args: [\"--import=vibelang/register\", \".smithers/flows/wiki/main.ts\", \"--verified\"],\n  data,\n  timeout: \"30m\"\n})\nconst freshness = S.Shell.Test({\n  bin: S.Runtime.bin,\n  args: [\"--import=vibelang/register\", \".smithers/flows/wiki/main.ts\", \"--check\"],\n  data: [preview, ...data],\n  timeout: \"5m\"\n})\nconst securityReview = S.SecurityReview({\n  cwd: \".smithers/flows/wiki\",\n  include: [\"*.ts\"],\n  checks: [\n    {\n      id: \"wiki-source-confinement\",\n      title: \"Page sources are repository-relative, non-private text files inside the root\",\n      threat:\n        \"A catalog entry or symlink in a contributed change copies a maintainer's secrets or files outside the repository into the published wiki snapshot and the reviewer prompt.\",\n      lookFor: [\n        \"safePath denying .env with a case-sensitive regex (no /i), so .ENV on a case-insensitive disk, .envrc, .npmrc, .dev.vars, *.pem, id_rsa, or a nested .git/.jj dir still pass.\",\n        \"read resolving realPath of root and file but comparing with a prefix check that a sibling directory such as <root>-other can pass.\",\n        \"check() reading pages/ or sources/ files via path.resolve(current.directory, input.path) and following a symlink before the realPath comparison runs.\"\n      ],\n      paths: [\"operations.ts\", \"main.ts\"]\n    },\n    {\n      id: \"wiki-output-confinement\",\n      title: \"Generation writes only inside a dedicated output directory under --root\",\n      threat:\n        \"A symlinked .flows or output parent committed in a contributed change makes a wiki run write snapshots and current.json outside the repository on the runner.\",\n      lookFor: [\n        \"main.ts relative() and write() realPath checks covering only the last output segment, so a symlinked .flows parent lets output resolve outside --root.\",\n        \"write() installing the snapshot, staging dir, or current.json pointer through a symlinked snapshots/ or output root without the realPath equality check.\",\n        \"Capability rules in main.ts granting fs:read on the whole root or resolve(output, \\\"..\\\") or fs:write beyond output/**.\",\n        \"flow.ts declaring capabilities fs:read:** and fs:write:** wider than its effects.writes .flows/wiki/**, so a host that trusts the declaration grants every path.\"\n      ],\n      paths: [\"main.ts\", \"operations.ts\", \"flow.ts\"]\n    },\n    {\n      id: \"reviewer-prompt-injection\",\n      title: \"Repository text cannot steer the reviewer into certifying a page\",\n      threat:\n        \"A contributor who edits a catalogued page or source file makes the model reviewer mark false documentation as verified.\",\n      lookFor: [\n        \"ReviewPage prompt interpolating evidence, prior review, or correction text outside JSON.stringify so it can close the data frame.\",\n        \"A supported verdict accepted without assess() proving each quote is on the cited line and that a current-behavior section cites a non-self file.\",\n        \"The Jev citation classifier state carrying excerpt lines that the page excerpts hid, or a low-confidence answer counted as supported.\",\n        \"agentLayers in runtime.ts giving the reviewer a nonempty capabilityEnvelope or registry tools, so injected page text can act instead of only answer.\"\n      ],\n      paths: [\"workflow.ts\", \"evidence.ts\", \"jev-citations.ts\", \"operations.ts\", \"runtime.ts\"]\n    },\n    {\n      id: \"reused-review-trust\",\n      title: \"Reused reviews come only from intact, same-policy receipts\",\n      threat:\n        \"Whoever supplies a carried pool or a prior run id publishes a verified wiki whose reviews no model produced against the current source.\",\n      lookFor: [\n        \"load() accepting a caller pool whose policyDigest is computable from public files and whose candidates are not re-verified against a stored attempt.\",\n        \"loadRun() reading attempts from another execution or a non-terminal run, or picking between two successful receipts for one page.\",\n        \"select() reusing a review when inputDigest, contentDigest, sections, or reviewer changed, or when assess() fails.\"\n      ],\n      paths: [\"reuse.ts\"]\n    },\n    {\n      id: \"verification-status-integrity\",\n      title: \"A snapshot says verified only when every section passed review and the source is unchanged\",\n      threat:\n        \"A stale or partly reviewed wiki is published as verified and readers trust documentation that contradicts the code.\",\n      lookFor: [\n        \"write() computing verified without requiring a non-null reviewer and every section supported, or skipping the recollect digest comparison.\",\n        \"check() accepting a current.json whose pages, sources, or artifactDigest differ from the immutable snapshot, or --verified passing a non-verified snapshot.\",\n        \"check() accepting a verified pointer without a valid seal (HMAC of artifactDigest under the host key beside, never inside, the output), or write() placing that key where the output writer can read it.\",\n        \"The reviewer label in main.ts taken from SMITHERS_OPENAI_AUTH so a different provider route can reuse a prior approval.\"\n      ],\n      paths: [\"operations.ts\", \"main.ts\", \"reuse.ts\"]\n    }\n  ]\n})\nexport const Package = S.Package({ targets: { preview, freshness, verify, ...securityReview } })\n",
       "coverageDirectives": [
         {
           "line": 47,
@@ -131,11 +131,11 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/workflow.ts"
+          "path": ".smithers/flows/wiki/workflow.vibe"
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/runtime.ts"
+          "path": ".smithers/flows/wiki/runtime.vibe"
         },
         {
           "kind": "file",
@@ -163,7 +163,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/wiki-policy.ts"
+          "path": ".smithers/flows/coding/wiki-policy.vibe"
         },
         {
           "kind": "file",
@@ -179,7 +179,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/request.ts"
+          "path": ".smithers/flows/coding/request.vibe"
         },
         {
           "kind": "file",
@@ -207,7 +207,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/poc-schema.ts"
+          "path": ".smithers/flows/coding/poc-schema.vibe"
         },
         {
           "kind": "file",
@@ -239,7 +239,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/checks.ts"
+          "path": ".smithers/flows/coding/checks.vibe"
         },
         {
           "kind": "file",
@@ -327,7 +327,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/schema.ts"
+          "path": ".smithers/flows/wiki/schema.vibe"
         },
         {
           "kind": "file",
@@ -339,7 +339,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/operations.ts"
+          "path": ".smithers/flows/wiki/operations.vibe"
         },
         {
           "kind": "file",
@@ -347,15 +347,15 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/reuse.ts"
+          "path": ".smithers/flows/wiki/reuse.vibe"
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/jev-citations.ts"
+          "path": ".smithers/flows/wiki/jev-citations.vibe"
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/repository/jev-checks.ts"
+          "path": ".smithers/flows/repository/jev-checks.vibe"
         },
         {
           "kind": "file",
@@ -363,7 +363,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/wiki-output.ts"
+          "path": ".smithers/flows/coding/wiki-output.vibe"
         },
         {
           "kind": "file",
@@ -464,11 +464,11 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/workflow.ts"
+          "path": ".smithers/flows/wiki/workflow.vibe"
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/runtime.ts"
+          "path": ".smithers/flows/wiki/runtime.vibe"
         },
         {
           "kind": "file",
@@ -496,7 +496,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/wiki-policy.ts"
+          "path": ".smithers/flows/coding/wiki-policy.vibe"
         },
         {
           "kind": "file",
@@ -512,7 +512,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/request.ts"
+          "path": ".smithers/flows/coding/request.vibe"
         },
         {
           "kind": "file",
@@ -540,7 +540,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/poc-schema.ts"
+          "path": ".smithers/flows/coding/poc-schema.vibe"
         },
         {
           "kind": "file",
@@ -572,7 +572,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/checks.ts"
+          "path": ".smithers/flows/coding/checks.vibe"
         },
         {
           "kind": "file",
@@ -660,7 +660,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/schema.ts"
+          "path": ".smithers/flows/wiki/schema.vibe"
         },
         {
           "kind": "file",
@@ -672,7 +672,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/operations.ts"
+          "path": ".smithers/flows/wiki/operations.vibe"
         },
         {
           "kind": "file",
@@ -680,15 +680,15 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/reuse.ts"
+          "path": ".smithers/flows/wiki/reuse.vibe"
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/jev-citations.ts"
+          "path": ".smithers/flows/wiki/jev-citations.vibe"
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/repository/jev-checks.ts"
+          "path": ".smithers/flows/repository/jev-checks.vibe"
         },
         {
           "kind": "file",
@@ -696,7 +696,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/wiki-output.ts"
+          "path": ".smithers/flows/coding/wiki-output.vibe"
         },
         {
           "kind": "file",
@@ -841,11 +841,11 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/workflow.ts"
+          "path": ".smithers/flows/wiki/workflow.vibe"
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/runtime.ts"
+          "path": ".smithers/flows/wiki/runtime.vibe"
         },
         {
           "kind": "file",
@@ -873,7 +873,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/wiki-policy.ts"
+          "path": ".smithers/flows/coding/wiki-policy.vibe"
         },
         {
           "kind": "file",
@@ -889,7 +889,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/request.ts"
+          "path": ".smithers/flows/coding/request.vibe"
         },
         {
           "kind": "file",
@@ -917,7 +917,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/poc-schema.ts"
+          "path": ".smithers/flows/coding/poc-schema.vibe"
         },
         {
           "kind": "file",
@@ -949,7 +949,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/checks.ts"
+          "path": ".smithers/flows/coding/checks.vibe"
         },
         {
           "kind": "file",
@@ -1037,7 +1037,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/schema.ts"
+          "path": ".smithers/flows/wiki/schema.vibe"
         },
         {
           "kind": "file",
@@ -1049,7 +1049,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/operations.ts"
+          "path": ".smithers/flows/wiki/operations.vibe"
         },
         {
           "kind": "file",
@@ -1057,15 +1057,15 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/reuse.ts"
+          "path": ".smithers/flows/wiki/reuse.vibe"
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/wiki/jev-citations.ts"
+          "path": ".smithers/flows/wiki/jev-citations.vibe"
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/repository/jev-checks.ts"
+          "path": ".smithers/flows/repository/jev-checks.vibe"
         },
         {
           "kind": "file",
@@ -1073,7 +1073,7 @@
         },
         {
           "kind": "file",
-          "path": ".smithers/flows/coding/wiki-output.ts"
+          "path": ".smithers/flows/coding/wiki-output.vibe"
         },
         {
           "kind": "file",

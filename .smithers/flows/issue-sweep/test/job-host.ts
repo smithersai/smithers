@@ -7,7 +7,7 @@ import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { makeJob } from "../vm.ts"
+import { makeJob } from "../vm.vibe"
 
 const [directory, backend, mode, key] = process.argv.slice(2) as [string, string, string, string]
 const handlePath = join(directory, "handle.json")

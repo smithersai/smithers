@@ -13,8 +13,8 @@ import {
   ReleaseError,
   Review,
   Thread
-} from "../release-support/schema.ts"
-import { ReleaseTemplate, TemplatePick } from "./jev-template.ts"
+} from "../release-support/schema.vibe"
+import { ReleaseTemplate, TemplatePick } from "./jev-template.vibe"
 
 const system = [
   "You write Smithers release materials. Smithers is a workflows product built on Flow.make, Action.make and Effect.",

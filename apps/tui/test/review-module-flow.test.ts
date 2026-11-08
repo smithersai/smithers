@@ -30,8 +30,8 @@ it("discovers, plans, starts and observes ordinary review with shared host servi
    const nodeControl = await import("@smthrs/cli/NodeControl")
    mock.module("@smthrs/cli/NodeControl", () => ({ ...nodeControl, layerSeatEvaluator: () => ScriptedJudge.layerAll }))
    const [FlowControl, Host] = await Promise.all([import(${
-      JSON.stringify(join(workspace, "apps/tui/src/flow-control.ts"))
-    }), import(${JSON.stringify(join(workspace, "apps/tui/src/host.ts"))})])
+      JSON.stringify(join(workspace, "apps/tui/src/flow-control.vibe"))
+    }), import(${JSON.stringify(join(workspace, "apps/tui/src/host.vibe"))})])
    const cwd = ${JSON.stringify(root)}
    const host = Host.make({ cwd, environment: {}, approvals: "all", judge: ScriptedJudge.layerAll })
    const port = FlowControl.make({ cwd, environment: {}, approvals: host.approvals })

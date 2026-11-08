@@ -5,9 +5,9 @@ import { Effect } from "effect"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type * as Host from "../src/host.ts"
+import type * as Host from "../src/host.vibe"
 import * as Print from "../src/print.ts"
-import * as Runtime from "../src/runtime.ts"
+import * as Runtime from "../src/runtime.vibe"
 import { Workspace } from "../src/workspace.ts"
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))

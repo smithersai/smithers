@@ -5,7 +5,7 @@ import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { layerWired } from "../../../packages/smithers/flows/flow/test/MemoryFlowRuntime.ts"
-import { checkDelegate, checkLayers } from "../coding/checks.ts"
+import { checkDelegate, checkLayers } from "../coding/checks.vibe"
 import { CodingError } from "../coding/schema.ts"
 
 test("a registered build-only check refuses before any source export or process", async () => {

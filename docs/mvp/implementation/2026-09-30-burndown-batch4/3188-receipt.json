@@ -21,7 +21,7 @@
     "apps/tui/src/main.tsx": "c25cffc96fb2c0e25b75a42cce72c8ad002cd2ffb0129d6fb29c0c2b835bee80",
     "apps/tui/src/run.tsx": "d58440e604ff8b74deef2b8228915347d765e2977f0c39c174e657afbf467fcf",
     "apps/tui/src/replay.ts": "07290b8c2584f86513c150058674ffec9a0f79e5673d79b2fca84442017a6906",
-    "apps/tui/src/host.ts": "b4afd9343b5e687bbfe521b66a02b0ea69c0d314d3ca56e5863a41d9673090ae",
+    "apps/tui/src/host.vibe": "b4afd9343b5e687bbfe521b66a02b0ea69c0d314d3ca56e5863a41d9673090ae",
     "apps/tui/e2e/tmux.ts": "68111e02b754efde3267ed702936f8e703861697ace4ed449d7cb110c6af1d2b",
     "apps/tui/e2e/command-routes.test.ts": "4996510068617d05883a0e96c215b427283b4f00dd378989595b4ebff4c59ca7",
     "packages/rpc/src/Mythical.ts": "4f86876b697e598febb74925fb1ccdf9ea3d291a69d47a1c515d1a500fe8691c",

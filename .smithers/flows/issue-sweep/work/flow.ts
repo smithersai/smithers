@@ -1,4 +1,4 @@
-import { awaitHostDisk, workspaceBytes } from "../disk.ts"
+import { awaitHostDisk, workspaceBytes } from "../disk.vibe"
 /**
  * `issue-sweep/work`: one coding agent fixes one issue in its own jj workspace,
  * on the next ready subscription account. The parent sweep already holds the
@@ -28,8 +28,8 @@ import {
   releaseJobAccount,
   reserveAccount,
   restoreJobAccount
-} from "../accounts.ts"
-import { issue } from "../github.ts"
+} from "../accounts.vibe"
+import { issue } from "../github.vibe"
 import {
   type HostFailed,
   output,
@@ -39,12 +39,12 @@ import {
   tail,
   workspaceName,
   workspaceOf
-} from "../host.ts"
-import { goCache, install } from "../land.ts"
-import { vmFields, vmOptions } from "../vm-options.ts"
-import * as LocalVm from "../vm.ts"
-import { assertNoClaudeLogin, readClaudeLogin, reserveRemoteAccount } from "./claude.ts"
-import * as Receipts from "./receipts.ts"
+} from "../host.vibe"
+import { goCache, install } from "../land.vibe"
+import { vmFields, vmOptions } from "../vm-options.vibe"
+import * as LocalVm from "../vm.vibe"
+import { assertNoClaudeLogin, readClaudeLogin, reserveRemoteAccount } from "./claude.vibe"
+import * as Receipts from "./receipts.vibe"
 
 const Payload = Schema.Struct({
   ...vmFields,

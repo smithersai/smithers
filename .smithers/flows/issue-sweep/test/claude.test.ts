@@ -9,8 +9,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import test from "node:test"
-import { makeAccountPicker, type Pools } from "../accounts.ts"
-import { guestCheckout } from "../vm.ts"
+import { makeAccountPicker, type Pools } from "../accounts.vibe"
+import { guestCheckout } from "../vm.vibe"
 import {
   assertNoClaudeLogin,
   claudeCommand,
@@ -19,7 +19,7 @@ import {
   guestClaudeHome,
   readClaudeLogin,
   reserveRemoteAccount
-} from "../work/claude.ts"
+} from "../work/claude.vibe"
 
 const token = "fake-subscription-token-for-tests"
 const accounts = (t: { after: (fn: () => void) => void }) => {

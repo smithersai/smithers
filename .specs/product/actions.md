@@ -35,135 +35,135 @@ The TODO flow: route, plan, implement, verify, review, correct, land, and refres
 
 | id | kind | source | what | runs in | MVP | renders as |
 | --- | --- | --- | --- | --- | --- | --- |
-| `coding/prepare-atom` | action | .smithers/flows/coding/atoms.ts:17 | Open the working copy for one atom | Machine | Keep | Opened the working copy |
-| `coding/prepare-atom-mutation` | action | .smithers/flows/coding/atoms.ts:23 | Record the atom's base before editing | Machine | Keep | Prepared to edit |
-| `coding/observe-atom` | action | .smithers/flows/coding/atoms.ts:39 | Capture the atom's resulting change | Machine | Keep | Saved the edit |
-| `coding/edit-atom` | agent action (coding/implement) | .smithers/flows/coding/atoms.ts:49 | Agent edits files for one atom | Machine | Keep | Edited the files |
-| `coding/check-command` | action | .smithers/flows/coding/checks.ts:20 | Run the check's command | Machine | Keep | Ran checks |
-| `coding/CommandCheck` | flow | .smithers/flows/coding/checks.ts:27 | Run one command as a check | Machine | Keep | Ran checks |
-| `coding/select-owner-repair` | agent action (coding/implement) | .smithers/flows/coding/correction.ts:142 | Agent picks which change owns a repair | Machine | Keep | Chose what to fix |
-| `coding/read-correction-history` | action | .smithers/flows/coding/correction.ts:155 | Read earlier correction rounds | Machine | Keep | Read earlier fixes |
-| `coding/prepare-repair-context` | action | .smithers/flows/coding/correction.ts:165 | Gather evidence for a repair | Machine | Keep | Gathered repair context |
-| `coding/prepare-owner-repair` | action | .smithers/flows/coding/correction.ts:170 | Set up the owner's repair | Machine | Keep | Prepared the repair |
-| `coding/prepare-return-mythical-tip` | action | .smithers/flows/coding/correction.ts:175 | Return to the stack tip after repair | Machine | Keep | Returned to the stack tip |
-| `coding/refresh-restacked-evidence` | action | .smithers/flows/coding/correction.ts:180 | Refresh evidence after a restack | Install | Keep | Refreshed evidence |
-| `coding/run-correction-round` | action | .smithers/flows/coding/correction.ts:185 | Run the correction round's edits | Machine | Keep | Fixed review findings |
-| `coding/finish-correction` | action | .smithers/flows/coding/correction.ts:191 | Finish a correction round | Machine | Keep | Finished the fix round |
-| `coding/record-learning` | action | .smithers/flows/coding/correction.ts:197 | Record what a correction taught | Machine | Keep | Saved a lesson |
-| `coding/begin-correction` | action | .smithers/flows/coding/correction.ts:202 | Start a correction round | Machine | Keep | Started a fix round |
-| `coding/RepairPass` | flow | .smithers/flows/coding/correction.ts:337 | One bounded owner repair pass | Machine | Keep | Repaired the change |
-| `coding/RecheckCorrected` | flow | .smithers/flows/coding/correction.ts:375 | Recheck after a correction | Machine | Keep | Re-checked the fix |
-| `coding/CorrectionRound` | flow | .smithers/flows/coding/correction.ts:390 | Run one correction round | Machine | Keep | Fixed review findings |
-| `coding/CorrectPlan` | flow | .smithers/flows/coding/correction.ts:410 | Plan and run correction rounds | Machine | Keep | Fixed review findings |
-| `coding/dispatch-turn` | agent action (?) | .smithers/flows/coding/dispatch.ts:152 | Agent works one turn in the workspace | Machine | Keep | Worked a turn |
-| `coding/observe-dispatch` | action | .smithers/flows/coding/dispatch.ts:167 | Record the turn's result | Machine | Keep | Saved the turn |
+| `coding/prepare-atom` | action | .smithers/flows/coding/atoms.vibe:17 | Open the working copy for one atom | Machine | Keep | Opened the working copy |
+| `coding/prepare-atom-mutation` | action | .smithers/flows/coding/atoms.vibe:23 | Record the atom's base before editing | Machine | Keep | Prepared to edit |
+| `coding/observe-atom` | action | .smithers/flows/coding/atoms.vibe:39 | Capture the atom's resulting change | Machine | Keep | Saved the edit |
+| `coding/edit-atom` | agent action (coding/implement) | .smithers/flows/coding/atoms.vibe:49 | Agent edits files for one atom | Machine | Keep | Edited the files |
+| `coding/check-command` | action | .smithers/flows/coding/checks.vibe:20 | Run the check's command | Machine | Keep | Ran checks |
+| `coding/CommandCheck` | flow | .smithers/flows/coding/checks.vibe:27 | Run one command as a check | Machine | Keep | Ran checks |
+| `coding/select-owner-repair` | agent action (coding/implement) | .smithers/flows/coding/correction.vibe:142 | Agent picks which change owns a repair | Machine | Keep | Chose what to fix |
+| `coding/read-correction-history` | action | .smithers/flows/coding/correction.vibe:155 | Read earlier correction rounds | Machine | Keep | Read earlier fixes |
+| `coding/prepare-repair-context` | action | .smithers/flows/coding/correction.vibe:165 | Gather evidence for a repair | Machine | Keep | Gathered repair context |
+| `coding/prepare-owner-repair` | action | .smithers/flows/coding/correction.vibe:170 | Set up the owner's repair | Machine | Keep | Prepared the repair |
+| `coding/prepare-return-mythical-tip` | action | .smithers/flows/coding/correction.vibe:175 | Return to the stack tip after repair | Machine | Keep | Returned to the stack tip |
+| `coding/refresh-restacked-evidence` | action | .smithers/flows/coding/correction.vibe:180 | Refresh evidence after a restack | Install | Keep | Refreshed evidence |
+| `coding/run-correction-round` | action | .smithers/flows/coding/correction.vibe:185 | Run the correction round's edits | Machine | Keep | Fixed review findings |
+| `coding/finish-correction` | action | .smithers/flows/coding/correction.vibe:191 | Finish a correction round | Machine | Keep | Finished the fix round |
+| `coding/record-learning` | action | .smithers/flows/coding/correction.vibe:197 | Record what a correction taught | Machine | Keep | Saved a lesson |
+| `coding/begin-correction` | action | .smithers/flows/coding/correction.vibe:202 | Start a correction round | Machine | Keep | Started a fix round |
+| `coding/RepairPass` | flow | .smithers/flows/coding/correction.vibe:337 | One bounded owner repair pass | Machine | Keep | Repaired the change |
+| `coding/RecheckCorrected` | flow | .smithers/flows/coding/correction.vibe:375 | Recheck after a correction | Machine | Keep | Re-checked the fix |
+| `coding/CorrectionRound` | flow | .smithers/flows/coding/correction.vibe:390 | Run one correction round | Machine | Keep | Fixed review findings |
+| `coding/CorrectPlan` | flow | .smithers/flows/coding/correction.vibe:410 | Plan and run correction rounds | Machine | Keep | Fixed review findings |
+| `coding/dispatch-turn` | agent action (?) | .smithers/flows/coding/dispatch.vibe:152 | Agent works one turn in the workspace | Machine | Keep | Worked a turn |
+| `coding/observe-dispatch` | action | .smithers/flows/coding/dispatch.vibe:167 | Record the turn's result | Machine | Keep | Saved the turn |
 | `coding/Dispatch` | flow | .smithers/flows/coding/dispatch/flow.ts:25 | Run one dispatched agent turn | Machine | Keep | Ran an agent turn |
-| `coding/record-fast-gated-progress` | action | .smithers/flows/coding/feedback.ts:23 | Record progress after quick checks | Machine | Keep | Recorded progress |
-| `coding/record-slow-feedback` | action | .smithers/flows/coding/feedback.ts:29 | Record feedback from slow checks | Machine | Keep | Recorded feedback |
-| `coding/ObservePlan` | flow | .smithers/flows/coding/feedback.ts:150 | Watch a plan run and record progress | Machine | Keep | Tracked progress |
-| `coding/read-feedback-cancellation` | action | .smithers/flows/coding/feedback.ts:162 | Read whether feedback was cancelled | Machine | Keep | Read your steer |
+| `coding/record-fast-gated-progress` | action | .smithers/flows/coding/feedback.vibe:23 | Record progress after quick checks | Machine | Keep | Recorded progress |
+| `coding/record-slow-feedback` | action | .smithers/flows/coding/feedback.vibe:29 | Record feedback from slow checks | Machine | Keep | Recorded feedback |
+| `coding/ObservePlan` | flow | .smithers/flows/coding/feedback.vibe:150 | Watch a plan run and record progress | Machine | Keep | Tracked progress |
+| `coding/read-feedback-cancellation` | action | .smithers/flows/coding/feedback.vibe:162 | Read whether feedback was cancelled | Machine | Keep | Read your steer |
 | `coding/ImplementPlan` | flow | .smithers/flows/coding/flow.ts:42 | Implement every atom of the plan | Machine | Keep | Implemented the plan |
 | `coding/ImplementAtom` | flow | .smithers/flows/coding/implementation/flow.ts:13 | Prepare, edit and observe one atom | Machine | Keep | Implemented one step |
 | `coding/ImplementAtoms` | flow | .smithers/flows/coding/implementation/flow.ts:86 | Implement atoms in order | Machine | Keep | Implemented the plan |
-| `coding/check-jev-rules` | action | .smithers/flows/coding/jev-check.ts:44 | Evaluate Jev rules on the change | Machine | Keep | Checked rules |
-| `coding/JevCheck` | flow | .smithers/flows/coding/jev-check.ts:51 | Check the change against Jev rules | Machine | Keep | Checked rules |
-| `coding/ReadNative` | action | .smithers/flows/coding/native.ts:305 | Read native jj changes | Install | Keep | Read the changes |
-| `coding/ApplyNative` | action | .smithers/flows/coding/native.ts:311 | Apply native jj changes | Install | Keep | Applied the changes |
-| `coding/configure-planning-wiki` | action | .smithers/flows/coding/planning-wiki.ts:37 | Choose the wiki the planner reads | Install | Keep | Chose wiki pages |
-| `coding/find-planning-wiki-review` | action | .smithers/flows/coding/planning-wiki.ts:43 | Find a recorded wiki review to reuse | Install | Keep | Found wiki notes |
-| `coding/refresh-planning-wiki` | action | .smithers/flows/coding/planning-wiki.ts:49 | Refresh wiki pages the plan needs | Install | Keep | Refreshed wiki pages |
-| `coding/RefreshWiki` | flow | .smithers/flows/coding/planning-wiki.ts:60 | Refresh planning wiki before planning | Install | Keep | Refreshed wiki pages |
-| `coding/gather-planning-context` | action | .smithers/flows/coding/planning.ts:82 | Collect wiki, code and history for planning | Machine | Keep | Gathered context |
-| `coding/review-request` | agent action (coding/plan) | .smithers/flows/coding/planning.ts:88 | Agent reviews the request for gaps | Machine | Keep | Reviewed the request |
-| `coding/draft-plan` | agent action (coding/plan) | .smithers/flows/coding/planning.ts:105 | Agent drafts the plan | Machine | Keep | Drafted the plan |
-| `coding/finalize-plan` | action | .smithers/flows/coding/planning.ts:123 | Settle the plan's atoms | Machine | Keep | Finalized the plan |
-| `coding/decline-request` | action | .smithers/flows/coding/planning.ts:129 | Decline a request with evidence | Machine | Keep | Declined the request |
-| `coding/verify-planning-context` | action | .smithers/flows/coding/planning.ts:134 | Check planning context is current | Machine | Keep | Checked the context |
-| `coding/PreparePlan` | flow | .smithers/flows/coding/planning.ts:142 | Gather context, review, draft and finalize plan | Machine | Keep | Planned the change |
-| `coding/capture-poc-source` | action | .smithers/flows/coding/poc.ts:21 | Capture the source for the prototype | Machine | Keep | Captured the source |
-| `coding/draft-poc` | agent action (coding/poc) | .smithers/flows/coding/poc.ts:27 | Agent proposes prototype file contents | Machine | Keep | Drafted a prototype |
-| `coding/materialize-poc` | action | .smithers/flows/coding/poc.ts:40 | Apply the prototype in isolation | Machine | Keep | Applied the prototype |
-| `coding/review-poc` | agent action (coding/poc) | .smithers/flows/coding/poc.ts:45 | Agent reviews the prototype | Machine | Keep | Reviewed the prototype |
-| `coding/retain-poc` | action | .smithers/flows/coding/poc.ts:66 | Save the prototype result | Machine | Keep | Saved the prototype |
-| `coding/Poc` | flow | .smithers/flows/coding/poc.ts:74 | Draft and review an unvalidated prototype | Machine | Keep | Drafted a prototype |
+| `coding/check-jev-rules` | action | .smithers/flows/coding/jev-check.vibe:44 | Evaluate Jev rules on the change | Machine | Keep | Checked rules |
+| `coding/JevCheck` | flow | .smithers/flows/coding/jev-check.vibe:51 | Check the change against Jev rules | Machine | Keep | Checked rules |
+| `coding/ReadNative` | action | .smithers/flows/coding/native.vibe:305 | Read native jj changes | Install | Keep | Read the changes |
+| `coding/ApplyNative` | action | .smithers/flows/coding/native.vibe:311 | Apply native jj changes | Install | Keep | Applied the changes |
+| `coding/configure-planning-wiki` | action | .smithers/flows/coding/planning-wiki.vibe:37 | Choose the wiki the planner reads | Install | Keep | Chose wiki pages |
+| `coding/find-planning-wiki-review` | action | .smithers/flows/coding/planning-wiki.vibe:43 | Find a recorded wiki review to reuse | Install | Keep | Found wiki notes |
+| `coding/refresh-planning-wiki` | action | .smithers/flows/coding/planning-wiki.vibe:49 | Refresh wiki pages the plan needs | Install | Keep | Refreshed wiki pages |
+| `coding/RefreshWiki` | flow | .smithers/flows/coding/planning-wiki.vibe:60 | Refresh planning wiki before planning | Install | Keep | Refreshed wiki pages |
+| `coding/gather-planning-context` | action | .smithers/flows/coding/planning.vibe:82 | Collect wiki, code and history for planning | Machine | Keep | Gathered context |
+| `coding/review-request` | agent action (coding/plan) | .smithers/flows/coding/planning.vibe:88 | Agent reviews the request for gaps | Machine | Keep | Reviewed the request |
+| `coding/draft-plan` | agent action (coding/plan) | .smithers/flows/coding/planning.vibe:105 | Agent drafts the plan | Machine | Keep | Drafted the plan |
+| `coding/finalize-plan` | action | .smithers/flows/coding/planning.vibe:123 | Settle the plan's atoms | Machine | Keep | Finalized the plan |
+| `coding/decline-request` | action | .smithers/flows/coding/planning.vibe:129 | Decline a request with evidence | Machine | Keep | Declined the request |
+| `coding/verify-planning-context` | action | .smithers/flows/coding/planning.vibe:134 | Check planning context is current | Machine | Keep | Checked the context |
+| `coding/PreparePlan` | flow | .smithers/flows/coding/planning.vibe:142 | Gather context, review, draft and finalize plan | Machine | Keep | Planned the change |
+| `coding/capture-poc-source` | action | .smithers/flows/coding/poc.vibe:21 | Capture the source for the prototype | Machine | Keep | Captured the source |
+| `coding/draft-poc` | agent action (coding/poc) | .smithers/flows/coding/poc.vibe:27 | Agent proposes prototype file contents | Machine | Keep | Drafted a prototype |
+| `coding/materialize-poc` | action | .smithers/flows/coding/poc.vibe:40 | Apply the prototype in isolation | Machine | Keep | Applied the prototype |
+| `coding/review-poc` | agent action (coding/poc) | .smithers/flows/coding/poc.vibe:45 | Agent reviews the prototype | Machine | Keep | Reviewed the prototype |
+| `coding/retain-poc` | action | .smithers/flows/coding/poc.vibe:66 | Save the prototype result | Machine | Keep | Saved the prototype |
+| `coding/Poc` | flow | .smithers/flows/coding/poc.vibe:74 | Draft and review an unvalidated prototype | Machine | Keep | Drafted a prototype |
 | `coding/PrepareRequest` | flow | .smithers/flows/coding/preparation.ts:8 | Prepare the request's first plan | Machine | Keep | Prepared the request |
 | `coding/Prototype` | flow | .smithers/flows/coding/prototype/flow.ts:10 | Draft a throwaway prototype for planning | Machine | Keep | Drafted a prototype |
 | `coding/merge-request-feedback` | action | .smithers/flows/coding/request/flow.ts:26 | Fold steer text into the request | Machine | Keep | Took in your steer |
 | `coding/refuse-plan-approval` | action | .smithers/flows/coding/request/flow.ts:31 | Refuse a plan approval that is not allowed | Machine | Keep | Refused a plan approval |
 | `coding/CoordinateRequest` | flow | .smithers/flows/coding/request/flow.ts:93 | Coordinate planning, POC and finalization | Machine | Keep | Worked the TODO |
 | `coding/Request` | flow | .smithers/flows/coding/request/flow.ts:158 | Plan, implement and prepare one request | Machine | Replaced by the `todo` flow (T-FLW-11): its steps survive inside the single run; this separate entry point is removed | Worked the TODO |
-| `coding/capture-review-check` | action | .smithers/flows/coding/review-check.ts:75 | Capture the change for review | Machine | Keep | Captured the change |
-| `coding/review-lens` | agent action (?) | .smithers/flows/coding/review-check.ts:83 | Agent reviews through one lens | Machine | Keep | Reviewed through one lens |
-| `coding/finish-review-check` | action | .smithers/flows/coding/review-check.ts:95 | Combine lens findings into a receipt | Machine | Keep | Collected review findings |
-| `coding/ReviewCapturedChange` | flow | .smithers/flows/coding/review-check.ts:102 | Review a captured change | Machine | Keep | Reviewed the change |
-| `coding/ReviewCheck` | flow | .smithers/flows/coding/review-check.ts:120 | Run review lenses on the change | Machine | Keep | Reviewed the change |
-| `coding/review-security` | action | .smithers/flows/coding/security-review-check.ts:97 | Agent reviews the change for security | Machine | Keep | Reviewed security |
-| `coding/SecurityReviewCheck` | flow | .smithers/flows/coding/security-review-check.ts:105 | Security review as a check | Machine | Keep | Reviewed security |
-| `coding/audit-security` | action | .smithers/flows/coding/security-review-check.ts:390 | Audit a revision for security issues | Machine | Keep | Audited security |
-| `coding/SecurityAudit` | flow | .smithers/flows/coding/security-review-check.ts:397 | Security audit of a revision | Machine | Keep | Audited security |
-| `coding/admit-retained-source` | action | .smithers/flows/coding/source-admission.ts:10 | Admit a retained source revision | Install | Keep | Opened the source |
-| `coding/prepare-stack-base` | action | .smithers/flows/coding/stack.ts:27 | Prepare the stack's base | Install | Keep | Prepared the stack |
-| `coding/create-stack-base` | action | .smithers/flows/coding/stack.ts:34 | Create the stack's base change | Install | Keep | Created the stack base |
-| `coding/receive-request-feedback` | action | .smithers/flows/coding/steering.ts:156 | Wait for steer on the request | Machine | Keep | Waited for your steer |
-| `factory/route-todo` | action | .smithers/flows/coding/todo.ts:45 | Jev picks implement, bug, feature or close | Machine | Keep | Chose how to start |
-| `factory/stamp-route` | action | .smithers/flows/coding/todo.ts:57 | Fail a declined TODO with its route | Machine | Keep | Declined the TODO |
-| `factory/Todo` | flow | .smithers/flows/coding/todo.ts:78 | Route a TODO, then plan it | Machine | Keep | Routed the TODO |
-| `coding/todo-delivery` | action | .smithers/flows/coding/todo.ts:39 | Resolve the planned request for delivery | Machine | Keep | Prepared the delivery |
-| `coding/todo-pause-requested` | action | .smithers/flows/coding/todo-pause.ts:10 | Read whether a person asked the TODO to pause | Machine | Keep | - |
+| `coding/capture-review-check` | action | .smithers/flows/coding/review-check.vibe:75 | Capture the change for review | Machine | Keep | Captured the change |
+| `coding/review-lens` | agent action (?) | .smithers/flows/coding/review-check.vibe:83 | Agent reviews through one lens | Machine | Keep | Reviewed through one lens |
+| `coding/finish-review-check` | action | .smithers/flows/coding/review-check.vibe:95 | Combine lens findings into a receipt | Machine | Keep | Collected review findings |
+| `coding/ReviewCapturedChange` | flow | .smithers/flows/coding/review-check.vibe:102 | Review a captured change | Machine | Keep | Reviewed the change |
+| `coding/ReviewCheck` | flow | .smithers/flows/coding/review-check.vibe:120 | Run review lenses on the change | Machine | Keep | Reviewed the change |
+| `coding/review-security` | action | .smithers/flows/coding/security-review-check.vibe:97 | Agent reviews the change for security | Machine | Keep | Reviewed security |
+| `coding/SecurityReviewCheck` | flow | .smithers/flows/coding/security-review-check.vibe:105 | Security review as a check | Machine | Keep | Reviewed security |
+| `coding/audit-security` | action | .smithers/flows/coding/security-review-check.vibe:390 | Audit a revision for security issues | Machine | Keep | Audited security |
+| `coding/SecurityAudit` | flow | .smithers/flows/coding/security-review-check.vibe:397 | Security audit of a revision | Machine | Keep | Audited security |
+| `coding/admit-retained-source` | action | .smithers/flows/coding/source-admission.vibe:10 | Admit a retained source revision | Install | Keep | Opened the source |
+| `coding/prepare-stack-base` | action | .smithers/flows/coding/stack.vibe:27 | Prepare the stack's base | Install | Keep | Prepared the stack |
+| `coding/create-stack-base` | action | .smithers/flows/coding/stack.vibe:34 | Create the stack's base change | Install | Keep | Created the stack base |
+| `coding/receive-request-feedback` | action | .smithers/flows/coding/steering.vibe:156 | Wait for steer on the request | Machine | Keep | Waited for your steer |
+| `factory/route-todo` | action | .smithers/flows/coding/todo.vibe:45 | Jev picks implement, bug, feature or close | Machine | Keep | Chose how to start |
+| `factory/stamp-route` | action | .smithers/flows/coding/todo.vibe:57 | Fail a declined TODO with its route | Machine | Keep | Declined the TODO |
+| `factory/Todo` | flow | .smithers/flows/coding/todo.vibe:78 | Route a TODO, then plan it | Machine | Keep | Routed the TODO |
+| `coding/todo-delivery` | action | .smithers/flows/coding/todo.vibe:39 | Resolve the planned request for delivery | Machine | Keep | Prepared the delivery |
+| `coding/todo-pause-requested` | action | .smithers/flows/coding/todo-pause.vibe:10 | Read whether a person asked the TODO to pause | Machine | Keep | - |
 | `system/human-task` | action | packages/smithers/flows/flow/src/HumanTask.ts:135 | Wait for a person's answer | Machine | Keep | Waited for your answer |
-| `coding/todo-resume` | action | .smithers/flows/coding/todo-pause.ts:37 | Read whether a person resumed a paused TODO | Machine | Keep | - |
+| `coding/todo-resume` | action | .smithers/flows/coding/todo-pause.vibe:37 | Read whether a person resumed a paused TODO | Machine | Keep | - |
 | `system/wait-for` | action | packages/smithers/flows/flow/src/WaitFor.ts:66 | Wait durably for a signal (the TODO's pause watch) | Machine | Keep | - |
 | `system/sleep` | action | packages/smithers/flows/flow/src/Sleep.ts:66 | Sleep durably | Machine | Keep | - |
-| `coding/admit-verify-source` | action | .smithers/flows/coding/verify-schema.ts:34 | Admit the candidate source for verify | Machine | Keep | Opened the candidate |
+| `coding/admit-verify-source` | action | .smithers/flows/coding/verify-schema.vibe:34 | Admit the candidate source for verify | Machine | Keep | Opened the candidate |
 | `coding/Verify` | flow | .smithers/flows/coding/verify/flow.ts:16 | Re-run required checks on a rebased candidate | Machine | Replaced by the `todo` flow (T-FLW-11): its steps survive inside the single run; this separate entry point is removed | Re-ran checks |
-| `coding/fence-vibe-source` | action | .smithers/flows/coding/vibe-admission.ts:19 | Pin the exact source being landed | Install | Keep | Pinned the change |
-| `coding/VerifyVibe` | flow | .smithers/flows/coding/vibe-admission.ts:25 | Verify the request before landing | Install | Keep | Verified before landing |
-| `coding/AdmitVibe` | flow | .smithers/flows/coding/vibe-admission.ts:58 | Admit the request's source for landing | Install | Keep | Opened the change for landing |
-| `coding/review-final-history` | agent action (coding/implement) | .smithers/flows/coding/vibe-cleanup.ts:35 | Agent reviews the final history | Machine | Keep | Reviewed the history |
-| `coding/repair-final-history` | agent action (coding/implement) | .smithers/flows/coding/vibe-cleanup.ts:47 | Agent corrects a refused final history once | Machine | Keep | Corrected the history |
-| `coding/validate-final-history` | action | .smithers/flows/coding/vibe-cleanup.ts:56 | Validate the final history | Machine | Keep | Checked the history |
-| `coding/prepare-final-description` | action | .smithers/flows/coding/vibe-cleanup.ts:62 | Prepare the final description | Machine | Keep | Drafted the commit message |
-| `coding/confirm-final-description` | action | .smithers/flows/coding/vibe-cleanup.ts:68 | Confirm the final description | Machine | Keep | Confirmed the commit message |
-| `coding/DescribeFinalAtom` | flow | .smithers/flows/coding/vibe-cleanup.ts:74 | Describe the final commit | Install | Keep | Wrote the commit message |
-| `coding/refresh-final-history` | action | .smithers/flows/coding/vibe-cleanup.ts:84 | Refresh history after rewrite | Machine | Keep | Refreshed the history |
-| `coding/RecheckFinalHistory` | flow | .smithers/flows/coding/vibe-cleanup.ts:91 | Recheck the rewritten history | Machine | Keep | Re-checked the history |
-| `coding/finish-final-history` | action | .smithers/flows/coding/vibe-cleanup.ts:135 | Finish the history rewrite | Machine | Keep | Finished the history |
-| `coding/RewriteFinalHistory` | flow | .smithers/flows/coding/vibe-cleanup.ts:141 | Rewrite final commit history | Install | Keep | Tidied the history |
-| `coding/ProposeFinalHistory` | flow | .smithers/flows/coding/vibe-cleanup.ts:168 | Review the final history, repairing a refusal once | Machine | Keep | Reviewed the history |
-| `coding/CleanVibeHistory` | flow | .smithers/flows/coding/vibe-cleanup.ts:187 | Tidy the change's final history | Install | Keep | Tidied the history |
-| `coding/read-vibe-request` | action | .smithers/flows/coding/vibe-evidence.ts:18 | Read the request being landed | Install | Keep | Read the request |
-| `coding/read-vibe-lander` | action | .smithers/flows/coding/vibe-lander.ts:9 | Read the lander's state | Install | Keep | Read landing state |
-| `coding/read-vibe-stack` | action | .smithers/flows/coding/vibe-landing.ts:47 | Read the stack | Install | Keep | Read the stack |
-| `coding/submit-vibe-lane` | action | .smithers/flows/coding/vibe-landing.ts:53 | Submit the change to its lane | Install | Keep | Queued the change |
-| `coding/read-vibe-delivery` | action | .smithers/flows/coding/vibe-landing.ts:60 | Read delivery status | Install | Keep | Read delivery status |
-| `coding/open-vibe-pull` | action | .smithers/flows/coding/vibe-landing.ts:66 | Open the GitHub pull request | Install | Keep | Opened the pull request |
-| `coding/prepare-vibe-append` | action | .smithers/flows/coding/vibe-landing.ts:72 | Prepare to append to the stack | Install | Keep | Prepared to add to the stack |
-| `coding/create-vibe-landing` | action | .smithers/flows/coding/vibe-landing.ts:78 | Create the landing record | Install | Keep | Added to the stack |
-| `coding/queue-vibe-append` | action | .smithers/flows/coding/vibe-landing.ts:84 | Queue the stack append | Install | Keep | Queued for the stack |
-| `coding/observe-vibe-append` | action | .smithers/flows/coding/vibe-landing.ts:90 | Watch the append finish | Install | Keep | Added to the stack |
-| `coding/verify-vibe-landed` | action | .smithers/flows/coding/vibe-landing.ts:96 | Check the change landed | Install | Keep | Confirmed it landed |
-| `coding/prepare-vibe-candidate` | action | .smithers/flows/coding/vibe-landing.ts:107 | Prepare the local candidate | Install | Keep | Prepared the change |
-| `coding/fast-forward-vibe` | action | .smithers/flows/coding/vibe-landing.ts:114 | Fast-forward the local ref | Install | Keep | Moved the branch forward |
-| `coding/open-vibe-local-pull` | action | .smithers/flows/coding/vibe-landing.ts:120 | Open a local pull request | Install | Keep | Opened the pull request |
-| `coding/observe-vibe-pull-checks` | action | .smithers/flows/coding/vibe-landing.ts:126 | Watch the pull request's checks | Machine | Keep | Watched PR checks |
-| `coding/merge-vibe-local-pull` | action | .smithers/flows/coding/vibe-landing.ts:133 | Merge the local pull request | Install | Keep | Merged the change |
-| `coding/LandVibe` | flow | .smithers/flows/coding/vibe-landing.ts:271 | Append, open PR and land the change | Install | Keep | Landed the change |
-| `coding/publish-vibe-source` | action | .smithers/flows/coding/vibe-publication.ts:9 | Publish the verified source | Install | Keep | Published the change |
-| `coding/PublishVibeSource` | flow | .smithers/flows/coding/vibe-publication.ts:17 | Publish the source to the stack | Install | Keep | Published the change |
+| `coding/fence-vibe-source` | action | .smithers/flows/coding/vibe-admission.vibe:19 | Pin the exact source being landed | Install | Keep | Pinned the change |
+| `coding/VerifyVibe` | flow | .smithers/flows/coding/vibe-admission.vibe:25 | Verify the request before landing | Install | Keep | Verified before landing |
+| `coding/AdmitVibe` | flow | .smithers/flows/coding/vibe-admission.vibe:58 | Admit the request's source for landing | Install | Keep | Opened the change for landing |
+| `coding/review-final-history` | agent action (coding/implement) | .smithers/flows/coding/vibe-cleanup.vibe:35 | Agent reviews the final history | Machine | Keep | Reviewed the history |
+| `coding/repair-final-history` | agent action (coding/implement) | .smithers/flows/coding/vibe-cleanup.vibe:47 | Agent corrects a refused final history once | Machine | Keep | Corrected the history |
+| `coding/validate-final-history` | action | .smithers/flows/coding/vibe-cleanup.vibe:56 | Validate the final history | Machine | Keep | Checked the history |
+| `coding/prepare-final-description` | action | .smithers/flows/coding/vibe-cleanup.vibe:62 | Prepare the final description | Machine | Keep | Drafted the commit message |
+| `coding/confirm-final-description` | action | .smithers/flows/coding/vibe-cleanup.vibe:68 | Confirm the final description | Machine | Keep | Confirmed the commit message |
+| `coding/DescribeFinalAtom` | flow | .smithers/flows/coding/vibe-cleanup.vibe:74 | Describe the final commit | Install | Keep | Wrote the commit message |
+| `coding/refresh-final-history` | action | .smithers/flows/coding/vibe-cleanup.vibe:84 | Refresh history after rewrite | Machine | Keep | Refreshed the history |
+| `coding/RecheckFinalHistory` | flow | .smithers/flows/coding/vibe-cleanup.vibe:91 | Recheck the rewritten history | Machine | Keep | Re-checked the history |
+| `coding/finish-final-history` | action | .smithers/flows/coding/vibe-cleanup.vibe:135 | Finish the history rewrite | Machine | Keep | Finished the history |
+| `coding/RewriteFinalHistory` | flow | .smithers/flows/coding/vibe-cleanup.vibe:141 | Rewrite final commit history | Install | Keep | Tidied the history |
+| `coding/ProposeFinalHistory` | flow | .smithers/flows/coding/vibe-cleanup.vibe:168 | Review the final history, repairing a refusal once | Machine | Keep | Reviewed the history |
+| `coding/CleanVibeHistory` | flow | .smithers/flows/coding/vibe-cleanup.vibe:187 | Tidy the change's final history | Install | Keep | Tidied the history |
+| `coding/read-vibe-request` | action | .smithers/flows/coding/vibe-evidence.vibe:18 | Read the request being landed | Install | Keep | Read the request |
+| `coding/read-vibe-lander` | action | .smithers/flows/coding/vibe-lander.vibe:9 | Read the lander's state | Install | Keep | Read landing state |
+| `coding/read-vibe-stack` | action | .smithers/flows/coding/vibe-landing.vibe:47 | Read the stack | Install | Keep | Read the stack |
+| `coding/submit-vibe-lane` | action | .smithers/flows/coding/vibe-landing.vibe:53 | Submit the change to its lane | Install | Keep | Queued the change |
+| `coding/read-vibe-delivery` | action | .smithers/flows/coding/vibe-landing.vibe:60 | Read delivery status | Install | Keep | Read delivery status |
+| `coding/open-vibe-pull` | action | .smithers/flows/coding/vibe-landing.vibe:66 | Open the GitHub pull request | Install | Keep | Opened the pull request |
+| `coding/prepare-vibe-append` | action | .smithers/flows/coding/vibe-landing.vibe:72 | Prepare to append to the stack | Install | Keep | Prepared to add to the stack |
+| `coding/create-vibe-landing` | action | .smithers/flows/coding/vibe-landing.vibe:78 | Create the landing record | Install | Keep | Added to the stack |
+| `coding/queue-vibe-append` | action | .smithers/flows/coding/vibe-landing.vibe:84 | Queue the stack append | Install | Keep | Queued for the stack |
+| `coding/observe-vibe-append` | action | .smithers/flows/coding/vibe-landing.vibe:90 | Watch the append finish | Install | Keep | Added to the stack |
+| `coding/verify-vibe-landed` | action | .smithers/flows/coding/vibe-landing.vibe:96 | Check the change landed | Install | Keep | Confirmed it landed |
+| `coding/prepare-vibe-candidate` | action | .smithers/flows/coding/vibe-landing.vibe:107 | Prepare the local candidate | Install | Keep | Prepared the change |
+| `coding/fast-forward-vibe` | action | .smithers/flows/coding/vibe-landing.vibe:114 | Fast-forward the local ref | Install | Keep | Moved the branch forward |
+| `coding/open-vibe-local-pull` | action | .smithers/flows/coding/vibe-landing.vibe:120 | Open a local pull request | Install | Keep | Opened the pull request |
+| `coding/observe-vibe-pull-checks` | action | .smithers/flows/coding/vibe-landing.vibe:126 | Watch the pull request's checks | Machine | Keep | Watched PR checks |
+| `coding/merge-vibe-local-pull` | action | .smithers/flows/coding/vibe-landing.vibe:133 | Merge the local pull request | Install | Keep | Merged the change |
+| `coding/LandVibe` | flow | .smithers/flows/coding/vibe-landing.vibe:271 | Append, open PR and land the change | Install | Keep | Landed the change |
+| `coding/publish-vibe-source` | action | .smithers/flows/coding/vibe-publication.vibe:9 | Publish the verified source | Install | Keep | Published the change |
+| `coding/PublishVibeSource` | flow | .smithers/flows/coding/vibe-publication.vibe:17 | Publish the source to the stack | Install | Keep | Published the change |
 | `coding/Vibe` | flow | .smithers/flows/coding/vibe/flow.ts:13 | Land one approved request | Machine | Replaced by the `todo` flow (T-FLW-11): its steps survive inside the single run; this separate entry point is removed | Landed the change |
-| `coding/capture-wiki-check` | action | .smithers/flows/coding/wiki-check.ts:51 | Capture wiki state for checking | Machine | Keep | Captured the wiki |
-| `coding/finish-wiki-check` | action | .smithers/flows/coding/wiki-check.ts:57 | Turn wiki review into a receipt | Machine | Keep | Checked the wiki |
-| `coding/ReviewCapturedWiki` | flow | .smithers/flows/coding/wiki-check.ts:82 | Review a captured wiki state | Install | Keep | Checked the wiki |
-| `coding/WikiCheck` | flow | .smithers/flows/coding/wiki-check.ts:93 | Check the wiki against the revision | Machine | Keep | Checked the wiki |
-| `coding/import-dependency-docs` | action | .smithers/flows/coding/wiki-refresh.ts:55 | Import dependency docs to the wiki | Install | Keep | Imported dependency docs |
-| `coding/install-dependency-pages` | action | .smithers/flows/coding/wiki-refresh.ts:66 | Install dependency wiki pages | Install | Keep | Added dependency pages |
-| `coding/read-published-wiki` | action | .smithers/flows/coding/wiki-refresh.ts:95 | Read the published wiki | Install | Keep | Read the wiki |
+| `coding/capture-wiki-check` | action | .smithers/flows/coding/wiki-check.vibe:51 | Capture wiki state for checking | Machine | Keep | Captured the wiki |
+| `coding/finish-wiki-check` | action | .smithers/flows/coding/wiki-check.vibe:57 | Turn wiki review into a receipt | Machine | Keep | Checked the wiki |
+| `coding/ReviewCapturedWiki` | flow | .smithers/flows/coding/wiki-check.vibe:82 | Review a captured wiki state | Install | Keep | Checked the wiki |
+| `coding/WikiCheck` | flow | .smithers/flows/coding/wiki-check.vibe:93 | Check the wiki against the revision | Machine | Keep | Checked the wiki |
+| `coding/import-dependency-docs` | action | .smithers/flows/coding/wiki-refresh.vibe:55 | Import dependency docs to the wiki | Install | Keep | Imported dependency docs |
+| `coding/install-dependency-pages` | action | .smithers/flows/coding/wiki-refresh.vibe:66 | Install dependency wiki pages | Install | Keep | Added dependency pages |
+| `coding/read-published-wiki` | action | .smithers/flows/coding/wiki-refresh.vibe:95 | Read the published wiki | Install | Keep | Read the wiki |
 | `coding/Wiki` | flow | .smithers/flows/coding/wiki/flow.ts:17 | Refresh wiki pages after a fold | Machine | Keep | Refreshed the wiki |
-| `coding/validate-plan` | action | .smithers/flows/coding/workflow.ts:22 | Validate the plan's shape | Machine | Keep | Checked the plan |
-| `coding/implement-change` | action | .smithers/flows/coding/workflow.ts:27 | Run the change's implement step | Machine | Keep | Implemented the change |
-| `coding/check` | action | .smithers/flows/coding/workflow.ts:38 | Run a declared check on the change | Machine | Keep | Ran checks |
-| `coding/fast-gate` | action | .smithers/flows/coding/workflow.ts:43 | Run quick checks before review | Machine | Keep | Ran quick checks |
-| `coding/assess` | action | .smithers/flows/coding/workflow.ts:53 | Judge whether the change meets the plan | Machine | Keep | Assessed the change |
+| `coding/validate-plan` | action | .smithers/flows/coding/workflow.vibe:22 | Validate the plan's shape | Machine | Keep | Checked the plan |
+| `coding/implement-change` | action | .smithers/flows/coding/workflow.vibe:27 | Run the change's implement step | Machine | Keep | Implemented the change |
+| `coding/check` | action | .smithers/flows/coding/workflow.vibe:38 | Run a declared check on the change | Machine | Keep | Ran checks |
+| `coding/fast-gate` | action | .smithers/flows/coding/workflow.vibe:43 | Run quick checks before review | Machine | Keep | Ran quick checks |
+| `coding/assess` | action | .smithers/flows/coding/workflow.vibe:53 | Judge whether the change meets the plan | Machine | Keep | Assessed the change |
 
 ### Current TODO composition controls (T-CAT-01, E-19)
 
@@ -171,13 +171,13 @@ These machine-side steps use the attempt pin and existing install admission. A `
 
 | id | kind | source | what | runs in | MVP | renders as |
 | --- | --- | --- | --- | --- | --- | --- |
-| `stack.candidate` | action | .smithers/flows/coding/stack.ts:50 | Submit the current attempt candidate | Machine | Keep | Saved the candidate |
-| `stack.propose` | action | .smithers/flows/coding/stack.ts:56 | Submit the verified candidate for publication | Machine | Keep | Proposed the candidate |
-| `coding/todo-review-input` | action | .smithers/flows/coding/todo.ts:52 | Await the next committed review or steer input | Machine | Keep | - |
-| `coding/todo-review` | flow | .smithers/flows/coding/todo.ts:97 | Continue the same attempt after review input | Machine | Keep | - |
-| `coding/todo-boundary` | flow | .smithers/flows/coding/todo-pause.ts:54 | Park and resume at a safe TODO boundary | Machine | Keep | - |
+| `stack.candidate` | action | .smithers/flows/coding/stack.vibe:50 | Submit the current attempt candidate | Machine | Keep | Saved the candidate |
+| `stack.propose` | action | .smithers/flows/coding/stack.vibe:56 | Submit the verified candidate for publication | Machine | Keep | Proposed the candidate |
+| `coding/todo-review-input` | action | .smithers/flows/coding/todo.vibe:52 | Await the next committed review or steer input | Machine | Keep | - |
+| `coding/todo-review` | flow | .smithers/flows/coding/todo.vibe:97 | Continue the same attempt after review input | Machine | Keep | - |
+| `coding/todo-boundary` | flow | .smithers/flows/coding/todo-pause.vibe:54 | Park and resume at a safe TODO boundary | Machine | Keep | - |
 | `coding/FlowLoad` | flow | .smithers/flows/coding/flow-load/flow.ts:12 | Validate the pinned repository flow source | Machine | Keep | Validated the flows |
-| `coding/load-flows` | action | .smithers/flows/coding/flow-load.ts:69 | Typecheck the immutable flow source without executing it | Machine | Keep | Validated the flows |
+| `coding/load-flows` | action | .smithers/flows/coding/flow-load.vibe:69 | Typecheck the immutable flow source without executing it | Machine | Keep | Validated the flows |
 
 ## C.2 review
 
@@ -206,17 +206,17 @@ Generated wiki pages with cited, reviewed content and incremental reuse.
 | id | kind | source | what | runs in | MVP | renders as |
 | --- | --- | --- | --- | --- | --- | --- |
 | `smithers/Wiki` | flow | .smithers/flows/wiki/flow.ts:9 | Build and review wiki pages | Machine | Keep | Refreshed the wiki |
-| `wiki/load-recorded-reviews` | action | .smithers/flows/wiki/reuse.ts:54 | Load earlier page reviews | Install | Keep | Found earlier reviews |
-| `wiki/select-recorded-review` | action | .smithers/flows/wiki/reuse.ts:59 | Choose a reusable review | Install | Keep | Reused a review |
-| `wiki/bind-review-provenance` | action | .smithers/flows/wiki/reuse.ts:64 | Bind a review to its source | Install | Keep | Linked a review to its source |
-| `wiki/publish-recorded-reviews` | action | .smithers/flows/wiki/reuse.ts:69 | Publish reused reviews | Install | Keep | Saved wiki pages |
-| `smithers/IncrementalWiki` | flow | .smithers/flows/wiki/reuse.ts:75 | Re-review only changed wiki sections | Install | Keep | Refreshed the wiki |
-| `wiki/collect-page` | action | .smithers/flows/wiki/workflow.ts:10 | Collect a page's sources | Install | Keep | Collected sources for a page |
-| `wiki/review-page` | agent action (wiki/reviewer) | .smithers/flows/wiki/workflow.ts:16 | Agent writes or reviews a page | Machine | Keep | Reviewed a wiki page |
-| `wiki/validate-review` | action | .smithers/flows/wiki/workflow.ts:47 | Validate the page review | Install | Keep | Checked a wiki page |
-| `wiki/check-citations` | action | .smithers/flows/wiki/workflow.ts:58 | Check page citations | Install | Keep | Checked citations |
-| `wiki/assess-review` | action | .smithers/flows/wiki/workflow.ts:98 | Judge the review's quality | Install | Keep | Assessed a wiki page |
-| `wiki/write-snapshot` | action | .smithers/flows/wiki/workflow.ts:103 | Write the wiki snapshot | Install | Keep | Saved wiki pages |
+| `wiki/load-recorded-reviews` | action | .smithers/flows/wiki/reuse.vibe:54 | Load earlier page reviews | Install | Keep | Found earlier reviews |
+| `wiki/select-recorded-review` | action | .smithers/flows/wiki/reuse.vibe:59 | Choose a reusable review | Install | Keep | Reused a review |
+| `wiki/bind-review-provenance` | action | .smithers/flows/wiki/reuse.vibe:64 | Bind a review to its source | Install | Keep | Linked a review to its source |
+| `wiki/publish-recorded-reviews` | action | .smithers/flows/wiki/reuse.vibe:69 | Publish reused reviews | Install | Keep | Saved wiki pages |
+| `smithers/IncrementalWiki` | flow | .smithers/flows/wiki/reuse.vibe:75 | Re-review only changed wiki sections | Install | Keep | Refreshed the wiki |
+| `wiki/collect-page` | action | .smithers/flows/wiki/workflow.vibe:10 | Collect a page's sources | Install | Keep | Collected sources for a page |
+| `wiki/review-page` | agent action (wiki/reviewer) | .smithers/flows/wiki/workflow.vibe:16 | Agent writes or reviews a page | Machine | Keep | Reviewed a wiki page |
+| `wiki/validate-review` | action | .smithers/flows/wiki/workflow.vibe:47 | Validate the page review | Install | Keep | Checked a wiki page |
+| `wiki/check-citations` | action | .smithers/flows/wiki/workflow.vibe:58 | Check page citations | Install | Keep | Checked citations |
+| `wiki/assess-review` | action | .smithers/flows/wiki/workflow.vibe:98 | Judge the review's quality | Install | Keep | Assessed a wiki page |
+| `wiki/write-snapshot` | action | .smithers/flows/wiki/workflow.vibe:103 | Write the wiki snapshot | Install | Keep | Saved wiki pages |
 
 ## C.4 memory
 
@@ -313,97 +313,97 @@ The old job machinery: issue and PR jobs, replies, setup, evaluation, triggers, 
 
 | id | kind | source | what | runs in | MVP | renders as |
 | --- | --- | --- | --- | --- | --- | --- |
-| `repository/register-candidate` | action | .smithers/flows/repository/activation.ts:92 | Register a candidate setup | Install | Cut | - |
-| `repository/RegisterCandidate` | flow | .smithers/flows/repository/activation.ts:98 | Register a candidate flow | Install | Cut | - |
-| `repository/probe-trial` | action | .smithers/flows/repository/activation.ts:112 | Trial a candidate setup | Install | Cut | - |
-| `repository/request-manual` | action | .smithers/flows/repository/activation.ts:134 | Request a manual run | Install | Cut | - |
-| `repository/DispatchManual` | flow | .smithers/flows/repository/activation.ts:140 | Dispatch a manual run | Install | Cut | - |
-| `repository/probe-manual` | action | .smithers/flows/repository/activation.ts:146 | Probe a manual run | Install | Cut | - |
-| `repository/draft-change` | agent action (repository/author) | .smithers/flows/repository/changes.ts:34 | Agent drafts a change for an issue | Install | Defer §14 | - |
-| `repository/select-change-source` | action | .smithers/flows/repository/changes.ts:52 | Choose the change's source | Install | Defer §14 | - |
-| `repository/prepare-change` | action | .smithers/flows/repository/changes.ts:65 | Prepare a proposed change | Install | Defer §14 | - |
-| `repository/retain-proposed-change` | action | .smithers/flows/repository/changes.ts:71 | Save a proposed change | Install | Defer §14 | - |
-| `repository/prepare-change-entry` | action | .smithers/flows/repository/changes.ts:76 | Prepare the change entry | Install | Defer §14 | - |
-| `repository/create-native-source` | action | .smithers/flows/repository/changes.ts:82 | Create a native source | Install | Defer §14 | - |
-| `repository/verify-written-change` | action | .smithers/flows/repository/changes.ts:88 | Verify the written change | Install | Defer §14 | - |
-| `repository/retain-source-admission-failure` | action | .smithers/flows/repository/changes.ts:94 | Save a source admission failure | Install | Defer §14 | - |
-| `repository/ApplyChange` | flow | .smithers/flows/repository/changes.ts:106 | Apply a drafted change | Install | Defer §14 | - |
-| `repository/ProposalStep` | flow | .smithers/flows/repository/changes.ts:202 | Propose a change from an issue | Install | Defer §14 | - |
-| `repository/capture-checks` | action | .smithers/flows/repository/checks.ts:241 | Capture check evidence | Install | Cut | - |
-| `repository/execute-command-check` | action | .smithers/flows/repository/checks.ts:247 | Run a command check | Install | Cut | - |
-| `repository/retain-semantic-check` | action | .smithers/flows/repository/checks.ts:253 | Save an AI check result | Install | Cut | - |
-| `repository/jev-semantic-check` | action | .smithers/flows/repository/checks.ts:269 | Jev runs an AI check | Install | Cut | - |
-| `repository/CommandCheck` | flow | .smithers/flows/repository/checks.ts:275 | Run a command check | Install | Cut | - |
-| `repository/AICheck` | flow | .smithers/flows/repository/checks.ts:286 | Run an AI check | Install | Cut | - |
-| `repository/run-checks` | action | .smithers/flows/repository/checks.ts:301 | Run configured checks | Install | Cut | - |
-| `repository/CheckStep` | flow | .smithers/flows/repository/checks.ts:306 | Run one check step | Install | Cut | - |
-| `repository/prepare-landing` | action | .smithers/flows/repository/delivery.ts:25 | Prepare a landing | Install | Defer §14 | - |
-| `repository/report-check-receipt` | action | .smithers/flows/repository/delivery.ts:32 | Report a check receipt | Install | Defer §14 | - |
-| `repository/create-landing` | action | .smithers/flows/repository/delivery.ts:38 | Create a landing record | Install | Defer §14 | - |
-| `repository/queue-landing` | action | .smithers/flows/repository/delivery.ts:44 | Queue a landing | Install | Defer §14 | - |
-| `repository/observe-landing` | action | .smithers/flows/repository/delivery.ts:54 | Watch a landing finish | Install | Defer §14 | - |
-| `repository/retain-landing` | action | .smithers/flows/repository/delivery.ts:68 | Save a landing result | Install | Defer §14 | - |
-| `repository/retain-delivery-failure` | action | .smithers/flows/repository/delivery.ts:73 | Save a delivery failure | Install | Defer §14 | - |
-| `repository/DeliverChange` | flow | .smithers/flows/repository/delivery.ts:78 | Land a job's change | Install | Defer §14 | - |
-| `repository/jev-score` | action | .smithers/flows/repository/evaluation.ts:41 | Jev scores an evaluation case | Install | Cut | - |
-| `repository/score-case` | agent action (repository/evaluator) | .smithers/flows/repository/evaluation.ts:47 | Agent scores an evaluation case | Install | Cut | - |
-| `repository/retain-eval-score` | action | .smithers/flows/repository/evaluation.ts:66 | Save an evaluation score | Install | Cut | - |
-| `repository/ScoreExecution` | flow | .smithers/flows/repository/evaluation.ts:71 | Score one evaluation run | Install | Cut | - |
-| `repository/evaluate-candidate` | action | .smithers/flows/repository/evaluation.ts:89 | Evaluate a candidate setup | Install | Cut | - |
-| `repository/CaptureCase` | flow | .smithers/flows/repository/evaluation.ts:114 | Capture an evaluation case | Install | Cut | - |
-| `repository/capture` | action | .smithers/flows/repository/inspection.ts:23 | Capture repository evidence | Install | Defer §14 | - |
-| `repository/start-budget` | action | .smithers/flows/repository/inspection.ts:172 | Start a job's budget | Install | Defer §14 | - |
-| `repository/assert-budget` | action | .smithers/flows/repository/inspection.ts:178 | Stop a job over budget | Install | Defer §14 | - |
-| `repository/ApproveStep` | flow | .smithers/flows/repository/jobs.ts:127 | Wait for a person's approval | Install | Defer §14 | - |
-| `repository/research` | agent action (seat repository/research) | .smithers/flows/repository/jobs.ts:203 | Agent researches a request | Install | Defer §14 | - |
-| `repository/propose-repro` | agent action (seat repository/propose-repro) | .smithers/flows/repository/jobs.ts:207 | Agent proposes a reproduction | Install | Defer §14 | - |
-| `repository/review` | agent action (seat repository/review) | .smithers/flows/repository/jobs.ts:211 | Agent reviews an outside change | Install | Defer §14 | - |
-| `repository/jev-duplicates` | action | .smithers/flows/repository/jobs.ts:219 | Jev finds duplicate issues | Install | Defer §14 | - |
-| `repository/retain-observation` | action | .smithers/flows/repository/jobs.ts:225 | Save a job observation | Install | Defer §14 | - |
-| `repository/execute-repro` | action | .smithers/flows/repository/jobs.ts:230 | Run a proposed reproduction | Install | Defer §14 | - |
-| `repository/jev-reproduction` | action | .smithers/flows/repository/jobs.ts:247 | Jev judges a reproduction | Install | Defer §14 | - |
-| `repository/retain-reproduction-review` | action | .smithers/flows/repository/jobs.ts:253 | Save the reproduction review | Install | Defer §14 | - |
-| `repository/ReviewReproduction` | flow | .smithers/flows/repository/jobs.ts:258 | Review a reproduction | Install | Defer §14 | - |
-| `repository/retain-step-failure` | action | .smithers/flows/repository/jobs.ts:267 | Save a step failure | Install | Defer §14 | - |
-| `repository/FailedStep` | flow | .smithers/flows/repository/jobs.ts:272 | Record a failed job step | Install | Defer §14 | - |
-| `repository/InvestigateStep` | flow | .smithers/flows/repository/jobs.ts:347 | Investigate an issue or PR | Install | Defer §14 | - |
-| `repository/finish-job` | action | .smithers/flows/repository/jobs.ts:360 | Close out a job | Install | Defer §14 | - |
-| `repository/validate-author-reply` | action | .smithers/flows/repository/jobs.ts:370 | Check an author's reply | Install | Defer §14 | - |
-| `repository/CheckReply` | flow | .smithers/flows/repository/jobs.ts:375 | Check an author reply | Install | Defer §14 | - |
-| `repository/await-author-reply` | action | .smithers/flows/repository/jobs.ts:381 | Wait for the author | Install | Defer §14 | - |
-| `repository/AwaitReply` | flow | .smithers/flows/repository/jobs.ts:386 | Wait for an author reply | Install | Defer §14 | - |
-| `repository/continue-author` | action | .smithers/flows/repository/jobs.ts:392 | Resume after an author reply | Install | Defer §14 | - |
-| `repository/run-steps` | action | .smithers/flows/repository/jobs.ts:400 | Run a job's configured steps | Install | Defer §14 | - |
-| `repository/capture-job` | action | .smithers/flows/repository/jobs.ts:410 | Capture a job's evidence | Install | Defer §14 | - |
-| `repository/CaptureFollowup` | flow | .smithers/flows/repository/jobs.ts:416 | Capture follow-up evidence | Install | Defer §14 | - |
-| `repository/Investigate` | flow | .smithers/flows/repository/jobs.ts:422 | Investigate an incoming issue or PR | Install | Defer §14 | - |
-| `repository/Job` | flow | .smithers/flows/repository/jobs.ts:433 | Run one configured job | Install | Defer §14 | - |
-| `repository/reply-budget` | action | .smithers/flows/repository/replies.ts:98 | Reserve the reply budget | Install | Defer §14 | - |
-| `repository/ConfirmReply` | flow | .smithers/flows/repository/replies.ts:108 | Confirm a drafted reply | Install | Defer §14 | - |
-| `repository/publish-reply` | action | .smithers/flows/repository/replies.ts:131 | Post an approved reply | Install | Defer §14 | - |
-| `repository/PublishReply` | flow | .smithers/flows/repository/replies.ts:137 | Post a reply after approval | Install | Defer §14 | - |
-| `repository/suggest-setup` | agent action (repository/research) | .smithers/flows/repository/setup.ts:212 | Agent suggests a job setup | Install | Cut | - |
-| `repository/Capture` | flow | .smithers/flows/repository/setup.ts:243 | Capture setup evidence | Install | Cut | - |
-| `repository/Suggest` | flow | .smithers/flows/repository/setup.ts:249 | Suggest a setup | Install | Cut | - |
-| `repository/RunEvaluation` | flow | .smithers/flows/repository/setup.ts:255 | Evaluate a candidate setup | Install | Cut | - |
-| `repository/execute-setup` | action | .smithers/flows/repository/setup.ts:261 | Run setup | Install | Cut | - |
-| `repository/Setup` | flow | .smithers/flows/repository/setup.ts:267 | Set up a repository job | Install | Cut | - |
-| `repository/refuse-setup` | action | .smithers/flows/repository/setup.ts:276 | Refuse a setup | Install | Cut | - |
-| `repository/RunSetup` | flow | .smithers/flows/repository/setup.ts:281 | Run or refuse setup | Install | Cut | - |
-| `repository/refuse-job` | action | .smithers/flows/repository/setup.ts:290 | Refuse a job | Install | Cut | - |
-| `repository/RunJob` | flow | .smithers/flows/repository/setup.ts:291 | Run or refuse a job | Install | Cut | - |
-| `repository/recover-trigger` | action | .smithers/flows/repository/triggers.ts:105 | Recover a stuck trigger | Install | Defer §16 | - |
-| `repository/RecoverTrigger` | flow | .smithers/flows/repository/triggers.ts:111 | Recover a trigger | Install | Defer §16 | - |
-| `repository/prepare-trigger` | action | .smithers/flows/repository/triggers.ts:118 | Prepare a trigger | Install | Defer §16 | - |
-| `repository/PrepareTrigger` | flow | .smithers/flows/repository/triggers.ts:124 | Prepare a trigger | Install | Defer §16 | - |
-| `repository/activate-trigger` | action | .smithers/flows/repository/triggers.ts:130 | Activate a trigger | Install | Defer §16 | - |
-| `repository/ActivateTrigger` | flow | .smithers/flows/repository/triggers.ts:136 | Activate a trigger | Install | Defer §16 | - |
-| `repository/fire-trigger` | action | .smithers/flows/repository/triggers.ts:142 | Fire a trigger | Install | Defer §16 | - |
-| `repository/FireTrigger` | flow | .smithers/flows/repository/triggers.ts:148 | Fire a trigger | Install | Defer §16 | - |
-| `repository/execute-trigger` | action | .smithers/flows/repository/triggers.ts:155 | Run a trigger's flow | Install | Defer §16 | - |
-| `repository/Trigger` | flow | .smithers/flows/repository/triggers.ts:161 | Run a trigger | Install | Defer §16 | - |
-| `repository/refuse-trigger` | action | .smithers/flows/repository/triggers.ts:170 | Refuse an unapproved trigger | Install | Defer §16 | - |
-| `repository/RunTrigger` | flow | .smithers/flows/repository/triggers.ts:175 | Run or refuse a trigger | Install | Defer §16 | - |
+| `repository/register-candidate` | action | .smithers/flows/repository/activation.vibe:92 | Register a candidate setup | Install | Cut | - |
+| `repository/RegisterCandidate` | flow | .smithers/flows/repository/activation.vibe:98 | Register a candidate flow | Install | Cut | - |
+| `repository/probe-trial` | action | .smithers/flows/repository/activation.vibe:112 | Trial a candidate setup | Install | Cut | - |
+| `repository/request-manual` | action | .smithers/flows/repository/activation.vibe:134 | Request a manual run | Install | Cut | - |
+| `repository/DispatchManual` | flow | .smithers/flows/repository/activation.vibe:140 | Dispatch a manual run | Install | Cut | - |
+| `repository/probe-manual` | action | .smithers/flows/repository/activation.vibe:146 | Probe a manual run | Install | Cut | - |
+| `repository/draft-change` | agent action (repository/author) | .smithers/flows/repository/changes.vibe:34 | Agent drafts a change for an issue | Install | Defer §14 | - |
+| `repository/select-change-source` | action | .smithers/flows/repository/changes.vibe:52 | Choose the change's source | Install | Defer §14 | - |
+| `repository/prepare-change` | action | .smithers/flows/repository/changes.vibe:65 | Prepare a proposed change | Install | Defer §14 | - |
+| `repository/retain-proposed-change` | action | .smithers/flows/repository/changes.vibe:71 | Save a proposed change | Install | Defer §14 | - |
+| `repository/prepare-change-entry` | action | .smithers/flows/repository/changes.vibe:76 | Prepare the change entry | Install | Defer §14 | - |
+| `repository/create-native-source` | action | .smithers/flows/repository/changes.vibe:82 | Create a native source | Install | Defer §14 | - |
+| `repository/verify-written-change` | action | .smithers/flows/repository/changes.vibe:88 | Verify the written change | Install | Defer §14 | - |
+| `repository/retain-source-admission-failure` | action | .smithers/flows/repository/changes.vibe:94 | Save a source admission failure | Install | Defer §14 | - |
+| `repository/ApplyChange` | flow | .smithers/flows/repository/changes.vibe:106 | Apply a drafted change | Install | Defer §14 | - |
+| `repository/ProposalStep` | flow | .smithers/flows/repository/changes.vibe:202 | Propose a change from an issue | Install | Defer §14 | - |
+| `repository/capture-checks` | action | .smithers/flows/repository/checks.vibe:241 | Capture check evidence | Install | Cut | - |
+| `repository/execute-command-check` | action | .smithers/flows/repository/checks.vibe:247 | Run a command check | Install | Cut | - |
+| `repository/retain-semantic-check` | action | .smithers/flows/repository/checks.vibe:253 | Save an AI check result | Install | Cut | - |
+| `repository/jev-semantic-check` | action | .smithers/flows/repository/checks.vibe:269 | Jev runs an AI check | Install | Cut | - |
+| `repository/CommandCheck` | flow | .smithers/flows/repository/checks.vibe:275 | Run a command check | Install | Cut | - |
+| `repository/AICheck` | flow | .smithers/flows/repository/checks.vibe:286 | Run an AI check | Install | Cut | - |
+| `repository/run-checks` | action | .smithers/flows/repository/checks.vibe:301 | Run configured checks | Install | Cut | - |
+| `repository/CheckStep` | flow | .smithers/flows/repository/checks.vibe:306 | Run one check step | Install | Cut | - |
+| `repository/prepare-landing` | action | .smithers/flows/repository/delivery.vibe:25 | Prepare a landing | Install | Defer §14 | - |
+| `repository/report-check-receipt` | action | .smithers/flows/repository/delivery.vibe:32 | Report a check receipt | Install | Defer §14 | - |
+| `repository/create-landing` | action | .smithers/flows/repository/delivery.vibe:38 | Create a landing record | Install | Defer §14 | - |
+| `repository/queue-landing` | action | .smithers/flows/repository/delivery.vibe:44 | Queue a landing | Install | Defer §14 | - |
+| `repository/observe-landing` | action | .smithers/flows/repository/delivery.vibe:54 | Watch a landing finish | Install | Defer §14 | - |
+| `repository/retain-landing` | action | .smithers/flows/repository/delivery.vibe:68 | Save a landing result | Install | Defer §14 | - |
+| `repository/retain-delivery-failure` | action | .smithers/flows/repository/delivery.vibe:73 | Save a delivery failure | Install | Defer §14 | - |
+| `repository/DeliverChange` | flow | .smithers/flows/repository/delivery.vibe:78 | Land a job's change | Install | Defer §14 | - |
+| `repository/jev-score` | action | .smithers/flows/repository/evaluation.vibe:41 | Jev scores an evaluation case | Install | Cut | - |
+| `repository/score-case` | agent action (repository/evaluator) | .smithers/flows/repository/evaluation.vibe:47 | Agent scores an evaluation case | Install | Cut | - |
+| `repository/retain-eval-score` | action | .smithers/flows/repository/evaluation.vibe:66 | Save an evaluation score | Install | Cut | - |
+| `repository/ScoreExecution` | flow | .smithers/flows/repository/evaluation.vibe:71 | Score one evaluation run | Install | Cut | - |
+| `repository/evaluate-candidate` | action | .smithers/flows/repository/evaluation.vibe:89 | Evaluate a candidate setup | Install | Cut | - |
+| `repository/CaptureCase` | flow | .smithers/flows/repository/evaluation.vibe:114 | Capture an evaluation case | Install | Cut | - |
+| `repository/capture` | action | .smithers/flows/repository/inspection.vibe:23 | Capture repository evidence | Install | Defer §14 | - |
+| `repository/start-budget` | action | .smithers/flows/repository/inspection.vibe:172 | Start a job's budget | Install | Defer §14 | - |
+| `repository/assert-budget` | action | .smithers/flows/repository/inspection.vibe:178 | Stop a job over budget | Install | Defer §14 | - |
+| `repository/ApproveStep` | flow | .smithers/flows/repository/jobs.vibe:127 | Wait for a person's approval | Install | Defer §14 | - |
+| `repository/research` | agent action (seat repository/research) | .smithers/flows/repository/jobs.vibe:203 | Agent researches a request | Install | Defer §14 | - |
+| `repository/propose-repro` | agent action (seat repository/propose-repro) | .smithers/flows/repository/jobs.vibe:207 | Agent proposes a reproduction | Install | Defer §14 | - |
+| `repository/review` | agent action (seat repository/review) | .smithers/flows/repository/jobs.vibe:211 | Agent reviews an outside change | Install | Defer §14 | - |
+| `repository/jev-duplicates` | action | .smithers/flows/repository/jobs.vibe:219 | Jev finds duplicate issues | Install | Defer §14 | - |
+| `repository/retain-observation` | action | .smithers/flows/repository/jobs.vibe:225 | Save a job observation | Install | Defer §14 | - |
+| `repository/execute-repro` | action | .smithers/flows/repository/jobs.vibe:230 | Run a proposed reproduction | Install | Defer §14 | - |
+| `repository/jev-reproduction` | action | .smithers/flows/repository/jobs.vibe:247 | Jev judges a reproduction | Install | Defer §14 | - |
+| `repository/retain-reproduction-review` | action | .smithers/flows/repository/jobs.vibe:253 | Save the reproduction review | Install | Defer §14 | - |
+| `repository/ReviewReproduction` | flow | .smithers/flows/repository/jobs.vibe:258 | Review a reproduction | Install | Defer §14 | - |
+| `repository/retain-step-failure` | action | .smithers/flows/repository/jobs.vibe:267 | Save a step failure | Install | Defer §14 | - |
+| `repository/FailedStep` | flow | .smithers/flows/repository/jobs.vibe:272 | Record a failed job step | Install | Defer §14 | - |
+| `repository/InvestigateStep` | flow | .smithers/flows/repository/jobs.vibe:347 | Investigate an issue or PR | Install | Defer §14 | - |
+| `repository/finish-job` | action | .smithers/flows/repository/jobs.vibe:360 | Close out a job | Install | Defer §14 | - |
+| `repository/validate-author-reply` | action | .smithers/flows/repository/jobs.vibe:370 | Check an author's reply | Install | Defer §14 | - |
+| `repository/CheckReply` | flow | .smithers/flows/repository/jobs.vibe:375 | Check an author reply | Install | Defer §14 | - |
+| `repository/await-author-reply` | action | .smithers/flows/repository/jobs.vibe:381 | Wait for the author | Install | Defer §14 | - |
+| `repository/AwaitReply` | flow | .smithers/flows/repository/jobs.vibe:386 | Wait for an author reply | Install | Defer §14 | - |
+| `repository/continue-author` | action | .smithers/flows/repository/jobs.vibe:392 | Resume after an author reply | Install | Defer §14 | - |
+| `repository/run-steps` | action | .smithers/flows/repository/jobs.vibe:400 | Run a job's configured steps | Install | Defer §14 | - |
+| `repository/capture-job` | action | .smithers/flows/repository/jobs.vibe:410 | Capture a job's evidence | Install | Defer §14 | - |
+| `repository/CaptureFollowup` | flow | .smithers/flows/repository/jobs.vibe:416 | Capture follow-up evidence | Install | Defer §14 | - |
+| `repository/Investigate` | flow | .smithers/flows/repository/jobs.vibe:422 | Investigate an incoming issue or PR | Install | Defer §14 | - |
+| `repository/Job` | flow | .smithers/flows/repository/jobs.vibe:433 | Run one configured job | Install | Defer §14 | - |
+| `repository/reply-budget` | action | .smithers/flows/repository/replies.vibe:98 | Reserve the reply budget | Install | Defer §14 | - |
+| `repository/ConfirmReply` | flow | .smithers/flows/repository/replies.vibe:108 | Confirm a drafted reply | Install | Defer §14 | - |
+| `repository/publish-reply` | action | .smithers/flows/repository/replies.vibe:131 | Post an approved reply | Install | Defer §14 | - |
+| `repository/PublishReply` | flow | .smithers/flows/repository/replies.vibe:137 | Post a reply after approval | Install | Defer §14 | - |
+| `repository/suggest-setup` | agent action (repository/research) | .smithers/flows/repository/setup.vibe:212 | Agent suggests a job setup | Install | Cut | - |
+| `repository/Capture` | flow | .smithers/flows/repository/setup.vibe:243 | Capture setup evidence | Install | Cut | - |
+| `repository/Suggest` | flow | .smithers/flows/repository/setup.vibe:249 | Suggest a setup | Install | Cut | - |
+| `repository/RunEvaluation` | flow | .smithers/flows/repository/setup.vibe:255 | Evaluate a candidate setup | Install | Cut | - |
+| `repository/execute-setup` | action | .smithers/flows/repository/setup.vibe:261 | Run setup | Install | Cut | - |
+| `repository/Setup` | flow | .smithers/flows/repository/setup.vibe:267 | Set up a repository job | Install | Cut | - |
+| `repository/refuse-setup` | action | .smithers/flows/repository/setup.vibe:276 | Refuse a setup | Install | Cut | - |
+| `repository/RunSetup` | flow | .smithers/flows/repository/setup.vibe:281 | Run or refuse setup | Install | Cut | - |
+| `repository/refuse-job` | action | .smithers/flows/repository/setup.vibe:290 | Refuse a job | Install | Cut | - |
+| `repository/RunJob` | flow | .smithers/flows/repository/setup.vibe:291 | Run or refuse a job | Install | Cut | - |
+| `repository/recover-trigger` | action | .smithers/flows/repository/triggers.vibe:105 | Recover a stuck trigger | Install | Defer §16 | - |
+| `repository/RecoverTrigger` | flow | .smithers/flows/repository/triggers.vibe:111 | Recover a trigger | Install | Defer §16 | - |
+| `repository/prepare-trigger` | action | .smithers/flows/repository/triggers.vibe:118 | Prepare a trigger | Install | Defer §16 | - |
+| `repository/PrepareTrigger` | flow | .smithers/flows/repository/triggers.vibe:124 | Prepare a trigger | Install | Defer §16 | - |
+| `repository/activate-trigger` | action | .smithers/flows/repository/triggers.vibe:130 | Activate a trigger | Install | Defer §16 | - |
+| `repository/ActivateTrigger` | flow | .smithers/flows/repository/triggers.vibe:136 | Activate a trigger | Install | Defer §16 | - |
+| `repository/fire-trigger` | action | .smithers/flows/repository/triggers.vibe:142 | Fire a trigger | Install | Defer §16 | - |
+| `repository/FireTrigger` | flow | .smithers/flows/repository/triggers.vibe:148 | Fire a trigger | Install | Defer §16 | - |
+| `repository/execute-trigger` | action | .smithers/flows/repository/triggers.vibe:155 | Run a trigger's flow | Install | Defer §16 | - |
+| `repository/Trigger` | flow | .smithers/flows/repository/triggers.vibe:161 | Run a trigger | Install | Defer §16 | - |
+| `repository/refuse-trigger` | action | .smithers/flows/repository/triggers.vibe:170 | Refuse an unapproved trigger | Install | Defer §16 | - |
+| `repository/RunTrigger` | flow | .smithers/flows/repository/triggers.vibe:175 | Run or refuse a trigger | Install | Defer §16 | - |
 
 ## C.9 checks
 
@@ -558,8 +558,8 @@ Our burndown tool: sweep open issues across agent accounts.
 
 | id | kind | source | what | runs in | MVP | renders as |
 | --- | --- | --- | --- | --- | --- | --- |
-| `issue-sweep/ensure-disk` | action | .smithers/flows/issue-sweep/disk.ts:68 | Ensure disk for a worker | Install | Cut | - |
-| `issue-sweep/disk-admission` | flow | .smithers/flows/issue-sweep/disk.ts:75 | Admit a worker by free disk | Install | Cut | - |
+| `issue-sweep/ensure-disk` | action | .smithers/flows/issue-sweep/disk.vibe:68 | Ensure disk for a worker | Install | Cut | - |
+| `issue-sweep/disk-admission` | flow | .smithers/flows/issue-sweep/disk.vibe:75 | Admit a worker by free disk | Install | Cut | - |
 | `issue-sweep/list-issues` | action | .smithers/flows/issue-sweep/flow.ts:88 | List issues to sweep | Install | Cut | - |
 | `issue-sweep/accounts` | action | .smithers/flows/issue-sweep/flow.ts:96 | List usable agent accounts | Install | Cut | - |
 | `issue-sweep` | flow | .smithers/flows/issue-sweep/flow.ts:135 | Burn down issues across accounts | Install | Cut | - |

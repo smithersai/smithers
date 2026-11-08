@@ -1,5 +1,5 @@
 import { afterEach, expect, setSystemTime, test } from "bun:test"
-import * as Box from "../src/box.ts"
+import * as Box from "../src/box.vibe"
 
 afterEach(() => {
   setSystemTime()

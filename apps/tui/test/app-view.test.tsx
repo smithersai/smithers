@@ -7,7 +7,7 @@ import type * as Complete from "../src/complete.ts"
 import type * as Extension from "../src/extension.ts"
 import type { FlowForm } from "../src/key-dispatch.vibe"
 import * as Keys from "../src/keys.ts"
-import type * as Models from "../src/models.ts"
+import type * as Models from "../src/models.vibe"
 import * as Transcript from "../src/transcript.ts"
 
 let setup: Awaited<ReturnType<typeof testRender>> | undefined

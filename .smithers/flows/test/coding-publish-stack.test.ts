@@ -15,11 +15,11 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
 import type { StackPublicationInput } from "../coding/landing-schema.vibe"
-import { Landing, type LocalLanding } from "../coding/landing.ts"
-import { make } from "../coding/local-landing.ts"
-import { NativeCoding } from "../coding/native.ts"
+import { Landing, type LocalLanding } from "../coding/landing.vibe"
+import { make } from "../coding/local-landing.vibe"
+import { NativeCoding } from "../coding/native.vibe"
 import { CodingError } from "../coding/schema.ts"
-import { PublishStack, stackPublicationLayers } from "../coding/vibe-publication.ts"
+import { PublishStack, stackPublicationLayers } from "../coding/vibe-publication.vibe"
 
 const environment: Record<string, string> = {
   PATH: process.env.PATH ?? "/usr/bin:/bin",

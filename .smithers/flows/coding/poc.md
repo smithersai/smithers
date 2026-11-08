@@ -27,4 +27,4 @@ Deployment composes `pocSource({ ...nativeOptions, fs, exporterPath })`, `pocPol
 
 The embedded run card selects the latest retained prototype or a prototype explicitly selected in the trace. It displays complete before/after values as React text and never executes the retained HTML. The prototype decoder requires its result source to match the child's input source. The shared evidence reader supplies the recorded execution context.
 
-While the enclosing coding run is live, “Give prototype feedback” invokes `runs.steer` with its backend run ID. Queue acknowledgement is distinct from a changed plan. Pure recipe value schemas live in private `poc-schema.ts`, with the prior exports retained by `poc.ts`.
+While the enclosing coding run is live, “Give prototype feedback” invokes `runs.steer` with its backend run ID. Queue acknowledgement is distinct from a changed plan. Pure recipe value schemas live in private `poc-schema.vibe`, with the prior exports retained by `poc.vibe`.

@@ -14,7 +14,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
 import { outsideStacksServed } from "../coding/host.ts"
-import { NativeCoding } from "../coding/native.ts"
+import { NativeCoding } from "../coding/native.vibe"
 import {
   AppendOutsideStack,
   gate,
@@ -23,9 +23,9 @@ import {
   type OutsideStack,
   outsideStackLayers,
   StackRefused
-} from "../coding/outside-stack.ts"
+} from "../coding/outside-stack.vibe"
 import { type Check, checkInputDigest, CodingError, type Revision } from "../coding/schema.ts"
-import { RunCheck } from "../coding/workflow.ts"
+import { RunCheck } from "../coding/workflow.vibe"
 
 const environment: Record<string, string> = {
   PATH: process.env.PATH ?? "/usr/bin:/bin",

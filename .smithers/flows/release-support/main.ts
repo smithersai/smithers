@@ -14,7 +14,7 @@ import Release from "../release/flow.ts"
 import { contentInput, releaseInput } from "./input.ts"
 import { atomicWrite, inside, maybeRead } from "./io.ts"
 import { runtime } from "./runtime.ts"
-import { ContentInput, ReleaseInput, StoredRun } from "./schema.ts"
+import { ContentInput, ReleaseInput, StoredRun } from "./schema.vibe"
 
 const root = resolve(import.meta.dirname, "../../..")
 const help = `Smithers release workflows (Node 26.4+, pnpm and jj required)

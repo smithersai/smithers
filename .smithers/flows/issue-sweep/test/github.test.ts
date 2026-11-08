@@ -5,7 +5,7 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import assert from "node:assert/strict"
 import test from "node:test"
 import { claimTool } from "../flow.ts"
-import { proxyTool } from "../github.ts"
+import { proxyTool } from "../github.vibe"
 
 const proxyGrant = "proc:spawn:node /*/flows/issue-claim/github-proxy.mjs --ensure"
 

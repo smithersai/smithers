@@ -7,9 +7,9 @@ import { tmpdir } from "node:os"
 import { isAbsolute, join, relative, resolve, sep } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
-import { loadProject } from "../coding/project-config.ts"
+import { loadProject } from "../coding/project-config.vibe"
 import { reviewEvidence } from "../wiki/evidence.ts"
-import { sections } from "../wiki/operations.ts"
+import { sections } from "../wiki/operations.vibe"
 import { systemFlows } from "./fixtures/system-flows.ts"
 
 const valid = () => ({
@@ -347,7 +347,7 @@ test("an install snapshot loads literal command declarations without reading rep
   await writeFile(join(directory, "snapshot.json"), JSON.stringify(snapshot))
   const result = await Effect.runPromise(loadProject(directory, "snapshot.json").pipe(Effect.provide(platform)))
   assert.deepEqual(result, { ...snapshot, implementation: "coding/implementation" })
-  const { PlanningContext, Draft } = await import("../coding/planning.ts")
+  const { PlanningContext, Draft } = await import("../coding/planning.vibe")
   const { Schema } = await import("effect")
   const check = { ...snapshot.checks[0], flowDigest: "literal-check-digest" }
   assert.deepEqual(Schema.decodeUnknownSync(PlanningContext.fields.checks)([check]), [check])

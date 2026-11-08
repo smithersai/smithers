@@ -9,7 +9,7 @@
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as Seat from "@smthrs/agent/Seat"
 import * as Providers from "@smthrs/cli/Providers"
-import { delegateSeat, labelOf, type Model, routeOf } from "./models.ts"
+import { delegateSeat, labelOf, type Model, routeOf } from "./models.vibe"
 
 /** Credit refusal codes; timing and scope determine whether they are terminal. */
 export const refusals: ReadonlySet<string> = new Set(["quota_exceeded", "out_of_credit"])

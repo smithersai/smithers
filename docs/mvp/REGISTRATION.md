@@ -69,7 +69,7 @@ default.
 
 - **Where it runs.** Clone is the existing GitHub import, so the registrant
   owns a Smithers Cloud repository and a workspace for it. `register-repository`
-  is a coding-host builtin (`.smithers/flows/repository/registry.ts`) and runs there,
+  is a coding-host builtin (`.smithers/flows/repository/registry.vibe`) and runs there,
   which is what lets readiness run the repository's own install, tests, lint
   and build on an exported copy (scratch `HOME`, bounded time).
 - **Steps.** `flows/register-repository/workflow.ts`; typed results in

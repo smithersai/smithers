@@ -27,8 +27,8 @@ import {
   type Triage,
   triage,
   TriageFailed
-} from "../triage.ts"
-import { marker } from "../verdict.ts"
+} from "../triage.vibe"
+import { marker } from "../verdict.vibe"
 
 const text = textOf({ title: "Deploy plue", body: "Run deploy.ts and post the receipt.", comments: [] })
 

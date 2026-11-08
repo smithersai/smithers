@@ -17,9 +17,9 @@ import {
   NativeTransport,
   requestIdFor,
   type SourcePublication
-} from "../coding/native.ts"
+} from "../coding/native.vibe"
 import type { Plan } from "../coding/schema.ts"
-import { admitSource } from "../coding/source-admission.ts"
+import { admitSource } from "../coding/source-admission.vibe"
 
 const revision = {
   kind: "resolved" as const,

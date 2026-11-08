@@ -12,7 +12,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
-import { catalogLayers } from "../coding/catalog.ts"
+import { catalogLayers } from "../coding/catalog.vibe"
 import ImplementPlan from "../coding/flow.ts"
 import {
   checkInputDigest,
@@ -21,7 +21,7 @@ import {
   Receipt as ReceiptSchema
 } from "../coding/schema.ts"
 import type { Check, Implementation, Plan, Receipt, Revision } from "../coding/schema.ts"
-import { Implement, policyLayers, receiptFindings, RunCheck } from "../coding/workflow.ts"
+import { Implement, policyLayers, receiptFindings, RunCheck } from "../coding/workflow.vibe"
 
 const revision = (name: string, parent?: string): Revision => ({
   changeId: `jj-${name}`,

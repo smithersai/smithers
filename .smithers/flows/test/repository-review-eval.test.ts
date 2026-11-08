@@ -8,7 +8,7 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { test, type TestContext } from "node:test"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
-import type { ImmutableSourceOptions } from "../coding/immutable-source.ts"
+import type { ImmutableSourceOptions } from "../coding/immutable-source.vibe"
 import { CodingError } from "../coding/schema.ts"
 import {
   CaptureChecks,
@@ -19,10 +19,10 @@ import {
   RunChecks,
   type SemanticVerdict,
   verifyTrialChecks
-} from "../repository/checks.ts"
-import { assessScore } from "../repository/evaluation.ts"
-import type { Work } from "../repository/jobs.ts"
-import type { Check, EvalCase, JobResult, Step, StepResult } from "../repository/schema.ts"
+} from "../repository/checks.vibe"
+import { assessScore } from "../repository/evaluation.vibe"
+import type { Work } from "../repository/jobs.vibe"
+import type { Check, EvalCase, JobResult, Step, StepResult } from "../repository/schema.vibe"
 import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 
 const base = "fb8c7b08f0d0feb5887cabbec5650e28dae2e6c1", candidate = "989b1f1c0c4c153d3917d89de00f2caee95292d0"
@@ -33,7 +33,7 @@ const diff =
   `diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1,2 +1,4 @@\n # Canary sandbox\n \n+Open this repository in Smithers.\n+Review changes in the cloud before landing.\n`
 const refused = "The production flow did not complete its evaluated work"
 /** The reviewed configuration `writeCandidate` writes into the repository and
- * snapshots (`.smithers/flows/repository/setup.ts:151-174`), at the production digest the
+ * snapshots (`.smithers/flows/repository/setup.vibe:151-174`), at the production digest the
  * receipt records as its own evidence. Every comparison a review of this
  * repository computes carries whichever of these the snapshots added. */
 const retained =

@@ -3,7 +3,7 @@ import { createCliRenderer } from "@opentui/core"
 import { createRoot } from "@opentui/react"
 import { App } from "../src/app.tsx"
 import type * as Approvals from "../src/approvals.ts"
-import type * as Host from "../src/host.ts"
+import type * as Host from "../src/host.vibe"
 
 let settle = (_: Host.Outcome) => {}
 let pending = false

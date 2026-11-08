@@ -1,0 +1,36 @@
+/** Rebase repair stays in the attempt's approved host and ordinary agent. */
+import { DurableDeferred, FlowRuntime, Interpreter, WaitFor } from "@smthrs/flow"
+import { readNative } from "./native.vibe"
+import TodoConflict from "./rebase-conflict/flow.ts"
+import { Done, Repair, Resolved } from "./todo-conflict-schema.vibe"
+export { TodoConflict }
+export { ConflictInput, Done, Repair, Resolved } from "./todo-conflict-schema.vibe"
+
+const resolvedLayer = Resolved.toLayer(({ onto }) =>
+  Effect.map(
+    readNative(),
+    ({ head }) => head.kind === "resolved" && head.parentCommitIds.length === 1 && head.parentCommitIds[0] === onto
+  )
+)
+export const todoConflictDoneLayer = Done.toLayer((input) =>
+  effect {
+    const instance = try FlowRuntime.FlowInstance
+    const deferred = WaitFor.deferred(input.name)
+    const token = DurableDeferred.tokenFromExecutionId(deferred, {
+      flow: instance.flow,
+      executionId: instance.executionId
+    })
+    try FlowRuntime.annotateWaiting({
+      reason: "approval",
+      token,
+      request: JSON.stringify({ kind: "conflict", conflict_change: input.change, onto_revision: input.onto })
+    })
+    try DurableDeferred.await(deferred)
+  }
+)
+export const todoConflictLayer = Layer.mergeAll(
+  Repair.layer,
+  resolvedLayer,
+  todoConflictDoneLayer,
+  Interpreter.layer(TodoConflict)
+)

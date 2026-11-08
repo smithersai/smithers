@@ -685,7 +685,7 @@ const triagePublish = Smithers.NodeTest({
 // flow under `bench/`; the gates
 // below run the same modules from the checkout root, where their evidence
 // directories resolve, and the suites run each flow's graph over its module.
-const runModuleSource = Smithers.file("//.smithers/flows/automation/run-module.ts")
+const runModuleSource = Smithers.file("//.smithers/flows/automation/run-module.vibe")
 const benchSources = [
   Smithers.glob("//.smithers/flows/bench/**/*"),
   runModuleSource,
@@ -1140,7 +1140,7 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "A prompt-injected agent or approved shell tool reads SMITHERS_JJHUB_TOKEN or the gateway credential and acts as the workspace on its repository.",
       lookFor: [
-        "SMITHERS_JJHUB_TOKEN read from process.env anywhere other than coding/landing-config.ts, or read before it is deleted there.",
+        "SMITHERS_JJHUB_TOKEN read from process.env anywhere other than coding/landing-config.vibe, or read before it is deleted there.",
         "A spawned process or check environment built from process.env instead of the PATH/HOME/proxy allowlist in coding/check-environment.ts.",
         "SMITHERS_CACHE_TOKEN or SMITHERS_CACHE_URL left in process.env after coding/check-environment.ts consumes them, or given to anything but repository checks (repositoryCheckEnvironment).",
         "A token or credential passed to a model prompt, a run output, a receipt, an error message, or Redacted.value outside the HTTP bearer header.",
@@ -1149,12 +1149,12 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "coding/serve.ts",
         "coding/check-environment.ts",
-        "coding/landing-config.ts",
-        "coding/landing.ts",
+        "coding/landing-config.vibe",
+        "coding/landing.vibe",
         "coding/host.ts",
         "invoke/**",
-        "repository/remote.ts",
-        "repository/check-receipt.ts",
+        "repository/remote.vibe",
+        "repository/check-receipt.vibe",
         "coding/check-detection.ts"
       ]
     },
@@ -1169,7 +1169,7 @@ const securityReview = Smithers.SecurityReview({
         "apiBaseUrl accepted over plain http: outside a loopback test host while carrying a bearer token.",
         "A PR link parsed from comment text used to pick the repository whose source is retained or reviewed."
       ],
-      paths: ["repository/remote.ts", "repository/check-receipt.ts", "coding/landing.ts"]
+      paths: ["repository/remote.vibe", "repository/check-receipt.vibe", "coding/landing.vibe"]
     },
     {
       id: "source-tree-confinement",
@@ -1184,14 +1184,14 @@ const securityReview = Smithers.SecurityReview({
         "release-support atomicWrite/inside accepting an absolute, backslash or .. path."
       ],
       paths: [
-        "repository/source.ts",
-        "repository/execution.ts",
-        "repository/inspection.ts",
-        "repository/checks.ts",
-        "repository/check-context.ts",
+        "repository/source.vibe",
+        "repository/execution.vibe",
+        "repository/inspection.vibe",
+        "repository/checks.vibe",
+        "repository/check-context.vibe",
         "coding/filesystem.ts",
-        "coding/immutable-source.ts",
-        "coding/snapshots.ts",
+        "coding/immutable-source.vibe",
+        "coding/snapshots.vibe",
         "release-support/io.ts",
         "coding/check-detection.ts"
       ]
@@ -1222,10 +1222,10 @@ const securityReview = Smithers.SecurityReview({
         "A command check run with no deadline, or outside the scoped immutable export root."
       ],
       paths: [
-        "repository/checks.ts",
+        "repository/checks.vibe",
         "repository/ci-policy.ts",
-        "repository/changes.ts",
-        "coding/immutable-source.ts",
+        "repository/changes.vibe",
+        "coding/immutable-source.vibe",
         "coding/host.ts",
         "coding/serve.ts"
       ]
@@ -1236,21 +1236,21 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "An outside GitHub user writes an issue or comment that makes an agent land code, publish a reply, approve a step or exfiltrate repository content.",
       lookFor: [
-        "Event author text concatenated into a prompt without the untrusted-content framing in repository/intake.ts.",
+        "Event author text concatenated into a prompt without the untrusted-content framing in repository/intake.vibe.",
         "A publish, land, approve or pause decision keyed on text the event author controls rather than a verified role or approved digest (approved-text.ts, reply-trust).",
         "A steering or correction message accepted from someone other than the run owner.",
         "Withheld or hidden fields from the intake screen still reaching a later model step."
       ],
       paths: [
-        "repository/intake.ts",
-        "repository/replies.ts",
+        "repository/intake.vibe",
+        "repository/replies.vibe",
         "repository/approved-text.ts",
-        "repository/triggers.ts",
-        "repository/delivery.ts",
-        "repository/jev-*.ts",
-        "coding/steering.ts",
-        "coding/correction.ts",
-        "coding/feedback.ts",
+        "repository/triggers.vibe",
+        "repository/delivery.vibe",
+        "repository/jev-*.{ts,vibe}",
+        "coding/steering.vibe",
+        "coding/correction.vibe",
+        "coding/feedback.vibe",
         "issue-triage/**",
         "pr-triage/**",
         "review/**"
@@ -1272,7 +1272,7 @@ const securityReview = Smithers.SecurityReview({
         "coding/host-modules.ts",
         "coding/host-modules-build.mjs",
         "coding/build.mjs",
-        "repository/registry.ts"
+        "repository/registry.vibe"
       ]
     },
     {
@@ -1287,12 +1287,12 @@ const securityReview = Smithers.SecurityReview({
         "vibe-cleanup deleting refs or files it did not create."
       ],
       paths: [
-        "coding/landing.ts",
-        "coding/vibe-*.ts",
-        "coding/source-*.ts",
-        "repository/delivery.ts",
-        "repository/changes.ts",
-        "repository/retention.ts"
+        "coding/landing.vibe",
+        "coding/vibe-*.{ts,vibe}",
+        "coding/source-*.{ts,vibe}",
+        "repository/delivery.vibe",
+        "repository/changes.vibe",
+        "repository/retention.vibe"
       ]
     },
     {

@@ -4,8 +4,8 @@ import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Option } from "effect"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import * as Changes from "../src/changes.ts"
-import type * as Host from "../src/host.ts"
+import * as Changes from "../src/changes.vibe"
+import type * as Host from "../src/host.vibe"
 import * as Session from "../src/session.ts"
 
 /** Persisted worker receipts, with no executed tools, repository or provider. */

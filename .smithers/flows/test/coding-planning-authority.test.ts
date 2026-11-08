@@ -35,7 +35,7 @@ import * as GrantStore from "../../../packages/smithers/flows/kernel/src/GrantSt
 import * as Workspace from "../../../packages/smithers/flows/kernel/src/Workspace.ts"
 import * as AtomicFileSystem from "../../../packages/smithers/flows/platform-node/src/AtomicFileSystem.ts"
 import * as ProcessConfinement from "../../../packages/smithers/flows/platform-node/src/ProcessConfinement.ts"
-import { evidenceOnly } from "../coding/planning-authority.ts"
+import { evidenceOnly } from "../coding/planning-authority.vibe"
 
 const all = [new CapabilityPattern({ action: "*", resource: "*" })]
 const Output = Schema.Struct({

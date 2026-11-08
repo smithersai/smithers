@@ -28,7 +28,7 @@ import {
   NOTIFICATION_POLICY_KINDS as FLOW_KINDS,
   NOTIFICATION_RECIPIENT_LIMIT as FLOW_RECIPIENT_LIMIT,
   Request
-} from "../notification-policy/src/policy.ts"
+} from "../notification-policy/src/policy.vibe"
 
 const request = {
   repo: "maya/app",
@@ -189,9 +189,9 @@ test("the copyable flow restates the app's three constants and never reaches int
   assert.equal(FLOW_DECIDE_ACTION, NOTIFICATION_POLICY_DECIDE_ACTION)
   assert.deepEqual([...FLOW_KINDS], [...NOTIFICATION_POLICY_KINDS])
   assert.equal(FLOW_RECIPIENT_LIMIT, NOTIFICATION_RECIPIENT_LIMIT)
-  const source = await readFile(new URL("../notification-policy/src/policy.ts", import.meta.url), "utf8")
+  const source = await readFile(new URL("../notification-policy/src/policy.vibe", import.meta.url), "utf8")
   const imports = [...source.matchAll(/^import\s[\s\S]*?from\s+"([^"]+)"/gm)].map((match) => match[1])
-  assert.deepEqual(imports, ["@smthrs/flow", "effect"])
+  assert.deepEqual(imports, ["@smthrs/flow"])
 })
 
 test("the app resolves a declaration naming a repository's own flow, not only this one's", () => {

@@ -5,7 +5,7 @@ This repository recipe expresses the coding policy as ordinary `Flow.make`,
 action outcomes, child execution relationships, and replay state through its
 injected database. There is no coding database, queue, lease, or event store.
 
-`native.ts` is the private Effect adapter to the Plue-owned program installed by
+`native.vibe` is the private Effect adapter to the Plue-owned program installed by
 the existing sandbox head-reporter provisioning. The host merges `nativeActions`
 into its current action table and provides
 `nativeLayer({ repositoryPath: executionRoot })` through its existing injected
@@ -112,7 +112,7 @@ and the assistant messages the turn produced. It is registered
 unconditionally and, unlike `coding/request`, needs no memory and no check
 table.
 
-`planning.ts` provides `PreparePlan`: bounded source gathering, request review,
+`planning.vibe` provides `PreparePlan`: bounded source gathering, request review,
 optional durable clarification, a model draft, and source verification before
 binding the existing `Plan` schema. See [planning.md](planning.md) for context
 shapes, native-history windows and deployment authority.
@@ -126,7 +126,7 @@ The stack service refreshes the wiki with `coding/wiki` after every fold; see
 [planning-wiki.md](planning-wiki.md). Ordinary native JJ history remains part
 of every coding plan.
 
-`registration.ts` is private repository configuration, not a new package API.
+`registration.vibe` is private repository configuration, not a new package API.
 Provide the host's existing executable catalog to `registration` and pass the
 registration to the host runtime. The discovered `flow.ts` IS the flow: it
 default-exports `coding/ImplementPlan`, which takes `{ plan }` and needs no
@@ -134,7 +134,7 @@ delegate registration. The native flow is also directly callable from another
 registered flow:
 
 ```ts
-import { ImplementPlan } from "./workflow.ts"
+import { ImplementPlan } from "./workflow.vibe"
 
 // Inside an Effect scope with the deployment's runtime and action layers.
 const result = yield* ImplementPlan.execute({ plan })
@@ -151,7 +151,7 @@ Do not introduce a Node sidecar as a requirement for a Bun desktop host.
 `implementation/flow.ts` supplies the concrete native implementation, discovered
 as `coding/implementation` and default-exporting `coding/ImplementAtoms`. Merge
 `atomFlows`, `atomOperations`, `nativeActions`, and `EditAtom.layer` into the
-host's existing action table; `atoms.ts` holds the actions they carry. The host supplies its
+host's existing action table; `atoms.vibe` holds the actions they carry. The host supplies its
 ordinary `AgentAction.Host`, guarded filesystem tools, seat resolver (the
 `coding/implement` role), budget and native adapter. No model transport or
 runtime is constructed in this recipe.

@@ -18,7 +18,7 @@
 import { Action, Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Schema } from "effect"
-import { ModuleFailed, runModule } from "../automation/run-module.ts"
+import { ModuleFailed, runModule } from "../automation/run-module.vibe"
 
 /**
  * One run of `package-docs.mjs`: `print` (no flag), `--write` or `--check`.

@@ -2972,7 +2972,7 @@
     "sha256": "06e1a521d694a337aafbf101b14e2c26ffdaeb698c0ce3983920473c7728e612"
   },
   {
-    "path": "apps/tui/src/box.ts",
+    "path": "apps/tui/src/box.vibe",
     "sha256": "999003cbc6fdeca0cdbda93da07ac517ce005eb0ae3dae9db29c80438f5f7f12"
   },
   {
@@ -2988,7 +2988,7 @@
     "sha256": "3f915990a2e56da8ce7eafa442b95c339e024f27a6a0849f1aa4c54a3b964643"
   },
   {
-    "path": "apps/tui/src/changes.ts",
+    "path": "apps/tui/src/changes.vibe",
     "sha256": "09d39538f3b079ad80d3eb5818ec2464631a822dc59ca115ca7711379ea8bb86"
   },
   {
@@ -3064,7 +3064,7 @@
     "sha256": "e7b3c088a1643f77e37fc56b2b586b0a1380a30e9f5cd102d0567a6b0c1abac5"
   },
   {
-    "path": "apps/tui/src/flow-control.ts",
+    "path": "apps/tui/src/flow-control.vibe",
     "sha256": "3a0ed101623bfca2d382bdd4e98c88496fe5d933f52bcb262bb69089235a2dd1"
   },
   {
@@ -3084,7 +3084,7 @@
     "sha256": "a4202cb17e7681980a98e794855964f5bbf899f66bbff001dd737cedf61b4157"
   },
   {
-    "path": "apps/tui/src/host.ts",
+    "path": "apps/tui/src/host.vibe",
     "sha256": "4cfc003687a34036b8e9fcfed1c0dedf362150e68710bfcd400c7ccb287cf8e3"
   },
   {
@@ -3116,7 +3116,7 @@
     "sha256": "c25cffc96fb2c0e25b75a42cce72c8ad002cd2ffb0129d6fb29c0c2b835bee80"
   },
   {
-    "path": "apps/tui/src/models.ts",
+    "path": "apps/tui/src/models.vibe",
     "sha256": "d755f28ad2bf807285d69711f175e1ca6ffe7f4b916d08018a6ffca21a12cb2a"
   },
   {
@@ -3148,7 +3148,7 @@
     "sha256": "666d310188101e23ae53ebda4302e3248695e7328c0feb81818f0b66364ba475"
   },
   {
-    "path": "apps/tui/src/reads.ts",
+    "path": "apps/tui/src/reads.vibe",
     "sha256": "6f7679985efe216ac823aa6917992ea92e084fe581123909fd1efef03c6e6298"
   },
   {
@@ -3168,7 +3168,7 @@
     "sha256": "3a36832d3e468fa9121b2001ea8b9a9234c4012b3816ec908091c0610d3802a6"
   },
   {
-    "path": "apps/tui/src/run-history.ts",
+    "path": "apps/tui/src/run-history.vibe",
     "sha256": "abc730ebb532108c9e65919221e0b236e8b0f0fe154c6fea818917fbd837fabd"
   },
   {
@@ -3180,7 +3180,7 @@
     "sha256": "419ee0d19dbb2ecff99ced541c3078f5ecb5068e52ddb36d61554caa7cb5be31"
   },
   {
-    "path": "apps/tui/src/runtime.ts",
+    "path": "apps/tui/src/runtime.vibe",
     "sha256": "483c62dc1ce01f49a8ee55ac1b031e532646fad83833fc0836b2eec6683ba423"
   },
   {
@@ -3204,15 +3204,15 @@
     "sha256": "f55a4ebf4b9ac080d3d42262f6071fc07cd62bbec4e23d02243ee0be2240cca2"
   },
   {
-    "path": "apps/tui/src/smithers.ts",
+    "path": "apps/tui/src/smithers.vibe",
     "sha256": "6f07aca7813ffcd83fd54b46554c31b7ea6f2fe2ca1c068b532662332fef7289"
   },
   {
-    "path": "apps/tui/src/spend.ts",
+    "path": "apps/tui/src/spend.vibe",
     "sha256": "9ff719b7486dca18755dc1da0d5e1a51e94c26daf71ad90dbcfbd7d7878ba92e"
   },
   {
-    "path": "apps/tui/src/steering.ts",
+    "path": "apps/tui/src/steering.vibe",
     "sha256": "5c4466213ba0fbb8a3e05f36e8f981033b3e126cbfd818114950956035278ba7"
   },
   {
@@ -3248,7 +3248,7 @@
     "sha256": "df5516e7c0126dbd6b58ea16a17a64568fa61b4b214866be2932cb6860bfe32d"
   },
   {
-    "path": "apps/tui/src/target-approvals.ts",
+    "path": "apps/tui/src/target-approvals.vibe",
     "sha256": "306b8c5deb84f589886493d4cbc63ee21aa5b729aa0b08c675673e040ff76e5d"
   },
   {

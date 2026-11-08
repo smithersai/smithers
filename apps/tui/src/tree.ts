@@ -1,6 +1,6 @@
 /** Live tab hierarchy: the Summary overview's worker tree, and a root's tree as a standard panel. */
 import * as SubagentCard from "@smthrs/rpc/SubagentCard"
-import { seatName } from "./models.ts"
+import { seatName } from "#vibelang/emitted/src/models"
 import type * as Panels from "./panels.vibe"
 import type * as Transcript from "./transcript.ts"
 import type { Tab } from "./workspace.ts"

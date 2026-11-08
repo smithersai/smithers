@@ -12,7 +12,7 @@ import { test } from "node:test"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
 import * as NodeJj from "../../../packages/smithers/flows/jj/src/node/NodeJj.ts"
 import * as CodingFileSystem from "../coding/filesystem.ts"
-import { layerAt } from "../coding/snapshots.ts"
+import { layerAt } from "../coding/snapshots.vibe"
 
 const helper = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
 

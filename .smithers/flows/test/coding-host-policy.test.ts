@@ -9,9 +9,9 @@ import { join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import { bundle } from "../coding/build.mjs"
-import { separateWikiOutput } from "../coding/wiki-output.ts"
-import { runningWikiPolicy } from "../coding/wiki-policy.ts"
-import { policySources } from "../wiki/reuse.ts"
+import { separateWikiOutput } from "../coding/wiki-output.vibe"
+import { runningWikiPolicy } from "../coding/wiki-policy.vibe"
+import { policySources } from "../wiki/reuse.vibe"
 
 const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
 
@@ -35,7 +35,7 @@ test("source reviewer identity reads the running recipe, changes with its policy
   const changed = await Effect.runPromise(runningWikiPolicy.pipe(Effect.provideService(FileSystem.FileSystem, {
     ...fs,
     stream: (file, options) =>
-      file.endsWith("/wiki/workflow.ts")
+      file.endsWith("/wiki/workflow.vibe")
         ? Stream.make(new TextEncoder().encode("a changed host review task; target sources are unchanged")) :
         fs.stream(file, options)
   })))

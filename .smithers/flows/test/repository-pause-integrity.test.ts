@@ -2,8 +2,8 @@ import { Schema } from "effect"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { initialSetup, setupCandidate } from "../../../packages/rpc/src/RepositorySetup.ts"
-import { activeRegistration, pausedRegistration, restartedRegistration } from "../repository/activation.ts"
-import { SetupInput } from "../repository/schema.ts"
+import { activeRegistration, pausedRegistration, restartedRegistration } from "../repository/activation.vibe"
+import { SetupInput } from "../repository/schema.vibe"
 
 /** The production shape of defect D-7: one pause on the enabled `feature` job
  * whose local draft had reached revision 11 while the active registration

@@ -86,6 +86,66 @@
       "types": "./.vibe/declarations/src/credit.d.vibe.ts",
       "vibelang-source": "./src/credit.vibe",
       "default": "./.vibelang/js/src/credit.js"
+    },
+    "#vibelang/emitted/src/box": {
+      "types": "./.vibe/declarations/src/box.d.vibe.ts",
+      "vibelang-source": "./src/box.vibe",
+      "default": "./.vibelang/js/src/box.js"
+    },
+    "#vibelang/emitted/src/changes": {
+      "types": "./.vibe/declarations/src/changes.d.vibe.ts",
+      "vibelang-source": "./src/changes.vibe",
+      "default": "./.vibelang/js/src/changes.js"
+    },
+    "#vibelang/emitted/src/flow-control": {
+      "types": "./.vibe/declarations/src/flow-control.d.vibe.ts",
+      "vibelang-source": "./src/flow-control.vibe",
+      "default": "./.vibelang/js/src/flow-control.js"
+    },
+    "#vibelang/emitted/src/host": {
+      "types": "./.vibe/declarations/src/host.d.vibe.ts",
+      "vibelang-source": "./src/host.vibe",
+      "default": "./.vibelang/js/src/host.js"
+    },
+    "#vibelang/emitted/src/models": {
+      "types": "./.vibe/declarations/src/models.d.vibe.ts",
+      "vibelang-source": "./src/models.vibe",
+      "default": "./.vibelang/js/src/models.js"
+    },
+    "#vibelang/emitted/src/reads": {
+      "types": "./.vibe/declarations/src/reads.d.vibe.ts",
+      "vibelang-source": "./src/reads.vibe",
+      "default": "./.vibelang/js/src/reads.js"
+    },
+    "#vibelang/emitted/src/run-history": {
+      "types": "./.vibe/declarations/src/run-history.d.vibe.ts",
+      "vibelang-source": "./src/run-history.vibe",
+      "default": "./.vibelang/js/src/run-history.js"
+    },
+    "#vibelang/emitted/src/runtime": {
+      "types": "./.vibe/declarations/src/runtime.d.vibe.ts",
+      "vibelang-source": "./src/runtime.vibe",
+      "default": "./.vibelang/js/src/runtime.js"
+    },
+    "#vibelang/emitted/src/smithers": {
+      "types": "./.vibe/declarations/src/smithers.d.vibe.ts",
+      "vibelang-source": "./src/smithers.vibe",
+      "default": "./.vibelang/js/src/smithers.js"
+    },
+    "#vibelang/emitted/src/spend": {
+      "types": "./.vibe/declarations/src/spend.d.vibe.ts",
+      "vibelang-source": "./src/spend.vibe",
+      "default": "./.vibelang/js/src/spend.js"
+    },
+    "#vibelang/emitted/src/steering": {
+      "types": "./.vibe/declarations/src/steering.d.vibe.ts",
+      "vibelang-source": "./src/steering.vibe",
+      "default": "./.vibelang/js/src/steering.js"
+    },
+    "#vibelang/emitted/src/target-approvals": {
+      "types": "./.vibe/declarations/src/target-approvals.d.vibe.ts",
+      "vibelang-source": "./src/target-approvals.vibe",
+      "default": "./.vibelang/js/src/target-approvals.js"
     }
   }
 }

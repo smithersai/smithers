@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { readRepositorySources } from "../repository/inspection.ts"
+import { readRepositorySources } from "../repository/inspection.vibe"
 
 // The canary's own checks step prompt, which names manifests but no directory.
 const prompt =

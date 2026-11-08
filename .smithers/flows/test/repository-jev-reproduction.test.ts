@@ -8,8 +8,8 @@ import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
-import { NativeCoding } from "../coding/native.ts"
-import { executionLayers } from "../repository/execution.ts"
+import { NativeCoding } from "../coding/native.vibe"
+import { executionLayers } from "../repository/execution.vibe"
 import {
   MAX_REPRODUCTION_STATE_BYTES,
   REPRODUCTION_CONFIDENCE,
@@ -17,7 +17,7 @@ import {
   reproductionClassifier,
   reproductionState,
   verdicts
-} from "../repository/jev-reproduction.ts"
+} from "../repository/jev-reproduction.vibe"
 import {
   modelNames,
   type Observation,
@@ -25,8 +25,8 @@ import {
   type Reproduction,
   ReviewReproduction,
   type Work
-} from "../repository/jobs.ts"
-import type { StepResult } from "../repository/schema.ts"
+} from "../repository/jobs.vibe"
+import type { StepResult } from "../repository/schema.vibe"
 
 const source = {
   changeId: "change",

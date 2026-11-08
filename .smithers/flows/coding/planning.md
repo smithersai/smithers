@@ -9,7 +9,7 @@ runtime persists its observations, model results, question, answer, and final
 plan in the existing flow journal and database.
 
 ```ts
-import { PreparePlan } from "./planning.ts"
+import { PreparePlan } from "./planning.vibe"
 
 const prepare = PreparePlan.execute({
   prompt: "Add a query API using the current storage layer.",

@@ -4,7 +4,7 @@ import { Deferred, Effect } from "effect"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
-import { runIndependentSteps } from "../repository/execution.ts"
+import { runIndependentSteps } from "../repository/execution.vibe"
 
 test("independent steps wait for positive measured usage, then run three children within the same approved account", async () => {
   const rootId = "approved-root"

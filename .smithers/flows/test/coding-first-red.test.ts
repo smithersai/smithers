@@ -18,7 +18,7 @@ import {
   probeIndex
 } from "../coding/first-red.ts"
 import { type Check, checkInputDigest, CodingError, type Implementation, type Receipt } from "../coding/schema.ts"
-import { RunCheck } from "../coding/workflow.ts"
+import { RunCheck } from "../coding/workflow.vibe"
 
 const check = (id: string): Check => ({
   id,

@@ -114,8 +114,8 @@
       "document": ".smithers/wiki/pages/agent.md",
       "inputs": [
         "packages/smithers/agent/docs/README.md",
-        ".smithers/flows/wiki/workflow.ts",
-        ".smithers/flows/wiki/runtime.ts"
+        ".smithers/flows/wiki/workflow.vibe",
+        ".smithers/flows/wiki/runtime.vibe"
       ],
       "related": [
         "flows",
@@ -170,7 +170,7 @@
       "document": ".smithers/wiki/pages/coding-host.md",
       "inputs": [
         ".smithers/flows/coding/host.md",
-        ".smithers/flows/coding/wiki-policy.ts"
+        ".smithers/flows/coding/wiki-policy.vibe"
       ],
       "related": [
         "native-control",
@@ -197,7 +197,7 @@
       "inputs": [
         ".smithers/flows/coding/request.md",
         ".smithers/flows/coding/request-flow.ts",
-        ".smithers/flows/coding/request.ts",
+        ".smithers/flows/coding/request.vibe",
         ".smithers/flows/coding/prototype/flow.ts"
       ],
       "excerpts": {
@@ -259,7 +259,7 @@
       "inputs": [
         ".smithers/flows/coding/poc.md",
         ".smithers/flows/coding/prototype/flow.ts",
-        ".smithers/flows/coding/poc-schema.ts"
+        ".smithers/flows/coding/poc-schema.vibe"
       ],
       "related": [
         "coding-request",
@@ -307,7 +307,7 @@
       "document": ".smithers/wiki/pages/coding-checks.md",
       "inputs": [
         ".smithers/flows/coding/checks.md",
-        ".smithers/flows/coding/checks.ts"
+        ".smithers/flows/coding/checks.vibe"
       ],
       "related": [
         "coding-progression",
@@ -316,7 +316,7 @@
         "build-graph"
       ],
       "excerpts": {
-        ".smithers/flows/coding/checks.ts": [
+        ".smithers/flows/coding/checks.vibe": [
           {
             "start": 60,
             "end": 180

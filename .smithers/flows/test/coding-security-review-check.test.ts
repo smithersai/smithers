@@ -13,7 +13,7 @@ import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { after, test } from "node:test"
-import { NativeCoding } from "../coding/native.ts"
+import { NativeCoding } from "../coding/native.vibe"
 import type { Check, Implementation, Receipt, Revision } from "../coding/schema.ts"
 import {
   auditSecurity,
@@ -29,7 +29,7 @@ import {
   type SecurityReviewEvidence,
   unfinished,
   ungoverned
-} from "../coding/security-review-check.ts"
+} from "../coding/security-review-check.vibe"
 
 const temporary = await mkdtemp(join(tmpdir(), "security-review-check-"))
 after(() => rm(temporary, { recursive: true, force: true }))

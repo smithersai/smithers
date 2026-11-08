@@ -15,12 +15,12 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os"
 import { dirname, join, relative } from "node:path"
 import { test, type TestContext } from "node:test"
-import { checkDelegate } from "../coding/checks.ts"
+import { checkDelegate } from "../coding/checks.vibe"
 import { configuredCodingRoutes, missingCodingExecutables, provisionHostBuiltins } from "../coding/host.ts"
-import { loadProject } from "../coding/project-config.ts"
-import { bindRepositoryRegistry, repositoryCatalog } from "../repository/registry.ts"
-import { RunJob, RunSetup } from "../repository/setup.ts"
-import { RunTrigger } from "../repository/triggers.ts"
+import { loadProject } from "../coding/project-config.vibe"
+import { bindRepositoryRegistry, repositoryCatalog } from "../repository/registry.vibe"
+import { RunJob, RunSetup } from "../repository/setup.vibe"
+import { RunTrigger } from "../repository/triggers.vibe"
 import { systemFlows } from "./fixtures/system-flows.ts"
 
 const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
@@ -221,7 +221,7 @@ test("a repository with no Smithers files serves engine verification with its de
 
 test("a plan's detected checks keep one identity on every lane's host, and a changed command is refused", async (t) => {
   // coding/verify compares each plan check's flowDigest with the executing
-  // host's own descriptor (.smithers/flows/coding/catalog.ts). Lanes never share a
+  // host's own descriptor (.smithers/flows/coding/catalog.vibe). Lanes never share a
   // built-in root: it sits under the binding's state directory and a policy
   // that names the binding, so only content may decide the identity.
   const { root } = await repository(t, {

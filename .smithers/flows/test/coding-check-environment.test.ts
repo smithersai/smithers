@@ -7,7 +7,7 @@ import { tmpdir } from "node:os"
 import { basename, dirname, join } from "node:path"
 import { test } from "node:test"
 import { consume, repositoryCheckEnvironment } from "../coding/check-environment.ts"
-import { environmentSecrets, redactOutput, runSourceProcess, withImmutableSource } from "../coding/immutable-source.ts"
+import { environmentSecrets, redactOutput, runSourceProcess, withImmutableSource } from "../coding/immutable-source.vibe"
 
 const cacheUrl = "https://api.example.test/api/repos/o/r/build-cache"
 

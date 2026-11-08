@@ -33,7 +33,7 @@ provisioned landing binding and reserved `SMITHERS_JJHUB_TOKEN` and
 does a project `landing` of `fast-forward` or `pull-request` on a host without
 that binding, landing with `jj`, `git` and `gh` from `PATH`
 (see [finalization.md](finalization.md)).
-With a project it also registers `factory/Todo`, which routes each stack request (a TODO) on Jev before it is planned (see [todo.ts](todo.ts)), and `coding/verify`, which runs the required checks on a rebased stack
+With a project it also registers `factory/Todo`, which routes each stack request (a TODO) on Jev before it is planned (see [todo.vibe](todo.vibe)), and `coding/verify`, which runs the required checks on a rebased stack
 candidate, and `coding/wiki` when the project enables its wiki, which refreshes
 and reviews the declared pages.
 These routes ship as host built-ins beside `coding` and `coding/implementation`,
@@ -106,7 +106,7 @@ provider than the effective implementer's. All these model roles
 use the evidence-only authority recipe. When Wiki is enabled, its required `reviewer` policy,
 and selected wiki model participate in review reuse identity. The same identity
 includes the running host's review task: a digest of the wiki review policy
-sources (`policySources` in `.smithers/flows/wiki/reuse.ts`). Source mode reads them
+sources (`policySources` in `.smithers/flows/wiki/reuse.vibe`). Source mode reads them
 beside its own module; the deployment bundler computes the same digest and
 embeds it in the artifact. Nothing else in the host build is covered, so a host
 deploy that leaves the review task alone keeps prior reviews reusable. It does
@@ -160,7 +160,7 @@ publication.
 The configured executable is staged separately from the general Smithers CLI.
 General CLI pack setup and interactive commands retain their existing executable.
 
-Engine compensation uses the private `snapshots.ts` configuration of the existing
+Engine compensation uses the private `snapshots.vibe` configuration of the existing
 Jj service. Its opaque preimage is an immutable full commit ID; snapshots never
 create or describe another planned JJ change. Privileged snapshot subprocesses
 use the existing contained spawner and Control journal process ledger. Standard

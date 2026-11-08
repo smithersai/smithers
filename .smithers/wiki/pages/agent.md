@@ -14,6 +14,6 @@ A seat string names a model without carrying a credential. Resolving it into a l
 
 ## The wiki reviewer is an ordinary agent action
 
-`ReviewPage` in `.smithers/flows/wiki/workflow.ts` is an `AgentAction` on the `wiki/reviewer` seat whose output is a `Review`. Its system text says it has no tools or authority to edit files and that a current-behavior section must cite a file other than its own page. Its host supplies an empty descriptor registry, an empty capability envelope and at most 8 frames.
+`ReviewPage` in `.smithers/flows/wiki/workflow.vibe` is an `AgentAction` on the `wiki/reviewer` seat whose output is a `Review`. Its system text says it has no tools or authority to edit files and that a current-behavior section must cite a file other than its own page. Its host supplies an empty descriptor registry, an empty capability envelope and at most 8 frames.
 
 A review that fails exact validation gets one correction call; a second failure is terminal. Surviving reviews then pass `CheckCitations`, which judges whether each cited line supports its claim.

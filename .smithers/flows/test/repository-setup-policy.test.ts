@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import type { Check } from "../repository/schema.ts"
-import { suggestedChecks } from "../repository/setup.ts"
+import type { Check } from "../repository/schema.vibe"
+import { suggestedChecks } from "../repository/setup.vibe"
 
 const ai: typeof Check.Type = {
   id: "observability",

@@ -10,7 +10,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
 import { pathToFileURL } from "node:url"
-import { ModuleFailed, runModule, vibeLangLoader } from "./run-module.ts"
+import { ModuleFailed, runModule, vibeLangLoader } from "./run-module.vibe"
 
 const inScratch = async <A>(body: (directory: string) => Promise<A>) => {
   // A checkout root of its own, so the module's name is relative to it.
@@ -75,10 +75,10 @@ test("a non-zero exit is a typed failure naming the module and its exit code", a
 test("an interpreter that cannot start is a typed failure with no exit code", async () => {
   const failure = failureOf(
     await Effect.runPromiseExit(
-      runModule(new URL("./run-module.ts", import.meta.url), [], { interpreter: "smithers-no-such-interpreter" })
+      runModule(new URL("./run-module.vibe", import.meta.url), [], { interpreter: "smithers-no-such-interpreter" })
     )
   )
-  assert.equal(failure.module, ".smithers/flows/automation/run-module.ts")
+  assert.equal(failure.module, ".smithers/flows/automation/run-module.vibe")
   assert.equal(failure.exitCode, null)
 })
 

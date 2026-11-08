@@ -11,13 +11,13 @@ import { join } from "node:path"
 import { test, type TestContext } from "node:test"
 import { initialSetup, setupCandidate } from "../../../packages/rpc/src/RepositorySetup.ts"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
-import { NativeCoding } from "../coding/native.ts"
+import { NativeCoding } from "../coding/native.vibe"
 import { CodingError } from "../coding/schema.ts"
-import { executionLayers } from "../repository/execution.ts"
-import { ContinueAuthor } from "../repository/jobs.ts"
-import { RepositoryRemote } from "../repository/remote.ts"
-import { ConfirmReply, consolidatedReply, PublishReply, replyLayers } from "../repository/replies.ts"
-import { JobInput, JobResult, Reply, type StepResult } from "../repository/schema.ts"
+import { executionLayers } from "../repository/execution.vibe"
+import { ContinueAuthor } from "../repository/jobs.vibe"
+import { RepositoryRemote } from "../repository/remote.vibe"
+import { ConfirmReply, consolidatedReply, PublishReply, replyLayers } from "../repository/replies.vibe"
+import { JobInput, JobResult, Reply, type StepResult } from "../repository/schema.vibe"
 import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 
 const json = (value: unknown): Schema.Json => JSON.parse(JSON.stringify(value))
@@ -314,7 +314,7 @@ test("issue and model text asking to post the reply cannot answer the approval",
 })
 
 /**
- * The `ContinueAuthor` round (`.smithers/flows/repository/execution.ts:208-222`): one
+ * The `ContinueAuthor` round (`.smithers/flows/repository/execution.vibe:208-222`): one
  * dispatch, two consolidated drafts, two independent confirmations, two
  * comments. Plue keys a published comment by (dispatch, step), so a second
  * body under one step is refused.

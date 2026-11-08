@@ -8,7 +8,7 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Models from "../src/models.ts"
+import * as Models from "../src/models.vibe"
 
 /** Claude Code signs its own requests, so resolving its seat never reaches the executor. */
 const unusedExecutor = {} as RequestExecutor.RequestExecutor

@@ -1,7 +1,7 @@
 import * as RunHistory from "@smthrs/gateway/RunHistory"
 import { describe, expect, test } from "bun:test"
 import { Effect, Exit } from "effect"
-import * as History from "../src/run-history.ts"
+import * as History from "../src/run-history.vibe"
 
 /*
  * `/verify-run` and `/fork-run` read and fork through the gateway's

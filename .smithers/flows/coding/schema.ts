@@ -261,7 +261,10 @@ Fault.register(
   } satisfies Fault.Rows<CodingError["code"]>
 )
 
-/** A check that could not measure the revision must never become repair feedback. */
+/**
+ * A check that could not measure the revision must never become repair feedback.
+ * @throws {never}
+ */
 export const receiptOutage = (receipt: Receipt): CodingError | undefined =>
   receipt.status !== "passed" && receipt.fault === "infra"
     ? new CodingError({ code: "check_infra", message: `${receipt.target}: check infrastructure unavailable` })
@@ -274,6 +277,7 @@ export const receiptOutage = (receipt: Receipt): CodingError | undefined =>
  * every required check the repository has (`finalize`), and a repository may
  * have one check or none (mvp.md J1.4). A lone check gates its own tier and
  * the final assessment, which reads every non-delivery receipt (`Assess`).
+ * @throws {CodingError} `invalid_plan` for a duplicate Change, check or JJ change owner
  */
 export const validatePlan = (plan: Plan): void => {
   const groups = new Set<string>(), nativeChanges = new Set<string>()
@@ -297,15 +301,26 @@ export const validatePlan = (plan: Plan): void => {
   }
 }
 
+/**
+ * Whether `receipt` is the exact receipt of `check` on the implemented revision.
+ * @throws {never} the digest reads canonical JSON, which is well-formed text
+ */
 export const receiptMatches = (implementation: Implementation, check: Check, receipt: Receipt): boolean =>
   receipt.change === implementation.change && receipt.checkId === check.id && receipt.target === check.target &&
   receipt.tier === check.tier && receipt.commitId === implementation.head.commitId &&
   receipt.treeId === implementation.head.treeId && receipt.inputDigest === checkInputDigest(implementation, check)
 
-/** The existing canonical digest binds a receipt to the exact delegated inputs. */
+/**
+ * The existing canonical digest binds a receipt to the exact delegated inputs.
+ * @throws {never} canonical JSON is well-formed text, so the digest cannot refuse it
+ */
 export const checkInputDigest = (implementation: Implementation, check: Check): string =>
   `sha256:${Digest.digest(Digest.canonical({ version: 1, implementation, check }))}`
 
+/**
+ * Whether two revisions name the same change, commit, tree, operation and parents.
+ * @throws {never}
+ */
 export const sameRevision = (left: Revision, right: Revision): boolean =>
   left.changeId === right.changeId && left.commitId === right.commitId && left.treeId === right.treeId &&
   left.operationId === right.operationId && left.parentCommitIds.length === right.parentCommitIds.length &&

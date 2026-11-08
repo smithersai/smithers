@@ -3,9 +3,9 @@ import { readFileSync } from "node:fs"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import { initialSetup, setupCandidate } from "../../../packages/rpc/src/RepositorySetup.ts"
-import { finalCheckWork, reviewChecks } from "../repository/changes.ts"
+import { finalCheckWork, reviewChecks } from "../repository/changes.vibe"
 import { type CiPolicy, composeCiChecks, readCiPolicy } from "../repository/ci-policy.ts"
-import type { Work } from "../repository/jobs.ts"
+import type { Work } from "../repository/jobs.vibe"
 
 const repo = "example/repo", workspaceId = "11111111-1111-4111-a111-111111111111"
 const registrationId = "33333333-3333-4333-a333-333333333333"
@@ -129,7 +129,7 @@ test("the producer and the receipt verifier share one final-check construction",
     evidence: { ...work.evidence, source: head },
     proposal: []
   })
-  const source = readFileSync(fileURLToPath(new URL("../repository/changes.ts", import.meta.url)), "utf8")
+  const source = readFileSync(fileURLToPath(new URL("../repository/changes.vibe", import.meta.url)), "utf8")
   assert.match(
     source,
     /payload: \{ work: finalCheckWork\(prepared\.work, \{ head, base: prepared\.work\.evidence\.source\.commitId \}\) \}/,

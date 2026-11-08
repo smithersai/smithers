@@ -1,7 +1,7 @@
 import { Effect, Fiber } from "effect"
 import assert from "node:assert/strict"
 import test from "node:test"
-import { diskFloor, makeDiskGate, workspaceBytes } from "../disk.ts"
+import { diskFloor, makeDiskGate, workspaceBytes } from "../disk.vibe"
 
 const cleanup = (events: string[]) => ({
   cleanGo: Effect.sync(() => {
@@ -81,7 +81,7 @@ test("disk admission executes its typed cleanup action through the engine", asyn
   const { Layer, ManagedRuntime } = await import("effect")
   const NodeCrypto = await import("@effect/platform-node/NodeCrypto")
   const NodeServices = await import("@effect/platform-node/NodeServices")
-  const { DiskAdmission, makeDiskLayer } = await import("../disk.ts")
+  const { DiskAdmission, makeDiskLayer } = await import("../disk.vibe")
   const events: string[] = []
   let free = 0
   const gate = makeDiskGate({
@@ -128,7 +128,7 @@ test("hanging cleanup is bounded and later cleanup still recovers disk", async (
 })
 
 test("reaping requires durable settlement and fresh free ownership", async () => {
-  const { makeSettledWorkspaceReaper } = await import("../disk.ts")
+  const { makeSettledWorkspaceReaper } = await import("../disk.vibe")
   const checked: number[] = []
   const removed: number[] = []
   const reaper = makeSettledWorkspaceReaper({

@@ -11,7 +11,7 @@ import { join } from "node:path"
 import { test } from "node:test"
 import * as MemoryStore from "../../../packages/smithers/agent/memory/src/MemoryStore.ts"
 import * as TestMemory from "../../../packages/smithers/agent/memory/src/test/TestMemory.ts"
-import * as Mine from "../memory/mine.ts"
+import * as Mine from "../memory/mine.vibe"
 import * as MineFlowFile from "../memory/mine/flow.ts"
 import MineFlow from "../memory/mine/flow.ts"
 

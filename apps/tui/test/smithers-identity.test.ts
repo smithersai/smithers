@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Panels from "#vibelang/emitted/src/panels"
-import * as Smithers from "../src/smithers.ts"
+import * as Smithers from "../src/smithers.vibe"
 
 const connection = (
   status?: { logged_in: boolean; verified?: boolean; username?: string | null; email?: string | null }

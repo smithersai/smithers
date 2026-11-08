@@ -11,12 +11,12 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
 import Wiki from "../wiki/flow.ts"
-import { checkCitations } from "../wiki/jev-citations.ts"
-import { operations } from "../wiki/operations.ts"
-import type { Pool } from "../wiki/reuse.ts"
-import { actionLayers } from "../wiki/runtime.ts"
-import type { PageSpec, Review } from "../wiki/schema.ts"
-import { ReviewPage } from "../wiki/workflow.ts"
+import { checkCitations } from "../wiki/jev-citations.vibe"
+import { operations } from "../wiki/operations.vibe"
+import type { Pool } from "../wiki/reuse.vibe"
+import { actionLayers } from "../wiki/runtime.vibe"
+import type { PageSpec, Review } from "../wiki/schema.vibe"
+import { ReviewPage } from "../wiki/workflow.vibe"
 
 type Choice = "supports" | "contradicts" | "unrelated"
 const answer = (choice: Choice, confidence: number) => {
@@ -216,7 +216,7 @@ test("SQLite incremental reuse re-reviews a prior uncertain citation", { timeout
   const { fileURLToPath } = await import("node:url")
   const { Capability } = await import("@smthrs/flows")
   const NodeRuntime = (await import("@smthrs/platform-node")).NodeRuntime
-  const { IncrementalWiki, policySources, reuseLayers } = await import("../wiki/reuse.ts")
+  const { IncrementalWiki, policySources, reuseLayers } = await import("../wiki/reuse.vibe")
   const f = await fixture(t)
   execFileSync("jj", ["git", "init", f.root], { stdio: "pipe" })
   await writeFile(join(f.root, ".gitignore"), ".flows/\n")
@@ -289,7 +289,7 @@ test("SQLite incremental reuse re-reviews a prior uncertain citation", { timeout
   const reused = JSON.parse(await readFile(join(output, "current.json"), "utf8"))
   assert.equal(reused.pages[0].verification.provenance.reusedFrom.runId, "wiki-uncertain-incremental")
   const { canonical } = await import("@smthrs/core/Digest")
-  const { digest } = await import("../wiki/operations.ts")
+  const { digest } = await import("../wiki/operations.vibe")
   const sectionsDigest = await Effect.runPromise(
     digest(canonical(f.evidence.sections)).pipe(
       Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))

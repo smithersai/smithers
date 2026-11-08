@@ -5,7 +5,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { load } from "../coding/landing-config.ts"
+import { load } from "../coding/landing-config.vibe"
 import { CodingError } from "../coding/schema.ts"
 
 const binding = {

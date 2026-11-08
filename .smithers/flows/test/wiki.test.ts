@@ -10,11 +10,11 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
 import { fileURLToPath } from "node:url"
-import { separateWikiOutput } from "../coding/wiki-output.ts"
+import { separateWikiOutput } from "../coding/wiki-output.vibe"
 import { reviewEvidence } from "../wiki/evidence.ts"
-import { CITATION_CONTEXT_LINES, MAX_CLAIM_BYTES, MAX_STATE_BYTES } from "../wiki/jev-citations.ts"
-import { operations } from "../wiki/operations.ts"
-import { PageSpec, type Review, type ReviewedPage } from "../wiki/schema.ts"
+import { CITATION_CONTEXT_LINES, MAX_CLAIM_BYTES, MAX_STATE_BYTES } from "../wiki/jev-citations.vibe"
+import { operations } from "../wiki/operations.vibe"
+import { PageSpec, type Review, type ReviewedPage } from "../wiki/schema.vibe"
 import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 
 const fixture = async (t: TestContext) => {
@@ -439,8 +439,8 @@ test("real AgentAction review and flow replay use the existing engine", { timeou
   const Seat = await import("@smthrs/agent/Seat")
   const SeatResolver = await import("@smthrs/agent/SeatResolver")
   const { default: Wiki } = await import("../wiki/flow.ts")
-  const { agentLayers } = await import("../wiki/runtime.ts")
-  const { actionLayers } = await import("../wiki/runtime.ts")
+  const { agentLayers } = await import("../wiki/runtime.vibe")
+  const { actionLayers } = await import("../wiki/runtime.vibe")
   const EventSink = await import("@smthrs/agent/EventSink")
   const f = await fixture(t), evidence = await run(f.ops.collect(f.spec))
   let calls = 0
@@ -552,8 +552,8 @@ test("independent page reviews finish before exact citation assessment can fail"
   const { FlowEngine } = await import("@smthrs/engine")
   const { Layer } = await import("effect")
   const { default: Wiki } = await import("../wiki/flow.ts")
-  const { ReviewPage } = await import("../wiki/workflow.ts")
-  const { actionLayers } = await import("../wiki/runtime.ts")
+  const { ReviewPage } = await import("../wiki/workflow.vibe")
+  const { actionLayers } = await import("../wiki/runtime.vibe")
   const f = await fixture(t), completed: string[] = []
   const layer = Layer.mergeAll(
     actionLayers({ root: f.root, output: f.output, evaluator: citationsSupported }),
@@ -603,8 +603,8 @@ test("one citation repair receives every bad citation and the same evidence, the
   const { FlowEngine } = await import("@smthrs/engine")
   const { Layer } = await import("effect")
   const { default: Wiki } = await import("../wiki/flow.ts")
-  const { ReviewPage } = await import("../wiki/workflow.ts")
-  const { actionLayers } = await import("../wiki/runtime.ts")
+  const { ReviewPage } = await import("../wiki/workflow.vibe")
+  const { actionLayers } = await import("../wiki/runtime.vibe")
   const f = await fixture(t), calls: string[] = []
   let initial: ReviewedPage["evidence"] | undefined
   const layer = Layer.mergeAll(

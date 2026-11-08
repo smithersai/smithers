@@ -16,9 +16,9 @@ import {
   type Operation,
   requestIdFor,
   StackCandidate
-} from "../coding/native.ts"
+} from "../coding/native.vibe"
 import { CodingError } from "../coding/schema.ts"
-import { Candidate, stackBaseLayer } from "../coding/stack.ts"
+import { Candidate, stackBaseLayer } from "../coding/stack.vibe"
 
 test("native invocation UUIDs remain stable across retry and differ between durable actions", () => {
   const first = requestIdFor("execution-1", "create/database")

@@ -3,8 +3,8 @@ import { FetchHttpClient } from "effect/http"
 import assert from "node:assert/strict"
 import { createServer } from "node:http"
 import { test } from "node:test"
-import { makeRemote } from "../repository/remote.ts"
-import type { Event } from "../repository/schema.ts"
+import { makeRemote } from "../repository/remote.vibe"
+import type { Event } from "../repository/schema.vibe"
 
 test("GitHub PR capture validates the recorded source, PR number and exact base/head while allowing a fork head", async (t) => {
   const head = "b".repeat(40), base = "a".repeat(40)

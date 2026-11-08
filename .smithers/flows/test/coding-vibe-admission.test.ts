@@ -5,10 +5,10 @@ import { Effect, Exit, Layer, ManagedRuntime } from "effect"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
-import { type BackendLanding, Landing, type LocalLanding } from "../coding/landing.ts"
-import { NativeCoding, NativeCodingError } from "../coding/native.ts"
+import { type BackendLanding, Landing, type LocalLanding } from "../coding/landing.vibe"
+import { NativeCoding, NativeCodingError } from "../coding/native.vibe"
 import { checkInputDigest, type Implementation, type Plan, type Revision } from "../coding/schema.ts"
-import { AdmitVibe, FenceVibeSource, fenceVibeSource, VerifyVibe } from "../coding/vibe-admission.ts"
+import { AdmitVibe, FenceVibeSource, fenceVibeSource, VerifyVibe } from "../coding/vibe-admission.vibe"
 import {
   messageRefusal,
   type Proposal,
@@ -17,12 +17,12 @@ import {
   RepairHistory,
   ReviewHistory,
   validateProposalLayer
-} from "../coding/vibe-cleanup.ts"
-import { ReadVibeRequest, VibeEvidence } from "../coding/vibe-evidence.ts"
-import { landerLayer } from "../coding/vibe-lander.ts"
-import { publicationLayers, PublishVibeSource } from "../coding/vibe-publication.ts"
-import type { VibeAdmission } from "../coding/vibe-schema.ts"
-import { policyLayers } from "../coding/workflow.ts"
+} from "../coding/vibe-cleanup.vibe"
+import { ReadVibeRequest, VibeEvidence } from "../coding/vibe-evidence.vibe"
+import { landerLayer } from "../coding/vibe-lander.vibe"
+import { publicationLayers, PublishVibeSource } from "../coding/vibe-publication.vibe"
+import type { VibeAdmission } from "../coding/vibe-schema.vibe"
+import { policyLayers } from "../coding/workflow.vibe"
 
 /** Admission reads only the lander's kind; every landing method refuses. */
 const unusedLanding = () => Effect.die("admission must not land")

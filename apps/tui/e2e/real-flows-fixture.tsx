@@ -9,8 +9,8 @@ import { createCliRenderer } from "@opentui/core"
 import { createRoot } from "@opentui/react"
 import { appendFileSync } from "node:fs"
 import { App } from "../src/app.tsx"
-import * as FlowControl from "../src/flow-control.ts"
-import * as Host from "../src/host.ts"
+import * as FlowControl from "../src/flow-control.vibe"
+import * as Host from "../src/host.vibe"
 
 const stream = (text: string) => {
   return [

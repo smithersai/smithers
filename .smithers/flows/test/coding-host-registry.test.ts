@@ -10,7 +10,7 @@ import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs
 import { join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
-import * as HostRegistry from "../coding/host-registry.ts"
+import * as HostRegistry from "../coding/host-registry.vibe"
 
 const parent = fileURLToPath(new URL("../", import.meta.url))
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect)

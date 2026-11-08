@@ -1,0 +1,657 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
+/**
+ * Landing one agent's change on `main`: rebase it onto the current `main`,
+ * run the tests of the packages it touches, and push it when they pass.
+ *
+ * The burndown's merge queue calls {@link landChange} for several changes at
+ * once: they join the shared FIFO lease before rebasing or checking, and retain
+ * it through publication. Every repository write
+ * takes the machine-wide VCS lock other landing tools on this Mac share, when
+ * it exists. The checks run inside `codex sandbox`, so code the agent wrote
+ * can write only its own workspace and has no network.
+ */
+import { Fault, type FlowRuntime } from "@smthrs/flow"
+import type * as EffectDigest from "effect/crypto/Digest"
+import { acquireLock, type LandLease } from "../land/lock.mjs"
+import { awaitHostDisk, workspaceBytes } from "./disk.vibe"
+import { type Exited, type HostFailed, output, repository, ridingOutages, run, tail, workspaces } from "./host.vibe"
+import {
+  fileExists,
+  goCache,
+  landingLockPath,
+  lockFile,
+  matchesPath,
+  readBaselines,
+  saveBaselines
+} from "./land.platform.ts"
+
+export { goCache } from "./land.platform.ts"
+
+export class LandFailed extends Schema.TaggedError<LandFailed>()("issue-sweep/LandFailed", {
+  message: Schema.String
+}) {}
+Fault.register("issue-sweep/LandFailed", "factory")
+
+// ---------------------------------------------------------------------------
+// Decisions (pure)
+// ---------------------------------------------------------------------------
+
+/** The package directory of a target label: `//a/b:test` is `a/b`, `//:x` is the root, `""`. */
+export const packageOf = (label: string): string => label.slice(2, label.indexOf(":"))
+
+/**
+ * The packages `files` belong to: for each file, the deepest package directory
+ * that contains it. A file only the root package contains selects nothing,
+ * because the root package's tests are the whole repository's.
+ */
+export const packagesOf = (files: ReadonlyArray<string>, packages: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const owners = new Set<string>()
+  for (const file of files) {
+    let owner = ""
+    for (const directory of packages) {
+      if (directory.length > owner.length && file.startsWith(`${directory}/`)) owner = directory
+    }
+    if (owner !== "") owners.add(owner)
+  }
+  return [...owners].sort()
+}
+
+/** One declared input as `smthrs index --format json` lists it; `git-diff` inputs carry no path. */
+export interface IndexedInput {
+  readonly kind: string
+  readonly path?: string | undefined
+  readonly pattern?: string | undefined
+  readonly exclude?: ReadonlyArray<string> | undefined
+}
+
+/** One target as `smthrs index --format json` lists it. */
+export interface IndexedTarget {
+  readonly label: string
+  readonly kinds: ReadonlyArray<string>
+  /** The exclusive tier (browser and end-to-end suites) that wildcard `test` and `ci` omit. */
+  readonly exclusive?: boolean | undefined
+  readonly inputs?: ReadonlyArray<IndexedInput> | undefined
+}
+
+const isE2ePath = (path: string): boolean => path.split("/").includes("e2e")
+
+/**
+ * Whether `file` is one of `target`'s e2e inputs: it matches a declared input
+ * whose path or pattern runs through an `e2e` directory (`apps/tui/e2e/**`).
+ */
+const touchesE2eInput = (target: IndexedTarget, file: string): boolean =>
+  (target.inputs ?? []).some((input) => {
+    if (input.pattern !== undefined) {
+      return isE2ePath(input.pattern) && matchesPath(file, input.pattern) &&
+        !(input.exclude ?? []).some((exclude) => matchesPath(file, exclude))
+    }
+    return input.path !== undefined && isE2ePath(input.path) && file === input.path
+  })
+
+/**
+ * The test targets of the packages `files` touch, in label order.
+ *
+ * An exclusive target (a browser or end-to-end tier, such as
+ * `//apps/tui:e2eTests`) runs only when a changed file is one of its e2e
+ * inputs; CI runs every exclusive tier by label on `main`. Ordinary test
+ * targets of a touched package always run.
+ */
+export const testTargets = (
+  files: ReadonlyArray<string>,
+  index: ReadonlyArray<IndexedTarget>
+): ReadonlyArray<string> => {
+  const packages = [...new Set(index.map((target) => packageOf(target.label)))]
+  const touched = new Set(packagesOf(files, packages))
+  return index
+    .filter((target) => target.kinds.includes("test") && touched.has(packageOf(target.label)))
+    .filter((target) => target.exclusive !== true || files.some((file) => touchesE2eInput(target, file)))
+    .map((target) => target.label)
+    .sort()
+}
+
+/** What one `smthrs test` run decided. */
+export type Checked =
+  | { readonly _tag: "Green" }
+  | { readonly _tag: "Red"; readonly labels: ReadonlyArray<string> }
+  | { readonly _tag: "Broken"; readonly message: string }
+
+// `smthrs test --known-red` names each failure the list does not excuse:
+// "newly red, no matching failure in .github/ci-known-red.json: //pkg:test".
+const newlyRed = /^newly red\b[^:]*: (\/\/\S+)\s*$/
+
+const Refusal = Schema.fromJsonString(Schema.Struct({ code: Schema.String, message: Schema.String }))
+const Report = Schema.fromJsonString(Schema.Struct({ ok: Schema.Boolean }))
+
+/**
+ * Reads one `smthrs test --format json --known-red ...` run. A run that
+ * reported `ok` is green. A `targets_failed` refusal is red, listing the
+ * targets the known-red list does not excuse. Anything else, such as a
+ * workspace that could not be planned, means the checks never ran.
+ */
+export const readChecks = (exited: Exited): Checked => {
+  // These diagnostics mean the harness could not execute its checks. They
+  // must never become an assertion failure a baseline can excuse.
+  const diagnostic = `${exited.stdout}\n${exited.stderr}`
+  if (
+    /\b(?:listen|bind|connect)\s+(?:EPERM|EACCES|EADDRINUSE|ECONNREFUSED)\b|\bspawn\s+[^\n]*\bENOENT\b|\b(?:ENOSPC|EMFILE|ENFILE)\b/
+      .test(diagnostic)
+  ) {
+    return { _tag: "Broken", message: tail(diagnostic) }
+  }
+  const report = Schema.decodeUnknownOption(Report)(exited.stdout)
+  if (exited.code === 0 && Option.isSome(report) && report.value.ok) return { _tag: "Green" }
+  const refusal = Schema.decodeUnknownOption(Refusal)(exited.stdout)
+  if (Option.isSome(refusal) && refusal.value.code === "targets_failed") {
+    const labels = exited.stderr.split("\n").flatMap((line) => {
+      const match = newlyRed.exec(line.trim())
+      return match === null ? [] : [match[1]!]
+    })
+    if (labels.length > 0) return { _tag: "Red", labels: [...new Set(labels)].sort() }
+    return { _tag: "Broken", message: refusal.value.message }
+  }
+  return {
+    _tag: "Broken",
+    message: Option.isSome(refusal)
+      ? `${refusal.value.code}: ${refusal.value.message}`
+      : `exit ${exited.code}: ${tail(exited.stderr)}`
+  }
+}
+
+/**
+ * The failures that block a landing: the targets red on the change that are
+ * not also red on `main` itself. A target red on both was red before the
+ * agent touched anything.
+ */
+export const blocking = (onChange: ReadonlyArray<string>, onMain: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const preexisting = new Set(onMain)
+  return onChange.filter((label) => !preexisting.has(label))
+}
+
+/** Files outside any package whose change can turn every package's tests red. */
+export const globalInputs = ["pnpm-lock.yaml", "package.json", "WORKSPACE.ts", ".github/ci-known-red.json", ...[
+  ".pnpmfile.cjs",
+  ".npmrc",
+  "pnpm-workspace.yaml"
+]]
+
+/**
+ * Whether `main` moving by `moved` files invalidates checks that ran the
+ * tests of `tested` packages: it touched one of them, a global input, or a
+ * docs source when the change's own docs were synced against the old `main`.
+ */
+export const invalidates = (
+  moved: ReadonlyArray<string>,
+  tested: ReadonlyArray<string>,
+  packages: ReadonlyArray<string>,
+  syncedDocs: boolean
+): boolean =>
+  moved.some((file) => globalInputs.includes(file)) ||
+  (syncedDocs && moved.some(isDocsSource)) ||
+  packagesOf(moved, packages).some((owner) => tested.includes(owner))
+
+// ---------------------------------------------------------------------------
+// The repository (host)
+// ---------------------------------------------------------------------------
+
+const fail = (message: string) => new LandFailed({ message })
+const asLand = <A, R>(program: A!(HostFailed | LandFailed)!R) =>
+  Effect.mapError(program, (error) => error._tag === "issue-sweep/LandFailed" ? error : fail(error.message))
+
+/** A jj command in `workspace`, reading only. */
+// jj prints paths relative to the process's directory, so every command runs
+// from the workspace root: from anywhere else `diff --name-only` names
+// `../smithers-sweep/issue-N/...`, which selects no package and no test.
+const jj = (workspace: string, args: ReadonlyArray<string>) =>
+  asLand(output("jj", ["-R", workspace, ...args], { cwd: workspace }))
+
+/** The repository-relative paths `change` touches. */
+export const changedFiles = (workspace: string, change: string) =>
+  Effect.map(
+    jj(workspace, ["diff", "--name-only", "-r", change]),
+    (text) => text.split("\n").filter((file) => file !== "")
+  )
+
+/** A jj command in `workspace` that writes the shared repository, under the VCS lock `lock`. */
+// Fetches and pushes ride out network outages; every other write fails at once.
+const jjWriteUnder = (lock: string | undefined) => (workspace: string, args: ReadonlyArray<string>) => {
+  const write = asLand(
+    lock !== undefined && fileExists(lock)
+      ? output("lockf", ["-k", "-t", "900", lock, "jj", "-R", workspace, ...args], { cwd: workspace })
+      : output("jj", ["-R", workspace, ...args], { cwd: workspace })
+  )
+  return args[0] === "git"
+    ? ridingOutages(write, {
+      name: "issue-sweep/jj-network",
+      implementationVersion: "jj-network/v1",
+      idempotencyKey: JSON.stringify([workspace, args]),
+      success: Schema.String,
+      error: LandFailed
+    })
+    : write
+}
+
+/** A jj command in `workspace` that writes the shared repository, under the machine-wide VCS lock. */
+const jjWrite = jjWriteUnder(lockFile)
+
+const one = (workspace: string, revision: string, template: string) =>
+  Effect.map(jj(workspace, ["log", "--no-graph", "-r", revision, "-T", template]), (text) => text.trim())
+
+/**
+ * Runs `command` in `workspace` inside Codex's workspace sandbox: writes only
+ * under the workspace and the temporary directory, no network. smthrs
+ * contains its own targets behind Unix sockets under /tmp.
+ */
+export const sandboxed = (workspace: string, command: ReadonlyArray<string>) =>
+  run("codex", [
+    "sandbox",
+    "-P",
+    ":workspace",
+    "-C",
+    workspace,
+    "--allow-unix-socket",
+    "/private/tmp",
+    "--allow-unix-socket",
+    "/tmp",
+    "--",
+    ...command
+  ], { cwd: workspace, env: { GOCACHE: goCache } })
+
+/**
+ * Installs the workspace's locked dependencies from the local pnpm store.
+ *
+ * It runs on the host, because pnpm must read and write its store and cache
+ * outside the workspace (inside `codex sandbox` it exits 1). Lifecycle
+ * scripts are off; the repository's pnpmfile runs, so a change that edits it
+ * never reaches an install (see {@link landChange}).
+ */
+export effect function install(workspace: string) {
+  const exited = try run("pnpm", ["install", "--prefer-offline", "--frozen-lockfile", "--ignore-scripts"], {
+    cwd: workspace
+  })
+  if (exited.code !== 0) {
+    throw fail(`pnpm install: exit ${exited.code}: ${tail(`${exited.stdout}\n${exited.stderr}`)}`)
+  }
+}
+
+/** Files whose code the host runs during an install; a change to one needs a person. */
+export const installHooks = [".pnpmfile.cjs", ".npmrc", "pnpm-workspace.yaml"]
+
+const IndexJson = Schema.fromJsonString(Schema.Struct({
+  targets: Schema.Array(Schema.Struct({
+    label: Schema.String,
+    kinds: Schema.Array(Schema.String),
+    exclusive: Schema.optional(Schema.Boolean),
+    inputs: Schema.Array(Schema.Struct({
+      kind: Schema.String,
+      path: Schema.optional(Schema.String),
+      pattern: Schema.optional(Schema.String),
+      exclude: Schema.optional(Schema.Array(Schema.String))
+    }))
+  }))
+}))
+
+// The longest one landing's checks may take before the change fails to land.
+const checkBudget = Duration.minutes(90)
+
+/** Runs `labels`' tests in `workspace`, sandboxed, against the repository's known-red list. */
+const test = (workspace: string, labels: ReadonlyArray<string>) =>
+  sandboxed(workspace, [
+    "pnpm",
+    "exec",
+    "smthrs",
+    "test",
+    ...labels,
+    "--known-red",
+    ".github/ci-known-red.json",
+    "--jobs",
+    "4",
+    "--format",
+    "json",
+    // The workspace's result cache is the agent's to write: a check that
+    // read it would accept a result the agent recorded, not one it earned.
+    "--no-cache"
+  ]).pipe(
+    Effect.map(readChecks),
+    Effect.timeoutOrElse({
+      duration: checkBudget,
+      orElse: () =>
+        Effect.succeed<Checked>({
+          _tag: "Broken",
+          message: `tests did not finish within ${Duration.format(checkBudget)}`
+        })
+    })
+  )
+
+// The workspace kept at a `main` commit for telling a new red from an old one.
+// One baseline run at a time uses it.
+const baseline = `${workspaces}/baseline`
+const baselineTurn = Semaphore.makeUnsafe(1)
+
+/** Runs `labels` on `main` at `revision` in the shared baseline workspace. */
+const measureOnMain = (revision: string, labels: ReadonlyArray<string>) =>
+  Semaphore.withPermit(
+    baselineTurn,
+    asLand(effect {
+      if (!fileExists(baseline)) {
+        try asLand(awaitHostDisk(workspaceBytes))
+        try jjWrite(repository, ["workspace", "add", baseline, "--name", "sweep-baseline", "-r", revision])
+      } else {
+        try jjWrite(baseline, ["new", revision])
+      }
+      try install(baseline)
+      return try test(baseline, labels)
+    })
+  )
+
+// How many main commits the baseline file remembers.
+const rememberedCommits = 64
+
+/**
+ * The labels red on a `main` commit, measured once per (commit, label).
+ *
+ * Asking for labels already measured on `commit`, or being measured for
+ * another caller, waits for that answer instead of running them again. A
+ * green or red answer is kept in memory and, when `file` is given, in that
+ * JSON file for the newest {@link rememberedCommits} commits, so a restarted
+ * host keeps it. A run that could not decide (`Broken`) fails its callers
+ * and is not kept, so a later request retries it.
+ */
+export const makeBaselines = <R>(options: {
+  readonly file?: string | undefined
+  readonly measure: (commit: string, labels: ReadonlyArray<string>) => Checked!LandFailed!R
+}) => {
+  const saved = readBaselines(options.file)
+  const known = new Map<string, Map<string, Deferred.Deferred<boolean, LandFailed>>>()
+  for (const [commit, labels] of Object.entries(saved)) {
+    known.set(
+      commit,
+      new Map(
+        Object.entries(labels).map(([label, red]) => {
+          const answer = Deferred.makeUnsafe<boolean, LandFailed>()
+          Deferred.doneUnsafe(answer, Effect.succeed(red))
+          return [label, answer]
+        })
+      )
+    )
+  }
+  const save = (commit: string, answers: Record<string, boolean>) => {
+    if (options.file === undefined) return
+    const next = { ...saved[commit], ...answers }
+    delete saved[commit]
+    saved[commit] = next
+    for (const old of Object.keys(saved).slice(0, -rememberedCommits)) delete saved[old]
+    saveBaselines(options.file, saved)
+  }
+  return (commit: string, labels: ReadonlyArray<string>): ReadonlyArray<string>!LandFailed!R =>
+    Effect.suspend(() => {
+      const answers = known.get(commit) ?? new Map<string, Deferred.Deferred<boolean, LandFailed>>()
+      known.set(commit, answers)
+      const missing = [...new Set(labels)].filter((label) => !answers.has(label))
+      const mine = new Map(missing.map((label) => [label, Deferred.makeUnsafe<boolean, LandFailed>()]))
+      for (const [label, answer] of mine) answers.set(label, answer)
+      const asked = labels.map((label) => [label, answers.get(label)!] as const)
+      const measure = missing.length === 0
+        ? Effect.void
+        : options.measure(commit, missing).pipe(
+          Effect.onExit((exit) =>
+            sync(() => {
+              if (exit._tag === "Failure") {
+                // A baseline that failed decides nothing: its askers fail, a later ask runs it again.
+                const failed = Cause.findErrorOption(exit.cause)
+                const error = Option.isSome(failed) ? failed.value : fail(`baseline on ${commit} did not finish`)
+                for (const [label, answer] of mine) {
+                  answers.delete(label)
+                  Deferred.doneUnsafe(answer, Effect.fail(error))
+                }
+                return
+              }
+              const checked = exit.value
+              if (checked._tag === "Broken") {
+                const error = fail(`baseline on ${commit} did not run: ${checked.message}`)
+                for (const [label, answer] of mine) {
+                  answers.delete(label)
+                  Deferred.doneUnsafe(answer, Effect.fail(error))
+                }
+                return
+              }
+              const red = new Set(checked._tag === "Red" ? checked.labels : [])
+              for (const [label, answer] of mine) {
+                Deferred.doneUnsafe(answer, Effect.succeed(red.has(label)))
+              }
+              save(commit, Object.fromEntries(missing.map((l) => [l, red.has(l)])))
+              for (const old of [...known.keys()].slice(0, -rememberedCommits)) known.delete(old)
+            })
+          ),
+          Effect.ignore
+        )
+      return Effect.andThen(
+        measure,
+        Effect.map(
+          Effect.forEach(
+            asked,
+            ([label, answer]) => Effect.map(Deferred.await(answer), (red) => [label, red] as const)
+          ),
+          (pairs) => pairs.filter(([, red]) => red).map(([label]) => label)
+        )
+      )
+    })
+}
+
+/** The labels among `labels` that are red on `main` at `revision`, measured once per commit and label. */
+const redOnMain = makeBaselines({
+  file: `${workspaces}/baseline.json`,
+  measure: measureOnMain
+})
+
+/** Whether `file` is documentation `pnpm docs:sync` generates other files from. */
+export const isDocsSource = (file: string) => /(^|\/)docs\//.test(file) && !file.startsWith("apps/")
+
+/**
+ * Regenerates the documentation mirrors a change's docs edits feed, folds
+ * what changed into the change, and requires `pnpm docs:check` to pass, so
+ * a landing never leaves the generated docs behind their sources.
+ */
+effect function syncDocs(workspace: string, change: string, files: ReadonlyArray<string>) {
+  if (!files.some(isDocsSource)) return
+  const synced = try asLand(sandboxed(workspace, ["pnpm", "docs:sync"]))
+  if (synced.code !== 0) throw fail(`pnpm docs:sync for ${change}: exit ${synced.code}: ${tail(synced.stderr)}`)
+  if ((try jj(workspace, ["diff", "--name-only", "-r", "@"])).trim() !== "") {
+    try jjWrite(workspace, ["squash", "--from", "@", "--into", change, "-u"])
+  }
+  const checked = try asLand(sandboxed(workspace, ["pnpm", "docs:check"]))
+  if (checked.code !== 0) {
+    throw fail(`pnpm docs:check for ${change}: exit ${checked.code}: ${tail(`${checked.stdout}\n${checked.stderr}`)}`)
+  }
+}
+
+/**
+ * What a landing runs besides jj: the seam tests replace. `prepare` installs
+ * dependencies and syncs docs, `index` lists the targets, `test` runs labels,
+ * and `redOnMain` answers which of `labels` are already red on `main` at a
+ * commit.
+ */
+type RetryServices =
+  | FlowRuntime.FlowInstance
+  | FlowRuntime.FlowRuntime
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
+
+export interface Checks<R = never> {
+  readonly prepare: (
+    workspace: string,
+    change: string,
+    files: ReadonlyArray<string>
+  ) => void!LandFailed!R
+  readonly index: (workspace: string) => ReadonlyArray<IndexedTarget>!LandFailed!R
+  readonly test: (workspace: string, labels: ReadonlyArray<string>) => Checked!LandFailed!R
+  readonly redOnMain: (
+    labels: ReadonlyArray<string>,
+    revision: string
+  ) => ReadonlyArray<string>!LandFailed!R
+}
+
+/** The checks a live landing runs, sandboxed, in the change's workspace. */
+export const liveChecks: Checks<RetryServices> = {
+  prepare: (workspace, change, files) => asLand(Effect.andThen(install(workspace), syncDocs(workspace, change, files))),
+  index: (workspace) =>
+    asLand(Effect.flatMap(
+      output("pnpm", ["exec", "smthrs", "index", "//...", "--format", "json"], { cwd: workspace }),
+      (text) =>
+        Effect.mapError(
+          Schema.decodeUnknownEffect(IndexJson)(text),
+          (cause) => fail(`smthrs index: ${cause.message}`)
+        )
+    )).pipe(Effect.map((index) => index.targets)),
+  test: (workspace, labels) => asLand(test(workspace, labels)),
+  redOnMain: (labels, revision) => redOnMain(revision, labels)
+}
+
+// How many times one change is checked before main moving under it fails it.
+const checkAttempts = 6
+// How many times the serial step tries to move main for one checked change.
+const pushAttempts = 3
+
+/**
+ * Builds {@link landChange} over `checks`. Each landing holds the shared FIFO
+ * lease from its first fetch through validation and supervised publication.
+ * `lock` is the VCS lock file every repository write takes; `beforePush`
+ * runs inside that serial step, before `main` moves.
+ */
+export const makeLander = <R>(options: {
+  readonly checks: Checks<R>
+  readonly lock?: string | undefined
+  readonly landingLock?: string | undefined
+  readonly beforePush?: ((change: string) => void!!) | undefined
+}) => {
+  const { checks } = options
+  const write = jjWriteUnder(options.lock)
+  const turn = Semaphore.makeUnsafe(1)
+  const landedAs = (workspace: string, change: string) => one(workspace, `${change} & ::main@origin`, "commit_id")
+  effect function rebase(workspace: string, change: string, main: string) {
+    try write(workspace, ["rebase", "-s", change, "-d", main])
+    if ((try one(workspace, change, `if(conflict, "conflict", "")`)) !== "") {
+      throw fail(`change ${change} conflicts with main ${main.slice(0, 12)}`)
+    }
+  }
+
+  /**
+   * The serial step: moves `main` to `change`, checked on `tested`. When
+   * `main` moved since, it rebases without checking again unless the new
+   * commits {@link invalidates} the checks; then it answers `undefined`.
+   */
+  const push = (
+    lease: LandLease,
+    workspace: string,
+    change: string,
+    tested: string,
+    check: { readonly packages: ReadonlyArray<string>; readonly all: ReadonlyArray<string>; readonly docs: boolean }
+  ) =>
+    Semaphore.withPermit(
+      turn,
+      effect {
+        let base = tested
+        for (let attempt = 1; attempt <= pushAttempts; attempt++) {
+          try write(workspace, ["git", "fetch"])
+          const landed = try landedAs(workspace, change)
+          if (landed !== "") return landed
+          const main = try one(workspace, "main@origin", "commit_id")
+          if (main !== base) {
+            const moved = try jj(workspace, ["diff", "--name-only", "--from", base, "--to", main])
+            const files = moved.split("\n").filter((file) => file !== "")
+            if (invalidates(files, check.packages, check.all, check.docs)) return undefined
+            try rebase(workspace, change, main)
+            base = main
+          }
+          try Effect.try({ try: () => lease.check(), catch: (error) => fail(String(error)) })
+          if (options.beforePush !== undefined) try options.beforePush(change)
+          // Only a fast-forward may move main; a refusal means main moved again.
+          const moved = try Effect.result(write(workspace, ["bookmark", "set", "main", "-r", change]))
+          if (Result.isFailure(moved)) continue
+          const pushed = try Effect.result(tryPromise({
+            try: () =>
+              options.lock !== undefined && fileExists(options.lock)
+                ? lease.push("lockf", [
+                  "-k",
+                  "-t",
+                  "900",
+                  options.lock,
+                  "jj",
+                  "-R",
+                  workspace,
+                  "git",
+                  "push",
+                  "-b",
+                  "main"
+                ], { cwd: workspace, stream: true })
+                : lease.push("jj", ["-R", workspace, "git", "push", "-b", "main"], { cwd: workspace, stream: true }),
+            catch: (error) => fail(String(error))
+          }))
+          // A publication decision is single-use. A failed push needs a fresh
+          // FIFO ticket and fresh validation, outside this lease's scope.
+          return Result.isSuccess(pushed) ? try one(workspace, change, "commit_id") : undefined
+        }
+        return undefined
+      }
+    )
+
+  /**
+   * Lands the change `change` (a jj change id) from `workspace` on `main`,
+   * and answers the landed commit id.
+   *
+   * The checks run under the shared FIFO lease. If a pusher outside the queue
+   * moves `main` meanwhile, the
+   * change is rebased and pushed without checking again unless the new
+   * commits touched a package whose tests it ran (see {@link invalidates}).
+   * Re-landing a change `main` already contains answers its commit, so a
+   * round replayed after a crash never pushes twice. A conflict, a red test
+   * the known-red list and `main` do not explain, or checks that cannot run
+   * fail with {@link LandFailed} and leave the change in the repository for
+   * inspection.
+   */
+  return (workspace: string, change: string) =>
+    effect {
+      for (let attempt = 1; attempt <= checkAttempts; attempt++) {
+        const pushed = try Effect.acquireUseRelease(
+          Effect.interruptible(tryPromise({
+            try: (signal) => acquireLock(landingLockPath(options.landingLock), { signal }),
+            catch: (error) => fail(String(error))
+          })),
+          (lease) =>
+            effect {
+              try write(workspace, ["git", "fetch"])
+              const landed = try landedAs(workspace, change)
+              if (landed !== "") return landed
+              const main = try one(workspace, "main@origin", "commit_id")
+              try rebase(workspace, change, main)
+              const files = try changedFiles(workspace, change)
+              if (files.length === 0) throw fail(`change ${change} is empty on main ${main.slice(0, 12)}`)
+              const hooks = files.filter((file) => installHooks.includes(file))
+              if (hooks.length > 0) {
+                throw fail(`change ${change} edits install hooks (${hooks.join(" ")}); land it by hand`)
+              }
+              try checks.prepare(workspace, change, files)
+              const index = try checks.index(workspace)
+              const labels = testTargets(files, index)
+              if (labels.length > 0) {
+                const checked = try checks.test(workspace, labels)
+                if (checked._tag === "Broken") throw fail(`checks did not run for ${change}: ${checked.message}`)
+                if (checked._tag === "Red") {
+                  const blockers = blocking(checked.labels, try checks.redOnMain(checked.labels, main))
+                  if (blockers.length > 0) throw fail(`checks red for ${change}: ${blockers.join(" ")}`)
+                }
+              }
+              return try push(lease, workspace, change, main, {
+                packages: [...new Set(labels.map(packageOf))],
+                all: [...new Set(index.map((target) => packageOf(target.label)))],
+                docs: files.some(isDocsSource)
+              })
+            },
+          (lease) => promise(() => lease())
+        )
+        if (pushed !== undefined) return pushed
+      }
+      throw fail(`main kept moving; ${change} not landed after ${checkAttempts} checks`)
+    }
+}
+
+/** Lands one change with the live checks under the machine-wide VCS lock; see {@link makeLander}. */
+export const landChange = makeLander({ checks: liveChecks, lock: lockFile })

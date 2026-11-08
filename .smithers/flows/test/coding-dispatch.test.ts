@@ -24,14 +24,14 @@ import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
-import { conversation, DispatchInput, dispatchModels, noChange, seatFor } from "../coding/dispatch.ts"
+import { conversation, DispatchInput, dispatchModels, noChange, seatFor } from "../coding/dispatch.vibe"
 import Dispatch, { dispatchRegistration } from "../coding/dispatch/flow.ts"
 import * as CodingFileSystem from "../coding/filesystem.ts"
-import * as HostRegistry from "../coding/host-registry.ts"
+import * as HostRegistry from "../coding/host-registry.vibe"
 import { provisionHostBuiltins, repositoryFlowsServed, roleResolver } from "../coding/host.ts"
-import { NativeCoding } from "../coding/native.ts"
+import { NativeCoding } from "../coding/native.vibe"
 import { composeRoot } from "../coding/serve-host.ts"
-import { bindRepositoryRegistry } from "../repository/registry.ts"
+import { bindRepositoryRegistry } from "../repository/registry.vibe"
 import { systemFlows } from "./fixtures/system-flows.ts"
 
 const changeId = "k".repeat(32)

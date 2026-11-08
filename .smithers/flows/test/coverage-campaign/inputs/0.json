@@ -1896,7 +1896,7 @@
     "sha256": "39d93eac57d1ec6393bb1f1c7bad6de2afe0d04ccb103b9ddce2c30e4fa9bac5"
   },
   {
-    "path": ".smithers/flows/automation/run-module.ts",
+    "path": ".smithers/flows/automation/run-module.vibe",
     "sha256": "3352969bf03f88c0bedd6594bda99176bf4739083551f3523e12f521e553aba4"
   },
   {
@@ -2100,7 +2100,7 @@
     "sha256": "0cc6e61bd0226ff25712608a6440cc1e67ca77249f303ba7410e7c25373dee09"
   },
   {
-    "path": ".smithers/flows/coding/atoms.ts",
+    "path": ".smithers/flows/coding/atoms.vibe",
     "sha256": "1f51cadc1b16fc6cd1004c74c45639b9afb9e3eaee3fb86da1639f866fac12e0"
   },
   {
@@ -2108,7 +2108,7 @@
     "sha256": "61c8d7c01c6eebf1b6491dbe39634bae90645801ed8205d96e0e274966092e2e"
   },
   {
-    "path": ".smithers/flows/coding/catalog.ts",
+    "path": ".smithers/flows/coding/catalog.vibe",
     "sha256": "bfa13554da444ef0e6aa824b7889f57d1c61cf84b9573ef62665451e280bf369"
   },
   {
@@ -2124,11 +2124,11 @@
     "sha256": "0d97f9178d4d6150ba6d386aec99b0d0e41f2193d345be2d2f39f0a480f37d56"
   },
   {
-    "path": ".smithers/flows/coding/checks.ts",
+    "path": ".smithers/flows/coding/checks.vibe",
     "sha256": "4decb661e50ab6043469c3cfc2650641e09bc42f8d6a48ef7a627070f42a40d5"
   },
   {
-    "path": ".smithers/flows/coding/command-receipts.ts",
+    "path": ".smithers/flows/coding/command-receipts.vibe",
     "sha256": "f92d7657eedf138dd51cf3e98dd17344770458f1a8629cf8fbde72f01c1b33b8"
   },
   {
@@ -2136,7 +2136,7 @@
     "sha256": "07c341e3b8d9e94b40b6bda9f40e1133de6e8c6376b0f311bc715b49cb979c74"
   },
   {
-    "path": ".smithers/flows/coding/correction.ts",
+    "path": ".smithers/flows/coding/correction.vibe",
     "sha256": "bd959dbf1b0620aec2cea2cc10a3d289ceca5bbee50db6480d9594c3d7fee03d"
   },
   {
@@ -2148,7 +2148,7 @@
     "sha256": "24bdf88b37e31c51da1180313937fb2370db52cd0d80011ba045e3804c9ef486"
   },
   {
-    "path": ".smithers/flows/coding/dispatch.ts",
+    "path": ".smithers/flows/coding/dispatch.vibe",
     "sha256": "ece20916e45c568e6db1b773a6c3c66bc9f93aae853bb8527482af64908b1c0f"
   },
   {
@@ -2160,7 +2160,7 @@
     "sha256": "a8bc72a994029e99571b62a29a2d3a1cd579bf5f0b654c0be636e32c64aa5f95"
   },
   {
-    "path": ".smithers/flows/coding/feedback.ts",
+    "path": ".smithers/flows/coding/feedback.vibe",
     "sha256": "a4e11db9d63856a299e35788ab78dd234a54312dfb41e25f2d6e0975c15a0883"
   },
   {
@@ -2180,7 +2180,7 @@
     "sha256": "5bf3a1dbfbcec33274abd72d1cc4c15a1e0c76d7d70d98b8c0ebc75cb92b2349"
   },
   {
-    "path": ".smithers/flows/coding/flow-load.ts",
+    "path": ".smithers/flows/coding/flow-load.vibe",
     "sha256": "3647445a18b79f75f2dd4ea1e3724c7fac19d812c9959c7a9e6b9379d84d3d00"
   },
   {
@@ -2212,7 +2212,7 @@
     "sha256": "7987c43803649baf0a3a8f8a490ed2568b4d6bb67234e04b369f277566107c31"
   },
   {
-    "path": ".smithers/flows/coding/host-registry.ts",
+    "path": ".smithers/flows/coding/host-registry.vibe",
     "sha256": "375f55c63f1ff2028b14aacb5b602737c9b93fae0002819618210bda3ca6fe5c"
   },
   {
@@ -2224,7 +2224,7 @@
     "sha256": "aa26679f5649ea1c792d8e997ea3a3133dbeabda65161cc896f8c1edffd3d699"
   },
   {
-    "path": ".smithers/flows/coding/immutable-source.ts",
+    "path": ".smithers/flows/coding/immutable-source.vibe",
     "sha256": "1757f9204af1e2980e5a6a11824857086141f39cbd22f35cb9dbf9179eed3171"
   },
   {
@@ -2236,11 +2236,11 @@
     "sha256": "f8d97119988b387a90137370084e36b655d91a885a331cc3d45ef98225b3265a"
   },
   {
-    "path": ".smithers/flows/coding/jev-check.ts",
+    "path": ".smithers/flows/coding/jev-check.vibe",
     "sha256": "d0a6f94649694dacdeeb3dc5f34415df0adcef252e9d3569334b41231519c22c"
   },
   {
-    "path": ".smithers/flows/coding/landing-config.ts",
+    "path": ".smithers/flows/coding/landing-config.vibe",
     "sha256": "aec767bf06edf3e51ffa3d5bdacef845abe30372beccff839c088d2066ca055a"
   },
   {
@@ -2248,15 +2248,15 @@
     "sha256": "c0c8f98bafbfb02d743f9c9a526a7ad8589db0fc0ccf657dca6bf48a16f79688"
   },
   {
-    "path": ".smithers/flows/coding/landing.ts",
+    "path": ".smithers/flows/coding/landing.vibe",
     "sha256": "52da582dd0b80ceef31ad0622e76a507bb090c67f625eeb740db4407eb406e60"
   },
   {
-    "path": ".smithers/flows/coding/learnings.ts",
+    "path": ".smithers/flows/coding/learnings.vibe",
     "sha256": "98e7c4ec5e80a4ae46c45c220f7306ac4ac21e1b92164e7940c692348f1b5635"
   },
   {
-    "path": ".smithers/flows/coding/local-landing.ts",
+    "path": ".smithers/flows/coding/local-landing.vibe",
     "sha256": "8c73306d1191e5e5f2201e9483491abf94fbaa0b25aedae9dd31197bf21a6346"
   },
   {
@@ -2268,7 +2268,7 @@
     "sha256": "ee76ba845fc95a3e64fe7a4ce3bfebb5233e7365f263bc70f93b0b1a5ab99cb6"
   },
   {
-    "path": ".smithers/flows/coding/native.ts",
+    "path": ".smithers/flows/coding/native.vibe",
     "sha256": "4b9892b554403c0331b08260f513f1aabaed5b0fb13eb44bc615cb5fc8a6e16f"
   },
   {
@@ -2276,7 +2276,7 @@
     "sha256": "2507b87ba82fa85338ace2a3da57682c67f029964dc51bd9ed7d308557dcd320"
   },
   {
-    "path": ".smithers/flows/coding/outside-stack.ts",
+    "path": ".smithers/flows/coding/outside-stack.vibe",
     "sha256": "163c22538ce75cc7c99094ec2d724b1849db7af22a311c607f51292f8a23c7a9"
   },
   {
@@ -2288,19 +2288,19 @@
     "sha256": "49ff73aa82dfefcab2310bf882e58c2e13ba9b0539f908d0a5ca6b9ae743a085"
   },
   {
-    "path": ".smithers/flows/coding/planning-authority.ts",
+    "path": ".smithers/flows/coding/planning-authority.vibe",
     "sha256": "39692f3ebe6ca7ff8a8addb148e84fd0ff67c75c226e458f37018a18b62d2d1b"
   },
   {
-    "path": ".smithers/flows/coding/planning-memory.ts",
+    "path": ".smithers/flows/coding/planning-memory.vibe",
     "sha256": "2628ef96e1749e05a39212d09b95cb93c2870535f738833118700ac74bfcee61"
   },
   {
-    "path": ".smithers/flows/coding/planning-sources.ts",
+    "path": ".smithers/flows/coding/planning-sources.vibe",
     "sha256": "5bd3cdbfa8eb226671b444e7bd0866a11c81adbe3cee0a22caabaca7cd2a9f40"
   },
   {
-    "path": ".smithers/flows/coding/planning-wiki-provider.ts",
+    "path": ".smithers/flows/coding/planning-wiki-provider.vibe",
     "sha256": "8fe2a14fd142f779836ef8ea20ff82b273c86a030d42b6fcd8af797c098268c5"
   },
   {
@@ -2308,7 +2308,7 @@
     "sha256": "115a84eb03063c1ad14e80362027e56270aa4eb84e99c5f8e7c9ff66067ad442"
   },
   {
-    "path": ".smithers/flows/coding/planning-wiki.ts",
+    "path": ".smithers/flows/coding/planning-wiki.vibe",
     "sha256": "d1c948f0099e7bd0c5f3beeb3ce355a0587018e6b65ef502e00c0e01286a0598"
   },
   {
@@ -2316,15 +2316,15 @@
     "sha256": "5202734f52d365b21905f32d11f8c3792fa25f3cb3e2d69add1645dd6f09bde0"
   },
   {
-    "path": ".smithers/flows/coding/planning.ts",
+    "path": ".smithers/flows/coding/planning.vibe",
     "sha256": "f16f1a436e8181413582d82623bccdcbb644b375cd58874490d3101325e089df"
   },
   {
-    "path": ".smithers/flows/coding/poc-schema.ts",
+    "path": ".smithers/flows/coding/poc-schema.vibe",
     "sha256": "5011b7c5492a6ccd8b2304a319ecea4109460c77ea8d5552f97791a6480a4442"
   },
   {
-    "path": ".smithers/flows/coding/poc-source.ts",
+    "path": ".smithers/flows/coding/poc-source.vibe",
     "sha256": "3c2b939192f5fe1f182da0f3686e42e85e54e6d23fa6665716ce2e6bfa0b8330"
   },
   {
@@ -2332,7 +2332,7 @@
     "sha256": "2b51326740d2caec1d9c4558e090d4e9b4e22032aa470a62b4628c7d42b6914a"
   },
   {
-    "path": ".smithers/flows/coding/poc.ts",
+    "path": ".smithers/flows/coding/poc.vibe",
     "sha256": "9621e551398d745adf79580efce4f07299b978251dd6f3d16c566bb09638abd1"
   },
   {
@@ -2344,7 +2344,7 @@
     "sha256": "94b41fa425f27924340348f66030ae9672448f811c1c62ff1c2af8cb85c32f13"
   },
   {
-    "path": ".smithers/flows/coding/project-config.ts",
+    "path": ".smithers/flows/coding/project-config.vibe",
     "sha256": "c011eb070ea58e047b00dc288f2fa243391a0262402e063e7f3d15435b672824"
   },
   {
@@ -2368,7 +2368,7 @@
     "sha256": "9cd66c74664531210a635063607bf38ccdcaa9478d8bd4a4a6b2ce0cf8a31d71"
   },
   {
-    "path": ".smithers/flows/coding/registration.ts",
+    "path": ".smithers/flows/coding/registration.vibe",
     "sha256": "71adb375ad01f76b10dae06374fd1ec791eab9439968f200b0e4af0b23b07dbc"
   },
   {
@@ -2380,11 +2380,11 @@
     "sha256": "834c840b62edcee02a6da309e59cf32e7c175fdc325e0980656d1b665228c36b"
   },
   {
-    "path": ".smithers/flows/coding/request.ts",
+    "path": ".smithers/flows/coding/request.vibe",
     "sha256": "3ae12cc026713ca1e539cc209496f5290aa812cb16266e74f60d1d64b1f268d7"
   },
   {
-    "path": ".smithers/flows/coding/review-check.ts",
+    "path": ".smithers/flows/coding/review-check.vibe",
     "sha256": "80d82867af20997dca81e279bd102cc3099c7baf35d0d6a006db879d772b98e9"
   },
   {
@@ -2396,7 +2396,7 @@
     "sha256": "d8f0c41f60f6a2b9677815864921dcb8084350ebdf654d4053d3d1ff68f0fa02"
   },
   {
-    "path": ".smithers/flows/coding/security-review-check.ts",
+    "path": ".smithers/flows/coding/security-review-check.vibe",
     "sha256": "5cd52d240abc674f7d87e99b4c43c1df6a2878c64fab6c086e7f251208cbd85c"
   },
   {
@@ -2412,19 +2412,19 @@
     "sha256": "a00356b7fb60172df341b1b9170176a015650518725bb91f012bd0297f434645"
   },
   {
-    "path": ".smithers/flows/coding/snapshots.ts",
+    "path": ".smithers/flows/coding/snapshots.vibe",
     "sha256": "e61ffff93c5b820f7b257ca2177082e23ed857599bdb71344aa3d2807ec9befd"
   },
   {
-    "path": ".smithers/flows/coding/source-admission.ts",
+    "path": ".smithers/flows/coding/source-admission.vibe",
     "sha256": "cdb96163247114ef1f90b5cc92312ced9b041cb6dbc970834d80ea928ca8d242"
   },
   {
-    "path": ".smithers/flows/coding/source-refusal.ts",
+    "path": ".smithers/flows/coding/source-refusal.vibe",
     "sha256": "faeb8f2cff6d5f06d42efa71a8e00c5ea97f1145b7838a9bc0ccb2ecf9fc6856"
   },
   {
-    "path": ".smithers/flows/coding/stack.ts",
+    "path": ".smithers/flows/coding/stack.vibe",
     "sha256": "c6505af5eed55743371e529433dd89c3cb4a08f6e090f71e2f79bd83f85774ea"
   },
   {
@@ -2436,7 +2436,7 @@
     "sha256": "b9a05a25386e5b54007641f87b8d2ee1ff28d85ca28c9980b6889224bf22b456"
   },
   {
-    "path": ".smithers/flows/coding/steering.ts",
+    "path": ".smithers/flows/coding/steering.vibe",
     "sha256": "2181b23d941c69bb92ca0d296b200577029e4628a5b421fede020c61901c963e"
   },
   {
@@ -2448,31 +2448,31 @@
     "sha256": "93ca986641e30945e2a53e885359f7a444c48a8ff46455b4d0e5fb67d7807faf"
   },
   {
-    "path": ".smithers/flows/coding/todo-conflict-schema.ts",
+    "path": ".smithers/flows/coding/todo-conflict-schema.vibe",
     "sha256": "aad49e6586dd34d9e3250e5627f981e40f7bfc46621e42f0c519fbcefda712c8"
   },
   {
-    "path": ".smithers/flows/coding/todo-conflict.ts",
+    "path": ".smithers/flows/coding/todo-conflict.vibe",
     "sha256": "2fff8ad2e50bea09dd4f0a55d51dc9afa5273606ff4f92f22969385e6dd071b8"
   },
   {
-    "path": ".smithers/flows/coding/todo-pause.ts",
+    "path": ".smithers/flows/coding/todo-pause.vibe",
     "sha256": "3733682ccb26bb2d50ad2f5959678dd9b31c4304f56881667423e4497b643b52"
   },
   {
-    "path": ".smithers/flows/coding/todo-route.ts",
+    "path": ".smithers/flows/coding/todo-route.vibe",
     "sha256": "a0eaa9e15d9ab79dfa00b05247d1844ccd3c131b1cba7d5503730c18ad41d3c1"
   },
   {
-    "path": ".smithers/flows/coding/todo.ts",
+    "path": ".smithers/flows/coding/todo.vibe",
     "sha256": "3f1f15e54c2be552cef24360b35ac60d9842bb9c91a1e3f2b513905afee96e94"
   },
   {
-    "path": ".smithers/flows/coding/verify-schema.ts",
+    "path": ".smithers/flows/coding/verify-schema.vibe",
     "sha256": "7bb4706af5d3790acf6da229fe381ed97e556577bb09ee2a0d0ebdaa102f999b"
   },
   {
-    "path": ".smithers/flows/coding/verify.ts",
+    "path": ".smithers/flows/coding/verify.vibe",
     "sha256": "545e3c4ef5547ffdea3c7f160fad2b05e2271f7846946a25c389c7da0c5b2804"
   },
   {
@@ -2480,15 +2480,15 @@
     "sha256": "8bfab3ae5a950e3a5085842f0710d18c5c4f9cc48d715a3cfb405c72c626e281"
   },
   {
-    "path": ".smithers/flows/coding/vibe-admission.ts",
+    "path": ".smithers/flows/coding/vibe-admission.vibe",
     "sha256": "6e10f55865f7108e06c9d75eac0f2cb32a464953b4f8687cf43bda773e6c37fb"
   },
   {
-    "path": ".smithers/flows/coding/vibe-cleanup.ts",
+    "path": ".smithers/flows/coding/vibe-cleanup.vibe",
     "sha256": "d10fab8f136e119efaac4077eb7e35dbd6a02807585186c2d12c3a1cf03431c9"
   },
   {
-    "path": ".smithers/flows/coding/vibe-evidence.ts",
+    "path": ".smithers/flows/coding/vibe-evidence.vibe",
     "sha256": "2312a328d6a2700753ec003c3ef7d3f753aec77053cc7ec5d1031f02c3507952"
   },
   {
@@ -2496,23 +2496,23 @@
     "sha256": "ed4e7546bd5ec00211b73126b47953e9e9a55292ec8da5098d5aef32de0fd051"
   },
   {
-    "path": ".smithers/flows/coding/vibe-lander.ts",
+    "path": ".smithers/flows/coding/vibe-lander.vibe",
     "sha256": "6d7ade38e56f510b17024739faf84e32a3b5d5aec05a6940c0ee00ac73a975de"
   },
   {
-    "path": ".smithers/flows/coding/vibe-landing.ts",
+    "path": ".smithers/flows/coding/vibe-landing.vibe",
     "sha256": "182e585ffc0663711a26a6410a97e8014d155924905dd02373559a90d9e14ef3"
   },
   {
-    "path": ".smithers/flows/coding/vibe-publication.ts",
+    "path": ".smithers/flows/coding/vibe-publication.vibe",
     "sha256": "0d1ae4af6251d3fe9b7ac76319520928e3927e966a034234618675f2f0ae16e3"
   },
   {
-    "path": ".smithers/flows/coding/vibe-schema.ts",
+    "path": ".smithers/flows/coding/vibe-schema.vibe",
     "sha256": "49cff417099e46f29b5c0addcdb8dec7ca4b323cd130e0cc549028e2ab5d2cc8"
   },
   {
-    "path": ".smithers/flows/coding/vibe.ts",
+    "path": ".smithers/flows/coding/vibe.vibe",
     "sha256": "402b88ac9a5aef0cbbcdfee80bf212cbb1568e608093283c30ade9570fd8a39c"
   },
   {
@@ -2520,27 +2520,27 @@
     "sha256": "a15de169cf4f6d650ed4bc5c5a8e13fea83db2921afea96dcc0a1fd395fe06a8"
   },
   {
-    "path": ".smithers/flows/coding/wiki-check.ts",
+    "path": ".smithers/flows/coding/wiki-check.vibe",
     "sha256": "757d61e0120d9d7246b4d28c093087f875b8d75d372ef153a7227a0d54451d69"
   },
   {
-    "path": ".smithers/flows/coding/wiki-output.ts",
+    "path": ".smithers/flows/coding/wiki-output.vibe",
     "sha256": "ab6d190293b7772c3a9cced51266c975ce6024767cbab8e8d9e85a63dff0b037"
   },
   {
-    "path": ".smithers/flows/coding/wiki-policy.ts",
+    "path": ".smithers/flows/coding/wiki-policy.vibe",
     "sha256": "fce1153adceb5019f4d55e46736ce6e04577abe01e2cba6225ada73bdb687724"
   },
   {
-    "path": ".smithers/flows/coding/wiki-refresh.ts",
+    "path": ".smithers/flows/coding/wiki-refresh.vibe",
     "sha256": "9c9321c2f793dbc923d789caf35cab3ed87632362df005c64444cca5904d20ff"
   },
   {
-    "path": ".smithers/flows/coding/wiki-registry.ts",
+    "path": ".smithers/flows/coding/wiki-registry.vibe",
     "sha256": "367fe52e73882848dcbf2dedc9963ccc4db283761f8e6280874094a5583a8169"
   },
   {
-    "path": ".smithers/flows/coding/wiki-route.ts",
+    "path": ".smithers/flows/coding/wiki-route.vibe",
     "sha256": "c1198e1827028aecdeb64a6da696631f8988736ad860463ecb022fb7868cd691"
   },
   {
@@ -2548,7 +2548,7 @@
     "sha256": "bd80fafc26d93f306ebcbaaddd38a29180e0727b9d312fb0a4e24e3746fe4554"
   },
   {
-    "path": ".smithers/flows/coding/workflow.ts",
+    "path": ".smithers/flows/coding/workflow.vibe",
     "sha256": "cd0a01749d7699b9bba2b9f59f3cbdd03f33a38dda9bd59f791f3a6fe48de776"
   },
   {
@@ -2700,11 +2700,11 @@
     "sha256": "76c0280f6d85c08ff02022529eb1700394cd551b0633745604bd25162b608e73"
   },
   {
-    "path": ".smithers/flows/issue-sweep/accounts.ts",
+    "path": ".smithers/flows/issue-sweep/accounts.vibe",
     "sha256": "20ce64d1b7d0105540445bdbadabb8dc79706282c9602d6d8515df77ee47a523"
   },
   {
-    "path": ".smithers/flows/issue-sweep/disk.ts",
+    "path": ".smithers/flows/issue-sweep/disk.vibe",
     "sha256": "e3cd36ac91f60268c3ce3fa6f436025c2f295d30be0213b13ad989f79d1c4815"
   },
   {
@@ -2712,11 +2712,11 @@
     "sha256": "3b037a8b5cd9420f1beb43e7cbe6ebc543ca9f39a93d3985b78c3ccb2b106990"
   },
   {
-    "path": ".smithers/flows/issue-sweep/github.ts",
+    "path": ".smithers/flows/issue-sweep/github.vibe",
     "sha256": "328802cc30469c873f7b0361ae62bc63db27074bbf70bd006eaf8dbb405a41cf"
   },
   {
-    "path": ".smithers/flows/issue-sweep/host.ts",
+    "path": ".smithers/flows/issue-sweep/host.vibe",
     "sha256": "79644b12ac171548a386645933cfad4362d0d2ec68e2d4f13ba95360728e94b4"
   },
   {
@@ -2724,7 +2724,7 @@
     "sha256": "792558def570c5bb5267e4f9daf93deded9b8af10710b785a2d2c29e1846c807"
   },
   {
-    "path": ".smithers/flows/issue-sweep/land.ts",
+    "path": ".smithers/flows/issue-sweep/land.vibe",
     "sha256": "21a17c3a9bc703bd9139a19fa39ea67a98b34797164268579b8bfb6f78042a8b"
   },
   {
@@ -2868,27 +2868,27 @@
     "sha256": "e5f7ebc0734ab189e75ae4fdab62455257d1f568824d45bb40264ebe0e910404"
   },
   {
-    "path": ".smithers/flows/issue-sweep/triage.ts",
+    "path": ".smithers/flows/issue-sweep/triage.vibe",
     "sha256": "2ea4747a08618f8113a73dc8210aac15e727c4ad1b0c9b99d111f91e6401e152"
   },
   {
-    "path": ".smithers/flows/issue-sweep/verdict.ts",
+    "path": ".smithers/flows/issue-sweep/verdict.vibe",
     "sha256": "025487624975fd962f71db66e8a38b776b662dbe6f42884ec1ab75f25e90581b"
   },
   {
-    "path": ".smithers/flows/issue-sweep/vm-options.ts",
+    "path": ".smithers/flows/issue-sweep/vm-options.vibe",
     "sha256": "cef18daa91e714d17ef249452039a4f831e790c9f1abeeb948cd2474c525e506"
   },
   {
-    "path": ".smithers/flows/issue-sweep/vm-pool.ts",
+    "path": ".smithers/flows/issue-sweep/vm-pool.vibe",
     "sha256": "0339af9a49a3acc75c812ba1dc2ec92ab49cd5b327b448c5e03d2b0075ec0a6b"
   },
   {
-    "path": ".smithers/flows/issue-sweep/vm.ts",
+    "path": ".smithers/flows/issue-sweep/vm.vibe",
     "sha256": "3eb212d60e9fb2a0b2caf016e2a1e5f128cf1e50d6e8d3dac57262d2fe8681d9"
   },
   {
-    "path": ".smithers/flows/issue-sweep/work/claude.ts",
+    "path": ".smithers/flows/issue-sweep/work/claude.vibe",
     "sha256": "c9b4962f0c8c16b045244188bcf29ceba0eae6b88730fedad6c510484dbed990"
   },
   {
@@ -2896,7 +2896,7 @@
     "sha256": "e654027e90cc36862a2d3aeb1335c1f382caf1445a85902d02d2d9539d71efa8"
   },
   {
-    "path": ".smithers/flows/issue-sweep/work/receipts.ts",
+    "path": ".smithers/flows/issue-sweep/work/receipts.vibe",
     "sha256": "674d3736d7d91ac22811cc0a1e7572f3ff2c23ec5cf3b4a56fa17644d11ead2b"
   },
   {
@@ -2912,7 +2912,7 @@
     "sha256": "4dcd6b58602f794e8cd2f9d216f190b64cf823970ce7ec31ca71a85d0437e1e2"
   },
   {
-    "path": ".smithers/flows/issues/file-tree/errors.ts",
+    "path": ".smithers/flows/issues/file-tree/errors.vibe",
     "sha256": "3fc29a19ba6eaf3a55da8917274b8362e953f2a8abc4b7cfd2dde816c80b8d7e"
   },
   {
@@ -3148,7 +3148,7 @@
     "sha256": "3e0ece457968e7910f919e8aa3b9c465eb3e0ac36ff4fabe623ba1c71d5f94ca"
   },
   {
-    "path": ".smithers/flows/memory/calibrate.ts",
+    "path": ".smithers/flows/memory/calibrate.vibe",
     "sha256": "8595e78e2677327625f01f2b148df54d4fafaf1150ec0a0b734c8151f9732b23"
   },
   {
@@ -3156,7 +3156,7 @@
     "sha256": "ee861f97863ee2b668c0e37e8aeb0c8585be96c394d26d77a16c64f8a1fab3c8"
   },
   {
-    "path": ".smithers/flows/memory/deps.ts",
+    "path": ".smithers/flows/memory/deps.vibe",
     "sha256": "e6c21287fd96e3cd32c93a4382a043f23f44144b534a20837a84bf5fb9159144"
   },
   {
@@ -3164,7 +3164,7 @@
     "sha256": "7231a7d550b12742e95897312675d343eb1d525b906c736e757cb38af1da41d2"
   },
   {
-    "path": ".smithers/flows/memory/landed.ts",
+    "path": ".smithers/flows/memory/landed.vibe",
     "sha256": "bc08913a7fcedbb174239760c11b860ee3aa55c714f73d57393dd21078377380"
   },
   {
@@ -3172,7 +3172,7 @@
     "sha256": "3c2322d2d911eb8d5f447bf6c49639d161d09c12ff0caee5f93dd52b3dcf7545"
   },
   {
-    "path": ".smithers/flows/memory/mine.ts",
+    "path": ".smithers/flows/memory/mine.vibe",
     "sha256": "8158ddaab3fa3eea92445bdb40678a38ce220a587dae3982666ab30dfb20f5bc"
   },
   {
@@ -3180,7 +3180,7 @@
     "sha256": "be2949d305a0f399738d9b153ae5d340839b580988a69fd882e116a688992b1c"
   },
   {
-    "path": ".smithers/flows/memory/thresholds.ts",
+    "path": ".smithers/flows/memory/thresholds.vibe",
     "sha256": "f1cb351bf0f34c392963f68c345cd10f0c0e8dea2f51c4e127b87951aaaaff57"
   },
   {
@@ -3256,7 +3256,7 @@
     "sha256": "4f2d926d3f3b6d12f9915207447855f65ef6fdd6fabf9644e250bd70558fb111"
   },
   {
-    "path": ".smithers/flows/notification-policy/src/policy.ts",
+    "path": ".smithers/flows/notification-policy/src/policy.vibe",
     "sha256": "feb6a4f1ab558cd22d9a00adb16ed8078bbcd14ecb9fa19ce3caef5816fa583b"
   },
   {
@@ -3332,7 +3332,7 @@
     "sha256": "f1de119003fa52180376856cf494b43f1715de6d56b9cc4be8cd57ba918be619"
   },
   {
-    "path": ".smithers/flows/release-content/jev-template.ts",
+    "path": ".smithers/flows/release-content/jev-template.vibe",
     "sha256": "2d179fead3dc7cf08c82867988a4467e760c5714d6acdc1a59530a003d2450f4"
   },
   {
@@ -3372,7 +3372,7 @@
     "sha256": "41bd1fbbd30cbb93c15e1990947695272a0b49e8d982e27d76506a26d6e7e49b"
   },
   {
-    "path": ".smithers/flows/release-support/schema.ts",
+    "path": ".smithers/flows/release-support/schema.vibe",
     "sha256": "c6ff4de0464ec64de26ebeb28245b579211ef933af4b71616e10384072baee36"
   },
   {
@@ -3760,7 +3760,7 @@
     "sha256": "23c5e347bef5bfffb61b13a068296baf9099bcff30fad018bb6ea3f9fac07f44"
   },
   {
-    "path": ".smithers/flows/repository/activation.ts",
+    "path": ".smithers/flows/repository/activation.vibe",
     "sha256": "d30ed037b043d5bdf76124f1fa478d5d8c1612a28786dc0107df056929ca31c8"
   },
   {
@@ -3772,19 +3772,19 @@
     "sha256": "4d6a089b8e998ff727541ea6bf9e461c666ac3a77c5b1890da4d2cfd5ed73d1d"
   },
   {
-    "path": ".smithers/flows/repository/changes.ts",
+    "path": ".smithers/flows/repository/changes.vibe",
     "sha256": "a1403ce18b259fffa3507a1820b02671838e9536f5e70ba997c50330db779d20"
   },
   {
-    "path": ".smithers/flows/repository/check-context.ts",
+    "path": ".smithers/flows/repository/check-context.vibe",
     "sha256": "1ef836d7bbb8c3ead53af4ba932a436b396c94afb8fb3f6b001aa2cc4268eed7"
   },
   {
-    "path": ".smithers/flows/repository/check-receipt.ts",
+    "path": ".smithers/flows/repository/check-receipt.vibe",
     "sha256": "ee29c4afddcd767d925317747fd21c73b966a3628f00496bbf0649b798d57602"
   },
   {
-    "path": ".smithers/flows/repository/checks.ts",
+    "path": ".smithers/flows/repository/checks.vibe",
     "sha256": "b9b37b7884937b000d1ade0a96cf0ab0554c7c5048de71d4470b4129ba481500"
   },
   {
@@ -3796,11 +3796,11 @@
     "sha256": "4422a2a5b8d11cb78d47dab376e77f6290969d9bae0441d1ccc8c426ad8d28ec"
   },
   {
-    "path": ".smithers/flows/repository/delivery.ts",
+    "path": ".smithers/flows/repository/delivery.vibe",
     "sha256": "85917731da8fb1d20d7cb67a7822c9fcd396b30d67109b00a1656320787c0d04"
   },
   {
-    "path": ".smithers/flows/repository/evaluation.ts",
+    "path": ".smithers/flows/repository/evaluation.vibe",
     "sha256": "9d3e2bb5c84b7ed1bbfb1cf176e0027565bcb9e8b31359126b59a97d0bfc7c8b"
   },
   {
@@ -3808,71 +3808,71 @@
     "sha256": "c0040e5e4679e2eb77308a2a821ea0736fedb31c1d81728452f425a3f544285f"
   },
   {
-    "path": ".smithers/flows/repository/execution.ts",
+    "path": ".smithers/flows/repository/execution.vibe",
     "sha256": "02672b61ccd35391d86c87189014a4c5a30b5d394a5240ac385888bbe3fc1159"
   },
   {
-    "path": ".smithers/flows/repository/inspection.ts",
+    "path": ".smithers/flows/repository/inspection.vibe",
     "sha256": "32bb772c356053d9dd64a11ff8f9a3cf95ebe77bc9b07d878caf7fa398fffc9f"
   },
   {
-    "path": ".smithers/flows/repository/intake.ts",
+    "path": ".smithers/flows/repository/intake.vibe",
     "sha256": "493cd956c041e95448b76afe9e7280337356a7d78da7e308887b8c990ec72692"
   },
   {
-    "path": ".smithers/flows/repository/jev-checks.ts",
+    "path": ".smithers/flows/repository/jev-checks.vibe",
     "sha256": "d49847f7efedce3fda73487ef22117b6a452d768978edfd65ca8cfd7e23098ce"
   },
   {
-    "path": ".smithers/flows/repository/jev-duplicates.ts",
+    "path": ".smithers/flows/repository/jev-duplicates.vibe",
     "sha256": "cf5a3f18fc68684abd8b960b9dc8861dacddb6503b2eff8cf025fc784a1966d7"
   },
   {
-    "path": ".smithers/flows/repository/jev-reproduction.ts",
+    "path": ".smithers/flows/repository/jev-reproduction.vibe",
     "sha256": "ec3e4c1780dd3c112a97ec4cf7f40e79892e1df492bc4e1a2ec224fc6052326b"
   },
   {
-    "path": ".smithers/flows/repository/jev-score.ts",
+    "path": ".smithers/flows/repository/jev-score.vibe",
     "sha256": "88c8788f297027c6516044e5ba4bebbfaae2e0a22cc77d0e7c3e69dbf950013b"
   },
   {
-    "path": ".smithers/flows/repository/jobs.ts",
+    "path": ".smithers/flows/repository/jobs.vibe",
     "sha256": "0f87d7abdf91a967399f3ff98ddbb7cf995fae8d1c83431b597fc3d60a06a6cf"
   },
   {
-    "path": ".smithers/flows/repository/receipts.ts",
+    "path": ".smithers/flows/repository/receipts.vibe",
     "sha256": "73b80e52255083c5bed6e8b072b36be08aa308df278dad1eaef84b97cc5fbf3a"
   },
   {
-    "path": ".smithers/flows/repository/registry.ts",
+    "path": ".smithers/flows/repository/registry.vibe",
     "sha256": "80d1c4803d76b968a293858f0b70dd7f94b49c932d0e72a47ce5cd170e8b18c2"
   },
   {
-    "path": ".smithers/flows/repository/remote.ts",
+    "path": ".smithers/flows/repository/remote.vibe",
     "sha256": "cd205bcd71323b42fb254a624601f656b3a45c5cb0d8439fdb5608a8a5fcb5a9"
   },
   {
-    "path": ".smithers/flows/repository/replies.ts",
+    "path": ".smithers/flows/repository/replies.vibe",
     "sha256": "a26e1ef4b0b2b6cc3cb0a71f1e2229e5a9e9100992eea54d10e52bf69a160123"
   },
   {
-    "path": ".smithers/flows/repository/retention.ts",
+    "path": ".smithers/flows/repository/retention.vibe",
     "sha256": "a8e0805f3109c305ccd01b38312d23acc76af1abc506c8674e34926374b82695"
   },
   {
-    "path": ".smithers/flows/repository/schema.ts",
+    "path": ".smithers/flows/repository/schema.vibe",
     "sha256": "ed8a920daca0336b86876f47fdc3fdfb7b6048fd0eec959c715cf635bf854eaf"
   },
   {
-    "path": ".smithers/flows/repository/setup.ts",
+    "path": ".smithers/flows/repository/setup.vibe",
     "sha256": "9d7ea793c60b6ddbd59b71107790ac8c99a12afab758dee2ffb0f03cb0bc5a5c"
   },
   {
-    "path": ".smithers/flows/repository/source.ts",
+    "path": ".smithers/flows/repository/source.vibe",
     "sha256": "8c760289d6d349bced8c4953f6eb58fc4186516608ac70fde15acfdfc85a11c1"
   },
   {
-    "path": ".smithers/flows/repository/triggers.ts",
+    "path": ".smithers/flows/repository/triggers.vibe",
     "sha256": "dbf333aa874e611c10ee93c995cff1c072432d9f695595c266f4a3f04cabbded"
   },
   {

@@ -1,0 +1,97 @@
+import { sourceRefusal } from "./source-refusal.vibe"
+/** Request admission uses captured JJ source facts, never a silently refreshed tip. */
+import { Action, FlowRuntime } from "@smthrs/flow"
+import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
+import { NativeCoding, NativeCodingError } from "./native.vibe"
+import { CodingError, Plan, Revision, validatePlan } from "./schema.ts"
+import { requestIdFor, sameCode } from "./source-admission.trusted.ts"
+
+// Older prepared-source receipts prove no retention; use a distinct durable action identity.
+export const AdmitSource = Action.make("coding/admit-retained-source", {
+  payload: { plan: Plan },
+  success: Schema.Struct({ ...Plan.fields, observedHead: Revision }),
+  error: Schema.Union([CodingError, NativeCodingError]),
+  nondeterministic: true
+})
+
+/** The existing per-operation native fences still guard every later mutation. */
+export effect function admitSource(plan: Plan, requestId?: string) {
+  try Effect.try({
+    try: () => validatePlan(plan),
+    catch: (error) =>
+      error instanceof CodingError ?
+        error :
+        new CodingError({ code: "invalid_plan", message: String(error) })
+  })
+  if (!plan.observedHead) {
+    throw new CodingError({
+      code: "stale_revision",
+      message: "This request needs the observed native source head; prepare a new plan"
+    })
+  }
+  const jj = try Jj.Jj, native = try NativeCoding
+  const current = try native.read([...new Set([plan.base.changeId, plan.observedHead.changeId])])
+  const base = current.revisions.find((row) => row.changeId === plan.base.changeId)
+  if (
+    current.head.kind !== "resolved" || !sameCode(current.head, plan.observedHead) ||
+    !base || base.kind !== "resolved" || !sameCode(base, plan.base)
+  ) {
+    throw new CodingError({
+      code: "stale_revision",
+      message: "Native source changed after this plan; gather and plan again before implementation"
+    })
+  }
+  if (native.sourcePublication === "cloud") {
+    if (!requestId) {
+      throw new CodingError({
+        code: "unavailable",
+        message: "Cloud source admission requires its durable request identity"
+      })
+    }
+    try native.publishOriginalSource({ requestId, source: current.head })
+  }
+  // Retain the observed immutable commit before even the admission snapshot
+  // may rewrite it. Dirty files then refuse this plan without losing its base.
+  // Only source conflicts justify a replan. Adapter outages and grant
+  // refusals must stop without spending the factory's correction budget.
+  jj.snapshot("coding request source admission") catch effect (error) => {
+    const refused = error.code === "invalid_ref" || error.code === "snapshot_refused" ||
+      error.code === "permission_denied" || error.code === "permission_required"
+    throw new CodingError({
+      code: error.code === "conflict" ? "stale_revision" : refused ? "source_refused" : "execution",
+      message: (refused ?
+        (try sourceRefusal("admission_snapshot_refused", {
+          head: plan.observedHead?.commitId,
+          base: plan.base.commitId
+        })) :
+        "Source snapshot failed") +
+        `: Prepared source snapshot failed (${error.code}): ${
+          "reason" in error ? error.reason : error.message || error._tag
+        }`
+    })
+  }
+  {
+    const after = try native.read([plan.base.changeId])
+    const afterBase = after.revisions.find((row) => row.changeId === plan.base.changeId)
+    if (
+      after.head.kind !== "resolved" || !sameCode(after.head, plan.observedHead) ||
+      !afterBase || afterBase.kind !== "resolved" || !sameCode(afterBase, plan.base)
+    ) {
+      throw new CodingError({
+        code: "stale_revision",
+        message: "Native source changed during publication; gather and plan again before implementation"
+      })
+    }
+  }
+  return { ...plan, observedHead: plan.observedHead }
+}
+
+export const sourceAdmission = AdmitSource.toLayer(({ plan }) =>
+  effect {
+    const instance = try FlowRuntime.FlowInstance
+    return try admitSource(
+      plan,
+      requestIdFor(instance.executionId, JSON.stringify(["publish-source", plan.observedHead?.commitId]))
+    )
+  }
+)

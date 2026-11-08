@@ -8,7 +8,7 @@ import * as Editor from "../src/editor.ts"
 import * as Replay from "../src/replay.ts"
 import * as Session from "../src/session.ts"
 import * as Shell from "../src/shell.ts"
-import * as Steering from "../src/steering.ts"
+import * as Steering from "../src/steering.vibe"
 
 let previousSessionDirectory: string | undefined
 beforeEach(() => {

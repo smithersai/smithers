@@ -42,7 +42,7 @@ policy. It rejects duplicate check IDs before those gates, then snapshots and
 checks the native source, retaining a fresh operation fence for the first
 mutation. Missing, collected, conflicting or ambiguous evidence refuses.
 
-These are new private action values in `vibe-schema.ts`: `VibeEvidence` stores
+These are new private action values in `vibe-schema.vibe`: `VibeEvidence` stores
 existing request/control/approval/preparation identities, original source and the
 RequestResult; `VibeAdmission` adds the current validated head. There is no new
 database or public package service. Lookup is bounded to 16 MiB per retained
@@ -58,7 +58,7 @@ request ID and returns the existing SourcePublication receipt. The existing gues
 helper owns authorization, exact-source checks, native transport and ACK recovery.
 No credential is part of either value. Native receipt schemas now live in the
 pure `native-schema.ts` module so the browser can decode the same contracts;
-`native.ts` re-exports its existing names and retains the Effect/process adapter.
+`native.vibe` re-exports its existing names and retains the Effect/process adapter.
 
 The immutable source base is the source captured before this entire request,
 including before any implementation which later steering revised. The final
@@ -165,7 +165,7 @@ the migration, new worker and repo-host together before enabling the route. Exis
 ordinary task behavior and old native receipt serialization remain compatible.
 
 The existing reserved repository API credentials are
-`SMITHERS_JJHUB_TOKEN` and `SMITHERS_JJHUB_API_URL`. `landing-config.ts` reads
+`SMITHERS_JJHUB_TOKEN` and `SMITHERS_JJHUB_API_URL`. `landing-config.vibe` reads
 them once at the executable boundary, together with the provisioned
 `/etc/smithers/workspace-coding.json` binding (repository slug, ID, workspace ID
 and this exact repository path), and deletes the token from `process.env` before
@@ -177,7 +177,7 @@ credentials in workflow payloads, notes or model context.
 
 ## Append through the landing adapter
 
-`landing.ts` is an opinionated Effect adapter over the existing repository API,
+`landing.vibe` is an opinionated Effect adapter over the existing repository API,
 constructed over the host's selected Node or Bun HttpClient with redirects
 refused, a 90 second deadline, a 2 MiB bounded response body and no remote body
 or credential in any error. `LandVibe` runs, in this order and only after the
@@ -265,7 +265,7 @@ repository without an active stack keeps the paths above.
 A stack request starts on the tip: `coding/request` with
 `base: { commitId, ref }` (the tip retained in this workspace's source ref)
 imports that commit and creates an empty working change on it before planning
-(`stack.ts`), so the plan's native history is the stack. `coding/verify`
+(`stack.vibe`), so the plan's native history is the stack. `coding/verify`
 (`verify/flow.ts`) imports one retained commit and runs the required checks on
 its immutable export; it passes only when every required check passed. Its
 payload's `writes` are the paths the rebased candidate changes on the tip, so
@@ -275,7 +275,7 @@ them.
 ## Land without the backend
 
 A self-hosted host on plain git or GitHub declares `"landing"` in
-`.smithers/coding-project.json` (`local-landing.ts`). Its `coding/vibe` skips
+`.smithers/coding-project.json` (`local-landing.vibe`). Its `coding/vibe` skips
 cloud retention on both sides, because there is no backend to retain with:
 `AdmitVibe` verifies the request directly, and `LandVibe` runs one of two
 member sets after cleanup. Both begin with `PrepareCandidate`: the cleaned tip
@@ -321,7 +321,7 @@ not on one candidate. `coding/AdvanceGreenPrefix` moves `main` to the newest
 stack commit those checks passed on with no failed commit between it and
 `main`. Its payload is the stack `tip` (a bookmark or commit ID), the
 `required` check IDs, and the check `receipts`; it runs on the
-`"fast-forward"` lander only (`advanceGreenPrefix` in `local-landing.ts`).
+`"fast-forward"` lander only (`advanceGreenPrefix` in `local-landing.vibe`).
 
 The lander lists `main..tip` and refuses unless it is one line of commits whose
 first parent is `main` (`stale_revision` when the tip does not descend from
@@ -362,7 +362,7 @@ stack is separate: see [Publish a rewritten stack](#publish-a-rewritten-stack).
 
 Correcting an earlier Change rewrites it and every Change above it, so the
 stack's branch on GitHub (for example `vibe`) must be replaced, not appended
-to. `coding/PublishStack` (`vibe-publication.ts`) does that through a local
+to. `coding/PublishStack` (`vibe-publication.vibe`) does that through a local
 lander's `publishStack`:
 
 ```ts

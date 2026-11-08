@@ -10,10 +10,10 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import { initialSetup, setupCandidate } from "../../../packages/rpc/src/RepositorySetup.ts"
 import { CodingError } from "../coding/schema.ts"
-import { verifyTrialChecks } from "../repository/checks.ts"
-import { RepositoryJob } from "../repository/jobs.ts"
-import { completedJob, priorSetupReceipt } from "../repository/receipts.ts"
-import { Draft, type JobInput, JobResult, OperationResult, type SetupInput } from "../repository/schema.ts"
+import { verifyTrialChecks } from "../repository/checks.vibe"
+import { RepositoryJob } from "../repository/jobs.vibe"
+import { completedJob, priorSetupReceipt } from "../repository/receipts.vibe"
+import { Draft, type JobInput, JobResult, OperationResult, type SetupInput } from "../repository/schema.vibe"
 
 const source = "a".repeat(40), base = "b".repeat(40)
 const json = (value: unknown): Schema.Json => JSON.parse(JSON.stringify(value))

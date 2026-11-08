@@ -7,7 +7,7 @@ import { createServer } from "node:net"
 import { setImmediate } from "node:timers/promises"
 import { App } from "../src/app.tsx"
 import { Asks } from "../src/asks.ts"
-import type * as Host from "../src/host.ts"
+import type * as Host from "../src/host.vibe"
 
 let now = 10_000
 Date.now = () => now

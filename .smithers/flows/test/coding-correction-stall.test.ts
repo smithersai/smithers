@@ -2,7 +2,7 @@ import { Stall } from "@smthrs/flow"
 import { Effect, Exit, Schema } from "effect"
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { Cursor, defaultStall, finishRound, observeRound, roundSignals } from "../coding/correction.ts"
+import { Cursor, defaultStall, finishRound, observeRound, roundSignals } from "../coding/correction.vibe"
 import type { Receipt, Result, Revision } from "../coding/schema.ts"
 
 const revision = (tree: string): Revision => ({

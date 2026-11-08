@@ -9,9 +9,9 @@
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Activity from "#vibelang/emitted/src/activity"
 import * as Approvals from "./approvals.ts"
-import * as Changes from "./changes.ts"
+import * as Changes from "#vibelang/emitted/src/changes"
 import * as Credit from "#vibelang/emitted/src/credit"
-import * as Models from "./models.ts"
+import * as Models from "#vibelang/emitted/src/models"
 import type * as Panels from "./panels.vibe"
 import * as Shell from "./shell.ts"
 

@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { delimiter, join } from "node:path"
 import * as Approvals from "../src/approvals.ts"
-import * as Runtime from "../src/runtime.ts"
+import * as Runtime from "../src/runtime.vibe"
 
 const cwd = "/work/repo"
 

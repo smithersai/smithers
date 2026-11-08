@@ -39,7 +39,7 @@ test("built native and coding hosts expose their actual private registrations", 
       }
       assert.ok(inventories[2]!.tags.some((tag) => tag.id === "coding/RefreshWiki"))
       assert.ok(
-        coding.some((tag) => tag.id === "coding/prepare-atom" && tag.source === ".smithers/flows/coding/atoms.ts")
+        coding.some((tag) => tag.id === "coding/prepare-atom" && tag.source === ".smithers/flows/coding/atoms.vibe")
       )
       // These are the actual private layers, not the already-clean public
       // repository route inventory. Keep identifying pending migrations.

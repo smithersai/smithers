@@ -4,9 +4,9 @@ import { Effect, Layer, Schema } from "effect"
 import { readFile, realpath } from "node:fs/promises"
 import { basename, resolve, sep } from "node:path"
 import { parseArgs } from "node:util"
-import { containedWikiOutput } from "../coding/wiki-output.ts"
-import { operations } from "./operations.ts"
-import { type Input, PageSpec } from "./schema.ts"
+import { containedWikiOutput } from "../coding/wiki-output.vibe"
+import { operations } from "./operations.vibe"
+import { type Input, PageSpec } from "./schema.vibe"
 
 const { values } = parseArgs({
   options: {
@@ -23,7 +23,7 @@ const { values } = parseArgs({
 })
 if (values.help) {
   console.log(
-    "node --experimental-strip-types .smithers/flows/wiki/main.ts [--verified] [--model provider:model] [--output path] [--database .flows/engine.db] [--run id] [--reuse-run terminal-run-id]\nDefault: a clearly unreviewed preview. --verified performs real AgentAction semantic review and fails if any section lacks support. Runtime host is selected from the actual Node/Bun executable."
+    "node --import vibelang/register .smithers/flows/wiki/main.ts [--verified] [--model provider:model] [--output path] [--database .flows/engine.db] [--run id] [--reuse-run terminal-run-id]\nDefault: a clearly unreviewed preview. --verified performs real AgentAction semantic review and fails if any section lacks support. Runtime host is selected from the actual Node/Bun executable."
   )
 } else {
   const root = await realpath(resolve(values.root ?? process.cwd()))
@@ -69,9 +69,9 @@ if (values.help) {
         import("@smthrs/flow"),
         import("@smthrs/flows"),
         import("./flow.ts"),
-        import("./runtime.ts")
+        import("./runtime.vibe")
       ])
-    const incremental = values["reuse-run"] ? await import("./reuse.ts") : undefined
+    const incremental = values["reuse-run"] ? await import("./reuse.vibe") : undefined
     if (incremental && !values.verified) {
       throw new Error("--reuse-run requires --verified and the existing database containing that terminal run")
     }
@@ -101,7 +101,7 @@ if (values.help) {
         Effect.provide(Layer.mergeAll(NodeServices.layer, NativeCrypto.layer))
       )
     )
-    // The verified-snapshot seal key lives beside the output (operations.ts).
+    // The verified-snapshot seal key lives beside the output (operations.vibe).
     const sealKey = resolve(output, "..", `.${basename(output)}.seal-key`)
     const rule = (action: "fs:read" | "fs:write", resource: string) =>
       new Capability.Permission.Rule({

@@ -6,7 +6,7 @@ import { Clock, Duration, Effect, Layer, ManagedRuntime, Schema } from "effect"
 import assert from "node:assert/strict"
 import test from "node:test"
 import Sweep, { Accounts, Dispatch, GhFailed, ghFailed, ListIssues, SweepFailure } from "../flow.ts"
-import { HostFailed, hostFailed, output } from "../host.ts"
+import { HostFailed, hostFailed, output } from "../host.vibe"
 
 import Work, { AgentFailed, FetchIssue, fetchIssueWith } from "../work/flow.ts"
 

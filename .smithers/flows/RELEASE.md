@@ -60,7 +60,7 @@ rules. `minScore` defaults to 0.86; `maxRevisions` defaults to 2 and is capped a
 
 Jev selects the narrative, and it is the only model that selects it. Which of
 four write-ups a release calls for is a closed choice, so
-[`jev-template.ts`](release-content/jev-template.ts) sends one state, the claim
+[`jev-template.ts`](release-content/jev-template.vibe) sends one state, the claim
 ledger beside the commit subjects, changed paths and documentation excerpts it
 was built from plus the operator's own notes, all clipped in proportion so the
 state stays under 32 KiB, and asks one question: does this release call for a

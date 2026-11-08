@@ -1,0 +1,30 @@
+/** Compose the existing registry with its durable archive outside source. */
+import * as ExecutionSnapshot from "@smthrs/registry/ExecutionSnapshot"
+import * as Registry from "@smthrs/registry/Registry"
+import { archiveRoot, relocateLegacyArchive } from "./host-registry.platform.ts"
+
+// Only the archive directories move (host-registry.platform.ts). A failure
+// surfaces as the Error the move threw.
+export const relocateExecutionArchive = (sourceRoot: string, stateRoot: string) =>
+  Effect.tryPromise({
+    try: () => relocateLegacyArchive(sourceRoot, stateRoot),
+    catch: (error) => error instanceof Error ? error : new Error(String(error))
+  })
+
+/**
+ * The project registry over `sourceRoot`. With `repositoryFlows` false it
+ * discovers nothing there: a hosted host serving the live checkout runs only
+ * its bundled and system flows, because the checkout holds agent edits.
+ */
+export const layer = (
+  sourceRoot: string,
+  stateRoot: string,
+  bodyPlatform: Layer.Layer<FileSystem.FileSystem | Path.Path>,
+  repositoryFlows = true
+) =>
+  Layer.unwrap(effect {
+    const snapshots = try ExecutionSnapshot.makeFileSystem({ root: archiveRoot(stateRoot) })
+    if (!repositoryFlows) return Registry.layerFromDescriptors([], [], snapshots).pipe(Layer.provide(bodyPlatform))
+    try relocateExecutionArchive(sourceRoot, stateRoot)
+    return Registry.layerProject({ root: sourceRoot, snapshots }).pipe(Layer.provide(bodyPlatform))
+  }).pipe(Layer.orDie)

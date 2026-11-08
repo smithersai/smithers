@@ -6,9 +6,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { test } from "node:test"
-import { failedCheckFinding } from "../coding/checks.ts"
-import { observeRound, ownerRepair, repairContext, roundSignals, SelectRepair } from "../coding/correction.ts"
-import { outputTailBytes, redactTail, runSourceProcess, withImmutableCommit } from "../coding/immutable-source.ts"
+import { failedCheckFinding } from "../coding/checks.vibe"
+import { observeRound, ownerRepair, repairContext, roundSignals, SelectRepair } from "../coding/correction.vibe"
+import { outputTailBytes, redactTail, runSourceProcess, withImmutableCommit } from "../coding/immutable-source.vibe"
 import { type Finding, type Plan, Result, type Revision } from "../coding/schema.ts"
 
 /*

@@ -1,0 +1,156 @@
+import type { PlanningWikiProvider } from "./planning-memory.vibe"
+import { type Fetch, relayFetch } from "./planning-wiki-provider.platform.ts"
+import { CodingError } from "./schema.ts"
+
+/** Host-owned relay adapter. The shared selector and activation authorizer are
+ * required bindings, never repository configuration or a second selector. */
+export const relayWikiProvider = (options: {
+  readonly relayURL: string
+  readonly owner: string
+  readonly repository: string
+  readonly runCredential: string
+  readonly authorize: PlanningWikiProvider["authorize"]
+  readonly select: PlanningWikiProvider["select"]
+  readonly fetch?: Fetch
+}): PlanningWikiProvider => {
+  const unavailable = () =>
+    new CodingError({ code: "unavailable", message: "Authorized wiki relay read is unavailable" })
+  const binding = effect {
+    const url = try Effect.try({ try: () => new URL(options.relayURL), catch: unavailable })
+    if (
+      !["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash ||
+      !options.owner || !options.repository || !options.runCredential.trim()
+    ) throw unavailable()
+    return url
+  }
+  return {
+    authorize: effect () => {
+      try binding
+      return try options.authorize()
+    },
+    select: effect (request) => {
+      try binding
+      return try options.select(request)
+    },
+    read: effect (slug) => {
+      const base = try binding
+      try options.authorize()
+      if (!slug || slug.split("/").some((part) => !part || part === "." || part === "..")) throw unavailable()
+      const path = `/api/repos/${encodeURIComponent(options.owner)}/${encodeURIComponent(options.repository)}/wiki/${
+        encodeURIComponent(slug)
+      }`
+      return try tryPromise({
+        try: async (signal) => {
+          const response = await relayFetch(options.fetch, new URL(path, base), {
+            headers: { Authorization: `Bearer ${options.runCredential}`, Accept: "application/json" },
+            redirect: "error",
+            signal
+          })
+          if (!response.ok) {
+            await response.body?.cancel()
+            throw unavailable()
+          }
+          const page = await response.json() as Record<string, unknown>
+          if (
+            typeof page.id !== "number" || !Number.isSafeInteger(page.id) || page.id < 1 ||
+            page.slug !== slug || typeof page.revision !== "number" || !Number.isSafeInteger(page.revision) ||
+            page.revision < 1 ||
+            typeof page.content_digest !== "string" || !/^[0-9a-f]{64}$/.test(page.content_digest) ||
+            typeof page.title !== "string" || typeof page.body !== "string" || page.attachment != null
+          ) throw unavailable()
+          // Generated pages require metadata bound to these same revision bytes;
+          // wikiMemory checks their declared inputs inside the machine.
+          // Explicit null means authored, including a person-edited generated
+          // page. Older APIs without classification cannot enable planning.
+          if (!Object.hasOwn(page, "generated")) throw unavailable()
+          const generated = page.generated === null ? undefined : page.generated as Record<string, unknown>
+          if (
+            generated !== undefined && (generated === null || typeof generated.id !== "string" ||
+              typeof generated.inputDigest !== "string" || !/^[0-9a-f]{64}$/.test(generated.inputDigest) ||
+              typeof generated.sourceRevision !== "string" || !generated.sourceRevision)
+          ) throw unavailable()
+          return {
+            pageID: String(page.id),
+            slug,
+            revision: page.revision,
+            digest: page.content_digest,
+            title: page.title,
+            markdown: page.body,
+            ...(generated === undefined ? {} : {
+              generated: {
+                id: generated.id as string,
+                inputDigest: generated.inputDigest as string,
+                sourceRevision: generated.sourceRevision as string
+              }
+            })
+          }
+        },
+        catch: unavailable
+      })
+    }
+  }
+}
+
+/** The configured coding host's binding (T-FLW-10). Selection is the shared
+ * preflight selector behind the host API, called with the provisioned run
+ * credential, never a second selector here. Only a host whose workspace
+ * binding the machine provisioned is isolated; a process runtime refuses
+ * citation-enabled planning with isolation_required. */
+export const boundRelayWikiProvider = (options: {
+  readonly apiBaseUrl: string
+  readonly repositorySlug: string
+  readonly runCredential: string
+  readonly isolated: boolean
+  readonly fetch?: Fetch
+}): PlanningWikiProvider => {
+  const parts = options.repositorySlug.split("/")
+  const [owner, repository] = parts.length === 2 ? parts as [string, string] : ["", ""]
+  const unavailable = () => new CodingError({ code: "unavailable", message: "Shared wiki selection is unavailable" })
+  return relayWikiProvider({
+    relayURL: options.apiBaseUrl,
+    owner,
+    repository,
+    runCredential: options.runCredential,
+    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+    authorize: effect () => {
+      if (!options.isolated) {
+        throw new CodingError({ code: "isolation_required", message: "Plans cite wiki pages only inside a branch machine" })
+      }
+    },
+    select: (request) =>
+      tryPromise({
+        try: async (signal) => {
+          if (request.kinds.length !== 1 || request.kinds[0] !== "wiki" || !request.prompt.trim()) throw unavailable()
+          const path = `/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/wiki/selection`
+          const response = await relayFetch(options.fetch, new URL(path, options.apiBaseUrl), {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${options.runCredential}`,
+              Accept: "application/json",
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ prompt: request.prompt }),
+            redirect: "error",
+            signal
+          })
+          if (!response.ok) {
+            await response.body?.cancel()
+            throw unavailable()
+          }
+          const body = await response.json() as { readonly pages?: unknown; readonly model?: unknown }
+          if (!Array.isArray(body.pages) || typeof body.model !== "string" || !body.model) throw unavailable()
+          const slugs: Array<{ readonly slug: string }> = []
+          for (const page of body.pages as ReadonlyArray<Record<string, unknown>>) {
+            if (
+              typeof page?.slug !== "string" || !page.slug || typeof page.revision !== "number" ||
+              !Number.isSafeInteger(page.revision) || page.revision < 1 || typeof page.reason !== "string" ||
+              slugs.some(({ slug }) => slug === page.slug)
+            ) throw unavailable()
+            slugs.push({ slug: page.slug })
+          }
+          return slugs
+        },
+        catch: unavailable
+      })
+  })
+}

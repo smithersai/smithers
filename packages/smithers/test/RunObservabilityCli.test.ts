@@ -312,7 +312,7 @@ describe("terminal failure diagnosis through the real CLI", { timeout: 180_000 }
         if (scenario === "outage") {
           await writeFile(
             join(dir, "file-tree-errors.ts"),
-            await readFile(new URL("../../../.smithers/flows/issues/file-tree/errors.ts", import.meta.url), "utf8")
+            await readFile(new URL("../../../.smithers/flows/issues/file-tree/errors.vibe", import.meta.url), "utf8")
           )
         }
         const message = JSON.stringify(

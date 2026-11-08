@@ -41,8 +41,8 @@ The shared types landed in this change (`apps/tui/src/extension.ts`,
 
 | Source | Finding the design depends on |
 | --- | --- |
-| `apps/tui/src/runtime.ts` (main) | `tui/runtime` catalog: `ui.publish`, `flow.list`, `flow.run`, `agent.delegate`, `tab.read`, `tab.list`. |
-| `~/smithers-tuifeat-smithers-plugin` (`ozlrrvkv`, uncommitted) | `@smthrs/agent/SmithersPlugin`: `smithers.guide`, `smithers.flows`, `smithers.run`, `smithers.inspect` over `Ports`, plus a `cellModelRequest` brief; replaces `flow.list`/`flow.run`; `apps/tui/src/smithers.ts` adds a Smithers surface; `/smithers` command. |
+| `apps/tui/src/runtime.vibe` (main) | `tui/runtime` catalog: `ui.publish`, `flow.list`, `flow.run`, `agent.delegate`, `tab.read`, `tab.list`. |
+| `~/smithers-tuifeat-smithers-plugin` (`ozlrrvkv`, uncommitted) | `@smthrs/agent/SmithersPlugin`: `smithers.guide`, `smithers.flows`, `smithers.run`, `smithers.inspect` over `Ports`, plus a `cellModelRequest` brief; replaces `flow.list`/`flow.run`; `apps/tui/src/smithers.vibe` adds a Smithers surface; `/smithers` command. |
 | `~/smithers-tuifeat-which-key` (`lwnmtzuv`, uncommitted) | `apps/tui/src/keys.ts`: static `registry: Binding[]` with `id/keys/label/context/group`, `bindingFor`, `hintsFor`, `duplicateKeys`; `KeyHints` and `KeyPopup` in `view.tsx`. |
 | `~/smithers-tuifix-seat-queue` (`ulxzkmyn`) | Worker tabs queue past three seats (`queued`). `Workspace.retry` drops `request.model`. |
 | `~/smithers-tuifeat-monitors` (`wssvontv`) | `monitor.create/list/stop`; `Session.Record` gains `monitor` and `monitor-update`; `Transcript.alert`. |

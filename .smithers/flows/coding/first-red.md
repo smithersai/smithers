@@ -82,7 +82,7 @@ correction of `firstRed.change` can read directly. `FirstRed` edits nothing.
 ## Host composition
 
 Merge `firstRedLayers` with the host's `coding/check` implementation:
-`checkLayers` from `checks.ts` for command checks, or another registered
+`checkLayers` from `checks.vibe` for command checks, or another registered
 delegate. The test (`test/coding-first-red.test.ts`) bisects a real JJ stack of
 33 Changes from four authors with checks that read each commit's files, and
 replays the run on a new host without running a check again.

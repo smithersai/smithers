@@ -7,8 +7,8 @@ import { readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { setTimeout as pause } from "node:timers/promises"
 import { App } from "../src/app.tsx"
-import * as Changes from "../src/changes.ts"
-import type * as Host from "../src/host.ts"
+import * as Changes from "../src/changes.vibe"
+import type * as Host from "../src/host.vibe"
 
 const workers: Record<string, { title: string; prompt: string; model?: "sol" | "luna" }> = {
   fix: { title: "Fix add in math.js", prompt: "Fix add in math.js so node check.mjs passes." },

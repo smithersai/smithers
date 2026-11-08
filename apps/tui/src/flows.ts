@@ -5,7 +5,7 @@ import * as Log from "./log.ts"
  * Shares `lifecycle.ts` with `workspace.ts`: a request persists before any
  * work, returns a `requested` or `queued` receipt, and settles only from the
  * control plane's watch. The
- * `Port` is the seam to the native control host (`flow-control.ts`).
+ * `Port` is the seam to the native control host (`flow-control.vibe`).
  */
 import * as NodeOutput from "@smthrs/cli/NodeOutput"
 import type { ControlSchema } from "@smthrs/control"

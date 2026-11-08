@@ -9,9 +9,9 @@ import { readFileSync } from "node:fs"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
-import { NativeCoding } from "../coding/native.ts"
-import { executionLayers } from "../repository/execution.ts"
-import { inspectionLayers } from "../repository/inspection.ts"
+import { NativeCoding } from "../coding/native.vibe"
+import { executionLayers } from "../repository/execution.vibe"
+import { inspectionLayers } from "../repository/inspection.vibe"
 import {
   ExecuteRepro,
   failureLayer,
@@ -24,8 +24,8 @@ import {
   Research,
   Review,
   type Work
-} from "../repository/jobs.ts"
-import type { StepResult } from "../repository/schema.ts"
+} from "../repository/jobs.vibe"
+import type { StepResult } from "../repository/schema.vibe"
 import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 
 const source = {
@@ -184,7 +184,7 @@ test("no investigation seat is asked to classify anything", () => {
     ["summary", "question", "citations", "reproduction"],
     "a seat answers only what is genuinely text"
   )
-  const text = readFileSync(fileURLToPath(new URL("../repository/jobs.ts", import.meta.url)), "utf8")
+  const text = readFileSync(fileURLToPath(new URL("../repository/jobs.vibe", import.meta.url)), "utf8")
   const seats = text.slice(text.indexOf("const model = "), text.indexOf("export const JevDuplicates"))
   assert.ok(seats.includes("repository/review"), "the slice covers all three seat declarations")
   assert.doesNotMatch(seats, /classif/i, "neither the shared teaching nor any role mentions classification")

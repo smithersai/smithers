@@ -3,6 +3,7 @@ import type { FindingVerdict } from "./verifyVerdictsSchema.ts"
 
 const severitySteps = ReviewCommentSeverity.literals
 
+/** @throws {never} */
 export function applyFindingVerdicts<T extends { path: string; severity: ReviewCommentSeverity }>(
   findings: Array<T>,
   verdicts: ReadonlyArray<FindingVerdict>

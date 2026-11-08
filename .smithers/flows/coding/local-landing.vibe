@@ -1,0 +1,647 @@
+/**
+ * Landing without the backend: the working copy's own jj repository and `gh`.
+ *
+ * `prepare` builds one candidate commit, the cleaned tip merged onto main with
+ * main as its sole parent, without touching the working-copy change. The
+ * fast-forward lander then runs the project's checks on it and moves main;
+ * the pull-request lander pushes it as `smithers/landing-<request>` and lets
+ * GitHub's required checks and branch protection decide the merge. Nothing
+ * here retains a source with the backend or reads a credential: the operator's
+ * `gh auth login` and jj identity reach these processes through the selected
+ * environment only.
+ */
+import { ChildProcessSpawner } from "effect/process"
+import { runSourceProcess } from "./immutable-source.vibe"
+import type {
+  GreenPrefixInput,
+  GreenPrefixOutcome,
+  LandingCandidate,
+  LocalLander,
+  LocalPull,
+  PullChecks,
+  StackPublicationInput
+} from "./landing-schema.vibe"
+import { Landing, type LocalLanding } from "./landing.vibe"
+import { NativeCoding } from "./native.vibe"
+import { CodingError, type Receipt } from "./schema.ts"
+import { cleanedTipRefusal, type VibeCleanup } from "./vibe-schema.vibe"
+
+export interface Options {
+  readonly kind: LocalLander
+  readonly repositoryPath: string
+  readonly fs: FileSystem.FileSystem
+  /** PATH, HOME and the `gh`/jj settings the operator selected; nothing else reaches these processes. */
+  readonly environment: Readonly<Record<string, string>>
+  /** The bookmark a candidate lands on. */
+  readonly target?: string | undefined
+}
+
+const commit = /^[0-9a-f]{40}$/
+const change = /^[k-z]{32}$/
+const evicted = (message: string) => new CodingError({ code: "evicted", message })
+const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
+const unavailable = (message: string) => new CodingError({ code: "unavailable", message })
+const bounded = (text: string, limit = 2_048) => {
+  const trimmed = text.trim()
+  return trimmed.length > limit ? `${trimmed.slice(0, limit - 1)}…` : trimmed
+}
+const jjMinutes = 2, gitMinutes = 5, ghMinutes = 2
+/** Stack rows one `jj log` answers within the process output limit. */
+const stackPage = 1_000
+/** `gh pr view --json`; only the fields a receipt needs. */
+const PullView = Schema.Struct({
+  number: Schema.Int.check(Schema.isGreaterThan(0)),
+  url: Schema.String,
+  state: Schema.Literals(["OPEN", "CLOSED", "MERGED"]),
+  headRefOid: Schema.String,
+  headRefName: Schema.String,
+  baseRefName: Schema.String,
+  mergeCommit: Schema.NullOr(Schema.Struct({ oid: Schema.String }))
+})
+/** `gh pr checks --required --json`. */
+const CheckRows = Schema.Array(Schema.Struct({ name: Schema.String, bucket: Schema.String })).check(
+  Schema.isMaxLength(256)
+)
+
+/** A stack commit's slow-check verdict: no receipt, or only an outage, is `unknown`. */
+export type Verdict = "passed" | "failed" | "unknown"
+/**
+ * The newest commit of `stack` (oldest first) that passed with no failed
+ * commit at or below it. An untested commit inherits nothing and blocks
+ * nothing: a pass above it covered its tree too.
+ */
+export const greenPrefix = (
+  stack: ReadonlyArray<string>,
+  verdicts: ReadonlyMap<string, Verdict>
+): string | undefined => {
+  let green: string | undefined
+  for (const commitId of stack) {
+    const verdict = verdicts.get(commitId)
+    if (verdict === "failed") break
+    if (verdict === "passed") green = commitId
+  }
+  return green
+}
+/**
+ * Fold receipts into verdicts for the commits in `trees`. Only slow and
+ * delivery receipts of a `required` check count; superseded ones never do. A
+ * real failure of any required check fails the commit; a commit passes once
+ * every required check has a passed receipt; anything else, including a check
+ * whose only receipt is an outage (`fault`), is no verdict yet. A receipt for
+ * another tree refuses.
+ */
+const verdictsOf = (
+  receipts: ReadonlyArray<Receipt>,
+  trees: ReadonlyMap<string, string>,
+  required: ReadonlyArray<string>
+) => {
+  const failed = new Set<string>(), passed = new Map<string, Set<string>>()
+  for (const receipt of receipts) {
+    const tree = trees.get(receipt.commitId)
+    if (
+      tree === undefined || receipt.tier === "fast" || receipt.status === "superseded" ||
+      !required.includes(receipt.checkId)
+    ) continue
+    if (receipt.treeId !== tree) {
+      return invalid(`The receipt for ${receipt.commitId} names tree ${receipt.treeId}, not its commit's tree ${tree}`)
+    }
+    if (receipt.status === "passed") {
+      passed.set(receipt.commitId, (passed.get(receipt.commitId) ?? new Set()).add(receipt.checkId))
+    } else if (receipt.fault === undefined) failed.add(receipt.commitId)
+  }
+  const verdicts = new Map<string, Verdict>()
+  for (const commitId of trees.keys()) {
+    const checks = passed.get(commitId)
+    verdicts.set(
+      commitId,
+      failed.has(commitId)
+        ? "failed"
+        : checks !== undefined && required.every((check) => checks.has(check))
+        ? "passed"
+        : "unknown"
+    )
+  }
+  return verdicts
+}
+
+export effect function make(options: Options) {
+    const native = try NativeCoding, spawner = try ChildProcessSpawner.ChildProcessSpawner
+    const root = options.repositoryPath, target = options.target ?? "main"
+    if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(target)) {
+      throw unavailable("The landing target must be a bookmark name")
+    }
+    const run = (argv: ReadonlyArray<string>, minutes: number) =>
+      runSourceProcess(options, argv, root, minutes * 60_000).pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        Effect.mapError((error) =>
+          error instanceof CodingError
+            ? error
+            : unavailable(`${argv[0]} could not run on this host: ${bounded(String(error), 500)}`)
+        )
+      )
+    /** A jj command that must succeed; its stderr is the refusal. */
+    const jj = effect (args: ReadonlyArray<string>) => {
+      const result = try run(["jj", "--no-pager", "--color=never", ...args], jjMinutes)
+      if (result.exitCode !== 0) throw unavailable(`jj ${args[0]} refused: ${bounded(result.stderr.text, 1_024)}`)
+      return result
+    }
+    const lines = (text: string) => text.split("\n").map((line) => line.trim()).filter((line) => line !== "")
+    /** Exactly one revision's field, or a refusal naming what was ambiguous. */
+    const one = effect (revset: string, template: string, what: string) => {
+      const result = try jj(["log", "--no-graph", "-r", revset, "-T", `${template} ++ "\\n"`])
+      const found = lines(result.stdout.text)
+      if (found.length !== 1 || result.stdout.truncated) {
+        throw invalid(`${what} must resolve to one revision (${found.length} found)`)
+      }
+      return found[0]!
+    }
+    const readMain = effect {
+      const id = try one(target, "commit_id", `The ${target} bookmark`)
+      if (!commit.test(id)) throw invalid(`${target} is not a commit`)
+      return id
+    }
+    const marker = (requestId: string) => `smithers/landing ${requestId}`
+    const described = (description: string) => `description(exact:${JSON.stringify(`${description}\n`)})`
+    // An absent revision is nothing to abandon, and jj skips one already hidden, so a replay is a no-op.
+    const abandonRevset = effect (revset: string) => {
+      try jj(["abandon", "-r", `present(${revset})`])
+    }
+    const prepare = effect (cleanup: VibeCleanup, requestId: string) => {
+        const refusal = cleanedTipRefusal(cleanup)
+        if (refusal !== undefined) throw invalid(refusal)
+        if (!/^[0-9a-f-]{36}$/.test(requestId)) throw invalid("A candidate needs this run's request identity")
+        const tip = cleanup.head.commitId
+        const atoms = cleanup.result.changes.flatMap((entry) => entry.implementation.atoms.map((atom) => atom.commitId))
+        if (!commit.test(tip) || atoms.some((id) => !commit.test(id))) {
+          throw invalid("A candidate needs full immutable native commit IDs")
+        }
+        // A crashed earlier attempt leaves its marked commits; they are not a candidate.
+        try abandonRevset(
+          `${described(`${marker(requestId)} merge`)} | ${described(`${marker(requestId)} candidate`)}`
+        )
+        const main = try readMain
+        // The commits to land are the tip's line after main. This request's
+        // validated atoms must all be on it: an atom main already has, or one
+        // on another line, is not this request's delivery.
+        const foreign = try jj([
+          "log",
+          "--no-graph",
+          "-r",
+          `(${atoms.join(" | ")}) ~ (ancestors(${tip}) ~ ancestors(${main}))`,
+          "-T",
+          "commit_id ++ \"\\n\""
+        ])
+        if (lines(foreign.stdout.text).length !== 0) {
+          throw invalid("The validated atoms are not the cleaned tip's line after main")
+        }
+        try jj(["new", main, tip, "--no-edit", "-m", `${marker(requestId)} merge`])
+        const merge = try one(described(`${marker(requestId)} merge`), "commit_id", "The merge commit")
+        const conflicted = try one(merge, "if(conflict, \"conflict\", \"clean\")", "The merge commit")
+        if (conflicted === "conflict") {
+          const listed = jj(["resolve", "-r", merge, "--list"]) catch () => undefined
+          const paths = listed === undefined
+            ? [] as Array<string>
+            : lines(listed.stdout.text).map((line) => line.split(/\s{2,}|\t/, 1)[0]!)
+          try abandonRevset(merge)
+          throw evicted(`The cleaned tip conflicts with ${target}: ${bounded(paths.join(", "), 1_024)}`)
+        }
+        try jj(["new", main, "--no-edit", "-m", `${marker(requestId)} candidate`])
+        const placeholder = try one(described(`${marker(requestId)} candidate`), "change_id", "The candidate")
+        if (!change.test(placeholder)) throw invalid("The candidate has no native change identity")
+        try jj(["restore", "--from", merge, "--into", placeholder])
+        try abandonRevset(merge)
+        const empty = try one(placeholder, "if(empty, \"empty\", \"changed\")", "The candidate")
+        if (empty === "empty") {
+          try abandonRevset(placeholder)
+          throw evicted(`The cleaned tip changes nothing on ${target}`)
+        }
+        try jj(["describe", "-r", placeholder, "-m", cleanup.summary])
+        const mainChange = try one(main, "change_id", `The ${target} bookmark`)
+        const read = native.read([mainChange, placeholder]) catch effect (error) => {
+          throw unavailable(`The candidate could not be read: ${error.message}`)
+        }
+        const revision = (changeId: string) => {
+          const found = read.revisions.find((entry) => entry.changeId === changeId)
+          return found === undefined || found.kind !== "resolved" ? undefined : {
+            changeId: found.changeId,
+            commitId: found.commitId,
+            treeId: found.treeId,
+            operationId: read.operationId,
+            parentCommitIds: [...found.parentCommitIds]
+          }
+        }
+        const base = revision(mainChange), candidate = revision(placeholder)
+        if (
+          base === undefined || base.commitId !== main || candidate === undefined ||
+          candidate.parentCommitIds.length !== 1 || candidate.parentCommitIds[0] !== main
+        ) {
+          try abandonRevset(placeholder)
+          throw invalid(`The candidate is not one resolved commit on ${target}`)
+        }
+        return { lander: options.kind, main: base, summary: cleanup.summary, candidate }
+      }
+    /** Move the bookmark forward only; jj refuses a backwards or sideways move. */
+    const moveTarget = effect (to: string, from: string) => {
+        const moved = try run(["jj", "--no-pager", "--color=never", "bookmark", "set", target, "-r", to], jjMinutes)
+        if (moved.exitCode !== 0) {
+          throw /backwards or sideways/.test(moved.stderr.text)
+            ? evicted(`${target} moved from ${from} while it was being advanced`)
+            : unavailable(`jj bookmark set refused: ${bounded(moved.stderr.text, 1_024)}`)
+        }
+        const landed = try readMain
+        if (landed !== to) throw invalid(`${target} is ${landed}, not ${to}`)
+        return landed
+      }
+    const fastForward = effect (prepared: LandingCandidate) => {
+        const main = try readMain
+        if (main === prepared.candidate.commitId) return main
+        if (main !== prepared.main.commitId) {
+          throw evicted(
+            `${target} moved from ${prepared.main.commitId} to ${main} after the candidate was verified`
+          )
+        }
+        return try moveTarget(prepared.candidate.commitId, main)
+      }
+    const advanceGreenPrefix = effect (input: GreenPrefixInput): GreenPrefixOutcome!CodingError => {
+        if (options.kind !== "fast-forward") {
+          throw unavailable(`The ${options.kind} lander does not move ${target}; GitHub does`)
+        }
+        if (!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(input.tip)) {
+          throw invalid("The stack tip must be a bookmark name or a commit ID")
+        }
+        if (input.required.length === 0) throw invalid("Name at least one required check")
+        const main = try readMain
+        const tip = try one(`present(${input.tip})`, "commit_id", "The stack tip")
+        const below = try jj(["log", "--no-graph", "-r", `${main} & ::${tip}`, "-T", "commit_id ++ \"\\n\""])
+        if (lines(below.stdout.text).length !== 1) {
+          throw new CodingError({
+            code: "stale_revision",
+            message: `The stack tip ${tip} does not descend from ${target} ${main}; ${target} only fast-forwards`
+          })
+        }
+        // A process answers at most 128 KiB, so a long stack is read newest first, a page at a time.
+        const newestFirst: Array<{ commitId: string; changeId: string; parents: Array<string> }> = []
+        for (let cursor = tip; cursor !== main;) {
+          const listed = try jj([
+            "log",
+            "--no-graph",
+            "--limit",
+            String(stackPage),
+            "-r",
+            `${main}..${cursor}`,
+            "-T",
+            "commit_id ++ \" \" ++ change_id ++ \" \" ++ parents.map(|p| p.commit_id()).join(\",\") ++ \"\\n\""
+          ])
+          if (listed.stdout.truncated) throw invalid("The stack listing was truncated")
+          const page = lines(listed.stdout.text).map((line) => {
+            const [commitId = "", changeId = "", parents = ""] = line.split(" ")
+            return { commitId, changeId, parents: parents.split(",").filter((id) => id !== "") }
+          })
+          newestFirst.push(...page)
+          const parent = page.at(-1)?.parents
+          if (parent?.length !== 1) {
+            throw invalid(`The stack from ${target} to ${tip} is not one line of commits`)
+          }
+          cursor = parent[0]!
+        }
+        const rows = newestFirst.reverse()
+        // The mythical history is one line: each commit's sole parent is the one below it.
+        const linear = rows.every((row, index) =>
+          commit.test(row.commitId) && change.test(row.changeId) && row.parents.length === 1 &&
+          row.parents[0] === (index === 0 ? main : rows[index - 1]!.commitId)
+        )
+        if (!linear) throw invalid(`The stack from ${target} to ${tip} is not one line of commits`)
+        const read = rows.length === 0 ? undefined : native.read(rows.map((row) => row.changeId)) catch effect (error) => {
+          throw unavailable(`The stack could not be read: ${error.message}`)
+        }
+        const trees = new Map<string, string>()
+        for (const row of rows) {
+          const found = read?.revisions.find((entry) => entry.changeId === row.changeId)
+          if (found === undefined || found.kind !== "resolved" || found.commitId !== row.commitId) {
+            throw invalid(`The stack commit ${row.commitId} is not one resolved revision`)
+          }
+          trees.set(row.commitId, found.treeId)
+        }
+        const verdicts = verdictsOf(input.receipts, trees, input.required)
+        if (verdicts instanceof CodingError) throw verdicts
+        const stack = rows.map((row) => row.commitId)
+        const green = greenPrefix(stack, verdicts)
+        if (green === undefined) {
+          const failed = stack.find((commitId) => verdicts.get(commitId) === "failed")
+          return {
+            status: "unchanged" as const,
+            main,
+            reason: failed === undefined ? `no passed commit above ${target}` : `${failed} failed above ${target}`
+          }
+        }
+        // The stack may be rewritten while it is read: move only to a visible commit still under the tip.
+        const onStack = effect {
+          const result = try jj([
+            "log",
+            "--no-graph",
+            "-r",
+            `${green} & ::present(${input.tip}) & ::visible_heads()`,
+            "-T",
+            "commit_id ++ \"\\n\""
+          ])
+          return lines(result.stdout.text).length === 1
+        }
+        if (!(try onStack)) {
+          throw evicted(`${green} left the stack under ${input.tip} while ${target} was being advanced`)
+        }
+        const moved = try run(
+          ["jj", "--no-pager", "--color=never", "bookmark", "set", target, "-r", green],
+          jjMinutes
+        )
+        const now = try readMain
+        if (moved.exitCode !== 0) {
+          if (!/backwards or sideways/.test(moved.stderr.text)) {
+            throw unavailable(`jj bookmark set refused: ${bounded(moved.stderr.text, 1_024)}`)
+          }
+          // Another advance got there first: main already holds the green commit.
+          const past = try jj(["log", "--no-graph", "-r", `${green} & ::${now}`, "-T", "commit_id ++ \"\\n\""])
+          if (lines(past.stdout.text).length !== 1) {
+            throw evicted(`${target} moved from ${main} to ${now} while it was being advanced`)
+          }
+          return { status: "unchanged" as const, main: now, reason: `${target} already holds ${green}` }
+        }
+        if (now !== green) throw invalid(`${target} is ${now}, not ${green}`)
+        if (!(try onStack)) {
+          throw evicted(`${target} moved to ${green}, which left the stack under ${input.tip} during the move`)
+        }
+        return { status: "advanced" as const, from: main, to: green, above: stack.length - 1 - stack.indexOf(green) }
+      }
+    const abandon = (prepared: LandingCandidate) => abandonRevset(prepared.candidate.commitId)
+    const gh = (args: ReadonlyArray<string>) => run(["gh", ...args], ghMinutes)
+    const branchFor = (requestId: string) => `smithers/landing-${requestId}`
+    const viewPull = effect (branch: string) => {
+      const result = try gh([
+        "pr",
+        "view",
+        branch,
+        "--json",
+        "number,url,state,headRefOid,headRefName,baseRefName,mergeCommit"
+      ])
+      if (result.exitCode !== 0) {
+        if (/no pull requests found/i.test(result.stderr.text)) return undefined
+        throw unavailable(`gh pr view refused: ${bounded(result.stderr.text, 1_024)}`)
+      }
+      const parsed = Effect.try({
+        try: () => JSON.parse(result.stdout.text) as unknown,
+        catch: () => invalid("gh pr view returned no JSON")
+      })
+      const view = Effect.flatMap(parsed, Schema.decodeUnknownEffect(PullView)) catch effect (error) => {
+        throw error instanceof CodingError ? error : invalid("gh pr view returned an unexpected pull request shape")
+      }
+      const pull: LocalPull = {
+        number: view.number,
+        url: view.url,
+        state: view.state === "OPEN" ? "open" : view.state === "MERGED" ? "merged" : "closed",
+        headRef: view.headRefName,
+        headSha: view.headRefOid,
+        baseRef: view.baseRefName,
+        mergeCommitId: view.mergeCommit?.oid ?? null
+      }
+      return pull
+    }
+    const openPull = effect (prepared: LandingCandidate, requestId: string) => {
+        if (!/^[0-9a-f-]{36}$/.test(requestId)) {
+          throw invalid("A pull request needs this run's request identity")
+        }
+        if (!(options.fs.exists(`${root}/.git`) catch () => false)) {
+          throw unavailable("The pull-request lander needs a colocated Git repository (jj git init --colocate)")
+        }
+        const branch = branchFor(requestId), tip = prepared.candidate.commitId
+        // Unforced: a branch already at the tip is up to date; one that moved is refused, never overwritten.
+        const pushed = try run(["git", "push", "origin", `${tip}:refs/heads/${branch}`], gitMinutes)
+        if (pushed.exitCode !== 0) {
+          throw /rejected|non-fast-forward|fetch first/i.test(pushed.stderr.text)
+            ? invalid(`The branch ${branch} moved away from the candidate; it is not pushed over`)
+            : unavailable(`git push refused: ${bounded(pushed.stderr.text, 1_024)}`)
+        }
+        let pull = try viewPull(branch)
+        if (pull === undefined) {
+          const summary = prepared.summary
+          const created = try gh([
+            "pr",
+            "create",
+            "--head",
+            branch,
+            "--base",
+            target,
+            "--title",
+            summary.split(/\r?\n/, 1)[0]!,
+            "--body",
+            summary
+          ])
+          if (created.exitCode !== 0 && !/already exists/i.test(created.stderr.text)) {
+            throw unavailable(`gh pr create refused: ${bounded(created.stderr.text, 1_024)}`)
+          }
+          const opened = try viewPull(branch)
+          if (opened === undefined) throw invalid(`The pull request for ${branch} was not found after it was created`)
+          pull = opened
+        }
+        if (pull.headRef !== branch || pull.headSha !== tip) {
+          throw invalid(`Pull request #${pull.number} does not carry the candidate ${tip} on ${branch}`)
+        }
+        return pull
+      }
+    /** The rows `gh pr checks --json` printed, or undefined when its output is not JSON. */
+    const checkRows = (text: string): unknown => {
+      try {
+        return JSON.parse(text)
+      } catch {
+        return undefined
+      }
+    }
+    const observeChecks = effect (pull: LocalPull): PullChecks!CodingError => {
+      const result = try gh(["pr", "checks", String(pull.number), "--required", "--json", "name,bucket"])
+      const rows = checkRows(result.stdout.text)
+      if (!Schema.is(CheckRows)(rows)) {
+        if (/no (required )?checks reported/i.test(result.stderr.text)) return { status: "passed" as const, checks: [] }
+        throw unavailable(`gh pr checks refused: ${bounded(result.stderr.text, 1_024)}`)
+      }
+      const checks = rows.map(({ name, bucket }) => ({ name, bucket }))
+      const status = checks.some((check) => check.bucket === "fail" || check.bucket === "cancel")
+        ? "failed" as const
+        : checks.some((check) => check.bucket === "pending")
+        ? "pending" as const
+        : "passed" as const
+      return { status, checks }
+    }
+    const merge = effect (pull: LocalPull, prepared: LandingCandidate) => {
+        // A lost reply may have left the merge applied. Observe the exact
+        // pull and candidate before either acknowledging it or sending again.
+        const before = try viewPull(pull.headRef)
+        if (
+          before === undefined || before.number !== pull.number || before.headRef !== pull.headRef ||
+          before.headSha !== prepared.candidate.commitId || before.baseRef !== target || before.state === "closed"
+        ) {
+          throw invalid("The pull request no longer carries this candidate on the landing target")
+        }
+        if (before.state === "merged") {
+          if (before.mergeCommitId !== null && commit.test(before.mergeCommitId)) {
+            return { status: "merged" as const, mainCommitId: before.mergeCommitId }
+          }
+          throw unavailable(`Pull request #${pull.number} is merged but its merge commit was not observed`)
+        }
+        const summary = prepared.summary
+        const merged = try gh([
+          "pr",
+          "merge",
+          String(pull.number),
+          "--squash",
+          "--match-head-commit",
+          prepared.candidate.commitId,
+          "--subject",
+          summary.split(/\r?\n/, 1)[0]!,
+          "--body",
+          summary
+        ])
+        const after = try viewPull(pull.headRef)
+        if (after?.state === "merged" && after.mergeCommitId !== null && commit.test(after.mergeCommitId)) {
+          return { status: "merged" as const, mainCommitId: after.mergeCommitId }
+        }
+        if (merged.exitCode === 0) {
+          throw unavailable(`gh merged pull request #${pull.number} but its merge commit was not observed`)
+        }
+        return { status: "open" as const, reason: bounded(merged.stderr.text) }
+      }
+    /** The remote branch's head as last fetched, or `null` when the remote has no such branch. */
+    const remoteHead = effect (remote: string, branch: string) => {
+      const result = try jj([
+        "log",
+        "--no-graph",
+        "-r",
+        `remote_bookmarks(exact:${JSON.stringify(branch)}, exact:${JSON.stringify(remote)})`,
+        "-T",
+        "commit_id ++ \"\\n\""
+      ])
+      const found = lines(result.stdout.text)
+      if (found.length > 1) throw invalid(`${branch}@${remote} is conflicted on the remote (${found.length} heads)`)
+      return found[0] ?? null
+    }
+    const fetchBranch = (remote: string, branch: string) =>
+      jj(["git", "fetch", "--remote", remote, "--branch", `exact:${branch}`])
+    /** Every Change is exactly its named commit among `head`'s ancestors: an old or missing version refuses. */
+    const carries = effect (head: string, changes: StackPublicationInput["changes"], where: string) => {
+      for (const { changeId, commitId } of changes) {
+        const result = try jj([
+          "log",
+          "--no-graph",
+          "-r",
+          `change_id(${changeId}) & ::${head}`,
+          "-T",
+          "commit_id ++ \"\\n\""
+        ])
+        const found = lines(result.stdout.text)
+        if (found.length === 1 && found[0] === commitId) continue
+        throw invalid(
+          found.length === 0
+            ? `${changeId} is not ${where}`
+            : `${changeId} is ${found.join(", ")} ${where}, not ${commitId}`
+        )
+      }
+    }
+    const publishStack = effect (input: StackPublicationInput) => {
+        const remote = input.remote ?? "origin", branch = input.branch
+        if (
+          !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(branch) || /\.\.|\/\/|\/$|\.lock$|^refs\//.test(branch)
+        ) {
+          throw invalid("The publication branch must be a bookmark name")
+        }
+        if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(remote)) {
+          throw invalid("The publication remote must be a remote name")
+        }
+        const commits = [
+          input.tip,
+          ...input.changes.map((entry) =>
+            entry.commitId
+          )
+        ]
+        if (
+          commits.some((id) =>
+            !commit.test(id)
+          ) || input.changes.some((entry) => !change.test(entry.changeId)) ||
+          (input.expected !== null && !commit.test(input.expected))
+        ) {
+          throw invalid("A publication needs full commit and change IDs")
+        }
+        // A full commit id still resolves an abandoned commit: an obsolete tip is not the stack.
+        if ((try one(input.tip, "if(hidden, \"hidden\", \"visible\")", "The stack tip")) === "hidden") {
+          throw invalid(`The stack tip ${input.tip} was rewritten or abandoned`)
+        }
+        try carries(input.tip, input.changes, "on the stack")
+        const where = `${branch}@${remote}`
+        try fetchBranch(remote, branch)
+        const observed = try remoteHead(remote, branch)
+        if (observed !== input.tip) {
+          if (observed !== input.expected) {
+            throw evicted(
+              `${where} moved from ${input.expected ?? "no branch"} to ${
+                observed ?? "no branch"
+              }; it is not pushed over`
+            )
+          }
+          const conflicted = try jj([
+            "log",
+            "--no-graph",
+            "-r",
+            `(::${input.tip} ~ ::remote_bookmarks(remote=exact:${JSON.stringify(remote)})) & conflicts()`,
+            "-T",
+            "commit_id ++ \"\\n\""
+          ])
+          if (lines(conflicted.stdout.text).length !== 0) {
+            throw invalid(`The stack has conflicted commits: ${bounded(conflicted.stdout.text, 1_024)}`)
+          }
+          // The lease is git's, on the exact expected head (empty: no branch), checked by the remote
+          // itself. jj's own push lease is its remote-tracking ref, which any fetch in this
+          // repository can move.
+          const gitDir = (try jj(["git", "root"])).stdout.text.trim()
+          const pushed = try run([
+            "git",
+            "--git-dir",
+            gitDir,
+            "push",
+            "--porcelain",
+            `--force-with-lease=refs/heads/${branch}:${input.expected ?? ""}`,
+            remote,
+            `${input.tip}:refs/heads/${branch}`
+          ], gitMinutes)
+          if (pushed.exitCode !== 0) {
+            throw /stale info|\[rejected\]|non-fast-forward|fetch first/i.test(
+                `${pushed.stdout.text}\n${pushed.stderr.text}`
+              )
+              ? evicted(`${where} moved during publication; it is not pushed over`)
+              : unavailable(`git push refused: ${bounded(pushed.stderr.text, 1_024)}`)
+          }
+        }
+        // Confirmation reads the remote again, not anything local.
+        try fetchBranch(remote, branch)
+        const published = try remoteHead(remote, branch)
+        if (published !== input.tip) {
+          const message = `${where} is ${published ?? "absent"} after publication, not ${input.tip}`
+          // Another writer moved or deleted it after the push.
+          throw evicted(message)
+        }
+        try carries(published, input.changes, `on ${where}`)
+        // Track it, as a jj push would: jj treats an untracked remote bookmark as immutable, and a
+        // later correction must still amend the published stack in place.
+        try jj(["bookmark", "track", branch, "--remote", remote])
+        try jj(["bookmark", "set", branch, "-r", published, "--allow-backwards"])
+        return { remote, branch, previous: input.expected, head: published, changes: input.changes }
+      }
+    const service: LocalLanding = {
+      kind: options.kind,
+      prepare,
+      fastForward,
+      advanceGreenPrefix,
+      abandon,
+      openPull,
+      observeChecks,
+      merge,
+      publishStack
+    }
+    return service
+}
+export const layer = (options: Options) => Layer.effect(Landing)(make(options))

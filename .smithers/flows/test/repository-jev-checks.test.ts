@@ -9,8 +9,8 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
 import { CodingError } from "../coding/schema.ts"
-import type { CheckContext } from "../repository/check-context.ts"
-import * as Checks from "../repository/checks.ts"
+import type { CheckContext } from "../repository/check-context.vibe"
+import * as Checks from "../repository/checks.vibe"
 import {
   AICheck,
   checkLayers,
@@ -21,10 +21,10 @@ import {
   inconclusiveCheck,
   RunChecks,
   verifyTrialChecks
-} from "../repository/checks.ts"
-import { batches, hunks, jevSemanticCheck, MAX_STATES, proposalHunks } from "../repository/jev-checks.ts"
-import type { Work } from "../repository/jobs.ts"
-import type { Check, Draft, JobResult, StepResult } from "../repository/schema.ts"
+} from "../repository/checks.vibe"
+import { batches, hunks, jevSemanticCheck, MAX_STATES, proposalHunks } from "../repository/jev-checks.vibe"
+import type { Work } from "../repository/jobs.vibe"
+import type { Check, Draft, JobResult, StepResult } from "../repository/schema.vibe"
 
 const base = "a".repeat(40), candidate = "b".repeat(40)
 const lines = (count: number, prefix: string) =>

@@ -9,9 +9,9 @@ Paths are relative to /Users/williamcory/smithers. "Svc" = packages/backend/inte
 - Order today is not user-controlled: items advance sorted by issue number (chat first) (Svc/mythical_items.go:1113-1123). Items integrate serially onto the stack tip; PR base is the default bookmark (`main`) (mythical_items.go:2095), not the previous item. "Merges after #n", Move up/down, Drop, Before #n, Amend #n do not exist as user operations. "Amend/insert" exist only as the planner's edits to existing stack changes (mythical_items.go:866-920), and a candidate that does so is re-run, not rebased (mythical_git.go:529-539).
 - Merge is gated by label/Land authorization + green CI + review approve + head match (mythical_items.go:2440-2535), via GitHub PR merge. D-23 approval gating lives in the separate plue landing path (Svc/landing.go:1697), not in the Mythical path.
 - States are one 15-value enum (migration 0053). Needs you / Paused / Failed / In review are not states; `StackIssues.ts` buckets them into 3 groups (needs-you/working/done) and puts `proposed` under needs-you.
-- Steering exists for the planning boundaries of `coding/request` only (.smithers/flows/coding/steering.ts); implementation waits for the next boundary. No steer route from a stack item to its lane run. `runs.steer` works on any run id through the workspace gateway.
+- Steering exists for the planning boundaries of `coding/request` only (.smithers/flows/coding/steering.vibe); implementation waits for the next boundary. No steer route from a stack item to its lane run. `runs.steer` works on any run id through the workspace gateway.
 - Rebase on main move: fold of main into the stack, then a candidate not on the tip is rebased; conflict => `retrying` with `integration.conflict.paths`, re-plan on the new tip, up to 3 attempts, then `blocked`. No "Needs you / Resolve" for a conflict; no checkpoint/present-person scheduling.
-- Learning: `improve.mine` is only a name in factory rules (no flow in `flows/`). Failed review rounds write pending notes (.smithers/flows/coding/learnings.ts). Wiki refresh after fold exists (mythical_wikis).
+- Learning: `improve.mine` is only a name in factory rules (no flow in `flows/`). Failed review rounds write pending notes (.smithers/flows/coding/learnings.vibe). Wiki refresh after fold exists (mythical_wikis).
 
 ## Inventory
 
@@ -47,13 +47,13 @@ Paths are relative to /Users/williamcory/smithers. "Svc" = packages/backend/inte
 | `runs.resume` | entries/runs.ts:88; controller/runs.ts:533 | `gateway.resume` of a parked run; no stack item involvement | §6.6 Stop and resume |
 | `flow.run.stop` | entries/flow.ts:87; controller/workflow-pump.ts:591 | Cancels the run (or denies the runaway guard); hidden, confirm | §6.6 Stop |
 | `approval.approve` | entries/approval.ts:16; turns.ts:1114 `decideApproval` | userOnly; decides a chat approval card | §4.1 Needs you |
-| TODO flow head | .smithers/flows/coding/todo.ts:78 `factory/Todo` (Jev routes implement/bug/feature/close; :61 `leafFeedback`) | Route once, then plan through `coding/Request` | §6.9 route |
-| Request flow | .smithers/flows/coding/request/flow.ts:158 `coding/Request`; registration .smithers/flows/coding/request.ts (+ preparation.ts, planning.ts, planning-memory.ts) | Stack request: `admitStackBase` -> install dependency pages -> `Todo` -> `PrepareRequest` -> `AdmitSource` -> `Coordinate` (implement atoms, checks, correction rounds) | §6.9 plan, implement, check |
+| TODO flow head | .smithers/flows/coding/todo.vibe:78 `factory/Todo` (Jev routes implement/bug/feature/close; :61 `leafFeedback`) | Route once, then plan through `coding/Request` | §6.9 route |
+| Request flow | .smithers/flows/coding/request/flow.ts:158 `coding/Request`; registration .smithers/flows/coding/request.vibe (+ preparation.ts, planning.ts, planning-memory.ts) | Stack request: `admitStackBase` -> install dependency pages -> `Todo` -> `PrepareRequest` -> `AdmitSource` -> `Coordinate` (implement atoms, checks, correction rounds) | §6.9 plan, implement, check |
 | Vibe flow | .smithers/flows/coding/vibe/flow.ts:13 `coding/Vibe` = AdmitVibe -> CleanVibeHistory -> LandVibe | Clean history, deliver one commit / PR | §6.9 open PR |
 | Verify flow | .smithers/flows/coding/verify/flow.ts:16 `coding/Verify` | Re-run checks on rebased candidate | §6.9 check |
 | Host config | .smithers/flows/coding/project-config.md:7-13 | Host reads `<root>/.smithers/coding-project.json` or `SMITHERS_CODING_PROJECT`; absent => only manual plan route; invalid => refuses startup. Keys: wiki, implementation, checks[], historyLimit, maxMemoryBytes, landing, seats | §6.9 Status, §11.10 |
-| Steering | .smithers/flows/coding/steering.ts:1-60, steering.md | `ReceiveFeedback` at boundaries `after-poc`, `before-implementation`, `after-correction`; Message steers admitted only for active `coding/request` runs; closed after the empty final receipt | §6.6 Steer |
-| Learnings | .smithers/flows/coding/learnings.ts:1-64 | Changes-requested review round -> pending note (`status: pending`); only accepted notes reach planning (max 20) | §6.12 Learning (partial) |
+| Steering | .smithers/flows/coding/steering.vibe:1-60, steering.md | `ReceiveFeedback` at boundaries `after-poc`, `before-implementation`, `after-correction`; Message steers admitted only for active `coding/request` runs; closed after the empty final receipt | §6.6 Steer |
+| Learnings | .smithers/flows/coding/learnings.vibe:1-64 | Changes-requested review round -> pending note (`status: pending`); only accepted notes reach planning (max 20) | §6.12 Learning (partial) |
 | `improve.mine` | packages/rpc/test/FactoryProjection.test.ts:86; packages/smithers/build/targets/test/Factory.test.ts:120; .smithers/flows/pack.test.mjs:490 | Only appears in factory rule fixtures: `change.landed -> wiki, history.fold, improve.mine`. No `flows/improve*`. | §6.12 Learning (Missing) |
 
 ## State mapping

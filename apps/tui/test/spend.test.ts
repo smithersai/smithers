@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect"
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Spend from "../src/spend.ts"
+import * as Spend from "../src/spend.vibe"
 
 const roots: Array<string> = []
 afterAll(() => roots.forEach((root) => rmSync(root, { recursive: true, force: true })))

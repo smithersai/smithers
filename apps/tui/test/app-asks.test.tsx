@@ -9,7 +9,7 @@ import { act } from "react"
 import { App } from "../src/app.tsx"
 import * as Approvals from "../src/approvals.ts"
 import { Asks } from "../src/asks.ts"
-import type * as Host from "../src/host.ts"
+import type * as Host from "../src/host.vibe"
 
 // Needs you from the chat: an ask a worker puts to the person shows beside Summary and on its card, and
 // `a` answers it when it is the only one. Only Host execution is controlled; asks run through the real

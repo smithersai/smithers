@@ -1,7 +1,7 @@
 # Native engine snapshots
 
 The configured coding host supplies the existing `Jj` Effect service through
-[`layerAt`](./snapshots.ts). It uses the shared Rust helper's `--engine`
+[`layerAt`](./snapshots.vibe). It uses the shared Rust helper's `--engine`
 mode and the host's injected process spawner. Node and Bun use this same recipe;
 there is no sidecar, new snapshot database, or second identity service.
 
@@ -13,7 +13,7 @@ stay in the existing flow journal. Both compensable action preimages and the
 engine's settled diff snapshots therefore preserve the planned atom.
 
 ```ts
-import * as Snapshots from "./snapshots.ts"
+import * as Snapshots from "./snapshots.vibe"
 
 const snapshots = Snapshots.layerAt({ repositoryPath: workspaceRoot })
   .pipe(Layer.provide(containedHostSpawner))

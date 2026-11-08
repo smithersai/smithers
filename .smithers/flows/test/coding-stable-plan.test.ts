@@ -54,7 +54,7 @@ const sources = (directory: string): Array<string> =>
   readdirSync(directory).flatMap((name) => {
     const path = join(directory, name)
     if (statSync(path).isDirectory()) return name === "node_modules" ? [] : sources(path)
-    return path.endsWith(".ts") && !path.endsWith(".d.ts") && !path.endsWith(".test.ts") ? [path] : []
+    return /\.(?:ts|vibe)$/.test(path) && !/\.(?:d|test)\.(?:ts|vibe)$/.test(path) ? [path] : []
   })
 
 test("every coding step flow builds with stable callbacks", async () => {

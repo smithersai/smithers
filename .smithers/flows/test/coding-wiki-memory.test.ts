@@ -9,11 +9,11 @@ import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { type PlanningWikiProvider, staleWikiNotes, wikiMemory } from "../coding/planning-memory.ts"
+import { type PlanningWikiProvider, staleWikiNotes, wikiMemory } from "../coding/planning-memory.vibe"
 import { CodingError } from "../coding/schema.ts"
-import { cloudWikiBody, reviewCounts } from "../coding/wiki-refresh.ts"
-import { operations } from "../wiki/operations.ts"
-import type { PageSpec } from "../wiki/schema.ts"
+import { cloudWikiBody, reviewCounts } from "../coding/wiki-refresh.vibe"
+import { operations } from "../wiki/operations.vibe"
+import type { PageSpec } from "../wiki/schema.vibe"
 
 const run = <A, E>(
   effect: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom) | FileSystem.FileSystem | Path.Path>

@@ -7,9 +7,9 @@ import { test } from "node:test"
 import { initialSetup, setupCandidate } from "../../../packages/rpc/src/RepositorySetup.ts"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
 import * as Journal from "../../../packages/smithers/flows/journal/src/Journal.ts"
-import { NativeCoding } from "../coding/native.ts"
+import { NativeCoding } from "../coding/native.vibe"
 import { CodingError } from "../coding/schema.ts"
-import { executionLayers, selectedSteps } from "../repository/execution.ts"
+import { executionLayers, selectedSteps } from "../repository/execution.vibe"
 import {
   ignoreConfidence,
   injectionProbability,
@@ -17,9 +17,9 @@ import {
   intakeTexts,
   screenEvent,
   withheldPlaceholder
-} from "../repository/intake.ts"
-import { RunSteps, type Work } from "../repository/jobs.ts"
-import { Draft, type IntakeScreening, type JobInput } from "../repository/schema.ts"
+} from "../repository/intake.vibe"
+import { RunSteps, type Work } from "../repository/jobs.vibe"
+import { Draft, type IntakeScreening, type JobInput } from "../repository/schema.vibe"
 import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 
 const repo = "example/repo"

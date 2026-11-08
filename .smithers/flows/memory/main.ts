@@ -1,5 +1,5 @@
 /**
- * `node --experimental-strip-types .smithers/flows/memory/main.ts calibrate --root <repo>
+ * `node --import vibelang/register .smithers/flows/memory/main.ts calibrate --root <repo>
  *   [--journals <dir>] [--journal-prefix <prefix>] [--landed <N>] [--write]`
  *
  * Runs `memory/calibrate` once and prints its receipt as JSON. `--journals`
@@ -23,8 +23,8 @@ import { resolve } from "node:path"
 import { parseArgs } from "node:util"
 import * as GrantStore from "../../../packages/smithers/flows/kernel/src/GrantStore.ts"
 import * as KernelHttpClient from "../../../packages/smithers/flows/kernel/src/HttpClient.ts"
-import { evaluatorLayer } from "../repository/jev-checks.ts"
-import * as Calibrate from "./calibrate.ts"
+import { evaluatorLayer } from "../repository/jev-checks.vibe"
+import * as Calibrate from "./calibrate.vibe"
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,
@@ -60,7 +60,7 @@ const judge: Layer.Layer<Evaluator.Evaluator> = key === undefined || key === ""
         Effect.service(Evaluator.Evaluator),
         Evaluator.layerVercelGateway({ apiKey: Redacted.make(key) }).pipe(
           Layer.provide(KernelHttpClient.layer),
-          // eslint-disable-next-line no-restricted-syntax -- Jev HTTP only, as apps/tui/src/host.ts binds it
+          // eslint-disable-next-line no-restricted-syntax -- Jev HTTP only, as apps/tui/src/host.vibe binds it
           Layer.provide(GrantStore.layerNoop),
           Layer.provide(FetchHttpClient.layer)
         )

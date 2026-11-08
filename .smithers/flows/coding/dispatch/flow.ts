@@ -19,7 +19,7 @@ import {
   DispatchResult,
   DispatchTurn,
   ObserveDispatch
-} from "../dispatch.ts"
+} from "../dispatch.vibe"
 import Dispatch from "./flow.ts"
 
 export default Flow.make("coding/Dispatch", {

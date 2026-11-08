@@ -3,8 +3,8 @@ import * as AgentAction from "@smthrs/agent/AgentAction"
 import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
-import { Input, Receipt, WikiError } from "./schema.ts"
-import { Assess, Collect, ReviewPage, validateOrRepairReview, Write } from "./workflow.ts"
+import { Input, Receipt, WikiError } from "./schema.vibe"
+import { Assess, Collect, ReviewPage, validateOrRepairReview, Write } from "./workflow.vibe"
 
 export default Flow.make("smithers/Wiki", {
   description:

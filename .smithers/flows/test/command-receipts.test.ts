@@ -7,7 +7,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
 import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
-import { commandReceipts } from "../coding/command-receipts.ts"
+import { commandReceipts } from "../coding/command-receipts.vibe"
 
 test("private command receipts invalidate old exits, survive replacement and fail closed on corrupt storage", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "command-receipts-"))

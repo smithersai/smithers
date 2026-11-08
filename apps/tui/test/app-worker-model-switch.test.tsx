@@ -9,7 +9,7 @@ import { act } from "react"
 import { App } from "../src/app.tsx"
 import * as Credit from "../src/credit.vibe"
 import * as Files from "../src/files.ts"
-import type * as Host from "../src/host.ts"
+import type * as Host from "../src/host.vibe"
 import * as Session from "../src/session.ts"
 
 // Real App, native renderer and worker persistence; only execution is controlled.
