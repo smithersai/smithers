@@ -1,6 +1,8 @@
+import { verificationSuites } from "../assets/wiki.generated.vibe"
 // Foldkit rendering of wiki/designs/issues. Smithers owns the component CSS; ix-* is the designer's extension.
+import { reviewers, emptySpecification } from "../core/specification.vibe"
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { issuePermission, may, type IssueRecord, type IssueOperation, type Role } from "../core/conversation.vibe"
+import { issuePermission, may, specificationAccepted, type IssueRecord, type IssueOperation, type Role } from "../core/conversation.vibe"
 import type { Message } from "./main.vibe"
 import type { IssuesUi } from "./issues.vibe"
 import { blocks, inline as codeParts } from "./markdown.vibe"
@@ -76,7 +78,7 @@ function header(h: H, send: Send, name: string, back = "‹ Chat", actions: Read
 function titleOf(ui: IssuesUi): string { return ui.kind === "All" || ui.kind === "Issues" ? "Issues" : ui.kind }
 export function issuesView(ui: IssuesUi, h: H, send: Send): Html {
   return h.section([h.Class("ix-surface"), h.AriaLabel("Issues pane"), h.Style({ viewTransitionName: "issues" })], [
-    ...(ui.screen === "roles" ? rolesView(h, send) : ui.screen === "detail" ? detail(ui, h, send) : ui.screen === "vip" || ui.screen === "new" ? form(ui, h, send) : list(ui, h, send)),
+    ...(ui.screen === "specification" ? specificationView(ui, h, send) : ui.screen === "roles" ? rolesView(h, send) : ui.screen === "detail" ? detail(ui, h, send) : ui.screen === "vip" || ui.screen === "new" ? form(ui, h, send) : list(ui, h, send)),
     dialog(ui, h, send),
   ])
 }
@@ -109,7 +111,7 @@ function list(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
   const action = propose ? "Propose a VIP" : "New issue"
   const connection = ui.role !== "viewer" && !connected(ui) ? [connect(h, ui)] : []
   const controls = connected(ui) && issuePermission(ui.role, propose ? "propose" : "new") ? [h.button([h.Class("sui-button sui-button-sm sui-button-default"), h.Type("button"), h.OnClick(send(propose ? "vip-form" : "new-form"))], [action])] : []
-  return [header(h, send, titleOf(ui), "‹ Chat", [button(h, send, "Roles", "roles"), ...connection, ...controls]), ...(ui.error === "" || ui.status === "error" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...(ui.retry === undefined ? ui.error === "Couldn't load comments. Retry." ? [button(h, send, "Retry", "read")] : [] : !issuePermission(ui.role, ui.retry.op) ? [] : [button(h, send, "Retry", "retry", true)])])]), h.div([h.Class("sui-page-body")], [h.div([h.Class("sui-issues-view")], [
+  return [header(h, send, titleOf(ui), "‹ Chat", [button(h, send, "Specification", "specification"), button(h, send, "Roles", "roles"), ...connection, ...controls]), ...(ui.error === "" || ui.status === "error" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...(ui.retry === undefined ? ui.error === "Couldn't load comments. Retry." ? [button(h, send, "Retry", "read")] : [] : !issuePermission(ui.role, ui.retry.op) ? [] : [button(h, send, "Retry", "retry", true)])])]), h.div([h.Class("sui-page-body")], [h.div([h.Class("sui-issues-view")], [
     h.div([h.Class("sui-issues-header")], [
       h.div([h.Class("sui-issues-filters")], (["open", "closed"] as const).map((state) => h.a([h.Class("sui-issues-filter"), h.Href(`#${state}`), ...(state === ui.state ? [h.AriaCurrent("page")] : []), h.OnClick(send("state", state), { defaultAction: "Prevent" })], [state === "open" ? "◉ Open " : "✓ Closed ", h.span([h.Class("sui-issues-filter-count")], [String(filtered.filter((i) => i.state === state).length)])]))),
       h.div([h.Class("sui-segmented"), h.DataAttribute("size", "sm"), h.Role("radiogroup"), h.AriaLabel("Kind")], (["All", "Issues", "Tasks", "VIPs"] as const).map((kind, index, kinds) => h.button([h.Id(`ix-kind-${kind}`), h.Class("sui-segmented-item"), h.Type("button"), h.Role("radio"), h.AriaChecked(ui.kind === kind), h.Tabindex(ui.kind === kind ? 0 : -1), h.OnClick(send("kind", kind)), h.OnKeyDownPreventDefault((key) => key === "ArrowRight" || key === "ArrowLeft" ? Option.some(send("kind-key", kinds[(index + (key === "ArrowRight" ? 1 : 3)) % 4]!)) : Option.none())], [kind]))),
@@ -144,6 +146,10 @@ function detail(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
         h.ul([h.Class("ix-tree-list")], children.map((child) => h.li([h.Class("ix-tree-row")], [icon(h, child), issueLink(h, send, child), h.span([h.Class("ix-tree-meta")], [...badges(h, child, false), ...(child.assignee === "" ? [] : [avatar(h, child.assignee)])])]))),
       ])])
       ]),
+      ...(i.vip === "" ? [] : [h.section([h.AriaLabel("Proposal gate"), h.Class("sui-card")], [
+        h.div([h.Class("sui-card-header")], [h.span([h.Class("sui-card-title")], ["Proposal"]), h.span([h.Class("sui-badge sui-badge-outline")], [i.vip])]),
+        h.div([h.Class("sui-card-content")], [h.span([h.Class("sui-label")], ["Maintainer · person"]), ...(i.approvedBy === undefined ? [] : [h.div([], [i.approvedBy, " · ", h.time([h.Datetime(i.approvedAt ?? "")], [i.approvedAt ?? ""])])])]),
+      ])]),
       h.ol([h.Class("sui-item-conv-events")], i.notes.filter(n => n.event).map(n => h.li([h.Class("sui-item-conv-event")], [h.span([h.Class("sui-item-conv-event-icon")], [n.text.startsWith("added ") ? "+" : n.text.startsWith("accepted ") ? "✓" : n.text.startsWith("proposed ") ? "◦" : "↳"]), h.span([h.Class("sui-item-conv-event-text")], [h.b([], [n.author]), " ", ...eventText(ui, h, send, n.text), ...(n.age === "" ? [] : [` · ${n.age}`])])]))),
       h.ol([h.Class("sui-item-conv-comments")], i.notes.filter(n => !n.event).map(n => h.li([h.Class("sui-item-conv-comment")], [h.div([h.Class("sui-item-conv-comment-meta")], [avatar(h, n.author), h.span([h.Class("sui-item-conv-author")], [n.author]), ...(n.author === "VibeLang agent" ? [h.span([h.Class("sui-badge sui-badge-secondary")], ["agent"])] : []), ...(n.age === "" ? [] : [h.span([], [when(ui.data.absoluteDates === true, n.age, true)])])]), ...issueBody(ui, h, send, n.text)]))),
       ...(connected(ui) && issuePermission(ui.role, "comment") ? [h.div([h.Class("sui-item-conv-composer")], [h.textarea([h.Class("sui-textarea"), h.AriaLabel("Comment"), h.Disabled(ui.busy || ui.retry !== undefined), h.Placeholder("Comment"), h.Value(ui.comment), h.OnInput((value) => send("comment-text", value)), h.OnKeyDownPreventDefault((key, mods) => key === "Enter" && (mods.metaKey || mods.ctrlKey) ? Option.some(send("comment")) : Option.none())]), h.div([h.Class("sui-item-conv-composer-actions")], [h.button([h.Type("button"), h.Class("sui-button sui-button-sm sui-button-default"), h.OnClick(send("comment"))], ["Comment"])])])] : []),
@@ -182,4 +188,29 @@ function dialog(ui: IssuesUi, h: H, send: Send): Html {
     ...(ui.error === "" ? [] : [h.div([h.Role("alert"), h.Class("sui-issue-form-error")], [ui.error, ...(ui.error === "Connect GitHub." ? [connect(h, ui)] : []), ...(ui.retry === undefined ? ui.error === "Couldn't load comments. Retry." ? [button(h, send, "Retry", "read")] : [] : !issuePermission(ui.role, ui.retry.op) ? [] : [button(h, send, "Retry", "retry", true)])])]),
     h.div([h.Class("sui-dialog-footer")], [button(h, send, "Cancel", "cancel"), h.button([h.Class("sui-button sui-button-sm sui-button-solid"), h.Type("button"), h.Disabled(ui.busy || ui.retry !== undefined), h.OnClick(send(ui.dialog))], [ui.dialog === "commit" ? "Commit" : ui.dialog === "split" ? "Split" : "Link"])]),
   ])
+}
+
+
+function specificationView(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> {
+  const spec = ui.data.specification ?? emptySpecification
+  const accepted = specificationAccepted(spec)
+  const history = ui.data.specificationHistory ?? []
+  return [header(h, send, "Specification", "‹ VIPs"), h.div([h.Class("sui-page-body"), h.DataAttribute("width", "narrow")], [
+    h.div([h.Class("sui-card")], [
+      h.div([h.Class("sui-card-header")], [h.span([h.Class("sui-card-title")], [`Revision ${spec.revision}`]), h.span([h.Role("status"), h.AriaLabel("Specification gate"), h.Class(`sui-badge sui-badge-${accepted ? "success" : "warning"}`)], [accepted ? "Accepted" : "In review"])]),
+      h.div([h.Class("sui-table-container")], [h.table([h.Class("sui-table ix-spec-reviews"), h.AriaLabel("Specification reviews")], [
+        h.thead([], [h.tr([], ["Reviewer", "Verdict", "Grade", "Rev", ""].map(label => h.th([], [label])))]),
+        h.tbody([], reviewers.map(({ id, name }) => {
+          const review = spec[id]
+          return h.tr([], [h.td([], [name]), h.td([], review.link === "" ? [review.verdict || "—"] : [h.a([h.Href(review.link)], [review.verdict])]), h.td([], [review.grade || "—"]), h.td([], [review.revision === 0 ? "—" : String(review.revision)]), h.td([], issuePermission(ui.role, "spec-review") ? [h.button([h.Class("sui-button sui-button-sm"), h.Type("button"), h.Disabled(ui.busy), h.AriaLabel("Request review"), h.OnClick(send("spec-review", id))], ["Review"])] : [])])
+        })),
+      ])]),
+      h.div([h.Class("sui-card-content")], [
+        ...(issuePermission(ui.role, "spec-revise") ? [h.textarea([h.Class("sui-textarea vl-code"), h.Rows(8), h.AriaLabel("Specification text"), h.Value(ui.summary), h.Disabled(ui.busy), h.OnInput(v => send("summary", v))]), h.button([h.Class("sui-button sui-button-sm"), h.Type("button"), h.Disabled(ui.busy || ui.summary.trim() === "" || ui.summary === spec.text), h.OnClick(send("spec-revise"))], ["Save revision"])] : [h.pre([h.Class("vl-code"), h.Style({ whiteSpace: "pre-wrap" })], [spec.text])]),
+        ...(ui.error === "" ? [] : [h.div([h.Role("alert")], [ui.error, ...(ui.retry === undefined ? [] : [button(h, send, "Retry", "retry")])])]),
+      ]),
+    ]),
+    ...(accepted ? [h.div([h.Class("sui-card")], [h.div([h.Class("sui-card-header")], [h.span([h.Class("sui-card-title")], ["Self-consistency"])]), h.div([h.Class("sui-card-content")], verificationSuites.map(suite => h.a([h.Class("sui-badge sui-badge-outline"), h.Href(suite.href)], [`${suite.label} · ${suite.state}`])))])] : []),
+    h.details([], [h.summary([], ["History"]), h.ol([h.Class("sui-item-conv-events")], history.map((event, index) => h.li([h.Id(`spec-review-${index + 1}`), h.Class("sui-item-conv-event")], [h.details([], [h.summary([], [`r${event.revision} · ${event.event === "reset" ? "Reset" : `${reviewers.find(r => r.id === event.reviewer)?.name ?? event.reviewer} · ${event.verdict} · ${event.grade}`} · ${event.at}`]), ...(event.review === undefined ? [] : [h.p([], [event.review])])])])))]),
+  ])]
 }

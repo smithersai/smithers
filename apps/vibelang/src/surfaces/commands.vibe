@@ -1,6 +1,6 @@
 import { collectAnswer, answerOutcome, commandError, type AskProgress } from "./commandDecision.vibe"
 import { commandConversation } from "../core/protocolDecision.vibe"
-import { IssueRequest, IssuesState } from "../core/issueSchemas.vibe"
+import { IssueRequest, IssuesState, SpecificationReviewer } from "../core/issueSchemas.vibe"
 // One command registry; CLI parameters, MCP tools and discovery all derive from it (decision 0009).
 import { Argument, Flag, type Command } from "effect/cli"
 import { IdGenerator, Tool } from "effect/ai"
@@ -280,9 +280,12 @@ export const Issues = define("issues", "List GitHub issues, tasks and VIPs.", To
 }, (output) => output.items.map((i) => `#${i.number} ${i.title}${i.task === "" ? "" : ` · Task · ${i.task}`}${i.vip === "" ? "" : ` · VIP · ${i.vip}`}`).join("\n"))
 
 const defaultText = Schema.String.pipe(Schema.withDecodingDefaultKey(succeed("")))
+const defaultReviewer = SpecificationReviewer.pipe(Schema.withDecodingDefaultKey(succeed("astra" as const)))
 const defaultNumber = Schema.Number.pipe(Schema.withDecodingDefaultKey(succeed(0)))
-const AgentIssueOperation = Schema.Literals(["read", "new", "comment", "link", "split", "commit", "uncommit", "draft", "propose"])
+const AgentIssueOperation = Schema.Literals(["read", "new", "comment", "link", "split", "commit", "uncommit", "draft", "propose", "spec-revise", "spec-review"])
 export schema IssueInput {
+  readonly revision: defaultNumber
+  readonly reviewer: defaultReviewer
   readonly resumeRecovery: defaultText
   readonly resumeOp: defaultText
   readonly resumeKey: defaultText
@@ -299,11 +302,13 @@ export schema IssueInput {
 }
 const IssueOutput = Schema.Struct({ seq: Schema.Number, items: Schema.Array(IssueBrief), detail: Schema.String, draft: IssuesState.fields.draft })
 export const Issue = define("issue", "Run an issue flow.", IssueInput, IssueOutput, {
+  revision: Flag.Int("revision").pipe(Flag.withDefault(0)),
+  reviewer: Flag.ChoiceWithValue("reviewer", [["astra", "astra"], ["sol", "sol"], ["fable", "fable"], ["opus", "opus"]] as const).pipe(Flag.withDefault("astra")),
   resumeRecovery: Flag.String("resume-recovery").pipe(Flag.withDefault("")),
   resumeOp: Flag.String("resume-op").pipe(Flag.withDefault("")),
   resumeKey: Flag.String("resume-key").pipe(Flag.withDefault("")),
   recovery: Flag.String("recovery").pipe(Flag.withDefault("")),
-  op: Argument.Literals("op", ["read", "new", "comment", "link", "split", "commit", "uncommit", "draft", "propose"]),
+  op: Argument.Literals("op", ["read", "new", "comment", "link", "split", "commit", "uncommit", "draft", "propose", "spec-revise", "spec-review"]),
   number: Flag.Int("number").pipe(Flag.withDefault(0)),
   parent: Flag.Int("parent").pipe(Flag.withDefault(0)),
   title: Flag.String("title").pipe(Flag.withDefault("")),
@@ -319,7 +324,7 @@ export const Issue = define("issue", "Run an issue flow.", IssueInput, IssueOutp
   const { recovery, resumeOp, resumeKey, resumeRecovery, ...payload } = input
   const result = api.act({ ...payload, key, ...(resumeOp === "" || resumeKey === "" ? {} : { resumeOp, resumeKey, ...(resumeRecovery === "" ? {} : { resumeRecovery }) }), ...(recovery === "" ? {} : { recovery }) }) catch effect (error) => { throw new CommandError({ message: error.reason === "forbidden" ? "Not allowed." : "Issue change failed." }) }
   const selected = result.selected ?? input.number
-  return { seq: result.seq, items: result.items, ...(result.draft === undefined ? {} : { draft: result.draft }), detail: JSON.stringify(result.saved ?? result.items.find(i => i.number === selected) ?? null) }
+  return { seq: result.seq, items: result.items, ...(result.draft === undefined ? {} : { draft: result.draft }), detail: JSON.stringify(input.op.startsWith("spec-") || (input.op === "read" && input.number === 0) ? { specification: result.specification, history: result.specificationHistory } : result.saved ?? result.items.find(i => i.number === selected) ?? null) }
 }, (output) => JSON.stringify(output))
 
 const ActionJson = Schema.String.pipe(Schema.withDecodingDefaultKey(succeed("{}")))

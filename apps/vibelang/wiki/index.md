@@ -44,6 +44,8 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0025](decisions/0025-desktop.md) | Electrobun hosts the shared Foldkit app; local models, confined folders and flows run on Bun |
 | [0026](decisions/0026-marketing-media.md) | The Tour flow selects each stop’s media; compiler card in empty chat, silent videos, posters and failure removal (VL-19) |
 
+| [0027](decisions/0027-acceptance-gates.md) | Human proposal approval and four current-revision LGTM/A specification reviews; shared flows, reset history and suite state (lane vl-gates) |
+
 ## Layout
 
 ```

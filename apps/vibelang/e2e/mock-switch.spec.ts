@@ -54,6 +54,26 @@ test("the top bar switches to Mock, the choice persists, and every feature works
   await page.getByRole("link", { name: "Case branches on tuples", exact: true }).click()
   await expect(page.getByRole("link", { name: /#49/ })).toBeVisible()
 
+  // Both acceptance gates. Agent review is separate from the maintainer's proposal approval.
+  await page.getByRole("link", { name: "‹ Issues" }).click()
+  await picker.selectOption("maintainer")
+  await page.getByRole("link", { name: "Pattern matching in case", exact: true }).click()
+  await page.getByRole("button", { name: "Accept", exact: true }).click()
+  await expect(page.getByRole("region", { name: "Proposal gate" })).toContainText("will")
+  await page.getByRole("link", { name: "‹ Issues" }).click()
+  await page.getByRole("button", { name: "Specification", exact: true }).click()
+  await expect(page.getByRole("status", { name: "Specification gate" })).toHaveText("Accepted")
+  await page.getByRole("textbox", { name: "Specification text" }).fill("A new mock specification revision.")
+  await page.getByRole("button", { name: "Save revision" }).click()
+  await expect(page.getByRole("status", { name: "Specification gate" })).toHaveText("In review")
+  for (const reviewer of ["Codex Astra", "Codex Sol", "Claude Fable", "Claude Opus"]) {
+    await page.getByRole("row", { name: new RegExp(reviewer) }).getByRole("button", { name: "Request review" }).click()
+    await expect(page.getByRole("row", { name: new RegExp(reviewer) })).toContainText("LGTM")
+  }
+  await expect(page.getByRole("status", { name: "Specification gate" })).toHaveText("In review")
+  await page.getByRole("row", { name: /Claude Opus/ }).getByRole("button", { name: "Request review" }).click()
+  await expect(page.getByRole("status", { name: "Specification gate" })).toHaveText("Accepted")
+
   // Actions, and the slash menu, which also lists switching back to live.
   await page.goto("/")
   await ask(page, "Hello")

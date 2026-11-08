@@ -38,7 +38,7 @@ it("every issue flow through the real product fixture engine", async ({ bench })
         expect(drafted.items).toEqual(uncommitted.items)
         expect(drafted.draft).toEqual({ title: "Tuple proposal", summary: "Summary", example: "const pair = [1, 2]", prior: "Rust tuple patterns\nTypeScript tuple types" })
         expect(proposed.items[0]).toMatchObject({ number: 53, title: "Tuple proposal", vip: "In review", task: "", path: "docs/design/vips/53.md", review: "https://github.com/smithersai/vibelang/pull/53", body: "Summary\n\n```vibe\nconst pair = [1, 2]\n```\n\nEffect" })
-        expect(accepted.items[0]).toEqual({ ...proposed.items[0]!, vip: "Accepted", notes: [...proposed.items[0]!.notes, { age: "just now", author: "will", text: "accepted this VIP", event: true }] })
+        expect(accepted.items[0]).toEqual({ ...proposed.items[0]!, vip: "Accepted", approvedBy: "will", approvedAt: expect.any(String), notes: [...proposed.items[0]!.notes, { age: "just now", author: "will", text: "accepted this VIP", event: true }] })
         expect(declined.items.find((item) => item.number === 45)).toEqual({ ...before.items.find((item) => item.number === 45)!, vip: "Declined", state: "closed", notes: [...before.items.find((item) => item.number === 45)!.notes, { age: "just now", author: "will", text: "declined this VIP", event: true }] })
         expect(after.items.map((item) => item.number)).toEqual([53, 52, 51, 48, 46, 45, 44, 47, 42, 40, 39, 38, 36, 49, 50, 43, 41, 37, 35, 34, 33, 31])
         expect(after.items.filter((item) => item.number <= 50 && item.number !== 45)).toEqual(before.items.filter((item) => item.number !== 45))
@@ -99,7 +99,7 @@ it("each issue command's fresh-engine latency", async ({ bench }) => {
     { op: "commit", data: { number: 42, assignee: "Will" }, number: 42, expected: { ...issue42, task: "Queued", assignee: "Will", notes: [...issue42.notes, { age: "just now", author: "will", text: "committed this as a task and assigned Will", event: true }] } },
     { op: "uncommit", data: { number: 48 }, number: 48, expected: { ...issue48, task: "", assignee: "", notes: [...issue48.notes, { age: "just now", author: "will", text: "uncommitted this task", event: true }] } },
     { op: "propose", data: { title: "Measure", text: "Summary", example: "const n = 1", prior: "Effect" }, number: 51, expected: { ...created, vip: "In review", path: "docs/design/vips/51.md", review: "https://github.com/smithersai/vibelang/pull/51", body: "Summary\n\n```vibe\nconst n = 1\n```\n\nEffect" } },
-    { op: "accept", data: { number: 45 }, number: 45, expected: { ...issue45, vip: "Accepted", notes: [...issue45.notes, { age: "just now", author: "will", text: "accepted this VIP", event: true }] } },
+    { op: "accept", data: { number: 45 }, number: 45, expected: { ...issue45, vip: "Accepted", approvedBy: "will", approvedAt: expect.any(String), notes: [...issue45.notes, { age: "just now", author: "will", text: "accepted this VIP", event: true }] } },
     { op: "decline", data: { number: 45 }, number: 45, expected: { ...issue45, vip: "Declined", state: "closed", notes: [...issue45.notes, { age: "just now", author: "will", text: "declined this VIP", event: true }] } },
     { op: "draft", data: { title: "Measure", text: "Summary" }, number: 42, expected: issue42 },
   ]

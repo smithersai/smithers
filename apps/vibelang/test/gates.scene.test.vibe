@@ -1,0 +1,28 @@
+import { click, expect, given, role, scene, text } from "foldkit/scene"
+import { it } from "@effect/vitest"
+import { init, update, signedOut } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+import { fixtureIssues } from "../src/core/IssuesFactory.vibe"
+import { fixtureSpecification } from "../src/core/specification.vibe"
+import { initialIssues } from "../src/web/issues.vibe"
+const home = init({ session: "gates", mode: "mock", name: "Will" }).model
+const base = { ...home, account: { ...signedOut, identity: { id: "1", login: "will", role: "maintainer" as const } }, issues: { ...initialIssues, status: "ready" as const, data: { seq: 0, items: fixtureIssues, specification: fixtureSpecification }, role: "maintainer" as const } }
+it("shows the human proposal gate and the specification beside VIPs", () => {
+  scene({ update, view }, given(base),
+    click(role("link", { name: "Pattern matching in case" })),
+    expect(role("region", { name: "Proposal gate" })).toExist(),
+    expect(text("Maintainer · person")).toExist(),
+    click(role("link", { name: "‹ Issues" })),
+    click(role("button", { name: "Specification" })),
+    expect(role("heading", { name: "Specification" })).toExist(),
+  )
+})
+
+it("three A grades and a B never show Accepted", () => {
+  const data = { ...base.issues.data, specification: { ...fixtureSpecification, opus: { ...fixtureSpecification.opus, grade: "B" } } }
+  scene({ update, view }, given({ ...base, issues: { ...base.issues, screen: "specification", data } }),
+    expect(role("status", { name: "Specification gate" })).toHaveText("In review"),
+    expect(role("table", { name: "Specification reviews" })).toExist(),
+    expect(text("Claude Opus")).toExist(),
+  )
+})

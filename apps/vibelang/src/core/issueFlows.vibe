@@ -8,14 +8,14 @@ import { issuePermission, type Role, type IssueOperation } from "./conversation.
 export service IssueHost {
   perform(request: IssueRequest): typeof IssuesState.Type!IssueFailure!(FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom)
 }
-const operations: ReadonlyArray<IssueOperation> = ["read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft"]
+const operations: ReadonlyArray<IssueOperation> = ["read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft", "spec-revise", "spec-review"]
 const retries = RetryPolicy.make({ initialMs: 1000, factor: 2, maxMs: 60_000, expirationMs: 120_000, retryable: [{ tag: "IssueFailure", code: "unavailable" }, { tag: "IssueFailure", code: "rate-limited" }, { tag: "IssueFailure", code: "unknown" }] })
 const steps = Metric.counter("vibelang_issue_steps", { incremental: true })
 const definitions = operations.map((op) => {
   const action = Action.make(`vibelang/issues/${op}/perform`, {
     payload: IssueRequest.fields, success: IssuesState, error: IssueFailure,
     tier: op === "read" || op === "draft" ? "sealed" : "irreversible",
-    implementationVersion: "issues/v1", retryPolicy: retries,
+    implementationVersion: "issues/v2", retryPolicy: retries,
     ...(op === "read" || op === "draft" ? {} : { idempotencyKey: (payload: IssueRequest) => ({ request: payload.key, operation: payload.op }) }),
   })
   const flow = Flow.make(`vibelang/issues/${op}`, {
@@ -37,7 +37,7 @@ export const issueRegistration = Layer.unwrap(effect {
       try Effect.logInfo("vibelang.issues.step").pipe(Effect.annotateLogs({ op, outcome }))
       if (result._tag === "Failure") throw result.failure
       return result.success
-    }, `vibelang.issues.${op}`), { implementationVersion: "issues/v1" }),
+    }, `vibelang.issues.${op}`), { implementationVersion: "issues/v2" }),
   )))
 })
 

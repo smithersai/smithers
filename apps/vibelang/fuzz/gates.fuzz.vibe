@@ -1,0 +1,16 @@
+import { it } from "@effect/vitest"
+import { specificationAccepted, reviseSpecification, recordSpecificationReview, approveVip, type Specification } from "../src/core/conversation.vibe"
+import { fixtureIssues } from "../src/core/IssuesFactory.vibe"
+import { run } from "./run.vibe"
+const Seat = Schema.Struct({ approves: Schema.Boolean, a: Schema.Boolean, current: Schema.Boolean, linked: Schema.Boolean })
+const Candidate = Schema.Struct({ astra: Seat, sol: Seat, fable: Seat, opus: Seat, person: Schema.Boolean, maintainer: Schema.Boolean })
+it.live("gates/four-current-A-reviews-and-human-proposals", () => run("gates/four-current-A-reviews-and-human-proposals", Candidate, input => {
+  const answer = (seat: typeof Seat.Type) => ({ verdict: seat.approves ? "LGTM" as const : "Changes requested" as const, grade: seat.a ? "A" : "B", revision: seat.current ? 2 : 1, link: seat.linked ? "#review" : "" })
+  const spec: Specification = { revision: 2, text: "specification", astra: answer(input.astra), sol: answer(input.sol), fable: answer(input.fable), opus: answer(input.opus) }
+  const expected = [input.astra, input.sol, input.fable, input.opus].every(seat => seat.approves && seat.a && seat.current && seat.linked)
+  if (specificationAccepted(spec) !== expected || specificationAccepted(reviseSpecification(spec, "new revision"))) return false
+  if (recordSpecificationReview(spec, "astra", "person", { verdict: "LGTM", grade: "A", revision: 2, link: "#forged" }) !== spec) return false
+  const vip = fixtureIssues.find(i => i.number === 45)!
+  const approved = approveVip(vip, input.maintainer ? "maintainer" : "contributor", input.person ? "person" : "agent", "will", "2026-11-08")
+  return (approved.vip === "Accepted") === (input.person && input.maintainer)
+}))

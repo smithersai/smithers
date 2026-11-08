@@ -120,8 +120,8 @@ cases.extend([("src/core/conversation.vibe", *case) for case in [
 ('issues-commit-identity','setCommitment','...issue, task:','...issue, number: issue.number + 1, task:','a task keeps its GitHub identity'),
 ('issues-commit-assignee','setCommitment','assignee: committed ? assignee : ""','assignee: ""','a committed task names the assigned worker'),
 ('issues-uncommit','setCommitment','task: committed ? "Queued" : ""','task: "Queued"','uncommit restores a plain issue'),
-('issues-decline','setVipReview','state: accepted ? issue.state : "closed"','state: issue.state','a declined VIP is closed'),
-('issues-review-task','setVipReview','...issue, vip:','...issue, task: "Queued", vip:','accepting a VIP does not silently commit work'),
+('issues-decline','declineVip','state: "closed"','state: issue.state','a declined VIP is closed'),
+('issues-review-task','approveVip','...issue, vip:','...issue, task: "Queued", vip:','accepting a VIP does not silently commit work'),
 ]])
 if len(sys.argv) < 2: raise SystemExit('Usage: mutations.py OUT [NAME ...]')
 out=pathlib.Path(sys.argv[1]).resolve()

@@ -1,5 +1,6 @@
 import * as Credentials from "../../worker/IssueCredentials.vibe"
-import { FetchHttpClient, HttpServerResponse } from "effect/http"
+import { SpecificationReviewers } from "../../src/core/specification.vibe"
+import { FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 // The product fixture host on workerd's real persistent flow engine; there is no HTTP interception.
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
@@ -13,7 +14,7 @@ import { VipWriter } from "../../src/core/VipWriter.vibe"
 import { Spend } from "../../worker/Reply.vibe"
 import * as DailyBudget from "../../worker/Budget.vibe"
 import { ledgerOver } from "../../worker/ObjectStorage.vibe"
-import { executeIssues, IssueAuthority, issueWriteKey, repository } from "../../worker/Issues.vibe"
+import { serveIssues, executeIssues, IssueAuthority, issueWriteKey, repository } from "../../worker/Issues.vibe"
 import type { Storage } from "../../worker/Objects.vibe"
 const meterFlow = Flow.make("test/vip/meter", { payload: {}, success: Schema.Number, body: () => Node.succeed(0) })
 export class IssuesObject {
@@ -21,6 +22,22 @@ export class IssuesObject {
   async fetch(request: Request): Promise<Response> {
     const state = this.state
     const hostId = state.id.toString()
+    if (new URL(request.url).pathname === "/api/issues") return HttpServerResponse.toWeb(await runPromise(scoped(effect {
+      const kind = request.headers.get("x-test-principal") === "agent" ? "agent" as const : "person" as const
+      const identity = { id: "fixture-maintainer", login: "will", role: "maintainer" as const, kind }
+      const authority: IssueAuthority.Shape = { current: () => Effect.succeed({ ...identity, token: Redacted.make("fixture-only") }) }
+      const stored = try promise(() => state.storage.get("gates/fixture"))
+      const current = try Ref.make(stored === undefined ? { seq: 0, items: fixtureIssues } : try Schema.decodeUnknownEffect(IssuesState)(stored))
+      const fixture = try fixtureHost(effect () => identity, current)
+      const host: IssueHost.Shape = { perform: effect (payload) => {
+        const result = try fixture.perform(payload)
+        try promise(() => state.storage.put("gates/fixture", result))
+        return result
+      } }
+      // Product scripted reviewer service at a native model boundary; HTTP and SQLite engine stay real.
+      const reviewers: SpecificationReviewers.Shape = { review: (reviewer, spec) => Effect.succeed({ revision: spec.revision, verdict: "LGTM", grade: reviewer === "opus" && spec.opus.verdict === "" ? "B" : "A", link: "#review", review: "Scripted workerd review" }) }
+      return try serveIssues(hostId, state.storage).pipe(Effect.provideService(IssueAuthority, authority), Effect.provideService(IssueHost, host), Effect.provideService(SpecificationReviewers, reviewers), Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)), Effect.provide(FetchHttpClient.layer))
+    })))
     if (new URL(request.url).pathname === "/recovery") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(await runPromise(effect {
       const resumed = try Ref.make(false)
       const child = try Ref.make<{ key: string; linked: boolean } | undefined>(undefined)

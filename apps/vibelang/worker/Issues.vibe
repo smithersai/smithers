@@ -1,3 +1,5 @@
+import { performSpecification, emptySpecification } from "../src/core/specification.vibe"
+import { IssuesState } from "../src/core/issueSchemas.vibe"
 import { VipWriter } from "../src/core/VipWriter.vibe"
 import { Digest } from "effect/crypto"
 import { Base64 } from "effect/encoding"
@@ -6,12 +8,12 @@ import { GitHub } from "@smthrs/integrations"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import { CloudflareRuntime, ObjectDatabase, RunInspection } from "@smthrs/platform-cloudflare"
 import { HttpClient, FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
-import { applyIssues, canLinkIssues, emptyIssues, issuePermission, setCommitment, reviewActions, vipDocumentMatches, type IssueRecord, type Role } from "../src/core/conversation.vibe"
+import { applyIssues, approveVip, canLinkIssues, emptyIssues, issuePermission, setCommitment, reviewActions, vipDocumentMatches, type IssueRecord, type Role } from "../src/core/conversation.vibe"
 import { IssueHost, issueFlows, issueRegistration, authorizeIssue, issueExecutionId, issueRecoveryId } from "../src/core/issueFlows.vibe"
 import { IssueFailure, IssueRequest, vipDocument, vipIssueBody } from "../src/core/issueSchemas.vibe"
 import type { Storage } from "./Objects.vibe"
 
-export interface Principal { readonly id: string; readonly login: string; readonly role: Role; readonly token: Redacted.Redacted<string> }
+export interface Principal { readonly id: string; readonly login: string; readonly role: Role; readonly token: Redacted.Redacted<string>; readonly kind?: "person" | "agent" }
 export service IssueAuthority {
   current(): (Principal | undefined)!IssueFailure
   readonly authorize?: (operation: IssueRequest["op"]) => void!IssueFailure
@@ -116,6 +118,7 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
       const actor = try authority.current()
       if (authority.authorize !== undefined) try authority.authorize(request.op)
       if (!issuePermission(actor?.role ?? "viewer", request.op)) throw new IssueFailure({ reason: "forbidden" })
+      if ((request.op === "accept" || request.op === "decline") && actor?.kind === "agent") throw new IssueFailure({ reason: "forbidden" })
       const token = actor?.token ?? Redacted.make("")
       const work = effect {
         if (request.op === "read") return try read(request.number)
@@ -192,6 +195,10 @@ export effect function githubHost(repo: Repository = repository, observe?: (item
           } else try authorized(GitHub.Issues.removeLabel(repo.owner, repo.name, issue.number, TASK_LABEL))
           try authorized(GitHub.Issues.removeLabel(repo.owner, repo.name, issue.number, "vibelang:running"))
         } else if (request.op === "accept" || request.op === "decline") {
+          if (request.op === "accept" && issue.vip === "In review") {
+            const approved = approveVip(issue, actor.role, actor.kind ?? "person", actor.login, new Date(try Clock.currentTimeMillis).toISOString())
+            if (approved.vip !== "Accepted") throw new IssueFailure({ reason: "forbidden" })
+          }
           const plan = reviewActions(issue.vip, issue.state, request.op === "accept")
           if (!plan.allowed) throw new IssueFailure({ reason: "review" })
           const label = request.op === "accept" ? ACCEPTED : DECLINED
@@ -243,17 +250,43 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
   const authority = try IssueAuthority
   const actor = try authority.current()
   if (authority.authorize !== undefined) try authority.authorize(payload.op)
+  if ((payload.op === "accept" || payload.op === "decline") && actor?.kind === "agent") throw new IssueFailure({ reason: "forbidden" })
   try authorizeIssue(actor?.role ?? "viewer", payload.op)
   const flow = issueFlows.find((f) => f._tag === `vibelang/issues/${payload.op}`)!
   let fresh = false
   const injected = try Effect.serviceOption(IssueHost)
-  const host = Option.isSome(injected) ? injected.value : try githubHost(repo, effect (items) => {
+  const issueHost = Option.isSome(injected) ? injected.value : try githubHost(repo, effect (items) => {
     const previous = try promise(() => storage.get("issues/revision"))
     const seq = typeof previous === "number" && Number.isSafeInteger(previous) ? previous : 0
     const next = applyIssues({ seq, items: [] }, { type: "IssuesObserved", seq: seq + 1, items })
     try promise(() => storage.put("issues/revision", next.seq))
     return next
   }, () => fresh)
+  // The project object owns gate receipts; public GitHub labels cannot invent a person's approval.
+  const host: IssueHost.Shape = { perform: effect (request) => {
+    const current = try authority.current()
+    if ((request.op === "accept" || request.op === "decline") && current?.kind === "agent") throw new IssueFailure({ reason: "forbidden" })
+    const raw = try promise(() => storage.get("gates/state"))
+    const saved: typeof IssuesState.Type = raw === undefined ? { seq: 0, items: [], specification: emptySpecification } : try Schema.decodeUnknownEffect(IssuesState)(raw).pipe(Effect.mapError(() => new IssueFailure({ reason: "protocol" })))
+    if (request.op === "spec-revise" || request.op === "spec-review") {
+      if (!issuePermission(current?.role ?? "viewer", request.op)) throw new IssueFailure({ reason: "forbidden" })
+      const result = try performSpecification(saved, request, false)
+      try promise(() => storage.put("gates/state", result))
+      return result
+    }
+    const observed = try issueHost.perform(request)
+    let items = observed.items.map(item => {
+      const receipt = saved.items.find(old => old.number === item.number && old.approvedBy !== undefined)
+      return item.vip !== "Accepted" ? item : receipt === undefined ? { ...item, vip: "In review" as const } : { ...item, approvedBy: receipt.approvedBy ?? "", approvedAt: receipt.approvedAt ?? "" }
+    })
+    if (request.op === "accept" && current !== undefined) {
+      const at = new Date(try Clock.currentTimeMillis).toISOString()
+      items = items.map(item => item.number === request.number ? approveVip(item, current.role, current.kind ?? "person", current.login, at) : item)
+    }
+    const result = { ...observed, items, specification: saved.specification ?? emptySpecification, specificationHistory: saved.specificationHistory ?? [], seq: Math.max(saved.seq + 1, observed.seq) }
+    try promise(() => storage.put("gates/state", result))
+    return result
+  } }
   const executionId = try issueExecutionId(actor?.id ?? "public", payload.op, payload.key)
   if (payload.recovery !== undefined && !/^[A-Za-z0-9-]{1,100}$/.test(payload.recovery)) throw new IssueFailure({ reason: "invalid" })
   const { recovery, ...original } = payload
@@ -285,7 +318,7 @@ export effect function executeIssues(hostId: string, storage: Storage, payload: 
     const result = try engine.execute(flow, { executionId: target, payload: original })
     if (original.op === "read" && original.resumeKey !== undefined && original.resumeOp !== undefined) {
       if (actor === undefined) throw new IssueFailure({ reason: "sign-in" })
-      if (!/^[A-Za-z0-9-]{1,100}$/.test(original.resumeKey) || !["new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline"].includes(original.resumeOp)) throw new IssueFailure({ reason: "invalid" })
+      if (!/^[A-Za-z0-9-]{1,100}$/.test(original.resumeKey) || !["new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "spec-revise", "spec-review"].includes(original.resumeOp)) throw new IssueFailure({ reason: "invalid" })
       const rootId = try issueExecutionId(actor.id, original.resumeOp as IssueRequest["op"], original.resumeKey)
       if (original.resumeRecovery !== undefined && !/^[A-Za-z0-9-]{1,100}$/.test(original.resumeRecovery)) throw new IssueFailure({ reason: "invalid" })
       const sourceId = original.resumeRecovery === undefined ? rootId : try issueRecoveryId(rootId, original.resumeRecovery)

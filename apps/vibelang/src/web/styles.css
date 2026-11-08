@@ -438,3 +438,13 @@ html { overflow-anchor: none; }
 .vl-actions-pane .vl-docs-page { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .vl-actions-pane .vl-docs-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .vl-actions-pane { min-width: 0; }
+
+/* The specification keeps all four answers and their action in view on phones. */
+.ix-spec-reviews { width: 100%; }
+@media (max-width: 600px) {
+  .ix-spec-reviews th, .ix-spec-reviews td { padding: 10px 4px; }
+  .ix-spec-reviews th { font-size: 10px; }
+  .ix-spec-reviews td { font-size: 12px; }
+  .ix-spec-reviews td:first-child { min-width: 70px; }
+  .ix-spec-reviews .sui-button { min-width: 0; padding-inline: 8px; font-size: 11px; white-space: nowrap; }
+}

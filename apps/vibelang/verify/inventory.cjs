@@ -53,7 +53,13 @@ const functionBoundaries = {
   "src/core/conversation.vibe:issuePolicyAction": "Exact mapping of each issue operation to the shared authorization action (0022).",
   "src/core/conversation.vibe:canLinkIssues": "Termination, positive distinct identities and existence of the child only; acyclicity and parent-path completeness remain unproved (0022).",
   "src/core/conversation.vibe:setCommitment": "Exact commit/uncommit assignment and task state; all issue identity, tree, content and review fields preserved. Commit requires nonempty assignee (0022).",
-  "src/core/conversation.vibe:setVipReview": "Exact accepted/declined review and closed-on-decline state, with every other field preserved; requires an in-review input (0022).",
+  "src/core/conversation.vibe:approveVip": "Only a maintainer person with nonempty identity and time can accept an in-review VIP; task and issue identity are preserved (0027).",
+  "src/core/conversation.vibe:declineVip": "An in-review VIP becomes Declined and closed, preserving its task; other states are unchanged (0027).",
+  "src/core/conversation.vibe:specificationReviewPasses": "Exact current-revision LGTM/A with a nonempty review receipt (0027).",
+  "src/core/conversation.vibe:specificationAccepted": "Exactly the conjunction of Astra, Sol, Fable and Opus on one current revision (0027).",
+  "src/core/conversation.vibe:unansweredSpecificationReview": "Exact empty answer, grade, revision and link (0027).",
+  "src/core/conversation.vibe:reviseSpecification": "Changed content increments the immutable revision and resets every field of all four answers; equal content is unchanged (0027).",
+  "src/core/conversation.vibe:recordSpecificationReview": "Only the bound reviewer records their current-revision verdict and receipt; unrelated seats, revision and text are preserved (0027).",
   "src/core/conversation.vibe:reviewActions": "Exact admissibility and remaining label/close actions after a partial review; GitHub action execution is outside this decision (0022)."
 };
 const functions = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression']);

@@ -132,7 +132,7 @@ describe("the issues boundary over the accounts object", () => {
         try Effect.try(() => {
           expect(read).toMatchObject({ seq: 1, role: "viewer", connected: false })
           expect(anonymous.status).toBe(401)
-          expect(written).toMatchObject({ seq: 1, role: "community", connected: false, selected: 7 })
+          expect(written).toMatchObject({ seq: 2, role: "community", connected: false, selected: 7 })
           expect(promoted).toMatchObject({ id: "7", role: "community" })
           expect(commented.status).toBe(200)
           expect(linked.status).toBe(403)

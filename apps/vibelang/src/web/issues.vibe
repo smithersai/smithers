@@ -6,7 +6,7 @@ export schema IssuesUi {
   readonly keyPrefix: string
   readonly connection?: string
   readonly open: boolean
-  readonly screen: "list" | "detail" | "new" | "vip" | "roles"
+  readonly screen: "list" | "detail" | "new" | "vip" | "roles" | "specification"
   readonly kind: "All" | "Issues" | "Tasks" | "VIPs"
   readonly state: "open" | "closed"
   readonly query: string
@@ -46,6 +46,12 @@ export function issuesUpdate(ui: IssuesUi, action: string, value: string): UiRes
       return { ui: { ...ui, serial, retry: request, busy: true, error: "" }, request }
     }
     case "close": return { ui: { ...ui, open: false } }
+    case "specification": return { ui: { ...ui, screen: "specification", summary: ui.data.specification?.text ?? "", error: "" } }
+    case "spec-review": {
+      if (ui.busy || !issuePermission(ui.role, "spec-review")) return { ui }
+      const request = { ...issueRequest(ui, "spec-review"), revision: ui.data.specification?.revision ?? 0, reviewer: value as "astra" | "sol" | "fable" | "opus" }
+      return { ui: { ...ui, busy: true, serial: ui.serial + 1, retry: request, error: "" }, request }
+    }
     case "roles": return { ui: { ...ui, screen: "roles", dialog: "", error: "" } }
     case "list": return { ui: { ...ui, screen: "list", dialog: "", error: "" } }
     case "select": return { ui: { ...ui, screen: "detail", selected: Number(value), error: "" } }
@@ -77,13 +83,13 @@ export function issuesUpdate(ui: IssuesUi, action: string, value: string): UiRes
       return issuePermission(ui.role, op) ? { ui: { ...ui, dialog: op, error: "", title: "", summary: "" } } : { ui }
     }
     default: {
-      if (ui.busy || !["read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft"].includes(action)) return { ui }
+      if (ui.busy || !["read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft", "spec-revise"].includes(action)) return { ui }
       const op = action as IssueRequest["op"]
       if (!issuePermission(ui.role, op)) return { ui }
       if ((op === "new" || op === "split" || op === "propose") && ui.title.trim() === "") return { ui: { ...ui, error: op === "propose" ? "Name the feature." : "Add a title." } }
       if (ui.retry !== undefined && ui.retry.op === op) return { ui: { ...ui, busy: true, error: "" }, request: ui.retry }
       if (ui.retry !== undefined && !["read", "draft"].includes(op)) return { ui: { ...ui, error: "Retry the saved action." } }
-      const request = issueRequest(ui, op)
+      const request = { ...issueRequest(ui, op), ...(op === "spec-revise" ? { revision: ui.data.specification?.revision ?? 0 } : {}) }
       return { ui: { ...ui, busy: true, serial: ui.serial + 1, error: "", ...(["read", "draft"].includes(op) ? {} : { retry: request }) }, request }
     }
   }

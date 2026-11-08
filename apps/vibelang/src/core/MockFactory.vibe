@@ -1,3 +1,4 @@
+import { requestedSpecificationReview } from "./specification.vibe"
 import { firstUndispatched } from "./flowDecision.vibe"
 import * as MockAccounts from "./MockAccounts.vibe"
 import type { IssuesApi } from "./issueSchemas.vibe"
@@ -97,7 +98,8 @@ effect function scripted(
   if (page !== undefined) try Action.make({ name: "vibelang/wiki/record", success: Schema.Boolean, execute: openWiki(id, page) })
   // An explicit wiki request wins over action words inside its page title.
   // Asked about the mythical history, the scripted agent reads it through the live agent's tool, as a step.
-  let text = page !== undefined ? `Opened ${page}.` : prompt.startsWith("File an issue:") || prompt === "Split #38 into three children, linked under it." ? "" : /\b(start|run|use|spin up)\b.*\bsandbox\b/i.test(prompt) ? (effect {
+  const specificationReview = page !== undefined ? undefined : try requestedSpecificationReview(issues, prompt, `${conversation}-${post}-specification`)
+  let text = specificationReview !== undefined ? specificationReview : page !== undefined ? `Opened ${page}.` : prompt.startsWith("File an issue:") || prompt === "Split #38 into three children, linked under it." ? "" : /\b(start|run|use|spin up)\b.*\bsandbox\b/i.test(prompt) ? (effect {
     const snapshot = try sandboxTools.startSandbox(conversation, `agent-${id}`)
     return `Started ${snapshot.id}.`
   } catch () => "Couldn't start a sandbox") : matches(prompt.toLowerCase(), HISTORY_WORDS)

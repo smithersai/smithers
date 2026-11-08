@@ -57,6 +57,6 @@ it.live("recovers a terminal partial write through native retryFrom and adopts t
     const response = try HttpClient.get(server.origin + "/recovery")
     try Effect.try(() => expect(response.status).toBe(200))
     const result = try response.json
-    try Effect.try(() => expect(result).toEqual({ completedStatus: "completed", savedKey: "partial-child", savedStatus: "failed", ownerBound: true, first: "Failure", failedReplay: "Failure", edited: "Failure", recovered: 1, replay: 1, writes: 1, linked: true }))
+    try Effect.try(() => expect(result).toEqual({ completedStatus: "completed", savedKey: "partial-child", savedStatus: "failed", ownerBound: true, first: "Failure", failedReplay: "Failure", edited: "Failure", recovered: 3, replay: 3, writes: 1, linked: true }))
   }
 })

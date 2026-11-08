@@ -1,3 +1,4 @@
+import { liveSpecificationReviewers, specificationModels } from "./SpecificationReviewers.vibe"
 import { accountRoute } from "../src/core/protocolDecision.vibe"
 import { publicIssues } from "./Issues.vibe"
 import { writerLayer } from "./VipDraft.vibe"
@@ -86,6 +87,7 @@ const AccountsLive = ProjectAccounts.make(effect {
   const state = try Cloudflare.DurableObjectState
   const budgets = (try Budget) as Namespace<BudgetShape>
   const model = try Effect.orDie(chatModel())
+  try Effect.orDie(specificationModels())
   const setup = try Effect.orDie(Accounts.configured().pipe(Effect.provide(FetchHttpClient.layer)))
   return effect {
     const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
@@ -103,7 +105,7 @@ const AccountsLive = ProjectAccounts.make(effect {
       fetch: effect {
         const runtime = try RuntimeContext
         const spend = spendOf(runtime, budgets, hostId)
-        return try accounts.fetch.pipe(Effect.provide(writerLayer.pipe(Layer.provide(Layer.succeed(ChatModel, model)), Layer.provide(Layer.succeed(IssueSpend, spend)))))
+        return try accounts.fetch.pipe(Effect.provide(Layer.merge(writerLayer, liveSpecificationReviewers).pipe(Layer.provide(Layer.succeed(ChatModel, model)), Layer.provide(Layer.succeed(IssueSpend, spend)))))
       },
     }
   }
@@ -343,6 +345,7 @@ const program = effect {
   const commit = Option.getOrUndefined(try Effect.orDie(Config.option(Config.String("VIBELANG_COMMIT"))))
   try Effect.orDie(chatModel())
   try Effect.orDie(dailyTokens)
+  try Effect.orDie(specificationModels())
   return {
     fetch: effect {
       const runtime = try RuntimeContext

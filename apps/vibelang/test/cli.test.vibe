@@ -26,6 +26,22 @@ effect function json(text: string) {
 const platform = Layer.mergeAll(NodeServices.layer, ExperimentalNodeServices.layer)
 
 layer(platform)("built CLI process", (it) => {
+  it.effect("reads and revises a specification through the shared flow and refuses VIP acceptance", () => effect {
+    const read = try cli(["--mock", "--json", "issue", "read"])
+    const revised = try cli(["--mock", "--json", "issue", "spec-revise", "--revision", "2", "--text", "CLI revision", "--key", "cli-spec"])
+    const refused = try cli(["--mock", "--json", "issue", "accept", "--number", "45"])
+    const initial = try json(read.stdout)
+    const next = try json(revised.stdout)
+    try Effect.try(() => {
+      expect(read.status).toBe(0)
+      expect(revised.status).toBe(0)
+      expect(JSON.parse(initial.detail).specification.revision).toBe(2)
+      expect(JSON.parse(next.detail).specification.astra.verdict).toBe("")
+      expect(JSON.parse(next.detail).specification.revision).toBe(3)
+      expect(refused.status).not.toBe(0)
+    })
+  }, LIMIT)
+
   it.effect("prints the complete reply and event numbers", () => effect {
     const result = try cli(["--mock", "ask", "How do I install it?"])
     try Effect.try(() => {

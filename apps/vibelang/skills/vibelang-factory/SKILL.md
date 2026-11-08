@@ -75,3 +75,10 @@ Roles come from the host. Internal flows cannot run.
 
 Success exits 0; invalid input, refusals and unavailable backends exit nonzero
 with an error on stderr. A requested or failed operation is not successful.
+
+Specification state is in `issue read --json`'s `detail`. Maintainers write
+`issue spec-revise --revision <current> --text '<spec>' --key <stable>`;
+a revision clears all answers. Request
+`issue spec-review --revision <current> --reviewer astra|sol|fable|opus --key <stable>`.
+The reviewer supplies its verdict; callers cannot. Acceptance requires four
+current LGTM/A answers. VIP Accept/Decline are human-only.

@@ -847,7 +847,7 @@ export function grantPolicy(id: string, by: string, current: Role, actor: Role, 
 }
 
 // ── GitHub's issue projection (0022). GitHub owns content and edges; these numbered observations drive every surface.
-export type IssueOperation = "read" | "new" | "comment" | "link" | "split" | "commit" | "uncommit" | "propose" | "accept" | "decline" | "draft"
+export type IssueOperation = "read" | "new" | "comment" | "link" | "split" | "commit" | "uncommit" | "propose" | "accept" | "decline" | "draft" | "spec-revise" | "spec-review"
 export interface IssueNote { readonly age: string; readonly author: string; readonly text: string; readonly event: boolean }
 export interface IssueRecord {
   readonly number: number
@@ -861,13 +861,15 @@ export interface IssueRecord {
   readonly parent: number
   readonly task: "" | "Queued" | "Running" | "Done"
   readonly assignee: string
+  readonly approvedBy?: string
+  readonly approvedAt?: string
   readonly vip: "" | "In review" | "Accepted" | "Declined"
   readonly review: string
   readonly path: string
   readonly comments: number
   readonly notes: ReadonlyArray<IssueNote>
 }
-export interface IssuesState { readonly seq: number; readonly items: ReadonlyArray<IssueRecord> }
+export interface IssuesState { readonly seq: number; readonly items: ReadonlyArray<IssueRecord>; readonly specification?: Specification }
 export interface IssuesEvent { readonly type: "IssuesObserved"; readonly seq: number; readonly items: ReadonlyArray<IssueRecord> }
 export const emptyIssues: IssuesState = { seq: 0, items: [] }
 
@@ -879,7 +881,7 @@ export const emptyIssues: IssuesState = { seq: 0, items: [] }
 //@ ensures \result.seq == state.seq || \result.seq == state.seq + 1
 export function applyIssues(state: IssuesState, event: IssuesEvent): IssuesState {
   if (event.seq !== state.seq + 1) return state
-  return { seq: event.seq, items: event.items }
+  return { ...state, seq: event.seq, items: event.items }
 }
 
 /** Every issue gate delegates to 0019: shaping is triage; commitments and review are maintainer decisions. */
@@ -887,6 +889,8 @@ export function applyIssues(state: IssuesState, event: IssuesEvent): IssuesState
 //@ ensures op == "read" ==> \result
 //@ ensures (op == "commit" || op == "uncommit" || op == "accept" || op == "decline") ==> (\result == (role == "maintainer"))
 //@ ensures role == "viewer" && op != "read" ==> !\result
+//@ ensures op == "spec-revise" ==> (\result == (role == "maintainer"))
+//@ ensures op == "spec-review" ==> (\result == (role == "contributor" || role == "maintainer"))
 //@ ensures (op == "propose" || op == "draft") ==> (\result == (role == "community" || role == "contributor" || role == "maintainer"))
 //@ ensures (op == "link" || op == "split") ==> (\result == (role == "contributor" || role == "maintainer"))
 //@ ensures (op == "new" || op == "comment") ==> (\result == (role != "viewer"))
@@ -899,11 +903,15 @@ export function issuePermission(role: Role, op: IssueOperation): boolean {
 //@ ensures op == "read" ==> \result == "read"
 //@ ensures op == "new" ==> \result == "issue"
 //@ ensures op == "comment" ==> \result == "comment"
+//@ ensures op == "spec-review" ==> \result == "triage"
+//@ ensures op == "spec-revise" ==> \result == "merge"
 //@ ensures (op == "link" || op == "split") ==> \result == "triage"
 //@ ensures (op == "propose" || op == "draft") ==> \result == "vip"
 //@ ensures (op == "commit" || op == "uncommit" || op == "accept" || op == "decline") ==> \result == "merge"
 export function issuePolicyAction(op: IssueOperation): Action {
   if (op === "read") return "read"
+  if (op === "spec-review") return "triage"
+  if (op === "spec-revise") return "merge"
   if (op === "new") return "issue"
   if (op === "comment") return "comment"
   if (op === "link" || op === "split") return "triage"
@@ -941,17 +949,6 @@ export function canLinkIssues(items: ReadonlyArray<IssueRecord>, child: number, 
 //@ ensures !committed ==> \result.task == "" && \result.assignee == ""
 export function setCommitment(issue: IssueRecord, assignee: string, committed: boolean): IssueRecord {
   return { ...issue, task: committed ? "Queued" : "", assignee: committed ? assignee : "" }
-}
-
-/** A review records a person's decision; it never merges a change or commits a task. */
-//@ verify
-//@ requires issue.vip == "In review"
-//@ ensures \result.number == issue.number && \result.githubId == issue.githubId && \result.parent == issue.parent && \result.task == issue.task
-//@ ensures \result.title == issue.title && \result.body == issue.body && \result.assignee == issue.assignee && \result.labels == issue.labels && \result.notes == issue.notes && \result.review == issue.review && \result.path == issue.path && \result.author == issue.author && \result.age == issue.age && \result.comments == issue.comments
-//@ ensures accepted ==> \result.vip == "Accepted" && \result.state == issue.state
-//@ ensures !accepted ==> \result.vip == "Declined" && \result.state == "closed"
-export function setVipReview(issue: IssueRecord, accepted: boolean): IssueRecord {
-  return { ...issue, vip: accepted ? "Accepted" : "Declined", state: accepted ? issue.state : "closed" }
 }
 
 /** Reconcile a human review after any prefix of its GitHub writes has completed. */
@@ -1065,4 +1062,82 @@ export interface VipFile { readonly filename: string; readonly status: string }
 export function vipDocumentMatches(issueAuthor: number, reviewAuthor: number, path: string, files: ReadonlyArray<VipFile>): boolean {
   if (issueAuthor <= 0 || issueAuthor !== reviewAuthor || path === "") return false
   return files.some(file => file.filename === path && file.status !== "removed")
+}
+
+
+// ── The two acceptance gates (VL-32 / PROC-28). Authority comes from the host, never an intent payload.
+/** Gate 1 records only a maintainer person's approval, including attribution. */
+//@ verify
+//@ ensures (kind != "person" || role != "maintainer" || actor == "" || at == "" || issue.vip != "In review") ==> \result == issue
+//@ ensures kind == "person" && role == "maintainer" && actor != "" && at != "" && issue.vip == "In review" ==> \result.vip == "Accepted" && \result.approvedBy == actor && \result.approvedAt == at
+//@ ensures \result.task == issue.task && \result.state == issue.state && \result.number == issue.number
+export function approveVip(issue: IssueRecord, role: Role, kind: string, actor: string, at: string): IssueRecord {
+  if (kind !== "person" || role !== "maintainer" || actor === "" || at === "" || issue.vip !== "In review") return issue
+  return { ...issue, vip: "Accepted", approvedBy: actor, approvedAt: at }
+}
+//@ verify
+//@ ensures issue.vip != "In review" ==> \result == issue
+//@ ensures issue.vip == "In review" ==> \result.vip == "Declined" && \result.state == "closed"
+//@ ensures \result.task == issue.task && \result.number == issue.number
+export function declineVip(issue: IssueRecord): IssueRecord {
+  return issue.vip === "In review" ? { ...issue, vip: "Declined", state: "closed" } : issue
+}
+export type SpecificationReviewer = "astra" | "sol" | "fable" | "opus"
+export interface SpecificationReview { readonly verdict: "" | "LGTM" | "Changes requested"; readonly grade: string; readonly revision: number; readonly link: string }
+export interface Specification {
+  readonly revision: number
+  readonly text: string
+  readonly astra: SpecificationReview
+  readonly sol: SpecificationReview
+  readonly fable: SpecificationReview
+  readonly opus: SpecificationReview
+}
+/** Each answer must be an A-grade LGTM on this revision and retain its review receipt. */
+//@ verify
+//@ ensures \result == (revision > 0 && review.verdict == "LGTM" && review.grade == "A" && review.revision == revision && review.link != "")
+export function specificationReviewPasses(review: SpecificationReview, revision: number): boolean {
+  return revision > 0 && review.verdict === "LGTM" && review.grade === "A" && review.revision === revision && review.link !== ""
+}
+/** Gate 2 has no writable accepted bit. Acceptance is exactly the conjunction of the four named seats. */
+//@ verify
+//@ ensures \result == (specificationReviewPasses(spec.astra, spec.revision) && specificationReviewPasses(spec.sol, spec.revision) && specificationReviewPasses(spec.fable, spec.revision) && specificationReviewPasses(spec.opus, spec.revision))
+export function specificationAccepted(spec: Specification): boolean {
+  return specificationReviewPasses(spec.astra, spec.revision) && specificationReviewPasses(spec.sol, spec.revision) && specificationReviewPasses(spec.fable, spec.revision) && specificationReviewPasses(spec.opus, spec.revision)
+}
+//@ verify
+//@ ensures \result.verdict == "" && \result.grade == "" && \result.revision == 0 && \result.link == ""
+export function unansweredSpecificationReview(): SpecificationReview {
+  return { verdict: "", grade: "", revision: 0, link: "" }
+}
+/** Content equality is a no-op; a new immutable revision clears every answer. */
+//@ verify
+//@ requires 0 <= spec.revision && spec.revision < 9007199254740991
+//@ ensures text == spec.text ==> \result == spec
+//@ ensures text != spec.text ==> \result.revision == spec.revision + 1 && \result.text == text
+//@ ensures text != spec.text ==> \result.astra.verdict == "" && \result.sol.verdict == "" && \result.fable.verdict == "" && \result.opus.verdict == ""
+//@ ensures text != spec.text ==> !specificationAccepted(\result)
+//@ ensures text != spec.text ==> \result.astra == unansweredSpecificationReview() && \result.sol == unansweredSpecificationReview() && \result.fable == unansweredSpecificationReview() && \result.opus == unansweredSpecificationReview()
+export function reviseSpecification(spec: Specification, text: string): Specification {
+  if (text === spec.text) return spec
+  return { revision: spec.revision + 1, text, astra: unansweredSpecificationReview(), sol: unansweredSpecificationReview(), fable: unansweredSpecificationReview(), opus: unansweredSpecificationReview() }
+}
+/** A flow's bound reviewer identity may record only its own current-revision answer. */
+//@ verify
+//@ ensures (principal != reviewer || review.revision != spec.revision || review.verdict == "" || review.link == "") ==> \result == spec
+//@ ensures principal == reviewer && review.revision == spec.revision && review.verdict != "" && review.link != "" && reviewer == "astra" ==> \result.astra == review
+//@ ensures principal == reviewer && review.revision == spec.revision && review.verdict != "" && review.link != "" && reviewer == "sol" ==> \result.sol == review
+//@ ensures principal == reviewer && review.revision == spec.revision && review.verdict != "" && review.link != "" && reviewer == "fable" ==> \result.fable == review
+//@ ensures principal == reviewer && review.revision == spec.revision && review.verdict != "" && review.link != "" && reviewer == "opus" ==> \result.opus == review
+//@ ensures \result.revision == spec.revision && \result.text == spec.text
+//@ ensures reviewer != "astra" ==> \result.astra == spec.astra
+//@ ensures reviewer != "sol" ==> \result.sol == spec.sol
+//@ ensures reviewer != "fable" ==> \result.fable == spec.fable
+//@ ensures reviewer != "opus" ==> \result.opus == spec.opus
+export function recordSpecificationReview(spec: Specification, reviewer: string, principal: string, review: SpecificationReview): Specification {
+  if (principal !== reviewer || review.revision !== spec.revision || review.verdict === "" || review.link === "") return spec
+  if (reviewer === "astra") return { ...spec, astra: review }
+  if (reviewer === "sol") return { ...spec, sol: review }
+  if (reviewer === "fable") return { ...spec, fable: review }
+  if (reviewer === "opus") return { ...spec, opus: review }
+  return spec
 }

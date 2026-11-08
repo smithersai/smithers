@@ -1,0 +1,54 @@
+import { expect, it } from "@effect/vitest"
+import { beforeAll, afterAll } from "vitest"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { IssuesState } from "../src/core/issueSchemas.vibe"
+import { specificationAccepted } from "../src/core/conversation.vibe"
+import { serveIssuesHost, type Served } from "./support/workerd.vibe"
+let server: Served
+beforeAll(async () => { server = await runPromise(serveIssuesHost()) })
+afterAll(async () => { await server?.dispose() })
+const input = (op: string, key: string) => ({ op, key, number: 45, parent: 0, title: "", text: "", assignee: "", example: "", prior: "" })
+effect function call(body: unknown, agent = false) {
+  return try (try HttpClient.HttpClient).execute(HttpClientRequest.post(server.origin + "/api/issues").pipe(HttpClientRequest.setHeader("x-test-principal", agent ? "agent" : "person"), HttpClientRequest.bodyJsonUnsafe(body)))
+}
+effect function accepted(body: unknown) {
+  const response = try call(body)
+  try Effect.try(() => expect(response.status).toBe(200))
+  return try Schema.decodeUnknownEffect(IssuesState)(try response.json)
+}
+it.live("the live route refuses an agent's VIP acceptance and journals a person's approval once", () => effect {
+  provide FetchHttpClient.layer {
+    const request = input("accept", "native-approval")
+    const refused = try call(request, true)
+    try Effect.try(() => expect(refused.status).toBe(403))
+    const first = try accepted(request)
+    const replay = try accepted(request)
+    try Effect.try(() => {
+      expect(first.items.find(i => i.number === 45)).toMatchObject({ vip: "Accepted", approvedBy: "will" })
+      expect(replay).toEqual(first)
+    })
+    const cachedAgent = try call(request, true)
+    try Effect.try(() => expect(cachedAgent.status).toBe(403))
+  }
+})
+it.live("the live specification route persists all four answers, a B refuses, and a revision clears every answer", () => effect {
+  provide FetchHttpClient.layer {
+    let state = try accepted({ ...input("spec-revise", "native-revision"), revision: 0, text: "Specification from approved VIPs" })
+    for (const reviewer of ["astra", "sol", "fable", "opus"]) state = try accepted({ ...input("spec-review", "native-" + reviewer), revision: 1, reviewer, verdict: "LGTM", grade: "A" })
+    try Effect.try(() => {
+      expect(state.specification!.opus.grade).toBe("B")
+      expect(specificationAccepted(state.specification!)).toBe(false)
+    })
+    state = try accepted({ ...input("spec-review", "native-opus-again"), revision: 1, reviewer: "opus" })
+    try Effect.try(() => expect(specificationAccepted(state.specification!)).toBe(true))
+    const reset = try accepted({ ...input("spec-revise", "native-reset"), revision: 1, text: "New specification revision" })
+    try Effect.try(() => {
+      expect(reset.specification!.revision).toBe(2)
+      expect(specificationAccepted(reset.specification!)).toBe(false)
+      expect(reset.specification!.astra.verdict).toBe("")
+      expect(reset.specification!.opus.verdict).toBe("")
+    })
+    const stale = try call({ ...input("spec-review", "native-stale"), revision: 1, reviewer: "sol" })
+    try Effect.try(() => expect(stale.status).toBe(400))
+  }
+})

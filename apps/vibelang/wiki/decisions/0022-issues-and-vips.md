@@ -121,3 +121,12 @@ The report names the reproduction and candidate patch. This decision does not cl
 The phone issue surface follows 0019’s shared header height, including the taller fixture role picker, so list and VIP controls stay below navigation. Fixture chat retains the accepted post’s person and resolves that person’s current role at execution; changing the role picker never changes queued issue attribution. Person-scoped fixture engines share one project projection and atomic writer.
 
 The designed public Roles matrix is reachable from the Issues header because the design-only screen switcher is excluded. Every cell calls the same 0019 predicate as its control. New cannot propose a VIP; Community cannot link issues. The matrix lists implemented actions: the design’s label-triage and generic-close rows are omitted because 0019 reserves future permission names without claiming implemented features. Its caption states the human-only review and role-grant boundary.
+
+## Two acceptance gates (0027, VL-32)
+
+[0027](0027-acceptance-gates.md) replaces the role-only VIP projection with `approveVip`'s proved maintainer-person
+guard and attribution. An agent never accepts a VIP, including with a maintainer role. The live projection requires
+a retained human gate receipt as well as GitHub's label. Specification revision/review flows sit beside VIPs and use
+this same Factory/flow/host boundary; all four named current-revision LGTM/A results are required. A new revision
+resets all four answers. Proposal approval and specification acceptance remain separate; neither commits a task or
+merges a change. The fixture includes the previously accepted specification and an earlier reset.
