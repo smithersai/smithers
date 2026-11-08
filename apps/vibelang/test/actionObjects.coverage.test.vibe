@@ -1,61 +1,69 @@
 // @vitest-environment node
 // The public action index and per-run hosts on real SQLite, with product accounts/history and durable alarms.
 import { describe, expect, it } from "@effect/vitest"
-import * as MockAccounts from "../src/core/MockAccounts.vibe"
-import { MockMythical } from "../src/history/MockMythical.vibe"
 import { Mythical } from "../src/history/MythicalHistory.vibe"
-import { empty as emptyHistory } from "../src/history/mythical.vibe"
-import type { RunRequest } from "../src/actions/wire.vibe"
-import { Unreachable } from "../worker/Unreachable.vibe"
+import { ActionDevice } from "../src/actions/execution.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { Factory } from "../src/core/Factory.vibe"
 import { ExecutionObject } from "@smthrs/platform-cloudflare"
 import { Reply } from "../src/core/flows.vibe"
-import * as Directory from "../worker/ActionDirectory.vibe"
 import * as Runs from "../worker/ActionRuns.vibe"
-import * as Identity from "../worker/ActionIdentity.vibe"
 import * as Objects from "../worker/Objects.vibe"
-import { objectStorage } from "./support/objectStorage.ts"
 
-/** A product world; only the platform's SQLite/KV/alarm adapter differs from workerd. */
-effect function world() {
-  const accounts = try MockAccounts.make()
-  const person = try accounts.choose("maintainer")
-  const authority = Identity.fromAccounts({
-    current: () => Effect.orDie(accounts.current()), role: accounts.role,
-    allowed: (actor, action) => accounts.policy.authorize(actor, action).pipe(Effect.as(true), Effect.catch(() => succeed(false))),
-  })
-  const objects = new Map<string, {
-    readonly storage: Objects.Storage
-    readonly sequencer: Effect.Success<ReturnType<typeof Objects.conversation>>
-    readonly host: ReturnType<typeof Runs.make>
-  }>()
-  effect function object(id: string) {
-    const root = id.endsWith("-reply") ? id.slice(0, -6) : id
-    const existing = objects.get(root)
-    if (existing !== undefined) return existing
-    const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
-    const sequencer = try Objects.conversation(storage)
-    const found = { storage, sequencer, host: Runs.make(root, storage, sequencer, authority) }
-    objects.set(root, found)
-    return found
-  }
-  const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
-  const directory = Directory.directory("index", storage, {
-    request: effect (id) => { const obj = try object(id); return try promise(() => obj.storage.get<RunRequest>("action/request")) },
-    read: effect (id) => try Runs.read((try object(id)).sequencer),
-    start: effect (request, role) => try (try object(request.id)).host.start(request, role),
-    cancel: effect (id, role, owner) => try Effect.mapError((try object(id)).host.cancel(id, role, owner), () => new Unreachable({ what: "action" })),
-  }, authority)
-  const budget = try Objects.budget(storage, 1000)
-  const spend = { admit: (_day: string) => budget.admit(), spend: (_day: string, reply: string, tokens: number) => budget.spend(reply, tokens) }
-  const model = { model: undefined, unusable: "no-model" }
-  return { accounts, person, object, directory, spend, model }
-}
-function request(id: string, flow: string, input: Schema.Json, owner: string): RunRequest {
-  return { id, flow, input, door: "button", actor: "person", owner, name: "will" }
-}
-const history = MockMythical({ role: "maintainer", name: "will", agent: false }, () => succeed(emptyHistory))
+import { world, request, history } from "./support/actionObjects.vibe"
 
 describe("durable action objects", () => {
+  it.live("dispatches sandbox actions through the product Factory and retains its files across stop/start", () => scoped(effect {
+    const w = try world()
+    provide MockFactory, history {
+      const device = try Factory
+      try device.accounts!.choose("maintainer")
+      const product = try Mythical
+      provide ActionDevice = device {
+        const cases = [
+          request("asandbox-start", "vibelang/sandbox/start", { conversation: "action-sandbox" }, w.person.id),
+          request("asandbox-write", "vibelang/sandbox/command", { conversation: "action-sandbox", generation: 1, command: "echo coverage > result.txt" }, w.person.id),
+          request("asandbox-stop", "vibelang/sandbox/stop", { conversation: "action-sandbox", generation: 1 }, w.person.id),
+          request("asandbox-restart", "vibelang/sandbox/start", { conversation: "action-sandbox" }, w.person.id),
+          request("asandbox-read", "vibelang/sandbox/command", { conversation: "action-sandbox", generation: 2, command: "cat result.txt" }, w.person.id),
+        ]
+        for (const body of cases) {
+          const admitted = try w.directory.start(body, "maintainer")
+          const obj = try w.object(body.id)
+          try obj.host.alarm(w.spend, w.model, product)
+          const rows = try Runs.read(obj.sequencer)
+          try Effect.try(() => {
+            expect(admitted).toBeNull()
+            expect(rows.find(run => run.id === body.id)?.state).toBe("passed")
+            if (body.id === "asandbox-read") expect(rows.find(run => run.id === body.id)?.result).toBe(JSON.stringify("coverage\n"))
+          })
+        }
+        const snapshot = try device.sandbox("action-sandbox")
+        try Effect.try(() => expect(snapshot).toMatchObject({ status: "running", generation: 2 }))
+        try device.stopSandbox("action-sandbox", "final-stop", 2)
+      }
+    }
+  }), 60_000)
+
+  it.live("cancels a queued history action before its alarm without recording the requested plan", () => scoped(effect {
+    const w = try world()
+    const body = request("acancel-plan", "vibelang/history/Plan", { how: "append", epic: "", newEpic: "Coverage", target: "", title: "Cancelled", task: "Must not run" }, w.person.id)
+    try w.directory.start(body, "maintainer")
+    const cancelled = try w.directory.cancel(body.id, "maintainer", w.person.id)
+    const obj = try w.object(body.id)
+    provide history {
+      const product = try Mythical
+      try obj.host.alarm(w.spend, w.model, product)
+      const outline = try product.outline()
+      const rows = try Runs.read(obj.sequencer)
+      try Effect.try(() => {
+        expect(cancelled).toBeNull()
+        expect(outline.open).toEqual([])
+        expect(rows.find(run => run.id === body.id)?.state).toBe("cancelled")
+      })
+    }
+  }), 60_000)
+
   it.live("keeps a missing journal as an error unless the host recorded cancellation before admission", () => scoped(effect {
     const w = try world()
     const obj = try w.object("amissing")

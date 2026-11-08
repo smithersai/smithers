@@ -42,11 +42,38 @@ effect function served() {
       return eventStream(Stream.orDie(product.events(room, afterOf(new URL(request.url, "http://local")) ?? 0)))
     },
   }
-  try HttpServer.serveEffect(handle(api, unavailableHistory))
+  try HttpServer.serveEffect(handle(api, unavailableHistory, product))
   return { origin: "" }
 }
 
 describe("the HTTP Factory", () => {
+  it.live("runs the actual sandbox gateway and retains files across generation changes over HTTP", () => scoped(effect {
+    provide NodeHttpServer.layerTest, MockFactory {
+      const product = try Factory
+      try product.accounts!.choose("maintainer")
+      try served()
+      provide LiveFactory("") {
+        const factory = try Factory
+        const before = try factory.sandbox("http-sandbox")
+        const started = try factory.startSandbox("http-sandbox", "start")
+        try factory.sandboxCommand("http-sandbox", "write", "echo persisted > result.txt", started.generation)
+        const stopped = try factory.stopSandbox("http-sandbox", "stop", started.generation)
+        const restarted = try factory.startSandbox("http-sandbox", "restart")
+        const output = try factory.sandboxCommand("http-sandbox", "read", "cat result.txt", restarted.generation)
+        const stale = try Effect.flip(factory.stopSandbox("http-sandbox", "stale", started.generation))
+        try factory.stopSandbox("http-sandbox", "final-stop", restarted.generation)
+        try Effect.try(() => {
+          expect(before.status).toBe("stopped")
+          expect(started.status).toBe("running")
+          expect(stopped.status).toBe("stopped")
+          expect(restarted.generation).toBe(started.generation + 1)
+          expect(output).toBe("persisted\n")
+          expect(stale).toMatchObject({ _tag: "Refused", refusal: "stale-generation" })
+        })
+      }
+    }
+  }))
+
   for (const room of ["a".repeat(128), "unicode-😀/with?query#fragment"]) {
     it.live(`preserves the valid conversation identifier ${room.length} code units over HTTP`, () => scoped(effect {
       provide NodeHttpServer.layerTest, MockFactory {

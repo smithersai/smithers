@@ -1,114 +1,34 @@
 // @vitest-environment node
-// src/actions/LiveActions.vibe against a canned HttpClient and src/actions/execution.vibe's prepare: every verb,
-// the slash-command parser, refusal codes and the run event stream; every invocation kind and its input failures.
+// src/actions/LiveActions.vibe against an injected faulty HttpClient and src/actions/execution.vibe's prepare: every verb,
+// transport/protocol failures; happy paths use real HTTP and durable hosts in actionClientHttp.test.vibe.
 import { describe, expect, it } from "@effect/vitest"
-import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServerResponse } from "effect/http"
+import { HttpClient, HttpClientError, HttpClientResponse, HttpServerResponse } from "effect/http"
 import { LiveActions } from "../src/actions/LiveActions.vibe"
 import { prepare } from "../src/actions/execution.vibe"
 import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
 
-interface Canned { readonly status: number; readonly body: string }
+interface FaultAnswer { readonly status: number; readonly body: string }
 
-/** A client answering `routes` (keyed `METHOD path?query`) and recording what was asked. */
-function canned(routes: Record<string, Canned>) {
-  const seen: Array<string> = []
+/** A faulty Effect transport: refused, unavailable or malformed replies only. */
+function faulty(routes: Record<string, FaultAnswer>) {
   const client = HttpClient.make((request) => {
     const url = new URL(request.url)
     const key = `${request.method} ${url.pathname}${url.search}`
-    seen.push(key)
     return routes[key] === undefined
       ? fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) }))
       : succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(routes[key]!.body, { status: routes[key]!.status }))))
   })
-  return { client, seen }
+  return { client }
 }
-
-const registered = JSON.stringify([{ name: "vibelang/Post", title: "Post", detail: "Ask the agent", command: "/post", runnable: true, least: "contributor", input: "text" }])
-const run = JSON.stringify({ id: "a-1", flow: "vibelang/Post", door: "button", actor: "person", state: "queued", started: 1, at: 1, result: "", steps: [] })
 
 /** The ActionFailure code a call fails with, or `ok`. */
 effect function codeOf(work: unknown!ActionFailure) {
   return work.pipe(Effect.map(() => "ok")) catch (error) => error.code
 }
 
-describe("LiveActions", () => {
-  it.effect("lists, starts, reruns, reads, cancels and follows a run over the wire", () => effect {
-    const { client, seen } = canned({
-      "GET /api/actions": { status: 200, body: registered },
-      "GET /api/actions/commands": { status: 200, body: registered },
-      "GET /api/actions/runs?flow=vibelang%2FPost": { status: 200, body: `[${run}]` },
-      "GET /api/actions/runs/a-1": { status: 200, body: run },
-      "POST /api/actions/runs": { status: 202, body: JSON.stringify({ id: "a-2" }) },
-      "POST /api/actions/runs/a-1/rerun": { status: 202, body: JSON.stringify({ id: "a-3" }) },
-      "DELETE /api/actions/runs/a-1": { status: 200, body: "{}" },
-      "GET /api/actions/runs/a-1/events": { status: 200, body: `data: ${JSON.stringify({ type: "ActionRequested", seq: 1, id: "a-1", flow: "vibelang/Post", door: "button", actor: "person", at: 1 })}\n\ndata: ${JSON.stringify({ type: "ActionSettled", seq: 2, id: "a-1", state: "passed", result: "null", at: 2 })}\n\n` },
-    })
-    provide Layer.succeed(HttpClient.HttpClient, client) {
-    provide LiveActions("https://a.test") {
-      const actions = try Actions
-      const list = try actions.list()
-      const commands = try actions.commands()
-      const runs = try actions.runs("vibelang/Post")
-      const found = try actions.read("a-1")
-      const started = try actions.start("vibelang/Post", { text: "hi" }, "button")
-      const reran = try actions.rerun("a-1")
-      try actions.cancel("a-1")
-      const followed = try Stream.runCollect(actions.follow("a-1"))
-      try Effect.try(() => {
-        expect(list[0]?.command).toBe("/post")
-        expect(commands).toHaveLength(1)
-        expect(runs[0]?.id).toBe("a-1")
-        expect(found.state).toBe("queued")
-        expect(started).toBe("a-2")
-        expect(reran).toBe("a-3")
-        expect(followed.map((entry) => entry.state)).toEqual(["queued", "passed"])
-        expect(seen).toHaveLength(8)
-      })
-    }
-    }
-  })
-
-  it.effect("parses a slash command, refusing the unknown and the malformed", () => effect {
-    const { client } = canned({
-      "GET /api/actions/commands": { status: 200, body: registered },
-      "POST /api/actions/runs": { status: 202, body: JSON.stringify({ id: "a-9" }) },
-    })
-    provide Layer.succeed(HttpClient.HttpClient, client) {
-    provide LiveActions("https://a.test") {
-      const actions = try Actions
-      const started = try actions.command("/post hello there")
-      const unknown = try codeOf(actions.command("/nope"))
-      try Effect.try(() => {
-        expect(started).toBe("a-9")
-        expect(unknown).toBe("unknown-command")
-      })
-    }
-    }
-  })
-
-  it.effect("parses a json command's input and refuses the malformed", () => effect {
-    const jsonEntry = JSON.stringify([{ name: "vibelang/history/Plan", title: "Plan", detail: "Plan", command: "/plan", runnable: true, least: "contributor", input: "json" }])
-    const { client } = canned({
-      "GET /api/actions/commands": { status: 200, body: jsonEntry },
-      "POST /api/actions/runs": { status: 202, body: JSON.stringify({ id: "a-7" }) },
-    })
-    provide Layer.succeed(HttpClient.HttpClient, client) {
-    provide LiveActions("https://a.test") {
-      const actions = try Actions
-      const started = try actions.command(`/plan {"title":"t"}`)
-      const empty = try actions.command("/plan")
-      const malformed = try codeOf(actions.command("/plan {oops"))
-      try Effect.try(() => {
-        expect(started).toBe("a-7")
-        expect(empty).toBe("a-7")
-        expect(malformed).toBe("input")
-      })
-    }
-    }
-  })
-
+describe("LiveActions faulty services", () => {
   it.effect("carries the server's failure code, and unavailable when it is not the protocol", () => effect {
-    const { client } = canned({
+    const { client } = faulty({
       "POST /api/actions/runs": { status: 409, body: JSON.stringify({ code: "busy" }) },
       "GET /api/actions": { status: 500, body: "not json" },
       "GET /api/actions/runs/a-1/events": { status: 503, body: "" },

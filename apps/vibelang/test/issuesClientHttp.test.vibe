@@ -1,0 +1,45 @@
+// @vitest-environment node
+// LiveIssues through the production HTTP/SQLite flow host over the product's offline fixture implementation.
+import { expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { HttpServer } from "effect/http"
+import { fixtureHost, makeIssueStore } from "../src/core/IssuesFactory.vibe"
+import * as MockAccounts from "../src/core/MockAccounts.vibe"
+import { IssueHost } from "../src/core/issueFlows.vibe"
+import { liveIssues } from "../src/core/LiveIssues.vibe"
+import { IssueAuthority, serveIssues } from "../worker/Issues.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+import type { Storage } from "../worker/Objects.vibe"
+
+it.live("reads, writes and replays a real offline issue over HTTP, then enforces the current role", () => scoped(effect {
+  provide NodeHttpServer.layerTest {
+    const accounts = try MockAccounts.make()
+    try accounts.choose("maintainer")
+    const selected = effect () => {
+      const person = try Effect.orDie(accounts.current())
+      return { id: person.id, login: person.login, role: person.role, kind: "person" as const }
+    }
+    const store = try makeIssueStore()
+    const host = try fixtureHost(selected, store.state, store.lock)
+    const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Storage
+    const authority: IssueAuthority.Shape = { current: effect () => { const person = try selected(); return person.id === "" ? undefined : { ...person, token: Redacted.make("fixture-only") } } }
+    try HttpServer.serveEffect(serveIssues("issues-client-http", storage).pipe(Effect.provideService(IssueHost, host), Effect.provideService(IssueAuthority, authority)))
+    const client = try liveIssues("")
+    const before = try client.read()
+    const request = { op: "new" as const, number: 0, parent: 0, title: "Real HTTP issue", text: "Persist once", assignee: "", example: "", prior: "", key: "new-http-issue" }
+    const written = try client.act(request)
+    const replay = try client.act(request)
+    const after = try client.read()
+    try accounts.choose("viewer")
+    const denied = try Effect.flip(client.act({ ...request, key: "viewer-cannot-write" }))
+    const publicRead = try client.read()
+    try Effect.try(() => {
+      expect(written.items.length).toBe(before.items.length + 1)
+      expect(written.items.find(issue => issue.number === written.selected)).toMatchObject({ title: request.title, body: request.text })
+      expect(replay).toEqual(written)
+      expect(after.items.filter(issue => issue.title === request.title)).toHaveLength(1)
+      expect(denied.reason).toBe("forbidden")
+      expect(publicRead.items.filter(issue => issue.title === request.title)).toHaveLength(1)
+    })
+  }
+}), 60_000)
