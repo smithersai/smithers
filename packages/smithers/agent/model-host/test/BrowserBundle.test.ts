@@ -11,11 +11,13 @@
  */
 import { build } from "esbuild"
 import { fileURLToPath } from "node:url"
+import vibelang from "vibelang-unplugin/esbuild"
 import { describe, expect, it } from "vitest"
 
 describe("the root entry", () => {
   it("bundles for the browser without a node: or bun: built-in", async () => {
     const result = await build({
+      plugins: [vibelang({ root: fileURLToPath(new URL("..", import.meta.url)) })],
       bundle: true,
       entryPoints: [fileURLToPath(new URL("../src/index.ts", import.meta.url))],
       external: ["effect", "effect/*"],

@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import * as ts from "typescript"
+import { compileProjectSync } from "vibelang/project"
 import { expect, it } from "vitest"
 
 const packageRoot = fileURLToPath(new URL("../", import.meta.url))
@@ -23,24 +23,31 @@ it("typechecks the quickstart snippets in the files the guide names", () => {
   try {
     writeFileSync(join(temporaryRoot, "package.json"), "{\"type\":\"module\"}\n")
     for (const [name, source] of files) writeFileSync(join(temporaryRoot, name), source)
-    const program = ts.createProgram([...files.keys()].map((name) => join(temporaryRoot, name)), {
-      target: ts.ScriptTarget.ES2022,
-      // The source fallback is checked with the same libraries as the package.
-      lib: ["lib.es2022.d.ts", "lib.es2024.string.d.ts", "lib.dom.d.ts", "lib.dom.iterable.d.ts"],
-      module: ts.ModuleKind.NodeNext,
-      moduleResolution: ts.ModuleResolutionKind.NodeNext,
-      strict: true,
-      noEmit: true,
-      allowImportingTsExtensions: true,
-      skipLibCheck: true,
-      types: [],
-      // Always the source: a dist left over from an earlier build would check
-      // the guide against an API the package no longer has.
-      paths: { "@smthrs/plugin": [join(packageRoot, "src/index.vibe")] }
-    })
-    const diagnostics = ts.getPreEmitDiagnostics(program).map((diagnostic) =>
-      ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n")
+    // The VibeLang checker, since the package source is .vibe modules that a
+    // stock TypeScript program cannot read.
+    writeFileSync(
+      join(temporaryRoot, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          target: "es2022",
+          // The source fallback is checked with the same libraries as the package.
+          lib: ["es2022", "es2024.string", "dom", "dom.iterable"],
+          module: "nodenext",
+          moduleResolution: "nodenext",
+          strict: true,
+          noEmit: true,
+          allowImportingTsExtensions: true,
+          skipLibCheck: true,
+          types: [],
+          // Always the source: a dist left over from an earlier build would check
+          // the guide against an API the package no longer has.
+          paths: { "@smthrs/plugin": [join(packageRoot, "src/index.vibe")] }
+        },
+        files: [...files.keys()]
+      })
     )
+    const diagnostics = compileProjectSync({ project: join(temporaryRoot, "tsconfig.json"), root: packageRoot, cache: false })
+      .errors.map((diagnostic) => diagnostic.text)
     expect(diagnostics).toEqual([])
     expect([...files.keys()]).toEqual(["host.ts", "main.ts"])
   } finally {

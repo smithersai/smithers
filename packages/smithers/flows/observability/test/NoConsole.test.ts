@@ -87,7 +87,7 @@ const withoutLiterals = (source: string): string => {
 /**
  * The file whose `console.log` is data rather than a call.
  *
- * `cellPrompt.ts` is the contract a model is taught, and the contract's worked
+ * `cellPrompt.vibe` is the contract a model is taught, and the contract's worked
  * example is JavaScript for a *different* realm: `console.log` is how a cell
  * talks to its next turn, so the example has to spell it. Models imitate the
  * example, so spelling it any other way to satisfy a text match would teach a
@@ -98,7 +98,7 @@ const withoutLiterals = (source: string): string => {
  * exact text below: editing the worked example requires updating that list,
  * with the same deliberateness the contract's own digest and token ceiling ask for.
  */
-const TEACHING = "smithers/agent/harness/src/internal/cellPrompt.ts"
+const TEACHING = "smithers/agent/harness/src/internal/cellPrompt.vibe"
 
 /**
  * Sandbox output is model-visible cell data, not host telemetry (OBS-1/OBS-5).

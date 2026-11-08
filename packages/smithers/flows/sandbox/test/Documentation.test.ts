@@ -1,6 +1,6 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import ts from "typescript"
+import { compileProjectSync, formatDiagnostic } from "vibelang/project"
 import { expect, it } from "vitest"
 
 const root = join(import.meta.dirname, "..")
@@ -73,26 +73,29 @@ it("describes authored documentation without the removed generator", () => {
 function checkFences(source: string): void {
   const directory = mkdtempSync(join(root, "test", ".docs-fences-"))
   try {
-    const file = join(directory, "example.ts")
-    writeFileSync(file, source)
-    const program = ts.createProgram([file], {
-      target: ts.ScriptTarget.ES2022,
-      module: ts.ModuleKind.NodeNext,
-      moduleResolution: ts.ModuleResolutionKind.NodeNext,
-      strict: true,
-      exactOptionalPropertyTypes: true,
-      noUncheckedIndexedAccess: true,
-      skipLibCheck: true,
-      noEmit: true,
-      allowImportingTsExtensions: true,
-      types: ["node"]
-    })
-    const diagnostics = ts.getPreEmitDiagnostics(program)
-    expect(ts.formatDiagnostics(diagnostics, {
-      getCanonicalFileName: (fileName) => fileName,
-      getCurrentDirectory: () => root,
-      getNewLine: () => "\n"
-    })).toBe("")
+    writeFileSync(join(directory, "example.ts"), source)
+    // The VibeLang checker, since the package's own modules are .vibe sources
+    // that a stock TypeScript program cannot read.
+    writeFileSync(
+      join(directory, "tsconfig.json"),
+      JSON.stringify({
+        compilerOptions: {
+          target: "es2022",
+          module: "nodenext",
+          moduleResolution: "nodenext",
+          strict: true,
+          exactOptionalPropertyTypes: true,
+          noUncheckedIndexedAccess: true,
+          skipLibCheck: true,
+          noEmit: true,
+          allowImportingTsExtensions: true,
+          types: ["node"]
+        },
+        files: ["example.ts"]
+      })
+    )
+    const { errors } = compileProjectSync({ project: join(directory, "tsconfig.json"), root, cache: false })
+    expect(errors.map(formatDiagnostic).join("\n")).toBe("")
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }

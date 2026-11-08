@@ -19,6 +19,7 @@ import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { build } from "esbuild"
 import * as NativePath from "node:path"
 import { fileURLToPath } from "node:url"
+import vibelang from "vibelang-unplugin/esbuild"
 import { describe, expect, it } from "vitest"
 import * as BunFileSystem from "../src/BunFileSystem.vibe"
 import * as BunGarbageCollector from "../src/BunGarbageCollector.vibe"
@@ -141,6 +142,7 @@ describe("@smthrs/platform-bun barrel", () => {
 describe("@smthrs/platform-bun module graph", () => {
   it("never resolves @smthrs/platform-browser", async () => {
     const result = await build({
+      plugins: [vibelang({ root: fileURLToPath(new URL("..", import.meta.url)) })],
       bundle: true,
       entryPoints: [fileURLToPath(new URL("../src/index.ts", import.meta.url))],
       // Bun's own built-ins (the SQLite driver BunRuntime opens) resolve only on Bun.

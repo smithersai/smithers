@@ -9,6 +9,7 @@
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
 import { fileURLToPath } from "node:url"
+import vibelang from "vibelang-unplugin/esbuild"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 const entry = fileURLToPath(new URL("./workerd/cache-worker.ts", import.meta.url))
@@ -17,6 +18,7 @@ let worker: Miniflare
 
 beforeAll(async () => {
   const bundled = await build({
+    plugins: [vibelang({ root: fileURLToPath(new URL("..", import.meta.url)) })],
     entryPoints: [entry],
     bundle: true,
     write: false,

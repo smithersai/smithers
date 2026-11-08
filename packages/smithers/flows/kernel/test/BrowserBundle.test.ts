@@ -1,10 +1,12 @@
 import { build } from "esbuild"
 import { fileURLToPath } from "node:url"
+import vibelang from "vibelang-unplugin/esbuild"
 import { describe, expect, it } from "vitest"
 
 describe("browser bundle", () => {
   it("resolves the complete root dependency graph without Node built-ins", async () => {
     const result = await build({
+      plugins: [vibelang({ root: fileURLToPath(new URL("..", import.meta.url)) })],
       bundle: true,
       entryPoints: [fileURLToPath(new URL("../src/index.ts", import.meta.url))],
       external: [

@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process"
 import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { emitModule } from "vibelang/emit"
 import { describe, expect, it } from "vitest"
 import * as Manifest from "../src/Manifest.vibe"
 import * as Resolve from "../src/Resolve.vibe"
@@ -110,8 +111,11 @@ describe("reference documentation matches admission", () => {
     }
     const imported = new Set<string>()
     for (const entry of readdirSync(join(packageRoot, "src"), { recursive: true, withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.endsWith(".ts")) continue
-      const source = readFileSync(join(entry.parentPath, entry.name), "utf8")
+      if (!entry.isFile() || !/\.(?:ts|vibe)$/.test(entry.name)) continue
+      const path = join(entry.parentPath, entry.name)
+      // A .vibe module also imports what its compiled JavaScript imports, such
+      // as the VibeLang runtime its effect code compiles to.
+      const source = readFileSync(path, "utf8") + (path.endsWith(".vibe") ? `\n${emitModule(path).code}` : "")
       for (const match of source.matchAll(/(?:from|import\()\s*"([^"]+)"/g)) {
         const specifier = match[1]!
         if (specifier.startsWith(".") || specifier.startsWith("node:")) continue

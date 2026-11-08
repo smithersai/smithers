@@ -209,6 +209,7 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
     "vibelang": "0.0.12",
+    "vibelang-unplugin": "0.0.12",
     "vibelang-vite": "0.0.12",
     "vitest": "5.0.0"
   },

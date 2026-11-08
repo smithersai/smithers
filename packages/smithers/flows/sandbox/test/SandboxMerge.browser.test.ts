@@ -3,9 +3,11 @@ import { build } from "esbuild"
 import { webcrypto } from "node:crypto"
 import { fileURLToPath } from "node:url"
 import { createContext, runInContext } from "node:vm"
+import vibelang from "vibelang-unplugin/esbuild"
 
 it("keeps the public package browser import and unchanged work independent of the Node host adapter", async () => {
   const bundle = await build({
+    plugins: [vibelang({ root: fileURLToPath(new URL("..", import.meta.url)) })],
     stdin: {
       contents: `
         import * as Effect from "effect/Effect"

@@ -4,6 +4,7 @@
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
 import { readFile } from "node:fs/promises"
+import vibelang from "vibelang-unplugin/esbuild"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 const entry = new URL("./workerd/worker.ts", import.meta.url).pathname
@@ -37,7 +38,7 @@ beforeAll(async () => {
           return { path: "./quickjs.wasm", external: true }
         })
       }
-    }]
+    }, vibelang({ root: new URL("..", import.meta.url).pathname })]
   })
   wasmFiles = wasm
   const modules: Record<string, { readonly type: "esm" | "wasm"; readonly contents: string | Uint8Array }> = {

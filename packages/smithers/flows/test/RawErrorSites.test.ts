@@ -82,7 +82,7 @@ const sources = (directory: string): ReadonlyArray<string> => {
   return entries.flatMap((entry) => {
     const path = join(directory, entry.name)
     if (entry.isDirectory()) return sources(path)
-    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : []
+    return /\.(?:tsx?|vibe)$/.test(entry.name) && !/\.test\.(?:tsx?|vibe)$/.test(entry.name) ? [path] : []
   })
 }
 
