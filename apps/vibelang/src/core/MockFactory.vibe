@@ -69,7 +69,7 @@ schema error ReplyBusy {}
 
 /** The scripted agent's reply to `post`, `vibelang/Reply`'s mock body: every record is a step. */
 effect function scripted(
-  engine: FlowRuntime.FlowRuntime["Service"],
+  handTour: (tour: string) => void!!,
   state: Ref.Ref<State>,
   record: (intent: Intent) => Decision!!,
   post: string,
@@ -93,10 +93,9 @@ effect function scripted(
       if (!decision.ok) {
         try Metric.update(Metric.withAttributes(replyStarts, { outcome: "contended" }), 1)
         try Effect.logInfo("vibelang.reply.start").pipe(Effect.annotateLogs({ outcome: "contended" }))
-        // The actor is awaiting this reply. Run the accepted tour as a child so it can settle naturally; the engine then
-        // retries this same start action, preserving the post's reply execution and ordering.
-        const tour = touring((try Ref.get(state)).conversation)
-        try Effect.orDie(engine.execute(Tour, { executionId: `tour/${tour}`, payload: { tour } }))
+        // The accepted tour's run belongs to the room's tour sequencer: hand it over and wait for that run to end. The
+        // engine then retries this same start action, preserving the post's reply execution and ordering.
+        try handTour(touring((try Ref.get(state)).conversation))
         throw new ReplyBusy()
       }
     },
@@ -170,6 +169,12 @@ effect function cryptoOf() {
 const INTERRUPTED = "The agent failed. Try again."
 const restoredReplies = Metric.counter("vibelang_mock_restored_replies", { description: "Mock replies a reload interrupted, failed on restore", incremental: true })
 
+/** A tour run the room's tour sequencer owes, and the signal its waiters read when the run ends. */
+interface TourRun {
+  readonly tour: string
+  readonly done: Deferred.Deferred<void>
+}
+
 /** The mock factory. Each layer build is its own world; closing that layer ends all work and subscriptions. */
 export function mockFactoryFor(role?: Role) {
 return Layer.effect(Factory, effect {
@@ -234,10 +239,23 @@ return Layer.effect(Factory, effect {
   }
 
   /**
-   * Runs the conversation's tour in its own `vibelang/Tour` execution, then answers every unanswered post, oldest
-   * first, each in its own `vibelang/Reply` execution; each at most once.
+   * The room's tour sequencer, the one driver of every `vibelang/Tour` execution: it runs each handed-over tour in
+   * turn, marks it as the tour `Tours.wake` resumes, and completes the run's signal however the run ends.
    */
-  effect function answer(state: Ref.Ref<State>, engine: FlowRuntime.FlowRuntime["Service"], wake: Queue.Queue<void>, activeTour: Ref.Ref<string>) {
+  effect function sequenceTours(engine: FlowRuntime.FlowRuntime["Service"], runs: Queue.Queue<TourRun>, activeTour: Ref.Ref<string>) {
+    while (true) {
+      const { tour, done } = try Queue.take(runs)
+      try Ref.set(activeTour, tour)
+      const exit = try Effect.exit(ensuring(Effect.orDie(Effect.asVoid(engine.execute(Tour, { executionId: `tour/${tour}`, payload: { tour } }))), Ref.set(activeTour, "")))
+      try Deferred.done(done, exit)
+    }
+  }
+
+  /**
+   * Runs the conversation's tour through the tour sequencer, then answers every unanswered post, oldest first, each in
+   * its own `vibelang/Reply` execution; each at most once.
+   */
+  effect function answer(state: Ref.Ref<State>, engine: FlowRuntime.FlowRuntime["Service"], wake: Queue.Queue<void>, handTour: (tour: string) => void!!) {
     const dispatched = new Set<string>()
     while (true) {
       try Queue.take(wake)
@@ -245,8 +263,7 @@ return Layer.effect(Factory, effect {
         const tour = touring((try Ref.get(state)).conversation)
         if (tour !== "" && !dispatched.has(`tour/${tour}`)) {
           dispatched.add(`tour/${tour}`)
-          try Ref.set(activeTour, tour)
-          try ensuring(Effect.orDie(engine.execute(Tour, { executionId: `tour/${tour}`, payload: { tour } })), Ref.set(activeTour, ""))
+          try handTour(tour)
           continue
         }
         const posts = unanswered((try Ref.get(state)).conversation)
@@ -288,6 +305,15 @@ return Layer.effect(Factory, effect {
       const cryptoLayer = Layer.mergeAll(Layer.succeed(Digest.Digest, crypto.digest), Layer.succeed(SecureRandom.SecureRandom, crypto.random))
       const engine = Context.get(try Layer.buildWithScope(FlowEngine.layerMemory.pipe(Layer.provide(cryptoLayer)), scope), FlowRuntime.FlowRuntime)
       const activeTour = try Ref.make("")
+      const tourRuns = try Scope.provide(scope)(acquireRelease(Queue.unbounded<TourRun>(), Queue.shutdown))
+      // Hands `tour`'s run to the tour sequencer and waits for that run to end. The run's execution id is the tour's, so
+      // a tour handed twice runs once: the second hand reads the recorded result.
+      const handTour = (tour: string) => effect {
+        const done = try Deferred.make<void>()
+        try Queue.offer(tourRuns, { tour, done })
+        try Effect.logInfo("vibelang.mock.tour").pipe(Effect.annotateLogs({ outcome: "handed" }))
+        try Deferred.await(done)
+      }
       const accepted = (intent: Intent) => Effect.map(record(intent), (decision) => decision.ok)
       const tours: Tours.Shape = {
         start: effect () => {
@@ -345,7 +371,7 @@ return Layer.effect(Factory, effect {
           const wikiForPoster: Pick<WikiApi, "act"> = {
             act: effect (request) => try (try wikiForPerson(person)).act(request),
           }
-          return try Effect.orDie(withSpan(scripted(engine, state, record, payload.post, forPoster, wikiForPoster, history, conversation, {
+          return try Effect.orDie(withSpan(scripted(handTour, state, record, payload.post, forPoster, wikiForPoster, history, conversation, {
             startSandbox: effect (room, operationId) => try (try sandboxForOwner(postOwners.get(payload.post) ?? "")).startSandbox(room, operationId),
           }, effect () => (try Effect.orDie(accounts.current())).id === (postOwners.get(payload.post) ?? "")), "vibelang.reply"))
         })),
@@ -364,7 +390,8 @@ return Layer.effect(Factory, effect {
       }
       const room: Room = { state, engine }
       try Ref.set(rooms, new Map(all).set(conversation, room))
-      try Effect.forkIn(answer(state, engine, wake, activeTour), scope)
+      try Effect.forkIn(sequenceTours(engine, tourRuns, activeTour), scope)
+      try Effect.forkIn(answer(state, engine, wake, handTour), scope)
       if (retained.length > 0) try Queue.offer(wake, undefined)
       // Wait for any already-accepted commit/publish before disposal completes. New calls see Closed.
       try Scope.addFinalizer(scope, Semaphore.withPermits(gate, 1)(Effect.void))

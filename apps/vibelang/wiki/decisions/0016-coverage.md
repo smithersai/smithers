@@ -639,7 +639,7 @@ fallbacks and two always-defined `??` fallbacks.
 
 | Lines | Why a test can't reach it deterministically |
 | --- | --- |
-| 90-97 | Covered since 2026-11-09 by `test/mockReplyRace.coverage.test.vibe`. The mock reads `Digest` from context; a Digest that holds the reply's first journaled digest on a latch opens the window between dispatch and `StartReply`, and a second latch on the child tour opens the window before it runs. |
+| 90-97 | Covered since 2026-11-09 by `test/mockReplyRace.coverage.test.vibe`. The mock reads `Digest` from context; a Digest that holds the reply's first journaled digest on a latch opens the window between dispatch and `StartReply`, and a second latch on the handed tour's `vibelang/tour/start` step opens the window before its run starts. |
 | 102 | Deleted 2026-11-09. `StartReply` refused for a reason other than `busy` needs a second dispatch of the post, which the answer loop never makes, or 2^53 events. The start step now has no success value and every refusal is contention. |
 | 327 | `Tours.ended` after the tour already ended: between `running` and the subscription. Nothing in that window calls a service a test can hold, so only the fiber scheduler reaches it; the check keeps `ended` from waiting forever. |
 
@@ -658,6 +658,14 @@ implementations with `Interpreter.layerWithImplementations`; they read `Posts`, 
 version of this fix (44053da0) wrapped each body in one `<flow>/perform` step, and the Actions pane showed
 `perform · running` instead of the tour's `start` and `guide`. Resuming a run journaled before either change (a tour
 parked across the deploy) is untested.
+
+**A reply-started tour stayed parked (fixed 2026-11-09).** A reply refused `busy` by a tour accepted after its
+dispatch ran that tour as its own child execution. Ending the tour woke only the tour the answer loop started, so the
+child stayed parked forever with no `vibelang.tour.run` outcome, though the reply still answered. Now each room has one
+tour sequencer, the only driver of `vibelang/Tour` runs: the answer loop and a contended reply both hand it the tour
+and wait for that run to end, and `Tours.wake` resumes the sequencer's run. Regression: case 1 of
+`test/mockReplyRace.coverage.test.vibe` (ending the tour logs the run's `inactive` outcome); it failed before the fix
+with no outcome. The same case still asserts the reply answers, which caught the earlier two-driver hang.
 
 **Service Shape spread.** `test/support/overlaidAccounts.vibe` lists the `Accounts` members, as `overlaid.vibe` does
 `Factory`'s, because spreading a service Shape drops its methods in VibeLang 0.0.12. The upstream fix awaits

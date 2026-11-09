@@ -1,6 +1,7 @@
 // A tour accepted after the answer loop picked a post, before that post's reply started (src/core/MockFactory.vibe).
 // A Digest that holds a flow's first journaled digest on a latch opens each window deterministically: the reply is
-// refused `busy`, counts the contention, runs the accepted tour as its child, and answers the post once it ends.
+// refused `busy`, counts the contention, hands the accepted tour to the room's tour sequencer, and answers the post
+// once that run ends. The reply never drives the tour execution itself.
 import { expect, it } from "@effect/vitest"
 import { WebCrypto } from "@smthrs/crypto"
 import { Digest } from "effect/crypto"
@@ -70,6 +71,16 @@ effect function answered(post: string, lines: Ref.Ref<ReadonlyArray<Line>>, mess
   return { events, outcomes }
 }
 
+/** The outcomes logged as `vibelang.tour.run`, once one is logged or 5 seconds pass. */
+effect function tourRuns(lines: Ref.Ref<ReadonlyArray<Line>>) {
+  const deadline = (try Clock.currentTimeMillis) + 5000
+  while (true) {
+    const runs = (try Ref.get(lines)).filter((line) => line.message === "vibelang.tour.run").map((line) => line.outcome)
+    if (runs.length > 0 || (try Clock.currentTimeMillis) > deadline) return runs
+    try sleep("20 millis")
+  }
+}
+
 function expectAnsweredAfterTour(events: ReadonlyArray<Event>) {
   const types = events.map((event) => event.type)
   expect(types.indexOf("TourStarted")).toBeGreaterThan(types.indexOf("Posted"))
@@ -80,7 +91,7 @@ function expectAnsweredAfterTour(events: ReadonlyArray<Event>) {
   expect(conversation.agent).toBe("idle")
 }
 
-it.live("a tour accepted before the reply starts runs as its child; ending it lets the reply answer", () => effect {
+it.live("a tour accepted before the reply starts runs on the tour's own sequencer; ending it finishes the run and the reply answers", () => effect {
   const reply = try latch("vibelang/reply/answer")
   const lines = try Ref.make<ReadonlyArray<Line>>([])
   const world = Layer.merge(MockFactory.pipe(Layer.provide(Layer.succeed(Digest.Digest, try holding([reply])))), capture(lines))
@@ -94,15 +105,18 @@ it.live("a tour accepted before the reply starts runs as its child; ending it le
     try Stream.runDrain(factory.events("race", 0).pipe(Stream.takeUntil((event) => event.type === "ReplyDelta"), Stream.timeout("5 seconds")))
     try factory.endTour("race")
     const { events, outcomes } = try answered(post, lines, "vibelang.reply.start")
+    const runs = try tourRuns(lines)
     try Effect.try(() => {
       expectAnsweredAfterTour(events)
       expect(events.some((event) => event.type === "WalkthroughDriven")).toBe(true)
       expect(outcomes).toContain("contended")
+      // Escape woke the run parked on its reading hold; its re-drive found the tour over and finished.
+      expect(runs).toEqual(["inactive"])
     })
   }, world)
 }, 30_000)
 
-it.live("a tour ended before the reply's child starts it: the child returns at once and the reply retries", () => effect {
+it.live("a tour ended before its handed-over run starts: the run returns at once and the reply retries", () => effect {
   const reply = try latch("vibelang/reply/answer")
   const tour = try latch("vibelang/tour/start")
   const lines = try Ref.make<ReadonlyArray<Line>>([])
@@ -118,10 +132,12 @@ it.live("a tour ended before the reply's child starts it: the child returns at o
     try factory.endTour("race")
     try Deferred.succeed(tour.release, undefined)
     const { events, outcomes } = try answered(post, lines, "vibelang.reply.start")
+    const runs = try tourRuns(lines)
     try Effect.try(() => {
       expectAnsweredAfterTour(events)
       expect(events.some((event) => event.type === "WalkthroughDriven")).toBe(false)
       expect(outcomes).toContain("contended")
+      expect(runs).toEqual(["inactive"])
     })
   }, world)
 }, 30_000)
