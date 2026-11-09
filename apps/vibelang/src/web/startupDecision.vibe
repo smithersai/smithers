@@ -57,3 +57,19 @@ export function tutorialStartup(session: string | null, fresh: string, sound: st
 export function otherMode(mode: "mock" | "live"): "mock" | "live" {
   return mode === "mock" ? "live" : "mock"
 }
+
+/** The switch names this page's mode. */
+//@ verify
+//@ ensures mode == "mock" ==> \result == "Mock"
+//@ ensures mode == "live" ==> \result == "Live"
+export function modeName(mode: "mock" | "live"): string {
+  return mode === "mock" ? "Mock" : "Live"
+}
+
+/** The switch's accessible name says where a click goes. */
+//@ verify
+//@ ensures mode == "mock" ==> \result == "Mock mode: switch to live"
+//@ ensures mode == "live" ==> \result == "Live mode: switch to Mock"
+export function modeSwitchLabel(mode: "mock" | "live"): string {
+  return mode === "mock" ? "Mock mode: switch to live" : "Live mode: switch to Mock"
+}

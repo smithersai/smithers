@@ -11,6 +11,7 @@ import json, pathlib, re, sys
 from mutation_edit import executable_matches
 root=pathlib.Path(__file__).resolve().parent
 from extended_mutations import cases as extended_cases
+from web_mutations import cases as web_cases
 # The mutation cases: name, function, production text, mutated text, the claim the mutation breaks.
 cases=[
 ('wiki-edits-stale','applyWikiEdits','if (event.seq !== state.seq + 1) return state','if (event.seq === state.seq + 1) return state','a stale wiki observation changes nothing'),
@@ -140,6 +141,7 @@ cases += [
 ('src/core/wikiDecision.vibe','wiki-agent-read','wikiSubmissionAllowed','operation === "read"','false','an agent can read'),
 ('src/core/protocolDecision.vibe','wiki-account-route','accountRoute','path === "/api/wiki" || ','','wiki uses the account credential boundary'),
 ]
+cases += web_cases
 if len(sys.argv) < 2: raise SystemExit('Usage: mutations.py OUT [NAME ...] [--module src/x.vibe ...]')
 out=pathlib.Path(sys.argv[1]).resolve()
 args=sys.argv[2:]; modules=set(); names=[]
@@ -160,9 +162,9 @@ for module,name,fn,old,new,claim in cases:
     if modules and module not in modules: continue
     source=(root.parent/module).read_text()
     if selected and name not in selected: continue
-    match=re.search(r'^(?:export )?function '+fn+r'\(',source,re.M)
+    match=re.search(r'^(?:export )?function '+fn+r'(?:<[^>(]*>)?\(',source,re.M)
     if not match: raise SystemExit(f'Missing function {fn}')
-    start=match.start(); following=re.search(r'^(?:export )?function \w+\(',source[match.end():],re.M)
+    start=match.start(); following=re.search(r'^(?:export )?function \w+(?:<[^>(]*>)?\(',source[match.end():],re.M)
     end=match.end()+following.start() if following else len(source)
     body=source[start:end]
     matches=executable_matches(body,old)

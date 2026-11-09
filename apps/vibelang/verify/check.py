@@ -97,7 +97,7 @@ def verify(item):
    elif line.lstrip().startswith('//') or not line.strip(): before+='\n'+line
    else: before=''
   for name in marked:
-   if not re.search(r'\b(?:function|method)\s+'+re.escape(dafny_name(name,KEYWORDS))+r'\(',text):
+   if not re.search(r'\b(?:function|method)\s+'+re.escape(dafny_name(name,KEYWORDS))+r'(?:<[^>(]*>)?\(',text):
     code=2;out+=f'ERROR: marked function {name} was not emitted\n'
   if code: dfy.write_text(text);text='' 
   if not re.search(r'\b(?:ensures|assert)\b',text):

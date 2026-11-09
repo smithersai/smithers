@@ -205,3 +205,8 @@ patches; `verify/install.sh` builds it, so npm no longer supplies the tool. `upd
 with commands as data; the arms proved so far, and those still inline, are listed in 0018.
 
 **Sequencers and commands (0018, third lane).** Both sequencers call proved decisions for their follow cut, plan steps, title cuts, reply attempts and finish plans; the CLI and MCP commands call proved argument decisions. A function named by a Dafny keyword is now verified under its escaped name.
+
+**Web viewport and history page (0018, lane vl-proveall2).** The transcript viewport's pause, scroll, follow and key steps and
+the history page's response guards, read scheduling, page merge and arm frames are proved in `screenDecision.vibe` and the
+new `historyDecision.vibe`. Four LemmaScript fixes land in `packages/lemmascript` with fixtures; one of them, `real` record
+fields, closes an unsoundness where a fractional field was proved as an integer.

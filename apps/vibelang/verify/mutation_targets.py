@@ -324,10 +324,10 @@ def postcondition_line(generated, function, contains):
     import re
     lines=generated.splitlines()
     # A pure function carries its postconditions on the generated `_ensures` lemma, a method on its own header.
-    start=next((i for i,line in enumerate(lines) if re.match(r'lemma '+re.escape(function)+r'_ensures\(',line)),None)
+    start=next((i for i,line in enumerate(lines) if re.match(r'lemma '+re.escape(function)+r'_ensures(?:<[^>(]*>)?\(',line)),None)
     if start is None:
         from sources import dafny_name
-        start=next((i for i,line in enumerate(lines) if re.match(r'(?:ghost )?(?:method|function) '+re.escape(dafny_name(function))+r'\(',line)),None)
+        start=next((i for i,line in enumerate(lines) if re.match(r'(?:ghost )?(?:method|function) '+re.escape(dafny_name(function))+r'(?:<[^>(]*>)?\(',line)),None)
     if start is None: raise ValueError('Missing target function '+function)
     end=next((i for i in range(start+1,len(lines)) if lines[i]=='{'),len(lines))
     matches=[i+1 for i in range(start,end) if lines[i].lstrip().startswith('ensures ') and contains in lines[i]]
@@ -501,7 +501,7 @@ for _name in ASSERTIONS:
 def case_assertion_line(generated, function, case, clause):
     import re
     lines = generated.splitlines()
-    starts = [i for i, line in enumerate(lines) if re.match(r'(?:ghost )?(?:method|function) '+re.escape(function)+r'\(', line)]
+    starts = [i for i, line in enumerate(lines) if re.match(r'(?:ghost )?(?:method|function) '+re.escape(function)+r'(?:<[^>(]*>)?\(', line)]
     if len(starts) != 1: raise ValueError('Missing or ambiguous target function '+function)
     start = starts[0]
     end = next((i for i in range(start+1, len(lines)) if re.match(r'(?:ghost )?(?:method|function|lemma) ', lines[i])), len(lines))

@@ -371,3 +371,6 @@ The resumed benchmark receipt passes 53 files / 127 tests (125 workload groups p
 Hosted-broker main is independently measured by 54 benchmark files / 128 tests; 5,816/7,035 src/worker lines (82.67%), with 95 files below unchanged strict thresholds. Cookie admission and the broker-unavailable/credential-Connect fault contract are benchmarked without real OAuth. No new app tool or dependency.
 
 Hosted-broker main is independently measured by 54 benchmark files / 128 tests; 5,827/7,036 src/worker lines (82.82%), with 95 files below unchanged strict thresholds. Cookie admission and the broker-unavailable/credential-Connect fault contract are benchmarked without real OAuth. No new app tool or dependency.
+
+**Proof harness, lane vl-proveall2 (0018).** `verify/harness_test.py` gains a regression that a marked generic function is
+found and proved; 75 executable mutations join `verify:broken` in `verify/web_mutations.py`. No new tool or dependency.

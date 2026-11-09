@@ -259,3 +259,62 @@ export function latestScreen(state: ScreenState): ScreenState {
 export function toggleScreenDocs(state: ScreenState): ScreenState {
   return { surface: state.surface, palette: state.palette, tour: state.tour, tourError: state.tourError, docs: toggleDocs(state.docs), following: state.following }
 }
+
+/** The transcript's own follow permission: the newest intent revision, whether the reader paused, the last position. */
+export interface Viewport { readonly intent: number; readonly paused: boolean; readonly previousY: real }
+/** A native gesture's result: the next viewport, and whether it reports `bottom` with the new intent. */
+export interface ViewportStep { readonly viewport: Viewport; readonly emit: boolean; readonly bottom: boolean }
+
+/** An allowed upward gesture pauses and takes the next intent, so every older permission is void. */
+//@ verify
+//@ requires 0 <= viewport.intent && viewport.intent < 9007199254740991
+//@ ensures \result.emit == canPause(active, scrollable)
+//@ ensures !\result.bottom
+//@ ensures !\result.emit ==> \result.viewport == viewport
+//@ ensures \result.emit ==> \result.viewport.intent == viewport.intent + 1 && \result.viewport.paused && \result.viewport.previousY == y
+export function pauseViewport(viewport: Viewport, active: boolean, scrollable: boolean, y: real): ViewportStep {
+  if (!canPause(active, scrollable)) return { viewport, emit: false, bottom: false }
+  return { viewport: { intent: viewport.intent + 1, paused: true, previousY: y }, emit: true, bottom: false }
+}
+
+/** A native scroll on the active page measures the reader; a repeated position-only pause reports nothing. */
+//@ verify
+//@ requires 0 <= viewport.intent && viewport.intent < 9007199254740991
+//@ ensures !active ==> \result.viewport == viewport && !\result.emit && !\result.bottom
+//@ ensures active ==> \result.bottom == (atBottom && (!viewport.paused || y > viewport.previousY))
+//@ ensures active ==> \result.viewport.paused == !\result.bottom && \result.viewport.previousY == y
+//@ ensures active ==> \result.viewport.intent == (!\result.bottom && !viewport.paused ? viewport.intent + 1 : viewport.intent)
+//@ ensures active ==> \result.emit == !(hosted && viewport.paused && !\result.bottom)
+//@ ensures \result.viewport.intent == viewport.intent || \result.viewport.intent == viewport.intent + 1
+export function scrolledViewport(viewport: Viewport, active: boolean, hosted: boolean, atBottom: boolean, y: real): ViewportStep {
+  if (!active) return { viewport, emit: false, bottom: false }
+  const next = nativeScroll(atBottom, viewport.paused, y, viewport.previousY, viewport.intent)
+  return { viewport: { intent: next.intent, paused: next.paused, previousY: y }, emit: !(hosted && viewport.paused && !next.bottom), bottom: next.bottom }
+}
+
+export interface FollowStep { readonly viewport: Viewport; readonly scroll: boolean }
+
+/** Only the newest intent on an active page, with a newest entry to show, scrolls and resumes following. */
+//@ verify
+//@ ensures \result.scroll == (authorized == viewport.intent && active && found)
+//@ ensures \result.scroll ==> !\result.viewport.paused && \result.viewport.intent == viewport.intent && \result.viewport.previousY == viewport.previousY
+//@ ensures !\result.scroll ==> \result.viewport == viewport
+export function followViewport(viewport: Viewport, authorized: number, active: boolean, found: boolean): FollowStep {
+  if (!nativeFollow(authorized, viewport.intent, active) || !found) return { viewport, scroll: false }
+  return { viewport: { intent: viewport.intent, paused: false, previousY: viewport.previousY }, scroll: true }
+}
+
+export type KeyGesture = "browser" | "top" | "page" | "line"
+
+/** Which page scroll a key takes over. Alt and modified keys belong to the browser, except a modified jump to the top. */
+//@ verify
+//@ ensures (\result != "browser") == (!alt && (!(control || meta) || key == "Home" || (key == "ArrowUp" && meta)) && keyPauses(key, prevented, editor))
+//@ ensures \result == "top" ==> key == "Home" || (key == "ArrowUp" && meta)
+//@ ensures \result != "browser" && (key == "Home" || (key == "ArrowUp" && meta)) ==> \result == "top"
+//@ ensures \result != "browser" && key == "PageUp" ==> \result == "page"
+//@ ensures \result != "browser" && key == "ArrowUp" && !meta ==> \result == "line"
+export function keyGesture(key: string, alt: boolean, control: boolean, meta: boolean, prevented: boolean, editor: boolean): KeyGesture {
+  const pageTop = key === "Home" || key === "ArrowUp" && meta
+  if (alt || (control || meta) && !pageTop || !keyPauses(key, prevented, editor)) return "browser"
+  return pageTop ? "top" : key === "PageUp" ? "page" : "line"
+}

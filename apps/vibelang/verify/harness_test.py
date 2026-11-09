@@ -1,5 +1,5 @@
 """Regression: an ignored-only proof directory must never pass with zero checked sources."""
-import json, pathlib, subprocess, sys, tempfile, unittest
+import json, os, pathlib, subprocess, sys, tempfile, unittest
 from sources import production_sources
 HERE = pathlib.Path(__file__).resolve().parent
 ROOT = pathlib.Path(__file__).resolve().parent
@@ -79,6 +79,16 @@ class SourceArguments(unittest.TestCase):
             result = subprocess.run([sys.executable, str(ROOT / 'check.py'), str(source), str(missing)], capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0, result.stdout)
             self.assertIn('Not found:', result.stdout + result.stderr)
+
+class GenericFunctions(unittest.TestCase):
+    def test_a_marked_generic_function_is_found_and_proved(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            source = pathlib.Path(folder) / 'generic.ts'
+            source.write_text('//@ verify\n//@ ensures \\result.length == items.length + 1\nexport function added<C>(items: ReadonlyArray<C>, item: C): ReadonlyArray<C> { return [...items, item] }\n')
+            env = {key: value for key, value in os.environ.items() if key not in ('VIBELANG_VERIFY_ROOT', 'VERIFY_MUTATION_MANIFEST')}
+            result = subprocess.run([sys.executable, str(ROOT / 'check.py'), str(source)], capture_output=True, text=True, env=env)
+            self.assertNotIn('was not emitted', result.stdout + result.stderr)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 class MutationLocation(unittest.TestCase):
     def test_contract_text_is_not_an_executable_match(self):

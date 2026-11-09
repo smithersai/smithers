@@ -36,6 +36,8 @@ brick                                   state         proof
 - **Proofs of all logic (0018, lane vl-proveall): in progress.** The inventory contains 2,508 executable items. Seventeen modules carry contracts and 962 current mutant copies match actual Dafny rejections; unproved logic and tool boundaries remain explicit.
 - **Proofs outside the web app (0018, lane vl-proveall3): in progress.** Sequencer, follow and command argument decisions proved; one title-cut defect fixed.
 
+- **Proofs of the web decision modules (0018, lane vl-proveall2): in progress.** Viewport steps and the history page's guards, merge, reads and arm frames are proved; 75 new mutations rejected. Remaining rows name host or tool boundaries.
+
 - **CLI and MCP sign-in (VL-26): implemented; lead deploys.** 0028: `login`/`logout` run GitHub's device flow through the shared
   integrations auth; the server names the agent's posts `<login> (agent)`, carries the person's role and refuses it
   approve, fold and merge. Journaled native flows, private shared settings and a persistent MCP host are covered. Live sign-in waits on device flow enabled on the GitHub OAuth app (the lane report).
