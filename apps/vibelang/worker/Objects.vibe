@@ -24,6 +24,8 @@ import type { HistoryReader } from "../src/history/tools.vibe"
 import { HistoryTools } from "./HistoryTools.vibe"
 import { ChatModel, registration, Replies, Spend } from "./Reply.vibe"
 import * as Sequencer from "./Sequencer.vibe"
+import { unanswered } from "../src/core/flows.vibe"
+import type { Refusal } from "../src/core/decide.vibe"
 import { tourAgentRegistration } from "./Tour.vibe"
 
 /** A conversation object's storage: key-value for the log and the execution's intent, SQLite for the engine. */
@@ -163,6 +165,14 @@ effect function wakeTour(hostId: string, storage: Storage) {
  * the tour is recorded and its flow dispatched. `null` once recorded, else the sequencer's refusal.
  */
 export effect function tour(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer) {
+  // A post's reply that was dispatched but has not started holds this object's one execution, and its start would
+  // wait on a tour accepted now while the tour waits on it. Learn more is busy until that question is answered.
+  const held = try promise(() => storage.get(ExecutionObject.intentKey))
+  if (held !== undefined && unanswered(try sequencer.snapshot()).length > 0) {
+    try Effect.logInfo("vibelang.tour.start").pipe(Effect.annotateLogs({ outcome: "busy", reason: "reply-waiting" }))
+    const busy: Refusal = "busy"
+    return busy
+  }
   return try asked(hostId, storage, sequencer, StartTour, "start-tour")
 }
 

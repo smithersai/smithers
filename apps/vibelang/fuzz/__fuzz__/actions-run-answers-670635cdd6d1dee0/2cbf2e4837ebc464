@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 28
+bias 2
+null-prototype false
+key 1151941209
+tape 5uI4GDkRAemgpg1y0Nn79thryRBKb6nPDb--FUcGt9cTqlN5OZjQM32OzsX_q70a
+schedule-key 2058396321
+schedule 
+signature "PropertyError:Finding"
+path 17
+codec "json"
+value "[{\"flow\":\"vibelang/Post\",\"reply\":\"prose\",\"text\":\"\\ud800\",\"ledger\":\"admit\",\"demote\":\"contributor\",\"alarms\":1,\"cancel\":\"none\"}]"
+# PropertyError:Finding
+# [{"flow":"vibelang/Post","reply":"prose","text":"\ud800","ledger":"admit","demote":"contributor","alarms":1,"cancel":"none"}]

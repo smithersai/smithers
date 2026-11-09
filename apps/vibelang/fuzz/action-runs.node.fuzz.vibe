@@ -53,6 +53,11 @@ it.live("actions/run-answers", () => run("actions/run-answers", Input, (configs)
         const restored = w.accounts.grant(w.person.id, "maintainer") catch () => "refused"
         if (restored === "refused") throw new Finding({ report: "a maintainer could not restore a maintainer" })
         const started = try object.host.start(request(id, input.flow, { text: `Question ${input.text}` }, w.person.id), "maintainer")
+        // The wire refuses text that is not well-formed UTF-16, so a post of it is invalid, as the Worker answers.
+        if (input.flow === "vibelang/Post" && !`Question ${input.text}`.isWellFormed()) {
+          if (started !== "invalid") throw new Finding({ report: `a malformed post answered ${started}` })
+          continue
+        }
         if (started !== null) throw new Finding({ report: `a permitted ${input.flow} start answered ${started}` })
         const settled = new Map<string, string>()
         for (let turn = 0; turn < input.alarms; turn++) {

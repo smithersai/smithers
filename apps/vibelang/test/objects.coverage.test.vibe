@@ -117,16 +117,22 @@ describe("posts and tours through their flows", () => {
   it.live("a tour waits behind the held reply intent, and ending it leaves that intent parked", () => effect {
     const { kv, storage, sequencer } = try world()
     try Objects.post(hostId, storage, sequencer, "c1", "ada", "hello")
+    // While the dispatched reply's question waits, Learn more is busy: a tour then would deadlock with that reply
+    // (fuzz objects/conversation-host; test/tourAfterRefusedReply.test.vibe).
+    const waiting = try Objects.tour(hostId, storage, sequencer)
+    // The reply settles; its execution's intent is held until the next alarm forgets it.
+    try Objects.alarm(hostId, storage, sequencer, { admit: () => succeed(true), spend: () => Effect.void }, { model: undefined, unusable: "unconfigured" }, unavailableHistory)
     const started = try Objects.tour(hostId, storage, sequencer)
     try sequencer.ensureDispatched()
     const ended = try Objects.endTour(hostId, storage, sequencer)
     const keys = [...kv.kv.keys()]
     try Effect.try(() => {
+      expect(waiting).toBe("busy")
       expect(started).toBeNull()
       expect(ended).toBeNull()
       expect(keys).toContain("smithers/intent")
       expect(keys).toContain("dispatched/m1")
-      expect(keys).not.toContain("dispatched/tour/t2")
+      expect(keys).not.toContain("dispatched/tour/t3")
       expect(kv.alarmAt).not.toBeUndefined()
     })
   }, 30_000)

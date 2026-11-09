@@ -30,7 +30,7 @@ it.live("objects/conversation-host", () => run("objects/conversation-host", Sche
   const object = try storage()
   const sequencer = try Objects.conversation(object)
   const clients: Array<string> = []
-  for (const step of steps) {
+  const apply = effect (step: typeof Step.Type) => {
     const before = try sequencer.snapshot()
     switch (step.op) {
       case "post":
@@ -77,9 +77,14 @@ it.live("objects/conversation-host", () => run("objects/conversation-host", Sche
       }
       default: try sequencer.ensureDispatched()
     }
+  }
+  for (const step of steps) {
+    // Every object call answers within the request: one that never returns is a finding with its input.
+    const finished = try Effect.timeoutOption(apply(step), "20 seconds")
+    if (Option.isNone(finished)) throw new Finding({ report: `${step.op} did not return` })
     // A fresh incarnation over the same storage replays the same conversation.
     const reloaded = try Objects.conversation(object)
-    if (!same(try reloaded.snapshot(), try sequencer.snapshot())) throw new Finding({ report: "objects:82 !same(try reloaded.snapshot(), try sequencer.snapshot())" })
+    if (!same(try reloaded.snapshot(), try sequencer.snapshot())) throw new Finding({ report: "a fresh incarnation replayed another conversation" })
   }
   return true
 }))

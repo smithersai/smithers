@@ -152,3 +152,78 @@ Lines 20 and 21 of `worker/SandboxAccounts.vibe` are the no-image branch; `sandb
 Fuzz-only: 6284/7042 lines (89.23%), 8916/12110 branches (73.62%), 42 of 142 files at 100%, at a 5-second budget; goal not met. `worker/Http.vibe` is at 100%; `worker/Reply.vibe` is at 136/136 lines and 75/81 branches.
 
 Fifth campaign: seed 20261112, 32 seconds per target, 41.7 minutes, 145 receipts, 60,449,973 recorded executions, none with zero executions. The browser phase did not run after the failure, so the five browser targets ran afterwards at the same seed and budget; all passed. One product bug: with a valid stored session and a device flow pending for another server, `login` answered signed-in with that flow's user code and URL. It now offers no code when signed in; the value stays in the corpus.
+
+## Lane vl-fuzz2: worker and view branches, 2026-11-09
+
+A second fuzz lane drove branch coverage of `worker/{Issues,Wiki,ActionRuns,Objects,Sequencer,HistoryActions}.vibe`
+and `src/web/{view,viewDecision,theatreDecision,viewport,startupDecision}.vibe`. Its targets steer inputs toward the
+states a branch needs (a started run before its alarm, a reply open when it is cancelled, a demotion between alarms)
+instead of waiting for random sequences to find them, and throw a named `Finding` so a counterexample says which
+invariant broke.
+
+| Target | Checks |
+| --- | --- |
+| `web/decision-contracts` | startup and view decisions against their written contracts |
+| `web/view-branches`, `web/chat-steered` | steered chat models render with every control named; the composer answers keys as its contract says |
+| `web/viewport-gestures` | reader gestures over a happy-dom page, a windowless document and no host: a pause needs an active, scrollable page; follow scrolls only on the current intent |
+| `sequencer/tour-and-settle`, `sequencer/stored-log` | tour controls, settle answers, grants and actions on the real sequencer; an undecodable stored log is one defect |
+| `actions/run-hosts` | starts, retries, conflicts, alarms, cancels, demotions, hosts stopped mid-start or mid-reply, history hosts that refuse, fail or cannot cancel |
+| `actions/run-answers` | posts answered by `fuzz/model-server.vibe`'s scripted model under a ledger that admits, refuses or dies; a reply's row agrees with the reply |
+| `actions/history-host` | the history host over every flow kind: start, busy, alarms, receipt, cancel |
+| `objects/conversation-host` | posts, tours, tour controls, wiki pages and alarms; each call returns within 20 s; a fresh incarnation replays the same conversation |
+| `issues/host-writes` | link, commit, uncommit, accept, decline and read, checked against the scripted GitHub's state |
+| `issues/journaled-writes` | replay joins, a changed payload is refused, a resumed read reports the outcome, recovery retries only a failure, HTTP names the reason |
+| `wiki/host-calls`, `wiki/served-failures` | the wiki host's refusals before any write; HTTP status per reason; a host defect stays a defect |
+
+Product bugs fixed, each with a regression test that failed first:
+
+| Finding | Fix |
+| --- | --- |
+| A chat link with a blank label, `[\t](#issue-4)`, had no accessible name | Markdown shows the link's target as its text |
+| The issue card's open button took the same blank label | it reads `Open #<number>` |
+| A wiki save or propose whose credential went after the call began answered `connect`, but dropped the reviewed text and the fresh request's `unwritten` mark | both kept, as when the person arrived without a credential |
+| A tour accepted after a post, before that post's reply started, deadlocked the conversation: the reply's start waited on the tour while the tour waited on the reply's held execution | Learn more answers `busy` while a dispatched reply's question is unanswered (`Objects.tour`) |
+
+**Open, not fixed:** tour, alarm (the tour parks), end tour, a second tour, then seek: the seek's wake resumes the first
+tour's held execution and dies with `FOREIGN KEY constraint failed` in the engine store. Reproduction and the
+counterexample: `~/vl/fuzz2-findings/tour-seek-fk/` on nyc-01. The counterexample is not in `fuzz/__fuzz__/`, so
+`pnpm fuzz` stays green; it goes there with the fix.
+
+Unreachable fallbacks removed from `src/web/view.vibe`, behaviour unchanged: the tour narration's `?? false`/`?? ""`
+after a length check, the video `loop` no asset leaves unset, the poster-still path (every poster asset has controls),
+and a second `?? []` for issue items. External: happy-dom 20.13.2's `WheelEvent` drops `ctrlKey` from its init; the
+viewport target passes the two fields it reads.
+
+Fuzz-only coverage of the lane's files, Vitest V8 with the suite's configuration, the targets that reach them at 5 s
+each (`fuzz:coverage`'s budget), Node and happy-dom, no browser phase:
+
+| File | Lines | Branches |
+| --- | ---: | ---: |
+| `src/web/startupDecision.vibe` | 9/9 | 18/18 |
+| `src/web/theatreDecision.vibe` | 18/18 | 56/56 |
+| `src/web/view.vibe` | 53/53 | 173/173 |
+| `src/web/viewDecision.vibe` | 22/22 | 52/52 |
+| `src/web/viewport.vibe` | 48/48 | 58/58 |
+| `worker/HistoryActions.vibe` | 33/33 | 19/19 |
+| `worker/Sequencer.vibe` | 119/119 | 67/68 |
+| `worker/Wiki.vibe` | 153/154 | 205/217 |
+| `worker/Objects.vibe` | 102/108 | 41/46 |
+| `worker/ActionRuns.vibe` | 114/117 | 150/168 |
+| `worker/Issues.vibe` | 246/271 | 376/440 |
+
+Not reached, with the reason; none is excluded:
+
+- `ActionRuns` 157: `admit` with no stored request. Admission runs from alarms that `ActionRuns.alarm` reaches only
+  with a stored request, and nothing deletes it.
+- `ActionRuns` 104-107 and 122, `Issues` 348, `Wiki` 220: an engine or alarm failure that is not a typed refusal. It
+  needs the engine store to fail; a storage adapter whose SQL fails would reach it.
+- `Issues` 317 and `Wiki` 208: `engine.retryFrom === undefined`; the Cloudflare runtime supplies it in every target.
+- `Wiki` 134 and 136, `Issues` 152-174: journaled proposals that need the engine; `wiki/github-host-operations` and
+  `issues/github-host-operations` reach them at long budgets.
+- `Sequencer` 71's second arm, `Objects` 146-148 and 297, remaining `Issues` read paths (50-page cursors, truncated
+  reviews): rare at 5 s; seen in longer runs.
+
+Campaign: seed 20261113, 240 s per target, 14 targets, 28.2 minutes wall on two workers, 19,491,917 executions in 13 receipts
+(`objects/conversation-host` hung and wrote none). Two targets failed and were fixed or recorded: `actions/run-answers` (oracle: a lone surrogate post is `invalid` by
+design; value kept) and `objects/conversation-host` (the deadlock above). Rerun at the same seed and budget: the
+deadlock is gone and the target found the open foreign-key failure; `actions/run-answers` passed (326 executions).

@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 3
+bias 4
+null-prototype false
+key 985659722
+tape 3TJistb-FJU0QLZZsOxZcS0KPlJ7ULQRCN6OZA
+schedule-key 4198252580
+schedule 
+signature "Died:@smthrs/flow/FlowExecutionNotFound"
+path 0
+codec "json"
+value "{\"flow\":\"vibelang/sandbox/command\",\"variant\":0,\"admit\":false,\"alarms\":0,\"cancel\":false}"
+# Died:@smthrs/flow/FlowExecutionNotFound
+# {"flow":"vibelang/sandbox/command","variant":0,"admit":false,"alarms":0,"cancel":false}

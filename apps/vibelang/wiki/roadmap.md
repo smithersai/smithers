@@ -58,6 +58,7 @@ brick                                   state         proof
 
 - Brick 2 policy and shared authentication: decision [0019](decisions/0019-sign-in-and-roles.md); lane vl-roles.
 - **vl-fuzzpkg, in progress:** `@smthrs/fuzz` landed at 100%; `pnpm fuzz` passes; a second 32.5-minute campaign's 6 findings are fixed. Fuzz-only coverage is 70.7% lines and 53.5% branches, below the 100% goal (decision 0015).
+- **vl-fuzz2 (0015), scope partly met:** the five view files and the history host are at 100% fuzz-only lines and branches, the sequencer at 67/68 branches; action runs, issues, wiki and the conversation object are listed in 0015 with what is left. Fixed: unnamed blank chat links and issue-card buttons, a lost wiki edit text, and a tour-behind-a-waiting-reply deadlock. Open: a seek after a second tour fails in the engine store.
 
 - **Tour production fixes (vl-tourfix, 0014):** docs and the current paragraph share the maximized pane; live and mock use durable word-count reading holds; Escape retains keyboard control, maximization isolates chat, status announces control, and later replies exclude tour history.
 

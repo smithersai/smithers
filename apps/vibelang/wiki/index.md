@@ -33,6 +33,7 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0014 theatre walkthrough](decisions/0014-agent-tour.md#vl-31-theatre-walkthrough-2026-11-08-lane-vl-learnmore) | Ten app-driving steps, sound-off subtitles, durable pause/seek and reload (VL-31) |
 | [0014 production fixes](decisions/0014-agent-tour.md#other-choices) | Tour docs and current narration stay in view; durable reading holds, paragraphs, keyboard control, inert background and control announcements |
 | [0015](decisions/0015-fuzzing.md) | Effect fork as `@smthrs/fuzz`, corpus, budgets, whole-app fuzz targets and independent coverage |
+| [0015 worker and view branches](decisions/0015-fuzzing.md#lane-vl-fuzz2-worker-and-view-branches-2026-11-09) | Lane vl-fuzz2: steered targets for the view, viewport, sequencer, action runs, conversation object, issues and wiki hosts |
 | [0016](decisions/0016-coverage.md) | Boundary tests, prepared source coverage gates and recorded measurement limitations |
 | [0016 vl-coverage2](decisions/0016-coverage.md#lane-vl-coverage2-2026-11-09) | HTTP, browser factory, mock actions, mock factory, state machine and live wiki at their boundaries; the reload-mid-reply fix (lane vl-coverage2) |
 | [0017](decisions/0017-benchmarks.md) | Local/live methods, current-main measurements, content/session recovery benchmarks and unfinished strict source coverage |
