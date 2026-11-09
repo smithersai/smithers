@@ -14,7 +14,7 @@ it.effect.skipIf(!liveEnabled || !hasKey)(
   () =>
     Effect.gen(function*() {
       // Collection checks the opt-in gate without loading the native stack.
-      const { main } = yield* Effect.promise(() => import("../../examples/12-agent-live-smoke.ts"))
+      const { main } = yield* Effect.promise(() => import("../../examples/12-agent-live-smoke.vibe"))
       const result = yield* main("What is 2+2? Reply with just the digit.")
       // eslint-disable-next-line no-console
       console.log("LIVE MODEL ANSWER:", JSON.stringify(result))

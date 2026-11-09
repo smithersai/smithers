@@ -112,6 +112,7 @@ export interface RouteResolver {
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const routeResolver = <Body, Frame, Event, State>(
   route: Route.Route<Body, Frame, Event, State>

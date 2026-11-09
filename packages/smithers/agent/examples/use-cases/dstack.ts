@@ -30,7 +30,7 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
-import { executorLayer } from "../13-agent-live-smoke-local.ts"
+import { executorLayer } from "../13-agent-live-smoke-local.vibe"
 
 /** The seat both agents sit in: the model name vLLM serves (`--served-model-name kimi-k2`). */
 export const seat = "dstack:kimi-k2"

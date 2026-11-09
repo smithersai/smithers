@@ -57,6 +57,7 @@ export const knownContextWindowTokens = (modelId: string): number | undefined =>
  *
  * @category resolvers
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const contextWindowTokensFor = (modelId: string): number =>
   knownContextWindowTokens(modelId) ?? unknownModelTokens

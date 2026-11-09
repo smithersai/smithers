@@ -33,7 +33,7 @@ it.skipIf(!liveEnabled)(
     if (!pulled) ctx.skip(`Requires Ollama at ${daemon} with ${seatModel} pulled`)
 
     // Collection checks the opt-in gate without loading the native stack.
-    const { main } = await import("../../examples/13-agent-live-smoke-local.ts")
+    const { main } = await import("../../examples/13-agent-live-smoke-local.vibe")
     for (let attempt = 0; attempt < 3; attempt++) {
       const result = await Effect.runPromise(main("What is the capital of France? Answer in one word."))
       expect(result.answer).toMatch(/paris/i)

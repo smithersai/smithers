@@ -28,6 +28,7 @@ import * as Route from "@smthrs/model/Route"
 import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Layer, Option, Redacted, Schema } from "effect"
+import { envVar, environment, runWhenEntry } from "./live-smoke.platform.ts"
 
 /**
  * The real HTTP transport: the kernel's guarded client (always-allow, since
@@ -40,7 +41,7 @@ import { Effect, Layer, Option, Redacted, Schema } from "effect"
 export const executorLayer = RequestExecutor.layer.pipe(
   Layer.provide(KernelHttpClient.layer),
   Layer.provide(GrantStore.layerNoop),
-  Layer.provide(EgressHttpClient.layer(process.env))
+  Layer.provide(EgressHttpClient.layer(environment))
 )
 
 /**
@@ -53,36 +54,35 @@ export const executorLayer = RequestExecutor.layer.pipe(
  */
 export const liveGeminiSeats = (baseUrl: string, apiKey: string) =>
   Layer.effect(SeatResolver.SeatResolver)(
-    Effect.gen(function*() {
-      const executor = yield* RequestExecutor.RequestExecutor
+    effect {
+      const executor = try RequestExecutor.RequestExecutor
       return SeatResolver.make({
-        resolve: (id) =>
-          Effect.gen(function*() {
-            const modelId = Seat.modelIdOf(id)
-            const routeConfig = yield* Effect.fromResult(
-              Route.openaiChatCompatible({
-                id: "gemini",
-                providerName: "gcp.gemini",
-                baseUrl,
-                path: "/chat/completions",
-                apiKey: Redacted.make(apiKey)
-              })
-            ).pipe(
-              Effect.mapError((error) => new Seat.SeatUnresolved({ seat: id, message: error.message }))
-            )
-            const model = yield* Route.toModel(routeConfig).pipe(
-              Effect.provideService(RequestExecutor.RequestExecutor, executor)
-            )
-            return Seat.make({
-              id,
-              modelId,
-              model,
-              route: FlowEngineLike.routeResolver(routeConfig),
-              contextWindowTokens: SeatResolver.contextWindowTokensFor(modelId)
+        resolve: effect (id) => {
+          const modelId = Seat.modelIdOf(id)
+          const routeConfig = try Effect.fromResult(
+            Route.openaiChatCompatible({
+              id: "gemini",
+              providerName: "gcp.gemini",
+              baseUrl,
+              path: "/chat/completions",
+              apiKey: Redacted.make(apiKey)
             })
+          ).pipe(
+            Effect.mapError((error) => new Seat.SeatUnresolved({ seat: id, message: error.message }))
+          )
+          const model = try Route.toModel(routeConfig).pipe(
+            Effect.provideService(RequestExecutor.RequestExecutor, executor)
+          )
+          return Seat.make({
+            id,
+            modelId,
+            model,
+            route: FlowEngineLike.routeResolver(routeConfig),
+            contextWindowTokens: SeatResolver.contextWindowTokensFor(modelId)
           })
+        }
       })
-    })
+    }
   ).pipe(Layer.provide(executorLayer))
 
 /** One model-backed step: answer a question in one short sentence. */
@@ -130,11 +130,11 @@ export const liveLayer = (baseUrl: string, apiKey: string) =>
     Layer.provideMerge(Agent.layerDefaults),
     // The configured seat judges completions through the same evaluator API.
     Layer.provideMerge(
-      Layer.unwrap(Effect.gen(function*() {
-        const resolver = yield* SeatResolver.SeatResolver
-        const seat = yield* resolver.resolve("gemini:gemini-2.5-flash")
+      Layer.unwrap(effect {
+        const resolver = try SeatResolver.SeatResolver
+        const seat = try resolver.resolve("gemini:gemini-2.5-flash")
         return Evaluator.layerFromSeat(seat)
-      })).pipe(Layer.provide(liveGeminiSeats(baseUrl, apiKey)))
+      }).pipe(Layer.provide(liveGeminiSeats(baseUrl, apiKey)))
     ),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
@@ -150,7 +150,7 @@ export const liveLayer = (baseUrl: string, apiKey: string) =>
 export const main = (
   question: string,
   baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai",
-  apiKey = process.env.GEMINI_API_KEY ?? ""
+  apiKey = envVar("GEMINI_API_KEY") ?? ""
 ) =>
   LiveSmokeGeminiWorkflow.execute(
     { question },
@@ -160,14 +160,4 @@ export const main = (
     Effect.provide(liveLayer(baseUrl, apiKey))
   )
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  Effect.runPromise(main("What is the capital of France? Answer in one word.")).then(
-    (result) => {
-      console.log("RESULT:", JSON.stringify(result))
-    },
-    (error) => {
-      console.error("FAILED:", error)
-      process.exitCode = 1
-    }
-  )
-}
+runWhenEntry(import.meta.url, () => main("What is the capital of France? Answer in one word."))

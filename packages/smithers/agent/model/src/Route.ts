@@ -588,6 +588,7 @@ export const anthropic = (
  * @since 0.1.0
  * @category constructors
  * @slop
+ * @throws {never}
  */
 export const openai = (
   input: {
@@ -679,6 +680,7 @@ export const openaiResponsesCompatible = (
  *
  * @since 0.1.0
  * @category constructors
+ * @throws {never}
  */
 export const openaiChatCompatible = (
   input: {
