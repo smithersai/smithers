@@ -120,7 +120,7 @@ export function toursOf(sequencer: Sequencer.Sequencer, wake: () => void!! = () 
     running: sequencer.running,
     open: sequencer.open,
     say: sequencer.say,
-    finish: sequencer.finishTour,
+    finish: (tour) => sequencer.finishTour(tour, ""),
     ended: sequencer.ended,
   }
 }

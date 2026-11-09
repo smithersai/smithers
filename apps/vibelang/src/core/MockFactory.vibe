@@ -29,6 +29,7 @@ import { AgentActions } from "../actions/agent.vibe"
 import { Mythical } from "../history/MythicalHistory.vibe"
 import type { Principal } from "../history/roles.vibe"
 import { type HistoryPages, show } from "../history/tools.vibe"
+import type { Outline } from "../history/pages.vibe"
 import { matches } from "./mockDecision.vibe"
 import { makeMockSandboxes } from "./sandboxMock.vibe"
 import type { Role } from "./sandboxDecision.vibe"
@@ -72,7 +73,7 @@ effect function scripted(
   record: (intent: Intent) => Decision!!,
   post: string,
   issues: IssuesApi,
-  wiki: WikiApi,
+  wiki: Pick<WikiApi, "act">,
   history: HistoryPages!!,
   conversation: string,
   sandboxTools: Pick<Factory.Shape, "startSandbox">,
@@ -99,7 +100,8 @@ effect function scripted(
     },
   })
   if (!started) return null
-  const prompt = (try Ref.get(state)).conversation.entries.find((entry) => entry.id === post)?.text ?? ""
+  // The answer loop dispatches only posts it read from this conversation, and entries are never removed.
+  const prompt = (try Ref.get(state)).conversation.entries.find((entry) => entry.id === post)!.text
   const page = requestedWiki(prompt)
   if (page !== undefined) try Action.make({ name: "vibelang/wiki/record", success: Schema.Boolean, execute: openWiki(id, page) })
   // An explicit wiki request wins over action words inside its page title.
@@ -112,10 +114,8 @@ effect function scripted(
     ? try Action.make({
       name: "vibelang/history/show",
       success: Schema.String,
-      execute: effect {
-        const result = show(try history, { what: "outline" }) catch () => undefined
-        return result !== undefined && "epics" in result ? historyReply(result) : "The history can't be reached."
-      },
+      // The mock history is in memory: reading it can't fail, and an outline request answers an outline.
+      execute: effect { return historyReply(try Effect.orDie(show(try history, { what: "outline" })) as Outline) },
     })
     : mockReply(prompt)
   const { actions } = try AgentActions
@@ -126,7 +126,7 @@ effect function scripted(
       const runId = try Action.make({ name: "vibelang/actions/request", success: Schema.String, error: ActionFailure, execute: actions.command(requested, "agent") })
       const run = try actions.read(runId)
       try record({ type: "RequestAction", id: run.id, flow: run.flow, door: "agent", actor: "agent", at: run.started })
-      return `${run.flow.split("/").at(-1) ?? run.flow} requested.`
+      return `${run.flow.split("/").at(-1)!} requested.`
     }) catch () => "Action unavailable."
   }
   let answer = text
@@ -146,7 +146,7 @@ effect function scripted(
   }
   if (page !== undefined && /\bdraft\b/i.test(prompt)) {
     const result = try Effect.result(wiki.act({ op: "draft", page, base: "", text: prompt, key: `${conversation}-${post}-wiki-draft` }))
-    answer = result._tag === "Failure" ? result.failure.reason === "forbidden" ? "Only contributors can draft wiki edits." : "Couldn't draft that edit." : `Drafted an edit to ${pages.find(entry => entry.id === page)?.label ?? page}. [Review it](#wiki-draft-${page})`
+    answer = result._tag === "Failure" ? result.failure.reason === "forbidden" ? "Only contributors can draft wiki edits." : "Couldn't draft that edit." : `Drafted an edit to ${pages.find(entry => entry.id === page)!.label}. [Review it](#wiki-draft-${page})`
   }
   const pieces = chunks(answer)
   for (let index = 0; index < pieces.length; index++) {
@@ -162,6 +162,10 @@ effect function cryptoOf() {
     return { digest: try Digest.Digest, random: try SecureRandom.SecureRandom }
   }
 }
+
+/** What a reply interrupted by a page reload reads, as a failed live reply does (worker/Reply.vibe `REASONS.failed`). */
+const INTERRUPTED = "The agent failed. Try again."
+const restoredReplies = Metric.counter("vibelang_mock_restored_replies", { description: "Mock replies a reload interrupted, failed on restore", incremental: true })
 
 /** The mock factory. Each layer build is its own world; closing that layer ends all work and subscriptions. */
 export function mockFactoryFor(role?: Role) {
@@ -186,7 +190,7 @@ return Layer.effect(Factory, effect {
     return service
   })
   const sandboxFor = effect {
-    const person = try Effect.mapError(accounts.current(), () => new Unavailable({ reason: "account-unavailable" }))
+    const person = try Effect.orDie(accounts.current())
     return try sandboxForOwner(person.id)
   }
   const sandboxes: Pick<Factory.Shape, "sandbox" | "startSandbox" | "stopSandbox" | "sandboxCommand"> = {
@@ -269,10 +273,11 @@ return Layer.effect(Factory, effect {
       const postOwners = new Map<string, string>()
       const postPeople = new Map<string, { readonly id: string; readonly login: string }>()
       const posts: Posts.Shape = {
-        record: effect (clientId: string, name: string, text: string, owner?: string) => {
+        // MockFactory.post always records its signed-in owner, "" when signed out.
+        record: effect (clientId: string, name: string, text: string, owner = "") => {
           const id = try nextId("m")
           const decision = try record({ type: "Post", id, clientId, name, text })
-          if (decision.ok) { postOwners.set(id, owner ?? ""); postPeople.set(id, { id: owner ?? "", login: name }) }
+          if (decision.ok) { postOwners.set(id, owner); postPeople.set(id, { id: owner, login: name }) }
           return decision.ok ? null : decision.refusal
         },
         dispatch: () => Effect.asVoid(Queue.offer(wake, undefined)),
@@ -313,8 +318,7 @@ return Layer.effect(Factory, effect {
           const entry = (try Ref.get(state)).conversation.entries.find((entry) => entry.id === tour)
           return try accepted({ type: "AppendReply", id: tour, text: entry?.text ? `\n\n${text}` : text })
         },
-        finish: (tour: string, reason: string) =>
-          Effect.asVoid(record(reason === "" ? { type: "FinishReply", id: tour } : { type: "FailReply", id: tour, reason })),
+        finish: (tour: string) => Effect.asVoid(record({ type: "FinishReply", id: tour })),
         // Subscribe before reading the state, so the event that ends the tour can't fall between.
         ended: (tour: string) => scoped(effect {
           const live = try PubSub.subscribe(published)
@@ -336,8 +340,7 @@ return Layer.effect(Factory, effect {
               read: effect () => try (try issuesForPerson(person)).read(),
               act: effect (request) => try (try issuesForPerson(person)).act(request),
             }
-            const wikiForPoster: WikiApi = {
-              read: effect (page) => try (try wikiForPerson(person)).read(page),
+            const wikiForPoster: Pick<WikiApi, "act"> = {
               act: effect (request) => try (try wikiForPerson(person)).act(request),
             }
             return try Effect.orDie(withSpan(scripted(engine, state, record, payload.post, forPoster, wikiForPoster, history, conversation, {
@@ -353,6 +356,13 @@ return Layer.effect(Factory, effect {
         Layer.provide(Layer.mergeAll(Layer.succeed(Digest.Digest, crypto.digest), Layer.succeed(SecureRandom.SecureRandom, crypto.random))),
       )
       try Layer.buildWithScope(flows, scope)
+      // A journal retained mid-reply has no execution left to finish that reply: fail it, so later posts are answered.
+      // A retained tour is different: the answer loop runs it again below.
+      if (restored.agent === "working" && !isTouring(restored, restored.replying)) {
+        try record({ type: "FailReply", id: restored.replying, reason: INTERRUPTED })
+        try Metric.update(restoredReplies, 1)
+        try Effect.logInfo("vibelang.mock.restore").pipe(Effect.annotateLogs({ outcome: "reply-failed" }))
+      }
       const room: Room = { state, engine }
       try Ref.set(rooms, new Map(all).set(conversation, room))
       try Effect.forkIn(answer(state, engine, wake, activeTour), scope)

@@ -126,8 +126,8 @@ export service Tours {
   open(tour: string, url: string): boolean!!
   /** Adds `text` to what `tour` said, while it runs. */
   say(tour: string, text: string): boolean!!
-  /** Settles `tour` as finished, or as failed with `reason` when it isn't `""`. */
-  finish(tour: string, reason: string): void!!
+  /** Settles `tour` as finished. */
+  finish(tour: string): void!!
   /** Completes once `tour` no longer runs: it finished, failed, or the person ended it. */
   ended(tour: string): void!!
 }
@@ -297,7 +297,7 @@ export effect function walk(tour: string) {
     }
     visit = Continuation.nextTourCounter(visit)
   }
-  try Action.make({ name: "vibelang/tour/finish", execute: tours.finish(tour, "") })
+  try Action.make({ name: "vibelang/tour/finish", execute: tours.finish(tour) })
 }
 effect function narrateLine(tour: string, text: string, visit: bigint) {
   return try Action.make({ name: `vibelang/tour/say/${visit}`, success: Schema.Boolean, execute: say(tour, text) })

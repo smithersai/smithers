@@ -180,6 +180,12 @@ checks that no chat/palette has started. Private Mock tour/demo event logs are r
 `MockJournal`; ordinary core tests still build independent memory worlds. The tab session and active flag survive
 reload; settled walkthroughs never auto-restart.
 
+A retained log can end mid-reply when the page reloads while the agent answers a post. No execution survives the
+reload to finish that reply, so restoring the room fails it with the live agent's wording, "The agent failed. Try
+again.", and the next post is answered (`vibelang_mock_restored_replies`, log `vibelang.mock.restore`). Before
+2026-11-09 the room stayed busy: later posts were never answered and the tour was refused. A retained tour is not
+failed; the answer loop runs it again. Regression: `test/mockFactory.coverage.test.vibe`.
+
 Design inconsistencies resolved without changing the archived handoff:
 
 - The layout says nine segments; section 4 supplies ten steps. The product consistently counts ten.

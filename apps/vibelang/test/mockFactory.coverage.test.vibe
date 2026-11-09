@@ -1,0 +1,143 @@
+// The product mock (VL-13) at the Factory boundary: restored journals, scripted replies and their failures.
+// Faults are injected Effect services or Factory members; nothing intercepts a request.
+import { describe, expect, it } from "@effect/vitest"
+import type { Event } from "../src/core/conversation.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { MockJournal } from "../src/core/MockJournal.vibe"
+import { replyIdOf } from "../src/core/flows.vibe"
+import { mockReply } from "../src/core/mockReplies.vibe"
+import { BrowserFactory } from "../src/web/backend.vibe"
+import { heldHealth } from "./support/heldHealth.vibe"
+
+/** A page's journal: what it retained, and what the factory writes back. */
+function journal(retained: Record<string, ReadonlyArray<Event>>) {
+  const kept = new Map(Object.entries(retained))
+  return {
+    kept,
+    layer: Layer.succeed(MockJournal, {
+      read: (conversation: string) => sync(() => kept.get(conversation) ?? []),
+      write: (conversation: string, events: ReadonlyArray<Event>) => sync(() => { kept.set(conversation, events) }),
+    }),
+  }
+}
+
+/** Every event of `room` until the reply to the post sent as `clientId` settles. */
+effect function settled(factory: Factory.Shape, room: string, post: string) {
+  return try Stream.runCollect(factory.events(room, 0).pipe(
+    Stream.takeUntil((event) => (event.type === "ReplyFinished" || event.type === "ReplyFailed") && event.id === replyIdOf(post)),
+    Stream.timeout("10 seconds"),
+  ))
+}
+
+describe("the product mock", () => {
+  it.live("fails a reply its journal retained mid-stream, then answers the next post", () => scoped(effect {
+    const page = journal({ "tour-reload": [
+      { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "install" },
+      { type: "ReplyStarted", seq: 2, id: replyIdOf("m1"), inReplyTo: "m1" },
+      { type: "ReplyDelta", seq: 3, id: replyIdOf("m1"), text: "Half" },
+    ] })
+    provide mockFactoryFor().pipe(Layer.provide(page.layer)) {
+      const factory = try Factory
+      try factory.post("tour-reload", "b", "Ada", "install")
+      const next = (try factory.read("tour-reload", 0)).entries.find((entry) => entry.clientId === "b")!
+      try settled(factory, "tour-reload", next.id)
+      const chat = try factory.read("tour-reload", 0)
+      try Effect.try(() => {
+        expect(chat.entries.find((entry) => entry.id === replyIdOf("m1"))).toMatchObject({ done: true, error: "The agent failed. Try again." })
+        expect(chat.entries.find((entry) => entry.inReplyTo === next.id)).toMatchObject({ done: true, error: "", text: mockReply("install") })
+        expect(page.kept.get("tour-reload")!.map((event) => event.type)).toContain("ReplyFailed")
+      })
+    }
+  }), 30_000)
+
+  it.live("runs a tour its journal retained mid-walk again, failing nothing", () => scoped(effect {
+    const page = journal({ "tour-walk": [{ type: "TourStarted", seq: 1, id: "t1" }] })
+    provide mockFactoryFor().pipe(Layer.provide(page.layer)) {
+      const factory = try Factory
+      const walked = try Stream.runCollect(factory.events("tour-walk", 0).pipe(Stream.takeUntil((event) => event.type === "WalkthroughDriven")))
+      try factory.endTour("tour-walk")
+      try Effect.try(() => expect(Array.from(walked).map((event) => event.type)).toEqual(["TourStarted", "WalkthroughDriven"]))
+    }
+  }), 30_000)
+
+  it.live("answers a post its journal retained unanswered, as Guest with no owner", () => scoped(effect {
+    const page = journal({
+      "demo-restored": [{ type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "run /tour" }],
+      "demo-sandbox": [{ type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "start a sandbox" }],
+    })
+    provide BrowserFactory("http://startup.test", true, "maintainer", undefined).pipe(Layer.provide((try heldHealth()).layer), Layer.provide(page.layer)) {
+      const factory = try Factory
+      try settled(factory, "demo-restored", "m1")
+      const reply = (try factory.read("demo-restored", 0)).entries.find((entry) => entry.inReplyTo === "m1")
+      try settled(factory, "demo-sandbox", "m1")
+      const sandbox = (try factory.read("demo-sandbox", 0)).entries.find((entry) => entry.inReplyTo === "m1")
+      try Effect.try(() => {
+        expect(reply).toMatchObject({ done: true, error: "", text: "Action unavailable." })
+        expect(sandbox).toMatchObject({ done: true, error: "", text: "Couldn't start a sandbox" })
+      })
+    }
+  }), 30_000)
+
+  it.live("the agent requests an action its poster may run, and names one it can't", () => scoped(effect {
+    provide BrowserFactory("http://startup.test", true, "maintainer").pipe(Layer.provide((try heldHealth()).layer)) {
+      const factory = try Factory
+      const ask = effect (room: string, text: string) => {
+        try factory.post(room, "a", "Ada", text)
+        const post = (try factory.read(room, 0)).entries.find((entry) => entry.clientId === "a")!
+        try settled(factory, room, post.id)
+        return (try factory.read(room, 0)).entries.find((entry) => entry.inReplyTo === post.id)!.text
+      }
+      const requested = try ask("run-plan", 'run /plan {"how":"append","epic":"","newEpic":"Agent","target":"","title":"docs: agent","task":"t"}')
+      const unknown = try ask("run-unknown", "run /nothing")
+      try factory.tour("run-borrow")
+      try factory.post("run-borrow", "a", "Ada", "run /history")
+      try factory.accounts!.choose("contributor")
+      try factory.endTour("run-borrow")
+      const post = (try factory.read("run-borrow", 0)).entries.find((entry) => entry.clientId === "a")!
+      try settled(factory, "run-borrow", post.id)
+      const borrowed = (try factory.read("run-borrow", 0)).entries.find((entry) => entry.inReplyTo === post.id)!.text
+      try Effect.try(() => expect([requested, unknown, borrowed]).toEqual(["Plan requested.", "Action unavailable.", "Action unavailable."]))
+    }
+  }), 60_000)
+
+  it.live("a maintainer's split files all three children", () => scoped(effect {
+    provide mockFactoryFor("maintainer") {
+      const factory = try Factory
+      try factory.post("split", "a", "Ada", "Split #38 into three children, linked under it.")
+      const post = (try factory.read("split", 0)).entries.find((entry) => entry.clientId === "a")!
+      try settled(factory, "split", post.id)
+      const reply = (try factory.read("split", 0)).entries.find((entry) => entry.inReplyTo === post.id)!
+      const issues = try factory.issues!.read()
+      try Effect.try(() => {
+        expect(reply.text).toBe("Split #38 into three children, linked under it.\n\n[Open #38](#issue-38)")
+        expect(issues.items.filter((item) => ["Resolve module exports", "Check module cycles", "Document module imports"].includes(item.title))).toHaveLength(3)
+      })
+    }
+  }), 60_000)
+
+  it.live("a signed-in agent reads and files issues as the agent", () => scoped(effect {
+    provide mockFactoryFor("contributor") {
+      const factory = try Factory
+      const agent = try factory.accounts!.signInAgent()
+      const before = try factory.issues!.read()
+      const made = try factory.issues!.act({ number: 0, parent: 0, title: "Agent task", text: "t", assignee: "", example: "", prior: "", op: "new", key: "agent-issue" })
+      try Effect.try(() => {
+        expect(agent.agent).toBe(true)
+        expect(before.items.length).toBeGreaterThan(0)
+        expect(made.selected).toBeGreaterThan(0)
+      })
+    }
+  }), 60_000)
+
+  it.live("a draft of a page the repository doesn't hold names the failure", () => scoped(effect {
+    provide mockFactoryFor("contributor") {
+      const factory = try Factory
+      try factory.post("draft-decisions", "a", "Ada", "Draft an edit to the wiki decisions page")
+      const post = (try factory.read("draft-decisions", 0)).entries.find((entry) => entry.clientId === "a")!
+      try settled(factory, "draft-decisions", post.id)
+      const reply = (try factory.read("draft-decisions", 0)).entries.find((entry) => entry.inReplyTo === post.id)!
+      try Effect.try(() => expect(reply.text).toBe("Couldn't draft that edit."))
+    }
+  }), 60_000)
+})
