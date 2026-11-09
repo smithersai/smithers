@@ -143,7 +143,7 @@ describe("a message before its part of the model exists", () => {
 describe("docs and the wiki pane", () => {
   const wiki = { ...newClient, conversation: { ...newClient.conversation, pane: "/wiki/index" } }
   it("Escape from a maximized page outside the wiki reveals nothing", () => {
-    expect(update({ ...chat, docs: "max" }, Message.PressedEscape()).commands).toBeUndefined()
+    expect(update({ ...chat, docs: "max" }, Message.PressedEscape()).commands).toEqual([])
   })
   it("the Docs button re-reveals a wiki page only when leaving maximized", () => {
     expect(names(update({ ...chat, docs: "max", client: wiki }, Message.ClickedDocs()))).toEqual(["RevealWiki"])
@@ -168,7 +168,7 @@ describe("stale and repeated answers", () => {
   })
   it("the slash catalog already loaded isn't loaded again, and a stale highlight starts nothing", () => {
     const loadedPanel: Model = { ...chat, actions: { ...initialActions, entries: [{ name: "x" } as never] } }
-    expect(update(loadedPanel, Message.UpdatedDraft({ value: "/" })).commands).toBeUndefined()
+    expect(update(loadedPanel, Message.UpdatedDraft({ value: "/" })).commands).toEqual([])
     const stale: Model = { ...chat, draft: "/x", actions: { ...initialActions, highlight: 5 } }
     expect(update(stale, Message.SubmittedDraft()).model).toBe(stale)
   })

@@ -107,6 +107,8 @@ describe("page listeners", () => {
     const seen = try started(quiet())
     try settled(() => { popTo("/wiki/testing"); expect(seen.model.wikiRequested).toBe("/wiki/testing") })
     try settled(() => { popTo("/"); expect(seen.model.surface).toBe("splash") })
+    // The wiki read the first address started still settles; compare after it does.
+    try settled(() => expect(seen.model.wikiStatus).not.toBe("loading"))
     const before = seen.model
     try sync(() => popTo("/elsewhere"))
     try sleep("50 millis")

@@ -24,12 +24,12 @@ const chat: Model = { ...home, surface: "chat" }
 const person = { id: "1", login: "ada", role: "new" as const }
 
 const started = (over: Partial<Model>, actions: Layer.Layer<Actions, never, Factory> = MockActions({ actor: "person" }), resources: Layer.Layer<Factory> = MockFactory) => startedOn(sync(container), over, actions, resources)
-const startedIn = (page: Document, over: Partial<Model>) => startedOn(sync(() => page.body.appendChild(page.createElement("div"))), over, MockActions({ actor: "person" }), MockFactory)
+const startedIn = (page: Document, over: Partial<Model>) => startedOn(sync(() => { const node = page.body.appendChild(page.createElement("div")); node.id = "app"; return node }), over, MockActions({ actor: "person" }), MockFactory)
 effect function startedOn(host: HTMLElement!never!never, over: Partial<Model>, actions: Layer.Layer<Actions, never, Factory>, resources: Layer.Layer<Factory>) {
   const first: Started = { model: { ...chat, ...over }, commands: [] }
-  const seen: { model: Model } = { model: first.model }
+  const seen: { model: Model; messages: Array<string> } = { model: first.model, messages: [] }
   const node = try acquireRelease(host, (node) => sync(() => remove(node)))
-  const program = try Effect.try(() => application(node, resources, (model) => { seen.model = model }, () => first, actions))
+  const program = try Effect.try(() => application(node, resources, (model) => { seen.model = model }, () => first, actions, (message) => { seen.messages.push(message._tag) }))
   try acquireRelease(sync(() => Runtime.embed(program, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
   return seen
 }
@@ -143,11 +143,27 @@ describe("streams that break", () => {
     try sleep("50 millis")
     try Effect.try(() => expect(seen.model.actions?.runs).toEqual([run]))
   }))
-  it.live("a page without a window still runs and remeasures its tour", () => scoped(effect {
+  it.live("a page without a window remeasures its tour when its document resizes, and ignores history", () => scoped(effect {
+    // The tour measures its target in the browser's document; the page under test has no window of its own.
+    const rect = { top: 100, left: 40, right: 300, bottom: 400 }
+    try acquireRelease(sync(() => {
+      const node = addElement<HTMLDivElement>("div", "vl-edge-target")
+      node.className = "vl-primary"
+      node.getBoundingClientRect = () => ({ ...rect, x: rect.left, y: rect.top, width: rect.right - rect.left, height: rect.bottom - rect.top, toJSON: () => rect })
+      return node
+    }), (node) => sync(() => node.remove()))
     const windowless = try Effect.try(() => document.implementation.createHTMLDocument("edge"))
     const seen = try startedIn(windowless, { tour: true, theatre: { step: 1, target: "splash", paused: false, sound: false } })
+    try settled(() => expect(seen.messages.length).toBeGreaterThan(0))
+    const remeasures = () => seen.messages.filter((tag) => tag === "RemeasureTheatre").length
+    const wiki = seen.model.wikiRequested
+    try Effect.try(() => { fire(window, "resize"); fire(window, "orientationchange"); fire(windowless, "popstate") })
     try sleep("300 millis")
-    try Effect.try(() => { fire(windowless, "resize"); fire(windowless, "orientationchange"); expect(seen.model.tour).toBe(true) })
+    try Effect.try(() => { expect(remeasures()).toBe(0); expect(seen.messages).not.toContain("WikiLocationChanged"); expect(seen.model.wikiRequested).toBe(wiki) })
+    try Effect.try(() => fire(windowless, "resize"))
+    try settled(() => { expect(remeasures()).toBe(1); expect(seen.model.theatreBox).toMatchObject({ x: 40, y: 100, width: 260, height: 300 }) })
+    try Effect.try(() => { Object.assign(rect, { top: 150, left: 50, right: 350, bottom: 450 }); fire(windowless, "orientationchange") })
+    try settled(() => { expect(remeasures()).toBe(2); expect(seen.model.theatreBox).toMatchObject({ x: 50, y: 150 }) })
   }))
 })
 

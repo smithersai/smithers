@@ -313,8 +313,8 @@ export function init(flags: Flags): Update.Return<Model, Message, Factory | Acti
 
 // UPDATE
 
-export function update(model: Model, message: Message): Update.Return<Model, Message, Factory | Actions> {
-  const next = Message.match<Update.Return<Model, Message, Factory | Actions>>(message, {
+export function update(model: Model, message: Message): WithCommands<Update.Return<Model, Message, Factory | Actions>> {
+  const next = withCommands(Message.match<Update.Return<Model, Message, Factory | Actions>>(message, {
     ObservedMedia: () => ({ model }),
     LoadedMedia: ({ kind }) => ({ model, commands: [ObserveMedia({ kind, outcome: "loaded" })] }),
     FailedMedia: ({ src, kind }) => ({ model: { ...model, failedMedia: [...(model.failedMedia ?? []), src] }, commands: [ObserveMedia({ kind, outcome: "failed" })] }),
@@ -572,16 +572,16 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       return { model: { ...model, following: next.following, followIntent: next.followIntent } }
     },
     ClickedLatest: () => ({ model: { ...model, ...latestScreen(model) }, commands: [FocusComposer({})] }),
-  })
+  }))
   const before = accountOf(model).identity
   const after = accountOf(next.model).identity
   const issues = next.model.issues
   const after2 = UpdateDecision.afterUpdate(issues !== undefined, before.role !== after.role, before.id !== after.id, issues !== undefined && issues.dialog !== "", issues === undefined || issues.dialog === "" || Machine.issuePermission(after.role, issues.dialog), next.model.tour, message._tag)
   if (after2.kind === "issues" && issues !== undefined) {
-    return { ...next, model: { ...next.model, issues: { ...issues, role: after.role, dialog: after2.closeDialog ? "" : issues.dialog, ...(after2.clearRetry ? { retry: undefined, busy: false } : {}) } }, commands: [...(next.commands ?? []), ...(after2.closeDialog ? [CloseIssueDialog({})] : [])] }
+    return { ...next, model: { ...next.model, issues: { ...issues, role: after.role, dialog: after2.closeDialog ? "" : issues.dialog, ...(after2.clearRetry ? { retry: undefined, busy: false } : {}) } }, commands: [...next.commands, ...(after2.closeDialog ? [CloseIssueDialog({})] : [])] }
   }
   if (after2.kind === "measure") {
-    return { ...next, commands: [...(next.commands ?? []), MeasureTheatre({ target: next.model.theatre?.target ?? "splash" })] }
+    return { ...next, commands: [...next.commands, MeasureTheatre({ target: next.model.theatre?.target ?? "splash" })] }
   }
   return next
 }
@@ -661,9 +661,13 @@ function runActions(model: Model, step: ModelDecision.ActionStep): Update.Return
   return step.commands.length === 0 ? { model: next } : { model: next, commands: step.commands.map(actionCommand) }
 }
 
-/** A click and a browser deep link request the same durable wiki flow; the event alone moves the pane. */
 /** An update the function always gives commands, so its callers need no empty default. */
 type WithCommands<R extends { readonly commands?: unknown }> = R & { readonly commands: NonNullable<R["commands"]> }
+/** Every message answers with its commands, an empty list when it has none. */
+function withCommands(result: Update.Return<Model, Message, Factory | Actions>): WithCommands<Update.Return<Model, Message, Factory | Actions>> {
+  return { ...result, commands: result.commands ?? [] }
+}
+/** A click and a browser deep link request the same durable wiki flow; the event alone moves the pane. */
 function visitWiki(model: Model, page: string): WithCommands<Update.Return<Model, Message, Factory>> {
   const opening = model.stream !== "open"
   const request = (model.wikiRequest ?? 0) + 1
@@ -730,7 +734,7 @@ function driveWalkthrough(next: WithCommands<Update.Return<Model, Message, Facto
   const plan = TourDecision.walkthroughPlan(state.step, model.client.conversation.entries.some(entry => entry.clientId === `${walkthroughSession(model)}-walkthrough`))
   let driven: Model = { ...next.model, palette: false, docs: "pane", surface: plan.surface, issues: { ...issueStateOf(model), open: false }, sandboxPane: "closed", actions: { ...actionsOf(model), slash: false, open: false, maximized: false } }
   const commands = plan.keepsCommands ? [...next.commands] : []
-  const send = (message: Message) => { const result = update(driven, message); driven = result.model; commands.push(...(result.commands ?? [])) }
+  const send = (message: Message) => { const result = update(driven, message); driven = result.model; commands.push(...result.commands) }
   if (plan.ask) {
     driven = update(driven, Message.PressedCommandK()).model
     send(Message.UpdatedDraft({ value: DEMO_QUESTION }))
