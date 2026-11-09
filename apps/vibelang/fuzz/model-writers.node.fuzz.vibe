@@ -12,11 +12,14 @@ import { WikiFailure } from "../src/core/wikiSchemas.vibe"
 import { SpecificationReviewers } from "../src/core/specification.vibe"
 import { unansweredSpecificationReview } from "../src/core/conversation.vibe"
 import { DEFAULT_CHAT_MODEL } from "../worker/AgentModel.vibe"
-import { ChatModel, Spend } from "../worker/Reply.vibe"
+import { answer as answerPost, ChatModel, Replies, REASONS, Spend } from "../worker/Reply.vibe"
+import { HistoryTools } from "../worker/HistoryTools.vibe"
+import { Tours } from "../src/core/flows.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
 import { WikiDraftAgent, wikiAgentLayer, wikiWriter } from "../worker/WikiDraft.vibe"
 import { liveSpecificationReviewers } from "../worker/SpecificationReviewers.vibe"
 import { run, Text } from "./run.vibe"
+import { cell, scriptedModel } from "./model-server.vibe"
 
 const ORIGIN = "http://127.0.0.1:9"
 const CREDENTIAL = { SMITHERS_MODEL_KEY_FUZZ: "fuzz-local-value", SMITHERS_MODEL_KEY_FUZZ_ORIGIN: ORIGIN }
@@ -96,4 +99,98 @@ it.live("specification/reviewers", () => run("specification/reviewers", Reviewer
   if (input.bound === "none") return outcome.value === "no-model" && log.admitted === 0
   if (input.admission !== "admit") return outcome.value === "budget" && log.spent === 0
   return outcome.value === "review" && log.spent === 1
+})))
+
+const WikiAnswer = Schema.Struct({ answer: Schema.Literals(["draft", "other-page", "blank", "not-a-draft", "no-cell", "unavailable"]), ask: Text })
+
+/** A real model answer on a real socket: only the asked page with a non-blank text becomes a draft, and it is charged once. */
+it.live("wiki/writer-answers", () => run("wiki/writer-answers", WikiAnswer, ({ answer, ask }) => scoped(effect {
+  const { log, spend } = ledger("admit")
+  const page = "roadmap"
+  const output = answer === "other-page" ? { page: "index", text: "# X" } : answer === "blank" ? { page, text: "   " } : answer === "not-a-draft" ? { nope: 1 } : { page, text: "# Edited" }
+  const script = answer === "unavailable" ? { kind: "status" as const, status: 400, code: "invalid" } : { kind: "stream" as const, pieces: [answer === "no-cell" ? "prose only" : cell(JSON.stringify(output))], prompt: 3, completion: 4 }
+  const scripted = try scriptedModel([script])
+  const agent = wikiAgentLayer.pipe(Layer.provide(Layer.succeed(ChatModel, { model: scripted.model, unusable: "" })))
+  const writer = wikiWriter.pipe(Layer.provide(agent), Layer.provide(Layer.succeed(Spend, spend)))
+  const outcome = try within(writer, effect {
+    const result = try Effect.result((try WikiWriter).draft({ page, source: "# Page", ask }))
+    return result._tag === "Success" ? "ok:" + result.success.text : result.failure.reason as string
+  })
+  if (log.spent !== 1) return false
+  return answer === "draft" ? outcome === "ok:# Edited" : outcome === "draft"
+})))
+
+const ReviewAnswer = Schema.Struct({ reviewer: Schema.Literals(["astra", "sol", "fable", "opus"]), verdict: Schema.Literals(["LGTM", "Changes requested", "Maybe"]), grade: Schema.Literals(["A", "C+", "Z"]), review: Text, revision: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 9 })) })
+
+/** Only a verdict the schema accepts becomes a review, it carries the asked revision, and it is charged once. */
+it.live("specification/reviewer-answers", () => run("specification/reviewer-answers", ReviewAnswer, (input) => scoped(effect {
+  const { log, spend } = ledger("admit")
+  const scripted = try scriptedModel([{ kind: "stream", pieces: [cell(JSON.stringify({ verdict: input.verdict, grade: input.grade, review: input.review }))], prompt: 2, completion: 2 }])
+  const values = { ...scripted.values, [`SPEC_REVIEW_${input.reviewer.toUpperCase()}`]: JSON.stringify(scripted.record) }
+  const layer = liveSpecificationReviewers.pipe(Layer.provide(Layer.succeed(Spend, spend)), Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(values))))
+  const spec = { revision: input.revision, text: "spec", astra: unansweredSpecificationReview(), sol: unansweredSpecificationReview(), fable: unansweredSpecificationReview(), opus: unansweredSpecificationReview() }
+  const outcome = try within(layer, effect {
+    const result = try Effect.result((try SpecificationReviewers).review(input.reviewer, spec))
+    return result._tag === "Success" ? `ok:${result.success.revision}:${result.success.verdict}` : result.failure.reason as string
+  })
+  if (log.spent !== 1) return false
+  const accepted = input.verdict !== "Maybe" && input.grade !== "Z"
+  return accepted ? outcome === `ok:${input.revision}:${input.verdict}` : outcome === "review"
+})))
+
+const ANSWER_KINDS = ["answer", "chunked", "empty", "blank", "prose", "refused", "credit", "rate-limited", "garbage", "bad-usage"] as const
+const ReplyInput = Schema.Struct({ kind: Schema.Literals(ANSWER_KINDS), text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(60)), start: Schema.Literals(["done", "refused"]), admission: Schema.Literals(["admit", "refuse"]), bound: Schema.Boolean })
+
+function scriptOf(input: typeof ReplyInput.Type) {
+  const done = (output: string) => cell(JSON.stringify(output))
+  switch (input.kind) {
+    case "answer": return { kind: "stream" as const, pieces: [done(input.text)], prompt: 3, completion: 4 }
+    case "chunked": { const whole = done(input.text); const middle = Math.floor(whole.length / 2); return { kind: "stream" as const, pieces: [whole.slice(0, middle), whole.slice(middle)], prompt: 3, completion: 4 } }
+    case "empty": return { kind: "stream" as const, pieces: [done("")], prompt: 3, completion: 4 }
+    case "blank": return { kind: "stream" as const, pieces: [done("  ")], prompt: 3, completion: 4 }
+    case "prose": return { kind: "stream" as const, pieces: ["no cell here"], prompt: 3, completion: 4 }
+    case "refused": return { kind: "status" as const, status: 400, code: "content_policy" }
+    case "credit": return { kind: "status" as const, status: 402, code: "out_of_credit" }
+    case "rate-limited": return { kind: "status" as const, status: 400, code: "invalid" }
+    case "garbage": return { kind: "garbage" as const }
+    case "bad-usage": return { kind: "stream" as const, pieces: [done(input.text)], prompt: -5, completion: 4 }
+  }
+}
+
+/**
+ * `Reply.answer` over a real model answer: an answer the agent completed is finished with exactly that text, its visible
+ * stream is a prefix of it, and everything else fails with one of the product's reasons.
+ */
+it.live("reply/answers", () => run("reply/answers", ReplyInput, (input) => scoped(effect {
+  const log = { finished: [] as Array<string>, failed: [] as Array<string>, appended: new Map<number, string>(), restarts: 0, starts: 0 }
+  const { log: charges, spend } = ledger(input.admission)
+  const replies: Replies.Shape = {
+    start: () => sync(() => { log.starts += 1; return input.start }),
+    history: () => succeed([{ author: "person" as const, text: "question" }]),
+    append: (_reply, attempt, _offset, text) => sync(() => { log.appended.set(attempt, (log.appended.get(attempt) ?? "") + text) }),
+    restart: () => sync(() => { log.restarts += 1 }),
+    finish: (_reply, text) => sync(() => { log.finished.push(text); return "done" as const }),
+    fail: (_reply, reason) => sync(() => { log.failed.push(reason); return "done" as const }),
+  }
+  const scripted = try scriptedModel([scriptOf(input)])
+  const services = Layer.mergeAll(
+    Layer.succeed(Replies, replies), Layer.succeed(Spend, spend),
+    Layer.succeed(ChatModel, input.bound ? { model: scripted.model, unusable: "" } : { model: undefined, unusable: "unset" }),
+    Layer.succeed(Tours, {} as Tours.Shape), Layer.succeed(HistoryTools, { history: {} as HistoryTools.Shape["history"] }),
+  )
+  const exit = try Effect.exit(within(services, Effect.as(Effect.orDie(answerPost("m1")), "settled") as never))
+  if (exit._tag === "Failure") return false
+  if (log.starts !== 1) return false
+  if (input.start === "refused") return log.finished.length === 0 && log.failed.length === 0 && charges.admitted === 0
+  if (log.finished.length + log.failed.length !== 1) return false
+  if (input.admission === "refuse") return log.failed[0] === REASONS.budget && charges.spent === 0
+  if (!input.bound) return log.failed[0] === REASONS.unconfigured && charges.spent === 0
+  if (charges.spent !== 1) return false
+  const complete = input.kind === "answer" || input.kind === "chunked"
+  if (complete && input.text.trim() !== "") {
+    if (log.finished[0] !== input.text) return false
+    const shown = log.appended.get(1 + log.restarts) ?? ""
+    return input.text.startsWith(shown)
+  }
+  return log.finished.length === 0 && Object.values(REASONS).includes(log.failed[0] as never)
 })))

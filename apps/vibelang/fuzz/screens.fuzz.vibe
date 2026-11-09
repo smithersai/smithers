@@ -5,7 +5,9 @@ import { issuePermission } from "../src/core/conversation.vibe"
 import { audioIdentity, speechAction, theatreFocusIndex, theatreOutcome, theatreSelector } from "../src/web/theatreDecision.vibe"
 import { IssuesUi, initialIssues, issuesUpdate } from "../src/web/issues.vibe"
 import { ActionView } from "../src/web/actionModel.vibe"
-import { Flags, init, Message, Model, update } from "../src/web/main.vibe"
+import { accountOf, Flags, init, Message, Model, update } from "../src/web/main.vibe"
+import { pages, wikiEditable } from "../src/core/wiki.vibe"
+import { wikiPermission } from "../src/core/conversation.vibe"
 import { view } from "../src/web/view.vibe"
 import { run, Text } from "./run.vibe"
 import { issuesCorpusCodec } from "./issues-corpus.vibe"
@@ -61,6 +63,47 @@ it.live("screens/panes-name-controls", () => run("screens/panes-name-controls", 
   const model = init(flags).model
   const conversation = { ...model.client.conversation, pane: wiki ? "wiki:index" : "" }
   return try Effect.try(() => renders({ ...model, surface: "chat", docs: maximized ? "max" : "pane", client: { ...model.client, conversation }, actions: { ...actions, open, maximized } }))
+}))
+
+const WikiInput = Schema.Struct({
+  flags: Flags, page: Schema.Int.check(Schema.isBetween({ minimum: -1, maximum: 400 })), anchor: Schema.Boolean,
+  status: Schema.UndefinedOr(Schema.Literals(["loading", "ready", "error"])), query: Schema.UndefinedOr(Schema.Union([Text, Schema.Literals(["", "zzzz-none", "decision", " "])])),
+  docs: Schema.Literals(["pane", "max"]), tour: Schema.Boolean, role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]),
+  edit: Schema.Literals(["none", "this", "other"]), busy: Schema.Boolean, submitting: Schema.Boolean, error: Schema.Literals(["", "That page changed."]), review: Schema.Literals(["none", "this", "other"]), observed: Schema.Literals(["none", "same", "changed"]),
+})
+
+/** The wiki pane over every page and state: controls stay named, and exactly one of the editor and the page finder shows. */
+it.live("screens/wiki-pane", () => run("screens/wiki-pane", WikiInput, (input) => effect {
+  const base = init(input.flags).model
+  const page = input.page < 0 ? undefined : pages[input.page % pages.length]
+  const pane = page === undefined ? "/wiki/no-such-page" : `/wiki/${page.id}${input.anchor ? "#a" : ""}`
+  const other = page?.id === "index" ? "rulings" : "index"
+  const editPage = input.edit === "this" ? page?.id ?? "index" : other
+  const model: Model = {
+    ...base, surface: "chat", docs: input.docs, tour: input.tour, issues: { ...initialIssues, open: false },
+    account: { ...accountOf(base), identity: { ...accountOf(base).identity, role: input.role } },
+    client: { ...base.client, conversation: { ...base.client.conversation, pane } },
+    ...(input.status === undefined ? {} : { wikiStatus: input.status }),
+    ...(input.query === undefined ? {} : { wikiQuery: input.query }),
+    ...(input.edit === "none" ? {} : { wikiEdit: { page: editPage, base: "b", text: "# Draft", busy: input.busy, error: input.error, ...(input.submitting ? { submission: {} as never } : {}) } }),
+    ...(input.review === "none" ? {} : { wikiReview: { page: input.review === "this" ? page?.id ?? "index" : other, url: "https://example.test/review" } }),
+    ...(input.observed === "none" || page === undefined ? {} : { wikiPages: [{ id: page.id, source: input.observed === "same" ? page.source : "# Changed\n", revision: "r" }] }),
+  }
+  const editing = page !== undefined && input.edit === "this"
+  // A deep link in the flags starts the page loading, so the status may be the initial model's.
+  const status = input.status ?? base.wikiStatus
+  const loading = status === "loading"
+  let holds = true
+  try Effect.try(() => scene({ update, view }, given(model), (simulation: SceneSimulation<Model, Message>) => {
+    for (const role of ROLES) if (getAllByRole(role)(simulation.html).length !== getAllByRole(role, { name: /\S/ })(simulation.html).length) holds = false
+    if (findAll(simulation.html, "script").length !== 0) holds = false
+    if (getAllByRole("textbox", { name: /^Edit / })(simulation.html).length !== (editing ? 1 : 0)) holds = false
+    if (getAllByRole("textbox", { name: "Find a page" })(simulation.html).length !== (editing ? 0 : 1)) holds = false
+    const offered = page !== undefined && wikiEditable(page.id) && (wikiPermission(input.role, "save") || wikiPermission(input.role, "propose")) && !input.tour && !editing && !loading && status !== "error"
+    if (getAllByRole("button", { name: /^Edit$/ })(simulation.html).length !== (offered ? 1 : 0)) holds = false
+    return simulation
+  }))
+  return holds
 }))
 
 const Speech = Schema.Struct({ step: Schema.Int, sound: Schema.Boolean, active: Schema.Boolean, paused: Schema.Boolean, finish: Schema.Boolean, previousStep: Schema.Int, previousSound: Schema.Boolean, previousActive: Schema.Boolean, previousPaused: Schema.Boolean })

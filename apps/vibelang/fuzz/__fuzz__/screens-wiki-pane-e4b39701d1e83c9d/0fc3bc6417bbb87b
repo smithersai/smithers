@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 10
+bias 6
+null-prototype false
+key 304354724
+tape Cbe68YVtCsr3VQoBP-gVMQPiLgkwH0MUiGws5DJaEX5n2vfrX8eRW1OBKXv4mcWZqKcX_aCoUQnSNo_yKffEONzGPlJfPL69oprcsmT0c0aaCrnYzYxwFlm9tZ_pRPf7sW8w73aK1Lsdmzv_an2k5UZ4oqOcT_8TUNOSjYCxS1oWYiofg38F0yuSDCKxdZpuCyClBJm172Fm6asvATV-hg0u7qG0ENuxnV93RUuUFR-R4_pY0d48h2rpcEiWXcQZn_fUwiUy0-Ak4QVst1dki3awg6tE-B30Me_p8kl49yKlEvBroE_YZ_BCMPG0cb1tHGDIkCZUDkOhy4boXwCFC7hwxTX2J9Vtge3oOcqkElITRSSGST-nyR-3glrQ1b9YZhVWXN3vi7JbQMYWLqj_iKXtPzMHkzRWM4mV7bYJ2va5KDouVgVEx3egrQs
+schedule-key 1980834066
+schedule 
+signature "ReturnedFalse"
+path 0.0.0.0.0.0.0.0.0.0.0.0.0
+codec "json"
+value "{\"flags\":{\"session\":\"\",\"mode\":\"pending\",\"name\":\"\"},\"page\":0,\"anchor\":false,\"status\":\"ready\",\"query\":\"\",\"docs\":\"pane\",\"tour\":false,\"role\":\"new\",\"edit\":\"this\",\"busy\":false,\"submitting\":false,\"error\":\"\",\"review\":\"other\",\"observed\":\"none\"}"
+# ReturnedFalse
+# {"flags":{"session":"","mode":"pending","name":""},"page":0,"anchor":false,"status":"ready","query":"","docs":"pane","tour":false,"role":"new","edit":"this","busy":false,"submitting":false,"error":"","review":"other","observed":"none"}

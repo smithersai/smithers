@@ -3,8 +3,21 @@ import { Duration } from "effect"
 import vibelang from "vibelang-vite"
 import { configDefaults, defineConfig } from "vitest/config"
 
+/** workerd's bundler hands the agent's QuickJS a compiled module for this specifier; Node compiles the same file. */
+const quickjsModule = {
+  name: "vibelang-fuzz-quickjs-module",
+  enforce: "pre" as const,
+  resolveId: (id: string) => id === "#quickjs.wasm" ? "\0vibelang-quickjs-module" : undefined,
+  load: (id: string) => id !== "\0vibelang-quickjs-module" ? undefined : `
+    import { readFile } from "node:fs/promises"
+    import { createRequire } from "node:module"
+    const path = createRequire(${JSON.stringify(new URL("../../packages/smithers/agent/harness/package.json", import.meta.url).pathname)}).resolve("@jitl/quickjs-wasmfile-release-sync/wasm")
+    export default await WebAssembly.compile(await readFile(path))
+  `,
+}
+
 export default defineConfig({
-  plugins: [vibelang()],
+  plugins: [vibelang(), quickjsModule],
   test: {
     testTimeout: Math.max(120_000, Duration.toMillis(Duration.fromInputUnsafe((process.env.FUZZ_BUDGET ?? "250 millis") as Duration.Input)) + 30_000), hookTimeout: 120_000,
     maxWorkers: 2,

@@ -1,0 +1,43 @@
+// A scripted model on a real local socket: the provider's HTTP and SSE, answered in the order a run asks, so the agent's
+// successful paths run with no key and no provider. The wire format is the benchmark's (bench/drafts-workerd.bench.vibe).
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { HostModel } from "@smthrs/model-host"
+
+/** One model call's answer: streamed text with its usage, or a provider failure. */
+export type Scripted =
+  | { readonly kind: "stream"; readonly pieces: ReadonlyArray<string>; readonly prompt: number; readonly completion: number }
+  | { readonly kind: "status"; readonly status: number; readonly code: string }
+  | { readonly kind: "garbage" }
+
+const chunk = (body: unknown) => `data: ${JSON.stringify(body)}\n\n`
+const delta = (content: string) => chunk({ id: "fuzz", object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content }, finish_reason: null }] })
+const closing = (prompt: number, completion: number) => chunk({ id: "fuzz", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: prompt, completion_tokens: completion, total_tokens: prompt + completion } })
+
+function responseOf(script: Scripted) {
+  switch (script.kind) {
+    case "status": return HttpServerResponse.jsonUnsafe({ error: { code: script.code, message: "scripted" } }, { status: script.status })
+    case "garbage": return HttpServerResponse.text("data: {not json\n\n", { contentType: "text/event-stream" })
+    case "stream": return HttpServerResponse.text([...script.pieces.map(delta), closing(script.prompt, script.completion), "data: [DONE]\n\n"].join(""), { contentType: "text/event-stream" })
+  }
+}
+
+/** A model cell that ends the run with `output`, passed as written. */
+export const cell = (output: string) => "```cell\nctx.done(" + output + ");\n```"
+
+/** Serves `scripts` in order, repeating the last, for this scope; `model` is bound to the server's own origin. */
+export effect function scriptedModel(scripts: ReadonlyArray<Scripted>) {
+  const calls = try Ref.make(0)
+  const context = try Layer.build(NodeHttpServer.layerTest)
+  const server = Context.get(context, HttpServer.HttpServer)
+  try Effect.provideService(HttpServer.serveEffect(effect {
+    try (try HttpServerRequest.HttpServerRequest).text
+    const index = try Ref.getAndUpdate(calls, (count) => count + 1)
+    return responseOf(scripts[Math.min(index, scripts.length - 1)]!)
+  }), HttpServer.HttpServer, server)
+  const origin = HttpServer.formatAddress(server.address).replace("0.0.0.0", "127.0.0.1").replace("[::]", "127.0.0.1")
+  const record = { protocol: "openai-chat", baseUrl: origin, modelId: "scripted", credential: "FUZZ" }
+  const values = { SMITHERS_MODEL_KEY_FUZZ: "fuzz-local-value", SMITHERS_MODEL_KEY_FUZZ_ORIGIN: origin }
+  const model = try HostModel.make(record).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(values))))
+  return { model, record, values, origin, calls: Ref.get(calls) }
+}
