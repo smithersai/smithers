@@ -205,20 +205,26 @@ const decoder = new TextDecoder("utf-8", { fatal: true })
  * @category handlers
  * @since 1.0.0
  */
-export const run = Effect.fn("ApplyPatch.run")(function*(
-  input: typeof Input.Type
-): Effect.fn.Return<typeof Output.Type, StdError.StdError, FileSystem.FileSystem | Path.Path> {
-  const fileSystem = yield* FileSystem.FileSystem
-  const path = yield* Path.Path
+export const run: (input: {
+  readonly input: string
+}) => Effect.Effect<{
+  readonly output: string
+  readonly added: readonly string[]
+  readonly modified: readonly string[]
+  readonly deleted: readonly string[]
+}, StdError.StdError, FileSystem.FileSystem | import("effect/Path").Path> = effect (input) =>
+  try withSpan(effect {
+  const fileSystem = try FileSystem.FileSystem
+  const path = try Path.Path
 
-  let parsed: ApplyPatchText.ParsedPatch
-  try {
-    parsed = ApplyPatchText.parsePatch(input.input)
-  } catch (error) {
+  const parsed: ApplyPatchText.ParsedPatch = Effect.try({
+    try: () => ApplyPatchText.parsePatch(input.input),
+    catch: (error) => error
+  }) catch effect (error) => {
     if (error instanceof ApplyPatchText.ParseError) {
-      return yield* Effect.fail(new StdError.StdError({ code: "invalid_input", message: error.message }))
+      throw new StdError.StdError({ code: "invalid_input", message: error.message })
     }
-    return yield* unknownFailure(error)
+    return try unknownFailure(error)
   }
 
   // Every update hunk is derived from the file as it is on disk, so two
@@ -255,9 +261,9 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
   }
   const touched = new Set<string>()
   for (const hunk of parsed.hunks) {
-    const source = yield* identity(hunk.path)
+    const source = try identity(hunk.path)
     const destination = hunk.kind === "update" && hunk.movePath !== undefined
-      ? yield* identity(hunk.movePath)
+      ? try identity(hunk.movePath)
       : undefined
     const claims: Array<[string, string]> = [[hunk.path, source]]
     if (hunk.kind === "update" && hunk.movePath !== undefined && destination !== source) {
@@ -265,19 +271,17 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
     }
     for (const [claimed, key] of claims) {
       if (touched.has(key)) {
-        return yield* Effect.fail(
-          new StdError.StdError({
+        throw new StdError.StdError({
             code: "invalid_input",
             message: `The patch names ${claimed} in more than one section; give one section per path`,
             path: claimed
           })
-        )
       }
       touched.add(key)
     }
   }
 
-  yield* FileMutation.validate(
+  try FileMutation.validate(
     fileSystem,
     parsed.hunks.flatMap((hunk) =>
       hunk.kind === "update" && hunk.movePath !== undefined ? [hunk.path, hunk.movePath] : [hunk.path]
@@ -289,7 +293,7 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
   for (const hunk of parsed.hunks) {
     const destination = hunk.kind === "add" ? hunk.path : hunk.kind === "update" ? hunk.movePath : undefined
     if (destination !== undefined && !FileMutation.isVersioned(fileSystem)) {
-      yield* fileSystem.makeDirectory(path.dirname(destination), { recursive: true }).pipe(
+      try fileSystem.makeDirectory(path.dirname(destination), { recursive: true }).pipe(
         Effect.mapError(
           FsFailure.denied(destination, () =>
             new StdError.StdError({
@@ -301,8 +305,8 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
       )
     }
   }
-  return yield* Effect.scoped(Effect.gen(function*() {
-    const mutation = yield* FileMutation.acquire(
+  return try Effect.scoped(effect {
+    const mutation = try FileMutation.acquire(
       fileSystem,
       parsed.hunks.flatMap((hunk) =>
         hunk.kind === "update" && hunk.movePath !== undefined ? [hunk.path, hunk.movePath] : [hunk.path]
@@ -316,22 +320,20 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
 
     for (const hunk of parsed.hunks) {
       if (hunk.kind !== "update") continue
-      const bytes = yield* mutation.read(
+      const bytes = try mutation.read(
         hunk.path,
         fileSystem.readFile(hunk.path).pipe(
           Effect.mapError(FsFailure.reading(hunk.path, `Failed to read file to update ${hunk.path}`))
         )
       )
       if (bytes.includes(0)) {
-        return yield* Effect.fail(
-          new StdError.StdError({
+        throw new StdError.StdError({
             code: "binary_file",
             message: `Cannot read binary file: ${hunk.path}`,
             path: hunk.path
           })
-        )
       }
-      const original = yield* Effect.try({
+      const original = try Effect.try({
         try: () => decoder.decode(bytes),
         catch: () =>
           new StdError.StdError({
@@ -340,16 +342,14 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
             path: hunk.path
           })
       })
-      let contents: string
-      try {
-        contents = ApplyPatchText.deriveNewContents(original, hunk.path, hunk.chunks)
-      } catch (error) {
+      const contents: string = Effect.try({
+        try: () => ApplyPatchText.deriveNewContents(original, hunk.path, hunk.chunks),
+        catch: (error) => error
+      }) catch effect (error) => {
         if (error instanceof ApplyPatchText.ComputeReplacementsError) {
-          return yield* Effect.fail(
-            new StdError.StdError({ code: "no_match", message: error.message, path: hunk.path })
-          )
+          throw new StdError.StdError({ code: "no_match", message: error.message, path: hunk.path })
         }
-        return yield* unknownFailure(error, hunk.path)
+        return try unknownFailure(error, hunk.path)
       }
       prepared.set(hunk, contents)
     }
@@ -368,7 +368,7 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
           path: hunk.movePath ?? hunk.path,
           content: encoder.encode(prepared.get(hunk))
         })
-        if (hunk.movePath !== undefined && (yield* identity(hunk.movePath)) !== (yield* identity(hunk.path))) {
+        if (hunk.movePath !== undefined && (try identity(hunk.movePath)) !== (try identity(hunk.path))) {
           moves.add(hunk)
           changes.push({ path: hunk.path, content: null })
         }
@@ -391,20 +391,20 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
         path: offendingPath
       })
 
-    yield* mutation.commit(
+    try mutation.commit(
       changes,
-      Effect.gen(function*() {
+      effect {
         for (const hunk of parsed.hunks) {
           switch (hunk.kind) {
             case "add": {
-              yield* fileSystem.writeFile(hunk.path, encoder.encode(hunk.contents)).pipe(
+              try fileSystem.writeFile(hunk.path, encoder.encode(hunk.contents)).pipe(
                 Effect.mapError(mutationFailure("command_failed", `Failed to write file ${hunk.path}`, hunk.path))
               )
               added.push(hunk.path)
               break
             }
             case "delete": {
-              yield* fileSystem.remove(hunk.path).pipe(
+              try fileSystem.remove(hunk.path).pipe(
                 Effect.mapError(mutationFailure("not_found", `Failed to delete file ${hunk.path}`, hunk.path))
               )
               deleted.push(hunk.path)
@@ -413,7 +413,7 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
             case "update": {
               const contents = prepared.get(hunk)!
               const destination = hunk.movePath ?? hunk.path
-              yield* Preserve.writeFile(fileSystem, destination, encoder.encode(contents)).pipe(
+              try Preserve.writeFile(fileSystem, destination, encoder.encode(contents)).pipe(
                 Effect.mapError((error) =>
                   error.reason.method === "chmod"
                     ? mutationError(
@@ -426,7 +426,7 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
               )
               modified.push(destination)
               if (moves.has(hunk)) {
-                yield* fileSystem.remove(hunk.path).pipe(
+                try fileSystem.remove(hunk.path).pipe(
                   Effect.mapError(
                     mutationFailure("command_failed", `Failed to remove original ${hunk.path}`, hunk.path)
                   )
@@ -436,13 +436,14 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
             }
           }
         }
-      })
+      }
     )
 
     // Publish diagnostics only after the whole provider operation succeeds.
     for (const change of changes) {
-      if (change.content === null) yield* Diagnostics.close(path.resolve(change.path))
-      else yield* Diagnostics.sync(path.resolve(change.path), decoder.decode(change.content))
+      const bytes = change.content
+      if (bytes === null) try Diagnostics.close(path.resolve(change.path))
+      else try Diagnostics.sync(path.resolve(change.path), try Effect.orDie(Effect.try(() => decoder.decode(bytes))))
     }
     const summary = {
       added: parsed.hunks.filter((hunk) => hunk.kind === "add").map((hunk) => hunk.path),
@@ -454,5 +455,5 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
       output: ApplyPatchText.printSummary(summary),
       ...summary
     }
-  }))
-})
+  })
+  }, "ApplyPatch.run")

@@ -1,7 +1,7 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { Cause, Effect, Exit, FileSystem, Option, Path } from "effect"
-import * as ApplyPatch from "../../src/ApplyPatch.ts"
+import * as ApplyPatch from "../../src/ApplyPatch.vibe"
 import * as Edit from "../../src/Edit.ts"
 import type { StdError } from "../../src/StdError.ts"
 

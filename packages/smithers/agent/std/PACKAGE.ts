@@ -101,7 +101,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/Preserve.vibe",
         "src/Write.vibe",
         "src/Edit.ts",
-        "src/ApplyPatch.ts",
+        "src/ApplyPatch.vibe",
         "src/internal/ApplyPatch.vibe"
       ]
     },

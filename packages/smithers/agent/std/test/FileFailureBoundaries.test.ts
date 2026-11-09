@@ -1,6 +1,6 @@
 import { Effect, FileSystem, PlatformError } from "effect"
 import { expect, it } from "vitest"
-import * as ApplyPatch from "../src/ApplyPatch.ts"
+import * as ApplyPatch from "../src/ApplyPatch.vibe"
 import * as Edit from "../src/Edit.ts"
 import * as Read from "../src/Read.ts"
 import * as Write from "../src/Write.vibe"

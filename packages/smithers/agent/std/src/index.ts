@@ -99,7 +99,7 @@ export * as Probe from "./Probe.ts"
  * @category flows
  * @since 1.0.0
  */
-export * as ApplyPatch from "./ApplyPatch.ts"
+export * as ApplyPatch from "./ApplyPatch.vibe"
 
 /**
  * @category flows

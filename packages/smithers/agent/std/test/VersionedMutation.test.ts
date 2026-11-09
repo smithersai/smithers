@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as ApplyPatch from "../src/ApplyPatch.ts"
+import * as ApplyPatch from "../src/ApplyPatch.vibe"
 import * as Edit from "../src/Edit.ts"
 import * as FileMutation from "../src/internal/FileMutation.vibe"
 import * as LanguageServer from "../src/LanguageServer.vibe"

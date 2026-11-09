@@ -4,7 +4,7 @@
  * @since 1.0.0
  */
 
-import * as ApplyPatch from "./ApplyPatch.ts"
+import * as ApplyPatch from "./ApplyPatch.vibe"
 import * as Bash from "./Bash.ts"
 import * as Edit from "./Edit.ts"
 import * as Explore from "./Explore.vibe"

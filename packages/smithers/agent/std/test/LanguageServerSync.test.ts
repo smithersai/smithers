@@ -7,7 +7,7 @@
  */
 import { Cause, Effect, Exit, Layer } from "effect"
 import { describe, expect, it } from "vitest"
-import * as ApplyPatch from "../src/ApplyPatch.ts"
+import * as ApplyPatch from "../src/ApplyPatch.vibe"
 import * as Edit from "../src/Edit.ts"
 import * as Diagnostics from "../src/internal/Diagnostics.vibe"
 import * as LanguageServer from "../src/LanguageServer.vibe"

@@ -2,7 +2,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { Cause, Effect, Exit, FileSystem, Option, Path, PlatformError } from "effect"
 import { describe, expect, it } from "vitest"
-import * as ApplyPatch from "../src/ApplyPatch.ts"
+import * as ApplyPatch from "../src/ApplyPatch.vibe"
 import {
   ComputeReplacementsError,
   deriveNewContents,

@@ -8,7 +8,7 @@
  */
 import { Cause, Effect, Exit, Option } from "effect"
 import { describe, expect, it, vi } from "vitest"
-import * as ApplyPatch from "../src/ApplyPatch.ts"
+import * as ApplyPatch from "../src/ApplyPatch.vibe"
 import { layer } from "./TestLayers.ts"
 
 const hooks = vi.hoisted(() => ({

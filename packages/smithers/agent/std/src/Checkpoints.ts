@@ -28,7 +28,7 @@
  * as history. `stash create` is the one git command
  * that records the working tree and changes nothing else: it does not move the
  * worktree and does not touch the stash ref. It runs against a shadow
- * `GIT_DIR` over a copy of the workspace index (see `internal/GitWorktree.vibe`),
+ * `GIT_DIR` over a copy of the workspace index (see `internal/GitWorktree.ts`),
  * so it never writes the repository's index and never runs a program the
  * workspace's `.git` names. That matters more than it sounds. The agent runs `git` in this same
  * workspace and its own `git diff` is the run's evidence, so a capture that
@@ -295,7 +295,7 @@ const namable = /^[A-Za-z0-9][A-Za-z0-9-]*$/
  *
  * Every git command that records or checks out a tree runs against a shadow
  * `GIT_DIR` the harness owns, never the workspace's `.git`, which the agent
- * can write; see `internal/GitWorktree.vibe`. The capture reads a copy of the
+ * can write; see `internal/GitWorktree.ts`. The capture reads a copy of the
  * workspace index, so the agent's own index is untouched: its `git diff` is the
  * run's evidence and must not move because the harness recorded something.
  *

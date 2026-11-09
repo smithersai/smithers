@@ -1,7 +1,7 @@
 import { NodeFileSystem } from "@effect/platform-node"
 import { Cause, Effect, Exit, FileSystem, Option, Path, PlatformError } from "effect"
 import { describe, expect, it } from "vitest"
-import * as ApplyPatch from "../src/ApplyPatch.ts"
+import * as ApplyPatch from "../src/ApplyPatch.vibe"
 import * as Edit from "../src/Edit.ts"
 import { rootFailure } from "../src/internal/SearchContract.vibe"
 import * as Ls from "../src/Ls.ts"
