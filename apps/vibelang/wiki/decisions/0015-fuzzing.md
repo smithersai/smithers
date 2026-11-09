@@ -146,3 +146,9 @@ Lines 20 and 21 of `worker/SandboxAccounts.vibe` are the no-image branch; `sandb
 `web/command-sequences` is folded into `web/guided-commands`: arbitrary Messages now arrive between gestures the screen offers. It had no retained regressions.
 
 `fuzz/model-server.vibe` answers the provider's HTTP and SSE on a real local socket. `fuzz.config.ts` loads QuickJS's compiled module under Node so `Reply.answer`, the wiki writer and the reviewers run to a completed answer. The refused-port cases of `wiki/writer` and `specification/reviewers` now reach provider backoff, about 2 seconds per execution.
+
+## Status, 2026-11-09 (sixth session)
+
+Fuzz-only: 6284/7042 lines (89.23%), 8916/12110 branches (73.62%), 42 of 142 files at 100%, at a 5-second budget; goal not met. `worker/Http.vibe` is at 100%; `worker/Reply.vibe` is at 136/136 lines and 75/81 branches.
+
+Fifth campaign: seed 20261112, 32 seconds per target, 41.7 minutes, 145 receipts, 60,449,973 recorded executions, none with zero executions. The browser phase did not run after the failure, so the five browser targets ran afterwards at the same seed and budget; all passed. One product bug: with a valid stored session and a device flow pending for another server, `login` answered signed-in with that flow's user code and URL. It now offers no code when signed in; the value stays in the corpus.
