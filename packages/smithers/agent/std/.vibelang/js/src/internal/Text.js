@@ -99,6 +99,7 @@ export const truncateBytes = (text, maxBytes, options) => {
  *
  * @category rendering
  * @since 1.0.0-rc.5
+ * @throws {never}
  */
 export const elideMiddle = (start, droppedBytes, end) => `${start}${start === "" || start.endsWith("\n") ? "" : "\n"}[${droppedBytes} ${droppedBytes === 1 ? "byte" : "bytes"} omitted]\n${end}`;
 /**

@@ -63,7 +63,7 @@ export * as RemoteSearch from "./RemoteSearch.vibe"
  * @category flows
  * @since 1.0.0
  */
-export * as Bash from "./Bash.ts"
+export * as Bash from "./Bash.vibe"
 
 /** @category services @since 1.0.0 */
 export * as Container from "./Container.vibe"

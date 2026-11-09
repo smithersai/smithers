@@ -25,7 +25,7 @@ import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import * as ProcessConfinement from "../../../flows/platform-node/src/ProcessConfinement.ts"
 import * as ProcessSandbox from "../../../flows/platform-node/src/ProcessSandbox.ts"
-import * as Bash from "../src/Bash.ts"
+import * as Bash from "../src/Bash.vibe"
 import * as ShellCommand from "../src/ShellCommand.vibe"
 import type * as StdError from "../src/StdError.ts"
 

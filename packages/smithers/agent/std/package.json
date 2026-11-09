@@ -43,8 +43,8 @@
       "default": "./.vibelang/js/src/ApplyPatch.js"
     },
     "./Bash": {
-      "types": "./src/Bash.ts",
-      "vibelang-source": "./src/Bash.ts",
+      "types": "./.vibe/declarations/Bash.d.vibe.ts",
+      "vibelang-source": "./src/Bash.vibe",
       "default": "./.vibelang/js/src/Bash.js"
     },
     "./Checkpoints": {

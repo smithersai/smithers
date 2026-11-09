@@ -8,7 +8,7 @@ import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpaw
 import * as Redacted from "effect/Redacted"
 import { TestClock } from "effect/testing"
 import { describe, expect, it, vi } from "vitest"
-import * as Bash from "../src/Bash.ts"
+import * as Bash from "../src/Bash.vibe"
 import * as Container from "../src/Container.vibe"
 import * as Exec from "../src/internal/Exec.vibe"
 import { MAX_SHELL_OUTPUT_BYTES } from "../src/internal/Text.ts"

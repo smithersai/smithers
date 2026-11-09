@@ -116,6 +116,7 @@ const quoted = (name) => `'${name.replaceAll("'", `'\\''`)}'`;
  *
  * @category constructors
  * @since 1.0.0
+ * @throws {never}
  */
 export const script = (options = {}) => {
     const prune = (options.prune ?? defaultPrune).map((name) => `-name ${quoted(name)}`).join(" -o ");
@@ -138,6 +139,7 @@ export const script = (options = {}) => {
  *
  * @category conversions
  * @since 1.0.0
+ * @throws {never}
  */
 export const parse = (stdout) => {
     const lines = stdout.trim().split("\n").map((line) => line.trim());
@@ -164,6 +166,7 @@ export const parse = (stdout) => {
  *
  * @category conversions
  * @since 1.0.0
+ * @throws {never}
  */
 export const moved = (before, after) => before === undefined || after === undefined || !before.complete || !after.complete
     ? undefined

@@ -137,6 +137,7 @@ const quoted = (name: string): string => `'${name.replaceAll("'", `'\\''`)}'`
  *
  * @category constructors
  * @since 1.0.0
+ * @throws {never}
  */
 export const script = (options: {
   readonly prune?: ReadonlyArray<string> | undefined
@@ -165,6 +166,7 @@ export const script = (options: {
  *
  * @category conversions
  * @since 1.0.0
+ * @throws {never}
  */
 export const parse = (stdout: string): Measurement | undefined => {
   const lines = stdout.trim().split("\n").map((line) => line.trim())
@@ -190,6 +192,7 @@ export const parse = (stdout: string): Measurement | undefined => {
  *
  * @category conversions
  * @since 1.0.0
+ * @throws {never}
  */
 export const moved = (
   before: Measurement | undefined,

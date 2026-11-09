@@ -73,7 +73,7 @@ const securityReview = Smithers.SecurityReview({
         "A cwd, relative path, or dot-dot segment that resolves outside the envelope after path.resolve yet passes withinEnvelope.",
         "The /dev/ exemption or the cwd === base shortcut admitting a path that is not process plumbing or the workspace root."
       ],
-      paths: ["src/Bash.ts", "src/internal/EnvelopePrecheck.ts", "src/internal/Paths.ts"]
+      paths: ["src/Bash.vibe", "src/internal/EnvelopePrecheck.ts", "src/internal/Paths.ts"]
     },
     {
       id: "effect-envelope-honesty",
@@ -118,7 +118,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/Container.vibe",
-        "src/Bash.ts",
+        "src/Bash.vibe",
         "src/TestRun.vibe",
         "src/internal/Exec.vibe",
         "src/internal/GitWorktree.vibe",
@@ -154,7 +154,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Container.vibe",
         "src/NativeSearch.vibe",
         "src/TestRun.vibe",
-        "src/Bash.ts"
+        "src/Bash.vibe"
       ]
     },
     {
@@ -220,7 +220,7 @@ const securityReview = Smithers.SecurityReview({
         "Bash.sealed or TestRun admitting a call whose container is undefined, empty, or a different name.",
         "Relocate rewriting a containerised cwd to a host path, or a host path to a container path outside the materialized checkout."
       ],
-      paths: ["src/Bash.ts", "src/TestRun.vibe", "src/Relocate.vibe", "src/Container.vibe"]
+      paths: ["src/Bash.vibe", "src/TestRun.vibe", "src/Relocate.vibe", "src/Container.vibe"]
     }
   ]
 })

@@ -18,7 +18,7 @@ import { mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } f
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as Bash from "../src/Bash.ts"
+import * as Bash from "../src/Bash.vibe"
 import * as Checkpoints from "../src/Checkpoints.vibe"
 import * as Container from "../src/Container.vibe"
 

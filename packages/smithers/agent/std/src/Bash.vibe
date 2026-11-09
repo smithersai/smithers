@@ -220,7 +220,7 @@ export type Output = typeof Output.Type
  * @category rendering
  * @since 1.0.0-rc.5
  */
-export const elideMiddle: (start: string, droppedBytes: number, end: string) => string = elide
+export const elideMiddle = (start: string, droppedBytes: number, end: string): string => elide(start, droppedBytes, end)
 
 /**
  * Static conservative effect envelope for the bash flow.
@@ -467,16 +467,16 @@ const fingerprint = (
   input: Input,
   transport: Option.Option<Container.Container>
 ): Effect.Effect<TreeFingerprint.Measurement | undefined, never, ChildProcessSpawner.ChildProcessSpawner> =>
-  Effect.gen(function*() {
+  (effect {
     if (input.container === undefined || Option.isNone(transport)) return undefined
-    const routing = yield* transport.value.exec({
+    const routing = try transport.value.exec({
       container: input.container,
       file: "sh",
       args: ["-c", TreeFingerprint.script()],
       ...(input.cwd === undefined ? {} : { cwd: input.cwd }),
       stdin: false
     })
-    const result = yield* Exec.exec(routing.file, {
+    const result = try Exec.exec(routing.file, {
       ...(routing.env === undefined ? {} : { env: routing.env }),
       timeoutMs: Math.min(input.timeoutMs ?? DEFAULT_TIMEOUT_MS, FINGERPRINT_TIMEOUT_MS),
       maxCaptureBytes: MAX_SHELL_OUTPUT_BYTES,
@@ -494,21 +494,61 @@ const fingerprint = (
  * @category handlers
  * @since 1.0.0
  */
-export const run = Effect.fn("Bash.run")(function*(
-  input: Input
-): Effect.fn.Return<Output, StdError.StdError, ChildProcessSpawner.ChildProcessSpawner | Path.Path> {
-  const intent = precheck(input, yield* Path.Path)
-  if (intent instanceof StdError.StdError) return yield* Effect.fail(intent)
+export const run: (input: {
+    readonly mode: "hermetic";
+    readonly command?: string | undefined;
+    readonly script?: string | undefined;
+    readonly interpreter?: string | undefined;
+    readonly args?: readonly string[] | undefined;
+    readonly stdin?: string | undefined;
+    readonly container?: string | undefined;
+    readonly reads: readonly string[];
+    readonly writes: readonly string[];
+    readonly cwd?: string | undefined;
+    readonly env?: {
+        readonly [x: string]: string;
+    } | undefined;
+    readonly timeoutMs?: number | undefined;
+} | {
+    readonly mode?: "unhermetic";
+    readonly command?: string | undefined;
+    readonly script?: string | undefined;
+    readonly interpreter?: string | undefined;
+    readonly args?: readonly string[] | undefined;
+    readonly stdin?: string | undefined;
+    readonly container?: string | undefined;
+    readonly cwd?: string | undefined;
+    readonly env?: {
+        readonly [x: string]: string;
+    } | undefined;
+    readonly timeoutMs?: number | undefined;
+}) => Effect.Effect<{
+    readonly exitCode: number;
+    readonly stdout: string;
+    readonly stderr: string;
+    readonly stdoutTruncated: boolean;
+    readonly stderrTruncated: boolean;
+    readonly stdoutDroppedBytes: number;
+    readonly stderrDroppedBytes: number;
+    readonly invalidProbe?: {
+        readonly reason: "unknown-command" | "unknown-environment" | "unknown-module" | "unknown-path" | "unknown-test";
+        readonly evidence: string;
+        readonly message: string;
+    } | undefined;
+    readonly mutated?: boolean | undefined;
+}, StdError.StdError, ChildProcessSpawner.ChildProcessSpawner | import("effect/Path").Path> = effect (input) => try withSpan(effect {
+  const intent = precheck(input, try Path.Path)
+  if (intent instanceof StdError.StdError) throw intent
   // The working directory belongs to the container. The transport supplies
   // any environment overrides its host process needs to forward into it.
   const contained = input.container !== undefined
-  const transport = yield* Effect.serviceOption(Container.Container)
-  const spawned = yield* routed(intent, input, transport)
+  const transport = try Effect.serviceOption(Container.Container)
+  const spawned = try routed(intent, input, transport)
 
   // The tree the command runs in, before it runs. Measured in the container
   // because nothing on this host can see it; see `TreeFingerprint`.
-  const before = yield* fingerprint(input, transport)
-  const result = yield* Exec.exec(spawned.file, {
+  const before = try fingerprint(input, transport)
+  const result = try Exec.exec(spawned.file, {
     ...(input.cwd === undefined || contained ? {} : { cwd: input.cwd }),
     ...(spawned.env === undefined ? {} : { env: spawned.env }),
     timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
@@ -517,10 +557,10 @@ export const run = Effect.fn("Bash.run")(function*(
     ...(spawned.args === undefined ? {} : { args: spawned.args }),
     ...(spawned.stdin === undefined ? {} : { stdin: spawned.stdin })
   }).pipe(Effect.mapError((error) => Exec.toStdError(spawned.quoted, error)))
-  const mutated = TreeFingerprint.moved(before, yield* fingerprint(input, transport))
+  const mutated = TreeFingerprint.moved(before, try fingerprint(input, transport))
   // A command on this host may have changed files a language server holds
   // open; a container's files are not the ones it was sent.
-  if (!contained) yield* Diagnostics.refresh
+  if (!contained) try Diagnostics.refresh
   // Exit codes alone cannot establish whether the shell refused to launch a
   // command or a launched runner chose that status after executing tests.
   return {
@@ -533,7 +573,7 @@ export const run = Effect.fn("Bash.run")(function*(
     stderrDroppedBytes: result.stderrDroppedBytes,
     ...(mutated === undefined ? {} : { mutated })
   }
-})
+}, "Bash.run")
 
 /**
  * What one call runs, after planning and before any transport: the program,
@@ -570,21 +610,61 @@ export const invocation = (input: Input): Invocation | StdError.StdError => plan
  * @category handlers
  * @since 1.0.0
  */
-export const inTerminal = <R>(
+export const inTerminal: <R>(execute: (input: Input) => Effect.Effect<Output, StdError.StdError, R>) => (input: {
+    readonly mode: "hermetic";
+    readonly command?: string | undefined;
+    readonly script?: string | undefined;
+    readonly interpreter?: string | undefined;
+    readonly args?: readonly string[] | undefined;
+    readonly stdin?: string | undefined;
+    readonly container?: string | undefined;
+    readonly reads: readonly string[];
+    readonly writes: readonly string[];
+    readonly cwd?: string | undefined;
+    readonly env?: {
+        readonly [x: string]: string;
+    } | undefined;
+    readonly timeoutMs?: number | undefined;
+} | {
+    readonly mode?: "unhermetic";
+    readonly command?: string | undefined;
+    readonly script?: string | undefined;
+    readonly interpreter?: string | undefined;
+    readonly args?: readonly string[] | undefined;
+    readonly stdin?: string | undefined;
+    readonly container?: string | undefined;
+    readonly cwd?: string | undefined;
+    readonly env?: {
+        readonly [x: string]: string;
+    } | undefined;
+    readonly timeoutMs?: number | undefined;
+}) => Effect.Effect<{
+    readonly exitCode: number;
+    readonly stdout: string;
+    readonly stderr: string;
+    readonly stdoutTruncated: boolean;
+    readonly stderrTruncated: boolean;
+    readonly stdoutDroppedBytes: number;
+    readonly stderrDroppedBytes: number;
+    readonly invalidProbe?: {
+        readonly reason: "unknown-command" | "unknown-environment" | "unknown-module" | "unknown-path" | "unknown-test";
+        readonly evidence: string;
+        readonly message: string;
+    } | undefined;
+    readonly mutated?: boolean | undefined;
+}, StdError.StdError, R | import("effect/Path").Path> = <R>(
   execute: (input: Input) => Effect.Effect<Output, StdError.StdError, R>
 ) =>
-  Effect.fn("Bash.inTerminal")(function*(
-    input: Input
-  ): Effect.fn.Return<Output, StdError.StdError, R | Path.Path> {
-    const intent = precheck(input, yield* Path.Path)
-    if (intent instanceof StdError.StdError) return yield* Effect.fail(intent)
-    if (input.container !== undefined) return yield* Effect.fail(Container.unavailable(input.container))
-    const output = yield* execute(input)
+  effect (input: Input) => try withSpan(effect {
+    const intent = precheck(input, try Path.Path)
+    if (intent instanceof StdError.StdError) throw intent
+    if (input.container !== undefined) throw Container.unavailable(input.container)
+    const output = try execute(input)
     // The terminal ran on this workspace: files a language server holds may
     // have changed, exactly as after a spawn here.
-    yield* Diagnostics.refresh
+    try Diagnostics.refresh
     return output
-  })
+  }, "Bash.inTerminal")
 
 /**
  * The refusal a sealed host answers a call outside its container with.

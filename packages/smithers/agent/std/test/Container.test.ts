@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as Bash from "../src/Bash.ts"
+import * as Bash from "../src/Bash.vibe"
 import * as Container from "../src/Container.vibe"
 
 const request = (container: string): Container.Request => ({

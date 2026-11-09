@@ -62,7 +62,7 @@ export default defineConfig({
         "src/internal/Preserve.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/Container.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
         // T-TRM-05 edits Bash.ts: its terminal handler shares this per-file gate.
-        "src/Bash.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
+        "src/Bash.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/Glob.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/Grep.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/internal/EnvelopePrecheck.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
