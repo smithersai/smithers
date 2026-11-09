@@ -312,3 +312,7 @@ reply fuzz oracle now computes expected sums with independent BigInt arithmetic 
 **Shared history decisions (0018).** Existing real-engine role/Plan/Note tests, real HTTP history clients and the
 /history browser suite exercise the extracted policies. All61current history flow-machine mutants are rerun against
 the changed source, including45new guard/field/label mutations; generated inputs are checked byte-for-byte.
+
+**Reply event routing (0018).** All61current Reply kernel mutants rerun against the changed source, including14new
+event-kind, ignored-event, text-only, settlement-admission, exact-charge and failure-code mutations. Existing reply
+unit/workerd, full units, independent BigInt event fuzzing and affected benchmarks exercise the native projection.

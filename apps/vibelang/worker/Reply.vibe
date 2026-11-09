@@ -1,4 +1,4 @@
-import { initialProgress, resetProgress, appendProgress, validUsage, chargeProgress, invalidProgress, failProgress, completion, type ProgressState } from "./replyProgressDecision.vibe"
+import { initialProgress, advanceProgress, completion, type ProgressState } from "./replyProgressDecision.vibe"
 import { promptWindow } from "../src/core/sequenceDecision.vibe"
 // The agent's reply to one post, a durable `@smthrs/flow` flow (rulings VL-11; wiki/decisions/0010-live-agent.md,
 // 0012-smithers-agent.md). Every side effect is a journaled step, so a reset Durable Object resumes the reply where it
@@ -148,27 +148,36 @@ export const started: Progress = initialProgress()
 
 /** Folds one agent event into the reply's progress. A new model call or a retry starts the reply's text over. */
 export function fold(progress: Progress, event: AgentEvent.AgentEvent): Progress {
+  let piece = ""
+  let projected: string | undefined = undefined
+  let textDelta = false
+  let input = 0
+  let output = 0
+  let code = ""
+  let safeTotal = false
+  let safeInput = false
+  let safeOutput = false
+  // SDK payload projection and DoneText stay at this native boundary; the kernel owns every state choice.
   switch (event._tag) {
-    case "model-requested":
-    case "model-retried":
-      return resetProgress(progress)
-    case "model-delta": {
-      if (event.delta.type !== "text-delta") return progress
-      const reply = progress.reply + event.delta.text
-      const text = Option.getOrUndefined(DoneText.project(reply))
-      return appendProgress(progress, event.delta.text, text)
-    }
-    case "model-settled": {
-      const input = event.usage.inputTokens ?? 0
-      const output = event.usage.outputTokens ?? 0
-      if (!validUsage(Number.isSafeInteger(progress.tokens), Number.isSafeInteger(input), Number.isSafeInteger(output), progress.tokens, input, output)) return invalidProgress(progress)
-      return chargeProgress(progress, input, output)
-    }
+    case "model-delta":
+      if (event.delta.type === "text-delta") {
+        textDelta = true
+        piece = event.delta.text
+        projected = Option.getOrUndefined(DoneText.project(progress.reply + piece))
+      }
+      break
+    case "model-settled":
+      input = event.usage.inputTokens ?? 0
+      output = event.usage.outputTokens ?? 0
+      safeTotal = Number.isSafeInteger(progress.tokens)
+      safeInput = Number.isSafeInteger(input)
+      safeOutput = Number.isSafeInteger(output)
+      break
     case "model-failed":
-      return failProgress(progress, event.code)
-    default:
-      return progress
+      code = event.code
+      break
   }
+  return advanceProgress(progress, { kind: event._tag, textDelta, piece, projected, input, output, code, safeTotal, safeInput, safeOutput })
 }
 
 /**

@@ -75,3 +75,42 @@ export function completion(failed: boolean, usageValid: boolean, hasText: boolea
   if (failed || !usageValid) return "failed"
   return hasText ? "answered" : "empty"
 }
+
+/** The host projects native SDK payloads and DoneText; this record contains no provider or runtime API. */
+export interface ProgressEvent {
+  readonly kind: string
+  readonly textDelta: boolean
+  readonly piece: string
+  readonly projected: string | undefined
+  readonly input: number
+  readonly output: number
+  readonly code: string
+  readonly safeTotal: boolean
+  readonly safeInput: boolean
+  readonly safeOutput: boolean
+}
+
+/** Every event chooses exactly one transition; all other SDK event kinds leave the state unchanged. */
+//@ verify
+//@ requires 0 <= state.tokens && state.tokens <= 9007199254740991
+//@ ensures 0 <= \result.tokens && \result.tokens <= 9007199254740991
+//@ ensures !state.usageValid ==> !\result.usageValid
+//@ ensures event.kind == "model-requested" || event.kind == "model-retried" ==> \result.reply == "" && \result.text == state.text && \result.tokens == state.tokens && \result.failed == state.failed && \result.usageValid == state.usageValid
+//@ ensures event.kind == "model-delta" && event.textDelta ==> \result.reply == state.reply + event.piece && \result.tokens == state.tokens && \result.failed == state.failed && \result.usageValid == state.usageValid
+//@ ensures event.kind == "model-delta" && event.textDelta && event.projected == undefined ==> \result.text == state.text
+//@ ensures event.kind == "model-delta" && event.textDelta && event.projected != undefined ==> \result.text == event.projected
+//@ ensures event.kind == "model-delta" && !event.textDelta ==> \result == state
+//@ ensures event.kind == "model-settled" && validUsage(event.safeTotal, event.safeInput, event.safeOutput, state.tokens, event.input, event.output) ==> \result.tokens == state.tokens + event.input + event.output && \result.reply == state.reply && \result.text == state.text && \result.failed == state.failed && \result.usageValid == state.usageValid
+//@ ensures event.kind == "model-settled" && !validUsage(event.safeTotal, event.safeInput, event.safeOutput, state.tokens, event.input, event.output) ==> !\result.usageValid && \result.tokens == state.tokens && \result.reply == state.reply && \result.text == state.text && \result.failed == state.failed
+//@ ensures event.kind == "model-failed" ==> \result.failed == event.code && \result.reply == state.reply && \result.text == state.text && \result.tokens == state.tokens && \result.usageValid == state.usageValid
+//@ ensures event.kind != "model-requested" && event.kind != "model-retried" && event.kind != "model-delta" && event.kind != "model-settled" && event.kind != "model-failed" ==> \result == state
+export function advanceProgress(state: ProgressState, event: ProgressEvent): ProgressState {
+  if (event.kind === "model-requested" || event.kind === "model-retried") return resetProgress(state)
+  if (event.kind === "model-delta") return event.textDelta ? appendProgress(state, event.piece, event.projected) : state
+  if (event.kind === "model-settled") {
+    if (!validUsage(event.safeTotal, event.safeInput, event.safeOutput, state.tokens, event.input, event.output)) return invalidProgress(state)
+    return chargeProgress(state, event.input, event.output)
+  }
+  if (event.kind === "model-failed") return failProgress(state, event.code)
+  return state
+}

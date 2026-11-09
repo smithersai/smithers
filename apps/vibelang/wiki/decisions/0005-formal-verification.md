@@ -182,3 +182,8 @@ remain explicit boundaries. No contract is weakened to admit a non-integer or ov
 The shared history flow machine (0018) also proves role thresholds, HTTP outcomes, Plan operation/field policies,
 open-epic membership and append-prefix behavior, agent signatures and product labels. Actual browser and protocol
 callers use these decisions. Full page merging, response admission and model frames remain explicit unfinished work.
+
+Reply event routing (0018) now lives in the proved kernel: every recognized kind selects its exact transition,
+non-text/unrelated events are identities, bounded tokens remain bounded and invalidity never clears. The native
+wrapper only projects SDK payloads and native observations. The optional-member conditional reproduction retains
+the backend failure; equivalent undefined/present postconditions preserve the full original relation.

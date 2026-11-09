@@ -51,3 +51,10 @@ Plan operation/fields, open-epic membership/opening prefix, signature and label 
 HTTP/flow/browser hosts. Updatedmodule23proofunits;61/61current mutants reject(45new);17sources862mutantsmatch
 realreceipts. Typecheck0,835unit/52workerd/21historybrowser passes,port4504. Full page merging/model admission
 remains unfinished and toolrequest projection retains the optional-union-default reproduction. No new dependency.
+
+Seventeenth batch: Reply event dispatch itself now runs through the proved reducer, including ignored/non-text
+identity, requested/retried resets, exact settled charges, latched invalidity and failure frames. The SDK host only
+projects payloads/native observations. Updatedmodule13units;61/61current mutants reject(14new);17source/876current
+mutationsmatchactualreceipts. Typecheck0,835unit/52workerd/9fuzz(119738executions1replay)/2benchmark passes.
+The optional-member-default minimal repro retains the emitter failure; both exact present/undefined postconditions
+are retained as implications. No runtime workaround or dependency is added.
