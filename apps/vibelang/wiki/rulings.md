@@ -138,13 +138,20 @@ All of the following are from Will's message of 2026-11-07, about 00:30 PST, unl
   first. Replaces VL-28's narrated tour where they differ.
 - **VL-32. Both acceptance gates of the coding factory are built here (PROC-28).** A proposal (a VIP) is accepted only
   when a maintainer, a person, approves it; an agent review never accepts one. The specification written from accepted
-  proposals is accepted only when Codex Astra, Codex Sol, Claude Fable and Claude Opus all answer LGTM with an A grade;
+  proposals is accepted only when Codex Astra, Codex Sol, Claude Fable and Claude Opus all answer LGTM with A- or better;
   after that it stays self-consistent while it is built optimistically and fuzz tested. Will, 2026-11-08 11:20 PST: "I
   believe acceptance involved writing a spec and a review of 4 agents astra sol fable and opus all saying lgtm A grade";
   11:22: "Not for the VIP for the spec we reached acceptance in past. The VIP are personally approved by me and then the
   spec needs to be self consistent and optimistically built fuzz tested etc."; about 11:23: "This is important because
   this is the general core of hwo our coding factory works btw". Relayed the same day: it gets built in
   vibelang.smithers.sh.
+  **2026-11-09 addenda:** Will, 04:25 PST: "Yes a- counts" (PROC-28, Smithers main `080d48c6`). A+, A and A-
+  pass when all four answer LGTM on the same revision. The confirmed passing panel is `v6` (2026-10-29 UTC;
+  `~/vibe/review-spec/v6` on nyc-01), as corrected in Smithers main `c27bfe7f`; the earlier `r6` did not pass.
+  The lang lead, under Will's delegation (`factory/open`,
+  question 3), decided: "after acceptance, a specification change does not reset the four reviewers; automated
+  checks keep it self-consistent, and a full panel runs again for a release." The project's revision policy is
+  `"keep"`; both policies remain proved. See [0027](decisions/0027-acceptance-gates.md#vl-32-addenda-2026-11-09-lane-vl-gates2).
 
 - **VL-33. Sign-in reuses smithers.sh's GitHub callback; no new redirect URLs.** Will, 2026-11-09 11:19Z (Telegram,
   answering the request to add vibelang.smithers.sh's callback to the GitHub App): "Smithers.sh should support this

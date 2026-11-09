@@ -1155,21 +1155,20 @@ export interface Specification {
   readonly fable: SpecificationReview
   readonly opus: SpecificationReview
 }
-/** Each answer must be an A-grade LGTM on this revision and retain its review receipt. */
+/** Each answer must be an A- or better LGTM on this revision and retain its review receipt. */
 //@ verify
-//@ ensures \result == (revision > 0 && review.verdict == "LGTM" && review.grade == "A" && review.revision == revision && review.link != "")
+//@ ensures \result == (revision > 0 && review.verdict == "LGTM" && (review.grade == "A+" || review.grade == "A" || review.grade == "A-") && review.revision == revision && review.link != "")
 export function specificationReviewPasses(review: SpecificationReview, revision: number): boolean {
-  return revision > 0 && review.verdict === "LGTM" && review.grade === "A" && review.revision === revision && review.link !== ""
+  return revision > 0 && review.verdict === "LGTM" && (review.grade === "A+" || review.grade === "A" || review.grade === "A-") && review.revision === revision && review.link !== ""
 }
 /**
- * Whether a new revision of an accepted specification needs all four reviews again. Will has not ruled on it (VL-32
- * quotes him: accepted once, then it "needs to be self consistent and optimistically built fuzz tested"); the question
- * is open at lang.smithers.sh/factory/open (question 3). This constant is the one place it flips: "reset" clears the
- * four answers on each new revision; "keep" keeps the acceptance the four gave one revision.
+ * VL-32 addendum: the lang lead chose keep under Will's delegation (factory/open, question 3).
+ * Automated checks maintain self-consistency after acceptance; a release runs the full panel again.
+ * Reset remains an explicit, proved policy for callers testing that rule.
  */
 export type SpecRevisionPolicy = "reset" | "keep"
-export const SPEC_REVISION_POLICY: SpecRevisionPolicy = "reset"
-/** All four named seats answered LGTM with an A on this one revision. */
+export const SPEC_REVISION_POLICY: SpecRevisionPolicy = "keep"
+/** All four named seats answered LGTM with A- or better on this one revision. */
 //@ verify
 //@ ensures \result == (specificationReviewPasses(spec.astra, revision) && specificationReviewPasses(spec.sol, revision) && specificationReviewPasses(spec.fable, revision) && specificationReviewPasses(spec.opus, revision))
 export function specificationAcceptedOn(spec: Specification, revision: number): boolean {

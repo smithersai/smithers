@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { approveVip, specificationAccepted, specificationAcceptedUnder, reviseSpecification, reviseSpecificationUnder, recordSpecificationReview, SPEC_REVISION_POLICY } from "../src/core/conversation.vibe"
+import { approveVip, specificationAccepted, specificationAcceptedUnder, reviseSpecification, reviseSpecificationUnder, recordSpecificationReview, SPEC_REVISION_POLICY, specificationReviewPasses } from "../src/core/conversation.vibe"
 import { fixtureIssues } from "../src/core/IssuesFactory.vibe"
 const review = { verdict: "LGTM" as const, grade: "A", revision: 2, link: "/review/1" }
 const spec = { revision: 2, text: "Specification", astra: review, sol: review, fable: review, opus: review }
@@ -14,28 +14,38 @@ describe("factory acceptance gates", () => {
     expect(approveVip(settled, "maintainer", "person", "will", "2026-11-08")).toBe(settled)
     expect(approveVip(vip, "maintainer", "person", "will", "2026-11-08")).toMatchObject({ vip: "Accepted", approvedBy: "will", approvedAt: "2026-11-08" })
   })
-  it("requires four current LGTM A reviews with review links", () => {
+  it("requires four same-revision LGTM reviews with A- or better and review links", () => {
     expect(specificationAccepted(spec)).toBe(true)
     for (const reviewer of ["astra", "sol", "fable", "opus"] as const) {
-      expect(specificationAccepted({ ...spec, [reviewer]: { ...review, grade: "B" } })).toBe(false)
+      expect(specificationAccepted({ ...spec, [reviewer]: { ...review, grade: "B+" } })).toBe(false)
       expect(specificationAccepted({ ...spec, [reviewer]: { ...review, verdict: "Changes requested" } })).toBe(false)
       expect(specificationAccepted({ ...spec, [reviewer]: { ...review, revision: 1 } })).toBe(false)
       expect(specificationAccepted({ ...spec, [reviewer]: { ...review, link: "" } })).toBe(false)
     }
   })
-  it("keeps the reset behind one named policy, which reads reset until Will rules (VL-32)", () => {
-    expect(SPEC_REVISION_POLICY).toBe("reset")
-    const kept = reviseSpecificationUnder(spec, "Revised specification", "keep")
+  it("accepts A+, A and A- in every seat and refuses B+ and lower or unknown grades", () => {
+    for (const grade of ["A+", "A", "A-"]) {
+      expect(specificationReviewPasses({ ...review, grade }, 2)).toBe(true)
+      for (const reviewer of ["astra", "sol", "fable", "opus"] as const) expect(specificationAccepted({ ...spec, [reviewer]: { ...review, grade } })).toBe(true)
+    }
+    for (const grade of ["B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F", "", "a", "A--", " A-"]) expect(specificationReviewPasses({ ...review, grade }, 2)).toBe(false)
+  })
+  it("keeps acceptance after an edit under the project policy and proves reset separately", () => {
+    expect(SPEC_REVISION_POLICY).toBe("keep")
+    const kept = reviseSpecification(spec, "Revised specification")
+    expect(kept).toEqual(reviseSpecificationUnder(spec, "Revised specification", "keep"))
     expect(kept.revision).toBe(3)
     for (const who of ["astra", "sol", "fable", "opus"] as const) expect(kept[who]).toEqual(spec[who])
+    expect(specificationAccepted(kept)).toBe(true)
     expect(specificationAcceptedUnder(kept, "keep")).toBe(true)
     expect(specificationAcceptedUnder(kept, "reset")).toBe(false)
     expect(specificationAcceptedUnder({ ...kept, opus: { ...kept.opus, revision: 1 } }, "keep")).toBe(false)
-    expect(reviseSpecificationUnder(spec, "Revised specification", "reset")).toEqual(reviseSpecification(spec, "Revised specification"))
+    expect(specificationAcceptedUnder({ ...spec, revision: 1 }, "keep")).toBe(false)
+    expect(specificationAcceptedUnder({ ...spec, revision: 0, astra: { ...review, revision: 0 } }, "keep")).toBe(false)
   })
   it("resets all answers on a new revision and rejects old results and person impersonation", () => {
     expect(reviseSpecification(spec, spec.text)).toBe(spec)
-    const reset = reviseSpecification(spec, "Revised specification")
+    const reset = reviseSpecificationUnder(spec, "Revised specification", "reset")
     expect(reset.revision).toBe(3)
     expect(specificationAccepted(reset)).toBe(false)
     for (const who of ["astra", "sol", "fable", "opus"] as const) expect(reset[who].verdict).toBe("")
@@ -73,29 +83,35 @@ it.effect("agent authority cannot accept through the same Factory flow as a main
     expect(replay).toEqual(accepted)
   })
 }))
-it.effect("the shared flow records scripted reviews, refuses three As and a B, then accepts and resets", () => scoped(effect {
+it.effect("the accepted round-6 fixture and its receipts survive new revisions in the shared flow", () => scoped(effect {
   const api = try makeIssueFactory("maintainer")
   const initial = try api.read()
-  let state = try api.act({ ...request("spec-revise", "revision"), revision: initial.specification!.revision, text: "A revised specification." })
+  const revised = try api.act({ ...request("spec-revise", "revision"), revision: 2, text: "A revised specification." })
+  try Effect.try(() => {
+    expect([initial.specification!.astra.grade, initial.specification!.sol.grade, initial.specification!.fable.grade, initial.specification!.opus.grade]).toEqual(["A", "A", "A-", "A-"])
+    expect(specificationAccepted(initial.specification!)).toBe(true)
+    expect(specificationAccepted(revised.specification!)).toBe(true)
+    for (const who of ["astra", "sol", "fable", "opus"] as const) expect(revised.specification![who]).toEqual(initial.specification![who])
+    expect(revised.specificationHistory!.filter(e => e.event === "reset")).toHaveLength(1)
+    expect(revised.specificationHistory!.at(-1)).toMatchObject({ revision: 3, event: "revision" })
+  })
+  let state = revised
   for (const reviewer of ["astra", "sol", "fable", "opus"] as const) state = try api.act({ ...request("spec-review", reviewer), revision: 3, reviewer })
   try Effect.try(() => {
-    expect(state.specification!.opus.grade).toBe("B")
-    expect(specificationAccepted(state.specification!)).toBe(false)
-    expect(state.specificationHistory!.filter(e => e.event === "reset")).toHaveLength(2)
+    expect(state.specification!.opus.grade).toBe("A-")
+    expect(specificationAccepted(state.specification!)).toBe(true)
   })
-  state = try api.act({ ...request("spec-review", "opus-again"), revision: 3, reviewer: "opus" })
-  try Effect.try(() => expect(specificationAccepted(state.specification!)).toBe(true))
   const stale = try Effect.result(api.act({ ...request("spec-review", "stale"), revision: 2, reviewer: "sol" }))
   try Effect.try(() => expect(stale).toMatchObject({ _tag: "Failure", failure: { reason: "review" } }))
-  const reset = try api.act({ ...request("spec-revise", "reset-again"), revision: 3, text: "Another revision." })
-  try Effect.try(() => expect(specificationAccepted(reset.specification!)).toBe(false))
+  const next = try api.act({ ...request("spec-revise", "revise-again"), revision: 3, text: "Another revision." })
+  try Effect.try(() => expect(specificationAccepted(next.specification!)).toBe(true))
 }))
 it.effect("a person can request a reviewer but cannot supply their grade or answer", () => scoped(effect {
   const api = try makeIssueFactory("maintainer")
   try api.act({ ...request("spec-revise", "new-spec"), revision: 2, text: "New revision" })
-  const forged = { ...request("spec-review", "forged"), revision: 3, reviewer: "opus" as const, verdict: "LGTM", grade: "A", principal: "opus" }
+  const forged = { ...request("spec-review", "forged"), revision: 3, reviewer: "opus" as const, verdict: "LGTM", grade: "A+", principal: "opus" }
   const result = try api.act(forged)
-  try Effect.try(() => expect(result.specification!.opus.grade).toBe("B"))
+  try Effect.try(() => expect(result.specification!.opus.grade).toBe("A-"))
 }))
 it.effect("CLI and MCP request reviews through the same command and refuse VIP acceptance", () => effect {
   provide MockFactory {
@@ -111,6 +127,19 @@ it.effect("CLI and MCP request reviews through the same command and refuse VIP a
   }
 })
 
+it.effect("a host-produced B+ refuses gate 2 and A- restores it without accepting request-supplied grades", () => scoped(effect {
+  const api = try makeIssueFactory("maintainer")
+  for (const reviewer of ["astra", "sol", "fable", "opus"] as const) {
+    for (const grade of ["B+", "A-"]) {
+      const provider: SpecificationReviewers.Shape = { review: () => succeed({ revision: 2, verdict: "LGTM", grade, link: "#host-review" }) }
+      const result = try api.act({ ...request("spec-review", `${reviewer}-${grade}`), revision: 2, reviewer }).pipe(Effect.provideService(SpecificationReviewers, provider))
+      try Effect.try(() => {
+        expect(result.specification![reviewer].grade).toBe(grade)
+        expect(specificationAccepted(result.specification!)).toBe(grade === "A-")
+      })
+    }
+  }
+}))
 it.effect("a faulty reviewer cannot record a stale result or change the gate after a failed review", () => scoped(effect {
   const api = try makeIssueFactory("maintainer")
   const before = try api.read()

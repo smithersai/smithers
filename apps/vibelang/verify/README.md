@@ -40,7 +40,7 @@ or duplicate a selected clause fail closed. Select the earliest broken contract:
 checked assertion can hide a later failure in an isolated check. A few prefix and delta-field mutations select that exact earlier assertion within its function or named switch case;
 missing or duplicate functions, cases and clauses fail closed. Other cases retain whole-function checks. A surviving mutation fails the gate. Positive checks verify every
 contract, without symbol or position filters. The conversation module isolates every assertion with eight solver
-workers, a 60-second limit per batch and a 600-second process limit; other positives retain one core and a
+workers, a 60-second limit per batch and a 3,600-second process limit; other positives retain one core and a
 180-second process limit. [Dafny assertion batching](https://dafny.org/latest/HowToFAQ/FAQSplitHere) changes how
 obligations are grouped, never which obligations are checked. Its reported assertion-batch count is not comparable
 to earlier unsplit counts. Timeouts and backend errors never count as proofs or rejections.

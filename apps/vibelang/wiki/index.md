@@ -45,7 +45,8 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0024](decisions/0024-sandboxes.md) | Sandboxes, shared flows, a single durable minute writer and opt-in offline Cloudflare Containers |
 | [0025](decisions/0025-desktop.md) | Electrobun hosts the shared Foldkit app; local models, confined folders and flows run on Bun |
 | [0026](decisions/0026-marketing-media.md) | Splash and empty-chat media; native posters and failure removal; former tour placements superseded by VL-31 |
-| [0027](decisions/0027-acceptance-gates.md) | Human proposal approval and four current-revision LGTM/A specification reviews; shared flows, reset history and suite state (lane vl-gates) |
+| [0027](decisions/0027-acceptance-gates.md) | Human proposal approval and four same-revision LGTM/A- or better specification reviews; shared flows, reset history and suite state (lane vl-gates) |
+| [0027 addenda](decisions/0027-acceptance-gates.md#vl-32-addenda-2026-11-09-lane-vl-gates2) | A- or better passes; new specification revisions keep acceptance, with both revision policies proved (lane vl-gates2) |
 | [0028](decisions/0028-cli-and-mcp-sign-in.md) | CLI and MCP sign-in: GitHub device flow; the server names the agent's posts `<login> (agent)`, carries the person's role, and refuses it approve, fold and merge (VL-26) |
 
 ## Layout

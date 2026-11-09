@@ -124,7 +124,7 @@ No compiler behavior, dependency, threshold or production exclusion changes in t
 The expanded corpus independently benchmarks real SQLite conversation hosts (queued posts, owner-preserving
 duplicates, alarm settlement, sequencer recovery, cancellation tombstones), action hosts (request conflicts,
 terminal traces, queued cancellation and current-role revocation), all dispatch/progress/startup/theatre decisions,
-and specification revision/review/reset through product mock flows. The wiki generator runs actual emitted child
+and specification revision/review/keep through product mock flows (0027's VL-32 addenda). The wiki generator runs actual emitted child
 processes on fixture files, checking deterministic output and preservation after real read failures. Run that command
 separately from ordinary wiki-process tests, which share its ignored compiler fixture directory. No test suite is
 imported into the benchmark suite and no GitHub request is intercepted.

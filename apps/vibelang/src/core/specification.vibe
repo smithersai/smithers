@@ -1,25 +1,25 @@
 // Both hosts run these transitions inside vibelang/issues flows. Review answers are host-produced, never request data.
 import { FlowRuntime } from "@smthrs/flow"
 import { Digest, SecureRandom } from "effect/crypto"
-import { unansweredSpecificationReview, reviseSpecification, recordSpecificationReview, type Specification, type SpecificationReviewer } from "./conversation.vibe"
+import { unansweredSpecificationReview, reviseSpecification, recordSpecificationReview, type Specification, type SpecificationReviewer, SPEC_REVISION_POLICY } from "./conversation.vibe"
 import { IssueFailure, type IssueRequest, IssuesState, SpecificationReview } from "./issueSchemas.vibe"
 export const reviewers: ReadonlyArray<{ readonly id: SpecificationReviewer; readonly name: string }> = [
   { id: "astra", name: "Codex Astra" }, { id: "sol", name: "Codex Sol" }, { id: "fable", name: "Claude Fable" }, { id: "opus", name: "Claude Opus" },
 ]
 export const emptySpecification: Specification = { revision: 0, text: "", astra: unansweredSpecificationReview(), sol: unansweredSpecificationReview(), fable: unansweredSpecificationReview(), opus: unansweredSpecificationReview() }
 const accepted = { verdict: "LGTM" as const, grade: "A", revision: 2, link: "#spec-review-3" }
-// PROC-28: the specification already reached acceptance. Product fixtures retain a previous revision's reset.
-export const fixtureSpecification: Specification = { revision: 2, text: "# VibeLang specification\n\nEffect programs in TypeScript syntax.\n\n## Accepted VIPs\n\n- VIP #44 · for-await over streams", astra: { ...accepted }, sol: { ...accepted, link: "#spec-review-4" }, fable: { ...accepted, link: "#spec-review-5" }, opus: { ...accepted, link: "#spec-review-6" } }
+// PROC-28 addendum: round 6 accepted A, A, A-, A-. The synthetic history retains a pre-keep reset.
+export const fixtureSpecification: Specification = { revision: 2, text: "# VibeLang specification\n\nEffect programs in TypeScript syntax.\n\n## Accepted VIPs\n\n- VIP #44 · for-await over streams", astra: { ...accepted }, sol: { ...accepted, link: "#spec-review-4" }, fable: { ...accepted, grade: "A-", link: "#spec-review-5" }, opus: { ...accepted, grade: "A-", link: "#spec-review-6" } }
 export const fixtureSpecificationHistory = [
   { revision: 1, event: "review" as const, reviewer: "opus", verdict: "Changes requested", grade: "B", link: "#spec-review-1", at: "2026-11-07T00:00:00Z" },
   { revision: 2, event: "reset" as const, reviewer: "", verdict: "", grade: "", link: "", at: "2026-11-07T01:00:00Z" },
-  ...reviewers.map(({ id }, index) => ({ revision: 2, event: "review" as const, reviewer: id, verdict: "LGTM", grade: "A", link: `#spec-review-${index + 3}`, at: "2026-11-07T02:00:00Z" })),
+  ...reviewers.map(({ id }, index) => ({ revision: 2, event: "review" as const, reviewer: id, verdict: "LGTM", grade: fixtureSpecification[id].grade, link: `#spec-review-${index + 3}`, at: "2026-11-07T02:00:00Z" })),
 ]
 /** Only a deployment-bound reviewer implementation can supply an answer. People request the flow, not its result. */
 export service SpecificationReviewers {
   review(reviewer: SpecificationReviewer, spec: Specification): typeof SpecificationReview.Type!IssueFailure!(FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom)
 }
-/** Scripted product mode. Opus first requests changes; the next review is A. No input can choose a verdict. */
+/** Scripted product mode. Unreviewed Opus first returns B+; later reviews use the accepted round-6 grades. No input can choose a verdict. */
 export effect function performSpecification(before: typeof IssuesState.Type, request: IssueRequest, scripted = true) {
   const spec = before.specification ?? emptySpecification
   const history = before.specificationHistory ?? []
@@ -29,13 +29,13 @@ export effect function performSpecification(before: typeof IssuesState.Type, req
     if (request.text.trim() === "" || spec.revision >= Number.MAX_SAFE_INTEGER) throw new IssueFailure({ reason: "invalid", unwritten: true })
     const next = reviseSpecification(spec, request.text)
     if (next === spec) return before
-    return { ...before, seq: before.seq + 1, specification: next, specificationHistory: [...history, { revision: next.revision, event: "reset" as const, reviewer: "", verdict: "", grade: "", link: "", at }] }
+    return { ...before, seq: before.seq + 1, specification: next, specificationHistory: [...history, { revision: next.revision, event: SPEC_REVISION_POLICY === "reset" ? "reset" as const : "revision" as const, reviewer: "", verdict: "", grade: "", link: "", at }] }
   }
   const reviewer = request.reviewer
   if (reviewer === undefined || spec.revision === 0) throw new IssueFailure({ reason: "invalid", unwritten: true })
   const provider = try Effect.serviceOption(SpecificationReviewers)
   const answer = Option.isSome(provider) ? try provider.value.review(reviewer, spec) : scripted
-    ? { verdict: "LGTM" as const, grade: reviewer === "opus" && spec.opus.verdict === "" ? "B" : "A", revision: spec.revision, link: `#spec-review-${history.length + 1}`, review: "Scripted review" }
+    ? { verdict: "LGTM" as const, grade: reviewer === "opus" && spec.opus.verdict === "" ? "B+" : fixtureSpecification[reviewer].grade, revision: spec.revision, link: `#spec-review-${history.length + 1}`, review: "Scripted review" }
     : undefined
   if (answer === undefined) throw new IssueFailure({ reason: "no-model", unwritten: true })
   // A provider returning another revision is refused rather than being relabelled as current.

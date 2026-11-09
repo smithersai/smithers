@@ -31,22 +31,23 @@ it.live("the live route refuses an agent's VIP acceptance and journals a person'
     try Effect.try(() => expect(cachedAgent.status).toBe(403))
   }
 })
-it.live("the live specification route persists all four answers, a B refuses, and a revision clears every answer", () => effect {
+it.live("the live specification route persists all four answers, B+ refuses, A- accepts, and a revision keeps every answer", () => effect {
   provide FetchHttpClient.layer {
     let state = try accepted({ ...input("spec-revise", "native-revision"), revision: 0, text: "Specification from approved VIPs" })
     for (const reviewer of ["astra", "sol", "fable", "opus"]) state = try accepted({ ...input("spec-review", "native-" + reviewer), revision: 1, reviewer, verdict: "LGTM", grade: "A" })
     try Effect.try(() => {
-      expect(state.specification!.opus.grade).toBe("B")
+      expect(state.specification!.opus.grade).toBe("B+")
       expect(specificationAccepted(state.specification!)).toBe(false)
     })
     state = try accepted({ ...input("spec-review", "native-opus-again"), revision: 1, reviewer: "opus" })
     try Effect.try(() => expect(specificationAccepted(state.specification!)).toBe(true))
-    const reset = try accepted({ ...input("spec-revise", "native-reset"), revision: 1, text: "New specification revision" })
+    const kept = try accepted({ ...input("spec-revise", "native-keep"), revision: 1, text: "New specification revision" })
     try Effect.try(() => {
-      expect(reset.specification!.revision).toBe(2)
-      expect(specificationAccepted(reset.specification!)).toBe(false)
-      expect(reset.specification!.astra.verdict).toBe("")
-      expect(reset.specification!.opus.verdict).toBe("")
+      expect(kept.specification!.revision).toBe(2)
+      expect(specificationAccepted(kept.specification!)).toBe(true)
+      for (const who of ["astra", "sol", "fable", "opus"] as const) expect(kept.specification![who]).toEqual(state.specification![who])
+      expect(kept.specification!.opus.grade).toBe("A-")
+      expect(kept.specificationHistory!.at(-1)).toMatchObject({ event: "revision", revision: 2 })
     })
     const stale = try call({ ...input("spec-review", "native-stale"), revision: 1, reviewer: "sol" })
     try Effect.try(() => expect(stale.status).toBe(400))

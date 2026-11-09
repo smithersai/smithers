@@ -35,7 +35,7 @@ export class IssuesObject {
         return result
       } }
       // Product scripted reviewer service at a native model boundary; HTTP and SQLite engine stay real.
-      const reviewers: SpecificationReviewers.Shape = { review: (reviewer, spec) => Effect.succeed({ revision: spec.revision, verdict: "LGTM", grade: reviewer === "opus" && spec.opus.verdict === "" ? "B" : "A", link: "#review", review: "Scripted workerd review" }) }
+      const reviewers: SpecificationReviewers.Shape = { review: (reviewer, spec) => Effect.succeed({ revision: spec.revision, verdict: "LGTM", grade: reviewer === "opus" && spec.opus.verdict === "" ? "B+" : reviewer === "opus" ? "A-" : "A", link: "#review", review: "Scripted workerd review" }) }
       return try serveIssues(hostId, state.storage).pipe(Effect.provideService(IssueAuthority, authority), Effect.provideService(IssueHost, host), Effect.provideService(SpecificationReviewers, reviewers), Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)), Effect.provide(FetchHttpClient.layer))
     })))
     if (new URL(request.url).pathname === "/recovery") return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(await runPromise(effect {

@@ -68,14 +68,13 @@ test("the top bar switches to Mock, the choice persists, and every feature works
   await expect(page.getByRole("status", { name: "Specification gate" })).toHaveText("Accepted")
   await page.getByRole("textbox", { name: "Specification text" }).fill("A new mock specification revision.")
   await page.getByRole("button", { name: "Save revision" }).click()
-  await expect(page.getByRole("status", { name: "Specification gate" })).toHaveText("In review")
-  for (const reviewer of ["Codex Astra", "Codex Sol", "Claude Fable", "Claude Opus"]) {
-    await page.getByRole("row", { name: new RegExp(reviewer) }).getByRole("button", { name: "Request review" }).click()
-    await expect(page.getByRole("row", { name: new RegExp(reviewer) })).toContainText("LGTM")
-  }
-  await expect(page.getByRole("status", { name: "Specification gate" })).toHaveText("In review")
-  await page.getByRole("row", { name: /Claude Opus/ }).getByRole("button", { name: "Request review" }).click()
+  await expect(page.getByText("Revision 3", { exact: true })).toBeVisible()
   await expect(page.getByRole("status", { name: "Specification gate" })).toHaveText("Accepted")
+  for (const reviewer of ["Codex Astra", "Codex Sol", "Claude Fable", "Claude Opus"]) {
+    const row = page.getByRole("row", { name: new RegExp(reviewer) })
+    await expect(row.getByRole("cell").nth(3)).toHaveText("2")
+    await expect(row).toContainText("LGTM")
+  }
 
   // Actions, and the slash menu, which also lists switching back to live.
   await page.goto("/")

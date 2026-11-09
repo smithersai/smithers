@@ -127,6 +127,6 @@ The designed public Roles matrix is reachable from the Issues header because the
 [0027](0027-acceptance-gates.md) replaces the role-only VIP projection with `approveVip`'s proved maintainer-person
 guard and attribution. An agent never accepts a VIP, including with a maintainer role. The live projection requires
 a retained human gate receipt as well as GitHub's label. Specification revision/review flows sit beside VIPs and use
-this same Factory/flow/host boundary; all four named current-revision LGTM/A results are required. A new revision
-resets all four answers. Proposal approval and specification acceptance remain separate; neither commits a task or
+this same Factory/flow/host boundary; all four named LGTM results need A- or better on the same revision. Under
+0027's 2026-11-09 addenda, new revisions keep all four answers and acceptance; release runs a full panel again. Proposal approval and specification acceptance remain separate; neither commits a task or
 merges a change. The fixture includes the previously accepted specification and an earlier reset.

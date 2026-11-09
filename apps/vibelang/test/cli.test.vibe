@@ -36,7 +36,7 @@ layer(platform)("built CLI process", (it) => {
       expect(read.status).toBe(0)
       expect(revised.status).toBe(0)
       expect(JSON.parse(initial.detail).specification.revision).toBe(2)
-      expect(JSON.parse(next.detail).specification.astra.verdict).toBe("")
+      expect(JSON.parse(next.detail).specification).toMatchObject({ astra: { verdict: "LGTM", revision: 2 }, fable: { grade: "A-" }, opus: { grade: "A-" } })
       expect(JSON.parse(next.detail).specification.revision).toBe(3)
       expect(refused.status).not.toBe(0)
     })

@@ -211,6 +211,6 @@ function specificationView(ui: IssuesUi, h: H, send: Send): ReadonlyArray<Html> 
       ]),
     ]),
     ...(accepted ? [h.div([h.Class("sui-card")], [h.div([h.Class("sui-card-header")], [h.span([h.Class("sui-card-title")], ["Self-consistency"])]), h.div([h.Class("sui-card-content")], verificationSuites.map(suite => h.a([h.Class("sui-badge sui-badge-outline"), h.Href(suite.href)], [`${suite.label} · ${suite.state}`])))])] : []),
-    h.details([], [h.summary([], ["History"]), h.ol([h.Class("sui-item-conv-events")], history.map((event, index) => h.li([h.Id(`spec-review-${index + 1}`), h.Class("sui-item-conv-event")], [h.details([], [h.summary([], [`r${event.revision} · ${event.event === "reset" ? "Reset" : `${reviewers.find(r => r.id === event.reviewer)?.name ?? event.reviewer} · ${event.verdict} · ${event.grade}`} · ${event.at}`]), ...(event.review === undefined ? [] : [h.p([], [event.review])])])])))]),
+    h.details([], [h.summary([], ["History"]), h.ol([h.Class("sui-item-conv-events")], history.map((event, index) => h.li([h.Id(`spec-review-${index + 1}`), h.Class("sui-item-conv-event")], [h.details([], [h.summary([], [`r${event.revision} · ${event.event === "reset" ? "Reset" : event.event === "revision" ? "Revision" : `${reviewers.find(r => r.id === event.reviewer)?.name ?? event.reviewer} · ${event.verdict} · ${event.grade}`} · ${event.at}`]), ...(event.review === undefined ? [] : [h.p([], [event.review])])])])))]),
   ])]
 }

@@ -84,9 +84,13 @@ brick                                   state         proof
 
 - **Benchmarks (0017, vl-bench): not done.** Local/live timings and the deterministic 5% work gate pass. The complete independent [source-profile receipt](benchmarks.md#benchmark-only-coverage), reusing the landed coverage configuration, covers 5,083/6,675 src/worker lines (76.15%) on its archived pre-0028 source snapshot; strict thresholds remain red. Qualified unminified profiling, exact-range merging, SQLite recovery and native action/wiki journeys are implemented. Optimized-bundle attribution remains unqualified; uncovered paths are retained explicitly.
 
-- **Both acceptance gates (0027, lane vl-gates): implemented locally.** Maintainer-person VIP approval; Astra, Sol, Fable and Opus current-revision LGTM/A specification acceptance; mock reset history, real flows, proofs/mutations, scenes, browser and workerd routes. Lead deploys.
+- **Both acceptance gates (0027, lane vl-gates): implemented locally.** Maintainer-person VIP approval; Astra, Sol, Fable and Opus same-revision LGTM/A- or better specification acceptance; keep acceptance on edits and retain prior reset history, real flows, proofs/mutations, scenes, browser and workerd routes. Lead deploys.
 
 - **vl-learnmore (0014, VL-31):** ten-step theatre tutorial, exact subtitles and optional sound, numbered app drives,
   durable pause/seek and private Mock reload recovery; designer source preserved in `designs/onboarding/`.
 
 - **Wiki editing (0021, vl-wikiedit):** designed Edit/Propose pane, person-owned fork/commit/review through shared integrations; agent drafts for explicit person submission; fixture, HTTP, SQLite, CLI/MCP and browser checks. People merge; lead deploys.
+
+- **Gate 2 addenda (0027, lane vl-gates2): implemented locally.** A+, A and A- pass; B+ refuses. The accepted mock
+  starts with A, A, A-, A-; edits keep acceptance and receipts. Both explicit revision policies retain proofs and
+  negative controls; memory/workerd, CLI/MCP, scene, fuzz, benchmark and browser cases track keep. Lead deploys.

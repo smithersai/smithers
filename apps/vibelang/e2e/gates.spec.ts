@@ -26,14 +26,24 @@ test("the maintainer proposal gate and four reviewer specification gate", async 
     const rect = (await button.boundingBox())!
     expect(rect.x + rect.width).toBeLessThanOrEqual(page.viewportSize()!.width)
   }
+  const table = page.getByRole("table", { name: "Specification reviews" })
+  const seats = ["Codex Astra", "Codex Sol", "Claude Fable", "Claude Opus"]
+  for (const [index, reviewer] of seats.entries()) {
+    await expect(table.getByRole("row", { name: new RegExp(reviewer) }).getByRole("cell").nth(2)).toHaveText(index < 2 ? "A" : "A-")
+  }
   await page.getByRole("textbox", { name: "Specification text" }).fill("Revised VibeLang specification from accepted VIPs.")
   await page.getByRole("button", { name: "Save revision" }).click()
-  await expect(gate).toHaveText("In review")
-  for (const reviewer of ["Codex Astra", "Codex Sol", "Claude Fable", "Claude Opus"]) {
-    await page.getByRole("row", { name: new RegExp(reviewer) }).getByRole("button", { name: "Request review" }).click()
-    await expect(page.getByRole("row", { name: new RegExp(reviewer) })).toContainText(reviewer === "Claude Opus" ? "B" : "A")
+  await expect(page.getByText("Revision 3", { exact: true })).toBeVisible()
+  await expect(gate).toHaveText("Accepted")
+  for (const reviewer of seats) await expect(table.getByRole("row", { name: new RegExp(reviewer) }).getByRole("cell").nth(3)).toHaveText("2")
+  await page.getByLabel("Issues pane").getByText("History", { exact: true }).click()
+  await expect(page.locator(".sui-item-conv-event").last()).toContainText("r3 · Revision")
+  // A new panel may be requested explicitly; the old same-revision acceptance is retained across edits.
+  for (const [index, reviewer] of seats.entries()) {
+    const row = table.getByRole("row", { name: new RegExp(reviewer) })
+    await row.getByRole("button", { name: "Request review" }).click()
+    await expect(row.getByRole("cell").nth(3)).toHaveText("3")
+    await expect(row.getByRole("cell").nth(2)).toHaveText(index < 2 ? "A" : "A-")
   }
-  await expect(gate).toHaveText("In review")
-  await page.getByRole("row", { name: /Claude Opus/ }).getByRole("button", { name: "Request review" }).click()
   await expect(gate).toHaveText("Accepted")
 })

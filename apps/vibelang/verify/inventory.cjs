@@ -83,7 +83,7 @@ const functionBoundaries = {
   "src/core/conversation.vibe:setCommitment": "Exact commit/uncommit assignment and task state; all issue identity, tree, content and review fields preserved. Commit requires nonempty assignee (0022).",
   "src/core/conversation.vibe:approveVip": "Only a maintainer person with nonempty identity and time can accept an in-review VIP; task and issue identity are preserved (0027).",
   "src/core/conversation.vibe:declineVip": "An in-review VIP becomes Declined and closed, preserving its task; other states are unchanged (0027).",
-  "src/core/conversation.vibe:specificationReviewPasses": "Exact current-revision LGTM/A with a nonempty review receipt (0027).",
+  "src/core/conversation.vibe:specificationReviewPasses": "Exact same-revision LGTM/A- or better with a nonempty review receipt (0027).",
   "src/core/conversation.vibe:specificationAccepted": "Exactly the conjunction of Astra, Sol, Fable and Opus on one current revision (0027).",
   "src/core/conversation.vibe:unansweredSpecificationReview": "Exact empty answer, grade, revision and link (0027).",
   "src/core/conversation.vibe:reviseSpecification": "Changed content increments the immutable revision and resets every field of all four answers; equal content is unchanged (0027).",

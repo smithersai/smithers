@@ -13,9 +13,9 @@ proposal document, issue and review change; gate receipts neither merge that cha
 
 A specification has immutable numbered revisions and four named slots: Codex Astra, Codex Sol, Claude Fable and
 Claude Opus. Each slot records verdict, grade, reviewed revision and review link. Acceptance is derived, never a
-writable flag: all four must be LGTM/A on the current positive revision with a review receipt. Changing the text
-increments the revision and clears every field of every answer; saving identical text changes nothing. A stale
-review result cannot be recorded. The history retains review results and resets; the review links target those
+writable flag: all four must be LGTM with A+, A or A- on the same positive revision with a review receipt. Changing the text
+increments the revision and keeps all four answers and their acceptance under the project's `"keep"` policy; saving identical text changes nothing. A stale
+review result cannot be recorded. The history retains review results, new revisions and earlier resets; the review links target those
 receipts, including the review text. The specification is editable by maintainers; contributors can request reviews.
 Both use 0019's single policy mapping.
 
@@ -49,18 +49,21 @@ acceptance, Self-consistency links Fuzz, Coverage and Proofs to the app's existi
 in-progress states are generated from those records at build time; the gate never claims the broader 100% target
 has passed. No new explanatory product prose is added.
 
-The fixture starts at revision 2, accepted by all four, reflecting PROC-28. Its synthetic history retains revision
-1's changes-requested/B answer, revision 2's reset and four A answers. Fixture timestamps and seeded review links are
-fixture data, not claimed historical provider receipts. A new revision clears all answers. The scripted Opus first
-returns LGTM/B, then LGTM/A on another request. The other scripted reviewers return LGTM/A. This makes the three-A,
-one-B refusal and subsequent acceptance usable with no backend, sign-in or model. The maintainer fixture identity
+The fixture starts at revision 2, accepted with Astra A, Sol A, Fable A-, Opus A-, reflecting panel `v6`
+(2026-10-29 UTC). All four `~/vibe/review-spec/v6/<reviewer>/REPORT.md` records on nyc-01 confirm these grades.
+Smithers main `c27bfe7f` corrects the earlier citation: October 28's `r6` did not pass (Opus B+); `v6` did.
+Its synthetic history retains revision 1's changes-requested/B answer, revision 2's pre-keep reset, and these four
+answers. Fixture timestamps and seeded review links are fixture data, not historical provider receipts. A new
+revision keeps all answers and records a Revision event. Scripted reviews use the same A, A, A-, A- grades; only
+an unreviewed Opus seat first returns LGTM/B+, then LGTM/A-. An explicit new panel must still agree on one revision.
+The maintainer fixture identity
 approves VIPs through the same flow as live. Review scripts cannot approve a VIP.
 
 ## Proof and behavioral evidence
 
-Contracts prove the human gate, exact single-review predicate, conjunction of all four reviewers, revision reset,
+Contracts prove the human gate, exact A- or better single-review predicate, conjunction of all four reviewers, both revision policies,
 reviewer authority and stale-result rejection, preserving unrelated seats and specification text/revision.
-Twenty-four executable mutations remove each authority/review guard, each required seat, each seat's reset and both
+Twenty-nine executable mutations change each authority/review guard or grade boundary, each required seat, each seat's reset and both
 new least-role mappings. Contracts stay byte-identical and rejection must be a Dafny obligation, never a compiler
 or tool failure. Existing VIP projection mutations now target the guarded acceptance and decline transitions.
 
@@ -77,12 +80,30 @@ The phone table has a geometry regression test: all four review actions must rem
 phone run caught the original clipped action column; compact cell spacing, a short visible Review label and Rev
 heading retain the complete four-seat table without horizontal clipping. The accessible action remains Request review.
 
-## Revisions after acceptance (2026-11-08)
+## VL-32 addenda (2026-11-09, lane vl-gates2)
 
-Whether a new revision of an accepted specification needs all four reviews again is not Will's rule yet: VL-32 quotes
-him that the specification is accepted once and then "needs to be self consistent and optimistically built fuzz
-tested". The question is open for him at lang.smithers.sh/factory/open (question 3). Until he answers, one constant,
-`SPEC_REVISION_POLICY` in `src/core/conversation.vibe`, holds the behavior: `"reset"` (today) clears the four answers on
-each new revision; `"keep"` keeps the acceptance the four gave one revision. Both are proved
-(`reviseSpecificationUnder`, `specificationAcceptedUnder`). The live reviewer models stay unbound: Mock shows the gate,
-and real specification reviews run in the new factory (smithersai/lang).
+Will, 2026-11-09 04:25 PST: **"Yes a- counts"** (PROC-28 addendum on Smithers main, commit `080d48c6`).
+Gate 2 accepts exactly A+, A and A-, with all four reviewers answering LGTM on the same revision. B+ refuses.
+The live model-result codec admits plus/minus grades, and its instruction names the same acceptance boundary;
+wire state and history preserve the exact grade string. UI, CLI, MCP and chat show that grade without rounding.
+
+The lang lead decided under Will's delegation at `lang.smithers.sh/factory/open`, question 3:
+**"after acceptance, a specification change does not reset the four reviewers; automated checks keep it
+self-consistent, and a full panel runs again for a release."** `SPEC_REVISION_POLICY` is now `"keep"`.
+The earlier open question and provisional reset default are superseded. Both explicit policies remain proved by
+`reviseSpecificationUnder` and `specificationAcceptedUnder`; reset-specific cases name `"reset"` directly.
+Keeping acceptance preserves the reviewed revision and all receipt fields; it never relabels an old review as current.
+An explicitly requested new panel still needs all four seats on one revision; stale results are still refused.
+
+Regressions cover A- and A+ in every seat, three A and one A-, refusal of B+/lower/unknown grades, a changed accepted
+specification retaining acceptance, the exact fixture grades and retained receipts, and Revision history without a
+new Reset. Memory flows, scenes, emitted CLI/MCP, workerd, fuzzing, benchmarks and Chromium use the keep policy.
+Executable grade mutations separately accept B+, accept any grade, reject A-, and reject A+; every existing gate
+guard and both policies retain negative controls. Existing issue flows supply logs, spans and counters; this adds
+no step or dependency. Lead deploys.
+
+The expanded whole-conversation proof hit the prior 1,200-second process wall on the shared host. Its bounded
+process allowance is 3,600 seconds; every original assertion is still checked with eight workers and the same
+60-second solver limit per assertion batch. Negative-case limits remain 30 seconds and timeouts still fail.
+The gate's 29 mutations all reached actual failed Dafny obligations before this wall-budget adjustment.
+Live reviewer models remain unbound; real specification panels run in the new factory (`smithersai/lang`).

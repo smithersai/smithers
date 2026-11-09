@@ -1,6 +1,6 @@
 import { it, expect } from "@effect/vitest"
 import { fixtureSpecification } from "../src/core/specification.vibe"
-import { approveVip, specificationAccepted, reviseSpecification } from "../src/core/conversation.vibe"
+import { approveVip, specificationAccepted, reviseSpecification, reviseSpecificationUnder, specificationAcceptedUnder } from "../src/core/conversation.vibe"
 import { fixtureIssues } from "../src/core/IssuesFactory.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 it("both factory acceptance gates and every single-review refusal", async ({ bench }) => {
@@ -8,12 +8,14 @@ it("both factory acceptance gates and every single-review refusal", async ({ ben
     expect(specificationAccepted(fixtureSpecification)).toBe(true)
     for (const reviewer of ["astra", "sol", "fable", "opus"] as const) {
       const review = fixtureSpecification[reviewer]
-      for (const change of [{ grade: "B" }, { verdict: "Changes requested" as const }, { revision: 1 }, { link: "" }]) expect(specificationAccepted({ ...fixtureSpecification, [reviewer]: { ...review, ...change } })).toBe(false)
+      for (const change of [{ grade: "B+" }, { verdict: "Changes requested" as const }, { revision: 1 }, { link: "" }]) expect(specificationAccepted({ ...fixtureSpecification, [reviewer]: { ...review, ...change } })).toBe(false)
     }
-    expect(specificationAccepted(reviseSpecification(fixtureSpecification, "New revision"))).toBe(false)
+    expect(specificationAccepted(reviseSpecification(fixtureSpecification, "New revision"))).toBe(true)
+    expect(specificationAcceptedUnder(reviseSpecificationUnder(fixtureSpecification, "New revision", "reset"), "reset")).toBe(false)
+    for (const grade of ["A+", "A", "A-"]) expect(specificationAccepted({ ...fixtureSpecification, opus: { ...fixtureSpecification.opus, grade } })).toBe(true)
     const vip = fixtureIssues.find(i => i.number === 45)!
     expect(approveVip(vip, "maintainer", "agent", "agent", "now")).toBe(vip)
     expect(approveVip(vip, "maintainer", "person", "will", "now")).toMatchObject({ vip: "Accepted", approvedBy: "will" })
   }).run(quick)
-  await runPromise(artifact("factory-gates", "Both acceptance predicates over the accepted fixture, sixteen single-review refusals, revision reset and person/agent approval; assertions included.", ["In-process decisions; excludes model inference, transport and storage."], result))
+  await runPromise(artifact("factory-gates", "Both acceptance predicates over the accepted fixture, sixteen single-review refusals including B+, keep and reset revision policies and person/agent approval; assertions included.", ["In-process decisions; excludes model inference, transport and storage."], result))
 })

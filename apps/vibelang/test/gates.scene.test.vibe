@@ -1,3 +1,4 @@
+import { reviseSpecification } from "../src/core/conversation.vibe"
 import { click, expect, given, role, scene, text } from "foldkit/scene"
 import { it } from "@effect/vitest"
 import { init, update, signedOut } from "../src/web/main.vibe"
@@ -18,11 +19,22 @@ it("shows the human proposal gate and the specification beside VIPs", () => {
   )
 })
 
-it("three A grades and a B never show Accepted", () => {
-  const data = { ...base.issues.data, specification: { ...fixtureSpecification, opus: { ...fixtureSpecification.opus, grade: "B" } } }
+it("a B+ review never shows Accepted", () => {
+  const data = { ...base.issues.data, specification: { ...fixtureSpecification, opus: { ...fixtureSpecification.opus, grade: "B+" } } }
   scene({ update, view }, given({ ...base, issues: { ...base.issues, screen: "specification", data } }),
     expect(role("status", { name: "Specification gate" })).toHaveText("In review"),
     expect(role("table", { name: "Specification reviews" })).toExist(),
     expect(text("Claude Opus")).toExist(),
+  )
+})
+
+it("shows round-6 A- grades and keeps Accepted after a specification edit", () => {
+  const specification = reviseSpecification(fixtureSpecification, "Updated accepted specification")
+  const data = { ...base.issues.data, specification }
+  scene({ update, view }, given({ ...base, issues: { ...base.issues, screen: "specification", data } }),
+    expect(role("status", { name: "Specification gate" })).toHaveText("Accepted"),
+    expect(text("Self-consistency")).toExist(),
+    expect(text("A-")).toExist(),
+    expect(text("Revision 3")).toExist(),
   )
 })

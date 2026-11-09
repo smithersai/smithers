@@ -60,7 +60,7 @@ describe("built MCP stdio server through McpClient", () => {
       try Effect.try(() => expect(JSON.parse(revised.detail).specification.revision).toBe(3))
       for (const reviewer of ["astra", "sol", "fable", "opus"]) {
         const result = try client.callTool({ tool: issue, schema: output, arguments: { op: "spec-review", revision: 3, reviewer, key: "mcp-review-" + reviewer } })
-        try Effect.try(() => expect(JSON.parse(result.detail).specification[reviewer]).toMatchObject({ verdict: "LGTM", grade: reviewer === "opus" ? "B" : "A", revision: 3 }))
+        try Effect.try(() => expect(JSON.parse(result.detail).specification[reviewer]).toMatchObject({ verdict: "LGTM", grade: reviewer === "opus" || reviewer === "fable" ? "A-" : "A", revision: 3 }))
       }
       const refused = try Effect.result(client.callTool({ tool: issue, schema: output, arguments: { op: "accept", number: 45, key: "mcp-cannot-accept" } }))
       try Effect.try(() => expect(refused._tag).toBe("Failure"))
