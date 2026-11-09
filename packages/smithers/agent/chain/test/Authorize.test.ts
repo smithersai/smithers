@@ -540,7 +540,7 @@ describe("Authorize", () => {
       mayOverlap: () => false
     }))
     try {
-      const reloaded = await import("../src/Authorize.ts")
+      const reloaded = await import("../src/Authorize.vibe")
       const verdict = await Effect.runPromise(
         Effect.flatMap(
           reloaded.Authorize,

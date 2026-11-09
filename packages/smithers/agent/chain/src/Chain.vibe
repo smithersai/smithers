@@ -13,7 +13,7 @@
 import * as Digest from "@smthrs/core/Digest"
 import * as Author from "./Author.vibe"
 import * as AuthorDeclaration from "./AuthorDeclaration.ts"
-import * as Authorize from "./Authorize.ts"
+import * as Authorize from "./Authorize.vibe"
 import * as CallKey from "./CallKey.vibe"
 import * as Catalog from "./Catalog.vibe"
 import * as Event from "./Event.vibe"

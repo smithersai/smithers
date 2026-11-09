@@ -217,7 +217,7 @@ export const layerRules = (rules: ReadonlyArray<Permission.Rule>): Layer.Layer<A
   return Layer.succeed(Authorize)(
     make({
       authorize: Effect.fn("Authorize.authorize")((request) =>
-        Effect.gen(function*() {
+        effect {
           // Defensive for direct service users: the chain itself defaults
           // undeclared entries to the broadest claim before calling.
           const claims = request.capabilities.length === 0 ? ["*"] : request.capabilities
@@ -230,10 +230,10 @@ export const layerRules = (rules: ReadonlyArray<Permission.Rule>): Layer.Layer<A
             }
             const exact = exactCapability(parsed.value)
             const verdict = Option.isSome(exact)
-              ? Permission.evaluate([snapshot], exact.value)
+              ? try Effect.orDie(Effect.try(() => Permission.evaluate([snapshot], exact.value)))
               : evaluatePattern(snapshot, parsed.value)
             if (verdict === "deny") {
-              return yield* new AuthorizeError({
+              throw new AuthorizeError({
                 code: "denied",
                 message: `"${request.name}" is denied for ${declared}`
               })
@@ -243,12 +243,12 @@ export const layerRules = (rules: ReadonlyArray<Permission.Rule>): Layer.Layer<A
             }
           }
           if (ask !== undefined) {
-            return yield* new AuthorizeError({
+            throw new AuthorizeError({
               code: "approval_required",
               message: `"${request.name}" needs approval for ${ask}`
             })
           }
-        })
+        }
       )
     })
   )

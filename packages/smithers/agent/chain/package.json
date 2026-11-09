@@ -83,9 +83,9 @@
     },
     "./Authorize": {
       "types": {
-        "default": "./src/Authorize.ts"
+        "default": "./.vibe/declarations/Authorize.d.vibe.ts"
       },
-      "vibelang-source": "./src/Authorize.ts",
+      "vibelang-source": "./src/Authorize.vibe",
       "default": "./.vibelang/js/src/Authorize.js"
     },
     "./Script": {
@@ -220,7 +220,8 @@
     "!.vibelang/js/.loader",
     "src/SubChains.vibe",
     "src/Chain.vibe",
-    "src/ScriptRunner.vibe"
+    "src/ScriptRunner.vibe",
+    "src/Authorize.vibe"
   ],
   "publishConfig": {
     "access": "public",

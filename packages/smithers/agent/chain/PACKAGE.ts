@@ -96,7 +96,7 @@ const securityReview = Smithers.SecurityReview({
         "An unparseable claim treated as allow, or authorize_unavailable swallowed instead of failing the run.",
         "A sub-chain spawned through the agent entry running without the parent's Authorize service."
       ],
-      paths: ["src/Authorize.ts", "src/Chain.vibe", "src/SubChains.vibe", "src/AuthorDeclaration.ts", "src/Catalog.vibe"]
+      paths: ["src/Authorize.vibe", "src/Chain.vibe", "src/SubChains.vibe", "src/AuthorDeclaration.ts", "src/Catalog.vibe"]
     },
     {
       id: "replay-identity",

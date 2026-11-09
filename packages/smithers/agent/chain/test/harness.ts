@@ -1,6 +1,6 @@
 import { Effect, Layer, type Scope } from "effect"
 import type * as Author from "../src/Author.vibe"
-import type * as Authorize from "../src/Authorize.ts"
+import type * as Authorize from "../src/Authorize.vibe"
 import * as Catalog from "../src/Catalog.vibe"
 import * as Chain from "../src/Chain.vibe"
 import type * as Event from "../src/Event.vibe"

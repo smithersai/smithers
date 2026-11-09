@@ -36,7 +36,7 @@ export * as AuthorDeclaration from "./AuthorDeclaration.ts"
  * @since 0.1.0
  * @slop
  */
-export * as Authorize from "./Authorize.ts"
+export * as Authorize from "./Authorize.vibe"
 
 /**
  * The durable identity of one settled call within a link.
