@@ -13,18 +13,18 @@ for (const length of [10, 1000, 100000]) {
     const draft = Message.UpdatedDraft({ value: "service" })
     const event = Message.ReceivedEvent({ event: { type: "Posted", seq: length + 1, id: "new", clientId: "new", name: "Ada", text: "new post" } })
     const measurements = []
-    measurements.push(await workload(bench, "keystroke-update", () => {
+    measurements.push(await workload(bench, "keystroke-update", "sync", () => {
       const updated = update(model, draft).model
       assert(updated.draft).toBe("service")
       assert(updated.client).toBe(model.client)
     }).run(quick))
-    measurements.push(await workload(bench, "incoming-event-update", () => {
+    measurements.push(await workload(bench, "incoming-event-update", "sync", () => {
       const updated = update(model, event).model
       assert(updated.client.conversation.entries.length).toBe(length + 1)
       assert(updated.client.conversation.entries.at(-1)?.text).toBe("new post")
     }).run(quick))
     // Scene rendering includes vnode generation, serialization and query traversal; it has no browser layout.
-    measurements.push(await workload(bench, "view", () => {
+    measurements.push(await workload(bench, "view", "sync", () => {
       scene({ update, view }, given(model), inside(role("log", { name: "Conversation" }), expectAll(all.role("article")).toHaveCount(length), expect(text(`post ${length}`)).toExist()))
     }).run({ time: 0, iterations: 3, warmup: false }))
     await runPromise(artifact(`web-${length}`, "Vitest built-in bench. Immutable update on one draft keystroke and one received event; Foldkit scene renders the whole transcript and checks its exact scoped article count and tail. Setup excluded; assertions included; view 3 unwarmed samples.", ["Scene view includes serialization/query cost, no DOM patch/layout/paint. 100,000 entries may exceed a usable browser transcript; no virtualization exists."], measurements))
@@ -33,7 +33,7 @@ for (const length of [10, 1000, 100000]) {
 
 it("streamed Markdown", async ({ bench }) => {
   const input = "Use `service`.\n\n```vibe\nservice Users {}\n```\n\nDone."
-  const measurement = await workload(bench, "markdown-blocks", () => {
+  const measurement = await workload(bench, "markdown-blocks", "sync", () => {
     assert(blocks(input)).toEqual([{ kind: "prose", text: "Use `service`." }, { kind: "code", language: "vibe", text: "service Users {}" }, { kind: "prose", text: "Done." }])
   }).run(quick)
   await runPromise(artifact("markdown", "Vitest built-in bench; parse a paragraph/code/paragraph answer; compare complete blocks.", ["Small fixed answer; rendering is measured separately."], measurement))

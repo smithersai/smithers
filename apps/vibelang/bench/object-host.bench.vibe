@@ -14,7 +14,7 @@ import { artifact, workload, slow } from "./artifact.vibe"
 const unavailableHistory = readerOver(() => fail(new Unreachable({ what: "history" })), () => fail(new Unreachable({ what: "history" })))
 
 it("SQLite conversation hosts settle queued replies, recover and preserve ownership", async ({ bench }) => {
-  const result = await workload(bench, "object-post-alarm-recovery", async () => {
+  const result = await workload(bench, "object-post-alarm-recovery", "async", async () => {
     await runPromise(scoped(effect {
       const kv = try Effect.try(() => objectStorage())
       const storage = kv as unknown as Objects.Storage
@@ -65,7 +65,7 @@ it("SQLite conversation hosts settle queued replies, recover and preserve owners
 })
 
 it("missing execution receipts require a durable cancellation tombstone", async ({ bench }) => {
-  const result = await workload(bench, "object-cancelled-receipt", async () => {
+  const result = await workload(bench, "object-cancelled-receipt", "async", async () => {
     await runPromise(scoped(effect {
       const kv = try Effect.try(() => objectStorage())
       const storage = kv as unknown as Objects.Storage

@@ -6,7 +6,7 @@ import { wantsMock, preferenceWrite, startupRole, startupSession, tutorialStartu
 import { artifact, workload, quick } from "./artifact.vibe"
 
 it("dispatch scans stop at the first unmarked post and attempt once", async ({ bench }) => {
-  const result = await workload(bench, "dispatcher-decisions", () => {
+  const result = await workload(bench, "dispatcher-decisions", "sync", () => {
     const posts = ["m1", "m2", "m3"]
     for (let marks = 0; marks < 8; marks++) {
       let scan = initialDispatch()
@@ -27,7 +27,7 @@ it("dispatch scans stop at the first unmarked post and attempt once", async ({ b
 })
 
 it("model progress preserves projected output and accounts exact safe usage", async ({ bench }) => {
-  const result = await workload(bench, "reply-progress-decisions", () => {
+  const result = await workload(bench, "reply-progress-decisions", "sync", () => {
     const event: ProgressEvent = { kind: "model-delta", textDelta: true, piece: "cell", projected: "answer", input: 2, output: 3, code: "offline", safeTotal: true, safeInput: true, safeOutput: true }
     const initial = initialProgress()
     const projected = advanceProgress(initial, event)
@@ -59,7 +59,7 @@ it("model progress preserves projected output and accounts exact safe usage", as
 })
 
 it("startup preferences and theatre controls preserve their public choices", async ({ bench }) => {
-  const result = await workload(bench, "startup-theatre-decisions", () => {
+  const result = await workload(bench, "startup-theatre-decisions", "sync", () => {
     for (const [query, stored, mock, write] of [
       ["mock", "live", true, "set"], ["live", "mock", false, "clear"], [null, "mock", true, "keep"],
       [null, null, false, "keep"], ["unknown", "mock", true, "keep"], ["unknown", "unknown", false, "keep"],

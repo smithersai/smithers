@@ -4,7 +4,7 @@ import { approveVip, specificationAccepted, reviseSpecification, reviseSpecifica
 import { fixtureIssues } from "../src/core/IssuesFactory.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 it("both factory acceptance gates and every single-review refusal", async ({ bench }) => {
-  const result = await workload(bench, "factory-gates", () => {
+  const result = await workload(bench, "factory-gates", "sync", () => {
     expect(specificationAccepted(fixtureSpecification)).toBe(true)
     for (const reviewer of ["astra", "sol", "fable", "opus"] as const) {
       const review = fixtureSpecification[reviewer]

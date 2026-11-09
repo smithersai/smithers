@@ -6,7 +6,7 @@ import { Identity, viewer } from "../src/core/roles.vibe"
 import { artifact, workload, slow, quick } from "./artifact.vibe"
 
 it("mock account identity, grants, participation, events and sign-out", async ({ bench }) => {
-  const result = await workload(bench, "accounts-lifecycle", async () => {
+  const result = await workload(bench, "accounts-lifecycle", "async", async () => {
     await runPromise(scoped(effect {
       const accounts = try MockAccounts.make()
       const initial = try accounts.current()
@@ -60,7 +60,7 @@ it("mock account identity, grants, participation, events and sign-out", async ({
 })
 
 it("live account adapter failures through a faulty Effect transport", async ({ bench }) => {
-  const result = await workload(bench, "accounts-transport-faults", async () => {
+  const result = await workload(bench, "accounts-transport-faults", "async", async () => {
     for (const [status, body] of [[0, ""], [403, ""], [503, ""], [200, "{"], [200, "{}"], [200, "data: {}\n\n"], [204, ""]] as const) {
       const faulty = HttpClient.make((request) => status === 0
         ? fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) }))

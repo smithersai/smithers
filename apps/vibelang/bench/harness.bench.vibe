@@ -1,0 +1,20 @@
+// These are controls of the real built-in runner, not a fake Bench implementation.
+import { it, expect } from "@effect/vitest"
+import { workload } from "./artifact.vibe"
+
+effect function finish(done: () => void) { try sleep("10 millis"); try sync(done) }
+
+it("sync workloads execute exactly the requested measured callbacks", async ({ bench }) => {
+  let calls = 0
+  await workload(bench, "harness-sync", "sync", () => { calls++ }).run({ time: 0, iterations: 3, warmup: false })
+  expect(calls).toBe(runSync(Config.withDefault(Config.Boolean("BENCH_COVERAGE"), false)) ? 1 : 3)
+})
+
+it("promise-returning workloads execute exactly three serial callbacks", async ({ bench }) => {
+  let calls = 0, active = 0, maximum = 0
+  await workload(bench, "harness-promise", "async", () => {
+    calls++; active++; maximum = Math.max(maximum, active)
+    return runPromise(finish(() => { active-- }))
+  }).run({ time: 0, iterations: 3, warmup: false })
+  expect({ calls, active, maximum }).toEqual({ calls: runSync(Config.withDefault(Config.Boolean("BENCH_COVERAGE"), false)) ? 1 : 3, active: 0, maximum: 1 })
+})

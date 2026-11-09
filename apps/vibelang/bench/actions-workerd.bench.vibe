@@ -3,6 +3,8 @@ import { it, expect } from "@effect/vitest"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { HttpServer, HttpServerRequest, HttpServerResponse, FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { LiveActions } from "../src/actions/LiveActions.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { LiveMythical } from "../src/history/LiveMythical.vibe"
 import { Actions } from "../src/actions/Actions.vibe"
 import type { Run } from "../src/actions/Actions.vibe"
 import { serveApi, type Served } from "../test/support/workerd.vibe"
@@ -64,15 +66,16 @@ it("workerd actions API over LiveActions and signed sessions", async ({ bench })
         CHAT_MODEL: JSON.stringify({ protocol: "openai-chat", baseUrl: model, modelId: "deterministic", credential: "BENCH" }),
         SMITHERS_MODEL_KEY_BENCH: "benchmark-only", SMITHERS_MODEL_KEY_BENCH_ORIGIN: model,
       }), (served) => promise(served.dispose))
-      provide LiveActions(api.origin).pipe(Layer.provide(FetchHttpClient.layer)), FetchHttpClient.layer {
+      provide LiveActions(api.origin).pipe(Layer.provide(FetchHttpClient.layer)), LiveMythical(api.origin).pipe(Layer.provide(FetchHttpClient.layer)), FetchHttpClient.layer {
         const actions = try Actions
+        const mythical = try Mythical
         const client = try HttpClient.HttpClient
         const issue = async (person: string) => {
           const response = await runPromise(call(client, api, "GET", `/__fixture/issue?id=${person}&login=bench${person}`))
           expect(response.status).toBe(200)
           return Schema.decodeUnknownSync(Schema.Struct({ cookie: Schema.String }))(await runPromise(response.json)).cookie
         }
-        const result = try Effect.try(() => workload(bench, "workerd-actions", async () => {
+        const result = try Effect.try(() => workload(bench, "workerd-actions", "async", async () => {
           const stamp = `${Date.now() % 100000}`
           const listed = await runPromise(actions.list())
           expect(listed.map((entry) => entry.name)).toEqual(expect.arrayContaining(["vibelang/Post", "vibelang/Tour", "vibelang/history/Plan"]))
@@ -112,10 +115,20 @@ it("workerd actions API over LiveActions and signed sessions", async ({ bench })
           expect(settled.steps.every((step) => step.state === "passed")).toBe(true)
 
           const planId = `a-plan-${stamp}`
-          const planned = await runPromise(call(client, api, "POST", "/api/actions/runs", person, { id: planId, flow: "vibelang/history/Plan", input: { how: "append", epic: "", newEpic: "Bench", target: "", title: "Measured", task: "Task" }, door: "slash" }, ""))
+          const title = `Measured history ${stamp}`
+          const planRequest = { id: planId, flow: "vibelang/history/Plan", input: { how: "append", epic: "", newEpic: "Bench", target: "", title, task: "Task" }, door: "slash" }
+          const planned = await runPromise(call(client, api, "POST", "/api/actions/runs", person, planRequest, ""))
           expect(planned.status).toBe(202)
-          const plannedRun = await runPromise(untilSettled(async () => Schema.decodeUnknownSync(Schema.Struct({ state: Schema.String }))(await runPromise((await runPromise(call(client, api, "GET", `/api/actions/runs/${planId}`, person, undefined, ""))).json)), planId))
+          const plannedRun = await runPromise(untilSettled(async () => Schema.decodeUnknownSync(Schema.Struct({ state: Schema.String, result: Schema.String }))(await runPromise((await runPromise(call(client, api, "GET", `/api/actions/runs/${planId}`, person, undefined, ""))).json)), planId))
           expect(plannedRun.state).toBe("passed")
+          const answer = Schema.decodeUnknownSync(Schema.Struct({ id: Schema.String, refusal: Schema.Null }))(JSON.parse(plannedRun.result))
+          expect(answer.id).toMatch(/^m[0-9]+$/)
+          const beforeReplay = await runPromise(mythical.search(title))
+          expect(beforeReplay.commits.map(commit => [commit.id, commit.title])).toEqual([[answer.id, title]])
+          const replayedPlan = await runPromise(call(client, api, "POST", "/api/actions/runs", person, planRequest, ""))
+          expect(replayedPlan.status).toBe(202)
+          const afterReplay = await runPromise(mythical.search(title))
+          expect(afterReplay).toEqual(beforeReplay)
 
           const rerun = await runPromise(call(client, api, "POST", `/api/actions/runs/${postId}/rerun`, person, { id: `a-rerun-${stamp}` }, ""))
           expect(rerun.status).toBe(202)
@@ -135,7 +148,7 @@ it("workerd actions API over LiveActions and signed sessions", async ({ bench })
           const foreignWrite = await runPromise(call(client, api, "POST", "/api/actions/runs", person, { id: `a-w-${stamp}`, flow: "vibelang/Tour", input: {}, door: "button" }, "https://other.example"))
           expect(foreignWrite.status).toBe(403)
         }))
-        try artifact("workerd-actions", "Vitest built-in bench; real local workerd API Worker with the deterministic model service: LiveActions list/commands/start/cancel/follow/runs/read/rerun/slash and its typed failures, then signed sessions run Post and history Plan flows to settlement, with the input/authority/conflict/not-found matrix and cross-origin refusal.", ["Flow/adapter overhead over local workerd, no WAN or production contention; model replies are deterministic HTTP fixtures. Three samples per command on one served instance."], try tryPromise(() => result.run(slow)))
+        try artifact("workerd-actions", "Vitest built-in bench; real local workerd API Worker with the deterministic model service: LiveActions list/commands/start/cancel/follow/runs/read/rerun/slash and its typed failures, then signed sessions run Post and History Plan to settlement; decode the real History result, require one matching retained commit, replay the exact request and require unchanged readback, with the input/authority/conflict/not-found matrix and cross-origin refusal.", ["Flow/adapter overhead over local workerd, no WAN or production contention; model replies are deterministic HTTP fixtures. Three samples per command on one served instance."], try tryPromise(() => result.run(slow)))
       }
     }
   }))

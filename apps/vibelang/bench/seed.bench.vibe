@@ -13,7 +13,7 @@ it("bootstrap a real commit graph and merge-queue evidence", async ({ bench }) =
     { id: "a", lane: "bench", state: "rejected", reason: "test failed", gate: "test", titles: ["feat(effect): add layer"] },
     { id: "b", lane: "bench", state: "landed", reason: "", gate: "test", titles: ["feat(effect): add layer"] },
   ]
-  const result = await workload(bench, "history-bootstrap-graph", () => {
+  const result = await workload(bench, "history-bootstrap-graph", "sync", () => {
     const fetched = [...commits].reverse().map((commit) => ({ sha: commit.sha, commit: { message: commit.description }, parents: commit.parents.map((sha) => ({ sha })) }))
     const incremental = newCommits(fetched, commits[0]!.sha)
     expect(incremental?.map((commit) => commit.sha)).toEqual([commits[1]!.sha, commits[2]!.sha])

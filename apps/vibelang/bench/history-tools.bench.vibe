@@ -11,7 +11,7 @@ import { apply, empty as noConversation } from "../src/core/conversation.vibe"
 import { artifact, workload, quick, slow } from "./artifact.vibe"
 
 it("history tools and their durable write answers", async ({ bench }) => {
-  const result = await workload(bench, "history-tool-lifecycle", async () => {
+  const result = await workload(bench, "history-tool-lifecycle", "async", async () => {
     await runPromise(scoped(effect {
       provide MockMythical({ role: "contributor", name: "Bench", agent: true }, () => succeed(empty)) {
         const history = try Mythical
@@ -45,7 +45,7 @@ it("history tools and their durable write answers", async ({ bench }) => {
     commit: () => fail(new Unavailable({ reason: "offline" })), search: () => fail(new Unavailable({ reason: "offline" })),
     plan: () => fail(new Unavailable({ reason: "offline" })), start: () => fail(new Unavailable({ reason: "offline" })), note: () => fail(new Unavailable({ reason: "offline" })),
   }
-  const failure = await workload(bench, "history-tool-faults", async () => {
+  const failure = await workload(bench, "history-tool-faults", "async", async () => {
     const answers = await runPromise(all([
       plan(faulty, { how: "append", epic: "e1", newEpic: "", target: "", title: "Measured", task: "" }, "fault-plan"),
       start(faulty, "m1", "bench", "fault-start"), note(faulty, "m1", "tried", "Measured.", "fault-note"),
@@ -59,7 +59,7 @@ it("history tools and their durable write answers", async ({ bench }) => {
 
 it("mock agent reads actual committed history", async ({ bench }) => {
   const seed = await runPromise(seeded())
-  const result = await workload(bench, "mock-agent-history", async () => {
+  const result = await workload(bench, "mock-agent-history", "async", async () => {
     await runPromise(scoped(effect {
       provide MockFactory {
         const factory = try Factory
@@ -82,7 +82,7 @@ it("mock agent reads actual committed history", async ({ bench }) => {
 
 
 it("history catalog invokes each actual binding", async ({ bench }) => {
-  const result = await workload(bench, "history-catalog-calls", async () => {
+  const result = await workload(bench, "history-catalog-calls", "async", async () => {
     await runPromise(scoped(effect {
       provide MockMythical({ role: "contributor", name: "Bench", agent: true }, () => succeed(empty)) {
         const history = try Mythical

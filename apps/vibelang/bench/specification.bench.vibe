@@ -8,7 +8,7 @@ import { artifact, workload, slow } from "./artifact.vibe"
 const base: IssueRequest = { op: "spec-review", revision: 2, reviewer: "astra", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "bench" }
 
 it("specification revisions keep acceptance and retain the named review receipts", async ({ bench }) => {
-  const result = await workload(bench, "specification-review-journey", async () => {
+  const result = await workload(bench, "specification-review-journey", "async", async () => {
     await runPromise(scoped(effect {
       const api = try makeIssueFactory("maintainer")
       const before = try api.read()

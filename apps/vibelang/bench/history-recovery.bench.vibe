@@ -14,7 +14,7 @@ const seed: H.History = {
 }
 
 it("history amendment, insertion, duplicate and store recovery", async ({ bench }) => {
-  const result = await workload(bench, "history-retelling-recovery", async () => {
+  const result = await workload(bench, "history-retelling-recovery", "async", async () => {
     await runPromise(scoped(effect {
       const store = try memoryStore()
       const history = try make(store)
@@ -79,7 +79,7 @@ it("history amendment, insertion, duplicate and store recovery", async ({ bench 
 })
 
 it("history rejects malformed next events without losing sequence progress", async ({ bench }) => {
-  const result = await workload(bench, "history-malformed-replay", () => {
+  const result = await workload(bench, "history-malformed-replay", "sync", () => {
     const invalid: ReadonlyArray<H.Event> = [
       { type: "EpicOpened", seq: 5, id: "e1", title: "Duplicate" },
       { type: "EpicOpened", seq: 5, id: "", title: "Missing" },

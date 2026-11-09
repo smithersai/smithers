@@ -11,18 +11,18 @@ for (const length of [10, 1000, 100000]) {
     const history = plannedHistory(length), outline = P.outlineOf(history), page = P.epicPageOf(history, "e1", 0)
     const model = { ...init({ mode: "mock", role: "maintainer", hash: "" }).model, status: "ready" as const, outline, pages: [page], open: ["e1"] }
     const results = []
-    results.push(await workload(bench, "history-filter-keystroke", () => {
+    results.push(await workload(bench, "history-filter-keystroke", "sync", () => {
       const updated = update(model, HistoryMessage.UpdatedFilter({ value: `Commit ${length - 1}` }))
       assert(updated.model.filter).toBe(`Commit ${length - 1}`)
       assert(updated.model.outline).toBe(outline)
       assert(updated.commands).toHaveLength(1)
     }).run(quick))
-    results.push(await workload(bench, "history-open-epic-view", () => {
+    results.push(await workload(bench, "history-open-epic-view", "sync", () => {
       scene({ update, view }, given(model), inside(role("list", { name: "Performance" }), expectAll(all.role("link")).toHaveCount(Math.min(length, 50)), expect(text(`Commit ${Math.min(length, 50) - 1}`)).toExist()))
     }).run({ time: 0, iterations: 3, warmup: false }))
     if (length > 50) {
       const next = P.epicPageOf(history, "e1", 50)
-      results.push(await workload(bench, "history-next-page-update", () => {
+      results.push(await workload(bench, "history-next-page-update", "sync", () => {
         const updated = update(model, HistoryMessage.GotEpic({ page: next })).model
         assert(updated.outline).toBe(outline)
         assert(updated.pages[0]?.commits.map((commit) => commit.id)).toEqual(Array.from({ length: 100 }, (_, i) => `m${i + 1}`))
@@ -35,7 +35,7 @@ for (const length of [10, 1000, 100000]) {
 
 it("history reducer actions and read recovery", async ({ bench }) => {
   const history = plannedHistory(2), outline = P.outlineOf(history), page = P.epicPageOf(history, "e1", 0)
-  const result = await workload(bench, "history-actions", () => {
+  const result = await workload(bench, "history-actions", "sync", () => {
     const model = init({ mode: "pending", role: "maintainer", hash: "" }).model
     assert(update(model, HistoryMessage.ResolvedMode({ mode: "live" })).model.role).toBe("viewer")
     let next = update(model, HistoryMessage.GotOutline({ outline })).model

@@ -8,7 +8,7 @@ import { artifact, workload, quick, slow } from "./artifact.vibe"
 const request: IssueRequest = { op: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "benchmark" }
 
 it("every issue flow through the real product fixture engine", async ({ bench }) => {
-  const result = await workload(bench, "issue-flow-journey", async () => {
+  const result = await workload(bench, "issue-flow-journey", "async", async () => {
     await runPromise(scoped(effect {
       const api = try makeIssueFactory("maintainer")
       const before = try api.read()
@@ -52,7 +52,7 @@ it("every issue flow through the real product fixture engine", async ({ bench })
 })
 
 it("issue policy, ordered observations, trees and review recovery", async ({ bench }) => {
-  const result = await workload(bench, "issue-policy-corpus", () => {
+  const result = await workload(bench, "issue-policy-corpus", "sync", () => {
     const operations: ReadonlyArray<IssueOperation> = ["read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft"]
     const allowed: Record<Role, ReadonlyArray<IssueOperation>> = {
       viewer: ["read"], new: ["read", "new", "comment"], community: ["read", "new", "comment", "propose", "draft"],
@@ -105,7 +105,7 @@ it("each issue command's fresh-engine latency", async ({ bench }) => {
   ]
   const results = []
   for (const scenario of cases) {
-    results.push(await workload(bench, `issues-${scenario.op}`, async () => {
+    results.push(await workload(bench, `issues-${scenario.op}`, "async", async () => {
       const state = await runPromise(scoped(effect {
         const api = try makeIssueFactory("maintainer")
         return try api.act({ ...request, ...scenario.data, op: scenario.op, key: `command-${scenario.op}` })
@@ -121,7 +121,7 @@ it("each issue command's fresh-engine latency", async ({ bench }) => {
 })
 
 it("issue durable identities match fixed SHA-256 vectors", async ({ bench }) => {
-  const result = await workload(bench, "issue-identities", async () => {
+  const result = await workload(bench, "issue-identities", "async", async () => {
     const root = "issues/person/read/root"
     const expectedHashes = {"read": "d39d52eb59750f1e0b7ee7aef37629b83f4841cdd76efdce2387f5bb59df448b", "new": "6e877bdf8591c7e8a6536ce2e13bac06c74e82ad2730cdea635fbe06c1c395f7", "comment": "feeca75dfad6bf87c285581b89b1d7880be12750256c4c7733d4b48de051b311"}
     for (const op of ["read", "new", "comment"] as const) {
@@ -135,7 +135,7 @@ it("issue durable identities match fixed SHA-256 vectors", async ({ bench }) => 
 })
 
 it("issue replay rechecks the current role and refusals preserve state", async ({ bench }) => {
-  const result = await workload(bench, "issue-refusals", async () => {
+  const result = await workload(bench, "issue-refusals", "async", async () => {
     await runPromise(scoped(effect {
       const role = try Ref.make<Role>("maintainer")
       const participated = try Ref.make<ReadonlyArray<string>>([])

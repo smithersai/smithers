@@ -15,8 +15,8 @@ for (const length of [10, 1000, 100000]) {
     const intent: H.Intent = { type: "Plan", id: "new", epic: "e", before: "", title: "New work", task: "Task" }
     const event: H.Event = { type: "Planned", seq: length + 2, id: "new", epic: "e", rank: length, title: "New work", task: "Task" }
     const results = []
-    results.push(await workload(bench, "history-decide", () => expect(H.decide(history, intent)).toEqual({ ok: true, event })).run(quick))
-    results.push(await workload(bench, "history-apply", () => {
+    results.push(await workload(bench, "history-decide", "sync", () => expect(H.decide(history, intent)).toEqual({ ok: true, event })).run(quick))
+    results.push(await workload(bench, "history-apply", "sync", () => {
       const applied = H.apply(history, event)
       expect(applied.seq).toBe(length + 2)
       expect(applied.commits.length).toBe(length + 1)
@@ -25,7 +25,7 @@ for (const length of [10, 1000, 100000]) {
     }).run(quick))
     const codec = Schema.fromJsonString(HistorySchema)
     const encoded = Schema.encodeSync(codec)(history)
-    results.push(await workload(bench, "history-decode", () => {
+    results.push(await workload(bench, "history-decode", "sync", () => {
       const decoded = Schema.decodeUnknownSync(codec)(encoded)
       expect(decoded.commits.length).toBe(length)
       expect(decoded.commits.at(-1)?.id).toBe(`c${length - 1}`)
@@ -36,7 +36,7 @@ for (const length of [10, 1000, 100000]) {
 }
 
 it("mythical history durable planning lifecycle", async ({ bench }) => {
-  const result = await workload(bench, "history-plan-start-note-approve-fold", async () => {
+  const result = await workload(bench, "history-plan-start-note-approve-fold", "async", async () => {
     await runPromise(scoped(effect {
       provide MockMythical({ role: "maintainer", name: "Benchmark", agent: false }, () => succeed(H.empty)) {
         const history = try Mythical
@@ -66,7 +66,7 @@ it("mythical history durable planning lifecycle", async ({ bench }) => {
 })
 
 it("real VibeLang history snapshot", async ({ bench }) => {
-  const result = await workload(bench, "history-seed-decode", async () => {
+  const result = await workload(bench, "history-seed-decode", "async", async () => {
     const state = await runPromise(seeded())
     expect(state.epics.length).toBeGreaterThan(0)
     expect(state.commits.length).toBeGreaterThan(100)
@@ -80,7 +80,7 @@ it("real VibeLang history snapshot", async ({ bench }) => {
 })
 
 it("history role decisions", async ({ bench }) => {
-  const result = await workload(bench, "history-role-matrix", () => {
+  const result = await workload(bench, "history-role-matrix", "sync", () => {
     for (const role of ROLES) {
       expect(may({ role, name: "Benchmark", agent: true }, "approve")).toBe(false)
       expect(may({ role, name: "Benchmark", agent: true }, "fold")).toBe(false)

@@ -81,7 +81,7 @@ it("emitted maintenance scripts", async ({ bench }) => {
   try {
     const runSeed = () => runPromise(Effect.provide(run(fixture.executable, [fixture.seed], fixture.env), platform))
     const readSeedTarget = () => runPromise(Effect.provide(effect { return try (try FileSystem.FileSystem).readFileString(fixture.seedTarget) }, platform))
-    results.push(await workload(bench, "mythical-seed-write", async () => {
+    results.push(await workload(bench, "mythical-seed-write", "async", async () => {
       const written = await runSeed()
       expect(written.status, written.stderr).toBe(0)
       expect(written.stdout).toContain("2 real commits, 1 mythical commits, 1 epics")
@@ -99,13 +99,13 @@ it("emitted maintenance scripts", async ({ bench }) => {
         "Validation: checked both arms.",
       ])
     }).run(slow))
-    results.push(await workload(bench, "mythical-seed-deterministic", async () => {
+    results.push(await workload(bench, "mythical-seed-deterministic", "async", async () => {
       const before = await readSeedTarget()
       const again = await runSeed()
       expect(again.status, again.stderr).toBe(0)
       expect(await readSeedTarget()).toBe(before)
     }).run(slow))
-    results.push(await workload(bench, "mythical-seed-read-failures", async () => {
+    results.push(await workload(bench, "mythical-seed-read-failures", "async", async () => {
       const before = await readSeedTarget()
       const missing = fixture.directory + "/missing"
       for (const env of [{ ...fixture.env, VIBELANG_REPO: missing }, { ...fixture.env, VIBELANG_QUEUE: missing + ".jsonl" }]) {
@@ -117,7 +117,7 @@ it("emitted maintenance scripts", async ({ bench }) => {
       expect(await readSeedTarget()).toBe(before)
     }).run(slow))
     const runContext = (args: string[]) => runPromise(Effect.provide(run(fixture.executable, [fixture.context, ...args]), platform))
-    results.push(await workload(bench, "agent-context-write", async () => {
+    results.push(await workload(bench, "agent-context-write", "async", async () => {
       await runPromise(Effect.provide(effect { return try (try FileSystem.FileSystem).remove(fixture.contextTarget, { force: true }) }, platform))
       const missing = await runContext(["--check"])
       expect(missing.status).toBe(1)
@@ -128,11 +128,11 @@ it("emitted maintenance scripts", async ({ bench }) => {
       expect(generated).toContain("You are the VibeLang agent on vibelang.smithers.sh")
       expect(generated).toContain("# VibeLang ")
     }).run(slow))
-    results.push(await workload(bench, "agent-context-check", async () => {
+    results.push(await workload(bench, "agent-context-check", "async", async () => {
       const current = await runContext(["--check"])
       expect(current.status, current.stderr).toBe(0)
     }).run(slow))
-    results.push(await workload(bench, "agent-context-stale", async () => {
+    results.push(await workload(bench, "agent-context-stale", "async", async () => {
       const original = await runPromise(Effect.provide(effect {
         const fs = try FileSystem.FileSystem
         const current = try fs.readFileString(fixture.contextTarget)

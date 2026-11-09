@@ -12,7 +12,7 @@ it("sandbox policy, clock domains and exact month accounting", async ({ bench })
   const boundary = Date.UTC(2026, 11, 1)
   const entries = [{ id: "a", conversation: "a", running: true }, { id: "b", conversation: "b", running: true }]
   const ledger = { ...D.emptySandboxLedger("bench", "contributor", 36000, monthOf(boundary - 10), boundary - 10), usedMilliseconds: 9, sandboxes: entries }
-  const result = await workload(bench, "sandbox-meter-and-policy", async () => {
+  const result = await workload(bench, "sandbox-meter-and-policy", "async", async () => {
     expect(Object.values(D.ALLOWANCES)).toEqual([0, 60, 240, 600, 2000])
     for (const role of ["viewer", "new", "community", "contributor", "maintainer"] as const) expect(D.mayStart(role)).toBe(role === "contributor" || role === "maintainer")
     expect(D.runningCount(entries)).toBe(2)
@@ -51,7 +51,7 @@ it("sandbox policy, clock domains and exact month accounting", async ({ bench })
 
 for (const cycles of [1, 100]) {
   it(`sandbox Factory file/restart lifecycle, ${cycles} cycles`, async ({ bench }) => {
-    const result = await workload(bench, "sandbox-file-restart", async () => {
+    const result = await workload(bench, "sandbox-file-restart", "async", async () => {
       await runPromise(scoped(effect {
         provide mockFactoryFor("contributor") {
           const factory = try Factory
@@ -93,7 +93,7 @@ effect function bound(binding: FlowBinding.Binding, input: typeof Schema.Json.Ty
 }
 
 it("sandbox agent bindings and generation-safe replay", async ({ bench }) => {
-  const result = await workload(bench, "sandbox-agent-bindings", async () => {
+  const result = await workload(bench, "sandbox-agent-bindings", "async", async () => {
     await runPromise(scoped(effect {
       provide mockFactoryFor("contributor") {
         const factory = try Factory

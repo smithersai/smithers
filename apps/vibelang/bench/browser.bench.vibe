@@ -6,7 +6,7 @@ import { run } from "../test/support/processes.vibe"
 import { workload } from "./artifact.vibe"
 
 it("real Chromium first render, Command-K and keystroke", async ({ bench }) => {
-  await workload(bench, "chromium", async () => {
+  await workload(bench, "chromium", "async", async () => {
     const result = await runPromise(Effect.provide(run("pnpm", ["exec", "playwright", "test", "--config", "bench/playwright.config.ts"], { BENCH_LIVE: "0" }), NodeServices.layer))
     expect(result.status, result.stdout + result.stderr).toBe(0)
     expect(result.stdout).toContain("6 passed")

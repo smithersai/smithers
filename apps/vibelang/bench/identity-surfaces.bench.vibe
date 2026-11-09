@@ -15,7 +15,7 @@ import { artifact, workload, quick, slow } from "./artifact.vibe"
 const platform = Layer.mergeAll(NodeServices.layer, ExperimentalNodeServices.layer)
 
 it("signed identity labels preserve guest, person and personal agent names", async ({ bench }) => {
-  const result = await workload(bench, "identity-labels", () => {
+  const result = await workload(bench, "identity-labels", "sync", () => {
     expect(postLabel("", "forged", true, "Guest")).toBe("Guest")
     expect(postLabel("1", "will", false, "Guest")).toBe("will")
     expect(postLabel("1", "will", true, "Guest")).toBe("will (agent)")
@@ -47,7 +47,7 @@ effect function cliJourney() {
 }
 
 it("CLI sign-in, ask, sign-out and repeated sign-out use isolated private settings", async ({ bench }) => {
-  const result = await workload(bench, "cli-identity-journey", () => runPromise(Effect.provide(cliJourney(), platform))).run(slow)
+  const result = await workload(bench, "cli-identity-journey", "async", () => runPromise(Effect.provide(cliJourney(), platform))).run(slow)
   await runPromise(artifact("identity-cli", "Vitest built-in bench; three complete journeys, four emitted CLI processes each, fresh scoped private settings. Decode every public schema, check signed fixture identity, settled answer, first/repeated logout and removed session file. Includes startup, durable session actions, scripted reply and assertions; build excluded.", ["Product mock sign-in, no OAuth, network, real session or model. This is whole-journey cost, not one-command latency. Private settings paths and contents are not retained."], result))
 })
 
@@ -62,7 +62,7 @@ it("persistent MCP sign-in and sign-out change the signed post author", async ({
     const tools = try client.listTools()
     const tool = (name: string) => tools.find(tool => tool.name === name)!
     let ordinal = 0
-    const measured = try Effect.try(() => workload(bench, "mcp-identity-journey", async () => {
+    const measured = try Effect.try(() => workload(bench, "mcp-identity-journey", "async", async () => {
       const signedText = `install signed ${++ordinal}`, guestText = `install guest ${ordinal}`
       const login = await runPromise(client.callTool({ tool: tool("login"), schema: LoginOutput, arguments: {} }))
       await runPromise(client.callTool({ tool: tool("ask"), schema: AskOutput, arguments: { text: signedText } }))

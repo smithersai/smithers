@@ -73,7 +73,7 @@ it("history view renders every page, state and role control", async ({ bench }) 
     ["plan-amend", { ...base, dialog: true, hash: "m1", commit: detail, commitId: "m1", form: { how: "amend" as const, epic: "", newEpic: "", title: "", task: "", target: "m1" } }, [expect(role("dialog", { name: "Amend" })).toExist()]],
     ["plan-missing-target", { ...base, dialog: true, form: { how: "insert" as const, epic: "", newEpic: "", title: "", task: "", target: "m9" } }, [expect(text("m9")).toExist()]],
   ]
-  const result = await workload(bench, "history-view-matrix", () => {
+  const result = await workload(bench, "history-view-matrix", "sync", () => {
     for (const [, model, expectations] of renders) scene({ update: updateHistory, view: historyView }, given(model), ...expectations)
     assert(refusalText("forbidden")).toBe("Your role can't do that.")
     assert(refusalText("empty")).toBe("Needs a title.")
@@ -92,7 +92,7 @@ it("history view renders every page, state and role control", async ({ bench }) 
 
 it("issues reducer covers every control and retry recovery", async ({ bench }) => {
   const maintainer = { ...initialIssues, role: "maintainer" as const, status: "ready" as const }
-  const result = await workload(bench, "issues-reducer", () => {
+  const result = await workload(bench, "issues-reducer", "sync", () => {
     assert(issuesUpdate(maintainer, "close", "").ui.open).toBe(false)
     assert(issuesUpdate(maintainer, "roles", "").ui.screen).toBe("roles")
     assert(issuesUpdate(maintainer, "list", "").ui.screen).toBe("list")
@@ -178,7 +178,7 @@ it("issues pane renders lists, detail, wizard and gates", async ({ bench }) => {
     [{ ...base, issues: { ...base.issues, status: "error" as const } }, [expect(role("button", { name: "Retry" })).toExist()]],
     [{ ...base, issues: { ...base.issues, error: "Sign in again." } }, [expect(text("Sign in again.")).toExist()]],
   ]
-  const result = await workload(bench, "issues-view-matrix", () => {
+  const result = await workload(bench, "issues-view-matrix", "sync", () => {
     for (const [model, expectations] of scenes) scene({ update, view }, given(model), ...expectations)
   }).run(quick)
   await runPromise(artifact("issues-view-matrix", "Vitest built-in bench; Foldkit scenes over the real app update/view render the issues pane list kinds, state and query filters, detail with notes and VIP review, commit/split/link dialogs, new and VIP wizard steps, the role matrix, connect gating, loading, failure and inline errors.", ["Scene rendering without layout/paint or a GitHub call; the write boundary runs in the issues fixture and workerd benchmarks."], result))
@@ -198,7 +198,7 @@ it("wiki pane renders navigation, decisions and recovery", async ({ bench }) => 
     [{ ...opened, tour: true, docs: "max" }, [expect(role("region", { name: "Wiki" })).toHaveAttr("data-maximized", "true")]],
     [update(chat, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: "/wiki/nope" } })).model, [expect(role("region", { name: "Wiki" })).toExist()]],
   ]
-  const result = await workload(bench, "wiki-view-matrix", () => {
+  const result = await workload(bench, "wiki-view-matrix", "sync", () => {
     for (const [model, expectations] of scenes) scene({ update, view }, given(model), ...expectations)
   }).run(quick)
   await runPromise(artifact("wiki-view-matrix", "Vitest built-in bench; Foldkit scenes over the real update/view render the wiki pane's index, decision chrome, loading skeleton, error with retry, filtered and empty navigation and tour-maximized state.", ["Scene rendering without layout/paint; the durable open flow is benchmarked through the mock factory and workerd."], result))
@@ -220,7 +220,7 @@ it("actions pane renders catalog, runs, trace and slash completion", async ({ be
     [{ ...open, actions: { ...open.actions, run: "" } }, [expect(role("button", { name: "Run" })).toExist()]],
     [{ ...open, actions: { ...open.actions, maximized: true } }, [expect(role("region", { name: "Actions" })).toHaveAttr("data-maximized", "true")]],
   ]
-  const result = await workload(bench, "actions-view-matrix", () => {
+  const result = await workload(bench, "actions-view-matrix", "sync", () => {
     for (const [model, expectations] of scenes) scene({ update, view }, given(model), ...expectations)
     assert(actionsOf({})).toEqual(initialActions)
     assert(completions({ actions: { ...initialActions, slash: true, commands: [registration("vibelang/Tour")] }, draft: "/to" }).map((entry) => entry.command)).toEqual(["/tour"])
@@ -238,7 +238,7 @@ it("actions pane renders catalog, runs, trace and slash completion", async ({ be
 })
 
 it("main reducer visits the wiki, launches actions and drives sandbox controls", async ({ bench }) => {
-  const result = await workload(bench, "main-reducer-boundaries", () => {
+  const result = await workload(bench, "main-reducer-boundaries", "sync", () => {
     const issues = issueStateOf({ ...home, issues: { ...initialIssues, retry: { op: "new", number: 0, parent: 0, title: "T", text: "", assignee: "", example: "", prior: "", key: "k", recovery: "r" } } })
     assert(issues.keyPrefix).toBe("bench")
     assert(issues.role).toBe("viewer")

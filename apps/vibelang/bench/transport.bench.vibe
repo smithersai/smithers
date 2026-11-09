@@ -8,7 +8,7 @@ import { Mythical } from "../src/history/MythicalHistory.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 
 it("typed transport failure latency", async ({ bench }) => {
-  const result = await workload(bench, "transport-fault-matrix", async () => {
+  const result = await workload(bench, "transport-fault-matrix", "async", async () => {
     for (const [status, text] of [[0, ""], [503, ""], [200, "{"], [200, "{}"], [409, "{"], [409, "{}"]] as const) {
       const broken = HttpClient.make((request) => status === 0
         ? fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) }))

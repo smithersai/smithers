@@ -26,7 +26,7 @@ effect function isolatedCli(args: ReadonlyArray<string>) {
 it("emitted wiki CLI read, draft, save and propose", async ({ bench }) => {
   const results = []
   for (const op of ["read", "draft", "save", "propose"] as const) {
-    results.push(await workload(bench, `cli-wiki-${op}`, async () => {
+    results.push(await workload(bench, `cli-wiki-${op}`, "async", async () => {
       const args = ["--mock", "wiki", op, "--page", "index", "--key", `bench-${op}`, "--json"]
       if (op !== "read") args.push("--text", op === "draft" ? note : changed)
       if (op === "save" || op === "propose") args.push("--base", source)
@@ -58,7 +58,7 @@ it("persistent wiki MCP operations preserve source and replay their reviews", as
     const results = []
     let ordinal = 0
     for (const op of ["read", "draft", "save", "propose"] as const) {
-      const measured = try Effect.try(() => workload(bench, `mcp-wiki-${op}-readback`, async () => {
+      const measured = try Effect.try(() => workload(bench, `mcp-wiki-${op}-readback`, "async", async () => {
         const args = { op, page: "index", base: source, text: op === "draft" ? note : changed, key: `wiki-${++ordinal}` }
         const first = await runPromise(client.callTool({ tool, schema: WikiState, arguments: args }))
         expect(first.role).toBe("maintainer")

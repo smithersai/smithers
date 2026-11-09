@@ -78,15 +78,15 @@ it("workerd sequencer, post, reply and tour flows", { timeout: WALKTHROUGH.reduc
         const seed = try seeded()
         const expected = outlineOf(seed)
         const historyResults = []
-        const cold = try Effect.try(() => workload(bench, "history-first-outline", async () => {
+        const cold = try Effect.try(() => workload(bench, "history-first-outline", "async", async () => {
           expect(await runPromise(mythical.outline())).toEqual(expected)
         }))
         historyResults.push(try tryPromise(() => cold.run({ time: 0, warmup: false, iterations: 1 })))
-        const warm = try Effect.try(() => workload(bench, "history-warm-outline", async () => {
+        const warm = try Effect.try(() => workload(bench, "history-warm-outline", "async", async () => {
           expect(await runPromise(mythical.outline())).toEqual(expected)
         }))
         historyResults.push(try tryPromise(() => warm.run(slow)))
-        const pages = try Effect.try(() => workload(bench, "history-detail-pages", async () => {
+        const pages = try Effect.try(() => workload(bench, "history-detail-pages", "async", async () => {
           const epic = seed.epics[0]!.id, commit = seed.commits[0]!.id
           expect(await runPromise(mythical.epic(epic, 0))).toEqual(epicPageOf(seed, epic, 0))
           expect(await runPromise(mythical.epic(epic, 50))).toEqual(epicPageOf(seed, epic, 50))
@@ -94,19 +94,19 @@ it("workerd sequencer, post, reply and tour flows", { timeout: WALKTHROUGH.reduc
           expect(await runPromise(mythical.search("compiler"))).toEqual(matchesOf(seed, "compiler"))
         }))
         historyResults.push(try tryPromise(() => pages.run(slow)))
-        const refusal = try Effect.try(() => workload(bench, "history-viewer-refusals", async () => {
+        const refusal = try Effect.try(() => workload(bench, "history-viewer-refusals", "async", async () => {
           const result = await runPromise(historyRefusals(mythical))
           expect(result.refusals).toEqual(Array(5).fill("forbidden"))
           expect(result.after).toEqual(expected)
         }))
         historyResults.push(try tryPromise(() => refusal.run(slow)))
-        const protocol = try Effect.try(() => workload(bench, "history-protocol-errors", async () => {
+        const protocol = try Effect.try(() => workload(bench, "history-protocol-errors", "async", async () => {
           const statuses = await runPromise(historyProtocol(client, api.origin))
           expect(statuses).toEqual([404, 400, 400, 400, 413])
         }))
         historyResults.push(try tryPromise(() => protocol.run(slow)))
         let ordinal = 0
-        const replay = try Effect.try(() => workload(bench, "history-keyed-call-replay", async () => {
+        const replay = try Effect.try(() => workload(bench, "history-keyed-call-replay", "async", async () => {
           const title = `fix(compiler): ${await runPromise(room("bench-history-replay"))}`
           const before = await runPromise(mythical.outline())
           const current = ordinal
@@ -145,7 +145,7 @@ it("workerd sequencer, post, reply and tour flows", { timeout: WALKTHROUGH.reduc
       provide LiveFactory(api.origin).pipe(Layer.provide(FetchHttpClient.layer)) {
         const factory = try Factory
         const results = []
-        const sandboxBoundary = try Effect.try(() => workload(bench, "workerd-sandbox-viewer", async () => {
+        const sandboxBoundary = try Effect.try(() => workload(bench, "workerd-sandbox-viewer", "async", async () => {
           const before = await runPromise(factory.sandbox("bench-viewer"))
           expect(before).toMatchObject({ id: "", generation: 0, sequence: 0, role: "viewer", status: "stopped", allowance: 0, used: 0, remaining: 0, output: "" })
           expect(Number.isFinite(before.resetAt)).toBe(true)
@@ -176,9 +176,9 @@ it("workerd sequencer, post, reply and tour flows", { timeout: WALKTHROUGH.reduc
           expect(state.entries[1]).toMatchObject({ text: "Deterministic answer.", done: true, error: "", inReplyTo: "m1" })
           expect(await runPromise(factory.read(conversation, 0))).toEqual({ seq: state.seq, entries: state.entries })
         }
-        const postBench = try Effect.try(() => workload(bench, "workerd-post-reply-read", runPost))
+        const postBench = try Effect.try(() => workload(bench, "workerd-post-reply-read", "async", runPost))
         results.push(try tryPromise(() => postBench.run(slow)))
-        const tourBench = try Effect.try(() => workload(bench, "workerd-tour", async () => {
+        const tourBench = try Effect.try(() => workload(bench, "workerd-tour", "async", async () => {
           const conversation = await runPromise(room("bench-tour"))
           await runPromise(factory.tour(conversation))
           const events = await runPromise(settled(factory, conversation))

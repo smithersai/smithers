@@ -4,7 +4,7 @@ import * as M from "../src/core/conversation.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 
 it("machine transitions, refusal boundaries and client recovery", async ({ bench }) => {
-  const result = await workload(bench, "machine-boundaries", () => {
+  const result = await workload(bench, "machine-boundaries", "sync", () => {
     let state = M.empty
     const send = (intent: M.Intent) => {
       const decision = M.decide(state, intent)

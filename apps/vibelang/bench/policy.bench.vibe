@@ -7,7 +7,7 @@ import { failureCode, reasonCode } from "../worker/replyReasons.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 
 it("durable-flow and budget decisions", async ({ bench }) => {
-  const result = await workload(bench, "flow-and-budget-policies", () => {
+  const result = await workload(bench, "flow-and-budget-policies", "sync", () => {
     expect(readingHold(0)).toBe(4000)
     expect(readingHold(10)).toBe(4000)
     expect(readingHold(11)).toBe(4300)
@@ -45,7 +45,7 @@ it("screen, protocol and scripted-agent decisions", async ({ bench }) => {
   const S = await import("../src/web/screenDecision.vibe")
   const P = await import("../src/core/protocolDecision.vibe")
   const M = await import("../src/core/mockDecision.vibe")
-  const result = await workload(bench, "screen-protocol-mock-policies", () => {
+  const result = await workload(bench, "screen-protocol-mock-policies", "sync", () => {
     expect(S.escapeAction(true, false, false, "splash", "pane")).toBe("tour")
     expect(S.escapeAction(false, true, true, "chat", "max")).toBe("tour")
     expect(S.escapeAction(false, false, true, "chat", "max")).toBe("palette")
@@ -130,7 +130,7 @@ it("history authorization and journal ordering", async ({ bench }) => {
   const roles = ["viewer", "new", "community", "contributor", "maintainer"] as const
   const actions = ["show", "append", "retell", "start", "note", "approve", "fold"] as const
   const minimum = [0, 3, 4, 3, 3, 4, 4]
-  const result = await workload(bench, "history-flow-ordering", () => {
+  const result = await workload(bench, "history-flow-ordering", "sync", () => {
     for (const [rank, role] of roles.entries()) {
       expect(F.standing(role)).toBe(rank)
       for (const [index, action] of actions.entries()) for (const agent of [false, true]) {
@@ -174,7 +174,7 @@ it("ordered prompt selection and command reply collection", async ({ bench }) =>
     { id: "tour", author: "agent", text: "tour", done: true, error: "", inReplyTo: "" },
     { id: "p", author: "person", text: "last", done: true, error: "", inReplyTo: "" },
   ]
-  const result = await workload(bench, "context-and-command-decisions", () => {
+  const result = await workload(bench, "context-and-command-decisions", "sync", () => {
     expect(entries.map(S.promptEligible)).toEqual([true, true, false, false, false, true])
     expect(S.firstEntryIndex(entries, "p")).toBe(0)
     expect(S.firstEntryIndex(entries, "missing")).toBe(6)

@@ -5,7 +5,7 @@ import { dayOf, failureReason, fold, promptOf, REASONS, reasonOf, started, tagOf
 import { artifact, workload, quick } from "./artifact.vibe"
 
 it("agent stream projection, bounded context and safe errors", async ({ bench }) => {
-  const result = await workload(bench, "agent-projection", () => {
+  const result = await workload(bench, "agent-projection", "sync", () => {
     const fence = "`".repeat(3)
     const events = [
       { _tag: "model-requested" }, { _tag: "model-delta", delta: { type: "text-delta", text: `${fence}cell\nctx.done("hel` } },
@@ -39,7 +39,7 @@ it("agent stream projection, bounded context and safe errors", async ({ bench })
 })
 
 it("model configuration", async ({ bench }) => {
-  const result = await workload(bench, "model-config", async () => {
+  const result = await workload(bench, "model-config", "async", async () => {
     await runPromise(effect {
       provide ConfigProvider.layer(ConfigProvider.fromUnknown({})) {
         const model = try chatModel()

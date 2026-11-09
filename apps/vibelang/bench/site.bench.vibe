@@ -11,7 +11,7 @@ type Incoming = Parameters<typeof worker.fetch>[0]
 type Bindings = Parameters<typeof worker.fetch>[1]
 
 it("site routing over real loopback HTTP and repository assets", async ({ bench }) => {
-  const result = await workload(bench, "site-routing", async () => {
+  const result = await workload(bench, "site-routing", "async", async () => {
     await runPromise(scoped(effect {
       provide NodeHttpServer.layerTest {
         const fs = try FileSystem.FileSystem

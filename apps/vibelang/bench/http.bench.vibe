@@ -10,7 +10,7 @@ import { MAX_WRITE_BYTES } from "../src/history/wire.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 
 it("HTTP admission, routing, cursor and transport faults", async ({ bench }) => {
-  const result = await workload(bench, "http-boundaries", async () => {
+  const result = await workload(bench, "http-boundaries", "async", async () => {
     await runPromise(scoped(effect {
       const log = try Ref.make<ReadonlyArray<Event>>([])
       const sequencer = try Sequencer.make({ read: () => Ref.get(log), write: (event) => Ref.update(log, (events) => [...events, event]) }, { start: () => Effect.void, tour: () => Effect.void })

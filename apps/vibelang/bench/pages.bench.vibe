@@ -13,14 +13,14 @@ for (const length of [10, 1000, 100000]) {
     const ids = (from: number, count: number) => Array.from({ length: count }, (_, i) => `m${from + i + 1}`)
     const first = ids(0, Math.min(length, 50)), last = ids(offset, length - offset)
     const results = []
-    results.push(await workload(bench, "history-outline", () => {
+    results.push(await workload(bench, "history-outline", "sync", () => {
       const outline = P.outlineOf(history)
       expect(outline.seq).toBe(length + 1)
       expect(outline.epics).toEqual([{ id: "e1", title: "Performance", commits: length, folds: 0 }])
       expect(outline.open.length).toBe(length)
       expect(outline.open.every((commit, index) => commit.id === `m${index + 1}` && commit.rank === index && commit.notes === 0 && commit.folds === 0)).toBe(true)
     }).run(quick))
-    results.push(await workload(bench, "history-epic-pages", () => {
+    results.push(await workload(bench, "history-epic-pages", "sync", () => {
       const page = P.epicPageOf(history, "e1", 0)
       const tail = P.epicPageOf(history, "e1", offset)
       expect(page.commits.map((commit) => commit.id)).toEqual(first)
@@ -28,12 +28,12 @@ for (const length of [10, 1000, 100000]) {
       expect([page.from, page.total, tail.from, tail.total]).toEqual([0, length, offset, length])
       expect(P.epicPageOf(history, "e1", length).commits).toEqual([])
     }).run(quick))
-    results.push(await workload(bench, "history-commit-page", () => {
+    results.push(await workload(bench, "history-commit-page", "sync", () => {
       const page = P.commitPageOf(history, `m${length}`)
       expect(page).toEqual({ seq: length + 1, commit: history.commits.at(-1), real: [] })
       expect(P.commitPageOf(history, "missing").commit).toBeNull()
     }).run(quick))
-    results.push(await workload(bench, "history-search", () => {
+    results.push(await workload(bench, "history-search", "sync", () => {
       const page = P.matchesOf(history, `Commit ${length - 1}`)
       expect(page.commits.map((commit) => commit.id)).toEqual([`m${length}`])
       expect(P.matchesOf(history, "Commit").commits.map((commit) => commit.id)).toEqual(ids(0, Math.min(length, 100)))
@@ -43,7 +43,7 @@ for (const length of [10, 1000, 100000]) {
     const outline = P.outlineOf(history), page = P.epicPageOf(history, "e1", 0)
     const outlineCodec = Schema.fromJsonString(Outline), pageCodec = Schema.fromJsonString(EpicPage)
     const encodedOutline = Schema.encodeSync(outlineCodec)(outline), encodedPage = Schema.encodeSync(pageCodec)(page)
-    results.push(await workload(bench, "history-page-codecs", () => {
+    results.push(await workload(bench, "history-page-codecs", "sync", () => {
       expect(Schema.decodeUnknownSync(outlineCodec)(encodedOutline)).toEqual(outline)
       expect(Schema.decodeUnknownSync(pageCodec)(encodedPage)).toEqual(page)
     }).run(quick))
@@ -57,7 +57,7 @@ it("paged history order, notes, folds and wire routing", async ({ bench }) => {
   const third = { ...first, id: "m3", epic: "e2", rank: 0, state: "working" as const, title: "Commit 2", lane: "bench", notes: [] }
   const real = ["one", "two"].map((sha) => ({ sha, mythical: "m1", change: "", title: "Real" }))
   const history: History = { seq: 11, main: "three", epics: [{ id: "e1", title: "Performance" }, { id: "e2", title: "Other" }], commits: [third, second, first], real: [...real, { sha: "three", mythical: "m2", change: "", title: "Other real" }] }
-  const result = await workload(bench, "history-page-boundaries", () => {
+  const result = await workload(bench, "history-page-boundaries", "sync", () => {
     const outline = P.outlineOf(history)
     expect(outline.open.map((commit) => commit.id)).toEqual(["m1", "m3"])
     expect(outline.epics).toEqual([{ id: "e1", title: "Performance", commits: 2, folds: 3 }, { id: "e2", title: "Other", commits: 1, folds: 0 }])

@@ -3,7 +3,7 @@ import { mediaEvents, observeMedia } from "../src/web/media.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 
 it("media outcomes expose only bounded dimensions", async ({ bench }) => {
-  const result = await workload(bench, "media-observe", async () => {
+  const result = await workload(bench, "media-observe", "async", async () => {
     await runPromise(effect {
       const lines: Array<string> = []
       const logger = Logger.layer([Logger.make((options) => { lines.push(JSON.stringify(options.message)) })])

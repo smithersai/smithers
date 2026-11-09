@@ -13,23 +13,23 @@ for (const length of [10, 1000, 100000]) {
     const client = { ...newClient, conversation: state, pending: [{ clientId: "new", text: "next", error: "" }] }
     const events = history(length)
     const results = []
-    results.push(await workload(bench, "decide", () => {
+    results.push(await workload(bench, "decide", "sync", () => {
       expect(decide(state, intent)).toEqual({ ok: true, event })
     }).run(quick))
-    results.push(await workload(bench, "apply", () => {
+    results.push(await workload(bench, "apply", "sync", () => {
       const updated = apply(state, event)
       expect(updated.seq).toBe(length + 1)
       expect(updated.entries.length).toBe(length + 1)
       expect(updated.entries.at(-1)?.text).toBe("next")
       expect(updated.entries[0]).toBe(state.entries[0])
     }).run(quick))
-    results.push(await workload(bench, "receive", () => {
+    results.push(await workload(bench, "receive", "sync", () => {
       const updated = receive(client, event)
       expect(updated.pending).toEqual([])
       expect(updated.conversation.entries.length).toBe(length + 1)
       expect(updated.gap).toBe(false)
     }).run(quick))
-    results.push(await workload(bench, "replay-apply", () => {
+    results.push(await workload(bench, "replay-apply", "sync", () => {
       const replayed = events.reduce(apply, empty)
       expect(replayed.seq).toBe(length)
       expect(replayed.entries.length).toBe(2)
@@ -37,7 +37,7 @@ for (const length of [10, 1000, 100000]) {
       expect(replayed.entries[1]?.done).toBe(true)
       expect(replayed.agent).toBe("idle")
     }).run(quick))
-    results.push(await workload(bench, "replay-receive", () => {
+    results.push(await workload(bench, "replay-receive", "sync", () => {
       const replayed = events.reduce(receive, newClient)
       expect(replayed.conversation.seq).toBe(length)
       expect(replayed.conversation.entries[1]?.text).toBe("x".repeat(length - 3))
@@ -57,24 +57,24 @@ test("protocol encode, decode and URL routing", async ({ bench }) => {
   const decode = Schema.decodeUnknownSync(json)
   const encoded = encode(original)
   const results = []
-  results.push(await workload(bench, "event-encode", () => {
+  results.push(await workload(bench, "event-encode", "sync", () => {
     const encoded = encode(original)
     expect(encoded).toBe(JSON.stringify(original))
     expect(decode(encoded)).toEqual(original)
   }).run(quick))
-  results.push(await workload(bench, "event-decode", () => expect(decode(encoded)).toEqual(original)).run(quick))
+  results.push(await workload(bench, "event-decode", "sync", () => expect(decode(encoded)).toEqual(original)).run(quick))
   for (const length of [10, 1000, 100000]) {
     const snapshot = { seq: length, entries: transcript(length).entries }
     const codec = Schema.fromJsonString(ReadSnapshot)
     const text = Schema.encodeSync(codec)(snapshot)
-    results.push(await workload(bench, `snapshot-decode-${length}`, () => {
+    results.push(await workload(bench, `snapshot-decode-${length}`, "sync", () => {
       const decoded = Schema.decodeUnknownSync(codec)(text)
       expect(decoded.entries.length).toBe(length)
       expect(decoded.entries.at(-1)?.text).toBe(`post ${length}`)
       expect(decoded).toEqual(snapshot)
     }).run(quick))
   }
-  results.push(await workload(bench, "route-roundtrip", () => {
+  results.push(await workload(bench, "route-roundtrip", "sync", () => {
     expect(routeOf("POST", conversationPath("a b/λ") + "/posts")).toEqual({ kind: "post", conversation: "a b/λ" })
     expect(routeOf("GET", "/api/conversations/%broken")).toBeUndefined()
   }).run(quick))

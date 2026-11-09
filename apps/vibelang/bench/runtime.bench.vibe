@@ -7,7 +7,7 @@ import { activeId, commandK, container, remove, send } from "../test/support/bro
 import { artifact, workload, slow } from "./artifact.vibe"
 
 it("browser runtime startup, palette, post, streaming and follow", async ({ bench }) => {
-  const result = await workload(bench, "runtime-startup-post", async () => {
+  const result = await workload(bench, "runtime-startup-post", "async", async () => {
     await runPromise(scoped(effect {
       const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
       const root = try Effect.try(() => {

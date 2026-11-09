@@ -6,7 +6,7 @@ import { node, run } from "../test/support/processes.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
 
 it("wiki generation preserves links, metadata and prior output on failure", async ({ bench }) => {
-  const result = await workload(bench, "wiki-script-journey", async () => {
+  const result = await workload(bench, "wiki-script-journey", "async", async () => {
     await runPromise(scoped(effect {
       provide NodeServices.layer, ExperimentalNodeServices.layer {
         const fs = try FileSystem.FileSystem

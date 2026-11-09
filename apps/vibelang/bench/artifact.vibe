@@ -36,13 +36,13 @@ export effect function artifact(name: string, method: string, limitations: Reado
   }
 }
 
-/** Vitest isolates timing projects from coverage. Coverage executes the identical validated workload once. */
-export function workload(bench: import("vitest").Bench, name: string, body: () => unknown) {
+/** Vitest isolates timing projects from coverage. Coverage executes the identical validated workload once. Explicit mode prevents an unmeasured runner probe. */
+export function workload(bench: import("vitest").Bench, name: string, mode: "sync" | "async", body: () => unknown) {
   return { run: async (options: import("vitest").BenchRunOptions) => {
     if (runSync(Config.withDefault(Config.Boolean("BENCH_COVERAGE"), false))) {
       await body()
       return { name, instrumented: true, executions: 1 }
     }
-    return await bench(name, body).run(options)
+    return await bench(name, { async: mode === "async" }, body).run(options)
   } }
 }

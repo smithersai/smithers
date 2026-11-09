@@ -7,7 +7,7 @@ import { world, request, history } from "../test/support/actionObjects.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
 
 it("SQLite actions preserve admission identity, terminal traces and cancellation", async ({ bench }) => {
-  const result = await workload(bench, "action-host-recovery", async () => {
+  const result = await workload(bench, "action-host-recovery", "async", async () => {
     await runPromise(scoped(effect {
       const w = try world()
       const post = request("apost", "vibelang/Post", { text: "Measured post" }, w.person.id)
@@ -28,7 +28,28 @@ it("SQLite actions preserve admission identity, terminal traces and cancellation
         try planning.host.alarm(w.spend, w.model, product)
         const cancelledRuns = try Runs.read(planning.sequencer)
         const state = try product.outline()
+        const refused = request("ahistory-refused", "vibelang/history/Start", { id: "m999999", lane: "bench" }, w.person.id)
+        const admittedRefusal = try w.directory.start(refused, "maintainer")
+        const refusedObject = try w.object(refused.id)
+        try refusedObject.host.alarm(w.spend, w.model, product)
+        try refusedObject.host.alarm(w.spend, w.model, product)
+        const refusedRuns = try Runs.read(refusedObject.sequencer)
+        const afterRefusal = try product.outline()
+        const acceptedHistory = request("ahistory-passed", "vibelang/history/Plan", { how: "append", epic: "", newEpic: "Accepted", target: "", title: "Retained history", task: "Measured" }, w.person.id)
+        const admittedHistory = try w.directory.start(acceptedHistory, "maintainer")
+        const historyObject = try w.object(acceptedHistory.id)
+        try historyObject.host.alarm(w.spend, w.model, product)
+        try historyObject.host.alarm(w.spend, w.model, product)
+        const historyRuns = try Runs.read(historyObject.sequencer)
+        const afterHistory = try product.outline()
         try Effect.try(() => {
+          expect([admittedRefusal, admittedHistory]).toEqual([null, null])
+          expect(refusedRuns.map(run => [run.id, run.state])).toEqual([["ahistory-refused", "failed"]])
+          expect(JSON.parse(refusedRuns[0]!.result)).toEqual({ id: "", refusal: "unknown" })
+          expect(historyRuns.map(run => [run.id, run.state])).toEqual([["ahistory-passed", "passed"]])
+          expect(JSON.parse(historyRuns[0]!.result)).toEqual({ id: "m1", refusal: null })
+          expect(afterRefusal).toEqual({ seq: 0, main: "", epics: [], open: [] })
+          expect(afterHistory).toMatchObject({ seq: 2, open: [{ id: "m1", title: "Retained history" }] })
           expect([accepted, replayed, conflict, planned, cancelled]).toEqual([null, null, "conflict", null, null])
           expect(recorded.entries.map(entry => entry.text)).toEqual(["Measured post"])
           expect(runs.map(run => [run.id, run.flow, run.state])).toEqual([["apost", "vibelang/Post", "passed"], ["apost-reply", "vibelang/Reply", "failed"]])
@@ -41,11 +62,11 @@ it("SQLite actions preserve admission identity, terminal traces and cancellation
       }
     }))
   }).run(slow)
-  await runPromise(artifact("action-host", "Vitest built-in bench; actual production action index/per-run hosts with real SQLite and product MockAccounts/Mythical services. Check once-only post acceptance, changed-input conflict, correlated terminal Post/Reply traces after two alarms, and cancelling a queued Plan before admission without any history mutation. Three new scoped worlds, migrations and assertions included.", ["Node SQLite/KV/alarm adapter, no workerd scheduling or remote storage. Deliberately unconfigured model fails the reply; no inference or GitHub mutation. The product mock provides local accounts/history."], result))
+  await runPromise(artifact("action-host", "Vitest built-in bench; actual production action index/per-run hosts with real SQLite and product MockAccounts/Mythical services. Check once-only post acceptance, changed-input conflict, correlated terminal Post/Reply traces after two alarms, and cancelling a queued Plan before admission without any history mutation; unknown-commit Start settles failed with its exact refusal while accepted History Plan settles passed, keeps its real id and writes exactly one retained commit. Three new scoped worlds, migrations and assertions included.", ["Node SQLite/KV/alarm adapter, no workerd scheduling or remote storage. Deliberately unconfigured model fails the reply; no inference or GitHub mutation. The product mock provides local accounts/history."], result))
 })
 
 it("current role is rechecked before a queued action executes", async ({ bench }) => {
-  const result = await workload(bench, "action-host-role-downgrade", async () => {
+  const result = await workload(bench, "action-host-role-downgrade", "async", async () => {
     await runPromise(scoped(effect {
       const w = try world()
       const plan = request("ademoted", "vibelang/history/Plan", { how: "append", epic: "", newEpic: "Bench", target: "", title: "Must not exist", task: "Forbidden" }, w.person.id)

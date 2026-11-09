@@ -5,7 +5,7 @@ import * as Budget from "../worker/Budget.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 
 it("sequencer lifecycle, ordering, retry and replay", async ({ bench }) => {
-  const result = await workload(bench, "sequencer-lifecycle", async () => {
+  const result = await workload(bench, "sequencer-lifecycle", "async", async () => {
     await runPromise(scoped(effect {
       const log = try Ref.make<ReadonlyArray<Event>>([])
       const dispatches = try Ref.make<ReadonlyArray<ReadonlyArray<string>>>([])
@@ -75,7 +75,7 @@ it("sequencer lifecycle, ordering, retry and replay", async ({ bench }) => {
 })
 
 it("budget admission and idempotent spend", async ({ bench }) => {
-  const result = await workload(bench, "budget", async () => {
+  const result = await workload(bench, "budget", "async", async () => {
     await runPromise(effect {
       const entries = try Ref.make<Readonly<Record<string, number>>>({})
       const budget = try Budget.make({ read: (key) => Effect.map(Ref.get(entries), (values) => values[key]), write: (values) => Ref.update(entries, (before) => ({ ...before, ...values })) }, 4)

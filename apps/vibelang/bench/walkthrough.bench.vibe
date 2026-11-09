@@ -3,7 +3,7 @@ import { apply, decide, empty, type Intent } from "../src/core/conversation.vibe
 import { WALKTHROUGH } from "../src/core/walkthroughSteps.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 it("walkthrough drive, pause, resume and seek preserve the conversation", async ({ bench }) => {
-  const result = await workload(bench, "walkthrough-controls", () => {
+  const result = await workload(bench, "walkthrough-controls", "sync", () => {
     let state = apply(empty, { type: "TourStarted", seq: 1, id: "t1" })
     for (const [index, stop] of WALKTHROUGH.entries()) {
       const intents: ReadonlyArray<Intent> = [

@@ -5,7 +5,7 @@ import { view, failureOf } from "../src/web/view.vibe"
 import { artifact, workload, quick } from "./artifact.vibe"
 
 it("web actions, recovery and tour controls", async ({ bench }) => {
-  const result = await workload(bench, "web-actions", () => {
+  const result = await workload(bench, "web-actions", "sync", () => {
     const home = init({ session: "s", mode: "mock", name: "Ada" }).model
     let model = home
     const send = (message: Message) => { model = update(model, message).model; return model }
@@ -82,7 +82,7 @@ it("web actions, recovery and tour controls", async ({ bench }) => {
 })
 
 it("post and connection failure views", async ({ bench }) => {
-  const result = await workload(bench, "failure-views", () => {
+  const result = await workload(bench, "failure-views", "sync", () => {
     const home = init({ session: "s", mode: "mock", name: "Ada" }).model
     for (const [reason, label] of [["empty", "Empty message"], ["too-long", "Message too long"], ["duplicate", "Already sent"], ["busy", "Agent busy"], ["not-replying", "Answer unavailable"], ["unavailable", "Send failed"]]) {
       const model = { ...home, surface: "chat" as const, client: { ...home.client, pending: [{ clientId: "s-1", text: "hi", error: reason! }] } }

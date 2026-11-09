@@ -196,15 +196,22 @@ export class Conversation {
       spend: (day, reply, tokens) => reach("budget", () => call(env.BUDGET, day, "spend", { reply: chargeKeyOf(hostId, reply), tokens }).then(() => undefined)),
     }
     const model = await Effect.runPromise(Effect.orDie(configured(env, chatModel())))
-    await Effect.runPromise((await this.actions).alarm(spend, model, historyOf(env)))
+    const active = await this.state.storage.get<RunRequest>("action/request")
+    const owner = active?.owner ?? ""
+    const principal: Principal = { role: active === undefined ? "viewer" : await Effect.runPromise(actionIdentity(env).role(owner)), name: active?.name ?? "Guest", agent: active?.actor !== "person" }
+    await Effect.runPromise((await this.actions).alarm(spend, model, historyOf(env, principal, owner)))
   }
 }
 
 /** VibeLang's History object as a conversation's agent reaches it, as worker/Api.vibe's objects do. */
-function historyOf(env: Env, principal?: Principal) {
+function historyOf(env: Env, principal?: Principal, owner?: string) {
   return HistoryObject.readerOver(
     (request) => reach("history", () => call(env.HISTORY, "vibelang", "page", request)),
-    (name, body, principal, operation) => reach("history", () => call(env.HISTORY, "vibelang", "act", { name, body, principal, operation }) as Promise<HistoryObject.Answered>),
+    (name, body, caller, operation) => effect {
+      // Match Api.vibe: each delegated write resolves the originating owner's current grant.
+      const fresh = owner === undefined ? caller : { ...caller, role: try actionIdentity(env).role(owner) }
+      return try reach("history", () => call(env.HISTORY, "vibelang", "act", { name, body, principal: fresh, operation }) as Promise<HistoryObject.Answered>)
+    },
     principal,
   )
 }

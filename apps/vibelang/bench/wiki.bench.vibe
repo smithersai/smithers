@@ -3,7 +3,7 @@ import { it, expect } from "@effect/vitest"
 import { makeWikiFactory, makeWikiStore } from "../src/core/WikiFactory.vibe"
 import { artifact, workload, slow } from "./artifact.vibe"
 it("wiki drafts, person submissions and replay preserve the repository source", async ({ bench }) => {
-  const result = await workload(bench, "wiki-edit-journeys", () => runPromise(scoped(effect {
+  const result = await workload(bench, "wiki-edit-journeys", "async", () => runPromise(scoped(effect {
     for (const role of ["maintainer", "contributor"] as const) {
       const store = try makeWikiStore()
       const wiki = try makeWikiFactory(role, store)

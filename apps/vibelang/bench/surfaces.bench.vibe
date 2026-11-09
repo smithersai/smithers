@@ -17,13 +17,13 @@ const platform = Layer.mergeAll(NodeServices.layer, ExperimentalNodeServices.lay
 
 it("mock agent and command registry", async ({ bench }) => {
   const results = []
-  results.push(await workload(bench, "mock-agent-ask", async () => {
+  results.push(await workload(bench, "mock-agent-ask", "async", async () => {
     const answer = await runPromise(Effect.provide(Ask.run({ text: "install" }), MockFactory))
     expect(answer.text).toBe(mockReply("install"))
     expect(answer.events[0]).toBe(1)
     expect(answer.events.at(-1)).toBe(answer.events.length)
   }).run(slow))
-  results.push(await workload(bench, "read-command", async () => {
+  results.push(await workload(bench, "read-command", "async", async () => {
     const answer = await runPromise(Effect.provide(Read.run({}), MockFactory))
     expect(answer).toEqual({ conversation: "home", seq: 0, entries: [] })
   }).run(quick))
@@ -33,7 +33,7 @@ it("mock agent and command registry", async ({ bench }) => {
 it("emitted CLI commands", async ({ bench }) => {
   const results = []
   for (const args of [["--mock", "read", "--json"], ["--mock", "ask", "install", "--json"], ["--llms"], ["--help"]]) {
-    results.push(await workload(bench, args.join(" "), async () => {
+    results.push(await workload(bench, args.join(" "), "async", async () => {
       const result = await runPromise(Effect.provide(effect { return try run(try node(), [try cliPath(), ...args]) }, platform))
       expect(result.status).toBe(0)
       expect(result.stderr).toBe("")
@@ -51,7 +51,7 @@ it("stdio MCP handshake and calls", async ({ bench }) => {
   }).pipe(Layer.provide(platform))
   const results = []
   for (const command of ["read", "ask"] as const) {
-    results.push(await workload(bench, `mcp-${command}`, async () => {
+    results.push(await workload(bench, `mcp-${command}`, "async", async () => {
       await runPromise(Effect.provide(effect {
         const client = try McpClient.McpClient
         const tools = try client.listTools()
@@ -77,13 +77,13 @@ it("CLI and MCP failures at the process boundary", async ({ bench }) => {
     [["--wat"], "wat"],
     [["read"], "can't be reached"],
   ] as const) {
-    results.push(await workload(bench, `cli-failure-${args.join(" ")}`, async () => {
+    results.push(await workload(bench, `cli-failure-${args.join(" ")}`, "async", async () => {
       const result = await runPromise(Effect.provide(effect { return try run(try node(), [try cliPath(), ...args], { VIBELANG_FACTORY: "", VIBELANG_FACTORY_URL: "http://127.0.0.1:9" }) }, platform))
       expect(result.status).toBe(1)
       expect(result.stderr).toContain(message)
     }).run(slow))
   }
-  results.push(await workload(bench, "mcp-unreachable", async () => {
+  results.push(await workload(bench, "mcp-unreachable", "async", async () => {
     const result = await runPromise(Effect.provide(effect { return try run(try node(), [try serverPath()], { VIBELANG_FACTORY: "", VIBELANG_FACTORY_URL: "http://127.0.0.1:9" }) }, platform))
     expect(result.status).toBe(1)
     expect(result.stdout).toBe("")
@@ -100,7 +100,7 @@ it("persistent MCP command latency", async ({ bench }) => {
     const client = try McpClient.McpClient
     const tools = try client.listTools()
     const tool = tools.find((tool) => tool.name === "read")!
-    const registration = try Effect.try(() => workload(bench, "mcp-warm-read", async () => {
+    const registration = try Effect.try(() => workload(bench, "mcp-warm-read", "async", async () => {
       const output = await runPromise(client.callTool({ tool, schema: ReadOutput, arguments: {} }))
       expect(output).toEqual({ conversation: "home", seq: 0, entries: [] })
     }))
@@ -118,7 +118,7 @@ it("history CLI and persistent MCP actions", async ({ bench }) => {
     ["--mock", "history", "--commit", "m1", "--json"],
     ["--mock", "plan", "Measure history", "--epic", "e1", "--json"],
   ]) {
-    results.push(await workload(bench, `cli-${args[1]}`, async () => {
+    results.push(await workload(bench, `cli-${args[1]}`, "async", async () => {
       const result = await runPromise(Effect.provide(effect { return try run(try node(), [try cliPath(), ...args]) }, platform))
       expect(result.status).toBe(0)
       expect(result.stderr).toBe("")
@@ -139,7 +139,7 @@ it("history CLI and persistent MCP actions", async ({ bench }) => {
     const client = try McpClient.McpClient
     const tools = try client.listTools()
     const tool = (name: string) => tools.find((tool) => tool.name === name)!
-    const registration = try Effect.try(() => workload(bench, "mcp-history-plan-start-note", async () => {
+    const registration = try Effect.try(() => workload(bench, "mcp-history-plan-start-note", "async", async () => {
       const planned = await runPromise(client.callTool({ tool: tool("plan"), schema: WrittenOutput, arguments: { title: "Measure history", epic: "e1" } }))
       const started = await runPromise(client.callTool({ tool: tool("start"), schema: WrittenOutput, arguments: { id: planned.id, lane: "bench" } }))
       const noted = await runPromise(client.callTool({ tool: tool("note"), schema: WrittenOutput, arguments: { id: planned.id, section: "evidence", text: "Measured." } }))
@@ -160,7 +160,7 @@ it("history CLI and persistent MCP actions", async ({ bench }) => {
 it("sandbox CLI and persistent MCP lifecycle latency", async ({ bench }) => {
   const results = []
   for (const command of ["sandboxes", "sandbox-start"]) {
-    results.push(await workload(bench, `cli-${command}`, async () => {
+    results.push(await workload(bench, `cli-${command}`, "async", async () => {
       const result = await runPromise(Effect.provide(effect { return try run(try node(), [try cliPath(), "--mock", command, "--json"]) }, platform))
       expect(result.status).toBe(0)
       expect(result.stderr).toBe("")
@@ -178,7 +178,7 @@ it("sandbox CLI and persistent MCP lifecycle latency", async ({ bench }) => {
     try Effect.try(() => expect(tools.map((tool) => tool.name).sort()).toEqual(["ask", "read", "history", "plan", "start", "note", "sandboxes", "sandbox-start", "sandbox-stop", "sandbox-run", "issues", "issue", "actions", "run", "trace", "cancel", "rerun", "wiki", "login", "logout"].sort()))
     const tool = (name: string) => tools.find((tool) => tool.name === name)!
     let sample = 0
-    const measured = try Effect.try(() => workload(bench, "mcp-sandbox-file-restart", async () => {
+    const measured = try Effect.try(() => workload(bench, "mcp-sandbox-file-restart", "async", async () => {
       const id = `bench-${++sample}`
       const first = await runPromise(client.callTool({ tool: tool("sandbox-start"), schema: SandboxSnapshot, arguments: { operationId: `${id}-start-a` } }))
       const written = await runPromise(client.callTool({ tool: tool("sandbox-run"), schema: TerminalOutput, arguments: { operationId: `${id}-write`, generation: first.generation, command: "echo saved > keep" } }))

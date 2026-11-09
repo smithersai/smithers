@@ -11,7 +11,7 @@ const tourDuration = WALKTHROUGH.reduce((total, stop) => total + stop.duration, 
 
 it("complete mock tour and cancellation", { timeout: tourDuration + 60000 }, async ({ bench }) => {
   const results = []
-  results.push(await workload(bench, "mock-tour-complete", async () => {
+  results.push(await workload(bench, "mock-tour-complete", "async", async () => {
     await runPromise(scoped(effect {
       provide MockFactory {
         const factory = try Factory
@@ -32,7 +32,7 @@ it("complete mock tour and cancellation", { timeout: tourDuration + 60000 }, asy
       }
     }))
   }).run({ time: 0, warmup: false, iterations: 1 }))
-  results.push(await workload(bench, "mock-tour-end", async () => {
+  results.push(await workload(bench, "mock-tour-end", "async", async () => {
     await runPromise(scoped(effect {
       provide MockFactory {
         const factory = try Factory
@@ -53,7 +53,7 @@ it("complete mock tour and cancellation", { timeout: tourDuration + 60000 }, asy
 })
 
 it("script selection and chunk preservation", async ({ bench }) => {
-  const result = await workload(bench, "mock-scripts", () => {
+  const result = await workload(bench, "mock-scripts", "sync", () => {
     for (const prompt of ["install", "service", "effect", "error", "flow", "something entirely different"]) {
       const reply = mockReply(prompt)
       expect(reply.length).toBeGreaterThan(0)
@@ -65,7 +65,7 @@ it("script selection and chunk preservation", async ({ bench }) => {
 })
 
 it("closed Factory refuses new work", async ({ bench }) => {
-  const result = await workload(bench, "mock-factory-close", async () => {
+  const result = await workload(bench, "mock-factory-close", "async", async () => {
     await runPromise(effect {
       const scope = try Scope.make()
       const context = try Layer.buildWithScope(MockFactory, scope)

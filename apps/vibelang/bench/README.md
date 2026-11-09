@@ -18,3 +18,9 @@ Browser source profiling builds with `--mode bench-coverage` (unminified). The r
 must stay uncovered; minifier folding loses that distinction in the generic bundled converter. Timings use the
 normal optimized build. Cross-runtime maps normalize only open-ended end columns, identically to the shared V8
 provider; source ranges must still match completely. No threshold or production exclusion is relaxed.
+
+Every workload declares `sync` or `async` at registration. Tinybench's automatic detection invokes plain callbacks
+once before measurement, and a Promise-returning probe can overlap the first measured sample. The harness disables
+that detection through Vitest's supported `async` option. Real-runner controls require exactly three callbacks
+and maximum concurrency one with warmup disabled; coverage requires one callback. Earlier timing receipts without
+explicit registration are historical observations and cannot establish isolated, unwarmed execution.

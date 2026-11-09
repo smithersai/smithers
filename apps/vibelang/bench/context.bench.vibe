@@ -9,7 +9,7 @@ for (const length of [10, 1000, 100000]) {
     const expected = Array.from({ length }, (_, index) => ({ author: "person", text: `post ${index + 1}` }))
     const expectedIndexes = Array.from({ length }, (_, index) => index)
     const tail = expected.slice(-12)
-    const result = await workload(bench, "model-context-select-and-window", () => {
+    const result = await workload(bench, "model-context-select-and-window", "sync", () => {
       const selection = selectModelTurns(entries, `m${length}`)
       expect(selection.end).toBe(length)
       expect(selection.indexes).toEqual(expectedIndexes)

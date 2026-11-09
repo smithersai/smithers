@@ -20,7 +20,7 @@ import { wikiPath, wikiPage, requestedWiki } from "../src/core/wiki.vibe"
 import { artifact, workload, quick, slow } from "./artifact.vibe"
 
 it("action run ordering kernels and small decisions", async ({ bench }) => {
-  const result = await workload(bench, "action-kernels", () => {
+  const result = await workload(bench, "action-kernels", "sync", () => {
     expect(acceptSnapshot("queued", 1, 2)).toBe(true)
     expect(acceptSnapshot("running", 2, 2)).toBe(true)
     expect(acceptSnapshot("passed", 1, 2)).toBe(false)
@@ -70,7 +70,7 @@ it("action run ordering kernels and small decisions", async ({ bench }) => {
 })
 
 it("action catalog registration and one role gate", async ({ bench }) => {
-  const result = await workload(bench, "action-catalog", () => {
+  const result = await workload(bench, "action-catalog", "sync", () => {
     const names = flows.map((flow) => flow._tag)
     expect(names).toContain("vibelang/Post")
     for (const name of names) {
@@ -105,7 +105,7 @@ it("action catalog registration and one role gate", async ({ bench }) => {
 })
 
 it("action invocation preparation admits valid input and refuses the rest", async ({ bench }) => {
-  const result = await workload(bench, "action-prepare", async () => {
+  const result = await workload(bench, "action-prepare", "async", async () => {
     await runPromise(effect {
       const post = try prepare("vibelang/Post", { text: "Measured" }, "bench-1")
       const tour = try prepare("vibelang/Tour", {}, "bench-2")
@@ -142,7 +142,7 @@ it("action invocation preparation admits valid input and refuses the rest", asyn
 
 it("mock actions run real product flows and share live steps", async ({ bench }) => {
   const world = MockActions({ role: "contributor", actor: "person" }).pipe(Layer.provide(MockFactory))
-  const result = await workload(bench, "mock-actions", async () => {
+  const result = await workload(bench, "mock-actions", "async", async () => {
     await runPromise(scoped(effect {
       provide world {
         const actions = try Actions
@@ -152,6 +152,10 @@ it("mock actions run real product flows and share live steps", async ({ bench })
         const settled = try Stream.runLast(actions.follow(id).pipe(Stream.takeUntil((run) => run.state !== "running" && run.state !== "queued")))
         const slash = try actions.command("/post How do I install it?")
         const second = try Stream.runLast(actions.follow(slash).pipe(Stream.takeUntil((run) => run.state !== "running" && run.state !== "queued")))
+        const refusedId = try actions.start("vibelang/history/Start", { id: "m999999", lane: "bench" }, "button")
+        const refusedRun = try Stream.runLast(actions.follow(refusedId).pipe(Stream.takeUntil(run => run.state !== "running" && run.state !== "queued")))
+        const acceptedId = try actions.start("vibelang/history/Plan", { how: "append", epic: "", newEpic: "Benchmark acceptance", target: "", title: "Retained history", task: "Measured" }, "button")
+        const acceptedRun = try Stream.runLast(actions.follow(acceptedId).pipe(Stream.takeUntil(run => run.state !== "running" && run.state !== "queued")))
         const runs = try actions.runs("vibelang/Post")
         const read = try actions.read(id)
         const unknownCommand = try Effect.flip(actions.command("/nope"))
@@ -163,6 +167,11 @@ it("mock actions run real product flows and share live steps", async ({ bench })
         const rerun = try actions.rerun(id)
         const third = try Stream.runLast(actions.follow(rerun).pipe(Stream.takeUntil((run) => run.state !== "running" && run.state !== "queued")))
         try Effect.try(() => {
+          expect(Option.isSome(refusedRun) && refusedRun.value.state).toBe("failed")
+          expect(Option.isSome(refusedRun) && JSON.parse(refusedRun.value.result).refusal).toBe("unknown")
+          expect(Option.isSome(acceptedRun) && acceptedRun.value.state).toBe("passed")
+          expect(Option.isSome(acceptedRun) && JSON.parse(acceptedRun.value.result).refusal).toBe(null)
+          expect(Option.isSome(acceptedRun) && JSON.parse(acceptedRun.value.result).id).toMatch(/^m[0-9]+$/)
           expect(all.map((flow) => flow.name)).toEqual(expect.arrayContaining(["vibelang/Post", "vibelang/Reply", "vibelang/Tour", "vibelang/docs/open"]))
           expect(commands.some((entry) => entry.command === "/post")).toBe(true)
           expect(Option.isSome(settled) && settled.value.state).toBe("passed")
@@ -179,11 +188,11 @@ it("mock actions run real product flows and share live steps", async ({ bench })
       }
     }))
   }).run(slow)
-  await runPromise(artifact("mock-actions", "Vitest built-in bench; product MockActions over MockFactory: catalog, command table, button and slash starts, follow to settlement, per-flow runs, direct read, unknown command, invalid JSON input, missing run, cancellation and rerun. Three unwarmed samples.", ["Product mock backend; no model, network or workerd isolation. The same protocol against the real Worker runs in the workerd actions benchmark."], result))
+  await runPromise(artifact("mock-actions", "Vitest built-in bench; product MockActions over MockFactory: catalog, command table, button and slash starts, follow to settlement, per-flow runs, direct read, unknown command, invalid JSON input, missing run, cancellation and rerun; real unknown-commit History refusal settles failed with its exact reason, while an accepted History Plan settles passed with its real id. Three unwarmed samples.", ["Product mock backend; no model, network or workerd isolation. The same protocol against the real Worker runs in the workerd actions benchmark."], result))
 })
 
 it("action agent bindings through the real harness boundary", async ({ bench }) => {
-  const result = await workload(bench, "action-tools", async () => {
+  const result = await workload(bench, "action-tools", "async", async () => {
     await runPromise(scoped(effect {
       provide MockActions({ role: "contributor", actor: "agent" }).pipe(Layer.provide(MockFactory)) {
         const actions = try Actions
@@ -215,7 +224,7 @@ it("action agent bindings through the real harness boundary", async ({ bench }) 
 })
 
 it("markdown, wiki and small shared decisions", async ({ bench }) => {
-  const result = await workload(bench, "shared-decisions", () => {
+  const result = await workload(bench, "shared-decisions", "sync", () => {
     expect(inline("a `b` c ``")).toEqual([{ code: false, text: "a " }, { code: true, text: "b" }, { code: false, text: " c " }])
     expect(inline("plain")).toEqual([{ code: false, text: "plain" }])
     expect(safeLink("https://vibelang.sh")).toBe(true)
@@ -270,7 +279,7 @@ it("markdown, wiki and small shared decisions", async ({ bench }) => {
     { id: "m1", epic: "e1", rank: 0, title: "One", state: "planned", task: "T", lane: "", notes: [] },
     { id: "m2", epic: "e1", rank: 1, title: "Two", state: "approved", task: "", lane: "", notes: [] },
   ]
-  const lookups = await workload(bench, "mythical-lookups", () => {
+  const lookups = await workload(bench, "mythical-lookups", "sync", () => {
     expect(taskOf(commits, "m1")).toBe("T")
     expect(taskOf(commits, "nope")).toBe("")
     expect(epicOf(commits, "m2")).toBe("e1")
@@ -284,7 +293,7 @@ it("markdown, wiki and small shared decisions", async ({ bench }) => {
     expect(foldTarget(commits, "m2")).toBe("m2")
     expect(foldTarget(commits, "nope")).toBe("")
   }).run(quick)
-  const policies = await workload(bench, "sandbox-policy-layers", async () => {
+  const policies = await workload(bench, "sandbox-policy-layers", "async", async () => {
     const signedOutPrincipal = await runPromise(Effect.provide(Effect.flatMap(SandboxPolicy, (service) => service.current()), signedOutSandbox))
     const contributor = await runPromise(Effect.provide(Effect.flatMap(SandboxPolicy, (service) => service.current()), mockPolicy("contributor")))
     expect(signedOutPrincipal).toEqual({ owner: "", role: "viewer" })
