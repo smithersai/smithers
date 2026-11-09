@@ -1,5 +1,7 @@
 import { acceptSnapshot } from "../core/conversation.vibe"
 import { Registered, Run } from "../actions/Actions.vibe"
+import { historyRefusal } from "../history/flowMachine.vibe"
+import { HistoryAnswer } from "../history/flows.vibe"
 export schema ActionView {
   readonly epoch?: number
   readonly step?: string
@@ -19,6 +21,11 @@ export schema ActionView {
   readonly runs: ReadonlyArray<Run>
 }
 export const initial: ActionView = { open: false, maximized: false, selected: "", run: "", loading: false, starting: false, error: "", input: "", highlight: 0, slash: false, entries: [], commands: [], runs: [] }
+/** A refused write's result is its answer as JSON; a person reads the reason. */
+export function resultText(result: string): string {
+  const answer = Schema.decodeUnknownOption(Schema.fromJsonString(HistoryAnswer))(result)
+  return Option.isSome(answer) && answer.value.refusal !== null ? historyRefusal(answer.value.refusal) : result
+}
 export function actionsOf(model: { readonly actions?: ActionView }): ActionView { return model.actions ?? initial }
 /** The page's own commands: switching between the live agent and the mock (VL-13). Not flows: a page load. */
 export function modeCommands(mode: string | undefined): ReadonlyArray<Registered> {

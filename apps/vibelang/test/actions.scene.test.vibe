@@ -1,5 +1,5 @@
 import { Command, click, expect, given, role, scene, Subscription, text, type } from "foldkit/scene"
-import { it } from "@effect/vitest"
+import { describe, it } from "@effect/vitest"
 import { init, LoadActions, Message, update } from "../src/web/main.vibe"
 import { view } from "../src/web/view.vibe"
 import { initial as initialActions } from "../src/web/actionModel.vibe"
@@ -55,4 +55,30 @@ it("a Contributor can cancel a live Post Reply child while the internal declarat
     expect(role("button", { name: "Cancel" })).toExist(),
     expect(role("button", { name: "Re-run" })).toBeAbsent(),
   )
+})
+
+describe("the run's result", () => {
+  const settled = (state: "passed" | "failed", result: string) => {
+    const run = { id: "a1", flow: "vibelang/history/Plan", door: "button" as const, actor: "person" as const, state, started: 0, at: 1, result, steps: [] }
+    return given({ ...home, surface: "chat", actions: { ...initialActions, open: true, selected: run.flow, run: run.id, entries: [registration(run.flow)], commands: [registration(run.flow)], runs: [run] } })
+  }
+  it.each([
+    ["unknown", "No such epic or commit."],
+    ["forbidden", "Your role can't do that."],
+    ["unavailable", "The history can't be reached."],
+    ["a-new-reason", "a-new-reason"],
+  ])("a %s refusal shows its reason, not its JSON", (refusal, reason) => {
+    const raw = JSON.stringify({ id: "", refusal })
+    scene({ update, view }, settled("failed", raw),
+      expect(text(reason)).toExist(),
+      expect(text(raw)).toBeAbsent(),
+    )
+  })
+  it.each([
+    ["an accepted answer", "passed" as const, JSON.stringify({ id: "c1", refusal: null })],
+    ["a failure message", "failed" as const, "Action failed"],
+    ["other JSON with a refusal field", "passed" as const, JSON.stringify({ refusal: "unknown" })],
+  ])("%s stays as it was", (_name, state, result) => {
+    scene({ update, view }, settled(state, result), expect(text(result)).toExist())
+  })
 })

@@ -1,6 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Registered, Run } from "../actions/Actions.vibe"
-import { actionsOf, completions, selectedStep } from "./actionModel.vibe"
+import { actionsOf, completions, resultText, selectedStep } from "./actionModel.vibe"
 import { type Message as AppMessage, Message, type Model } from "./main.vibe"
 type H = HtmlBuilder<AppMessage>
 
@@ -40,7 +40,7 @@ function trace(h: H, run: Run, now = 0, chosen = ""): Html {
     h.div([h.Class("vl-term")], [
       h.div([h.Class("vl-term-bar")], [title(run.flow), duration(run, now)]),
       h.pre([h.Class("vl-term-body"), h.AriaLabel("Logs")], [step === undefined ? "" : `${title(step.name)} · ${step.state}`]),
-      ...(run.result === "" ? [] : [h.div([h.Class("vl-term-bar"), h.AriaLabel("Result")], [run.result])]),
+      ...(run.result === "" ? [] : [h.div([h.Class("vl-term-bar"), h.AriaLabel("Result")], [resultText(run.result)])]),
     ]),
   ])
 }
