@@ -3480,3 +3480,10 @@ The two spread forms above were the gaps.
 
 VL-5: `ts-morph` 25.0.1 was already this toolchain's dependency through the npm package; it now appears in the pnpm lockfile
 with `tsx`, `typescript` and `@types/node` at monorepo versions. `lemmascript-claimcheck` is dropped: `lsc claimcheck` reports it missing.
+
+### Next tool gap for `update`
+
+`update` is still unproved. Under ts-morph the real Foldkit `Message` has members typed `{ [x: string]: any }` where a payload
+uses `Schema.*`, because LemmaScript's checker does not see the VibeLang compiler's types, and `schema` declarations are not
+TypeScript. The tagged-match reader needs a literal `_tag` on every member, so it declines the real table.
+Reproduction: `~/vl/vibelang-bugs/lemmascript-vibe-typed-message` on nyc-01.
