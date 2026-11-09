@@ -138,7 +138,7 @@ const runInProcess = (script, handler) => {
             if (settled !== undefined) {
                 if (settled._tag === "thrown") {
                     const thrown = settled.error;
-                    const message = yield* Effect.orDie(Effect.try(() => JsonBoundary.failureMessage(thrown)));
+                    const message = yield* Effect.sync(() => JsonBoundary.failureMessage(thrown));
                     return yield* Effect_1.fail(new ScriptFailure({ code: "runtime", message }));
                 }
                 // The outcome crosses the same boundary as a call payload, and it

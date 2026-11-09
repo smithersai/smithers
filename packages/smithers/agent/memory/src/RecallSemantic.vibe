@@ -414,7 +414,7 @@ export const recall = effect (
           for (const vector of vectors) {
             const row = byIdentity.get(`${vector.recordKind}\u0000${vector.recordId}`)
             if (row === undefined) continue
-            const indexedText = try Effect.orDie(Effect.try(() => searchableText(row.text)))
+            const indexedText = try Effect.sync(() => searchableText(row.text))
             if (vector.contentDigest !== digest(indexedText)) continue
             if (row.status !== undefined && row.status !== "accepted") continue
             if (
@@ -542,7 +542,7 @@ export const decorateStore = (
             store.getFact({ namespace: input.namespace, key: input.key }).pipe(
               Effect.flatMap(effect (fact) => {
                 if (fact === undefined) return
-                const text = try Effect.orDie(Effect.try(() => searchableText(fact.value)))
+                const text = try Effect.sync(() => searchableText(fact.value))
                 try project({
                   bank: bankForNamespace(fact.namespace),
                   recordKind: "fact",

@@ -438,7 +438,7 @@ export const cachedLoad = <A>(load: () => Promise<A>): () => Promise<A> => {
   return () => {
     cached = cached ?? load().catch((error: unknown) => {
       cached = undefined
-      throw error
+      return Promise.reject(error)
     })
     return cached
   }
@@ -456,8 +456,8 @@ const evaluate = <E>(
   script: Script.Script,
   handler: (request: ScriptRunner.Request) => Effect.Effect<unknown, E>
 ): Effect.Effect<Outcome.Outcome, ScriptRunner.ScriptFailure | E> =>
-  Effect.gen(function*() {
-    const acquired = yield* Effect.acquireRelease(
+  effect {
+    const acquired = try Effect.acquireRelease(
       Effect.sync(() => {
         const runtime: QuickJSRuntime = module.newRuntime()
         if (limits.memoryBytes !== undefined) {
@@ -496,14 +496,14 @@ const evaluate = <E>(
 
     const pending: Array<BridgeCall> = []
     const deferreds = new Set<QuickJSDeferredPromise>()
-    yield* Effect.addFinalizer(() =>
+    try Effect.addFinalizer(() =>
       Effect.sync(() => {
         for (const deferred of deferreds) deferred.dispose()
         deferreds.clear()
       })
     )
 
-    const bridge = context.newFunction("__call", (nameHandle, inputHandle) => {
+    const bridge = try Effect.sync(() => context.newFunction("__call", (nameHandle, inputHandle) => {
       const name = context.getString(nameHandle)
       const encoded = context.getString(inputHandle)
       const deferred = context.newPromise()
@@ -521,16 +521,16 @@ const evaluate = <E>(
       const input = decodeCallInput(encoded)
       pending.push({ name, payload: input.payload, refusal: input.refusal, settle })
       return deferred.handle
-    })
-    context.setProp(context.global, "__call", bridge)
-    bridge.dispose()
-    const source = context.newString(script.text)
-    context.setProp(context.global, "__source", source)
-    source.dispose()
+    }))
+    try Effect.sync(() => context.setProp(context.global, "__call", bridge))
+    try Effect.sync(() => bridge.dispose())
+    const source = try Effect.sync(() => context.newString(script.text))
+    try Effect.sync(() => context.setProp(context.global, "__source", source))
+    try Effect.sync(() => source.dispose())
 
     // The prelude is a fixed string over an empty realm; a failure here is
     // a defect in this module, never a property of the script.
-    context.unwrapResult(context.evalCode(prelude)).dispose()
+    try Effect.sync(() => context.unwrapResult(context.evalCode(prelude)).dispose())
 
     // Parse first, without executing: a compile-only evaluation of the
     // wrapped source distinguishes a genuine parse failure from any runtime
@@ -539,46 +539,46 @@ const evaluate = <E>(
     // construction is not a parse check: QuickJS builds the function by
     // concatenating its source, so text that closes that wrapper runs.
     const wrapped = wrap(script.text)
-    const parsed = context.evalCode(wrapped, "script.js", { compileOnly: true })
+    const parsed = try Effect.sync(() => context.evalCode(wrapped, "script.js", { compileOnly: true }))
     if (parsed.error !== undefined) {
-      const failure = context.dump(parsed.error)
-      parsed.error.dispose()
-      return yield* new ScriptRunner.ScriptFailure({
+      const failure = try Effect.sync(() => context.dump(parsed.error))
+      try Effect.sync(() => parsed.error.dispose())
+      throw new ScriptRunner.ScriptFailure({
         code: "compile",
-        message: JsonBoundary.failureMessage(failure)
+        message: try Effect.sync(() => JsonBoundary.failureMessage(failure))
       })
     }
-    parsed.value.dispose()
+    try Effect.sync(() => parsed.value.dispose())
 
-    const started = context.evalCode(wrapped)
+    const started = try Effect.sync(() => context.evalCode(wrapped))
     if (started.error !== undefined) {
-      const failure = context.dump(started.error)
-      started.error.dispose()
+      const failure = try Effect.sync(() => context.dump(started.error))
+      try Effect.sync(() => started.error.dispose())
       // The source parsed, so anything here — an interrupt from the step
       // budget, a memory-limit throw, a wrapper escape — is runtime.
-      return yield* new ScriptRunner.ScriptFailure({
+      throw new ScriptRunner.ScriptFailure({
         code: "runtime",
-        message: JsonBoundary.failureMessage(failure)
+        message: try Effect.sync(() => JsonBoundary.failureMessage(failure))
       })
     }
     const scriptHandle = started.value
-    yield* Effect.addFinalizer(() => Effect.sync(() => scriptHandle.dispose()))
+    try Effect.addFinalizer(() => Effect.sync(() => scriptHandle.dispose()))
 
     while (true) {
-      const jobs = runtime.executePendingJobs()
-      yield* QuickJsJobs.check(jobs)
+      const jobs = try Effect.sync(() => runtime.executePendingJobs())
+      try QuickJsJobs.check(jobs)
       // Drain issued calls before consulting the script's promise: a call
       // that was issued settles durably even when the script no longer
       // awaits it (a race loser), and its bridge handle is disposed.
       const next = pending.shift()
       if (next !== undefined) {
-        yield* dispatchBridgeCall(next, pending, handler)
+        try dispatchBridgeCall(next, pending, handler)
         continue
       }
-      const state = context.getPromiseState(scriptHandle)
+      const state = try Effect.sync(() => context.getPromiseState(scriptHandle))
       if (state.type === "fulfilled") {
-        const value = context.dump(state.value)
-        state.value.dispose()
+        const value = try Effect.sync(() => context.dump(state.value))
+        try Effect.sync(() => state.value.dispose())
         // The in-realm encoder answers null for a value JSON.stringify would
         // rewrite. A non-string or malformed result is the same refusal the
         // in-process binding makes.
@@ -588,22 +588,21 @@ const evaluate = <E>(
         // are not redundant: the in-realm copy is what stops the realm's own
         // stringify from rewriting the value, and the host walk is the one
         // that bounds size — the shared gate both bindings answer to.
-        let decoded: ReturnType<typeof JsonBoundary.jsonBoundary>
-        try {
-          if (typeof value !== "string") throw new TypeError(JsonBoundary.unserializableOutcome)
-          decoded = JsonBoundary.jsonBoundary(JSON.parse(value))
-        } catch {
-          decoded = { _tag: "Refused" }
-        }
+        const parsedOutcome = typeof value === "string"
+          ? try Effect.result(Effect.try(() => JSON.parse(value) as unknown))
+          : undefined
+        const decoded = parsedOutcome === undefined || parsedOutcome._tag === "Failure"
+          ? ({ _tag: "Refused" } as const)
+          : JsonBoundary.jsonBoundary(parsedOutcome.success)
         if (decoded._tag === "Refused") {
-          return yield* new ScriptRunner.ScriptFailure({
+          throw new ScriptRunner.ScriptFailure({
             code: "invalid_outcome",
             message: JsonBoundary.unserializableOutcome
           })
         }
         const outcome = JsonBoundary.decodeOutcome(decoded.value)
         if (outcome._tag === "None") {
-          return yield* new ScriptRunner.ScriptFailure({
+          throw new ScriptRunner.ScriptFailure({
             code: "invalid_outcome",
             message: JsonBoundary.notAnOutcome
           })
@@ -611,21 +610,21 @@ const evaluate = <E>(
         return outcome.value
       }
       if (state.type === "rejected") {
-        const failure = context.dump(state.error)
-        state.error.dispose()
-        return yield* new ScriptRunner.ScriptFailure({
+        const failure = try Effect.sync(() => context.dump(state.error))
+        try Effect.sync(() => state.error.dispose())
+        throw new ScriptRunner.ScriptFailure({
           code: "runtime",
-          message: JsonBoundary.failureMessage(failure)
+          message: try Effect.sync(() => JsonBoundary.failureMessage(failure))
         })
       }
       // Nothing is queued and no VM job can advance the script: it
       // awaited something the sealed realm can never settle.
-      return yield* new ScriptRunner.ScriptFailure({
+      throw new ScriptRunner.ScriptFailure({
         code: "runtime",
         message: JsonBoundary.neverSettles
       })
     }
-  }).pipe(
+  }.pipe(
     Effect.scoped,
     // Last line of defence for the sealed realm's own machinery, and ONLY
     // for it. A native WebAssembly abort — the shape a host-stack
@@ -645,11 +644,10 @@ const evaluate = <E>(
         ? Effect.die(defect.defect)
         : Effect.flatMap(
           Effect.logWarning("QuickJsRunner degraded a host defect to a runtime script failure", Cause.die(defect)),
-          () =>
-            new ScriptRunner.ScriptFailure({
-              code: "runtime",
-              message: hostDefectMarker + JsonBoundary.failureMessage(defect)
-            })
+          effect () => {
+            const message = try Effect.sync(() => JsonBoundary.failureMessage(defect))
+            throw new ScriptRunner.ScriptFailure({ code: "runtime", message: hostDefectMarker + message })
+          }
         )
     )
   )

@@ -184,7 +184,7 @@ export const resolveLive = (seat: string, root: string): Effect.Effect<Seat.Seat
   return effect {
     const context = try Layer.build(executor)
     const request = Context.get(context, RequestExecutor.RequestExecutor)
-    const resolver = try Effect.orDie(Effect.try(() => NativeEquipment.seatResolver(env, request)))
+    const resolver = try Effect.sync(() => NativeEquipment.seatResolver(env, request))
     return try resolver.resolve(seat)
   }
 }
@@ -253,13 +253,13 @@ export const runTurn = (options: TurnOptions): Effect.Effect<Turn> =>
     const settled = Deferred.makeUnsafe<Exit.Exit<string, unknown>>()
     const body = effect {
       const agent = try Agent.Agent
-      const flows = try Effect.orDie(Effect.try(() =>
+      const flows = try Effect.sync(() =>
         World.sources(options.world, options.composed.role, actions, options.idBase ?? 0)
-      ))
+      )
       const effort = options.composed.effort
       const modelParams = effort === undefined
         ? undefined
-        : try Effect.orDie(Effect.try(() => ModelRequest.GenerationParams.make({ reasoningEffort: effort })))
+        : try Effect.sync(() => ModelRequest.GenerationParams.make({ reasoningEffort: effort }))
       try agent.run({
         session: options.session ?? "evals-character",
         seat: options.seat,

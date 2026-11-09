@@ -183,9 +183,9 @@
     },
     "./QuickJsRunner": {
       "types": {
-        "default": "./src/QuickJsRunner.ts"
+        "default": "./.vibe/declarations/QuickJsRunner.d.vibe.ts"
       },
-      "vibelang-source": "./src/QuickJsRunner.ts",
+      "vibelang-source": "./src/QuickJsRunner.vibe",
       "default": "./.vibelang/js/src/QuickJsRunner.js"
     },
     "./RegistryCatalog": {
@@ -221,7 +221,8 @@
     "src/SubChains.vibe",
     "src/Chain.vibe",
     "src/ScriptRunner.vibe",
-    "src/Authorize.vibe"
+    "src/Authorize.vibe",
+    "src/QuickJsRunner.vibe"
   ],
   "publishConfig": {
     "access": "public",

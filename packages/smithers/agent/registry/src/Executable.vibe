@@ -663,7 +663,7 @@ const importModule = (
         sourceRoot.identity,
         platformPath.relative(sourceRoot.workspace, original)
       )
-      try Effect.orDie(Effect.try(() => Graph.evaluatedFrom(sibling, declaredPath)))
+      try Effect.sync(() => Graph.evaluatedFrom(sibling, declaredPath))
     }
     return try Effect.tryPromise({
       try: () => import(/* @vite-ignore */ fileSpecifier(siblings.get(entryPath)!)) as Promise<unknown>,
@@ -1073,7 +1073,7 @@ const loadModule = (
     ))
     const { bytes, modules } = source
     const loadPath = "loadPath" in source ? source.loadPath : source.entry
-    if (try Effect.orDie(Effect.try(() => isLegacyObjectModule(bytes)))) {
+    if (try Effect.sync(() => isLegacyObjectModule(bytes))) {
       return try Effect.fail(refuse({
         code: "invalid_module",
         flow: descriptor.name,
@@ -1615,7 +1615,7 @@ export const fromDescriptor = (
       // delegating node, so two descriptors declaring different policies are two
       // declarations with two step keys, and — the half that reaches admission —
       // onto the action the bridged flow dispatches, above.
-      const identity = try Effect.orDie(Effect.try(() => PlanNode.capture(captured(lowered), (value: unknown) => value)))
+      const identity = try Effect.sync(() => PlanNode.capture(captured(lowered), (value: unknown) => value))
       // The BODY's identity is captured too, and it has to be. A plan-time
       // function JavaScript cannot inspect gets process-local identity, so a
       // bridged flow built from one unchanged descriptor would key differently in
@@ -1624,7 +1624,7 @@ export const fromDescriptor = (
       // so declaring it makes the flow's identity a function of the descriptor
       // rather than of the process that loaded it.
       const placement = invocationPlacement(lowered.placement)
-      const build = try Effect.orDie(Effect.try(() => PlanNode.capture(
+      const build = try Effect.sync(() => PlanNode.capture(
         {
           flow: descriptor.name,
           delegate: delegate._tag,
@@ -1644,7 +1644,7 @@ export const fromDescriptor = (
             : PlanNode.map(bridge.declaration.call(envelope), identity)
           return lowered.priority === undefined ? carried : PlanNode.priority(carried, lowered.priority)
         }
-      )))
+      ))
       // A canonical declaration normally has the same tag as its registry name.
       // Its payload codec is the user's schema; this admission adapter takes
       // { input }. Registering both under that tag made whichever layer won

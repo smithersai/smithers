@@ -25,7 +25,7 @@ export const measureLockfiles = (root) => {
             if (Option.isSome(bytes))
                 measured.push([name, yield* digestOf(bytes.value)]);
         }
-        const encoded = yield* Effect.orDie(Effect.try(() => JSON.stringify(measured)));
+        const encoded = yield* Effect.sync(() => JSON.stringify(measured));
         return yield* digestOf(new TextEncoder().encode(encoded));
     });
 };

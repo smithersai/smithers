@@ -107,9 +107,9 @@ export const makeFileSystem = effect (options: { readonly root: string; readonly
   const root = path.resolve(options.root)
   const directory = path.join(root, ".flows", "executions")
   const store = options.store ??
-    (try Effect.orDie(Effect.try(() =>
+    (try Effect.sync(() =>
       ArtifactStore.makeFileSystem(fs, path, { directory: path.join(root, ".flows", "objects") })
-    )))
+    ))
   const put = (bytes: Uint8Array) => store.put(bytes).pipe(Effect.provideService(EffectDigest.Digest, crypto))
   const get = (digest: string) => store.get(digest).pipe(Effect.provideService(EffectDigest.Digest, crypto))
   const syncDirectories = effect {

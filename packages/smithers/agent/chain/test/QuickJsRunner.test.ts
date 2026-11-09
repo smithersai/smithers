@@ -4,7 +4,7 @@ import type { ExecutePendingJobsResult, QuickJSWASMModule } from "quickjs-emscri
 import { newQuickJSWASMModuleFromVariant } from "quickjs-emscripten-core"
 import { describe, expect, it } from "vitest"
 import * as QuickJsJobs from "../src/internal/QuickJsJobs.ts"
-import * as QuickJsRunner from "../src/QuickJsRunner.ts"
+import * as QuickJsRunner from "../src/QuickJsRunner.vibe"
 import * as Script from "../src/Script.vibe"
 import type * as ScriptRunner from "../src/ScriptRunner.vibe"
 

@@ -14,7 +14,7 @@ import { resolveNamespace } from "./ResolveNamespace.js";
 import { changed, decodeJson, decodeThread, encodeJson, error, storeError, validateLimit, validateNonEmpty, validateTime } from "./Store.js";
 // canonicalJson only meets values the JSON boundary already admitted, so a
 // failure here is a defect.
-const canonical = (value) => Effect.orDie(Effect.try(() => canonicalJson(value)));
+const canonical = (value) => Effect.sync(() => canonicalJson(value));
 const THREAD_COLUMNS = "thread_id, namespace_kind, namespace_id, title, metadata_json, created_at_ms, updated_at_ms";
 const MESSAGE_COLUMNS = "thread_id, id, role, text, at_ms";
 const DELETE_MESSAGES_CHUNK_SIZE = 900;

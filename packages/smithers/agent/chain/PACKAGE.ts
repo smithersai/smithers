@@ -58,7 +58,7 @@ const securityReview = Smithers.SecurityReview({
         "A handle (deferred, scriptHandle, error) used after dispose, or a host exception from a bridge callback escaping as a defect instead of a typed ScriptFailure.",
         "Date or Math.random still reachable in the realm, or a prelude intrinsic read after the script could replace it."
       ],
-      paths: ["src/QuickJsRunner.ts", "src/internal/QuickJsJobs.ts"]
+      paths: ["src/QuickJsRunner.vibe", "src/internal/QuickJsJobs.ts"]
     },
     {
       id: "in-process-runner-trusted-only",
@@ -82,7 +82,7 @@ const securityReview = Smithers.SecurityReview({
         "The in-realm copyJson and host jsonBoundary disagreeing on depth, size, holes, -0, or prototype checks.",
         "A key assigned with = instead of Object.defineProperty on a copy that has Object.prototype."
       ],
-      paths: ["src/JsonBoundary.ts", "src/QuickJsRunner.ts", "src/ScriptRunner.vibe", "src/Chain.vibe"]
+      paths: ["src/JsonBoundary.ts", "src/QuickJsRunner.vibe", "src/ScriptRunner.vibe", "src/Chain.vibe"]
     },
     {
       id: "authorize-every-live-call",
@@ -143,7 +143,7 @@ const securityReview = Smithers.SecurityReview({
         "SubChains maxDepth not counted from derived segments, allowing unbounded nested Chain.run.",
         "An observation, steering, or context string appended to the author prompt without the 8192/32768 truncation."
       ],
-      paths: ["src/QuickJsRunner.ts", "src/Chain.vibe", "src/SubChains.vibe", "src/Observation.vibe"]
+      paths: ["src/QuickJsRunner.vibe", "src/Chain.vibe", "src/SubChains.vibe", "src/Observation.vibe"]
     },
     {
       id: "prompt-catalog-injection",

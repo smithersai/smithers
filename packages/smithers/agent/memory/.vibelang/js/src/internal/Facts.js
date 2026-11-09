@@ -14,7 +14,7 @@ import { resolveNamespace } from "./ResolveNamespace.js";
 import { changed, decodeFact, decodeJson, encodeJson, storeError, validateLimit, validateNonEmpty, validateTags, validateTime } from "./Store.js";
 // canonicalJson only meets values the JSON boundary already admitted, so a
 // failure here is a defect.
-const canonical = (value) => Effect.orDie(Effect.try(() => canonicalJson(value)));
+const canonical = (value) => Effect.sync(() => canonicalJson(value));
 const FACT_COLUMNS = "namespace_kind, namespace_id, fact_key, value_json, tags_json, ttl_ms, " +
     "provenance_json, created_at_ms, updated_at_ms";
 const DELETE_EXPIRED_FACTS_CHUNK_SIZE = 256;
@@ -109,7 +109,7 @@ export const make = (database) => {
                 recordKind: "fact",
                 namespaceId: namespace.id,
                 key: input.key,
-                text: yield* Effect.orDie(Effect.try(() => searchableText(value)))
+                text: yield* Effect.sync(() => searchableText(value))
             });
         })).pipe(Effect.mapError(storeError("could not write memory fact")));
     });

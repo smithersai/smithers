@@ -284,7 +284,7 @@ export const recall = (input, options) => {
                     const row = byIdentity.get(`${vector.recordKind}\u0000${vector.recordId}`);
                     if (row === undefined)
                         continue;
-                    const indexedText = yield* Effect.orDie(Effect.try(() => searchableText(row.text)));
+                    const indexedText = yield* Effect.sync(() => searchableText(row.text));
                     if (vector.contentDigest !== digest(indexedText))
                         continue;
                     if (row.status !== undefined && row.status !== "accepted")
@@ -369,7 +369,7 @@ export const decorateStore = (store, projector, embedding) => {
             return Effect_1.gen(function* () {
                 if (fact === undefined)
                     return;
-                const text = yield* Effect.orDie(Effect.try(() => searchableText(fact.value)));
+                const text = yield* Effect.sync(() => searchableText(fact.value));
                 yield* project({
                     bank: bankForNamespace(fact.namespace),
                     recordKind: "fact",

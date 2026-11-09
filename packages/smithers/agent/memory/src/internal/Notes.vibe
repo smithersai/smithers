@@ -33,7 +33,7 @@ import {
 
 // canonicalJson only meets values the JSON boundary already admitted, so a
 // failure here is a defect.
-const canonical = (value: unknown) => Effect.orDie(Effect.try(() => canonicalJson(value)))
+const canonical = (value: unknown) => Effect.sync(() => canonicalJson(value))
 
 const CREATION_COLUMNS = "namespace_kind, namespace_id, id, text, tags_json, provenance_json, status, created_at_ms"
 

@@ -191,9 +191,7 @@ const readMetadata = (
       const parseLimit = Math.min(bytes.length, metadataReadLimit)
       let text = ""
       for (let offset = 0; offset < parseLimit; offset += chunkSize) {
-        text += try Effect.orDie(Effect.try(() =>
-          decoder.decode(bytes.subarray(offset, Math.min(offset + chunkSize, parseLimit)), { stream: true })
-        ))
+        text += try Effect.orDie(Effect.try(() => decoder.decode(bytes.subarray(offset, Math.min(offset + chunkSize, parseLimit)), { stream: true })))
         const complete = kind === "markdown"
           ? Frontmatter.isMetadataComplete(text)
           : ModuleMetadata.isComplete(text)

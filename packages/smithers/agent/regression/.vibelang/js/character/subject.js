@@ -132,7 +132,7 @@ export const resolveLive = (seat, root) => {
     return Effect_1.gen(function* () {
         const context = yield* Layer.build(executor);
         const request = Context.get(context, RequestExecutor.RequestExecutor);
-        const resolver = yield* Effect.orDie(Effect.try(() => NativeEquipment.seatResolver(env, request)));
+        const resolver = yield* Effect.sync(() => NativeEquipment.seatResolver(env, request));
         return yield* resolver.resolve(seat);
     });
 };
@@ -181,11 +181,11 @@ export const runTurn = (options) => Effect_1.gen(function* () {
     const settled = Deferred.makeUnsafe();
     const body = Effect_1.gen(function* () {
         const agent = yield* Agent.Agent;
-        const flows = yield* Effect.orDie(Effect.try(() => World.sources(options.world, options.composed.role, actions, options.idBase ?? 0)));
+        const flows = yield* Effect.sync(() => World.sources(options.world, options.composed.role, actions, options.idBase ?? 0));
         const effort = options.composed.effort;
         const modelParams = effort === undefined
             ? undefined
-            : yield* Effect.orDie(Effect.try(() => ModelRequest.GenerationParams.make({ reasoningEffort: effort })));
+            : yield* Effect.sync(() => ModelRequest.GenerationParams.make({ reasoningEffort: effort }));
         yield* agent.run({
             session: options.session ?? "evals-character",
             seat: options.seat,

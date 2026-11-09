@@ -482,7 +482,7 @@ export const run = (suite, options) => Effect.withSpan(Effect_1.gen(function* ()
         cases,
         observations: cases.flatMap((caseResult) => caseResult.observations),
         // fromEntries defines own properties, so a case named `__proto__` stays a case.
-        trials: yield* Effect.orDie(Effect.try(() => Trials.aggregate(Object.fromEntries(outcomes), k))),
+        trials: yield* Effect.sync(() => Trials.aggregate(Object.fromEntries(outcomes), k)),
         k
     };
 }), "Eval.run", { attributes: { suite: suite.name, runId: options.runId } });

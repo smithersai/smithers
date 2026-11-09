@@ -27,6 +27,6 @@ export const measureLockfiles = effect (root: string) => {
     )
     if (Option.isSome(bytes)) measured.push([name, try digestOf(bytes.value)])
   }
-  const encoded = try Effect.orDie(Effect.try(() => JSON.stringify(measured)))
+  const encoded = try Effect.sync(() => JSON.stringify(measured))
   return try digestOf(new TextEncoder().encode(encoded))
 }

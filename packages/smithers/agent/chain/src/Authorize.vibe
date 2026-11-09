@@ -230,7 +230,7 @@ export const layerRules = (rules: ReadonlyArray<Permission.Rule>): Layer.Layer<A
             }
             const exact = exactCapability(parsed.value)
             const verdict = Option.isSome(exact)
-              ? try Effect.orDie(Effect.try(() => Permission.evaluate([snapshot], exact.value)))
+              ? try Effect.sync(() => Permission.evaluate([snapshot], exact.value))
               : evaluatePattern(snapshot, parsed.value)
             if (verdict === "deny") {
               throw new AuthorizeError({

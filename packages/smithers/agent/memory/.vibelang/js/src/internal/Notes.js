@@ -13,7 +13,7 @@ import { resolveNamespace } from "./ResolveNamespace.js";
 import { changed, collectUntil, decodeJson, decodeNote, encodeJson, error, MIN_NOTE_PAGE_SIZE, NOTE_PAGE_SIZE, storeError, tagMatcher, validateLimit, validateNonEmpty, validateTags } from "./Store.js";
 // canonicalJson only meets values the JSON boundary already admitted, so a
 // failure here is a defect.
-const canonical = (value) => Effect.orDie(Effect.try(() => canonicalJson(value)));
+const canonical = (value) => Effect.sync(() => canonicalJson(value));
 const CREATION_COLUMNS = "namespace_kind, namespace_id, id, text, tags_json, provenance_json, status, created_at_ms";
 const NOTE_COLUMNS = `${CREATION_COLUMNS}, status_at_ms, accepted_todo`;
 /**

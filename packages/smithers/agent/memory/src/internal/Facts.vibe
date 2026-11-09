@@ -30,7 +30,7 @@ import {
 
 // canonicalJson only meets values the JSON boundary already admitted, so a
 // failure here is a defect.
-const canonical = (value: unknown) => Effect.orDie(Effect.try(() => canonicalJson(value)))
+const canonical = (value: unknown) => Effect.sync(() => canonicalJson(value))
 
 const FACT_COLUMNS = "namespace_kind, namespace_id, fact_key, value_json, tags_json, ttl_ms, " +
   "provenance_json, created_at_ms, updated_at_ms"
@@ -153,7 +153,7 @@ export const make = (database: DatabaseService): {
             recordKind: "fact",
             namespaceId: namespace.id,
             key: input.key,
-            text: try Effect.orDie(Effect.try(() => searchableText(value)))
+            text: try Effect.sync(() => searchableText(value))
           })
         }
       ).pipe(Effect.mapError(storeError("could not write memory fact")))

@@ -145,7 +145,7 @@ export * as Prompt from "./Prompt.ts"
  * @since 0.1.0
  * @slop
  */
-export * as QuickJsRunner from "./QuickJsRunner.ts"
+export * as QuickJsRunner from "./QuickJsRunner.vibe"
 
 /**
  * The registry-backed catalog projection.

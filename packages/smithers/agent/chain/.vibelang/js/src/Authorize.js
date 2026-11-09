@@ -183,7 +183,7 @@ export const layerRules = (rules) => {
                 }
                 const exact = exactCapability(parsed.value);
                 const verdict = Option.isSome(exact)
-                    ? yield* Effect.orDie(Effect.try(() => Permission.evaluate([snapshot], exact.value))) : evaluatePattern(snapshot, parsed.value);
+                    ? yield* Effect.sync(() => Permission.evaluate([snapshot], exact.value)) : evaluatePattern(snapshot, parsed.value);
                 if (verdict === "deny") {
                     return yield* Effect_1.fail(new AuthorizeError({
                         code: "denied",

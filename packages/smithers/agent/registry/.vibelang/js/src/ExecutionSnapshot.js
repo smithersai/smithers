@@ -72,7 +72,7 @@ export const makeFileSystem = (options) => {
         const root = path.resolve(options.root);
         const directory = path.join(root, ".flows", "executions");
         const store = options.store ??
-            (yield* Effect.orDie(Effect.try(() => ArtifactStore.makeFileSystem(fs, path, { directory: path.join(root, ".flows", "objects") }))));
+            (yield* Effect.sync(() => ArtifactStore.makeFileSystem(fs, path, { directory: path.join(root, ".flows", "objects") })));
         const put = (bytes) => store.put(bytes).pipe(Effect.provideService(EffectDigest.Digest, crypto));
         const get = (digest) => store.get(digest).pipe(Effect.provideService(EffectDigest.Digest, crypto));
         const syncDirectories = Effect_1.gen(function* syncDirectories() {

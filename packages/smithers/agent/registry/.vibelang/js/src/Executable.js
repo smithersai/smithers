@@ -345,7 +345,7 @@ const importModule = (path, source, sourceRoot) => Effect_1.gen(function* () {
         // The retained directory supplies bytes, while the approved identity
         // supplies declaration sites. A fork must re-record the same provenance.
         const declaredPath = sourceRoot === undefined ? original : platformPath.resolve(sourceRoot.identity, platformPath.relative(sourceRoot.workspace, original));
-        yield* Effect.orDie(Effect.try(() => Graph.evaluatedFrom(sibling, declaredPath)));
+        yield* Effect.sync(() => Graph.evaluatedFrom(sibling, declaredPath));
     }
     return yield* Effect.tryPromise({
         try: () => import(__rewriteRelativeImportExtension(/* @vite-ignore */ fileSpecifier(siblings.get(entryPath)))),
@@ -641,7 +641,7 @@ const loadModule = (descriptor, path, recorded, options, approvedDigest) => Effe
         : options.snapshots.restore(approvedDigest).pipe(Effect.mapError((cause) => snapshotFailure(error, cause)))));
     const { bytes, modules } = source;
     const loadPath = "loadPath" in source ? source.loadPath : source.entry;
-    if (yield* Effect.orDie(Effect.try(() => isLegacyObjectModule(bytes)))) {
+    if (yield* Effect.sync(() => isLegacyObjectModule(bytes))) {
         return yield* Effect.fail(refuse({
             code: "invalid_module",
             flow: descriptor.name,
@@ -1083,7 +1083,7 @@ export const fromDescriptor = (descriptor, options) => Effect.suspend(() => {
         // delegating node, so two descriptors declaring different policies are two
         // declarations with two step keys, and — the half that reaches admission —
         // onto the action the bridged flow dispatches, above.
-        const identity = yield* Effect.orDie(Effect.try(() => PlanNode.capture(captured(lowered), (value) => value)));
+        const identity = yield* Effect.sync(() => PlanNode.capture(captured(lowered), (value) => value));
         // The BODY's identity is captured too, and it has to be. A plan-time
         // function JavaScript cannot inspect gets process-local identity, so a
         // bridged flow built from one unchanged descriptor would key differently in
@@ -1092,7 +1092,7 @@ export const fromDescriptor = (descriptor, options) => Effect.suspend(() => {
         // so declaring it makes the flow's identity a function of the descriptor
         // rather than of the process that loaded it.
         const placement = invocationPlacement(lowered.placement);
-        const build = yield* Effect.orDie(Effect.try(() => PlanNode.capture({
+        const build = yield* Effect.sync(() => PlanNode.capture({
             flow: descriptor.name,
             delegate: delegate._tag,
             prompt: body.prompt,
@@ -1109,7 +1109,7 @@ export const fromDescriptor = (descriptor, options) => Effect.suspend(() => {
                 ? delegate.call(envelope)
                 : PlanNode.map(bridge.declaration.call(envelope), identity);
             return lowered.priority === undefined ? carried : PlanNode.priority(carried, lowered.priority);
-        })));
+        }));
         // A canonical declaration normally has the same tag as its registry name.
         // Its payload codec is the user's schema; this admission adapter takes
         // { input }. Registering both under that tag made whichever layer won
