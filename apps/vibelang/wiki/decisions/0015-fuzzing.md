@@ -128,3 +128,21 @@ Fourth campaign: seed 20261111, 32 seconds per target, 35 minutes, 128 target re
 ## Status, 2026-11-09 (later)
 
 Fuzz-only: 85.96% of lines, 69.46% of branches; goal not met. Sandbox objects, action identity, wiki tools and writer, specification reviewers and device sign-in now have targets. `machineObject`, `accountObject` and `gatewayOf` are separated from Alchemy's `.make` so a container of local processes (`fuzz/machine-box.ts`) drives the real bodies; live Containers stay off. Commands in those targets come from a fixed list, because they execute. A successful model answer is not reached: it needs a scripted model server.
+
+## Lines fuzzing cannot execute
+
+Alchemy runs these only when it binds a Worker inside Cloudflare's runtime; `Cloudflare.DurableObjectState` and the Durable Object namespaces do not exist in a local target. Every body they call has a target through the exported function named.
+
+| File | Lines | Runs in | Body reached through |
+| --- | --- | --- | --- |
+| `worker/SandboxMachine.vibe` | 11-13 | `SandboxMachine.make` | `machineObject` |
+| `worker/SandboxAccounts.vibe` | 12-15 | `SandboxAccount.make` | `accountObject` |
+| `worker/SandboxAccounts.vibe` | 22-24 | `gatewayWithIdentity` with a container image | `gatewayOf` |
+
+Lines 20 and 21 of `worker/SandboxAccounts.vibe` are the no-image branch; `sandbox/gateway-without-image` runs them. These lines stay in the denominator: the record replaces an exclusion, so the 100% gate fails on them until a target can reach them or Will rules on excluding them.
+
+`account.run` no longer reads a snapshot for a refused answer. The gateway never read it, and a refused snapshot died there.
+
+`web/command-sequences` is folded into `web/guided-commands`: arbitrary Messages now arrive between gestures the screen offers. It had no retained regressions.
+
+`fuzz/model-server.vibe` answers the provider's HTTP and SSE on a real local socket. `fuzz.config.ts` loads QuickJS's compiled module under Node so `Reply.answer`, the wiki writer and the reviewers run to a completed answer. The refused-port cases of `wiki/writer` and `specification/reviewers` now reach provider backoff, about 2 seconds per execution.

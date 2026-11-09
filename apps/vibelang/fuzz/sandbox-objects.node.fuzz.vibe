@@ -6,7 +6,8 @@ import { HttpServerRequest } from "effect/http"
 import type { SandboxSnapshot } from "../src/core/Factory.vibe"
 import { mayStart } from "../src/core/sandboxPolicy.vibe"
 import { machineObject, type MachineBox, type ObjectState } from "../worker/SandboxMachine.vibe"
-import { accountObject, gatewayOf, identityFromPolicy, noIdentity, SandboxIdentity } from "../worker/SandboxAccounts.vibe"
+import { accountObject, gatewayOf, gatewayWithIdentity, identityFromPolicy, noIdentity, SandboxGateway, SandboxIdentity } from "../worker/SandboxAccounts.vibe"
+import { signedOutGateway } from "../worker/SandboxHttp.vibe"
 import { makeBox, namespaceOf, type BoxFault } from "./machine-box.ts"
 import { objectStorage } from "../test/support/objectStorage.ts"
 import { run, Int } from "./run.vibe"
@@ -131,4 +132,10 @@ it.live("sandbox/account-gateway", () => run("sandbox/account-gateway", AccountI
   if (blank.ok || blank.refusal !== "forbidden") return false
   const foreign = try account.run("someone-else", "start", "c-1", "op-foreign", 0, "")
   return owner === undefined || (!foreign.ok && foreign.refusal === "forbidden")
+})))
+
+/** A deployment with no container image binds no objects: every sandbox request answers signed out. */
+it.live("sandbox/gateway-without-image", () => run("sandbox/gateway-without-image", Schema.Boolean, () => scoped(effect {
+  const context = try Layer.build(gatewayWithIdentity as unknown as Layer.Layer<SandboxGateway>).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))))
+  return Context.get(context, SandboxGateway).gateway === signedOutGateway
 })))

@@ -12,14 +12,15 @@ import { WikiFailure } from "../src/core/wikiSchemas.vibe"
 import { SpecificationReviewers } from "../src/core/specification.vibe"
 import { unansweredSpecificationReview } from "../src/core/conversation.vibe"
 import { DEFAULT_CHAT_MODEL } from "../worker/AgentModel.vibe"
-import { answer as answerPost, ChatModel, Replies, REASONS, Spend } from "../worker/Reply.vibe"
+import { agentOf, answer as answerPost, ChatModel, Replies, REASONS, Spend, tagOf } from "../worker/Reply.vibe"
+import { AgentAction, EventSink } from "@smthrs/agent"
 import { HistoryTools } from "../worker/HistoryTools.vibe"
 import { Tours } from "../src/core/flows.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
 import { WikiDraftAgent, wikiAgentLayer, wikiWriter } from "../worker/WikiDraft.vibe"
 import { liveSpecificationReviewers } from "../worker/SpecificationReviewers.vibe"
 import { run, Text } from "./run.vibe"
-import { cell, scriptedModel } from "./model-server.vibe"
+import { cell, scriptedModel, type Scripted } from "./model-server.vibe"
 
 const ORIGIN = "http://127.0.0.1:9"
 const CREDENTIAL = { SMITHERS_MODEL_KEY_FUZZ: "fuzz-local-value", SMITHERS_MODEL_KEY_FUZZ_ORIGIN: ORIGIN }
@@ -138,12 +139,19 @@ it.live("specification/reviewer-answers", () => run("specification/reviewer-answ
   return accepted ? outcome === `ok:${input.revision}:${input.verdict}` : outcome === "review"
 })))
 
-const ANSWER_KINDS = ["answer", "chunked", "empty", "blank", "prose", "refused", "credit", "rate-limited", "garbage", "bad-usage"] as const
+const ANSWER_KINDS = ["answer", "chunked", "corrected", "empty", "blank", "prose", "refused", "credit", "rate-limited", "garbage", "bad-usage", "history-defect", "busy-once"] as const
 const ReplyInput = Schema.Struct({ kind: Schema.Literals(ANSWER_KINDS), text: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(60)), start: Schema.Literals(["done", "refused"]), admission: Schema.Literals(["admit", "refuse"]), bound: Schema.Boolean })
 
-function scriptOf(input: typeof ReplyInput.Type) {
+function scriptsOf(input: typeof ReplyInput.Type): ReadonlyArray<Scripted> {
   const done = (output: string) => cell(JSON.stringify(output))
+  // A first cell that shows text and then throws, so the next frame's different answer starts the visible reply over.
+  if (input.kind === "corrected") return [{ kind: "stream", pieces: ["```cell\nctx.done(\"\\u0001draft\" + missing);\n```"], prompt: 3, completion: 4 }, { kind: "stream", pieces: [done(input.text)], prompt: 3, completion: 4 }]
+  return [scriptOf(input, done)]
+}
+
+function scriptOf(input: typeof ReplyInput.Type, done: (output: string) => string): Scripted {
   switch (input.kind) {
+    case "corrected": case "history-defect": case "busy-once": return { kind: "stream", pieces: [done(input.text)], prompt: 3, completion: 4 }
     case "answer": return { kind: "stream" as const, pieces: [done(input.text)], prompt: 3, completion: 4 }
     case "chunked": { const whole = done(input.text); const middle = Math.floor(whole.length / 2); return { kind: "stream" as const, pieces: [whole.slice(0, middle), whole.slice(middle)], prompt: 3, completion: 4 } }
     case "empty": return { kind: "stream" as const, pieces: [done("")], prompt: 3, completion: 4 }
@@ -165,14 +173,14 @@ it.live("reply/answers", () => run("reply/answers", ReplyInput, (input) => scope
   const log = { finished: [] as Array<string>, failed: [] as Array<string>, appended: new Map<number, string>(), restarts: 0, starts: 0 }
   const { log: charges, spend } = ledger(input.admission)
   const replies: Replies.Shape = {
-    start: () => sync(() => { log.starts += 1; return input.start }),
-    history: () => succeed([{ author: "person" as const, text: "question" }]),
+    start: () => sync(() => { log.starts += 1; return input.kind === "busy-once" && log.starts === 1 ? "busy" as const : input.start }),
+    history: () => input.kind === "history-defect" ? Effect.die("history") : succeed([{ author: "person" as const, text: "question" }]),
     append: (_reply, attempt, _offset, text) => sync(() => { log.appended.set(attempt, (log.appended.get(attempt) ?? "") + text) }),
     restart: () => sync(() => { log.restarts += 1 }),
     finish: (_reply, text) => sync(() => { log.finished.push(text); return "done" as const }),
     fail: (_reply, reason) => sync(() => { log.failed.push(reason); return "done" as const }),
   }
-  const scripted = try scriptedModel([scriptOf(input)])
+  const scripted = try scriptedModel(scriptsOf(input))
   const services = Layer.mergeAll(
     Layer.succeed(Replies, replies), Layer.succeed(Spend, spend),
     Layer.succeed(ChatModel, input.bound ? { model: scripted.model, unusable: "" } : { model: undefined, unusable: "unset" }),
@@ -180,17 +188,35 @@ it.live("reply/answers", () => run("reply/answers", ReplyInput, (input) => scope
   )
   const exit = try Effect.exit(within(services, Effect.as(Effect.orDie(answerPost("m1")), "settled") as never))
   if (exit._tag === "Failure") return false
-  if (log.starts !== 1) return false
+  if (log.starts !== (input.kind === "busy-once" ? 2 : 1)) return false
   if (input.start === "refused") return log.finished.length === 0 && log.failed.length === 0 && charges.admitted === 0
   if (log.finished.length + log.failed.length !== 1) return false
   if (input.admission === "refuse") return log.failed[0] === REASONS.budget && charges.spent === 0
   if (!input.bound) return log.failed[0] === REASONS.unconfigured && charges.spent === 0
+  if (input.kind === "history-defect") return log.failed[0] === REASONS.failed && charges.spent === 0
   if (charges.spent !== 1) return false
-  const complete = input.kind === "answer" || input.kind === "chunked"
+  const complete = input.kind === "answer" || input.kind === "chunked" || input.kind === "corrected" || input.kind === "busy-once"
   if (complete && input.text.trim() !== "") {
     if (log.finished[0] !== input.text) return false
     const shown = log.appended.get(1 + log.restarts) ?? ""
     return input.text.startsWith(shown)
   }
   return log.finished.length === 0 && Object.values(REASONS).includes(log.failed[0] as never)
+})))
+
+const OtherSeat = AgentAction.make("vibelang/fuzz/other-seat", { payload: {}, output: Schema.String, seat: "other", profile: "conversation", system: [], prompt: () => "", maxFrames: 1 })
+
+/** The agent has one seat: an action asking for another fails unresolved and calls no model. */
+it.live("reply/unknown-seat", () => run("reply/unknown-seat", Schema.Boolean, () => scoped(effect {
+  const scripted = try scriptedModel([{ kind: "garbage" }])
+  const sink: EventSink.Service = { emit: () => Effect.void }
+  const outcome = try within(Layer.empty, effect {
+    const exit = try Effect.exit(effect {
+      provide agentOf(OtherSeat.layer, scripted.model, sink), EventSink.EventSink = sink {
+        return try (try OtherSeat.requirement).action({})
+      }
+    })
+    return exit._tag === "Success" ? "answered" : tagOf(Cause.squash(exit.cause))
+  } as never)
+  return outcome.endsWith("SeatUnresolved") && (try scripted.calls) === 0
 })))

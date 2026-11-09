@@ -44,13 +44,6 @@ function tab(flags: Flags) {
   }
 }
 
-effect function drive(flags: Flags, messages: ReadonlyArray<Message>) {
-  const session = tab(flags)
-  try session.settle
-  for (const message of messages) try session.send(message)
-  return true
-}
-
 const PUMP_WINDOW = "20 millis"
 
 /** What the event subscriptions would deliver: anything the conversation and tour streams hold right now. */
@@ -74,7 +67,7 @@ const Op = Schema.Literals([
   "wiki", "filter-wiki", "wiki-location", "edit-wiki", "wiki-draft", "edit-text", "edit-same", "save-wiki", "cancel-edit",
   "account", "sign-in", "sign-out", "choose", "people", "close-people", "toggle-people", "select-role", "confirm-role", "cancel-role", "dismiss", "retry-account", "resolve-mock", "resolve-live",
   "issues", "issue-ui", "issue-card", "sandboxes", "maximize-sandboxes", "start-sandbox", "stop-sandbox", "terminal", "submit-terminal",
-  "tour", "auto-tour", "pause-tour", "back-stop", "skip-stop", "tour-sound", "end-tour", "measure", "remeasure", "tour-focus", "media", "pump", "wiki-save", "wiki-no-change", "drive-tour", "tour-event-end",
+  "tour", "auto-tour", "pause-tour", "back-stop", "skip-stop", "tour-sound", "end-tour", "measure", "remeasure", "tour-focus", "media", "pump", "noise", "wiki-save", "wiki-no-change", "drive-tour", "tour-event-end",
 ])
 const ISSUE_ACTIONS = ["retry", "close", "specification", "spec-review", "roles", "list", "select", "kind", "state", "query", "title", "summary", "example", "prior", "comment-text", "parent", "assignee", "cancel", "back", "continue", "new-form", "vip-form", "commit-dialog", "split-dialog", "link-dialog"]
 const ISSUE_KINDS = ["All", "Issues", "Tasks", "VIPs"]
@@ -180,7 +173,7 @@ function gesture(model: Model, { op, n, text }: typeof Step.Type): ReadonlyArray
     case "remeasure": return [Message.RemeasureTheatre()]
     case "tour-focus": return [Message.MovedTourFocus({ backward: n % 2 === 0 })]
     case "media": return [n % 2 === 0 ? Message.LoadedMedia({ kind: "image" }) : Message.FailedMedia({ src: text, kind: "video" })]
-    case "pump": return []
+    case "pump": case "noise": return []
     case "wiki-save": return [Message.ClickedWiki({ page: editable.id }), Message.ClickedEditWiki(), Message.UpdatedWikiEdit({ value: `${text}!` }), Message.SubmittedWikiEdit()]
     case "wiki-no-change": return [Message.ClickedWiki({ page: editable.id }), Message.ClickedEditWiki(), Message.SubmittedWikiEdit()]
     case "drive-tour": return tourStop(model, n % 10 + 1)
@@ -188,9 +181,7 @@ function gesture(model: Model, { op, n, text }: typeof Step.Type): ReadonlyArray
   }
 }
 
-const Input = Schema.Struct({ flags: Flags, backend: Backend, role: Role, messages: Schema.Array(Message).check(Schema.isMaxLength(12)) })
 
-it.live("web/command-sequences", () => run("web/command-sequences", Input, ({ flags, backend: kind, role, messages }) => Effect.provide(drive(flags, messages), backend(kind, role))))
 
 it.live("web/commands-from-any-model", () => run("web/commands-from-any-model", Schema.Struct({ model: Model, message: Message, backend: Backend, role: Role, repeat: Int }), ({ model, message, backend: kind, role }) => Effect.provide(effect {
   const answer = update(model, message)
@@ -202,15 +193,18 @@ it.live("web/commands-from-any-model", () => run("web/commands-from-any-model", 
   return true
 }, backend(kind, role))))
 
-const Guided = Schema.Struct({ session: Int, resumeTour: Schema.Boolean, backend: Backend, role: Role, steps: Schema.Array(Step).check(Schema.isMinLength(1), Schema.isMaxLength(24)) })
+// Arbitrary Messages arrive between the gestures a screen offers, as a stale or malformed event would.
+const Guided = Schema.Struct({ session: Int, resumeTour: Schema.Boolean, backend: Backend, role: Role, steps: Schema.Array(Step).check(Schema.isMinLength(1), Schema.isMaxLength(24)), noise: Schema.optionalKey(Schema.Array(Message).check(Schema.isMaxLength(6))) })
 
-it.live("web/guided-commands", () => run("web/guided-commands", Guided, ({ session: id, resumeTour, backend: kind, role, steps }) => Effect.provide(effect {
+it.live("web/guided-commands", () => run("web/guided-commands", Guided, ({ session: id, resumeTour, backend: kind, role, steps, noise }) => Effect.provide(effect {
+  let noiseAt = 0
   const session = tab({ session: `s${id}`, mode: "mock", name: "Guest", ...(resumeTour ? { resumeTour: true } : {}) })
   try session.settle
   try session.send(try Effect.try(() => Message.ResolvedMode({ mode: "mock" })))
   try session.send(try Effect.try(() => Message.ChoseIdentity({ role })))
   for (const step of steps) {
     for (const message of gesture(session.model(), step)) try session.send(message)
+    if (step.op === "noise" && noise !== undefined && noiseAt < noise.length) try session.send(noise[noiseAt++]!)
     if (step.op === "pump" || step.op === "tour") try pump(session)
   }
   return true
