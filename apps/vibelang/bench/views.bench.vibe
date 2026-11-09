@@ -173,7 +173,7 @@ it("issues pane renders lists, detail, wizard and gates", async ({ bench }) => {
     [{ ...base, issues: { ...base.issues, screen: "new" as const } }, [expect(role("textbox", { name: "Title" })).toExist(), expect(role("button", { name: "New issue" })).toExist()]],
     [{ ...base, issues: { ...base.issues, screen: "vip" as const, title: "T", summary: "S", step: 2 } }, [expect(role("textbox", { name: "Example" })).toExist()]],
     [{ ...base, issues: { ...base.issues, screen: "roles" as const } }, [expect(role("table")).toExist()]],
-    [{ ...base, mode: "live" as const, issues: { ...base.issues, data: { ...data, connected: false } } }, [expect(role("link", { name: "Connect GitHub" })).toExist(), expect(role("button", { name: "New issue" })).toBeAbsent()]],
+    [{ ...base, mode: "live" as const, issues: { ...base.issues, data: { ...data, connected: false } } }, [expect(role("button", { name: "Connect GitHub" })).toExist(), expect(role("button", { name: "New issue" })).toBeAbsent()]],
     [{ ...base, issues: { ...base.issues, status: "loading" as const } }, [expect(role("link", { name: "Case branches on tuples" })).toBeAbsent()]],
     [{ ...base, issues: { ...base.issues, status: "error" as const } }, [expect(role("button", { name: "Retry" })).toExist()]],
     [{ ...base, issues: { ...base.issues, error: "Sign in again." } }, [expect(text("Sign in again.")).toExist()]],

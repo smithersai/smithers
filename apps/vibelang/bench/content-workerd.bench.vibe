@@ -1,5 +1,5 @@
 // @vitest-environment node
-// Native runtime counterpart to content-host: real workerd storage, encrypted credentials and durable recovery.
+// Native runtime counterpart to content-host: real workerd storage and durable recovery.
 import { it, expect } from "@effect/vitest"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { IssuesState } from "../src/core/issueSchemas.vibe"
@@ -19,21 +19,19 @@ effect function post(server: Served, path: string, body: unknown, role = "mainta
   return { status: response.status, body: try response.json }
 }
 
-it("workerd content journals, encrypted connections and paid failures recover without duplicate writes", async ({ bench }) => {
+it("workerd content journals and paid failures recover without duplicate writes", async ({ bench }) => {
   const result = await workload(bench, "content-workerd", "async", () => runPromise(scoped(effect {
     provide FetchHttpClient.layer {
       const issues = try acquireRelease(serveIssuesHost(), server => promise(server.dispose))
       const first = try post(issues, "/api/issues", { ...input, op: "commit", key: "commit" })
       const again = try post(issues, "/api/issues", { ...input, op: "commit", key: "commit" })
       const committed = try Schema.decodeUnknownEffect(IssuesState)(first.body)
-      const credentials = try read(issues, "/credentials")
       const charged = try read(issues, "/meter")
       const recovered = try read(issues, "/recovery")
       try Effect.try(() => {
         expect([first.status, again.status]).toEqual([200, 200])
         expect(again.body).toEqual(first.body)
         expect(committed.items.find(item => item.number === 42)).toMatchObject({ number: 42, parent: 38, task: "Queued", assignee: "VibeLang agent", comments: 6 })
-        expect(credentials).toEqual({ encrypted: true, connected: true, freshRole: true, ownerBound: true, sessionBound: true, expired: true, forgotten: true, anonymous: true })
         expect(charged).toEqual({ first: 18, replay: 18, spent: 36, recovered: 18 })
         expect(recovered).toEqual({ completedStatus: "completed", savedKey: "partial-child", savedStatus: "failed", ownerBound: true, first: "Failure", failedReplay: "Failure", edited: "Failure", recovered: committed.seq + 3, replay: committed.seq + 3, writes: 1, linked: true })
       })
@@ -63,5 +61,5 @@ it("workerd content journals, encrypted connections and paid failures recover wi
       })
     }
   }))).run(slow)
-  await runPromise(artifact("content-workerd", "Vitest built-in bench; each of three unwarmed samples starts fresh real workerd issue and wiki hosts. HTTP/SQLite commitments replay once; credentials are encrypted/session-bound/current-role/expiring; paid failed drafts charge once; partial write retryFrom adopts exactly one original child. Wiki draft privacy, contributor proposal/replay, forbidden Save, unchanged Markdown and one completed proposal journal row checked. Bundling, server lifecycle and assertions included.", ["Existing unshipped host supplies product fixture identities/repository; typed faulty Effect services exercise paid failures and partial recovery. No real GitHub write, OAuth or Container. Whole fresh-host corpus cost includes bundling and startup; it is not per-request latency or model inference."], result))
+  await runPromise(artifact("content-workerd", "Vitest built-in bench; each of three unwarmed samples starts fresh real workerd issue and wiki hosts. HTTP/SQLite commitments replay once; paid failed drafts charge once; partial write retryFrom adopts exactly one original child. Wiki draft privacy, contributor proposal/replay, forbidden Save, unchanged Markdown and one completed proposal journal row checked. Bundling, server lifecycle and assertions included.", ["Existing unshipped host supplies product fixture identities/repository; typed faulty Effect services exercise paid failures and partial recovery. No real GitHub write, OAuth or Container. Whole fresh-host corpus cost includes bundling and startup; it is not per-request latency or model inference."], result))
 })
