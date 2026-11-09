@@ -15,6 +15,7 @@
  *
  * @since 1.0.0-rc.1
  * @private
+ * @throws {never}
  */
 export const decider = (asked) => asked.decidedBy ?? "jev";
 /**
@@ -23,5 +24,6 @@ export const decider = (asked) => asked.decidedBy ?? "jev";
  *
  * @since 1.0.0-rc.1
  * @private
+ * @throws {never}
  */
 export const answeredBy = (asked) => asked.decidedBy === undefined ? {} : { decidedBy: asked.decidedBy };

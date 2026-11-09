@@ -90,6 +90,7 @@ export const middleFrom = (text, whole, limit, recall) => {
  * @since 0.1.0
  * @private
  * @slop
+ * @throws {never}
  */
 export const noticeCost = (whole, recall) => bytes.size(middleFrom("", whole, 0, recall));
 /**
@@ -102,6 +103,7 @@ export const noticeCost = (whole, recall) => bytes.size(middleFrom("", whole, 0,
  * @since 0.1.0
  * @private
  * @slop
+ * @throws {never}
  */
 export const middle = (text, limit, recall) => middleFrom(text, bytes.size(text), limit, recall);
 /**
@@ -113,6 +115,7 @@ export const middle = (text, limit, recall) => middleFrom(text, bytes.size(text)
  * @since 0.1.0
  * @private
  * @slop
+ * @throws {never}
  */
 export const head = (text, limit, recall) => {
     const whole = bytes.size(text);

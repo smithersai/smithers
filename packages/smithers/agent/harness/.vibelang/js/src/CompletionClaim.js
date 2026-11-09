@@ -644,6 +644,7 @@ export const sentenceClassifier = (parts) => Classifier.make("completion/claim-s
  *
  * @category conversions
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const find = (reading) => reading.complete <= disprovenAt || reading.overclaims >= overclaimedAt || reading.invented >= unsupportedAt
     ? { complete: reading.complete, overclaims: reading.overclaims, invented: reading.invented }
@@ -659,6 +660,7 @@ export const find = (reading) => reading.complete <= disprovenAt || reading.over
  *
  * @category predicates
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const unrecorded = (reading) => reading.invented >= inventedAt;
 /**
@@ -845,6 +847,7 @@ export const read = (evidence) => Effect.gen(function* () {
  *
  * @category constructors
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const demand = () => DemandText.claim();
 /**
@@ -860,5 +863,6 @@ export const quote = (value) => CanonicalJson.stringify(value);
  *
  * @category conversions
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const prose = (text) => elide.head(text.trim(), proseBytes, "the run record has the whole text");

@@ -18,7 +18,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as Cell from "../src/Cell.ts"
-import * as CellCalls from "../src/CellCalls.ts"
+import * as CellCalls from "../src/CellCalls.vibe"
 import * as FlowBinding from "../src/FlowBinding.ts"
 import { HarnessError } from "../src/HarnessError.vibe"
 

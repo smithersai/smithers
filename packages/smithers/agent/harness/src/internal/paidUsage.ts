@@ -54,6 +54,7 @@ export const paidUsage = (readings: ReadonlyArray<Metered>): ReadonlyArray<Engin
  *
  * @since 1.0.0-rc.1
  * @private
+ * @throws {never}
  */
 export const readingCost = (reading: Metered, at: number): Pricing.Cost | undefined =>
   reading === undefined
@@ -68,6 +69,7 @@ export const readingCost = (reading: Metered, at: number): Pricing.Cost | undefi
  *
  * @since 1.0.0-rc.1
  * @private
+ * @throws {never}
  */
 export const paidTogether = (
   first: Evaluator.Usage | undefined,

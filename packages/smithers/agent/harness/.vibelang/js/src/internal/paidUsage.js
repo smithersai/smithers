@@ -41,6 +41,7 @@ export const paidUsage = (readings) => {
  *
  * @since 1.0.0-rc.1
  * @private
+ * @throws {never}
  */
 export const readingCost = (reading, at) => reading === undefined
     ? undefined
@@ -53,6 +54,7 @@ export const readingCost = (reading, at) => reading === undefined
  *
  * @since 1.0.0-rc.1
  * @private
+ * @throws {never}
  */
 export const paidTogether = (first, second) => {
     if (first === undefined)

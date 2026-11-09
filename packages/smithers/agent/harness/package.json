@@ -57,8 +57,8 @@
       "default": "./.vibelang/js/src/Cell.js"
     },
     "./CellCalls": {
-      "types": "./src/CellCalls.ts",
-      "vibelang-source": "./src/CellCalls.ts",
+      "types": "./.vibe/declarations/src/CellCalls.d.vibe.ts",
+      "vibelang-source": "./src/CellCalls.vibe",
       "default": "./.vibelang/js/src/CellCalls.js"
     },
     "./CellHistory": {
@@ -172,8 +172,8 @@
       "default": "./.vibelang/js/src/Sufficiency.js"
     },
     "./Supervisor": {
-      "types": "./src/Supervisor.ts",
-      "vibelang-source": "./src/Supervisor.ts",
+      "types": "./.vibe/declarations/src/Supervisor.d.vibe.ts",
+      "vibelang-source": "./src/Supervisor.vibe",
       "default": "./.vibelang/js/src/Supervisor.js"
     },
     "./Tokens": {

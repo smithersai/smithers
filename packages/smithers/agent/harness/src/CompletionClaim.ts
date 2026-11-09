@@ -785,6 +785,7 @@ export interface Reading extends Probabilities {
  *
  * @category conversions
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const find = (reading: Probabilities): Probabilities | undefined =>
   reading.complete <= disprovenAt || reading.overclaims >= overclaimedAt || reading.invented >= unsupportedAt
@@ -802,6 +803,7 @@ export const find = (reading: Probabilities): Probabilities | undefined =>
  *
  * @category predicates
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const unrecorded = (reading: Probabilities): boolean => reading.invented >= inventedAt
 
@@ -1029,6 +1031,7 @@ export const read = (
  *
  * @category constructors
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const demand = (): string => DemandText.claim()
 
@@ -1046,5 +1049,6 @@ export const quote = (value: Schema.Json): string => CanonicalJson.stringify(val
  *
  * @category conversions
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const prose = (text: string): string => elide.head(text.trim(), proseBytes, "the run record has the whole text")

@@ -35,7 +35,7 @@ import * as ContextWindow from "../src/ContextWindow.ts"
 import * as EngineLike from "../src/EngineLike.ts"
 import * as FailedCall from "../src/FailedCall.ts"
 import { HarnessError } from "../src/HarnessError.vibe"
-import * as Frame from "../src/internal/frame.ts"
+import * as Frame from "../src/internal/frame.vibe"
 
 const task = "Make AdminSite.catch_all_view() preserve the query string on an APPEND_SLASH redirect."
 const claim = "Updated AdminSite.catch_all_view() to preserve query strings."

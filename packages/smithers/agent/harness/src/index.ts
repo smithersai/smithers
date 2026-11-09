@@ -27,7 +27,7 @@ export * as CompletionClaim from "./CompletionClaim.ts"
  * @category controls
  * @since 1.0.0-rc.0
  */
-export * as Supervisor from "./Supervisor.ts"
+export * as Supervisor from "./Supervisor.vibe"
 
 /**
  * @category controls
@@ -144,7 +144,7 @@ export * as CellHistory from "./CellHistory.vibe"
  * @category constructors
  * @since 0.1.0
  */
-export * as CellCalls from "./CellCalls.ts"
+export * as CellCalls from "./CellCalls.vibe"
 
 /**
  * @category constructors

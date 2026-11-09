@@ -55,6 +55,7 @@ import * as DemandText from "./internal/demandText.js";
  *
  * @category conversions
  * @since 0.1.0
+ * @throws {never}
  */
 export const find = (options) => options.opened === "" || options.digest === "" || options.opened !== options.digest ||
     (options.elsewhere ?? 0) > 0
@@ -86,5 +87,6 @@ export const find = (options) => options.opened === "" || options.digest === "" 
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const demand = (found) => DemandText.unmoved(found.opened, found.closed);

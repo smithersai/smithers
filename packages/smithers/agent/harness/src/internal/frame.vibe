@@ -857,203 +857,202 @@ const measuredDemand = (
  * @since 1.0.0-rc.0
  * @private
  */
-export const judgeCompletion = (
+export const judgeCompletion = effect (
   state: State,
   accounting: Accounting,
   contextWindow: ContextWindow.ContextWindow,
   claim: string,
   read: typeof CompletionClaim.read = CompletionClaim.read
-): Effect.Effect<CompletionJudgement, HarnessError.HarnessError, Evaluator.Evaluator> =>
-  Effect.gen(function*() {
-    const { calls, facts, workspaceDigest } = accounting
-    const room = handBackRoom(state, facts.readOnlyFrames) && state.demandedFrame !== state.frame
-    const nextFrame = state.frame + 1
-    if (room) {
-      const measured = measuredDemand(state, accounting, contextWindow, nextFrame, claim)
-      // A measured demand names a missing fact, so the answer it takes away
-      // is worth restoring if the budget runs out, unless the demand says the
-      // answer was written blind. See `CompletionDemand`.
-      if (measured !== undefined) return handBack(measured)
-    }
+): Effect.Effect<CompletionJudgement, HarnessError.HarnessError, Evaluator.Evaluator> => {
+  const { calls, facts, workspaceDigest } = accounting
+  const room = handBackRoom(state, facts.readOnlyFrames) && state.demandedFrame !== state.frame
+  const nextFrame = state.frame + 1
+  if (room) {
+    const measured = measuredDemand(state, accounting, contextWindow, nextFrame, claim)
+    // A measured demand names a missing fact, so the answer it takes away
+    // is worth restoring if the budget runs out, unless the demand says the
+    // answer was written blind. See `CompletionDemand`.
+    if (measured !== undefined) return handBack(measured)
+  }
 
-    // The sixth brake, and the only one that leaves this package to decide.
-    // `claimCap` of zero, the default, leaves it off: no request, no event,
-    // no failure. This also disarms UnmovedTree, which depends on this reading.
-    // The independent measured demands above remain subject to their own caps.
-    // A workflow that wants a model in this path arms it.
-    if (state.claimCap === 0) return stands
-    // A host may put prior conversation before the current request. Keep
-    // both ends of the task; clipping its head alone can leave only history.
-    // Reserve the elision notice inside the task's byte budget.
-    const originalTask = taskText(contextWindow).trim()
-    const recallTask = "the run record has the whole task"
-    const task = elide.middle(
-      originalTask,
-      CompletionClaim.proseBytes - elide.noticeCost(bytes.size(originalTask), recallTask),
-      recallTask
-    )
-    const check = lastCheck(calls)
-    const unmovedTree = UnmovedTree.find({
-      opened: facts.openingDigest,
-      digest: workspaceDigest,
-      elsewhere: facts.remoteMutations
-    })
-    const evidence: CompletionClaim.Evidence = {
-      task,
-      claim: CompletionClaim.prose(claim),
-      // The `UnmovedTree` fact, read the other way round. An unmeasured tree
-      // reads as moved, which is the reading that asks for nothing.
-      treeMoved: unmovedTree === undefined,
-      checksRun: facts.reported,
-      callsRun: facts.callLedger.map((entry) => ({
-        flow: entry.flow,
-        input: entry.subject,
-        ok: entry.ok,
-        resultSummary: entry.digest
-      })),
-      ...(check === undefined ? {} : { lastCheck: check })
-    }
-    const reading = yield* read(evidence)
-    if (reading === undefined) return stands
-    const found = CompletionClaim.find(reading)
-    // One bounce while the cap and a frame allow it; the verdict after that,
-    // and only over the readings the verdict is about.
-    const bounced = found !== undefined && room && state.claimDemands < state.claimCap
-    // An unmoved tree alone is not a demand: a read-only question is answered
-    // on exactly the tree it was asked on, and bouncing that answer discarded
-    // correct replies (#2937). The tree fact names what is missing only when
-    // this reading found the claim unsupported, and then its wording is the
-    // more precise of the two, so it takes the bounce while its cap lasts and
-    // the reading is journaled beside it as one that did not demand.
-    const unmoved = found !== undefined && room && state.unmovedDemands < state.unmovedCap
-      ? unmovedTree
-      : undefined
-    // The third way a reading comes out, stated on the event because nothing
-    // downstream can derive it: a reading that neither stands nor hands the
-    // frame back is the one that ends the run, and a projection that could not
-    // tell it from a reading that stood wrote no card for it. See
-    // `AgentEvent.ClaimDemanded.refused`.
-    const refused = found !== undefined && !bounced && unmoved === undefined && CompletionClaim.unrecorded(found)
-    // A completion read as not done, with no bounce left and nothing to
-    // refuse, used to stand here whatever it said, so a run reporting its own
-    // work unfinished settled as a completed one (#3009). Whether it said so
-    // is one more question, asked only here; see `UnfinishedWork`.
-    const unfinished = found !== undefined && !bounced && unmoved === undefined && !refused &&
-        reading.complete <= CompletionClaim.disprovenAt
-      ? yield* UnfinishedWork.read(evidence, reading.usage)
-      : undefined
-    const incomplete = unfinished !== undefined && unfinished.unfinished >= UnfinishedWork.reportedAt
-    const usage = paidTogether(reading.usage, unfinished?.usage)
-    const event = new AgentEvent.ClaimDemanded({
-      eventType: eventType.claimDemanded,
-      complete: reading.complete,
-      overclaims: reading.overclaims,
-      invented: reading.invented,
-      latencyMs: reading.latencyMs + (unfinished?.latencyMs ?? 0),
-      ...(usage === undefined ? {} : { usage }),
-      ...readingCost(usage, yield* Clock.currentTimeMillis),
-      demanded: bounced && unmoved === undefined,
-      refused,
-      currentDigest: workspaceDigest,
-      nextFrame
-    })
-    // The same reading with what it was a reading OF. `acted` is the two ways
-    // a reading changes what the run does next, and a reader that reported no
-    // evidence journals no decision: see `CompletionClaim.Reading.asked`.
-    const decision = reading.asked === undefined ? undefined : new AgentEvent.DecisionSettled({
-      eventType: eventType.decisionSettled,
-      scope: state.session,
-      frame: state.frame,
-      classifier: CompletionClaim.classifier.id,
-      digest: CompletionClaim.classifier.digest,
-      state: reading.asked.state,
-      questions: CompletionClaim.classifier.questions,
-      answers: reading.asked.answers,
-      latencyMs: reading.latencyMs,
-      acted: bounced || refused || unmoved !== undefined || incomplete,
-      decidedBy: decider(reading.asked)
-    })
-    const unfinishedDecision = unfinished === undefined ? undefined : new AgentEvent.DecisionSettled({
-      eventType: eventType.decisionSettled,
-      scope: state.session,
-      frame: state.frame,
-      classifier: unfinished.asked.classifier,
-      digest: unfinished.asked.digest,
-      state: unfinished.asked.state,
-      questions: unfinished.asked.questions,
-      answers: unfinished.asked.answers,
-      latencyMs: unfinished.latencyMs,
-      acted: incomplete,
-      decidedBy: decider(unfinished.asked)
-    })
-    // The per-sentence reading, journaled as its own decision because it is
-    // one: its own classifier, questions and answers. See
-    // `CompletionClaim.sentenceClassifier`.
-    const sentenceDecision = reading.sentences === undefined ? undefined : new AgentEvent.DecisionSettled({
-      eventType: eventType.decisionSettled,
-      scope: state.session,
-      frame: state.frame,
-      classifier: reading.sentences.classifier,
-      digest: reading.sentences.digest,
-      state: reading.sentences.state,
-      questions: reading.sentences.questions,
-      answers: reading.sentences.answers,
-      latencyMs: reading.sentences.latencyMs,
-      acted: bounced || refused || unmoved !== undefined,
-      decidedBy: decider(reading.sentences)
-    })
-    if (found === undefined) {
-      return { observed: event, demand: undefined, unproven: undefined, decision, sentenceDecision }
-    }
-    if (unmoved !== undefined) {
-      return {
-        ...handBack({
-          event: new AgentEvent.UnmovedDemanded({
-            eventType: eventType.unmovedDemanded,
-            openedDigest: unmoved.opened,
-            currentDigest: unmoved.closed,
-            nextFrame
-          }),
-          note: UnmovedTree.demand(unmoved),
-          keeps: !CompletionClaim.unrecorded(found),
-          spent: { unmovedDemands: state.unmovedDemands + 1 }
-        }, decision),
-        observed: event,
-        sentenceDecision
-      }
-    }
-    if (bounced) {
-      return {
-        ...handBack({
-          event,
-          note: CompletionClaim.demand(),
-          // A bounce the brake would not refuse is worth restoring against an
-          // exhausted budget; one it would refuse is not. See `CompletionDemand`.
-          keeps: !CompletionClaim.unrecorded(found),
-          spent: { claimDemands: state.claimDemands + 1 }
-        }, decision),
-        sentenceDecision
-      }
-    }
-    // Out of bounces. A claim the brake only found thin stands here: it was
-    // handed back once, the run answered, and refusing the answer as well is
-    // the price that destroyed honest runs. Only an unrecorded claim is
-    // refused, and only a completion reporting its own work unfinished fails.
-    return {
-      observed: event,
-      demand: undefined,
-      // Either bounce handed the claim back: the unmoved demand spends its
-      // own cap in the claim brake's place.
-      unproven: refused
-        ? CompletionClaim.unproven(found, state.claimDemands + state.unmovedDemands > 0, claim)
-        : incomplete
-        ? UnfinishedWork.incomplete(reading.complete, unfinished.unfinished, claim)
-        : undefined,
-      decision,
-      sentenceDecision,
-      ...(unfinishedDecision === undefined ? {} : { unfinishedDecision })
-    }
+  // The sixth brake, and the only one that leaves this package to decide.
+  // `claimCap` of zero, the default, leaves it off: no request, no event,
+  // no failure. This also disarms UnmovedTree, which depends on this reading.
+  // The independent measured demands above remain subject to their own caps.
+  // A workflow that wants a model in this path arms it.
+  if (state.claimCap === 0) return stands
+  // A host may put prior conversation before the current request. Keep
+  // both ends of the task; clipping its head alone can leave only history.
+  // Reserve the elision notice inside the task's byte budget.
+  const originalTask = taskText(contextWindow).trim()
+  const recallTask = "the run record has the whole task"
+  const task = elide.middle(
+    originalTask,
+    CompletionClaim.proseBytes - elide.noticeCost(bytes.size(originalTask), recallTask),
+    recallTask
+  )
+  const check = lastCheck(calls)
+  const unmovedTree = UnmovedTree.find({
+    opened: facts.openingDigest,
+    digest: workspaceDigest,
+    elsewhere: facts.remoteMutations
   })
+  const evidence: CompletionClaim.Evidence = {
+    task,
+    claim: CompletionClaim.prose(claim),
+    // The `UnmovedTree` fact, read the other way round. An unmeasured tree
+    // reads as moved, which is the reading that asks for nothing.
+    treeMoved: unmovedTree === undefined,
+    checksRun: facts.reported,
+    callsRun: facts.callLedger.map((entry) => ({
+      flow: entry.flow,
+      input: entry.subject,
+      ok: entry.ok,
+      resultSummary: entry.digest
+    })),
+    ...(check === undefined ? {} : { lastCheck: check })
+  }
+  const reading = try read(evidence)
+  if (reading === undefined) return stands
+  const found = CompletionClaim.find(reading)
+  // One bounce while the cap and a frame allow it; the verdict after that,
+  // and only over the readings the verdict is about.
+  const bounced = found !== undefined && room && state.claimDemands < state.claimCap
+  // An unmoved tree alone is not a demand: a read-only question is answered
+  // on exactly the tree it was asked on, and bouncing that answer discarded
+  // correct replies (#2937). The tree fact names what is missing only when
+  // this reading found the claim unsupported, and then its wording is the
+  // more precise of the two, so it takes the bounce while its cap lasts and
+  // the reading is journaled beside it as one that did not demand.
+  const unmoved = found !== undefined && room && state.unmovedDemands < state.unmovedCap
+    ? unmovedTree
+    : undefined
+  // The third way a reading comes out, stated on the event because nothing
+  // downstream can derive it: a reading that neither stands nor hands the
+  // frame back is the one that ends the run, and a projection that could not
+  // tell it from a reading that stood wrote no card for it. See
+  // `AgentEvent.ClaimDemanded.refused`.
+  const refused = found !== undefined && !bounced && unmoved === undefined && CompletionClaim.unrecorded(found)
+  // A completion read as not done, with no bounce left and nothing to
+  // refuse, used to stand here whatever it said, so a run reporting its own
+  // work unfinished settled as a completed one (#3009). Whether it said so
+  // is one more question, asked only here; see `UnfinishedWork`.
+  const unfinished = found !== undefined && !bounced && unmoved === undefined && !refused &&
+      reading.complete <= CompletionClaim.disprovenAt
+    ? try UnfinishedWork.read(evidence, reading.usage)
+    : undefined
+  const incomplete = unfinished !== undefined && unfinished.unfinished >= UnfinishedWork.reportedAt
+  const usage = paidTogether(reading.usage, unfinished?.usage)
+  const event = new AgentEvent.ClaimDemanded({
+    eventType: eventType.claimDemanded,
+    complete: reading.complete,
+    overclaims: reading.overclaims,
+    invented: reading.invented,
+    latencyMs: reading.latencyMs + (unfinished?.latencyMs ?? 0),
+    ...(usage === undefined ? {} : { usage }),
+    ...readingCost(usage, try Clock.currentTimeMillis),
+    demanded: bounced && unmoved === undefined,
+    refused,
+    currentDigest: workspaceDigest,
+    nextFrame
+  })
+  // The same reading with what it was a reading OF. `acted` is the two ways
+  // a reading changes what the run does next, and a reader that reported no
+  // evidence journals no decision: see `CompletionClaim.Reading.asked`.
+  const decision = reading.asked === undefined ? undefined : new AgentEvent.DecisionSettled({
+    eventType: eventType.decisionSettled,
+    scope: state.session,
+    frame: state.frame,
+    classifier: CompletionClaim.classifier.id,
+    digest: CompletionClaim.classifier.digest,
+    state: reading.asked.state,
+    questions: CompletionClaim.classifier.questions,
+    answers: reading.asked.answers,
+    latencyMs: reading.latencyMs,
+    acted: bounced || refused || unmoved !== undefined || incomplete,
+    decidedBy: decider(reading.asked)
+  })
+  const unfinishedDecision = unfinished === undefined ? undefined : new AgentEvent.DecisionSettled({
+    eventType: eventType.decisionSettled,
+    scope: state.session,
+    frame: state.frame,
+    classifier: unfinished.asked.classifier,
+    digest: unfinished.asked.digest,
+    state: unfinished.asked.state,
+    questions: unfinished.asked.questions,
+    answers: unfinished.asked.answers,
+    latencyMs: unfinished.latencyMs,
+    acted: incomplete,
+    decidedBy: decider(unfinished.asked)
+  })
+  // The per-sentence reading, journaled as its own decision because it is
+  // one: its own classifier, questions and answers. See
+  // `CompletionClaim.sentenceClassifier`.
+  const sentenceDecision = reading.sentences === undefined ? undefined : new AgentEvent.DecisionSettled({
+    eventType: eventType.decisionSettled,
+    scope: state.session,
+    frame: state.frame,
+    classifier: reading.sentences.classifier,
+    digest: reading.sentences.digest,
+    state: reading.sentences.state,
+    questions: reading.sentences.questions,
+    answers: reading.sentences.answers,
+    latencyMs: reading.sentences.latencyMs,
+    acted: bounced || refused || unmoved !== undefined,
+    decidedBy: decider(reading.sentences)
+  })
+  if (found === undefined) {
+    return { observed: event, demand: undefined, unproven: undefined, decision, sentenceDecision }
+  }
+  if (unmoved !== undefined) {
+    return {
+      ...handBack({
+        event: new AgentEvent.UnmovedDemanded({
+          eventType: eventType.unmovedDemanded,
+          openedDigest: unmoved.opened,
+          currentDigest: unmoved.closed,
+          nextFrame
+        }),
+        note: UnmovedTree.demand(unmoved),
+        keeps: !CompletionClaim.unrecorded(found),
+        spent: { unmovedDemands: state.unmovedDemands + 1 }
+      }, decision),
+      observed: event,
+      sentenceDecision
+    }
+  }
+  if (bounced) {
+    return {
+      ...handBack({
+        event,
+        note: CompletionClaim.demand(),
+        // A bounce the brake would not refuse is worth restoring against an
+        // exhausted budget; one it would refuse is not. See `CompletionDemand`.
+        keeps: !CompletionClaim.unrecorded(found),
+        spent: { claimDemands: state.claimDemands + 1 }
+      }, decision),
+      sentenceDecision
+    }
+  }
+  // Out of bounces. A claim the brake only found thin stands here: it was
+  // handed back once, the run answered, and refusing the answer as well is
+  // the price that destroyed honest runs. Only an unrecorded claim is
+  // refused, and only a completion reporting its own work unfinished fails.
+  return {
+    observed: event,
+    demand: undefined,
+    // Either bounce handed the claim back: the unmoved demand spends its
+    // own cap in the claim brake's place.
+    unproven: refused
+      ? CompletionClaim.unproven(found, state.claimDemands + state.unmovedDemands > 0, claim)
+      : incomplete
+      ? UnfinishedWork.incomplete(reading.complete, unfinished.unfinished, claim)
+      : undefined,
+    decision,
+    sentenceDecision,
+    ...(unfinishedDecision === undefined ? {} : { unfinishedDecision })
+  }
+}
 
 /**
  * The interventions one ordinary continuing frame hands to the next.

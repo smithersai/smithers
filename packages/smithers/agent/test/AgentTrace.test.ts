@@ -20,7 +20,7 @@ import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Effect, Option, Result, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Frame from "../harness/src/internal/frame.ts"
+import * as Frame from "../harness/src/internal/frame.vibe"
 import * as AgentSession from "../src/AgentSession.ts"
 import { unordered } from "../src/internal/TraceOrder.ts"
 

@@ -111,7 +111,7 @@ const securityReview = Smithers.SecurityReview({
         "A declaration digest mismatch between the catalog the model saw and the registry entry that runs, or a binding dispatched when its digest differs from the registry descriptor.",
         "A catalog refresh (openFrame nextCatalog) or discovered flow list that adds entries without the modelInvocable filter."
       ],
-      paths: ["src/CellTurn.ts", "src/CellCalls.ts", "src/FlowBinding.ts"]
+      paths: ["src/CellTurn.ts", "src/CellCalls.vibe", "src/FlowBinding.ts"]
     },
     {
       id: "write-guards",
@@ -144,7 +144,7 @@ const securityReview = Smithers.SecurityReview({
         "src/NarrowedCheck.vibe",
         "src/Compaction.ts",
         "src/Relevance.vibe",
-        "src/Supervisor.ts",
+        "src/Supervisor.vibe",
         "src/Steering.vibe",
         "src/Monitor.vibe",
         "src/Notifications.ts",
@@ -160,7 +160,7 @@ const securityReview = Smithers.SecurityReview({
         "A boundary or step key that omits the invocation input, the declaration digest, the frame ordinal or the live-tree digest.",
         "A replayed outcome returned without re-checking the capability envelope or withheld-flow state that applied when it was recorded."
       ],
-      paths: ["src/CellTurn.ts", "src/Cell.ts", "src/internal/frame.ts", "src/EngineLike.ts"]
+      paths: ["src/CellTurn.ts", "src/Cell.ts", "src/internal/frame.vibe", "src/EngineLike.ts"]
     },
     {
       id: "completion-gate-bypass",

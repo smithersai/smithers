@@ -78,6 +78,7 @@ export const interruptBudget = (now) => {
  *
  * @category conversions
  * @since 1.0.0-rc.16
+ * @throws {never}
  */
 export const utf8Length = (text) => {
     let bytes = 0;

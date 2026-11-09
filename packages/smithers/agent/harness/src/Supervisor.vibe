@@ -559,40 +559,39 @@ export interface Reading {
  * @category conversions
  * @since 1.0.0-rc.0
  */
-export const read = (snapshot: Snapshot, extra: MonitorQuestions): Effect.Effect<Reading, Judgement.Unjudged> =>
-  Effect.gen(function*() {
-    const { answers, asked } = yield* Judgement.read(classifierFor(extra), snapshot)
-    const all = answers as Readonly<Record<string, Classifier.Answer>>
-    // Every declared question is answered or the decode above failed, and a
-    // monitor question is declared exactly for the ids read below.
-    const bool = (id: string): number => (all[id] as Classifier.BooleanAnswer).probability
-    return {
-      thrashing: answers.thrashing.probability,
-      onTarget: answers.on_target.probability,
-      suspect: answers.suspect.probability,
-      outdatedContext: answers.outdated_context.probability,
-      irrelevantContext: answers.irrelevant_context.probability,
-      emotions: {
-        frustrated: answers.frustrated.label,
-        anxious: answers.anxious.label,
-        scared: answers.scared.label,
-        confused: answers.confused.label,
-        confident: answers.confident.label
-      },
-      needsHelp: answers.needs_help.value,
-      monitors: Object.fromEntries(Object.keys(extra).map((id) => [id.slice(monitorPrefix.length), bool(id)])),
-      latencyMs: asked.latencyMs,
-      ...(asked.usage === undefined ? {} : { usage: asked.usage }),
-      ...(asked.timing === undefined ? {} : { timing: asked.timing }),
-      asked: {
-        digest: asked.digest,
-        questions: asked.questions,
-        state: asked.state,
-        answers: asked.answers,
-        ...answeredBy(asked)
-      }
+export const read = effect (snapshot: Snapshot, extra: MonitorQuestions): Effect.Effect<Reading, Judgement.Unjudged> => {
+  const { answers, asked } = try Judgement.read(classifierFor(extra), snapshot)
+  const all = answers as Readonly<Record<string, Classifier.Answer>>
+  // Every declared question is answered or the decode above failed, and a
+  // monitor question is declared exactly for the ids read below.
+  const bool = (id: string): number => (all[id] as Classifier.BooleanAnswer).probability
+  return {
+    thrashing: answers.thrashing.probability,
+    onTarget: answers.on_target.probability,
+    suspect: answers.suspect.probability,
+    outdatedContext: answers.outdated_context.probability,
+    irrelevantContext: answers.irrelevant_context.probability,
+    emotions: {
+      frustrated: answers.frustrated.label,
+      anxious: answers.anxious.label,
+      scared: answers.scared.label,
+      confused: answers.confused.label,
+      confident: answers.confident.label
+    },
+    needsHelp: answers.needs_help.value,
+    monitors: Object.fromEntries(Object.keys(extra).map((id) => [id.slice(monitorPrefix.length), bool(id)])),
+    latencyMs: asked.latencyMs,
+    ...(asked.usage === undefined ? {} : { usage: asked.usage }),
+    ...(asked.timing === undefined ? {} : { timing: asked.timing }),
+    asked: {
+      digest: asked.digest,
+      questions: asked.questions,
+      state: asked.state,
+      answers: asked.answers,
+      ...answeredBy(asked)
     }
-  })
+  }
+}
 
 /**
  * The memory a supervisor reads rows from, and the run-end transcript miner

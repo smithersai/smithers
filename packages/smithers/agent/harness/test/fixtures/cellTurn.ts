@@ -12,7 +12,7 @@ import { HarnessError } from "../../src/HarnessError.vibe"
 import * as QuickJSSandbox from "../../src/QuickJSSandbox.ts"
 import type * as Sandbox from "../../src/Sandbox.ts"
 import * as Steering from "../../src/Steering.vibe"
-import * as Supervisor from "../../src/Supervisor.ts"
+import * as Supervisor from "../../src/Supervisor.vibe"
 import * as ScriptedEngine from "./scriptedEngine.ts"
 import * as ScriptedModel from "./scriptedModel.ts"
 

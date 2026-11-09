@@ -15,6 +15,7 @@
  *
  * @since 1.0.0-rc.1
  * @private
+ * @throws {never}
  */
 export const decider = (asked: { readonly decidedBy?: "seat" | undefined }): "jev" | "seat" => asked.decidedBy ?? "jev"
 
@@ -24,6 +25,7 @@ export const decider = (asked: { readonly decidedBy?: "seat" | undefined }): "je
  *
  * @since 1.0.0-rc.1
  * @private
+ * @throws {never}
  */
 export const answeredBy = (
   asked: { readonly decidedBy?: "seat" | undefined }
