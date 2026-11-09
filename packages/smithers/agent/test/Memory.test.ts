@@ -36,7 +36,7 @@ import {
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import * as CellPlugin from "../src/CellPlugin.ts"
+import * as CellPlugin from "../src/CellPlugin.vibe"
 import * as Repo from "../src/internal/memory/repo.vibe"
 import * as Memory from "../src/Memory.ts"
 import * as MemoryCalibration from "../src/MemoryCalibration.vibe"

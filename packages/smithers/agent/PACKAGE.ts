@@ -208,7 +208,7 @@ const securityReview = Smithers.SecurityReview({
         "A saved flow's declared capabilities not intersected with the writing run's capability ceiling when it is later invoked.",
         "Executable module loading that runs a flow whose content digest differs from the approved execution digest."
       ],
-      paths: ["src/PromoteFlows.vibe", "src/Agent.vibe", "src/AgentSession.ts", "src/CellPlugin.ts"]
+      paths: ["src/PromoteFlows.vibe", "src/Agent.vibe", "src/AgentSession.ts", "src/CellPlugin.vibe"]
     },
     {
       id: "capability-envelope-attenuation",

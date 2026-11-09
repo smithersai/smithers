@@ -58,7 +58,7 @@ export * as SeatRouter from "./SeatRouter.ts"
  * @category plugins
  * @since 0.1.0
  */
-export * as CellPlugin from "./CellPlugin.ts"
+export * as CellPlugin from "./CellPlugin.vibe"
 
 /**
  * @category plugins
