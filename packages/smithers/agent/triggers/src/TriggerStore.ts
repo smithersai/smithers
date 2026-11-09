@@ -111,6 +111,7 @@ export const reservationPrefix = "trigger-reservation:"
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const reservationId = (triggerId: string, occurrence: number, attempt?: string): string =>
   `${reservationPrefix}${triggerId}:${attempt === undefined ? "" : `${attempt}:`}${occurrence}`
@@ -120,6 +121,7 @@ export const reservationId = (triggerId: string, occurrence: number, attempt?: s
  *
  * @category predicates
  * @since 0.1.0
+ * @throws {never}
  */
 export const isReservation = (runId: string | undefined): boolean =>
   runId !== undefined && runId.startsWith(reservationPrefix)
@@ -129,6 +131,7 @@ export const isReservation = (runId: string | undefined): boolean =>
  *
  * @category getters
  * @since 0.1.0
+ * @throws {never}
  */
 export const reservationOccurrence = (runId: string): number | undefined => {
   if (!isReservation(runId)) return undefined
@@ -168,6 +171,7 @@ export type Result =
  *
  * @category predicates
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const resultRefusal = (
   result: Result,

@@ -198,9 +198,21 @@ describe("package boundaries", () => {
     }
     expect(exports["./*"]).toBeUndefined()
     expect(published["./*"]).toBeUndefined()
-    expect(exports["./TriggerStore"]).toBe("./src/TriggerStore.ts")
-    expect(exports["./DispatchReader"]).toBe("./src/DispatchReader.ts")
-    expect(exports["./test/TestTriggers"]).toBe("./src/test/TestTriggers.ts")
+    expect(exports["./TriggerStore"]).toEqual({
+      types: "./src/TriggerStore.ts",
+      "vibelang-source": "./src/TriggerStore.ts",
+      default: "./.vibelang/js/src/TriggerStore.js"
+    })
+    expect(exports["./DispatchReader"]).toEqual({
+      types: "./src/DispatchReader.ts",
+      "vibelang-source": "./src/DispatchReader.ts",
+      default: "./.vibelang/js/src/DispatchReader.js"
+    })
+    expect(exports["./test/TestTriggers"]).toEqual({
+      types: "./src/test/TestTriggers.ts",
+      "vibelang-source": "./src/test/TestTriggers.ts",
+      default: "./.vibelang/js/src/test/TestTriggers.js"
+    })
   })
 
   it("publishes the release candidate on the next tag", () => {

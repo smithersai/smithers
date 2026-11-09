@@ -27,5 +27,6 @@ export const decide = (policy, state) => {
  *
  * @category decision
  * @since 0.1.0
+ * @throws {never}
  */
 export const pendingAfter = (state) => Math.max(state.pending ?? Number.NEGATIVE_INFINITY, state.due);

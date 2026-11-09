@@ -52,23 +52,51 @@
       "vibelang-source": "./src/Channel.vibe",
       "default": "./.vibelang/js/src/Channel.js"
     },
-    "./Cron": "./src/Cron.ts",
-    "./DispatchReader": "./src/DispatchReader.ts",
-    "./Overlap": "./src/Overlap.ts",
-    "./Schedule": "./src/Schedule.ts",
+    "./Cron": {
+      "types": "./src/Cron.ts",
+      "vibelang-source": "./src/Cron.ts",
+      "default": "./.vibelang/js/src/Cron.js"
+    },
+    "./DispatchReader": {
+      "types": "./src/DispatchReader.ts",
+      "vibelang-source": "./src/DispatchReader.ts",
+      "default": "./.vibelang/js/src/DispatchReader.js"
+    },
+    "./Overlap": {
+      "types": "./src/Overlap.ts",
+      "vibelang-source": "./src/Overlap.ts",
+      "default": "./.vibelang/js/src/Overlap.js"
+    },
+    "./Schedule": {
+      "types": "./src/Schedule.ts",
+      "vibelang-source": "./src/Schedule.ts",
+      "default": "./.vibelang/js/src/Schedule.js"
+    },
     "./Scheduler": {
       "types": "./src/Scheduler.ts",
       "vibelang-source": "./src/Scheduler.ts",
       "default": "./.vibelang/js/src/Scheduler.js"
     },
     "./SqlTriggerStore": {
-      "types": "./src/SqlTriggerStore.ts",
-      "vibelang-source": "./src/SqlTriggerStore.ts",
+      "types": "./.vibe/declarations/SqlTriggerStore.d.vibe.ts",
+      "vibelang-source": "./src/SqlTriggerStore.vibe",
       "default": "./.vibelang/js/src/SqlTriggerStore.js"
     },
-    "./Trigger": "./src/Trigger.ts",
-    "./TriggerError": "./src/TriggerError.ts",
-    "./TriggerStore": "./src/TriggerStore.ts",
+    "./Trigger": {
+      "types": "./src/Trigger.ts",
+      "vibelang-source": "./src/Trigger.ts",
+      "default": "./.vibelang/js/src/Trigger.js"
+    },
+    "./TriggerError": {
+      "types": "./src/TriggerError.ts",
+      "vibelang-source": "./src/TriggerError.ts",
+      "default": "./.vibelang/js/src/TriggerError.js"
+    },
+    "./TriggerStore": {
+      "types": "./src/TriggerStore.ts",
+      "vibelang-source": "./src/TriggerStore.ts",
+      "default": "./.vibelang/js/src/TriggerStore.js"
+    },
     "./Webhook": {
       "types": "./.vibe/declarations/src/Webhook.d.vibe.ts",
       "vibelang-source": "./src/Webhook.vibe",
@@ -79,7 +107,11 @@
       "vibelang-source": "./src/index.ts",
       "default": "./.vibelang/js/src/index.js"
     },
-    "./test/TestTriggers": "./src/test/TestTriggers.ts"
+    "./test/TestTriggers": {
+      "types": "./src/test/TestTriggers.ts",
+      "vibelang-source": "./src/test/TestTriggers.ts",
+      "default": "./.vibelang/js/src/test/TestTriggers.js"
+    }
   },
   "files": [
     "src/**/*.ts",

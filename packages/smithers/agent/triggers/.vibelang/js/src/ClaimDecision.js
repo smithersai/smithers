@@ -27,6 +27,7 @@ const decided = (claim, writes) => ({ _tag: "Decided", claim, writes });
  *
  * @category decision
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const lease = (input) => {
     const { activeClaimedAt, activeRunId, now, pending, unfinished } = input;
@@ -54,6 +55,7 @@ export const lease = (input) => {
  *
  * @category decision
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const refuse = (snapshot, fire) => {
     if (snapshot.revision !== fire.expectedRevision) {
@@ -83,6 +85,7 @@ export const decide = (input) => {
  * @category decision
  * @since 1.0.0-rc.0
  * @private
+ * @throws {never}
  */
 export const decideFenced = ({ claimedAt, fire, reservationId, snapshot }) => {
     let activeRunId = snapshot.activeRunId;

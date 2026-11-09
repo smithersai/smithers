@@ -6,7 +6,7 @@ import * as Result from "effect/Result"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
-import * as SqlTriggerStore from "../src/SqlTriggerStore.ts"
+import * as SqlTriggerStore from "../src/SqlTriggerStore.vibe"
 import * as TriggerStore from "../src/TriggerStore.ts"
 import { storeConformance } from "./StoreConformance.ts"
 

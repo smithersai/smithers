@@ -69,7 +69,7 @@ const securityReview = Smithers.SecurityReview({
         "sql.unsafe, sql.literal, or string concatenation building SQL from trigger ids, flow ids, cron text, run ids, or error text.",
         "Dialect-specific fragments interpolated from anything other than a fixed internal choice."
       ],
-      paths: ["src/SqlTriggerStore.ts", "src/migrations/**"]
+      paths: ["src/SqlTriggerStore.vibe", "src/migrations/**"]
     },
     {
       id: "trigger-row-decode",
@@ -80,7 +80,7 @@ const securityReview = Smithers.SecurityReview({
         "JSON.parse of input_json or a cast of an overlap/catch_up column that is not followed by schema validation.",
         "A decode failure that fails the whole listing or scheduler loop instead of the single row."
       ],
-      paths: ["src/SqlTriggerStore.ts", "src/TriggerStore.ts", "src/Trigger.ts"]
+      paths: ["src/SqlTriggerStore.vibe", "src/TriggerStore.ts", "src/Trigger.ts"]
     },
     {
       id: "schedule-resource-bounds",
@@ -103,7 +103,7 @@ const securityReview = Smithers.SecurityReview({
         "A claim path in SqlTriggerStore.ts or ClaimDecision.ts whose UPDATE lacks the active_run_id or reservation guard, or ignores affectedRows.",
         "An idempotency key for Control that is not derived from trigger id and occurrence."
       ],
-      paths: ["src/SqlTriggerStore.ts", "src/ClaimDecision.ts", "src/Scheduler.ts", "src/Overlap.ts"]
+      paths: ["src/SqlTriggerStore.vibe", "src/ClaimDecision.ts", "src/Scheduler.ts", "src/Overlap.ts"]
     },
     {
       id: "cancel-own-runs-only",
@@ -115,7 +115,7 @@ const securityReview = Smithers.SecurityReview({
         "A run id read from the store or a fire record passed to cancel without checking it belongs to that trigger id.",
         "A reservation id (isReservation) passed to Control.cancel as if it were a run id."
       ],
-      paths: ["src/Scheduler.ts", "src/internal/ActiveRuns.vibe", "src/SqlTriggerStore.ts"]
+      paths: ["src/Scheduler.ts", "src/internal/ActiveRuns.vibe", "src/SqlTriggerStore.vibe"]
     }
   ]
 })

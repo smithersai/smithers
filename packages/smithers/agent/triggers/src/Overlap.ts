@@ -49,5 +49,6 @@ export const decide = (policy: Policy, state: State): Action => {
  *
  * @category decision
  * @since 0.1.0
+ * @throws {never}
  */
 export const pendingAfter = (state: State): number => Math.max(state.pending ?? Number.NEGATIVE_INFINITY, state.due)

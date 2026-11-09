@@ -148,6 +148,7 @@ export type Lease =
  *
  * @category decision
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const lease = (input: {
   readonly activeRunId?: string | undefined
@@ -180,6 +181,7 @@ export const lease = (input: {
  *
  * @category decision
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const refuse = (
   snapshot: Pick<Snapshot, "enabled" | "revision">,
@@ -214,6 +216,7 @@ export const decide = (input: Input): Decision => {
  * @category decision
  * @since 1.0.0-rc.0
  * @private
+ * @throws {never}
  */
 export const decideFenced = ({ claimedAt, fire, reservationId, snapshot }: Input): AdmittedDecision => {
   let activeRunId = snapshot.activeRunId

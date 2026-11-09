@@ -41,6 +41,7 @@ export const reservationPrefix = "trigger-reservation:";
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const reservationId = (triggerId, occurrence, attempt) => `${reservationPrefix}${triggerId}:${attempt === undefined ? "" : `${attempt}:`}${occurrence}`;
 /**
@@ -48,6 +49,7 @@ export const reservationId = (triggerId, occurrence, attempt) => `${reservationP
  *
  * @category predicates
  * @since 0.1.0
+ * @throws {never}
  */
 export const isReservation = (runId) => runId !== undefined && runId.startsWith(reservationPrefix);
 /**
@@ -55,6 +57,7 @@ export const isReservation = (runId) => runId !== undefined && runId.startsWith(
  *
  * @category getters
  * @since 0.1.0
+ * @throws {never}
  */
 export const reservationOccurrence = (runId) => {
     if (!isReservation(runId))
@@ -68,6 +71,7 @@ export const reservationOccurrence = (runId) => {
  *
  * @category predicates
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const resultRefusal = (result, fire, activeRunId) => {
     if (result.outcome === "launched" && (typeof result.runId !== "string" || result.runId.trim().length === 0)) {
