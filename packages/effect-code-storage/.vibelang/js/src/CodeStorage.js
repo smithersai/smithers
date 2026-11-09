@@ -274,10 +274,7 @@ const TagsJson = Schema.fromJsonString(Schema.Struct({
 }));
 function make(credentials) {
     return Effect_1.gen(function* make() {
-        const key = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return Token.importKey(Redacted.value(credentials.key)); }); })(), () => (_tail_1 => { return Effect_1.gen(function* () {
-            const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
-            return _completion_1[0] ? yield* _value_1 : _value_1;
-        }); })(() => { return [true, Effect_1.fail(new CodeStorageError({ operation: "configure", code: "invalid_key" }))]; }));
+        const key = yield* (Effect.mapError(Token.importKey(Redacted.value(credentials.key)), () => new CodeStorageError({ operation: "configure", code: "invalid_key" })));
         const client = yield* HttpClient.HttpClient;
         const base = credentials.apiUrl ?? `https://api.${credentials.org}.code.storage`;
         const url = (repo, path = "") => `${base}/api/repos${repo === "" ? "" : `/${encodeURIComponent(repo)}`}${path}`;
@@ -309,10 +306,7 @@ function make(credentials) {
                     issuedAt: Math.floor(now / 1000),
                     ttlSeconds: tokenTtlSeconds
                 });
-                const response = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return client.execute(HttpClientRequest.bearerToken(request, Redacted.make(token))); }); })(), () => (_tail_2 => { return Effect_1.gen(function* () {
-                    const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
-                    return _completion_2[0] ? yield* _value_2 : _value_2;
-                }); })(() => { return [true, Effect_1.fail(new CodeStorageError({ operation, code: "transport" }))]; }));
+                const response = yield* (Effect.mapError(client.execute(HttpClientRequest.bearerToken(request, Redacted.make(token))), () => new CodeStorageError({ operation, code: "transport" })));
                 if (response.status >= 300)
                     return yield* Effect_1.fail(yield* failure(operation, response));
                 return response;
@@ -322,17 +316,11 @@ function make(credentials) {
         function readJson(operation, response, schema) {
             return Effect_1.gen(function* readJson() {
                 const invalid = () => new CodeStorageError({ operation, code: "invalid_response", status: response.status });
-                const { bytes, truncated } = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return read(operation, response, maxJsonBytes); }); })(), () => (_tail_3 => { return Effect_1.gen(function* () {
-                    const _completion_3 = _tail_3(), _value_3 = _completion_3[1];
-                    return _completion_3[0] ? yield* _value_3 : _value_3;
-                }); })(() => { return [true, Effect_1.fail(new CodeStorageError({ operation, code: "transport", status: response.status }))]; }));
+                const { bytes, truncated } = yield* (Effect.mapError(read(operation, response, maxJsonBytes), () => new CodeStorageError({ operation, code: "transport", status: response.status })));
                 if (truncated)
                     return yield* Effect_1.fail(invalid());
                 const text = yield* Effect.try({ try: () => decoder.decode(bytes), catch: invalid });
-                const body = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return Schema.decodeUnknownEffect(schema)(text); }); })(), () => (_tail_4 => { return Effect_1.gen(function* () {
-                    const _completion_4 = _tail_4(), _value_4 = _completion_4[1];
-                    return _completion_4[0] ? yield* _value_4 : _value_4;
-                }); })(() => { return [true, Effect_1.fail(invalid())]; }));
+                const body = yield* (Effect.mapError(Schema.decodeUnknownEffect(schema)(text), () => invalid()));
                 return { body, bytesRead: bytes.length };
             });
         }
@@ -436,9 +424,9 @@ function make(credentials) {
                         size: declared
                     }));
                 }
-                const { bytes, truncated } = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return read("readFile", response, options.maxBytes); }); })(), () => (_tail_5 => { return Effect_1.gen(function* () {
-                    const _completion_5 = _tail_5(), _value_5 = _completion_5[1];
-                    return _completion_5[0] ? yield* _value_5 : _value_5;
+                const { bytes, truncated } = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return read("readFile", response, options.maxBytes); }); })(), () => (_tail_1 => { return Effect_1.gen(function* () {
+                    const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
+                    return _completion_1[0] ? yield* _value_1 : _value_1;
                 }); })(() => { return [true, Effect_1.fail(new CodeStorageError({ operation: "readFile", code: "transport", status: response.status }))]; }));
                 if (truncated) {
                     return yield* Effect_1.fail(new CodeStorageError({ operation: "readFile", code: "too_large", status: response.status }));

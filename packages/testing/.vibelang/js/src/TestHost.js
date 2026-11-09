@@ -13,11 +13,11 @@
  *
  * @since 1.0.0-rc.0
  */
+import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Random from "effect/Random";
 import * as TestClock from "effect/testing/TestClock";
-import * as Effect from "effect/Effect";
 import * as BrowserJj from "@smthrs/jj/browser/BrowserJj";
 import * as HttpClient from "@smthrs/kernel/HttpClient";
 import * as ProcessConfinement from "@smthrs/kernel/ProcessConfinement";
@@ -254,7 +254,7 @@ export const layerSeededRandom = (seed = 42) => Layer.sync(Random.Random)(() => 
  */
 export const layer = (options) => {
     // Allocate per build while retaining the browser layer's isolation attestation.
-    const isolatedFileSystem = Layer.orDie(Layer.unwrap(Effect.sync(() => { return BrowserFileSystem.layer(makeMemoryFs(options?.files)); })));
+    const isolatedFileSystem = Layer.orDie(Layer.unwrap(Effect.sync(() => BrowserFileSystem.layer(makeMemoryFs(options?.files)))));
     const platform = Layer.mergeAll(isolatedFileSystem, 
     // POSIX by design: the in-memory volume has no host path syntax.
     Path.layer);

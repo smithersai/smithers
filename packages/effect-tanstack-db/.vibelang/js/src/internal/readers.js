@@ -82,13 +82,12 @@ const change = (message) => ({
     previousValue: message.previousValue
 });
 /**
- * What a mutation TanStack DB refused before applying it fails with, as `MutationRefused`: the `catch` of the
- * `Effect.try` around the call, which throws.
+ * Applies a TanStack DB mutation as an Effect: `MutationRefused` when it throws, else its transaction.
  *
  * @category mutations
  * @since 0.1.0
  */
-export const refused = (operation) => (cause) => new MutationRefused({ operation, cause });
+export const mutate = (operation, apply) => Effect.try({ try: apply, catch: (cause) => new MutationRefused({ operation, cause }) }).pipe(Effect.map(receipt));
 /**
  * One actual TanStack persistence receipt, shared by mutations and pending-key reads.
  * @private

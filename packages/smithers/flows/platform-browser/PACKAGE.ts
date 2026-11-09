@@ -145,7 +145,7 @@ const securityReview = Smithers.SecurityReview({
         "A Start payload or Signal value used without decoding it with the flow's own schema.",
         "A Refused reply or a log line carrying an error's message instead of its tag."
       ],
-      paths: ["src/internal/Leader.ts", "src/internal/Protocol.vibe", "src/BrowserEngine.ts"]
+      paths: ["src/internal/Leader.ts", "src/internal/Protocol.ts", "src/BrowserEngine.ts"]
     },
     {
       id: "content-free-telemetry",

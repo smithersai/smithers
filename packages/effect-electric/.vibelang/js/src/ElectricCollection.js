@@ -194,7 +194,10 @@ export function make(options) {
             });
             if (rows === undefined)
                 return new Unreadable({ status: response.status, bytes: body.byteLength });
-            accepted = { handle: response.headers.get("electric-handle"), offset: response.headers.get("electric-offset") };
+            accepted = {
+                handle: response.headers.get("electric-handle"),
+                offset: response.headers.get("electric-offset")
+            };
             yield* publish({ _tag: "Succeeded" });
             return $platform.withBody(response, body);
         }), "electric.shape.request", {

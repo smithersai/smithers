@@ -50,7 +50,7 @@ explicitly before implementation; existing wording must be reconciled then.
 
 ## Code Storage primary-source research
 
-Read the package's [source](../../../../../packages/effect-code-storage/src/CodeStorage.ts),
+Read the package's [source](../../../../../packages/effect-code-storage/src/CodeStorage.vibe),
 [signer](../../../../../packages/effect-code-storage/src/internal/token.ts),
 [docs](../../../../../packages/effect-code-storage/docs/README.md) and
 [API reference](../../../../../packages/effect-code-storage/docs/api.md).

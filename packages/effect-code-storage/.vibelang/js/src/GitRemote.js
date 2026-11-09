@@ -21,9 +21,7 @@ import * as Exit from "effect/Exit";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as Option from "effect/Option";
 import { withSpan } from "effect/Effect";
-import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime/internal";
 import * as Effect from "effect/Effect";
 import * as HttpClient from "effect/http/HttpClient";
 import * as Metric from "effect/Metric";
@@ -165,10 +163,7 @@ export const head = (remote) => { var topic_1; return (topic_1 = Effect_1.gen(fu
     const client = yield* HttpClient.HttpClient;
     const upstream = typeof remote === "string" ? { url: remote } : remote;
     const request = withCredential(HttpClientRequest.setUrlParam(HttpClientRequest.get(`${upstream.url.replace(/\/+$/, "")}/info/refs`), "service", "git-upload-pack"), upstream);
-    const response = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return client.execute(request); }); })(), () => (_tail_1 => { return Effect_1.gen(function* () {
-        const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
-        return _completion_1[0] ? yield* _value_1 : _value_1;
-    }); })(() => { return [true, Effect_1.fail(new GitRemoteError({ code: "transport" }))]; }));
+    const response = yield* (Effect.mapError(client.execute(request), () => new GitRemoteError({ code: "transport" })));
     const status = response.status;
     if (status === 401 || status === 403 || status === 404) {
         return yield* Effect_1.fail(new GitRemoteError({ code: "not_found", status }));
@@ -179,10 +174,7 @@ export const head = (remote) => { var topic_1; return (topic_1 = Effect_1.gen(fu
         return yield* Effect_1.fail(new GitRemoteError({ code: "invalid_response", status }));
     }
     const reader = advertisedHead();
-    const stopped = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return readPackets(response.stream, maxAdvertisementBytes, reader.onPacket); }); })(), () => (_tail_2 => { return Effect_1.gen(function* () {
-        const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
-        return _completion_2[0] ? yield* _value_2 : _value_2;
-    }); })(() => { return [true, Effect_1.fail(new GitRemoteError({ code: "transport", status }))]; }));
+    const stopped = yield* (Effect.mapError(readPackets(response.stream, maxAdvertisementBytes, reader.onPacket), () => new GitRemoteError({ code: "transport", status })));
     const read = reader.result();
     if (read?._tag === "Found")
         return read.value;
@@ -254,10 +246,7 @@ export const ref = (upstream, branch) => { var topic_2; return (topic_2 = Effect
     const client = yield* HttpClient.HttpClient;
     const wanted = `refs/heads/${branch}`;
     const request = withCredential(HttpClientRequest.bodyUint8Array(HttpClientRequest.setHeader(HttpClientRequest.post(`${upstream.url.replace(/\/+$/, "")}/git-upload-pack`), "git-protocol", "version=2"), lsRefs(wanted), "application/x-git-upload-pack-request"), upstream);
-    const response = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return client.execute(request); }); })(), () => (_tail_3 => { return Effect_1.gen(function* () {
-        const _completion_3 = _tail_3(), _value_3 = _completion_3[1];
-        return _completion_3[0] ? yield* _value_3 : _value_3;
-    }); })(() => { return [true, Effect_1.fail(new GitRemoteError({ code: "transport" }))]; }));
+    const response = yield* (Effect.mapError(client.execute(request), () => new GitRemoteError({ code: "transport" })));
     const status = response.status;
     if (status === 401 || status === 403 || status === 404) {
         return yield* Effect_1.fail(new GitRemoteError({ code: "not_found", status }));
@@ -268,10 +257,7 @@ export const ref = (upstream, branch) => { var topic_2; return (topic_2 = Effect
         return yield* Effect_1.fail(new GitRemoteError({ code: "invalid_response", status }));
     }
     const reader = listedRef(wanted);
-    const stopped = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return readPackets(response.stream, maxRefsBytes, reader.onPacket); }); })(), () => (_tail_4 => { return Effect_1.gen(function* () {
-        const _completion_4 = _tail_4(), _value_4 = _completion_4[1];
-        return _completion_4[0] ? yield* _value_4 : _value_4;
-    }); })(() => { return [true, Effect_1.fail(new GitRemoteError({ code: "transport", status }))]; }));
+    const stopped = yield* (Effect.mapError(readPackets(response.stream, maxRefsBytes, reader.onPacket), () => new GitRemoteError({ code: "transport", status })));
     const read = reader.result();
     if (read?._tag === "Found")
         return read.value;

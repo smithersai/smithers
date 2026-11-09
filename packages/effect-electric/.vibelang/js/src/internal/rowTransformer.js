@@ -3,6 +3,8 @@
  * Electric's `transformer` over an Electric collection's row schema. TanStack
  * DB expects a row that doesn't decode to throw, which stops the shape, so this
  * plain TypeScript module keeps the throwing call out of `ElectricCollection.vibe`.
+ *
+ * @since 0.1.0
  */
 import * as Schema from "effect/Schema";
 /**
@@ -10,6 +12,8 @@ import * as Schema from "effect/Schema";
  * the columns that changed. A row schema checks without transforming
  * (`Collection.RowSchema`), so each field decodes with no services.
  *
+ * @private
+ * @since 0.1.0
  * @throws {never}
  */
 export const columnwiseTransformer = (fields) => {

@@ -30,8 +30,10 @@ import {
 } from "@tanstack/db"
 import { persistedCollectionOptions } from "@tanstack/db-sqlite-persistence-core"
 import type * as Cause from "effect/Cause"
+import * as Clock from "effect/Clock"
 import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
+import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
@@ -40,7 +42,7 @@ import * as Elections from "./internal/elections.vibe"
 import { errorName } from "./internal/errorName.ts"
 import { type Change, type Key, LoadFailed, type MutationRefused, type Transaction } from "./internal/model.vibe"
 import { oneWriter } from "./internal/oneWriter.vibe"
-import { awaitRow, changes, preload, receipt, refused, release, toArray } from "./internal/readers.vibe"
+import { awaitRow, changes, mutate, preload, receipt, release, toArray } from "./internal/readers.vibe"
 import { wholeTransactions } from "./internal/wholeTransactions.ts"
 import { declared } from "./Migrations.vibe"
 import type { Lock } from "./Outbox.vibe"
@@ -75,23 +77,23 @@ export interface Collection<A extends object, K extends Key = Key, U extends Uti
    */
   readonly tanstack: TanStackCollection<A, K, U>
   /** The rows as they are now, optimistic writes included. */
-  readonly toArray: ReadonlyArray<A>!!
+  readonly toArray: Effect.Effect<ReadonlyArray<A>>
   /** One row as it is now. */
-  readonly get: (key: K) => Option.Option<A>!!
+  readonly get: (key: K) => Effect.Effect<Option.Option<A>>
   /**
    * Whether the row is there as the sync source has it: present, with no optimistic write of its own pending. A row
    * a mutation inserted is not synced until its handler persists it and the source delivers it back.
    */
-  readonly isSynced: (key: K) => boolean!!
+  readonly isSynced: (key: K) => Effect.Effect<boolean>
   /** Actual unsettled write receipts for this key, including optimistic deletion. A read never retries a write. */
-  readonly pendingWrites: (key: K) => ReadonlyArray<Transaction>!!
+  readonly pendingWrites: (key: K) => Effect.Effect<ReadonlyArray<Transaction>>
   /** Starts the collection's sync and waits for its first rows: for a synced collection, the network's. */
-  readonly preload: void!LoadFailed
+  readonly preload: Effect.Effect<void, LoadFailed>
   /**
    * Starts the collection and waits until the rows kept on the device have loaded, whatever the network does. For a
    * collection that keeps none, the same as `preload`.
    */
-  readonly restored: void!LoadFailed
+  readonly restored: Effect.Effect<void, LoadFailed>
   /**
    * The changes from the moment the stream starts, in the batches TanStack DB
    * publishes. With `initial`, the current rows are the first batch.
@@ -103,13 +105,13 @@ export interface Collection<A extends object, K extends Key = Key, U extends Uti
    * the database they share. Fails with `TimeoutError` when none has within
    * `timeout`.
    */
-  readonly awaitRow: (match: (row: A) => boolean, timeout: Duration.Input) => A!Cause.TimeoutError
+  readonly awaitRow: (match: (row: A) => boolean, timeout: Duration.Input) => Effect.Effect<A, Cause.TimeoutError>
   /** Inserts rows. They show at once. */
-  readonly insert: (rows: A | ReadonlyArray<A>) => Transaction!MutationRefused
+  readonly insert: (rows: A | ReadonlyArray<A>) => Effect.Effect<Transaction, MutationRefused>
   /** Changes one row through a draft. The change shows at once. */
-  readonly update: (key: K, recipe: (draft: WritableDeep<A>) => void) => Transaction!MutationRefused
+  readonly update: (key: K, recipe: (draft: WritableDeep<A>) => void) => Effect.Effect<Transaction, MutationRefused>
   /** Deletes rows. They disappear at once. */
-  readonly delete: (keys: K | ReadonlyArray<K>) => Transaction!MutationRefused
+  readonly delete: (keys: K | ReadonlyArray<K>) => Effect.Effect<Transaction, MutationRefused>
 }
 
 /**
@@ -186,100 +188,101 @@ const indexing = { autoIndex: "eager", defaultIndexType: BasicIndex } as const
 export function make<A extends object, K extends Key, U extends UtilsRecord = UtilsRecord>(
   schema: RowSchema<A>,
   options: Options<A, K, U>
-): Collection<A, K, U>!never!Scope.Scope
+): Effect.Effect<Collection<A, K, U>, never, Scope.Scope>
 export function make<A extends object, K extends Key, U extends UtilsRecord = UtilsRecord>(
   schema: RowSchema<A>,
   options: Options<A, K, U>,
   settings: { readonly persist: Persist }
-): Collection<A, K, U>!never!(Scope.Scope | Persistence)
+): Effect.Effect<Collection<A, K, U>, never, Scope.Scope | Persistence>
 export function make<A extends object, K extends Key, U extends UtilsRecord = UtilsRecord>(
   schema: RowSchema<A>,
   options: Options<A, K, U>,
   settings?: { readonly persist: Persist }
-): Collection<A, K, U>!never!(Scope.Scope | Persistence) {
+): Effect.Effect<Collection<A, K, U>, never, Scope.Scope | Persistence> {
   const config = { ...options, ...indexing, gcTime: 0, schema: Schema.toStandardSchemaV1(schema) }
   if (settings === undefined) return create<A, K, U>(config)
-  return effect {
-    const service = try Persistence
+  return Effect.gen(function*() {
+    const service = yield* Persistence
     const { persistence, registry, lock } = service
-    try mustBeDeclared(registry, options.id, "synced", settings.persist.schemaVersion)
-    if (Option.isNone(persistence)) return try create<A, K, U>(config)
+    yield* mustBeDeclared(registry, options.id, "synced", settings.persist.schemaVersion)
+    if (Option.isNone(persistence)) return yield* create<A, K, U>(config)
     // Each of the source's transactions reaches the persisted core whole, so none crosses a hydration cycle; with a
     // lock, the source stores what it syncs in one program only, chosen by an election a report of the program's
     // first roles waits for. A persisted synced collection is always eager: its network-first restore refuses
     // on-demand sync.
     const elect = lock === undefined
       ? undefined
-      : try elected(options.sync, lock, `persisted-sync:${options.id}`, options.id!, Elections.of(service))
+      : yield* elected(options.sync, lock, `persisted-sync:${options.id}`, options.id!, Elections.of(service))
     const sync = elect === undefined ? wholeTransactions(options.sync) : elect.sync
     // Network-first with no wait: restored rows show at once, and the readiness of the restore is observable.
-    return try timedRestore(
+    return yield* timedRestore(
       create<A, K, U>(
         {
-          ...try Effect.sync(() =>
-            persistedCollectionOptions({
-              ...config,
-              sync,
-              persistence: persistence.value,
-              schemaVersion: settings.persist.schemaVersion,
-              initialRender: { strategy: "network-first", networkTimeoutMs: 0 }
-            } as never)
-          ),
+          ...persistedCollectionOptions({
+            ...config,
+            sync,
+            persistence: persistence.value,
+            schemaVersion: settings.persist.schemaVersion,
+            initialRender: { strategy: "network-first", networkTimeoutMs: 0 }
+          } as never),
           onSyncCommit: options.onSyncCommit
         }
-      ) |> Effect.tap(%, (made) => elect === undefined ? Effect.void : endsOnError(made.tanstack, elect.election))
+      ).pipe(Effect.tap((made) => elect === undefined ? Effect.void : endsOnError(made.tanstack, elect.election)))
     )
-  }
+  })
 }
 
 // A collection that fails ends its election: one whose database can't be read fails before its source starts, so it
 // never takes a role. Subscribed before the restore starts the collection, so no failure comes before it.
-const endsOnError = effect <A extends object, K extends Key, U extends UtilsRecord>(
+const endsOnError = <A extends object, K extends Key, U extends UtilsRecord>(
   tanstack: TanStackCollection<A, K, U>,
   election: Elections.Election
-) => {
-  const run = Effect.runSyncWith(try Effect.context<never>())
-  const off = try Effect.sync(() => tanstack.on("status:error", () => run(election.ended)))
-  try Effect.addFinalizer(() => Effect.sync(off))
-}
+) =>
+  Effect.gen(function*() {
+    const run = Effect.runSyncWith(yield* Effect.context<never>())
+    const off = tanstack.on("status:error", () => run(election.ended))
+    yield* Effect.addFinalizer(() => Effect.sync(off))
+  })
 
 // `sync`, writing only in the program that holds the collection's lock (internal/oneWriter.ts), its turn at the lock
 // run in the background with the program's services, and each role it takes counted and logged: a first role a
 // report counts at Debug (`Persistence.reportRoles` sums them), any other at Info. Its election ends when the turn
 // ends, as one whose source threw does, or the collection closes, before a first role, so a report never waits for it.
-const elected = effect <C extends { readonly sync: (params: never) => unknown }>(
+const elected = <C extends { readonly sync: (params: never) => unknown }>(
   sync: C,
   lock: Lock,
   name: string,
   id: string,
   elections: Elections.Elections
-) => {
-  const context = try Effect.context<never>()
-  const runFork = Effect.runForkWith(context)
-  const run = Effect.runSyncWith(context)
-  const election = try elections.begin
-  try Effect.addFinalizer(() => election.ended)
-  const writing = oneWriter(sync, {
-    lock,
-    name,
-    fork: (turn) => {
-      const fiber = runFork(Effect.ensuring(turn, election.ended))
-      return () => fiber.interruptUnsafe()
-    },
-    became: (role) =>
-      run(effect {
-        try Metric.update(Metric.withAttributes(syncRoles, { collection: id.split(":", 1)[0]!, role }), 1)
-        const level = (try election.took(role)) ? Effect.logInfo : Effect.logDebug
-        try (level("persisted sync role") |> Effect.annotateLogs({ collection: id.split(":", 1)[0]!, role })(%))
-      }),
-    // A turn that failed, such as a source that throws as it starts, fails the collection: logged by its kind (the id
-    // up to the first `:`) and the error's name, never its message.
-    failed: (error) =>
-      Effect.logWarning("persisted sync failed")
-        |> Effect.annotateLogs({ collection: id.split(":", 1)[0]!, error: errorName(error) })(%)
+) =>
+  Effect.gen(function*() {
+    const context = yield* Effect.context<never>()
+    const fork = Effect.runForkWith(context)
+    const run = Effect.runSyncWith(context)
+    const election = yield* elections.begin
+    yield* Effect.addFinalizer(() => election.ended)
+    const writing = oneWriter(sync, {
+      lock,
+      name,
+      fork: (turn) => {
+        const fiber = fork(Effect.ensuring(turn, election.ended))
+        return () => fiber.interruptUnsafe()
+      },
+      became: (role) =>
+        run(Effect.gen(function*() {
+          yield* Metric.update(Metric.withAttributes(syncRoles, { collection: id.split(":", 1)[0]!, role }), 1)
+          const level = (yield* election.took(role)) ? Effect.logInfo : Effect.logDebug
+          yield* level("persisted sync role").pipe(Effect.annotateLogs({ collection: id.split(":", 1)[0]!, role }))
+        })),
+      // A turn that failed, such as a source that throws as it starts, fails the collection: logged by its kind (the id
+      // up to the first `:`) and the error's name, never its message.
+      failed: (error) =>
+        Effect.logWarning("persisted sync failed").pipe(
+          Effect.annotateLogs({ collection: id.split(":", 1)[0]!, error: errorName(error) })
+        )
+    })
+    return { sync: writing, election }
   })
-  return { sync: writing, election }
-}
 
 // A persisted collection the registry doesn't declare, at this version and kind, is a defect: it would skip its
 // migrations. Without a registry, any collection opens.
@@ -288,7 +291,7 @@ const mustBeDeclared = (
   id: string | undefined,
   kind: "local" | "synced",
   schemaVersion: number
-): void!! => {
+): Effect.Effect<void> => {
   if (registry === undefined) return Effect.void
   const undeclared = declared(registry, id ?? "", kind, schemaVersion)
   return undeclared === undefined ? Effect.void : Effect.die(undeclared)
@@ -296,7 +299,7 @@ const mustBeDeclared = (
 
 const create = <A extends object, K extends Key, U extends UtilsRecord>(
   config: object
-): Collection<A, K, U>!!Scope.Scope =>
+): Effect.Effect<Collection<A, K, U>, never, Scope.Scope> =>
   Effect.acquireRelease(
     Effect.sync(() => {
       const { onSyncCommit, ...options } = config as Options<A, K, U>
@@ -324,30 +327,33 @@ const create = <A extends object, K extends Key, U extends UtilsRecord>(
       return createCollection({ ...options, sync: observed } as never) as TanStackCollection<A, K, U>
     }),
     release
-  ) |> Effect.map(%, wrap)
+  ).pipe(Effect.map(wrap))
 
 // Records how long the collection took to restore its rows, in the scope's background. A restore that failed, so the
 // collection starts without its stored rows, is logged as `persisted restore failed` by the collection's kind (its id up
 // to the first `:`) and the error's name, never its message, and counted in `Persistence.restoreFailures`.
-const timedRestore = effect <A extends object, K extends Key, U extends UtilsRecord>(
-  collection: Collection<A, K, U>!!Scope.Scope
-) => {
-  const start = try Clock.currentTimeMillis
-  const made = try collection
-  try (made.restored
-    |> Effect.andThen(%, Clock.currentTimeMillis)
-    |> Effect.flatMap(%, (now) =>
-      Metric.update(Metric.withAttributes(restoreMs, { collection: made.id.split(":", 1)[0]! }), now - start)
+const timedRestore = <A extends object, K extends Key, U extends UtilsRecord>(
+  collection: Effect.Effect<Collection<A, K, U>, never, Scope.Scope>
+) =>
+  Effect.gen(function*() {
+    const start = yield* Clock.currentTimeMillis
+    const made = yield* collection
+    yield* made.restored.pipe(
+      Effect.andThen(Clock.currentTimeMillis),
+      Effect.flatMap((now) =>
+        Metric.update(Metric.withAttributes(restoreMs, { collection: made.id.split(":", 1)[0]! }), now - start)
+      ),
+      Effect.catch(({ cause }) => {
+        const kind = made.id.split(":", 1)[0]!
+        return Metric.update(Metric.withAttributes(restoreFailures, { collection: kind }), 1).pipe(
+          Effect.andThen(Effect.logWarning("persisted restore failed")),
+          Effect.annotateLogs({ collection: kind, error: errorName(cause) })
+        )
+      }),
+      Effect.forkScoped
     )
-    |> Effect.catch(%, ({ cause }) => {
-      const kind = made.id.split(":", 1)[0]!
-      return Metric.update(Metric.withAttributes(restoreFailures, { collection: kind }), 1)
-        |> Effect.andThen(%, Effect.logWarning("persisted restore failed"))
-        |> Effect.annotateLogs({ collection: kind, error: errorName(cause) })(%)
-    })
-    |> Effect.forkScoped(%))
-  return made
-}
+    return made
+  })
 
 /**
  * An in-memory collection, cleaned up when the scope closes. Its writes apply
@@ -357,22 +363,21 @@ const timedRestore = effect <A extends object, K extends Key, U extends UtilsRec
  * @category constructors
  * @since 0.1.0
  */
-export const local = effect <A extends object, K extends Key>(options: {
+export const local = <A extends object, K extends Key>(options: {
   readonly id: string
   readonly schema: RowSchema<A>
   readonly getKey: (row: A) => K
   readonly initialData?: ReadonlyArray<NoInfer<A>>
-}): Collection<A, K>!never!Scope.Scope => {
-  const initialData = [...Schema.decodeUnknownSync(Schema.Array(options.schema))(options.initialData ?? [])]
-  const { utils, ...local } = try Effect.sync(() =>
-    localOnlyCollectionOptions<A, K>({
+}): Effect.Effect<Collection<A, K>, never, Scope.Scope> =>
+  Effect.suspend(() => {
+    const initialData = [...Schema.decodeUnknownSync(Schema.Array(options.schema))(options.initialData ?? [])]
+    const { utils, ...local } = localOnlyCollectionOptions<A, K>({
       id: options.id,
       getKey: options.getKey,
       initialData
     })
-  )
-  return try make<A, K>(options.schema, { ...local, utils })
-}
+    return make<A, K>(options.schema, { ...local, utils })
+  })
 
 /**
  * An in-memory collection whose rows are kept on the device through
@@ -386,32 +391,31 @@ export const local = effect <A extends object, K extends Key>(options: {
  * @category constructors
  * @since 0.2.0
  */
-export const persisted = effect <A extends object, K extends Key>(options: {
+export const persisted = <A extends object, K extends Key>(options: {
   readonly id: string
   readonly schema: RowSchema<A>
   readonly getKey: (row: A) => K
   readonly schemaVersion: number
-}): Collection<A, K>!never!(Scope.Scope | Persistence) => {
-  const { persistence, registry } = try Persistence
-  try mustBeDeclared(registry, options.id, "local", options.schemaVersion)
-  if (Option.isNone(persistence)) return try local<A, K>(options)
-  return try reportFailedWrites(
-    try timedRestore(
-      create<A, K, UtilsRecord>({
-        ...try Effect.sync(() =>
-          persistedCollectionOptions<A, K>({
+}): Effect.Effect<Collection<A, K>, never, Scope.Scope | Persistence> =>
+  Effect.gen(function*() {
+    const { persistence, registry } = yield* Persistence
+    yield* mustBeDeclared(registry, options.id, "local", options.schemaVersion)
+    if (Option.isNone(persistence)) return yield* local<A, K>(options)
+    return yield* reportFailedWrites(
+      yield* timedRestore(
+        create<A, K, UtilsRecord>({
+          ...persistedCollectionOptions<A, K>({
             id: options.id,
             getKey: options.getKey,
             persistence: persistence.value,
             schemaVersion: options.schemaVersion
-          })
-        ),
-        ...indexing,
-        schema: Schema.toStandardSchemaV1(options.schema)
-      })
+          }),
+          ...indexing,
+          schema: Schema.toStandardSchemaV1(options.schema)
+        })
+      )
     )
-  )
-}
+  })
 
 /**
  * The collection, with each write the device couldn't store, which rolled
@@ -419,43 +423,46 @@ export const persisted = effect <A extends object, K extends Key>(options: {
  * operation and the error's name, never its message, and counted in
  * `Persistence.writeFailures`, in the scope's background.
  */
-const reportFailedWrites = effect <A extends object, K extends Key>(collection: Collection<A, K>) => {
-  const scope = try Effect.scope
-  const watch = (operation: MutationRefused["operation"]) => (transaction: Transaction) =>
-    transaction.persisted
-      |> Effect.catch(%, ({ cause }) =>
-        Effect.andThen(
-          Metric.update(
-            Metric.withAttributes(writeFailures, { collection: collection.id.split(":", 1)[0]!, operation }),
-            1
-          ),
-          Effect.logWarning("persisted write failed")
-            |> Effect.annotateLogs({
-              collection: collection.id.split(":", 1)[0]!,
-              operation,
-              // TanStack DB rejects with an Error of its own; only its name is logged.
-              error: (cause as Error).name
-            })(%)
-        )
+const reportFailedWrites = <A extends object, K extends Key>(collection: Collection<A, K>) =>
+  Effect.gen(function*() {
+    const scope = yield* Effect.scope
+    const watch = (operation: MutationRefused["operation"]) => (transaction: Transaction) =>
+      transaction.persisted.pipe(
+        Effect.catch(({ cause }) =>
+          Effect.andThen(
+            Metric.update(
+              Metric.withAttributes(writeFailures, { collection: collection.id.split(":", 1)[0]!, operation }),
+              1
+            ),
+            Effect.logWarning("persisted write failed").pipe(
+              Effect.annotateLogs({
+                collection: collection.id.split(":", 1)[0]!,
+                operation,
+                // TanStack DB rejects with an Error of its own; only its name is logged.
+                error: (cause as Error).name
+              })
+            )
+          )
+        ),
+        Effect.forkIn(scope),
+        Effect.as(transaction)
       )
-      |> Effect.forkIn(%, scope)
-      |> Effect.as(%, transaction)
-  return {
-    ...collection,
-    insert: (rows) => Effect.flatMap(collection.insert(rows), watch("insert")),
-    update: (key, recipe) => Effect.flatMap(collection.update(key, recipe), watch("update")),
-    delete: (keys) => Effect.flatMap(collection.delete(keys), watch("delete"))
-  } satisfies Collection<A, K>
-}
+    return {
+      ...collection,
+      insert: (rows) => Effect.flatMap(collection.insert(rows), watch("insert")),
+      update: (key, recipe) => Effect.flatMap(collection.update(key, recipe), watch("update")),
+      delete: (keys) => Effect.flatMap(collection.delete(keys), watch("delete"))
+    } satisfies Collection<A, K>
+  })
 
 // What `restored` waits for: the restore of a persisted synced collection, which TanStack DB tracks apart from the
 // network; the first rows for any other collection.
-const restored = effect <A extends object, K extends Key, U extends UtilsRecord>(
+const restored = <A extends object, K extends Key, U extends UtilsRecord>(
   tanstack: TanStackCollection<A, K, U>
-): void!LoadFailed => {
-  const readiness = try Effect.sync(() => getPersistedReadinessSource(tanstack.config))
-  if (readiness === undefined) return try preload(tanstack)
-  try Effect.callback<void, LoadFailed>((resume) => {
+): Effect.Effect<void, LoadFailed> => {
+  const readiness = getPersistedReadinessSource(tanstack.config)
+  if (readiness === undefined) return preload(tanstack)
+  return Effect.callback<void, LoadFailed>((resume) => {
     const check = () => {
       const snapshot = readiness.getSnapshot()
       if (snapshot.status === "ready") resume(Effect.void)
@@ -475,7 +482,8 @@ const wrap = <A extends object, K extends Key, U extends UtilsRecord>(
   tanstack: TanStackCollection<A, K, U>
 ): Collection<A, K, U> => {
   const pending = new Map<string, ReturnType<TanStackCollection<A, K, U>["insert"]>>()
-  const capture = (transaction: ReturnType<TanStackCollection<A, K, U>["insert"]>) => {
+  const capture = (apply: () => ReturnType<TanStackCollection<A, K, U>["insert"]>) => () => {
+    const transaction = apply()
     pending.set(transaction.id, transaction)
     const settled = () => {
       pending.delete(transaction.id)
@@ -501,19 +509,9 @@ const wrap = <A extends object, K extends Key, U extends UtilsRecord>(
     preload: preload(tanstack),
     restored: restored(tanstack),
     changes: (options) => changes(tanstack, options),
-    awaitRow: (match, timeout) => awaitRow(tanstack, match) |> Effect.timeout(%, timeout),
-    insert: (rows) =>
-      Effect.try({
-        try: () => capture(tanstack.insert(Array.isArray(rows) ? [...rows] : rows as A)),
-        catch: refused("insert")
-      }) |> Effect.map(%, receipt),
-    update: (key, recipe) =>
-      Effect.try({ try: () => capture(tanstack.update(key, recipe)), catch: refused("update") })
-        |> Effect.map(%, receipt),
-    delete: (keys) =>
-      Effect.try({
-        try: () => capture(tanstack.delete(Array.isArray(keys) ? [...keys] : keys as K)),
-        catch: refused("delete")
-      }) |> Effect.map(%, receipt)
+    awaitRow: (match, timeout) => awaitRow(tanstack, match).pipe(Effect.timeout(timeout)),
+    insert: (rows) => mutate("insert", capture(() => tanstack.insert(Array.isArray(rows) ? [...rows] : rows as A))),
+    update: (key, recipe) => mutate("update", capture(() => tanstack.update(key, recipe))),
+    delete: (keys) => mutate("delete", capture(() => tanstack.delete(Array.isArray(keys) ? [...keys] : keys as K)))
   }
 }

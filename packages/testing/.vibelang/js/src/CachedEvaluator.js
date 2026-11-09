@@ -19,9 +19,7 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { $catchExpression } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
-import * as runtime from "vibelang-runtime/internal";
 import * as CanonicalJson from "@smthrs/model/CanonicalJson";
 import * as Evaluator from "@smthrs/model/Evaluator";
 import * as Model from "@smthrs/model/Model";
@@ -58,16 +56,13 @@ const asModel = (live) => Model.make({
         // The request is the one `make` built: one user message, one text part.
         const message = request.messages[0];
         const evaluation = yield* Effect.orDie(Effect.try(() => JSON.parse(message.content[0].text)));
-        const response = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return live.evaluate(evaluation); }); })(), (error) => (_tail_1 => { return Effect_1.gen(function* () {
-            const _completion_1 = _tail_1(), _value_1 = _completion_1[1];
-            return _completion_1[0] ? yield* _value_1 : _value_1;
-        }); })(() => { return [true, Effect_1.fail(new ModelError({
-                code: "unknown",
-                providerCode: error.code,
-                message: error.message,
-                httpStatus: error.status,
-                resetAtEpochMillis: error.resetAtEpochMillis
-            }))]; }));
+        const response = yield* (Effect.mapError(live.evaluate(evaluation), (error) => new ModelError({
+            code: "unknown",
+            providerCode: error.code,
+            message: error.message,
+            httpStatus: error.status,
+            resetAtEpochMillis: error.resetAtEpochMillis
+        })));
         const recorded = {
             answers: response.answers,
             ...(response.confidence === undefined ? {} : { confidence: response.confidence }),
@@ -121,10 +116,7 @@ export const make = (options) => {
                         message: "The evaluation needs JSON evidence and valid questions."
                     })
                 });
-                const events = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return Stream.runCollect(model.stream(evaluationRequest(modelId, prompt))); }); })(), (e) => (_tail_2 => { return Effect_1.gen(function* () {
-                    const _completion_2 = _tail_2(), _value_2 = _completion_2[1];
-                    return _completion_2[0] ? yield* _value_2 : _value_2;
-                }); })(() => { return [true, Effect_1.fail(asEvaluatorError(e))]; }));
+                const events = yield* (Effect.mapError(Stream.runCollect(model.stream(evaluationRequest(modelId, prompt))), (e) => asEvaluatorError(e)));
                 const text = (yield* Effect.sync(() => ModelEvent.settledMessage(events))).message.content
                     .filter((part) => part.type === "text")
                     .map((part) => part.text)

@@ -10,7 +10,7 @@
  * @category collections
  * @since 0.1.0
  */
-export * as Collection from "./Collection.vibe"
+export * as Collection from "./Collection.ts"
 
 /**
  * @category queries
