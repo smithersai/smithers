@@ -473,3 +473,16 @@ bindings and the linked Container resource, without provider initialization or d
 command runs on real fixture files: nested/absolute/external/hash links, decision metadata and ruling deduplication,
 ordering, non-Markdown omission, deterministic output and read failures preserving prior output. Its output lives
 only in the ignored compiler fixture tree. No runtime source is excluded and no dependency was added.
+
+
+## Paths a Node unit test can't close (2026-11-09)
+
+The unit gate still fails below 100%. No file below is excluded and no threshold changed; each stays counted as uncovered.
+
+| Path | Needs | Test that covers it once available |
+| --- | --- | --- |
+| `worker/SandboxMachine.vibe`, Container paths of `worker/SandboxAccounts.vibe` | A real Container binding. Live sandboxes wait on Will's yes/no (Containers spend). No scripted Container namespace. | `test/sandbox.container.workerd.test.vibe`, opt-in on `VIBELANG_SANDBOX_TEST_URL` and `VIBELANG_SANDBOX_TEST_COOKIE`, skipped with that reason |
+| `worker/Api.vibe` | Workerd isolate coverage. Its Durable Object wiring runs only in workerd, and a Node run would need scripted namespaces. | `pnpm test:workerd`, once VibeLang 0.0.13 is on npm with the source-map fix (`f5d37aa764af`) and workerd reports precise coverage |
+| `worker/SpecificationReviewers.vibe` | Stays unbound by decision 0027. | None until it is bound |
+| `worker/VipDraft.vibe`, model paths of `worker/Reply.vibe` | A model credential reference in the environment. | `test/live.workerd.test.vibe` covers Reply, opt-in on `CEREBRAS_API_KEY`. The `VipDraft` opt-in test is not written yet |
+| GitHub write paths of `worker/Wiki.vibe` | A real GitHub token for the test repository. | `test/wikiEdit.github.test.vibe`, opt-in on `GITHUB_TEST_TOKEN` |
