@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 31
+bias 3
+null-prototype false
+key 2394790482
+tape vnNL9Eu6d8EMIubWI-daZ7jLR7NxNAvr6sC2R-VQEfx6avmeLIxGddiTUNl4v6s5pHzewOSH1Yh1GNqbtgfN6xXHltdhVLJsm2OrRZ90OEyqoxwPEOoRoszQZDaESP3US-4R5MHRc7h7aakce2mpHO0Vmb5VuMkAD-a_tZEbmXmKfFBc6yRj9irXe6Fhxl6KlqE6Lu26pg8QvuWFndPU22s6bzFKQzm16tKsu6s0JN-uJnZnibQkPfXFsb5J7MOHk_eSJgXuNPxuV9dxWZ5VBo8uVDAVRQF8zYrXq4eyCtoCRuZb76fyfm8YAKi55_g6rlLm9bq8yNL3drCq2JRjhwiT8eXh-95reg6UA0wqA8_VY7j8whm67Mqcy4WGDmj23ahRkpg42vygMM_OPgLxtpTna9XWmCilvLCLob7kFJRaNz2ZeU9RdspZLglFPy0CpTda6qK3rwsDLB7FglhETjsOoxR85PN51pw2b4bFkJOLAfOEpAsNDH7pStmMIRF_cX6yeeH3XUUt9bMmjyTjjB4C5U8gb_ECylqVQaJtV8JhZv-nTVqYrYir19X1DIHDr-LawV08wp5Y-ED3TUUxAVs4tT2b1hG7q02Td41WF8iK9LSAIQ1k68aP5FXDoKnGTC10qRmSgQd7Qy07RlSr_EDLUbUOY1c8O3W3ULzzMVOgS0DrJ-96fk6OLxyZsXntZ_rr4mr3OlZwIShyuhx2lxLLMCrBRdTG_PUfFn15BhcycZI8VzaPVYK7iYOCapxL2W5idYXUxX8B9L2clFYLABzLVwg_VqAL2ekd-yBf2AHRNZH7-YH2tfRwljw785tW1vhYgbqxlBvZlAWHnuqWR6rIAMu8oWWkEqfvxIEINfmgGxblYq_Wgc3qMio
+schedule-key 951120712
+schedule 
+signature "PropertyError:Finding"
+path 0.2.2.3.20
+codec "json"
+value "{\"session\":0,\"role\":\"maintainer\",\"wiki\":\"missing\",\"steps\":[{\"op\":\"wiki-save\",\"n\":0,\"text\":\"\\ud800\"}]}"
+# PropertyError:Finding
+# {"session":0,"role":"maintainer","wiki":"missing","steps":[{"op":"wiki-save","n":0,"text":"\ud800"}]}

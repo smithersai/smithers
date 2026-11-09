@@ -55,3 +55,23 @@ export function backend(kind: Backend, role: typeof Role.Type) {
   const changed = Layer.effect(Factory, map(Factory, (factory) => kind === "live" ? changedFactory(factory, { mode: "live" }) : kind === "bare" ? changedFactory(factory, { accounts: undefined, issues: undefined, wiki: undefined, controlTour: undefined }) : factory)).pipe(Layer.provide(mock))
   return Layer.provideMerge(MockActions({ actor: "person" }), changed)
 }
+
+/** What the wiki answers in an otherwise working mock: its own pages, or one injected fault. */
+export const WikiFault = Schema.Literals(["none", "read-fails", "missing", "draft", "unwritten", "kept"])
+
+function faultyWiki(wiki: NonNullable<Factory.Shape["wiki"]>, fault: typeof WikiFault.Type): NonNullable<Factory.Shape["wiki"]> {
+  switch (fault) {
+    case "none": return wiki
+    case "read-fails": return Object.assign(Object.create(wiki), { read: () => fail(new WikiFailure({ reason: "unavailable" })) })
+    case "missing": return Object.assign(Object.create(wiki), { read: (page: string) => map(wiki.read(page), (snapshot) => ({ ...snapshot, pages: snapshot.pages.filter((entry) => entry.id !== page) })) })
+    case "draft": return Object.assign(Object.create(wiki), { read: (page: string) => map(wiki.read(page), (snapshot) => ({ ...snapshot, draft: { page, text: "# Draft" } })) })
+    case "unwritten": return Object.assign(Object.create(wiki), { act: () => fail(new WikiFailure({ reason: "conflict", unwritten: true })) })
+    case "kept": return Object.assign(Object.create(wiki), { act: () => fail(new WikiFailure({ reason: "unavailable" })) })
+  }
+}
+
+/** The real mock backend with its wiki answering `fault`. */
+export function backendWithWiki(role: typeof Role.Type, fault: typeof WikiFault.Type) {
+  const changed = Layer.effect(Factory, map(Factory, (factory) => changedFactory(factory, { wiki: faultyWiki(factory.wiki!, fault) }))).pipe(Layer.provide(mockFactoryFor(role)))
+  return Layer.provideMerge(MockActions({ actor: "person" }), changed)
+}

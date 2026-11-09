@@ -451,7 +451,8 @@ export function update(model: Model, message: Message): WithCommands<Update.Retu
     FailedSandbox: ({ conversation, request, reason }) => !currentSandbox(conversation, model.conversation, request, model.sandboxRequest ?? 0) ? { model } : (() => { const result = PaneDecision.failedSandbox(sandboxResult(model), reason); return { model: { ...model, sandboxBusy: result.busy, sandboxError: result.error } } })(),
     ClickedEditWiki: () => beginWikiEdit(model),
     ClickedWikiDraft: ({ page }) => beginWikiEdit(model, page),
-    UpdatedWikiEdit: ({ value }) => model.wikiEdit === undefined || !PaneDecision.wikiEditTypes(model.wikiEdit.busy, model.wikiEdit.submission !== undefined) ? { model } : { model: { ...model, wikiEdit: { ...model.wikiEdit, ...PaneDecision.updatedWikiEdit(wikiEditScreen(model.wikiEdit), value) } } },
+    // The store keeps only well-formed text (DurableText): an unpaired surrogate becomes U+FFFD as it is typed, never at save.
+    UpdatedWikiEdit: ({ value }) => model.wikiEdit === undefined || !PaneDecision.wikiEditTypes(model.wikiEdit.busy, model.wikiEdit.submission !== undefined) ? { model } : { model: { ...model, wikiEdit: { ...model.wikiEdit, ...PaneDecision.updatedWikiEdit(wikiEditScreen(model.wikiEdit), value.toWellFormed()) } } },
     CanceledWikiEdit: () => model.wikiEdit === undefined || model.wikiEdit.submission !== undefined ? { model } : { model: { ...model, wikiEdit: undefined } },
     SubmittedWikiEdit: () => {
       const editing = model.wikiEdit
