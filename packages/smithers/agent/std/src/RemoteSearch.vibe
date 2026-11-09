@@ -130,19 +130,19 @@ const run = (
   bound: number,
   stdin = ""
 ): Effect.Effect<Uint8Array, StdError.StdError, ChildProcessSpawner.ChildProcessSpawner> =>
-  Effect.gen(function*() {
-    const result = yield* Exec.exec("sh", {
+  effect {
+    const result = try Exec.exec("sh", {
       args: ["-c", bootstrap, "sh", ...args],
       stdin: `${Base64.encode(new TextEncoder().encode(script))}\n${stdin}`
     }).pipe(Effect.mapError((error) => failed(root, error.message)))
     if (result.exitCode !== 0) {
-      return yield* Effect.fail(failed(root, result.stderr.trim() || `exit ${result.exitCode}`))
+      throw failed(root, result.stderr.trim() || `exit ${result.exitCode}`)
     }
     const decoded = Base64.decode(result.stdout.replaceAll(/\s/g, ""))
-    if (Result.isFailure(decoded)) return yield* Effect.fail(failed(root, "the machine answered with invalid base64"))
-    if (decoded.success.length >= bound) return yield* Effect.fail(tooLarge(root, bound - 1))
+    if (Result.isFailure(decoded)) throw failed(root, "the machine answered with invalid base64")
+    if (decoded.success.length >= bound) throw tooLarge(root, bound - 1)
     return decoded.success
-  })
+  }
 
 /**
  * Builds the peer over a machine's spawner and its `Path`, which resolves a
@@ -174,11 +174,11 @@ export const make = (
   }
   return Search.make({
     grep: (input) =>
-      Effect.gen(function*() {
-        const tree = yield* listed(input.root, input.noIgnore)
-        const read = yield* PortableSearch.searched(input).pipe(Effect.provide(copy(tree)))
+      (effect {
+        const tree = try listed(input.root, input.noIgnore)
+        const read = try PortableSearch.searched(input).pipe(Effect.provide(copy(tree)))
         const files = [...new Set(read.map((file) => path.resolve(file)))]
-        const bytes = files.length === 0 ? new Uint8Array() : yield* run(
+        const bytes = files.length === 0 ? new Uint8Array() : try run(
           input.root,
           fetching,
           [String(contentBound)],
@@ -187,9 +187,9 @@ export const make = (
         )
         // `tar` ends every archive it writes, even one whose files it could not read.
         const members = files.length === 0 || bytes.length > 0 ? Tar.files(bytes) : undefined
-        if (members === undefined) return yield* Effect.fail(failed(input.root, "the files came back malformed"))
+        if (members === undefined) throw failed(input.root, "the files came back malformed")
         const contents = new Map([...tree.contents, ...RemoteTree.absolute(members)])
-        return yield* PortableSearch.make(copy({ ...tree, contents })).grep(input)
+        return try PortableSearch.make(copy({ ...tree, contents })).grep(input)
       }).pipe(Effect.provide(services)),
     glob: (input) =>
       Effect.flatMap(listed(input.root, input.noIgnore), (tree) => PortableSearch.make(copy(tree)).glob(input)).pipe(

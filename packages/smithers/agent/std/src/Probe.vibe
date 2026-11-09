@@ -261,13 +261,13 @@ export const probeAttribution = Classifier.make("probe/attribution", {
  * @category classification
  * @since 1.0.0
  */
-export const classify = Effect.fn("Probe.classify")(function*(result: {
+export const classify: (result: {
   readonly command: string
   readonly exitCode: number
   readonly output: string
-}): Effect.fn.Return<Attribution, Classifier.ClassifierError, Evaluator.Evaluator> {
+}) => Effect.Effect<Attribution, Classifier.ClassifierError, Evaluator.Evaluator> = effect (result) => try withSpan((effect (): Attribution!Classifier.ClassifierError!Evaluator.Evaluator => {
   if (result.exitCode === 0) return { to: "tree" }
-  const answers = yield* probeAttribution.evaluate({
+  const answers = try probeAttribution.evaluate({
     command: result.command,
     exitCode: result.exitCode,
     output: truncateBytes(result.output, MAX_OUTPUT_BYTES, { keep: "tail" }).text
@@ -281,4 +281,4 @@ export const classify = Effect.fn("Probe.classify")(function*(result: {
       executed,
       invalidProbe: invalid(decided, judged(decided, answers.attribution.confidence, executed))
     }
-})
+})(), "Probe.classify")

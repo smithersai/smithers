@@ -9,7 +9,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as Probe from "../src/Probe.ts"
+import * as Probe from "../src/Probe.vibe"
 
 /** An evaluator that answers one attribution, with the confidence it is given. */
 const answering = (

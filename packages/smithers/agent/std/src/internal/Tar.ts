@@ -55,6 +55,7 @@ const paxPath = (data: Uint8Array): string | undefined => {
  *
  * @private
  * @since 1.0.0-rc.8
+ * @throws {never}
  */
 export const files = (stream: Uint8Array): ReadonlyMap<string, Uint8Array> | undefined => {
   const found = new Map<string, Uint8Array>()

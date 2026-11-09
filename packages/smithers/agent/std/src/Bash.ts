@@ -28,7 +28,7 @@ import * as Diagnostics from "./internal/Diagnostics.vibe"
 import { outsideEnvelope } from "./internal/EnvelopePrecheck.ts"
 import * as Exec from "./internal/Exec.vibe"
 import { elideMiddle as elide, MAX_SHELL_OUTPUT_BYTES } from "./internal/Text.ts"
-import * as Probe from "./Probe.ts"
+import * as Probe from "./Probe.vibe"
 import * as StdError from "./StdError.ts"
 import * as TreeFingerprint from "./TreeFingerprint.ts"
 

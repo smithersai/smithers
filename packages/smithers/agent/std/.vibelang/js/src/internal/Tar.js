@@ -53,6 +53,7 @@ const paxPath = (data) => {
  *
  * @private
  * @since 1.0.0-rc.8
+ * @throws {never}
  */
 export const files = (stream) => {
     const found = new Map();

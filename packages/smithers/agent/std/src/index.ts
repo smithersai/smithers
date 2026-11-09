@@ -57,7 +57,7 @@ export * as PortableSearch from "./PortableSearch.vibe"
 export * as NativeSearch from "./NativeSearch.vibe"
 
 /** @category layers @since 1.0.0-rc.8 */
-export * as RemoteSearch from "./RemoteSearch.ts"
+export * as RemoteSearch from "./RemoteSearch.vibe"
 
 /**
  * @category flows
@@ -93,7 +93,7 @@ export * as TestRunner from "./TestRunner.vibe"
  * @category classification
  * @since 1.0.0
  */
-export * as Probe from "./Probe.ts"
+export * as Probe from "./Probe.vibe"
 
 /**
  * @category flows

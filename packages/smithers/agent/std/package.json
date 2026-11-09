@@ -123,8 +123,8 @@
       "default": "./.vibelang/js/src/PortableSearch.js"
     },
     "./Probe": {
-      "types": "./src/Probe.ts",
-      "vibelang-source": "./src/Probe.ts",
+      "types": "./.vibe/declarations/Probe.d.vibe.ts",
+      "vibelang-source": "./src/Probe.vibe",
       "default": "./.vibelang/js/src/Probe.js"
     },
     "./Read": {
@@ -138,8 +138,8 @@
       "default": "./.vibelang/js/src/Relocate.js"
     },
     "./RemoteSearch": {
-      "types": "./src/RemoteSearch.ts",
-      "vibelang-source": "./src/RemoteSearch.ts",
+      "types": "./.vibe/declarations/RemoteSearch.d.vibe.ts",
+      "vibelang-source": "./src/RemoteSearch.vibe",
       "default": "./.vibelang/js/src/RemoteSearch.js"
     },
     "./Search": {
