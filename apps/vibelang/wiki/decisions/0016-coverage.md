@@ -24,6 +24,8 @@ post's answer. That reply now drives the accepted tour as a durable child and us
 starting the same reply, retaining oldest-post ordering and natural tour completion. The contended start has an
 outcome-only log/counter and a reply span; no user content is logged.
 
+Later dead code removed (2026-11-09): in `src/web/main.vibe`, the `?? 0` epoch defaults when an account or role change loads actions (the new epoch is always a number) and the `?? ""` wikiAfter default (reached only when no entry matches an undefined id).
+
 Dead code removed: the unused custom chunk-size parameter (every product caller uses 24), and the markdown capture's
 unreachable undefined fallback (the regular expression always captures a string, including an empty string).
 
@@ -71,9 +73,9 @@ as other lanes land history and proof modules. Browser line/statement figures ar
 refer to Node clients only. The per-file snapshot below records the measured revisions; it is not a 100% claim.
 
 <!-- measurements:start -->
-Snapshot provenance: unit at `af56fa418a48`; workerd and Chromium at `efb00d0f5854`, with the retained strict-gate prototype. Later source additions and passing ordinary tests do not change these frozen measurements.
+Snapshot provenance: all three suites at `9861d6f26e36` (2026-11-09), each table showing the previous snapshot (unit `af56fa418a48`, workerd and Chromium `efb00d0f5854`) → this one. Passing ordinary tests do not change these frozen measurements.
 
-Percentages show **before → after**, independently for each suite. A dash means the file was absent from that
+Percentages show **previous snapshot → this snapshot**, independently for each suite. A dash means the file was absent from that
 snapshot's source roster, not excluded. CSV retains every covered/executable count. The initial unit snapshot has 38
 files and one timing-related assertion failure; the refreshed snapshots have 90 runtime files. Workerd and browser had no original
 pre-work baseline: their before columns are the first retained earlier instrumented snapshots, already during the
@@ -83,371 +85,480 @@ fix; even an unexecuted source return can receive a false statement hit. No prod
 
 ## Unit
 
-Before: lines 65.25% (849/1301), branches 68.36% (590/863), functions 59.68% (268/449), statements 63.53% (1007/1585).
+Previous snapshot: lines 77.51% (3133/4042), branches 75.2% (2509/3336), functions 68.19% (995/1459), statements 73.72% (3727/5055).
 
-After: lines 77.51% (3133/4042), branches 75.2% (2509/3336), functions 68.19% (995/1459), statements 73.72% (3727/5055).
+At `9861d6f26e36` less its last two issuesView scene cases (the run just before them; 1548 passed, 3 skipped): lines 90.88% (6592/7253), branches 88.32% (7006/7932), functions 87.78% (2378/2709), statements 88.9% (8318/9356).
 
 | File | Lines | Branches | Functions | Statements |
 |---|---:|---:|---:|---:|
-| `infra/SandboxImage.vibe` | — → 0% | — → 100% | — → 100% | — → 0% |
-| `infra/Stack.vibe` | 0% → 100% | 0% → 100% | 100% → 100% | 0% → 100% |
-| `infra/WorkerBuild.vibe` | 0% → 100% | 100% → 100% | 100% → 100% | 0% → 100% |
-| `scripts/agent-context.vibe` | 0% → 100% | 0% → 100% | 0% → 100% | 0% → 100% |
-| `scripts/mythical-seed.vibe` | — → 100% | — → 94.44% | — → 93.75% | — → 96.92% |
+| `infra/SandboxImage.vibe` | 0% → 100% | 100% → 100% | 100% → 100% | 0% → 100% |
+| `infra/Stack.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `infra/WorkerBuild.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `scripts/agent-context.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `scripts/mythical-seed.vibe` | 100% → 100% | 94.44% → 94.44% | 93.75% → 93.75% | 96.92% → 96.92% |
+| `scripts/wiki.vibe` | — → 100% | — → 92.85% | — → 100% | — → 100% |
+| `src/actions/Actions.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/actions/LiveActions.vibe` | — → 100% | — → 95.23% | — → 96% | — → 98.14% |
+| `src/actions/MockActions.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/actions/agent.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/actions/catalog.vibe` | — → 100% | — → 97.5% | — → 100% | — → 100% |
+| `src/actions/execution.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/actions/tools.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/actions/wire.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/assets/wiki.generated.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
 | `src/core/Factory.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
-| `src/core/IssuesFactory.vibe` | — → 92.3% | — → 76.76% | — → 100% | — → 81.81% |
-| `src/core/LiveAccounts.vibe` | — → 28% | — → 0% | — → 8.33% | — → 22.58% |
-| `src/core/LiveFactory.vibe` | 25% → 70% | 8.33% → 40% | 27.27% → 94.44% | 24.44% → 67.07% |
-| `src/core/MockAccounts.vibe` | — → 98.52% | — → 86.66% | — → 91.66% | — → 95.6% |
-| `src/core/MockFactory.vibe` | 100% → 97% | 87.5% → 84.72% | 100% → 96.42% | 97.41% → 95.16% |
-| `src/core/conversation.vibe` | 100% → 98.07% | 96.68% → 91.75% | 100% → 95.65% | 96.89% → 96.46% |
-| `src/core/flowDecision.vibe` | — → 90.9% | — → 94.11% | — → 100% | — → 91.66% |
-| `src/core/flows.vibe` | 89.23% → 90.62% | 97.36% → 95.34% | 70.83% → 71.87% | 88.73% → 90.26% |
-| `src/core/issueFlows.vibe` | — → 90.62% | — → 100% | — → 88.88% | — → 91.89% |
-| `src/core/issueSchemas.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
-| `src/core/mockDecision.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
-| `src/core/mockReplies.vibe` | 100% → 100% | 100% → 75% | 100% → 83.33% | 100% → 95.83% |
-| `src/core/protocolDecision.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
-| `src/core/roles.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
-| `src/core/sandboxDecision.vibe` | — → 96.36% | — → 84.72% | — → 93.33% | — → 86.84% |
-| `src/core/sandboxHost.vibe` | — → 85.39% | — → 78.72% | — → 96.29% | — → 80.09% |
-| `src/core/sandboxMeter.vibe` | — → 100% | — → 94.28% | — → 100% | — → 94.59% |
-| `src/core/sandboxMock.vibe` | — → 100% | — → 62.22% | — → 91.3% | — → 91.66% |
-| `src/core/sandboxPolicy.vibe` | — → 100% | — → 100% | — → 66.66% | — → 75% |
+| `src/core/IssuesFactory.vibe` | 92.3% → 97.36% | 76.76% → 86.06% | 100% → 100% | 81.81% → 90% |
+| `src/core/LiveAccounts.vibe` | 28% → 96.15% | 0% → 91.66% | 8.33% → 92.3% | 22.58% → 93.75% |
+| `src/core/LiveFactory.vibe` | 70% → 100% | 40% → 83.33% | 94.44% → 100% | 67.07% → 94.38% |
+| `src/core/LiveIssues.vibe` | — → 100% | — → 100% | — → 85.71% | — → 93.75% |
+| `src/core/LiveWiki.vibe` | — → 33.33% | — → 0% | — → 30% | — → 28.57% |
+| `src/core/MockAccounts.vibe` | 98.52% → 98.7% | 86.66% → 88.23% | 91.66% → 92.3% | 95.6% → 96.07% |
+| `src/core/MockFactory.vibe` | 97% → 98.06% | 84.72% → 95.74% | 96.42% → 100% | 95.16% → 97.45% |
+| `src/core/MockJournal.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/core/VipWriter.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/core/WikiFactory.vibe` | — → 98.46% | — → 90.27% | — → 100% | — → 94.31% |
+| `src/core/WikiWriter.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/core/accountCookieDecision.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/core/accountCookies.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/core/conversation.vibe` | 98.07% → 100% | 91.75% → 100% | 95.65% → 100% | 96.46% → 100% |
+| `src/core/decide.vibe` | — → 100% | — → 96.26% | — → 100% | — → 97.7% |
+| `src/core/flowDecision.vibe` | 90.9% → 100% | 94.11% → 100% | 100% → 100% | 91.66% → 100% |
+| `src/core/flows.vibe` | 90.62% → 91.51% | 95.34% → 93.58% | 71.87% → 68.18% | 90.26% → 90.95% |
+| `src/core/identityDecision.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/core/issueFlows.vibe` | 90.62% → 100% | 100% → 100% | 88.88% → 100% | 91.89% → 100% |
+| `src/core/issueSchemas.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `src/core/mockDecision.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `src/core/mockReplies.vibe` | 100% → 100% | 75% → 75% | 83.33% → 83.33% | 95.83% → 95.65% |
+| `src/core/protocolDecision.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `src/core/roles.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `src/core/sandboxDecision.vibe` | 96.36% → 96.36% | 84.72% → 87.5% | 93.33% → 93.33% | 86.84% → 89.47% |
+| `src/core/sandboxHost.vibe` | 85.39% → 100% | 78.72% → 100% | 96.29% → 100% | 80.09% → 100% |
+| `src/core/sandboxMeter.vibe` | 100% → 100% | 94.28% → 94.28% | 100% → 100% | 94.59% → 94.87% |
+| `src/core/sandboxMock.vibe` | 100% → 100% | 62.22% → 71.11% | 91.3% → 95.65% | 91.66% → 95.83% |
+| `src/core/sandboxPolicy.vibe` | 100% → 100% | 100% → 100% | 66.66% → 66.66% | 75% → 75% |
 | `src/core/schemas.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
-| `src/core/sequenceDecision.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
-| `src/core/tourStops.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
-| `src/core/wire.vibe` | 100% → 100% | 86.2% → 100% | 100% → 100% | 94.11% → 100% |
-| `src/history/LiveMythical.vibe` | — → 100% | — → 92.3% | — → 100% | — → 97.72% |
-| `src/history/MockMythical.vibe` | — → 100% | — → 100% | — → 96.42% | — → 97.56% |
-| `src/history/MythicalHistory.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
-| `src/history/Sequencer.vibe` | — → 92.7% | — → 75% | — → 100% | — → 90.26% |
-| `src/history/flowMachine.vibe` | — → 100% | — → 94.73% | — → 100% | — → 93.75% |
-| `src/history/flows.vibe` | — → 89.18% | — → 80% | — → 75% | — → 88.63% |
-| `src/history/mythical.vibe` | — → 98.49% | — → 95.76% | — → 100% | — → 94.62% |
-| `src/history/pages.vibe` | — → 100% | — → 93.33% | — → 100% | — → 100% |
-| `src/history/roles.vibe` | — → 83.33% | — → 100% | — → 0% | — → 83.33% |
-| `src/history/schemas.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
-| `src/history/seed.vibe` | — → 99.41% | — → 89.71% | — → 100% | — → 98% |
-| `src/history/seed/vibelang.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
-| `src/history/tools.vibe` | — → 96.29% | — → 93.61% | — → 88.88% | — → 97.05% |
-| `src/history/wire.vibe` | — → 100% | — → 97.43% | — → 100% | — → 100% |
-| `src/surfaces/backend.vibe` | 72.72% → 76.92% | 66.66% → 50% | 75% → 75% | 69.23% → 73.33% |
-| `src/surfaces/cli-entry.vibe` | 0% → 100% | 0% → 100% | 0% → 100% | 0% → 100% |
-| `src/surfaces/cli.vibe` | 0% → 100% | 0% → 87.5% | 0% → 100% | 0% → 94.44% |
-| `src/surfaces/commandDecision.vibe` | — → 100% | — → 84.84% | — → 100% | — → 100% |
-| `src/surfaces/commands.vibe` | 90.74% → 89.81% | 72.22% → 75.71% | 63.63% → 70.27% | 84.61% → 86.2% |
-| `src/surfaces/manifest.vibe` | 0% → 100% | 100% → 100% | 0% → 100% | 0% → 100% |
-| `src/surfaces/mcp-entry.vibe` | 0% → 100% | 100% → 100% | 0% → 100% | 0% → 100% |
-| `src/surfaces/mcp.vibe` | 0% → 100% | 0% → 50% | 0% → 100% | 0% → 94.11% |
-| `src/web/backend.vibe` | 85.71% → 76.92% | 66.66% → 100% | 80% → 57.14% | 86.66% → 71.73% |
-| `src/web/entry.vibe` | 0% → 0% | 100% → 0% | 100% → 100% | 0% → 0% |
-| `src/web/historyApp.vibe` | — → 62.58% | — → 73.19% | — → 48.48% | — → 57.48% |
-| `src/web/historyBackend.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
-| `src/web/historyStartup.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
-| `src/web/historyView.vibe` | — → 85.36% | — → 80% | — → 88.37% | — → 85.71% |
-| `src/web/main.vibe` | 86.15% → 72.59% | 79.27% → 68.96% | 80.48% → 59.41% | 80.48% → 63.48% |
-| `src/web/markdown.vibe` | 100% → 100% | 93.75% → 100% | 100% → 100% | 100% → 100% |
-| `src/web/media.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
-| `src/web/roleView.vibe` | — → 83.33% | — → 81.25% | — → 71.42% | — → 85.18% |
-| `src/web/sandboxView.vibe` | — → 94.11% | — → 91.3% | — → 83.33% | — → 94.73% |
-| `src/web/screenDecision.vibe` | — → 100% | — → 92.95% | — → 100% | — → 94.28% |
-| `src/web/startup.vibe` | 96% → 96.55% | 50% → 75% | 100% → 100% | 93.1% → 94.11% |
+| `src/core/sequenceDecision.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `src/core/specification.vibe` | — → 100% | — → 79.62% | — → 100% | — → 90.9% |
+| `src/core/tourStops.vibe` | 100% → — | 100% → — | 100% → — | 100% → — |
+| `src/core/walkthroughSteps.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/core/wiki.vibe` | — → 93.33% | — → 76.92% | — → 100% | — → 96.29% |
+| `src/core/wikiDecision.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/core/wikiFlows.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/core/wikiLinks.vibe` | — → 100% | — → 93.54% | — → 100% | — → 100% |
+| `src/core/wikiSchemas.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/core/wire.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `src/history/LiveMythical.vibe` | 100% → 100% | 92.3% → 83.33% | 100% → 100% | 97.72% → 95.74% |
+| `src/history/MockMythical.vibe` | 100% → 100% | 100% → 100% | 96.42% → 96.42% | 97.56% → 97.67% |
+| `src/history/MythicalHistory.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `src/history/Sequencer.vibe` | 92.7% → 92.7% | 75% → 75% | 100% → 100% | 90.26% → 90.26% |
+| `src/history/flowMachine.vibe` | 100% → 100% | 94.73% → 92.47% | 100% → 100% | 93.75% → 91.3% |
+| `src/history/flows.vibe` | 89.18% → 89.47% | 80% → 77.77% | 75% → 75% | 88.63% → 88.88% |
+| `src/history/mythical.vibe` | 98.49% → 95.74% | 95.76% → 94.76% | 100% → 96.55% | 94.62% → 92.3% |
+| `src/history/pages.vibe` | 100% → 100% | 93.33% → 93.33% | 100% → 100% | 100% → 100% |
+| `src/history/roles.vibe` | 83.33% → 100% | 100% → 100% | 0% → 100% | 83.33% → 100% |
+| `src/history/schemas.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `src/history/seed.vibe` | 99.41% → 100% | 89.71% → 90.65% | 100% → 100% | 98% → 98.5% |
+| `src/history/seed/vibelang.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `src/history/tools.vibe` | 96.29% → 96.29% | 93.61% → 93.61% | 88.88% → 88.88% | 97.05% → 97.05% |
+| `src/history/wire.vibe` | 100% → 100% | 97.43% → 97.14% | 100% → 100% | 100% → 100% |
+| `src/surfaces/backend.vibe` | 76.92% → 91.11% | 50% → 68.57% | 75% → 64.28% | 73.33% → 84.48% |
+| `src/surfaces/cli-entry.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `src/surfaces/cli.vibe` | 100% → 100% | 87.5% → 90% | 100% → 100% | 94.44% → 94.44% |
+| `src/surfaces/commandDecision.vibe` | 100% → 100% | 84.84% → 100% | 100% → 100% | 100% → 100% |
+| `src/surfaces/commands.vibe` | 89.81% → 100% | 75.71% → 91.79% | 70.27% → 100% | 86.2% → 100% |
+| `src/surfaces/manifest.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `src/surfaces/mcp-entry.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `src/surfaces/mcp.vibe` | 100% → 100% | 50% → 50% | 100% → 100% | 94.11% → 95% |
+| `src/surfaces/session.vibe` | — → 93.65% | — → 70.83% | — → 81.81% | — → 86.66% |
+| `src/surfaces/sessionFlow.vibe` | — → 96.55% | — → 100% | — → 90% | — → 97.14% |
+| `src/surfaces/signin.vibe` | — → 98.13% | — → 90.21% | — → 61.53% | — → 89.36% |
+| `src/web/actionModel.vibe` | — → 100% | — → 82.75% | — → 90% | — → 95.65% |
+| `src/web/actionView.vibe` | — → 86.66% | — → 84.8% | — → 77.77% | — → 85.36% |
+| `src/web/backend.vibe` | 76.92% → 100% | 100% → 100% | 57.14% → 100% | 71.73% → 100% |
+| `src/web/entry.vibe` | 0% → 0% | 0% → 0% | 100% → 100% | 0% → 0% |
+| `src/web/historyApp.vibe` | 62.58% → 100% | 73.19% → 100% | 48.48% → 100% | 57.48% → 100% |
+| `src/web/historyBackend.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `src/web/historyStartup.vibe` | 100% → 100% | 100% → 91.66% | 100% → 100% | 100% → 97.36% |
+| `src/web/historyView.vibe` | 85.36% → 98.63% | 80% → 91.72% | 88.37% → 97.67% | 85.71% → 98.78% |
+| `src/web/issueDecision.vibe` | — → 98.87% | — → 89.24% | — → 95% | — → 99.28% |
+| `src/web/issues.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/web/issuesView.vibe` | — → 100% | — → 99.53% | — → 100% | — → 100% |
+| `src/web/main.vibe` | 72.59% → 100% | 68.96% → 99.67% | 59.41% → 100% | 63.48% → 100% |
+| `src/web/markdown.vibe` | 100% → 100% | 100% → 95.78% | 100% → 100% | 100% → 99.33% |
+| `src/web/media.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `src/web/modeSwitch.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/web/modelDecision.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/web/paneDecision.vibe` | — → 100% | — → 97.61% | — → 100% | — → 95.23% |
+| `src/web/roleView.vibe` | 83.33% → 83.33% | 81.25% → 83.33% | 71.42% → 71.42% | 85.18% → 85.18% |
+| `src/web/sandboxView.vibe` | 94.11% → 94.11% | 91.3% → 94.56% | 83.33% → 83.33% | 94.73% → 94.73% |
+| `src/web/screenDecision.vibe` | 100% → 100% | 92.95% → 100% | 100% → 100% | 94.28% → 100% |
+| `src/web/startup.vibe` | 96.55% → 92% | 75% → 45.45% | 100% → 84.61% | 94.11% → 79.68% |
+| `src/web/startupDecision.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
 | `src/web/styles.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
-| `src/web/view.vibe` | 100% → 100% | 97.4% → 93.79% | 100% → 100% | 100% → 98.38% |
-| `src/web/viewport.vibe` | 97.5% → 100% | 86.79% → 98.27% | 92.85% → 100% | 92.45% → 100% |
-| `worker/Accounts.vibe` | — → 14.11% | — → 12.85% | — → 11.9% | — → 13.77% |
-| `worker/AgentModel.vibe` | 0% → 100% | 100% → 100% | 0% → 100% | 0% → 100% |
-| `worker/Api.vibe` | 0% → 26.22% | 0% → 0% | 0% → 0% | 0% → 23.18% |
-| `worker/Budget.vibe` | 18.75% → 100% | 0% → 100% | 0% → 100% | 16.66% → 100% |
-| `worker/HistoryObject.vibe` | — → 10% | — → 6.66% | — → 3.03% | — → 8% |
-| `worker/HistoryTools.vibe` | — → 50% | — → 50% | — → 33.33% | — → 50% |
-| `worker/Http.vibe` | 20.51% → 100% | 18.42% → 95.71% | 9.09% → 94.11% | 17.64% → 97.75% |
-| `worker/MainLog.vibe` | — → 67.44% | — → 68.96% | — → 58.33% | — → 63.33% |
-| `worker/ObjectStorage.vibe` | 10% → 10% | 0% → 0% | 0% → 0% | 7.14% → 7.14% |
-| `worker/Objects.vibe` | 8.47% → 9.58% | 0% → 4% | 4.87% → 8.69% | 6.75% → 7.44% |
-| `worker/Reply.vibe` | 34.57% → 59.81% | 32.94% → 61.33% | 37.5% → 58.82% | 33.07% → 59.05% |
-| `worker/SandboxAccounts.vibe` | — → 10% | — → 2.7% | — → 0% | — → 7.69% |
-| `worker/SandboxHttp.vibe` | — → 13.33% | — → 0% | — → 0% | — → 9.52% |
-| `worker/SandboxMachine.vibe` | — → 1.51% | — → 0% | — → 0% | — → 1.05% |
-| `worker/SandboxTools.vibe` | — → 72.72% | — → 50% | — → 70% | — → 75% |
-| `worker/Sandboxes.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `worker/Sequencer.vibe` | 61.38% → 94.39% | 33.84% → 96.29% | 61.11% → 90.69% | 56.34% → 95.38% |
-| `worker/Tour.vibe` | 46.66% → 59.45% | 16.66% → 28.57% | 35.29% → 54.54% | 41.81% → 54.54% |
+| `src/web/theatre.vibe` | — → 100% | — → 80% | — → 100% | — → 94.11% |
+| `src/web/theatreDecision.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/web/tourDecision.vibe` | — → 100% | — → 95% | — → 100% | — → 94.73% |
+| `src/web/view.vibe` | 100% → 100% | 93.79% → 82.65% | 100% → 100% | 98.38% → 98.27% |
+| `src/web/viewDecision.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/web/viewport.vibe` | 100% → 100% | 98.27% → 98.27% | 100% → 100% | 100% → 100% |
+| `src/web/wikiView.vibe` | — → 92.85% | — → 86.81% | — → 78.94% | — → 89.74% |
+| `worker/Accounts.vibe` | 14.11% → 99.62% | 12.85% → 95.61% | 11.9% → 93.54% | 13.77% → 98.37% |
+| `worker/ActionDirectory.vibe` | — → 94.44% | — → 83.33% | — → 88.23% | — → 96% |
+| `worker/ActionIdentity.vibe` | — → 100% | — → 95% | — → 100% | — → 100% |
+| `worker/ActionRuns.vibe` | — → 97.43% | — → 87.5% | — → 94.11% | — → 93.75% |
+| `worker/ActionsHttp.vibe` | — → 100% | — → 94.73% | — → 90% | — → 98.36% |
+| `worker/AgentModel.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `worker/Api.vibe` | 26.22% → 19.91% | 0% → 0% | 0% → 0% | 23.18% → 17.49% |
+| `worker/Budget.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `worker/HistoryActions.vibe` | — → 90.9% | — → 78.94% | — → 81.81% | — → 86.48% |
+| `worker/HistoryObject.vibe` | 10% → 96.66% | 6.66% → 100% | 3.03% → 90.9% | 8% → 96% |
+| `worker/HistoryTools.vibe` | 50% → 100% | 50% → 100% | 33.33% → 100% | 50% → 100% |
+| `worker/Http.vibe` | 100% → 100% | 95.71% → 100% | 94.11% → 100% | 97.75% → 100% |
+| `worker/IssueCredentials.vibe` | — → 93.75% | — → 55.55% | — → 72.72% | — → 83.33% |
+| `worker/Issues.vibe` | — → 61.62% | — → 54.09% | — → 50% | — → 56.84% |
+| `worker/MainLog.vibe` | 67.44% → 100% | 68.96% → 96.55% | 58.33% → 100% | 63.33% → 98.33% |
+| `worker/ObjectStorage.vibe` | 10% → 90% | 0% → 83.33% | 0% → 81.81% | 7.14% → 85.71% |
+| `worker/Objects.vibe` | 9.58% → 87.96% | 4% → 76.08% | 8.69% → 91.66% | 7.44% → 88.97% |
+| `worker/Reply.vibe` | 59.81% → 65.44% | 61.33% → 51.85% | 58.82% → 58.82% | 59.05% → 63.46% |
+| `worker/SandboxAccounts.vibe` | 10% → 100% | 2.7% → 100% | 0% → 100% | 7.69% → 100% |
+| `worker/SandboxHttp.vibe` | 13.33% → 93.33% | 0% → 97.05% | 0% → 70% | 9.52% → 92.85% |
+| `worker/SandboxMachine.vibe` | 1.51% → 100% | 0% → 100% | 0% → 100% | 1.05% → 100% |
+| `worker/SandboxTools.vibe` | 72.72% → 72.72% | 50% → 50% | 70% → 70% | 75% → 75% |
+| `worker/Sandboxes.vibe` | 0% → 100% | 0% → 100% | 0% → 100% | 0% → 100% |
+| `worker/Sequencer.vibe` | 94.39% → 94.95% | 96.29% → 85.29% | 90.69% → 97.87% | 95.38% → 95.8% |
+| `worker/SpecificationReviewers.vibe` | — → 32.25% | — → 25% | — → 10% | — → 26.19% |
+| `worker/Tour.vibe` | 59.45% → 100% | 28.57% → 100% | 54.54% → 100% | 54.54% → 100% |
 | `worker/Unreachable.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `worker/VipDraft.vibe` | — → 73.33% | — → 60% | — → 33.33% | — → 65.85% |
+| `worker/Wiki.vibe` | — → 74.34% | — → 76.52% | — → 54.9% | — → 67.42% |
+| `worker/WikiDraft.vibe` | — → 43.75% | — → 14.28% | — → 22.22% | — → 36.36% |
+| `worker/WikiTools.vibe` | — → 100% | — → 83.33% | — → 100% | — → 92.3% |
+| `worker/accountObject.vibe` | — → 10.41% | — → 0% | — → 5.12% | — → 6.32% |
 | `worker/agentContext.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
-| `worker/budgetDecision.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `worker/budgetDecision.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
 | `worker/index.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
-| `worker/replyReasons.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `worker/liveDispatchDecision.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `worker/machineObject.vibe` | — → 1.58% | — → 0% | — → 5.88% | — → 1.08% |
+| `worker/replyProgressDecision.vibe` | — → 88.23% | — → 81.25% | — → 90% | — → 86.36% |
+| `worker/replyReasons.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
 
 ## Workerd — Node clients only
 
-Before: lines 17.7% (373/2107), branches 6.18% (89/1440), functions 7.98% (61/764), statements 15% (397/2646).
+Previous snapshot: lines 11.7% (473/4042), branches 3.56% (119/3336), functions 4.72% (69/1459), statements 9.57% (484/5055).
 
-After: lines 11.7% (473/4042), branches 3.56% (119/3336), functions 4.72% (69/1459), statements 9.57% (484/5055).
+At `9861d6f26e36`: lines 12.93% (938/7254), branches 4.75% (377/7934), functions 6.71% (182/2709), statements 10.6% (992/9351).
 
 | File | Lines | Branches | Functions | Statements |
 |---|---:|---:|---:|---:|
-| `infra/SandboxImage.vibe` | — → 0% | — → 100% | — → 100% | — → 0% |
+| `infra/SandboxImage.vibe` | 0% → 0% | 100% → 100% | 100% → 100% | 0% → 0% |
 | `infra/Stack.vibe` | 0% → 0% | 0% → 0% | 100% → 100% | 0% → 0% |
 | `infra/WorkerBuild.vibe` | 0% → 0% | 100% → 100% | 100% → 100% | 0% → 0% |
 | `scripts/agent-context.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 | `scripts/mythical-seed.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `scripts/wiki.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/actions/Actions.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/actions/LiveActions.vibe` | — → 93.02% | — → 71.42% | — → 80% | — → 83.33% |
+| `src/actions/MockActions.vibe` | — → 1.75% | — → 0% | — → 5.55% | — → 1.32% |
+| `src/actions/agent.vibe` | — → 36.36% | — → 100% | — → 16.66% | — → 29.41% |
+| `src/actions/catalog.vibe` | — → 37.5% | — → 0% | — → 0% | — → 37.5% |
+| `src/actions/execution.vibe` | — → 2.56% | — → 0% | — → 0% | — → 1.96% |
+| `src/actions/tools.vibe` | — → 30.76% | — → 0% | — → 0% | — → 28.57% |
+| `src/actions/wire.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/assets/wiki.generated.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
 | `src/core/Factory.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
-| `src/core/IssuesFactory.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `src/core/LiveAccounts.vibe` | — → 28% | — → 0% | — → 8.33% | — → 22.58% |
-| `src/core/LiveFactory.vibe` | 100% → 62.85% | 71.42% → 23.33% | 92.3% → 61.11% | 89.13% → 53.65% |
-| `src/core/MockAccounts.vibe` | — → 2.94% | — → 0% | — → 0% | — → 2.19% |
-| `src/core/MockFactory.vibe` | 4.47% → 3.59% | 0% → 0% | 0% → 3.57% | 3.29% → 2.89% |
-| `src/core/conversation.vibe` | 33.62% → 19.23% | 20.23% → 10.99% | 27.5% → 13.04% | 26.03% → 14.48% |
+| `src/core/IssuesFactory.vibe` | 0% → 2.63% | 0% → 0.81% | 0% → 6.25% | 0% → 2% |
+| `src/core/LiveAccounts.vibe` | 28% → 26.92% | 0% → 0% | 8.33% → 7.69% | 22.58% → 21.87% |
+| `src/core/LiveFactory.vibe` | 62.85% → 66.23% | 23.33% → 23.33% | 61.11% → 65% | 53.65% → 57.3% |
+| `src/core/LiveIssues.vibe` | — → 27.27% | — → 0% | — → 14.28% | — → 18.75% |
+| `src/core/LiveWiki.vibe` | — → 26.66% | — → 0% | — → 10% | — → 19.04% |
+| `src/core/MockAccounts.vibe` | 2.94% → 2.59% | 0% → 0% | 0% → 0% | 2.19% → 1.96% |
+| `src/core/MockFactory.vibe` | 3.59% → 3.08% | 0% → 0% | 3.57% → 2.56% | 2.89% → 2.54% |
+| `src/core/MockJournal.vibe` | — → 0% | — → 100% | — → 0% | — → 0% |
+| `src/core/VipWriter.vibe` | — → 0% | — → 100% | — → 100% | — → 0% |
+| `src/core/WikiFactory.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/core/WikiWriter.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/core/accountCookieDecision.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/core/accountCookies.vibe` | — → 88.88% | — → 81.81% | — → 50% | — → 66.66% |
+| `src/core/conversation.vibe` | 19.23% → 39.83% | 10.99% → 33.83% | 13.04% → 39.74% | 14.48% → 31.11% |
+| `src/core/decide.vibe` | — → 1.81% | — → 0% | — → 0% | — → 1.14% |
 | `src/core/flowDecision.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
-| `src/core/flows.vibe` | 22.72% → 22.91% | 0% → 0% | 0% → 0% | 20.83% → 19.46% |
-| `src/core/issueFlows.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `src/core/issueSchemas.vibe` | — → 0% | — → 100% | — → 0% | — → 0% |
-| `src/core/mockDecision.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `src/core/mockReplies.vibe` | 58.82% → 60% | 0% → 0% | 20% → 16.66% | 47.82% → 54.16% |
-| `src/core/protocolDecision.vibe` | — → 42.85% | — → 21.87% | — → 62.5% | — → 35% |
-| `src/core/roles.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
-| `src/core/sandboxDecision.vibe` | — → 1.81% | — → 0% | — → 0% | — → 1.31% |
-| `src/core/sandboxHost.vibe` | — → 0.56% | — → 0% | — → 0% | — → 0.47% |
-| `src/core/sandboxMeter.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `src/core/sandboxMock.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `src/core/sandboxPolicy.vibe` | — → 50% | — → 100% | — → 0% | — → 25% |
+| `src/core/flows.vibe` | 22.91% → 17.57% | 0% → 0% | 0% → 0% | 19.46% → 15.42% |
+| `src/core/identityDecision.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/core/issueFlows.vibe` | 0% → 31.25% | 0% → 55.55% | 0% → 22.22% | 0% → 29.72% |
+| `src/core/issueSchemas.vibe` | 0% → 83.33% | 100% → 100% | 0% → 0% | 0% → 83.33% |
+| `src/core/mockDecision.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `src/core/mockReplies.vibe` | 60% → 57.89% | 0% → 0% | 16.66% → 16.66% | 54.16% → 52.17% |
+| `src/core/protocolDecision.vibe` | 42.85% → 35.29% | 21.87% → 15.9% | 62.5% → 55.55% | 35% → 28% |
+| `src/core/roles.vibe` | 100% → 80% | 100% → 0% | 100% → 0% | 100% → 80% |
+| `src/core/sandboxDecision.vibe` | 1.81% → 1.81% | 0% → 0% | 0% → 0% | 1.31% → 1.31% |
+| `src/core/sandboxHost.vibe` | 0.56% → 0.57% | 0% → 0% | 0% → 0% | 0.47% → 0.47% |
+| `src/core/sandboxMeter.vibe` | 0% → 3.03% | 0% → 0% | 0% → 0% | 0% → 2.56% |
+| `src/core/sandboxMock.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `src/core/sandboxPolicy.vibe` | 50% → 50% | 100% → 100% | 0% → 0% | 25% → 25% |
 | `src/core/schemas.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
-| `src/core/sequenceDecision.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `src/core/tourStops.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
-| `src/core/wire.vibe` | 42.3% → 56% | 0% → 21.42% | 33.33% → 33.33% | 31.42% → 48.27% |
-| `src/history/LiveMythical.vibe` | 66.66% → 71.79% | 38.46% → 38.46% | 50% → 56.25% | 60.52% → 63.63% |
-| `src/history/MockMythical.vibe` | 3.33% → 2.94% | 100% → 100% | 8.33% → 3.57% | 2.85% → 2.43% |
+| `src/core/sequenceDecision.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `src/core/specification.vibe` | — → 18.75% | — → 0% | — → 20% | — → 13.63% |
+| `src/core/tourStops.vibe` | 100% → — | 100% → — | 100% → — | 100% → — |
+| `src/core/walkthroughSteps.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/core/wiki.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/core/wikiDecision.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/core/wikiFlows.vibe` | — → 31.25% | — → 47.61% | — → 22.22% | — → 29.72% |
+| `src/core/wikiLinks.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/core/wikiSchemas.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/core/wire.vibe` | 56% → 59.25% | 21.42% → 21.42% | 33.33% → 33.33% | 48.27% → 51.61% |
+| `src/history/LiveMythical.vibe` | 71.79% → 73.17% | 38.46% → 41.66% | 56.25% → 56.25% | 63.63% → 63.82% |
+| `src/history/MockMythical.vibe` | 2.94% → 0% | 100% → 0% | 3.57% → 0% | 2.43% → 0% |
 | `src/history/MythicalHistory.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
-| `src/history/Sequencer.vibe` | 0% → 2.08% | 0% → 0% | 0% → 0% | 0% → 1.76% |
-| `src/history/flowMachine.vibe` | — → 33.33% | — → 23.68% | — → 22.22% | — → 28.12% |
-| `src/history/flows.vibe` | 19.71% → 20.27% | 0% → 0% | 0% → 0% | 15.9% → 17.04% |
-| `src/history/mythical.vibe` | 3.3% → 3% | 0% → 0% | 0% → 0% | 2.2% → 2.15% |
-| `src/history/pages.vibe` | — → 8.33% | — → 0% | — → 0% | — → 6.52% |
-| `src/history/roles.vibe` | 57.14% → 83.33% | 0% → 100% | 0% → 0% | 50% → 83.33% |
-| `src/history/schemas.vibe` | 100% → 96.87% | 100% → 100% | 100% → 0% | 100% → 91.17% |
-| `src/history/seed.vibe` | 9.27% → 9.94% | 0% → 0% | 0% → 0% | 6.96% → 8.45% |
+| `src/history/Sequencer.vibe` | 2.08% → 2.08% | 0% → 0% | 0% → 0% | 1.76% → 1.76% |
+| `src/history/flowMachine.vibe` | 33.33% → 21.56% | 23.68% → 12.9% | 22.22% → 13.63% | 28.12% → 17.39% |
+| `src/history/flows.vibe` | 20.27% → 19.73% | 0% → 0% | 0% → 0% | 17.04% → 16.66% |
+| `src/history/mythical.vibe` | 3% → 2.83% | 0% → 0% | 0% → 0% | 2.15% → 2.05% |
+| `src/history/pages.vibe` | 8.33% → 8.33% | 0% → 0% | 0% → 0% | 6.52% → 6.52% |
+| `src/history/roles.vibe` | 83.33% → 83.33% | 100% → 100% | 0% → 0% | 83.33% → 83.33% |
+| `src/history/schemas.vibe` | 96.87% → 96.87% | 100% → 100% | 0% → 0% | 91.17% → 91.17% |
+| `src/history/seed.vibe` | 9.94% → 9.94% | 0% → 0% | 0% → 0% | 8.45% → 8.45% |
 | `src/history/seed/vibelang.vibe` | 0% → 0% | 100% → 100% | 100% → 100% | 0% → 0% |
-| `src/history/tools.vibe` | — → 11.11% | — → 0% | — → 0% | — → 8.82% |
-| `src/history/wire.vibe` | 55.55% → 51.35% | 0% → 10.25% | 0% → 20% | 41.66% → 40.42% |
-| `src/surfaces/backend.vibe` | 92.3% → 92.3% | 83.33% → 75% | 42.85% → 50% | 86.66% → 86.66% |
-| `src/surfaces/cli-entry.vibe` | 100% → 100% | 100% → 100% | 66.66% → 100% | 100% → 100% |
-| `src/surfaces/cli.vibe` | 93.75% → 93.75% | 62.5% → 62.5% | 71.42% → 83.33% | 88.88% → 88.88% |
-| `src/surfaces/commandDecision.vibe` | — → 88.88% | — → 72.72% | — → 80% | — → 90% |
-| `src/surfaces/commands.vibe` | 65.3% → 57.4% | 34.32% → 17.14% | 24.24% → 21.62% | 63.02% → 55.17% |
+| `src/history/tools.vibe` | 11.11% → 11.11% | 0% → 0% | 0% → 0% | 8.82% → 8.82% |
+| `src/history/wire.vibe` | 51.35% → 54.28% | 10.25% → 11.42% | 20% → 20% | 40.42% → 44.18% |
+| `src/surfaces/backend.vibe` | 92.3% → 62.22% | 75% → 45.71% | 50% → 35.71% | 86.66% → 51.72% |
+| `src/surfaces/cli-entry.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `src/surfaces/cli.vibe` | 93.75% → 93.75% | 62.5% → 70% | 83.33% → 83.33% | 88.88% → 88.88% |
+| `src/surfaces/commandDecision.vibe` | 88.88% → 88.88% | 72.72% → 72.72% | 80% → 80% | 90% → 90% |
+| `src/surfaces/commands.vibe` | 57.4% → 54.76% | 17.14% → 11.19% | 21.62% → 19.17% | 55.17% → 47.05% |
 | `src/surfaces/manifest.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
-| `src/surfaces/mcp-entry.vibe` | 0% → 0% | 100% → 100% | 0% → 0% | 0% → 0% |
-| `src/surfaces/mcp.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
-| `src/web/backend.vibe` | 82.14% → 58.97% | 50% → 45.45% | 60% → 28.57% | 80% → 52.17% |
-| `src/web/entry.vibe` | 0% → 0% | 100% → 0% | 100% → 100% | 0% → 0% |
-| `src/web/historyApp.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `src/web/historyBackend.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `src/web/historyStartup.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `src/web/historyView.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/surfaces/mcp-entry.vibe` | 0% → 100% | 100% → 100% | 0% → 100% | 0% → 100% |
+| `src/surfaces/mcp.vibe` | 0% → 82.35% | 0% → 0% | 0% → 83.33% | 0% → 80% |
+| `src/surfaces/session.vibe` | — → 84.12% | — → 66.66% | — → 63.63% | — → 78.66% |
+| `src/surfaces/sessionFlow.vibe` | — → 96.55% | — → 100% | — → 80% | — → 94.28% |
+| `src/surfaces/signin.vibe` | — → 87.96% | — → 74.46% | — → 50% | — → 74.64% |
+| `src/web/actionModel.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/web/actionView.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/web/backend.vibe` | 58.97% → 45.31% | 45.45% → 40% | 28.57% → 15.78% | 52.17% → 41.66% |
+| `src/web/entry.vibe` | 0% → 0% | 0% → 0% | 100% → 100% | 0% → 0% |
+| `src/web/historyApp.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `src/web/historyBackend.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `src/web/historyStartup.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `src/web/historyView.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `src/web/issueDecision.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/web/issues.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/web/issuesView.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
 | `src/web/main.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 | `src/web/markdown.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
-| `src/web/media.vibe` | — → 0% | — → 100% | — → 0% | — → 0% |
-| `src/web/roleView.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `src/web/sandboxView.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `src/web/screenDecision.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/web/media.vibe` | 0% → 0% | 100% → 100% | 0% → 0% | 0% → 0% |
+| `src/web/modeSwitch.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/web/modelDecision.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/web/paneDecision.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/web/roleView.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `src/web/sandboxView.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `src/web/screenDecision.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 | `src/web/startup.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `src/web/startupDecision.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
 | `src/web/styles.vibe` | 0% → 0% | 100% → 100% | 0% → 0% | 0% → 0% |
+| `src/web/theatre.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/web/theatreDecision.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/web/tourDecision.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
 | `src/web/view.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `src/web/viewDecision.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
 | `src/web/viewport.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
-| `worker/Accounts.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/web/wikiView.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/Accounts.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `worker/ActionDirectory.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/ActionIdentity.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/ActionRuns.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/ActionsHttp.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
 | `worker/AgentModel.vibe` | 0% → 0% | 100% → 100% | 0% → 0% | 0% → 0% |
 | `worker/Api.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 | `worker/Budget.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `worker/HistoryActions.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
 | `worker/HistoryObject.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
-| `worker/HistoryTools.vibe` | — → 25% | — → 0% | — → 0% | — → 25% |
+| `worker/HistoryTools.vibe` | 25% → 25% | 0% → 100% | 0% → 0% | 25% → 25% |
 | `worker/Http.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `worker/IssueCredentials.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/Issues.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
 | `worker/MainLog.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 | `worker/ObjectStorage.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 | `worker/Objects.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
-| `worker/Reply.vibe` | 12.87% → 12.14% | 0% → 0% | 0% → 0% | 10.92% → 10.23% |
-| `worker/SandboxAccounts.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `worker/SandboxHttp.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `worker/SandboxMachine.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `worker/SandboxTools.vibe` | — → 18.18% | — → 0% | — → 0% | — → 16.66% |
-| `worker/Sandboxes.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `worker/Sequencer.vibe` | 0.99% → 0.93% | 0% → 0% | 0% → 0% | 0.79% → 0.76% |
-| `worker/Tour.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `worker/Reply.vibe` | 12.14% → 10.29% | 0% → 0% | 0% → 5.88% | 10.23% → 8.97% |
+| `worker/SandboxAccounts.vibe` | 0% → 0% | 0% → 0% | 0% → 100% | 0% → 0% |
+| `worker/SandboxHttp.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `worker/SandboxMachine.vibe` | 0% → 0% | 0% → 100% | 0% → 100% | 0% → 0% |
+| `worker/SandboxTools.vibe` | 18.18% → 18.18% | 0% → 0% | 0% → 0% | 16.66% → 16.66% |
+| `worker/Sandboxes.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `worker/Sequencer.vibe` | 0.93% → 0.84% | 0% → 0% | 0% → 0% | 0.76% → 0.69% |
+| `worker/SpecificationReviewers.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/Tour.vibe` | 0% → 0% | 0% → 100% | 0% → 0% | 0% → 0% |
 | `worker/Unreachable.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `worker/VipDraft.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/Wiki.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/WikiDraft.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/WikiTools.vibe` | — → 11.11% | — → 0% | — → 16.66% | — → 15.38% |
+| `worker/accountObject.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
 | `worker/agentContext.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
 | `worker/budgetDecision.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 | `worker/index.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `worker/liveDispatchDecision.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/machineObject.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/replyProgressDecision.vibe` | — → 5.88% | — → 0% | — → 10% | — → 4.54% |
 | `worker/replyReasons.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 
 ## Chromium — diagnostic mapping
 
-Before: lines 47.87% (1182/2469), branches 53.72% (1313/2444), functions 61.93% (729/1177), statements 53.08% (1953/3679).
+Previous snapshot: lines 43.15% (1778/4120), branches 46.41% (2293/4940), functions 56.38% (1091/1935), statements 48.38% (3077/6360).
 
-After: lines 43.15% (1778/4120), branches 46.41% (2293/4940), functions 56.38% (1091/1935), statements 48.38% (3077/6360).
+At `9861d6f26e36`: lines 44.02% (3252/7387), branches 50.45% (6254/12394), functions 55.09% (2012/3652), statements 47.72% (5581/11695).
 
 | File | Lines | Branches | Functions | Statements |
 |---|---:|---:|---:|---:|
-| `infra/SandboxImage.vibe` | — → 0% | — → 100% | — → 100% | — → 0% |
+| `infra/SandboxImage.vibe` | 0% → 0% | 100% → 100% | 100% → 100% | 0% → 0% |
 | `infra/Stack.vibe` | 0% → 0% | 0% → 0% | 100% → 100% | 0% → 0% |
 | `infra/WorkerBuild.vibe` | 0% → 0% | 100% → 100% | 100% → 100% | 0% → 0% |
 | `scripts/agent-context.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 | `scripts/mythical-seed.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
-| `src/core/Factory.vibe` | 100% → 0% | 100% → 100% | 100% → 100% | 100% → 0% |
-| `src/core/IssuesFactory.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `src/core/LiveAccounts.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `src/core/LiveFactory.vibe` | 22.72% → 14.1% | 7.14% → 1.92% | 33.33% → 22.72% | 27.14% → 16.27% |
-| `src/core/MockAccounts.vibe` | — → 95.89% | — → 54.54% | — → 76.66% | — → 92.53% |
-| `src/core/MockFactory.vibe` | 92.95% → 89.26% | 61.45% → 57.57% | 92% → 81.69% | 89.05% → 86.7% |
-| `src/core/conversation.vibe` | 87.93% → 74.03% | 66.41% → 58.29% | 90% → 82.19% | 80.9% → 71.22% |
-| `src/core/flowDecision.vibe` | 50% → 72.72% | 47.05% → 47.82% | 66.66% → 80% | 50% → 80% |
-| `src/core/flows.vibe` | 73.52% → 79% | 69.11% → 65.88% | 61.11% → 61.7% | 74.77% → 78.53% |
-| `src/core/issueFlows.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `src/core/issueSchemas.vibe` | — → 0% | — → 100% | — → 0% | — → 0% |
+| `scripts/wiki.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/actions/Actions.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/actions/LiveActions.vibe` | — → 4.44% | — → 0% | — → 0% | — → 4.65% |
+| `src/actions/MockActions.vibe` | — → 94.11% | — → 54.16% | — → 70.45% | — → 88.26% |
+| `src/actions/agent.vibe` | — → 58.33% | — → 100% | — → 42.85% | — → 48.38% |
+| `src/actions/catalog.vibe` | — → 62.5% | — → 97.5% | — → 100% | — → 72.72% |
+| `src/actions/execution.vibe` | — → 42.5% | — → 11.32% | — → 13.33% | — → 30.37% |
+| `src/actions/tools.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/actions/wire.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/assets/wiki.generated.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/core/Factory.vibe` | 0% → 100% | 100% → 100% | 100% → 100% | 0% → 100% |
+| `src/core/IssuesFactory.vibe` | 0% → 88.31% | 0% → 73.89% | 0% → 90% | 0% → 81.95% |
+| `src/core/LiveAccounts.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `src/core/LiveFactory.vibe` | 14.1% → 12.64% | 1.92% → 1.92% | 22.72% → 20.83% | 16.27% → 14.89% |
+| `src/core/LiveIssues.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/core/LiveWiki.vibe` | — → 5.88% | — → 0% | — → 0% | — → 6.06% |
+| `src/core/MockAccounts.vibe` | 95.89% → 97.61% | 54.54% → 55.55% | 76.66% → 83.87% | 92.53% → 94.66% |
+| `src/core/MockFactory.vibe` | 89.26% → 90.84% | 57.57% → 60.91% | 81.69% → 79.79% | 86.7% → 87.2% |
+| `src/core/MockJournal.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/core/VipWriter.vibe` | — → 0% | — → 100% | — → 100% | — → 0% |
+| `src/core/WikiFactory.vibe` | — → 0% | — → 0% | — → 3.57% | — → 0% |
+| `src/core/WikiWriter.vibe` | — → 0% | — → 100% | — → 100% | — → 0% |
+| `src/core/accountCookieDecision.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/core/accountCookies.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/core/conversation.vibe` | 74.03% → 70.53% | 58.29% → 70.4% | 82.19% → 85.71% | 71.22% → 62.78% |
+| `src/core/decide.vibe` | — → 98.18% | — → 79.62% | — → 100% | — → 96.03% |
+| `src/core/flowDecision.vibe` | 72.72% → 36.92% | 47.82% → 32.14% | 80% → 75% | 80% → 31.18% |
+| `src/core/flows.vibe` | 79% → 77.38% | 65.88% → 61.18% | 61.7% → 53.03% | 78.53% → 79.18% |
+| `src/core/identityDecision.vibe` | — → 50% | — → 75% | — → 100% | — → 33.33% |
+| `src/core/issueFlows.vibe` | 0% → 91.17% | 0% → 75% | 0% → 91.66% | 0% → 92.98% |
+| `src/core/issueSchemas.vibe` | 0% → 91.66% | 100% → 100% | 0% → 66.66% | 0% → 95.45% |
 | `src/core/mockDecision.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
-| `src/core/mockReplies.vibe` | 100% → 85% | 100% → 50% | 100% → 55.55% | 89.65% → 78.94% |
-| `src/core/protocolDecision.vibe` | 14.28% → 0% | 0% → 0% | 36.36% → 0% | 10% → 0% |
-| `src/core/roles.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
-| `src/core/sandboxDecision.vibe` | — → 78.18% | — → 64.7% | — → 96.55% | — → 71.28% |
-| `src/core/sandboxHost.vibe` | — → 66.85% | — → 59.76% | — → 86.48% | — → 63.14% |
-| `src/core/sandboxMeter.vibe` | — → 93.54% | — → 77.41% | — → 100% | — → 84.9% |
-| `src/core/sandboxMock.vibe` | — → 96% | — → 25% | — → 86.66% | — → 92.45% |
-| `src/core/sandboxPolicy.vibe` | — → 66.66% | — → 100% | — → 0% | — → 50% |
-| `src/core/schemas.vibe` | 35.29% → 0% | 100% → 100% | 100% → 100% | 45% → 0% |
-| `src/core/sequenceDecision.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `src/core/tourStops.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
-| `src/core/wire.vibe` | 28.57% → 28% | 0% → 0% | 0% → 0% | 33.33% → 31.42% |
-| `src/history/LiveMythical.vibe` | 10.81% → 7.14% | 0% → 0% | 0% → 0% | 13.11% → 8.33% |
-| `src/history/MockMythical.vibe` | 100% → 100% | 66.66% → 66.66% | 96.15% → 97.29% | 98% → 98.33% |
-| `src/history/MythicalHistory.vibe` | 66.66% → 0% | 25% → 0% | 100% → 0% | 40% → 0% |
-| `src/history/Sequencer.vibe` | 73.62% → 73.19% | 42.1% → 35.71% | 93.75% → 89.83% | 75.97% → 73.56% |
-| `src/history/flowMachine.vibe` | — → 66.66% | — → 41.17% | — → 94.11% | — → 58.33% |
-| `src/history/flows.vibe` | 82.43% → 83.11% | 58.33% → 52.5% | 62.16% → 62.16% | 80.76% → 80.57% |
-| `src/history/mythical.vibe` | 80.16% → 0% | 68.93% → 0% | 84.21% → 0% | 77.07% → 0% |
-| `src/history/pages.vibe` | — → 77.77% | — → 72.22% | — → 96.55% | — → 83.87% |
-| `src/history/roles.vibe` | 75% → 57.14% | 37.5% → 100% | 100% → 0% | 72.72% → 70% |
-| `src/history/schemas.vibe` | 100% → 0% | 100% → 100% | 100% → 0% | 100% → 0% |
-| `src/history/seed.vibe` | 3.31% → 2.92% | 0% → 0% | 0% → 0% | 4.83% → 4.24% |
+| `src/core/mockReplies.vibe` | 85% → 84.21% | 50% → 50% | 55.55% → 55.55% | 78.94% → 78.37% |
+| `src/core/protocolDecision.vibe` | 0% → 11.76% | 0% → 0% | 0% → 33.33% | 0% → 8% |
+| `src/core/roles.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `src/core/sandboxDecision.vibe` | 78.18% → 78.18% | 64.7% → 64.7% | 96.55% → 96.55% | 71.28% → 71.28% |
+| `src/core/sandboxHost.vibe` | 66.85% → 68.57% | 59.76% → 59.27% | 86.48% → 91.89% | 63.14% → 65.25% |
+| `src/core/sandboxMeter.vibe` | 93.54% → 93.93% | 77.41% → 77.41% | 100% → 100% | 84.9% → 85.71% |
+| `src/core/sandboxMock.vibe` | 96% → 96% | 25% → 29.76% | 86.66% → 90% | 92.45% → 93.39% |
+| `src/core/sandboxPolicy.vibe` | 66.66% → 66.66% | 100% → 100% | 0% → 0% | 50% → 50% |
+| `src/core/schemas.vibe` | 0% → 80% | 100% → 100% | 100% → 100% | 0% → 81.81% |
+| `src/core/sequenceDecision.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `src/core/specification.vibe` | — → 82.35% | — → 63.21% | — → 83.33% | — → 73.77% |
+| `src/core/tourStops.vibe` | 100% → — | 100% → — | 100% → — | 100% → — |
+| `src/core/walkthroughSteps.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/core/wiki.vibe` | — → 93.33% | — → 57.77% | — → 100% | — → 84.37% |
+| `src/core/wikiDecision.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/core/wikiFlows.vibe` | — → 38.23% | — → 47.61% | — → 16.66% | — → 38.59% |
+| `src/core/wikiLinks.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/core/wikiSchemas.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/core/wire.vibe` | 28% → 33.33% | 0% → 0% | 0% → 0% | 31.42% → 36.84% |
+| `src/history/LiveMythical.vibe` | 7.14% → 6.81% | 0% → 0% | 0% → 0% | 8.33% → 7.89% |
+| `src/history/MockMythical.vibe` | 100% → 100% | 66.66% → 50% | 97.29% → 97.29% | 98.33% → 98.41% |
+| `src/history/MythicalHistory.vibe` | 0% → 66.66% | 0% → 25% | 0% → 100% | 0% → 40% |
+| `src/history/Sequencer.vibe` | 73.19% → 74.22% | 35.71% → 35.71% | 89.83% → 89.83% | 73.56% → 74.28% |
+| `src/history/flowMachine.vibe` | 66.66% → 52.94% | 41.17% → 37.57% | 94.11% → 82.92% | 58.33% → 41.09% |
+| `src/history/flows.vibe` | 83.11% → 82.05% | 52.5% → 47.22% | 62.16% → 63.15% | 80.57% → 80.28% |
+| `src/history/mythical.vibe` | 0% → 78.01% | 0% → 67.25% | 0% → 84.61% | 0% → 74.15% |
+| `src/history/pages.vibe` | 77.77% → 77.77% | 72.22% → 72.22% | 96.55% → 96.55% | 83.87% → 83.87% |
+| `src/history/roles.vibe` | 57.14% → 71.42% | 100% → 100% | 0% → 100% | 70% → 80% |
+| `src/history/schemas.vibe` | 0% → 62.5% | 100% → 100% | 0% → 33.33% | 0% → 64.1% |
+| `src/history/seed.vibe` | 2.92% → 2.92% | 0% → 0% | 0% → 0% | 4.24% → 4.24% |
 | `src/history/seed/vibelang.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
-| `src/history/tools.vibe` | — → 11.11% | — → 0% | — → 0% | — → 13.33% |
-| `src/history/wire.vibe` | 44.44% → 21.62% | 0% → 0% | 0% → 0% | 38.46% → 19.6% |
+| `src/history/tools.vibe` | 11.11% → 11.11% | 0% → 0% | 0% → 5.88% | 13.33% → 14.89% |
+| `src/history/wire.vibe` | 21.62% → 22.85% | 0% → 0% | 0% → 0% | 19.6% → 21.27% |
 | `src/surfaces/backend.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 | `src/surfaces/cli-entry.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 | `src/surfaces/cli.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
-| `src/surfaces/commandDecision.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/surfaces/commandDecision.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 | `src/surfaces/commands.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 | `src/surfaces/manifest.vibe` | 0% → 0% | 100% → 100% | 0% → 0% | 0% → 0% |
 | `src/surfaces/mcp-entry.vibe` | 0% → 0% | 100% → 100% | 0% → 0% | 0% → 0% |
 | `src/surfaces/mcp.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
-| `src/web/backend.vibe` | 87.87% → 86.36% | 75% → 80.95% | 81.25% → 82.14% | 90.74% → 89.41% |
+| `src/surfaces/session.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/surfaces/sessionFlow.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/surfaces/signin.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/web/actionModel.vibe` | — → 100% | — → 68.42% | — → 100% | — → 96.96% |
+| `src/web/actionView.vibe` | — → 90% | — → 82.71% | — → 87.5% | — → 90.56% |
+| `src/web/backend.vibe` | 86.36% → 85.91% | 80.95% → 73.33% | 82.14% → 82.97% | 89.41% → 86.56% |
 | `src/web/entry.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
-| `src/web/historyApp.vibe` | 84.49% → 86.22% | 59.74% → 55.8% | 79.41% → 77.35% | 83.7% → 83.38% |
-| `src/web/historyBackend.vibe` | 95.83% → 96.29% | 50% → 66.66% | 73.68% → 90.9% | 91.66% → 98.24% |
-| `src/web/historyStartup.vibe` | 85.18% → 92.59% | 83.33% → 88.88% | 100% → 100% | 84.44% → 91.11% |
-| `src/web/historyView.vibe` | 71.95% → 73.17% | 78.01% → 75.73% | 88.4% → 92.06% | 73.22% → 74.78% |
-| `src/web/main.vibe` | 95.07% → 91.13% | 83.57% → 69.49% | 95.74% → 83.5% | 92.21% → 86.29% |
-| `src/web/markdown.vibe` | 92.59% → 92.59% | 84.61% → 84.61% | 100% → 100% | 90.9% → 90.9% |
-| `src/web/media.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
-| `src/web/roleView.vibe` | — → 95.83% | — → 92.96% | — → 100% | — → 94.87% |
-| `src/web/sandboxView.vibe` | — → 94.11% | — → 71.11% | — → 100% | — → 96.66% |
-| `src/web/screenDecision.vibe` | 75% → 75% | 85.21% → 86.61% | 100% → 100% | 62.16% → 62.16% |
-| `src/web/startup.vibe` | 92.3% → 89.65% | 100% → 100% | 100% → 100% | 93.02% → 91.83% |
+| `src/web/historyApp.vibe` | 86.22% → 86.3% | 55.8% → 57.04% | 77.35% → 77.84% | 83.38% → 84.09% |
+| `src/web/historyBackend.vibe` | 96.29% → 96.29% | 66.66% → 66.66% | 90.9% → 90.9% | 98.24% → 98.24% |
+| `src/web/historyStartup.vibe` | 92.59% → 93.75% | 88.88% → 68.18% | 100% → 100% | 91.11% → 92.72% |
+| `src/web/historyView.vibe` | 73.17% → 82.19% | 75.73% → 77.11% | 92.06% → 92.06% | 74.78% → 81.65% |
+| `src/web/issueDecision.vibe` | — → 53.93% | — → 69.16% | — → 71.79% | — → 48.02% |
+| `src/web/issues.vibe` | — → 100% | — → 85.13% | — → 100% | — → 97.05% |
+| `src/web/issuesView.vibe` | — → 94.87% | — → 80.42% | — → 94.11% | — → 94.16% |
+| `src/web/main.vibe` | 91.13% → 80.84% | 69.49% → 64.95% | 83.5% → 78.21% | 86.29% → 78.24% |
+| `src/web/markdown.vibe` | 92.59% → 57.54% | 84.61% → 43.25% | 100% → 51.16% | 90.9% → 52.91% |
+| `src/web/media.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
+| `src/web/modeSwitch.vibe` | — → 100% | — → 100% | — → 100% | — → 100% |
+| `src/web/modelDecision.vibe` | — → 48.14% | — → 46.66% | — → 65% | — → 38.8% |
+| `src/web/paneDecision.vibe` | — → 36.84% | — → 30.95% | — → 37.5% | — → 36.36% |
+| `src/web/roleView.vibe` | 95.83% → 95.83% | 92.96% → 93.18% | 100% → 100% | 94.87% → 94.87% |
+| `src/web/sandboxView.vibe` | 94.11% → 94.11% | 71.11% → 71.11% | 100% → 100% | 96.66% → 96.66% |
+| `src/web/screenDecision.vibe` | 75% → 68.29% | 86.61% → 78.04% | 100% → 94.54% | 62.16% → 56.6% |
+| `src/web/startup.vibe` | 89.65% → 94% | 100% → 62.5% | 100% → 78.94% | 91.83% → 91% |
+| `src/web/startupDecision.vibe` | — → 66.66% | — → 80.55% | — → 100% | — → 50% |
 | `src/web/styles.vibe` | 100% → 100% | 100% → 100% | 100% → 100% | 100% → 100% |
-| `src/web/view.vibe` | 82.22% → 85.45% | 85.03% → 88.7% | 95.45% → 96.22% | 74.62% → 79.77% |
-| `src/web/viewport.vibe` | 97.5% → 95.83% | 65.71% → 62.03% | 100% → 100% | 93.24% → 91.66% |
-| `worker/Accounts.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `src/web/theatre.vibe` | — → 100% | — → 93.67% | — → 100% | — → 100% |
+| `src/web/theatreDecision.vibe` | — → 27.77% | — → 87.5% | — → 100% | — → 16.12% |
+| `src/web/tourDecision.vibe` | — → 68.75% | — → 47.5% | — → 83.33% | — → 54.54% |
+| `src/web/view.vibe` | 85.45% → 94.33% | 88.7% → 84.21% | 96.22% → 96.55% | 79.77% → 87.64% |
+| `src/web/viewDecision.vibe` | — → 54.54% | — → 72.11% | — → 92.3% | — → 37.5% |
+| `src/web/viewport.vibe` | 95.83% → 95.83% | 62.03% → 63.88% | 100% → 100% | 91.66% → 92.85% |
+| `src/web/wikiView.vibe` | — → 96.42% | — → 63.18% | — → 83.33% | — → 93.54% |
+| `worker/Accounts.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `worker/ActionDirectory.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/ActionIdentity.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/ActionRuns.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/ActionsHttp.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
 | `worker/AgentModel.vibe` | 0% → 0% | 100% → 100% | 0% → 0% | 0% → 0% |
 | `worker/Api.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 | `worker/Budget.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `worker/HistoryActions.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
 | `worker/HistoryObject.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
-| `worker/HistoryTools.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/HistoryTools.vibe` | 0% → 0% | 0% → 100% | 0% → 0% | 0% → 0% |
 | `worker/Http.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `worker/IssueCredentials.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/Issues.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
 | `worker/MainLog.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 | `worker/ObjectStorage.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 | `worker/Objects.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 | `worker/Reply.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
-| `worker/SandboxAccounts.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `worker/SandboxHttp.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `worker/SandboxMachine.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `worker/SandboxTools.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
-| `worker/Sandboxes.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/SandboxAccounts.vibe` | 0% → 0% | 0% → 0% | 0% → 100% | 0% → 0% |
+| `worker/SandboxHttp.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `worker/SandboxMachine.vibe` | 0% → 0% | 0% → 100% | 0% → 100% | 0% → 0% |
+| `worker/SandboxTools.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `worker/Sandboxes.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 | `worker/Sequencer.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
-| `worker/Tour.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `worker/SpecificationReviewers.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/Tour.vibe` | 0% → 0% | 0% → 100% | 0% → 0% | 0% → 0% |
 | `worker/Unreachable.vibe` | 0% → 0% | 100% → 100% | 100% → 100% | 0% → 0% |
+| `worker/VipDraft.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/Wiki.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/WikiDraft.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/WikiTools.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/accountObject.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
 | `worker/agentContext.vibe` | 0% → 0% | 100% → 100% | 100% → 100% | 0% → 0% |
 | `worker/budgetDecision.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 | `worker/index.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
+| `worker/liveDispatchDecision.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/machineObject.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
+| `worker/replyProgressDecision.vibe` | — → 0% | — → 0% | — → 0% | — → 0% |
 | `worker/replyReasons.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
-
-
-The Accounts Durable Object is driven in Node over a real loopback server and an in-memory object storage
-(`test/support/objectStorage.ts`: key-value, alarm, and a real `node:sqlite` database behind the Durable Object
-storage contract, with savepoint-nested transactions). Its tests run the real OAuth dance against an injected
-GitHub auth service, every grant policy outcome, body size and read-deadline bounds, cross-origin and
-absolute-URL refusals (a host presents an absolute URL through the workerd host's own `.modify({ url })`
-construction), sign-out of a live session, expired/corrupt/tampered sessions, participation idempotence, and the
-unconfigured host. Accounts.vibe measures 221/224 statements, 140/140 branches, 38/41 functions there. Three
-interface-required filler functions stay uncovered: the account flow's pure plan body (the engine re-drives a
-body only on resume, and these one-action mutations always complete) and the two no-op dispatch arrows the
-accounts ledger can never reach (it records no posts or tours).
-
-Dead code removed: `Option.getOrElse(initial, () => "")` after the option was already checked (now `initial.value`),
-and the `grantText ?? ""` fallback moved to the one call site that can pass undefined (non-write paths), so both
-outcomes are real.
-
-<!-- measurements:end -->
-
-Browser boundary cases additionally cover the default answer, rejected/unavailable tour starts, retry after an
-unavailable end, and native touch end/cancellation followed by Latest. Read-only native event evidence distinguishes
-an earlier follow scroll's end from the actual gesture ending; the test waits for the latter before tapping.
-
-The source-map control and generator-process checkpoint declares the root's patched coverage provider and matching
-Vitest 5.0.0 (provider declaration awaiting VL-5 approval). `build:scripts` emits operational scripts and a separate
-ignored test tree, both with source maps and inline sources. Tests execute those actual emissions, retaining their
-maps for subprocess collection. Context tests cover missing, current, changed and written output. The mythical seed
-command reads a real two-commit jj main and JSONL queue, skips malformed entries, resolves both revset batches,
-groups a landed stack and rejection notes, repeats deterministically, and preserves the previous seed when jj or
-queue input fails. These are passing behavioral tests; installing the provider is not a 100% coverage claim.
-
-The provider's open-ended source ranges had a second, independent defect: real Node execution of every branch
-could still leave duplicate zero branch/function counters. A plain async JavaScript control reproduces it too.
-The monorepo's existing provider patch now normalizes only infinite **end** columns to the original source line's
-UTF-16 length before merging. It preserves finite positions and hit counts. Six real subprocess controls cover
-JS/VibeLang with all branches executed, an unvisited conditional return, and one unused same-line function.
-The compiler, its maps and product code generation are unchanged. The bundled conditional-return defect above is
-separate and remains unresolved.
-
-Native touch assertions use the actual first touchmove position. Under instrumentation the answer grew between
-the earlier CDP measurement (1425) and first move (1743); the valid swipe ended at 1508 with following paused.
-Comparing to the stale pre-gesture position was incorrect. Read-only native event evidence retains that failure.
-
-History startup now has 57 boundary cases over a real window and the mounted Foldkit application: query/stored-role combinations, missing/empty/invalid/duplicate role input, unavailable storage through a faulty
-Window service, unavailable health through a faulty HttpClient, cancellation on disposal, role-specific controls,
-direct epic/commit hashes and native link navigation back to the outline. Happy paths use the product MockMythical
-flows and real browser-host services. The module independently measures100% lines, branches, functions and
-statements (27/27,10/10,9/9,32/32); that per-module validation does not replace the red whole-app gate.
-
-The startup matrix includes all 25 query/stored-role combinations, each of the five query-only and storage-only roles, and the invalid, empty and duplicate-query boundaries. Native runtime navigation separately checks New and Community: both can read the history and have no planning or folding control.
-
-Native form tests run the history update, view, subscriptions and commands over the actual MockMythical durable
-flows. They cover an empty-title refusal and recovery, a new or existing epic, every note section, Start, Approve,
-Fold, insertion, cancellation and amendment without a duplicate commit. Folding intentionally clears the completed
-task/lane; its real commit remains linked. An amendment focused the close button because ShowPlan requested the
-absent title field. The failed-first runtime regression and Chromium check now require Task focus; one selector
-chooses the title or task field present in that dialog.
-
-HTTP-backed runtime tests serve the real history protocol over a loopback socket and run LiveMythical over the native
-Node HTTP client. An injected faulty Effect transport fails a chosen operation; healthy operations still reach the
-real server and product durable flows. Initial-read Retry and each write's unavailable/retry path preserve inputs
-and state, then record exactly one recovered result. An inner scope closes the runtime/client before the server,
-including its persistent SSE connection. The tests never route or intercept browser requests.
-
-Dead code removed: reasonOf now accepts the actual Refused | Unavailable union. Refused always has a required
-refusal string, so the optional-field fallback to "refused" could never occur through the typed public service.
-Both real refusal and unavailable transport outcomes remain covered.
-
-A plain JavaScript minified control also reproduces false statement credit on the unvisited return: actual result 7,
-statement count 1 on the return-9 line, branches [1,0]. This isolates generic bundled attribution without loading
-VibeLang. The unbundled VibeLang map still agrees with real execution; no compiler or minifier behavior was changed.
 
 ## Client path regressions (Sol resume, 2026-11-08)
 
