@@ -71,7 +71,7 @@ test("the relay preserves pending-act failures, silent doors and report refusal 
   expect(fields("agent.status.report").map((line) => line.reason)).toEqual(["settled", "other_launcher", "no_row"])
 })
 
-test("session key diagnostics retain only outcome and step, never credentials or key material", async () => {
+test("the browser relay refuses server-only session diagnostics and counters", async () => {
   const exported = captured(Otlp.layerFetch({ baseUrl: `${ORIGIN}/api/telemetry`, serviceName: "auth-contract" }))
   await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
     for (const name of ["smithers_auth_session", "smithers_auth_issue", "smithers_auth_key_rotations", "smithers_auth_session_prior", "smithers_auth_session_ends", "smithers_device_principal_refusals", "smithers_auth_reauth", "smithers_auth_token_cleanup", "smithers_auth_token_store"]) {
@@ -81,9 +81,11 @@ test("session key diagnostics retain only outcome and step, never credentials or
       yield* Effect.logInfo(name).pipe(Effect.annotateLogs({ outcome: "completed", step: "cease", cookie: "credential-sentinel", secret: "secret-sentinel" }))
     }
   }).pipe(Effect.provide(exported.layer), Effect.provideService(Metric.MetricRegistry, new Map()))))
-  const { kept } = await Effect.runPromise(relayed(exported.exports, BROWSER_TELEMETRY))
+  const { kept, dropped } = await Effect.runPromise(relayed(exported.exports, BROWSER_TELEMETRY))
   for (const name of ["smithers_auth_session", "smithers_auth_issue", "smithers_auth_key_rotations", "smithers_auth_session_prior", "smithers_auth_session_ends", "smithers_device_principal_refusals", "smithers_auth_reauth", "smithers_auth_token_cleanup", "smithers_auth_token_store", "auth.session", "auth.issue", "auth.key_rotation", "auth.session_prior", "auth.session_end", "auth.session_retention", "auth.device_principal", "auth.reauth", "auth.token_store", "auth.token_cleanup", "auth.token_cleanup.failure"]) {
-    expect(kept.some(line => line.name === name), name).toBe(true)
+    expect(kept.filter(line => line.name === name), name).toEqual([])
+    expect([...dropped.records], name).toContain(name)
+    expect(EXPORTED_SPANS, name).not.toContain(name)
   }
   expect(JSON.stringify(kept)).not.toContain("credential-sentinel")
   expect(JSON.stringify(kept)).not.toContain("secret-sentinel")
@@ -94,12 +96,13 @@ test("session tags are stripped from logs, traces, metrics and URL attributes", 
   const tag = "8bcf97586ae0484686ce3750ac941946"
   const exported = captured(Otlp.layerFetch({ baseUrl: `${ORIGIN}/api/telemetry`, serviceName: "tag-privacy" }))
   await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
-    yield* Effect.logInfo("auth.session").pipe(Effect.annotateLogs({ outcome: "signed_in", session_tag: tag, sessionTag: tag, session: tag }))
-    yield* Effect.void.pipe(Effect.withSpan("auth.session", { attributes: { session_tag: tag, sessionTag: tag, session: tag, "url.full": `https://example.com/${tag}?tag=${tag}` } }))
-    yield* Metric.update(Metric.withAttributes(Metric.counter("smithers_auth_session", { incremental: true }), { outcome: "signed_in", session_tag: tag, sessionTag: tag, session: tag }), 1)
+    yield* Effect.logInfo("auth.session_refresh").pipe(Effect.annotateLogs({ outcome: "signed_in", session_tag: tag, sessionTag: tag, session: tag }))
+    yield* Effect.void.pipe(Effect.withSpan("auth.session_refresh", { attributes: { session_tag: tag, sessionTag: tag, session: tag, "url.full": `https://example.com/${tag}?tag=${tag}` } }))
+    yield* Metric.update(Metric.withAttributes(Metric.counter("smithers_auth_session_refreshes", { incremental: true }), { outcome: "signed_in", session_tag: tag, sessionTag: tag, session: tag }), 1)
   }).pipe(Effect.provide(exported.layer), Effect.provideService(Metric.MetricRegistry, new Map()))))
   const { kept } = await Effect.runPromise(relayed(exported.exports, BROWSER_TELEMETRY))
-  expect(kept.length).toBeGreaterThan(0)
+  expect(kept.filter(line => line.name === "auth.session_refresh")).toHaveLength(2)
+  expect(kept.filter(line => line.name === "smithers_auth_session_refreshes")).toHaveLength(1)
   expect(JSON.stringify(kept)).not.toContain(tag)
 })
 

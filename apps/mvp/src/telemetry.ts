@@ -159,11 +159,11 @@ export const RELAY_FIELDS = [
  *   failed are relayed. An exporter given {@link EXPORTED_SPANS} doesn't send them, and the relay drops the tab's;
  * - `fields`: a failure's message (`exception.message`, `exception.stacktrace`, `otlp.status_message`) can quote what
  *   someone wrote, so a failure is relayed by its type alone; and `effect.fiberId`, Effect's number for the fiber that
- *   logged, means nothing outside the tab. Full URLs and query strings can carry credentials or private content.
+ *   logged, means nothing outside the tab. Full URLs and query strings can carry credentials or private content. Electric collection ids can contain private repository and document names.
  */
 export const WITHHELD = {
   spans: ["browser.engine.request", "browser.runtime.request"],
-  fields: ["exception.message", "exception.stacktrace", "otlp.status_message", "effect.fiberId", "url.full", "url.query"],
+  fields: ["exception.message", "exception.stacktrace", "otlp.status_message", "effect.fiberId", "url.full", "url.query", "electric.collection"],
 } as const
 
 const features: ReadonlyArray<Telemetry> = [

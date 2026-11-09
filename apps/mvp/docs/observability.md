@@ -159,6 +159,10 @@ Metrics (`src/features/chat/metrics.ts`, `src/boot.ts`, `src/page.ts`, and `@smt
 | `first_run.press` | log, span | `step` = `model`: Open settings pressed on the first run's list |
 | `smithers_web_first_run_presses` | counter | `step` |
 
+Electric’s `electric.shape.request` and `electric.shape.evict` spans are relayed with content-free shape progress: live mode, requested and received offsets, handle, byte count, completeness and row count. These distinguish a missing batch from a completed sync without recording a row or URL. Collection ids are withheld before export and by the relay because they can contain private repository and document names.
+
+The browser relay accepts only records the tab, its engine worker or their SDK code emits. Server-only session issuance, signing-key rotation, reauthentication and token cleanup records stay in ChatApi’s structured Worker logs; they are absent from the browser allowlist.
+
 Every name above, and every attribute, is in the feature's contract (`CHAT_TELEMETRY` in `src/features/chat/contract.ts`, `AUTH_TELEMETRY` in `src/features/auth/contract.ts`, `FIRST_RUN_TELEMETRY` in `src/features/first-run/contract.ts`, `COMMANDS_TELEMETRY` in `src/features/commands/contract.ts`, and the app's own `APP_TELEMETRY` in `src/telemetry.ts`), which the relay keeps ([below](#relayed-browser-records)).
 
 #### The engine worker
@@ -1058,7 +1062,7 @@ The relay doesn't check the values: a caller picks its records' `service.name`, 
 | `packages/effect-electric/test/ShapeProxy.test.ts` | the shape proxy's log line, span, count and 405, a subset request's parameters dropped and never forwarded, and the Electric secret in no log or span |
 | `src/telemetry.test.ts` "the relay keeps everything the browser exports" | the tab's and the engine worker's exports, as `src/boot.ts` and `src/flows/engine.worker.ts` install their exporters, through the real relay with `BROWSER_TELEMETRY`: an answer whose agent calls a flow, asking, a refused ask, sync failing and retried. Nothing is dropped that `WITHHELD` doesn't name, the end-to-end tests' fields arrive, and no engine export comes near 128 KiB |
 | `src/telemetry.test.ts` "the contract" | no field that can carry what someone wrote; every record name is a string literal in the app or the SDK packages it names, or one a library forms (`GET`, `chat agent`, `execute_tool <flow>`) |
-| `src/telemetry-privacy.test.ts` | the real exporter and relay preserve `notifications.pending`, `smithers_notification_acts_dropped` by `act` and `reason`, `auth.run_credential` with `door_timeout`, and every report refusal's `reason`; sensitive URL fields stay removed |
+| `src/telemetry-privacy.test.ts` | the real exporter and relay preserve `notifications.pending`, `smithers_notification_acts_dropped` by `act` and `reason`, `auth.run_credential` with `door_timeout`, and every report refusal's `reason`; sensitive URL fields stay removed; server-only session records are refused, and browser session tags are stripped |
 | `packages/smithers/flows/observability/test/Otlp.test.ts` "exports only the spans `spans` names" | an exporter's `spans` list: only the named spans are sent, a dropped span's children keep its trace and parent id, and logs are sent as before |
 | `packages/smithers/flows/platform-browser/test/BrowserRuntime.test.ts` "run sends the worker's logs, spans and metrics to its telemetry" | `BrowserRuntime.run`'s `telemetry` receives the leader's log, spans and counts |
 | `worker/ExecutionHost.test.ts` "every start and alarm is one log line and one count by outcome, never the payload" | `cloudflare.execution.start` (`accepted`, `duplicate`) and `cloudflare.execution.alarm` (`settled`) lines and their counters, with a sentinel payload absent from every line |
@@ -1333,7 +1337,7 @@ receipt before erasure. Rotation records also include the fixed steps
 `pin_legacy`, `pin_seal`, `reset_seal`, `emergency_prepare` and `compromise`, with completed or failed
 outcomes. No session tag, token, ciphertext, cookie, fingerprint, key secret,
 login or person enters these diagnostics. Relay and raw-diagnostic privacy
-checks live in `src/telemetry-privacy.test.ts`.
+checks live in `src/telemetry-privacy.test.ts`. The relay refuses server-only session records; the browser exporter’s collection-id privacy is covered in `src/telemetryExport.test.ts`.
 
 ### Pending triage reauthorization
 
