@@ -1,0 +1,154 @@
+// The browser Commands that touch the page and the subscriptions that listen to it, on the real runtime: Render.afterCommit
+// resolves on a real commit and each subscription hears a real DOM event.
+import { describe, expect, it } from "@effect/vitest"
+import { vi } from "vitest"
+import { Runtime } from "foldkit"
+import type { Actions } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import type { Factory } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { initial as initialActions } from "../src/web/actionModel.vibe"
+import { accountOf, CloseIssueDialog, CloseRoleDialog, FocusAccountMenu, FocusIssueControl, FocusTourControl, FocusWikiEditor, init, MeasureTheatre, type Model, PresentTour, RevealWiki, RunAction, ShowIssueDialog, ShowRoleDialog, WikiLocation } from "../src/web/main.vibe"
+import { application } from "./support/application.vibe"
+import { activeIs, addElement, clickLink, container, dispatchWindow, location, popTo, press, remove } from "./support/browser.ts"
+
+const flags = { session: "r", name: "Ada", mode: "mock" as const }
+type Started = ReturnType<typeof init>
+const quiet = (over: Partial<Model> = {}, commands: () => NonNullable<Started["commands"]> = () => []) => (): Started => ({ model: { ...init(flags).model, surface: "chat", ...over }, commands: commands() })
+
+/** The app starting from `first`; `seen.model` is the latest model it rendered. */
+effect function started(make: () => Started, actions: Layer.Layer<Actions, never, Factory> = MockActions({ actor: "person" })) {
+  const first = try Effect.try(make)
+  const seen: { model: Model } = { model: first.model }
+  const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
+  const program = try Effect.try(() => application(node, MockFactory, (model) => { seen.model = model }, () => first, actions))
+  try acquireRelease(sync(() => Runtime.embed(program, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
+  return seen
+}
+
+const owned = <E extends HTMLElement>(tag: string, id: string, parent?: HTMLElement) => acquireRelease(sync(() => addElement<E>(tag, id, parent)), (node) => sync(() => node.remove()))
+const settled = (check: () => void) => promise(() => vi.waitFor(check, { timeout: 4000 }))
+describe("page commands", () => {
+  it.live("show both dialogs once the view has committed", () => scoped(effect {
+    const role = try owned<HTMLDialogElement>("dialog", "vl-role-dialog")
+    try owned("button", "vl-role-cancel", role)
+    const issue = try owned<HTMLDialogElement>("dialog", "ix-dialog")
+    try started(quiet({}, () => [ShowRoleDialog({}), ShowIssueDialog({})]))
+    try settled(() => { expect(role.open).toBe(true); expect(issue.open).toBe(true) })
+  }))
+  it.live("close both dialogs and return focus to the commit control", () => scoped(effect {
+    const role = try owned<HTMLDialogElement>("dialog", "vl-role-dialog")
+    const issue = try owned<HTMLDialogElement>("dialog", "ix-dialog")
+    const commit = try owned<HTMLButtonElement>("button", "ix-commit")
+    try Effect.try(() => { role.showModal(); issue.showModal() })
+    try started(quiet({}, () => [CloseRoleDialog({}), CloseIssueDialog({})]))
+    try settled(() => { expect(role.open).toBe(false); expect(issue.open).toBe(false); expect(activeIs(commit)).toBe(true) })
+  }))
+  it.live("a page without the dialogs still answers", () => scoped(effect {
+    const seen = try started(quiet({}, () => [ShowRoleDialog({}), CloseRoleDialog({}), ShowIssueDialog({}), CloseIssueDialog({})]))
+    try settled(() => expect(seen.model.surface).toBe("chat"))
+  }))
+  it.each([
+    ["the account menu's people control", () => FocusAccountMenu({ open: true }), "vl-account-people"],
+    ["the wiki editor", () => FocusWikiEditor({}), "vl-wiki-editor"],
+    ["a named issue control", () => FocusIssueControl({ id: "ix-kind-VIPs" }), "ix-kind-VIPs"],
+  ] as const)("focus %s", (_label, make, id) => Effect.runPromise(scoped(effect {
+    const target = try owned<HTMLTextAreaElement>("textarea", id)
+    try started(quiet({}, () => [make()]))
+    try settled(() => expect(activeIs(target)).toBe(true))
+  })))
+})
+
+describe("the wiki location", () => {
+  it.live("pushes a new page, scrolls its content to the top and reveals the docked pane", () => scoped(effect {
+    const content = try owned<HTMLDivElement>("div", "wiki-content-test")
+    const pane = try owned<HTMLDivElement>("div", "vl-wiki")
+    try sync(() => { content.className = "vl-wiki-content"; content.scrollTop = 80; pane.setAttribute("data-maximized", "false") })
+    try started(quiet({}, () => [WikiLocation({ url: "/wiki/testing" }), RevealWiki({})]))
+    try settled(() => { expect(location()).toBe("/wiki/testing"); expect(content.scrollTop).toBe(0) })
+  }))
+  it.live("goes to a heading, keeps a maximized pane where it is, and leaves an equal address alone", () => scoped(effect {
+    const heading = try owned<HTMLHeadingElement>("h2", "rulings")
+    const pane = try owned<HTMLDivElement>("div", "vl-wiki")
+    let scrolled = 0
+    try sync(() => { heading.scrollIntoView = () => { scrolled += 1 }; pane.setAttribute("data-maximized", "true") })
+    try started(quiet({}, () => [WikiLocation({ url: "/wiki/rulings#rulings" })]))
+    try settled(() => { expect(location()).toBe("/wiki/rulings#rulings"); expect(scrolled).toBe(1) })
+    try started(quiet({}, () => [WikiLocation({ url: "/wiki/rulings#rulings" }), RevealWiki({})]))
+    try settled(() => expect(scrolled).toBe(2))
+    try Effect.try(() => expect(location()).toBe("/wiki/rulings#rulings"))
+  }))
+})
+
+describe("page listeners", () => {
+  const maintainer = { account: { ...accountOf(init(flags).model), identity: { id: "1", login: "ada", role: "maintainer" as const } } }
+  it.live("a plain click on a wiki link visits it; a modified click or another address does not", () => scoped(effect {
+    const seen = try started(quiet())
+    try settled(() => { expect(clickLink("vl-wiki-content", "/wiki/index")).toBe(true); expect(seen.model.wikiRequested).toBe("/wiki/index") })
+    try Effect.try(() => {
+      expect(clickLink("vl-wiki-content", "/wiki/index", { metaKey: true })).toBe(false)
+      expect(clickLink("vl-wiki-content", "/wiki/index", { button: 1 })).toBe(false)
+      expect(clickLink("vl-wiki-content", "https://example.test/")).toBe(false)
+    })
+  }))
+  it.live("a draft link opens the editor on an existing page only", () => scoped(effect {
+    const seen = try started(quiet(maintainer))
+    try settled(() => { expect(clickLink("sui-chat-bubble", "#wiki-draft-index")).toBe(true); expect(seen.model.wikiEdit?.page).toBe("index") })
+    try Effect.try(() => {
+      expect(clickLink("sui-chat-bubble", "#wiki-draft-index", { ctrlKey: true })).toBe(false)
+      expect(clickLink("sui-chat-bubble", "#wiki-draft-nothing")).toBe(false)
+      expect(clickLink("sui-chat-bubble", "#elsewhere")).toBe(false)
+    })
+  }))
+  it.live("back and forward follow the wiki and the home page, and ignore any other address", () => scoped(effect {
+    const seen = try started(quiet())
+    try settled(() => { popTo("/wiki/testing"); expect(seen.model.wikiRequested).toBe("/wiki/testing") })
+    try settled(() => { popTo("/"); expect(seen.model.surface).toBe("splash") })
+    const before = seen.model
+    try sync(() => popTo("/elsewhere"))
+    try sleep("50 millis")
+    try Effect.try(() => expect(seen.model).toEqual(before))
+  }))
+  it.live("while touring, tour keys are claimed; other keys are left alone, and resizing re-measures", () => scoped(effect {
+    const seen = try started(quiet({ tour: true }))
+    try settled(() => expect(press({ key: "Tab" })).toBe(true))
+    try Effect.try(() => {
+      expect(press({ key: "Tab", shiftKey: true })).toBe(true)
+      expect(press({ key: " " })).toBe(true)
+      expect(press({ key: "ArrowLeft" })).toBe(true)
+      expect(press({ key: "ArrowRight" })).toBe(true)
+      expect(press({ key: "k", metaKey: true })).toBe(true)
+      expect(press({ key: "K", ctrlKey: true })).toBe(true)
+      expect(press({ key: "j", metaKey: true })).toBe(false)
+      expect(press({ key: "x" })).toBe(false)
+    })
+    try sync(() => { dispatchWindow("resize"); dispatchWindow("orientationchange") })
+    try settled(() => expect(seen.model.theatreBox).toBeDefined())
+  }))
+  it.live("an untouched splash starts the tour on its own", () => scoped(effect {
+    const seen = try started(quiet({ surface: "splash", autoTour: true }))
+    try settled(() => expect(seen.model.tour).toBe(true))
+  }))
+  it.live("a running action ticks the clock", () => scoped(effect {
+    const seen = try started(quiet({ actions: { ...initialActions } }, () => [RunAction({ name: "vibelang/Tour", text: "", door: "button", format: "none" })]))
+    try settled(() => expect(seen.model.actions?.runs.length).toBe(1))
+    try settled(() => expect(seen.model.actions?.now ?? 0).toBeGreaterThan(0))
+  }))
+  it.live("a started action is followed to its end", () => scoped(effect {
+    const seen = try started(quiet({ actions: { ...initialActions } }, () => [RunAction({ name: "vibelang/history/show", text: "", door: "button", format: "json" })]), MockActions({ role: "contributor", actor: "person" }))
+    try settled(() => expect(seen.model.actions?.runs[0]?.state).toBe("passed"))
+  }))
+  it.live("a run the service no longer knows ends its follow quietly", () => scoped(effect {
+    const run = { id: "gone", flow: "vibelang/Tour", door: "button" as const, actor: "person" as const, state: "running" as const, started: 0, at: 1, result: "", steps: [] }
+    const seen = try started(quiet({ actions: { ...initialActions, runs: [run] } }))
+    try sleep("50 millis")
+    try Effect.try(() => expect(seen.model.actions?.runs[0]?.state).toBe("running"))
+  }))
+})
+
+describe("the presenter", () => {
+  it.live("measures, presents and moves focus through the tour controls", () => scoped(effect {
+    const seen = try started(quiet({ tour: true }, () => [PresentTour({ step: 1, sound: false, active: true, paused: false }), MeasureTheatre({ target: "splash" }), FocusTourControl({ backward: false }), FocusTourControl({ backward: true })]))
+    try settled(() => expect(seen.model.theatreBox).toBeDefined())
+  }))
+})

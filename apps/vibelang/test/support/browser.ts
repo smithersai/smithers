@@ -42,3 +42,38 @@ export function healthResponse(agent: "mock" | "live"): Response {
 export function commandK(): void {
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true, cancelable: true }))
 }
+
+/** A new element under `parent` or the body. */
+export function addElement<E extends HTMLElement>(tag: string, id: string, parent?: HTMLElement): E {
+  const node = document.createElement(tag) as E
+  node.id = id
+  ;(parent ?? document.body).append(node)
+  return node
+}
+export function activeIs(node: Element): boolean { return document.activeElement === node }
+export function location(): string { return `${window.location.pathname}${window.location.hash}` }
+/** A real keydown at the document; true when a listener claimed it. */
+export function press(init: KeyboardEventInit): boolean {
+  const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init })
+  document.dispatchEvent(event)
+  return event.defaultPrevented
+}
+/** A real click on a link inside an element of `className`; true when a listener claimed it. */
+export function clickLink(className: string, href: string, init: MouseEventInit = {}): boolean {
+  const host = document.createElement("div")
+  host.className = className
+  const link = document.createElement("a")
+  link.setAttribute("href", href)
+  host.append(link)
+  document.body.append(host)
+  const event = new MouseEvent("click", { bubbles: true, cancelable: true, ...init })
+  link.dispatchEvent(event)
+  host.remove()
+  return event.defaultPrevented
+}
+/** The browser's back or forward landing on `path`. */
+export function popTo(path: string): void {
+  window.history.replaceState(null, "", path)
+  window.dispatchEvent(new PopStateEvent("popstate"))
+}
+export function dispatchWindow(type: string): void { window.dispatchEvent(new Event(type)) }
