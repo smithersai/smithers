@@ -22,7 +22,7 @@
  */
 
 import { IntegrationError } from "../core/IntegrationError.ts"
-import { GitHubClient } from "./GitHubClient.ts"
+import { GitHubClient } from "./GitHubClient.vibe"
 import { requireBranch } from "./Refs.ts"
 import { requireRepositoryPath } from "./Repository.vibe"
 

@@ -44,7 +44,7 @@
 
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { LabelName, RECONCILE_PAGES } from "./Actions.ts"
-import { GitHubClient } from "./GitHubClient.ts"
+import { GitHubClient } from "./GitHubClient.vibe"
 import { IssueNumber, requireRepositoryPath } from "./Repository.vibe"
 
 /**

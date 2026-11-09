@@ -24,7 +24,7 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { afterEach, expect, it } from "vitest"
 import * as GitHubActions from "../src/github/Actions.ts"
-import * as GitHubClient from "../src/github/GitHubClient.ts"
+import * as GitHubClient from "../src/github/GitHubClient.vibe"
 import { type FakeGitHub, startGitHub } from "./GitHubFake.ts"
 import { faultingTransport, gitHubLayer, gitHubLayerOver } from "./Http.ts"
 

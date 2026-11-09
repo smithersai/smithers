@@ -157,8 +157,8 @@
       "default": "./.vibelang/js/src/github/Config.js"
     },
     "./github/GitHubClient": {
-      "types": "./src/github/GitHubClient.ts",
-      "vibelang-source": "./src/github/GitHubClient.ts",
+      "types": "./.vibe/declarations/github/GitHubClient.d.vibe.ts",
+      "vibelang-source": "./src/github/GitHubClient.vibe",
       "default": "./.vibelang/js/src/github/GitHubClient.js"
     },
     "./github/Issues": {

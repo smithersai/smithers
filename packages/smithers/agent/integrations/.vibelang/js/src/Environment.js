@@ -17,5 +17,6 @@
  *
  * @category accessors
  * @since 1.0.0
+ * @throws {never}
  */
 export const ambientEnvironment = () => globalThis.process?.env ?? {};

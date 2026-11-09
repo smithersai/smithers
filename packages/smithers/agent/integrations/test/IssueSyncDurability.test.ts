@@ -14,7 +14,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Actions from "../src/github/Actions.ts"
-import * as Client from "../src/github/GitHubClient.ts"
+import * as Client from "../src/github/GitHubClient.vibe"
 import { json, startFixture } from "./Fixture.ts"
 import { gitHubClient } from "./Http.ts"
 

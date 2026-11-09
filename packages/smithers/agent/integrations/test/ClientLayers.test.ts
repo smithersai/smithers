@@ -1,6 +1,6 @@
 import { Cause, Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
-import * as GitHubClient from "../src/github/GitHubClient.ts"
+import * as GitHubClient from "../src/github/GitHubClient.vibe"
 import { fetchLayer, gitHubLayer } from "./Http.ts"
 
 // A bad config used to throw out of `Layer.sync`, which dies as a defect that

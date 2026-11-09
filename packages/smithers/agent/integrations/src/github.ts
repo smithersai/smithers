@@ -50,7 +50,7 @@ export * as Contents from "./github/Contents.vibe"
  * @category services
  * @since 1.0.0
  */
-export * as GitHubClient from "./github/GitHubClient.ts"
+export * as GitHubClient from "./github/GitHubClient.vibe"
 
 /**
  * @category constructors

@@ -55,7 +55,7 @@ import {
   transportCause,
   webHeaders
 } from "../core/CredentialHttp.ts"
-import { IntegrationError, isIntegrationError } from "../core/IntegrationError.ts"
+import { IntegrationError } from "../core/IntegrationError.ts"
 import { redactedError } from "../core/RedactedError.ts"
 import * as Environment from "../Environment.ts"
 import { type GitHubConfig, resolve } from "./Config.vibe"
@@ -404,13 +404,12 @@ const failureAttributes = (error: IntegrationError) =>
     "integration.outcome_unknown": error.details?.["outcomeUnknown"] === true
   })
 
-// The client over `http`. Throws an IntegrationError for a bad config; `make`
-// turns that into a typed failure.
-const build = (
+// The client over `http`. A bad config fails with an IntegrationError.
+const build = effect (
   config: GitHubConfig,
   env: Readonly<Record<string, string | undefined>>,
   http: HttpClient.HttpClient
-): GitHubClient => {
+): GitHubClient!IntegrationError => {
   const resolved = resolve(config, env)
   // An App's client credentials replace any token: GitHub authenticates its
   // `/applications/{client_id}/...` endpoints with HTTP Basic. Percent-encoding
@@ -483,7 +482,7 @@ const build = (
   // `new URL` throws a bare TypeError for anything starting with "http" that
   // is not a URL (`httpx`, say). That throw runs before the request effect, so
   // it would escape the declared IntegrationError channel as a defect.
-  const buildUrl = (path: string, query?: RequestOptions["query"]): string => {
+  const urlFor = effect (path: string, query?: RequestOptions["query"]): string!IntegrationError => {
     // Enterprise serves REST at /api/v3 and GraphQL at /api/graphql.
     const requestBase = path === "/graphql" ? baseUrl.replace(/\/api\/v3$/, "/api") : baseUrl
     const absolute = path.startsWith("http") ? path : `${requestBase}${path.startsWith("/") ? "" : "/"}${path}`
@@ -500,11 +499,6 @@ const build = (
     return url.toString()
   }
 
-  const urlFor = (
-    path: string,
-    query?: RequestOptions["query"]
-  ): Effect.Effect<string, IntegrationError> =>
-    Effect.try({ try: () => buildUrl(path, query), catch: (cause) => cause as IntegrationError })
 
   // Serialized once, before the attempt. `JSON.stringify` throws on a cyclic
   // or unserializable body, and inside the transport attempt that throw was
@@ -735,30 +729,30 @@ const build = (
   }
 
   const paginate: GitHubClient["paginate"] = (path, options) =>
-    Effect.gen(function*() {
-      const perPage = yield* bounded("perPage", options?.perPage, MAX_PER_PAGE, 1, MAX_PER_PAGE)
-      const maxPages = yield* bounded("maxPages", options?.maxPages, DEFAULT_MAX_PAGES, 1, MAX_PAGES_LIMIT)
+    (effect {
+      const perPage = try bounded("perPage", options?.perPage, MAX_PER_PAGE, 1, MAX_PER_PAGE)
+      const maxPages = try bounded("maxPages", options?.maxPages, DEFAULT_MAX_PAGES, 1, MAX_PAGES_LIMIT)
       const items: Array<unknown> = []
-      let url: string | null = yield* urlFor(path, { per_page: perPage })
+      let url: string | null = try urlFor(path, { per_page: perPage })
       let pages = 0
       while (url !== null && pages < maxPages) {
-        const page: { readonly json: unknown; readonly headers: Headers } = yield* requestUrl("GET", url)
+        const page: { readonly json: unknown; readonly headers: Headers } = try requestUrl("GET", url)
         if (Array.isArray(page.json)) items.push(...page.json)
         else if (page.json !== null) items.push(page.json)
-        url = yield* resolveNext(nextPageUrl(page.headers.get("link")), url)
+        url = try resolveNext(nextPageUrl(page.headers.get("link")), url)
         pages += 1
       }
-      yield* Effect.annotateCurrentSpan({ "github.pages": pages, "github.truncated": url !== null })
+      try Effect.annotateCurrentSpan({ "github.pages": pages, "github.truncated": url !== null })
       return { items, truncated: url !== null, ...(options?.withNext === true ? { next: url } : {}) }
     }).pipe(Effect.withSpan("GitHubClient.paginate"))
 
   const count: GitHubClient["count"] = (path, options) =>
-    Effect.gen(function*() {
-      const url = yield* urlFor(path, { ...options?.query, per_page: 1, page: 1 })
-      const page = yield* requestUrl("GET", url)
+    (effect {
+      const url = try urlFor(path, { ...options?.query, per_page: 1, page: 1 })
+      const page = try requestUrl("GET", url)
       const items = Array.isArray(page.json) ? page.json : page.json === null ? [] : [page.json]
       const total = lastPageNumber(page.headers.get("link")) ?? items.length
-      yield* Effect.annotateCurrentSpan({ "github.count": total })
+      try Effect.annotateCurrentSpan({ "github.count": total })
       return { total, first: items[0] }
     }).pipe(Effect.withSpan("GitHubClient.count"))
 
@@ -797,17 +791,7 @@ export const make = (
   config: GitHubConfig = {},
   env: Readonly<Record<string, string | undefined>> = Environment.ambientEnvironment()
 ): Effect.Effect<GitHubClient, IntegrationError, HttpClient.HttpClient> =>
-  Effect.flatMap(Effect.service(HttpClient.HttpClient), (http) =>
-    Effect.suspend(() => {
-      // A config error is a typed failure. Anything else build throws is a
-      // defect and stays one.
-      try {
-        return Effect.succeed(build(config, env, forCredentials(http)))
-      } catch (error) {
-        if (isIntegrationError(error)) return Effect.fail(error)
-        throw error
-      }
-    }))
+  Effect.flatMap(Effect.service(HttpClient.HttpClient), (http) => build(config, env, forCredentials(http)))
 
 /**
  * Layer for a client bound to `config`, over the `HttpClient` in context.

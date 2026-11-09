@@ -18,7 +18,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import { IntegrationFailure, RetryableIntegrationFailure } from "../src/core/ActionFailure.vibe"
 import type { IntegrationError } from "../src/core/IntegrationError.ts"
 import * as Actions from "../src/github/Actions.ts"
-import type * as GitHubClient from "../src/github/GitHubClient.ts"
+import type * as GitHubClient from "../src/github/GitHubClient.vibe"
 import { type FakeGitHub, startGitHub } from "./GitHubFake.ts"
 import { type Fault, faultingTransport, fetchLayer, gitHubLayer, gitHubLayerOver } from "./Http.ts"
 

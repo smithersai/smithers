@@ -87,7 +87,7 @@ const securityReview = Smithers.SecurityReview({
         "An IntegrationError summary, details map, or cause built from a response body or URL without passing through redact or RedactedError."
       ],
       paths: [
-        "src/github/GitHubClient.ts",
+        "src/github/GitHubClient.vibe",
         "src/core/Redact.ts",
         "src/core/RedactedError.ts",
         "src/core/AccessToken.vibe"

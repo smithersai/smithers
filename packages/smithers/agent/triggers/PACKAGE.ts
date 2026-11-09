@@ -100,7 +100,7 @@ const securityReview = Smithers.SecurityReview({
       threat:
         "Two scheduler processes double-launch a flow occurrence, duplicating side effects such as payments or deploys.",
       lookFor: [
-        "A claim path in SqlTriggerStore.ts or ClaimDecision.ts whose UPDATE lacks the active_run_id or reservation guard, or ignores affectedRows.",
+        "A claim path in SqlTriggerStore.vibe or ClaimDecision.ts whose UPDATE lacks the active_run_id or reservation guard, or ignores affectedRows.",
         "An idempotency key for Control that is not derived from trigger id and occurrence."
       ],
       paths: ["src/SqlTriggerStore.vibe", "src/ClaimDecision.ts", "src/Scheduler.ts", "src/Overlap.ts"]

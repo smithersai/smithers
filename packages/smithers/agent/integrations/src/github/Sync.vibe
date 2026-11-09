@@ -48,7 +48,7 @@
 import { IntegrationError } from "../core/IntegrationError.ts"
 import type { SourceRecord } from "../core/SourceRecord.vibe"
 import type { Changes, SyncAdapter } from "../core/Sync.vibe"
-import { type GitHubClient, MAX_PER_PAGE } from "./GitHubClient.ts"
+import { type GitHubClient, MAX_PER_PAGE } from "./GitHubClient.vibe"
 import { repositoryPath } from "./Repository.vibe"
 
 /**

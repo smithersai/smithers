@@ -44,10 +44,10 @@ import { forCredentials, webHeaders } from "../core/CredentialHttp.ts"
 import { type IntegrationError, isIntegrationError } from "../core/IntegrationError.ts"
 import { constantTimeEqual } from "../core/Signature.ts"
 import { DEFAULT_API_BASE_URL, DEFAULT_REQUEST_TIMEOUT } from "./Config.vibe"
-import { isRateLimitResponse, PROXY_REASON, PROXY_RETRY_AT } from "./GitHubClient.ts"
+import { isRateLimitResponse, PROXY_REASON, PROXY_RETRY_AT } from "./GitHubClient.vibe"
 import * as RateLimit from "./RateLimit.ts"
 
-export { PROXY_REASON, PROXY_RETRY_AT } from "./GitHubClient.ts"
+export { PROXY_REASON, PROXY_RETRY_AT } from "./GitHubClient.vibe"
 
 /**
  * The token the proxy sends for a request, and the principal whose budget it

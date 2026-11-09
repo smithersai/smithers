@@ -9,7 +9,7 @@
 import { Effect } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import type { IntegrationError } from "../src/core/IntegrationError.ts"
-import type { GitHubClient } from "../src/github/GitHubClient.ts"
+import type { GitHubClient } from "../src/github/GitHubClient.vibe"
 import * as Statuses from "../src/github/Statuses.vibe"
 import { type Fixture, json, startFixture } from "./Fixture.ts"
 import { gitHubLayer } from "./Http.ts"

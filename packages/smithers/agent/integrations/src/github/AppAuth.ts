@@ -41,7 +41,7 @@ import { Clock, Context, type Duration, Effect, Layer, Option, Redacted, Schema 
 import * as HttpClient from "effect/http/HttpClient"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { redactedError } from "../core/RedactedError.ts"
-import * as GitHubClient from "./GitHubClient.ts"
+import * as GitHubClient from "./GitHubClient.vibe"
 import { isRepo, requireRepositoryPath } from "./Repository.vibe"
 
 /**

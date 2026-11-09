@@ -22,7 +22,7 @@
 
 import { Effect, Option, Schema } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
-import { GitHubClient } from "./GitHubClient.ts"
+import { GitHubClient } from "./GitHubClient.vibe"
 import { requireRepositoryPath } from "./Repository.vibe"
 
 /**
