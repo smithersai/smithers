@@ -24,7 +24,7 @@ import { Context, Effect, Exit, Layer, Schema, type Scope } from "effect"
 import * as Cell from "./Cell.ts"
 import * as CellValidation from "./CellValidation.ts"
 import type { HarnessError } from "./HarnessError.vibe"
-import { refusal, timedOut } from "./internal/refusal.ts"
+import { refusal, timedOut } from "./internal/refusal.vibe"
 import type * as VariablesPanel from "./VariablesPanel.vibe"
 
 /**
@@ -346,7 +346,7 @@ export const minimumMemoryBytes = 1024 * 1024
 
 // The print-channel budgets live with the channel that spends them, and are
 // re-exported here because a host reads them to size what it prints.
-export { printFrameBytes, printRetainedBytes, printStatementFloor } from "./internal/printChannel.ts"
+export { printFrameBytes, printRetainedBytes, printStatementFloor } from "./internal/printChannel.vibe"
 
 const invalidLimit = (name: keyof Limits, requirement: string): SandboxError =>
   new SandboxError({

@@ -42,8 +42,8 @@
     "./internal/*": null,
     "./*/index": null,
     "./AgentEvent": {
-      "types": "./src/AgentEvent.ts",
-      "vibelang-source": "./src/AgentEvent.ts",
+      "types": "./.vibe/declarations/src/AgentEvent.d.vibe.ts",
+      "vibelang-source": "./src/AgentEvent.vibe",
       "default": "./.vibelang/js/src/AgentEvent.js"
     },
     "./CallLedger": {
@@ -62,8 +62,8 @@
       "default": "./.vibelang/js/src/CellCalls.js"
     },
     "./CellHistory": {
-      "types": "./src/CellHistory.ts",
-      "vibelang-source": "./src/CellHistory.ts",
+      "types": "./.vibe/declarations/src/CellHistory.d.vibe.ts",
+      "vibelang-source": "./src/CellHistory.vibe",
       "default": "./.vibelang/js/src/CellHistory.js"
     },
     "./CellTurn": {
@@ -97,8 +97,8 @@
       "default": "./.vibelang/js/src/EngineLike.js"
     },
     "./ExternalTranscript": {
-      "types": "./src/ExternalTranscript.ts",
-      "vibelang-source": "./src/ExternalTranscript.ts",
+      "types": "./.vibe/declarations/src/ExternalTranscript.d.vibe.ts",
+      "vibelang-source": "./src/ExternalTranscript.vibe",
       "default": "./.vibelang/js/src/ExternalTranscript.js"
     },
     "./FlowBinding": {
@@ -122,8 +122,8 @@
       "default": "./.vibelang/js/src/Monitor.js"
     },
     "./NarrowedCheck": {
-      "types": "./src/NarrowedCheck.ts",
-      "vibelang-source": "./src/NarrowedCheck.ts",
+      "types": "./.vibe/declarations/src/NarrowedCheck.d.vibe.ts",
+      "vibelang-source": "./src/NarrowedCheck.vibe",
       "default": "./.vibelang/js/src/NarrowedCheck.js"
     },
     "./Notifications": {
@@ -167,8 +167,8 @@
       "default": "./.vibelang/js/src/StructuredOutput.js"
     },
     "./Sufficiency": {
-      "types": "./src/Sufficiency.ts",
-      "vibelang-source": "./src/Sufficiency.ts",
+      "types": "./.vibe/declarations/src/Sufficiency.d.vibe.ts",
+      "vibelang-source": "./src/Sufficiency.vibe",
       "default": "./.vibelang/js/src/Sufficiency.js"
     },
     "./Supervisor": {
@@ -197,8 +197,8 @@
       "default": "./.vibelang/js/src/UnmovedTree.js"
     },
     "./UnresolvedFailure": {
-      "types": "./src/UnresolvedFailure.ts",
-      "vibelang-source": "./src/UnresolvedFailure.ts",
+      "types": "./.vibe/declarations/src/UnresolvedFailure.d.vibe.ts",
+      "vibelang-source": "./src/UnresolvedFailure.vibe",
       "default": "./.vibelang/js/src/UnresolvedFailure.js"
     },
     "./FailedCall": {

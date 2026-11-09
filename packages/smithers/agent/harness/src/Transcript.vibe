@@ -15,7 +15,7 @@ import * as Fault from "@smthrs/flow/Fault"
 import type { JournalEvent } from "@smthrs/journal"
 import { ModelRequest } from "@smthrs/model"
 import { Result, Schema } from "effect"
-import * as AgentEvent from "./AgentEvent.ts"
+import * as AgentEvent from "./AgentEvent.vibe"
 import type * as Cell from "./Cell.ts"
 import type * as EngineLike from "./EngineLike.ts"
 import * as FailedCall from "./FailedCall.ts"
@@ -509,5 +509,5 @@ export const projectResult = (
  * Pure external-source decoders; never create executable journal identities.
  * @since 1.0.0-rc.1
  */
-export { decodeClaude, decodeCodex } from "./ExternalTranscript.ts"
-export type { Decoded as ExternalDecoded, Entry as ExternalEntry } from "./ExternalTranscript.ts"
+export { decodeClaude, decodeCodex } from "./ExternalTranscript.vibe"
+export type { Decoded as ExternalDecoded, Entry as ExternalEntry } from "./ExternalTranscript.vibe"

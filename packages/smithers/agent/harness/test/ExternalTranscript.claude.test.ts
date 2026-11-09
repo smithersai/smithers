@@ -124,7 +124,7 @@ const constructed = (line: number, seq: number) => ({
 describe("ExternalTranscript Claude Code", () => {
   describe("public boundary", () => {
     it("is exported from the published ./ExternalTranscript subpath", async () => {
-      const subpath = await import("../src/ExternalTranscript.ts")
+      const subpath = await import("../src/ExternalTranscript.vibe")
       expect(subpath.decodeClaude).toBe(ExternalTranscript.decodeClaude)
       expect(subpath.claudeStart).toBe(ExternalTranscript.claudeStart)
     })

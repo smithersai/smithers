@@ -49,9 +49,9 @@
  */
 import type { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as NarrowedCheck from "../src/NarrowedCheck.ts"
+import * as NarrowedCheck from "../src/NarrowedCheck.vibe"
 import * as UnmovedTree from "../src/UnmovedTree.ts"
-import * as UnresolvedFailure from "../src/UnresolvedFailure.ts"
+import * as UnresolvedFailure from "../src/UnresolvedFailure.vibe"
 import journals from "./fixtures/completionJournals.json" with { type: "json" }
 import r97 from "./fixtures/r97Journals.json" with { type: "json" }
 import waveTen from "./fixtures/wave10Journals.json" with { type: "json" }

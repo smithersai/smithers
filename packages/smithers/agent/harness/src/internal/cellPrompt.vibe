@@ -69,7 +69,7 @@
 import * as Digest from "@smthrs/core/Digest"
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import type * as Descriptor from "@smthrs/registry/Descriptor"
-import type * as AgentEvent from "../AgentEvent.ts"
+import type * as AgentEvent from "../AgentEvent.vibe"
 import type * as Cell from "../Cell.ts"
 import * as Monitor from "../Monitor.vibe"
 import { untrustedData } from "./untrustedData.ts"

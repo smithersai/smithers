@@ -97,7 +97,7 @@
  * @since 0.1.0
  */
 
-import type * as NarrowedCheck from "./NarrowedCheck.ts"
+import type * as NarrowedCheck from "./NarrowedCheck.vibe"
 
 /**
  * How many pristine-tree passes one run carries forward.

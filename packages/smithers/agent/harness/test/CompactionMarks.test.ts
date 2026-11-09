@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest"
 import * as Compaction from "../src/Compaction.ts"
 import * as ContextWindow from "../src/ContextWindow.ts"
 import * as bytes from "../src/internal/bytes.ts"
-import * as Marks from "../src/internal/compactionMarks.ts"
+import * as Marks from "../src/internal/compactionMarks.vibe"
 
 const turn = (text: string, kind: ContextWindow.SegmentKind = "transcript") =>
   ContextWindow.makeSegment({ kind, zone: "tail", content: [ModelRequest.Message.assistant(text)] })

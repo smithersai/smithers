@@ -7,7 +7,7 @@ import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Effect, Layer, Option, Result, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as AgentEvent from "../src/AgentEvent.ts"
+import * as AgentEvent from "../src/AgentEvent.vibe"
 import * as bytes from "../src/internal/bytes.ts"
 import * as Relevance from "../src/Relevance.vibe"
 

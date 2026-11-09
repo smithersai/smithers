@@ -141,7 +141,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/cellPrompt.vibe",
         "src/internal/printsObservation.ts",
         "src/CallLedger.vibe",
-        "src/NarrowedCheck.ts",
+        "src/NarrowedCheck.vibe",
         "src/Compaction.ts",
         "src/Relevance.vibe",
         "src/Supervisor.ts",
@@ -174,11 +174,11 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/CompletionClaim.ts",
         "src/Judgement.ts",
-        "src/UnresolvedFailure.ts",
+        "src/UnresolvedFailure.vibe",
         "src/FailedCall.ts",
         "src/UnmovedTree.ts",
         "src/VacuousVerification.vibe",
-        "src/Sufficiency.ts",
+        "src/Sufficiency.vibe",
         "src/CellTurn.ts"
       ]
     },
@@ -192,7 +192,7 @@ const securityReview = Smithers.SecurityReview({
         "A flow handler cause or print buffer persisted verbatim without the redaction FlowBinding documents."
       ],
       paths: [
-        "src/AgentEvent.ts",
+        "src/AgentEvent.vibe",
         "src/Transcript.vibe",
         "src/EngineLike.ts",
         "src/FlowBinding.ts",

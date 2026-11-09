@@ -9,7 +9,7 @@
 import { CanonicalJson, ModelRequest } from "@smthrs/model"
 import { Effect, Option, Stream } from "effect"
 import { describe, expect, it } from "vitest"
-import * as AgentEvent from "../src/AgentEvent.ts"
+import * as AgentEvent from "../src/AgentEvent.vibe"
 import * as Cell from "../src/Cell.ts"
 import * as CellTurn from "../src/CellTurn.ts"
 import * as ContextWindow from "../src/ContextWindow.ts"

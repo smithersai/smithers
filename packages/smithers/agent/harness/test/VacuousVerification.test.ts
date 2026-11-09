@@ -12,9 +12,9 @@
 import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as NarrowedCheck from "../src/NarrowedCheck.ts"
-import * as Sufficiency from "../src/Sufficiency.ts"
-import * as UnresolvedFailure from "../src/UnresolvedFailure.ts"
+import * as NarrowedCheck from "../src/NarrowedCheck.vibe"
+import * as Sufficiency from "../src/Sufficiency.vibe"
+import * as UnresolvedFailure from "../src/UnresolvedFailure.vibe"
 import * as VacuousVerification from "../src/VacuousVerification.vibe"
 import wave from "./fixtures/vacuousJournals.json" with { type: "json" }
 

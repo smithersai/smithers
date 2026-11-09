@@ -11,7 +11,7 @@
 import { ModelRequest } from "@smthrs/model"
 import { Effect, Option, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
-import * as AgentEvent from "../src/AgentEvent.ts"
+import * as AgentEvent from "../src/AgentEvent.vibe"
 import * as CellTurn from "../src/CellTurn.ts"
 import * as EngineLike from "../src/EngineLike.ts"
 import * as FailedCall from "../src/FailedCall.ts"

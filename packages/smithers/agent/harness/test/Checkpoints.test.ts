@@ -12,7 +12,7 @@
 import { ModelRequest } from "@smthrs/model"
 import { Effect, Option } from "effect"
 import { describe, expect, it } from "vitest"
-import type * as AgentEvent from "../src/AgentEvent.ts"
+import type * as AgentEvent from "../src/AgentEvent.vibe"
 import * as Cell from "../src/Cell.ts"
 import * as CellTurn from "../src/CellTurn.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"

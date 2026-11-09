@@ -21,7 +21,7 @@ import * as Fault from "@smthrs/flow/Fault"
 import * as Classifier from "@smthrs/model/Classifier"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import type * as AgentEvent from "./AgentEvent.ts"
+import type * as AgentEvent from "./AgentEvent.vibe"
 import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.vibe"
 import * as Supervisor from "./Supervisor.ts"
 

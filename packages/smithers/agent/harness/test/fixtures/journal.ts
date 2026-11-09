@@ -1,7 +1,7 @@
 /** @since 0.1.0 */
 import { JournalEvent } from "@smthrs/journal"
 import { ModelEvent, ModelRequest } from "@smthrs/model"
-import * as AgentEvent from "../../src/AgentEvent.ts"
+import * as AgentEvent from "../../src/AgentEvent.vibe"
 
 const runId = "run-1" as JournalEvent.RunId
 const sourceId = "fixture" as JournalEvent.SourceId

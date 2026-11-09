@@ -37,7 +37,7 @@ import { Effect, Option, Schema } from "effect"
 import * as Cell from "./Cell.ts"
 import type * as FlowBinding from "./FlowBinding.ts"
 import { HarnessError } from "./HarnessError.vibe"
-import { refusal } from "./internal/refusal.ts"
+import { refusal } from "./internal/refusal.vibe"
 
 /**
  * One module-backed flow, implemented by the host that discovered it.

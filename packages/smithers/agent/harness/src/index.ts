@@ -15,7 +15,7 @@ export * as HarnessError from "./HarnessError.vibe"
  * @category events
  * @since 0.1.0
  */
-export * as AgentEvent from "./AgentEvent.ts"
+export * as AgentEvent from "./AgentEvent.vibe"
 
 /**
  * @category controls
@@ -81,7 +81,7 @@ export * as Transcript from "./Transcript.vibe"
  * @category projections
  * @since 1.0.0-rc.1
  */
-export * as ExternalTranscript from "./ExternalTranscript.ts"
+export * as ExternalTranscript from "./ExternalTranscript.vibe"
 
 /**
  * @category compaction
@@ -138,7 +138,7 @@ export * as DoneText from "./DoneText.vibe"
  * @category services
  * @since 0.1.0
  */
-export * as CellHistory from "./CellHistory.ts"
+export * as CellHistory from "./CellHistory.vibe"
 
 /**
  * @category constructors
@@ -174,7 +174,7 @@ export * as CallLedger from "./CallLedger.vibe"
  * @category models
  * @since 0.1.0
  */
-export * as NarrowedCheck from "./NarrowedCheck.ts"
+export * as NarrowedCheck from "./NarrowedCheck.vibe"
 
 /**
  * @category conversions
@@ -192,7 +192,7 @@ export * as UnmovedTree from "./UnmovedTree.ts"
  * @category models
  * @since 0.1.0
  */
-export * as UnresolvedFailure from "./UnresolvedFailure.ts"
+export * as UnresolvedFailure from "./UnresolvedFailure.vibe"
 
 /**
  * @category models
@@ -204,7 +204,7 @@ export * as FailedCall from "./FailedCall.ts"
  * @category models
  * @since 0.1.0
  */
-export * as Sufficiency from "./Sufficiency.ts"
+export * as Sufficiency from "./Sufficiency.vibe"
 
 /**
  * @category models

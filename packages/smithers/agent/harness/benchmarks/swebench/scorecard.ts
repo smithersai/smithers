@@ -46,7 +46,7 @@ import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
 import type { ControlSchema } from "../../../../control/src/index.ts"
 import * as Forensics from "../../../../src/Forensics.vibe"
-import type * as AgentEvent from "../../src/AgentEvent.ts"
+import type * as AgentEvent from "../../src/AgentEvent.vibe"
 import { jevCaller, jevCellQuestionsOf, jevUsageOf } from "./jev-usage.ts"
 import { jevModel, usd } from "./prices.ts"
 

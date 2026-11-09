@@ -53,7 +53,7 @@ import type * as Cell from "./Cell.ts"
 import { CallResult, failureKind, Failures } from "./Cell.ts"
 import { HarnessError } from "./HarnessError.vibe"
 import * as elide from "./internal/elide.ts"
-import { refusal, timedOut } from "./internal/refusal.ts"
+import { refusal, timedOut } from "./internal/refusal.vibe"
 
 /**
  * The declaration half of a binding.
