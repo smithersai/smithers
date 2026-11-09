@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest"
 import * as Descriptor from "../src/Descriptor.vibe"
 import * as Discovery from "../src/Discovery.ts"
 import * as Executable from "../src/Executable.ts"
-import * as Snapshot from "../src/ExecutionSnapshot.ts"
+import * as Snapshot from "../src/ExecutionSnapshot.vibe"
 
 const platform = Layer.mergeAll(NodeCrypto.layer, NodeFileSystem.layer, NodePath.layer)
 const source = `import { Flow } from "@smthrs/flow"

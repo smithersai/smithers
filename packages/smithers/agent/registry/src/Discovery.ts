@@ -33,7 +33,7 @@ import {
   SourceScan
 } from "./Descriptor.vibe"
 import * as Frontmatter from "./internal/Frontmatter.vibe"
-import { measureLockfiles } from "./internal/Lockfiles.ts"
+import { measureLockfiles } from "./internal/Lockfiles.vibe"
 import * as ModuleClosure from "./internal/ModuleClosure.ts"
 import * as ModuleMetadata from "./internal/ModuleMetadata.vibe"
 import * as Names from "./internal/Names.vibe"

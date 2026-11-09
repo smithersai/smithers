@@ -22,8 +22,8 @@ import {
   type Source
 } from "./Descriptor.vibe"
 import { Discovery, layer as discoveryLayer, type SkillSource } from "./Discovery.ts"
-import type * as ExecutionSnapshot from "./ExecutionSnapshot.ts"
-import { readVerifiedBody } from "./internal/Body.ts"
+import type * as ExecutionSnapshot from "./ExecutionSnapshot.vibe"
+import { readVerifiedBody } from "./internal/Body.vibe"
 import * as MarkdownFlow from "./MarkdownFlow.vibe"
 import * as Pack from "./Pack.vibe"
 import type { DiscoveryError, RegistryError } from "./RegistryError.vibe"

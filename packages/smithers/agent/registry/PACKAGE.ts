@@ -59,7 +59,7 @@ const securityReview = Smithers.SecurityReview({
         "An unpinnable closure entry (no contentDigest) that does not refuse execution.",
         "verifyImports comparing only measured entries and ignoring recorded paths that disappeared, or vice versa."
       ],
-      paths: ["src/Executable.ts", "src/internal/ModuleClosure.ts", "src/internal/Body.ts"]
+      paths: ["src/Executable.ts", "src/internal/ModuleClosure.ts", "src/internal/Body.vibe"]
     },
     {
       id: "load-sibling-files",

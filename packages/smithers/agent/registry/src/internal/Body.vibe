@@ -1,0 +1,58 @@
+/**
+ * The shared source-byte integrity boundary for registry bodies.
+ *
+ * @since 1.0.0-rc.0
+ */
+
+import * as Digest from "@smthrs/core/Digest"
+import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
+import * as Path from "effect/Path"
+import type { FlowDescriptor } from "../Descriptor.vibe"
+import { measureLockfiles } from "./Lockfiles.vibe"
+
+type BodyFailure =
+  | { readonly _tag: "unmeasured" }
+  | { readonly _tag: "changed" }
+  | { readonly _tag: "unreadable"; readonly cause: unknown }
+
+// SHA-256 failures are defects: the input is always an in-memory byte array.
+const digestOf = (bytes: Uint8Array) => Effect.orDie(Effect.try(() => Digest.digest(bytes)))
+
+/**
+ * Reads only measured bodies and verifies their complete source bytes.
+ * File URLs are decoded through the host Path service without changing the
+ * descriptor's import specifier. Callers adapt failures to their public errors.
+ *
+ * @category loading
+ * @since 1.0.0-rc.0
+ */
+export const readVerifiedBody = effect (
+  fs: FileSystem.FileSystem,
+  path: Path.Path,
+  descriptor: FlowDescriptor
+): Effect.Effect<Uint8Array, BodyFailure> => {
+  const digest = descriptor.body.contentDigest
+  if (digest === undefined) throw ({ _tag: "unmeasured" } as const)
+
+  if (descriptor.lockfiles !== undefined) {
+    const measured = try measureLockfiles(path.resolve(descriptor.provenance.root, descriptor.lockfiles.root))
+      .pipe(
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.provideService(Path.Path, path),
+        Effect.mapError((cause) => ({ _tag: "unreadable" as const, cause }))
+      )
+    if (measured !== descriptor.lockfiles.digest) throw ({ _tag: "changed" } as const)
+  }
+
+  const bytes = try effect {
+    const sourcePath = descriptor.body.path
+    const bodyPath = sourcePath.startsWith("file:")
+      ? try Effect.flatMap(Effect.try(() => new URL(sourcePath)), (url) => path.fromFileUrl(url))
+      : path.normalize(sourcePath)
+    return try fs.readFile(bodyPath)
+  }.pipe(Effect.mapError((cause) => ({ _tag: "unreadable" as const, cause })))
+
+  if ((try digestOf(bytes)) !== digest) throw ({ _tag: "changed" } as const)
+  return bytes
+}
