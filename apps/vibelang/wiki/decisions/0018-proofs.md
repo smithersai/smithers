@@ -20,7 +20,7 @@ strictly typecheck, and must fail a Dafny obligation in their named function. To
 | `src/web/startupDecision.vibe` | Explicit query/default precedence, preference writes, authoritative role-list selection, saved tutorial controls and opposite-mode selection | URL/storage effects, denial fallback and Foldkit execution |
 | `src/web/screenDecision.vibe` | Escape priority, palette focus choice, minimizing eligibility, docs toggle, scroll revision/pausing/following, tour stream cursor, completion announcements and keyboard decisions | Dafny models numbers as integers. Fractional DOM coordinates, IEEE-754 arithmetic, native DOM effects and actual focus restoration are tested, not proved |
 | `src/core/conversation.vibe` | Conversation sequence, entry identity and correlation, at most one answer per post, terminal replies/tours ignore later text, exact entry/state/role frames, admissible intent completeness, stable pending removal, unanswered order, replay bounds, reply/tour guards and pane ownership | Integer sequences below MAX_SAFE_INTEGER; dense readonly arrays; UTF-16 strings |
-| `src/core/conversation.vibe` issue helpers (0022) | Exact numbered observations, operation-to-role policy, commitment/review field preservation and remaining actions after partial review; tree-walk termination and child-identity admission; VIP author and non-removed document admission | Acyclicity is not yet a Dafny theorem; host cursor capacity and review-call preconditions remain to audit; GitHub execution is an Effect boundary |
+| `src/core/conversation.vibe` issue helpers (0022) | Exact numbered observations, operation-to-role policy, commitment/review field preservation and remaining actions after partial review; bounded first-match ancestor path reaches the root without the child; VIP author and non-removed document admission | Global graph preservation and acceptance completeness remain unproved; host cursor capacity and review-call preconditions remain to audit; GitHub execution is an Effect boundary |
 | `worker/liveDispatchDecision.vibe` | Exact scan/attempt/done transitions, first-unmarked cursor, terminal idempotency and one engine start attempt per invocation | Storage-mark truth, engine idempotency and host serialization |
 | `worker/replyReasons.vibe` | Content policy → refused; credit and quota → credit; other model failures → unavailable. Agent precedence: unresolved seat, structured-output failure, model failure, generic failure | The observed tag and code are inputs; constant wording lookup and provider parsing are outside this decision |
 | `worker/budgetDecision.vibe` | Strict admission, repeated charges add zero, exact nonnegative charge/total relation, admission to the safe integer sum domain, and exact charge-key construction namespaced by conversation object | Runtime guards establish the integer domain; key uniqueness is concat-cancellation, beyond the backend's string reasoning (`string-concat-unique.ts`) and demonstrated by the two-conversation workerd regression; storage consistency, serialization and host rounding remain boundaries |
@@ -340,6 +340,24 @@ Step names, public answers, Effect ordering and output-only metrics/logs remain 
 body order; engine journal/replay idempotency and interleavings remain library/host assumptions. Exact exits and
 receipt scope are in the host report.
 
+## Fourteenth module batch: accepted issue ancestry
+
+`canLinkIssues` now carries a bounded ancestor-path witness. The independently specified recursive measure
+`issueAncestorAt` describes exactly one first-match parent link at each step, an absorbing root and the missing-node
+sentinel. The unchanged iterative runtime proves that every accepted path reaches root zero within at most
+`items.length + 1` links and excludes the child at every earlier position. Existing positivity, distinctness and
+child-existence contracts remain verbatim. This establishes safety of the selected parent path; complete graph
+preservation and acceptance completeness are not claimed.
+
+The full production conversation proof passes 19,896 isolated batches in 724.340 seconds. Fifteen new executable
+mutations reject through actual Dafny contract failures. Removing the redundant early self-check is equivalent to
+the existing loop's child check, so that survivor is excluded and replaced by erroneous self-link acceptance.
+The 233 current conversation mutation inputs all match actual rejections across the full run and replacement
+receipt. The earlier full command exits one solely for its obsolete equivalent self-guard deletion; that case is
+excluded. All sixteen current marked modules and 770 current mutants match successful proof/rejection hashes.
+App/Worker typechecks and 827 unit/integration cases in 123 files pass after rebasing onto the incoming
+HTTP-client-test commit 6db1ba51 (one opt-in skip; Vitest 226.09 seconds). The inventory contains 2,476 executable items.
+
 ## Product defects
 
 **Saved theatre audio shape.** An injected Window service returning JSON `null` breaks speech control; wrong-type
@@ -467,6 +485,12 @@ filter. All strictly typecheck; JSON.stringify and regex literals fail emission,
 Dafny. These refine the existing codec/regexp gaps; none is counted as a proof or rejected mutation. Reproductions
 are `~/vl/vibelang-bugs/lemmascript-<fixture-name>/`.
 
+The history tool request prototype additionally exposes `optional-union-default.ts`, reproduced at
+`~/vl/vibelang-bugs/lemmascript-optional-union-default/`: a strictly typed two-variant output with a defaulted
+optional input emits incompatible bare-string/Option branches and a match on `seq<char>`. Dafny reports two
+resolution/type errors, not a contract failure. The production `requestOf` remains unchanged and unproved; the
+exact reproduction contract is retained.
+
 ## Inventory
 
 The compiler's original-source ESTree identifies executable functions, methods, effect blocks and nested callbacks
@@ -478,7 +502,7 @@ passes 101 obligations across eight modules; all three new mutations fail their 
 tokenization, rendering and durable execution retain the boundaries stated above.
 
 <!-- inventory:start -->
-2474 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
+2476 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
 
 | File and line | Function | Class | Proof or reason |
 | --- | --- | --- | --- |
@@ -651,33 +675,35 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/core/conversation.vibe:925` | `applyIssues` | pure logic | Exact next-numbered observation replacement and stale/future no-op; requires a safe sequence below capacity. The host cursor domain remains to audit (0022). |
 | `src/core/conversation.vibe:940` | `issuePermission` | pure logic | Exact least-role permission for each issue operation, through the shared role policy (0022). |
 | `src/core/conversation.vibe:954` | `issuePolicyAction` | pure logic | Exact mapping of each issue operation to the shared authorization action (0022). |
-| `src/core/conversation.vibe:969` | `canLinkIssues` | pure logic | Termination, positive distinct identities and existence of the child only; acyclicity and parent-path completeness remain unproved (0022). |
-| `src/core/conversation.vibe:970` | `canLinkIssues/callback@970` | pure logic | Termination, positive distinct identities and existence of the child only; acyclicity and parent-path completeness remain unproved (0022). |
-| `src/core/conversation.vibe:977` | `canLinkIssues/callback@977` | pure logic | Termination, positive distinct identities and existence of the child only; acyclicity and parent-path completeness remain unproved (0022). |
-| `src/core/conversation.vibe:993` | `setCommitment` | pure logic | Exact commit/uncommit assignment and task state; all issue identity, tree, content and review fields preserved. Commit requires nonempty assignee (0022). |
-| `src/core/conversation.vibe:1002` | `reviewActions` | pure logic | Exact admissibility and remaining label/close actions after a partial review; GitHub action execution is outside this decision (0022). |
-| `src/core/conversation.vibe:1015` | `unansweredIndexes` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
-| `src/core/conversation.vibe:1040` | `unansweredSelection` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
-| `src/core/conversation.vibe:1042` | `unansweredSelection/callback@1042` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
-| `src/core/conversation.vibe:1051` | `replayLog` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
-| `src/core/conversation.vibe:1072` | `pendingCount` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
-| `src/core/conversation.vibe:1082` | `acknowledgedPending` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
-| `src/core/conversation.vibe:1105` | `vipDocumentMatches` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
-| `src/core/conversation.vibe:1107` | `vipDocumentMatches/callback@1107` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
-| `src/core/conversation.vibe:1117` | `approveVip` | pure logic | Only a maintainer person with nonempty identity and time can accept an in-review VIP; task and issue identity are preserved (0027). |
-| `src/core/conversation.vibe:1125` | `declineVip` | pure logic | An in-review VIP becomes Declined and closed, preserving its task; other states are unchanged (0027). |
-| `src/core/conversation.vibe:1141` | `specificationReviewPasses` | pure logic | Exact current-revision LGTM/A with a nonempty review receipt (0027). |
-| `src/core/conversation.vibe:1155` | `specificationAcceptedOn` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
-| `src/core/conversation.vibe:1162` | `specificationAcceptedUnder` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
-| `src/core/conversation.vibe:1167` | `specificationAccepted` | pure logic | Exactly the conjunction of Astra, Sol, Fable and Opus on one current revision (0027). |
-| `src/core/conversation.vibe:1172` | `unansweredSpecificationReview` | pure logic | Exact empty answer, grade, revision and link (0027). |
-| `src/core/conversation.vibe:1185` | `reviseSpecificationUnder` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
-| `src/core/conversation.vibe:1191` | `reviseSpecification` | pure logic | Changed content increments the immutable revision and resets every field of all four answers; equal content is unchanged (0027). |
-| `src/core/conversation.vibe:1206` | `recordSpecificationReview` | pure logic | Only the bound reviewer records their current-revision verdict and receipt; unrelated seats, revision and text are preserved (0027). |
-| `src/core/conversation.vibe:1222` | `holdRemaining` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
-| `src/core/conversation.vibe:1232` | `drivenWalkthrough` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
-| `src/core/conversation.vibe:1243` | `controlledWalkthrough` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
-| `src/core/conversation.vibe:1250` | `soughtWalkthrough` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
+| `src/core/conversation.vibe:973` | `issueAncestorAt` | pure logic | Specification measure only: zero steps retain the start; each positive step uses the first matching record parent, root zero is absorbing and missing records return -1. Each step clause is proved independently and mutated. |
+| `src/core/conversation.vibe:977` | `issueAncestorAt/callback@977` | pure logic | Specification measure only: zero steps retain the start; each positive step uses the first matching record parent, root zero is absorbing and missing records return -1. Each step clause is proved independently and mutated. |
+| `src/core/conversation.vibe:987` | `canLinkIssues` | pure logic | Accepted links have positive distinct existing child identities and a bounded first-match parent path reaching the root without the child. This proves no cycle is introduced along that path; the complete global graph invariant and acceptance completeness remain unproved (0022). |
+| `src/core/conversation.vibe:988` | `canLinkIssues/callback@988` | pure logic | Accepted links have positive distinct existing child identities and a bounded first-match parent path reaching the root without the child. This proves no cycle is introduced along that path; the complete global graph invariant and acceptance completeness remain unproved (0022). |
+| `src/core/conversation.vibe:997` | `canLinkIssues/callback@997` | pure logic | Accepted links have positive distinct existing child identities and a bounded first-match parent path reaching the root without the child. This proves no cycle is introduced along that path; the complete global graph invariant and acceptance completeness remain unproved (0022). |
+| `src/core/conversation.vibe:1012` | `setCommitment` | pure logic | Exact commit/uncommit assignment and task state; all issue identity, tree, content and review fields preserved. Commit requires nonempty assignee (0022). |
+| `src/core/conversation.vibe:1021` | `reviewActions` | pure logic | Exact admissibility and remaining label/close actions after a partial review; GitHub action execution is outside this decision (0022). |
+| `src/core/conversation.vibe:1034` | `unansweredIndexes` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
+| `src/core/conversation.vibe:1059` | `unansweredSelection` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
+| `src/core/conversation.vibe:1061` | `unansweredSelection/callback@1061` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
+| `src/core/conversation.vibe:1070` | `replayLog` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
+| `src/core/conversation.vibe:1091` | `pendingCount` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
+| `src/core/conversation.vibe:1101` | `acknowledgedPending` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
+| `src/core/conversation.vibe:1124` | `vipDocumentMatches` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
+| `src/core/conversation.vibe:1126` | `vipDocumentMatches/callback@1126` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
+| `src/core/conversation.vibe:1136` | `approveVip` | pure logic | Only a maintainer person with nonempty identity and time can accept an in-review VIP; task and issue identity are preserved (0027). |
+| `src/core/conversation.vibe:1144` | `declineVip` | pure logic | An in-review VIP becomes Declined and closed, preserving its task; other states are unchanged (0027). |
+| `src/core/conversation.vibe:1160` | `specificationReviewPasses` | pure logic | Exact current-revision LGTM/A with a nonempty review receipt (0027). |
+| `src/core/conversation.vibe:1174` | `specificationAcceptedOn` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
+| `src/core/conversation.vibe:1181` | `specificationAcceptedUnder` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
+| `src/core/conversation.vibe:1186` | `specificationAccepted` | pure logic | Exactly the conjunction of Astra, Sol, Fable and Opus on one current revision (0027). |
+| `src/core/conversation.vibe:1191` | `unansweredSpecificationReview` | pure logic | Exact empty answer, grade, revision and link (0027). |
+| `src/core/conversation.vibe:1204` | `reviseSpecificationUnder` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
+| `src/core/conversation.vibe:1210` | `reviseSpecification` | pure logic | Changed content increments the immutable revision and resets every field of all four answers; equal content is unchanged (0027). |
+| `src/core/conversation.vibe:1225` | `recordSpecificationReview` | pure logic | Only the bound reviewer records their current-revision verdict and receipt; unrelated seats, revision and text are preserved (0027). |
+| `src/core/conversation.vibe:1241` | `holdRemaining` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
+| `src/core/conversation.vibe:1251` | `drivenWalkthrough` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
+| `src/core/conversation.vibe:1262` | `controlledWalkthrough` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
+| `src/core/conversation.vibe:1269` | `soughtWalkthrough` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
 | `src/core/flowDecision.vibe:6` | `dispatches` | pure logic | Post/StartTour record-once/accepted-dispatch-once model and its invariant, dispatch admission, append ordering, tour terminal events, reading-time policy and first undispatched source index; proved. |
 | `src/core/flowDecision.vibe:13` | `appends` | pure logic | Post/StartTour record-once/accepted-dispatch-once model and its invariant, dispatch admission, append ordering, tour terminal events, reading-time policy and first undispatched source index; proved. |
 | `src/core/flowDecision.vibe:20` | `endsTourEvent` | pure logic | Post/StartTour record-once/accepted-dispatch-once model and its invariant, dispatch admission, append ordering, tour terminal events, reading-time policy and first undispatched source index; proved. |

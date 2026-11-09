@@ -32,3 +32,9 @@ engine outcomes preserve their original order; even a busy first unmarked post s
 The thirteenth batch models actual Post/StartTour record/refusal/dispatch order. All previous flow clauses remain;
 sixteen modules and 755 current matched rejections, with 826 unit/integration and 52 workerd passes. The full app
 proof goal remains in progress; the inventory names supported-but-unproved logic and actual tool boundaries.
+
+Fourteenth batch: the unchanged iterative issue-link guard now proves an exact bounded first-match ancestor path
+reaches the root without the child. Full conversation proof:19,896isolated batches; fifteen new mutants. All770current
+mutations match actual Dafny failures; an equivalent early-self-check deletion is excluded and replaced. Global graph
+preservation and acceptance completeness remain explicit gaps. Rebased on6db1ba51HTTPtests; required gates rerun.
+New optional-union-default tool reproduction retains the exact contract; no request projection workaround.

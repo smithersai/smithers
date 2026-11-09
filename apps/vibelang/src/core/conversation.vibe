@@ -962,16 +962,36 @@ export function issuePolicyAction(op: IssueOperation): Action {
   return "merge"
 }
 
+/** Specification measure only: the first-match parent reached after exactly steps links; missing nodes are -1. */
+//@ verify
+//@ requires steps >= 0
+//@ ensures steps == 0 ==> \result == start
+//@ ensures steps > 0 && issueAncestorAt(items, start, steps - 1) == 0 ==> \result == 0
+//@ ensures steps > 0 && issueAncestorAt(items, start, steps - 1) != 0 && forall(i, 0 <= i && i < items.length ==> items[i].number != issueAncestorAt(items, start, steps - 1)) ==> \result == -1
+//@ ensures steps > 0 && issueAncestorAt(items, start, steps - 1) != 0 ==> forall(i, 0 <= i && i < items.length && items[i].number == issueAncestorAt(items, start, steps - 1) && forall(j, 0 <= j && j < i ==> items[j].number != issueAncestorAt(items, start, steps - 1)) ==> \result == items[i].parent)
+//@ decreases steps
+export function issueAncestorAt(items: ReadonlyArray<IssueRecord>, start: number, steps: number): number {
+  if (steps <= 0) return start
+  const previous = issueAncestorAt(items, start, steps - 1)
+  if (previous === 0) return 0
+  const found = items.find((item) => item.number === previous)
+  if (found === undefined) return -1
+  return found.parent
+}
+
 /** Each issue has one parent. Reject self links, missing parents and any cycle, including malformed input trees. */
 //@ verify
 //@ ensures \result ==> child > 0 && parent > 0 && child != parent
 //@ ensures \result ==> exists(i, 0 <= i && i < items.length && items[i].number == child)
+//@ ensures \result ==> exists(k, 0 <= k && k <= items.length + 1 && issueAncestorAt(items, parent, k) == 0 && forall(t, 0 <= t && t < k ==> issueAncestorAt(items, parent, t) != child))
 export function canLinkIssues(items: ReadonlyArray<IssueRecord>, child: number, parent: number): boolean {
   if (parent <= 0 || child <= 0 || child === parent || !items.some((i) => i.number === child)) return false
   let next = parent
   let steps = 0
   while (next !== 0 && steps <= items.length) {
     //@ invariant 0 <= steps && steps <= items.length + 1
+    //@ invariant next == issueAncestorAt(items, parent, steps)
+    //@ invariant forall(k, 0 <= k && k < steps ==> issueAncestorAt(items, parent, k) != child)
     //@ decreases items.length + 1 - steps
     if (next === child) return false
     const found = items.find((i) => i.number === next)
@@ -981,7 +1001,6 @@ export function canLinkIssues(items: ReadonlyArray<IssueRecord>, child: number, 
   }
   return next === 0
 }
-
 /** Commitment changes neither the issue identity nor its tree or content. */
 //@ verify
 //@ requires !committed || assignee != ""

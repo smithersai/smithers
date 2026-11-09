@@ -299,3 +299,7 @@ skipping an unmarked post, attempting a marked/exhausted position, and continuin
 **Continuation order (0018).** Existing real-engine Post/StartTour refusal, replay, ordering and fault tests exercise
 the shared begun/recorded/refused/dispatched model. Mutants cover each admission/terminal guard and invariant
 field, with all older flow contracts retained.
+
+**Issue ancestry (0018).** Existing independent generated-tree and malformed-tree tests run the unchanged iterative
+link check. New mutations target positive/existing identities, ancestor exclusion, missing parents, bounded traversal,
+root completion and each independent measure step. An equivalent redundant self-guard deletion is not counted.

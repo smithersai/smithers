@@ -7,7 +7,7 @@
 1. [LemmaScript](https://github.com/midspiral/lemmascript), by **Midspiral** (MIT), reads its normal `//@` contracts;
    Dafny proves them. LemmaScript reads TypeScript, and the module stays in its verifiable subset, which is plain
    TypeScript syntax: `pnpm verify` proves an exact `.ts` copy of the file's text, staged under the ignored
-   `verify/.checks/`. (`vibelang --ts-projection` keeps the text and all 83 `//@` comments but appends an import of
+   `verify/.checks/`. (`vibelang --ts-projection` keeps the text and its `//@` comments but appends an import of
    `vibelang-ts-mapper/prelude`, which the proof's strict typecheck can't resolve, TS2307.) This is verification
    tooling, not a runtime dependency. VibeLang's VIP-43 has not landed; move these contracts into its syntax when it
    does.
@@ -23,7 +23,7 @@ Node >=18, npm, Python >=3.9, curl and unzip are prerequisites; there is no glob
 
 Every check strictly typechecks the selected source, creates a unique ignored `verify/.checks/run-*` directory,
 generates fresh Dafny, and invokes Dafny with one solver core and a 60-second limit per positive assertion batch (30 seconds for a negative case). It never
-accepts a saved `.dfy` proof. All eleven exported transitions/queries and both typed decision constructors opt in with
+accepts a saved `.dfy` proof. Each marked production transition, query and typed decision constructor opts in with
 `//@ verify`. Missing emitted marked functions and source edits during a check fail the harness. Dafny locations are
 mapped back to TypeScript function names and declaration lines; raw generated locations remain in the diagnostic.
 Summaries, SHA-256 source identities, raw logs and Dafny CSV timings are retained under that run directory.
@@ -168,3 +168,8 @@ library/host assumptions.
 Post/StartTour (0018) thread a shared record-once/dispatch-once continuation model through their actual Actions.
 The proof preserves its accepted-receipt invariant and terminal guards; journal/replay behavior remains an SDK
 assumption, separately tested through real engines.
+
+Issue-link admission (0018) proves a bounded first-match parent path reaches the root without visiting the child.
+The recursive measure has its own exact step clauses; runtime traversal remains iterative. Global graph preservation
+and acceptance completeness remain outside this theorem. The optional-union-default reproduction records a separate
+LemmaScript union/optional contract lowering gap; no weakened request projection is substituted.
