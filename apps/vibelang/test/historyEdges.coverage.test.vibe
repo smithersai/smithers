@@ -1,0 +1,107 @@
+// The history page's update for what its scenes leave, its reads when the service fails, and its keyboard, on the real runtime.
+import { describe, expect, it } from "@effect/vitest"
+import { vi } from "vitest"
+import { Runtime } from "foldkit"
+import { Mythical, Unavailable } from "../src/history/MythicalHistory.vibe"
+import { ClosePlan, HistoryFlags, HistoryMessage, HistoryModel, init, ReadCommit, ReadEpic, ReadMatches, ReadOutline, ShowPlan, subscriptions, update } from "../src/web/historyApp.vibe"
+import { view } from "../src/web/historyView.vibe"
+import { container, press, remove } from "./support/browser.ts"
+
+const flags = { mode: "mock" as const, role: "maintainer" as const, hash: "" }
+const home = init(flags).model
+const asked = (result: { readonly commands?: ReadonlyArray<{ readonly name: string; readonly args?: unknown }> }) => (result.commands ?? []).map((command) => [command.name, command.args])
+const page = (epic: string, seq = 1) => ({ seq, epic, from: 0, total: 0, commits: [] })
+const outage = new Unavailable({ reason: "closed" })
+const down = () => Effect.fail(outage)
+function faulty(over: Partial<Mythical.Shape> = {}): Mythical.Shape {
+  return { mode: "mock", outline: down, epic: down, commit: down, search: down, events: () => Stream.fail(outage), plan: down, start: down, note: down, approve: down, fold: down, ...over }
+}
+effect function run<A, E, R>(make: () => { readonly effect: A!E!R }) {
+  const command = try Effect.try(make)
+  return try command.effect
+}
+
+describe("update", () => {
+  it("an arriving page leaves the other epics as they are", () => {
+    const shown = { ...home, pages: [page("a"), page("b")] }
+    const after = update(shown, HistoryMessage.GotEpic({ page: page("b", 2) })).model
+    expect(after.pages.map((each) => [each.epic, each.seq])).toEqual([["a", 1], ["b", 2]])
+  })
+  it("rereads the filter's matches when the outline changes", () => {
+    const after = update({ ...home, filter: "cache" }, HistoryMessage.GotOutline({ outline: home.outline }))
+    expect(asked(after)).toContainEqual(["ReadMatches", { query: "cache" }])
+  })
+  it("a blank filter reads nothing and a filter reads its matches", () => {
+    expect(asked(update(home, HistoryMessage.UpdatedFilter({ value: "  " })))).toEqual([])
+    expect(asked(update(home, HistoryMessage.UpdatedFilter({ value: "cache" })))).toEqual([["ReadMatches", { query: "cache" }]])
+  })
+  it("drops a commit for another address and a stale one for this address", () => {
+    const shown = { ...home, hash: "m1", commitId: "m1", commit: { ...home.commit, seq: 5 } }
+    const other = { ...home.commit, seq: 9 }
+    expect(update(shown, HistoryMessage.GotCommit({ id: "m2", page: other })).model).toBe(shown)
+    expect(update(shown, HistoryMessage.GotCommit({ id: "m1", page: { ...home.commit, seq: 4 } })).model).toBe(shown)
+  })
+  it("a failed read names its reason and lets the next event read again", () => {
+    const after = update({ ...home, latest: 9, outline: { ...home.outline, seq: 3 } }, HistoryMessage.FailedRead({ reason: "closed" })).model
+    expect(after).toMatchObject({ error: "closed", latest: 3 })
+  })
+  it("folding an epic reads nothing; opening a known one reads nothing; opening an unknown one reads it", () => {
+    expect(asked(update({ ...home, open: ["a"] }, HistoryMessage.ToggledEpic({ id: "a" })))).toEqual([])
+    expect(asked(update({ ...home, pages: [page("a")] }, HistoryMessage.ToggledEpic({ id: "a" })))).toEqual([])
+    expect(asked(update(home, HistoryMessage.ToggledEpic({ id: "a" })))).toEqual([["ReadEpic", { id: "a", from: 0 }]])
+  })
+  it("more of an unknown epic starts at its first commit", () => {
+    expect(asked(update(home, HistoryMessage.ClickedMore({ id: "gone" })))).toEqual([["ReadEpic", { id: "gone", from: 0 }]])
+  })
+  it("a lost event stream and Escape with no dialog change nothing", () => {
+    expect(update(home, HistoryMessage.FailedEvents()).model).toBe(home)
+    expect(update(home, HistoryMessage.PressedEscape()).model).toBe(home)
+  })
+})
+
+describe("reads when the service is down", () => {
+  const failed = { _tag: "FailedRead", reason: "unavailable" }
+  it.each([
+    ["the outline", () => ReadOutline({})],
+    ["an epic", () => ReadEpic({ id: "a", from: 0 })],
+    ["a commit", () => ReadCommit({ id: "m1" })],
+    ["matches", () => ReadMatches({ query: "x" })],
+  ] as const)("%s reports the failure", (_label, make) => Effect.runPromise(effect {
+    const answer = try Effect.provideService(run<{ readonly _tag: string }, never, Mythical>(make), Mythical, faulty())
+    expect(answer).toEqual(failed)
+  }))
+  it.effect("matches answer when the service is up", () => effect {
+    const matches = { seq: 1, query: "x", commits: [] }
+    const answer = try Effect.provideService(run(() => ReadMatches({ query: "x" })), Mythical, faulty({ search: () => succeed(matches) }))
+    try Effect.try(() => expect(answer).toEqual({ _tag: "GotMatches", matches }))
+  })
+})
+
+describe("the plan dialog on a page without it", () => {
+  for (const [label, make] of [["opening", () => ShowPlan({})], ["closing", () => ClosePlan({})]] as const) {
+    it.live(`${label} still settles`, () => effect {
+      const answer = try run<{ readonly _tag: string }, never, never>(make)
+      try Effect.try(() => expect(answer).toEqual({ _tag: "Settled" }))
+    })
+  }
+})
+
+describe("the running page", () => {
+  it.live("Escape closes the dialog after the event stream has broken; other keys leave it", () => scoped(effect {
+    const followed: Array<number> = []
+    const service = faulty({ outline: () => succeed(home.outline), events: (after) => { followed.push(after); return Stream.fail(outage) } })
+    const seen: { model: HistoryModel } = { model: home }
+    const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
+    const program = try Effect.try(() => Runtime.makeApplication({
+      Model: HistoryModel, Flags: HistoryFlags, init: () => ({ model: { ...home, dialog: true }, commands: [] }), update,
+      view: (model, h) => { seen.model = model; return view(model, h) },
+      subscriptions: subscriptions(node.ownerDocument.defaultView!), resources: Layer.succeed(Mythical, service), container: node,
+    }))
+    try acquireRelease(sync(() => Runtime.embed(program, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
+    try promise(() => vi.waitFor(() => expect(followed.length).toBeGreaterThan(0), { timeout: 4000 }))
+    try sleep("100 millis")
+    try Effect.try(() => { press({ key: "a" }); expect(seen.model.dialog).toBe(true) })
+    try Effect.try(() => press({ key: "Escape" }))
+    try promise(() => vi.waitFor(() => expect(seen.model.dialog).toBe(false), { timeout: 4000 }))
+  }))
+})

@@ -1,0 +1,143 @@
+// What a person does to the issue tracker by key and by typing, through the real view and update.
+import { Command, expect, expectIgnored, given, keydown, role, scene, text, type } from "foldkit/scene"
+import { describe, it } from "@effect/vitest"
+import { ActOnIssue, CloseIssueDialog, FocusIssueControl, init, Message, signedOut, update } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+import { initialIssues } from "../src/web/issues.vibe"
+import { issueChatCard } from "../src/web/issuesView.vibe"
+import { emptySpecification, fixtureSpecification } from "../src/core/specification.vibe"
+
+type Record = Parameters<typeof issueChatCard>[1]
+type Ui = NonNullable<ReturnType<typeof init>["model"]["issues"]>
+const issue = (over: Partial<Record> = {}): Record => ({
+  number: 7, githubId: 70, title: "Tuple patterns", body: "b", author: "ada", age: "3d", state: "open", labels: [],
+  parent: 0, task: "", assignee: "", vip: "", review: "", path: "", comments: 0, notes: [], ...over,
+})
+const home = init({ session: "keys", mode: "mock", name: "Will" }).model
+const account = { ...signedOut, identity: { id: "1", login: "will", role: "maintainer" as const } }
+const ui = (over: Partial<Ui> = {}, items: ReadonlyArray<Record> = [issue()]): Ui => ({ ...initialIssues, status: "ready", role: "maintainer", data: { seq: 1, items }, ...over })
+const model = (issues: Ui) => ({ ...home, account: { ...account, identity: { ...account.identity, role: issues.role } }, issues })
+const app = { update, view }
+const detail = (over: Partial<Ui>, items: ReadonlyArray<Record> = [issue()]) => model(ui({ screen: "detail", selected: 7, ...over }, items))
+const refusedFor = (op: string) => ({ op, number: 7, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "k" }) as NonNullable<Ui["retry"]>
+const focused = (id: string) => [Command.expectExact(FocusIssueControl({ id })), Command.resolve(FocusIssueControl, Message.IssueDialogFocused())] as const
+
+describe("the kind control", () => {
+  const radio = (name: string) => role("radio", { name })
+  it("moves right, and wraps left past the first kind", () => {
+    scene(app, given(model(ui())), keydown(radio("All"), "ArrowRight"), ...focused("ix-kind-Issues"), expect(radio("Issues")).toHaveAttr("aria-checked", "true"))
+    scene(app, given(model(ui())), keydown(radio("All"), "ArrowLeft"), ...focused("ix-kind-VIPs"), expect(radio("VIPs")).toHaveAttr("aria-checked", "true"))
+  })
+  it("ignores any other key", () => {
+    scene(app, given(model(ui())), keydown(radio("All"), "a"), expectIgnored(), expect(radio("All")).toHaveAttr("aria-checked", "true"))
+  })
+})
+
+describe("the list", () => {
+  const two = model(ui({}, [issue(), issue({ number: 8, githubId: 80, title: "Second" })]))
+  const row = (n: number) => role("listitem", { name: n === 1 ? /Tuple patterns/ : /Second/ })
+  it("j and k walk the rows and stop at each end", () => {
+    scene(app, given(two), keydown(row(1), "j"), ...focused("ix-issue-8"))
+    scene(app, given(two), keydown(row(2), "k"), ...focused("ix-issue-7"))
+    scene(app, given(two), keydown(row(2), "j"), ...focused("ix-issue-8"))
+    scene(app, given(two), keydown(row(1), "k"), ...focused("ix-issue-7"))
+  })
+  it("another key does nothing", () => {
+    scene(app, given(two), keydown(row(1), "x"), expectIgnored())
+  })
+  it("typing in the search narrows the rows", () => {
+    scene(app, given(model(ui())), type(role("searchbox"), "absent"), expect(text("No matches")).toExist())
+  })
+})
+
+describe("the composer", () => {
+  const box = role("textbox", { name: "Comment" })
+  const typed = detail({ comment: "hello", role: "maintainer" })
+  it("records what is typed", () => {
+    scene(app, given(detail({})), type(box, "hi"), expect(box).toHaveValue("hi"))
+  })
+  for (const mods of [{ metaKey: true }, { ctrlKey: true }]) {
+    it(`sends on Enter with ${Object.keys(mods)[0]}`, () => {
+      scene(app, given(typed), keydown(box, "Enter", mods), Command.expectHas(ActOnIssue), Command.resolveAll([ActOnIssue, Message.IssuesFailed({ reason: "x" })]))
+    })
+  }
+  it("does not send on a bare Enter or another modified key", () => {
+    scene(app, given(typed), keydown(box, "Enter"), expectIgnored())
+    scene(app, given(typed), keydown(box, "a", { metaKey: true }), expectIgnored())
+  })
+})
+
+describe("a failure a person may not retry", () => {
+  const retry = refusedFor("spec-revise")
+  for (const [label, shown] of [
+    ["on the issue", detail({ role: "community", error: "x", retry })],
+    ["in the form", model(ui({ role: "community", screen: "new", error: "x", retry }))],
+    ["in a dialog", detail({ role: "community", dialog: "split", error: "x", retry })],
+  ] as const) {
+    it(`offers no Retry ${label}`, () => {
+      scene(app, given(shown), expect(role("alert")).toExist(), expect(role("button", { name: "Retry" })).toBeAbsent())
+    })
+  }
+  for (const [label, shown] of [
+    ["in the form", model(ui({ screen: "new", error: "Couldn't load comments. Retry." }))],
+    ["in a dialog", detail({ dialog: "split", error: "Couldn't load comments. Retry." })],
+  ] as const) {
+    it(`offers a read Retry ${label} after a load failure`, () => {
+      scene(app, given(shown), expect(role("button", { name: "Retry" })).toExist())
+    })
+  }
+})
+
+describe("another failure with nothing to retry", () => {
+  for (const [label, shown] of [
+    ["on the issue", detail({ error: "Issue closed." })],
+    ["in a dialog", detail({ dialog: "split", error: "Issue closed." })],
+  ] as const) {
+    it(`names it ${label} and offers no Retry`, () => {
+      scene(app, given(shown), expect(role("alert")).toContainText("Issue closed."), expect(role("button", { name: "Retry" })).toBeAbsent())
+    })
+  }
+})
+
+describe("the forms", () => {
+  it("Enter in the title advances the VIP, and another key does not", () => {
+    const form = model(ui({ screen: "vip", step: 1, title: "A title", summary: "Why" }))
+    scene(app, given(form), keydown(role("textbox", { name: "Title" }), "Enter"), expect(role("textbox", { name: "Example" })).toExist())
+    scene(app, given(form), keydown(role("textbox", { name: "Title" }), "a"), expectIgnored())
+  })
+  it("Enter in the assignee list commits; another key does not", () => {
+    const open = detail({ dialog: "commit", assignee: "Will" })
+    const group = role("radiogroup", { name: "Assignee" })
+    scene(app, given(open), keydown(group, "Enter"), Command.expectHas(ActOnIssue), Command.resolveAll([ActOnIssue, Message.IssuesFailed({ reason: "x" })], [CloseIssueDialog, Message.IssueDialogFocused()]))
+    scene(app, given(open), keydown(group, "x"), expectIgnored())
+  })
+})
+
+describe("what an issue states", () => {
+  it("an approval with no time still names who approved", () => {
+    scene(app, given(detail({}, [issue({ vip: "Accepted", approvedBy: "will" })])), expect(text("will ·", { exact: false })).toExist())
+  })
+  it("a VIP lists its committed tasks and links its review", () => {
+    const vip = issue({ vip: "In review", review: "https://example.test/pr/1", path: " " })
+    const child = issue({ number: 9, githubId: 90, title: "Child", parent: 7, task: "Queued" })
+    scene(app, given(detail({}, [vip, child])), expect(role("link", { name: "Review change" })).toHaveAttr("href", "https://example.test/pr/1"), expect(role("link", { name: "Files" })).toExist())
+  })
+})
+
+describe("the specification", () => {
+  const spec = (over: Partial<Ui>) => model(ui({ screen: "specification", ...over }))
+  it("a linked review with no verdict reads Review", () => {
+    const blank = { ...fixtureSpecification.astra, verdict: "" as const, link: "https://example.test/r" }
+    const specification = { ...fixtureSpecification, astra: blank }
+    scene(app, given(spec({ data: { seq: 1, items: [], specification } })), expect(role("link", { name: "Review" })).toExist())
+  })
+  it("typing changes the text to save", () => {
+    const data = { seq: 1, items: [], specification: { ...emptySpecification, text: "same" } }
+    const box = role("textbox", { name: "Specification text" })
+    scene(app, given(spec({ data, summary: "same" })), type(box, "changed"), expect(role("button", { name: "Save revision" })).toBeEnabled())
+  })
+  it("its history names a revision", () => {
+    const specificationHistory = [{ revision: 4, event: "revision" as const, reviewer: "", verdict: "", grade: "", at: "t4", link: "" }]
+    scene(app, given(spec({ data: { seq: 1, items: [], specificationHistory } })), expect(text("r4 · Revision · t4")).toExist())
+  })
+})
