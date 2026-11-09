@@ -72,7 +72,12 @@ it.live("signin/device-flow", () => run("signin/device-flow", Input, (input) => 
         }
         const printed = JSON.stringify(answer.success)
         if (FORBIDDEN.some((secret) => printed.includes(secret))) return false
-        if (answer.success.status === "signed-in" && ((try readPending()) !== undefined || answer.success.login === "")) return false
+        if (answer.success.status === "signed-in") {
+          // A signed-in answer offers no device code, even when a flow for another server stays pending.
+          if (answer.success.login === "" || answer.success.userCode !== "" || answer.success.verificationUri !== "") return false
+          const left = try readPending()
+          if (!input.stored && left !== undefined && left.origin === origin) return false
+        }
       }
       return true
     }

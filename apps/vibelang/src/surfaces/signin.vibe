@@ -84,7 +84,8 @@ effect function settle(flow: PendingDevice, origin: string, answer: GitHub.Auth.
 effect function output(status: "started" | "pending" | "signed-in", mock = false) {
   const stored = mock ? try readMockSession() : try readSession()
   const pending = mock ? undefined : try readPending()
-  return { status, login: status === "signed-in" ? stored?.login ?? "" : "", userCode: pending?.userCode ?? "", verificationUri: pending?.verificationUri ?? "" } satisfies LoginOutput
+  const offered = status === "signed-in" ? undefined : pending
+  return { status, login: status === "signed-in" ? stored?.login ?? "" : "", userCode: offered?.userCode ?? "", verificationUri: offered?.verificationUri ?? "" } satisfies LoginOutput
 }
 
 /** `login`: the CLI waits by default; MCP returns the code immediately and finishes on a subsequent call. */
