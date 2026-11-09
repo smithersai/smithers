@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "rewriteRelativeImportExtensions": true,
     "allowArbitraryExtensions": true,
     "target": "ES2024",
     "module": "NodeNext",

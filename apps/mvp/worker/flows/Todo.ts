@@ -11,7 +11,7 @@ import { checkExecutionId, todoExecutionId } from "../../src/features/pulls/cont
 import { base64Bytes } from "../../src/features/runners/contract.ts"
 import { TODO_FAILURES } from "../../src/features/todos/contract.ts"
 import * as Change from "#vibelang/emitted/worker/branch/Change"
-import type { Machines } from "../branch/Machines.vibe"
+import type { Machines } from "#vibelang/source/worker/branch/Machines"
 import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import { agentFailureCodes } from "#vibelang/emitted/worker/flows/TodoDiagnostic"
 import { classify, withToken } from "#vibelang/emitted/worker/github/Calls"

@@ -3,7 +3,7 @@ import { Effect, Function, Option } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { withToken } from "#vibelang/emitted/worker/github/Calls"
-import type { GitHubApp, Repository } from "../github/Config.vibe"
+import type { GitHubApp, Repository } from "#vibelang/source/worker/github/Config"
 import { readIssue } from "../github/Project.ts"
 import * as Tokens from "../github/Tokens.ts"
 

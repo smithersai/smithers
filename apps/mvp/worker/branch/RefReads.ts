@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import { REPOSITORY_GRANTEE } from "../../src/features/branch/contract.ts"
-import type { Actor } from "../Actor.vibe"
+import type { Actor } from "#vibelang/source/worker/Actor"
 import { accessOf, canView, type Grants, installedOn, roleOn } from "./Access.ts"
 
 /**

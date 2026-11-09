@@ -3,7 +3,7 @@ import { Clock, Effect, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import { itemId } from "../../src/features/issues/contract.ts"
 import { reviewId } from "../../src/features/pulls/contract.ts"
-import type { Repository } from "./Config.vibe"
+import type { Repository } from "#vibelang/source/worker/github/Config"
 import { type Fetched, fetchIssue, project } from "./Project.ts"
 import { markedWrite, shownBody } from "./Store.ts"
 

@@ -7,7 +7,7 @@ import { describe, expect, test } from "vitest"
 import { caseNamed, inputOf } from "./cases"
 import { call, trial } from "./fixtures"
 import { PERSONS_OWN } from "../src/features/agent/instructions"
-import { ACTS_CRITERIA, CRITERIA, evidence, HONEST_CRITERIA, judgeScorer, questionsFor, read, SEAT_NOTE } from "./judge"
+import { ACTS_CRITERIA, CRITERIA, evidence, HONEST_CRITERIA, judgeScorer, questionsFor, read, SEAT_NOTE } from "./judge.ts"
 
 /** A judge that answers each question with the probability `answer` gives it, and records what it was asked. */
 const scripted = (

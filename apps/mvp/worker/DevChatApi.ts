@@ -1,6 +1,6 @@
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { GitHub } from "@smthrs/integrations"
-import type * as Actor from "./Actor.vibe"
+import type * as Actor from "#vibelang/source/worker/Actor"
 import { program, props } from "./ChatApi.ts"
 import { DEV_FEED_KEY } from "./feeds/dev.ts"
 import { repositoryOf } from "#vibelang/emitted/worker/github/Config"

@@ -8,7 +8,7 @@ import {
   MAX_CALL_BODY_BYTES,
   SANDBOX_CALLS_ROUTE,
 } from "../../src/features/sandbox/contract.ts"
-import type { Actor } from "../Actor.vibe"
+import type { Actor } from "#vibelang/source/worker/Actor"
 import { boundTo, canAsk, Sessions } from "#vibelang/emitted/worker/Actor"
 import { readBounded } from "#vibelang/emitted/worker/Body"
 import { codeOf } from "#vibelang/emitted/worker/ErrorCode"

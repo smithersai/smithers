@@ -14,7 +14,7 @@ import {
   queueRequestOf,
 } from "../../src/features/pulls/contract.ts"
 import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
-import type { Services } from "./Apply.vibe"
+import type { Services } from "#vibelang/source/worker/github/Apply"
 import { classify, withToken } from "#vibelang/emitted/worker/github/Calls"
 import { repositoryOf } from "#vibelang/emitted/worker/github/Config"
 import * as Metrics from "#vibelang/emitted/worker/github/Metrics"

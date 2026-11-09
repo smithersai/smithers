@@ -27,7 +27,7 @@ export const props = {
   main: "worker/ChatApi.ts",
   // @effect/sql-pg opens its sockets with node:net, which workerd provides under nodejs_compat.
   // global_fetch_strictly_public: the global fetch always goes out to the public internet, never straight to a Worker
-  // of this account; Electric's gateway, which has no public URL, is reached by service binding (infra/Electric.ts).
+  // of this account; Electric's gateway, which has no public URL, is reached by service binding (infra/Electric.vibe).
   compatibility: {
     date: "2026-10-01",
     flags: ["nodejs_compat", "enable_request_signal", "global_fetch_strictly_public"]

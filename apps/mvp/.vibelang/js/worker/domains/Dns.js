@@ -2,7 +2,7 @@
 import { Duration, Effect, Option } from "effect";
 import { HttpClient, HttpClientRequest } from "effect/http";
 import { routingRecord } from "../../src/features/domains/contract.js";
-import { ProviderUnavailable } from "./Provider.js";
+import { ProviderUnavailable } from "#vibelang/source/worker/domains/Provider";
 // The provider for a host that terminates its own TLS (decision 0039 §3): development, the end-to-end tests, and a
 // self-hosted or native deployment. It registers nothing anywhere. A domain is verified once public DNS gives it the
 // target as its CNAME. Shared addresses prove nothing (a CDN serves many owners), so an apex its DNS provider flattens

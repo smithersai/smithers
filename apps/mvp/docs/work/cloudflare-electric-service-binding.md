@@ -13,7 +13,7 @@ links: [land-and-deploy-mvp.md, infrastructure-as-code.md, local-dev-sync-connec
 
 **Current state:** At 18:37 the lead reports a one-line workaround landed as 7b96f878 and redeploy/sync verification running. The cleaner direct connection is queued, with no implementation receipt.
 
-**Next step:** Landed 2026-10-26: ChatApi binds the gateway as `ELECTRIC_GATEWAY` (infra/Electric.ts) and calls it through `ShapeProxy.Upstream` (infra/ElectricUpstream.ts); the gateway's `workers.dev` URL and `ElectricSecret` are gone. Production sync, recovery and the 8-browser health check run after the next deploy.
+**Next step:** Landed 2026-10-26: ChatApi binds the gateway as `ELECTRIC_GATEWAY` (infra/Electric.vibe) and calls it through `ShapeProxy.Upstream` (infra/ElectricUpstream.ts); the gateway's `workers.dev` URL and `ElectricSecret` are gone. Production sync, recovery and the 8-browser health check run after the next deploy.
 
 **Open questions for Will:** None.
 

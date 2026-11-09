@@ -2,7 +2,7 @@ import { Cause, Clock, Config, Context, Deferred, Effect, Metric, Option, Schema
 import { Headers, type HttpServerRequest } from "effect/http"
 import { ACCESSES } from "../src/features/branch/contract.ts"
 import { ROLES } from "../src/features/auth/contract.ts"
-import type { Actor } from "./Actor.vibe"
+import type { Actor } from "#vibelang/source/worker/Actor"
 import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import * as SessionStore from "./SessionStore.ts"
 import { ROLE_RECHECK_MINUTES } from "./SignIn.ts"

@@ -8,7 +8,7 @@ import { HttpClient, HttpClientRequest, type HttpServerRequest } from "effect/ht
 import { SqlClient } from "effect/sql"
 import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import { bearerOf } from "../RunCredentials.ts"
-import type { Services } from "./Apply.vibe"
+import type { Services } from "#vibelang/source/worker/github/Apply"
 import { withToken } from "#vibelang/emitted/worker/github/Calls"
 import { repositoryOf } from "#vibelang/emitted/worker/github/Config"
 import { fetchIssue, project } from "./Project.ts"

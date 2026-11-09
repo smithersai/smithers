@@ -8,7 +8,7 @@ import { AuthStore } from "../auth/store";
 import { FlowDispatch } from "../../flows/dispatch";
 import { repoId } from "../repo/contract";
 import { commentDraftKey, issuePath, MAX_BODY_LENGTH, MAX_TITLE_LENGTH, newDraftKey, newIssuePath, WRITE_ID_NAMESPACE, } from "./contract";
-import { admissions, pendingActions, reads, submissionFailures } from "./metrics.js";
+import { admissions, pendingActions, reads, submissionFailures } from "#vibelang/emitted/src/features/issues/metrics";
 import { recordShapeRetry } from "./shapeSync";
 import { SEARCHED, VIEW } from "./schema";
 import { IssuesStore } from "./store";

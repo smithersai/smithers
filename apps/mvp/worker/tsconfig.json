@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "rewriteRelativeImportExtensions": true,
     "customConditions": ["vibelang-source"],
     "allowArbitraryExtensions": true,
     "target": "ES2022",

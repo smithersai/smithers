@@ -145,7 +145,7 @@ test("promotion and cessation are separate, idempotent commits, and two rotation
 test("Alchemy's publication depends on the database key gate and binds the key map and pinned seal", () => {
   const stack = readFileSync(new URL("../alchemy.run.ts", import.meta.url), "utf8")
   expect(stack).toContain("SessionSigningKeyGate")
-  const binding = readFileSync(new URL("../infra/SignIn.ts", import.meta.url), "utf8")
+  const binding = readFileSync(new URL("../infra/SignIn.vibe", import.meta.url), "utf8")
   expect(binding).toContain('"SESSION_SECRETS"')
   expect(binding).toContain('"SESSION_SEAL_SECRET"')
   expect(stack).toContain("sealSecret: configuredSealSecret")

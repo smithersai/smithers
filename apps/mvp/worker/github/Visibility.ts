@@ -2,7 +2,7 @@ import { GitHub } from "@smthrs/integrations"
 import { Clock, Effect, Metric, Option, Redacted, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import { classify, isRateLimited, statusOf } from "#vibelang/emitted/worker/github/Calls"
-import type { Repository } from "./Config.vibe"
+import type { Repository } from "#vibelang/source/worker/github/Config"
 import * as Metrics from "#vibelang/emitted/worker/github/Metrics"
 import type { ReadToken } from "./ReadToken.ts"
 

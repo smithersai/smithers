@@ -3,7 +3,7 @@ import { Clock, Effect, Metric, Option, type Redacted, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import type { SessionKeys } from "../SessionKeys.ts"
 import { classify, isRateLimited, statusOf } from "#vibelang/emitted/worker/github/Calls"
-import type { Repository } from "./Config.vibe"
+import type { Repository } from "#vibelang/source/worker/github/Config"
 import * as Metrics from "#vibelang/emitted/worker/github/Metrics"
 import * as Store from "./Store.ts"
 

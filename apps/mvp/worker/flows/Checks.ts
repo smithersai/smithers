@@ -27,7 +27,7 @@ import { type Repository, repositoryOf } from "#vibelang/emitted/worker/github/C
 import { fetchPull, projectPull } from "../github/Pulls.ts"
 import { type GitHubTokens, TokenUnavailable } from "../github/Tokens.ts"
 import type { Seat } from "../ModelEndpoint.ts"
-import type { SandboxBranch } from "../branch/Sandboxes.vibe"
+import type { SandboxBranch } from "#vibelang/source/worker/branch/Sandboxes"
 import * as SandboxCommand from "./SandboxCommand.ts"
 
 // A pull request's checks (decision 0012 decision 12, decision 0016's factory simplified): Smithers runs on its head

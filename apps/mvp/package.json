@@ -306,6 +306,86 @@
       "types": "./.vibe/declarations/plugins/queue/src/tab.d.vibe.ts",
       "vibelang-source": "./plugins/queue/src/tab.vibe",
       "default": "./.vibelang/js/plugins/queue/src/tab.js"
+    },
+    "#vibelang/emitted/infra/Electric": {
+      "types": "./infra/Electric.d.vibe.ts",
+      "vibelang-source": "./infra/Electric.vibe",
+      "default": "./.vibelang/js/infra/Electric.js"
+    },
+    "#vibelang/emitted/infra/GateMachine": {
+      "types": "./infra/GateMachine.d.vibe.ts",
+      "vibelang-source": "./infra/GateMachine.vibe",
+      "default": "./.vibelang/js/infra/GateMachine.js"
+    },
+    "#vibelang/emitted/infra/Secrets": {
+      "types": "./infra/Secrets.d.vibe.ts",
+      "vibelang-source": "./infra/Secrets.vibe",
+      "default": "./.vibelang/js/infra/Secrets.js"
+    },
+    "#vibelang/emitted/infra/SignIn": {
+      "types": "./infra/SignIn.d.vibe.ts",
+      "vibelang-source": "./infra/SignIn.vibe",
+      "default": "./.vibelang/js/infra/SignIn.js"
+    },
+    "#vibelang/emitted/worker/CloudRuns": {
+      "types": "./worker/CloudRuns.d.vibe.ts",
+      "vibelang-source": "./worker/CloudRuns.vibe",
+      "default": "./.vibelang/js/worker/CloudRuns.js"
+    },
+    "#vibelang/source/plugins/bugs/src/tab": {
+      "types": "./.vibe/declarations/plugins/bugs/src/tab.d.vibe.ts",
+      "vibelang-source": "./plugins/bugs/src/tab.vibe",
+      "default": "./.vibelang/js/plugins/bugs/src/tab.js"
+    },
+    "#vibelang/source/plugins/queue/src/tab": {
+      "types": "./.vibe/declarations/plugins/queue/src/tab.d.vibe.ts",
+      "vibelang-source": "./plugins/queue/src/tab.vibe",
+      "default": "./.vibelang/js/plugins/queue/src/tab.js"
+    },
+    "#vibelang/source/src/features/chat/sharedPrompt": {
+      "types": "./.vibe/declarations/src/features/chat/sharedPrompt.d.vibe.ts",
+      "vibelang-source": "./src/features/chat/sharedPrompt.vibe",
+      "default": "./.vibelang/js/src/features/chat/sharedPrompt.js"
+    },
+    "#vibelang/source/worker/Actor": {
+      "types": "./worker/Actor.d.vibe.ts",
+      "vibelang-source": "./worker/Actor.vibe",
+      "default": "./.vibelang/js/worker/Actor.js"
+    },
+    "#vibelang/source/worker/domains/Provider": {
+      "types": "./worker/domains/Provider.d.vibe.ts",
+      "vibelang-source": "./worker/domains/Provider.vibe",
+      "default": "./.vibelang/js/worker/domains/Provider.js"
+    },
+    "#vibelang/source/worker/branch/Machines": {
+      "types": "./worker/branch/Machines.d.vibe.ts",
+      "vibelang-source": "./worker/branch/Machines.vibe",
+      "default": "./.vibelang/js/worker/branch/Machines.js"
+    },
+    "#vibelang/source/worker/github/Apply": {
+      "types": "./worker/github/Apply.d.vibe.ts",
+      "vibelang-source": "./worker/github/Apply.vibe",
+      "default": "./.vibelang/js/worker/github/Apply.js"
+    },
+    "#vibelang/source/worker/branch/Sandboxes": {
+      "types": "./worker/branch/Sandboxes.d.vibe.ts",
+      "vibelang-source": "./worker/branch/Sandboxes.vibe",
+      "default": "./.vibelang/js/worker/branch/Sandboxes.js"
+    },
+    "#vibelang/source/worker/about/Store": {
+      "types": "./worker/about/Store.d.vibe.ts",
+      "vibelang-source": "./worker/about/Store.vibe",
+      "default": "./.vibelang/js/worker/about/Store.js"
+    },
+    "#vibelang/source/worker/github/Config": {
+      "types": "./worker/github/Config.d.vibe.ts",
+      "vibelang-source": "./worker/github/Config.vibe",
+      "default": "./.vibelang/js/worker/github/Config.js"
+    },
+    "#vibelang/source/worker/Flows": {
+      "types": "./worker/Flows.d.vibe.ts",
+      "vibelang-source": "./worker/Flows.vibe",
+      "default": "./.vibelang/js/worker/Flows.js"
     }
   },
   "dependencies": {

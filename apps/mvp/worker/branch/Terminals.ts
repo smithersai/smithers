@@ -11,7 +11,7 @@ import {
   openExecutionId,
   TERMINALS_TABLE,
 } from "../../src/features/terminal/contract.ts"
-import type { Actor } from "../Actor.vibe"
+import type { Actor } from "#vibelang/source/worker/Actor"
 import { refusesPersonOnly, canAsk, Sessions } from "#vibelang/emitted/worker/Actor"
 import { readBounded } from "#vibelang/emitted/worker/Body"
 import { codeOf } from "#vibelang/emitted/worker/ErrorCode"

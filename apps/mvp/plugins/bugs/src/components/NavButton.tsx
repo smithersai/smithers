@@ -1,5 +1,5 @@
 import { Button } from "@smthrs/ui"
-import type { BugsTab } from "../tab.vibe"
+import type { BugsTab } from "#vibelang/source/plugins/bugs/src/tab"
 
 // The header's entry: Report a bug opens the form; the report names the page it was pressed on.
 export function NavButton({ tab }: { readonly tab: BugsTab }) {

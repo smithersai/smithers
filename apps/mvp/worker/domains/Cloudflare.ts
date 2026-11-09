@@ -12,7 +12,7 @@ import {
   type Provider,
   ProviderUnavailable,
   type Registration,
-} from "./Provider.vibe"
+} from "#vibelang/source/worker/domains/Provider"
 
 // Cloudflare for SaaS (decision 0039 §1): each domain is a custom hostname on the deployment's zone, whose certificate
 // Cloudflare issues over HTTP validation once the domain's CNAME points at the zone's target. One request per call,

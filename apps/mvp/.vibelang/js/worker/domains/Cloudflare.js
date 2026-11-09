@@ -2,7 +2,7 @@
 import { Duration, Effect, Option, Redacted } from "effect";
 import { HttpClient, HttpClientRequest } from "effect/http";
 import { routingRecord, } from "../../src/features/domains/contract.js";
-import { HostnameRejected, HostnameTaken, ProviderUnavailable, } from "./Provider.js";
+import { HostnameRejected, HostnameTaken, ProviderUnavailable, } from "#vibelang/source/worker/domains/Provider";
 // Cloudflare for SaaS (decision 0039 §1): each domain is a custom hostname on the deployment's zone, whose certificate
 // Cloudflare issues over HTTP validation once the domain's CNAME points at the zone's target. One request per call,
 // never repeated here: a step's retry policy repeats the step. A token never reaches a record, a failure or a log.

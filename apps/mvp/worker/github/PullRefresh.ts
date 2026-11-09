@@ -4,7 +4,7 @@ import { applyExecutionId, itemId, reconcileBucketStart } from "../../src/featur
 import { FlowStarter } from "#vibelang/emitted/worker/Flows"
 import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import { Apply } from "#vibelang/emitted/worker/github/Apply"
-import type { Repository } from "./Config.vibe"
+import type { Repository } from "#vibelang/source/worker/github/Config"
 
 export const refreshes = Metric.counter("smithers_pull_refresh_starts", { incremental: true })
 export const receipts = Metric.counter("smithers_pull_absence_receipts", { incremental: true })

@@ -19,7 +19,7 @@ import { COMMENTS_SHAPE_ROUTE, ITEMS_SHAPE_ROUTE, ITEM_SUMMARIES_SHAPE_ROUTE, SY
 import { WORK_LINKS_SHAPE_ROUTE } from "./work";
 import { accessQuery, allIssuesQuery, conversationQuery, deliveredQuery, itemQuery, summaryQuery, listQuery, publicListQuery, rowsQuery, syncedQuery, syncedRepositoriesQuery, triagePendingQuery, triageSettingsQuery, unsyncedQuery, viewQuery, } from "./queries";
 import { ACCESS, Access, Comment, Draft, IssueView, Item, ItemSummary, OpenedRepository, SEARCHED, Searched, syncKey, SyncRow, TriageSettings, VIEW, WorkLinkRow, WriteRow, } from "./schema";
-import { detailsUnlisted, evictions } from "./metrics.js";
+import { detailsUnlisted, evictions } from "#vibelang/emitted/src/features/issues/metrics";
 import { observeIssueShape } from "./shapeSync";
 import { ISSUE_WRITE, IssueWrites, keep } from "./writes";
 /**

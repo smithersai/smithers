@@ -7,11 +7,11 @@ import { SqlClient, SqlError } from "effect/sql"
 import { TEXT_NAMESPACE, textName } from "../../src/features/coedit/contract.ts"
 import { SAVED_MARK, savedMarkOf } from "../../src/features/coedit/saved.ts"
 import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
-import type { Repository } from "../github/Config.vibe"
+import type { Repository } from "#vibelang/source/worker/github/Config"
 import { Forge } from "./Forge.ts"
 import { Machines } from "#vibelang/emitted/worker/branch/Machines"
 import type { BranchRow, Publication } from "./Publish.ts"
-import type { SandboxBranch } from "./Sandboxes.vibe"
+import type { SandboxBranch } from "#vibelang/source/worker/branch/Sandboxes"
 
 // Resync (docs/features/branch-publish.md#resync; ruling GH-6, Will, 2026-10-20 06:39: "update branch resync"): a
 // published branch's GitHub branch moves on GitHub (an Update branch's merge, a push, a commit on github.com), and the

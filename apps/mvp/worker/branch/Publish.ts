@@ -14,7 +14,7 @@ import {
 import { agentAttribution, type WriteFailure } from "../../src/features/issues/contract.ts"
 import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import { roleOf } from "../GitHubAuth.ts"
-import type { Services as GitHubServices } from "../github/Apply.vibe"
+import type { Services as GitHubServices } from "#vibelang/source/worker/github/Apply"
 import { classify, statusOf, withToken } from "#vibelang/emitted/worker/github/Calls"
 import { type Repository, repositoryOf } from "#vibelang/emitted/worker/github/Config"
 import * as Metrics from "#vibelang/emitted/worker/github/Metrics"
@@ -26,7 +26,7 @@ import { base64Of, type Change, collect } from "#vibelang/emitted/worker/branch/
 import type { Forge } from "./Forge.ts"
 import { Machines } from "#vibelang/emitted/worker/branch/Machines"
 import { resync, ResyncRefused, ResyncUnavailable } from "./Resync.ts"
-import type { SandboxBranch } from "./Sandboxes.vibe"
+import type { SandboxBranch } from "#vibelang/source/worker/branch/Sandboxes"
 
 // Publish and Update branch (docs/features/branch-publish.md; rulings GH-6 and GH-11). A Smithers-only branch lives in
 // Code Storage's ephemeral namespace, and its edits in its machine's working copy; nothing reaches GitHub until a person

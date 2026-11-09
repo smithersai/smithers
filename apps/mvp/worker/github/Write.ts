@@ -17,7 +17,7 @@ import {
   type WriteFailure,
 } from "../../src/features/issues/contract.ts"
 import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
-import type { Services } from "./Apply.vibe"
+import type { Services } from "#vibelang/source/worker/github/Apply"
 import { roleOf } from "../GitHubAuth.ts"
 import { classify, withToken } from "#vibelang/emitted/worker/github/Calls"
 import { repositoryOf } from "#vibelang/emitted/worker/github/Config"

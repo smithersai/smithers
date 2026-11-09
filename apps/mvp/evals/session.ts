@@ -15,7 +15,7 @@
 import { openBudget } from "../bench/cerebras-load/budget.ts"
 import { guardedModel } from "../bench/cerebras-load/guard.ts"
 import { candidateConfig, refusalConfig } from "./candidate"
-import { openProviderResource, waitForDispatch } from "./session-lifecycle"
+import { openProviderResource, waitForDispatch } from "./session-lifecycle.ts"
 import { afterAll } from "vitest"
 import { HostModel } from "@smthrs/model-host"
 import { EgressHttpClient } from "@smthrs/platform-node"

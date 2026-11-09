@@ -1,6 +1,6 @@
 import { EmptyState } from "@smthrs/ui"
 import { useSyncExternalStore } from "react"
-import type { QueueTab } from "../tab.vibe"
+import type { QueueTab } from "#vibelang/source/plugins/queue/src/tab"
 import "./queue.css"
 
 // The queue's view (decision 0022, slice 1): the oldest open wait fills the screen, with its place in the queue. The

@@ -6,13 +6,13 @@
  * - Hyperdrive: the `ChatDatabase` (requests) and `EngineDatabase` (the durable engine) configs in front of Postgres,
  *   created after the migrations ran (infra/ChatDatabase.ts).
  * - Electric: `electricsql/electric:1.8.1` in a Cloudflare Container behind the ElectricGateway Worker, which has no
- *   public URL: ChatApi reaches it through a service binding (infra/ElectricGateway.ts, infra/Electric.ts).
+ *   public URL: ChatApi reaches it through a service binding (infra/ElectricGateway.ts, infra/Electric.vibe).
  * - ChatApi (worker/ChatApi.ts): an Effect-native Worker that answers /api/*: questions, the Electric shape proxy,
  *   the browser's telemetry, the model endpoint and sign-in. It reaches Postgres through Hyperdrive. Alchemy runs its
  *   handlers.
- * - SessionSecret (infra/SignIn.ts): a random secret Alchemy generates once, bound to ChatApi as SESSION_SECRET; it
+ * - SessionSecret (infra/SignIn.vibe): a random secret Alchemy generates once, bound to ChatApi as SESSION_SECRET; it
  *   signs session cookies and seals GitHub's tokens (docs/features/sign-in.md).
- * - SecretsKey (infra/Secrets.ts): a random secret Alchemy generates once, bound to ChatApi as SECRETS_KEY; repository
+ * - SecretsKey (infra/Secrets.vibe): a random secret Alchemy generates once, bound to ChatApi as SECRETS_KEY; repository
  *   secrets are sealed and sandbox placeholders derived under it (docs/features/secrets.md#keys).
  * - FlowExecution (worker/Executions.ts): the Durable Object ChatApi hosts, one per remote flow execution, which runs
  *   the durable flow engine over Postgres (schema smithers_flows) through its own Hyperdrive config, `EngineDatabase`
@@ -21,7 +21,7 @@
  *   transcript in its own SQLite and serves its watchers' sockets (docs/features/agent-transcripts.md).
  * - The branch sandboxes' `SandboxObject` and its `BranchSandbox` container, which ChatApi hosts; with GATE_IMAGE also the
  *   gate's job machine, `GateObject` and its `GateMachine` container, and the `CiArtifacts` R2 bucket its boxes keep their
- *   run's artifacts in (infra/GateMachine.ts, docs/features/ci.md#machines). ChatApi's program binds them.
+ *   run's artifacts in (infra/GateMachine.vibe, docs/features/ci.md#machines). ChatApi's program binds them.
  * - The site (Vite build + worker/index.ts): serves the app and hands /api/* to ChatApi over a service binding. In
  *   production it answers at the custom domain `APP_DOMAIN` (infra/Domain.ts), unless that is `workers.dev`, the
  *   hostnames in `APP_DOMAIN_REDIRECTS` answer with a 301 to it, and those in `APP_ALIASES` serve it too, each opening
@@ -48,13 +48,13 @@ import { Effect, Layer, Option } from "effect"
 import { Databases } from "./infra/ChatDatabase.ts"
 import { DocsSite } from "./infra/DocsSite.ts"
 import { aliasesBinding, AppDomain, type AppHost, workerDomain } from "./infra/Domain.ts"
-import * as Electric from "./infra/Electric.ts"
+import * as Electric from "#vibelang/emitted/infra/Electric"
 import ElectricGateway from "./infra/ElectricGateway.ts"
 import { DatabaseUrl as ElectricDatabaseUrl } from "./infra/ElectricRuntime.ts"
 import { directUrl, Postgres } from "./infra/Postgres.ts"
-import * as Secrets from "./infra/Secrets.ts"
+import * as Secrets from "#vibelang/emitted/infra/Secrets"
 import { SessionSigningKeyGate } from "./infra/SessionSigningKeyGate.ts"
-import * as SignIn from "./infra/SignIn.ts"
+import * as SignIn from "#vibelang/emitted/infra/SignIn"
 import ChatApi from "./worker/ChatApi.ts"
 import DevChatApi from "./worker/DevChatApi.ts"
 

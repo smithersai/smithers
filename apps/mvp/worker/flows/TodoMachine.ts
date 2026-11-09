@@ -1,7 +1,7 @@
 import { Effect, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import { todoExecutionId } from "../../src/features/pulls/contract.ts"
-import type { SandboxBranch } from "../branch/Sandboxes.vibe"
+import type { SandboxBranch } from "#vibelang/source/worker/branch/Sandboxes"
 
 // The machine a TODO's attempt works on (decision 0016, the factory simplified): its own branch machine, one per attempt
 // (`todo-<attemptId>`), checking out the attempt's base commit, and running each tool as the person who committed the

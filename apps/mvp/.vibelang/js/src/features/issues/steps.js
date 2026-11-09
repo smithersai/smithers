@@ -7,7 +7,7 @@ import { RunCredentials } from "../../flows/credentials";
 import { requesterOf } from "../../flows/requests";
 import { issuesChannel, QUEUE_WITHIN, WRITE_ID_NAMESPACE } from "./contract";
 import { IssueCommitment, QueueCommitment, IssueComment, IssueCreate, IssueTriage, IssueWriteRefused, QueueComment, QueueCreate, QueueEnable, QueuePause, QueueRun, QueueTriage, TriageEnable, TriagePause, TriageRunAgain, } from "./flows";
-import { writes } from "./metrics.js";
+import { writes } from "#vibelang/emitted/src/features/issues/metrics";
 import { Queued } from "./schema";
 /** The outboxes of this browser's tabs, as the step reaches them: only the tab that started a request answers. */
 export class TabIssues extends Context.Service()("@smthrs/mvp/issues/TabIssues") {
