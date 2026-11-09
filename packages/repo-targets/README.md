@@ -93,6 +93,8 @@ Run it with `pnpm exec smithers-build test '//apps/mvp:importRules'`; `ci` plans
 
 `forbidHostModules` uses the AST import analysis and Node’s builtin registry, including bare names such as `stream/web`, plus every `node:` and `bun:` specifier and `bun`. `SdkRules` applies it to library and app-library sources; host and component roles are exempt. See [host boundaries](docs/host-boundaries.md).
 
+Generated VibeLang declarations (`*.d.vibe.ts`) are excluded from ImportRules source discovery. Their compiler-added imports do not describe authored dependencies; `.vibe` sources and authored `.d.ts` declarations remain checked.
+
 Every rule takes:
 
 | Field | Type | Meaning |

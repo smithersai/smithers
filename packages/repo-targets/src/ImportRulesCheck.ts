@@ -291,7 +291,8 @@ export const validateRules = (rules: unknown): ReadonlyArray<ImportRule> => {
  * Every file with a {@link sourceExtensions} extension counts, except under
  * `node_modules`, build and test output, a dot-directory, or a nested
  * directory holding its own `package.json` (another package). Symbolic links
- * are not followed.
+ * are not followed. Generated VibeLang declarations (`*.d.vibe.ts`) are excluded;
+ * authored ambient declarations are still sources.
  *
  * @category files
  * @since 0.1.0
@@ -306,7 +307,7 @@ export const listSources = (packageDirectory: string): ReadonlyArray<string> => 
         const nested = lstatSync(join(packageDirectory, path, "package.json"), { throwIfNoEntry: false })
         if (nested?.isFile() === true) continue
         walk(path)
-      } else if (entry.isFile() && sourceExtensions.some((extension) => entry.name.endsWith(extension))) {
+      } else if (entry.isFile() && !entry.name.endsWith(".d.vibe.ts") && sourceExtensions.some((extension) => entry.name.endsWith(extension))) {
         found.push(path)
       }
     }
