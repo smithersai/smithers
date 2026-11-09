@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 3
+bias 3
+null-prototype true
+key 985659722
+tape rb8CKNb-FJU0QLZZsOxZcS0KPlJ7ULQRCN6OZKZAWIh-QRVUTyZDo6OyYsAF8k7cHhBpOg
+schedule-key 4198252580
+schedule 
+signature "Died:Error"
+path 1
+codec "json"
+value "{\"op\":\"new\",\"role\":\"community\",\"signedOut\":false,\"noToken\":false,\"number\":1,\"parent\":0,\"blank\":false,\"blankKey\":false,\"bogus\":false,\"demote\":true,\"assignee\":\"VibeLang agent\",\"withWriter\":false,\"authorizeFails\":false}"
+# Died:Error
+# {"op":"new","role":"community","signedOut":false,"noToken":false,"number":1,"parent":0,"blank":false,"blankKey":false,"bogus":false,"demote":true,"assignee":"VibeLang agent","withWriter":false,"authorizeFails":false}

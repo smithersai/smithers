@@ -58,6 +58,10 @@ it.live("issues/product-mock-lifecycle", () => run("issues/product-mock-lifecycl
   let participations = 0
   const api = try makeIssueFactory("maintainer", () => sync(() => { participations++ }))
   const request = (op: typeof IssueRequest.Type["op"], number: number, key: string): typeof IssueRequest.Type => ({ op, number, key, parent: 38, title: "Fuzz " + text, text: "Attempt " + text, assignee: "Will", example: "const x = 1", prior: "Existing syntax" })
+  if (text !== text.toWellFormed()) {
+    const refused = try Effect.result(api.act(request("new", 0, "new")))
+    return refused._tag === "Failure" && refused.failure.reason === "invalid"
+  }
   const opened = try api.act(request("new", 0, "new"))
   const id = opened.selected!
   try api.act(request("comment", id, "comment"))

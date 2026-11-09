@@ -1,5 +1,6 @@
 import { it } from "@effect/vitest"
 import { HttpClient, HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { WebCrypto } from "@smthrs/crypto"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import { GitHub } from "@smthrs/integrations"
 import { issuePermission } from "../src/core/conversation.vibe"
@@ -173,7 +174,9 @@ it.live("issues/host-perform-boundary", () => run("issues/host-perform-boundary"
     Effect.provideService(IssueAuthority, authority),
     Effect.provideService(HttpClient.HttpClient, fakeClient(fake)),
   )
-  const result = try Effect.result(input.withWriter ? Effect.provide(performed, writerLayer(true, true)) : performed)
+  // The Worker's host provides these at worker/Objects.vibe; a role demoted mid-call reaches the write key first.
+  const hosted = Effect.provide(performed, WebCrypto.layer)
+  const result = try Effect.result(input.withWriter ? Effect.provide(hosted, writerLayer(true, true)) : hosted)
   if (result._tag === "Failure") {
     if (result.failure._tag !== "IssueFailure" || !reasons.includes(result.failure.reason)) return false
     if (result.failure.reason === "forbidden" && permitted) return false

@@ -86,7 +86,7 @@ it.live("accounts/worker-sign-in-sequences", () => run("accounts/worker-sign-in-
       signedIn = op.person
       maintainer = op.person === "1"
     }
-    if (op.kind === "sign-out" && answer.status === 204) {
+    if (op.kind === "sign-out" && answer.status === 204 && !op.tamper) {
       signedIn = undefined
       maintainer = false
     }
@@ -205,6 +205,8 @@ it.live("accounts/worker-lifecycle", () => run("accounts/worker-lifecycle", Life
   if (input.badGithubId) {
     const failed = try callbackStep(false)
     if (failed.status !== 400) return false
+    userPerson = input.person
+    if ((try step("GET", "/api/auth/github")).status !== 302) return false
   }
   const connected = try callbackStep(false)
   if (connected.status !== 302) return false

@@ -5,7 +5,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { FlowRuntime } from "@smthrs/flow"
 import { applyIssues, canLinkIssues, emptyIssues, issuePermission, setCommitment, approveVip, declineVip, type IssueRecord, type Role } from "./conversation.vibe"
 import { IssueHost, issueFlows, issueRegistration, authorizeIssue, issueExecutionId } from "./issueFlows.vibe"
-import { IssueFailure, type IssueRequest, type IssuesApi, vipIssueBody } from "./issueSchemas.vibe"
+import { IssueFailure, IssueRequest, type IssuesApi, vipIssueBody } from "./issueSchemas.vibe"
 
 function item(number: number, title: string, extra: Partial<IssueRecord> = {}): IssueRecord {
   return { number, githubId: number + 1000, title, body: "Case branches on tuples should narrow each element without a cast.\n\n```vibe\nmatch (pair) {\n  when [let name, let count]: name\n}\n```", author: "jun", age: "2d", state: "open", labels: [], parent: 0, task: "", assignee: "", vip: "", review: "", path: "", comments: 0, notes: [], ...extra }
@@ -109,6 +109,8 @@ export effect function makeIssueFactory(identity: FixtureIdentity = "maintainer"
   const context = try Layer.build(issueRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(Layer.succeed(IssueHost, host)), Layer.provide(WebCrypto.layer)))
   const engine = Context.get(context, FlowRuntime.FlowRuntime)
   const act = effect (request: IssueRequest) => {
+    // The live Worker refuses this text at its wire schema; the mock answers with the same typed reason, never a defect.
+    if (!Schema.is(IssueRequest)(request)) throw new IssueFailure({ reason: "invalid", unwritten: true })
     const person = try personOf(identity)
     const flow = issueFlows.find((f) => f._tag === `vibelang/issues/${request.op}`)
     if (flow === undefined) throw new IssueFailure({ reason: "invalid", unwritten: true })

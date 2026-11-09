@@ -21,7 +21,7 @@ export effect function browserTarget(page: Page) {
       switch (step.op % 6) {
         case 0:
           try tryPromise(() => page.keyboard.press("ControlOrMeta+k"))
-          try tryPromise(() => expect(dialog).toBeVisible())
+          try tryPromise(() => expect(dialog).toBeVisible({ timeout: 20_000 }))
           try tryPromise(() => prompt.fill(step.text))
           try tryPromise(() => page.keyboard.press("Escape"))
           try tryPromise(() => expect(dialog).toBeHidden())

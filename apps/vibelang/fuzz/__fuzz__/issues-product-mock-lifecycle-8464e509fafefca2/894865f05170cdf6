@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 1
+bias 2
+null-prototype false
+key 1887810628
+tape JZZcNw801sxFFWTs
+schedule-key 1498834467
+schedule 
+signature "Died:Composite"
+path 17
+codec "json"
+value "{\"text\":\"\\ud800\",\"decline\":false}"
+# Died:Composite
+# {"text":"\ud800","decline":false}

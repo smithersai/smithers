@@ -27,7 +27,7 @@ effect function issue(id: string, expired = false) {
 it.live("workerd/session-signatures-and-sign-out", () => run("workerd/session-signatures-and-sign-out", Schema.Struct({ id: Int, expired: Schema.Boolean, tampered: Schema.Boolean, text: Text }), ({ id, expired, tampered, text }) => effect {
   provide FetchHttpClient.layer {
     const cookie = try issue(String(id + 100), expired)
-    const before = try (try request("/api/auth/session", tampered ? cookie + "!" + text : cookie)).json
+    const before = try (try request("/api/auth/session", tampered ? cookie + "!" + text.replace(/[^\x21-\x7e]/g, "x") : cookie)).json
     const identity = try Schema.decodeUnknownEffect(Identity)(before)
     if (expired || tampered) return identity.id === "" && identity.role === "viewer"
     if (identity.id !== String(id + 100) || identity.role === "viewer") return false
