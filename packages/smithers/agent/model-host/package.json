@@ -27,7 +27,8 @@
     "dist/**/*.d.ts.map",
     "LICENSE",
     "README.md",
-    ".vibelang/js"
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",

@@ -268,7 +268,8 @@
   },
   "files": [
     "src/",
-    ".vibelang/js"
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "scripts": {
     "check": "vibelang -p tsconfig.json --noEmit",

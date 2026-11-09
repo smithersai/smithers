@@ -67,7 +67,8 @@
     "CHANGELOG.md",
     "dist/vendor/**",
     "docs/",
-    ".vibelang/js"
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",

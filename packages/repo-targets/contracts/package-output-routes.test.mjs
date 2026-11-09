@@ -3,7 +3,7 @@
  * @since 0.1.0
  */
 import assert from "node:assert/strict"
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -27,6 +27,23 @@ const temporary = (body) => {
   const root = mkdtempSync(join(tmpdir(), "package-output-fixture-"))
   try { body(root) } finally { rmSync(root, { recursive: true, force: true }) }
 }
+
+// A loader record proves a compile in this workspace and nowhere else. Sidecar
+// generation writes one beside every published .vibelang/js directory.
+const manifests = directory => readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+  if (entry.name === "node_modules" || entry.name === "dist" || (entry.name.startsWith(".") && entry.name !== ".smithers")) return []
+  const path = join(directory, entry.name)
+  return entry.isDirectory() ? manifests(path) : entry.name === "package.json" ? [path] : []
+})
+
+test("no published package carries its loader records", () => {
+  const repository = new URL("../../../", import.meta.url).pathname
+  const published = manifests(repository)
+    .map(path => [path, JSON.parse(readFileSync(path, "utf8")).files])
+    .filter(([, files]) => files?.includes(".vibelang/js"))
+  assert.ok(published.length > 0)
+  for (const [path, files] of published) assert.ok(files.includes("!.vibelang/js/.loader"), path)
+})
 
 test("private routes are absent from a CommonJS map that also has ordinary imports", () => temporary(root => {
   write(join(root, "package.json"), JSON.stringify({ imports: {

@@ -105,7 +105,8 @@
     "docs/",
     "src/EvalError.vibe",
     "src/Suite.vibe",
-    ".vibelang/js"
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",

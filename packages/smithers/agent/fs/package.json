@@ -59,7 +59,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    ".vibelang/js"
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",

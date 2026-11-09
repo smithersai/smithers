@@ -217,6 +217,7 @@
     "README.md",
     "CHANGELOG.md",
     ".vibelang/js",
+    "!.vibelang/js/.loader",
     "src/SubChains.vibe",
     "src/Chain.vibe"
   ],

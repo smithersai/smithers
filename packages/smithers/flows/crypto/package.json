@@ -70,7 +70,8 @@
     "docs/",
     "src/Uuid.vibe",
     "src/WebCrypto.vibe",
-    ".vibelang/js"
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",

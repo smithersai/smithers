@@ -238,7 +238,8 @@
     "src/internal/ResultEnvelope.vibe",
     "src/internal/RunCatalogOps.vibe",
     "src/internal/RunListingError.vibe",
-    ".vibelang/js"
+    ".vibelang/js",
+    "!.vibelang/js/.loader"
   ],
   "publishConfig": {
     "access": "public",

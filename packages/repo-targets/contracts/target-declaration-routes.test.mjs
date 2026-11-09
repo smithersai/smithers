@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { dirname, join, relative, resolve } from "node:path"
 import { createRequire } from "node:module"
 import { test } from "node:test"
+import { checkLoaderRecord } from "vibelang/project"
 import { prepareSidecars, sidecarProjects } from "../scripts/prepare-sidecars.mjs"
 const require = createRequire(import.meta.url)
 const ts = require("typescript")
@@ -99,6 +100,10 @@ test("native declarations bootstrap a clean project without weakening its full c
   assert.ok(projects[0].libs.includes("es2024.string"))
   assert.equal(prepareSidecars(dir, { stdio: "pipe" }), 1)
   assert.match(readFileSync(declaration, "utf8"), /value/)
+  assert.equal(checkLoaderRecord({ project: join(dir, "tsconfig.json") }).miss, undefined, "a cold start must find a current loader record")
+  writeFileSync(join(dir, "src/value.vibe"), readFileSync(join(dir, "src/value.vibe"), "utf8") + "export const later = 1\n")
+  assert.notEqual(checkLoaderRecord({ project: join(dir, "tsconfig.json") }).miss, undefined, "an edit must invalidate the record")
+  writeFileSync(join(dir, "src/value.vibe"), readFileSync(join(dir, "src/value.vibe"), "utf8").replace("export const later = 1\n", ""))
   const read = ts.readConfigFile(join(dir, "tsconfig.json"), ts.sys.readFile)
   const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, dir)
   const found = ts.resolveModuleName("./value.vibe", join(dir, "src/consumer.ts"), parsed.options, ts.sys).resolvedModule

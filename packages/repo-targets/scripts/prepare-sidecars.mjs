@@ -5,10 +5,11 @@
  * @since 0.1.0
  */
 import { spawnSync } from "node:child_process"
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, rmdirSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { writeLoaderRecord } from "vibelang/project"
 
 const require = createRequire(import.meta.url)
 const ts = require("typescript")
@@ -154,6 +155,37 @@ export const sidecarProjects = (root = repository) => {
   })
 }
 
+const sidecarNames = directory => directory !== undefined && existsSync(directory)
+  ? readdirSync(directory, { recursive: true }).filter(name => name.endsWith(".d.vibe.ts"))
+  : []
+
+// A loader compile writes sidecars at the compiler's own layout, not where relocate
+// placed them. They are outputs and no record names them, so they can go.
+const removeSidecar = (sidecarDir, name) => {
+  rmSync(join(sidecarDir, name), { force: true })
+  for (let directory = dirname(join(sidecarDir, name)); within(sidecarDir, directory); directory = dirname(directory)) {
+    try { rmdirSync(directory) } catch { break }
+  }
+}
+
+// A process started from source compiles every project it reaches when its compile
+// cache is cold, as it always is on a fresh checkout, which takes most of a minute on a
+// small machine. A loader record serves that compile while its inputs' digests hold.
+// Records read the sidecars, so they follow all of them. A project the loader cannot
+// compile is left without one, and reports its errors where it runs.
+const writeLoaderRecords = (root, projects, stdio) => {
+  for (const project of projects) {
+    const placed = new Set(sidecarNames(project.sidecarDir))
+    try {
+      writeLoaderRecord({ project: project.config })
+    } catch (error) {
+      if (stdio === "inherit") console.warn("No loader record for " + slash(relative(root, project.config)) + ": " + error.message)
+    } finally {
+      for (const name of sidecarNames(project.sidecarDir)) if (!placed.has(name)) removeSidecar(project.sidecarDir, name)
+    }
+  }
+}
+
 /** Generate with strict source checking; leave no temporary configurations.
  * @category build
  * @since 0.1.0
@@ -188,6 +220,7 @@ compilerOptions: { noEmit: true, customConditions: project.conditions, ...(proje
     }
   }
   if (failed.length) throw new Error(failed.join("\n"))
+  writeLoaderRecords(root, projects, stdio)
   return projects.length
 }
 
