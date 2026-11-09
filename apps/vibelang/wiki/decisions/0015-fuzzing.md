@@ -89,3 +89,24 @@ uses the durable engine's execution identity derived from the operation key; hum
 identities. The public HTTP client refuses this private agent capability before transport. The trusted
 Worker adapter continues to supply its existing private replay identity. Plan/note replay has a failing-first
 regression; fuzzing also exercises start and the typed public-boundary refusal.
+
+## Status, 2026-11-09
+
+**Not complete.** Goal 3, 100% fuzz-only coverage, is unmet: 4843/6850 lines (70.7%), 6307/11787 branches (53.5%); 35 of 134 files are at 100%. `pnpm fuzz:coverage` exits 1 with 361 per-file gates failing. `pnpm fuzz` targets and browser pass.
+
+Second campaign: seed 20261109, 32 seconds per target, 32.5 minutes, 118 vitest targets, 69,460,816 recorded executions. It stopped at the target phase with 6 failures, so its browser phase did not run. All 6 were fixed and replay from `fuzz/__fuzz__/`.
+
+| Finding | Class | Fix |
+| --- | --- | --- |
+| Mock issue factory died on a lone surrogate | product | typed `invalid`, as the Worker answers |
+| VIP aside link without a path was unnamed | product | names it "Files" |
+| Tampered sign-out ended the modeled session | oracle | model ignores tampered sign-out |
+| Reused bad GitHub id in lifecycle | oracle | resets the person, reconnects |
+| `Digest` missing in the demoted-role path | harness | target provides `WebCrypto.layer` |
+| Control character in a test cookie | harness | target sends printable text |
+
+`fuzz/screens.fuzz.vibe` found earlier: a non-numeric parent sent `NaN`, which JSON carries as `null`; `spec-review` discarded a saved action and minted a new key for the same reviewer; a review link without a verdict, a blank assignee and untitled issue and action rows were unnamed.
+
+`browser/random-interactions` failed twice under the full run at host load 25 or more (a 145-second test timeout, then the palette dialog not visible in 5 seconds) and passed 3 of 3 runs alone. Its dialog wait is now 20 seconds and the last full run passed. The cause is unproven: a lost keypress during startup is not excluded.
+
+Coverage is still bounded by decision 0016's bundled source-range defect and by workerd's refusal of precise V8 profiling. `worker/Api.vibe` remains the only exclusion: Alchemy evaluates it to build the Worker, and request code runs in `Http` and `Objects`.
