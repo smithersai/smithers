@@ -311,6 +311,19 @@ const commonJsBuild = Smithers.NodeTest({
 })
 
 /**
+ * The TUI bundle's externals: a declared package stays external, also when an
+ * inlined module reaches it through its own `#import`.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const tuiBundleExternals = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/smithers/scripts/build-tui.test.mjs")]),
+  srcs: [Smithers.file("//packages/smithers/scripts/build-tui.mjs")],
+  deps: []
+})
+
+/**
  * The CLI's release installer: `install-cli.mjs` installs a packed release
  * closure with relocatable installation receipts, and `build-cli.mjs` packs
  * and installs the CLI for the distribution and offline boxes. They build
@@ -521,6 +534,7 @@ export const Package = Smithers.Package({
     hostProcessSampler,
     commonJsBuild,
     cliInstall,
+    tuiBundleExternals,
     lib,
     lint,
     nativeSources,

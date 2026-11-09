@@ -910,10 +910,14 @@
     "effect": "4.1.1",
     "@effect/sql-pg": "4.1.1",
     "@effect/sql-sqlite-node": "4.1.1",
-    "@smthrs/platform-bun": "1.0.0-rc.16"
+    "@smthrs/platform-bun": "1.0.0-rc.16",
+    "electrobun": "1.18.1"
   },
   "peerDependenciesMeta": {
     "@smthrs/platform-bun": {
+      "optional": true
+    },
+    "electrobun": {
       "optional": true
     }
   }

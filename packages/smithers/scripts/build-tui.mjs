@@ -21,7 +21,7 @@
  */
 import { build } from "esbuild"
 import vibelang from "vibelang-unplugin/esbuild"
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { builtinModules } from "node:module"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -33,8 +33,43 @@ import { verifyNativeArtifacts } from "../vendor/opentui-native/verify.mjs"
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 
+const builtin = (specifier) =>
+  specifier.startsWith("node:") || specifier.startsWith("bun:") || builtinModules.includes(specifier)
+
 /** The package name a bare specifier names: `@scope/name` or `name`. */
 const packageName = (specifier) => specifier.split("/").slice(0, specifier.startsWith("@") ? 2 : 1).join("/")
+
+/** The bare specifier a `#import` names in the nearest manifest's `imports`, if it names a package. */
+const packageImportTarget = (specifier, directory) => {
+  for (let current = directory; ; current = dirname(current)) {
+    const path = resolve(current, "package.json")
+    if (existsSync(path)) {
+      const target = JSON.parse(readFileSync(path, "utf8")).imports?.[specifier]?.default
+      return typeof target === "string" && !target.startsWith(".") ? target : undefined
+    }
+    if (dirname(current) === current) return undefined
+  }
+}
+
+/**
+ * Keeps declared packages external, and so also a package an inlined module
+ * reaches through its own `#import`, such as `@smthrs/platform-bun`'s optional
+ * Electrobun: the bundle must load the installed copy, or fail where it is
+ * used if none is installed.
+ */
+export const declaredDependenciesExternal = (declared) => ({
+  name: "declared-dependencies-external",
+  setup(context) {
+    context.onResolve({ filter: /^[^./]/ }, ({ path, resolveDir }) => {
+      const specifier = path.startsWith("#") ? packageImportTarget(path, resolveDir) : path
+      if (specifier === undefined) return undefined
+      if (builtin(specifier)) return { path: specifier, external: true }
+      if (specifier === "@smthrs/cli/tui-native") return { path: specifier, external: true }
+      const name = packageName(specifier)
+      return !name.startsWith("@smthrs/") && declared.has(name) ? { path: specifier, external: true } : undefined
+    })
+  }
+})
 
 export const buildTui = async () => {
   verifyNativeArtifacts()
@@ -44,8 +79,6 @@ export const buildTui = async () => {
     ...Object.keys(manifest.peerDependencies ?? {}),
     ...privateEffectAdapters(manifest)
   ])
-  const builtin = (specifier) =>
-    specifier.startsWith("node:") || specifier.startsWith("bun:") || builtinModules.includes(specifier)
   const outdir = resolve(packageRoot, "dist/tui")
   const app = resolve(packageRoot, "../../apps/tui")
   const result = await build({
@@ -69,17 +102,7 @@ export const buildTui = async () => {
     logLevel: "warning",
     // `.vibe` modules of the workspace packages the TUI imports compile with
     // their own package's tsconfig.
-    plugins: [vibelang({ root: app }), {
-      name: "declared-dependencies-external",
-      setup(context) {
-        context.onResolve({ filter: /^[^./]/ }, ({ path }) => {
-          if (builtin(path)) return { path, external: true }
-          if (path === "@smthrs/cli/tui-native") return { path, external: true }
-          const name = packageName(path)
-          return !name.startsWith("@smthrs/") && declared.has(name) ? { path, external: true } : undefined
-        })
-      }
-    }]
+    plugins: [vibelang({ root: app }), declaredDependenciesExternal(declared)]
   })
   if (result.errors.length > 0) throw new Error("The TUI bundle failed to build")
   const undeclared = new Set()

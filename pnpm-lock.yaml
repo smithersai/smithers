@@ -1749,6 +1749,9 @@ importers:
       diff:
         specifier: 9.0.0
         version: 9.0.0
+      electrobun:
+        specifier: 1.18.1
+        version: 1.18.1(patch_hash=2e0ced1afef62c1c1e3cb45ab20ee0b6b9f98010ff3b877282287e36e94e18d3)(supports-color@10.2.2)
       incur:
         specifier: 0.5.1
         version: 0.5.1
