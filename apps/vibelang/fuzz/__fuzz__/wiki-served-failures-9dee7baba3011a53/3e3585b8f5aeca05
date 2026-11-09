@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 10
+bias 6
+null-prototype false
+key 304354724
+tape Cbe68YVtCsr3VQoBP-gVMQPiLgkwH0MU
+schedule-key 1980834066
+schedule 
+signature "Died:Error"
+path 0.1
+codec "json"
+value "{\"reason\":\"unavailable\",\"unwritten\":false,\"untyped\":true,\"authorize\":false,\"recovery\":\"none\",\"op\":\"read\"}"
+# Died:Error
+# {"reason":"unavailable","unwritten":false,"untyped":true,"authorize":false,"recovery":"none","op":"read"}

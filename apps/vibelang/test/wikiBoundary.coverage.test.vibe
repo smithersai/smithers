@@ -164,6 +164,18 @@ describe("the GitHub host refuses before it writes", () => {
       try Effect.try(() => expect(outcome).toMatchObject({ _tag: "Failure", failure: { reason: "forbidden" } }))
     }
   })
+  it.live("a token revoked before the first GitHub read still retains the reviewed text (fuzz wiki/host-calls)", () => effect {
+    const storage = try Effect.try(() => objectStorage()) as unknown as Storage
+    let calls = 0
+    const revoking: WikiAuthority.Shape = { current: effect () => { calls += 1; return calls === 1 ? will : { ...will, token: Redacted.make("") } } }
+    const revoked = try hostOutcome(edit(), revoking, 403, storage, true)
+    const stored = try promise(() => storage.get(`wiki/draft/${will.id}/roadmap`))
+    try Effect.try(() => {
+      // Nothing was written, so a fresh request may be sent again unchanged once the person reconnects.
+      expect(revoked).toMatchObject({ _tag: "Failure", failure: { reason: "connect", unwritten: true } })
+      expect(stored).toEqual({ page: "roadmap", text: edit().text })
+    })
+  })
   it.live("a token revoked mid-write asks the person to connect, and a read failure names GitHub's answer", () => effect {
     let calls = 0
     const revoking: WikiAuthority.Shape = { current: effect () => { calls += 1; return calls === 1 ? will : { ...will, token: Redacted.make("") } } }

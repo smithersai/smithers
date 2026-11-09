@@ -89,7 +89,11 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
         const authorized = <A, E, R>(program: A!E!R, mutation = false) => effect {
           const current = try authority.current()
           if (current === undefined || current.id !== actor.id || !wikiPermission(current.role, request.op) || !wikiSubmissionAllowed(request.op, current.kind ?? "person")) throw new WikiFailure({ reason: "forbidden" })
-          if (Redacted.value(current.token) === "") throw new WikiFailure({ reason: "connect" })
+          if (Redacted.value(current.token) === "") {
+            // As when the person arrived without a credential: keep the reviewed text until they reconnect.
+            if (storage !== undefined && !touched) try promise(() => storage.put(`wiki/draft/${actor.id}/${request.page}`, { page: request.page, text: request.text }))
+            throw new WikiFailure({ reason: "connect" })
+          }
           if (authority.authorize !== undefined) try authority.authorize(request.op)
           if (mutation) touched = true
           return try program.pipe(GitHub.Calls.withToken(current.token, repo.api), Effect.provideService(HttpClient.HttpClient, http))
@@ -140,7 +144,7 @@ export effect function githubWikiHost(repo: WikiRepository = wikiRepository, sto
       }
       return try work.pipe(GitHub.Calls.withToken(actor === undefined ? blank : actor.token, repo.api), Effect.provideService(HttpClient.HttpClient, http), Effect.mapError((error) => {
         const failure = error._tag === "WikiFailure" ? error : wikiFailureOf(error)
-        return fresh() && !touched && ["conflict", "empty"].includes(failure.reason) ? new WikiFailure({ ...failure, unwritten: true }) : failure
+        return fresh() && !touched && ["conflict", "empty", "connect"].includes(failure.reason) ? new WikiFailure({ ...failure, unwritten: true }) : failure
       }))
     },
   }
