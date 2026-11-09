@@ -92,7 +92,7 @@ export * as SignalName from "./core/SignalName.ts"
  * @category constructors
  * @since 1.0.0
  */
-export * as Source from "./core/Source.ts"
+export * as Source from "./core/Source.vibe"
 
 /**
  * @category schemas

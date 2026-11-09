@@ -95,26 +95,24 @@ export const runWithCursor = <RP, R>(
   onBatch: (events: ReadonlyArray<ExternalEvent>) => Effect.Effect<void, IntegrationError, R>,
   options?: RunOptions | undefined
 ): Effect.Effect<void, IntegrationError, RP | R | RunContext> =>
-  Effect.gen(function*() {
+  effect {
     const intervalMs = options?.intervalMs ?? 250
     const maxTurns = options?.maxTurns
     if (
       !Number.isSafeInteger(intervalMs) || intervalMs < 0 ||
       (maxTurns !== undefined && (!Number.isSafeInteger(maxTurns) || maxTurns < 1))
     ) {
-      return yield* Effect.fail(
-        new IntegrationError(
-          "invalid-config",
-          "Polling requires a nonnegative integer intervalMs and a positive integer maxTurns."
-        )
+      throw new IntegrationError(
+        "invalid-config",
+        "Polling requires a nonnegative integer intervalMs and a positive integer maxTurns."
       )
     }
-    const instance = yield* FlowRuntime.FlowInstance
-    const cursors = yield* CursorStore
+    const instance = try FlowRuntime.FlowInstance
+    const cursors = try CursorStore
     for (let turn = 0; maxTurns === undefined || turn < maxTurns; turn++) {
       const name = `integrations/source/${encodeURIComponent(sourceId)}/${turn}`
       const key = (phase: string) => `${instance.executionId}/${name}/${phase}`
-      const batch = yield* Action.make({
+      const batch = try Action.make({
         name: `${name}/poll`,
         tier: "irreversible",
         idempotencyKey: key("poll"),
@@ -124,14 +122,14 @@ export const runWithCursor = <RP, R>(
           Effect.mapError(fromIntegrationError)
         )
       }).pipe(Effect.mapError(toIntegrationError))
-      yield* Action.make({
+      try Action.make({
         name: `${name}/handle`,
         tier: "irreversible",
         error: Failure,
         execute: Effect.suspend(() => onBatch(batch.events)).pipe(Effect.mapError(fromIntegrationError))
       }).pipe(Effect.mapError(toIntegrationError))
       if (batch.cursor !== undefined) {
-        yield* Action.make({
+        try Action.make({
           name: `${name}/commit`,
           tier: "irreversible",
           idempotencyKey: key("commit"),
@@ -140,7 +138,7 @@ export const runWithCursor = <RP, R>(
         }).pipe(Effect.mapError(toIntegrationError))
       }
       if (maxTurns === undefined || turn + 1 < maxTurns) {
-        yield* DurableClock.sleep({ name: `${name}/wait`, duration: intervalMs, inMemoryThreshold: 0 })
+        try DurableClock.sleep({ name: `${name}/wait`, duration: intervalMs, inMemoryThreshold: 0 })
       }
     }
-  })
+  }

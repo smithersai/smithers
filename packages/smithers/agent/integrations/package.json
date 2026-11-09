@@ -117,8 +117,8 @@
       "default": "./.vibelang/js/src/core/Signature.js"
     },
     "./core/Source": {
-      "types": "./src/core/Source.ts",
-      "vibelang-source": "./src/core/Source.ts",
+      "types": "./.vibe/declarations/core/Source.d.vibe.ts",
+      "vibelang-source": "./src/core/Source.vibe",
       "default": "./.vibelang/js/src/core/Source.js"
     },
     "./core/SourceRecord": {

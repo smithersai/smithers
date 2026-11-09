@@ -164,7 +164,7 @@ const importRules = ImportRules({
   rules: [
     {
       kind: "forbidCalls",
-      files: ["src/core/Source.ts"],
+      files: ["src/core/Source.vibe"],
       callees: ["Effect.repeat", "Effect.retry", "Effect.sleep", "Schedule.spaced", "setTimeout", "setInterval"],
       because: "DUR-2: polling steps and waits belong to the durable flow engine."
     },

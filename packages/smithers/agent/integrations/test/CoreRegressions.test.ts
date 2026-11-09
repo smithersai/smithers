@@ -7,7 +7,7 @@ import { layerMemory } from "../src/core/CursorStore.vibe"
 import type { ExternalEvent } from "../src/core/ExternalEvent.vibe"
 import * as Pkce from "../src/core/Pkce.vibe"
 import { toNotification } from "../src/core/SignalName.ts"
-import { runWithCursor } from "../src/core/Source.ts"
+import { runWithCursor } from "../src/core/Source.vibe"
 import { compareVersion } from "../src/core/SourceRecord.vibe"
 
 const event: ExternalEvent = {

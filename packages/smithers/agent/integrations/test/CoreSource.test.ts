@@ -9,7 +9,7 @@ import { Failure, fromIntegrationError } from "../src/core/ActionFailure.vibe"
 import { CursorStore, layerMemory } from "../src/core/CursorStore.vibe"
 import type { ExternalEvent } from "../src/core/ExternalEvent.vibe"
 import { IntegrationError } from "../src/core/IntegrationError.ts"
-import { type Batch, type RunContext, runWithCursor } from "../src/core/Source.ts"
+import { type Batch, type RunContext, runWithCursor } from "../src/core/Source.vibe"
 
 const event = (id: number): ExternalEvent => ({
   source: "example",
