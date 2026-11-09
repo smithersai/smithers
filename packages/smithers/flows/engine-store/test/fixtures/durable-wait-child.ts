@@ -99,7 +99,7 @@ const stateCompletion = Effect.gen(function*() {
     exit: Exit.succeed(process.argv[5] ?? ""),
     completedAtMs: Date.now()
   })
-  yield* line({ tag: outcome._tag, row: outcome.row })
+  yield* line({ tag: outcome._tag, row: outcome._tag === "NotFound" ? null : outcome.row })
 }).pipe(Effect.provide(database))
 
 const stateInitialization = Effect.gen(function*() {

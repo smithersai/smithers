@@ -103,9 +103,18 @@ export type DeferredRow = typeof DeferredRow.Type
  * @since 0.1.0
  * @category models
  */
+/**
+ * `NotFound`: the execution has no run. Nothing is stored: a completion
+ * belongs to a run, as a park or a wake does, and a token can name an
+ * execution that was never started.
+ *
+ * @since 1.0.0
+ * @category models
+ */
 export type CompleteDeferredOutcome =
   | { readonly _tag: "Completed"; readonly row: DeferredRow; readonly digest: DeferredDigest }
   | { readonly _tag: "Existing"; readonly row: DeferredRow; readonly digest: DeferredDigest }
+  | { readonly _tag: "NotFound" }
 
 /**
  * The `JournalEvent.contentDigest` of a stored completion's encoded `exit`
@@ -1238,6 +1247,10 @@ const completeDeferred = (db: Database): Service["completeDeferred"] =>
         db,
         row.executionId,
         Effect.gen(function*() {
+          // The row's foreign key names the run; refuse before the insert so
+          // an unknown execution is an outcome, not a constraint defect.
+          const run = yield* db.sql`SELECT 1 FROM flows_runs WHERE run_id = ${row.executionId}`
+          if (run.length === 0) return { _tag: "NotFound" as const }
           const inserted = yield* db.sql<DeferredDatabaseRow>`
             INSERT INTO flows_deferred_completions (
               flow_name,
@@ -2488,6 +2501,8 @@ const memoryConsumeDeferred = (memory: Memory): Service["consumeDeferred"] =>
 const memoryCompleteDeferred = (memory: Memory): Service["completeDeferred"] =>
   Effect.fn("DurableEngineState.completeDeferred")((row) =>
     Effect.gen(function*() {
+      // Mirrors SQL: an unknown run takes no completion.
+      if (!runView(memory, row.executionId, undefined).exists) return { _tag: "NotFound" as const }
       const stored = yield* snapshotDeferred(row)
       const key = deferredKey(stored)
       const existing = memory.deferreds.get(key)

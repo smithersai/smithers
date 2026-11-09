@@ -1,0 +1,38 @@
+// @vitest-environment node
+// Found by fuzz objects/conversation-host: a seek on a tour accepted while the ended tour's execution was still
+// held signalled a run that did not exist yet, and the engine store died with FOREIGN KEY constraint failed.
+import { describe, expect, it } from "@effect/vitest"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import { Unavailable } from "../src/core/Factory.vibe"
+import type { HistoryReader } from "../src/history/tools.vibe"
+import * as Objects from "../worker/Objects.vibe"
+
+const unavailable = () => fail(new Unavailable({ reason: "injected history failure" }))
+const history: HistoryReader = { outline: unavailable, epic: unavailable, commit: unavailable, search: unavailable, plan: unavailable, start: unavailable, note: unavailable }
+const spend = { admit: () => succeed(false), spend: () => Effect.void }
+const model = { model: undefined, unusable: "unset" as const }
+
+describe("a seek on a tour that waits behind an ended one", () => {
+  it.live("answers, and the waiting tour plays from the sought step", () => scoped(effect {
+    const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+    const object = raw as unknown as Objects.Storage
+    const sequencer = try Objects.conversation(object)
+    const first = try Objects.tour("conv", object, sequencer)
+    try Objects.alarm("conv", object, sequencer, spend, model, history)
+    const ended = try Objects.endTour("conv", object, sequencer)
+    const second = try Objects.tour("conv", object, sequencer)
+    const sought = try exit(Objects.controlTour("conv", object, sequencer, "seek", 6))
+    const atSeek = (try sequencer.snapshot()).walkthrough
+    for (let round = 0; round < 3; round++) {
+      try Effect.timeoutOption(Objects.alarm("conv", object, sequencer, spend, model, history), "10 seconds")
+    }
+    const after = (try sequencer.snapshot()).walkthrough
+    try Effect.try(() => {
+      expect([first, ended, second]).toEqual([null, null, null])
+      expect(sought).toEqual(Exit.succeed(null))
+      expect(atSeek?.step).toBe(6)
+      expect(after?.step).toBe(6)
+      expect(after?.target).not.toBe("")
+    })
+  }), 60_000)
+})

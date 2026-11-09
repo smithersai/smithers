@@ -826,7 +826,7 @@ const recordParentResume = (driver: Driver, parentExecutionId: string, childExec
         // A settlement announced again (`reannounce`) finds its wake
         // already recorded, and perhaps already consumed: it is not
         // scheduled twice.
-        if (completed._tag === "Existing") return false
+        if (completed._tag !== "Completed") return false
         yield* emitDecision(driver, parentExecutionId, { decision: "wake-scheduled", reason: "parent" })
         return true
       }),
@@ -4538,6 +4538,8 @@ const recordWake = (
           exit: { _tag: "Success", value: null },
           completedAtMs: yield* Clock.currentTimeMillis
         })
+        // The run was read in this transaction; a store without it schedules nothing.
+        if (completion._tag === "NotFound") return
         const wake = completion.row
         yield* driver.journal.emitDurableUnfenced(JournalRecords.deferredCompleted({
           runId: executionId,

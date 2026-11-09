@@ -756,6 +756,32 @@ describe("RunDriver requestResume", () => {
       ])
     }))
 
+  it.effect("records no control wake when the engine state has no run for it", () =>
+    Effect.gen(function*() {
+      const result = yield* withCrypto(provideJournal(Effect.gen(function*() {
+        const state = yield* DurableEngineState.DurableEngineState
+        yield* suspend("lost")
+        // Faulty service: the run store has the run, the engine state does not.
+        const lost: DurableEngineState.Service = {
+          ...state,
+          completeDeferred: () => Effect.succeed({ _tag: "NotFound" as const })
+        }
+        const driver = yield* recordingDriver([]).pipe(
+          Effect.provideService(DurableEngineState.DurableEngineState, lost)
+        )
+        yield* driver.scheduleResume(EdgeFlow._tag, "lost", "operator")
+        const journal = yield* Journal.Journal
+        yield* journal.flush
+        const page = yield* JournalRecords.entries("lost", undefined, 100)
+        return {
+          completions: page.entries.filter((entry) => entry.eventType === "flows.engine.deferred-completed").length,
+          stored: yield* state.completedDeferreds(EdgeFlow._tag, "lost")
+        }
+      })))
+
+      expect(result).toEqual({ completions: 0, stored: [] })
+    }))
+
   it.effect("refuses a delegated wake of a quarantine park in the transaction that reads it", () =>
     Effect.gen(function*() {
       const result = yield* withCrypto(provideJournal(Effect.gen(function*() {
@@ -1605,12 +1631,19 @@ describe("RunDriver atomic waiting markers", () => {
             runs: (runId) => Option.fromNullishOr(views.get(runId)),
             listRuns: () => views.entries()
           })
+          // The memory view follows the run store wherever the driver writes a run's engine state.
           const state: DurableEngineState.Service = {
             ...base,
             park: (runId, waiting, claimant) =>
               store.get(runId).pipe(
                 Effect.tap((row) => Effect.sync(() => views.set(runId, row))),
                 Effect.andThen(base.park(runId, waiting, claimant)),
+                Effect.orDie
+              ),
+            completeDeferred: (row) =>
+              store.get(row.executionId).pipe(
+                Effect.tap((run) => Effect.sync(() => views.set(row.executionId, run))),
+                Effect.andThen(base.completeDeferred(row)),
                 Effect.orDie
               )
           }

@@ -16266,7 +16266,7 @@ protected execution snapshot reader, independently of its redacted event view.
 | `WaitingRunsFilter`       | `{ reason?, dueBeforeMs?, cancelRequested? }`                                                        |
 | `RunParentEdge`           | `{ childId, parentId, seq }`, where `seq` is ordering only                                           |
 | `AttemptSurvivors`        | `{ earliestAttempt, earliestStartedAtMs, latest }`                                                   |
-| `CompleteDeferredOutcome` | `Completed` or `Existing`                                                                            |
+| `CompleteDeferredOutcome` | `Completed`, `Existing`, or `NotFound` (no such run: nothing stored)                                 |
 | `ScheduleClockOutcome`    | `Scheduled` or `Existing`                                                                            |
 | `CompleteClockOutcome`    | `Completed`, `AlreadyCompleted`, or `NotFound`                                                       |
 | `ParkOutcome`             | `Parked` or `NotFound`                                                                               |

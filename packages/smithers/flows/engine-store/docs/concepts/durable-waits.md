@@ -14,7 +14,9 @@ state that makes waiting survive all three.
 
 A **deferred** is addressed by flow name, execution id, and deferred name. It is
 completed once, first writer wins, and its `exit` is the value the resumed run
-receives.
+receives. A completion belongs to a run: one whose execution id names no run is
+`NotFound` and stores nothing, journals nothing and wakes nothing. A token can
+name an execution that was never started; no run can be waiting on it.
 
 A **clock** is addressed the same way and carries an absolute `dueAtMs`.
 Scheduling is first writer wins and fenced against the active run owner, so a
@@ -25,7 +27,7 @@ write from an idempotent repeat:
 
 | Call               | Outcomes                                       |
 | ------------------ | ---------------------------------------------- |
-| `completeDeferred` | `Completed` or `Existing`                      |
+| `completeDeferred` | `Completed`, `Existing`, or `NotFound`         |
 | `scheduleClock`    | `Scheduled` or `Existing`                      |
 | `completeClock`    | `Completed`, `AlreadyCompleted`, or `NotFound` |
 | `park`             | `Parked` or `NotFound`                         |

@@ -183,16 +183,15 @@ Product bugs fixed, each with a regression test that failed first:
 | The issue card's open button took the same blank label | it reads `Open #<number>` |
 | A wiki save or propose whose credential went after the call began answered `connect`, but dropped the reviewed text and the fresh request's `unwritten` mark | both kept, as when the person arrived without a credential |
 | A tour accepted after a post, before that post's reply started, deadlocked the conversation: the reply's start waited on the tour while the tour waited on the reply's held execution | Learn more answers `busy` while a dispatched reply's question is unanswered (`Objects.tour`) |
-
-**Open, not fixed:** tour, alarm (the tour parks), end tour, a second tour, then seek: the seek's wake resumes the first
-tour's held execution and dies with `FOREIGN KEY constraint failed` in the engine store. Reproduction and the
-counterexample: `~/vl/fuzz2-findings/tour-seek-fk/` on nyc-01. The counterexample is not in `fuzz/__fuzz__/`, so
-`pnpm fuzz` stays green; it goes there with the fix.
+| Tour, alarm (the tour parks), end tour, a second tour, then seek: the seek signalled the second tour's gate, whose run did not exist yet (the first tour's execution was still held), and the engine store died with `FOREIGN KEY constraint failed` | `@smthrs/engine-store`: a deferred completed for an execution with no run is `NotFound` and stores, journals and wakes nothing, in the SQL and memory stores alike. The waiting tour restores the sought step from the sequencer when it starts. Tests: the store contract, `DeferredPersistence`, `RunDriverEdges`, and `test/tourSeekQueued.test.vibe`; the value is in `fuzz/__fuzz__/objects-conversation-host-1f5170fb7ee19c5a/` |
 
 Unreachable fallbacks removed from `src/web/view.vibe`, behaviour unchanged: the tour narration's `?? false`/`?? ""`
 after a length check, the video `loop` no asset leaves unset, the poster-still path (every poster asset has controls),
 and a second `?? []` for issue items. External: happy-dom 20.13.2's `WheelEvent` drops `ctrlKey` from its init; the
-viewport target passes the two fields it reads.
+viewport target passes the two fields it reads. happy-dom's `WheelEvent` extends `UIEvent` where the UI Events spec
+says `MouseEvent`, so no `MouseEvent` field is read from the init; 21.0.4 has the same class. Minimal reproduction:
+`~/vl/vibelang-bugs/external-happy-dom-wheel-ctrlkey/` on nyc-01 (`node repro.mjs <happy-dom directory>`, exit 1 while
+the defect stands).
 
 Fuzz-only coverage of the lane's files, Vitest V8 with the suite's configuration, the targets that reach them at 5 s
 each (`fuzz:coverage`'s budget), Node and happy-dom, no browser phase:
