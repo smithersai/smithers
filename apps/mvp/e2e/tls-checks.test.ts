@@ -10,7 +10,7 @@ import { expect, test } from "vitest"
 const APP = new URL("..", import.meta.url).pathname
 const ROOTS = ["e2e", "ops"]
 /** These state the forms to refuse, or drive them. */
-const STATES_THEM = new Set(["e2e/tls-checks.test.ts", "e2e/runner.test.ts", "ops/tls.test.ts", "ops/work-links/link.test.ts", "ops/deploy-smoke/run.test.ts"])
+const STATES_THEM = new Set(["e2e/tls-checks.test.ts", "e2e/runner.test.ts", "ops/tls.test.ts", "ops/work-links/link.test.ts", "ops/deploy-smoke/run.test.ts", "ops/database/Tls.integration.test.ts"])
 const FORWARD = String.raw`(?:test\.info\(\)|testInfo)\.project\.use\.ignoreHTTPSErrors`
 /** These take the option as Playwright's fixture and pass it on, the only way to name it bare. */
 const TAKE_FIXTURE = new Set(["e2e/fixtures.ts", "e2e/devices.ts", "e2e/flow-editor-storage.spec.ts", "e2e/browser-isolation.spec.ts"])
@@ -31,8 +31,9 @@ const overrides = (source: string, takesFixture = false) => {
     if (before.endsWith(".project.use.") ? READ.test(after) : !/[."'`[]$/.test(before) && ((takesFixture && SHORTHAND.test(after)) || VALUE.test(after))) continue
     found.push(line(index))
   }
+  // This option has the opposite polarity: only literal true or the central local-host policy enables verification.
   for (const { index } of source.matchAll(/rejectUnauthorized/g)) {
-    if (!new RegExp(String.raw`^rejectUnauthorized: !onThisMachine\(baseURL\)${ENDS}`).test(source.slice(index))) found.push(line(index))
+    if (!new RegExp(String.raw`^rejectUnauthorized: (?:true|!onThisMachine\(baseURL\))${ENDS}`).test(source.slice(index))) found.push(line(index))
   }
   for (const { index } of source.matchAll(/NODE_TLS_REJECT_UNAUTHORIZED/g)) {
     if (!source.startsWith(RUNNER_SWITCH, index) && !source.startsWith('NODE_TLS_REJECT_UNAUTHORIZED === "0"', index)) found.push(line(index))
@@ -57,6 +58,7 @@ test("forwarding the project's value or saying false passes", () => {
     "persistent({\n  ignoreHTTPSErrors: testInfo.project.use.ignoreHTTPSErrors,\n})",
     "newContext({ ignoreHTTPSErrors: false })",
     "forward({ rejectUnauthorized: !onThisMachine(baseURL), x })",
+    "https.request({ rejectUnauthorized: true })",
     'if (env.NODE_TLS_REJECT_UNAUTHORIZED === "0") throw x',
     `({ ${RUNNER_SWITCH} })`,
   ]) expect(overrides(allowed), allowed).toEqual([])
@@ -65,7 +67,7 @@ test("forwarding the project's value or saying false passes", () => {
   }
 })
 
-test("every value a file chooses for itself fails, in every form", () => {
+test("every override that can disable checks fails, in every form", () => {
   for (const refused of [
     "newContext({ storageState, ignoreHTTPSErrors: true })",
     "newContext({ ignoreHTTPSErrors: onThisMachine(baseURL) })",
@@ -79,6 +81,11 @@ test("every value a file chooses for itself fails, in every form", () => {
     "newContext({ ignoreHTTPSErrors: test.info().project.use.ignoreHTTPSErrors || true })",
     "testInfo.project.use.ignoreHTTPSErrors = true",
     "https.request({ rejectUnauthorized: false })",
+    "https.request({ rejectUnauthorized: true && false })",
+    "options.rejectUnauthorized = false",
+    "(options.rejectUnauthorized) = false",
+    "[options.rejectUnauthorized] = [false]",
+    "({ value: options.rejectUnauthorized } = { value: false })",
     "https.request({ rejectUnauthorized: !secure })",
     "https.request({ rejectUnauthorized: !onThisMachine(baseURL) && false })",
     '({ NODE_TLS_REJECT_UNAUTHORIZED: "0" })',
@@ -104,7 +111,7 @@ test("no file under e2e/ or ops/ chooses for itself", () => {
 test("every ops/ file reaching a network refuses TLS checks turned off", () => {
   const code = scanned.filter((path) => path.startsWith("ops/") && !path.includes(".test."))
   const reaching = code.filter((path) => /\b(?:fetch|clientOf|neonUri|findProject|Database\.layer)\s*\(/.test(readFileSync(join(APP, path), "utf8")))
-  expect(reaching).toEqual(expect.arrayContaining(["ops/deploy-smoke/run.ts", "ops/work-links/link.mjs", "ops/issues/file.mjs", "ops/role-age/expire.ts"]))
+  expect(reaching).toEqual(expect.arrayContaining(["ops/deploy-smoke/run.ts", "ops/work-links/link.mjs", "ops/issues/track.mjs", "ops/auth/session-keys.ts", "ops/database/Connection.ts", "ops/issues/render-fixtures.mjs", "ops/machine-token/issue.ts", "ops/role-age/expire.ts"]))
   expect(reaching.filter((path) => !/^\s*refuseUncheckedTls\((?:process\.)?env\)$/m.test(readFileSync(join(APP, path), "utf8")))).toEqual([])
 })
 

@@ -6,6 +6,9 @@
 import { writeFileSync } from "node:fs"
 import { escapeMarkdown } from "../../src/features/issues/publicContent.mjs"
 import { RENDER_CASES, RENDER_CONTEXT } from "./render-cases.mjs"
+import { refuseUncheckedTls } from "../tls.mjs"
+
+refuseUncheckedTls(process.env)
 
 const out = process.argv.includes("--out") ? process.argv[process.argv.indexOf("--out") + 1] : new URL("./render-fixtures.json", import.meta.url).pathname
 // Ten cases a request, between separator paragraphs, so a refresh costs five requests. An escaped case can't open a

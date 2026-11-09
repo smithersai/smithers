@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url"
 import * as Database from "../../db/Database.ts"
 import * as Keys from "../../worker/SessionKeys.ts"
 import * as Rotation from "../../worker/flows/SessionSigningKeys.ts"
+import { refuseUncheckedTls } from "../tls.mjs"
 
 /** Rotation resumes by key id; each explicitly confirmed seal reset is a new operation. */
 export const executionId = (operation: string, keyId: string) =>
@@ -68,7 +69,11 @@ export const runOperation = (operation: string, keyId: string, replacementId?: s
   return selected.executionId
 }).pipe(Effect.withSpan("auth.key_tool"))
 
-export const main = (args: ReadonlyArray<string>) => Effect.gen(function* () {
+const checkedEnvironment = Effect.sync(() => {
+  refuseUncheckedTls(process.env)
+})
+
+export const main = (args: ReadonlyArray<string>) => Effect.andThen(checkedEnvironment, Effect.gen(function* () {
   const [operation, keyId] = args
   const reset = operation === "reset-seal"
   if (reset ? args.length !== 2 || keyId !== "--confirm-sign-out"
@@ -97,6 +102,6 @@ export const main = (args: ReadonlyArray<string>) => Effect.gen(function* () {
 }).pipe(
   // Driver causes can contain connection settings. The terminal gets only a fixed failure record.
   Effect.catchCause(() => Effect.fail(new Error("Session signing-key operation failed"))),
-)
+))
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) NodeRuntime.runMain(Effect.scoped(main(process.argv.slice(2))))
