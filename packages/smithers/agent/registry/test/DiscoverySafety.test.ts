@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import type { Source } from "../src/Descriptor.vibe"
-import * as Discovery from "../src/Discovery.ts"
+import * as Discovery from "../src/Discovery.vibe"
 
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
 const denied = (method: string, location: string) =>

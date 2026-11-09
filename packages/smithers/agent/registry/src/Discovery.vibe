@@ -34,7 +34,7 @@ import {
 } from "./Descriptor.vibe"
 import * as Frontmatter from "./internal/Frontmatter.vibe"
 import { measureLockfiles } from "./internal/Lockfiles.vibe"
-import * as ModuleClosure from "./internal/ModuleClosure.ts"
+import * as ModuleClosure from "./internal/ModuleClosure.vibe"
 import * as ModuleMetadata from "./internal/ModuleMetadata.vibe"
 import * as Names from "./internal/Names.vibe"
 import * as MarkdownFlow from "./MarkdownFlow.vibe"
@@ -174,7 +174,7 @@ const readMetadata = (
 ) =>
   fs.stream(location, { bytesToRead: entrySizeLimit + 1 }).pipe(
     Stream.runCollect,
-    Effect.map((chunks): EntryMetadata => {
+    Effect.flatMap(effect (chunks): Effect.Effect<EntryMetadata> => {
       const size = chunks.reduce((total, chunk) => total + chunk.length, 0)
       if (size > entrySizeLimit) {
         return { _tag: "Oversized", size }
@@ -185,13 +185,15 @@ const readMetadata = (
         bytes.set(chunk, position)
         position += chunk.length
       }
-      const contentDigest = Digest.digest(bytes)
+      const contentDigest = try Effect.orDie(Effect.try(() => Digest.digest(bytes)))
       const decoder = new TextDecoder()
       const chunkSize = kind === "module" ? moduleMetadataChunkSize : markdownMetadataChunkSize
       const parseLimit = Math.min(bytes.length, metadataReadLimit)
       let text = ""
       for (let offset = 0; offset < parseLimit; offset += chunkSize) {
-        text += decoder.decode(bytes.subarray(offset, Math.min(offset + chunkSize, parseLimit)), { stream: true })
+        text += try Effect.orDie(Effect.try(() =>
+          decoder.decode(bytes.subarray(offset, Math.min(offset + chunkSize, parseLimit)), { stream: true })
+        ))
         const complete = kind === "markdown"
           ? Frontmatter.isMetadataComplete(text)
           : ModuleMetadata.isComplete(text)
@@ -200,8 +202,8 @@ const readMetadata = (
       return {
         _tag: "Metadata",
         contentDigest,
-        text: text + decoder.decode(),
-        source: kind === "module" ? new TextDecoder().decode(bytes) : undefined
+        text: text + (try Effect.orDie(Effect.try(() => decoder.decode()))),
+        source: kind === "module" ? try Effect.orDie(Effect.try(() => new TextDecoder().decode(bytes))) : undefined
       }
     })
   )
@@ -234,18 +236,18 @@ const holdsEntry = (
   depth: number,
   visited: Map<string, number> = new Map()
 ): Effect.Effect<boolean> =>
-  Effect.gen(function*() {
+  effect {
     if (depth > maximumTraversalDepth) return false
-    const info = yield* Effect.result(fs.stat(directory))
+    const info = try Effect.result(fs.stat(directory))
     if (Result.isFailure(info) || info.success.type !== "Directory") return false
     const identity = directoryIdentity(info.success, directory)
     const priorDepth = visited.get(identity)
     if (priorDepth !== undefined && priorDepth <= depth) return false
     // A shallower alias can expose entries previously hidden by the depth limit.
     visited.set(identity, depth)
-    const listed = yield* Effect.result(fs.readDirectory(directory))
+    const listed = try Effect.result(fs.readDirectory(directory))
     if (Result.isFailure(listed)) return false
-    const stats = yield* Effect.forEach(
+    const stats = try Effect.forEach(
       [...listed.success].sort().filter((entry) =>
         entry !== "node_modules" && !entry.startsWith(".") &&
         !(depth === 0 && hostReservedRootDirectories.has(entry))
@@ -260,10 +262,10 @@ const holdsEntry = (
       if (info.success.type === "Directory") children.push(path.join(directory, entry))
     }
     for (const child of children) {
-      if (yield* holdsEntry(fs, path, child, depth + 1, visited)) return true
+      if (try holdsEntry(fs, path, child, depth + 1, visited)) return true
     }
     return false
-  })
+  }
 
 /**
  * Creates a discovery service from portable file-system and path services.
@@ -274,7 +276,7 @@ const holdsEntry = (
 export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
   Discovery.of({
     scan: Effect.fn("Discovery.scan")((source) =>
-      Effect.gen(function*() {
+      effect {
         const skills = "skills" in source && source.skills === true
         const provenance = new Provenance({ source: source.source, root: source.root })
         // Sibling flows in one project share most of their imports, so the
@@ -285,9 +287,9 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
 
         const realRoot = source.confinementRoot === undefined
           ? undefined
-          : yield* Effect.result(fs.realPath(source.confinementRoot))
+          : try Effect.result(fs.realPath(source.confinementRoot))
         // An explicit confinement boundary must be provable before reading it.
-        const withinRoot = Effect.fnUntraced(function*(location: string) {
+        const withinRoot = effect (location: string) => {
           if (realRoot === undefined) return true
           if (Result.isFailure(realRoot)) {
             warnings.push(warning(
@@ -298,7 +300,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
             ))
             return false
           }
-          const realLocation = yield* Effect.result(fs.realPath(location))
+          const realLocation = try Effect.result(fs.realPath(location))
           if (Result.isFailure(realLocation)) {
             warnings.push(warning(
               "outside_root",
@@ -319,13 +321,13 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
             return false
           }
           return true
-        })
+        }
 
-        if (source.retiredRoot !== undefined && (yield* holdsEntry(fs, path, source.retiredRoot, 0))) {
+        if (source.retiredRoot !== undefined && (try holdsEntry(fs, path, source.retiredRoot, 0))) {
           warnings.push(warning("retired_root", source.retiredRoot, retiredRootMessage))
         }
 
-        const exists = yield* fs.exists(source.root).pipe(
+        const exists = try fs.exists(source.root).pipe(
           Effect.mapError((cause) =>
             discoveryError({
               code: "read_failed",
@@ -338,7 +340,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
         )
         if (!exists) {
           if (source.optionalRoot === true) return new SourceScan({ entries, warnings })
-          return yield* Effect.fail(
+          return try Effect.fail(
             discoveryError({
               code: "root_missing",
               method: "scan",
@@ -348,7 +350,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
           )
         }
 
-        const rootInfo = yield* fs.stat(source.root).pipe(
+        const rootInfo = try fs.stat(source.root).pipe(
           Effect.mapError((cause) =>
             discoveryError({
               code: "read_failed",
@@ -360,7 +362,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
           )
         )
         if (rootInfo.type !== "Directory") {
-          return yield* Effect.fail(
+          return try Effect.fail(
             discoveryError({
               code: "invalid_root",
               method: "scan",
@@ -370,13 +372,13 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
           )
         }
 
-        if (!(yield* withinRoot(source.root))) {
+        if (!(try withinRoot(source.root))) {
           return new SourceScan({ entries, warnings })
         }
 
         const lockfiles = source.lockfileRoot === undefined ? undefined : {
           root: path.relative(source.root, source.lockfileRoot).split(path.sep).join("/"),
-          digest: yield* measureLockfiles(source.lockfileRoot).pipe(
+          digest: try measureLockfiles(source.lockfileRoot).pipe(
             Effect.provideService(FileSystem.FileSystem, fs),
             Effect.provideService(Path.Path, path),
             Effect.mapError((cause) =>
@@ -391,7 +393,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
           )
         }
 
-        const rootEntries = yield* fs.readDirectory(source.root).pipe(
+        const rootEntries = try fs.readDirectory(source.root).pipe(
           Effect.mapError((cause) =>
             discoveryError({
               code: "read_failed",
@@ -476,12 +478,12 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
           initialEntries?: ReadonlyArray<string>
         ) => Effect.Effect<void> =
           // Untraced because recursive directory traversal is a scan hot path.
-          Effect.fnUntraced(function*(
+          effect (
             directory,
             segments,
             directoryOrigins,
             initialEntries
-          ) {
+          ) => {
             if (segments.length > maximumTraversalDepth) {
               warnings.push(
                 warning(
@@ -494,7 +496,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
             }
 
             const directoryEntries = initialEntries === undefined
-              ? yield* Effect.result(fs.readDirectory(directory))
+              ? try Effect.result(fs.readDirectory(directory))
               : Result.succeed(initialEntries)
 
             if (Result.isFailure(directoryEntries)) {
@@ -509,7 +511,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
               return
             }
 
-            const stats = yield* Effect.forEach(
+            const stats = try Effect.forEach(
               [...directoryEntries.success].sort(),
               (entry) =>
                 Effect.map(
@@ -554,7 +556,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
 
             const candidates = entryPrecedence.filter((entry) => files.has(entry) && (!skills || entry === "SKILL.md"))
             const selected = candidates[0]
-            if (selected !== undefined && (yield* withinRoot(path.join(directory, selected)))) {
+            if (selected !== undefined && (try withinRoot(path.join(directory, selected)))) {
               const location = path.join(directory, selected)
               const selectedInfo = files.get(selected)!
               if (candidates.length > 1) {
@@ -580,7 +582,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
                   warning("entry_too_large", location, oversizedEntry(location, selectedInfo.size))
                 )
               } else {
-                const contents = yield* Effect.result(
+                const contents = try Effect.result(
                   readMetadata(fs, location, selected === "flow.ts" ? "module" : "markdown")
                 )
                 if (Result.isFailure(contents)) {
@@ -602,7 +604,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
                 } else {
                   const { imports, hostImports } = contents.success.source === undefined
                     ? { imports: [], hostImports: [] }
-                    : yield* ModuleClosure.analyze(fs, path, location, contents.success.source, closures)
+                    : try ModuleClosure.analyze(fs, path, location, contents.success.source, closures)
                   const projected = projectEntry(
                     directory,
                     location,
@@ -625,7 +627,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
             }
 
             for (const child of directories) {
-              if (!(yield* withinRoot(child.location))) continue
+              if (!(try withinRoot(child.location))) continue
               const ancestor = directoryOrigins.get(child.identity)
               if (ancestor !== undefined) {
                 warnings.push(
@@ -638,12 +640,12 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
                 continue
               }
               directoryOrigins.set(child.identity, child.location)
-              yield* visit(child.location, [...segments, child.name], directoryOrigins)
+              try visit(child.location, [...segments, child.name], directoryOrigins)
             }
-          })
+          }
 
         const rootIdentity = directoryIdentity(rootInfo, source.root)
-        yield* visit(
+        try visit(
           source.root,
           [],
           new Map([[rootIdentity, source.root]]),
@@ -652,7 +654,7 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
         entries.sort((left, right) => Number(left.path > right.path) - Number(left.path < right.path))
         warnings.sort(compareWarnings)
         return new SourceScan({ entries, warnings })
-      })
+      }
     )
   })
 
@@ -665,11 +667,11 @@ export const make = (fs: FileSystem.FileSystem, path: Path.Path): Discovery =>
  */
 export const layer: Layer.Layer<Discovery, never, FileSystem.FileSystem | Path.Path> = Layer.effect(
   Discovery,
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
+  effect {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
     return make(fs, path)
-  })
+  }
 )
 
 /**

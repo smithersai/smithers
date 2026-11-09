@@ -34,7 +34,7 @@ const securityReview = Smithers.SecurityReview({
         "A stat, readFile, or readDirectory in Discovery.visit reached before withinRoot vetted that location.",
         "A path-prefix containment test without a trailing separator, so /pack-evil passes for /pack."
       ],
-      paths: ["src/Discovery.ts", "src/Pack.vibe"]
+      paths: ["src/Discovery.vibe", "src/Pack.vibe"]
     },
     {
       id: "pack-manifest-paths",
@@ -59,7 +59,7 @@ const securityReview = Smithers.SecurityReview({
         "An unpinnable closure entry (no contentDigest) that does not refuse execution.",
         "verifyImports comparing only measured entries and ignoring recorded paths that disappeared, or vice versa."
       ],
-      paths: ["src/Executable.ts", "src/internal/ModuleClosure.ts", "src/internal/Body.vibe"]
+      paths: ["src/Executable.vibe", "src/internal/ModuleClosure.vibe", "src/internal/Body.vibe"]
     },
     {
       id: "load-sibling-files",
@@ -71,7 +71,7 @@ const securityReview = Smithers.SecurityReview({
         "removeStaleSiblings deleting any name matching the loadSibling regex, including user files, or following symlinks.",
         "fileSpecifier producing a specifier that addresses a different file than modulePath (unescaped #, ?, %)."
       ],
-      paths: ["src/Executable.ts"]
+      paths: ["src/Executable.vibe"]
     },
     {
       id: "authority-projection",
@@ -123,10 +123,10 @@ const securityReview = Smithers.SecurityReview({
         "A ModuleMetadata tokenizer loop or regex with super-linear behavior on crafted input."
       ],
       paths: [
-        "src/Discovery.ts",
+        "src/Discovery.vibe",
         "src/internal/Frontmatter.vibe",
         "src/internal/ModuleMetadata.vibe",
-        "src/internal/ModuleClosure.ts"
+        "src/internal/ModuleClosure.vibe"
       ]
     }
   ]

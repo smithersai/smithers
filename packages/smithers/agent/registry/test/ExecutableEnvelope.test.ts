@@ -15,8 +15,8 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { fileURLToPath } from "node:url"
 import type * as Descriptor from "../src/Descriptor.vibe"
-import * as Discovery from "../src/Discovery.ts"
-import * as Executable from "../src/Executable.ts"
+import * as Discovery from "../src/Discovery.vibe"
+import * as Executable from "../src/Executable.vibe"
 
 const flowsRoot = fileURLToPath(new URL("./fixtures/envelope/flows", import.meta.url))
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)

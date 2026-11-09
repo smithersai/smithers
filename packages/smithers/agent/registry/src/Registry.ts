@@ -21,7 +21,7 @@ import {
   retiredProjectFlowsDirectory,
   type Source
 } from "./Descriptor.vibe"
-import { Discovery, layer as discoveryLayer, type SkillSource } from "./Discovery.ts"
+import { Discovery, layer as discoveryLayer, type SkillSource } from "./Discovery.vibe"
 import type * as ExecutionSnapshot from "./ExecutionSnapshot.vibe"
 import { readVerifiedBody } from "./internal/Body.vibe"
 import * as MarkdownFlow from "./MarkdownFlow.vibe"

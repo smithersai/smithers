@@ -80,7 +80,7 @@ import type * as ExecutionSnapshot from "./ExecutionSnapshot.vibe"
 import { readVerifiedBody } from "./internal/Body.vibe"
 import * as Declared from "./internal/Declared.vibe"
 import { isLegacyObjectModule } from "./internal/LegacyModule.ts"
-import * as ModuleClosure from "./internal/ModuleClosure.ts"
+import * as ModuleClosure from "./internal/ModuleClosure.vibe"
 import * as MarkdownFlow from "./MarkdownFlow.vibe"
 import * as Registry from "./Registry.ts"
 import type { DiscoveryError, RegistryError } from "./RegistryError.vibe"
@@ -615,10 +615,10 @@ const importModule = (
   },
   sourceRoot?: Options["sourceRoot"]
 ): Effect.Effect<unknown, unknown, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const platformPath = yield* Path.Path
-    const sourcePath = path.startsWith("file:") ? yield* platformPath.fromFileUrl(new URL(path)) : path
+  effect {
+    const fs = try FileSystem.FileSystem
+    const platformPath = try Path.Path
+    const sourcePath = path.startsWith("file:") ? try platformPath.fromFileUrl(new URL(path)) : path
     // The closure is keyed by absolute path and always holds the entry.
     const entryPath = platformPath.resolve(sourcePath)
     const modules = source.modules
@@ -626,12 +626,12 @@ const importModule = (
     const siblings = new Map<string, string>()
     for (const original of modules.keys()) {
       const directory = platformPath.dirname(original)
-      yield* fs.makeDirectory(directory, { recursive: true })
+      try fs.makeDirectory(directory, { recursive: true })
       if (!swept.has(directory)) {
         swept.add(directory)
-        yield* removeStaleSiblings(fs, platformPath, directory)
+        try removeStaleSiblings(fs, platformPath, directory)
       }
-      const reserved = yield* Effect.acquireRelease(
+      const reserved = try Effect.acquireRelease(
         reserveSibling(
           fs,
           platformPath.join(directory, `.smithers-${source.contentDigest}-`),
@@ -653,7 +653,7 @@ const importModule = (
     }
     for (const [original, module] of modules) {
       const sibling = siblings.get(original)!
-      yield* fs.writeFile(sibling, rewriteLinks(platformPath, original, module, siblings))
+      try fs.writeFile(sibling, rewriteLinks(platformPath, original, module, siblings))
       // Said before the import, because a declaration captures its site while
       // the module is evaluated: without it every node of this flow would name
       // a scratch file removed when the load settles (D-068).
@@ -663,13 +663,13 @@ const importModule = (
         sourceRoot.identity,
         platformPath.relative(sourceRoot.workspace, original)
       )
-      Graph.evaluatedFrom(sibling, declaredPath)
+      try Effect.orDie(Effect.try(() => Graph.evaluatedFrom(sibling, declaredPath)))
     }
-    return yield* Effect.tryPromise({
+    return try Effect.tryPromise({
       try: () => import(/* @vite-ignore */ fileSpecifier(siblings.get(entryPath)!)) as Promise<unknown>,
       catch: (cause) => cause
     })
-  }).pipe(Effect.scoped)
+  }.pipe(Effect.scoped)
 
 /**
  * A module's bytes with each linked specifier naming its target's sibling.
@@ -900,10 +900,10 @@ const sourceBytes = (
   descriptor: Descriptor.FlowDescriptor,
   sourcePath: string
 ): Effect.Effect<Uint8Array, ExecutableError, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const path = yield* Path.Path
-    return yield* readVerifiedBody(fs, path, descriptor).pipe(
+  effect {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    return try readVerifiedBody(fs, path, descriptor).pipe(
       Effect.mapError((failure) =>
         refuse({
           code: "body_unavailable",
@@ -918,7 +918,7 @@ const sourceBytes = (
         })
       )
     )
-  })
+  }
 
 const snapshotFailure = (
   error: ExecutableError,
@@ -939,8 +939,8 @@ const loadMarkdown = (
   options: Options,
   approvedDigest: string | undefined
 ): Effect.Effect<LoadedBody, ExecutableError, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const bytes = yield* sourceBytes(descriptor, path).pipe(Effect.catch((error) =>
+  effect {
+    const bytes = try sourceBytes(descriptor, path).pipe(Effect.catch((error) =>
       options.snapshots === undefined || approvedDigest === undefined ?
         Effect.fail(error)
         : options.snapshots.restore(approvedDigest).pipe(
@@ -948,7 +948,7 @@ const loadMarkdown = (
           Effect.mapError((cause) => snapshotFailure(error, cause))
         )
     ))
-    const text = new TextDecoder().decode(bytes)
+    const text = try Effect.orDie(Effect.try(() => new TextDecoder().decode(bytes)))
     const body = MarkdownFlow.loadBody(text, baseDirectory)
     const prompt = MarkdownFlow.renderPrompt(body, { args: "" })
     const lowered = CoreMarkdown.lowerMarkdown(MarkdownFlow.toCoreFrontmatter(descriptor), prompt)
@@ -959,7 +959,7 @@ const loadMarkdown = (
       deadline: lowered.flow.deadline,
       source: { entry: path, bytes, modules: new Map([[path, { bytes, source: text, links: [] }]]) }
     }
-  })
+  }
 
 /**
  * Re-measures what the entry loads from beside itself, refuses when it is not
@@ -988,15 +988,15 @@ const verifyImports = (
   bytes: Uint8Array,
   recorded: ReadonlyArray<Descriptor.ModuleImport>
 ): Effect.Effect<ReadonlyMap<string, ClosureModule>, ExecutableError, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const platformPath = yield* Path.Path
+  effect {
+    const fs = try FileSystem.FileSystem
+    const platformPath = try Path.Path
     const entryPath = path.startsWith("file:")
-      ? yield* Effect.orDie(
+      ? try Effect.orDie(
         Effect.flatMap(Effect.try(() => new URL(path)), (url) => platformPath.fromFileUrl(url))
       )
       : platformPath.normalize(path)
-    const { imports: measured, modules, unsupported } = yield* ModuleClosure.snapshot(
+    const { imports: measured, modules, unsupported } = try ModuleClosure.snapshot(
       fs,
       platformPath,
       entryPath,
@@ -1004,7 +1004,7 @@ const verifyImports = (
     )
     const unpinnable = measured.find((entry) => entry.contentDigest === undefined)
     if (unpinnable !== undefined) {
-      return yield* Effect.fail(
+      return try Effect.fail(
         refuse({
           code: "body_unavailable",
           flow: descriptor.name,
@@ -1018,7 +1018,7 @@ const verifyImports = (
     const changed = measured.find((entry) => pinned.get(entry.path) !== entry.contentDigest)?.path ??
       [...pinned.keys()].find((recordedPath) => measured.every((entry) => entry.path !== recordedPath))
     if (changed !== undefined) {
-      return yield* Effect.fail(
+      return try Effect.fail(
         refuse({
           code: "body_unavailable",
           flow: descriptor.name,
@@ -1029,7 +1029,7 @@ const verifyImports = (
       )
     }
     if (unsupported.length > 0) {
-      return yield* Effect.fail(refuse({
+      return try Effect.fail(refuse({
         code: "body_unavailable",
         flow: descriptor.name,
         path,
@@ -1040,7 +1040,7 @@ const verifyImports = (
       }))
     }
     return modules
-  })
+  }
 
 const loadModule = (
   descriptor: Descriptor.FlowDescriptor,
@@ -1049,13 +1049,13 @@ const loadModule = (
   options: Options,
   approvedDigest: string | undefined
 ): Effect.Effect<LoadedBody, ExecutableError, FileSystem.FileSystem | Path.Path> =>
-  Effect.gen(function*() {
-    const platformPath = yield* Path.Path
-    const source = yield* Effect.gen(function*() {
-      const bytes = yield* sourceBytes(descriptor, path)
-      const modules = yield* verifyImports(descriptor, path, bytes, recorded)
+  effect {
+    const platformPath = try Path.Path
+    const source = try effect {
+      const bytes = try sourceBytes(descriptor, path)
+      const modules = try verifyImports(descriptor, path, bytes, recorded)
       const entry = path.startsWith("file:")
-        ? yield* platformPath.fromFileUrl(new URL(path)).pipe(Effect.mapError((cause) =>
+        ? try platformPath.fromFileUrl(new URL(path)).pipe(Effect.mapError((cause) =>
           refuse({
             code: "body_unavailable",
             flow: descriptor.name,
@@ -1066,15 +1066,15 @@ const loadModule = (
         ))
         : platformPath.resolve(path)
       return { entry, bytes, modules, loadPath: path.startsWith("file:") ? path : platformPath.resolve(path) }
-    }).pipe(Effect.catch((error) =>
+    }.pipe(Effect.catch((error) =>
       options.snapshots === undefined || approvedDigest === undefined ?
         Effect.fail(error)
         : options.snapshots.restore(approvedDigest).pipe(Effect.mapError((cause) => snapshotFailure(error, cause)))
     ))
     const { bytes, modules } = source
     const loadPath = "loadPath" in source ? source.loadPath : source.entry
-    if (isLegacyObjectModule(bytes)) {
-      return yield* Effect.fail(refuse({
+    if (try Effect.orDie(Effect.try(() => isLegacyObjectModule(bytes)))) {
+      return try Effect.fail(refuse({
         code: "invalid_module",
         flow: descriptor.name,
         path,
@@ -1083,7 +1083,7 @@ const loadModule = (
     }
     const load = options.load ??
       ((path: string, source: Parameters<typeof importModule>[1]) => importModule(path, source, options.sourceRoot))
-    const loaded = yield* load(loadPath, {
+    const loaded = try load(loadPath, {
       bytes,
       contentDigest: descriptor.body.contentDigest!,
       modules
@@ -1106,7 +1106,7 @@ const loadModule = (
     if (RuntimeFlow.isFlow(exported)) {
       const implementation = (loaded as { readonly layer?: unknown }).layer
       if (implementation !== undefined && !Layer.isLayer(implementation)) {
-        return yield* Effect.fail(refuse({
+        return try Effect.fail(refuse({
           code: "invalid_layer",
           flow: descriptor.name,
           path,
@@ -1122,7 +1122,7 @@ const loadModule = (
       }
     }
     if (!CoreFlow.isFlow(exported)) {
-      yield* Declared.decode(exported).pipe(Effect.mapError((cause) =>
+      try Declared.decode(exported).pipe(Effect.mapError((cause) =>
         refuse({
           code: "invalid_module",
           flow: descriptor.name,
@@ -1133,7 +1133,7 @@ const loadModule = (
       ))
     }
     if ((loaded as { readonly layer?: unknown }).layer !== undefined) {
-      return yield* Effect.fail(refuse({
+      return try Effect.fail(refuse({
         code: "invalid_layer",
         flow: descriptor.name,
         path,
@@ -1147,7 +1147,7 @@ const loadModule = (
       annotations: (exported as { readonly annotations?: Context.Context<never> }).annotations ?? Context.empty(),
       flow: undefined
     }
-  })
+  }
 
 /** The service key a failed Effect lookup names, when that is the cause's defect. */
 const missingService = (cause: Cause.Cause<unknown>): string | undefined => {
@@ -1265,10 +1265,10 @@ const moduleServices = (
   },
   ExecutableError
 > =>
-  Effect.gen(function*() {
-    const parent = yield* Effect.serviceOption(Scope.Scope)
+  effect {
+    const parent = try Effect.serviceOption(Scope.Scope)
     if (Option.isNone(parent)) {
-      return yield* Effect.fail(refuse({
+      return try Effect.fail(refuse({
         code: "missing_service",
         flow: descriptor.name,
         path: descriptor.body.path,
@@ -1276,16 +1276,16 @@ const moduleServices = (
         message: `flow "${descriptor.name}" requires host service "${Scope.Scope.key}" to load its layer`
       }))
     }
-    const hostTable = yield* Effect.serviceOption(Action.Implementations)
-    const runtime = yield* Effect.serviceOption(FlowRuntime)
-    const hostServices = yield* Effect.context<never>()
+    const hostTable = try Effect.serviceOption(Action.Implementations)
+    const runtime = try Effect.serviceOption(FlowRuntime)
+    const hostServices = try Effect.context<never>()
     // Hand ownership to the whole constructor atomically with the fork, so
     // cancellation after the exported build also retires private registrations.
-    const scope = yield* Scope.fork(parent.value).pipe(
+    const scope = try Scope.fork(parent.value).pipe(
       Effect.tap((scope) => Effect.sync(() => own(scope))),
       Effect.uninterruptible
     )
-    const local = yield* Layer.buildWithScope(Layer.fresh(Action.layerImplementations), scope)
+    const local = try Layer.buildWithScope(Layer.fresh(Action.layerImplementations), scope)
     const table = Context.get(local, Action.Implementations)
     const moduleTable = Action.Implementations.of({
       add: table.add,
@@ -1319,7 +1319,7 @@ const moduleServices = (
     // Later registrations reuse the built-in handlers its exported interpreters
     // built, while other modules and refreshes keep independent memo maps.
     const memoMap = Layer.makeMemoMapUnsafe()
-    const built = yield* Layer.buildWithMemoMap(implementation, memoMap, scope).pipe(
+    const built = try (Layer.buildWithMemoMap(implementation, memoMap, scope).pipe(
       // Dynamic module types erase requirements; this host closes them here.
       Effect.provideContext(
         Option.isSome(registrationRuntime) ? Context.add(input, FlowRuntime, registrationRuntime.value) : input
@@ -1339,11 +1339,11 @@ const moduleServices = (
           cause
         }))
       })
-    ) as Effect.Effect<Context.Context<unknown>, ExecutableError>
+    ) as Effect.Effect<Context.Context<unknown>, ExecutableError>)
     const exportedTable = Context.getOption(built, Action.Implementations)
     if (Option.isSome(exportedTable) && exportedTable.value !== moduleTable) {
-      yield* Scope.close(scope, Exit.void)
-      return yield* Effect.fail(refuse({
+      try Scope.close(scope, Exit.void)
+      return try Effect.fail(refuse({
         code: "invalid_layer",
         flow: descriptor.name,
         path: descriptor.body.path,
@@ -1353,8 +1353,8 @@ const moduleServices = (
       }))
     }
     if (Option.isNone(registrationRuntime)) {
-      yield* Scope.close(scope, Exit.void)
-      return yield* Effect.fail(refuse({
+      try Scope.close(scope, Exit.void)
+      return try Effect.fail(refuse({
         code: "missing_service",
         flow: descriptor.name,
         path: descriptor.body.path,
@@ -1370,7 +1370,7 @@ const moduleServices = (
     // Consumers register independently; only the loading host or a catalog
     // refresh that retires this entry releases the acquired module resources.
     return { layer: Layer.succeedContext(services), memoMap, scope, quiesce: quiescence.quiesce }
-  })
+  }
 
 /**
  * The delegate a module that IS a flow hands its work to: itself.
@@ -1451,16 +1451,16 @@ const dispatchedAction = (options: {
         // `ttlMs` is a changed step key when it fences its own expiry verdict.
         idempotencyKey: { delegate: delegate._tag, invocation: identityEnvelope, cache },
         metadata: boundaryOf(descriptor),
-        execute: Effect.gen(function*() {
-          const instance = yield* FlowInstance
-          const executionId = yield* Interpreter.childExecutionId(
+        execute: effect {
+          const instance = try FlowInstance
+          const executionId = try Interpreter.childExecutionId(
             instance.executionId,
             tag,
             delegate._tag,
             identityEnvelope
           )
-          return yield* delegate.execute(envelope, { executionId })
-        })
+          return try delegate.execute(envelope, { executionId })
+        }
       }),
       cache
     )
@@ -1490,7 +1490,7 @@ export const fromDescriptor = (
 ): Effect.Effect<Executable, ExecutableError, FileSystem.FileSystem | Path.Path> =>
   Effect.suspend(() => {
     let moduleScope: Scope.Closeable | undefined
-    const loadEffect = Effect.gen(function*() {
+    const loadEffect = effect {
       // The delegate is resolved BEFORE the body is loaded, and the refusal for a
       // missing one is raised after. Both refusals are real, but only one of them
       // is about this host: a flow whose delegate nobody registered is not
@@ -1499,7 +1499,7 @@ export const fromDescriptor = (
       // because a module that default-exports a `@smthrs/flow` flow delegates to
       // nothing, so its missing registration is not a refusal at all; a body that
       // cannot be read keeps the missing registration as the refusal to report.
-      const name = yield* delegateOf(descriptor, options)
+      const name = try delegateOf(descriptor, options)
       const registered = options.delegates.find((candidate) => candidate._tag === name)
       const missing = refuse({
         code: "missing_delegate",
@@ -1509,33 +1509,33 @@ export const fromDescriptor = (
         message: `flow "${descriptor.name}" delegates to "${name}", which no registered flow provides`
       })
       const sourceRoot = options.sourceRoot
-      const loading = sourceRoot === undefined ? descriptor : yield* Effect.gen(function*() {
-        const path = yield* Path.Path
+      const loading = sourceRoot === undefined ? descriptor : try effect {
+        const path = try Path.Path
         const locate = (value: string) =>
-          Effect.gen(function*() {
+          effect {
             const physical = value.startsWith("file:")
-              ? yield* Effect.flatMap(Effect.try(() => new URL(value)), (url) => path.fromFileUrl(url))
+              ? try Effect.flatMap(Effect.try(() => new URL(value)), (url) => path.fromFileUrl(url))
               : path.resolve(value)
             const suffix = path.relative(path.resolve(sourceRoot.identity), physical)
             if (suffix === ".." || suffix.startsWith(`..${path.sep}`) || path.isAbsolute(suffix)) {
-              return yield* Effect.fail(new Error("Source locator is outside the approved project identity root"))
+              return try Effect.fail(new Error("Source locator is outside the approved project identity root"))
             }
             return path.resolve(sourceRoot.workspace, suffix)
-          })
+          }
         return new Descriptor.FlowDescriptor({
           ...descriptor,
           // Dependency verification reads under the retained workspace too.
           // The executable still exposes the original approved descriptor.
-          provenance: { ...descriptor.provenance, root: yield* locate(descriptor.provenance.root) },
+          provenance: { ...descriptor.provenance, root: try locate(descriptor.provenance.root) },
           body: descriptor.body._tag === "Markdown"
             ? new Descriptor.BodyRefMarkdown({
               ...descriptor.body,
-              path: yield* locate(descriptor.body.path),
-              baseDirectory: yield* locate(descriptor.body.baseDirectory)
+              path: try locate(descriptor.body.path),
+              baseDirectory: try locate(descriptor.body.baseDirectory)
             })
-            : new Descriptor.BodyRefModule({ ...descriptor.body, path: yield* locate(descriptor.body.path) })
+            : new Descriptor.BodyRefModule({ ...descriptor.body, path: try locate(descriptor.body.path) })
         })
-      }).pipe(Effect.mapError((cause) =>
+      }.pipe(Effect.mapError((cause) =>
         refuse({
           code: "body_unavailable",
           flow: descriptor.name,
@@ -1573,10 +1573,10 @@ export const fromDescriptor = (
       // load failure is its own.
       const masksLoadFailure = registered === undefined &&
         !(descriptor.body._tag === "Module" && descriptor.flows.length === 0)
-      const body = yield* (masksLoadFailure
+      const body = try (masksLoadFailure
         ? Effect.catch(load, () => Effect.fail(missing))
         : load)
-      if (body.flow === undefined && registered === undefined) return yield* Effect.fail(missing)
+      if (body.flow === undefined && registered === undefined) return try Effect.fail(missing)
       const delegate = body.flow === undefined ? registered! : selfDelegate(body.flow)
       const lowered = lower(descriptor, body.annotations)
       const invocation = (input: Schema.Json): Invocation => {
@@ -1615,7 +1615,7 @@ export const fromDescriptor = (
       // delegating node, so two descriptors declaring different policies are two
       // declarations with two step keys, and — the half that reaches admission —
       // onto the action the bridged flow dispatches, above.
-      const identity = PlanNode.capture(captured(lowered), (value: unknown) => value)
+      const identity = try Effect.orDie(Effect.try(() => PlanNode.capture(captured(lowered), (value: unknown) => value)))
       // The BODY's identity is captured too, and it has to be. A plan-time
       // function JavaScript cannot inspect gets process-local identity, so a
       // bridged flow built from one unchanged descriptor would key differently in
@@ -1624,7 +1624,7 @@ export const fromDescriptor = (
       // so declaring it makes the flow's identity a function of the descriptor
       // rather than of the process that loaded it.
       const placement = invocationPlacement(lowered.placement)
-      const build = PlanNode.capture(
+      const build = try Effect.orDie(Effect.try(() => PlanNode.capture(
         {
           flow: descriptor.name,
           delegate: delegate._tag,
@@ -1644,7 +1644,7 @@ export const fromDescriptor = (
             : PlanNode.map(bridge.declaration.call(envelope), identity)
           return lowered.priority === undefined ? carried : PlanNode.priority(carried, lowered.priority)
         }
-      )
+      )))
       // A canonical declaration normally has the same tag as its registry name.
       // Its payload codec is the user's schema; this admission adapter takes
       // { input }. Registering both under that tag made whichever layer won
@@ -1681,7 +1681,7 @@ export const fromDescriptor = (
       )
       const implementations = body.layer === undefined
         ? undefined
-        : yield* moduleServices(
+        : try moduleServices(
           descriptor,
           body.layer,
           (scope) => {
@@ -1731,40 +1731,40 @@ export const fromDescriptor = (
               })
             )))
           })) :
-          Layer.effectDiscard(Effect.gen(function*() {
+          Layer.effectDiscard(effect {
             // Consumers own their registration scope, but it is also a child of
             // the module lifetime so refresh retires every original registration.
-            const scope = yield* Effect.acquireRelease(
+            const scope = try Effect.acquireRelease(
               Scope.fork(implementations.scope),
               (scope, exit) => Scope.close(scope, exit)
             )
-            yield* Layer.buildWithMemoMap(
+            try Layer.buildWithMemoMap(
               registrations.pipe(Layer.provide(implementations.layer)),
               Layer.forkMemoMapUnsafe(implementations.memoMap),
               scope
             )
-          }))) as Layer.Layer<never, never, Registration>
+          })) as Layer.Layer<never, never, Registration>
       }
       if (implementations !== undefined) {
         moduleScopes.set(executable, implementations.scope)
       }
       return executable
-    }).pipe(Effect.onExit((exit) =>
+    }.pipe(Effect.onExit((exit) =>
       Exit.isFailure(exit) && moduleScope !== undefined ? Scope.close(moduleScope, exit) : Effect.void
     ))
     return Effect.acquireUseRelease(
       Effect.forkChild(
-        Effect.gen(function*() {
-          const startedAt = yield* Clock.currentTimeMillis
+        effect {
+          const startedAt = try Clock.currentTimeMillis
           for (;;) {
-            yield* Effect.sleep("30 seconds")
-            yield* Effect.logInfo("loading flow", {
+            try Effect.sleep("30 seconds")
+            try Effect.logInfo("loading flow", {
               flow: descriptor.name,
               path: descriptor.body.path,
-              elapsedMs: (yield* Clock.currentTimeMillis) - startedAt
+              elapsedMs: (try Clock.currentTimeMillis) - startedAt
             })
           }
-        }).pipe(Effect.interruptible)
+        }.pipe(Effect.interruptible)
       ),
       () =>
         loadEffect,
@@ -1786,10 +1786,10 @@ export const fromRegistry = (
   ExecutableError | RegistryError,
   Registry.Registry | FileSystem.FileSystem | Path.Path
 > =>
-  Effect.gen(function*() {
-    const registry = yield* Registry.Registry
-    return yield* fromDescriptor(yield* registry.get(name), options)
-  })
+  effect {
+    const registry = try Registry.Registry
+    return try fromDescriptor(try registry.get(name), options)
+  }
 
 /**
  * Every discovered flow this host can run, and the ones it declined.
@@ -1873,9 +1873,9 @@ export const catalog = (
   RegistryError | DiscoveryError,
   Registry.Registry | FileSystem.FileSystem | Path.Path
 > =>
-  Effect.gen(function*() {
-    const registry = yield* Registry.Registry
-    const descriptors = yield* registry.list()
+  effect {
+    const registry = try Registry.Registry
+    const descriptors = try registry.list()
     const executables: Array<Executable> = []
     const refused: Array<ExecutableError> = []
     const deferred: Array<Descriptor.FlowDescriptor> = []
@@ -1888,7 +1888,7 @@ export const catalog = (
         }
       }
     }
-    const configured = options.loadTimeoutMs ?? (yield* Config.String("SMITHERS_FLOW_LOAD_TIMEOUT_MS").pipe(
+    const configured = options.loadTimeoutMs ?? (try Config.String("SMITHERS_FLOW_LOAD_TIMEOUT_MS").pipe(
       Effect.map(Number),
       Effect.catch(() => Effect.succeed(30_000))
     ))
@@ -1898,9 +1898,9 @@ export const catalog = (
         deferred.push(descriptor)
         continue
       }
-      const startedAt = yield* Clock.currentTimeMillis
-      yield* Effect.logDebug("Loading flow body", { flow: descriptor.name })
-      const result = yield* Effect.result(
+      const startedAt = try Clock.currentTimeMillis
+      try Effect.logDebug("Loading flow body", { flow: descriptor.name })
+      const result = try Effect.result(
         fromDescriptor(descriptor, options).pipe(
           Effect.timeoutOrElse({
             duration: loadTimeoutMs,
@@ -1915,10 +1915,10 @@ export const catalog = (
           })
         )
       )
-      yield* Effect.logDebug("Flow body load finished", {
+      try Effect.logDebug("Flow body load finished", {
         flow: descriptor.name,
         outcome: result._tag,
-        elapsedMs: (yield* Clock.currentTimeMillis) - startedAt
+        elapsedMs: (try Clock.currentTimeMillis) - startedAt
       })
       if (result._tag === "Success") {
         executables.push(result.success)
@@ -1930,7 +1930,7 @@ export const catalog = (
       // hosts that run prompts through their own agent path never register here.
       // That is the ordinary case, not a fault an operator can act on.
       if (isUnregisteredAgent(failure, options)) continue
-      yield* Effect.logWarning("discovered flow is not runnable on this host", {
+      try Effect.logWarning("discovered flow is not runnable on this host", {
         flow: failure.flow,
         path: failure.path,
         code: failure.code,
@@ -1940,14 +1940,14 @@ export const catalog = (
         cause: causeLine(failure.cause)
       })
     }
-    yield* Effect.logDebug("Flow catalog ready", {
+    try Effect.logDebug("Flow catalog ready", {
       loaded: executables.length,
       refused: refused.length,
       deferred: deferred.length
     })
     // Preserve the eager catalog's public shape for callers that did not opt into deferral.
     return eager === undefined ? { executables, refused } : { executables, refused, deferred }
-  }).pipe(Effect.withSpan("smithers.registry.catalog"))
+  }.pipe(Effect.withSpan("smithers.registry.catalog"))
 
 /**
  * What rebuilding one catalog entry did.
@@ -2102,9 +2102,9 @@ export const layerRefreshable = (
   never,
   Registry.Registry | FileSystem.FileSystem | Path.Path | Registration
 > =>
-  Layer.unwrap(Effect.gen(function*() {
+  Layer.unwrap(effect {
     let snapshot: Catalog = built
-    const refresh = yield* makeRefresh(options, () => snapshot, (next) => {
+    const refresh = try makeRefresh(options, () => snapshot, (next) => {
       snapshot = next
     })
     const live: Catalog = {
@@ -2123,7 +2123,7 @@ export const layerRefreshable = (
       Layer.succeed(Catalog)(live),
       Layer.succeed(Refresh)(refresh)
     )
-  }))
+  })
 
 /** The refresh operation, closed over the host's registration context and scope. */
 const makeRefresh = (
@@ -2135,15 +2135,15 @@ const makeRefresh = (
   never,
   Scope.Scope | Registry.Registry | FileSystem.FileSystem | Path.Path | Registration
 > =>
-  Effect.gen(function*() {
-    const host = yield* Effect.scope
+  effect {
+    const host = try Effect.scope
     // The refresh runs later, from whatever called it. Everything it needs to
     // load a body and register one is captured here, where the host composed
     // it, rather than demanded of a caller that has no reason to hold it.
-    const services = yield* Effect.context<
+    const services = try Effect.context<
       Registry.Registry | FileSystem.FileSystem | Path.Path | Registration
     >()
-    const gate = yield* Semaphore.make(1)
+    const gate = try Semaphore.make(1)
     const held = new Map<string, Scope.Closeable>()
     for (const executable of read().executables) {
       const scope = moduleScopes.get(executable)
@@ -2174,11 +2174,11 @@ const makeRefresh = (
       // construction remains interruptible; every uncommitted exit closes
       // resources and registrations even at a scheduler boundary after build.
       return Effect.uninterruptibleMask((restore) =>
-        Effect.gen(function*() {
-          const scope = yield* Scope.fork(host)
+        effect {
+          const scope = try Scope.fork(host)
           let committed = false
-          return yield* Effect.gen(function*() {
-            const result = yield* Effect.result(restore(
+          return try effect {
+            const result = try Effect.result(restore(
               fromDescriptor(descriptor, options).pipe(Effect.provideService(Scope.Scope, scope))
             ))
             if (result._tag === "Failure") {
@@ -2186,9 +2186,9 @@ const makeRefresh = (
               // held; only the refusal beside it changes.
               const previous = read().executables.find((entry) => entry.descriptor.name === name)
               put(name, previous, result.failure)
-              if (previous === undefined) yield* release(name)
+              if (previous === undefined) try release(name)
               if (!isUnregisteredAgent(result.failure, options)) {
-                yield* Effect.logWarning("refreshed flow is not runnable on this host", {
+                try Effect.logWarning("refreshed flow is not runnable on this host", {
                   flow: result.failure.flow,
                   path: result.failure.path,
                   code: result.failure.code,
@@ -2200,56 +2200,56 @@ const makeRefresh = (
               }
               return { _tag: "Refused", error: result.failure } as const
             }
-            yield* restore(Layer.build(result.success.layer).pipe(Effect.provideService(Scope.Scope, scope)))
+            try restore(Layer.build(result.success.layer).pipe(Effect.provideService(Scope.Scope, scope)))
             put(name, result.success, undefined)
-            yield* release(name)
+            try release(name)
             held.set(name, scope)
             committed = true
             return { _tag: "Registered", executable: result.success } as const
-          }).pipe(Effect.onExit((exit) => committed ? Effect.void : Scope.close(scope, exit)))
-        })
+          }.pipe(Effect.onExit((exit) => committed ? Effect.void : Scope.close(scope, exit)))
+        }
       )
     }
     const flow = (name: string): Effect.Effect<Refreshed, RegistryError | DiscoveryError> =>
-      gate.withPermits(1)(Effect.gen(function*() {
-        const registry = yield* Registry.Registry
-        yield* registry.refresh()
-        const found = yield* registry.getOption(name)
+      gate.withPermits(1)(effect {
+        const registry = try Registry.Registry
+        try registry.refresh()
+        const found = try registry.getOption(name)
         if (Option.isNone(found)) {
-          return yield* Effect.uninterruptible(Effect.gen(function*() {
+          return try Effect.uninterruptible(effect {
             // Catalog publication and retirement share one ownership transfer.
             put(name, undefined, undefined)
-            yield* release(name)
+            try release(name)
             return { _tag: "Removed" } as const
-          }))
+          })
         }
         if (options.refreshable !== undefined && !options.refreshable(found.value)) {
           return { _tag: "Fixed" } as const
         }
-        return yield* register(found.value)
-      })).pipe(Effect.provideContext(services))
+        return try register(found.value)
+      }).pipe(Effect.provideContext(services))
     const load: NonNullable<Catalog["load"]> = (name) =>
-      gate.withPermits(1)(Effect.gen(function*() {
+      gate.withPermits(1)(effect {
         const snapshot = read()
         const executable = snapshot.executables.find((entry) => entry.descriptor.name === name)
         if (executable !== undefined) return executable
         const refusal = snapshot.refused.find((entry) => entry.flow === name)
-        if (refusal !== undefined && refusal.code !== "load_timeout") return yield* Effect.fail(refusal)
-        const registry = yield* Registry.Registry
+        if (refusal !== undefined && refusal.code !== "load_timeout") return try Effect.fail(refusal)
+        const registry = try Registry.Registry
         // No refresh: first use retries the already measured descriptor, never
         // adopts edited bytes or imports a newly authored entry implicitly.
         const deferred = snapshot.deferred?.find((entry) => entry.name === name)
-        const descriptor = deferred ?? (yield* registry.get(name))
+        const descriptor = deferred ?? (try registry.get(name))
         if (refusal === undefined && deferred === undefined) {
-          return yield* Effect.fail(refuse({
+          return try Effect.fail(refuse({
             code: "body_unavailable",
             flow: name,
             path: descriptor.body.path,
             message: `flow "${name}" was not loaded by this catalog`
           }))
         }
-        const result = yield* register(descriptor)
-        return result._tag === "Registered" ? result.executable : yield* Effect.fail(result.error)
-      })).pipe(Effect.provideContext(services))
+        const result = try register(descriptor)
+        return result._tag === "Registered" ? result.executable : try Effect.fail(result.error)
+      }).pipe(Effect.provideContext(services))
     return { flow, load }
-  })
+  }

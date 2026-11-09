@@ -7,7 +7,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { inputDocument, type Source, SourceScan } from "../src/Descriptor.vibe"
-import * as Discovery from "../src/Discovery.ts"
+import * as Discovery from "../src/Discovery.vibe"
 
 const projectRoot = fileURLToPath(new URL("./fixtures/project/flows", import.meta.url))
 const foreignRoot = fileURLToPath(new URL("./fixtures/foreign", import.meta.url))

@@ -31,7 +31,7 @@ import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import { fileURLToPath } from "node:url"
-import * as Executable from "../src/Executable.ts"
+import * as Executable from "../src/Executable.vibe"
 import * as Registry from "../src/Registry.ts"
 
 const modulesRoot = fileURLToPath(new URL("./fixtures/executable/modules", import.meta.url))

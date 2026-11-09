@@ -7,8 +7,8 @@ import { Node } from "@smthrs/plan"
 import { Deferred, Effect, Exit, Fiber, FileSystem, Layer, Schema, Scope } from "effect"
 import { createRequire } from "node:module"
 import { describe, expect, it, vi } from "vitest"
-import * as Discovery from "../src/Discovery.ts"
-import * as Executable from "../src/Executable.ts"
+import * as Discovery from "../src/Discovery.vibe"
+import * as Executable from "../src/Executable.vibe"
 
 const platform = Layer.mergeAll(NodeCrypto.layer, NodeFileSystem.layer, NodePath.layer)
 

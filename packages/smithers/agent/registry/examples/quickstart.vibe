@@ -7,7 +7,7 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as Disclosure from "../src/Disclosure.ts"
-import * as Discovery from "../src/Discovery.ts"
+import * as Discovery from "../src/Discovery.vibe"
 import * as Registry from "../src/Registry.ts"
 
 /** Discovery is portable, so the host supplies the filesystem it walks. */

@@ -8,8 +8,8 @@ import { Cause, Context, Deferred, Effect, Exit, Fiber, FileSystem, Layer, type 
 import { createRequire } from "node:module"
 import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
-import * as Discovery from "../src/Discovery.ts"
-import * as Executable from "../src/Executable.ts"
+import * as Discovery from "../src/Discovery.vibe"
+import * as Executable from "../src/Executable.vibe"
 import * as Registry from "../src/Registry.ts"
 
 const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)

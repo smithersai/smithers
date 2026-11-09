@@ -32,7 +32,7 @@ import { createRequire } from "node:module"
 import { basename, dirname, join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 import * as Descriptor from "../src/Descriptor.vibe"
-import * as Executable from "../src/Executable.ts"
+import * as Executable from "../src/Executable.vibe"
 import * as Registry from "../src/Registry.ts"
 
 const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)

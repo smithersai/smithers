@@ -17,7 +17,7 @@ import {
   type Source,
   SourceScan
 } from "../src/Descriptor.vibe"
-import * as Discovery from "../src/Discovery.ts"
+import * as Discovery from "../src/Discovery.vibe"
 import * as Registry from "../src/Registry.ts"
 import type { DiscoveryError, RegistryError } from "../src/RegistryError.vibe"
 import { discoveryError } from "../src/RegistryError.vibe"

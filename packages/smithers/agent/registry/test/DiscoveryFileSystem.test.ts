@@ -2,7 +2,7 @@ import * as NodePath from "@effect/platform-node/NodePath"
 import { Effect, FileSystem, Layer, Path, PlatformError, Result } from "effect"
 import { describe, expect, it } from "vitest"
 import { DiscoveryWarning, type Source } from "../src/Descriptor.vibe"
-import * as Discovery from "../src/Discovery.ts"
+import * as Discovery from "../src/Discovery.vibe"
 import * as Registry from "../src/Registry.ts"
 
 import { type FileSystemCalls, type Node, virtualFileSystem } from "./support/VirtualFileSystem.ts"

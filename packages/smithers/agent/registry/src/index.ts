@@ -33,7 +33,7 @@ export * as Descriptor from "./Descriptor.vibe"
  * @category services
  * @since 0.1.0
  */
-export * as Discovery from "./Discovery.ts"
+export * as Discovery from "./Discovery.vibe"
 
 /**
  * @category markdown
@@ -63,7 +63,7 @@ export * as Disclosure from "./Disclosure.ts"
  * @category constructors
  * @since 0.1.0
  */
-export * as Executable from "./Executable.ts"
+export * as Executable from "./Executable.vibe"
 
 /**
  * @category models

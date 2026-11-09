@@ -8,8 +8,8 @@ import { Deferred, Effect, Exit, Fiber, FileSystem, Layer, PlatformError, Schema
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as Descriptor from "../src/Descriptor.vibe"
-import * as Discovery from "../src/Discovery.ts"
-import * as Executable from "../src/Executable.ts"
+import * as Discovery from "../src/Discovery.vibe"
+import * as Executable from "../src/Executable.vibe"
 import * as Snapshot from "../src/ExecutionSnapshot.vibe"
 
 const platform = Layer.mergeAll(NodeCrypto.layer, NodeFileSystem.layer, NodePath.layer)

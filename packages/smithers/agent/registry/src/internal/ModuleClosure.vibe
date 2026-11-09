@@ -288,21 +288,21 @@ const resolve = (
   specifier: string,
   memo: Cache
 ): Effect.Effect<string | undefined> =>
-  Effect.gen(function*() {
+  effect {
     const key = `${fromDirectory}\0${specifier}`
     if (memo.resolutions.has(key)) return memo.resolutions.get(key)
     // Different importers and aliases can probe the same absolute candidate.
     // Cache misses too: wildcard paths usually leave bare imports to packages.
     const isFile = (candidate: string) =>
-      Effect.gen(function*() {
+      effect {
         if (memo.isFile.has(candidate)) return memo.isFile.get(candidate)!
-        const stat = yield* Effect.result(fs.stat(candidate))
+        const stat = try Effect.result(fs.stat(candidate))
         const found = stat._tag === "Success" && stat.success.type === "File"
         memo.isFile.set(candidate, found)
         return found
-      })
+      }
     const base = path.resolve(fromDirectory, specifier)
-    if (yield* isFile(base)) {
+    if (try isFile(base)) {
       memo.resolutions.set(key, base)
       return base
     }
@@ -316,11 +316,11 @@ const resolve = (
     candidates.push(...suffixes.map((suffix) => `${base}${suffix}`), ...indexNames.map((name) => path.join(base, name)))
     // Most fallbacks are missing wildcard aliases. Overlap their host reads,
     // then select in loader order regardless of which probe finished first.
-    const matches = yield* Effect.forEach(candidates, isFile, { concurrency: 16 })
+    const matches = try Effect.forEach(candidates, isFile, { concurrency: 16 })
     const resolved = candidates[matches.findIndex(Boolean)]
     memo.resolutions.set(key, resolved)
     return resolved
-  })
+  }
 
 /**
  * A JSON document that may carry comments and trailing commas, as tsconfig and
@@ -421,16 +421,16 @@ const bareTargets = (
   specifier: string,
   configs: Map<string, Record<string, unknown> | undefined>
 ): Effect.Effect<BareTargets> =>
-  Effect.gen(function*() {
+  effect {
     // A config that is missing, unreadable or not a JSON object is no config.
     const readConfig = (file: string) =>
-      Effect.gen(function*() {
+      effect {
         if (configs.has(file)) return configs.get(file)
-        const bytes = yield* Effect.result(fs.readFile(file))
-        const parsed = bytes._tag === "Success" ? parseJsonc(new TextDecoder().decode(bytes.success)) : undefined
+        const bytes = try Effect.result(fs.readFile(file))
+        const parsed = bytes._tag === "Success" ? parseJsonc(try Effect.orDie(Effect.try(() => new TextDecoder().decode(bytes.success)))) : undefined
         configs.set(file, parsed)
         return parsed
-      })
+      }
     const ancestors: Array<string> = []
     for (let current = path.resolve(directory);;) {
       ancestors.push(current)
@@ -440,7 +440,7 @@ const bareTargets = (
     }
     let nearestPackage: { readonly directory: string; readonly json: Record<string, unknown> } | undefined
     for (const candidate of ancestors) {
-      const json = yield* readConfig(path.join(candidate, "package.json"))
+      const json = try readConfig(path.join(candidate, "package.json"))
       if (json === undefined) continue
       nearestPackage = { directory: candidate, json }
       break
@@ -481,7 +481,7 @@ const bareTargets = (
       json: Record<string, unknown>,
       seen: ReadonlySet<string>
     ): Effect.Effect<Effective> =>
-      Effect.gen(function*() {
+      effect {
         const here = path.dirname(file)
         let inherited: Effective = {}
         const extended = json["extends"]
@@ -492,9 +492,9 @@ const bareTargets = (
             : ancestors.map((dir) => path.join(dir, "node_modules", parent))
           const candidates = bases.flatMap((base) => [base, `${base}.json`, path.join(base, "tsconfig.json")])
           for (const candidate of candidates) {
-            const parentJson = yield* readConfig(candidate)
+            const parentJson = try readConfig(candidate)
             if (parentJson === undefined || seen.has(candidate)) continue
-            inherited = { ...inherited, ...(yield* effective(candidate, parentJson, new Set([...seen, candidate]))) }
+            inherited = { ...inherited, ...(try effective(candidate, parentJson, new Set([...seen, candidate]))) }
             break
           }
         }
@@ -506,14 +506,14 @@ const bareTargets = (
           ...(typeof baseUrl === "string" ? { baseUrl: path.resolve(here, baseUrl) } : {}),
           ...(map === undefined ? {} : { paths: { map, base: here } })
         }
-      })
+      }
 
     for (const candidate of ancestors) {
       for (const configName of ["tsconfig.json", "jsconfig.json"]) {
         const file = path.join(candidate, configName)
-        const json = yield* readConfig(file)
+        const json = try readConfig(file)
         if (json === undefined) continue
-        const { baseUrl, paths } = yield* effective(file, json, new Set([file]))
+        const { baseUrl, paths } = try effective(file, json, new Set([file]))
         if (paths !== undefined) {
           for (const [key, targets] of Object.entries(paths.map)) {
             const star = matchPattern(key, specifier)
@@ -529,7 +529,7 @@ const bareTargets = (
       }
     }
     return { files, unpinnable }
-  })
+  }
 
 /**
  * One module's digest and what it loads, read once per scan.
@@ -626,9 +626,9 @@ export const analyze = (
   entrySource: string,
   memo: Cache = cache()
 ): Effect.Effect<{ readonly imports: ReadonlyArray<ModuleImport>; readonly hostImports: ReadonlyArray<string> }> =>
-  Effect.gen(function*() {
+  effect {
     const hostImports = new Set<string>()
-    const imports = yield* walk(
+    const imports = try walk(
       fs,
       path,
       entryPath,
@@ -642,7 +642,7 @@ export const analyze = (
       hostImports
     )
     return { imports, hostImports: [...hostImports].sort() }
-  })
+  }
 
 /** What {@link walk} keeps of each module it reads when asked to: the bytes it measured. */
 interface Read {
@@ -665,7 +665,7 @@ const walk = (
   reads: Map<string, Read> | undefined,
   hostImports: Set<string>
 ): Effect.Effect<ReadonlyArray<ModuleImport>> =>
-  Effect.gen(function*() {
+  effect {
     const normalizedEntryPath = path.resolve(entryPath)
     const entryDirectory = path.dirname(normalizedEntryPath)
     const found = new Map<string, ModuleImport>()
@@ -695,11 +695,11 @@ const walk = (
     // file; the files it maps to are walked like relative ones, so a later
     // edit to the mapping or to the file is a changed closure.
     const followBare = (importer: string, from: string, specifiers: ReadonlyArray<string>) =>
-      Effect.gen(function*() {
+      effect {
         const directory = path.dirname(from)
         for (const specifier of specifiers) {
           const key = `${directory}\0${specifier}`
-          const targets = memo.bare.get(key) ?? (yield* bareTargets(fs, path, directory, specifier, memo.configs))
+          const targets = memo.bare.get(key) ?? (try bareTargets(fs, path, directory, specifier, memo.configs))
           memo.bare.set(key, targets)
           for (const reason of targets.unpinnable) {
             const description = `${importer} imports ${reason}`
@@ -707,7 +707,7 @@ const walk = (
           }
           let mapped = false
           for (const file of targets.files) {
-            if ((yield* resolve(fs, path, directory, file, memo)) !== undefined) {
+            if ((try resolve(fs, path, directory, file, memo)) !== undefined) {
               mapped = true
               if (from.endsWith(".mdx") && specifier === "@smthrs/registry/Prompt/jsx-runtime") {
                 const description = `${importer} maps the MDX text runtime to project files`
@@ -717,7 +717,7 @@ const walk = (
           }
           if (!mapped) hostImports.add(specifier)
         }
-      })
+      }
     const { absolute, bare, builtins, opaque, relative } = specifiersOf(entrySource)
     if (opaque > 0) {
       found.set(
@@ -728,11 +728,11 @@ const walk = (
     reportAbsolute("the entry", absolute)
     reportBuiltins(builtins)
     enqueue(normalizedEntryPath, entryDirectory, relative)
-    yield* followBare("the entry", normalizedEntryPath, bare)
+    try followBare("the entry", normalizedEntryPath, bare)
 
     while (pending.length > 0) {
       const { directory, from, specifier } = pending.shift()!
-      const resolved = yield* resolve(fs, path, directory, specifier, memo)
+      const resolved = try resolve(fs, path, directory, specifier, memo)
       const importer = from === normalizedEntryPath ? "the entry" : `"${relativePath(path, entryDirectory, from)}"`
       if (resolved === undefined) {
         const description = `${importer} imports "${specifier}", which resolves to no file`
@@ -763,10 +763,10 @@ const walk = (
         reportAbsolute(`"${recorded}"`, cached.absolute)
         reportBuiltins(cached.builtins)
         enqueue(resolved, path.dirname(resolved), cached.specifiers)
-        yield* followBare(`"${recorded}"`, resolved, cached.bare)
+        try followBare(`"${recorded}"`, resolved, cached.bare)
         continue
       }
-      const read = yield* Effect.result(fs.readFile(resolved))
+      const read = try Effect.result(fs.readFile(resolved))
       if (read._tag === "Failure") {
         const description = `"${recorded}" could not be read`
         found.set(description, unpinnable(description))
@@ -778,9 +778,9 @@ const walk = (
         found.set(description, unpinnable(description))
         break
       }
-      const contentDigest = Digest.digest(read.success)
-      const rawSource = new TextDecoder().decode(read.success)
-      const compiled = yield* Effect.result(
+      const contentDigest = try Effect.orDie(Effect.try(() => Digest.digest(read.success)))
+      const rawSource = try Effect.orDie(Effect.try(() => new TextDecoder().decode(read.success)))
+      const compiled = try Effect.result(
         resolved.endsWith(".mdx") ? Prompt.compile(rawSource) : Effect.succeed(rawSource)
       )
       if (compiled._tag === "Failure") {
@@ -805,11 +805,11 @@ const walk = (
       })
       found.set(recorded, { path: recorded, contentDigest })
       enqueue(resolved, path.dirname(resolved), specifiers.relative)
-      yield* followBare(`"${recorded}"`, resolved, specifiers.bare)
+      try followBare(`"${recorded}"`, resolved, specifiers.bare)
     }
 
     return [...found.values()].sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)
-  })
+  }
 
 /**
  * One module of a {@link snapshot}: the bytes that were measured, executable
@@ -852,11 +852,11 @@ export const snapshot = (
   readonly modules: ReadonlyMap<string, Module>
   readonly unsupported: ReadonlyArray<string>
 }> =>
-  Effect.gen(function*() {
+  effect {
     const memo = cache()
-    const entrySource = new TextDecoder().decode(entryBytes)
+    const entrySource = try Effect.orDie(Effect.try(() => new TextDecoder().decode(entryBytes)))
     const reads = new Map<string, Read>([[path.resolve(entryPath), { bytes: entryBytes, source: entrySource }]])
-    const imports = yield* walk(
+    const imports = try walk(
       fs,
       path,
       entryPath,
@@ -889,9 +889,9 @@ export const snapshot = (
       }
       for (const site of specifiers.statics) {
         const target = site.literal.startsWith("./") || site.literal.startsWith("../")
-          ? yield* resolve(fs, path, directory, site.literal, memo)
+          ? try resolve(fs, path, directory, site.literal, memo)
           : site.literal.startsWith("#")
-          ? yield* soleImportsTarget(fs, path, directory, site.literal, memo)
+          ? try soleImportsTarget(fs, path, directory, site.literal, memo)
           : undefined
         if (target !== undefined && reads.has(target)) links.push({ start: site.start, end: site.end, target })
         else if (hasMappedModule(site.literal)) {
@@ -905,7 +905,7 @@ export const snapshot = (
       modules.set(file, { ...read, links })
     }
     return { imports, modules, unsupported: [...unsupported] }
-  })
+  }
 
 /** The one file a package.json `imports` key maps to, or `undefined` when it maps to none or several. */
 const soleImportsTarget = (
@@ -915,11 +915,11 @@ const soleImportsTarget = (
   specifier: string,
   memo: Cache
 ): Effect.Effect<string | undefined> =>
-  Effect.gen(function*() {
+  effect {
     // The walk followed every bare specifier of every module it read, so the
     // mapping is already in `memo`.
     const targets = memo.bare.get(`${directory}\0${specifier}`)!
     return targets.files.length === 1 && targets.unpinnable.length === 0
-      ? yield* resolve(fs, path, directory, targets.files[0]!, memo)
+      ? try resolve(fs, path, directory, targets.files[0]!, memo)
       : undefined
-  })
+  }
