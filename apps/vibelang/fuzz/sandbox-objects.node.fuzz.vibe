@@ -1,0 +1,134 @@
+// The container and allowance Durable Objects' real bodies, wired as live: gateway, account object, machine object,
+// over SQLite storage and a container whose commands are local processes. Live Containers stay off.
+import { it } from "@effect/vitest"
+import { RuntimeContext } from "alchemy"
+import { HttpServerRequest } from "effect/http"
+import type { SandboxSnapshot } from "../src/core/Factory.vibe"
+import { mayStart } from "../src/core/sandboxPolicy.vibe"
+import { machineObject, type MachineBox, type ObjectState } from "../worker/SandboxMachine.vibe"
+import { accountObject, gatewayOf, identityFromPolicy, noIdentity, SandboxIdentity } from "../worker/SandboxAccounts.vibe"
+import { makeBox, namespaceOf, type BoxFault } from "./machine-box.ts"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import { run, Int } from "./run.vibe"
+
+const OWNER = "person-1"
+const FAULTS = ["start", "stuck", "setup", "snapshot", "destroy", "exec", "running"] as const satisfies ReadonlyArray<BoxFault>
+/** Fixed text: these run as real processes, so a target never executes generated text. */
+const COMMANDS = ["echo hi", "false", "exit 3", "head -c 300000 /dev/zero | tr \"\\0\" x", "printf \"\\377\""]
+const DURATIONS = ["60000", "5", "many", "21600001", "1000"]
+const Fault = Schema.Struct({ faulty: Schema.Boolean, fault: Int })
+const MachineInput = Schema.Struct({
+  prefix: Schema.Boolean,
+  steps: Schema.Array(Schema.Struct({ kind: Schema.Literals(["start", "stop", "command", "lease"]), generation: Int, current: Schema.Boolean, next: Schema.Boolean, operation: Int, command: Int, duration: Int, fault: Fault })).check(Schema.isMaxLength(10)),
+})
+const AccountInput = Schema.Struct({
+  role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]),
+  person: Schema.Literals([OWNER, "", "person-2"]),
+  prefix: Schema.Boolean,
+  allowed: Schema.Boolean,
+  binding: Schema.Boolean,
+  steps: Schema.Array(Schema.Struct({ kind: Schema.Literals(["read", "start", "stop", "command"]), generation: Int, current: Schema.Boolean, operation: Int, command: Int, fault: Fault })).check(Schema.isMaxLength(8)),
+})
+function stateOf(storage: ReturnType<typeof objectStorage>, id: string) {
+  return { raw: { storage }, id: { toString: () => id } } as unknown as ObjectState
+}
+function faulted(faults: Set<BoxFault>, fault: { readonly faulty: boolean; readonly fault: number }) {
+  faults.clear()
+  if (fault.faulty) faults.add(FAULTS[fault.fault % FAULTS.length]!)
+}
+const provided = <A, E>(body: Effect<A, E, RuntimeContext | Scope.Scope>) => Effect.provideService(body, RuntimeContext, {} as never)
+const clean = { faulty: false, fault: 0 }
+
+/** Stale generations never act, an admitted command runs once, and a stop that reports success has stopped the box. */
+it.live("sandbox/machine-object", () => run("sandbox/machine-object", MachineInput, (input) => provided(effect {
+  const local = try Effect.acquireRelease(sync(() => makeBox()), (made) => sync(() => made.dispose()))
+  const storage = try Effect.try(() => objectStorage())
+  const machine = try machineObject(local.box as unknown as MachineBox, stateOf(storage, "m"))
+  let generation = 0
+  const reached = new Set<string>()
+  const lifecycle = input.prefix ? [
+    { kind: "start" as const, generation: 0, current: false, next: true, operation: 0, command: 0, duration: 0, fault: clean },
+    { kind: "lease" as const, generation: 0, current: true, next: false, operation: 0, command: 0, duration: 0, fault: clean },
+    { kind: "command" as const, generation: 0, current: true, next: false, operation: 1, command: 0, duration: 0, fault: clean },
+    { kind: "command" as const, generation: 0, current: true, next: false, operation: 1, command: 0, duration: 0, fault: clean },
+    { kind: "stop" as const, generation: 0, current: true, next: false, operation: 0, command: 0, duration: 0, fault: clean },
+    { kind: "start" as const, generation: 0, current: false, next: true, operation: 0, command: 0, duration: 0, fault: clean },
+  ] : []
+  for (const step of [...lifecycle, ...input.steps]) {
+    faulted(local.faults, step.fault)
+    const target = step.next ? generation + 1 : step.current ? generation : step.generation
+    const executedBefore = local.state.executed.length
+    const operation = `op-${step.operation % 3}`
+    const argument = step.kind === "lease" ? DURATIONS[step.duration % DURATIONS.length]! : COMMANDS[step.command % COMMANDS.length]!
+    const before = (storage.kv.get("machine") as { readonly generation: number } | undefined)?.generation ?? 0
+    const answer = try machine.apply(step.kind, target, operation, argument)
+    if (typeof answer.ok !== "boolean" || typeof answer.output !== "string") return false
+    if (target < before && answer.ok) return false
+    const saved = storage.kv.get("machine") as { readonly generation: number; readonly phase: string } | undefined
+    if ((saved?.generation ?? 0) < before) return false
+    if (step.kind === "stop" && answer.ok && local.state.running) return false
+    if (step.kind === "start" && answer.ok) generation = target
+    const grew = local.state.executed.length !== executedBefore
+    if (step.kind !== "command" && grew) return false
+    // An uncertain command never runs again: a key that reached the box stays out of it.
+    const key = `${target}/${operation}`
+    if (grew && reached.has(key)) return false
+    if (grew) reached.add(key)
+  }
+  return true
+})))
+
+/** Only the owner with a starting role reaches their machine, and every failure answers as a typed refusal. */
+it.live("sandbox/account-gateway", () => run("sandbox/account-gateway", AccountInput, (input) => provided(effect {
+  const local = try Effect.acquireRelease(sync(() => makeBox()), (made) => sync(() => made.dispose()))
+  const machineStorage = try Effect.try(() => objectStorage())
+  const storage = try Effect.try(() => objectStorage())
+  const machine = try machineObject(local.box as unknown as MachineBox, stateOf(machineStorage, "m"))
+  const identity = try Effect.provide(effect { return try SandboxIdentity }, identityFromPolicy(
+    () => succeed({ owner: input.person, role: input.role }),
+    () => succeed(input.role),
+    { authorize: () => input.allowed ? Effect.void : fail("denied") },
+  ))
+  const defaults = try Effect.provide(effect { return try SandboxIdentity }, noIdentity)
+  if ((try defaults.role("x")) !== "viewer") return false
+  const account = try accountObject(stateOf(storage, "a"), (try Effect.try(() => namespaceOf(() => input.binding, machine))) as never, identity)
+  const { gateway } = gatewayOf((try Effect.try(() => namespaceOf(() => true, account))) as never, identity)
+  const admitted = input.allowed && input.person !== "" && mayStart(input.role)
+  type Step = typeof AccountInput.Type["steps"][number]
+  effect function act(step: Step, generation: number) {
+    const operation = `op-${step.operation % 4}`
+    const target = step.current ? generation : step.generation
+    if (step.kind === "read") return try gateway.sandbox("c-1")
+    if (step.kind === "start") return try gateway.startSandbox("c-1", operation)
+    if (step.kind === "stop") return try gateway.stopSandbox("c-1", operation, target)
+    return try gateway.sandboxCommand("c-1", operation, COMMANDS[step.command % COMMANDS.length]!, target)
+  }
+  let generation = 0
+  const lifecycle = input.prefix ? [
+    { kind: "start" as const, generation: 0, current: true, operation: 0, command: 0, fault: clean },
+    { kind: "command" as const, generation: 0, current: true, operation: 1, command: 0, fault: clean },
+    { kind: "stop" as const, generation: 0, current: true, operation: 2, command: 0, fault: clean },
+  ] : []
+  for (const step of [...lifecycle, ...input.steps]) {
+    faulted(local.faults, step.fault)
+    const outcome = try Effect.result(Effect.provideService(act(step, generation), HttpServerRequest.HttpServerRequest, {} as never))
+    if (outcome._tag === "Failure") {
+      if (!admitted && step.kind !== "read" && !(outcome.failure._tag === "Refused" && outcome.failure.refusal === "forbidden")) return false
+      continue
+    }
+    if (!admitted && step.kind !== "read") return false
+    if (typeof outcome.success !== "string") {
+      if (outcome.success.remaining < 0) return false
+      generation = outcome.success.generation
+    }
+  }
+  faulted(local.faults, clean)
+  // Only a run arms an alarm, and a run records the owner first, so an ownerless object never meters.
+  if (storage.kv.get("owner") !== undefined) try account.alarm()
+  // An account belongs to the first person who used it, and an empty owner never acts.
+  const owner = storage.kv.get("owner")
+  const blank = try account.run("", "start", "c-1", "op-blank", 0, "")
+  if (blank.refusal !== "forbidden") return false
+  const foreign = try account.run("someone-else", "start", "c-1", "op-foreign", 0, "")
+  return owner === undefined || foreign.refusal === "forbidden"
+})))

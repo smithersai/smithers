@@ -12,9 +12,10 @@ export interface MachineShape {
 }
 export class SandboxMachine extends Cloudflare.DurableObject<SandboxMachine, MachineShape>()("VibelangSandboxMachine") {}
 
-export const machineLive = SandboxMachine.make(effect {
-  const box = try SandboxImage
-  const state = try Cloudflare.DurableObjectState
+export type MachineBox = Effect.Success<typeof SandboxImage>
+export type ObjectState = Cloudflare.DurableObjectState["Service"]
+/** The object's body, apart from Alchemy's binding of it, so a local container can drive the same code. */
+export function machineObject(box: MachineBox, state: ObjectState) {
   return effect {
     const gate = try Semaphore.make(1)
     try Effect.orDie(Effect.try(() => state.raw.storage.sql.exec("CREATE TABLE IF NOT EXISTS sandbox_machine_commands (id TEXT PRIMARY KEY, command TEXT NOT NULL, phase TEXT NOT NULL, output TEXT)")))
@@ -102,4 +103,9 @@ export const machineLive = SandboxMachine.make(effect {
       },
     }
   }
+}
+export const machineLive = SandboxMachine.make(effect {
+  const box = try SandboxImage
+  const state = try Cloudflare.DurableObjectState
+  return machineObject(box, state)
 })

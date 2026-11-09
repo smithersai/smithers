@@ -1,0 +1,54 @@
+// The wiki's agent tools through their real bindings and the live sequencer, with a drafting service that can fail.
+import { it } from "@effect/vitest"
+import { Cell } from "@smthrs/harness"
+import type { Event } from "../src/core/conversation.vibe"
+import { pages } from "../src/core/wiki.vibe"
+import { WikiFailure } from "../src/core/wikiSchemas.vibe"
+import * as Sequencer from "../worker/Sequencer.vibe"
+import { toursOf } from "../worker/Objects.vibe"
+import { WIKI_INSTRUCTION, wikiTools } from "../worker/WikiTools.vibe"
+import { run, Int, Text } from "./run.vibe"
+
+const Input = Schema.Struct({
+  tool: Schema.Literals(["open", "docs", "draft"]), page: Int, known: Schema.Boolean, ask: Text, drafting: Schema.Literals(["absent", "ok", "faulty"]), again: Schema.Boolean,
+})
+
+function call(flowName: string, value: unknown) {
+  return new Cell.Call({ flowName, input: value, capabilities: [],
+    effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" }, placement: Option.none(),
+    identity: new Cell.CallIdentity({ session: "wiki", frame: 0, cell: "wiki", ordinal: 0, declaration: "wiki", layers: [] }),
+  })
+}
+
+it.live("wiki/tools", () => run("wiki/tools", Input, (input) => scoped(effect {
+  if (!pages.every((page) => WIKI_INSTRUCTION.includes(page.id))) return false
+  const events = try Ref.make<ReadonlyArray<Event>>([])
+  const sequencer = try Sequencer.make({ read: () => Ref.get(events), write: (event) => Ref.update(events, (log) => [...log, event]) }, { start: () => Effect.void, tour: () => Effect.void })
+  try sequencer.post("person", "Guest", "Open the wiki")
+  try sequencer.start("m1")
+  const keys: Array<string> = []
+  const drafting = input.drafting === "absent" ? undefined : {
+    draft: effect (_page: string, _ask: string, key: string) => {
+      keys.push(key)
+      if (input.drafting === "faulty") throw new WikiFailure({ reason: "draft" })
+    },
+  }
+  const bindings = try wikiTools("r1", toursOf(sequencer), drafting).bindings()
+  if (bindings.length !== (drafting === undefined ? 2 : 3)) return false
+  const page = input.known ? pages[input.page % pages.length]!.id : `missing-${input.page}`
+  if (input.tool === "draft" && drafting === undefined) return true
+  const binding = bindings[input.tool === "open" ? 0 : input.tool === "docs" ? 1 : 2]!
+  const name = input.tool === "open" ? "vibelang/wiki/open" : input.tool === "docs" ? "vibelang/docs/open" : "vibelang/wiki/draft"
+  const value = input.tool === "open" ? { page } : input.tool === "docs" ? { path: page } : { page, ask: input.ask }
+  const result = try binding.run(call(name, value))
+  if (input.tool !== "draft") return result.outcome === "success" || result.outcome === "failure"
+  const refused = !input.known || page === "decisions"
+  if (refused) return keys.length === 0 && result.outcome !== "success"
+  if (keys.length !== 1) return false
+  if (input.drafting === "faulty") return result.outcome !== "success"
+  if (!input.again) return result.outcome === "success"
+  // The key names one person's one ask, so a retried tool call dedupes in the wiki host.
+  try binding.run(call(name, value))
+  const both = [...keys]
+  return both.length === 2 && both[0] === both[1]
+})))

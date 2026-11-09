@@ -1,0 +1,37 @@
+// The only live authority adapter for actions: a role is granted only by a current allowance.
+import { it } from "@effect/vitest"
+import { HttpClientRequest, HttpServerRequest } from "effect/http"
+import { fromAccounts, signedOut, trustedOf, type Authority } from "../worker/ActionIdentity.vibe"
+import { run, Text } from "./run.vibe"
+
+const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
+const Input = Schema.Struct({
+  id: Schema.Literals(["", "1"]), login: Text, role: Role, grant: Role, agent: Schema.Boolean, allowed: Schema.Boolean, cookie: Schema.Boolean,
+  trusted: Schema.Literals(["none", "named", "unnamed"]), owner: Schema.Literals(["", "1", "2"]),
+  props: Schema.Record(Schema.String, Schema.Unknown),
+})
+
+it.live("actions/identity", () => run("actions/identity", Input, (input) => effect {
+  const accounts: Authority = {
+    current: () => succeed({ id: input.id, login: input.login, role: input.role, ...(input.agent ? { agent: true } : {}) }),
+    role: () => succeed(input.grant),
+    allowed: () => succeed(input.allowed),
+  }
+  const trusted = input.trusted === "none" ? undefined : { owner: "9", ...(input.trusted === "named" ? { name: "Ada" } : {}) }
+  const identity = fromAccounts(accounts, trusted)
+  const request = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(input.cookie ? HttpClientRequest.get("https://actions.invalid/").pipe(HttpClientRequest.setHeader("cookie", "a=b")) : HttpClientRequest.get("https://actions.invalid/")))
+  const principal = try Effect.provideService(identity.request(), HttpServerRequest.HttpServerRequest, request)
+  const role = try identity.role(input.owner)
+  if (input.owner === "" || !input.allowed ? role !== "viewer" : role !== input.grant) return false
+  if (trusted !== undefined) {
+    if (principal.owner !== "9" || principal.agent !== true || principal.name !== (trusted.name ?? "Guest")) return false
+    return principal.role === (input.allowed ? input.grant : "viewer")
+  }
+  if (principal.owner !== input.id || (principal.agent === true) !== input.agent) return false
+  if (principal.role !== (input.id !== "" && input.allowed ? input.role : "viewer")) return false
+  const defaults = try signedOut.request()
+  if (defaults.owner !== "" || defaults.role !== "viewer" || (try signedOut.role("1")) !== "viewer") return false
+  const fromProps = trustedOf(input.props)
+  if (typeof input.props.actionOwner !== "string") return fromProps === undefined
+  return fromProps?.owner === input.props.actionOwner && fromProps.name === (typeof input.props.actionName === "string" ? input.props.actionName : "Guest")
+}))

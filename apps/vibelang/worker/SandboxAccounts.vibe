@@ -8,7 +8,7 @@ import { SandboxPolicy, type SandboxPrincipal, mayStart } from "../src/core/sand
 import type { Role } from "../src/core/sandboxDecision.vibe"
 import { SandboxHost } from "../src/core/flows.vibe"
 import type { Machines } from "../src/core/sandboxHost.vibe"
-import { SandboxMachine, machineLive, type MachineShape } from "./SandboxMachine.vibe"
+import { SandboxMachine, machineLive, type MachineShape, type ObjectState } from "./SandboxMachine.vibe"
 import * as Sandboxes from "./Sandboxes.vibe"
 import { signedOutGateway, type Gateway } from "./SandboxHttp.vibe"
 
@@ -25,10 +25,9 @@ interface AccountShape {
   alarm(): void!!RuntimeContext
 }
 export class SandboxAccount extends Cloudflare.DurableObject<SandboxAccount, AccountShape>()("VibelangSandboxAccount") {}
-const accountLive = SandboxAccount.make(effect {
-  const state = try Cloudflare.DurableObjectState
-  const namespace = (try SandboxMachine) as Cloudflare.DurableObject<MachineShape>
-  const identity = try SandboxIdentity
+type Named<Shape> = Pick<Cloudflare.DurableObject<Shape>, "getByName">
+/** The object's body, apart from Alchemy's binding of it. */
+export function accountObject(state: ObjectState, namespace: Named<MachineShape>, identity: SandboxIdentity.Shape) {
   return effect {
     const runtime = try RuntimeContext
     const call = effect (id: string, kind: "start" | "stop" | "command" | "lease", generation: number, operationId = "", command = "") => {
@@ -68,7 +67,37 @@ const accountLive = SandboxAccount.make(effect {
       },
     }
   }
+}
+const accountLive = SandboxAccount.make(effect {
+  const state = try Cloudflare.DurableObjectState
+  const namespace = (try SandboxMachine) as Cloudflare.DurableObject<MachineShape>
+  const identity = try SandboxIdentity
+  return accountObject(state, namespace, identity)
 })
+
+/** Resolves the principal, then asks that person's object. */
+export function gatewayOf(namespace: Named<AccountShape>, identity: SandboxIdentity.Shape) {
+  const request = effect (kind: "read" | "start" | "stop" | "command", conversation: string, operationId: string, generation: number, command: string) => {
+    const runtime = try RuntimeContext
+    const principal = try identity.request()
+    if (principal.owner === "" || !mayStart(principal.role)) {
+      if (kind === "read") return { snapshot: try signedOutGateway.sandbox(conversation), output: "", refusal: "" }
+      throw new Refused({ refusal: "forbidden" })
+    }
+    const stub = try Effect.mapError(Effect.try(() => namespace.getByName(principal.owner)), () => new Unavailable({ reason: "sandbox-binding" }))
+    const answer = try Effect.provideService(stub.run(principal.owner, kind, conversation, operationId, generation, command), RuntimeContext, runtime)
+    if (answer.refusal !== "") throw new Refused({ refusal: answer.refusal })
+    return answer
+  }
+  // Resolve the current principal for every HTTP operation, before any journal replay can return a result.
+  const gateway: Gateway<RuntimeContext> = {
+    sandbox: (c) => Effect.map(request("read", c, `read/${Date.now()}`, 0, ""), (r) => r.snapshot),
+    startSandbox: (c, op) => Effect.map(request("start", c, op, 0, ""), (r) => r.snapshot),
+    stopSandbox: (c, op, gen) => Effect.map(request("stop", c, op, gen, ""), (r) => r.snapshot),
+    sandboxCommand: (c, op, command, gen) => Effect.map(request("command", c, op, gen, command), (r) => r.output),
+  }
+  return { gateway }
+}
 
 /** Container bindings are absent entirely when no image digest was configured. */
 export const gatewayWithIdentity = Layer.unwrap(effect {
@@ -76,27 +105,7 @@ export const gatewayWithIdentity = Layer.unwrap(effect {
   if (Option.isNone(image)) return Layer.succeed(SandboxGateway, { gateway: signedOutGateway })
   return Layer.effect(SandboxGateway, effect {
     const namespace = (try SandboxAccount) as Cloudflare.DurableObject<AccountShape>
-    const identity = try SandboxIdentity
-    const request = effect (kind: "read" | "start" | "stop" | "command", conversation: string, operationId: string, generation: number, command: string) => {
-      const runtime = try RuntimeContext
-      const principal = try identity.request()
-      if (principal.owner === "" || !mayStart(principal.role)) {
-        if (kind === "read") return { snapshot: try signedOutGateway.sandbox(conversation), output: "", refusal: "" }
-        throw new Refused({ refusal: "forbidden" })
-      }
-      const stub = try Effect.mapError(Effect.try(() => namespace.getByName(principal.owner)), () => new Unavailable({ reason: "sandbox-binding" }))
-      const answer = try Effect.provideService(stub.run(principal.owner, kind, conversation, operationId, generation, command), RuntimeContext, runtime)
-      if (answer.refusal !== "") throw new Refused({ refusal: answer.refusal })
-      return answer
-    }
-    // Resolve the current principal for every HTTP operation, before any journal replay can return a result.
-    const gateway: Gateway<RuntimeContext> = {
-      sandbox: (c) => Effect.map(request("read", c, `read/${Date.now()}`, 0, ""), (r) => r.snapshot),
-      startSandbox: (c, op) => Effect.map(request("start", c, op, 0, ""), (r) => r.snapshot),
-      stopSandbox: (c, op, gen) => Effect.map(request("stop", c, op, gen, ""), (r) => r.snapshot),
-      sandboxCommand: (c, op, command, gen) => Effect.map(request("command", c, op, gen, command), (r) => r.output),
-    }
-    return { gateway }
+    return gatewayOf(namespace, try SandboxIdentity)
   }).pipe(Layer.provide(accountLive), Layer.provide(machineLive))
 })
 export const gatewayLive = gatewayWithIdentity.pipe(Layer.provide(noIdentity))

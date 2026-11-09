@@ -118,6 +118,8 @@ export function objectStorage(): ObjectStorage {
       } catch (error) {
         db.exec(level === 0 ? "ROLLBACK" : `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`)
         throw error
+      } finally {
+        depth--
       }
     },
     async transaction(closure) {
