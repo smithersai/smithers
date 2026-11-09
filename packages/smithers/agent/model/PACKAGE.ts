@@ -92,7 +92,7 @@ const securityReview = Smithers.SecurityReview({
         "src/ModelError.vibe",
         "src/FailureCopy.vibe",
         "src/Classifier.vibe",
-        "src/*Messages.ts",
+        "src/*Messages.{ts,vibe}",
         "src/OpenAI*.{ts,vibe}"
       ]
     },

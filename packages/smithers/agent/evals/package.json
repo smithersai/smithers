@@ -233,7 +233,7 @@
     }
   },
   "scripts": {
-    "lint": "eslint src examples --max-warnings=0 && dprint check",
+    "lint": "eslint --no-error-on-unmatched-pattern src examples --max-warnings=0 && dprint check",
     "format": "dprint fmt",
     "build": "node scripts/build.mjs",
     "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",

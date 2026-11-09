@@ -352,7 +352,7 @@ const docsTextTest = Smithers.Shell.Test({
     Smithers.file("//packages/smithers/gateway/docs/guides/serve-beyond-loopback.md"),
     Smithers.file("//packages/smithers/flows/sync/src/SyncProtocol.ts"),
     Smithers.file("//packages/smithers/flows/kernel/src/HostServices.vibe"),
-    Smithers.file("//packages/smithers/agent/registry/src/Discovery.ts"),
+    Smithers.file("//packages/smithers/agent/registry/src/Discovery.vibe"),
     Smithers.file("//packages/smthrs-deprecation/docs/notice.md"),
     Smithers.file("//packages/smithers/migrate/src/flow/MigrateFlow.ts"),
     Smithers.file("//packages/smithers/migrate/src/Scan.ts"),
