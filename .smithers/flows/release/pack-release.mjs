@@ -449,6 +449,7 @@ const defaultExportPattern = /^[ \t]*export\s+default\b/gm
  * namespace bindings beside it) and every `export default` declaration. Each
  * site carries the one-based `line`, its `kind`, and the original line `text`.
  *
+ * Declaration files describe bindings without emitting JavaScript and have no sites.
  * Both are forbidden in a published package's `src`. `scripts/build.mjs`
  * converts every source file to CommonJS with esbuild (`bundle: false`) inside
  * a `"type": "module"` package, and for a default import of a sibling esbuild
@@ -469,7 +470,8 @@ const defaultExportPattern = /^[ \t]*export\s+default\b/gm
  * Comments and template literals are blanked before matching, so a flow
  * skeleton spelled inside a template string is not a site.
  */
-export const defaultBindings = (source) => {
+export const defaultBindings = (source, filename = "module.ts") => {
+  if (isDeclarationFile(filename)) return []
   const text = declarationText(source)
   const lines = source.split("\n")
   const lineAt = (index) => text.slice(0, index).split("\n").length

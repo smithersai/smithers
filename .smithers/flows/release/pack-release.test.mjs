@@ -795,6 +795,13 @@ test("defaultBindings reports the default import and export sites and nothing sp
     { line: 18, kind: "export", text: "export default named" }
   ])
   assert.deepEqual(defaultBindings("export const set = {}\n"), [])
+  // Declaration modules describe a loader binding and never emit CommonJS.
+  for (const filename of ["quickjsWasm.d.ts", "module.d.vibe.ts", "module.d.css.ts"]) {
+    assert.deepEqual(defaultBindings("export default wasmModule\n", filename), [])
+  }
+  for (const filename of ["module.ts", "module.vibe"]) {
+    assert.equal(defaultBindings("export default wasmModule\n", filename).length, 1)
+  }
   // A JSON module's only binding is its default, and esbuild's CommonJS
   // `__toESM(require("./x.json"), 1).default` is that same parsed value.
   assert.deepEqual(defaultBindings("import catalog from \"./catalog.mvp.json\" with { type: \"json\" }\n"), [])
@@ -829,7 +836,7 @@ test("no published source module default-imports a sibling or exports a default"
       if (!statSync(path).isFile()) continue
       modules += 1
       if (relative.endsWith(".vibe")) vibe += 1
-      for (const site of defaultBindings(readFileSync(path, "utf8"))) {
+      for (const site of defaultBindings(readFileSync(path, "utf8"), relative)) {
         sites.push(`${directory}/${relative}:${site.line}  ${site.text}`)
       }
     }
