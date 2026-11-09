@@ -92,11 +92,11 @@ Proposals cannot avoid forks: a branch on the upstream repository needs write ac
 
 ## As built
 
-Reads are one GET-only path allowlist (`DelegationPolicy.readable`), not typed reads: the rejected proxy's arguments concern writes. `DelegationPolicy` has unit coverage, no Dafny proofs.
+Reads are one GET-only path allowlist (`DelegationPolicy.readable`), not typed reads: the rejected proxy's arguments concern writes. A read GitHub answers with 404 refuses as `missing`, which the site sees as GitHub's own 404, so "no such page" or "no such branch" stays an answer. Before this, it was `unavailable`, and the wiki flow retried a connected read of a missing page for two minutes. `DelegationPolicy` has unit coverage, no Dafny proofs.
 
-`GitHubConnection` routes by `?person=` and trusts only the signed envelope. A site with no `grants` in `HOSTED_AUTH_SITES` signs in and holds no scope. A person disconnects a site at `/api/auth/connections`. The site's Install action redirects through `GITHUB_APP_SLUG`.
+smithers.sh's route (`GitHub.Delegation.route`) verifies the site's origin, signature, audience and expiry, and that the envelope names the URL's `?person=`, before it addresses a `GitHubConnection`. Addressing a Durable Object creates it, so an unsigned or wrongly signed call creates nothing. The person's object then claims the nonce and checks the delegation. A site with no `grants` in `HOSTED_AUTH_SITES` signs in and holds no scope. A person disconnects a site at `/api/auth/connections`. The site's Install action redirects through `GITHUB_APP_SLUG`.
 
-Vibelang's GET callback for direct sign-in remains, reachable only with no broker configured (tests). `GITHUB_CLIENT_SECRET` stays until it is removed.
+Vibelang's direct sign-in (the GitHub redirect from `/api/auth/sign-in` and the GET callback) remains, and production never reaches it: `readSetup` always sets `broker`, defaulting to `https://smithers.sh`. Only unit tests that build `Setup` without `broker` use it. The code exchange is its only use of `GITHUB_CLIENT_SECRET`; the device flow needs the client id alone. So the site keeps `GITHUB_CLIENT_SECRET` while that path exists. Removing it, and moving those tests to the broker path the workerd round trip already proves, lets production run with no secret.
 
 ## Trust limit
 
@@ -106,9 +106,10 @@ A compromised site holds its key, so it can act as any person connected to that 
 
 Verified from GitHub's documentation: the install requirement, the fork permission table, the user-token limits, ten tokens per person, App and scope ([authorizing](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps)), 8-hour and 6-month lifetimes with single-use refresh ([refreshing](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens)), and that `github_app_authorization` is delivered to every App ([event](https://docs.github.com/en/webhooks/webhook-events-and-payloads#github_app_authorization)).
 
+Verified by the fleet lead from GitHub's API on 2026-11-09 (`GET /app` and `GET /app/installations`, with the App's JWT): the production App `smitherspreviewrelease` holds Contents, Issues and Pull requests write. It is installed on `smithersai` and on `codeplanesmithers`, each with all repositories. Its slug, `smitherspreviewrelease`, is `GITHUB_APP_SLUG` in the deploy environment. Vibelang's callback URL was never registered on the App, so no App setting changes.
+
 Open, for the production smoke test:
 
 1. GitHub documents no event-specific field naming who revoked. The handler reads `sender.id`, ignores the `ghost` placeholder, and relies on a 401 otherwise. Confirm a real delivery.
-2. Whether the production App already holds Issues, Contents and Pull requests write, and is installed on `smithersai`.
-3. That a person's fork with a selected-repository install accepts `createCommitOnBranch` and the upstream pull.
-4. That ten further sign-ins leave the stored token usable.
+2. That a person's fork with a selected-repository install accepts `createCommitOnBranch` and the upstream pull.
+3. That ten further sign-ins leave the stored token usable.

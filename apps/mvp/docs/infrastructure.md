@@ -265,6 +265,7 @@ A local `.env` that raises a limit for development, such as `MODEL_DAILY_TOKEN_B
 | `MODEL_DAILY_TOKEN_BUDGET`, `MODEL_MAX_OUTPUT_TOKENS`, `MODEL_MAX_MESSAGES`, `MODEL_MAX_REQUEST_BYTES`, `MODEL_RESERVATION_EXPIRY` | no | ChatApi | [model-endpoint.md](features/model-endpoint.md#configuration) |
 | `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` | for sign-in | ChatApi | the Smithers GitHub App's client; without them nobody can sign in, so nobody can ask ([sign-in.md](features/sign-in.md#configuration)) |
 | `HOSTED_AUTH_SITES`, `AUTH_BROKER_ENCRYPTION_KEY` | for hosted-site sign-in | ChatApi, HostedAuthBroker | redacted exact-origin/per-site-key registry and base64 32-byte record-encryption key ([sign-in.md](features/sign-in.md#independently-hosted-sites)) |
+| `GITHUB_CONNECTION_KEYS`, `GITHUB_CONNECTION_KEY_ACTIVE` | for hosted-site GitHub writes | ChatApi, HostedAuthBroker, GitHubConnection | JSON `{ "<id>": "<base64 32-byte key>" }` and the id that seals new tokens; ChatApi's delegation route checks signatures against `HOSTED_AUTH_SITES` and answers 503 without them ([sign-in.md](features/sign-in.md#independently-hosted-sites)) |
 | `AUTH_BROKER_ORIGIN` | no | ChatApi, HostedAuthBroker | existing registered callback origin; defaults to HTTPS `APP_DOMAIN` |
 | `GITHUB_REPOSITORY`, `SESSION_MAX_AGE_DAYS`, `ROLE_RECHECK_MINUTES` | no | ChatApi | [sign-in.md](features/sign-in.md#configuration) |
 | `GITHUB_ALLOWED_REPOSITORIES` | no | ChatApi | [issues.md](features/issues.md#configuration) |
