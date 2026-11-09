@@ -265,3 +265,102 @@ describe("specifiers", () => {
     expect(specifiers(analyze("j.ts", "import \"b\"\nimport \"a\"\nconst lazy = import(\"b\")"))).toEqual(["a", "b"])
   })
 })
+
+describe("analyze: a .vibe module and its .ts twin", () => {
+  const typescript = [
+    "import { Effect } from \"effect\"",
+    "import * as Route from \"./Route.ts\"",
+    "import type { Model } from \"@smthrs/model\"",
+    "export { Button, type ButtonProps } from \"@smthrs/ui\"",
+    "export * from \"./More.ts\"",
+    "type Deep = import(\"./Deep.ts\").Deep",
+    "type Named = Route.Named",
+    "export const load = Effect.gen(function* () {",
+    "  const route = yield* Route.lookup(\"a\")",
+    "  yield* (yield* Users).find(route)",
+    "  const lazy = yield* Effect.promise(() => import(\"./Lazy.ts\"))",
+    "  yield* record(lazy, () => helper.run())",
+    "  return require(\"./old.cjs\")",
+    "})"
+  ].join("\n")
+  const vibe = [
+    "import { Effect } from \"effect\"",
+    "import * as Route from \"./Route.ts\"",
+    "import type { Model } from \"@smthrs/model\"",
+    "export { Button, type ButtonProps } from \"@smthrs/ui\"",
+    "export * from \"./More.ts\"",
+    "type Deep = import(\"./Deep.ts\").Deep",
+    "type Named = Route.Named",
+    "export effect function load() {",
+    "  const route = try Route.lookup(\"a\")",
+    "  try (try Users).find(route)",
+    "  const lazy = try Effect.promise(() => import(\"./Lazy.ts\"))",
+    "  try record(lazy, () => helper.run())",
+    "  return require(\"./old.cjs\")",
+    "}"
+  ].join("\n")
+
+  it("finds the same references, names and members", () => {
+    expect(references("Load.vibe", vibe)).toEqual(references("Load.ts", typescript))
+    expect(names("Load.vibe", vibe)).toEqual(names("Load.ts", typescript))
+  })
+
+  it("finds the same calls; only Effect.gen is TypeScript's spelling of effect", () => {
+    expect(calls("Load.vibe", vibe)).toEqual(calls("Load.ts", typescript).filter((call) => !call.endsWith("Effect.gen")))
+  })
+
+  it("reads calls inside VibeLang's own forms: try, catch, provide, effect blocks and try.all", () => {
+    const text = [
+      "export effect function run() {",
+      "  const a = try first() catch () => fallback()",
+      "  provide Live { try second() }",
+      "  try.all [third(), fourth()]",
+      "  return effect { try fifth() }",
+      "}"
+    ].join("\n")
+    expect(calls("Run.vibe", text)).toEqual(["2 first", "2 fallback", "3 second", "4 third", "4 fourth", "5 fifth"])
+  })
+
+  it.each([
+    "import x = require(\"y\")",
+    "import type z = require(\"w\")",
+    "import { \"a-b\" as c } from \"q\"",
+    "import { type T, U } from \"mixed\"\nU.read",
+    "const n = require(`t`)",
+    "import(\"a\", { with: { type: \"json\" } })",
+    "import(`b`)",
+    "import(specifier)",
+    "x.f[\"g\"]()",
+    "x.f[\"a-b\"]()",
+    "x[y]()",
+    "f()()",
+    "(a as any).run()",
+    "a!.run()",
+    "a?.run()",
+    "this.run()",
+    "class K extends B { #p() {} m() { this.#p(); super.m() } }",
+    "(await p).q()",
+    "export type * from \"./t.ts\"",
+    "export * as all from \"./t.ts\"",
+    "type U = import(\"./u.ts\")",
+    "type V = import(\"./u.ts\").A.B",
+    "import * as z from \"z\"\nz.a.b\nconst q: z.T = 1",
+    "new F()",
+    "tag`x`",
+    "other.read",
+    "import D from \"d\"\nD.read",
+    "page.context().route()",
+    "export { \"a-b\" as c } from \"x\""
+  ])("reads the same facts as TypeScript from %s", (text) => {
+    expect(analyze("Form.vibe", text)).toEqual(analyze("Form.ts", text))
+  })
+
+  it("reads a module declaration's imports, which only VibeLang has", () => {
+    const text = ["module text {", "  import { a } from \"inner\"", "  import x = require(\"old\")", "  export const b = a", "}"].join("\n")
+    expect(references("Mod.vibe", text)).toEqual(["2 import inner", "3 import-equals old"])
+  })
+
+  it("reports a .vibe syntax error instead of losing what follows it", () => {
+    expect(() => analyze("Broken.vibe", "export effect function broken( {")).toThrow()
+  })
+})
