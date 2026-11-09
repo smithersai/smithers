@@ -1,0 +1,189 @@
+// @vitest-environment node
+// Real private files, SQLite session actions and explicit failure services; no OAuth grants or user credentials.
+import { it, expect } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { HttpServer, HttpServerResponse } from "effect/http"
+import * as Settings from "../src/surfaces/session.vibe"
+import { sessionOperation, waitForSignIn, SignInFailed } from "../src/surfaces/sessionFlow.vibe"
+import { signIn, signOutSurface } from "../src/surfaces/signin.vibe"
+import { backend } from "../src/surfaces/backend.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("private settings preserve complete replacements, permissions, expiry and credential isolation", async ({ bench }) => {
+  const result = await workload(bench, "session-settings", "async", () => runPromise(scoped(effect {
+    provide NodeServices.layer {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const directory = try fs.makeTempDirectoryScoped()
+      provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: directory })) {
+        const root = try Settings.privateSettings()
+        const absent = try Settings.readSession()
+        const one = { origin: "https://factory.invalid", cookie: "fixture-first", login: "one" }
+        const two = { ...one, cookie: "fixture-second", login: "two" }
+        try Settings.writeSession(one)
+        const first = try Settings.readSession()
+        try Settings.writeMockSession("will")
+        try Settings.writeSession(two)
+        const replaced = try Settings.activeSession()
+        const mock = try Settings.readMockSession()
+        const folder = try fs.stat(root)
+        const file = try fs.stat(path.join(root, "session.json"))
+        const now = try Clock.currentTimeMillis
+        const pending: Settings.PendingDevice = { origin: one.origin, clientId: "fixture", deviceCode: "fixture-code", userCode: "FIXTURE", verificationUri: "https://github.invalid/device", intervalSeconds: 5, expiresAt: now + 60000, nextPollAt: now + 5000 }
+        try Settings.writePending(pending)
+        const livePending = try Settings.readPending()
+        try Settings.writePending({ ...pending, expiresAt: 0 })
+        const expired = try Settings.readPending()
+        const expiredFile = try fs.exists(path.join(root, "device.json"))
+        try Settings.removeMockSession()
+        const liveAfterMock = try Settings.readSession()
+        const removedMock = try Settings.readMockSession()
+        try Settings.removeSession()
+        try Settings.removeSession()
+        const removed = try Settings.readSession()
+        for (const text of ["{", "null", '{"origin":1}', "false"]) {
+          try fs.writeFileString(path.join(root, "session.json"), text, { mode: 0o600 })
+          const invalid = try Settings.readSession()
+          try Effect.try(() => expect(invalid).toBeUndefined())
+        }
+        try Settings.removeSession()
+        try Effect.try(() => {
+          expect(root).toBe(path.join(directory, "vibelang-factory"))
+          expect(absent).toBeUndefined()
+          expect(first).toEqual(one)
+          expect(replaced).toEqual(two)
+          expect(mock).toEqual({ origin: "mock", cookie: "", login: "will" })
+          expect([folder.mode & 0o777, file.mode & 0o777]).toEqual([0o700, 0o600])
+          expect(livePending).toEqual(pending)
+          expect(expired).toBeUndefined()
+          expect(expiredFile).toBe(false)
+          expect(liveAfterMock).toEqual(two)
+          expect([removed, removedMock]).toEqual([undefined, undefined])
+        })
+      }
+      provide ConfigProvider.layer(ConfigProvider.fromUnknown({ HOME: directory })) {
+        const root = try Settings.settingsDir()
+        try Effect.try(() => expect(root).toBe(path.join(directory, ".config", "vibelang-factory")))
+      }
+      provide ConfigProvider.layer(ConfigProvider.fromUnknown({})) {
+        const failure = try Effect.result(Settings.settingsDir())
+        try Effect.try(() => { expect(failure._tag).toBe("Failure"); if (failure._tag === "Failure") expect(failure.failure).toMatchObject({ _tag: "SessionFailed", reason: "no home directory" }) })
+      }
+      const value = JSON.stringify({ origin: "https://factory.invalid", cookie: "__Host-vibelang-session=fixture" })
+      provide ConfigProvider.layer(ConfigProvider.fromUnknown({ VIBELANG_SESSION: value })) {
+        const active = try Settings.activeSession()
+        try Effect.try(() => expect(active).toEqual({ origin: "https://factory.invalid", cookie: "__Host-vibelang-session=fixture", login: "" }))
+      }
+      for (const value of ["{", "{}", JSON.stringify({ origin: "https://factory.invalid", cookie: "wrong=fixture" })]) {
+        provide ConfigProvider.layer(ConfigProvider.fromUnknown({ VIBELANG_SESSION: value })) {
+          const failure = try Effect.result(Settings.activeSession())
+          try Effect.try(() => { expect(failure._tag).toBe("Failure"); if (failure._tag === "Failure") expect(failure.failure).toMatchObject({ _tag: "SessionFailed", reason: "invalid session" }) })
+        }
+      }
+    }
+  }))).run(slow)
+  await runPromise(artifact("session-settings", "Vitest built-in bench; real scoped filesystem settings lifecycle: absent/full replacement, separate mock/live session, exact 0700/0600 modes, pending grant retained/expired/deleted, repeated removal, invalid JSON/schema refusal, HOME fallback/missing HOME, explicit credential validation. Three unwarmed full corpora; setup, disk IO and correctness checks included.", ["Synthetic fixture values only; no OAuth/network. Local filesystem and process cache, no fsync/crash-durability claim. Private paths/contents omitted from artifacts."], result))
+})
+
+it("private settings failures are typed and never publish credentials", async ({ bench }) => {
+  const result = await workload(bench, "session-settings-faults", "async", () => runPromise(scoped(effect {
+    provide NodeServices.layer {
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const directory = try fs.makeTempDirectoryScoped()
+      const denied = () => fail(new PlatformError.PlatformError(new PlatformError.SystemError({ module: "FileSystem", method: "chmod", _tag: "PermissionDenied" })))
+      const faulty = { ...fs, chmod: denied }
+      provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: directory })), FileSystem.FileSystem = faulty {
+        const prepare = try Effect.result(Settings.privateSettings())
+        const write = try Effect.result(Settings.writeSession({ origin: "fixture", cookie: "fixture", login: "fixture" }))
+        const exists = try fs.exists(path.join(directory, "vibelang-factory", "session.json"))
+        try Effect.try(() => {
+          expect(prepare._tag).toBe("Failure")
+          expect(write._tag).toBe("Failure")
+          if (prepare._tag === "Failure") expect(prepare.failure).toMatchObject({ _tag: "SessionFailed", reason: "settings directory" })
+          if (write._tag === "Failure") expect(write.failure).toMatchObject({ _tag: "SessionFailed", reason: "settings file" })
+          expect(exists).toBe(false)
+        })
+      }
+      const cannotRemove = { ...fs, remove: denied }
+      provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: directory })), FileSystem.FileSystem = cannotRemove {
+        const removal = try Effect.result(Settings.removeSession())
+        try Effect.try(() => { expect(removal._tag).toBe("Failure"); if (removal._tag === "Failure") expect(removal.failure).toMatchObject({ _tag: "SessionFailed", reason: "settings removal" }) })
+      }
+    }
+  }))).run(slow)
+  await runPromise(artifact("session-settings-faults", "Vitest built-in bench; actual settings functions with an injected faulty Effect FileSystem chmod/remove over real temporary directories. Preparation/write/removal return exact safe reasons and no session file is published. Three fresh scoped samples, assertions included.", ["Permission failures are injected, not measured OS permission policy; no credential/OAuth/provider action."], result))
+})
+
+it("session Actions and Poll settle exact statuses and record bounded telemetry", async ({ bench }) => {
+  const result = await workload(bench, "session-runtime", "async", () => runPromise(scoped(effect {
+    provide NodeServices.layer {
+      const fs = try FileSystem.FileSystem
+      const directory = try fs.makeTempDirectoryScoped()
+      const lines = try Ref.make<ReadonlyArray<string>>([])
+      const logger = Logger.layer([Logger.make(options => runSync(Ref.update(lines, rows => [...rows, JSON.stringify({ message: options.message, annotations: options.fiber.getRef(References.CurrentLogAnnotations) })])))])
+      provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: directory })), logger, Metric.MetricRegistry = new Map() {
+        const counter = Metric.withAttributes(Metric.counter("vibelang_session_steps", { incremental: true }), { step: "login", outcome: "signed-in" })
+        const before = Number((try Metric.value(counter)).count)
+        const signed = try sessionOperation("login", succeed("signed-in" as const))
+        const after = Number((try Metric.value(counter)).count)
+        const failure = try Effect.result(sessionOperation("logout", fail(new SignInFailed({ message: "Synthetic unavailable" }))))
+        const polled = try waitForSignIn(succeed("signed-in" as const))
+        const refused = try waitForSignIn(fail(new SignInFailed({ message: "Synthetic unavailable" })))
+        const records = (try Ref.get(lines)).filter(line => line.includes('"vibelang.session"'))
+        try Effect.try(() => {
+          expect(signed).toBe("signed-in")
+          expect(after - before).toBe(1)
+          expect(failure._tag).toBe("Failure")
+          if (failure._tag === "Failure") expect(failure.failure.message).toBe("Synthetic unavailable")
+          expect([polled, refused]).toEqual(["signed-in", "failed"])
+          expect(records).toHaveLength(4)
+          expect(records.join("\n")).not.toMatch(/Synthetic|cookie|deviceCode|userCode/)
+        })
+      }
+    }
+  }))).run(slow)
+  await runPromise(artifact("session-runtime", "Vitest built-in bench; real platform-node SQLite host for sessionOperation and waitForSignIn. Action succeeds/fails, Poll completes on its first check or injected typed check failure. Exact statuses, propagated safe failure, counter increment and four bounded content-free telemetry records asserted. Three fresh private journals; setup/teardown included.", ["Deterministic action/check results measure durable flow overhead, not GitHub authorization, device polling intervals or WAN latency. No provider credential is used."], result))
+})
+
+it("native sign-in validates origins and reports an actual refusal without retaining credentials", async ({ bench }) => {
+  const result = await workload(bench, "session-live-refusals", "async", () => runPromise(scoped(effect {
+    provide NodeServices.layer, NodeHttpServer.layerTest {
+      const fs = try FileSystem.FileSystem
+      const directory = try fs.makeTempDirectoryScoped()
+      const requests = try Ref.make(0)
+      try HttpServer.serveEffect(effect { try Ref.update(requests, n => n + 1); return HttpServerResponse.empty({ status: 503 }) })
+      const origin = HttpServer.formatAddress((try HttpServer.HttpServer).address).replace("0.0.0.0", "127.0.0.1").replace("[::]", "127.0.0.1")
+      for (const url of ["bad", "http://untrusted.invalid", "https://factory.invalid/path", origin]) {
+        provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: directory, VIBELANG_FACTORY_URL: url })) {
+          provide backend(false, undefined, false) {
+            const failure = try Effect.result(signIn({ wait: false }))
+            try Effect.try(() => {
+              expect(failure._tag).toBe("Failure")
+              if (failure._tag === "Failure") expect(failure.failure.message).toBe(url === origin ? `Sign-in isn't available at ${origin}.` : "Invalid factory origin.")
+            })
+          }
+        }
+      }
+      provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: directory, VIBELANG_FACTORY_URL: origin })) {
+        try Settings.writeSession({ origin, cookie: "__Host-vibelang-session=fixture", login: "fixture" })
+        provide backend(false, undefined, false) {
+          const failedLogout = try Effect.result(signOutSurface())
+          const stored = try Settings.readSession()
+          const pending = try Settings.readPending()
+          const emptyLogout = try signOutSurface()
+          const count = try Ref.get(requests)
+          try Effect.try(() => {
+            expect(failedLogout._tag).toBe("Failure")
+            if (failedLogout._tag === "Failure") expect(failedLogout.failure.message).toBe("Sign-out was refused.")
+            expect([stored, pending]).toEqual([undefined, undefined])
+            expect(emptyLogout).toEqual({ signedOut: false })
+            expect(count).toBe(2)
+          })
+        }
+      }
+    }
+  }))).run(slow)
+  await runPromise(artifact("session-live-refusals", "Vitest built-in bench; actual native signIn/signOutSurface, SDK SQLite journal and real loopback HTTP faulty Effect service. Three invalid origins make no request; local device-route 503 and sign-out 503 produce exact safe failures. Failed revocation still deletes private credentials; repeated logout is false; exactly two requests asserted. Three fresh scoped samples.", ["Deliberately refusing loopback service; no request interception, OAuth grant, real token, external network or production write. Measures refusal/validation and durable IO overhead, not successful sign-in."], result))
+})

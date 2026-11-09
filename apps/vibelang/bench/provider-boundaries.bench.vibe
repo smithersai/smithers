@@ -1,0 +1,92 @@
+// @vitest-environment node
+// Provider-independent guards and actual provider adapters with deliberately unavailable Effect transport.
+import { GitHub } from "@smthrs/integrations"
+import { Flow, FlowRuntime } from "@smthrs/flow"
+import { FlowEngine } from "@smthrs/engine"
+import { Node } from "@smthrs/plan"
+import { WebCrypto } from "@smthrs/crypto"
+import { Digest, SecureRandom } from "effect/crypto"
+import { it, expect } from "@effect/vitest"
+import { HttpClient, HttpClientError } from "effect/http"
+import * as Issues from "../worker/Issues.vibe"
+import * as Wiki from "../worker/Wiki.vibe"
+import { objectStorage } from "../test/support/objectStorage.ts"
+import type { Storage } from "../worker/Objects.vibe"
+import type { IssueRequest } from "../src/core/issueSchemas.vibe"
+import type { WikiRequest } from "../src/core/wikiSchemas.vibe"
+import { artifact, workload, quick, slow } from "./artifact.vibe"
+
+const Guards = Flow.make("bench/ProviderGuards", { payload: {}, success: Schema.Void, error: Schema.Unknown, body: () => Node.succeed(undefined) })
+effect function guarded(program: void!unknown!(FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom)) {
+  const registration = Layer.effectDiscard(effect {
+    const engine = try FlowRuntime.FlowRuntime
+    try engine.register(Guards, () => program)
+  })
+  const context = try Layer.build(registration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer)))
+  try Context.get(context, FlowRuntime.FlowRuntime).execute(Guards, { executionId: "provider-guards", payload: {} })
+}
+
+it("provider diagnostics are bounded and malformed VIP claims never request authority", async ({ bench }) => {
+  const result = await workload(bench, "provider-guards", "async", async () => {
+    const unavailable = HttpClient.make(request => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "Unexpected request" }) })))
+    const check = (body: string, author: number) => runPromise(Issues.verifiedVip(Issues.repository, body, author).pipe(GitHub.Calls.withToken(Redacted.make(""), Issues.repository.api), Effect.provideService(HttpClient.HttpClient, unavailable)))
+    for (const [details, reason, code] of [[undefined, "unavailable", "unavailable"], [{ status: 401 }, "sign-in", undefined], [{ status: 403 }, "forbidden", undefined], [{ status: 404 }, "missing", undefined], [{ rateLimited: true, retryAfterMillis: 500 }, "rate-limited", "rate-limited"], [{ incomplete: true }, "partial", undefined], [{ outcomeUnknown: true, status: 403 }, "unknown", "unknown"]] as const) {
+      const error = { details, message: "Synthetic provider detail must stay private" }
+      for (const failure of [Issues.issueFailureOf(error), Wiki.wikiFailureOf(error)]) {
+        expect(failure.reason).toBe(reason)
+        expect(failure.code).toBe(code)
+        expect(JSON.stringify(failure)).not.toContain(error.message)
+        if (reason === "rate-limited") expect(failure.retryAfterMillis).toBe(500)
+      }
+    }
+    const claims = ["", "<!-- vibelang:vip path=docs/design/vips/a.md review=https://github.com/other/repo/pull/1 -->", "<!-- vibelang:vip path=docs/design/vips/a.md review=https://github.com/smithersai/vibelang/pull/01 -->", "<!-- vibelang:vip path=docs/design/vips/a.md review=https://github.com/smithersai/vibelang/pull/9007199254740992 -->"]
+    for (const body of claims) expect(await check(body, 1)).toBeUndefined()
+    expect(await check("<!-- vibelang:vip path=docs/design/vips/a.md review=https://github.com/smithersai/vibelang/pull/1 -->", 0)).toBeUndefined()
+    expect(Wiki.wikiFilePath("roadmap")).toBe("apps/vibelang/wiki/roadmap.md")
+    expect(Wiki.wikiFilePath("decisions")).toBeUndefined()
+    expect(Wiki.wikiFilePath("../private")).toBeUndefined()
+  }).run(quick)
+  await runPromise(artifact("provider-guards", "Vitest built-in bench; exact safe issue/wiki error classification (precedence, retry interval, no provider detail), malformed/mismatched/noncanonical/unsafe VIP markers and invalid author, configured wiki file path and traversal/generated-index refusal. Every callback checks its outputs.", ["Pure guards and no-request early returns; no successful GitHub review validation, network, credentials or writes."], result))
+})
+
+it("GitHub hosts refuse unauthorized and unconnected writes before transport", async ({ bench }) => {
+  const result = await workload(bench, "provider-host-refusals", "async", () => runPromise(scoped(guarded(effect {
+    const requests = try Ref.make(0)
+    const unavailable = HttpClient.make(request => effect {
+      try Ref.update(requests, n => n + 1)
+      throw new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "Synthetic unavailable transport" }) })
+    })
+    const actor = try Ref.make<Issues.Principal | undefined>({ id: "1", login: "fixture", role: "maintainer", token: Redacted.make("") })
+    const issue: IssueRequest = { op: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "request" }
+    const wiki: WikiRequest = { op: "save", page: "roadmap", base: "before", text: "after", key: "request" }
+    const kv = try Effect.try(() => objectStorage())
+    provide HttpClient.HttpClient = unavailable, Issues.IssueAuthority = { current: () => Ref.get(actor) }, Wiki.WikiAuthority = { current: () => Ref.get(actor) } {
+      const issues = try Issues.githubHost()
+      const pages = try Wiki.githubWikiHost(Wiki.wikiRepository, kv as unknown as Storage, () => true)
+      const noKey = try Effect.result(issues.perform({ ...issue, op: "new", key: "" }))
+      const unconnected = try Effect.result(issues.perform({ ...issue, op: "new" }))
+      const draft = try Effect.result(issues.perform({ ...issue, op: "draft" }))
+      const wikiMissing = try Effect.result(pages.perform({ ...wiki, page: "absent" }))
+      const wikiBlank = try Effect.result(pages.perform({ ...wiki, op: "draft", text: " " }))
+      const wikiDraft = try Effect.result(pages.perform({ ...wiki, op: "draft" }))
+      const wikiConnect = try Effect.result(pages.perform(wiki))
+      const retained = try promise(() => kv.get("wiki/draft/1/roadmap"))
+      try Ref.set(actor, undefined)
+      const anonymous = try Effect.result(issues.perform({ ...issue, op: "new" }))
+      const denied = try Effect.result(pages.perform(wiki))
+      const beforeRead = try Ref.get(requests)
+      const read = try Effect.result(issues.perform(issue))
+      const afterRead = try Ref.get(requests)
+      try Effect.try(() => {
+        for (const [answer, reason] of [[noKey, "sign-in"], [unconnected, "connect"], [draft, "unavailable"], [wikiMissing, "missing"], [wikiBlank, "empty"], [wikiDraft, "unavailable"], [wikiConnect, "connect"], [anonymous, "forbidden"], [denied, "forbidden"], [read, "unavailable"]] as const) {
+          expect(answer._tag).toBe("Failure")
+          if (answer._tag === "Failure") expect(answer.failure.reason).toBe(reason)
+        }
+        expect(retained).toEqual({ page: "roadmap", text: "after" })
+        expect([beforeRead, afterRead]).toEqual([0, 1])
+        if (wikiConnect._tag === "Failure") expect(wikiConnect.failure.unwritten).toBe(true)
+      })
+    }
+  })))).run(slow)
+  await runPromise(artifact("provider-host-refusals", "Vitest built-in bench; actual GitHub issue/wiki host closures with an injected unavailable Effect HttpClient and changing principal. Missing key, credential connection, unavailable draft, unknown page, empty draft and anonymous write failures asserted. Wiki text persists before Connect. All writes make zero requests; one public read reaches the failing transport exactly once. Three fresh SQLite/KV worlds, setup/assertions included.", ["No request interception, external request, real credential, OAuth or GitHub mutation. Deliberate transport failure establishes refusal behavior only; successful provider paths remain unmeasured."], result))
+})

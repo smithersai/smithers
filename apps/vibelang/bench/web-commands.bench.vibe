@@ -1,0 +1,109 @@
+// Real browser Command effects over the product mock services; no unit/fuzz tests are imported.
+import { it, expect } from "@effect/vitest"
+import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { ActOnIssue, CancelAction, ChooseIdentity, GrantRole, LoadAccount, LoadActions, LoadIssueDetails, LoadIssues, LoadPeople, OpenWikiEditor, ReadAction, RefreshIssueProjection, RunAction, SandboxAction, SignInAccount, SignOutAccount, SubmitWikiEdit } from "../src/web/main.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+effect function execute<A, E, R>(make: () => { readonly effect: A!E!R }) {
+  return try (try Effect.try(make)).effect
+}
+
+it("browser commands share account, issue and wiki services and preserve review source", async ({ bench }) => {
+  const result = await workload(bench, "web-content-commands", "async", () => runPromise(scoped(effect {
+    provide MockFactory {
+      const factory = try Factory
+      const chosen = try execute(() => ChooseIdentity({ role: "maintainer" }))
+      const loaded = try execute(() => LoadAccount({}))
+      const people = try execute(() => LoadPeople({}))
+      const granted = try execute(() => GrantRole({ id: "4", role: "community" }))
+      const afterGrant = try factory.accounts!.members()
+      const before = try execute(() => LoadIssues({}))
+      const created = try execute(() => ActOnIssue({ request: { op: "new", number: 0, parent: 0, title: "Measured command", text: "Kept body", example: "", prior: "", assignee: "", key: "new" } }))
+      const details = try execute(() => LoadIssueDetails({ number: 51, key: "details" }))
+      const projection = try execute(() => RefreshIssueProjection({}))
+      const opened = try execute(() => OpenWikiEditor({ page: "roadmap", request: 1 }))
+      try Effect.try(() => expect(opened._tag).toBe("BeganWikiEdit"))
+      if (opened._tag !== "BeganWikiEdit") return try Effect.die("wiki did not open")
+      const draft = try factory.wiki!.act({ op: "draft", page: "roadmap", base: "", text: "Measured browser draft", key: "draft" })
+      const restored = try execute(() => OpenWikiEditor({ page: "roadmap", request: 2 }))
+      const saved = try execute(() => SubmitWikiEdit({ serial: 2, request: { op: "save", page: "roadmap", base: opened.source, text: draft.draft!.text, key: "save" } }))
+      const after = try factory.wiki!.read("roadmap")
+      const missing = try execute(() => OpenWikiEditor({ page: "absent", request: 3 }))
+      const signed = try execute(() => SignInAccount({ mock: true }))
+      const out = try execute(() => SignOutAccount({}))
+      try Effect.try(() => {
+        expect(chosen).toMatchObject({ _tag: "AccountLoaded", identity: { id: "1", role: "maintainer" } })
+        expect(loaded).toEqual(chosen)
+        expect(people._tag).toBe("LoadedPeople")
+        if (people._tag === "LoadedPeople") expect(people.members.map(member => member.role)).toEqual(["maintainer", "new", "community", "contributor", "maintainer"])
+        expect(granted).toEqual({ _tag: "GrantedRole" })
+        expect(afterGrant.find(member => member.id === "4")?.role).toBe("community")
+        expect(before).toMatchObject({ _tag: "IssuesLoaded", created: false, role: "maintainer" })
+        expect(created).toMatchObject({ _tag: "IssuesLoaded", created: true, op: "new", key: "new" })
+        if (created._tag === "IssuesLoaded") expect(created.data.items[0]).toMatchObject({ number: 51, title: "Measured command", body: "Kept body" })
+        expect(details._tag).toBe("IssueDetailsLoaded")
+        expect(projection._tag).toBe("IssueProjectionLoaded")
+        if (details._tag === "IssueDetailsLoaded" && projection._tag === "IssueProjectionLoaded") expect(details.data.items).toEqual(projection.data.items)
+        expect(restored).toMatchObject({ _tag: "BeganWikiEdit", source: opened.source, draft: draft.draft!.text })
+        expect(saved).toMatchObject({ _tag: "CompletedWikiEdit", page: "roadmap", request: 2, source: opened.source, review: "https://github.com/smithersai/vibelang/pull/1001" })
+        expect(after.pages.find(page => page.id === "roadmap")?.source).toBe(opened.source)
+        expect(after.draft).toBeUndefined()
+        expect(missing).toEqual({ _tag: "FailedWikiEdit", request: 3, reason: "missing" })
+        expect(signed).toMatchObject({ _tag: "AccountLoaded", identity: { role: "new" } })
+        expect(out).toMatchObject({ _tag: "AccountLoaded", identity: { role: "viewer" } })
+      })
+    }
+  }))).run(slow)
+  await runPromise(artifact("web-content-commands", "Vitest built-in bench; real Foldkit Command effects over one scoped MockFactory, including identity/grant/readback, issue creation/details/projection, wiki editor/private draft/Save/readback and sign-in/out. Exact messages, source, public author/role and once-only review checked. Three fresh engines; setup, flow execution and assertions included.", ["Effect command boundary without DOM layout/paint; shipped product fixture services, no network/OAuth/GitHub/model. Full journey cost, not per-keystroke latency."], result))
+})
+
+it("browser action and sandbox commands keep run identities and retained terminal bytes", async ({ bench }) => {
+  const layer = MockActions({ actor: "person" }).pipe(Layer.provideMerge(MockFactory))
+  const result = await workload(bench, "web-execution-commands", "async", () => runPromise(scoped(effect {
+    provide layer {
+      const factory = try Factory
+      try factory.accounts!.choose("maintainer")
+      const catalog = try execute(() => LoadActions({ flow: "", epoch: 3 }))
+      const started = try execute(() => RunAction({ name: "vibelang/Tour", text: "", door: "button", epoch: 3 }))
+      try Effect.try(() => expect(started._tag).toBe("StartedAction"))
+      if (started._tag !== "StartedAction") return try Effect.die("action did not start")
+      const read = try execute(() => ReadAction({ id: started.run.id }))
+      const cancelled = try execute(() => CancelAction({ id: started.run.id }))
+      const invalid = try execute(() => RunAction({ name: "vibelang/Tour", text: "{", format: "json", door: "slash", epoch: 4 }))
+      const boot = try execute(() => SandboxAction({ conversation: "commands", kind: "start", operationId: "start", request: 1, generation: 0, command: "" }))
+      try Effect.try(() => expect(boot._tag).toBe("LoadedSandbox"))
+      if (boot._tag !== "LoadedSandbox") return try Effect.die("sandbox did not start")
+      const generation = boot.snapshot.generation
+      const command = try execute(() => SandboxAction({ conversation: "commands", kind: "command", operationId: "write", request: 2, generation, command: "echo bench > /workspace/evidence" }))
+      const stop = try execute(() => SandboxAction({ conversation: "commands", kind: "stop", operationId: "stop", request: 3, generation, command: "" }))
+      const again = try execute(() => SandboxAction({ conversation: "commands", kind: "start", operationId: "restart", request: 4, generation: 0, command: "" }))
+      const after = try factory.sandbox("commands")
+      const readback = try execute(() => SandboxAction({ conversation: "commands", kind: "command", operationId: "read", request: 5, generation: after.generation, command: "cat /workspace/evidence" }))
+      try Effect.try(() => {
+        expect(catalog).toMatchObject({ _tag: "LoadedActions", epoch: 3 })
+        expect(read).toMatchObject({ _tag: "ChangedAction", run: { id: started.run.id } })
+        expect(cancelled).toMatchObject({ _tag: "ChangedAction", run: { id: started.run.id, state: "cancelled" } })
+        expect(invalid).toEqual({ _tag: "FailedActions", code: "input", epoch: 4 })
+        expect(command).toMatchObject({ _tag: "LoadedSandbox", request: 2 })
+        expect(stop).toMatchObject({ _tag: "LoadedSandbox", snapshot: { status: "stopped" }, request: 3 })
+        expect(again).toMatchObject({ _tag: "LoadedSandbox", snapshot: { generation: generation + 1 }, request: 4 })
+        expect(readback).toMatchObject({ _tag: "LoadedSandbox", snapshot: { output: expect.stringContaining("bench\n") }, request: 5 })
+      })
+      const failed = () => fail(new ActionFailure({ code: "unavailable" }))
+      const faulty: Actions.Shape = { list: failed, commands: failed, runs: failed, read: failed, follow: () => Stream.fail(new ActionFailure({ code: "unavailable" })), start: failed, command: failed, rerun: failed, cancel: failed }
+      provide Actions = faulty {
+        const load = try execute(() => LoadActions({ flow: "", epoch: 9 }))
+        const read = try execute(() => ReadAction({ id: "missing" }))
+        const cancel = try execute(() => CancelAction({ id: "missing" }))
+        try Effect.try(() => {
+          expect(load).toEqual({ _tag: "FailedActions", code: "unavailable", epoch: 9 })
+          expect([read, cancel]).toEqual(Array(2).fill({ _tag: "FailedActions", code: "unavailable" }))
+        })
+      }
+    }
+  }))).run(slow)
+  await runPromise(artifact("web-execution-commands", "Vitest built-in bench; actual Command effects over MockActions/Factory: catalog, Tour run/read/cancel and invalid input, sandbox file write/stop/restart/readback, then faulty action discovery/read/cancel. Exact ids, states, generations, retained output and request/epoch fields checked. Three fresh engines, assertions included.", ["Product mock runtime, no actual Container, model or network. Command-level journey includes initialization and IO; native browser layout separately benchmarked."], result))
+})

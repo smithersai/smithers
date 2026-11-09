@@ -363,3 +363,11 @@ this package. `ts-morph` was already this toolchain's dependency through the npm
 ## Tool list: hosted auth broker (0029)
 
 MVP now declares the monorepo's existing `vibelang-runtime` 0.0.12 for its new VibeLang Worker modules. This is awaiting Will's VL-5 approval. VibeLang's app already declares it; this lane adds no dependency or test tool there.
+
+Benchmark runner controls exercise the real built-in runner: failed-first exact callback counts and serial Promise execution, with explicit sync/async registration (0017). No additional tool is introduced.
+
+The resumed benchmark receipt passes 53 files / 127 tests (125 workload groups plus two real-runner controls). Its benchmark-only source-profile merge covers 5,789/6,991 src/worker lines (82.81%); the unchanged strict gate remains red for 95 files. Full methods, limitations and per-file counters: 0017 and the benchmark wiki. No new tool is added.
+
+Hosted-broker main is independently measured by 54 benchmark files / 128 tests; 5,816/7,035 src/worker lines (82.67%), with 95 files below unchanged strict thresholds. Cookie admission and the broker-unavailable/credential-Connect fault contract are benchmarked without real OAuth. No new app tool or dependency.
+
+Hosted-broker main is independently measured by 54 benchmark files / 128 tests; 5,827/7,036 src/worker lines (82.82%), with 95 files below unchanged strict thresholds. Cookie admission and the broker-unavailable/credential-Connect fault contract are benchmarked without real OAuth. No new app tool or dependency.

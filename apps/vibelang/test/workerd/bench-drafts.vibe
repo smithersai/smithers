@@ -1,0 +1,64 @@
+// Unshipped benchmark host: production drafting/reviewer services on the actual SQLite engine, no GitHub writes.
+import { WebCrypto } from "@smthrs/crypto"
+import { Flow, FlowRuntime } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { FetchHttpClient, HttpServerResponse } from "effect/http"
+import { VipWriter, VipDraft } from "../../src/core/VipWriter.vibe"
+import { WikiWriter, WikiDraft } from "../../src/core/WikiWriter.vibe"
+import { SpecificationReviewers, emptySpecification } from "../../src/core/specification.vibe"
+import { IssueFailure, SpecificationReview } from "../../src/core/issueSchemas.vibe"
+import { writerLayer } from "../../worker/VipDraft.vibe"
+import { wikiWriterLayer } from "../../worker/WikiDraft.vibe"
+import { liveSpecificationReviewers } from "../../worker/SpecificationReviewers.vibe"
+import { ChatModel, Spend } from "../../worker/Reply.vibe"
+import { chatModel } from "../../worker/AgentModel.vibe"
+import * as DailyBudget from "../../worker/Budget.vibe"
+import { ledgerOver } from "../../worker/ObjectStorage.vibe"
+import { WikiFailure } from "../../src/core/wikiSchemas.vibe"
+import type { Storage } from "../../worker/Objects.vibe"
+
+const Vip = Flow.make("bench/VipDraft", { payload: {}, success: VipDraft, error: IssueFailure, body: () => Node.succeed({ title: "", summary: "", example: "", prior: "" }) })
+const Wiki = Flow.make("bench/WikiDraft", { payload: {}, success: WikiDraft, error: WikiFailure, body: () => Node.succeed({ page: "", text: "" }) })
+const emptyReview: typeof SpecificationReview.Type = { revision: 0, verdict: "", grade: "", link: "" }
+const Review = Flow.make("bench/SpecReview", { payload: {}, success: SpecificationReview, error: IssueFailure, body: () => Node.succeed(emptyReview) })
+
+export class DraftsObject {
+  constructor(readonly state: { readonly storage: Storage; readonly id: { toString(): string } }, readonly env: Readonly<Record<string, unknown>>) {}
+  async fetch(_request: Request): Promise<Response> {
+    const state = this.state
+    const result = await runPromise(Effect.provide(scoped(effect {
+      const model = try chatModel()
+      const budget = try DailyBudget.make(ledgerOver(state.storage), 1000)
+      const spend: Spend.Shape = { admit: () => budget.admit(), spend: (_day, key, tokens) => budget.spend(key, tokens) }
+      const services = Layer.mergeAll(writerLayer, wikiWriterLayer, liveSpecificationReviewers).pipe(Layer.provide(Layer.succeed(ChatModel, model)), Layer.provide(Layer.succeed(Spend, spend)))
+      const registration = Layer.effectDiscard(effect {
+        const engine = try FlowRuntime.FlowRuntime
+        const vip = try VipWriter
+        const wiki = try WikiWriter
+        const reviewers = try SpecificationReviewers
+        const issue = { op: "draft" as const, key: "vip", number: 0, parent: 0, title: "Measured VIP", text: "Summary", example: "const n = 1", prior: "Effect", assignee: "" }
+        try engine.register(Vip, () => vip.draft(issue))
+        try engine.register(Wiki, () => wiki.draft({ page: "roadmap", source: "# Original", ask: "A measured edit" }))
+        try engine.register(Review, () => reviewers.review("astra", { ...emptySpecification, revision: 1, text: "# Measured specification" }))
+      }).pipe(Layer.provide(services))
+      // Production hosts give each command its own flow instance and usage ledger; preserve that boundary here.
+      const vipRuntime = CloudflareRuntime.layer({ hostId: state.id.toString(), executionId: "vip", flow: Vip._tag }, registration).pipe(Layer.provide(ObjectDatabase.layer(state.storage)), Layer.provide(FetchHttpClient.layer))
+      const wikiRuntime = CloudflareRuntime.layer({ hostId: state.id.toString(), executionId: "wiki", flow: Wiki._tag }, registration).pipe(Layer.provide(ObjectDatabase.layer(state.storage)), Layer.provide(FetchHttpClient.layer))
+      const reviewRuntime = CloudflareRuntime.layer({ hostId: state.id.toString(), executionId: "review", flow: Review._tag }, registration).pipe(Layer.provide(ObjectDatabase.layer(state.storage)), Layer.provide(FetchHttpClient.layer))
+      const vip = try scoped(Effect.provide(Vip.execute({}, { executionId: "vip" }), vipRuntime))
+      const wiki = try scoped(Effect.provide(Wiki.execute({}, { executionId: "wiki" }), wikiRuntime))
+      const review = try scoped(Effect.provide(Review.execute({}, { executionId: "review" }), reviewRuntime))
+      const answer = { vip, wiki, review }
+      const spent = try promise(() => state.storage.get(DailyBudget.SPENT))
+      return { answer, spent }
+    }), Layer.merge(ConfigProvider.layer(ConfigProvider.fromUnknown(this.env)), WebCrypto.layer)))
+    return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(result))
+  }
+}
+interface Namespace { idFromName(name: string): unknown; get(id: unknown): { fetch(request: Request): Promise<Response> } }
+export default {
+  fetch(request: Request, env: { readonly DRAFTS: Namespace } & Readonly<Record<string, unknown>>) {
+    return env.DRAFTS.get(env.DRAFTS.idFromName("drafts")).fetch(request)
+  },
+}
