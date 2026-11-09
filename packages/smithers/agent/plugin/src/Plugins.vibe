@@ -139,15 +139,15 @@ export const make = <H = FlowsHooks>(resolved: Resolved<H>): Service<H> => {
   const handlers = (hook: string): ReadonlyArray<HandlerRecord> => resolved.handlers.get(hook) ?? empty
 
   const sequential = ((hook: string, ...args: Array<unknown>) =>
-    Effect.gen(function*() {
+    effect {
       const mismatch = kindMismatch(resolved, hook, "sequential", handlers(hook))
-      if (mismatch !== undefined) return yield* Effect.fail(mismatch)
+      if (mismatch !== undefined) throw mismatch
       const results: Array<unknown> = []
       for (const record of handlers(hook)) {
-        results.push(yield* runHandler(record, args))
+        results.push(try runHandler(record, args))
       }
       return results
-    })) as Service<H>["sequential"]
+    }) as Service<H>["sequential"]
 
   const parallel = ((hook: string, ...args: Array<unknown>) => {
     const mismatch = kindMismatch(resolved, hook, "parallel", handlers(hook))
@@ -163,36 +163,34 @@ export const make = <H = FlowsHooks>(resolved: Resolved<H>): Service<H> => {
   }) as Service<H>["parallel"]
 
   const first = ((hook: string, ...args: Array<unknown>) =>
-    Effect.gen(function*() {
+    effect {
       const mismatch = kindMismatch(resolved, hook, "first", handlers(hook))
-      if (mismatch !== undefined) return yield* Effect.fail(mismatch)
+      if (mismatch !== undefined) throw mismatch
       for (const record of handlers(hook)) {
-        const result = yield* runHandler(record, args)
+        const result = try runHandler(record, args)
         if (!Option.isOption(result)) {
-          return yield* Effect.fail(
-            new PluginError({
-              code: "invalid_hook_result",
-              message: `first hook "${record.hook}" in plugin "${record.plugin}" did not return an Option`,
-              plugin: record.plugin,
-              hook: record.hook
-            })
-          )
+          throw new PluginError({
+            code: "invalid_hook_result",
+            message: `first hook "${record.hook}" in plugin "${record.plugin}" did not return an Option`,
+            plugin: record.plugin,
+            hook: record.hook
+          })
         }
         if (Option.isSome(result)) return result
       }
       return Option.none()
-    })) as unknown as Service<H>["first"]
+    }) as unknown as Service<H>["first"]
 
   const waterfall =
     ((hook: string, initial: unknown, merge: (previous: unknown, patch: unknown) => unknown) =>
-      Effect.gen(function*() {
+      effect {
         const mismatch = kindMismatch(resolved, hook, "waterfall", handlers(hook))
-        if (mismatch !== undefined) return yield* Effect.fail(mismatch)
+        if (mismatch !== undefined) throw mismatch
         let value = initial
         for (const record of handlers(hook)) {
-          const patch = yield* runHandler(record, [value])
+          const patch = try runHandler(record, [value])
           if (patch !== undefined) {
-            value = yield* Effect.try({
+            value = try Effect.try({
               try: () => merge(value, patch),
               catch: (cause) =>
                 cause instanceof PluginError
@@ -215,7 +213,7 @@ export const make = <H = FlowsHooks>(resolved: Resolved<H>): Service<H> => {
           }
         }
         return value
-      })) as Service<H>["waterfall"]
+      }) as Service<H>["waterfall"]
 
   return Object.freeze({ resolved, handlers, sequential, parallel, first, waterfall })
 }

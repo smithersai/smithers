@@ -5,7 +5,7 @@
  */
 
 import * as Effect from "effect/Effect"
-import * as Plugins from "../Plugins.ts"
+import * as Plugins from "../Plugins.vibe"
 import type * as Resolve from "../Resolve.vibe"
 
 /**

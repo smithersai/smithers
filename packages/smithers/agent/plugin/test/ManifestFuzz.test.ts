@@ -1,7 +1,7 @@
 import { Cause, Effect, Exit } from "effect"
 import { describe, expect, it } from "vitest"
 import { Refusal } from "../src/Contribution.vibe"
-import * as Load from "../src/Load.ts"
+import * as Load from "../src/Load.vibe"
 import * as Manifest from "../src/Manifest.vibe"
 import { host, queueManifest } from "./support/hostFacts.ts"
 

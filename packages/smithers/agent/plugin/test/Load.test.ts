@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import * as Bind from "../src/Bind.vibe"
 import type * as Contribution from "../src/Contribution.vibe"
 import * as Keys from "../src/Keys.vibe"
-import * as Load from "../src/Load.ts"
+import * as Load from "../src/Load.vibe"
 import * as When from "../src/When.vibe"
 import { host, minimal, owned, queueManifest } from "./support/hostFacts.ts"
 

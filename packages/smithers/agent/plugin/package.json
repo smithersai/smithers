@@ -82,8 +82,8 @@
       "default": "./.vibelang/js/src/Keys.js"
     },
     "./Load": {
-      "types": "./src/Load.ts",
-      "vibelang-source": "./src/Load.ts",
+      "types": "./.vibe/declarations/Load.d.vibe.ts",
+      "vibelang-source": "./src/Load.vibe",
       "default": "./.vibelang/js/src/Load.js"
     },
     "./Manifest": {
@@ -102,8 +102,8 @@
       "default": "./.vibelang/js/src/PluginError.js"
     },
     "./Plugins": {
-      "types": "./src/Plugins.ts",
-      "vibelang-source": "./src/Plugins.ts",
+      "types": "./.vibe/declarations/Plugins.d.vibe.ts",
+      "vibelang-source": "./src/Plugins.vibe",
       "default": "./.vibelang/js/src/Plugins.js"
     },
     "./Resolve": {

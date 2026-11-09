@@ -82,7 +82,7 @@ export * from "./PluginError.vibe"
  * @since 1.0.0-rc.0
  * @category dispatch
  */
-export * as Plugins from "./Plugins.ts"
+export * as Plugins from "./Plugins.vibe"
 
 /**
  * @since 1.0.0-rc.0
@@ -124,7 +124,7 @@ export * as Keys from "./Keys.vibe"
  * @since 1.1.0
  * @category loading
  */
-export * as Load from "./Load.ts"
+export * as Load from "./Load.vibe"
 
 /**
  * @since 1.1.0
