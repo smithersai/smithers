@@ -82,7 +82,7 @@ brick                                   state         proof
 
 - **Marketing media (vl-media, 0026):** splash and empty-chat assets remain; VL-31 supersedes the former per-stop Tour placements; designer source preserved in `designs/media/`; browser loading, reduced motion, native failure and phone checks. Lead deploys.
 
-- **Benchmarks (0017, vl-bench): not done.** Correctness-checked local/live observations, SQLite recovery, specification reviews, maintenance scripts and a deterministic 5% work gate are implemented. The source-range merger now rejects false credit; independent coverage remains below 100%, with bundled attribution still diagnostic. Sandbox workerd lifecycle and metering run on main; the earlier compiler reproduction is retained in 0017.
+- **Benchmarks (0017, vl-bench): not done.** Local/live timings and the deterministic 5% work gate pass. The complete independent [source-profile receipt](benchmarks.md#benchmark-only-coverage), reusing the landed coverage configuration, covers 5,083/6,675 src/worker lines (76.15%) on its archived pre-0028 source snapshot; strict thresholds remain red. Qualified unminified profiling, exact-range merging, SQLite recovery and native action/wiki journeys are implemented. Optimized-bundle attribution remains unqualified; uncovered paths are retained explicitly.
 
 - **Both acceptance gates (0027, lane vl-gates): implemented locally.** Maintainer-person VIP approval; Astra, Sol, Fable and Opus current-revision LGTM/A specification acceptance; mock reset history, real flows, proofs/mutations, scenes, browser and workerd routes. Lead deploys.
 

@@ -5,7 +5,7 @@
 // CLI/MCP/script subprocesses. Two other runtimes never enter Vitest's map, because their bundles are compiled again
 // and would union a second statement structure into each shared source: workerd is a separate V8 isolate whose
 // inspector disables the Profiler domain, so its bundles carry Istanbul counters dumped over the inspector
-// (test/support/workerdCoverage.ts); Chromium executes the minified site bundle, dumped with its precise Profiler
+// (test/support/workerdCoverage.ts); Chromium executes the unminified source-coverage build, dumped with its precise Profiler
 // API into coverage/bench/chromium-raw (bench/browser.spec.ts). This script remaps both to source, credits them by
 // location, and enforces 100% lines, branches, functions and statements per file:
 //
@@ -36,13 +36,26 @@ interface FileCoverage {
 interface FileCoverageJSON {
   path: string
   statementMap: Record<string, { start: Position; end: Position }>
-  fnMap: Record<string, { name: string; decl: { start: Position; end: Position } }>
+  fnMap: Record<string, { name: string; decl: { start: Position; end: Position }; loc?: { start: Position; end: Position } }>
   branchMap: Record<string, { loc: { start: Position; end: Position }; type: string; locations: Array<{ start: Position; end: Position }> }>
   s: Record<string, number>
   f: Record<string, number>
   b: Record<string, Array<number>>
 }
 interface Position { line: number; column: number | null }
+/** Same open-ended sentinel normalization as the coverage lane's patched V8 provider; no hit is changed. */
+export function normalizeEndColumns(json: FileCoverageJSON, source: string): FileCoverageJSON {
+  const copy = structuredClone(json)
+  const lines = source.split(/\r?\n/)
+  const normalize = (range: { start: Position; end: Position } | undefined) => {
+    const position = range?.end
+    if (position?.column === Infinity && lines[position.line - 1] !== undefined) position.column = lines[position.line - 1]!.length
+  }
+  for (const loc of Object.values(copy.statementMap)) normalize(loc)
+  for (const fn of Object.values(copy.fnMap)) { normalize(fn.decl); normalize(fn.loc) }
+  for (const branch of Object.values(copy.branchMap)) { normalize(branch.loc); for (const loc of branch.locations) normalize(loc) }
+  return copy
+}
 interface SourceMapStore { registerMap(filename: string, map: unknown): void; transformCoverage(map: CoverageMap): Promise<CoverageMap> }
 
 const libCoverage = require("istanbul-lib-coverage") as {
@@ -82,7 +95,7 @@ async function workerdEvidence(): Promise<CoverageMap> {
     for (const file of sourceLevel.files()) {
       if (!file.endsWith(".vibe")) continue
       if (!file.startsWith(`${appRoot}/src/`) && !file.startsWith(`${appRoot}/worker/`) && !file.startsWith(`${appRoot}/infra/`) && !file.startsWith(`${appRoot}/scripts/`)) continue
-      filtered.merge({ [file]: sourceLevel.fileCoverageFor(file).toJSON() })
+      filtered.merge({ [file]: normalizeEndColumns(sourceLevel.fileCoverageFor(file).toJSON(), readFileSync(file, "utf8")) })
     }
     merged.merge(filtered)
   }
@@ -97,7 +110,7 @@ interface ScriptCoverage {
 const chromiumDir = "coverage/bench/chromium-raw"
 
 /**
- * Chromium's precise Profiler dumps of the minified site bundle, converted per script with the bundle's own map and
+ * Chromium's precise Profiler dumps of the source-coverage build, converted per script with the bundle's own map and
  * keyed by absolute source path. The bundle's statement structure is never merged into a source's Node structure;
  * only its hits are, by location, in the union below.
  */
@@ -126,7 +139,7 @@ async function chromiumEvidence(): Promise<CoverageMap> {
       for (const file of libCoverage.createCoverageMap(normalized).files()) {
         if (!file.endsWith(".vibe")) continue
         if (!file.startsWith(`${appRoot}/src/`) && !file.startsWith(`${appRoot}/worker/`) && !file.startsWith(`${appRoot}/infra/`) && !file.startsWith(`${appRoot}/scripts/`)) continue
-        filtered.merge({ [file]: libCoverage.createCoverageMap(normalized).fileCoverageFor(file).toJSON() })
+        filtered.merge({ [file]: normalizeEndColumns(libCoverage.createCoverageMap(normalized).fileCoverageFor(file).toJSON(), readFileSync(file, "utf8")) })
       }
       merged.merge(filtered)
     }

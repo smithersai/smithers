@@ -1,6 +1,12 @@
 // Smithers discovers targets only in PACKAGE.ts.
 import { Smithers } from "@smthrs/targets"
 
+/** Compiler files consumed by proof harnesses, owned here for cache invalidation across package boundaries. */
+const compilerSources = Smithers.Filegroup({
+  cwd: "packages/lemmascript",
+  srcs: [Smithers.glob("tools/src/**/*"), Smithers.file("package.json")],
+})
+
 const inputs = [
   Smithers.glob("//packages/lemmascript/tools/**/*"),
   Smithers.glob("//packages/lemmascript/examples/**/*"),
@@ -15,4 +21,4 @@ const test = Smithers.Shell.Test({
   timeout: "30m",
 })
 
-export const Package = Smithers.Package({ targets: { test } })
+export const Package = Smithers.Package({ targets: { compilerSources, test } })

@@ -13,3 +13,8 @@ are never promoted automatically. `wiki/benchmarks.md` holds methods and finding
 The typed targets are `//apps/vibelang:bench`, `:benchCoverage` and `:benchLive`.
 Use `--no-cache` with `smthrs target` for fresh observations; direct package commands always execute.
 Coverage and live targets are exclusive. The strict coverage gate is currently red; it is not a certificate.
+
+Browser source profiling builds with `--mode bench-coverage` (unminified). The real Vite/Node skipped-return control
+must stay uncovered; minifier folding loses that distinction in the generic bundled converter. Timings use the
+normal optimized build. Cross-runtime maps normalize only open-ended end columns, identically to the shared V8
+provider; source ranges must still match completely. No threshold or production exclusion is relaxed.

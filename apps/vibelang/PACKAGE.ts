@@ -13,6 +13,7 @@
  */
 import { Smithers } from "@smthrs/targets"
 import { Package as flowPackage } from "../../.smithers/flows/PACKAGE.ts"
+import { Package as lemmaPackage } from "../../packages/lemmascript/PACKAGE.ts"
 
 /** Everything the app's scripts read: sources, tests, proofs and their configuration. */
 const sources = [
@@ -44,8 +45,7 @@ const sources = [
 /** The proof harness and the state machine it proves. */
 const proofs = [
   Smithers.glob("//apps/vibelang/verify/*.{sh,py,cjs,json}"),
-  Smithers.glob("//packages/lemmascript/tools/src/**/*"),
-  Smithers.file("//packages/lemmascript/package.json"),
+  lemmaPackage.compilerSources,
   Smithers.glob("//apps/vibelang/src/**/*.vibe"),
   Smithers.glob("//apps/vibelang/worker/**/*.vibe"),
   Smithers.glob("//apps/vibelang/scripts/**/*.vibe"),

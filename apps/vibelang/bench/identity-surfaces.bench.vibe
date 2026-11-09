@@ -1,0 +1,81 @@
+// @vitest-environment node
+// Real private settings and durable session actions, without a provider grant or user credentials.
+import { it, expect } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { McpClient, McpProtocol } from "effect/ai"
+import { ChildProcess } from "effect/process"
+import { AskOutput, ReadOutput } from "../src/surfaces/commands.vibe"
+import { LoginOutput, LogoutOutput } from "../src/surfaces/signin.vibe"
+import { postLabel } from "../src/core/identityDecision.vibe"
+import { node, run } from "../test/support/processes.vibe"
+import { cliPath, serverPath } from "../test/surface-host.vibe"
+import { artifact, workload, quick, slow } from "./artifact.vibe"
+
+const platform = Layer.mergeAll(NodeServices.layer, ExperimentalNodeServices.layer)
+
+it("signed identity labels preserve guest, person and personal agent names", async ({ bench }) => {
+  const result = await workload(bench, "identity-labels", () => {
+    expect(postLabel("", "forged", true, "Guest")).toBe("Guest")
+    expect(postLabel("1", "will", false, "Guest")).toBe("will")
+    expect(postLabel("1", "will", true, "Guest")).toBe("will (agent)")
+  }).run(quick)
+  await runPromise(artifact("identity-labels", "Vitest built-in bench; three literal guest/person/agent cases per callback over the production label decision, assertions included.", ["Pure presentation rule; does not prove signature validity, provider identity or role authority."], result))
+})
+
+effect function cliJourney() {
+  return try scoped(effect {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const settings = try fs.makeTempDirectoryScoped()
+    const call = effect (args: ReadonlyArray<string>) => try run(try node(), [try cliPath(), "--mock", ...args], { XDG_CONFIG_HOME: settings })
+    const login = try call(["login", "--json"])
+    const ask = try call(["ask", "install", "--json"])
+    const logout = try call(["logout", "--json"])
+    const again = try call(["logout", "--json"])
+    const stored = try fs.exists(path.join(settings, "vibelang-factory", "mock-session.json"))
+    try Effect.try(() => {
+      for (const result of [login, ask, logout, again]) { expect(result.status, result.stderr).toBe(0); expect(result.stderr).toBe("") }
+      expect(Schema.decodeUnknownSync(LoginOutput)(JSON.parse(login.stdout))).toMatchObject({ status: "signed-in", login: "will" })
+      const posted = Schema.decodeUnknownSync(AskOutput)(JSON.parse(ask.stdout))
+      expect(posted.text).toContain("npm create vibelang@latest")
+      expect(Schema.decodeUnknownSync(LogoutOutput)(JSON.parse(logout.stdout))).toEqual({ signedOut: true })
+      expect(Schema.decodeUnknownSync(LogoutOutput)(JSON.parse(again.stdout))).toEqual({ signedOut: false })
+      expect(stored).toBe(false)
+    })
+  })
+}
+
+it("CLI sign-in, ask, sign-out and repeated sign-out use isolated private settings", async ({ bench }) => {
+  const result = await workload(bench, "cli-identity-journey", () => runPromise(Effect.provide(cliJourney(), platform))).run(slow)
+  await runPromise(artifact("identity-cli", "Vitest built-in bench; three complete journeys, four emitted CLI processes each, fresh scoped private settings. Decode every public schema, check signed fixture identity, settled answer, first/repeated logout and removed session file. Includes startup, durable session actions, scripted reply and assertions; build excluded.", ["Product mock sign-in, no OAuth, network, real session or model. This is whole-journey cost, not one-command latency. Private settings paths and contents are not retained."], result))
+})
+
+it("persistent MCP sign-in and sign-out change the signed post author", async ({ bench }) => {
+  const clientLayer = Layer.unwrap(effect {
+    const settings = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+    const command = ChildProcess.make(try node(), [try serverPath(), "--mock"], { env: { XDG_CONFIG_HOME: settings }, extendEnv: true })
+    return McpClient.layerStdio({ name: "Identity benchmarks", version: "1", protocol: McpProtocol.v2025_11_25, timeout: "10 seconds", command })
+  }).pipe(Layer.provide(platform))
+  const result = await runPromise(Effect.provide(effect {
+    const client = try McpClient.McpClient
+    const tools = try client.listTools()
+    const tool = (name: string) => tools.find(tool => tool.name === name)!
+    let ordinal = 0
+    const measured = try Effect.try(() => workload(bench, "mcp-identity-journey", async () => {
+      const signedText = `install signed ${++ordinal}`, guestText = `install guest ${ordinal}`
+      const login = await runPromise(client.callTool({ tool: tool("login"), schema: LoginOutput, arguments: {} }))
+      await runPromise(client.callTool({ tool: tool("ask"), schema: AskOutput, arguments: { text: signedText } }))
+      const out = await runPromise(client.callTool({ tool: tool("logout"), schema: LogoutOutput, arguments: {} }))
+      await runPromise(client.callTool({ tool: tool("ask"), schema: AskOutput, arguments: { text: guestText } }))
+      const state = await runPromise(client.callTool({ tool: tool("read"), schema: ReadOutput, arguments: {} }))
+      expect(login).toMatchObject({ status: "signed-in", login: "will" })
+      expect(out).toEqual({ signedOut: true })
+      expect(state.entries.find(entry => entry.text === signedText)).toMatchObject({ name: "will (agent)" })
+      expect(state.entries.find(entry => entry.text === guestText)).toMatchObject({ name: "Factory CLI" })
+      expect(state.entries.filter(entry => entry.inReplyTo !== "" && entry.done && entry.error === "")).toHaveLength(ordinal * 2)
+    }))
+    return try tryPromise(() => measured.run(slow))
+  }, clientLayer))
+  await runPromise(artifact("identity-mcp", "Vitest built-in bench; persistent actual stdio MCP, discovery/startup excluded. Three five-call journeys: login, signed ask, logout, guest ask and full readback; literal author labels and exact settled reply count checked. Durable session actions, private file IO, schema/IPC, scripted replies and assertions included.", ["Isolated product mock settings, no OAuth/network/real session/model. Transcript grows by two posts per sample. Whole-journey cost, no percentile claim."], result))
+})

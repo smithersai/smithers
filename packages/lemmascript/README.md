@@ -24,3 +24,6 @@ Each patch is offered back upstream later. Will decides any GitHub contribution.
 
 `pnpm --filter @smthrs/lemmascript build`, then `pnpm --filter @smthrs/lemmascript test`. The fixtures need `dafny` on
 `PATH`; `apps/vibelang/verify/.tools/bin` has it.
+
+Proof harnesses consume `Package.compilerSources` from `PACKAGE.ts` (`//packages/lemmascript:compilerSources`)
+as a data dependency. This keeps compiler changes in their cache identity while each package owns its source globs.

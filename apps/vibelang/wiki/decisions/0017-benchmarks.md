@@ -135,3 +135,53 @@ The workerd deadline includes three complete reading budgets; shortening real re
 would invalidate the method. Production's `/api/health` now exposes its deployed commit; live artifacts retain it
 when present and leave it unknown when absent. The successful sandbox workerd lifecycle/metering benchmark is now
 on main; the older nested-Effect reproduction above is retained as history, not an active deferral of that workload.
+
+**Qualified source build, 2026-11-09.** The retained plain-JavaScript control reproduces the bundled converter's
+false credit without VibeLang: actual result 7, an unvisited return-9 statement credited, branch arms `[1, 0]`.
+Unminified JavaScript and VibeLang controls both leave that return uncovered. `benchCoverageBundle.test.vibe` runs
+the actual app Vite configuration, executes a real native V8 subprocess and remaps its counters. It failed before
+the coverage build selected `--mode bench-coverage`; it now passes. This is source coverage before minifier folding,
+not a claim that optimized-bundle statement attribution is sound. Normal timing observations use the optimized build.
+No VibeLang compiler, emitted program semantics, dependency or threshold changes.
+
+The cross-runtime merger also applies the shared provider's exact Infinity-end-column normalization using the
+original UTF-16 source line length. Its failed-first test preserves finite/missing columns and every hit count.
+The full 41-file, 100-workload coverage run passed its behavioral assertions. Replacing its browser evidence with
+five source-build workloads preserves the tracked production source; before/after source hashes are retained with
+the receipt. The strict merged gate still fails. The wiki and lane report publish both Node-only counters and the
+merged statement-start counters, never the superseded outer-span heuristic. No `src/` or `worker/` line is excluded.
+
+
+**Shared configuration and wiki update, 2026-11-09.** After decision 0016 landed, the benchmark collector imports
+its canonical provider options, subprocess collection and full source roster. Only the benchmark include list runs;
+collection thresholds are deferred until workerd and Chromium evidence joins, where the same strict 100% per-file
+thresholds apply. No threshold is relaxed. This is a complete collection on one archived production source snapshot,
+not a combination with unit/fuzz execution or an older product tree. Before/after hashes match for all tracked
+production sources. The earlier 41-file run and source-browser replacement above remain historical receipts.
+
+The wiki addition also benchmarks native Edit/Save/Propose, Escape, role revocation, and reviewing/submitting a
+scripted agent draft. Each review leaves repository Markdown unchanged. Emitted CLI and persistent stdio MCP
+benchmarks exercise all four wiki operations; the MCP method explicitly includes readback and write replay.
+The exact catalog check failed first when Wiki became the eighteenth command, then passed after its roster update.
+A coverage attempt cancelled for that update exits 130 and supplies no published corpus.
+
+Latest complete benchmark-only receipt (`6a979627e06c4be522557d65f6ffa8bb8320b349`): Test Files 43 passed (43); Tests 103 passed (103); Duration 923.61s (tests 94%, import 3%, transform 2%, environment 1%). The merged count is 5,083/6,675 src/worker lines (76.15%); 93 files fail one or more strict thresholds. No `src/` or `worker/` line is excluded. Full per-file counters, methods and limitations appear in [the benchmark table](../benchmarks.md). The 100% requirement remains unfinished.
+
+
+**CLI/MCP identity on fresh main (0028).** Identity landed while the complete coverage run was frozen. Its later
+focused timing covers the literal guest/person/agent label rule, four-process CLI sign-in/ask/logout/repeated-logout
+journeys, and persistent five-call MCP sign-in/signed-post/logout/guest-post/readback journeys. Exact public schemas,
+author labels, settled counts and removed session files are checked. Real private settings and durable SQLite session
+actions run in scoped temporary directories; no real credentials, provider exchange, network or model is involved.
+Wiki CLI/MCP cases likewise receive isolated settings so a previous real or fixture sign-in cannot change their role.
+The exact current catalog retains all twenty commands, including login/logout. These three new identity groups and
+nine affected surface groups pass; their timing artifacts retain the later source revisions. They do not contribute
+counters to the earlier 43-file/103-workload coverage run, whose denominator predates 0028. Additional identity/session
+coverage is therefore still required alongside the gaps already recorded. No number is relabeled as current-head coverage.
+
+
+**Publication graph regression.** The fresh-main target-index check rejected two app-owned source globs crossing
+into the newly vendored LemmaScript package. That package now exports `compilerSources` as an owned filegroup;
+both app proof targets consume it. Target-index generation passes, and target inspection retains the compiler label
+in the proof target's dependencies/cache inputs. Its package README documents consumption. The original failed
+check is retained in the lane report; no compiler implementation or proof contract is changed.

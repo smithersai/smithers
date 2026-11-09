@@ -33,6 +33,7 @@ async function save(name: string, measurements: unknown, limitations: string[]) 
     machine: { hostname: hostname(), platform: platform(), release: release(), cpu: cpus()[0]?.model, logicalCpus: cpus().length },
     runtime: process.versions, versions, revision,
     deployment: { revision: live ? deploymentRevision : revision, identityMethod: live ? (deploymentRevision === null ? "Production does not expose its revision; unknown." : "Production /api/health commit at suite start.") : "Local build from this workspace revision." },
+    build: live ? { kind: "deployed", minified: null } : { kind: process.env.BENCH_COVERAGE === "1" ? "source-coverage" : "timing", minified: process.env.BENCH_COVERAGE !== "1" },
     method: "Serial Chromium desktop runs from nyc-01. First render: fresh context navigation to visible heading. Command-K: key dispatch to visible modal and focused textbox. Keystroke: key dispatch to input value. API: wall time at client; first event/visible answer delta and settlement from numbered SSE events. All raw samples retained; assertions included; no tail percentile claimed.",
     limitations, measurements,
   }, null, 2) + "\n", { flag: "wx" })
@@ -40,7 +41,7 @@ async function save(name: string, measurements: unknown, limitations: string[]) 
 
 async function collectBrowserCoverage(context: BrowserContext, page: Page, baseURL: string | undefined, name: string) {
   // Coverage mode only: the dump goes to the gate's own corpus (bench/merge-coverage.ts), never to Vitest's
-  // subprocess pickup, so the minified bundle's structure never merges with the Node structure of one source (0017).
+  // subprocess pickup, so the separately bundled structure never merges with Node's structure of one source (0017).
   if (process.env.BENCH_COVERAGE !== "1" || live) return undefined
   const directory = resolve("coverage/bench/chromium-raw")
   const session = await context.newCDPSession(page)
@@ -637,5 +638,72 @@ test("role views, People, grant confirmation, sign-out and participation", async
   } finally {
     if (coverage) await coverage()
     await save("local-role-actions", { origin: baseURL, timings }, ["One serial native-browser journey over the real product fixture account/role flows. Each role visit includes selection, identity visibility and (for signed roles) opening/checking/closing People. Other actions include confirmation or cancellation and resulting state. Sign-in/retry use the explicit mock identity host; no GitHub login, production identity, account mutation or model. Scripted reply/automation delays included; one observation per action establishes no percentile."])
+  }
+})
+
+test("wiki edit, Save, Propose, cancellation and reviewed agent draft", async ({ page, baseURL }) => {
+  test.skip(live, "Product fixture repository; no production GitHub writes or model generation.")
+  const timings: { action: string; ms: number; passed: boolean }[] = []
+  const coverage = await collectBrowserCoverage(page.context(), page, baseURL, "wiki")
+  const time = async (action: string, body: () => Promise<void>) => {
+    const start = performance.now(); let passed = false
+    try { await body(); passed = true } finally { timings.push({ action, ms: performance.now() - start, passed }) }
+  }
+  try {
+    await page.goto(`${baseURL}/?agent=mock`)
+    const picker = page.getByRole("combobox", { name: "Visit as" })
+    const wiki = page.getByRole("region", { name: "Wiki", exact: true })
+    await page.getByRole("button", { name: "Wiki", exact: true }).click()
+    await wiki.getByRole("link", { name: "Roadmap", exact: true }).first().click()
+    const editor = wiki.getByRole("textbox", { name: "Edit Roadmap", exact: true })
+    for (const role of ["maintainer", "contributor"] as const) {
+      await picker.selectOption(role)
+      let source = ""
+      await time(`wiki-edit-${role}`, async () => {
+        await wiki.getByRole("button", { name: "Edit", exact: true }).click()
+        await expect(editor).toBeFocused()
+        source = await editor.inputValue()
+        expect(source).toContain("# Roadmap")
+      })
+      await editor.fill(source + "\nBenchmark review.\n")
+      await time(role === "maintainer" ? "wiki-save" : "wiki-propose", async () => {
+        await wiki.getByRole("button", { name: role === "maintainer" ? "Save" : "Propose", exact: true }).click()
+        await expect(editor).toHaveCount(0)
+        await expect(wiki.getByRole("link", { name: "Review", exact: true })).toHaveAttribute("href", /\/pull\/[0-9]+$/)
+        await expect(wiki.locator(".vl-wiki-content")).not.toContainText("Benchmark review.")
+      })
+      await wiki.getByRole("button", { name: "Edit", exact: true }).click()
+      await expect(editor).toHaveValue(source)
+      await editor.fill(source + "\nDiscard benchmark.\n")
+      await time(`wiki-escape-${role}`, async () => {
+        await page.keyboard.press("Escape")
+        await expect(editor).toHaveCount(0)
+        await expect(wiki).not.toContainText("Discard benchmark.")
+      })
+    }
+    await wiki.getByRole("button", { name: "Edit", exact: true }).click()
+    await time("wiki-role-change-closes-editor", async () => {
+      await picker.selectOption("viewer")
+      await expect(editor).toHaveCount(0)
+      await expect(wiki.getByRole("button", { name: "Edit", exact: true })).toHaveCount(0)
+    })
+    await page.goto(`${baseURL}/?agent=mock&role=contributor`)
+    await time("wiki-agent-draft-review", async () => {
+      await page.getByRole("button", { name: "Ask the agent", exact: true }).click()
+      const ask = page.getByRole("dialog", { name: "Ask the agent", exact: true })
+      await ask.getByRole("textbox", { name: "Message", exact: true }).fill("Draft a wiki edit for the roadmap: benchmark reviewed draft")
+      await ask.getByRole("button", { name: "Send", exact: true }).click()
+      await page.getByRole("link", { name: "Review it", exact: true }).click()
+      await expect(editor).toHaveValue(/benchmark reviewed draft/)
+    })
+    await time("wiki-agent-draft-propose", async () => {
+      await wiki.getByRole("button", { name: "Propose", exact: true }).click()
+      await expect(editor).toHaveCount(0)
+      await expect(wiki.getByRole("link", { name: "Review", exact: true })).toBeVisible()
+      await expect(wiki.locator(".vl-wiki-content")).not.toContainText("benchmark reviewed draft")
+    })
+  } finally {
+    if (coverage) await coverage()
+    await save("local-wiki-actions", { origin: baseURL, timings }, ["One serial native Chromium journey through real product fixture flows. Maintainer Save and contributor Propose each open a review and preserve repository Markdown; reopening checks the original source. Escape, role revocation and a scripted agent draft are checked. No real GitHub writes, OAuth or model. Scripted waits and automation included; one sample per action establishes no percentile."])
   }
 })

@@ -16,7 +16,7 @@
 | Live Factory in local workerd: the API Worker's objects, LiveFactory, the protocol, the CLI | `test/*.workerd.test.*` | `pnpm test:workerd` (0010) |
 | The live agent in a browser, opt in | `e2e/live.spec.ts` | `E2E_LIVE_URL=<origin> pnpm exec playwright test e2e/live.spec.ts` |
 | Fuzzing and corpus regressions | `fuzz/*.fuzz.vibe`, native workerd and Chromium (0015); `@smthrs/fuzz`, `@smthrs/testing` | `pnpm fuzz`; independent strict gate `pnpm fuzz:coverage` |
-| Benchmarks | `bench/`: built-in Vitest, Chromium, emitted CLI/MCP/scripts, SQLite recovery and real workerd (0017) | `pnpm bench`; opt-in `pnpm bench:live`; independent strict `pnpm bench:coverage` (unfinished) |
+| Benchmarks | `bench/`: built-in Vitest, Chromium, native wiki/identity journeys, emitted CLI/MCP/scripts, SQLite recovery and real workerd (0017) | `pnpm bench`; opt-in `pnpm bench:live`; independent strict `pnpm bench:coverage` (unfinished) |
 
 **Rules.** No mocks besides the mock backend itself, which is a product mode (0004). Every test that waits on the UI
 waits on what a person sees (a role, a text, `data-done`), never a timer. Screenshots wait for view transitions to end.
@@ -216,6 +216,11 @@ optional peers differently. This lane adds no dependency version, coverage thres
 
 **Benchmark independence (0017).** Reuses the patched monorepo V8 provider and matching Vitest 5.0.0, with no new benchmark library or runtime dependency. Existing test-tool declarations await Will’s VL-5 approval. Timing and benchmark-only coverage receipts remain separate; strict coverage is unfinished.
 
+The benchmark source profile uses the unminified `bench-coverage` build after failed-first native skipped-return
+qualification, plus the provider's identical end-column normalization and complete-range merging. Optimized builds
+remain the timing workload; methods, per-file counters and remaining gaps are in [0017](0017-benchmarks.md) and
+[the measurement table](../benchmarks.md). No threshold or production exclusion was relaxed.
+
 **Seed replay capacity (0018).** Two behavioral regressions fail when replay starts at the maximum safe cursor or
 accepts its final safe event before another intent. The seed helper now uses the shared capacity decision; the
 valid final event remains and the next intent is refused. No dependency is added.
@@ -342,3 +347,10 @@ already declared SDK SQLite host and Poll; its actual journal must omit device/a
 settings use 0700 directories and atomic 0600 files, with faulty FileSystem permission denial. The existing label
 renders the fixture agent in Chromium, and the opt-in live suite expects the agent label only with a configured
 test session. No tool or dependency was added by this lane.
+
+
+**Independent benchmark refresh (0017).** Benchmark-only collection now imports this decision's canonical V8
+configuration after it landed. Its include list remains independent, and 100% thresholds run only after all
+runtime counters join. The latest per-file source receipt is linked from the benchmark table. Native wiki
+editing and emitted wiki CLI/MCP operations are included; product fixture review links are not real GitHub writes.
+The complete run's behavioral assertions pass, while its strict coverage qualification remains red.
