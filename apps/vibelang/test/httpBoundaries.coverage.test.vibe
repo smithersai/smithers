@@ -1,0 +1,183 @@
+// @vitest-environment node
+// The API's conversation, action and health routes over real loopback with the real mock product. A body that fails
+// mid-read is a faulty HttpServerRequest service, as a client that resets its connection leaves one.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { HttpClient, HttpClientRequest, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Factory, type Refused, type Unavailable } from "../src/core/Factory.vibe"
+import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import type { ActionsApi } from "../worker/ActionsHttp.vibe"
+import { afterOf, eventStream, handle, handleConversations, type Conversations, type Histories } from "../worker/Http.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+
+const unreachable = () => fail(new Unreachable({ what: "history" }))
+const unavailableHistory: Histories = { page: unreachable, write: unreachable, events: unreachable }
+const unavailableActions: ActionsApi = {
+  list: () => fail(new Unreachable({ what: "actions" })),
+  start: () => fail(new Unreachable({ what: "actions" })),
+  rerun: () => fail(new Unreachable({ what: "actions" })),
+  cancel: () => fail(new Unreachable({ what: "actions" })),
+  read: () => fail(new Unreachable({ what: "actions" })),
+  events: () => fail(new Unreachable({ what: "actions" })),
+}
+
+effect function accepted(work: void!(Refused | Unavailable)) {
+  return Effect.as(work, null) catch effect (error) => {
+    if (error._tag === "Refused") return error.refusal
+    throw new Unreachable({ what: "conversation" })
+  }
+}
+
+/** The Worker's Conversations contract over the mock product; `tours` false leaves tour control out, as a host may. */
+effect function conversations(tours: boolean) {
+  const product = try Factory
+  const api: Conversations = {
+    post: (room, body) => accepted(product.post(room, body.clientId, body.name, body.text)),
+    openWiki: (room, page) => accepted(product.openWiki(room, page)),
+    read: (room, after) => Effect.mapError(product.read(room, after), () => new Unreachable({ what: "conversation" })),
+    tour: (room) => accepted(product.tour(room)),
+    endTour: (room) => accepted(product.endTour(room)),
+    events: (room) => effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      return eventStream(Stream.orDie(product.events(room, afterOf(new URL(request.url, "http://local")) ?? 0)))
+    },
+    ...(tours ? { controlTour: (room: string, action: "pause" | "resume" | "seek", step: number) => accepted(product.controlTour!(room, action, step)) } : {}),
+  }
+  return api
+}
+
+effect function status(request: HttpClientRequest.HttpClientRequest) {
+  const response = try (try HttpClient.HttpClient).execute(request)
+  return { status: response.status, body: try response.json }
+}
+
+const post = (path: string, text: string, length?: string) => HttpClientRequest.post(path).pipe(
+  HttpClientRequest.bodyText(text), length === undefined ? (request) => request : HttpClientRequest.setHeader("content-length", length),
+)
+
+/** A request whose body stream fails after its headers, as a reset connection's does. */
+effect function resetRequest(path: string, length: string) {
+  const request = HttpClientRequest.post(`http://api.invalid${path}`).pipe(
+    HttpClientRequest.bodyStream(Stream.fail(new Unreachable({ what: "connection reset" })), { contentType: "application/json" }),
+    HttpClientRequest.setHeader("content-length", length),
+  )
+  return HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(request))
+}
+
+describe("the API's HTTP routes", () => {
+  it.live("opens a wiki page, and refuses a missing, empty, oversized or malformed body or an unknown page", () => scoped(effect {
+    provide NodeHttpServer.layerTest, MockFactory {
+      try HttpServer.serveEffect(handle(try conversations(true), unavailableHistory))
+      const path = "/api/conversations/wiki-room/wiki"
+      const missing = try status(HttpClientRequest.post(path))
+      const empty = try status(post(path, "", "0"))
+      const large = try status(post(path, JSON.stringify({ page: "x".repeat(1100) })))
+      const malformed = try status(post(path, "{", "1"))
+      const unknown = try status(post(path, JSON.stringify({ page: "no-such-page" })))
+      provide LiveFactory("") {
+        try (try Factory).openWiki("wiki-room", "rulings")
+        const snapshot = try (try Factory).read("wiki-room", 0)
+        try Effect.try(() => {
+          expect([missing, empty, large, malformed]).toEqual([
+            { status: 413, body: { error: "body size" } }, { status: 413, body: { error: "body size" } },
+            { status: 413, body: { error: "body size" } }, { status: 400, body: { error: "body" } },
+          ])
+          expect(unknown).toEqual({ status: 409, body: { refusal: "empty" } })
+          expect(snapshot.seq).toBe(1)
+        })
+      }
+    }
+  }))
+
+  it.live("pauses, seeks and resumes a running tour, and checks the body and step before the conversation", () => scoped(effect {
+    provide NodeHttpServer.layerTest, MockFactory {
+      try HttpServer.serveEffect(handle(try conversations(true), unavailableHistory))
+      const path = "/api/conversations/tour-room/tour-control"
+      const idle = try status(post(path, JSON.stringify({ action: "pause", step: 0 })))
+      const oversized = try status(post(path, JSON.stringify({ action: "seek", step: 1, pad: "x".repeat(1024) })))
+      const refused = try all([
+        post(path, "{"), post(path, JSON.stringify({ action: "stop", step: 1 })), post(path, JSON.stringify({ action: "seek", step: 12 })),
+        post(path, JSON.stringify({ action: "seek", step: -1 })), post(path, JSON.stringify({ action: "seek", step: 1.5 })),
+      ].map(status))
+      provide LiveFactory("") {
+        const factory = try Factory
+        try factory.tour("tour-room")
+        try Stream.runDrain(factory.events("tour-room", 0).pipe(Stream.takeUntil((event) => event.type === "WalkthroughDriven")))
+        try factory.controlTour!("tour-room", "pause", 0)
+        try factory.controlTour!("tour-room", "seek", 2)
+        try factory.controlTour!("tour-room", "resume", 2)
+        try factory.endTour("tour-room")
+        const recorded = try Stream.runCollect(factory.events("tour-room", 0).pipe(Stream.takeUntil((event) => event.type === "TourEnded")))
+        const controls = Array.from(recorded).filter((event) => event.type === "TourPaused" || event.type === "TourSought" || event.type === "TourResumed")
+        try Effect.try(() => {
+          expect(idle.status).toBe(409)
+          expect(oversized).toEqual({ status: 413, body: { error: "body size" } })
+          expect(refused).toEqual(Array.from({ length: 5 }, () => ({ status: 400, body: { error: "body" } })))
+          expect(controls.map((event) => event.type)).toEqual(["TourPaused", "TourSought", "TourResumed"])
+          expect(controls[1]).toMatchObject({ step: 2 })
+        })
+      }
+    }
+  }))
+
+  it.live("answers a host without tour control as not replying", () => scoped(effect {
+    provide NodeHttpServer.layerTest, MockFactory {
+      try HttpServer.serveEffect(handle(try conversations(false), unavailableHistory))
+      const answer = try status(post("/api/conversations/home/tour-control", JSON.stringify({ action: "pause", step: 0 })))
+      try Effect.try(() => expect(answer).toEqual({ status: 409, body: { refusal: "not-replying" } }))
+    }
+  }))
+
+  it.live("answers actions as unavailable without an actions API or when it is unreachable, and names the deployed commit only where bound", () => scoped(effect {
+    provide NodeHttpServer.layerTest, MockFactory {
+      const api = try conversations(true)
+      const without = try Effect.provideService(handle(api, unavailableHistory), HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(HttpClientRequest.get("http://api.invalid/api/actions"))))
+      const bare = try Effect.provideService(handleConversations(api), HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(HttpClientRequest.get("http://api.invalid/api/health"))))
+      const bareHealth = try promise(() => HttpServerResponse.toWeb(bare).json())
+      try HttpServer.serveEffect(handle(api, unavailableHistory, undefined, unavailableActions, "abc123"))
+      const catalog = try status(HttpClientRequest.get("/api/actions"))
+      const runs = try status(HttpClientRequest.get("/api/actions/runs"))
+      const health = try status(HttpClientRequest.get("/api/health"))
+      try Effect.try(() => {
+        expect(without.status).toBe(503)
+        expect(bareHealth).toEqual({ ok: true, agent: "live" })
+        expect(catalog.status).toBe(200)
+        expect(runs).toEqual({ status: 503, body: { code: "unavailable" } })
+        expect(health).toEqual({ status: 200, body: { ok: true, agent: "live", commit: "abc123" } })
+      })
+    }
+  }))
+
+  for (const route of ["wiki", "posts"]) {
+    it.effect(`refuses a ${route} body without a declared length, reaching no conversation`, () => effect {
+      provide MockFactory {
+        const body = JSON.stringify(route === "wiki" ? { page: "rulings" } : { clientId: "a", name: "Ada", text: "hi" })
+        const chunked = HttpClientRequest.post(`http://api.invalid/api/conversations/chunked/${route}`).pipe(
+          HttpClientRequest.bodyStream(Stream.make(new TextEncoder().encode(body)), { contentType: "application/json" }),
+        )
+        const request = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(chunked))
+        const response = try Effect.provideService(handle(try conversations(true), unavailableHistory), HttpServerRequest.HttpServerRequest, request)
+        const snapshot = try (try Factory).read("chunked", 0)
+        try Effect.try(() => {
+          expect(request.headers["content-length"]).toBeUndefined()
+          expect(response.status).toBe(413)
+          expect(snapshot.seq).toBe(0)
+        })
+      }
+    })
+  }
+
+  for (const path of ["/api/conversations/reset/wiki", "/api/conversations/reset/posts", "/api/conversations/reset/tour-control", "/api/history/plan"]) {
+    it.effect(`answers a body that fails mid-read as a bad body, reaching nothing: ${path}`, () => effect {
+      provide MockFactory {
+        const response = try Effect.provideService(handle(try conversations(true), unavailableHistory), HttpServerRequest.HttpServerRequest, try resetRequest(path, "20"))
+        const snapshot = try (try Factory).read("reset", 0)
+        try Effect.try(() => {
+          expect(response.status).toBe(400)
+          expect(snapshot.seq).toBe(0)
+        })
+      }
+    })
+  }
+})

@@ -102,7 +102,7 @@ effect function answer(route: Route, url: URL, conversations: Conversations) {
     const text = request.text catch () => ""
     if (text.length > 1024) return json({ error: "body size" }, 413)
     const body = Schema.decodeUnknownEffect(Schema.fromJsonString(TourControlBody))(text) catch () => undefined
-    if (body === undefined || !Number.isInteger(body.step) || body.step < 0 || body.step > 11) return json({ error: "body" }, 400)
+    if (body === undefined || body.step > 11) return json({ error: "body" }, 400)
     const refusal = conversations.controlTour === undefined ? "not-replying" : try conversations.controlTour(route.conversation, body.action, body.step)
     return refusal === null ? json({}) : json({ refusal }, 409)
   }
