@@ -25,7 +25,7 @@ import * as JsonBoundary from "./JsonBoundary.ts"
 import * as Observation from "./Observation.vibe"
 import * as Outcome from "./Outcome.vibe"
 import * as Script from "./Script.vibe"
-import * as ScriptRunner from "./ScriptRunner.ts"
+import * as ScriptRunner from "./ScriptRunner.vibe"
 import * as Steering from "./Steering.vibe"
 
 /**

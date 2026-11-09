@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import type * as Outcome from "../src/Outcome.vibe"
 import * as Script from "../src/Script.vibe"
-import * as ScriptRunner from "../src/ScriptRunner.ts"
+import * as ScriptRunner from "../src/ScriptRunner.vibe"
 import { runOn } from "./harness.ts"
 
 const echo = (request: ScriptRunner.Request): Effect.Effect<unknown> =>

@@ -124,9 +124,9 @@
     },
     "./ScriptRunner": {
       "types": {
-        "default": "./src/ScriptRunner.ts"
+        "default": "./.vibe/declarations/ScriptRunner.d.vibe.ts"
       },
-      "vibelang-source": "./src/ScriptRunner.ts",
+      "vibelang-source": "./src/ScriptRunner.vibe",
       "default": "./.vibelang/js/src/ScriptRunner.js"
     },
     "./Steering": {
@@ -219,7 +219,8 @@
     ".vibelang/js",
     "!.vibelang/js/.loader",
     "src/SubChains.vibe",
-    "src/Chain.vibe"
+    "src/Chain.vibe",
+    "src/ScriptRunner.vibe"
   ],
   "publishConfig": {
     "access": "public",

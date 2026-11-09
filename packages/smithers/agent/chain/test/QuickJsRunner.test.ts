@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest"
 import * as QuickJsJobs from "../src/internal/QuickJsJobs.ts"
 import * as QuickJsRunner from "../src/QuickJsRunner.ts"
 import * as Script from "../src/Script.vibe"
-import type * as ScriptRunner from "../src/ScriptRunner.ts"
+import type * as ScriptRunner from "../src/ScriptRunner.vibe"
 
 describe("QuickJsRunner load machinery", () => {
   it("caches a successful load and shares it", async () => {

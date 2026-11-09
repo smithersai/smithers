@@ -69,7 +69,7 @@ const securityReview = Smithers.SecurityReview({
         "A production layer or export path that selects ScriptRunner.layerInProcess instead of QuickJsRunner.layer.",
         "Docs or README text presenting layerInProcess as safe for untrusted scripts."
       ],
-      paths: ["src/ScriptRunner.ts", "src/index.ts"]
+      paths: ["src/ScriptRunner.vibe", "src/index.ts"]
     },
     {
       id: "json-boundary-single-read",
@@ -82,7 +82,7 @@ const securityReview = Smithers.SecurityReview({
         "The in-realm copyJson and host jsonBoundary disagreeing on depth, size, holes, -0, or prototype checks.",
         "A key assigned with = instead of Object.defineProperty on a copy that has Object.prototype."
       ],
-      paths: ["src/JsonBoundary.ts", "src/QuickJsRunner.ts", "src/ScriptRunner.ts", "src/Chain.vibe"]
+      paths: ["src/JsonBoundary.ts", "src/QuickJsRunner.ts", "src/ScriptRunner.vibe", "src/Chain.vibe"]
     },
     {
       id: "authorize-every-live-call",

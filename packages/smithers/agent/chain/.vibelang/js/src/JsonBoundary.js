@@ -26,6 +26,7 @@ const decodeOutcomeShape = Schema.decodeUnknownOption(Outcome.Outcome);
  * @category gates
  * @since 0.1.0
  * @slop
+ * @throws {never}
  */
 export const decodeOutcome = (value) => Option.map(decodeOutcomeShape(value), (outcome) => outcome._tag === "To" ? Outcome.to(outcome.script) : outcome);
 /**
@@ -75,6 +76,7 @@ const refused = { _tag: "Refused" };
  * @category gates
  * @since 0.1.0
  * @slop
+ * @throws {never}
  */
 export const jsonBoundary = (value) => {
     const seen = new Set();

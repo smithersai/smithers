@@ -22,7 +22,7 @@ import * as QuickJsJobs from "./internal/QuickJsJobs.ts"
 import * as JsonBoundary from "./JsonBoundary.ts"
 import type * as Outcome from "./Outcome.vibe"
 import type * as Script from "./Script.vibe"
-import * as ScriptRunner from "./ScriptRunner.ts"
+import * as ScriptRunner from "./ScriptRunner.vibe"
 
 /**
  * Optional hard limits on a script evaluation, enforced by the QuickJS

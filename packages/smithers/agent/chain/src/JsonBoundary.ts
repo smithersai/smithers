@@ -28,6 +28,7 @@ const decodeOutcomeShape = Schema.decodeUnknownOption(Outcome.Outcome)
  * @category gates
  * @since 0.1.0
  * @slop
+ * @throws {never}
  */
 export const decodeOutcome = (value: unknown): Option.Option<Outcome.Outcome> =>
   Option.map(
@@ -85,6 +86,7 @@ const refused = { _tag: "Refused" } as const
  * @category gates
  * @since 0.1.0
  * @slop
+ * @throws {never}
  */
 export const jsonBoundary = (
   value: unknown

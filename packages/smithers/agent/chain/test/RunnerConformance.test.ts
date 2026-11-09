@@ -6,7 +6,7 @@ import * as JsonBoundary from "../src/JsonBoundary.ts"
 import type * as Outcome from "../src/Outcome.vibe"
 import * as QuickJsRunner from "../src/QuickJsRunner.ts"
 import * as Script from "../src/Script.vibe"
-import * as ScriptRunner from "../src/ScriptRunner.ts"
+import * as ScriptRunner from "../src/ScriptRunner.vibe"
 import { flow, runChain } from "./harness.ts"
 
 const runners: ReadonlyArray<

@@ -172,7 +172,7 @@ export * as Script from "./Script.vibe"
  * @since 0.1.0
  * @slop
  */
-export * as ScriptRunner from "./ScriptRunner.ts"
+export * as ScriptRunner from "./ScriptRunner.vibe"
 
 /**
  * The steering port: outside messages drained at link boundaries.

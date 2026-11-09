@@ -6,7 +6,7 @@ import * as Chain from "../src/Chain.vibe"
 import type * as Event from "../src/Event.vibe"
 import * as Journal from "../src/Journal.vibe"
 import type * as Outcome from "../src/Outcome.vibe"
-import * as ScriptRunner from "../src/ScriptRunner.ts"
+import * as ScriptRunner from "../src/ScriptRunner.vibe"
 import type * as Steering from "../src/Steering.vibe"
 
 /** Wraps script lines in the one fenced flow block the shape gate expects. */

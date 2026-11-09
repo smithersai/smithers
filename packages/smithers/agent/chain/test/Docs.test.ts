@@ -12,7 +12,7 @@ import * as JsonBoundary from "../src/JsonBoundary.ts"
 import type * as Outcome from "../src/Outcome.vibe"
 import * as Prompt from "../src/Prompt.ts"
 import * as QuickJsRunner from "../src/QuickJsRunner.ts"
-import * as ScriptRunner from "../src/ScriptRunner.ts"
+import * as ScriptRunner from "../src/ScriptRunner.vibe"
 import * as Steering from "../src/Steering.vibe"
 import * as SubChains from "../src/SubChains.vibe"
 

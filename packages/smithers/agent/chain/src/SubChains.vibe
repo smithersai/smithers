@@ -30,7 +30,7 @@ import * as Chain from "./Chain.vibe"
 import { childRun } from "./internal/childRun.ts"
 import { ChildRunError } from "./internal/ChildRunError.vibe"
 import * as Journal from "./Journal.vibe"
-import * as ScriptRunner from "./ScriptRunner.ts"
+import * as ScriptRunner from "./ScriptRunner.vibe"
 
 /**
  * The catalog name a script spawns a sub-agent by.
