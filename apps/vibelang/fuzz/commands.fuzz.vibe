@@ -1,67 +1,13 @@
 // Runs the Commands `update` returns, in a closed loop: each Command's Message goes back through `update`, as the Foldkit runtime does.
 import { it } from "@effect/vitest"
-import { Factory, Unavailable, Refused } from "../src/core/Factory.vibe"
-import { mockFactoryFor } from "../src/core/MockFactory.vibe"
-import { AccountUnavailable } from "../src/core/roles.vibe"
-import { IssueFailure } from "../src/core/issueSchemas.vibe"
-import { WikiFailure } from "../src/core/wikiSchemas.vibe"
-import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
-import { MockActions } from "../src/actions/MockActions.vibe"
+import { Factory } from "../src/core/Factory.vibe"
 import { Model, Flags, Message, init, update, accountOf, tourConversation, walkthroughSession } from "../src/web/main.vibe"
 import { pages, wikiEditable } from "../src/core/wiki.vibe"
 import { actionsOf } from "../src/web/actionModel.vibe"
+import { backend, Backend, Role } from "./web-backends.vibe"
 import { run, Finding, Int, TextOrBoundary } from "./run.vibe"
 
 const MAX_COMMANDS = 48
-
-const Backend = Schema.Literals(["mock", "live", "bare", "faulty"])
-const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
-type Backend = typeof Backend.Type
-
-const unavailable = fail(new Unavailable({ reason: "fault" }))
-const refused = fail(new Refused({ refusal: "busy" }))
-const noAccount = fail(new AccountUnavailable({ reason: "fault" }))
-
-/** A backend whose every operation answers with its typed failure. */
-const faulty: Factory.Shape = {
-  mode: "mock",
-  accounts: {
-    current: () => noAccount, members: () => noAccount, grant: () => noAccount, signOut: () => noAccount,
-    signInAgent: () => noAccount, choose: () => noAccount, participated: () => noAccount, events: () => Stream.fail(new AccountUnavailable({ reason: "fault" })),
-  },
-  issues: { read: () => fail(new IssueFailure({ reason: "unavailable" })), act: () => fail(new IssueFailure({ reason: "conflict", unwritten: true })) },
-  wiki: { read: () => fail(new WikiFailure({ reason: "unavailable" })), act: () => fail(new WikiFailure({ reason: "conflict", unwritten: true })) },
-  post: () => refused,
-  read: () => unavailable,
-  events: () => Stream.fail(new Unavailable({ reason: "fault" })),
-  tour: () => refused,
-  openWiki: () => unavailable,
-  controlTour: () => unavailable,
-  endTour: () => unavailable,
-  sandbox: () => unavailable,
-  startSandbox: () => refused,
-  stopSandbox: () => unavailable,
-  sandboxCommand: () => refused,
-}
-
-const noActions: Actions.Shape = {
-  list: () => fail(new ActionFailure({ code: "fault" })), commands: () => fail(new ActionFailure({ code: "fault" })), runs: () => fail(new ActionFailure({ code: "fault" })),
-  read: () => fail(new ActionFailure({ code: "fault" })), start: () => fail(new ActionFailure({ code: "fault" })), command: () => fail(new ActionFailure({ code: "fault" })),
-  rerun: () => fail(new ActionFailure({ code: "fault" })), cancel: () => fail(new ActionFailure({ code: "fault" })), follow: () => Stream.fail(new ActionFailure({ code: "fault" })),
-}
-
-/** The same service object with some members replaced; a service's methods do not survive an object spread. */
-function changedFactory(factory: Factory.Shape, change: Record<string, unknown>): Factory.Shape {
-  return Object.assign(Object.create(factory) as Factory.Shape, change)
-}
-
-/** The real mock Factory and Actions, the same seen as live, without optional services, or failing everywhere. */
-function backend(kind: Backend, role: typeof Role.Type) {
-  if (kind === "faulty") return Layer.merge(Layer.succeed(Factory, faulty), Layer.succeed(Actions, noActions))
-  const mock = mockFactoryFor(role)
-  const changed = Layer.effect(Factory, map(Factory, (factory) => kind === "live" ? changedFactory(factory, { mode: "live" }) : kind === "bare" ? changedFactory(factory, { accounts: undefined, issues: undefined, wiki: undefined, controlTour: undefined }) : factory)).pipe(Layer.provide(mock))
-  return Layer.provideMerge(MockActions({ actor: "person" }), changed)
-}
 
 /** One tab: every Command ends in a Message, the Message goes back through `update`, and the Model stays valid. */
 function tab(flags: Flags) {
