@@ -730,3 +730,5 @@ an interrupted launch. No token enters a flow payload. A failure to persist clea
 `auth.token_cleanup`, `smithers_auth_token_cleanup { outcome: failed }`, without changing the callback response.
 The hosted identity broker independently revokes its temporary pair through `auth/broker/revoke`; its success and
 exhaustion counters are `smithers_auth_broker_revocations` and `smithers_auth_broker_revocation_failures`.
+
+The hosted sign-in broker writes structured JSON logs through `@smthrs/observability` in its own Durable Object. Each `auth.broker.revoke` record keeps its `outcome` (`revoked` or `failed`) and current trace and span identifiers; it never logs tokens or identity content.

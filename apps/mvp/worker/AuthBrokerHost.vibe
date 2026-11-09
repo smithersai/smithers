@@ -1,3 +1,4 @@
+import { Logger as StructuredLogger } from "@smthrs/observability"
 import { Core, GitHub } from "@smthrs/integrations"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
@@ -36,6 +37,6 @@ export effect function make(hostId: string, storage: ObjectDatabase.Storage, set
         try Effect.orDie(Semaphore.withPermits(lock, 1)((try FlowRuntime.FlowRuntime).execute(Step, { executionId, payload: { step: operation } })))
       }
       return response
-    } }
+    }.pipe(Effect.provide(StructuredLogger.layerStructuredJson())) }
 }
 

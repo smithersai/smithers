@@ -82,8 +82,14 @@ it.live("workerd: twelve broker sign-ins preserve the kept token under GitHub's 
     for (let index = 0; index < 12; index++) try signIn(host.origin)
     const stats = try (try http.get(broker + "/__tokens")).json
     const journal = try (try http.get(broker + "/__journal")).text
+    const logs = try (try http.get(broker + "/__logs")).json as Array<string>
     try Effect.try(() => {
       expect(stats).toMatchObject({ kept: true, live: 1, attempts: 12 })
+      const records = logs.map(line => JSON.parse(line)).filter(line => line.message === "auth.broker.revoke")
+      expect(records).toHaveLength(12)
+      expect(records.every(line => line.annotations.outcome === "revoked")).toBe(true)
+      expect(records.every(line => /^[0-9a-f]{32}$/.test(line.annotations.trace_id) && /^[0-9a-f]{16}$/.test(line.annotations.span_id))).toBe(true)
+      expect(JSON.stringify(logs)).not.toMatch(/fixture-token|fixture-refresh|code_verifier|\bada\b/)
       expect((JSON.parse(journal) as Array<{ name: string; rows: Array<unknown> }>).find(table => table.name === "flows_attempts")!.rows).toHaveLength(48)
       expect(journal).not.toMatch(/fixture-token|fixture-refresh|code_verifier|\bada\b/)
     })
@@ -99,9 +105,15 @@ it.live("workerd: exhausted revocation retries count failure without failing sig
     try http.get(broker + "/__fault-revoke?count=100")
     try signIn(host.origin)
     const after = try (try http.get(broker + "/__tokens")).json as { failures: number; attempts: number }
+    const logs = try (try http.get(broker + "/__logs")).json as Array<string>
     try Effect.try(() => {
       expect(after.failures - before.failures).toBe(1)
       expect(after.attempts).toBe(3)
+      const records = logs.map(line => JSON.parse(line)).filter(line => line.message === "auth.broker.revoke")
+      expect(records).toHaveLength(1)
+      expect(records[0]).toMatchObject({ level: "WARN", annotations: { outcome: "failed" } })
+      expect(records[0].annotations).toMatchObject({ trace_id: expect.stringMatching(/^[0-9a-f]{32}$/), span_id: expect.stringMatching(/^[0-9a-f]{16}$/) })
+      expect(JSON.stringify(logs)).not.toMatch(/fixture-token|fixture-refresh|code_verifier|\bada\b/)
     })
   }
 }), 120_000)
