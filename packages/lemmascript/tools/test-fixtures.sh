@@ -77,7 +77,7 @@ fi
 npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/optional-binder-collisions.ts"
 
 # Object spreads of conditionals and field subsets, and exhaustive tagged-message tables.
-for name in object-spread-conditional object-spread-partial tagged-match spec-record-spread; do
+for name in object-spread-conditional object-spread-partial tagged-match spec-record-spread empty-string-union; do
   cp "tools/fixtures/$name.ts" "$fixture_dir/$name.ts"
   npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/$name.ts"
 done
@@ -89,6 +89,10 @@ cp tools/fixtures/spec-record-spread-wrong.ts "$fixture_dir/spec-record-spread-w
 expect_failure \
   "a spread frame in a contract accepted a changed field" \
   npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/spec-record-spread-wrong.ts"
+cp tools/fixtures/empty-string-union-wrong.ts "$fixture_dir/empty-string-union-wrong.ts"
+expect_failure \
+  "an empty union member verified as a different member" \
+  npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/empty-string-union-wrong.ts"
 cp tools/fixtures/tagged-match-missing-arm.ts "$fixture_dir/tagged-match-missing-arm.ts"
 expect_failure \
   "a non-exhaustive handler table was read as a tagged match" \

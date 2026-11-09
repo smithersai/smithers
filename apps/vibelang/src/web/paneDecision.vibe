@@ -1,0 +1,158 @@
+// The sandbox and wiki-editor arms of `update` in main.vibe, on plain data: the state they touch, and commands main.vibe interprets.
+
+export type SandboxPane = "closed" | "pane" | "max"
+export type SandboxKind = "start" | "stop" | "command"
+export type SandboxOperation = SandboxKind | ""
+export type SandboxNotice = "out" | "low" | "clear" | "keep"
+export interface SandboxScreen {
+  readonly surface: "splash" | "chat"
+  readonly palette: boolean
+  readonly docs: "pane" | "max"
+  readonly pane: SandboxPane
+  readonly operation: SandboxOperation
+  readonly busy: boolean
+  readonly error: string
+  readonly request: number
+  readonly draft: string
+}
+export interface SandboxCommand { readonly type: "SandboxAction"; readonly request: number; readonly kind: SandboxKind; readonly generation: number; readonly command: string }
+export interface SandboxStep { readonly state: SandboxScreen; readonly commands: ReadonlyArray<SandboxCommand> }
+export interface SandboxResult { readonly pane: SandboxPane; readonly operation: SandboxOperation; readonly busy: boolean; readonly error: string }
+
+/** The operation recorded for each action kind. */
+//@ verify
+//@ ensures kind == "start" ==> \result == "start"
+//@ ensures kind == "stop" ==> \result == "stop"
+//@ ensures kind == "command" ==> \result == "command"
+export function operationOf(kind: SandboxKind): SandboxOperation {
+  return kind === "start" ? "start" : kind === "stop" ? "stop" : "command"
+}
+
+/** An accepted action shows the sandbox beside the chat, takes the next request number and spends the draft on its command. */
+//@ verify
+//@ ensures \result.state == { ...state, surface: "chat", palette: false, docs: "pane", pane: state.docs == "max" ? "max" : "pane", operation: operationOf(kind), busy: true, error: "", request: state.request + 1, draft: "" }
+//@ ensures \result.commands == [{ type: "SandboxAction", request: state.request + 1, kind: kind, generation: generation, command: state.draft }]
+export function startSandboxAction(state: SandboxScreen, kind: SandboxKind, generation: number): SandboxStep {
+  const request = state.request + 1
+  return { state: { ...state, surface: "chat", palette: false, docs: "pane", pane: state.docs === "max" ? "max" : "pane", operation: operationOf(kind), busy: true, error: "", request, draft: "" }, commands: [{ type: "SandboxAction", request, kind, generation, command: state.draft }] }
+}
+
+/** A current snapshot ends the wait and clears the failure; the pane opens only when told to. */
+//@ verify
+//@ ensures \result == { ...state, pane: opens ? "pane" : state.pane, operation: "", busy: false, error: "" }
+export function loadedSandbox(state: SandboxResult, opens: boolean): SandboxResult {
+  return { ...state, pane: opens ? "pane" : state.pane, operation: "", busy: false, error: "" }
+}
+
+/** A current failure ends the wait and shows its reason. */
+//@ verify
+//@ ensures \result == { ...state, busy: false, error: reason }
+export function failedSandbox(state: SandboxResult, reason: string): SandboxResult {
+  return { ...state, busy: false, error: reason }
+}
+
+/** Out of minutes outranks low; a new reset month clears an old notice; otherwise it stays. */
+//@ verify
+//@ ensures out ==> \result == "out"
+//@ ensures !out && low ==> \result == "low"
+//@ ensures !out && !low && resetChanged ==> \result == "clear"
+//@ ensures !out && !low && !resetChanged ==> \result == "keep"
+export function sandboxNotice(out: boolean, low: boolean, resetChanged: boolean): SandboxNotice {
+  return out ? "out" : low ? "low" : resetChanged ? "clear" : "keep"
+}
+
+/** A low-minutes notice records its month, so it shows once per month. */
+//@ verify
+//@ ensures low ==> \result == resetAt
+//@ ensures !low ==> \result == warned
+export function warnedMonthAfter(low: boolean, resetAt: number, warned: number): number {
+  return low ? resetAt : warned
+}
+
+export type WikiSubmitPlan = "ignore" | "no-changes" | "refuse" | "save" | "propose"
+export type WikiSubmission = "keep" | "clear"
+export interface WikiEditScreen { readonly page: string; readonly base: string; readonly text: string; readonly busy: boolean; readonly error: string }
+export interface WikiEditStep { readonly state: WikiEditScreen; readonly submission: WikiSubmission }
+
+/** Typing is refused while a save runs or a submission awaits its answer. */
+//@ verify
+//@ ensures \result == (!busy && !submitted)
+export function wikiEditTypes(busy: boolean, submitted: boolean): boolean {
+  return !busy && !submitted
+}
+
+/** Typing replaces the text and clears the failure. */
+//@ verify
+//@ ensures \result == { ...editing, text: value, error: "" }
+export function updatedWikiEdit(editing: WikiEditScreen, value: string): WikiEditScreen {
+  return { ...editing, text: value, error: "" }
+}
+
+/** A busy editor ignores submit, an unchanged one says so, and a role with neither right is refused; a role that can save never proposes. */
+//@ verify
+//@ ensures busy ==> \result == "ignore"
+//@ ensures !busy && text == base ==> \result == "no-changes"
+//@ ensures !busy && text != base && canSave ==> \result == "save"
+//@ ensures !busy && text != base && !canSave && canPropose ==> \result == "propose"
+//@ ensures !busy && text != base && !canSave && !canPropose ==> \result == "refuse"
+export function wikiSubmitPlan(busy: boolean, text: string, base: string, canSave: boolean, canPropose: boolean): WikiSubmitPlan {
+  if (busy) return "ignore"
+  if (text === base) return "no-changes"
+  return canSave ? "save" : canPropose ? "propose" : "refuse"
+}
+
+/** Unchanged text keeps the editor and names the reason. */
+//@ verify
+//@ ensures \result == { ...editing, error: "No changes." }
+export function noWikiChanges(editing: WikiEditScreen): WikiEditScreen {
+  return { ...editing, error: "No changes." }
+}
+
+/** Submitting starts the wait and clears the failure. */
+//@ verify
+//@ ensures \result == { ...editing, busy: true, error: "" }
+export function submittingWikiEdit(editing: WikiEditScreen): WikiEditScreen {
+  return { ...editing, busy: true, error: "" }
+}
+
+/** The loaded source applies only to the idle editor that asked for it. */
+//@ verify
+//@ ensures \result == (!busy && current)
+export function wikiBeginApplies(busy: boolean, current: boolean): boolean {
+  return !busy && current
+}
+
+/** The loaded source becomes the base; typed text survives, otherwise a draft, otherwise the source. */
+//@ verify
+//@ ensures editing.text != editing.base ==> \result == { ...editing, base: source }
+//@ ensures editing.text == editing.base && draft == "" ==> \result == { ...editing, base: source, text: source }
+//@ ensures editing.text == editing.base && draft != "" ==> \result == { ...editing, base: source, text: draft }
+export function beganWikiEdit(editing: WikiEditScreen, source: string, draft: string): WikiEditScreen {
+  return { ...editing, base: source, text: editing.text !== editing.base ? editing.text : draft === "" ? source : draft }
+}
+
+/** Only the newest editor's request can fail it. */
+//@ verify
+//@ ensures \result == (request == current)
+export function wikiEditFailureApplies(request: number, current: number | null): boolean {
+  return request === current
+}
+
+/** A failure ends the wait and names itself; only a write that certainly did not happen may be submitted afresh. */
+//@ verify
+//@ ensures \result.state == { ...editing, busy: false, error: text }
+//@ ensures unwritten ==> \result.submission == "clear"
+//@ ensures !unwritten ==> \result.submission == "keep"
+export function failedWikiEdit(editing: WikiEditScreen, text: string, unwritten: boolean): WikiEditStep {
+  return { state: { ...editing, busy: false, error: text }, submission: unwritten ? "clear" : "keep" }
+}
+
+/** The failure text for each refusal. */
+//@ verify
+//@ ensures reason == "forbidden" ==> \result == "Not allowed."
+//@ ensures reason == "conflict" ==> \result == "The page changed. Reload the editor."
+//@ ensures (reason == "connect" || reason == "sign-in") ==> \result == "Connect GitHub."
+//@ ensures reason != "forbidden" && reason != "conflict" && reason != "connect" && reason != "sign-in" ==> \result == "Couldn't save. Retry."
+export function wikiEditErrorText(reason: string): string {
+  return reason === "forbidden" ? "Not allowed." : reason === "conflict" ? "The page changed. Reload the editor." : reason === "connect" || reason === "sign-in" ? "Connect GitHub." : "Couldn't save. Retry."
+}

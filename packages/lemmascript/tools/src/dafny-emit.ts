@@ -1651,8 +1651,10 @@ function resolveTy(ty: Ty): Ty {
  *  "spec-pure", discriminated-union tags), which may contain characters no
  *  TS identifier has; map those to `_` before the ordinary escaping. A
  *  collision after mapping fails loudly in Dafny (duplicate constructor)
- *  rather than silently merging. */
+ *  rather than silently merging. The empty string has no characters to map,
+ *  so it gets a name of its own. */
 function dafnyCtorName(name: string): string {
+  if (name === "") return "empty_string";
   return escapeName(name.replace(/[^A-Za-z0-9_'?]/g, "_"));
 }
 
