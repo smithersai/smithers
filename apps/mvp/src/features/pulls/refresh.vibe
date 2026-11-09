@@ -1,7 +1,7 @@
 import { type ShapeSource } from "@smthrs/effect-electric"
 import type { Collection } from "@smthrs/effect-tanstack-db"
 import { PULL_RECEIPT_HEADER } from "./contract"
-import { type PullsView, VIEW } from "./schema.ts"
+import { type PullsView, VIEW } from "./schema"
 
 const Receipt = Schema.fromJsonString(
   Schema.Struct({ number: Schema.Number, checkedAt: Schema.Number, missing: Schema.Boolean }),

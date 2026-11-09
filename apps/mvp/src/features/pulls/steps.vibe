@@ -1,6 +1,6 @@
 import { Interpreter } from "@smthrs/flow"
 import { type Duration } from "effect"
-import { PullsClient, type PullsRequestFailed } from "./api.ts"
+import { PullsClient, type PullsRequestFailed } from "./api"
 import { REVIEW_REFUSALS, type ReviewRefusal } from "./contract"
 import {
   PullReview,
@@ -9,7 +9,7 @@ import {
   type ReviewRequest,
   ReviewRequestStep,
   ReviewUnsent,
-} from "./flows.ts"
+} from "./flows"
 
 // Review on request (docs/features/pulls.md#review-on-request): one ChatApi request through `PullsClient`. A
 // Maintainer's press, or `/review`, runs this step on this device's engine.

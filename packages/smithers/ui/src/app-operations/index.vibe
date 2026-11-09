@@ -7,7 +7,7 @@
  *
  * Pure: no store, no DOM, no Effect runtime.
  */
-import type { FormHints } from "../flow-form.vibe"
+import type { FormHints } from "../flow-form"
 
 /**
  * The input schemas an operation may declare: anything that decodes from

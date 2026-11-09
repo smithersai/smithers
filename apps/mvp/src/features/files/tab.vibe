@@ -1,5 +1,5 @@
 import { answerAskingTab } from "../../flows/askingTab"
-import { answer } from "./actions.ts"
+import { answer } from "./actions"
 import { filesChannel } from "./contract"
 import { FilesCall } from "./schema"
 

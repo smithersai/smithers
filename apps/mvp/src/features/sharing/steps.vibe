@@ -1,7 +1,7 @@
 import { Interpreter } from "@smthrs/flow"
-import { ShareClient, type ShareRefused } from "./api.ts"
+import { ShareClient, type ShareRefused } from "./api"
 import { BranchShare, BranchShareRefused, BranchShareUnavailable, RequestShare, type ShareFailure } from "./flows"
-import { shares } from "./metrics.vibe"
+import { shares } from "./metrics"
 import type { Change } from "./schema"
 
 // `branch/share`'s step (docs/features/branch-workspace.md#sharing): one `POST /api/branches/<id>/shares` through

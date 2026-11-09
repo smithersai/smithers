@@ -1,5 +1,5 @@
 /** Appendix B.4 controls whose providers arrive with their card tickets. */
-import { operation, type Operation, type OperationPayload } from "./index.vibe"
+import { operation, type Operation, type OperationPayload } from "./index"
 const N = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
 const Text = Schema.NonEmptyString
 schema Todo { n: N }

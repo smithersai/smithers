@@ -2,7 +2,7 @@
  * They expose no additional slash, CLI or model door. Concrete control bodies
  * must resolve their operation before authorization; there is no control grant.
  */
-import { NoInput, operation, type OperationPayload } from "./index.vibe"
+import { NoInput, operation, type OperationPayload } from "./index"
 
 const read = (
   name: string,
