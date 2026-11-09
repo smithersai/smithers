@@ -5,6 +5,7 @@
  * @since 1.0.0
  */
 import * as Effect_1 from "effect/Effect";
+import { identity as keepDefect } from "effect/Function";
 import { ModelStep } from "@smthrs/agent";
 import { digestSync } from "@smthrs/crypto";
 import { Action, RetryPolicy } from "@smthrs/flow";
@@ -152,10 +153,13 @@ const safeModel = (source) => ({
 export const durableModelStream = (name, source, request, callTimeoutMs, onStart) => Stream.callback((queue) => Effect_1.gen(function* () {
     const prepared = yield* source.route.prepare(request);
     const { body, ...material } = prepared;
-    const key = yield* Effect.orDie(Effect.try(() => digestSync(CanonicalJson.stringify({
-        request: JSON.parse(JSON.stringify(request)),
-        prepared: { ...material, body: Array.from(body) }
-    }))));
+    const key = yield* Effect.orDie(Effect.try({
+        try: () => digestSync(CanonicalJson.stringify({
+            request: JSON.parse(JSON.stringify(request)),
+            prepared: { ...material, body: Array.from(body) }
+        })),
+        catch: keepDefect
+    }));
     let executed = false;
     const recorded = yield* Action.make({
         name: name + "/outcome",

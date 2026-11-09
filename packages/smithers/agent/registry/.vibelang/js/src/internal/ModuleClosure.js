@@ -40,6 +40,7 @@
  * @since 1.0.0-rc.0
  */
 import * as Effect_1 from "effect/Effect";
+import { identity as keepDefect } from "effect/Function";
 import * as Digest from "@smthrs/core/Digest";
 import * as Effect from "effect/Effect";
 import * as Prompt from "../Prompt.js";
@@ -380,7 +381,7 @@ const bareTargets = (fs, path, directory, specifier, configs) => Effect_1.gen(fu
         if (configs.has(file))
             return configs.get(file);
         const bytes = yield* Effect.result(fs.readFile(file));
-        const parsed = bytes._tag === "Success" ? parseJsonc(yield* Effect.orDie(Effect.try(() => new TextDecoder().decode(bytes.success)))) : undefined;
+        const parsed = bytes._tag === "Success" ? parseJsonc(yield* Effect.orDie(Effect.try({ try: () => new TextDecoder().decode(bytes.success), catch: keepDefect }))) : undefined;
         configs.set(file, parsed);
         return parsed;
     });
@@ -653,8 +654,8 @@ const walk = (fs, path, entryPath, entrySource, memo, bounds, reads, hostImports
             found.set(description, unpinnable(description));
             break;
         }
-        const contentDigest = yield* Effect.orDie(Effect.try(() => Digest.digest(read.success)));
-        const rawSource = yield* Effect.orDie(Effect.try(() => new TextDecoder().decode(read.success)));
+        const contentDigest = yield* Effect.orDie(Effect.try({ try: () => Digest.digest(read.success), catch: keepDefect }));
+        const rawSource = yield* Effect.orDie(Effect.try({ try: () => new TextDecoder().decode(read.success), catch: keepDefect }));
         const compiled = yield* Effect.result(resolved.endsWith(".mdx") ? Prompt.compile(rawSource) : Effect.succeed(rawSource));
         if (compiled._tag === "Failure") {
             const description = `"${recorded}" could not be compiled as MDX`;
@@ -701,7 +702,7 @@ const walk = (fs, path, entryPath, entrySource, memo, bounds, reads, hostImports
  */
 export const snapshot = (fs, path, entryPath, entryBytes) => Effect_1.gen(function* () {
     const memo = cache();
-    const entrySource = yield* Effect.orDie(Effect.try(() => new TextDecoder().decode(entryBytes)));
+    const entrySource = yield* Effect.orDie(Effect.try({ try: () => new TextDecoder().decode(entryBytes), catch: keepDefect }));
     const reads = new Map([[path.resolve(entryPath), { bytes: entryBytes, source: entrySource }]]);
     const imports = yield* walk(fs, path, entryPath, entrySource, memo, { files: closureFileLimit, bytes: closureByteLimit }, reads, new Set());
     const modules = new Map();

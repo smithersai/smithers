@@ -5,6 +5,7 @@
  */
 import * as Effect_1 from "effect/Effect";
 import * as runtime from "vibelang-runtime/internal";
+import { identity as keepDefect } from "effect/Function";
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore";
 import * as FileLease from "@smthrs/artifacts/FileLease";
 import * as Digest from "@smthrs/core/Digest";
@@ -47,11 +48,11 @@ const Manifest = Schema.Struct({
     compiled: Schema.Record(Schema.String, Schema.Struct({ source: Schema.String, links: Schema.Array(Link) }))
 });
 // SHA-256 failures are defects: the input is always an in-memory byte array.
-const digestOf = (bytes) => Effect.orDie(Effect.try(() => Digest.digest(bytes)));
+const digestOf = (bytes) => Effect.orDie(Effect.try({ try: () => Digest.digest(bytes), catch: keepDefect }));
 const fail = (code, message, cause, indexMissing) => new ExecutionSnapshotError({ code, message, cause, ...(indexMissing ? { indexMissing } : {}) });
 const address = (value) => /^[a-f0-9]{64}$/.test(value);
 const verifiedCompilation = (filename, module, descriptor) => Effect_1.gen(function* () {
-    const raw = yield* Effect.orDie(Effect.try(() => new TextDecoder().decode(module.bytes)));
+    const raw = yield* Effect.orDie(Effect.try({ try: () => new TextDecoder().decode(module.bytes), catch: keepDefect }));
     const expected = descriptor.body._tag === "Module" && filename.endsWith(".mdx")
         ? yield* Prompt.compile(raw) : raw;
     if (module.source !== expected ||

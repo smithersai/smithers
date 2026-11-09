@@ -4,6 +4,7 @@
  * @since 0.1.0
  */
 
+import { identity as keepDefect } from "effect/Function"
 import * as Digest from "@smthrs/core/Digest"
 import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -311,7 +312,7 @@ export const compact = <E, R>(
         })
         const summaryId = options.makeSummaryId?.(threadId, oldMessages) ??
           `summary-${
-            try Effect.orDie(Effect.try(() => Digest.digest(Digest.canonical({ threadId, messageIds: oldMessages.map((message) => message.id) }))))
+            try Effect.orDie(Effect.try({ try: () => Digest.digest(Digest.canonical({ threadId, messageIds: oldMessages.map((message) => message.id) })), catch: keepDefect }))
           }`
         const summary: Message = { threadId, id: summaryId, role: "system", text: summaryText, at: oldMessages[0]!.at }
         deletedMessages += try store.compactMessages({ threadId, summary, sourceMessages: oldMessages })

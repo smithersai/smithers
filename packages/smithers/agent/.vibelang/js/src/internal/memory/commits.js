@@ -11,6 +11,7 @@
  * @since 1.0.0
  */
 import * as Effect_1 from "effect/Effect";
+import { identity as keepDefect } from "effect/Function";
 import * as Effect from "effect/Effect";
 import { headOf, run } from "./repo.js";
 /**
@@ -55,7 +56,7 @@ function parse(stdout) {
         const rows = [];
         for (const entry of stdout.split(record).filter((entry) => entry.trim() !== "")) {
             const [commitId, changeId, description] = entry.trim().split(field);
-            const decoded = yield* Effect.orDie(Effect.try(() => JSON.parse(description)));
+            const decoded = yield* Effect.orDie(Effect.try({ try: () => JSON.parse(description), catch: keepDefect }));
             rows.push({ commitId, changeId, description: decoded.trim() });
         }
         return rows;

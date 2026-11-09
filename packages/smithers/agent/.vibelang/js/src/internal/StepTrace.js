@@ -4,6 +4,7 @@
  * @since 1.0.0
  */
 import * as Effect_1 from "effect/Effect";
+import { identity as keepDefect } from "effect/Function";
 import * as Digest from "@smthrs/core/Digest";
 import { Action, FlowRuntime } from "@smthrs/flow";
 import { HarnessError } from "@smthrs/harness/HarnessError";
@@ -14,13 +15,16 @@ import * as EffectDigest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import { maxTracedBytes, traceIdentity, tracer } from "../AgentSession.js";
-const boundCallFields = (payload) => Effect.orDie(Effect.try(() => Object.fromEntries(Object.entries(payload).map(([key, value]) => {
-    if (key === "callId" || key === "outcome")
-        return [key, value];
-    const json = JSON.stringify(value);
-    const bytes = new TextEncoder().encode(json).byteLength;
-    return [key, bytes <= maxTracedBytes ? value : { truncated: true, bytes, digest: Digest.digest(json) }];
-}))));
+const boundCallFields = (payload) => Effect.orDie(Effect.try({
+    try: () => Object.fromEntries(Object.entries(payload).map(([key, value]) => {
+        if (key === "callId" || key === "outcome")
+            return [key, value];
+        const json = JSON.stringify(value);
+        const bytes = new TextEncoder().encode(json).byteLength;
+        return [key, bytes <= maxTracedBytes ? value : { truncated: true, bytes, digest: Digest.digest(json) }];
+    })),
+    catch: keepDefect
+}));
 /**
  * Every source event owns a small durable checkpoint. Its saved outcome and
  * public fact commit together in ActionPersistence. No writer outlives the
@@ -61,12 +65,12 @@ export const make = (journal) => Effect_1.gen(function* () {
             cursor.cell = event.cell.digest;
         const json = yield* Effect.sync(() => JSON.stringify(projected.payload));
         const bytes = yield* Effect.sync(() => new TextEncoder().encode(json).byteLength);
-        const original = yield* Effect.orDie(Effect.try(() => JSON.parse(json)));
+        const original = yield* Effect.orDie(Effect.try({ try: () => JSON.parse(json), catch: keepDefect }));
         const payload = bytes <= 262_144
             ? original
             : projected.eventType === "control.agent.cell-call-started"
                 || projected.eventType === "control.agent.cell-call-settled"
-                ? yield* boundCallFields(original) : { truncated: true, bytes, digest: yield* Effect.orDie(Effect.try(() => Digest.digest(json))) };
+                ? yield* boundCallFields(original) : { truncated: true, bytes, digest: yield* Effect.orDie(Effect.try({ try: () => Digest.digest(json), catch: keepDefect })) };
         // Concurrent calls may replay in a different completion order. Their
         // checkpoint addresses use call identity, not consumer arrival order.
         const position = yield* Effect.sync(() => JSON.stringify([projected.eventType, original.callId ?? ""]));
@@ -74,7 +78,10 @@ export const make = (journal) => Effect_1.gen(function* () {
         cursor.occurrences.set(position, occurrence + 1);
         const { cell, frame, ordinal } = cursor;
         cursor.ordinal++;
-        const identity = yield* Effect.orDie(Effect.try(() => Digest.digest(JSON.stringify([step, frame, cell, position, occurrence]))));
+        const identity = yield* Effect.orDie(Effect.try({
+            try: () => Digest.digest(JSON.stringify([step, frame, cell, position, occurrence])),
+            catch: keepDefect
+        }));
         yield* Action.make({
             name: "agent/trace/checkpoint",
             success: StepFact.Fact,

@@ -13,6 +13,7 @@
  * @since 1.0.0-rc.0
  */
 
+import { identity as keepDefect } from "effect/Function"
 import type { ModelStep } from "@smthrs/agent"
 import { digestSync } from "@smthrs/crypto"
 import { Action } from "@smthrs/flow"
@@ -260,7 +261,7 @@ export const createModelProbe = (options: ModelProbeOptions): ModelProbe => {
         success: Schema.String,
         execute: probe.pipe(Effect.flatMap((result) => sync(() => JSON.stringify(result))))
       })
-      return try Effect.orDie(Effect.try(() => ConfiguredModel.ModelTestResultSchema.parse(JSON.parse(encoded))))
+      return try Effect.orDie(Effect.try({ try: () => ConfiguredModel.ModelTestResultSchema.parse(JSON.parse(encoded)), catch: keepDefect }))
     }
 
   return { catalog: () => localModelCatalog(options.env, planOptions, options.credentials), test }

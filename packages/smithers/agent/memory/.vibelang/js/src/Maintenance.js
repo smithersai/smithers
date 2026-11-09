@@ -5,6 +5,7 @@
  * @since 0.1.0
  */
 import * as Effect_1 from "effect/Effect";
+import { identity as keepDefect } from "effect/Function";
 import * as Digest from "@smthrs/core/Digest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -171,7 +172,7 @@ export const compact = (options) => Effect_1.gen(function* () {
                 rendered: render(oldMessages)
             });
             const summaryId = options.makeSummaryId?.(threadId, oldMessages) ??
-                `summary-${yield* Effect.orDie(Effect.try(() => Digest.digest(Digest.canonical({ threadId, messageIds: oldMessages.map((message) => message.id) }))))}`;
+                `summary-${yield* Effect.orDie(Effect.try({ try: () => Digest.digest(Digest.canonical({ threadId, messageIds: oldMessages.map((message) => message.id) })), catch: keepDefect }))}`;
             const summary = { threadId, id: summaryId, role: "system", text: summaryText, at: oldMessages[0].at };
             deletedMessages += yield* store.compactMessages({ threadId, summary, sourceMessages: oldMessages });
             if (carried === undefined)

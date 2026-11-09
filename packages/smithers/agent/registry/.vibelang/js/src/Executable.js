@@ -67,6 +67,7 @@ var __rewriteRelativeImportExtension = (this && this.__rewriteRelativeImportExte
 };
 import * as Effect_1 from "effect/Effect";
 import * as runtime_1 from "vibelang-runtime/internal";
+import { identity as keepDefect } from "effect/Function";
 import * as Annotations from "@smthrs/core/Annotations";
 import * as CoreFlow from "@smthrs/core/Flow";
 import * as CoreMarkdown from "@smthrs/core/Markdown";
@@ -553,7 +554,7 @@ const loadMarkdown = (descriptor, path, baseDirectory, options, approvedDigest) 
     const bytes = yield* sourceBytes(descriptor, path).pipe(Effect.catch((error) => options.snapshots === undefined || approvedDigest === undefined ?
         Effect.fail(error)
         : options.snapshots.restore(approvedDigest).pipe(Effect.map((source) => source.bytes), Effect.mapError((cause) => snapshotFailure(error, cause)))));
-    const text = yield* Effect.orDie(Effect.try(() => new TextDecoder().decode(bytes)));
+    const text = yield* Effect.orDie(Effect.try({ try: () => new TextDecoder().decode(bytes), catch: keepDefect }));
     const body = MarkdownFlow.loadBody(text, baseDirectory);
     const prompt = MarkdownFlow.renderPrompt(body, { args: "" });
     const lowered = CoreMarkdown.lowerMarkdown(MarkdownFlow.toCoreFrontmatter(descriptor), prompt);
@@ -590,7 +591,7 @@ const verifyImports = (descriptor, path, bytes, recorded) => Effect_1.gen(functi
     const fs = yield* FileSystem.FileSystem;
     const platformPath = yield* Path.Path;
     const entryPath = path.startsWith("file:")
-        ? yield* Effect.orDie(Effect.flatMap(Effect.try(() => new URL(path)), (url) => platformPath.fromFileUrl(url))) : platformPath.normalize(path);
+        ? yield* Effect.orDie(Effect.flatMap(Effect.try({ try: () => new URL(path), catch: keepDefect }), (url) => platformPath.fromFileUrl(url))) : platformPath.normalize(path);
     const { imports: measured, modules, unsupported } = yield* ModuleClosure.snapshot(fs, platformPath, entryPath, bytes);
     const unpinnable = measured.find((entry) => entry.contentDigest === undefined);
     if (unpinnable !== undefined) {

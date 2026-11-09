@@ -12,6 +12,7 @@
  * @since 1.0.0-rc.0
  */
 import * as Effect_1 from "effect/Effect";
+import { identity as keepDefect } from "effect/Function";
 import { Permission } from "@smthrs/capability";
 import { Digest } from "@smthrs/core";
 import { Action, FlowRuntime, RetryPolicy, RunMetrics, SpanFailure } from "@smthrs/flow";
@@ -527,7 +528,7 @@ export const key = Effect.fn("ModelStep.key")(function (material, prepared) {
                 ...crypto,
                 digest: (algorithm, data) => {
                     return Effect_1.gen(function* digest() {
-                        const canonical = yield* Effect.orDie(Effect.try(() => new TextDecoder().decode(data)));
+                        const canonical = yield* Effect.orDie(Effect.try({ try: () => new TextDecoder().decode(data), catch: keepDefect }));
                         const offset = canonical.indexOf(marker);
                         // Caller material can contain the same literal. Retry with another
                         // marker rather than replacing any caller-owned value. No marker is

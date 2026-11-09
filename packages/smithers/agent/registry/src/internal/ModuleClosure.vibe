@@ -39,6 +39,7 @@
  * @since 1.0.0-rc.0
  */
 
+import { identity as keepDefect } from "effect/Function"
 import * as Digest from "@smthrs/core/Digest"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
@@ -427,7 +428,7 @@ const bareTargets = (
       effect {
         if (configs.has(file)) return configs.get(file)
         const bytes = try Effect.result(fs.readFile(file))
-        const parsed = bytes._tag === "Success" ? parseJsonc(try Effect.orDie(Effect.try(() => new TextDecoder().decode(bytes.success)))) : undefined
+        const parsed = bytes._tag === "Success" ? parseJsonc(try Effect.orDie(Effect.try({ try: () => new TextDecoder().decode(bytes.success), catch: keepDefect }))) : undefined
         configs.set(file, parsed)
         return parsed
       }
@@ -778,8 +779,8 @@ const walk = (
         found.set(description, unpinnable(description))
         break
       }
-      const contentDigest = try Effect.orDie(Effect.try(() => Digest.digest(read.success)))
-      const rawSource = try Effect.orDie(Effect.try(() => new TextDecoder().decode(read.success)))
+      const contentDigest = try Effect.orDie(Effect.try({ try: () => Digest.digest(read.success), catch: keepDefect }))
+      const rawSource = try Effect.orDie(Effect.try({ try: () => new TextDecoder().decode(read.success), catch: keepDefect }))
       const compiled = try Effect.result(
         resolved.endsWith(".mdx") ? Prompt.compile(rawSource) : Effect.succeed(rawSource)
       )
@@ -854,7 +855,7 @@ export const snapshot = (
 }> =>
   effect {
     const memo = cache()
-    const entrySource = try Effect.orDie(Effect.try(() => new TextDecoder().decode(entryBytes)))
+    const entrySource = try Effect.orDie(Effect.try({ try: () => new TextDecoder().decode(entryBytes), catch: keepDefect }))
     const reads = new Map<string, Read>([[path.resolve(entryPath), { bytes: entryBytes, source: entrySource }]])
     const imports = try walk(
       fs,

@@ -75,6 +75,7 @@
  * @since 0.1.0
  */
 import * as Effect_1 from "effect/Effect";
+import { identity as keepDefect } from "effect/Function";
 import { digest } from "@smthrs/core/Digest";
 import { FlowRuntime } from "@smthrs/flow";
 import * as Fault from "@smthrs/flow/Fault";
@@ -614,7 +615,7 @@ const journalUsage = (runId, payload, committed) => Effect_1.gen(function* () {
     const journal = yield* Effect.serviceOption(Journal.Journal);
     if (runId === looseRunId || Option.isNone(journal))
         return yield* committed;
-    const stepDigest = yield* Effect.orDie(Effect.try(() => digest(JSON.stringify(payload.stepKey))));
+    const stepDigest = yield* Effect.orDie(Effect.try({ try: () => digest(JSON.stringify(payload.stepKey)), catch: keepDefect }));
     yield* journal.value.emitDurableUnfenced(new JournalEvent.Input({
         runId: JournalEvent.RunId.make(runId),
         // One durable identity per model step, including commit-then-interrupt

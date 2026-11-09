@@ -17,6 +17,7 @@
  * @since 1.0.0-rc.0
  */
 
+import { identity as keepDefect } from "effect/Function"
 import type { ModelStep } from "@smthrs/agent"
 
 import { type CatalogDescriptor, catalogDescriptors } from "@smthrs/cli/Catalog"
@@ -1080,7 +1081,7 @@ export const runHostTurn = <E>(
       // ellipses are multi-byte, so a code-unit count would not match either.
       instructionBytes: instructions.byteLength,
       instructionLines: request.instructions.split("\n").length,
-      instructionSha: (try Effect.orDie(Effect.try(() => digestSync(instructions)))).slice(0, 12),
+      instructionSha: (try Effect.orDie(Effect.try({ try: () => digestSync(instructions), catch: keepDefect }))).slice(0, 12),
       appended: grant.agentInstructions !== undefined,
       appendedBytes: grant.agentInstructions === undefined ? 0 : utf8.encode(grant.agentInstructions).byteLength,
       context: request.context !== undefined,

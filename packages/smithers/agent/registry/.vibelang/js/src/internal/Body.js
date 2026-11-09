@@ -5,13 +5,14 @@
  * @since 1.0.0-rc.0
  */
 import * as Effect_1 from "effect/Effect";
+import { identity as keepDefect } from "effect/Function";
 import * as Digest from "@smthrs/core/Digest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import { measureLockfiles } from "./Lockfiles.js";
 // SHA-256 failures are defects: the input is always an in-memory byte array.
-const digestOf = (bytes) => Effect.orDie(Effect.try(() => Digest.digest(bytes)));
+const digestOf = (bytes) => Effect.orDie(Effect.try({ try: () => Digest.digest(bytes), catch: keepDefect }));
 /**
  * Reads only measured bodies and verifies their complete source bytes.
  * File URLs are decoded through the host Path service without changing the

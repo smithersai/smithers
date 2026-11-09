@@ -52,6 +52,7 @@
  * @since 0.1.0
  */
 
+import { identity as keepDefect } from "effect/Function"
 import { Permission } from "@smthrs/capability"
 import { Digest, type KeyMaterial } from "@smthrs/core"
 import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
@@ -733,7 +734,7 @@ export const make = (
     const scope: Scope = {
       layers: [
         ...(options.layers ?? []),
-        `flows/agent/composition/v1:${try Effect.orDie(Effect.try(() => Digest.digest(CanonicalJson.stringify(options.layers ?? []))))}`
+        `flows/agent/composition/v1:${try Effect.orDie(Effect.try({ try: () => Digest.digest(CanonicalJson.stringify(options.layers ?? [])), catch: keepDefect }))}`
       ],
       run: `${instance.flow._tag}/${instance.executionId}`
     }

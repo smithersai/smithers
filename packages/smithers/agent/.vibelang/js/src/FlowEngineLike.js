@@ -53,6 +53,7 @@
  * @since 0.1.0
  */
 import * as Effect_1 from "effect/Effect";
+import { identity as keepDefect } from "effect/Function";
 import { Permission } from "@smthrs/capability";
 import { Digest } from "@smthrs/core";
 import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow";
@@ -483,7 +484,7 @@ export const make = (options) => Effect_1.gen(function* () {
     const scope = {
         layers: [
             ...(options.layers ?? []),
-            `flows/agent/composition/v1:${yield* Effect.orDie(Effect.try(() => Digest.digest(CanonicalJson.stringify(options.layers ?? []))))}`
+            `flows/agent/composition/v1:${yield* Effect.orDie(Effect.try({ try: () => Digest.digest(CanonicalJson.stringify(options.layers ?? [])), catch: keepDefect }))}`
         ],
         run: `${instance.flow._tag}/${instance.executionId}`
     };

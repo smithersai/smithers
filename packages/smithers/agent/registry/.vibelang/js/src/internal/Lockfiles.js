@@ -4,13 +4,14 @@
  * @since 1.0.0-rc.1
  */
 import * as Effect_1 from "effect/Effect";
+import { identity as keepDefect } from "effect/Function";
 import * as Digest from "@smthrs/core/Digest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 // SHA-256 failures are defects: the input is always an in-memory byte array.
-const digestOf = (bytes) => Effect.orDie(Effect.try(() => Digest.digest(bytes)));
+const digestOf = (bytes) => Effect.orDie(Effect.try({ try: () => Digest.digest(bytes), catch: keepDefect }));
 const lockfiles = ["pnpm-lock.yaml", "package-lock.json", "yarn.lock", "bun.lock", "bun.lockb"];
 /** Measure the repository dependency environment without executing it.
  * @category utilities

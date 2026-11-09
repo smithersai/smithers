@@ -14,6 +14,7 @@
  * @since 1.0.0-rc.0
  */
 import * as Effect_1 from "effect/Effect";
+import { identity as keepDefect } from "effect/Function";
 import { digestSync } from "@smthrs/crypto";
 import { Action } from "@smthrs/flow";
 import { Classifier, Evaluator, ModelRequest } from "@smthrs/model";
@@ -160,7 +161,7 @@ export const createModelProbe = (options) => {
             success: Schema.String,
             execute: probe.pipe(Effect.flatMap((result) => Effect_1.sync(() => JSON.stringify(result))))
         });
-        return yield* Effect.orDie(Effect.try(() => ConfiguredModel.ModelTestResultSchema.parse(JSON.parse(encoded))));
+        return yield* Effect.orDie(Effect.try({ try: () => ConfiguredModel.ModelTestResultSchema.parse(JSON.parse(encoded)), catch: keepDefect }));
     });
     return { catalog: () => localModelCatalog(options.env, planOptions, options.credentials), test };
 };

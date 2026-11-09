@@ -3,6 +3,7 @@
  * @since 1.0.0-rc.1
  */
 
+import { identity as keepDefect } from "effect/Function"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import * as FileLease from "@smthrs/artifacts/FileLease"
 import * as Digest from "@smthrs/core/Digest"
@@ -69,7 +70,7 @@ const Manifest = Schema.Struct({
   compiled: Schema.Record(Schema.String, Schema.Struct({ source: Schema.String, links: Schema.Array(Link) }))
 })
 // SHA-256 failures are defects: the input is always an in-memory byte array.
-const digestOf = (bytes: Uint8Array) => Effect.orDie(Effect.try(() => Digest.digest(bytes)))
+const digestOf = (bytes: Uint8Array) => Effect.orDie(Effect.try({ try: () => Digest.digest(bytes), catch: keepDefect }))
 
 const fail = (code: ExecutionSnapshotError["code"], message: string, cause?: unknown, indexMissing?: true) =>
   new ExecutionSnapshotError({ code, message, cause, ...(indexMissing ? { indexMissing } : {}) })
@@ -77,7 +78,7 @@ const address = (value: string) => /^[a-f0-9]{64}$/.test(value)
 
 const verifiedCompilation = (filename: string, module: ClosureModule, descriptor: Descriptor.FlowDescriptor) =>
   effect {
-    const raw = try Effect.orDie(Effect.try(() => new TextDecoder().decode(module.bytes)))
+    const raw = try Effect.orDie(Effect.try({ try: () => new TextDecoder().decode(module.bytes), catch: keepDefect }))
     const expected = descriptor.body._tag === "Module" && filename.endsWith(".mdx")
       ? try Prompt.compile(raw)
       : raw

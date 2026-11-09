@@ -3,6 +3,7 @@
  * @since 1.0.0
  */
 
+import { identity as keepDefect } from "effect/Function"
 import * as Digest from "@smthrs/core/Digest"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
@@ -29,16 +30,18 @@ interface Cursor {
 }
 
 const boundCallFields = (payload: Record<string, Schema.Json>): Effect.Effect<Record<string, Schema.Json>> =>
-  Effect.orDie(Effect.try(() =>
-    Object.fromEntries(
-      Object.entries(payload).map(([key, value]) => {
-        if (key === "callId" || key === "outcome") return [key, value]
-        const json = JSON.stringify(value)
-        const bytes = new TextEncoder().encode(json).byteLength
-        return [key, bytes <= maxTracedBytes ? value : { truncated: true, bytes, digest: Digest.digest(json) }]
-      })
-    )
-  ))
+  Effect.orDie(Effect.try({
+    try: () =>
+      Object.fromEntries(
+        Object.entries(payload).map(([key, value]) => {
+          if (key === "callId" || key === "outcome") return [key, value]
+          const json = JSON.stringify(value)
+          const bytes = new TextEncoder().encode(json).byteLength
+          return [key, bytes <= maxTracedBytes ? value : { truncated: true, bytes, digest: Digest.digest(json) }]
+        })
+      ),
+    catch: keepDefect
+  }))
 
 /**
  * Every source event owns a small durable checkpoint. Its saved outcome and
@@ -82,13 +85,13 @@ export const make = (journal: Journal.Service) =>
         if (event._tag === "cell-produced") cursor.cell = event.cell.digest
         const json = try Effect.sync(() => JSON.stringify(projected.payload))
         const bytes = try Effect.sync(() => new TextEncoder().encode(json).byteLength)
-        const original = try Effect.orDie(Effect.try(() => JSON.parse(json) as Record<string, Schema.Json>))
+        const original = try Effect.orDie(Effect.try({ try: () => JSON.parse(json) as Record<string, Schema.Json>, catch: keepDefect }))
         const payload = bytes <= 262_144
           ? original
           : projected.eventType === "control.agent.cell-call-started"
               || projected.eventType === "control.agent.cell-call-settled"
           ? try boundCallFields(original)
-          : { truncated: true, bytes, digest: try Effect.orDie(Effect.try(() => Digest.digest(json))) }
+          : { truncated: true, bytes, digest: try Effect.orDie(Effect.try({ try: () => Digest.digest(json), catch: keepDefect })) }
         // Concurrent calls may replay in a different completion order. Their
         // checkpoint addresses use call identity, not consumer arrival order.
         const position = try Effect.sync(() => JSON.stringify([projected.eventType, original.callId ?? ""]))
@@ -96,9 +99,10 @@ export const make = (journal: Journal.Service) =>
         cursor.occurrences.set(position, occurrence + 1)
         const { cell, frame, ordinal } = cursor
         cursor.ordinal++
-        const identity = try Effect.orDie(Effect.try(() =>
-          Digest.digest(JSON.stringify([step, frame, cell, position, occurrence]))
-        ))
+        const identity = try Effect.orDie(Effect.try({
+          try: () => Digest.digest(JSON.stringify([step, frame, cell, position, occurrence])),
+          catch: keepDefect
+        }))
         try Action.make({
           name: "agent/trace/checkpoint",
           success: StepFact.Fact,

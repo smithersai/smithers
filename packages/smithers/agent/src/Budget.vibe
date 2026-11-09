@@ -74,6 +74,7 @@
  * @since 0.1.0
  */
 
+import { identity as keepDefect } from "effect/Function"
 import type * as ControlSchema from "@smthrs/control/ControlSchema"
 import { digest } from "@smthrs/core/Digest"
 import { FlowRuntime } from "@smthrs/flow"
@@ -1014,7 +1015,7 @@ const journalUsage = (
   effect {
     const journal = try Effect.serviceOption(Journal.Journal)
     if (runId === looseRunId || Option.isNone(journal)) return try committed
-    const stepDigest = try Effect.orDie(Effect.try(() => digest(JSON.stringify(payload.stepKey))))
+    const stepDigest = try Effect.orDie(Effect.try({ try: () => digest(JSON.stringify(payload.stepKey)), catch: keepDefect }))
     try journal.value.emitDurableUnfenced(
       new JournalEvent.Input({
         runId: JournalEvent.RunId.make(runId),

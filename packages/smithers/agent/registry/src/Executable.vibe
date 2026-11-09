@@ -48,6 +48,7 @@
  * @since 1.0.0-rc.0
  */
 
+import { identity as keepDefect } from "effect/Function"
 import * as Annotations from "@smthrs/core/Annotations"
 import * as CoreFlow from "@smthrs/core/Flow"
 import * as CoreMarkdown from "@smthrs/core/Markdown"
@@ -948,7 +949,7 @@ const loadMarkdown = (
           Effect.mapError((cause) => snapshotFailure(error, cause))
         )
     ))
-    const text = try Effect.orDie(Effect.try(() => new TextDecoder().decode(bytes)))
+    const text = try Effect.orDie(Effect.try({ try: () => new TextDecoder().decode(bytes), catch: keepDefect }))
     const body = MarkdownFlow.loadBody(text, baseDirectory)
     const prompt = MarkdownFlow.renderPrompt(body, { args: "" })
     const lowered = CoreMarkdown.lowerMarkdown(MarkdownFlow.toCoreFrontmatter(descriptor), prompt)
@@ -993,7 +994,7 @@ const verifyImports = (
     const platformPath = try Path.Path
     const entryPath = path.startsWith("file:")
       ? try Effect.orDie(
-        Effect.flatMap(Effect.try(() => new URL(path)), (url) => platformPath.fromFileUrl(url))
+        Effect.flatMap(Effect.try({ try: () => new URL(path), catch: keepDefect }), (url) => platformPath.fromFileUrl(url))
       )
       : platformPath.normalize(path)
     const { imports: measured, modules, unsupported } = try ModuleClosure.snapshot(

@@ -19,6 +19,7 @@
  */
 import { $schemaErrorMatcher, TaggedError } from "vibelang-runtime/internal";
 import * as Effect_1 from "effect/Effect";
+import { identity as keepDefect } from "effect/Function";
 import { catalogDescriptors } from "@smthrs/cli/Catalog";
 import { catalogRequest } from "@smthrs/cli/CatalogRequest";
 import { digestSync } from "@smthrs/crypto";
@@ -864,7 +865,7 @@ export const runHostTurn = (model, grant, options, write, transport, diagnostics
         // ellipses are multi-byte, so a code-unit count would not match either.
         instructionBytes: instructions.byteLength,
         instructionLines: request.instructions.split("\n").length,
-        instructionSha: (yield* Effect.orDie(Effect.try(() => digestSync(instructions)))).slice(0, 12),
+        instructionSha: (yield* Effect.orDie(Effect.try({ try: () => digestSync(instructions), catch: keepDefect }))).slice(0, 12),
         appended: grant.agentInstructions !== undefined,
         appendedBytes: grant.agentInstructions === undefined ? 0 : utf8.encode(grant.agentInstructions).byteLength,
         context: request.context !== undefined,

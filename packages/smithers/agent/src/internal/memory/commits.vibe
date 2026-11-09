@@ -10,6 +10,7 @@
  * @since 1.0.0
  */
 
+import { identity as keepDefect } from "effect/Function"
 import * as Effect from "effect/Effect"
 import { headOf, run } from "./repo.vibe"
 
@@ -72,7 +73,7 @@ effect function parse(stdout: string) {
   const rows: Array<{ commitId: string; changeId: string; description: string }> = []
   for (const entry of stdout.split(record).filter((entry) => entry.trim() !== "")) {
     const [commitId, changeId, description] = entry.trim().split(field) as [string, string, string]
-    const decoded = try Effect.orDie(Effect.try(() => JSON.parse(description) as string))
+    const decoded = try Effect.orDie(Effect.try({ try: () => JSON.parse(description) as string, catch: keepDefect }))
     rows.push({ commitId, changeId, description: decoded.trim() })
   }
   return rows

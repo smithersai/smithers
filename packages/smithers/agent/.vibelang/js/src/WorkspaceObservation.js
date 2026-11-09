@@ -75,6 +75,7 @@
  * @since 0.1.0
  */
 import * as Effect_1 from "effect/Effect";
+import { identity as keepDefect } from "effect/Function";
 import * as Digest from "@smthrs/core/Digest";
 import * as EngineLike from "@smthrs/harness/EngineLike";
 import { HarnessError } from "@smthrs/harness/HarnessError";
@@ -207,7 +208,7 @@ export const observeHost = (host, root, options = {}) => Effect_1.gen(function* 
     // Trailing separators go, except the one that names the filesystem root.
     yield* walk(root.replaceAll(/\/+$/g, "") || (root.startsWith("/") ? "/" : root));
     return new EngineLike.Observation({
-        digest: yield* Effect.orDie(Effect.try(() => Digest.digest(lines.join("\n")))),
+        digest: yield* Effect.orDie(Effect.try({ try: () => Digest.digest(lines.join("\n")), catch: keepDefect })),
         paths: lines.length,
         complete: !bounded && !unreadable
     });

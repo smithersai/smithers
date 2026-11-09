@@ -74,6 +74,7 @@
  * @since 0.1.0
  */
 
+import { identity as keepDefect } from "effect/Function"
 import * as Digest from "@smthrs/core/Digest"
 import * as EngineLike from "@smthrs/harness/EngineLike"
 import { HarnessError } from "@smthrs/harness/HarnessError"
@@ -302,7 +303,7 @@ export const observeHost = (
     // Trailing separators go, except the one that names the filesystem root.
     try walk(root.replaceAll(/\/+$/g, "") || (root.startsWith("/") ? "/" : root))
     return new EngineLike.Observation({
-      digest: try Effect.orDie(Effect.try(() => Digest.digest(lines.join("\n")))),
+      digest: try Effect.orDie(Effect.try({ try: () => Digest.digest(lines.join("\n")), catch: keepDefect })),
       paths: lines.length,
       complete: !bounded && !unreadable
     })

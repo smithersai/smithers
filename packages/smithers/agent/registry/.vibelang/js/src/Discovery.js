@@ -13,6 +13,7 @@
  * @since 0.1.0
  */
 import * as Effect_1 from "effect/Effect";
+import { identity as keepDefect } from "effect/Function";
 import { Markdown as CoreMarkdown } from "@smthrs/core";
 import * as Digest from "@smthrs/core/Digest";
 import * as ByteSize from "effect/ByteSize";
@@ -112,13 +113,13 @@ const readMetadata = (fs, location, kind) => fs.stream(location, { bytesToRead: 
             bytes.set(chunk, position);
             position += chunk.length;
         }
-        const contentDigest = yield* Effect.orDie(Effect.try(() => Digest.digest(bytes)));
+        const contentDigest = yield* Effect.orDie(Effect.try({ try: () => Digest.digest(bytes), catch: keepDefect }));
         const decoder = new TextDecoder();
         const chunkSize = kind === "module" ? moduleMetadataChunkSize : markdownMetadataChunkSize;
         const parseLimit = Math.min(bytes.length, metadataReadLimit);
         let text = "";
         for (let offset = 0; offset < parseLimit; offset += chunkSize) {
-            text += yield* Effect.orDie(Effect.try(() => decoder.decode(bytes.subarray(offset, Math.min(offset + chunkSize, parseLimit)), { stream: true })));
+            text += yield* Effect.orDie(Effect.try({ try: () => decoder.decode(bytes.subarray(offset, Math.min(offset + chunkSize, parseLimit)), { stream: true }), catch: keepDefect }));
             const complete = kind === "markdown"
                 ? Frontmatter.isMetadataComplete(text)
                 : ModuleMetadata.isComplete(text);
@@ -128,8 +129,8 @@ const readMetadata = (fs, location, kind) => fs.stream(location, { bytesToRead: 
         return {
             _tag: "Metadata",
             contentDigest,
-            text: text + (yield* Effect.orDie(Effect.try(() => decoder.decode()))),
-            source: kind === "module" ? yield* Effect.orDie(Effect.try(() => new TextDecoder().decode(bytes))) : undefined
+            text: text + (yield* Effect.orDie(Effect.try({ try: () => decoder.decode(), catch: keepDefect }))),
+            source: kind === "module" ? yield* Effect.orDie(Effect.try({ try: () => new TextDecoder().decode(bytes), catch: keepDefect })) : undefined
         };
     });
 }));
