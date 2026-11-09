@@ -171,3 +171,13 @@ test("old lock writers normalize with the SDK's code-unit ordering and no duplic
   const merged = canonicalHistory(mergeHistory({ stores: {}, payloads: {}, mutations: [] }, { stores: { a: entry("a") }, payloads: {}, mutations: ["ask"] }, { stores: {}, payloads: { p: entry("p") }, mutations: [] }))
   assert.deepEqual(Object.keys(merged), ["stores", "payloads", "mutations"])
 })
+
+test("a converted migration registers exactly as a TypeScript one, under the same ledger key", () => {
+  const output = migrationManifest(["0002_b.vibe", "0001_a.ts", "0002_b.d.vibe.ts", "0002_b.test.vibe", "0002_b.test.ts"])
+  assert.equal(output, migrationManifest(["0001_a.ts", "0002_b.vibe"]))
+  assert.match(output, /import m0001 from "\.\/migrations\/0001_a\.ts"\n/)
+  assert.match(output, /import m0002 from "\.\/migrations\/0002_b\.vibe"\n/)
+  assert.match(output, /"0001_a": m0001,\n  "0002_b": m0002,\n/)
+  assert.deepEqual(migrationManifest(["0001_a.ts", "0002_b.ts"]).replace("0002_b.ts", "0002_b.vibe"), output)
+  assert.throws(() => migrationManifest(["0001_a.ts", "0001_a.vibe"]), /Duplicate/)
+})

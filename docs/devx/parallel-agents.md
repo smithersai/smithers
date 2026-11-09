@@ -57,6 +57,15 @@ file tree can lose newer upstream edits. Global cache pruning and deleting
 other lanes' scratch cannot prove ownership. Installing every workspace locally
 multiplies disk usage and violates the requested source-only boundary.
 
+A migration's identity is its number and slug, in either source format. Converting a
+published `.ts` migration to `.vibe` is not an edit: `numbering.mjs` lets it keep its
+identity when the `.ts` file is gone and VibeLang's parser finds the same statements in
+the `.vibe` file (`conversion.mjs`). Only VibeLang's spellings of the same Effect code and
+the imports its prelude supplies may differ. Any other change to a published migration is
+still refused, and a `.vibe` beside its `.ts` is a duplicate. The landing tool registers a
+`.vibe` migration in `MigrationManifest.ts` the way it registers a `.ts` one, under the
+same ledger key.
+
 ## Sources and validation
 
 - [jj working-copy semantics](https://github.com/jj-vcs/jj/blob/main/docs/working-copy.md)

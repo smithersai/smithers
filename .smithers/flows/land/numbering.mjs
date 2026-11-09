@@ -5,6 +5,7 @@ import { existsSync, readFileSync, readdirSync, renameSync } from "node:fs"
 import { join, basename } from "node:path"
 import { sourcePath, writeSource } from "./files.mjs"
 import { pathToFileURL } from "node:url"
+import { sameMigration } from "./conversion.mjs"
 
 export const decisions = "apps/mvp/docs/decisions"
 export const migrations = "apps/mvp/db/migrations"
@@ -16,10 +17,20 @@ export function jj(root, args) {
 }
 const lines = (text) => text ? text.split("\n") : []
 const files = (root, rev, directory) => lines(jj(root, ["file", "list", "--ignore-working-copy", "-r", rev, directory]))
+/** A migration's numeric identity, whichever source format holds it: `.ts`, or VibeLang's `.vibe`. */
+export function migrationFile(name) {
+  const match = name.match(/^(\d{4})_([a-zA-Z0-9_]+)\.(ts|vibe)$/)
+  if (!match) return undefined
+  return { name, id: Number(match[1]), digits: match[1], slug: match[2], stem: `${match[1]}_${match[2]}`, extension: `.${match[3]}` }
+}
 const identity = (path, directory) => {
-  const match = basename(path).match(directory === decisions ? /^(\d{4,})-(.+)\.md$/ : /^(\d{4,})_(.+)\.ts$/)
-  if (!match || match[2].endsWith(".test") || (directory === decisions && match[2].endsWith("-comparison"))) return undefined
-  return { path, id: Number(match[1]), digits: match[1], slug: match[2], stem: basename(path).replace(/\.(md|ts)$/, "") }
+  if (directory === migrations) {
+    const entry = migrationFile(basename(path))
+    return entry && { path, ...entry }
+  }
+  const match = basename(path).match(/^(\d{4,})-(.+)\.md$/)
+  if (!match || match[2].endsWith(".test") || match[2].endsWith("-comparison")) return undefined
+  return { path, id: Number(match[1]), digits: match[1], slug: match[2], stem: basename(path).replace(/\.md$/, "") }
 }
 
 /** Fail on duplicate numeric identities, including names differing only by slug. */
@@ -27,6 +38,7 @@ export function unique(paths, directory) {
   const seen = new Map()
   for (const path of paths) {
     const entry = identity(path, directory)
+    if (!entry && directory === migrations && /^\d+_[^.]*\.(?:ts|vibe)$/.test(basename(path))) throw new Error(`Invalid migration name: ${path}`)
     if (!entry) continue
     if (seen.has(entry.id) && !(directory === decisions && entry.id === 38 &&
       new Set([seen.get(entry.id), path]).size === 2 &&
@@ -35,12 +47,27 @@ export function unique(paths, directory) {
   }
 }
 
+/**
+ * The `.vibe` file that replaces the published `.ts` migration at `path`, if the change is a source format conversion:
+ * the `.ts` is gone, a `.vibe` of the same identity took its place, and {@link sameMigration} proves both run the same
+ * statements. It keeps the published identity, so it allocates no number. Anything else is an edit, and refused.
+ */
+function conversionTarget(root, base, path, current) {
+  const entry = identity(path, migrations)
+  if (entry.extension !== ".ts" || existsSync(join(root, path))) return undefined
+  const target = `${migrations}/${entry.stem}.vibe`
+  if (!current.includes(target)) return undefined
+  const published = jj(root, ["file", "show", "--ignore-working-copy", "-r", base, path])
+  return sameMigration(published, readFileSync(join(root, target), "utf8")) ? target : undefined
+}
+
 /** Plan renames before rebasing, when each lane's additions are still unambiguous. */
 export function planNumbers(root, target = "main@origin") {
   jj(root, ["status"])
   const base = jj(root, ["log", "--ignore-working-copy", "-r", `heads(::@ & ::${target})`, "--no-graph", "-T", 'commit_id ++ "\\n"'])
   if (!base || base.includes("\n")) throw new Error("Number allocation requires one common ancestor")
   const renames = []
+  const conversions = new Set()
   for (const directory of [decisions, migrations]) {
     const prior = new Set(files(root, base, directory))
     const current = files(root, "@", directory)
@@ -49,11 +76,13 @@ export function planNumbers(root, target = "main@origin") {
     if (directory === migrations) {
       const changed = lines(jj(root, ["diff", "--from", base, "--to", "@", "--name-only", directory]))
       for (const path of changed) if (prior.has(path) && identity(path, directory)) {
-        throw new Error(`Published migration is immutable: ${path}; add a new migration instead`)
+        const converted = conversionTarget(root, base, path, current)
+        if (converted === undefined) throw new Error(`Published migration is immutable: ${path}; add a new migration instead`)
+        conversions.add(converted)
       }
     }
     unique(current, directory)
-    const incoming = current.filter((path) => !prior.has(path)).map((path) => identity(path, directory)).filter(Boolean)
+    const incoming = current.filter((path) => !prior.has(path) && !conversions.has(path)).map((path) => identity(path, directory)).filter(Boolean)
       .sort((a, b) => a.id - b.id || a.path.localeCompare(b.path))
     const used = new Set(published.map((path) => identity(path, directory)?.id).filter((id) => id !== undefined))
     let last = Math.max(0, ...used)
@@ -65,7 +94,7 @@ export function planNumbers(root, target = "main@origin") {
       if (next !== entry.id) {
         const digits = String(next).padStart(4, "0")
         const stem = `${digits}${directory === decisions ? "-" : "_"}${entry.slug}`
-        renames.push({ ...entry, directory, next, to: join(directory, `${stem}${directory === decisions ? ".md" : ".ts"}`), newStem: stem })
+        renames.push({ ...entry, directory, next, to: join(directory, `${stem}${directory === decisions ? ".md" : entry.extension}`), newStem: stem })
       }
     }
   }
@@ -112,7 +141,7 @@ export function applyNumbers(root, plan) {
       const decisionMap = new Map(plan.renames.filter((entry) => entry.directory === decisions).map((entry) => [entry.digits, String(entry.next).padStart(4, "0")]))
       text = text.replace(/(\b[Dd]ecision\s+`?|^#\s*|\[)(\d{4,})(?=$|[\s:\]`.,)])/g, (match, prefix, id) => decisionMap.has(id) ? `${prefix}${decisionMap.get(id)}` : match)
       // through("NNNN") and exact quoted boundaries occur only in added migration tests.
-      if (path.startsWith("apps/mvp/db/") && /\.test\.[cm]?ts$/.test(path)) {
+      if (path.startsWith("apps/mvp/db/") && /\.test\.(?:[cm]?ts|vibe)$/.test(path)) {
         text = text.replace(/(["'])(\d{4})\1/g, (match, quote, id) => numberMap.has(id) ? `${quote}${numberMap.get(id)}${quote}` : match)
       }
       source[index] = text
