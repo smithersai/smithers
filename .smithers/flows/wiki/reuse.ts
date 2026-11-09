@@ -17,11 +17,11 @@ const { EngineEvent, Journal, JournalEvent } = JournalModules
 // that task; every reused receipt still passes today's deterministic assessment.
 export const policySources = [
   ".smithers/flows/wiki/flow.ts",
-  ".smithers/flows/wiki/workflow.ts",
-  ".smithers/flows/wiki/schema.ts",
+  ".smithers/flows/wiki/workflow.vibe",
+  ".smithers/flows/wiki/schema.vibe",
   ".smithers/flows/wiki/evidence.ts",
   ".smithers/flows/wiki/runtime.ts",
-  ".smithers/flows/wiki/jev-citations.ts"
+  ".smithers/flows/wiki/jev-citations.vibe"
 ] as const
 const PolicySource = Schema.Struct({ path: Schema.String, digest: Schema.String })
 export const Provenance = Schema.Struct({

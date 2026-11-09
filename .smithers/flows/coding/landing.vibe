@@ -1,7 +1,7 @@
 /**
  * The one `Landing` a host binds: this opinionated Effect adapter over the
  * backend's landing API (Plue composes it; no queue or ledger here), or a local
- * lander from `local-landing.ts` for a host without a repository binding.
+ * lander from `local-landing.vibe` for a host without a repository binding.
  */
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import {

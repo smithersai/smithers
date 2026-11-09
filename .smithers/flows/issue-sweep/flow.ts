@@ -3,7 +3,7 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
  * `issue-sweep`: works every open GitHub issue that no other machine holds,
  * as a `Burndown` from `@smthrs/patterns`. Each round asks the Codex and
  * Claude account pools for capacity, lists the open issues, claims the ones
- * that are ours, triages each (`triage.ts`) so only an issue that needs a code
+ * that are ours, triages each (`triage.vibe`) so only an issue that needs a code
  * change is claimed, fixes each in its own jj workspace (`issue-sweep/work`), lands
  * each result on `main` as its fix finishes, checking up to `landers` changes
  * at once and pushing one at a time, and releases every claim. A finished fix

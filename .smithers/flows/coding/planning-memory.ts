@@ -43,7 +43,7 @@ export interface MemoryOptions {
  * The closed set of planning-context refusal sites.
  *
  * A refused gather or freshness check names exactly one of these, first in its
- * message, as a source refusal names its own site (`source-refusal.ts`). The
+ * message, as a source refusal names its own site (`source-refusal.vibe`). The
  * site is the diagnosis: `stale_revision` alone cannot say whether the source
  * really moved or the host could not read it, and a run card that says only
  * "Every plan failed" after three spent attempts is how both the 2026-10-05
@@ -88,7 +88,7 @@ const failure = (site: PlanningSite, message: string) => refuse(site, "stale_rev
 const hostFault = (site: PlanningSite, message: string) => refuse(site, "execution", message)
 /**
  * A native snapshot refusal, mapped by what the adapter answered, as request
- * admission already maps the same call (`source-admission.ts`): only a source
+ * admission already maps the same call (`source-admission.vibe`): only a source
  * conflict is a replan, a denied capability is the person's refusal, and
  * anything else is the host's.
  */

@@ -233,7 +233,7 @@ const turnFlow = (index: number) =>
 /** Builds a host for `cwd`. The runtime is shared by every turn. */
 export const make = (options: {
   readonly cwd: string
-  /** The credentials environment; see `models.ts` `detect`. */
+  /** The credentials environment; see `models.vibe` `detect`. */
   readonly environment: Readonly<Record<string, string | undefined>>
   /** The startup seat scan, including Claude Code, when one was performed. */
   readonly available?: Available
@@ -247,7 +247,7 @@ export const make = (options: {
   readonly judge?: Layer.Layer<Evaluator.Evaluator>
   /** Each turn's and worker's spend ceiling; see `budget.ts`. Unbounded when absent. */
   readonly budget?: Budget.Policy
-  /** Durable spend for `budget.daily` and for recovering a run's spend; see `spend.ts`. */
+  /** Durable spend for `budget.daily` and for recovering a run's spend; see `spend.vibe`. */
   readonly ledger?: Budget.Ledger
   /** Test seam for the seat resolver; the native one when absent. */
   readonly seats?: Layer.Layer<SeatResolver.SeatResolver>

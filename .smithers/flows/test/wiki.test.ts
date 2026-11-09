@@ -774,9 +774,10 @@ test("the wiki CLI refuses an output or database that a symlinked ancestor route
   t.after(() => rm(outside, { recursive: true, force: true }))
   await mkdir(join(f.root, ".smithers"))
   await writeFile(join(f.root, ".smithers/coding-project.json"), JSON.stringify({ pages: [f.spec] }))
+  const register = `--import=${import.meta.resolve("vibelang/register")}`
   const cli = fileURLToPath(new URL("../wiki/main.ts", import.meta.url))
   const invoke = (...args: Array<string>) =>
-    spawnSync("node", [cli, "--root", f.root, ...args], { cwd: f.root, encoding: "utf8", timeout: 25_000 })
+    spawnSync("node", [register, cli, "--root", f.root, ...args], { cwd: f.root, encoding: "utf8", timeout: 25_000 })
   await symlink(outside, join(f.root, ".flows"), "dir")
   const linked = invoke()
   assert.notEqual(linked.status, 0, linked.stdout)

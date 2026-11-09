@@ -44,9 +44,11 @@ test(
     await writeFile(join(root, ".smithers/coding-project.json"), JSON.stringify({ pages: [spec] }))
     await writeFile(join(root, "page.md"), "# Answer\n\nThe answer is 42.\n")
     await writeFile(join(root, "answer.ts"), "export const answer = 42\n")
+    const register = `--import=${import.meta.resolve("vibelang/register")}`
     const cli = fileURLToPath(new URL("../wiki/main.ts", import.meta.url))
     const invoke = (run: string, reuse = true) => {
       const result = spawnSync("node", [
+        register,
         cli,
         "--root",
         root,
