@@ -53,7 +53,8 @@ it.live("wiki/github-host-operations", () => run("wiki/github-host-operations", 
   for (const op of ops) {
     fake.forbiddenNext = op.salt % 8 === 7
     fake.pinnedText = op.salt % 8 === 5 ? "Main advanced." : undefined
-    fake.contentStatus = op.salt % 16 === 9 ? 500 : op.salt % 16 === 13 ? 404 : 200
+    // No 5xx here: the flow retries `unavailable` for up to 120 seconds on the real clock. wiki/failure-mapping covers it.
+    fake.contentStatus = op.salt % 16 === 13 ? 404 : 200
     fake.noMain = op.salt % 16 === 15
     try Ref.set(principal, op.signedOut ? undefined : { id: "7", login: "fuzz", role: op.role, token: Redacted.make(op.noToken ? "" : "token") })
     const retried = op.salt % 8 === 3 ? failed.get(`${op.key % 4}`) : undefined

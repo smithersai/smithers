@@ -25,6 +25,31 @@ export effect function heldStartupTarget(page: Page) {
   try tryPromise(() => expect(page.getByRole("dialog", { name: "Ask the agent" })).toBeVisible())
 }
 
+const FirstVisit = Schema.Struct({ phone: Schema.Boolean, reducedMotion: Schema.Boolean, pause: Schema.Boolean })
+
+/** A first visit starts the tour by itself; the tour keeps Ctrl+K from opening the palette, and Escape ends it. */
+export effect function firstVisitTarget(page: Page) {
+  return try run("browser/first-visit-tour", FirstVisit, ({ phone, reducedMotion, pause }) => effect {
+    try tryPromise(() => page.setViewportSize(phone ? { width: 392, height: 800 } : { width: 1280, height: 800 }))
+    try tryPromise(() => page.emulateMedia({ reducedMotion: reducedMotion ? "reduce" : "no-preference", colorScheme: "dark" }))
+    try tryPromise(() => page.goto("/?agent=mock"))
+    try tryPromise(() => page.evaluate("localStorage.clear(); sessionStorage.clear()"))
+    try tryPromise(() => page.goto("/?agent=mock"))
+    const bar = try Effect.try(() => page.locator(".vl-theatre-bar"))
+    try tryPromise(() => expect(bar).toBeVisible({ timeout: 20_000 }))
+    try tryPromise(() => page.keyboard.press("ControlOrMeta+k"))
+    try tryPromise(() => expect(page.getByRole("dialog", { name: "Ask the agent" })).toBeHidden())
+    if (pause) try tryPromise(() => page.keyboard.press(" "))
+    try tryPromise(() => page.keyboard.press("ArrowRight"))
+    try tryPromise(() => page.keyboard.press("ArrowLeft"))
+    try tryPromise(() => page.keyboard.press("Tab"))
+    try tryPromise(() => expect(bar).toBeVisible())
+    try tryPromise(() => page.keyboard.press("Escape"))
+    try tryPromise(() => expect(bar).toBeHidden())
+    return true
+  })
+}
+
 /** The actual built app, its real mock Factory, and native browser input. No request or DOM interception. */
 export effect function browserTarget(page: Page) {
   try returningVisitor(page)
