@@ -2,6 +2,7 @@
 """Every executable mutation must reach Dafny and fail a contract in its intended function.
 
   bash verify/broken.sh [NAME ...]   every mutation in mutations.py, or only the named ones
+  bash verify/broken.sh --module src/web/x.vibe   only the mutations of the named production modules
 
 The mutants are generated from src/core/conversation.vibe for this run, under the ignored verify/.checks/.
 """

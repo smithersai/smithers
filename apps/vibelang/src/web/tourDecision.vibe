@@ -1,0 +1,101 @@
+// Decisions for the tour controls and the event stream connection, over plain values. `update` reads the model and builds Commands.
+
+export type TourMove = "none" | "pause" | "resume" | "seek"
+export interface TourControl { readonly action: TourMove; readonly step: number }
+export interface TourPresentation { readonly step: number; readonly sound: boolean; readonly active: boolean; readonly paused: boolean }
+export interface StreamScreen { readonly stream: "open" | "failed"; readonly connection: string; readonly epoch: number; readonly from: number }
+export interface TourKeep { readonly tour: boolean; readonly recoverTour: boolean; readonly tourError: string }
+
+/** The pause button pauses a running tour and resumes a paused one; no tour, no command. */
+//@ verify
+//@ ensures !tour ==> \result == { action: "none", step: 0 }
+//@ ensures tour && paused ==> \result == { action: "resume", step: 0 }
+//@ ensures tour && !paused ==> \result == { action: "pause", step: 0 }
+export function pauseTour(tour: boolean, paused: boolean): TourControl {
+  if (!tour) return { action: "none", step: 0 }
+  return { action: paused ? "resume" : "pause", step: 0 }
+}
+
+/** Back seeks one stop earlier and stops at the first. */
+//@ verify
+//@ ensures (!tour || step <= 1) ==> \result == { action: "none", step: 0 }
+//@ ensures tour && step > 1 ==> \result == { action: "seek", step: step - 1 }
+export function backTour(tour: boolean, step: number): TourControl {
+  if (!tour || step <= 1) return { action: "none", step: 0 }
+  return { action: "seek", step: step - 1 }
+}
+
+/** Skip seeks one stop later. */
+//@ verify
+//@ ensures !tour ==> \result == { action: "none", step: 0 }
+//@ ensures tour ==> \result == { action: "seek", step: step + 1 }
+export function skipTour(tour: boolean, step: number): TourControl {
+  if (!tour) return { action: "none", step: 0 }
+  return { action: "seek", step: step + 1 }
+}
+
+/** The sound button flips only the sound, and presents the tour with it. */
+//@ verify
+//@ ensures \result == { ...state, sound: !state.sound }
+export function toggledSound(state: TourPresentation): TourPresentation {
+  return { ...state, sound: !state.sound }
+}
+
+/** Only a running tour measures its theatre. */
+//@ verify
+//@ ensures \result == tour
+export function remeasures(tour: boolean): boolean {
+  return tour
+}
+
+/** A tour ended before it was recorded is ended now that it is. */
+//@ verify
+//@ ensures \result == !tour
+export function endsLateTour(tour: boolean): boolean {
+  return !tour
+}
+
+/** A failed start keeps control only for this tab's own running tour or a busy recovery. */
+//@ verify
+//@ ensures \result == (touring || (recovering && reason == "busy"))
+export function failedTourKeeps(touring: boolean, recovering: boolean, reason: string): boolean {
+  return touring || (recovering && reason === "busy")
+}
+
+/** The tour that kept control runs on, with its recovery and error cleared. */
+//@ verify
+//@ ensures \result == { tour: true, recoverTour: false, tourError: "" }
+export function keptTour(): TourKeep {
+  return { tour: true, recoverTour: false, tourError: "" }
+}
+
+/** The tour starts by itself only over an empty, unoccupied splash. */
+//@ verify
+//@ ensures \result == (surface == "splash" && !palette && !tour && !issuesOpen && !conversation)
+export function autoTourStarts(surface: string, palette: boolean, tour: boolean, issuesOpen: boolean, conversation: boolean): boolean {
+  return surface === "splash" && !palette && !tour && !issuesOpen && !conversation
+}
+
+/** A lost stream says so and changes nothing else. */
+//@ verify
+//@ ensures \result == { ...state, stream: "failed", connection: "Disconnected" }
+export function failedEvents(state: StreamScreen): StreamScreen {
+  return { ...state, stream: "failed", connection: "Disconnected" }
+}
+
+/** Reconnecting reopens from the last applied event under a new epoch. */
+//@ verify
+//@ ensures \result == { ...state, stream: "open", connection: "Reconnecting", epoch: state.epoch + 1, from: seq }
+//@ ensures \result.epoch > state.epoch
+export function reconnected(state: StreamScreen, seq: number): StreamScreen {
+  return { ...state, stream: "open", connection: "Reconnecting", epoch: state.epoch + 1, from: seq }
+}
+
+/** Typing "/" opens the slash menu; an empty command list loads it. */
+//@ verify
+//@ ensures \result.slash == value.startsWith("/")
+//@ ensures \result.load == (value.startsWith("/") && empty)
+export function updatedDraftMenu(value: string, empty: boolean): { readonly slash: boolean; readonly load: boolean } {
+  const slash = value.startsWith("/")
+  return { slash, load: slash && empty }
+}

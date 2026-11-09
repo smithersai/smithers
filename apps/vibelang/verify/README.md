@@ -7,6 +7,7 @@ From the app:
   staged in `.checks/run-*/source/`; reports name the `.vibe` file and line.
 - `pnpm verify:broken`: assert every mutation in `mutations.py` fails its intended proof obligation.
 - `pnpm verify:broken <name> ...`: demonstrate the named mutations failing with their function and line.
+- `pnpm verify:broken --module src/web/x.vibe ...`: run only the mutations of the named production modules, for iterating; a landing still runs the whole suite.
 - `pnpm verify <file-or-directory> ...`: check every supplied source; a missing extra source is an error.
 - `pnpm verify verify/bugs/<name>.ts`: reproduce a documented tool boundary; unsafe-integer intentionally proves the mathematical model while its native counterexample fails.
 

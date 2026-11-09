@@ -1662,7 +1662,9 @@ function qualifyCtor(name: string, type?: string): string {
   const rawName = name.replace(/^\./, "");
   // hasOwn: a ctor literally named "constructor" (the IR's own Expr variant)
   // must not hit Object.prototype.constructor through the bare index.
-  const mapped = (Object.hasOwn(CTOR_MAP, rawName) ? CTOR_MAP[rawName] : undefined) ?? dafnyCtorName(rawName);
+  // A user datatype may declare a constructor spelled "none"; only Option's are renamed.
+  const optionCtor = type === undefined || type === "Option";
+  const mapped = (optionCtor && Object.hasOwn(CTOR_MAP, rawName) ? CTOR_MAP[rawName] : undefined) ?? dafnyCtorName(rawName);
   if (type) return `${type}.${mapped}`;
   return mapped;
 }

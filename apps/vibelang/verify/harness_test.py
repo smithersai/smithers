@@ -1,6 +1,7 @@
 """Regression: an ignored-only proof directory must never pass with zero checked sources."""
-import pathlib, subprocess, sys, tempfile, unittest
+import json, pathlib, subprocess, sys, tempfile, unittest
 from sources import production_sources
+HERE = pathlib.Path(__file__).resolve().parent
 ROOT = pathlib.Path(__file__).resolve().parent
 
 class StrictSourceChecks(unittest.TestCase):
@@ -104,6 +105,25 @@ class CheckedProofAdditions(unittest.TestCase):
         self.assertEqual(insertion_names('src/core/sandboxDecision.vibe'), ['runningCountPrefix_ensures'])
         for invalid in [source + source, source.replace('{\n}', '{\n  assert valid;\n}')]:
             with self.assertRaises(ValueError): add_proof_steps(invalid, 'src/core/sandboxDecision.vibe')
+
+class MutationModuleFilter(unittest.TestCase):
+    def run_mutations(self, *args):
+        with tempfile.TemporaryDirectory() as out:
+            proc = subprocess.run([sys.executable, str(HERE / 'mutations.py'), out, *args], text=True, capture_output=True)
+            manifest = json.loads((pathlib.Path(out) / 'manifest.json').read_text()) if proc.returncode == 0 else {}
+            return proc, manifest
+
+    def test_module_option_selects_only_that_modules_mutations(self):
+        proc, manifest = self.run_mutations('--module', 'src/web/tourDecision.vibe')
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertTrue(manifest)
+        self.assertEqual({item['source'] for item in manifest.values()}, {'src/web/tourDecision.vibe'})
+
+    def test_module_with_no_mutations_fails_closed(self):
+        proc, _ = self.run_mutations('--module', 'src/web/absent.vibe')
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn('No mutations in', proc.stderr)
+
 
 class MutationContractFailures(unittest.TestCase):
     def test_a_broken_capacity_guard_fails_the_callee_domain_contract(self):

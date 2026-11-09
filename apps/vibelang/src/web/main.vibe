@@ -1,8 +1,10 @@
 import * as ModelDecision from "./modelDecision.vibe"
+import * as IssueDecision from "./issueDecision.vibe"
+import * as TourDecision from "./tourDecision.vibe"
 import { WALKTHROUGH, DEMO_QUESTION } from "../core/walkthroughSteps.vibe"
 import { TourPresentation, presentation } from "./theatre.vibe"
 import { surfaceTransition, toggleSandbox, maximizeSandbox, currentSandbox, canSandboxAction } from "./viewDecision.vibe"
-import { IssuesUi, initialIssues, issuesUpdate } from "./issues.vibe"
+import { IssuesUi, initialIssues, issueScreen, issuesUpdate } from "./issues.vibe"
 import { IssueFailure, IssueRequest, IssuesState, IssueOperation } from "../core/issueSchemas.vibe"
 // The web app's Foldkit program: Model, Messages, update, Commands and Subscriptions. The view is `view.vibe`. Every
 // change to the conversation goes through the shared machine (`../core/conversation.vibe`); this file only adds what a
@@ -370,37 +372,41 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     FailedRoles: () => runAccount(model, ModelDecision.failedRoles(accountScreen(model))),
     RetriedAccount: () => ModelDecision.accountRetryPlan(accountOf(model).retry) === "sign-in" ? update(model, Message.ClickedSignIn()) : runAccount(model, ModelDecision.retriedAccount(accountScreen(model), accountOf(model).ledger.conversation.seq)),
     DismissedAccountError: () => runAccount(model, ModelDecision.dismissedAccountError(accountScreen(model))),
-    OpenIssueCard: ({ number }) => ({ model: { ...model, issues: { ...(model.issues ?? initialIssues), open: true, screen: "detail", selected: number } }, commands: [LoadIssues({}), ...(model.mode === "live" ? [LoadIssueDetails({ number, key: `${model.session}-card-${number}-${(model.issues?.serial ?? 0) + 1}` })] : [])] }),
-    IssueProjectionLoaded: ({ data }) => data.seq < (model.issues?.data.seq ?? 0) ? { model } : { model: { ...model, issues: { ...(model.issues ?? { ...initialIssues, open: false }), data, status: "ready", role: data.role ?? (model.mode === "mock" ? "maintainer" : "viewer") } } },
-    ClickedIssues: () => ({ model: { ...model, issues: { ...(model.issues ?? initialIssues), open: true } }, commands: model.issues?.busy ? [] : [LoadIssues({})] }),
+    OpenIssueCard: ({ number }) => ({ model: { ...model, issues: { ...(model.issues ?? initialIssues), ...IssueDecision.openedIssueCard(issueScreen(model.issues ?? initialIssues), number) } }, commands: [LoadIssues({}), ...(IssueDecision.issueCardLoadsDetails(model.mode) ? [LoadIssueDetails({ number, key: `${model.session}-card-${number}-${(model.issues?.serial ?? 0) + 1}` })] : [])] }),
+    IssueProjectionLoaded: ({ data }) => !IssueDecision.issueProjectionApplies(data.seq, model.issues?.data.seq ?? 0) ? { model } : { model: { ...model, issues: { ...(model.issues ?? { ...initialIssues, open: false }), data, status: "ready", role: data.role ?? IssueDecision.issueDefaultRole(model.mode) } } },
+    ClickedIssues: () => ({ model: { ...model, issues: { ...(model.issues ?? initialIssues), open: true } }, commands: IssueDecision.clickedIssuesLoads(model.issues?.busy === true) ? [LoadIssues({})] : [] }),
     IssueUi: ({ action, value }) => {
       const before = issueStateOf(model)
       const result = issuesUpdate(before, action, value)
-      return { model: { ...model, issues: action === "select" && model.mode === "live" ? { ...result.ui, serial: before.serial + 1 } : result.ui, ...(action === "close" ? { surface: "chat" } : {}) }, commands: [
-        ...(action === "select" && model.mode === "live" ? [LoadIssueDetails({ number: Number(value), key: `${model.session}-detail-${before.serial + 1}` })] : []),
+      const effects = IssueDecision.issueUiEffects(action, value, model.mode === "live", before.dialog, result.ui.dialog)
+      return { model: { ...model, issues: effects.bumpSerial ? { ...result.ui, serial: before.serial + 1 } : result.ui, ...(effects.toChat ? { surface: "chat" } : {}) }, commands: [
+        ...(effects.details ? [LoadIssueDetails({ number: Number(value), key: `${model.session}-detail-${before.serial + 1}` })] : []),
         ...(result.request === undefined ? [] : [ActOnIssue({ request: result.request })]),
-        ...(action === "kind-key" || action === "focus" ? [FocusIssueControl({ id: action === "kind-key" ? `ix-kind-${value}` : value })] : []),
-        ...(before.dialog === "" && result.ui.dialog !== "" ? [ShowIssueDialog({})] : []),
-        ...(before.dialog !== "" && result.ui.dialog === "" ? [CloseIssueDialog({})] : []),
+        ...(effects.focus === "" ? [] : [FocusIssueControl({ id: effects.focus })]),
+        ...(effects.showDialog ? [ShowIssueDialog({})] : []),
+        ...(effects.closeDialog ? [CloseIssueDialog({})] : []),
       ] }
     },
     IssuesLoaded: ({ data, created, role, op, key }) => {
       const ui = model.issues ?? initialIssues
       if (data.saved !== undefined) {
         const { request, status, unwritten, selected } = data.saved
-        const completed = status === "completed"
-        return { model: { ...model, issues: { ...ui, keyPrefix: model.session, data, role, status: "ready", busy: false, screen: request.op.startsWith("spec-") ? "specification" : completed ? "detail" : request.op === "new" ? "new" : request.op === "propose" ? "vip" : "detail", step: 4, selected, title: request.title, summary: request.text, comment: request.op === "comment" ? request.text : "", example: request.example, prior: request.prior, parent: String(request.parent), assignee: request.assignee, retry: completed || unwritten ? undefined : request, error: completed || unwritten ? "" : "Couldn't save. Retry." } } }
+        const step = IssueDecision.issueRecovered(issueScreen(ui), request.op, status === "completed", unwritten, selected, request.title, request.text, request.example, request.prior, String(request.parent), request.assignee)
+        return { model: { ...model, issues: { ...ui, ...step.state, keyPrefix: model.session, data, role, retry: step.clearRetry ? undefined : request } } }
       }
       const settled = ModelDecision.issueResponseSettles(ui.retry?.op ?? null, ui.retry?.key ?? null, op ?? null, key ?? null)
-      return { model: { ...model, issues: { ...ui, data: data.draft === undefined && data.seq >= ui.data.seq ? data : ui.data, status: "ready", role, ...(data.draft === undefined ? {} : { title: data.draft.title, summary: data.draft.summary, example: data.draft.example, prior: data.draft.prior }), busy: settled ? false : ui.busy, retry: settled ? undefined : ui.retry, error: settled ? "" : ui.error, comment: settled ? "" : ui.comment, dialog: settled ? "" : ui.dialog, ...(data.assignees === undefined ? {} : { assignee: data.assignees.some((a) => a.login === ui.assignee) ? ui.assignee : data.assignees.find((a) => a.label === "VibeLang agent")?.login ?? "" }), ...(created && settled ? { screen: "detail", selected: data.selected ?? Math.max(...data.items.map((i) => i.number)) } : {}) } }, commands: !settled || ui.dialog === "" ? [] : [CloseIssueDialog({})] }
+      const assignee = data.assignees === undefined ? ui.assignee : IssueDecision.issueAssigneeAfter(data.assignees.some((a) => a.login === ui.assignee), ui.assignee, data.assignees.find((a) => a.label === "VibeLang agent")?.login ?? "")
+      const step = IssueDecision.issueLoaded(issueScreen(ui), settled, created, data.draft !== undefined, data.draft?.title ?? "", data.draft?.summary ?? "", data.draft?.example ?? "", data.draft?.prior ?? "", assignee, data.selected ?? Math.max(...data.items.map((i) => i.number)))
+      return { model: { ...model, issues: { ...ui, ...step.state, data: IssueDecision.issueDataApplies(data.draft !== undefined, data.seq, ui.data.seq) ? data : ui.data, role, retry: step.clearRetry ? undefined : ui.retry } }, commands: step.closeDialog ? [CloseIssueDialog({})] : [] }
     },
     IssuesFailed: ({ reason, op, key, unwritten }) => {
       const ui = model.issues ?? initialIssues
       const relevant = ModelDecision.issueResponseSettles(ui.retry?.op ?? null, ui.retry?.key ?? null, op ?? null, key ?? null)
-      return { model: { ...model, issues: { ...ui, status: ui.data.items.length === 0 ? "error" : "ready", ...(relevant ? { busy: false, ...(unwritten === true ? { retry: undefined } : {}), error: reason === "no-model" ? "Review unavailable" : reason === "connect" ? "Connect GitHub." : reason === "forbidden" ? "Not allowed" : reason === "tree" ? "Choose another parent." : reason === "assignee" ? "Choose an assignee." : reason === "closed" ? "Issue closed." : "Couldn't save. Retry." } : {}) } } }
+      const step = IssueDecision.issueFailed(issueScreen(ui), ui.data.items.length === 0, relevant, unwritten === true, reason === "connect" ? "Connect GitHub." : IssueDecision.issueFailureText(reason))
+      return { model: { ...model, issues: { ...ui, ...step.state, retry: step.clearRetry ? undefined : ui.retry } } }
     },
     IssueDetailsLoaded: ({ data, number }) => model.issues === undefined || !ModelDecision.issueDetailsApply(model.issues.selected, number, data.seq, model.issues.data.seq) ? { model } : { model: { ...model, issues: { ...model.issues, data } } },
-    IssueDetailsFailed: ({ number }) => model.issues === undefined || !ModelDecision.issueDetailsFailureShows(model.issues.selected, number, model.issues.retry !== undefined) ? { model } : { model: { ...model, issues: { ...model.issues, error: "Couldn't load comments. Retry." } } },
+    IssueDetailsFailed: ({ number }) => model.issues === undefined || !ModelDecision.issueDetailsFailureShows(model.issues.selected, number, model.issues.retry !== undefined) ? { model } : { model: { ...model, issues: { ...model.issues, ...IssueDecision.issueDetailsFailed(issueScreen(model.issues)) } } },
     IssueDialogFocused: () => ({ model }),
     PressedCommandK: () => openPalette(model, !model.palette),
     ClickedAsk: () => openPalette(model, true),
@@ -424,26 +430,26 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       }
     },
     MovedTourFocus: ({ backward }) => ({ model, commands: [FocusTourControl({ backward })] }),
-    AutoTour: () => model.surface === "splash" && !model.palette && !model.tour && !model.issues?.open && !hasConversation(model) ? learnMore(model) : { model },
+    AutoTour: () => TourDecision.autoTourStarts(model.surface, model.palette, model.tour, model.issues?.open === true, hasConversation(model)) ? learnMore(model) : { model },
     MeasuredTheatre: (box) => ({ model: { ...model, theatreBox: box } }),
-    RemeasureTheatre: () => ({ model, commands: model.tour ? [MeasureTheatre({ target: model.theatre?.target ?? "splash" })] : [] }),
-    ClickedPauseTour: () => tourControl(model, model.theatre?.paused ? "resume" : "pause", 0),
-    ClickedBackStop: () => { const step = model.theatre?.step ?? 1; return step <= 1 ? { model } : tourControl(model, "seek", step - 1) },
-    ClickedSkipStop: () => tourControl(model, "seek", (model.theatre?.step ?? 1) + 1),
-    ToggledTourSound: () => ({ model: { ...model, theatre: { ...theatreOf(model), sound: !model.theatre?.sound } }, commands: [PresentTour({ step: model.theatre?.step ?? 1, sound: !model.theatre?.sound, active: model.tour, paused: model.theatre?.paused ?? false })] }),
+    RemeasureTheatre: () => ({ model, commands: TourDecision.remeasures(model.tour) ? [MeasureTheatre({ target: model.theatre?.target ?? "splash" })] : [] }),
+    ClickedPauseTour: () => runTourControl(model, TourDecision.pauseTour(model.tour, model.theatre?.paused === true)),
+    ClickedBackStop: () => runTourControl(model, TourDecision.backTour(model.tour, model.theatre?.step ?? 1)),
+    ClickedSkipStop: () => runTourControl(model, TourDecision.skipTour(model.tour, model.theatre?.step ?? 1)),
+    ToggledTourSound: () => {
+      const present = TourDecision.toggledSound({ step: model.theatre?.step ?? 1, sound: model.theatre?.sound === true, active: model.tour, paused: model.theatre?.paused ?? false })
+      return { model: { ...model, theatre: { ...theatreOf(model), sound: present.sound } }, commands: [PresentTour(present)] }
+    },
     ReceivedTourEvent: ({ event }) => receiveTour(model, event),
     FailedTourEvents: () => ({ model: { ...model, tourError: "Connection lost" } }),
     ClickedLearnMore: () => learnMore(model),
     ClickedEndTour: () => endTour(model),
     // Ended before the tour was even recorded: end it now that it is.
-    SucceededTour: () => model.tour ? { model } : { model, commands: [EndTourCommand({ conversation: tourConversation(walkthroughSession(model)) })] },
+    SucceededTour: () => TourDecision.endsLateTour(model.tour) ? { model, commands: [EndTourCommand({ conversation: tourConversation(walkthroughSession(model)) })] } : { model },
     // Busy while this tab's own tour runs (a Learn more racing an Escape): that tour keeps control.
-    FailedTour: ({ reason }) => {
-      const keep = touringHere(model) || (model.recoverTour === true && reason === "busy")
-      return keep ? { model: { ...model, tour: true, recoverTour: false, tourError: "" } } : {
-        model: { ...model, ...failScreenTour(model, reason, false), surface: "chat", recoverTour: false },
-        commands: [PresentTour({ step: theatreOf(model).step, sound: theatreOf(model).sound, active: false, paused: false }), FocusComposer({})],
-      }
+    FailedTour: ({ reason }) => TourDecision.failedTourKeeps(touringHere(model), model.recoverTour === true, reason) ? { model: { ...model, ...TourDecision.keptTour() } } : {
+      model: { ...model, ...failScreenTour(model, reason, false), surface: "chat", recoverTour: false },
+      commands: [PresentTour({ step: theatreOf(model).step, sound: theatreOf(model).sound, active: false, paused: false }), FocusComposer({})],
     },
     // The end never reached the agent: it still drives, so Esc comes back.
     FailedEndTour: () => recoverEndTour(model),
@@ -496,10 +502,13 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     ClickedDocs: () => ({ model: { ...model, ...toggleScreenDocs(model) }, ...(model.docs === "max" && model.client.conversation.pane.startsWith("/wiki/") ? { commands: [RevealWiki({})] } : {}) }),
     ClickedSplash: () => ({ model: { ...model, ...showSplash(model), ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }) } }),
     ClickedChat: () => minimizeSplash(model),
-    UpdatedDraft: ({ value }) => ({
-      model: { ...model, draft: value, actions: { ...actionsOf(model), slash: value.startsWith("/"), highlight: 0 } },
-      ...(value.startsWith("/") && actionsOf(model).entries.length === 0 ? { commands: [LoadActions({ flow: "", ...(actionsOf(model).epoch === undefined ? {} : { epoch: actionsOf(model).epoch }) })] } : {}),
-    }),
+    UpdatedDraft: ({ value }) => {
+      const menu = TourDecision.updatedDraftMenu(value, actionsOf(model).entries.length === 0)
+      return {
+        model: { ...model, draft: value, actions: { ...actionsOf(model), slash: menu.slash, highlight: 0 } },
+        ...(menu.load ? { commands: [LoadActions({ flow: "", ...(actionsOf(model).epoch === undefined ? {} : { epoch: actionsOf(model).epoch }) })] } : {}),
+      }
+    },
     ClickedActions: () => runActions(model, ModelDecision.clickedActions(actionScreen(model), actionsOf(model).entries.length !== 0, actionsOf(model).epoch ?? null)),
     MaximizedActions: () => runActions(model, ModelDecision.maximizedActions(actionScreen(model))),
     SelectedAction: ({ name }) => runActions(model, ModelDecision.selectedAction(actionScreen(model), name, actionsOf(model).epoch ?? null)),
@@ -562,8 +571,8 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
         ],
       }
     },
-    FailedEvents: () => ({ model: { ...model, stream: "failed", connection: "Disconnected" } }),
-    ClickedReconnect: () => ({ model: { ...model, stream: "open", connection: "Reconnecting", epoch: model.epoch + 1, from: model.client.conversation.seq }, commands: [FocusComposer({})] }),
+    FailedEvents: () => ({ model: { ...model, ...TourDecision.failedEvents(streamScreen(model)) } }),
+    ClickedReconnect: () => ({ model: { ...model, ...TourDecision.reconnected(streamScreen(model), model.client.conversation.seq) }, commands: [FocusComposer({})] }),
     FocusedPrompt: () => ({ model }),
     ScrolledTranscript: ({ bottom, intent = model.followIntent }) => {
       const next = scrollFollow(model.surface, model.palette, model.following, model.followIntent, bottom, intent)
@@ -658,12 +667,15 @@ function learnMore(model: Model): Update.Return<Model, Message, Factory | Action
     commands: [...(model.palette ? [ClosePalette({ dock: false })] : []), StartTourCommand({ conversation: tourConversation(walkthroughSession(model)) }), PresentTour({ step: 1, sound: theatreOf(model).sound, active: true, paused: false })],
   }
 }
+function runTourControl(model: Model, control: TourDecision.TourControl): Update.Return<Model, Message, Factory | Actions> {
+  return control.action === "none" ? { model } : { model, commands: [ControlTourCommand({ conversation: tourConversation(walkthroughSession(model)), action: control.action, step: control.step })] }
+}
+function streamScreen(model: Model): TourDecision.StreamScreen {
+  return { stream: model.stream, connection: model.connection, epoch: model.epoch, from: model.from }
+}
 function touringHere(model: Model): boolean {
   const conversation = (model.tourClient ?? model.client).conversation
   return Machine.isTouring(conversation, conversation.replying)
-}
-function tourControl(model: Model, action: "pause" | "resume" | "seek", step: number): Update.Return<Model, Message, Factory | Actions> {
-  return model.tour ? { model, commands: [ControlTourCommand({ conversation: tourConversation(walkthroughSession(model)), action, step })] } : { model }
 }
 function endTour(model: Model): Update.Return<Model, Message, Factory | Actions> {
   return { model: { ...model, tour: false, tourDismissed: true, surface: "chat", palette: false, draft: "", docs: "pane", sandboxPane: model.sandboxPane === "max" ? "pane" : model.sandboxPane ?? "closed", issues: { ...issueStateOf(model), open: false }, actions: { ...actionsOf(model), slash: false, maximized: false } }, commands: [EndTourCommand({ conversation: tourConversation(walkthroughSession(model)) }), ClosePalette({ dock: true }), PresentTour({ step: theatreOf(model).step, sound: theatreOf(model).sound, active: false, paused: false }), FocusComposer({})] }

@@ -1,6 +1,7 @@
 // Screen state only. Issue data arrives through Factory and the shared machine's numbered observations.
 import { IssueRequest, IssuesState } from "../core/issueSchemas.vibe"
 import { issuePermission, type Role } from "../core/conversation.vibe"
+import * as IssueDecision from "./issueDecision.vibe"
 
 export schema IssuesUi {
   readonly keyPrefix: string
@@ -41,63 +42,42 @@ function parentNumber(text: string): number {
 export function issueRequest(ui: IssuesUi, op: IssueRequest["op"]): IssueRequest {
   return { op, number: ui.selected, parent: parentNumber(ui.parent), title: ui.title, text: op === "comment" ? ui.comment : ui.summary, example: ui.example, prior: ui.prior, assignee: ui.assignee, key: ui.keyPrefix === "" ? String(ui.serial + 1) : `${ui.keyPrefix}-${ui.serial + 1}` }
 }
+/** The plain state the proved decisions in `issueDecision.vibe` read and return. */
+export function issueScreen(ui: IssuesUi): IssueDecision.IssueScreen {
+  const { open, screen, kind, state, query, selected, dialog, status, busy, title, summary, example, prior, comment, parent, assignee, step, error, serial } = ui
+  return { open, screen, kind, state, query, selected, dialog, status, busy, title, summary, example, prior, comment, parent, assignee, step, error, serial }
+}
+function issueFacts(ui: IssuesUi, action: string, value: string): IssueDecision.IssueFacts {
+  const op = IssueDecision.issueGateOp(action)
+  return {
+    retryOp: ui.retry?.op ?? "",
+    retryReviewer: ui.retry?.reviewer ?? "",
+    retryAllowed: ui.retry !== undefined && issuePermission(ui.role, ui.retry.op),
+    allowed: op !== "" && issuePermission(ui.role, op as IssueRequest["op"]),
+    specText: ui.data.specification?.text ?? "",
+    number: Number(value),
+    kind: value as IssuesUi["kind"],
+    listState: value as IssuesUi["state"],
+    blankTitle: ui.title.trim() === "",
+    blankSummary: ui.summary.trim() === "",
+    blankExample: ui.example.trim() === "",
+    blankPrior: ui.prior.trim() === "",
+  }
+}
+function issueRequestFor(ui: IssuesUi, action: string, value: string, serial: number): IssueRequest {
+  if (action === "retry" && ui.retry !== undefined) return { ...ui.retry, recovery: `${ui.keyPrefix}-${serial}` }
+  if (action === "spec-review") return { ...issueRequest(ui, "spec-review"), revision: ui.data.specification?.revision ?? 0, reviewer: value as "astra" | "sol" | "fable" | "opus" }
+  const op = action as IssueRequest["op"]
+  return { ...issueRequest(ui, op), ...(op === "spec-revise" ? { revision: ui.data.specification?.revision ?? 0 } : {}) }
+}
 export interface UiResult { readonly ui: IssuesUi; readonly request?: IssueRequest; readonly focusCommit?: boolean }
 export function issuesUpdate(ui: IssuesUi, action: string, value: string): UiResult {
-  switch (action) {
-    case "retry": {
-      if (ui.busy || ui.retry === undefined || !issuePermission(ui.role, ui.retry.op)) return { ui }
-      const serial = ui.serial + 1
-      const request = { ...ui.retry, recovery: `${ui.keyPrefix}-${serial}` }
-      return { ui: { ...ui, serial, retry: request, busy: true, error: "" }, request }
-    }
-    case "close": return { ui: { ...ui, open: false } }
-    case "specification": return { ui: { ...ui, screen: "specification", summary: ui.data.specification?.text ?? "", error: "" } }
-    case "spec-review": {
-      if (ui.busy || !issuePermission(ui.role, "spec-review")) return { ui }
-      if (ui.retry !== undefined && ui.retry.op === "spec-review" && ui.retry.reviewer === value) return { ui: { ...ui, busy: true, error: "" }, request: ui.retry }
-      if (ui.retry !== undefined) return { ui: { ...ui, error: "Retry the saved action." } }
-      const request = { ...issueRequest(ui, "spec-review"), revision: ui.data.specification?.revision ?? 0, reviewer: value as "astra" | "sol" | "fable" | "opus" }
-      return { ui: { ...ui, busy: true, serial: ui.serial + 1, retry: request, error: "" }, request }
-    }
-    case "roles": return { ui: { ...ui, screen: "roles", dialog: "", error: "" } }
-    case "list": return { ui: { ...ui, screen: "list", dialog: "", error: "" } }
-    case "select": return { ui: { ...ui, screen: "detail", selected: Number(value), error: "" } }
-    case "kind-key": case "kind": return { ui: { ...ui, kind: value as IssuesUi["kind"], screen: "list", error: "" } }
-    case "state": return { ui: { ...ui, state: value as "open" | "closed" } }
-    case "query": return { ui: { ...ui, query: value } }
-    case "title": return { ui: { ...ui, title: value, error: "" } }
-    case "summary": return { ui: { ...ui, summary: value } }
-    case "example": return { ui: { ...ui, example: value } }
-    case "prior": return { ui: { ...ui, prior: value } }
-    case "comment-text": return { ui: { ...ui, comment: value } }
-    case "parent": return { ui: { ...ui, parent: value } }
-    case "assignee": return { ui: { ...ui, assignee: value } }
-    case "cancel": return { ui: { ...ui, dialog: "", error: "" }, focusCommit: true }
-    case "back": return { ui: { ...ui, step: Math.max(1, ui.step - 1), error: "" } }
-    case "continue": {
-      const error = ui.step === 1 && ui.title.trim() === "" ? "Name the feature." : ui.step === 1 && ui.summary.trim() === "" ? "Add a summary." : ui.step === 2 && ui.example.trim() === "" ? "Add an example." : ui.step === 3 && ui.prior.trim() === "" ? "Add prior art." : ""
-      return { ui: { ...ui, step: error === "" ? Math.min(4, ui.step + 1) : ui.step, error } }
-    }
-    case "new-form": case "vip-form": {
-      if (ui.retry !== undefined) return { ui: { ...ui, error: "Retry the saved action." } }
-      const op = action === "vip-form" ? "propose" : "new"
-      if (!issuePermission(ui.role, op)) return { ui }
-      return { ui: { ...ui, screen: action === "vip-form" ? "vip" : "new", title: "", summary: "", example: "", prior: "", step: 1, error: "" } }
-    }
-    case "commit-dialog": case "split-dialog": case "link-dialog": {
-      if (ui.retry !== undefined) return { ui: { ...ui, error: "Retry the saved action." } }
-      const op = action === "commit-dialog" ? "commit" : action === "split-dialog" ? "split" : "link"
-      return issuePermission(ui.role, op) ? { ui: { ...ui, dialog: op, error: "", title: "", summary: "" } } : { ui }
-    }
-    default: {
-      if (ui.busy || !["read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft", "spec-revise"].includes(action)) return { ui }
-      const op = action as IssueRequest["op"]
-      if (!issuePermission(ui.role, op)) return { ui }
-      if ((op === "new" || op === "split" || op === "propose") && ui.title.trim() === "") return { ui: { ...ui, error: op === "propose" ? "Name the feature." : "Add a title." } }
-      if (ui.retry !== undefined && ui.retry.op === op) return { ui: { ...ui, busy: true, error: "" }, request: ui.retry }
-      if (ui.retry !== undefined && !["read", "draft"].includes(op)) return { ui: { ...ui, error: "Retry the saved action." } }
-      const request = { ...issueRequest(ui, op), ...(op === "spec-revise" ? { revision: ui.data.specification?.revision ?? 0 } : {}) }
-      return { ui: { ...ui, busy: true, serial: ui.serial + 1, error: "", ...(["read", "draft"].includes(op) ? {} : { retry: request }) }, request }
-    }
-  }
+  const step = IssueDecision.issueAction(issueScreen(ui), action, value, issueFacts(ui, action, value))
+  if (step.request === "idle") return { ui }
+  const next: IssuesUi = { ...ui, ...step.state }
+  const focus = step.focusCommit ? { focusCommit: true } : {}
+  if (step.request === "none") return { ui: next, ...focus }
+  if (step.request === "saved" && ui.retry !== undefined) return { ui: next, request: ui.retry, ...focus }
+  const request = issueRequestFor(ui, action, value, step.state.serial)
+  return { ui: step.request === "transient" ? next : { ...next, retry: request }, request, ...focus }
 }

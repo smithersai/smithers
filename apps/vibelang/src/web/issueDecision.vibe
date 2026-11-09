@@ -1,0 +1,369 @@
+// Decisions inside the issues screen, over plain values. `issues.vibe` and the `update` arms read data, build requests and run Commands; they do not choose a second policy.
+
+export type IssueView = "list" | "detail" | "new" | "vip" | "roles" | "specification"
+export type IssueKind = "All" | "Issues" | "Tasks" | "VIPs"
+export type IssueListState = "open" | "closed"
+export type IssueDialog = "" | "commit" | "split" | "link"
+export type IssueStatus = "loading" | "ready" | "error"
+export type IssueRequestPlan = "idle" | "none" | "saved" | "recovery" | "fresh" | "transient"
+
+export interface IssueScreen {
+  readonly open: boolean
+  readonly screen: IssueView
+  readonly kind: IssueKind
+  readonly state: IssueListState
+  readonly query: string
+  readonly selected: number
+  readonly dialog: IssueDialog
+  readonly status: IssueStatus
+  readonly busy: boolean
+  readonly title: string
+  readonly summary: string
+  readonly example: string
+  readonly prior: string
+  readonly comment: string
+  readonly parent: string
+  readonly assignee: string
+  readonly step: number
+  readonly error: string
+  readonly serial: number
+}
+/** What the shell read for one action: the saved retry (`retryOp` is "" without one), the role gates, the blank checks and the parsed value. */
+export interface IssueFacts {
+  readonly retryOp: string
+  readonly retryReviewer: string
+  readonly retryAllowed: boolean
+  readonly allowed: boolean
+  readonly specText: string
+  readonly number: number
+  readonly kind: IssueKind
+  readonly listState: IssueListState
+  readonly blankTitle: boolean
+  readonly blankSummary: boolean
+  readonly blankExample: boolean
+  readonly blankPrior: boolean
+}
+export interface IssueStep { readonly state: IssueScreen; readonly request: IssueRequestPlan; readonly focusCommit: boolean }
+export interface IssueResponse { readonly state: IssueScreen; readonly clearRetry: boolean; readonly closeDialog: boolean }
+export interface IssueEffects { readonly details: boolean; readonly focus: string; readonly showDialog: boolean; readonly closeDialog: boolean; readonly bumpSerial: boolean; readonly toChat: boolean }
+
+/** A mutation that writes durably: these stay saved for retry. Reads and drafts do not. */
+//@ verify
+//@ ensures \result == (op != "read" && op != "draft")
+export function issueOpRemembered(op: string): boolean {
+  return op !== "read" && op !== "draft"
+}
+
+/** The operation whose role gate guards an action; "" means the action has no gate of its own. */
+//@ verify
+//@ ensures action == "new-form" ==> \result == "new"
+//@ ensures action == "vip-form" ==> \result == "propose"
+//@ ensures action == "commit-dialog" ==> \result == "commit"
+//@ ensures action == "split-dialog" ==> \result == "split"
+//@ ensures action == "link-dialog" ==> \result == "link"
+//@ ensures action == "spec-review" ==> \result == "spec-review"
+//@ ensures (action == "read" || action == "new" || action == "comment" || action == "link" || action == "split" || action == "commit" || action == "uncommit" || action == "propose" || action == "accept" || action == "decline" || action == "draft" || action == "spec-revise") ==> \result == action
+//@ ensures (action == "retry" || action == "close" || action == "title") ==> \result == ""
+export function issueGateOp(action: string): string {
+  if (action === "new-form") return "new"
+  if (action === "vip-form") return "propose"
+  if (action === "commit-dialog") return "commit"
+  if (action === "split-dialog") return "split"
+  if (action === "link-dialog") return "link"
+  if (action === "spec-review") return "spec-review"
+  if (action === "read" || action === "new" || action === "comment" || action === "link" || action === "split" || action === "commit" || action === "uncommit" || action === "propose" || action === "accept" || action === "decline" || action === "draft" || action === "spec-revise") return action
+  return ""
+}
+
+/** The wizard names the first missing field of its step. */
+//@ verify
+//@ ensures step == 1 && blankTitle ==> \result == "Name the feature."
+//@ ensures step == 1 && !blankTitle && blankSummary ==> \result == "Add a summary."
+//@ ensures step == 2 && blankExample ==> \result == "Add an example."
+//@ ensures step == 3 && blankPrior ==> \result == "Add prior art."
+//@ ensures step == 1 && !blankTitle && !blankSummary ==> \result == ""
+//@ ensures step == 2 && !blankExample ==> \result == ""
+//@ ensures step == 3 && !blankPrior ==> \result == ""
+//@ ensures step != 1 && step != 2 && step != 3 ==> \result == ""
+export function issueStepError(step: number, blankTitle: boolean, blankSummary: boolean, blankExample: boolean, blankPrior: boolean): string {
+  if (step === 1 && blankTitle) return "Name the feature."
+  if (step === 1 && blankSummary) return "Add a summary."
+  if (step === 2 && blankExample) return "Add an example."
+  if (step === 3 && blankPrior) return "Add prior art."
+  return ""
+}
+
+/** One issues-screen action. The role gates, the single saved retry and the wizard bounds live here. */
+//@ verify
+//@ ensures state.step >= 1 && state.step <= 4 ==> \result.state.step >= 1 && \result.state.step <= 4
+//@ ensures action == "retry" && (state.busy || f.retryOp == "" || !f.retryAllowed) ==> \result == { state: state, request: "idle", focusCommit: false }
+//@ ensures action == "retry" && !state.busy && f.retryOp != "" && f.retryAllowed ==> \result == { state: { ...state, serial: state.serial + 1, busy: true, error: "" }, request: "recovery", focusCommit: false }
+//@ ensures action == "close" ==> \result == { state: { ...state, open: false }, request: "none", focusCommit: false }
+//@ ensures action == "specification" ==> \result == { state: { ...state, screen: "specification", summary: f.specText, error: "" }, request: "none", focusCommit: false }
+//@ ensures action == "spec-review" && (state.busy || !f.allowed) ==> \result == { state: state, request: "idle", focusCommit: false }
+//@ ensures action == "spec-review" && !state.busy && f.allowed && f.retryOp == "spec-review" && f.retryReviewer == value ==> \result == { state: { ...state, busy: true, error: "" }, request: "saved", focusCommit: false }
+//@ ensures action == "spec-review" && !state.busy && f.allowed && f.retryOp != "" && !(f.retryOp == "spec-review" && f.retryReviewer == value) ==> \result == { state: { ...state, error: "Retry the saved action." }, request: "none", focusCommit: false }
+//@ ensures action == "spec-review" && !state.busy && f.allowed && f.retryOp == "" ==> \result == { state: { ...state, busy: true, serial: state.serial + 1, error: "" }, request: "fresh", focusCommit: false }
+//@ ensures action == "roles" ==> \result == { state: { ...state, screen: "roles", dialog: "", error: "" }, request: "none", focusCommit: false }
+//@ ensures action == "list" ==> \result == { state: { ...state, screen: "list", dialog: "", error: "" }, request: "none", focusCommit: false }
+//@ ensures action == "select" ==> \result == { state: { ...state, screen: "detail", selected: f.number, error: "" }, request: "none", focusCommit: false }
+//@ ensures (action == "kind-key" || action == "kind") ==> \result == { state: { ...state, kind: f.kind, screen: "list", error: "" }, request: "none", focusCommit: false }
+//@ ensures action == "state" ==> \result == { state: { ...state, state: f.listState }, request: "none", focusCommit: false }
+//@ ensures action == "query" ==> \result == { state: { ...state, query: value }, request: "none", focusCommit: false }
+//@ ensures action == "title" ==> \result == { state: { ...state, title: value, error: "" }, request: "none", focusCommit: false }
+//@ ensures action == "summary" ==> \result == { state: { ...state, summary: value }, request: "none", focusCommit: false }
+//@ ensures action == "example" ==> \result == { state: { ...state, example: value }, request: "none", focusCommit: false }
+//@ ensures action == "prior" ==> \result == { state: { ...state, prior: value }, request: "none", focusCommit: false }
+//@ ensures action == "comment-text" ==> \result == { state: { ...state, comment: value }, request: "none", focusCommit: false }
+//@ ensures action == "parent" ==> \result == { state: { ...state, parent: value }, request: "none", focusCommit: false }
+//@ ensures action == "assignee" ==> \result == { state: { ...state, assignee: value }, request: "none", focusCommit: false }
+//@ ensures action == "cancel" ==> \result == { state: { ...state, dialog: "", error: "" }, request: "none", focusCommit: true }
+//@ ensures action == "back" && state.step > 1 ==> \result == { state: { ...state, step: state.step - 1, error: "" }, request: "none", focusCommit: false }
+//@ ensures action == "back" && state.step <= 1 ==> \result == { state: { ...state, step: 1, error: "" }, request: "none", focusCommit: false }
+//@ ensures action == "continue" ==> \result.request == "none" && \result.state.error == issueStepError(state.step, f.blankTitle, f.blankSummary, f.blankExample, f.blankPrior)
+//@ ensures action == "continue" && \result.state.error != "" ==> \result.state.step == state.step
+//@ ensures action == "continue" && \result.state.error == "" && state.step < 4 ==> \result.state.step == state.step + 1
+//@ ensures action == "continue" && \result.state.error == "" && state.step >= 4 ==> \result.state.step == 4
+//@ ensures (action == "new-form" || action == "vip-form") && f.retryOp != "" ==> \result == { state: { ...state, error: "Retry the saved action." }, request: "none", focusCommit: false }
+//@ ensures (action == "new-form" || action == "vip-form") && f.retryOp == "" && !f.allowed ==> \result == { state: state, request: "idle", focusCommit: false }
+//@ ensures action == "new-form" && f.retryOp == "" && f.allowed ==> \result == { state: { ...state, screen: "new", title: "", summary: "", example: "", prior: "", step: 1, error: "" }, request: "none", focusCommit: false }
+//@ ensures action == "vip-form" && f.retryOp == "" && f.allowed ==> \result == { state: { ...state, screen: "vip", title: "", summary: "", example: "", prior: "", step: 1, error: "" }, request: "none", focusCommit: false }
+//@ ensures (action == "commit-dialog" || action == "split-dialog" || action == "link-dialog") && f.retryOp != "" ==> \result == { state: { ...state, error: "Retry the saved action." }, request: "none", focusCommit: false }
+//@ ensures (action == "commit-dialog" || action == "split-dialog" || action == "link-dialog") && f.retryOp == "" && !f.allowed ==> \result == { state: state, request: "idle", focusCommit: false }
+//@ ensures action == "commit-dialog" && f.retryOp == "" && f.allowed ==> \result == { state: { ...state, dialog: "commit", error: "", title: "", summary: "" }, request: "none", focusCommit: false }
+//@ ensures action == "split-dialog" && f.retryOp == "" && f.allowed ==> \result == { state: { ...state, dialog: "split", error: "", title: "", summary: "" }, request: "none", focusCommit: false }
+//@ ensures action == "link-dialog" && f.retryOp == "" && f.allowed ==> \result == { state: { ...state, dialog: "link", error: "", title: "", summary: "" }, request: "none", focusCommit: false }
+//@ ensures issueIsOperation(action) && (state.busy || !f.allowed) ==> \result == { state: state, request: "idle", focusCommit: false }
+//@ ensures issueIsOperation(action) && !state.busy && f.allowed && (action == "new" || action == "split") && f.blankTitle ==> \result == { state: { ...state, error: "Add a title." }, request: "none", focusCommit: false }
+//@ ensures issueIsOperation(action) && !state.busy && f.allowed && action == "propose" && f.blankTitle ==> \result == { state: { ...state, error: "Name the feature." }, request: "none", focusCommit: false }
+//@ ensures issueIsOperation(action) && !state.busy && f.allowed && !((action == "new" || action == "split" || action == "propose") && f.blankTitle) && f.retryOp == action ==> \result == { state: { ...state, busy: true, error: "" }, request: "saved", focusCommit: false }
+//@ ensures issueIsOperation(action) && !state.busy && f.allowed && !((action == "new" || action == "split" || action == "propose") && f.blankTitle) && f.retryOp != "" && f.retryOp != action && issueOpRemembered(action) ==> \result == { state: { ...state, error: "Retry the saved action." }, request: "none", focusCommit: false }
+//@ ensures issueIsOperation(action) && !state.busy && f.allowed && !((action == "new" || action == "split" || action == "propose") && f.blankTitle) && f.retryOp == "" && issueOpRemembered(action) ==> \result == { state: { ...state, busy: true, serial: state.serial + 1, error: "" }, request: "fresh", focusCommit: false }
+//@ ensures issueIsOperation(action) && !state.busy && f.allowed && f.retryOp != action && !issueOpRemembered(action) ==> \result == { state: { ...state, busy: true, serial: state.serial + 1, error: "" }, request: "transient", focusCommit: false }
+//@ ensures !issueKnownAction(action) ==> \result == { state: state, request: "idle", focusCommit: false }
+export function issueAction(state: IssueScreen, action: string, value: string, f: IssueFacts): IssueStep {
+  const idle: IssueStep = { state, request: "idle", focusCommit: false }
+  const blocked: IssueStep = { state: { ...state, error: "Retry the saved action." }, request: "none", focusCommit: false }
+  if (action === "retry") {
+    if (state.busy || f.retryOp === "" || !f.retryAllowed) return idle
+    return { state: { ...state, serial: state.serial + 1, busy: true, error: "" }, request: "recovery", focusCommit: false }
+  }
+  if (action === "close") return { state: { ...state, open: false }, request: "none", focusCommit: false }
+  if (action === "specification") return { state: { ...state, screen: "specification", summary: f.specText, error: "" }, request: "none", focusCommit: false }
+  if (action === "spec-review") {
+    if (state.busy || !f.allowed) return idle
+    if (f.retryOp === "spec-review" && f.retryReviewer === value) return { state: { ...state, busy: true, error: "" }, request: "saved", focusCommit: false }
+    if (f.retryOp !== "") return blocked
+    return { state: { ...state, busy: true, serial: state.serial + 1, error: "" }, request: "fresh", focusCommit: false }
+  }
+  if (action === "roles") return { state: { ...state, screen: "roles", dialog: "", error: "" }, request: "none", focusCommit: false }
+  if (action === "list") return { state: { ...state, screen: "list", dialog: "", error: "" }, request: "none", focusCommit: false }
+  if (action === "select") return { state: { ...state, screen: "detail", selected: f.number, error: "" }, request: "none", focusCommit: false }
+  if (action === "kind-key" || action === "kind") return { state: { ...state, kind: f.kind, screen: "list", error: "" }, request: "none", focusCommit: false }
+  if (action === "state") return { state: { ...state, state: f.listState }, request: "none", focusCommit: false }
+  if (action === "query") return { state: { ...state, query: value }, request: "none", focusCommit: false }
+  if (action === "title") return { state: { ...state, title: value, error: "" }, request: "none", focusCommit: false }
+  if (action === "summary") return { state: { ...state, summary: value }, request: "none", focusCommit: false }
+  if (action === "example") return { state: { ...state, example: value }, request: "none", focusCommit: false }
+  if (action === "prior") return { state: { ...state, prior: value }, request: "none", focusCommit: false }
+  if (action === "comment-text") return { state: { ...state, comment: value }, request: "none", focusCommit: false }
+  if (action === "parent") return { state: { ...state, parent: value }, request: "none", focusCommit: false }
+  if (action === "assignee") return { state: { ...state, assignee: value }, request: "none", focusCommit: false }
+  if (action === "cancel") return { state: { ...state, dialog: "", error: "" }, request: "none", focusCommit: true }
+  if (action === "back") return { state: { ...state, step: state.step > 1 ? state.step - 1 : 1, error: "" }, request: "none", focusCommit: false }
+  if (action === "continue") {
+    const error = issueStepError(state.step, f.blankTitle, f.blankSummary, f.blankExample, f.blankPrior)
+    if (error !== "") return { state: { ...state, error }, request: "none", focusCommit: false }
+    return { state: { ...state, step: state.step < 4 ? state.step + 1 : 4, error }, request: "none", focusCommit: false }
+  }
+  if (action === "new-form" || action === "vip-form") {
+    if (f.retryOp !== "") return blocked
+    if (!f.allowed) return idle
+    return { state: { ...state, screen: action === "vip-form" ? "vip" : "new", title: "", summary: "", example: "", prior: "", step: 1, error: "" }, request: "none", focusCommit: false }
+  }
+  if (action === "commit-dialog" || action === "split-dialog" || action === "link-dialog") {
+    if (f.retryOp !== "") return blocked
+    if (!f.allowed) return idle
+    return { state: { ...state, dialog: action === "commit-dialog" ? "commit" : action === "split-dialog" ? "split" : "link", error: "", title: "", summary: "" }, request: "none", focusCommit: false }
+  }
+  if (!issueIsOperation(action) || state.busy || !f.allowed) return idle
+  if ((action === "new" || action === "split") && f.blankTitle) return { state: { ...state, error: "Add a title." }, request: "none", focusCommit: false }
+  if (action === "propose" && f.blankTitle) return { state: { ...state, error: "Name the feature." }, request: "none", focusCommit: false }
+  if (f.retryOp === action) return { state: { ...state, busy: true, error: "" }, request: "saved", focusCommit: false }
+  if (f.retryOp !== "" && issueOpRemembered(action)) return blocked
+  return { state: { ...state, busy: true, serial: state.serial + 1, error: "" }, request: issueOpRemembered(action) ? "fresh" : "transient", focusCommit: false }
+}
+
+/** The twelve operations the default branch of the screen accepts; `spec-review` has its own branch. */
+//@ verify
+//@ ensures \result == (action == "read" || action == "new" || action == "comment" || action == "link" || action == "split" || action == "commit" || action == "uncommit" || action == "propose" || action == "accept" || action == "decline" || action == "draft" || action == "spec-revise")
+export function issueIsOperation(action: string): boolean {
+  return action === "read" || action === "new" || action === "comment" || action === "link" || action === "split" || action === "commit" || action === "uncommit" || action === "propose" || action === "accept" || action === "decline" || action === "draft" || action === "spec-revise"
+}
+
+/** Every action with its own behavior. */
+//@ verify
+//@ ensures \result == (issueIsOperation(action) || action == "retry" || action == "close" || action == "specification" || action == "spec-review" || action == "roles" || action == "list" || action == "select" || action == "kind-key" || action == "kind" || action == "state" || action == "query" || action == "title" || action == "summary" || action == "example" || action == "prior" || action == "comment-text" || action == "parent" || action == "assignee" || action == "cancel" || action == "back" || action == "continue" || action == "new-form" || action == "vip-form" || action == "commit-dialog" || action == "split-dialog" || action == "link-dialog")
+export function issueKnownAction(action: string): boolean {
+  return issueIsOperation(action) || action === "retry" || action === "close" || action === "specification" || action === "spec-review" || action === "roles" || action === "list" || action === "select" || action === "kind-key" || action === "kind" || action === "state" || action === "query" || action === "title" || action === "summary" || action === "example" || action === "prior" || action === "comment-text" || action === "parent" || action === "assignee" || action === "cancel" || action === "back" || action === "continue" || action === "new-form" || action === "vip-form" || action === "commit-dialog" || action === "split-dialog" || action === "link-dialog"
+}
+
+/** What one screen action asks of the world besides its model change. */
+//@ verify
+//@ ensures \result.details == (action == "select" && live)
+//@ ensures \result.bumpSerial == (action == "select" && live)
+//@ ensures action == "kind-key" ==> \result.focus == "ix-kind-" + value
+//@ ensures action == "focus" ==> \result.focus == value
+//@ ensures action != "kind-key" && action != "focus" ==> \result.focus == ""
+//@ ensures \result.showDialog == (before == "" && after != "")
+//@ ensures \result.closeDialog == (before != "" && after == "")
+//@ ensures \result.toChat == (action == "close")
+export function issueUiEffects(action: string, value: string, live: boolean, before: IssueDialog, after: IssueDialog): IssueEffects {
+  return {
+    details: action === "select" && live,
+    bumpSerial: action === "select" && live,
+    focus: action === "kind-key" ? "ix-kind-" + value : action === "focus" ? value : "",
+    showDialog: before === "" && after !== "",
+    closeDialog: before !== "" && after === "",
+    toChat: action === "close",
+  }
+}
+
+/** Opening a card shows that issue, whatever screen was up. */
+//@ verify
+//@ ensures \result == { ...state, open: true, screen: "detail", selected: issue }
+export function openedIssueCard(state: IssueScreen, issue: number): IssueScreen {
+  return { ...state, open: true, screen: "detail", selected: issue }
+}
+
+/** A card's comments load only from a live backend. */
+//@ verify
+//@ ensures \result == (mode == "live")
+export function issueCardLoadsDetails(mode: string): boolean {
+  return mode === "live"
+}
+
+/** Opening the panel shows it; a running mutation is not raced by a reload. */
+//@ verify
+//@ ensures \result == !busy
+export function clickedIssuesLoads(busy: boolean): boolean {
+  return !busy
+}
+
+/** A projection applies unless it is older than the one shown. */
+//@ verify
+//@ ensures \result == (incoming >= current)
+export function issueProjectionApplies(incoming: number, current: number): boolean {
+  return incoming >= current
+}
+
+/** Without a server role, mock mode acts as maintainer and live mode as a viewer. */
+//@ verify
+//@ ensures mode == "mock" ==> \result == "maintainer"
+//@ ensures mode != "mock" ==> \result == "viewer"
+export function issueDefaultRole(mode: string): "maintainer" | "viewer" {
+  return mode === "mock" ? "maintainer" : "viewer"
+}
+
+/** A loaded projection replaces the data unless it is a draft or older than the one shown. */
+//@ verify
+//@ ensures \result == (!hasDraft && incoming >= current)
+export function issueDataApplies(hasDraft: boolean, incoming: number, current: number): boolean {
+  return !hasDraft && incoming >= current
+}
+
+/** A saved assignee stays while it is still assignable; otherwise the agent takes it. */
+//@ verify
+//@ ensures present ==> \result == current
+//@ ensures !present ==> \result == agent
+export function issueAssigneeAfter(present: boolean, current: string, agent: string): string {
+  return present ? current : agent
+}
+
+/** The screen a recovered request returns to. */
+//@ verify
+//@ ensures (op == "spec-revise" || op == "spec-review") ==> \result == "specification"
+//@ ensures op != "spec-revise" && op != "spec-review" && completed ==> \result == "detail"
+//@ ensures op != "spec-revise" && op != "spec-review" && !completed && op == "new" ==> \result == "new"
+//@ ensures op != "spec-revise" && op != "spec-review" && !completed && op == "propose" ==> \result == "vip"
+//@ ensures op != "spec-revise" && op != "spec-review" && !completed && op != "new" && op != "propose" ==> \result == "detail"
+export function issueRecoveredView(op: string, completed: boolean): IssueView {
+  if (op === "spec-revise" || op === "spec-review") return "specification"
+  if (completed) return "detail"
+  if (op === "new") return "new"
+  if (op === "propose") return "vip"
+  return "detail"
+}
+
+/** A recovered request restores its form; only a failed, written attempt keeps the retry and its error. */
+//@ verify
+//@ ensures \result.state == { ...state, status: "ready", busy: false, screen: issueRecoveredView(op, completed), step: 4, selected: selected, title: title, summary: text, comment: (op == "comment" ? text : ""), example: example, prior: prior, parent: parent, assignee: assignee, error: (completed || unwritten ? "" : "Couldn't save. Retry.") }
+//@ ensures \result.clearRetry == (completed || unwritten)
+//@ ensures !\result.closeDialog
+export function issueRecovered(state: IssueScreen, op: string, completed: boolean, unwritten: boolean, selected: number, title: string, text: string, example: string, prior: string, parent: string, assignee: string): IssueResponse {
+  const done = completed || unwritten
+  return {
+    state: { ...state, status: "ready", busy: false, screen: issueRecoveredView(op, completed), step: 4, selected, title, summary: text, comment: op === "comment" ? text : "", example, prior, parent, assignee, error: done ? "" : "Couldn't save. Retry." },
+    clearRetry: done,
+    closeDialog: false,
+  }
+}
+
+/** An unrelated response refreshes the data and leaves the running mutation; its own response settles it. */
+//@ verify
+//@ ensures \result.state.status == "ready"
+//@ ensures \result.clearRetry == settled
+//@ ensures \result.closeDialog == (settled && state.dialog != "")
+//@ ensures \result.state.busy == (settled ? false : state.busy)
+//@ ensures \result.state.error == (settled ? "" : state.error)
+//@ ensures \result.state.comment == (settled ? "" : state.comment)
+//@ ensures \result.state.dialog == (settled ? "" : state.dialog)
+//@ ensures hasDraft ==> \result.state.title == draftTitle && \result.state.summary == draftSummary && \result.state.example == draftExample && \result.state.prior == draftPrior
+//@ ensures !hasDraft ==> \result.state.title == state.title && \result.state.summary == state.summary && \result.state.example == state.example && \result.state.prior == state.prior
+//@ ensures \result.state.assignee == assignee
+//@ ensures created && settled ==> \result.state.screen == "detail" && \result.state.selected == newest
+//@ ensures !(created && settled) ==> \result.state.screen == state.screen && \result.state.selected == state.selected
+//@ ensures \result.state.open == state.open && \result.state.kind == state.kind && \result.state.state == state.state && \result.state.query == state.query && \result.state.parent == state.parent && \result.state.step == state.step && \result.state.serial == state.serial
+export function issueLoaded(state: IssueScreen, settled: boolean, created: boolean, hasDraft: boolean, draftTitle: string, draftSummary: string, draftExample: string, draftPrior: string, assignee: string, newest: number): IssueResponse {
+  const drafted: IssueScreen = hasDraft ? { ...state, title: draftTitle, summary: draftSummary, example: draftExample, prior: draftPrior } : state
+  const finished: IssueScreen = settled ? { ...drafted, busy: false, error: "", comment: "", dialog: "" } : drafted
+  const shown: IssueScreen = created && settled ? { ...finished, screen: "detail", selected: newest } : finished
+  return { state: { ...shown, status: "ready", assignee }, clearRetry: settled, closeDialog: settled && state.dialog !== "" }
+}
+
+/** The text a failed action shows. `connect` is chosen by the caller while decision 0165 replaces that path. */
+//@ verify
+//@ ensures reason == "no-model" ==> \result == "Review unavailable"
+//@ ensures reason == "forbidden" ==> \result == "Not allowed"
+//@ ensures reason == "tree" ==> \result == "Choose another parent."
+//@ ensures reason == "assignee" ==> \result == "Choose an assignee."
+//@ ensures reason == "closed" ==> \result == "Issue closed."
+//@ ensures reason != "no-model" && reason != "forbidden" && reason != "tree" && reason != "assignee" && reason != "closed" ==> \result == "Couldn't save. Retry."
+export function issueFailureText(reason: string): string {
+  if (reason === "no-model") return "Review unavailable"
+  if (reason === "forbidden") return "Not allowed"
+  if (reason === "tree") return "Choose another parent."
+  if (reason === "assignee") return "Choose an assignee."
+  if (reason === "closed") return "Issue closed."
+  return "Couldn't save. Retry."
+}
+
+/** A failure shows the error state only over an empty list, and touches the mutation only when it is that mutation's response. */
+//@ verify
+//@ ensures empty ==> \result.state.status == "error"
+//@ ensures !empty ==> \result.state.status == "ready"
+//@ ensures relevant ==> \result.state == { ...state, status: (empty ? "error" : "ready"), busy: false, error: text }
+//@ ensures !relevant ==> \result.state == { ...state, status: (empty ? "error" : "ready") }
+//@ ensures \result.clearRetry == (relevant && unwritten)
+//@ ensures !\result.closeDialog
+export function issueFailed(state: IssueScreen, empty: boolean, relevant: boolean, unwritten: boolean, text: string): IssueResponse {
+  const status: IssueStatus = empty ? "error" : "ready"
+  return { state: relevant ? { ...state, status, busy: false, error: text } : { ...state, status }, clearRetry: relevant && unwritten, closeDialog: false }
+}
+
+/** A comment load that failed says so and changes nothing else. */
+//@ verify
+//@ ensures \result == { ...state, error: "Couldn't load comments. Retry." }
+export function issueDetailsFailed(state: IssueScreen): IssueScreen {
+  return { ...state, error: "Couldn't load comments. Retry." }
+}
