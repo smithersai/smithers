@@ -1,0 +1,17 @@
+// The real accounts with `current` replaced, so a test states one identity fault and keeps the rest of the service.
+// Members are listed, as overlaid.vibe lists Factory's: spreading a service Shape drops its methods in VibeLang 0.0.12
+// (~/vl/vibelang-bugs/service-shape-spread on nyc-01).
+import type { Accounts } from "../../src/core/roles.vibe"
+
+export function withCurrent(base: Accounts.Shape, current: Accounts.Shape["current"]): Accounts.Shape {
+  return {
+    current,
+    members: () => base.members(),
+    grant: (id, role) => base.grant(id, role),
+    signOut: () => base.signOut(),
+    choose: (role) => base.choose(role),
+    signInAgent: () => base.signInAgent(),
+    participated: (personId) => base.participated(personId),
+    events: (after) => base.events(after),
+  }
+}

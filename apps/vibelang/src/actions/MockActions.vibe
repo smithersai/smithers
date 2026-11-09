@@ -6,7 +6,7 @@ import { apply, empty, type Conversation } from "../core/conversation.vibe"
 import { decide, type Intent } from "../core/decide.vibe"
 import type { Identity } from "../core/roles.vibe"
 import { Factory } from "../core/Factory.vibe"
-import { EndTour, Post, Tour } from "../core/flows.vibe"
+import { Post, Tour } from "../core/flows.vibe"
 import { Mythical } from "../history/MythicalHistory.vibe"
 import type { HistoryReader } from "../history/tools.vibe"
 import { ActionDevice, deviceRegistration, execute, historyRegistration, prepare, refused } from "./execution.vibe"
@@ -40,10 +40,11 @@ export function MockActions(principal: Principal) {
     const published = try acquireRelease(PubSub.unbounded<Run>(), PubSub.shutdown)
     const invocations = new Map<string, { readonly flow: string; readonly conversation: string; readonly input: Schema.Json; readonly owner: string }>()
 
+    // Every stored run comes from this world's own typed RequestAction, TraceAction and SettleAction, so it decodes.
     effect function read(id: string) {
       const run = (try Ref.get(state)).runs?.find((run) => run.id === id)
       if (run === undefined) throw new ActionFailure({ code: "not-found" })
-      return try Effect.mapError(decodeRun(run), () => new ActionFailure({ code: "invalid-run" }))
+      return try Effect.orDie(decodeRun(run))
     }
     effect function record(intent: Intent) {
       return try Semaphore.withPermits(gate, 1)(Effect.uninterruptible(effect {
@@ -86,10 +87,6 @@ export function MockActions(principal: Principal) {
         if (!last) return try Effect.die(new ActionFailure({ code: "failed" }))
         return null
       })
-      try engine.register(EndTour, effect (_payload, id) => {
-        try Action.make({ name: "vibelang/tour/end", execute: orDie(factory.endTour((principal.conversation ?? `action-${id}`))) })
-        return null
-      })
     })
     const registrationLayer = Layer.mergeAll(baseRegistration, historyRegistration(history), deviceRegistration).pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer))
     const engine = Context.get(try Layer.buildWithScope(registrationLayer, scope), FlowRuntime.FlowRuntime)
@@ -100,7 +97,7 @@ export function MockActions(principal: Principal) {
       const flow = try orDie(catalog.get(name))
       const program = effect {
         const person = try authorize(name)
-        const owner = invocations.get(id)?.owner ?? ""
+        const owner = invocations.get(id)!.owner
         if (registration(name).least !== "viewer" && owner !== person.id) throw new ActionFailure({ code: "forbidden" })
         return try execute(engine, try prepare(name, payload as Schema.Json, id), id)
       }
@@ -138,7 +135,7 @@ export function MockActions(principal: Principal) {
       },
       runs: effect (flow: string) => {
         const runs = (try Ref.get(state)).runs ?? []
-        return try Effect.mapError(Schema.decodeUnknownEffect(Schema.Array(Run))([...runs].reverse().filter((run) => flow === "" || run.flow === flow)), () => new ActionFailure({ code: "invalid-run" }))
+        return try Effect.orDie(Schema.decodeUnknownEffect(Schema.Array(Run))([...runs].reverse().filter((run) => flow === "" || run.flow === flow)))
       },
       read,
       start,
@@ -166,10 +163,11 @@ export function MockActions(principal: Principal) {
         const current = try read(id)
         try authorize(current.flow)
         if (current.state !== "queued" && current.state !== "running") return
-        const invocation = invocations.get(id)
-        if (invocation === undefined) throw new ActionFailure({ code: "not-found" })
+        // start records each invocation before its run, so a run read here always has one.
+        const invocation = invocations.get(id)!
         const flow = try orDie(catalog.get(invocation.flow))
-        try Effect.mapError(engine.interrupt(flow, id), () => new ActionFailure({ code: "cancel-failed" }))
+        // The in-memory engine keeps no durable cancellation record, so its interrupt never fails.
+        try Effect.orDie(engine.interrupt(flow, id))
         if (invocation.flow === Tour._tag) factory.endTour(invocation.conversation) catch () => undefined
         try record({ type: "SettleAction", id, state: "cancelled", result: "Cancelled", at: try Clock.currentTimeMillis })
       },

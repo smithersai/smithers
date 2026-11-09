@@ -1,6 +1,6 @@
 // The actual declarations and host bodies; no second graph, schema, or workflow runtime.
 import { Action, FlowRuntime } from "@smthrs/flow"
-import { EndTour, Post, Tour, SandboxStart, SandboxStop, SandboxCommand } from "../core/flows.vibe"
+import { Post, Tour, SandboxStart, SandboxStop, SandboxCommand } from "../core/flows.vibe"
 import { HistoryAnswer, Note, Plan, Start } from "../history/flows.vibe"
 import { type HistoryReader, note, plan, Show, show, start } from "../history/tools.vibe"
 import { Factory, Refused } from "../core/Factory.vibe"
@@ -14,7 +14,6 @@ export effect function prepare(name: string, input: Schema.Json, id: string) {
   switch (name) {
     case Post._tag: return { kind: "post" as const, payload: try decode(Post.payloadSchema, { clientId: id, name: "Guest", text: raw.text ?? "" }) }
     case Tour._tag: return { kind: "tour" as const, payload: { tour: id } }
-    case EndTour._tag: return { kind: "end" as const, payload: {} }
     case Show._tag: return { kind: "show" as const, payload: try decode(Show.payloadSchema, Object.keys(raw).length === 0 ? { what: "outline" } : input) }
     case Plan._tag: return { kind: "plan" as const, payload: try decode(Plan.payloadSchema, input) }
     case Start._tag: return { kind: "start" as const, payload: try decode(Start.payloadSchema, input) }
@@ -49,7 +48,6 @@ export effect function execute(engine: FlowRuntime.FlowRuntime["Service"], invoc
     case "sandbox-command": return try engine.execute(SandboxCommand, { payload: invocation.payload, executionId: id })
     case "post": return try engine.execute(Post, { payload: invocation.payload, executionId: id })
     case "tour": return try engine.execute(Tour, { payload: invocation.payload, executionId: id })
-    case "end": return try engine.execute(EndTour, { payload: invocation.payload, executionId: id })
     case "show": return try engine.execute(Show, { payload: invocation.payload, executionId: id })
     case "plan": return try engine.execute(Plan, { payload: invocation.payload, executionId: id })
     case "start": return try engine.execute(Start, { payload: invocation.payload, executionId: id })

@@ -1,0 +1,211 @@
+// Mock-mode actions (VL-13) at the Actions service boundary over the real MockFactory and in-memory engine.
+// Faults are injected Factory members (test/support/overlaid.vibe); nothing intercepts a request.
+import { describe, expect, it } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
+import { deviceRegistration } from "../src/actions/execution.vibe"
+import { MockActions, type Principal } from "../src/actions/MockActions.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { SandboxCommand, SandboxStart, SandboxStop } from "../src/core/flows.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { AccountUnavailable, Denied, type Accounts, type Identity } from "../src/core/roles.vibe"
+import { overlaid, type Overrides } from "./support/overlaid.vibe"
+import { withCurrent } from "./support/overlaidAccounts.vibe"
+
+const maintainer: Principal = { role: "maintainer", actor: "person" }
+
+/** The run once it settles. */
+effect function finished(id: string) {
+  const last = try Stream.runLast((try Actions).follow(id).pipe(Stream.takeUntil((run) => run.state !== "running" && run.state !== "queued")))
+  return Option.getOrThrow(last)
+}
+
+/** MockActions for `principal` over the real MockFactory with `over` replacing chosen members. */
+function world(principal: Principal, over: (base: Factory.Shape) => Overrides = () => ({})) {
+  return MockActions(principal).pipe(Layer.provideMerge(Layer.effect(Factory, effect {
+    const base = try Factory
+    return overlaid(base, over(base))
+  })), Layer.provide(MockFactory))
+}
+
+/** The real accounts with `current` replaced, and no policy: the host authorizes, as a live Factory's does. */
+function current(base: Factory.Shape, identity: Accounts.Shape["current"]): Overrides {
+  return { accounts: withCurrent(base.accounts!, identity), policy: undefined }
+}
+
+const json = (text: string) => Effect.try(() => JSON.parse(text) as Record<string, any>)
+
+const code = (error: ActionFailure) => error.code
+
+describe("mock-mode actions", () => {
+  it.live("runs a sandbox's start, command and stop as actions, in the home conversation when none is named", () => scoped(effect {
+    provide world(maintainer) {
+      const actions = try Actions
+      const started = try finished(try actions.start(SandboxStart._tag, {}, "button"))
+      const generation = (try json(started.result)).generation as number
+      const output = try finished(try actions.start(SandboxCommand._tag, { command: "echo action", generation }, "button"))
+      const stopped = try finished(try actions.start(SandboxStop._tag, { generation }, "slash"))
+      try Effect.try(() => {
+        expect([started.state, output.state, stopped.state]).toEqual(["passed", "passed", "passed"])
+        expect(JSON.parse(started.result)).toMatchObject({ status: "running" })
+        expect(output.result).toBe(JSON.stringify("action"))
+        expect(JSON.parse(stopped.result)).toMatchObject({ status: "stopped", generation })
+      })
+    }
+  }))
+
+  it.effect("a host that supplies no device refuses every sandbox operation", () => scoped(effect {
+    const context = try Layer.build(deviceRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer)))
+    const engine = Context.get(context, FlowRuntime.FlowRuntime)
+    const results = [
+      try Effect.flip(engine.execute(SandboxStart, { executionId: "d1", payload: { conversation: "home", operationId: "d1" } })),
+      try Effect.flip(engine.execute(SandboxStop, { executionId: "d2", payload: { conversation: "home", operationId: "d2", generation: 1 } })),
+      try Effect.flip(engine.execute(SandboxCommand, { executionId: "d3", payload: { conversation: "home", operationId: "d3", command: "ls", generation: 1 } })),
+    ]
+    try Effect.try(() => expect(results).toMatchObject(Array.from({ length: 3 }, () => ({ _tag: "Refused", refusal: "forbidden" }))))
+  }))
+
+  it.live("plans and notes history work, and a non-object input reads the outline", () => scoped(effect {
+    provide world(maintainer) {
+      const actions = try Actions
+      const planned = try finished(try actions.start("vibelang/history/Plan", { how: "append", epic: "", newEpic: "Notes", target: "", title: "docs: notes", task: "t" }, "button"))
+      const id = (try json(planned.result)).id as string
+      const noted = try finished(try actions.start("vibelang/history/Note", { id, section: "tried", text: "a note" }, "button"))
+      const outline = try finished(try actions.start("vibelang/history/show", [], "button"))
+      try Effect.try(() => {
+        expect([planned.state, noted.state, outline.state]).toEqual(["passed", "passed", "passed"])
+        expect(outline.result).toContain('"epics"')
+      })
+    }
+  }))
+
+  it.live("a person without a login writes history notes as Guest", () => scoped(effect {
+    provide world({ actor: "person" }, (base) => current(base, () => succeed({ id: "p1", login: "", role: "maintainer" }))) {
+      const actions = try Actions
+      const planned = try finished(try actions.start("vibelang/history/Plan", { how: "append", epic: "", newEpic: "Guests", target: "", title: "docs: guest", task: "t" }, "button"))
+      const id = (try json(planned.result)).id as string
+      try finished(try actions.start("vibelang/history/Note", { id, section: "tried", text: "by a guest" }, "button"))
+      const commit = try finished(try actions.start("vibelang/history/show", { what: "commit", id }, "button"))
+      const page = try json(commit.result)
+      try Effect.try(() => expect(page.commit.notes).toContainEqual({ section: "tried", text: "by a guest", by: "Guest" }))
+    }
+  }))
+
+  it.live("without accounts the principal's role decides, as a signed-out Guest", () => scoped(effect {
+    provide world(maintainer, () => ({ accounts: undefined, policy: undefined })) {
+      const run = try finished(try (try Actions).start("vibelang/Post", { text: "no accounts" }, "button"))
+      try Effect.try(() => expect(run.state).toBe("passed"))
+    }
+  }))
+
+  it.live("without accounts or a role, the Guest is a viewer", () => scoped(effect {
+    provide world({ actor: "person" }, () => ({ accounts: undefined, policy: undefined })) {
+      const refused = try Effect.flip((try Actions).start("vibelang/Post", { text: "viewer" }, "button"))
+      try Effect.try(() => expect(code(refused)).toBe("forbidden"))
+    }
+  }))
+
+  it.live("a post without text fails, and a refused note fails with its reason", () => scoped(effect {
+    provide world(maintainer) {
+      const actions = try Actions
+      const empty = try finished(try actions.start("vibelang/Post", {}, "button"))
+      const refused = try finished(try actions.start("vibelang/history/Note", { id: "m999999", section: "tried", text: "nothing" }, "button"))
+      try Effect.try(() => {
+        expect([empty.state, empty.result]).toEqual(["failed", "Action failed"])
+        expect(refused.state).toBe("failed")
+        expect(refused.result).toContain("refusal")
+      })
+    }
+  }))
+
+  it.live("cancels a running tour, and cancelling a settled run changes nothing", () => scoped(effect {
+    provide world(maintainer) {
+      const actions = try Actions
+      const tour = try actions.start("vibelang/Tour", {}, "button")
+      try Stream.runDrain(actions.follow(tour).pipe(Stream.takeUntil((run) => run.steps.length > 0)))
+      try actions.cancel(tour)
+      const cancelled = try finished(tour)
+      const post = try finished(try actions.start("vibelang/Post", { text: "done" }, "button"))
+      try actions.cancel(post.id)
+      const after = try actions.read(post.id)
+      try Effect.try(() => {
+        expect([cancelled.state, cancelled.result]).toEqual(["cancelled", "Cancelled"])
+        expect(after).toEqual(post)
+      })
+    }
+  }))
+
+  it.live("an unavailable account or a policy refusal stops a start before any run", () => scoped(effect {
+    const unavailable = try Effect.flip(Effect.scoped(effect {
+      provide world({ actor: "person" }, (base) => current(base, () => fail(new AccountUnavailable({ reason: "offline" })))) {
+        return try (try Actions).start("vibelang/Post", { text: "x" }, "button")
+      }
+    }))
+    const denied = try Effect.flip(Effect.scoped(effect {
+      provide world(maintainer, () => ({ policy: { authorize: () => fail(new Denied({ action: "action", least: "maintainer" })) } })) {
+        return try (try Actions).start("vibelang/Post", { text: "x" }, "button")
+      }
+    }))
+    try Effect.try(() => expect([code(unavailable), code(denied)]).toEqual(["unavailable", "forbidden"]))
+  }))
+
+  it.live("a run refuses to borrow a person selected after its start", () => scoped(effect {
+    let calls = 0
+    const person = (id: string): Identity => ({ id, login: id, role: "maintainer" })
+    provide world({ actor: "person" }, (base) => current(base, () => sync(() => person(++calls === 1 ? "first" : "second")))) {
+      const run = try finished(try (try Actions).start("vibelang/Post", { text: "mine" }, "button"))
+      try Effect.try(() => expect([run.state, run.result]).toEqual(["failed", "Action failed"]))
+    }
+  }))
+
+  for (const [label, ending, state] of [["none", [], "failed"], ["a failed reply", [{ type: "ReplyFailed" }], "failed"], ["its end", [{ type: "TourEnded" }], "passed"]] as const) {
+    it.live(`a tour action whose guide sees ${label} settles ${state}`, () => scoped(effect {
+      provide world(maintainer, () => ({ events: () => Stream.fromIterable(ending.map((event) => ({ ...event, seq: 99, id: "t1" }) as never)) })) {
+        const run = try finished(try (try Actions).start("vibelang/Tour", {}, "button"))
+        try Effect.try(() => expect(run.state).toBe(state))
+      }
+    }))
+  }
+
+  it.live("refuses an unknown flow, run or rerun, and a malformed or missing JSON command input", () => scoped(effect {
+    provide world(maintainer) {
+      const actions = try Actions
+      const none = try actions.runs("")
+      const unknown = try Effect.flip(actions.start("vibelang/Nothing", {}, "button"))
+      const read = try Effect.flip(actions.read("a999"))
+      const rerun = try Effect.flip(actions.rerun("a999"))
+      const malformed = try Effect.flip(actions.command("/plan {"))
+      const missing = try Effect.flip(actions.command("/plan"))
+      try Effect.try(() => {
+        expect(none).toEqual([])
+        expect([unknown, read, rerun, malformed, missing].map(code)).toEqual(["not-found", "not-found", "not-found", "input", "input"])
+      })
+    }
+  }))
+
+  it.live("refuses a start once its world has closed", () => effect {
+    const scope = try Scope.make()
+    const context = try Layer.buildWithScope(world(maintainer), scope)
+    try Scope.close(scope, Exit.void)
+    const closed = try Effect.flip(Context.get(context, Actions).start("vibelang/Post", { text: "late" }, "button"))
+    try Effect.try(() => expect(code(closed)).toBe("closed"))
+  })
+
+  it.live("cancels a run before it starts, and it never runs", () => scoped(effect {
+    // Without accounts or a policy, start and cancel complete before the run's fiber first runs.
+    provide world(maintainer, () => ({ accounts: undefined, policy: undefined })) {
+      const actions = try Actions
+      const id = try actions.start("vibelang/Post", { text: "never" }, "button")
+      try actions.cancel(id)
+      try sleep("50 millis")
+      const run = try actions.read(id)
+      const snapshot = try (try Factory).read(`action-${id}`, 0)
+      try Effect.try(() => {
+        expect([run.state, run.result, run.steps]).toEqual(["cancelled", "Cancelled", []])
+        expect(snapshot.entries).toEqual([])
+      })
+    }
+  }))
+})

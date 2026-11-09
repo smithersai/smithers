@@ -55,7 +55,7 @@ describe("prepare", () => {
   it.effect("builds every invocation kind, with the request id as the operation", () => effect {
     const post = try prepare("vibelang/Post", { text: "hi" }, "a-1")
     const tour = try prepare("vibelang/Tour", null, "a-2")
-    const end = try prepare("vibelang/EndTour", {}, "a-3")
+    const end = prepare("vibelang/EndTour", {}, "a-3") catch (error) => error.code
     const show = try prepare("vibelang/history/show", {}, "a-4")
     const plan = try prepare("vibelang/history/Plan", { how: "append", epic: "", newEpic: "Docs", target: "", title: "t", task: "d" }, "a-5")
     const start = try prepare("vibelang/history/Start", { id: "m1", lane: "lane" }, "a-6")
@@ -67,7 +67,7 @@ describe("prepare", () => {
       expect(post.kind).toBe("post")
       expect(post.payload).toMatchObject({ clientId: "a-1", text: "hi" })
       expect(tour.payload).toEqual({ tour: "a-2" })
-      expect(end.kind).toBe("end")
+      expect(end).toBe("not-found")
       expect(show.payload).toEqual({ what: "outline" })
       expect(plan.kind).toBe("plan")
       expect(start.kind).toBe("start")
