@@ -16,7 +16,7 @@ import * as Cell from "../src/Cell.ts"
 import { HarnessError } from "../src/HarnessError.vibe"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as QuickJSVariant from "../src/QuickJSVariant.vibe"
-import * as Sandbox from "../src/Sandbox.ts"
+import * as Sandbox from "../src/Sandbox.vibe"
 
 const flows: Readonly<Record<string, Cell.FlowProjection>> = {
   "fs/list": new Cell.FlowProjection({

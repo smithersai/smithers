@@ -7,9 +7,9 @@ import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Layer, Result, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import type * as AgentEvent from "../src/AgentEvent.vibe"
-import * as EngineLike from "../src/EngineLike.ts"
+import * as EngineLike from "../src/EngineLike.vibe"
 import type { HarnessError } from "../src/HarnessError.vibe"
-import * as Judgement from "../src/Judgement.ts"
+import * as Judgement from "../src/Judgement.vibe"
 
 const one = Classifier.make("test/one", {
   description: "One state, two questions.",

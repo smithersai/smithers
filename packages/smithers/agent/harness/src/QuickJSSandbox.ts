@@ -39,7 +39,7 @@ import * as printChannel from "./internal/printChannel.vibe"
 import { refusal } from "./internal/refusal.vibe"
 import * as QuickJSLifecycle from "./QuickJSLifecycle.ts"
 import * as QuickJSVariant from "./QuickJSVariant.vibe"
-import * as Sandbox from "./Sandbox.ts"
+import * as Sandbox from "./Sandbox.vibe"
 import * as VariablesPanel from "./VariablesPanel.vibe"
 
 /**

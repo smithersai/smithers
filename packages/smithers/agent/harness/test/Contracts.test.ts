@@ -8,7 +8,7 @@ import { readdirSync, readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as AgentEvent from "../src/AgentEvent.vibe"
 import * as Cell from "../src/Cell.ts"
-import * as EngineLike from "../src/EngineLike.ts"
+import * as EngineLike from "../src/EngineLike.vibe"
 import { HarnessError, HarnessErrorCode } from "../src/HarnessError.vibe"
 import * as Plan from "../src/Plan.vibe"
 

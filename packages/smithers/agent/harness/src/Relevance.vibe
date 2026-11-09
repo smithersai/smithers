@@ -28,7 +28,7 @@ import * as AgentEvent from "./AgentEvent.vibe"
 import * as bytes from "./internal/bytes.ts"
 import * as elide from "./internal/elide.ts"
 import { untrustedData } from "./internal/untrustedData.ts"
-import * as Judgement from "./Judgement.ts"
+import * as Judgement from "./Judgement.vibe"
 
 /**
  * What an item is.

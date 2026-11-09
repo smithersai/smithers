@@ -13,9 +13,9 @@ import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as Pricing from "@smthrs/model/Pricing"
 import { Context, Effect, Schema } from "effect"
 import * as Cell from "./Cell.ts"
-import * as EngineLike from "./EngineLike.ts"
+import * as EngineLike from "./EngineLike.vibe"
 import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.vibe"
-import * as Sandbox from "./Sandbox.ts"
+import * as Sandbox from "./Sandbox.vibe"
 
 /**
  * Observes an event before the controller advances or parks. Durable hosts

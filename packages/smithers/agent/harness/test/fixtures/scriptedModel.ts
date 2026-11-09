@@ -1,6 +1,6 @@
 import { Model, ModelError, ModelEvent, ModelRequest } from "@smthrs/model"
 import { Effect, Layer, Stream } from "effect"
-import * as EngineLike from "../../src/EngineLike.ts"
+import * as EngineLike from "../../src/EngineLike.vibe"
 
 /**
  * One recorded provider step replayed by the fixture model.

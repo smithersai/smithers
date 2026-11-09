@@ -85,7 +85,7 @@ const securityReview = Smithers.SecurityReview({
         "A cell-controlled value (flow name, input, at, print parts, intent payload) passed to host eval, dynamic import, Function or a property lookup on a host object without JSON decoding.",
         "The ctx and console globals becoming writable or configurable, so a cell can replace ctx.call for later cells."
       ],
-      paths: ["src/QuickJSSandbox.ts", "src/Sandbox.ts", "src/CellValidation.ts"]
+      paths: ["src/QuickJSSandbox.ts", "src/Sandbox.vibe", "src/CellValidation.ts"]
     },
     {
       id: "realm-resource-limits",
@@ -98,7 +98,7 @@ const securityReview = Smithers.SecurityReview({
         "A flow result materialized into the realm without the payloadBytes estimate, or a deep JSON payload whose handle building can overflow the host stack uncaught.",
         "Proxy or another getter-driven intrinsic available to cells that makes the variables-panel memory probe under-report held bytes."
       ],
-      paths: ["src/QuickJSSandbox.ts", "src/Sandbox.ts", "src/VariablesPanel.vibe"]
+      paths: ["src/QuickJSSandbox.ts", "src/Sandbox.vibe", "src/VariablesPanel.vibe"]
     },
     {
       id: "flow-call-authorization",
@@ -160,7 +160,7 @@ const securityReview = Smithers.SecurityReview({
         "A boundary or step key that omits the invocation input, the declaration digest, the frame ordinal or the live-tree digest.",
         "A replayed outcome returned without re-checking the capability envelope or withheld-flow state that applied when it was recorded."
       ],
-      paths: ["src/CellTurn.ts", "src/Cell.ts", "src/internal/frame.vibe", "src/EngineLike.ts"]
+      paths: ["src/CellTurn.ts", "src/Cell.ts", "src/internal/frame.vibe", "src/EngineLike.vibe"]
     },
     {
       id: "completion-gate-bypass",
@@ -173,7 +173,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/CompletionClaim.ts",
-        "src/Judgement.ts",
+        "src/Judgement.vibe",
         "src/UnresolvedFailure.vibe",
         "src/FailedCall.ts",
         "src/UnmovedTree.ts",
@@ -194,7 +194,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/AgentEvent.vibe",
         "src/Transcript.vibe",
-        "src/EngineLike.ts",
+        "src/EngineLike.vibe",
         "src/FlowBinding.ts",
         "src/HarnessError.vibe"
       ]

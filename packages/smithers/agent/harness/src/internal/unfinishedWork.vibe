@@ -27,7 +27,7 @@ import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect } from "effect"
 import * as CompletionClaim from "../CompletionClaim.ts"
 import { HarnessError } from "../HarnessError.vibe"
-import * as Judgement from "../Judgement.ts"
+import * as Judgement from "../Judgement.vibe"
 import { failedReading } from "./paidUsage.ts"
 
 /**

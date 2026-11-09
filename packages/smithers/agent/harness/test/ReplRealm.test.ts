@@ -17,7 +17,7 @@ import * as CellValidation from "../src/CellValidation.ts"
 import * as bytes from "../src/internal/bytes.ts"
 import * as CellPrompt from "../src/internal/cellPrompt.vibe"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
-import * as Sandbox from "../src/Sandbox.ts"
+import * as Sandbox from "../src/Sandbox.vibe"
 import type * as VariablesPanel from "../src/VariablesPanel.vibe"
 
 const projection = (name: string): Cell.FlowProjection =>

@@ -33,7 +33,7 @@ import { Effect, Layer } from "effect"
 import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
 import { newVariant } from "quickjs-emscripten-core"
 import * as QuickJSVariant from "./QuickJSVariant.vibe"
-import * as Sandbox from "./Sandbox.ts"
+import * as Sandbox from "./Sandbox.vibe"
 
 /**
  * The separate-file build, whose emscripten glue has a `workerd` export
@@ -63,7 +63,11 @@ export const variantFrom = (
           message: "QuickJS WebAssembly module could not be loaded",
           cause
         })
-    }).pipe(Effect.map(({ default: wasmModule }) => QuickJSVariant.layerVariant(newVariant(base, { wasmModule }))))
+    }).pipe(
+      Effect.flatMap(({ default: wasmModule }) =>
+        sync(() => QuickJSVariant.layerVariant(newVariant(base, { wasmModule })))
+      )
+    )
   )
 
 /**

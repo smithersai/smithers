@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest"
 import * as Cell from "../src/Cell.ts"
 import { HarnessError } from "../src/HarnessError.vibe"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
-import * as Sandbox from "../src/Sandbox.ts"
+import * as Sandbox from "../src/Sandbox.vibe"
 import { rejectedCell, rejectedCellNames } from "./fixtures/rejectedCells.ts"
 
 const listInputDocument = JSON.parse(

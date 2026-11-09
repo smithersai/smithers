@@ -8,7 +8,7 @@
 import type * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Pricing from "@smthrs/model/Pricing"
-import type * as EngineLike from "../EngineLike.ts"
+import type * as EngineLike from "../EngineLike.vibe"
 
 /**
  * One reading's metered usage and the model that read it; absent when the

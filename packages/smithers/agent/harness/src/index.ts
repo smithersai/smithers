@@ -39,7 +39,7 @@ export * as Monitor from "./Monitor.vibe"
  * @category controls
  * @since 1.0.0-rc.0
  */
-export * as Judgement from "./Judgement.ts"
+export * as Judgement from "./Judgement.vibe"
 
 /**
  * @category controls
@@ -57,7 +57,7 @@ export * as Plan from "./Plan.vibe"
  * @category services
  * @since 0.1.0
  */
-export * as EngineLike from "./EngineLike.ts"
+export * as EngineLike from "./EngineLike.vibe"
 
 /**
  * @category utilities
@@ -111,7 +111,7 @@ export * as Cell from "./Cell.ts"
  * @category services
  * @since 0.1.0
  */
-export * as Sandbox from "./Sandbox.ts"
+export * as Sandbox from "./Sandbox.vibe"
 
 /**
  * The QuickJS build a host names, shared by the cell sandbox and every other

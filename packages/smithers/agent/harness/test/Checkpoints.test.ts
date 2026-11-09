@@ -16,7 +16,7 @@ import type * as AgentEvent from "../src/AgentEvent.vibe"
 import * as Cell from "../src/Cell.ts"
 import * as CellTurn from "../src/CellTurn.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
-import * as Sandbox from "../src/Sandbox.ts"
+import * as Sandbox from "../src/Sandbox.vibe"
 import { descriptor, emits, of, pattern, run, window } from "./fixtures/cellTurn.ts"
 import * as ScriptedEngine from "./fixtures/scriptedEngine.ts"
 

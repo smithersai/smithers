@@ -864,7 +864,7 @@ export interface PendingCall {
  * @since 0.1.0
  * @slop
  */
-export const driveCell = (options: {
+export const driveCell = effect (options: {
   readonly replay?: RealmEvaluation["replay"]
   readonly progress?: ((dispatched: number, settled: number) => void) | undefined
   readonly pending: Array<PendingCall>
@@ -880,89 +880,88 @@ export const driveCell = (options: {
   /** What the frame's backstop has left for a call to this flow; see {@link Invocation.remainingMs}. */
   readonly remainingMs?: ((flow: string) => number | undefined) | undefined
   readonly limits?: Limits | undefined
-}): Effect.Effect<Cell.Outcome, SandboxError | HarnessError> =>
-  Effect.gen(function*() {
-    let calls = 0
-    let settledOrdinal = -1
-    for (;;) {
-      const next = options.pending.shift()
-      if (next !== undefined) {
-        if (
-          options.replay !== undefined &&
-          (next.ordinal > options.replay.boundary.settled || next.ordinal > options.replay.boundary.dispatched)
-        ) {
-          // Match interruption cleanup without delivering an answer that the
-          // original cell never received. This also covers queued checkpoints.
-          next.abort("The cell was interrupted")
-          options.abort("The cell was interrupted")
-          options.flush()
-          return options.replay.outcome
-        }
-        if (options.limits?.calls !== undefined && calls >= options.limits.calls) {
-          const message = `This cell exceeded its limit of ${options.limits.calls} flow calls`
-          next.abort(message)
-          options.abort(message)
-          options.flush()
-          return new Cell.Rejected({ code: "limit_exceeded", message })
-        }
-        calls = calls + 1
-        options.progress?.(next.ordinal, settledOrdinal)
-        const remainingMs = options.remainingMs?.(next.flow)
-        const callMs = callLimit(options.limits?.callMs ?? defaultLimits.callMs, { input: next.input, remainingMs })
-        // A mint is settled here rather than on a channel of its own so that it
-        // is ordered against the calls around it. See `Minter`.
-        const settling = next.kind === "checkpoint"
-          ? (options.mint ?? mintUnavailable)({ ordinal: next.ordinal })
-          : options.handler({
-            ordinal: next.ordinal,
-            flow: next.flow,
-            input: next.input,
-            ...(next.at === undefined ? {} : { at: next.at }),
-            ...(next.declared === true ? { declared: true } : {}),
-            ...(remainingMs === undefined ? {} : { remainingMs })
-          })
-        const result = yield* (options.bounded === true
-          // The caller bounds its own settlements, inside the boundary it
-          // journals them under. Racing a second clock here would settle the
-          // call from the one reading nothing records. See `bounded`.
-          ? settling
-          : settling.pipe(
-            // The per-call ceiling, ahead of the interrupt cleanup below: a call
-            // that overruns is answered, not abandoned, so the cell sees a
-            // resolved failure and the frame keeps its remaining budget.
-            Effect.timeoutOrElse({
-              duration: callMs,
-              orElse: () => Effect.succeed(callTimedOut(next.flow, callMs))
-            })
-          )).pipe(
-            Effect.flatMap(Cell.decodeCallResult),
-            Effect.onExit((exit) =>
-              Exit.isSuccess(exit)
-                ? Effect.void
-                : Effect.sync(() => {
-                  // `next` was shifted out of `pending` before the handler ran.
-                  // Settle that active bridge as well as calls queued behind it,
-                  // then flush the VM so a scoped runtime has no live promise
-                  // handles when a permission park or engine failure unwinds it.
-                  next.abort("The cell was interrupted")
-                  options.abort("The cell was interrupted")
-                  options.flush()
-                })
-            )
-          )
-        next.settle(result)
-        settledOrdinal = next.ordinal
-        options.progress?.(next.ordinal, settledOrdinal)
+}): Effect.Effect<Cell.Outcome, SandboxError | HarnessError> => {
+  let calls = 0
+  let settledOrdinal = -1
+  for (;;) {
+    const next = options.pending.shift()
+    if (next !== undefined) {
+      if (
+        options.replay !== undefined &&
+        (next.ordinal > options.replay.boundary.settled || next.ordinal > options.replay.boundary.dispatched)
+      ) {
+        // Match interruption cleanup without delivering an answer that the
+        // original cell never received. This also covers queued checkpoints.
+        next.abort("The cell was interrupted")
+        options.abort("The cell was interrupted")
         options.flush()
-        continue
+        return options.replay.outcome
       }
-      const outcome = options.finished()
-      if (outcome !== undefined) return yield* Cell.decodeOutcome(outcome)
-      // Nothing is queued and the cell has not settled: hand the runtime a
-      // yield point so a peer fiber and an interrupt are both still observable.
-      yield* Effect.yieldNow
+      if (options.limits?.calls !== undefined && calls >= options.limits.calls) {
+        const message = `This cell exceeded its limit of ${options.limits.calls} flow calls`
+        next.abort(message)
+        options.abort(message)
+        options.flush()
+        return new Cell.Rejected({ code: "limit_exceeded", message })
+      }
+      calls = calls + 1
+      options.progress?.(next.ordinal, settledOrdinal)
+      const remainingMs = options.remainingMs?.(next.flow)
+      const callMs = callLimit(options.limits?.callMs ?? defaultLimits.callMs, { input: next.input, remainingMs })
+      // A mint is settled here rather than on a channel of its own so that it
+      // is ordered against the calls around it. See `Minter`.
+      const settling = next.kind === "checkpoint"
+        ? (options.mint ?? mintUnavailable)({ ordinal: next.ordinal })
+        : options.handler({
+          ordinal: next.ordinal,
+          flow: next.flow,
+          input: next.input,
+          ...(next.at === undefined ? {} : { at: next.at }),
+          ...(next.declared === true ? { declared: true } : {}),
+          ...(remainingMs === undefined ? {} : { remainingMs })
+        })
+      const result = try (options.bounded === true
+        // The caller bounds its own settlements, inside the boundary it
+        // journals them under. Racing a second clock here would settle the
+        // call from the one reading nothing records. See `bounded`.
+        ? settling
+        : settling.pipe(
+          // The per-call ceiling, ahead of the interrupt cleanup below: a call
+          // that overruns is answered, not abandoned, so the cell sees a
+          // resolved failure and the frame keeps its remaining budget.
+          Effect.timeoutOrElse({
+            duration: callMs,
+            orElse: () => Effect.succeed(callTimedOut(next.flow, callMs))
+          })
+        )).pipe(
+          Effect.flatMap(Cell.decodeCallResult),
+          Effect.onExit((exit) =>
+            Exit.isSuccess(exit)
+              ? Effect.void
+              : Effect.sync(() => {
+                // `next` was shifted out of `pending` before the handler ran.
+                // Settle that active bridge as well as calls queued behind it,
+                // then flush the VM so a scoped runtime has no live promise
+                // handles when a permission park or engine failure unwinds it.
+                next.abort("The cell was interrupted")
+                options.abort("The cell was interrupted")
+                options.flush()
+              })
+          )
+        )
+      next.settle(result)
+      settledOrdinal = next.ordinal
+      options.progress?.(next.ordinal, settledOrdinal)
+      options.flush()
+      continue
     }
-  })
+    const outcome = options.finished()
+    if (outcome !== undefined) return try Cell.decodeOutcome(outcome)
+    // Nothing is queued and the cell has not settled: hand the runtime a
+    // yield point so a peer fiber and an interrupt are both still observable.
+    try Effect.yieldNow
+  }
+}
 
 /**
  * Projects a thrown value into a stable serializable cell outcome.

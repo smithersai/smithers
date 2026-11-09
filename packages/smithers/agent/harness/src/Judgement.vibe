@@ -33,7 +33,7 @@ import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as AgentEvent from "./AgentEvent.vibe"
-import * as EngineLike from "./EngineLike.ts"
+import * as EngineLike from "./EngineLike.vibe"
 import type { HarnessError } from "./HarnessError.vibe"
 import * as bytes from "./internal/bytes.ts"
 import { answeredBy, decider } from "./internal/decidedBy.ts"
@@ -111,52 +111,51 @@ export interface Read<Qs extends Classifier.Questions> {
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const measured = <Id extends string, S extends Schema.Codec<any, any>, Qs extends Classifier.Questions>(
+export const measured = effect <Id extends string, S extends Schema.Codec<any, any>, Qs extends Classifier.Questions>(
   classifier: Classifier.Classifier<Id, S, Qs>,
   state: S["Type"]
-): Effect.Effect<Read<Qs>, Classifier.ClassifierError, Evaluator.Evaluator> =>
-  Effect.gen(function*() {
-    const bound = yield* Evaluator.Evaluator
-    // The classifier returns answers only. The transport's accounting and the
-    // provider's confidence are read at the service boundary, and so is the
-    // state: a record of what was asked is of the encoding that crossed it.
-    let usage: Evaluator.Usage | undefined
-    let confidence: Readonly<Record<string, number>> | undefined
-    let decidedBy: Evaluator.Response["decidedBy"]
-    let timing: Evaluator.Response["timing"]
-    let sent: Schema.Json = null
-    const metered = Evaluator.Evaluator.of({
-      evaluate: (request) =>
-        bound.evaluate(request).pipe(Effect.tap((response) =>
-          Effect.sync(() => {
-            usage = response.usage
-            confidence = response.confidence
-            decidedBy = response.decidedBy
-            timing = response.timing
-            // A classifier state is a codec to JSON, so its encoding is JSON.
-            sent = request.state as Schema.Json
-          })
-        ))
-    })
-    const [elapsed, answers] = yield* classifier.evaluate(state).pipe(
-      Effect.provideService(Evaluator.Evaluator, metered),
-      Effect.timed
-    )
-    return {
-      answers,
-      asked: {
-        classifier: classifier.id,
-        digest: classifier.digest,
-        questions: classifier.questions,
-        state: sent,
-        answers: AgentEvent.decisionAnswers(answers, confidence),
-        latencyMs: Math.round(Duration.toMillis(elapsed)),
-        ...(usage === undefined ? {} : { usage }),
-        ...(timing === undefined ? {} : { timing }),
-        ...answeredBy({ decidedBy })
-      }
-    }
+): Effect.Effect<Read<Qs>, Classifier.ClassifierError, Evaluator.Evaluator> => {
+  const bound = try Evaluator.Evaluator
+  // The classifier returns answers only. The transport's accounting and the
+  // provider's confidence are read at the service boundary, and so is the
+  // state: a record of what was asked is of the encoding that crossed it.
+  let usage: Evaluator.Usage | undefined
+  let confidence: Readonly<Record<string, number>> | undefined
+  let decidedBy: Evaluator.Response["decidedBy"]
+  let timing: Evaluator.Response["timing"]
+  let sent: Schema.Json = null
+  const metered = Evaluator.Evaluator.of({
+    evaluate: (request) =>
+      bound.evaluate(request).pipe(Effect.tap((response) =>
+        Effect.sync(() => {
+          usage = response.usage
+          confidence = response.confidence
+          decidedBy = response.decidedBy
+          timing = response.timing
+          // A classifier state is a codec to JSON, so its encoding is JSON.
+          sent = request.state as Schema.Json
+        })
+      ))
   })
+  const [elapsed, answers] = try classifier.evaluate(state).pipe(
+    Effect.provideService(Evaluator.Evaluator, metered),
+    Effect.timed
+  )
+  return {
+    answers,
+    asked: {
+      classifier: classifier.id,
+      digest: classifier.digest,
+      questions: classifier.questions,
+      state: sent,
+      answers: AgentEvent.decisionAnswers(answers, confidence),
+      latencyMs: Math.round(Duration.toMillis(elapsed)),
+      ...(usage === undefined ? {} : { usage }),
+      ...(timing === undefined ? {} : { timing }),
+      ...answeredBy({ decidedBy })
+    }
+  }
+}
 
 /**
  * Asks like {@link measured}, and fails as {@link Unjudged} whenever no
@@ -166,23 +165,22 @@ export const measured = <Id extends string, S extends Schema.Codec<any, any>, Qs
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const read = <Id extends string, S extends Schema.Codec<any, any>, Qs extends Classifier.Questions>(
+export const read = effect <Id extends string, S extends Schema.Codec<any, any>, Qs extends Classifier.Questions>(
   classifier: Classifier.Classifier<Id, S, Qs>,
   state: S["Type"]
-): Effect.Effect<Read<Qs>, Unjudged> =>
-  Effect.gen(function*() {
-    const bound = yield* Effect.serviceOption(Evaluator.Evaluator)
-    if (Option.isNone(bound)) return yield* Effect.fail(unconfigured)
-    return yield* measured(classifier, state).pipe(
-      Effect.provideService(Evaluator.Evaluator, bound.value),
-      // An unreachable transport's own message can name hosts and URLs.
-      Effect.mapError((error): Unjudged => ({
-        reason: error.code,
-        detail: Evaluator.publicMessage(error),
-        ...(error.usage === undefined ? {} : { usage: [error.usage] })
-      }))
-    )
-  })
+): Effect.Effect<Read<Qs>, Unjudged> => {
+  const bound = try Effect.serviceOption(Evaluator.Evaluator)
+  if (Option.isNone(bound)) return try Effect.fail(unconfigured)
+  return try measured(classifier, state).pipe(
+    Effect.provideService(Evaluator.Evaluator, bound.value),
+    // An unreachable transport's own message can name hosts and URLs.
+    Effect.mapError((error): Unjudged => ({
+      reason: error.code,
+      detail: Evaluator.publicMessage(error),
+      ...(error.usage === undefined ? {} : { usage: [error.usage] })
+    }))
+  )
+}
 
 /**
  * The largest state one reading sends, in UTF-8 bytes of its JSON: the
@@ -310,72 +308,70 @@ export const perItem = <Ctx, Item, const Qs extends ItemQuestions>(
 
   const size = (value: unknown): number => bytes.size(JSON.stringify(value))
 
-  const chunk = (context: Ctx, items: ReadonlyArray<Item>): Effect.Effect<Array<Array<Item>>, Unjudged> =>
-    Effect.gen(function*() {
-      const invalid = (error: { readonly message: string }): Unjudged => ({
-        reason: "invalid_question",
-        detail: error.message
-      })
-      const encoded = yield* encodeContext(context).pipe(Effect.mapError(invalid))
-      // `{"context":…,"items":[]}`; each item adds its own bytes and, after
-      // the first, one comma.
-      const base = size({ context: encoded, items: [] })
-      const chunks: Array<Array<Item>> = []
-      let current: Array<Item> = []
-      let used = base
-      for (const [index, item] of items.entries()) {
-        const width = size(yield* encodeItem(item).pipe(Effect.mapError(invalid)))
-        if (base + width > limit) {
-          return yield* Effect.fail<Unjudged>({
-            reason: "invalid_question",
-            detail: `Item ${index} alone makes a ${base + width}-byte state; one reading sends at most ${limit} bytes.`
-          })
-        }
-        if (current.length > 0 && used + 1 + width > limit) {
-          chunks.push(current)
-          current = []
-        }
-        used = current.length === 0 ? base + width : used + 1 + width
-        current.push(item)
-      }
-      // Called with at least one item, so the last request is never empty.
-      chunks.push(current)
-      return chunks
+  const chunk = effect (context: Ctx, items: ReadonlyArray<Item>): Effect.Effect<Array<Array<Item>>, Unjudged> => {
+    const invalid = (error: { readonly message: string }): Unjudged => ({
+      reason: "invalid_question",
+      detail: error.message
     })
-
-  const readItems = (context: Ctx, items: ReadonlyArray<Item>): Effect.Effect<ItemsRead<Qs>, Unjudged> =>
-    Effect.gen(function*() {
-      if (items.length === 0) return { answers: [], asked: [] }
-      const chunks = yield* chunk(context, items)
-      // The first request that fails fails the reading, but every request
-      // that settled before it was paid for, and so was the failure itself.
-      const paid: Array<Evaluator.Usage> = []
-      const reads = yield* Effect.forEach(
-        chunks,
-        (slice) =>
-          read(classifierFor(slice.length), { context, items: slice }).pipe(
-            Effect.tap((reading) =>
-              Effect.sync(() => {
-                if (reading.asked.usage !== undefined) paid.push(reading.asked.usage)
-              })
-            )
-          ),
-        { concurrency: options.concurrency ?? Classifier.defaultConcurrency }
-      ).pipe(
-        Effect.mapError((unjudged): Unjudged => {
-          const usage = [...paid, ...(unjudged.usage ?? [])]
-          return usage.length === 0 ? unjudged : { ...unjudged, usage }
+    const encoded = try encodeContext(context).pipe(Effect.mapError(invalid))
+    // `{"context":…,"items":[]}`; each item adds its own bytes and, after
+    // the first, one comma.
+    const base = size({ context: encoded, items: [] })
+    const chunks: Array<Array<Item>> = []
+    let current: Array<Item> = []
+    let used = base
+    for (const [index, item] of items.entries()) {
+      const width = size(try encodeItem(item).pipe(Effect.mapError(invalid)))
+      if (base + width > limit) {
+        return try Effect.fail<Unjudged>({
+          reason: "invalid_question",
+          detail: `Item ${index} alone makes a ${base + width}-byte state; one reading sends at most ${limit} bytes.`
         })
+      }
+      if (current.length > 0 && used + 1 + width > limit) {
+        chunks.push(current)
+        current = []
+      }
+      used = current.length === 0 ? base + width : used + 1 + width
+      current.push(item)
+    }
+    // Called with at least one item, so the last request is never empty.
+    chunks.push(current)
+    return chunks
+  }
+
+  const readItems = effect (context: Ctx, items: ReadonlyArray<Item>): Effect.Effect<ItemsRead<Qs>, Unjudged> => {
+    if (items.length === 0) return { answers: [], asked: [] }
+    const chunks = try chunk(context, items)
+    // The first request that fails fails the reading, but every request
+    // that settled before it was paid for, and so was the failure itself.
+    const paid: Array<Evaluator.Usage> = []
+    const reads = try Effect.forEach(
+      chunks,
+      (slice) =>
+        read(classifierFor(slice.length), { context, items: slice }).pipe(
+          Effect.tap((reading) =>
+            Effect.sync(() => {
+              if (reading.asked.usage !== undefined) paid.push(reading.asked.usage)
+            })
+          )
+        ),
+      { concurrency: options.concurrency ?? Classifier.defaultConcurrency }
+    ).pipe(
+      Effect.mapError((unjudged): Unjudged => {
+        const usage = [...paid, ...(unjudged.usage ?? [])]
+        return usage.length === 0 ? unjudged : { ...unjudged, usage }
+      })
+    )
+    const answers = reads.flatMap((reading, at) =>
+      chunks[at]!.map((_, index) =>
+        Object.fromEntries(
+          keys.map((key) => [key, (reading.answers as Readonly<Record<string, unknown>>)[`${key}_${index}`]])
+        ) as ItemAnswers<Qs>
       )
-      const answers = reads.flatMap((reading, at) =>
-        chunks[at]!.map((_, index) =>
-          Object.fromEntries(
-            keys.map((key) => [key, (reading.answers as Readonly<Record<string, unknown>>)[`${key}_${index}`]])
-          ) as ItemAnswers<Qs>
-        )
-      )
-      return { answers, asked: reads.map((reading) => reading.asked) }
-    })
+    )
+    return { answers, asked: reads.map((reading) => reading.asked) }
+  }
 
   return { classifierFor, read: readItems }
 }
@@ -521,14 +517,13 @@ export const recorded = <A>(
  * @category conversions
  * @since 1.0.0-rc.0
  */
-export const emitRecorded = <E, R>(
+export const emitRecorded = effect <E, R>(
   emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void, E, R>,
   record: Recorded<unknown>
-): Effect.Effect<void, E, R> =>
-  Effect.gen(function*() {
-    for (const settled of record.decisions) yield* emit(settled)
-    if (record.unjudged !== null) yield* emit(record.unjudged)
-  })
+): Effect.Effect<void, E, R> => {
+  for (const settled of record.decisions) try emit(settled)
+  if (record.unjudged !== null) try emit(record.unjudged)
+}
 
 /**
  * The most of a run's task one reading carries, in UTF-8 bytes; both ends

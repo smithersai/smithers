@@ -92,8 +92,8 @@
       "default": "./.vibelang/js/src/ContextWindow.js"
     },
     "./EngineLike": {
-      "types": "./src/EngineLike.ts",
-      "vibelang-source": "./src/EngineLike.ts",
+      "types": "./.vibe/declarations/src/EngineLike.d.vibe.ts",
+      "vibelang-source": "./src/EngineLike.vibe",
       "default": "./.vibelang/js/src/EngineLike.js"
     },
     "./ExternalTranscript": {
@@ -112,8 +112,8 @@
       "default": "./.vibelang/js/src/HarnessError.js"
     },
     "./Judgement": {
-      "types": "./src/Judgement.ts",
-      "vibelang-source": "./src/Judgement.ts",
+      "types": "./.vibe/declarations/src/Judgement.d.vibe.ts",
+      "vibelang-source": "./src/Judgement.vibe",
       "default": "./.vibelang/js/src/Judgement.js"
     },
     "./Monitor": {
@@ -142,8 +142,8 @@
       "default": "./.vibelang/js/src/QuickJSSandbox.js"
     },
     "./QuickJSWorkerd": {
-      "types": "./src/QuickJSWorkerd.ts",
-      "vibelang-source": "./src/QuickJSWorkerd.ts",
+      "types": "./.vibe/declarations/src/QuickJSWorkerd.d.vibe.ts",
+      "vibelang-source": "./src/QuickJSWorkerd.vibe",
       "default": "./.vibelang/js/src/QuickJSWorkerd.js"
     },
     "./Relevance": {
@@ -152,8 +152,8 @@
       "default": "./.vibelang/js/src/Relevance.js"
     },
     "./Sandbox": {
-      "types": "./src/Sandbox.ts",
-      "vibelang-source": "./src/Sandbox.ts",
+      "types": "./.vibe/declarations/src/Sandbox.d.vibe.ts",
+      "vibelang-source": "./src/Sandbox.vibe",
       "default": "./.vibelang/js/src/Sandbox.js"
     },
     "./Steering": {
