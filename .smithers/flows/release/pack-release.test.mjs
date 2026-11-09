@@ -177,7 +177,7 @@ test("workspaces covers every non-private engine and agent package under package
   )
   assert.deepEqual(
     tooling.filter(([, manifest]) => manifest.private === true).map(([, manifest]) => manifest.name).sort(),
-    ["@smthrs/build-infra", "@smthrs/eval-agent", "@smthrs/repo-targets", "@smthrs/rpc"]
+    ["@smthrs/build-infra", "@smthrs/eval-agent", "@smthrs/lemmascript", "@smthrs/repo-targets", "@smthrs/rpc"]
   )
 })
 
