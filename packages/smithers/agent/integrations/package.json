@@ -72,8 +72,8 @@
       "default": "./.vibelang/js/src/core/Channel.js"
     },
     "./core/Connection": {
-      "types": "./src/core/Connection.ts",
-      "vibelang-source": "./src/core/Connection.ts",
+      "types": "./.vibe/declarations/core/Connection.d.vibe.ts",
+      "vibelang-source": "./src/core/Connection.vibe",
       "default": "./.vibelang/js/src/core/Connection.js"
     },
     "./core/CursorStore": {

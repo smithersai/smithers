@@ -14,7 +14,7 @@ import * as Commits from "../src/github/Commits.vibe"
 import type { GitHubClient } from "../src/github/GitHubClient.vibe"
 import { withWriteMarker } from "../src/github/Issues.vibe"
 import * as Pulls from "../src/github/Pulls.vibe"
-import * as Refs from "../src/github/Refs.ts"
+import * as Refs from "../src/github/Refs.vibe"
 import { type Fixture, json, startFixture } from "./Fixture.ts"
 import { gitHubLayer } from "./Http.ts"
 

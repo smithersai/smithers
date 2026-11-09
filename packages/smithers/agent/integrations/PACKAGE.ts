@@ -120,7 +120,7 @@ const securityReview = Smithers.SecurityReview({
         "A connection-scoped layer that falls back to ambientEnvironment() tokens when the connection's credential fails to resolve."
       ],
       paths: [
-        "src/core/Connection.ts",
+        "src/core/Connection.vibe",
         "src/Environment.ts",
         "src/*/Config.{ts,vibe}"
       ]

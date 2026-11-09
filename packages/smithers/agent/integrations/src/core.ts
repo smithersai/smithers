@@ -32,7 +32,7 @@ export * as Channel from "./core/Channel.vibe"
  * @category schemas
  * @since 1.0.0
  */
-export * as Connection from "./core/Connection.ts"
+export * as Connection from "./core/Connection.vibe"
 
 /**
  * @category services

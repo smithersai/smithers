@@ -92,7 +92,7 @@ export * as RateLimit from "./github/RateLimit.ts"
  * @category constructors
  * @since 1.0.0
  */
-export * as Refs from "./github/Refs.ts"
+export * as Refs from "./github/Refs.vibe"
 
 /**
  * @category constructors

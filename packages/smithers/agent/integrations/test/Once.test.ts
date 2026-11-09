@@ -17,7 +17,7 @@ import type { GitHubClient } from "../src/github/GitHubClient.vibe"
 import * as Issues from "../src/github/Issues.vibe"
 import * as Once from "../src/github/Once.vibe"
 import * as Pulls from "../src/github/Pulls.vibe"
-import * as Refs from "../src/github/Refs.ts"
+import * as Refs from "../src/github/Refs.vibe"
 import { type Fixture, json, startFixture } from "./Fixture.ts"
 import { gitHubLayer } from "./Http.ts"
 

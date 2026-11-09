@@ -23,7 +23,7 @@
 
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { GitHubClient } from "./GitHubClient.vibe"
-import { requireBranch } from "./Refs.ts"
+import { requireBranch } from "./Refs.vibe"
 import { requireRepositoryPath } from "./Repository.vibe"
 
 /**

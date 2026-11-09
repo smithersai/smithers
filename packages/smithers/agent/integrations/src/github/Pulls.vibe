@@ -36,7 +36,7 @@ import { IntegrationError } from "../core/IntegrationError.ts"
 import { RECONCILE_PAGES } from "./Actions.ts"
 import { GitHubClient } from "./GitHubClient.vibe"
 import { IssueUser, WRITE_ID_PATTERN, writeIdOf } from "./Issues.vibe"
-import { requireBranch } from "./Refs.ts"
+import { requireBranch } from "./Refs.vibe"
 import { IssueNumber, requireRepositoryPath } from "./Repository.vibe"
 
 /**

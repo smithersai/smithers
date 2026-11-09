@@ -37,7 +37,7 @@ import * as Commits from "./Commits.vibe"
 import type { GitHubClient } from "./GitHubClient.vibe"
 import * as Issues from "./Issues.vibe"
 import * as Pulls from "./Pulls.vibe"
-import * as Refs from "./Refs.ts"
+import * as Refs from "./Refs.vibe"
 
 /**
  * The commit trailer that carries a write's key.

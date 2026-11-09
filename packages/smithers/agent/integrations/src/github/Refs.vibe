@@ -98,11 +98,11 @@ export const getBranch = (
   repo: string,
   name: string
 ): Effect.Effect<Option.Option<Branch>, IntegrationError, GitHubClient> =>
-  Effect.gen(function*() {
-    const client = yield* GitHubClient
-    const repository = yield* requireRepositoryPath(owner, repo)
-    const branch = yield* requireBranch(name)
-    return yield* client.request("GET", `/repos/${repository}/git/ref/heads/${branch}`, undefined, {
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const branch = try requireBranch(name)
+    return try client.request("GET", `/repos/${repository}/git/ref/heads/${branch}`, undefined, {
       schema: RefAnswer
     }).pipe(
       Effect.map((answer) => Option.some({ name: branch, sha: answer.object.sha })),
@@ -130,16 +130,16 @@ export const listBranches = (
   IntegrationError,
   GitHubClient
 > =>
-  Effect.gen(function*() {
-    const client = yield* GitHubClient
-    const repository = yield* requireRepositoryPath(owner, repo)
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
     // A prefix is a branch name cut short: `smithers/t12-` is valid once its last segment is completed.
-    const valid = yield* requireBranch(`${prefix}x`)
+    const valid = try requireBranch(`${prefix}x`)
     const path = `/repos/${repository}/git/matching-refs/heads/${valid.slice(0, -1)}`
-    const page = yield* client.paginate(path, { maxPages: options?.maxPages })
+    const page = try client.paginate(path, { maxPages: options?.maxPages })
     const items: Array<Branch> = []
     for (const item of page.items) {
-      const ref = yield* Schema.decodeUnknownEffect(RefAnswer)(item).pipe(
+      const ref = try Schema.decodeUnknownEffect(RefAnswer)(item).pipe(
         Effect.mapError((cause) =>
           new IntegrationError("decode-failed", `GitHub response for GET ${path} failed schema validation.`, {
             method: "GET",
@@ -168,19 +168,17 @@ export const createBranch = (
   repo: string,
   input: { readonly name: string; readonly sha: string }
 ): Effect.Effect<Branch, IntegrationError, GitHubClient> =>
-  Effect.gen(function*() {
-    const client = yield* GitHubClient
-    const repository = yield* requireRepositoryPath(owner, repo)
-    const branch = yield* requireBranch(input.name)
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const branch = try requireBranch(input.name)
     if (typeof input.sha !== "string" || !SHA.test(input.sha)) {
-      return yield* Effect.fail(
-        new IntegrationError("invalid-config", "A commit SHA must be 40 lowercase hex digits.", {
-          field: "sha",
-          retryable: false
-        })
-      )
+      throw new IntegrationError("invalid-config", "A commit SHA must be 40 lowercase hex digits.", {
+        field: "sha",
+        retryable: false
+      })
     }
-    const answer = yield* client.request("POST", `/repos/${repository}/git/refs`, {
+    const answer = try client.request("POST", `/repos/${repository}/git/refs`, {
       ref: `refs/heads/${branch}`,
       sha: input.sha
     }, { schema: RefAnswer })
