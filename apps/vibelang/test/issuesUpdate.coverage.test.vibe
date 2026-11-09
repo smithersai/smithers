@@ -1,0 +1,148 @@
+// Every transition of the issues screen at `issuesUpdate`: form fields, role gates, the VIP steps and the saved action
+// a person must retry before starting another write.
+import { describe, expect, it } from "@effect/vitest"
+import { initialIssues, issueRequest, issuesUpdate, type IssuesUi } from "../src/web/issues.vibe"
+import type { IssueRequest } from "../src/core/issueSchemas.vibe"
+
+const ready = (over: Partial<IssuesUi> = {}): IssuesUi => ({ ...initialIssues, keyPrefix: "s", role: "maintainer", status: "ready", ...over })
+const saved: IssueRequest = { op: "comment", number: 7, parent: 0, title: "", text: "hello", example: "", prior: "", assignee: "", key: "s-1" }
+
+describe("the issues screen", () => {
+  it.each([
+    ["state", "closed", { state: "closed" }], ["query", "tuple", { query: "tuple" }], ["example", "x", { example: "x" }],
+    ["prior", "ML", { prior: "ML" }], ["comment-text", "hi", { comment: "hi" }], ["parent", "12", { parent: "12" }],
+    ["assignee", "ada", { assignee: "ada" }], ["kind", "VIPs", { kind: "VIPs", screen: "list" }], ["kind-key", "Tasks", { kind: "Tasks", screen: "list" }],
+    ["select", "7", { screen: "detail", selected: 7 }], ["roles", "", { screen: "roles", dialog: "" }], ["list", "", { screen: "list", dialog: "" }],
+  ] as const)("%s %j stores what the person chose, and sends nothing", (action, value, expected) => {
+    const result = issuesUpdate(ready({ error: "stale" }), action, value)
+    expect(result.ui).toMatchObject(expected)
+    expect(result.request).toBeUndefined()
+  })
+
+  it("cancelling a dialog closes it, clears its error and returns focus to the commit control", () => {
+    const result = issuesUpdate(ready({ dialog: "split", error: "stale" }), "cancel", "")
+    expect(result.ui).toMatchObject({ dialog: "", error: "" })
+    expect(result.focusCommit).toBe(true)
+  })
+
+  it("opens the specification with its text, or empty before one exists", () => {
+    expect(issuesUpdate(ready(), "specification", "").ui).toMatchObject({ screen: "specification", summary: "" })
+    const spec = { revision: 1, text: "# Spec" } as NonNullable<IssuesUi["data"]["specification"]>
+    expect(issuesUpdate(ready({ data: { seq: 1, items: [], specification: spec } }), "specification", "").ui.summary).toBe("# Spec")
+  })
+
+  describe("the VIP form's steps", () => {
+    it.each([
+      [{ step: 1, title: " ", summary: "s" }, "Name the feature.", 1],
+      [{ step: 1, title: "t", summary: " " }, "Add a summary.", 1],
+      [{ step: 2, example: " " }, "Add an example.", 2],
+      [{ step: 3, prior: " " }, "Add prior art.", 3],
+      [{ step: 1, title: "t", summary: "s" }, "", 2],
+      [{ step: 4 }, "", 4],
+    ] as const)("%j continues with error %j at step %i", (over, error, step) => {
+      expect(issuesUpdate(ready(over), "continue", "").ui).toMatchObject({ error, step })
+    })
+    it("goes back no further than the first step", () => {
+      expect(issuesUpdate(ready({ step: 3 }), "back", "").ui.step).toBe(2)
+      expect(issuesUpdate(ready({ step: 1 }), "back", "").ui.step).toBe(1)
+    })
+  })
+
+  describe("forms and dialogs", () => {
+    it.each([["new-form", "new"], ["vip-form", "vip"]] as const)("%s opens blank at the first step", (action, screen) => {
+      expect(issuesUpdate(ready({ title: "old", step: 3 }), action, "").ui).toMatchObject({ screen, title: "", summary: "", example: "", prior: "", step: 1 })
+    })
+    it.each([["commit-dialog", "commit"], ["split-dialog", "split"], ["link-dialog", "link"]] as const)("%s opens its dialog for a maintainer", (action, dialog) => {
+      expect(issuesUpdate(ready({ title: "old" }), action, "").ui).toMatchObject({ dialog, title: "" })
+    })
+    it.each(["new-form", "vip-form", "commit-dialog", "split-dialog", "link-dialog"])("%s changes nothing for a viewer", (action) => {
+      const before = ready({ role: "viewer" })
+      expect(issuesUpdate(before, action, "").ui).toBe(before)
+    })
+    it.each(["new-form", "vip-form", "commit-dialog", "split-dialog", "link-dialog"])("%s asks for the saved action first", (action) => {
+      expect(issuesUpdate(ready({ retry: saved }), action, "").ui.error).toBe("Retry the saved action.")
+    })
+  })
+
+  describe("starting an operation", () => {
+    it("ignores an unknown action and anything while busy", () => {
+      const idle = ready()
+      expect(issuesUpdate(idle, "nonsense", "")).toEqual({ ui: idle })
+      const busy = ready({ busy: true, title: "t" })
+      expect(issuesUpdate(busy, "new", "")).toEqual({ ui: busy })
+    })
+    it("refuses a role that may not perform it, without a request", () => {
+      const viewer = ready({ role: "viewer", title: "t" })
+      expect(issuesUpdate(viewer, "new", "")).toEqual({ ui: viewer })
+    })
+    it.each([["new", "Add a title."], ["split", "Add a title."], ["propose", "Name the feature."]] as const)("%s needs a title: %s", (op, error) => {
+      const result = issuesUpdate(ready({ title: "  " }), op, "")
+      expect(result.ui.error).toBe(error)
+      expect(result.request).toBeUndefined()
+    })
+    it("numbers keys by session, saves a write for retry, and keeps its text", () => {
+      const result = issuesUpdate(ready({ title: "t", summary: "s", serial: 4 }), "new", "")
+      expect(result.request).toMatchObject({ op: "new", key: "s-5", title: "t", text: "s" })
+      expect(result.ui).toMatchObject({ busy: true, serial: 5, retry: result.request })
+    })
+    it("a comment sends the comment's text; an unprefixed key is the bare serial", () => {
+      expect(issuesUpdate(ready({ comment: "c", summary: "other" }), "comment", "").request?.text).toBe("c")
+      expect(issueRequest(ready({ keyPrefix: "" }), "read").key).toBe("1")
+    })
+    it("whole, non-negative parent numbers go through; anything else names no parent", () => {
+      expect(issueRequest(ready({ parent: " 12 " }), "link").parent).toBe(12)
+      for (const parent of ["-1", "1.5", "abc", "99999999999999999999"]) expect(issueRequest(ready({ parent }), "link").parent).toBe(0)
+    })
+    it("reads and drafts are not saved for retry, and may run beside a saved write", () => {
+      const read = issuesUpdate(ready({ retry: saved }), "read", "")
+      expect(read.request?.op).toBe("read")
+      expect(read.ui.retry).toBe(saved)
+      expect(issuesUpdate(ready({ title: "t" }), "draft", "").ui.retry).toBeUndefined()
+    })
+    it("repeating the saved operation resends it unchanged; a different write must wait", () => {
+      const same = issuesUpdate(ready({ retry: saved }), "comment", "")
+      expect(same.request).toBe(saved)
+      const other = issuesUpdate(ready({ retry: saved }), "link", "")
+      expect(other.ui.error).toBe("Retry the saved action.")
+      expect(other.request).toBeUndefined()
+    })
+    it("a specification revision names the revision it was written against", () => {
+      const spec = { revision: 3, text: "x" } as NonNullable<IssuesUi["data"]["specification"]>
+      expect(issuesUpdate(ready({ data: { seq: 1, items: [], specification: spec } }), "spec-revise", "").request?.revision).toBe(3)
+      expect(issuesUpdate(ready(), "spec-revise", "").request?.revision).toBe(0)
+    })
+  })
+
+  describe("retrying", () => {
+    it("re-sends the saved request under a new recovery name", () => {
+      const result = issuesUpdate(ready({ retry: saved, serial: 2 }), "retry", "")
+      expect(result.request).toMatchObject({ ...saved, recovery: "s-3" })
+      expect(result.ui).toMatchObject({ busy: true, serial: 3 })
+    })
+    it.each([
+      ["nothing is saved", {}],
+      ["it is already running", { retry: saved, busy: true }],
+      ["the person lost the role", { retry: saved, role: "viewer" }],
+    ] as const)("does nothing when %s", (_name, over) => {
+      const before = ready(over)
+      expect(issuesUpdate(before, "retry", "")).toEqual({ ui: before })
+    })
+  })
+
+  describe("asking a specification reviewer", () => {
+    it("names the reviewer and the current revision, and saves it", () => {
+      const result = issuesUpdate(ready(), "spec-review", "opus")
+      expect(result.request).toMatchObject({ op: "spec-review", reviewer: "opus", revision: 0 })
+      expect(result.ui.retry).toBe(result.request)
+    })
+    it("only the same reviewer repeats a saved review", () => {
+      const pending: IssueRequest = { ...saved, op: "spec-review", reviewer: "opus" }
+      expect(issuesUpdate(ready({ retry: pending }), "spec-review", "opus").request).toBe(pending)
+      expect(issuesUpdate(ready({ retry: pending }), "spec-review", "sol").ui.error).toBe("Retry the saved action.")
+    })
+    it.each([["busy", { busy: true }], ["without the role", { role: "viewer" }]] as const)("does nothing %s", (_name, over) => {
+      const before = ready(over)
+      expect(issuesUpdate(before, "spec-review", "opus")).toEqual({ ui: before })
+    })
+  })
+})
