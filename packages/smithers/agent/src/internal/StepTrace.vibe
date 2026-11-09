@@ -80,7 +80,7 @@ export const make = (journal: Journal.Service) =>
           cursor.occurrences.clear()
         }
         if (event._tag === "cell-produced") cursor.cell = event.cell.digest
-        const json = try Effect.orDie(Effect.try(() => JSON.stringify(projected.payload)))
+        const json = try Effect.sync(() => JSON.stringify(projected.payload))
         const bytes = try Effect.sync(() => new TextEncoder().encode(json).byteLength)
         const original = try Effect.orDie(Effect.try(() => JSON.parse(json) as Record<string, Schema.Json>))
         const payload = bytes <= 262_144
@@ -91,7 +91,7 @@ export const make = (journal: Journal.Service) =>
           : { truncated: true, bytes, digest: try Effect.orDie(Effect.try(() => Digest.digest(json))) }
         // Concurrent calls may replay in a different completion order. Their
         // checkpoint addresses use call identity, not consumer arrival order.
-        const position = try Effect.orDie(Effect.try(() => JSON.stringify([projected.eventType, original.callId ?? ""])))
+        const position = try Effect.sync(() => JSON.stringify([projected.eventType, original.callId ?? ""]))
         const occurrence = cursor.occurrences.get(position) ?? 0
         cursor.occurrences.set(position, occurrence + 1)
         const { cell, frame, ordinal } = cursor

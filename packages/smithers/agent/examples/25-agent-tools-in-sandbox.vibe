@@ -227,7 +227,7 @@ export const main = (filename: string, root: string, model?: Model.Model): Effec
     const capabilities = ["fs:read", "fs:write"] as const
     // The standard declarations cover the entire host filesystem. Narrow both
     // declarations to match the confined service and expose just these tools.
-    const files = try Effect.try(() => FlowBinding.source("examples/scratch-files", [
+    const files = try Effect.sync(() => FlowBinding.source("examples/scratch-files", [
       FlowBinding.provide(
         FlowBinding.make({
           flow: {

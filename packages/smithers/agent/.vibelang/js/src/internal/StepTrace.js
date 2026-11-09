@@ -59,7 +59,7 @@ export const make = (journal) => Effect_1.gen(function* () {
         }
         if (event._tag === "cell-produced")
             cursor.cell = event.cell.digest;
-        const json = yield* Effect.orDie(Effect.try(() => JSON.stringify(projected.payload)));
+        const json = yield* Effect.sync(() => JSON.stringify(projected.payload));
         const bytes = yield* Effect.sync(() => new TextEncoder().encode(json).byteLength);
         const original = yield* Effect.orDie(Effect.try(() => JSON.parse(json)));
         const payload = bytes <= 262_144
@@ -69,7 +69,7 @@ export const make = (journal) => Effect_1.gen(function* () {
                 ? yield* boundCallFields(original) : { truncated: true, bytes, digest: yield* Effect.orDie(Effect.try(() => Digest.digest(json))) };
         // Concurrent calls may replay in a different completion order. Their
         // checkpoint addresses use call identity, not consumer arrival order.
-        const position = yield* Effect.orDie(Effect.try(() => JSON.stringify([projected.eventType, original.callId ?? ""])));
+        const position = yield* Effect.sync(() => JSON.stringify([projected.eventType, original.callId ?? ""]));
         const occurrence = cursor.occurrences.get(position) ?? 0;
         cursor.occurrences.set(position, occurrence + 1);
         const { cell, frame, ordinal } = cursor;

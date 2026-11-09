@@ -42,7 +42,7 @@
     "./internal/*": null,
     "./*/index": null,
     "./Agent": {
-      "types": "./.vibe/declarations/Agent.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Agent.d.vibe.ts",
       "vibelang-source": "./src/Agent.vibe",
       "default": "./.vibelang/js/src/Agent.js"
     },
@@ -57,42 +57,42 @@
       "default": "./.vibelang/js/src/AgentSession.js"
     },
     "./Budget": {
-      "types": "./.vibe/declarations/Budget.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Budget.d.vibe.ts",
       "vibelang-source": "./src/Budget.vibe",
       "default": "./.vibelang/js/src/Budget.js"
     },
     "./CellPlugin": {
-      "types": "./.vibe/declarations/CellPlugin.d.vibe.ts",
+      "types": "./.vibe/declarations/src/CellPlugin.d.vibe.ts",
       "vibelang-source": "./src/CellPlugin.vibe",
       "default": "./.vibelang/js/src/CellPlugin.js"
     },
     "./Checkpointed": {
-      "types": "./.vibe/declarations/Checkpointed.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Checkpointed.d.vibe.ts",
       "vibelang-source": "./src/Checkpointed.vibe",
       "default": "./.vibelang/js/src/Checkpointed.js"
     },
     "./ChildFlows": {
-      "types": "./.vibe/declarations/ChildFlows.d.vibe.ts",
+      "types": "./.vibe/declarations/src/ChildFlows.d.vibe.ts",
       "vibelang-source": "./src/ChildFlows.vibe",
       "default": "./.vibelang/js/src/ChildFlows.js"
     },
     "./EngineChildren": {
-      "types": "./.vibe/declarations/EngineChildren.d.vibe.ts",
+      "types": "./.vibe/declarations/src/EngineChildren.d.vibe.ts",
       "vibelang-source": "./src/EngineChildren.vibe",
       "default": "./.vibelang/js/src/EngineChildren.js"
     },
     "./EventSink": {
-      "types": "./.vibe/declarations/EventSink.d.vibe.ts",
+      "types": "./.vibe/declarations/src/EventSink.d.vibe.ts",
       "vibelang-source": "./src/EventSink.vibe",
       "default": "./.vibelang/js/src/EventSink.js"
     },
     "./FlowEngineLike": {
-      "types": "./.vibe/declarations/FlowEngineLike.d.vibe.ts",
+      "types": "./.vibe/declarations/src/FlowEngineLike.d.vibe.ts",
       "vibelang-source": "./src/FlowEngineLike.vibe",
       "default": "./.vibelang/js/src/FlowEngineLike.js"
     },
     "./FlowStore": {
-      "types": "./.vibe/declarations/FlowStore.d.vibe.ts",
+      "types": "./.vibe/declarations/src/FlowStore.d.vibe.ts",
       "vibelang-source": "./src/FlowStore.vibe",
       "default": "./.vibelang/js/src/FlowStore.js"
     },
@@ -147,7 +147,7 @@
       "default": "./.vibelang/js/src/SeatResolver.js"
     },
     "./SeatRouter": {
-      "types": "./.vibe/declarations/SeatRouter.d.vibe.ts",
+      "types": "./.vibe/declarations/src/SeatRouter.d.vibe.ts",
       "vibelang-source": "./src/SeatRouter.vibe",
       "default": "./.vibelang/js/src/SeatRouter.js"
     },
@@ -162,7 +162,7 @@
       "default": "./.vibelang/js/src/StandardFlows.js"
     },
     "./WorkspaceObservation": {
-      "types": "./.vibe/declarations/WorkspaceObservation.d.vibe.ts",
+      "types": "./.vibe/declarations/src/WorkspaceObservation.d.vibe.ts",
       "vibelang-source": "./src/WorkspaceObservation.vibe",
       "default": "./.vibelang/js/src/WorkspaceObservation.js"
     },
@@ -197,7 +197,7 @@
       "default": "./.vibelang/js/src/ExternalAgent.js"
     },
     "./Transcript": {
-      "types": "./.vibe/declarations/Transcript.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Transcript.d.vibe.ts",
       "vibelang-source": "./src/Transcript.vibe",
       "default": "./.vibelang/js/src/Transcript.js"
     }
