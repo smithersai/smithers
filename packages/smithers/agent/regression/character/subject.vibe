@@ -54,6 +54,7 @@ import * as EgressHttpClient from "../../../flows/platform-node/src/EgressHttpCl
 import * as NativeEquipment from "../../../src/internal/NativeEquipment.ts"
 import type * as Profile from "./profile.ts"
 import * as World from "#vibelang/emitted/character/world"
+import { characterDebug, hostEnvironment } from "./subject.platform.ts"
 
 /** Token counts of one model call, as the provider reported them. */
 export interface Usage {
@@ -167,7 +168,7 @@ const allow = (action: Capability.PatternAction, resource: string): Permission.R
  * outbound model and network calls: the turn's tools are simulated.
  */
 export const resolveLive = (seat: string, root: string): Effect.Effect<Seat.Seat, Seat.SeatUnresolved, Scope.Scope> => {
-  const env = subscriptionEnvironment(process.env)
+  const env = subscriptionEnvironment(hostEnvironment())
   const grants = GrantStore.layer({ attended: false, rules: [allow("net:*", "**"), allow("model:*", "**")] }).pipe(
     Layer.provide(Workspace.layer(root)),
     Layer.orDie
@@ -180,11 +181,12 @@ export const resolveLive = (seat: string, root: string): Effect.Effect<Seat.Seat
   // later call, so the layer is built into the caller's scope: the seat lives
   // as long as that scope. Session loss replaces the pool without replacing
   // the executor or its grant store.
-  return Effect.gen(function*() {
-    const context = yield* Layer.build(executor)
+  return effect {
+    const context = try Layer.build(executor)
     const request = Context.get(context, RequestExecutor.RequestExecutor)
-    return yield* NativeEquipment.seatResolver(env, request).resolve(seat)
-  })
+    const resolver = try Effect.orDie(Effect.try(() => NativeEquipment.seatResolver(env, request)))
+    return try resolver.resolve(seat)
+  }
 }
 
 const DriveFlow = Flow.make("evals/character/Turn", {
@@ -221,8 +223,9 @@ const describe = (cause: Cause.Cause<unknown>): string => {
   const error = Cause.squash(cause) as { readonly _tag?: unknown; readonly message?: unknown }
   const tag = typeof error?._tag === "string" ? error._tag : "failure"
   const message = typeof error?.message === "string" ? error.message : String(error)
-  const detail = process.env.CHARACTER_DEBUG === undefined ? "" : `\n${Cause.pretty(cause)}`
-  return `${tag}: ${message}${detail}`.slice(0, process.env.CHARACTER_DEBUG === undefined ? 600 : 20_000)
+  const debug = characterDebug()
+  const detail = debug ? `\n${Cause.pretty(cause)}` : ""
+  return `${tag}: ${message}${detail}`.slice(0, debug ? 20_000 : 600)
 }
 
 /** Everything one turn needs. */
@@ -241,16 +244,23 @@ export interface TurnOptions {
 
 /** Runs one turn and reports the reply, the recorded actions and the usage. */
 export const runTurn = (options: TurnOptions): Effect.Effect<Turn> =>
-  Effect.gen(function*() {
+  effect {
     const actions: Array<World.Action> = []
     const events: Array<AgentEvent.AgentEvent> = []
     const started = Date.now()
-    const engine = yield* FlowRuntime.FlowRuntime
-    const scope = yield* Effect.scope
+    const engine = try FlowRuntime.FlowRuntime
+    const scope = try Effect.scope
     const settled = Deferred.makeUnsafe<Exit.Exit<string, unknown>>()
-    const body = Effect.gen(function*() {
-      const agent = yield* Agent.Agent
-      yield* agent.run({
+    const body = effect {
+      const agent = try Agent.Agent
+      const flows = try Effect.orDie(Effect.try(() =>
+        World.sources(options.world, options.composed.role, actions, options.idBase ?? 0)
+      ))
+      const effort = options.composed.effort
+      const modelParams = effort === undefined
+        ? undefined
+        : try Effect.orDie(Effect.try(() => ModelRequest.GenerationParams.make({ reasoningEffort: effort })))
+      try agent.run({
         session: options.session ?? "evals-character",
         seat: options.seat,
         prompt: options.prompt,
@@ -258,10 +268,8 @@ export const runTurn = (options: TurnOptions): Effect.Effect<Turn> =>
         registry: emptyRegistry,
         capabilityEnvelope: [],
         maxFrames: options.maxFrames ?? 8,
-        flows: World.sources(options.world, options.composed.role, actions, options.idBase ?? 0),
-        ...(options.composed.effort === undefined
-          ? {}
-          : { modelParams: ModelRequest.GenerationParams.make({ reasoningEffort: options.composed.effort }) }),
+        flows,
+        ...(modelParams === undefined ? {} : { modelParams }),
         claimCap: 0,
         unmovedCap: 0,
         narrowingCap: 0,
@@ -278,14 +286,15 @@ export const runTurn = (options: TurnOptions): Effect.Effect<Turn> =>
         Effect.provide(Layer.merge(Agent.layerDefaults, ScriptedJudge.layer))
       )
       const answer = resolvedText(events)
-      return answer === undefined ? yield* Effect.fail(new Error("the turn resolved with no answer")) : answer
-    }).pipe(Effect.provide(Agent.layer), Effect.provide(policy))
-    yield* engine.register(
+      if (answer === undefined) throw new Error("the turn resolved with no answer")
+      return answer
+    }.pipe(Effect.provide(Agent.layer), Effect.provide(policy))
+    try engine.register(
       DriveFlow,
       () => Effect.onExit(body, (exit) => Effect.asVoid(Deferred.succeed(settled, exit)))
     ).pipe(Scope.provide(scope))
-    yield* engine.execute(DriveFlow, { executionId: `evals-character-${started}`, payload: {}, discard: true })
-    const exit = yield* Deferred.await(settled)
+    try engine.execute(DriveFlow, { executionId: `evals-character-${started}`, payload: {}, discard: true })
+    const exit = try Deferred.await(settled)
     const usage = usageOf(events)
     return {
       reply: Exit.isSuccess(exit) ? exit.value : undefined,
@@ -295,7 +304,7 @@ export const runTurn = (options: TurnOptions): Effect.Effect<Turn> =>
       usage,
       durationMs: Date.now() - started
     } satisfies Turn
-  }).pipe(
+  }.pipe(
     Effect.provide(Layer.merge(FlowEngine.layerMemory, NodeCrypto.layer)),
     Effect.scoped,
     Effect.orDie

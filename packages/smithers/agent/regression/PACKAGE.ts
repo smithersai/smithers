@@ -107,7 +107,7 @@ const securityReview = Smithers.SecurityReview({
         "A `Cause.pretty`, `CHARACTER_DEBUG` detail, or `--trace` output that prints request headers, env values, or `$CODEX_HOME/auth.json` contents.",
         "A results JSON or REGRESSION-LOG row that serializes the seat, route, or env rather than only usage counts."
       ],
-      paths: ["character/subject.ts", "character/run.ts", "character/rubric.ts"]
+      paths: ["character/subject.vibe", "character/run.ts", "character/rubric.ts"]
     },
     {
       id: "live-seat-grants",
@@ -118,7 +118,7 @@ const securityReview = Smithers.SecurityReview({
         "A world tool handler in `world.ts` that touches the real filesystem, spawns a process, or performs a real fetch (e.g. `web_fetch` not answering from `world.data.web`).",
         "The `Workspace.layer(root)` root set to the repository or home directory in a way the QuickJS cell can write through."
       ],
-      paths: ["character/subject.ts", "character/world.ts", "subject.vibe"]
+      paths: ["character/subject.vibe", "character/world.ts", "subject.vibe"]
     },
     {
       id: "judge-prompt-injection",
