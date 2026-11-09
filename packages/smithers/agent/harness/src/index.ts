@@ -99,7 +99,7 @@ export * as Steering from "./Steering.vibe"
  * @category notifications
  * @since 0.1.0
  */
-export * as Notifications from "./Notifications.ts"
+export * as Notifications from "./Notifications.vibe"
 
 /**
  * @category models

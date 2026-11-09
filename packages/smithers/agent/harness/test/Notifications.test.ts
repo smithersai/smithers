@@ -5,7 +5,7 @@ import { NotificationQueue } from "@smthrs/notifications"
 import type * as NotificationModel from "@smthrs/notifications/Notification"
 import { Cause, Effect, Exit, Layer, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Notifications from "../src/Notifications.ts"
+import * as Notifications from "../src/Notifications.vibe"
 import * as Steering from "../src/Steering.vibe"
 
 /**

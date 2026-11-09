@@ -127,8 +127,8 @@
       "default": "./.vibelang/js/src/NarrowedCheck.js"
     },
     "./Notifications": {
-      "types": "./src/Notifications.ts",
-      "vibelang-source": "./src/Notifications.ts",
+      "types": "./.vibe/declarations/src/Notifications.d.vibe.ts",
+      "vibelang-source": "./src/Notifications.vibe",
       "default": "./.vibelang/js/src/Notifications.js"
     },
     "./Plan": {

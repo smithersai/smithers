@@ -147,7 +147,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Supervisor.vibe",
         "src/Steering.vibe",
         "src/Monitor.vibe",
-        "src/Notifications.ts",
+        "src/Notifications.vibe",
         "src/CellTurn.ts"
       ]
     },
