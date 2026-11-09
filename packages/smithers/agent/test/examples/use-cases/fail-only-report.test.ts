@@ -11,7 +11,7 @@ import {
   RunCommand,
   RunFailed,
   WriteReport
-} from "../../../examples/use-cases/fail-only-report.ts"
+} from "../../../examples/use-cases/fail-only-report.vibe"
 import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "fail-only-report-"))

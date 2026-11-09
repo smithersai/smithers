@@ -12,7 +12,7 @@
  * 0.x's runner timeout failed the task; here a timed-out command is a result with exit code 124 and a timeout note, which is how 0.x's run prompt asked the runner to report it.
  * The analyzer and the report agent answer about results they are handed, so they set `claimCap: 0`; the completion brake would otherwise refuse them for naming commands their own sessions never ran.
  * `DriftDetector` does not fit: 0.x compares against no baseline, and its analyzer reads only the commands' own output.
- * 0.x gave the agents `bash` and `read` tools; in 1.0 tools are the host's registered flows (see `25-agent-tools-in-sandbox.ts`).
+ * 0.x gave the agents `bash` and `read` tools; in 1.0 tools are the host's registered flows (see `25-agent-tools-in-sandbox.vibe`).
  */
 import * as AgentAction from "@smthrs/agent/AgentAction"
 import { Action, Flow } from "@smthrs/flow"
@@ -22,7 +22,7 @@ import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import { exec } from "node:child_process"
+import { execCommand } from "./fail-only-report.platform.ts"
 
 const seat = "anthropic:claude-sonnet-5-5"
 
@@ -102,31 +102,27 @@ export const RunCommand = Action.make("examples/FailOnlyReport/Run", {
  * missing directory, output past the buffer, a death by another signal) fails
  * the run with {@link RunFailed}.
  */
-export const runCommand = (
+export effect function runCommand(
   { command, directory, timeoutMs }: typeof RunCommand.payloadSchema.Type
-): Effect.Effect<RunResult, RunFailed> =>
-  Effect.callback<RunResult, RunFailed>((resume, signal) => {
-    const startedAt = Date.now()
-    exec(command, { cwd: directory, timeout: timeoutMs, signal }, (error, stdout, stderr) => {
-      const durationMs = Date.now() - startedAt
-      // Node puts the exit code here, a system error name when the command
-      // never started, and null when a signal ended it.
-      const code: unknown = error === null ? 0 : error.code ?? null
-      if (typeof code === "number") {
-        return resume(Effect.succeed({ command, exitCode: code, stdout, stderr, durationMs }))
-      }
-      if (code === null && error?.killed === true) {
-        return resume(Effect.succeed({
-          command,
-          exitCode: timeoutExitCode,
-          stdout,
-          stderr: `${stderr}Timed out after ${timeoutMs} ms`,
-          durationMs
-        }))
-      }
-      return resume(Effect.fail(new RunFailed({ command, message: error?.message ?? "no exit code" })))
-    })
-  })
+): RunResult!RunFailed {
+  const { durationMs, error, stderr, stdout } = try execCommand(command, directory, timeoutMs)
+  // Node puts the exit code here, a system error name when the command
+  // never started, and null when a signal ended it.
+  const code: unknown = error === null ? 0 : error.code ?? null
+  if (typeof code === "number") {
+    return { command, exitCode: code, stdout, stderr, durationMs }
+  }
+  if (code === null && error?.killed === true) {
+    return {
+      command,
+      exitCode: timeoutExitCode,
+      stdout,
+      stderr: `${stderr}Timed out after ${timeoutMs} ms`,
+      durationMs
+    }
+  }
+  throw new RunFailed({ command, message: error?.message ?? "no exit code" })
+}
 
 /** Decides which results are notable. */
 export const Analyze = AgentAction.make("examples/FailOnlyReport/Analyze", {

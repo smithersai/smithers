@@ -165,7 +165,7 @@ const securityReview = Smithers.SecurityReview({
         "test/examples/12-*.test.ts",
         "test/examples/13-*.test.ts",
         "test/examples/fixtures/live-test-selection.ts",
-        "examples/use-cases/dstack.ts",
+        "examples/use-cases/dstack.vibe",
         "examples/use-cases/tweet-thread.ts",
         "test/examples/use-cases/dstack.test.ts",
         "test/examples/use-cases/tweet-thread.test.ts",
