@@ -25,7 +25,7 @@ const reviewed: ReadonlyArray<readonly [file: string, line: string, why: string]
     "an AbortSignal reason; cancellation is reported by its exit status"
   ],
   [
-    "src/cli/Entry.vibe",
+    "src/cli/Entry.platform.ts",
     "controller.abort(new Error(`smthrs interrupted by ${signal}`))",
     "an AbortSignal reason; the interrupt is reported by exit status 130/143"
   ],
@@ -65,7 +65,7 @@ const sources = (directory: string): ReadonlyArray<string> =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name)
     if (entry.isDirectory()) return sources(path)
-    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : []
+    return /\.(?:tsx?|vibex?)$/.test(entry.name) && !/\.test\.(?:tsx?|vibex?)$/.test(entry.name) ? [path] : []
   })
 
 describe("raw failure sites under src", () => {

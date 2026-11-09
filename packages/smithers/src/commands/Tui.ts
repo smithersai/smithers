@@ -227,7 +227,14 @@ export const launch = (
   }
   const bun = environment["SMITHERS_BUN"] ?? (machine.versions.bun === undefined ? undefined : machine.execPath)
   if (bun !== undefined && bun !== "") {
-    return { command: bun, args: [entry(packageRoot, true, machine)], runtime: "bun" }
+    return {
+      command: bun,
+      args: [
+        ...(checkout(packageRoot, machine) ? ["--preload", fileURLToPath(import.meta.resolve("vibelang/bun"))] : []),
+        entry(packageRoot, true, machine)
+      ],
+      runtime: "bun"
+    }
   }
   if (ffi(machine.versions.node)) {
     return {

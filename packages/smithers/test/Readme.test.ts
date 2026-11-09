@@ -89,7 +89,7 @@ describe("the CLI documentation contracts", () => {
     // `bin.ts` only picks an entry; the reporter, the exit status and the
     // `--help`/`--version` scan live in the two modules it loads.
     const stale = /`bin\.ts` (?:prints|hands|reads|answers)|through `bin\.ts`|rather than in `bin\.ts`/
-    const files = ["CliError.ts", "Unsupported.ts", "Command.ts", "Providers.ts", "internal/Failure.ts"]
+    const files = ["CliError.vibe", "Unsupported.ts", "Command.ts", "Providers.ts", "internal/Failure.ts"]
       .filter((file) => stale.test(readFileSync(new URL(`../src/${file}`, import.meta.url), "utf8")))
     const tests = readFileSync(new URL("./Unsupported.test.ts", import.meta.url), "utf8")
     expect(files).toEqual([])

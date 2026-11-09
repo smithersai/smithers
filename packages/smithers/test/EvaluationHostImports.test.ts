@@ -6,6 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import * as tar from "tar"
+import vibelang from "vibelang-unplugin/esbuild"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as LoadSuite from "../src/evaluation/LoadSuite.vibe"
 
@@ -32,6 +33,7 @@ beforeAll(async () => {
   await build({
     entryPoints: [join(import.meta.dirname, "../src/evaluation/EvalCli.ts")],
     outfile: join(stage, "dist/esm/EvalCli.js"),
+    plugins: [vibelang({ root: join(import.meta.dirname, "..") })],
     bundle: true,
     packages: "external",
     platform: "node",

@@ -44,13 +44,5 @@ const start = async (entry) => {
 if (!checkout && existsSync(fileURLToPath(built))) {
   await start(built.href)
 } else {
-  const NodeVersion = await import("../src/internal/NodeVersion.ts")
-  const unsupported = NodeVersion.refusal(process.versions.node, process.execPath)
-  if (unsupported === undefined) {
-    await import("vibelang/register")
-    await start(new URL("../src/bin.ts", import.meta.url).href)
-  } else {
-    process.stderr.write(`${unsupported}\n`)
-    process.exitCode = 1
-  }
+  await start(new URL("../src/bin.ts", import.meta.url).href)
 }
