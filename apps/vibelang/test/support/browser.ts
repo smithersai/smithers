@@ -79,3 +79,19 @@ export function popTo(path: string): void {
 export function dispatchWindow(type: string): void { window.dispatchEvent(new Event(type)) }
 export function fullLocation(): string { return `${window.location.pathname}${window.location.search}${window.location.hash}` }
 export function setLocation(path: string): void { window.history.replaceState(null, "", path) }
+
+/** A touch event at `clientY`, carrying the one finger the transcript follows. */
+export function dispatchTouch(type: string, clientY: number): void {
+  document.dispatchEvent(Object.assign(new Event(type, { bubbles: true, cancelable: true }), { touches: type === "touchend" || type === "touchcancel" ? [] : [{ identifier: 1, clientY }] }))
+}
+
+/** Happy DOM lays nothing out, so a page has no height; this gives it one and returns the undo. */
+export function tallPage(height: number): () => void {
+  const root = document.documentElement
+  Object.defineProperty(root, "scrollHeight", { configurable: true, value: height })
+  return () => { Reflect.deleteProperty(root, "scrollHeight") }
+}
+
+export function chatShown(): boolean { return document.querySelector(".vl-app[data-surface='chat']") !== null }
+
+export function fire(target: EventTarget, type: string): void { target.dispatchEvent(new Event(type)) }

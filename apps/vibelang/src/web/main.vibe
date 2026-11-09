@@ -326,8 +326,9 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       const changedPerson = person.id !== accountOf(model).identity.id
       const changedRole = person.role !== accountOf(model).identity.role
       const changedAccount = ModelDecision.accountChanged(person.id, accountOf(model).identity.id, person.role, accountOf(model).identity.role)
-      const nextActions = changedAccount ? { ...actionsOf(model), epoch: (actionsOf(model).epoch ?? 0) + 1, commands: [], slash: false, starting: false } : actionsOf(model)
-      const commands = [...(accountOf(model).target !== "" ? [CloseRoleDialog({})] : []), ...(changedAccount ? [LoadActions({ flow: nextActions.selected, epoch: nextActions.epoch ?? 0 })] : [])]
+      const actionsEpoch = (actionsOf(model).epoch ?? 0) + 1
+      const nextActions = changedAccount ? { ...actionsOf(model), epoch: actionsEpoch, commands: [], slash: false, starting: false } : actionsOf(model)
+      const commands = [...(accountOf(model).target !== "" ? [CloseRoleDialog({})] : []), ...(changedAccount ? [LoadActions({ flow: nextActions.selected, epoch: actionsEpoch })] : [])]
       return {
         model: { ...(changedAccount ? withoutSandbox : model), actions: nextActions, ...(changedAccount ? { wikiEdit: undefined, wikiReview: undefined, wikiEditRequest: (model.wikiEditRequest ?? 0) + 1, sandboxBusy: false, sandboxRequest: (model.sandboxRequest ?? 0) + 1 } : {}), ...(changedPerson ? { terminalDraft: "", sandboxPane: "closed" as const } : {}), name: person.login || "Guest", account: {
           ...accountOf(model), identity: person, pending: false,
@@ -365,8 +366,9 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
         ? event.mode === "participation" ? "You're now Community." : "You're now " + roleLabel(event.role) + "."
         : changed && event.mode === "person" && account.people !== "closed" ? name + " is now " + roleLabel(event.role) + "." : account.notice
       const close = ModelDecision.roleDialogCloses(identity.role, account.target)
-      const nextActions = changedRole ? { ...actionsOf(model), epoch: (actionsOf(model).epoch ?? 0) + 1, commands: [], slash: false, starting: false } : actionsOf(model)
-      const commands = [...(close ? [CloseRoleDialog({})] : []), ...(changed && account.people !== "closed" ? [LoadPeople({})] : []), ...(changedRole ? [LoadActions({ flow: nextActions.selected, epoch: nextActions.epoch ?? 0 })] : [])]
+      const actionsEpoch = (actionsOf(model).epoch ?? 0) + 1
+      const nextActions = changedRole ? { ...actionsOf(model), epoch: actionsEpoch, commands: [], slash: false, starting: false } : actionsOf(model)
+      const commands = [...(close ? [CloseRoleDialog({})] : []), ...(changed && account.people !== "closed" ? [LoadPeople({})] : []), ...(changedRole ? [LoadActions({ flow: nextActions.selected, epoch: actionsEpoch })] : [])]
       return { model: { ...(changedRole ? withoutSandbox : model), actions: nextActions, ...(changedRole ? { wikiEdit: undefined, wikiReview: undefined, wikiEditRequest: (model.wikiEditRequest ?? 0) + 1, sandboxBusy: false, sandboxRequest: (model.sandboxRequest ?? 0) + 1 } : {}), account: { ...account, ledger, identity, notice, target: close ? "" : account.target, pending: close ? false : account.pending } }, ...(commands.length > 0 ? { commands } : {}) }
     },
     FailedRoles: () => runAccount(model, ModelDecision.failedRoles(accountScreen(model))),
@@ -559,7 +561,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
           ...(advanced && event.type === "PaneOpened" ? { sandboxPane: model.sandboxPane === "max" ? "pane" as const : model.sandboxPane ?? "closed" } : {}),
           ...(advanced && event.type === "PaneOpened" && !event.url.startsWith("/wiki/") ? { wikiStatus: "ready" as const, wikiAfter: "" } : {}),
           ...(advanced && event.type === "PaneOpened" && event.url.startsWith("/wiki/") ? {
-            following: false, wikiStatus: "ready" as const, wikiAfter: event.id !== "" ? event.id : client.conversation.entries.some(entry => entry.id === model.wikiAfter) ? model.wikiAfter ?? "" : "",
+            following: false, wikiStatus: "ready" as const, wikiAfter: event.id !== "" ? event.id : model.wikiAfter !== undefined && client.conversation.entries.some(entry => entry.id === model.wikiAfter) ? model.wikiAfter : "",
           } : {}),
           ...(advanced && event.type === "PaneOpened" && model.wikiEdit !== undefined && model.wikiEdit.submission === undefined && event.url !== `/wiki/${model.wikiEdit.page}` ? { wikiEdit: undefined } : {}),
           ...(advanced && event.type === "PaneOpened" && event.url.startsWith("/wiki/") && accountOf(model).people === "max" ? { account: { ...accountOf(model), people: "pane" as const } } : {}),

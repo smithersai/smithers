@@ -1,0 +1,210 @@
+// The browser program's edges: page commands on a page without their element, touch that ends, streams that break, and
+// updates for state the other coverage files never reach. Real runtime and real DOM events; faults are injected services.
+import { describe, expect, it } from "@effect/vitest"
+import { vi } from "vitest"
+import { Runtime } from "foldkit"
+import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { Factory, Unavailable } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { newClient } from "../src/core/conversation.vibe"
+import { AccountUnavailable, type Accounts } from "../src/core/roles.vibe"
+import type { IssueRecord as IssueRecordSchema } from "../src/core/issueSchemas.vibe"
+import { initial as initialActions } from "../src/web/actionModel.vibe"
+import { initialIssues } from "../src/web/issues.vibe"
+import { accountOf, OpenWikiEditor, CloseIssueDialog, ClosePalette, CloseRoleDialog, EndTourCommand, FocusAccountMenu, FocusWikiEditor, init, Message, type Model, ShowIssueDialog, ShowRoleDialog, SignInAccount, SwitchMode, update } from "../src/web/main.vibe"
+import { application } from "./support/application.vibe"
+import { addElement, activeIs, chatShown, container, dispatchTouch, fire, fullLocation, remove, setLocation, tallPage } from "./support/browser.ts"
+import { overlaid } from "./support/overlaid.vibe"
+
+const flags = { session: "e", name: "Ada", mode: "mock" as const }
+type Started = ReturnType<typeof init>
+const home = init(flags).model
+const chat: Model = { ...home, surface: "chat" }
+const person = { id: "1", login: "ada", role: "new" as const }
+
+const started = (over: Partial<Model>, actions: Layer.Layer<Actions, never, Factory> = MockActions({ actor: "person" }), resources: Layer.Layer<Factory> = MockFactory) => startedOn(sync(container), over, actions, resources)
+const startedIn = (page: Document, over: Partial<Model>) => startedOn(sync(() => page.body.appendChild(page.createElement("div"))), over, MockActions({ actor: "person" }), MockFactory)
+effect function startedOn(host: HTMLElement!never!never, over: Partial<Model>, actions: Layer.Layer<Actions, never, Factory>, resources: Layer.Layer<Factory>) {
+  const first: Started = { model: { ...chat, ...over }, commands: [] }
+  const seen: { model: Model } = { model: first.model }
+  const node = try acquireRelease(host, (node) => sync(() => remove(node)))
+  const program = try Effect.try(() => application(node, resources, (model) => { seen.model = model }, () => first, actions))
+  try acquireRelease(sync(() => Runtime.embed(program, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
+  return seen
+}
+const owned = <E extends HTMLElement>(tag: string, id: string) => acquireRelease(sync(() => addElement<E>(tag, id)), (node) => sync(() => node.remove()))
+const settled = (check: () => void) => promise(() => vi.waitFor(check, { timeout: 4000 }))
+const faulty = (over: Parameters<typeof overlaid>[1]) => Layer.effect(Factory, map(Factory, (base) => overlaid(base, over))).pipe(Layer.provide(MockFactory))
+effect function run<A, E, R>(make: () => { readonly effect: A!E!R }) {
+  const command = try Effect.try(make)
+  return try command.effect
+}
+
+describe("page commands on a page without their element", () => {
+  it.each([
+    ["the wiki editor", () => FocusWikiEditor({}), "FocusedPrompt"],
+    ["the role dialog opening", () => ShowRoleDialog({}), "FocusedPrompt"],
+    ["the role dialog closing", () => CloseRoleDialog({}), "FocusedPrompt"],
+    ["the open account menu", () => FocusAccountMenu({ open: true }), "FocusedPrompt"],
+    ["the closed account menu", () => FocusAccountMenu({ open: false }), "FocusedPrompt"],
+    ["the issue dialog opening", () => ShowIssueDialog({}), "IssueDialogFocused"],
+    ["the issue dialog closing", () => CloseIssueDialog({}), "IssueDialogFocused"],
+  ] as const)("answer for %s", (_label, make, tag) => Effect.runPromise(effect {
+    const answer = try run<{ readonly _tag: string }, never, never>(make)
+    expect(answer).toEqual({ _tag: tag })
+  }))
+  it.live("a closed account menu returns focus to its button", () => scoped(effect {
+    const button = try owned<HTMLButtonElement>("button", "vl-account")
+    const answer = try run(() => FocusAccountMenu({ open: false }))
+    try Effect.try(() => { expect(answer).toEqual({ _tag: "FocusedPrompt" }); expect(activeIs(button)).toBe(true) })
+  }))
+  it.live("closing the palette without docking leaves focus alone", () => scoped(effect {
+    const before = try owned<HTMLButtonElement>("button", "edge-focus")
+    try Effect.try(() => before.focus())
+    const answer = try run(() => ClosePalette({ dock: false }))
+    try Effect.try(() => { expect(answer).toEqual({ _tag: "FocusedPrompt" }); expect(activeIs(before)).toBe(true) })
+  }))
+})
+
+describe("leaving the page", () => {
+  it.live("switching mode goes to that mode's address", () => effect {
+    const answer = try run(() => SwitchMode({ to: "live" }))
+    try Effect.try(() => { expect(answer).toEqual({ _tag: "FocusedPrompt" }); expect(fullLocation()).toContain("agent=live") })
+    try Effect.try(() => setLocation("/"))
+  })
+  it.live("live sign-in goes to the sign-in address", () => effect {
+    const answer = try run(() => SignInAccount({ mock: false })).pipe(Effect.provide(MockFactory))
+    try Effect.try(() => { expect(answer).toEqual({ _tag: "FocusedPrompt" }); expect(fullLocation()).toContain("/api/auth/sign-in") })
+    try Effect.try(() => setLocation("/"))
+  })
+})
+
+it.effect("ending a tour the agent is running answers the focus message", () => effect {
+  provide MockFactory {
+    const factory = try Factory
+    try factory.tour("edges-end")
+    const answer = try run(() => EndTourCommand({ conversation: "edges-end" }))
+    try Effect.try(() => expect(answer).toEqual({ _tag: "FocusedPrompt" }))
+  }
+})
+
+describe("touch that ends", () => {
+  /** A chat page tall enough to scroll, with the subscriptions listening. */
+  effect function listening() {
+    try acquireRelease(sync(() => tallPage(2000)), (restore) => sync(restore))
+    const seen = try started({ following: true })
+    try settled(() => expect(chatShown()).toBe(true))
+    try sleep("300 millis")
+    return seen
+  }
+  it.live("an upward drag pauses following", () => scoped(effect {
+    const seen = try listening()
+    try sync(() => { dispatchTouch("touchstart", 100); dispatchTouch("touchmove", 120) })
+    try settled(() => expect(seen.model.following).toBe(false))
+  }))
+  for (const end of ["touchend", "touchcancel"] as const) {
+    it.live(`a move after ${end} belongs to no gesture and leaves following on`, () => scoped(effect {
+      const seen = try listening()
+      try sync(() => { dispatchTouch("touchstart", 100); dispatchTouch(end, 100); dispatchTouch("touchmove", 120) })
+      try sleep("100 millis")
+      try Effect.try(() => expect(seen.model.following).toBe(true))
+    }))
+  }
+})
+
+describe("streams that break", () => {
+  const down = new AccountUnavailable({ reason: "closed" })
+  const failing = () => Effect.fail(down)
+  const accounts: Accounts.Shape = { current: failing, members: failing, grant: failing, signOut: failing, choose: failing, signInAgent: failing, participated: failing, events: () => Stream.fail(down) }
+  const fail = () => Effect.fail(new ActionFailure({ code: "closed" }))
+  it.live("a broken role stream says the roles are unavailable", () => scoped(effect {
+    const seen = try started({ account: { ...accountOf(home), identity: person } }, undefined, faulty({ accounts }))
+    try settled(() => expect(accountOf(seen.model).error).toBe("Connection lost."))
+  }))
+  it.live("a backend without accounts leaves a signed-in person undisturbed", () => scoped(effect {
+    const polled: Array<true> = []
+    const sandbox = effect () => { polled.push(true); return try Effect.fail(new Unavailable({ reason: "closed" })) }
+    const seen = try started({ account: { ...accountOf(home), identity: person } }, undefined, faulty({ accounts: undefined, sandbox }))
+    try settled(() => expect(polled.length).toBeGreaterThan(0))
+    try sleep("100 millis")
+    try Effect.try(() => expect(accountOf(seen.model).identity).toEqual(person))
+  }))
+  it.live("a tour event reaches the tour client", () => scoped(effect {
+    const seen = try started({ tourClient: newClient }, undefined, faulty({ events: () => Stream.make({ type: "TourStarted" as const, seq: 1, id: "t1" }) }))
+    try settled(() => expect(seen.model.tourClient?.conversation.seq).toBe(1))
+  }))
+  it.live("a run whose follow breaks stays on screen", () => scoped(effect {
+    const run = { id: "a1", flow: "vibelang/Post", door: "button" as const, actor: "person" as const, state: "running" as const, started: 1, at: 4, result: "", steps: [] }
+    const asked: Array<string> = []
+    const broken: Actions.Shape = { list: fail, commands: fail, runs: fail, read: fail, follow: (id) => { asked.push(id); return Stream.fail(new ActionFailure({ code: "closed" })) }, start: fail, command: fail, rerun: fail, cancel: fail }
+    const seen = try started({ actions: { ...initialActions, runs: [run] } }, Layer.succeed(Actions, broken))
+    try settled(() => expect(asked).toEqual(["a1"]))
+    try sleep("50 millis")
+    try Effect.try(() => expect(seen.model.actions?.runs).toEqual([run]))
+  }))
+  it.live("a page without a window still runs and remeasures its tour", () => scoped(effect {
+    const windowless = try Effect.try(() => document.implementation.createHTMLDocument("edge"))
+    const seen = try startedIn(windowless, { tour: true, theatre: { step: 1, target: "splash", paused: false, sound: false } })
+    try sleep("300 millis")
+    try Effect.try(() => { fire(windowless, "resize"); fire(windowless, "orientationchange"); expect(seen.model.tour).toBe(true) })
+  }))
+})
+
+const signedMaintainer: Model = { ...chat, account: { ...accountOf(home), identity: { id: "1", login: "ada", role: "maintainer" } } }
+
+describe("updates", () => {
+  const edit = { page: "b", base: "", text: "", busy: false, error: "" }
+  const open = (over: Partial<typeof initialIssues> = {}): Model => ({ ...chat, issues: { ...initialIssues, status: "ready", ...over } })
+  it("a failure for another request does not disturb the one pending", () => {
+    const pending = open({ busy: true, retry: { op: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "mine" }, error: "" })
+    const after = update(pending, Message.IssuesFailed({ reason: "forbidden", op: "read", key: "other" }))
+    expect(after.model.issues).toMatchObject({ busy: true, error: "" })
+  })
+  it("saving a page keeps the other observed pages and replaces its own", () => {
+    const editing: Model = { ...chat, wikiEdit: edit, wikiEditRequest: 1, wikiPages: [{ id: "a", source: "A", revision: "1" }, { id: "b", source: "old", revision: "1" }] }
+    const after = update(editing, Message.CompletedWikiEdit({ request: 1, page: "b", source: "new", revision: "2", review: "" }))
+    expect(after.model.wikiPages).toEqual([{ id: "a", source: "A", revision: "1" }, { id: "b", source: "new", revision: "2" }])
+  })
+  it("a failure with no request outstanding is ignored", () => {
+    const editing: Model = { ...chat, wikiEdit: edit }
+    expect(update(editing, Message.FailedWikiEdit({ request: 1, reason: "x" })).model).toBe(editing)
+  })
+  it("a slash loads actions at the current epoch", () => {
+    const after = update({ ...chat, actions: { ...initialActions, epoch: 4 } }, Message.UpdatedDraft({ value: "/" }))
+    expect(after.commands?.[0]).toMatchObject({ name: "LoadActions", args: { flow: "", epoch: 4 } })
+  })
+
+  const issue = (number: number): typeof IssueRecordSchema.Type => ({ number, githubId: number, title: "t", body: "", author: "ada", age: "2026-01-02", state: "open", labels: [], parent: 0, task: "", assignee: "", vip: "", review: "", path: "", comments: 0, notes: [] })
+  it("a failure keeps a list already on screen", () => {
+    const shown = open({ data: { ...initialIssues.data, items: [issue(1)] } })
+    expect(update(shown, Message.IssuesFailed({ reason: "x" })).model.issues?.status).toBe("ready")
+  })
+  it("a tour event before any tour client starts one", () => {
+    const after = update(chat, Message.ReceivedTourEvent({ event: { type: "TourStarted", seq: 1, id: "t1" } }))
+    expect(after.model.tourClient?.conversation.seq).toBe(1)
+  })
+  it("the walkthrough's second step posts its question once", () => {
+    const step = Message.ReceivedTourEvent({ event: { type: "WalkthroughDriven", id: "t1", seq: 2, step: 2, target: "chat", at: 0, duration: 1000 } })
+    const running = update({ ...chat, tourClient: newClient }, Message.ReceivedTourEvent({ event: { type: "TourStarted", id: "t1", seq: 1 } })).model
+    const withPost = (clientId: string) => update(running, Message.ReceivedEvent({ event: { type: "Posted", seq: 1, id: "p", clientId, name: "Ada", text: "q" } })).model
+    const other = update(withPost("elsewhere"), step)
+    const repeated = update(withPost("e-walkthrough"), step)
+    expect(other.model.client.pending.length).toBe(1)
+    expect(repeated.model.client.pending.length).toBe(0)
+  })
+  it("the editor starts from the page the repository last showed", () => {
+    const onPage: Model = { ...signedMaintainer, client: { ...newClient, conversation: { ...newClient.conversation, pane: "/wiki/index" } } }
+    const opened = update({ ...onPage, wikiPages: [{ id: "other", source: "O", revision: "1" }, { id: "index", source: "observed", revision: "2" }] }, Message.ClickedEditWiki())
+    expect(opened.model.wikiEdit).toMatchObject({ page: "index", base: "observed" })
+  })
+})
+
+it.effect("a successful read that omits the page names it missing", () => effect {
+  provide MockFactory {
+    const factory = try Factory
+    const wiki = { read: () => succeed({ seq: 1, pages: [] }), act: factory.wiki!.act }
+    const answer = try Effect.provideService(run(() => OpenWikiEditor({ page: "index", request: 3 })), Factory, overlaid(factory, { wiki }))
+    try Effect.try(() => expect(answer).toMatchObject({ _tag: "FailedWikiEdit", request: 3, reason: "missing" }))
+  }
+})
