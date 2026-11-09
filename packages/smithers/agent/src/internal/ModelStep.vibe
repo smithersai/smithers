@@ -26,7 +26,7 @@ import * as Exit from "effect/Exit"
 import * as Metric from "effect/Metric"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
-import { tokensOf } from "../Budget.ts"
+import { tokensOf } from "../Budget.vibe"
 
 /**
  * The durable outcome of one sealed model step.

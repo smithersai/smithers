@@ -3,7 +3,7 @@ import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Deferred, Effect, Exit, Fiber } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Budget from "../src/Budget.ts"
+import * as Budget from "../src/Budget.vibe"
 
 const instance = (executionId: string) => ({ executionId }) as FlowRuntime.FlowInstance["Service"]
 const failure = new Journal.JournalError({ code: "sink_failed", message: "injected usage write failure" })

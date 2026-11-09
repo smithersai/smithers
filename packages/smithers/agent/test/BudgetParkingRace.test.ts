@@ -15,7 +15,7 @@ import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Deferred, Effect, Exit, Layer } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AgentSession from "../src/AgentSession.ts"
-import * as Budget from "../src/Budget.ts"
+import * as Budget from "../src/Budget.vibe"
 
 const exceeded = (used: number) =>
   new Budget.BudgetExceeded({

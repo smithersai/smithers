@@ -19,7 +19,7 @@ import * as Fault from "@smthrs/flow/Fault"
 import * as HarnessError from "@smthrs/harness/HarnessError"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import * as Budget from "./Budget.ts"
+import * as Budget from "./Budget.vibe"
 
 /**
  * The operation a {@link Timeout} interrupted: a model call past its call

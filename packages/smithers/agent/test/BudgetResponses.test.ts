@@ -3,7 +3,7 @@ import { Effect, Layer, Redacted, Result, Stream } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as http from "node:http"
 import { describe, expect, it } from "vitest"
-import * as Budget from "../src/Budget.ts"
+import * as Budget from "../src/Budget.vibe"
 
 describe("Responses usage admitted by the budget", () => {
   it("counts reasoning within output when the provider omits its total", async () => {

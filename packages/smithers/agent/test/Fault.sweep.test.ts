@@ -15,7 +15,7 @@ import * as ModelError from "@smthrs/model/ModelError"
 import { readdirSync, readFileSync } from "node:fs"
 import { join, relative } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import * as Budget from "../src/Budget.ts"
+import * as Budget from "../src/Budget.vibe"
 import * as RunawayGuard from "../src/RunawayGuard.vibe"
 import * as Seat from "../src/Seat.vibe"
 

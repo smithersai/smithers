@@ -6,7 +6,7 @@ import type * as Stream from "effect/Stream"
 import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Agent from "../src/Agent.vibe"
 import * as AgentAction from "../src/AgentAction.ts"
-import * as Budget from "../src/Budget.ts"
+import * as Budget from "../src/Budget.vibe"
 import * as QuotaPolicy from "../src/QuotaPolicy.vibe"
 
 type Requirements<Self> = Self extends Layer.Layer<infer _Success, infer _Error, infer Requirement> ? Requirement

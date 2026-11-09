@@ -945,11 +945,11 @@ const emit = (
   eventType: string,
   payload: unknown
 ): Effect.Effect<void, unknown> =>
-  Effect.gen(function*() {
-    const journal = yield* Effect.serviceOption(Journal.Journal)
-    const instance = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
+  effect {
+    const journal = try Effect.serviceOption(Journal.Journal)
+    const instance = try Effect.serviceOption(FlowRuntime.FlowInstance)
     if (Option.isNone(journal) || Option.isNone(instance)) return
-    yield* write(
+    try write(
       journal.value,
       new JournalEvent.Input({
         runId: JournalEvent.RunId.make(instance.value.executionId),
@@ -958,7 +958,7 @@ const emit = (
         payload
       })
     )
-  })
+  }
 
 /**
  * The failure a broken half of the ledger reports.
@@ -1011,26 +1011,27 @@ const journalUsage = (
   payload: typeof UsageRecord.Encoded,
   committed: Effect.Effect<void>
 ): Effect.Effect<void, AccountingUnavailable> =>
-  Effect.gen(function*() {
-    const journal = yield* Effect.serviceOption(Journal.Journal)
-    if (runId === looseRunId || Option.isNone(journal)) return yield* committed
-    yield* journal.value.emitDurableUnfenced(
+  effect {
+    const journal = try Effect.serviceOption(Journal.Journal)
+    if (runId === looseRunId || Option.isNone(journal)) return try committed
+    const stepDigest = try Effect.orDie(Effect.try(() => digest(JSON.stringify(payload.stepKey))))
+    try journal.value.emitDurableUnfenced(
       new JournalEvent.Input({
         runId: JournalEvent.RunId.make(runId),
         // One durable identity per model step, including commit-then-interrupt
         // retries. Hash the JSON string encoding so identifiers stay bounded
         // and distinct even for long keys or unpaired UTF-16 surrogates.
-        sourceId: JournalEvent.SourceId.make(`${recordSource}/usage/${digest(JSON.stringify(payload.stepKey))}`),
+        sourceId: JournalEvent.SourceId.make(`${recordSource}/usage/${stepDigest}`),
         sourceSeq: JournalEvent.SourceSeq.make(0),
         eventType: usageEvent,
         payload
       })
     )
-    const observable = yield* journal.value.whenCommitted(committed)
+    const observable = try journal.value.whenCommitted(committed)
     if (!observable) {
-      return yield* Effect.fail(new Error("usage was written inside an unmanaged transaction"))
+      throw new Error("usage was written inside an unmanaged transaction")
     }
-  }).pipe(
+  }.pipe(
     Effect.mapError((cause) => unavailable("record", runId, String(cause), cause))
   )
 
@@ -1094,13 +1095,13 @@ const recoverUsage = (
   runId: string,
   entryLimit: number
 ): Effect.Effect<RecoveredLedger, AccountingUnavailable> =>
-  Effect.gen(function*() {
+  effect {
     const recovered = new Map<string, Charge>()
     let startedAt = Number.POSITIVE_INFINITY
     let latched: BudgetExceeded | undefined
     let suspendedMillis = 0
     let suspendedSince: number | undefined
-    const journal = yield* Effect.serviceOption(Journal.Journal)
+    const journal = try Effect.serviceOption(Journal.Journal)
     if (Option.isNone(journal)) {
       return { usage: recovered, startedAt: undefined, latched: undefined, suspendedMillis, suspendedSince }
     }
@@ -1108,11 +1109,11 @@ const recoverUsage = (
     // a write transaction can deadlock its lossy writer or recover a clock
     // zero that is later rolled back. Refuse before either operation.
     let outsideTransaction = false
-    yield* journal.value.whenCommitted(Effect.sync(() => {
+    try journal.value.whenCommitted(Effect.sync(() => {
       outsideTransaction = true
     }))
     if (!outsideTransaction) {
-      return yield* Effect.fail(unavailable("recover", runId, "budget recovery must run outside a journal transaction"))
+      throw unavailable("recover", runId, "budget recovery must run outside a journal transaction")
     }
     const id = JournalEvent.RunId.make(runId)
     const unreadable = (cause: unknown) => unavailable("recover", runId, String(cause), cause)
@@ -1124,23 +1125,23 @@ const recoverUsage = (
       )
     // Flushed first, and the flush failure is the read's failure: entries the
     // journal is still holding are entries this run spent.
-    yield* journal.value.flush.pipe(Effect.mapError(unreadable))
+    try journal.value.flush.pipe(Effect.mapError(unreadable))
     let after: JournalEvent.Seq | undefined
     let scanned = 0
     for (;;) {
-      const read = yield* journal.value.entries(
+      const read = try journal.value.entries(
         after === undefined
           ? { runId: id, limit: recoveryPageSize }
           : { runId: id, after, limit: recoveryPageSize }
       ).pipe(Effect.mapError(unreadable))
       for (const entry of read.entries) {
         if (entry.eventType === usageEvent) {
-          const payload = yield* Schema.decodeUnknownEffect(UsageRecord)(entry.payload).pipe(
+          const payload = try Schema.decodeUnknownEffect(UsageRecord)(entry.payload).pipe(
             Effect.mapError(() => undecodable(entry, "usage"))
           )
           const previous = recovered.get(payload.stepKey)
           if (previous !== undefined && (previous.spent !== payload.spent || previous.costUsd !== payload.costUsd)) {
-            return yield* Effect.fail(unavailable("recover", runId, "its usage records disagree about one model step"))
+            throw unavailable("recover", runId, "its usage records disagree about one model step")
           }
           if (previous === undefined) {
             recovered.set(payload.stepKey, {
@@ -1149,7 +1150,7 @@ const recoverUsage = (
             })
           }
         } else if (entry.eventType === budgetStartedEvent) {
-          const payload = yield* Schema.decodeUnknownEffect(BudgetStartedRecord)(entry.payload).pipe(
+          const payload = try Schema.decodeUnknownEffect(BudgetStartedRecord)(entry.payload).pipe(
             Effect.mapError(() => undecodable(entry, "budget-started"))
           )
           // Spans closed before the zero are outside the allowance, as they
@@ -1157,15 +1158,15 @@ const recoverUsage = (
           if (startedAt === Number.POSITIVE_INFINITY) suspendedMillis = 0
           startedAt = Math.min(startedAt, payload.startedAt)
         } else if (entry.eventType === budgetLatchedEvent) {
-          const payload = yield* Schema.decodeUnknownEffect(BudgetExceeded)(entry.payload).pipe(
+          const payload = try Schema.decodeUnknownEffect(BudgetExceeded)(entry.payload).pipe(
             Effect.mapError(() => undecodable(entry, "budget-latched"))
           )
           if (payload.onExceeded !== "skip-remaining") {
-            return yield* Effect.fail(undecodable(entry, "budget-latched"))
+            throw undecodable(entry, "budget-latched")
           }
           latched ??= payload
         } else if (entry.eventType === budgetSuspendedEvent || entry.eventType === budgetResumedEvent) {
-          const { at } = yield* Schema.decodeUnknownEffect(BudgetClockRecord)(entry.payload).pipe(
+          const { at } = try Schema.decodeUnknownEffect(BudgetClockRecord)(entry.payload).pipe(
             Effect.mapError(() => undecodable(entry, entry.eventType))
           )
           // The same fold the live account applies, in journal order.
@@ -1179,10 +1180,10 @@ const recoverUsage = (
       scanned += read.entries.length
       const last = read.entries.at(-1)
       if (read.hasMore && last === undefined) {
-        return yield* Effect.fail(unavailable("recover", runId, "its journal returned an empty page with more entries"))
+        throw unavailable("recover", runId, "its journal returned an empty page with more entries")
       }
       if (scanned > entryLimit || (scanned === entryLimit && read.hasMore)) {
-        return yield* Effect.fail(
+        return try Effect.fail(
           unavailable("recover", runId, `its journal holds more than the ${entryLimit} entries one recovery reads`)
         )
       }
@@ -1197,7 +1198,7 @@ const recoverUsage = (
       }
       after = last!.seq
     }
-  })
+  }
 
 /**
  * One run's accounting.
@@ -1332,8 +1333,8 @@ export const make = (
   declaredPolicy: Policy,
   declaredOptions: Options = {}
 ): Effect.Effect<Service, ConfigurationError> =>
-  Effect.gen(function*() {
-    const { options, policy } = yield* Schema.decodeUnknownEffect(Configuration, { onExcessProperty: "error" })({
+  effect {
+    const { options, policy } = try Schema.decodeUnknownEffect(Configuration, { onExcessProperty: "error" })({
       policy: declaredPolicy,
       options: declaredOptions
     }).pipe(
@@ -1341,7 +1342,7 @@ export const make = (
     )
     const spendLedger = declaredOptions.ledger
     if (policy.daily !== undefined && spendLedger === undefined) {
-      return yield* Effect.fail(
+      return try Effect.fail(
         new ConfigurationError({ message: "Invalid budget configuration: a daily cap needs a ledger" })
       )
     }
@@ -1349,11 +1350,11 @@ export const make = (
     const maxRuns = options.maxRuns ?? defaultMaxRuns
     const recoveryEntries = options.recoveryEntries ?? defaultRecoveryEntries
     const accounts = new Map<string, RunAccount>()
-    const registry = yield* Semaphore.make(1)
+    const registry = try Semaphore.make(1)
 
-    const newAccount = Effect.gen(function*() {
-      const startedAt = yield* Clock.currentTimeMillis
-      const state = yield* Ref.make<State>({
+    const newAccount = effect {
+      const startedAt = try Clock.currentTimeMillis
+      const state = try Ref.make<State>({
         tokens: 0,
         largestCall: 0,
         usd: 0,
@@ -1362,8 +1363,8 @@ export const make = (
         counted: new Map<string, Charge>(),
         latched: undefined
       })
-      const recovery = yield* Semaphore.make(1)
-      const admission = yield* Semaphore.make(1)
+      const recovery = try Semaphore.make(1)
+      const admission = try Semaphore.make(1)
       return {
         startedAt,
         zeroed: false,
@@ -1378,13 +1379,13 @@ export const make = (
         users: 0,
         evictable: false
       } satisfies RunAccount
-    })
+    }
 
     // The loose account exists from construction so a caller outside a run —
     // a unit test, a composition that accounts before it executes anything —
     // starts its latency clock where the budget was built. It is held apart
     // from the run map so it is never the entry a bound evicts.
-    const loose: RunAccount = yield* newAccount
+    const loose: RunAccount = try newAccount
     loose.zeroed = true
 
     /**
@@ -1482,7 +1483,7 @@ export const make = (
           if (run.recovered) return Effect.void
           return recoverUsage(runId, recoveryEntries).pipe(
             Effect.flatMap((ledger) =>
-              Effect.gen(function*() {
+              effect {
                 // A run with no recorded zero gets one at its first decision
                 // (`checkAccount`), not here: a resume recovers the account
                 // when the port is built, before the run has decided anything.
@@ -1492,23 +1493,23 @@ export const make = (
                 }
                 run.suspendedMillis = ledger.suspendedMillis
                 run.suspendedSince = ledger.suspendedSince
-                yield* Effect.forEach(
+                try Effect.forEach(
                   ledger.usage,
                   ([stepKey, charge]) => account(run, runId, stepKey, charge),
                   { discard: true }
                 )
                 if (spendLedger !== undefined) {
-                  const held = yield* spendLedger.run(runId).pipe(
+                  const held = try spendLedger.run(runId).pipe(
                     Effect.mapError((cause) => unavailable("recover", runId, String(cause), cause))
                   )
-                  yield* Effect.forEach(held, ([stepKey, charge]) => account(run, runId, stepKey, charge), {
+                  try Effect.forEach(held, ([stepKey, charge]) => account(run, runId, stepKey, charge), {
                     discard: true
                   })
                 }
-                yield* Ref.update(run.state, (current) => ({ ...current, latched: ledger.latched }))
+                try Ref.update(run.state, (current) => ({ ...current, latched: ledger.latched }))
                 // A spend ledger cannot restore clocks, suspension spans or the skip latch.
-                run.evictable = Option.isSome(yield* Effect.serviceOption(Journal.Journal))
-              })
+                run.evictable = Option.isSome(try Effect.serviceOption(Journal.Journal))
+              }
             ),
             Effect.andThen(Effect.sync(() => {
               run.recovered = true
@@ -1524,13 +1525,13 @@ export const make = (
      * The id travels with the account because the write side needs it: a
      * record that cannot be written names the run whose ledger is now short.
      */
-    const acquireAccount = Effect.gen(function*() {
-      const instance = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
+    const acquireAccount = effect {
+      const instance = try Effect.serviceOption(FlowRuntime.FlowInstance)
       if (Option.isNone(instance)) return { run: loose, runId: looseRunId }
       const runId = instance.value.executionId
-      const run = yield* accountFor(runId)
+      const run = try accountFor(runId)
       return { run, runId }
-    })
+    }
 
     const withRecovered = <A, E, R>(
       use: (run: RunAccount, runId: string) => Effect.Effect<A, E, R>,
@@ -1564,34 +1565,34 @@ export const make = (
       runId: string,
       failure: BudgetExceeded
     ): Effect.Effect<Verdict, AccountingUnavailable> =>
-      Effect.gen(function*() {
+      effect {
         if (failure.onExceeded === "skip-remaining") {
           // The refusal can outlive the reservation that triggered it. Commit
           // its ledger record before publishing the latch or returning a verdict.
-          yield* Effect.gen(function*() {
-            const journal = yield* Effect.serviceOption(Journal.Journal)
+          try effect {
+            const journal = try Effect.serviceOption(Journal.Journal)
             if (runId !== looseRunId && Option.isSome(journal)) {
               let outsideTransaction = false
-              yield* journal.value.whenCommitted(Effect.sync(() => {
+              try journal.value.whenCommitted(Effect.sync(() => {
                 outsideTransaction = true
               }))
               if (!outsideTransaction) {
-                return yield* Effect.fail(
+                return try Effect.fail(
                   unavailable("record", runId, "a budget latch must be recorded outside a journal transaction")
                 )
               }
               const payload = Schema.encodeSync(BudgetExceeded)(failure)
-              yield* emit(
+              try emit(
                 (journal, input) => journal.emitDurableUnfenced(input),
                 budgetLatchedEvent,
                 payload
               ).pipe(Effect.mapError((cause) => unavailable("record", runId, String(cause), cause)))
             }
-            yield* Ref.update(run.state, (current) => ({ ...current, latched: failure }))
-          }).pipe(Effect.uninterruptible)
+            try Ref.update(run.state, (current) => ({ ...current, latched: failure }))
+          }.pipe(Effect.uninterruptible)
         }
         if (failure.onExceeded === "warn") {
-          yield* journalWarning({
+          try journalWarning({
             scope: failure.scope,
             used: failure.used,
             reserved: failure.reserved,
@@ -1600,7 +1601,7 @@ export const make = (
           })
         }
         return verdictFor(failure)
-      })
+      }
 
     /**
      * Opens or closes one run's suspension span, durably before in memory, so
@@ -1613,26 +1614,26 @@ export const make = (
       to: "suspend" | "resume",
       at: number
     ): Effect.Effect<void, AccountingUnavailable> =>
-      Effect.gen(function*() {
+      effect {
         const open = run.suspendedSince
         if ((to === "suspend") === (open !== undefined)) return
         if (runId !== looseRunId) {
-          const journal = yield* Effect.serviceOption(Journal.Journal)
+          const journal = try Effect.serviceOption(Journal.Journal)
           if (Option.isSome(journal)) {
             let outsideTransaction = false
-            yield* journal.value.whenCommitted(Effect.sync(() => {
+            try journal.value.whenCommitted(Effect.sync(() => {
               outsideTransaction = true
             }))
             if (!outsideTransaction) {
-              return yield* Effect.fail(
+              return try Effect.fail(
                 unavailable("record", runId, "a suspension transition must be recorded outside a journal transaction")
               )
             }
           }
-          const payload = yield* Schema.encodeEffect(BudgetClockRecord)({ at }).pipe(
+          const payload = try Schema.encodeEffect(BudgetClockRecord)({ at }).pipe(
             Effect.mapError((cause) => unavailable("record", runId, "its suspension record does not encode", cause))
           )
-          yield* emit(
+          try emit(
             (journal, input) => journal.emitDurableUnfenced(input),
             to === "suspend" ? budgetSuspendedEvent : budgetResumedEvent,
             payload
@@ -1645,7 +1646,7 @@ export const make = (
           run.suspendedMillis += Math.max(0, at - open)
           run.suspendedSince = undefined
         }
-      }).pipe(Effect.uninterruptible)
+      }.pipe(Effect.uninterruptible)
 
     const checkAccount = (
       run: RunAccount,
@@ -1654,8 +1655,8 @@ export const make = (
       // `reading` projects nothing: it refuses only a ceiling already spent.
       mode: "check" | "reserve" | "reading"
     ): Effect.Effect<Verdict, AccountingUnavailable> =>
-      Effect.gen(function*() {
-        const current = yield* Ref.get(run.state)
+      effect {
+        const current = try Ref.get(run.state)
         // A step the ledger already holds is a step this run already paid for,
         // so the call about to be made is its replay and costs nothing. Every
         // ceiling below projects the NEXT call's cost onto the ledger, and
@@ -1667,21 +1668,21 @@ export const make = (
           return { _tag: "proceed" }
         }
         const pending = run.pending.values().next().value
-        if (pending !== undefined) return yield* Effect.fail(pending)
+        if (pending !== undefined) return try Effect.fail(pending)
         if (stepKey !== undefined && run.reservations.has(stepKey)) return { _tag: "proceed" }
-        const now = yield* Clock.currentTimeMillis
+        const now = try Clock.currentTimeMillis
         if (current.latched !== undefined) return verdictFor(current.latched)
         // A run asking to call a model is executing, whatever it recorded.
-        yield* transition(run, runId, "resume", now)
+        try transition(run, runId, "resume", now)
         if (!run.zeroed) {
           // The run's first decision is its latency clock zero. Time before
           // it, parked or not, is outside the allowance.
-          const payload = yield* Schema.encodeEffect(BudgetStartedRecord)({ startedAt: now }).pipe(
+          const payload = try Schema.encodeEffect(BudgetStartedRecord)({ startedAt: now }).pipe(
             Effect.mapError((cause) => unavailable("record", runId, "its latency clock zero does not encode", cause))
           )
           // Written and applied together, like a transition: an interrupt
           // between the two would leave a durable zero this account ignores.
-          yield* Effect.uninterruptible(Effect.andThen(
+          try Effect.uninterruptible(Effect.andThen(
             journalBudgetStarted(runId, payload),
             Effect.sync(() => {
               run.startedAt = now
@@ -1695,7 +1696,7 @@ export const make = (
         const latency = policy.latency
         const active = now - run.startedAt - run.suspendedMillis
         if (latency !== undefined && active > latency.maxMillis) {
-          const verdict = yield* settle(
+          const verdict = try settle(
             run,
             runId,
             exceeded(
@@ -1712,12 +1713,12 @@ export const make = (
         const tokens = policy.tokens
         const daily = policy.daily
         if (daily !== undefined && spendLedger !== undefined) {
-          const used = yield* spendLedger.total(utcDay(now)).pipe(
+          const used = try spendLedger.total(utcDay(now)).pipe(
             Effect.mapError((cause) => unavailable("recover", runId, String(cause), cause))
           )
           const projected = mode === "reading" ? 0 : current.largestCall
           if (used + projected > daily.max || used >= daily.max) {
-            return yield* settle(run, runId, exceeded("daily", "fail", used, daily.max, projected))
+            return try settle(run, runId, exceeded("daily", "fail", used, daily.max, projected))
           }
         }
         // Before any positive cost is known, hold the whole token allowance
@@ -1740,7 +1741,7 @@ export const make = (
           (tokens.max === 0 ||
             (mode === "reading" ? current.tokens >= tokens.max : current.tokens + reserved + next > tokens.max))
         ) {
-          const verdict = yield* settle(
+          const verdict = try settle(
             run,
             runId,
             exceeded(
@@ -1759,7 +1760,7 @@ export const make = (
         if (usd !== undefined) {
           // An unpriced step's dollars are unknown, not zero.
           if (current.unpriced !== undefined) {
-            return yield* Effect.fail(
+            return try Effect.fail(
               unavailable(
                 "recover",
                 runId,
@@ -1786,7 +1787,7 @@ export const make = (
             usd.max === 0 ||
             (mode === "reading" ? current.usd >= usd.max : current.usd + reservedUsd + nextUsd > usd.max)
           ) {
-            const verdict = yield* settle(
+            const verdict = try settle(
               run,
               runId,
               exceeded("usd", usd.onExceeded ?? "fail", current.usd, usd.max, nextUsd, reservedUsd)
@@ -1796,7 +1797,7 @@ export const make = (
           }
         }
         return warned ?? { _tag: "proceed" }
-      })
+      }
 
     const check = (stepKey: string | undefined): Effect.Effect<Verdict, AccountingUnavailable> =>
       withRecovered((run, runId) => run.admission.withPermits(1)(checkAccount(run, runId, stepKey, "check")))
@@ -1804,19 +1805,19 @@ export const make = (
     const reserve = (stepKey: string): Effect.Effect<Verdict, AccountingUnavailable, Scope.Scope> =>
       withRecovered((run, runId) =>
         run.admission.withPermits(1)(Effect.uninterruptibleMask((restore) =>
-          Effect.gen(function*() {
-            const verdict = yield* restore(checkAccount(run, runId, stepKey, "reserve"))
+          effect {
+            const verdict = try restore(checkAccount(run, runId, stepKey, "reserve"))
             if (verdict._tag === "refuse") return verdict
-            const current = yield* Ref.get(run.state)
+            const current = try Ref.get(run.state)
             if (current.counted.has(stepKey)) return verdict
             // Each scope owns a holder, not a captured predecessor. Closing one
             // duplicate's scope cannot release another still-live duplicate.
-            const scope = yield* Scope.Scope
+            const scope = try Scope.Scope
             const reservation = run.reservations.get(stepKey) ?? { holders: 0 }
             reservation.holders++
             run.reservations.set(stepKey, reservation)
             run.users++
-            yield* Scope.addFinalizer(
+            try Scope.addFinalizer(
               scope,
               Effect.sync(() => {
                 reservation.holders--
@@ -1825,7 +1826,7 @@ export const make = (
               })
             )
             return verdict
-          })
+          }
         ))
       )
 
@@ -1842,9 +1843,9 @@ export const make = (
         withRecovered((run, runId) => run.admission.withPermits(1)(checkAccount(run, runId, stepKey, "reading"))),
       record: (stepKey, usage, modelId) =>
         withRecovered((run, runId) =>
-          Effect.gen(function*() {
+          effect {
             const weights = modelId === undefined ? undefined : policy.weights?.[modelId]
-            const at = yield* Clock.currentTimeMillis
+            const at = try Clock.currentTimeMillis
             const charged = (paid: ModelEvent.Usage): Charge => {
               const cost = Pricing.cost(paid, modelId, { table: prices, at })
               return { spent: tokensOf(paid, weights), ...(cost === undefined ? {} : { costUsd: cost.costUsd }) }
@@ -1854,10 +1855,10 @@ export const make = (
             const charge: Charge = { spent, ...(priced === undefined ? {} : { costUsd: priced.costUsd }) }
             // What the controller said this call was for, read where the call
             // is made. It labels the record and decides nothing.
-            const labelled = attributed(yield* EngineLike.Spend, usage, modelId, charged, charge)
+            const labelled = attributed(try EngineLike.Spend, usage, modelId, charged, charge)
             // A malformed cost must not poison the numeric accumulator. Keep the
             // ledger unavailable until that step supplies a valid record.
-            const payload = yield* Schema.encodeEffect(UsageRecord)({ stepKey, spent, ...priced, ...labelled }).pipe(
+            const payload = try Schema.encodeEffect(UsageRecord)({ stepKey, spent, ...priced, ...labelled }).pipe(
               Effect.mapError((cause) => unavailable("record", runId, "its usage record does not encode", cause)),
               Effect.tapError((failure) =>
                 Effect.sync(() => {
@@ -1867,54 +1868,54 @@ export const make = (
             )
             let entered = false
             const write = Effect.uninterruptibleMask((restore) =>
-              Effect.gen(function*() {
+              effect {
                 entered = true
                 const pending = run.pending.get(stepKey) ??
                   unavailable("record", runId, "a paid model step has uncommitted usage")
-                const counted = yield* account(run, runId, stepKey, charge, pending)
+                const counted = try account(run, runId, stepKey, charge, pending)
                 if (!counted && !run.pending.has(stepKey)) return
                 if (spendLedger !== undefined) {
-                  const now = yield* Clock.currentTimeMillis
-                  yield* restore(spendLedger.record({ day: utcDay(now), runId, stepKey, spent, ...priced })).pipe(
+                  const now = try Clock.currentTimeMillis
+                  try restore(spendLedger.record({ day: utcDay(now), runId, stepKey, spent, ...priced })).pipe(
                     Effect.mapError((cause) => unavailable("record", runId, String(cause), cause))
                   )
                 }
-                yield* restore(journalUsage(
+                try restore(journalUsage(
                   runId,
                   payload,
                   Effect.sync(() => {
                     if (run.pending.get(stepKey) === pending) run.pending.delete(stepKey)
                   })
                 ))
-              })
+              }
             )
-            return yield* Effect.gen(function*() {
-              const journal = yield* Effect.serviceOption(Journal.Journal)
+            return try effect {
+              const journal = try Effect.serviceOption(Journal.Journal)
               let outsideTransaction = true
               if (runId !== looseRunId && Option.isSome(journal)) {
                 outsideTransaction = false
-                yield* journal.value.whenCommitted(Effect.sync(() => {
+                try journal.value.whenCommitted(Effect.sync(() => {
                   outsideTransaction = true
                 }))
               }
               // A transaction already owns its writer. Waiting for admission
               // could invert that lock against another record waiting to write.
               // Its usage remains pending until the existing commit callback.
-              if (!outsideTransaction) return yield* write
+              if (!outsideTransaction) return try write
               // Keep admission behind a live write, but allow a queued paid
               // record to be cancelled before it gets the permit.
-              return yield* run.admission.withPermits(1)(write)
-            }).pipe(Effect.onError(() =>
-              Effect.gen(function*() {
+              return try run.admission.withPermits(1)(write)
+            }.pipe(Effect.onError(() =>
+              effect {
                 if (entered) return
                 const pending = run.pending.get(stepKey) ??
                   unavailable("record", runId, "a paid model step could not enter usage accounting")
                 // Cancellation must retain the known cost as well as its key.
                 // This synchronous transition also detects conflicting retries.
-                yield* account(run, runId, stepKey, charge, pending).pipe(Effect.ignore)
-              })
+                try account(run, runId, stepKey, charge, pending).pipe(Effect.ignore)
+              }
             ))
-          }), stepKey),
+          }, stepKey),
       usage: withRecovered((run) => Effect.map(Ref.get(run.state), summarize)),
       suspend: withRecovered((run, runId) =>
         run.admission.withPermits(1)(
@@ -1952,14 +1953,14 @@ export const make = (
           // No accumulator, so no caching either: answering about an arbitrary
           // run must not leave one tally per run the process was ever asked
           // about.
-          return Effect.gen(function*() {
-            const snapshot = yield* newAccount
-            yield* ensureRecovered(snapshot, runId)
-            return summarize(yield* Ref.get(snapshot.state))
-          })
+          return effect {
+            const snapshot = try newAccount
+            try ensureRecovered(snapshot, runId)
+            return summarize(try Ref.get(snapshot.state))
+          }
         })
     })
-  })
+  }
 
 /**
  * A budget that accounts nothing and refuses nothing.

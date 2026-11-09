@@ -300,7 +300,7 @@ const securityReview = Smithers.SecurityReview({
         "QuotaPolicy classifying a provider error so the call is retried unbounded or parked with spend uncounted."
       ],
       paths: [
-        "src/Budget.ts",
+        "src/Budget.vibe",
         "src/RunawayGuard.vibe",
         "src/QuotaPolicy.vibe",
         "src/FlowEngineLike.vibe",

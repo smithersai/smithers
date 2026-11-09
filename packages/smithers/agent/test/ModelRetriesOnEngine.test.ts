@@ -30,7 +30,7 @@ import { Cause, Deferred, Effect, Exit, Fiber, Layer, Schema, Scope, Stream } fr
 import type * as EffectDigest from "effect/crypto/Digest"
 import { SqlClient } from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
-import * as Budget from "../src/Budget.ts"
+import * as Budget from "../src/Budget.vibe"
 import * as FlowEngineLike from "../src/FlowEngineLike.vibe"
 import * as QuotaPolicy from "../src/QuotaPolicy.vibe"
 

@@ -148,7 +148,7 @@ export * as QuotaPolicy from "./QuotaPolicy.vibe"
  * @category services
  * @since 0.1.0
  */
-export * as Budget from "./Budget.ts"
+export * as Budget from "./Budget.vibe"
 
 /**
  * @category services

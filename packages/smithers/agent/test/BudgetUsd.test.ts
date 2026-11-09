@@ -2,7 +2,7 @@ import { FlowRuntime } from "@smthrs/flow"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Effect, Exit, Scope } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Budget from "../src/Budget.ts"
+import * as Budget from "../src/Budget.vibe"
 
 const inRun = <A, E, R>(executionId: string, effect: Effect.Effect<A, E, R>) =>
   effect.pipe(Effect.provideService(FlowRuntime.FlowInstance, { executionId } as FlowRuntime.FlowInstance["Service"]))

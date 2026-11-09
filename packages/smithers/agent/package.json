@@ -57,8 +57,8 @@
       "default": "./.vibelang/js/src/AgentSession.js"
     },
     "./Budget": {
-      "types": "./src/Budget.ts",
-      "vibelang-source": "./src/Budget.ts",
+      "types": "./.vibe/declarations/Budget.d.vibe.ts",
+      "vibelang-source": "./src/Budget.vibe",
       "default": "./.vibelang/js/src/Budget.js"
     },
     "./CellPlugin": {
