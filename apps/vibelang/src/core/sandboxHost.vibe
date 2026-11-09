@@ -93,7 +93,6 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
     if (recorded !== undefined) return { ...state, pending: null }
     const id = `${state.ledger.owner}/${pending.conversation}`
     let next = state
-    let output = ""
     let refusal = ""
     if (pending.kind === "start") {
       const started = try Effect.result(observed("provision", machines.start(id, pending.generation)))
@@ -116,17 +115,13 @@ export effect function makeSandboxHost(store: Store, machines: Machines) {
     } else if (pending.kind === "cancel-start") {
       try observed("cancel-start", machines.stop(id, pending.generation))
       refusal = "start-failed"
-    } else if (pending.kind === "stop") {
+    } else {
+      // A command never reaches here: its own fiber writes its receipt, and `current` settles an orphaned one.
       try observed("stop", machines.stop(id, pending.generation))
       const measured = try meter(state.ledger, state.months, try millisecondOf(try Clock.currentTimeMillis), state.ledger.allowanceMilliseconds)
       next = try transition({ ...state, ...measured }, pending, now)
-    } else {
-      const result = try Effect.result(observed("command", machines.command(id, pending.generation, pending.operationId, pending.command)))
-      if (result._tag === "Failure") refusal = "command-uncertain"
-      else output = result.success
-      next = { ...state, outputs: { ...state.outputs, [pending.conversation]: `${outputOf(state, pending.conversation)}$ ${pending.command}\n${output}\n`.slice(-32768) } }
     }
-    const receipt: Receipt = { request: pending.kind === "cancel-start" ? { ...pending, kind: "start" } : pending, snapshot: view(next, pending.conversation), output, refusal }
+    const receipt: Receipt = { request: pending.kind === "cancel-start" ? { ...pending, kind: "start" } : pending, snapshot: view(next, pending.conversation), output: "", refusal }
     next = { ...next, pending: null }
     try store.write(next, receipt)
     try arm(next)
