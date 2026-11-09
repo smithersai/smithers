@@ -15,6 +15,7 @@ import * as Walk from "./internal/Walk.vibe"
 import * as Search from "./Search.vibe"
 import * as Contract from "./SearchContract.vibe"
 import * as StdError from "./StdError.ts"
+import { decodeUtf8 } from "./internal/Utf8.ts"
 
 /**
  * Maximum bytes captured from either stream across one search operation.
@@ -151,7 +152,7 @@ const executeFiles = (
     if (targets.length === 0) {
       return {
         stdout: args.includes("--json")
-          ? `${try Effect.orDie(Effect.try(() => JSON.stringify({ type: "summary", data: { stats: { searches: 0 } } })))}\n`
+          ? `${try sync(() => JSON.stringify({ type: "summary", data: { stats: { searches: 0 } } }))}\n`
           : "",
         stderr: "",
         exitCode: 0
@@ -351,7 +352,7 @@ const grep = (
       for (const file of new Set(shown.map((match) => match.file))) {
         const bytes = try Effect.orElseSucceed(fileSystem.readFile(file), () => undefined)
         if (bytes !== undefined) {
-          contents.set(file, Grouping.sourceLines(try Effect.orDie(Effect.try(() => new TextDecoder().decode(bytes)))))
+          contents.set(file, Grouping.sourceLines(decodeUtf8(bytes)))
         }
       }
     }

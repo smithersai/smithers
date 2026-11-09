@@ -15,6 +15,7 @@ import * as StdError from "../StdError.js";
 import { guarded, refusal } from "./HttpNetwork.js";
 import { MAX_OUTPUT_BYTES, notice, truncateBytes } from "./Text.js";
 import { parseHttpUrl } from "./Url.js";
+import { decodeUtf8 } from "./Utf8.js";
 /**
  * Maximum captured response bytes before decoding.
  *
@@ -152,7 +153,7 @@ export const execute = (input, makeRequest) => {
             const bytes = yield* readBounded(response.stream, input.url);
             return { status: response.status, bytes };
         })).pipe(Effect.mapError((error) => requestError(input.url, error))), input.url, input.timeout);
-        const { text, ...disclosure } = capOutput(yield* Effect.orDie(Effect.try(() => new TextDecoder().decode(bytes))));
+        const { text, ...disclosure } = capOutput(decodeUtf8(bytes));
         return { status, body: text, ...disclosure };
     }), "Http.execute"); });
 };

@@ -16,6 +16,7 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import { header, readBounded } from "./internal/Http.js";
 import * as StdError from "./StdError.js";
 import * as WebSearch from "./WebSearch.js";
+import { decodeUtf8 } from "./internal/Utf8.js";
 const maxResults = 20;
 const requestTimeoutMs = 30_000;
 const ExaResult = Schema.Struct({
@@ -94,7 +95,7 @@ export const layer = (credentialId) => Layer.effect(WebSearch.WebSearch, Effect_
                 : error instanceof StdError.StdError && error.code === "response_too_large"
                     ? failure("response_too_large", "Exa search response exceeds the 5 MiB limit")
                     : failure("request_failed", "Exa search response was invalid")));
-            const body = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ExaResponse))(yield* Effect.orDie(Effect.try(() => new TextDecoder().decode(bytes)))).pipe(Effect.mapError(() => new StdError.StdError({ code: "request_failed", message: "Exa search response was invalid" })));
+            const body = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ExaResponse))(decodeUtf8(bytes)).pipe(Effect.mapError(() => new StdError.StdError({ code: "request_failed", message: "Exa search response was invalid" })));
             return {
                 results: body.results.slice(0, Math.min(input.numResults ?? 8, maxResults)).map((result) => ({
                     title: result.title ?? result.url,

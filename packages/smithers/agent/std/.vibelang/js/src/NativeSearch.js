@@ -15,6 +15,7 @@ import * as Walk from "./internal/Walk.js";
 import * as Search from "./Search.js";
 import * as Contract from "./SearchContract.js";
 import * as StdError from "./StdError.js";
+import { decodeUtf8 } from "./internal/Utf8.js";
 /**
  * Maximum bytes captured from either stream across one search operation.
  *
@@ -103,7 +104,7 @@ const executeFiles = (cwd, args, targets, environment) => Effect_1.gen(function*
     if (targets.length === 0) {
         return {
             stdout: args.includes("--json")
-                ? `${yield* Effect.orDie(Effect.try(() => JSON.stringify({ type: "summary", data: { stats: { searches: 0 } } })))}\n`
+                ? `${yield* Effect_1.sync(() => JSON.stringify({ type: "summary", data: { stats: { searches: 0 } } }))}\n`
                 : "",
             stderr: "",
             exitCode: 0
@@ -298,7 +299,7 @@ const grep = (input, environment) => Effect_1.gen(function* () {
         for (const file of new Set(shown.map((match) => match.file))) {
             const bytes = yield* Effect.orElseSucceed(fileSystem.readFile(file), () => undefined);
             if (bytes !== undefined) {
-                contents.set(file, Grouping.sourceLines(yield* Effect.orDie(Effect.try(() => new TextDecoder().decode(bytes)))));
+                contents.set(file, Grouping.sourceLines(decodeUtf8(bytes)));
             }
         }
     }

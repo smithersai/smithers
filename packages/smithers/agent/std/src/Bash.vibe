@@ -220,7 +220,7 @@ export type Output = typeof Output.Type
  * @category rendering
  * @since 1.0.0-rc.5
  */
-export const elideMiddle = (start: string, droppedBytes: number, end: string): string => elide(start, droppedBytes, end)
+export const elideMiddle: (start: string, droppedBytes: number, end: string) => string = elide
 
 /**
  * Static conservative effect envelope for the bash flow.

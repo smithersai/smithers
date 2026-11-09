@@ -20,6 +20,7 @@ import { capOutput, header, MAX_RESPONSE_BYTES, readBounded, Timeout, withDeadli
 import { guarded, refusal } from "./internal/HttpNetwork.vibe"
 import { parseHttpUrl } from "./internal/Url.ts"
 import * as StdError from "./StdError.ts"
+import { decodeUtf8 } from "./internal/Utf8.ts"
 
 const maxRedirects = 10
 /**
@@ -179,7 +180,7 @@ export const run: (input: {
           : error("request_failed", "Web fetch response could not be read")
       )
     )
-    const raw = try Effect.orDie(Effect.try(() => new TextDecoder().decode(body)))
+    const raw = decodeUtf8(body)
     const format = input.format ?? "markdown"
     const { text: content, ...disclosure } = capOutput(
       format === "html" || !normalizedContentType.includes("html")

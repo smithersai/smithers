@@ -14,6 +14,7 @@ import * as StdError from "../StdError.ts"
 import { guarded, refusal } from "./HttpNetwork.vibe"
 import { MAX_OUTPUT_BYTES, notice, truncateBytes } from "./Text.ts"
 import { parseHttpUrl } from "./Url.ts"
+import { decodeUtf8 } from "./Utf8.ts"
 
 /**
  * Maximum captured response bytes before decoding.
@@ -204,6 +205,6 @@ export const execute = effect (input: {
     input.url,
     input.timeout
   )
-  const { text, ...disclosure } = capOutput(try Effect.orDie(Effect.try(() => new TextDecoder().decode(bytes))))
+  const { text, ...disclosure } = capOutput(decodeUtf8(bytes))
   return { status, body: text, ...disclosure }
 }, "Http.execute")

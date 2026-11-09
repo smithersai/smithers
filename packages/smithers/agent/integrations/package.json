@@ -72,7 +72,7 @@
       "default": "./.vibelang/js/src/core/Channel.js"
     },
     "./core/Connection": {
-      "types": "./.vibe/declarations/core/Connection.d.vibe.ts",
+      "types": "./.vibe/declarations/src/core/Connection.d.vibe.ts",
       "vibelang-source": "./src/core/Connection.vibe",
       "default": "./.vibelang/js/src/core/Connection.js"
     },
@@ -112,12 +112,12 @@
       "default": "./.vibelang/js/src/core/SignalName.js"
     },
     "./core/Signature": {
-      "types": "./.vibe/declarations/core/Signature.d.vibe.ts",
+      "types": "./.vibe/declarations/src/core/Signature.d.vibe.ts",
       "vibelang-source": "./src/core/Signature.vibe",
       "default": "./.vibelang/js/src/core/Signature.js"
     },
     "./core/Source": {
-      "types": "./.vibe/declarations/core/Source.d.vibe.ts",
+      "types": "./.vibe/declarations/src/core/Source.d.vibe.ts",
       "vibelang-source": "./src/core/Source.vibe",
       "default": "./.vibelang/js/src/core/Source.js"
     },
@@ -142,12 +142,12 @@
       "default": "./.vibelang/js/src/github.js"
     },
     "./github/Actions": {
-      "types": "./.vibe/declarations/github/Actions.d.vibe.ts",
+      "types": "./.vibe/declarations/src/github/Actions.d.vibe.ts",
       "vibelang-source": "./src/github/Actions.vibe",
       "default": "./.vibelang/js/src/github/Actions.js"
     },
     "./github/AppAuth": {
-      "types": "./.vibe/declarations/github/AppAuth.d.vibe.ts",
+      "types": "./.vibe/declarations/src/github/AppAuth.d.vibe.ts",
       "vibelang-source": "./src/github/AppAuth.vibe",
       "default": "./.vibelang/js/src/github/AppAuth.js"
     },
@@ -157,7 +157,7 @@
       "default": "./.vibelang/js/src/github/Config.js"
     },
     "./github/GitHubClient": {
-      "types": "./.vibe/declarations/github/GitHubClient.d.vibe.ts",
+      "types": "./.vibe/declarations/src/github/GitHubClient.d.vibe.ts",
       "vibelang-source": "./src/github/GitHubClient.vibe",
       "default": "./.vibelang/js/src/github/GitHubClient.js"
     },
@@ -172,7 +172,7 @@
       "default": "./.vibelang/js/src/github/Payload.js"
     },
     "./github/Proxy": {
-      "types": "./.vibe/declarations/github/Proxy.d.vibe.ts",
+      "types": "./.vibe/declarations/src/github/Proxy.d.vibe.ts",
       "vibelang-source": "./src/github/Proxy.vibe",
       "default": "./.vibelang/js/src/github/Proxy.js"
     },

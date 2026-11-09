@@ -183,7 +183,7 @@ export const Output = Schema.Struct({
  * @category rendering
  * @since 1.0.0-rc.5
  */
-export const elideMiddle = (start, droppedBytes, end) => elide(start, droppedBytes, end);
+export const elideMiddle = elide;
 /**
  * Static conservative effect envelope for the bash flow.
  *

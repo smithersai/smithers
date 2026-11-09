@@ -73,17 +73,17 @@
       "default": "./.vibelang/js/src/Schedule.js"
     },
     "./Scheduler": {
-      "types": "./.vibe/declarations/Scheduler.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Scheduler.d.vibe.ts",
       "vibelang-source": "./src/Scheduler.vibe",
       "default": "./.vibelang/js/src/Scheduler.js"
     },
     "./SqlTriggerStore": {
-      "types": "./.vibe/declarations/SqlTriggerStore.d.vibe.ts",
+      "types": "./.vibe/declarations/src/SqlTriggerStore.d.vibe.ts",
       "vibelang-source": "./src/SqlTriggerStore.vibe",
       "default": "./.vibelang/js/src/SqlTriggerStore.js"
     },
     "./Trigger": {
-      "types": "./.vibe/declarations/Trigger.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Trigger.d.vibe.ts",
       "vibelang-source": "./src/Trigger.vibe",
       "default": "./.vibelang/js/src/Trigger.js"
     },
@@ -93,7 +93,7 @@
       "default": "./.vibelang/js/src/TriggerError.js"
     },
     "./TriggerStore": {
-      "types": "./.vibe/declarations/TriggerStore.d.vibe.ts",
+      "types": "./.vibe/declarations/src/TriggerStore.d.vibe.ts",
       "vibelang-source": "./src/TriggerStore.vibe",
       "default": "./.vibelang/js/src/TriggerStore.js"
     },

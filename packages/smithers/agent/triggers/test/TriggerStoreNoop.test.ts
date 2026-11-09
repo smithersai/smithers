@@ -199,7 +199,7 @@ describe("package boundaries", () => {
     expect(exports["./*"]).toBeUndefined()
     expect(published["./*"]).toBeUndefined()
     expect(exports["./TriggerStore"]).toEqual({
-      types: "./.vibe/declarations/TriggerStore.d.vibe.ts",
+      types: "./.vibe/declarations/src/TriggerStore.d.vibe.ts",
       "vibelang-source": "./src/TriggerStore.vibe",
       default: "./.vibelang/js/src/TriggerStore.js"
     })

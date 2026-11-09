@@ -16,6 +16,7 @@ import * as Walk from "./internal/Walk.js";
 import * as Search from "./Search.js";
 import * as Contract from "./SearchContract.js";
 import * as StdError from "./StdError.js";
+import { decodeChunk } from "./internal/Utf8.js";
 /**
  * Narrows a walk to the files a search reports.
  *
@@ -47,10 +48,7 @@ const grep = (input) => Effect_1.gen(function* () {
     const includedByGlobs = (relative, basename) => Contract.includedByGlobs(input.globs, relative, basename);
     const walked = yield* Walk.files(fileSystem, path, input.root, input.hidden, input.noIgnore, includedByGlobs);
     const insensitive = input.ignoreCase || (input.smartCase && !/[A-Z]/.test(input.pattern));
-    const regex = yield* Effect.orDie(Effect.try({
-        try: () => LinearRegex.compile(input.fixedStrings ? escapeRegex(input.pattern) : input.pattern, insensitive),
-        catch: (error) => error
-    }));
+    const regex = yield* Effect_1.sync(() => LinearRegex.compile(input.fixedStrings ? escapeRegex(input.pattern) : input.pattern, insensitive));
     const shownMatches = [];
     const shownFiles = [];
     let total = 0;
@@ -143,10 +141,10 @@ const grep = (input) => Effect_1.gen(function* () {
                             path: file
                         }));
                     }
-                    yield* consume(yield* Effect.orDie(Effect.try(() => decoder.decode(bytes, { stream: true }))));
+                    yield* consume(decodeChunk(decoder, bytes));
                 });
             }));
-            yield* consume(yield* Effect.orDie(Effect.try(() => decoder.decode())));
+            yield* consume(decodeChunk(decoder));
             if (fragments.length > 0)
                 yield* scanLine(fragments.join(""));
             return true;

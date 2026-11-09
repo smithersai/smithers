@@ -24,6 +24,7 @@ import * as FileMutation from "./internal/FileMutation.js";
 import * as FsFailure from "./internal/FsFailure.js";
 import * as Preserve from "./internal/Preserve.js";
 import * as StdError from "./StdError.js";
+import { decodeUtf8 } from "./internal/Utf8.js";
 /**
  * Registry name for the apply_patch flow. Matches the Codex CLI tool name.
  *
@@ -348,7 +349,7 @@ export const run = (input) => {
                 if (bytes === null)
                     yield* Diagnostics.close(path.resolve(change.path));
                 else
-                    yield* Diagnostics.sync(path.resolve(change.path), yield* Effect.orDie(Effect.try(() => decoder.decode(bytes))));
+                    yield* Diagnostics.sync(path.resolve(change.path), decodeUtf8(bytes));
             }
             const summary = {
                 added: parsed.hunks.filter((hunk) => hunk.kind === "add").map((hunk) => hunk.path),

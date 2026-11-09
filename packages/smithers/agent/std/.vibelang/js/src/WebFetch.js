@@ -21,6 +21,7 @@ import { capOutput, header, MAX_RESPONSE_BYTES, readBounded, Timeout, withDeadli
 import { guarded, refusal } from "./internal/HttpNetwork.js";
 import { parseHttpUrl } from "./internal/Url.js";
 import * as StdError from "./StdError.js";
+import { decodeUtf8 } from "./internal/Utf8.js";
 const maxRedirects = 10;
 /**
  * The registry name of the `webfetch` flow.
@@ -139,7 +140,7 @@ export const run = (input) => {
             const body = yield* readBounded(response.stream, url.toString()).pipe(Effect.mapError((cause) => cause instanceof StdError.StdError
                 ? cause
                 : error("request_failed", "Web fetch response could not be read")));
-            const raw = yield* Effect.orDie(Effect.try(() => new TextDecoder().decode(body)));
+            const raw = decodeUtf8(body);
             const format = input.format ?? "markdown";
             const { text: content, ...disclosure } = capOutput(format === "html" || !normalizedContentType.includes("html")
                 ? raw
