@@ -20,8 +20,16 @@ effect function sequencer() {
   return { events, service }
 }
 
+/** A sequencer the host gave no dispatch: posts and tours are recorded, and nothing is ever started. */
+effect function undispatched() {
+  const events = try Ref.make<ReadonlyArray<M.Event>>([])
+  const service = try Sequencer.make({ read: () => Ref.get(events), write: (event) => Ref.update(events, (log) => [...log, event]) })
+  return { events, service }
+}
+
 it.live("sequencer/commands", () => run("sequencer/commands", Steps, (steps) => effect {
   const { service, events } = try sequencer()
+  const bare = try undispatched()
   for (const step of steps) {
     const before = (try Ref.get(events)).reduce(M.apply, M.empty)
     const post = before.entries.filter((entry) => entry.author === "person").at(-1)?.id ?? "missing"
@@ -30,7 +38,11 @@ it.live("sequencer/commands", () => run("sequencer/commands", Steps, (steps) => 
     const command = step.op % 12
     const ran = try exit(effect {
       switch (command) {
-        case 0: try service.post(`c${step.id}`, "Guest", step.text); break
+        case 0: {
+          try service.post(`c${step.id}`, "Guest", step.text)
+          try exit(bare.service.post(`c${step.id}`, "Guest", step.text))
+          break
+        }
         case 1: try service.start(step.flag ? "missing" : post); break
         case 2: {
           const attempt = 1 + (try Ref.get(events)).filter((event) => event.type === "ReplyRestarted" && event.id === reply).length
@@ -51,11 +63,21 @@ it.live("sequencer/commands", () => run("sequencer/commands", Steps, (steps) => 
         }
         case 4: try service.finish(reply, step.text); break
         case 5: try service.fail(reply, step.text); break
-        case 6: try service.startTour(); break
+        case 6: {
+          try exit(bare.service.startTour())
+          try service.startTour()
+          break
+        }
         case 7: try service.endTour(); break
         case 8: try service.open(reply, step.text); break
         case 9: try service.say(reply, step.text); break
-        case 10: try service.ensureDispatched(); break
+        case 10: {
+          const recorded = (try Ref.get(bare.events)).length
+          try bare.service.ensureDispatched()
+          if ((try Ref.get(bare.events)).length !== recorded) return false
+          try service.ensureDispatched()
+          break
+        }
         default: {
           const turns = try service.history(step.flag ? "missing" : post)
           if (!turns.every((turn) => turn.author === "person" || turn.author === "agent")) return false

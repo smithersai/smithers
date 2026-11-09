@@ -290,7 +290,7 @@ function executionLayer(hostId: string, storage: Storage, sequencer: Sequencer.S
 }
 
 /** One SDK host per action-object incarnation: cancellation interrupts the active drive and survives reload. */
-export function executionHost(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, admit: () => boolean!! = () => succeed(true)) {
+export function executionHost(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, admit?: () => boolean!!) {
   return ExecutionObject.make(executionStorage(storage), {
     flows: [Reply, Tour], router: unrouted, settledRetentionMs: SETTLED_RETENTION_MS,
     runtime: (intent) => Layer.unwrap(effect { return executionLayer(hostId, storage, sequencer, intent, (try ActiveExecution).services) }),
