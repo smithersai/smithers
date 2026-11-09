@@ -2,6 +2,8 @@
 
 Status: implemented locally, 2026-11-09; the lead coordinates deployment. Ruling VL-33; supersedes 0019's per-site sign-in callback.
 
+Connecting GitHub for writes is decided in smithers.sh's `apps/mvp/docs/decisions/0165-hosted-site-github-delegation.md`.
+
 ## Design twice
 
 Chosen: an opaque, 256-bit, single-use code with server-to-server redemption. The hosted site signs a request

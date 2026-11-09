@@ -103,6 +103,7 @@ only that validated operation, key and recovery ID through the person/session-bo
 retrieves the original typed request from that person’s native flow journal and polls its receipt. It displays a
 completed receipt without writing; only an explicit Retry resumes unfinished work. An unknown recovery falls back
 to its original request. No second outbox or issue store is introduced.
+Connecting GitHub for writes is decided in smithers.sh's `apps/mvp/docs/decisions/0165-hosted-site-github-delegation.md`.
 
 Additional source-of-truth departures from the static design: live reviewers come from GitHub reviews, timeline
 actors from GitHub events, and dates are the observed calendar dates. They are never invented as Will or a fixed
