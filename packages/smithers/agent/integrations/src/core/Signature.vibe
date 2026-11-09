@@ -21,6 +21,7 @@
  */
 
 import { Effect } from "effect"
+import { hmacSha256 } from "./Signature.platform.ts"
 
 const HEX = /^[0-9a-f]+$/i
 // Standard base64, supported alongside hex digests.
@@ -52,26 +53,6 @@ export const constantTimeEqual = (left: Uint8Array, right: Uint8Array): boolean 
   }
   return difference === 0
 }
-
-const encoder = new TextEncoder()
-
-// HMAC zero-pads a key shorter than the hash block, so the empty key and one
-// zero byte are the same key. WebCrypto refuses a zero-length raw key.
-const keyBytes = (secret: string): Uint8Array<ArrayBuffer> => {
-  const bytes = encoder.encode(secret)
-  return bytes.length === 0 ? new Uint8Array(1) : bytes
-}
-
-// Text is UTF-8, as the provider signed it; bytes are copied when the Effect
-// starts, so the caller's array is not read again after that.
-const hmacSha256 = (payload: string | Uint8Array, secret: string): Effect.Effect<Uint8Array> =>
-  Effect.promise(async () => {
-    const data = typeof payload === "string" ? encoder.encode(payload) : new Uint8Array(payload)
-    const key = await crypto.subtle.importKey("raw", keyBytes(secret), { name: "HMAC", hash: "SHA-256" }, false, [
-      "sign"
-    ])
-    return new Uint8Array(await crypto.subtle.sign("HMAC", key, data))
-  })
 
 const encodeHex = (bytes: Uint8Array): string =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")

@@ -71,7 +71,7 @@ const securityReview = Smithers.SecurityReview({
         "An idempotency or dedupe key built from attacker-chosen fields alone, so a replay with a new key is processed twice."
       ],
       paths: [
-        "src/core/Signature.ts",
+        "src/core/Signature.vibe",
         "src/core/Channel.vibe",
         "src/github/Payload.vibe"
       ]

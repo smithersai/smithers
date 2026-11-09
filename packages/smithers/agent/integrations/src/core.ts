@@ -80,7 +80,7 @@ export * as Pkce from "./core/Pkce.vibe"
  * @category verification
  * @since 1.0.0
  */
-export * as Signature from "./core/Signature.ts"
+export * as Signature from "./core/Signature.vibe"
 
 /**
  * @category constructors

@@ -55,7 +55,7 @@ import type { Credential, CredentialRef } from "@smthrs/control/Credential"
 import { Duration, Effect, Redacted } from "effect"
 import * as HttpClient from "effect/http/HttpClient"
 import type { AccessTokenSource } from "./AccessToken.vibe"
-import { forCredentials, retryAfterHeader, transportCause, webHeaders } from "./CredentialHttp.ts"
+import { forCredentials, retryAfterHeader, transportCause, webHeaders } from "./CredentialHttp.vibe"
 import { IntegrationError, isIntegrationError } from "./IntegrationError.ts"
 import { redactedError } from "./RedactedError.ts"
 
