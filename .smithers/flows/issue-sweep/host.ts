@@ -13,9 +13,10 @@
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { Fault } from "@smthrs/flow"
 import { Unreachable } from "@smthrs/kernel"
+import { Effect, Schema, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
-import { homeDirectory, workingDirectory } from "./host.platform.ts"
+import { homedir } from "node:os"
 
 export class HostFailed extends Schema.TaggedError<HostFailed>()("issue-sweep/HostFailed", {
   message: Schema.String,
@@ -56,7 +57,7 @@ export const staleWorkspace = (
 }
 
 /** Runs a host command once; stale jj workspaces require deliberate recovery. */
-export effect function run(command: string, args: ReadonlyArray<string>, options: RunOptions = {}) {
+export const run = (command: string, args: ReadonlyArray<string>, options: RunOptions = {}) => {
   // Landing serializes writes as `lockf -k -t 900 <lock> jj ...`.
   const jjAt = command === "jj" ? -1 : command === "lockf" && args[4] === "jj" ? 4 : undefined
   const jjArgs = jjAt === undefined ? undefined : args.slice(jjAt + 1)
@@ -66,51 +67,61 @@ export effect function run(command: string, args: ReadonlyArray<string>, options
     "snapshot.auto-update-stale=false",
     ...args.slice(jjAt + 1)
   ]
-  const exited = try once(command, argv, options)
-  const stale = jjArgs === undefined ? undefined : staleWorkspace(jjArgs, exited, options.cwd ?? workingDirectory())
-  if (stale !== undefined) {
-    throw new HostFailed({
-      code: "stale_workspace",
-      message: `${exited.stderr}\nWorkspace ${stale}: commit or back up your files and recover deliberately.`
-    })
-  }
-  return exited
+  return Effect.flatMap(once(command, argv, options), (exited) => {
+    const stale = jjArgs === undefined ? undefined : staleWorkspace(jjArgs, exited, options.cwd ?? process.cwd())
+    return stale === undefined
+      ? Effect.succeed(exited)
+      : Effect.fail(
+        new HostFailed({
+          code: "stale_workspace",
+          message: `${exited.stderr}\nWorkspace ${stale}: commit or back up your files and recover deliberately.`
+        })
+      )
+  })
 }
 
 const once = (command: string, args: ReadonlyArray<string>, options: RunOptions) =>
-  Effect.provide(
-    scoped(effect {
-      const spawner = try ChildProcessSpawner
-      const handle = try spawner.spawn(ChildProcess.make(command, args, {
-        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-        ...(options.env === undefined ? {} : { env: options.env, extendEnv: true }),
-        stdin: "ignore"
-      }))
-      const [stdout, stderr, code] = try.all [
+  Effect.scoped(Effect.gen(function*() {
+    const spawner = yield* ChildProcessSpawner
+    const handle = yield* spawner.spawn(ChildProcess.make(command, args, {
+      ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+      ...(options.env === undefined ? {} : { env: options.env, extendEnv: true }),
+      stdin: "ignore"
+    }))
+    const [stdout, stderr, code] = yield* Effect.all(
+      [
         Stream.mkString(Stream.decodeText(handle.stdout)),
         Stream.mkString(Stream.decodeText(handle.stderr)),
         handle.exitCode
-      ]
-      return { stdout, stderr, code: Number(code) } satisfies Exited
-    }).pipe(Effect.catchTag("PlatformError", (cause) => Effect.fail(hostFailed(`${command}: ${cause.message}`)))),
-    NodeServices.layer
+      ],
+      { concurrency: "unbounded" }
+    )
+    return { stdout, stderr, code: Number(code) } satisfies Exited
+  })).pipe(
+    Effect.catchTag(
+      "PlatformError",
+      (cause) => Effect.fail(hostFailed(`${command}: ${cause.message}`))
+    ),
+    Effect.provide(NodeServices.layer)
   )
 
 /** The last `lines` lines of `text`, for a failure message. */
 export const tail = (text: string, lines = 5) => text.trim().split("\n").slice(-lines).join("\n")
 
 /** Runs `command` and answers its stdout; a non-zero exit is {@link HostFailed}. */
-export effect function output(command: string, args: ReadonlyArray<string>, options: RunOptions = {}) {
-  const exited = try run(command, args, options)
-  if (exited.code !== 0) throw hostFailed(`${command} ${args[0] ?? ""}: exit ${exited.code}: ${tail(exited.stderr)}`)
-  return exited.stdout
-}
+export const output = (command: string, args: ReadonlyArray<string>, options: RunOptions = {}) =>
+  Effect.flatMap(run(command, args, options), (exited) =>
+    exited.code === 0
+      ? Effect.succeed(exited.stdout)
+      : Effect.fail(
+        hostFailed(`${command} ${args[0] ?? ""}: exit ${exited.code}: ${tail(exited.stderr)}`)
+      ))
 
 /** The checkout every issue workspace branches from. */
-export const repository = `${homeDirectory()}/smithers`
+export const repository = `${homedir()}/smithers`
 
 /** Where the per-issue jj workspaces live: beside the checkout, never inside it. */
-export const workspaces = `${homeDirectory()}/smithers-sweep`
+export const workspaces = `${homedir()}/smithers-sweep`
 
 /** The jj workspace of one issue. */
 export const workspaceOf = (issue: number) => `${workspaces}/issue-${issue}`
@@ -126,7 +137,7 @@ export const ridingOutages = <
   R,
   Success extends Schema.Constraint,
   Error extends Schema.Constraint & { readonly Type: { readonly message: string } }
->(program: Success["Type"]!Error["Type"]!R, options: {
+>(effect: Effect.Effect<Success["Type"], Error["Type"], R>, options: {
   readonly name: string
   readonly idempotencyKey: string
   readonly implementationVersion: string
@@ -140,10 +151,12 @@ export const ridingOutages = <
   })
   const Failure = Schema.Union([Outage, options.error])
   return Fault.retryTransient<R, Success, typeof Failure>(
-    Effect.mapError(program, (error) =>
-      Unreachable.classifyExit(error.message) === undefined
-        ? error
-        : { _tag: "issue-sweep/HostOutage" as const, message: error.message, original: error }
+    effect.pipe(
+      Effect.mapError((error) =>
+        Unreachable.classifyExit(error.message) === undefined
+          ? error
+          : { _tag: "issue-sweep/HostOutage" as const, message: error.message, original: error }
+      )
     ),
     { ...options, tier: "irreversible", error: Failure }
   ).pipe(

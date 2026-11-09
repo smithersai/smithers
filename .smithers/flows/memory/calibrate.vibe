@@ -13,7 +13,7 @@ import * as MemoryCalibration from "@smthrs/agent/MemoryCalibration"
 import { Fault } from "@smthrs/flow"
 import { journalName, journalPath, listJournalEntries, readJournal } from "./calibrate.platform.ts"
 import * as Labels from "./labels.ts"
-import * as Landed from "./landed.vibe"
+import * as Landed from "./landed.ts"
 import * as Thresholds from "./thresholds.vibe"
 
 type Decision = MemoryCalibration.Decision

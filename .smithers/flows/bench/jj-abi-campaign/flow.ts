@@ -19,7 +19,7 @@
 import { Action, Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
-import { ModuleFailed, runModule } from "../../automation/run-module.vibe"
+import { ModuleFailed, runModule } from "../../automation/run-module.ts"
 
 /**
  * Which operation to run, and the seed to replay in place of `SMITHERS_ABI_SEED`.

@@ -9,7 +9,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
 import { wikiMemory } from "../coding/planning-memory.vibe"
-import { boundRelayWikiProvider } from "../coding/planning-wiki-provider.vibe"
+import { boundRelayWikiProvider } from "../coding/planning-wiki-provider.ts"
 import { loadProject } from "../coding/project-config.vibe"
 
 // Literal fixtures (T-FLW-10, C-J8-04): bodies, revisions and SHA-256 digests.

@@ -3,6 +3,7 @@ import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import * as Digest from "@smthrs/core/Digest"
 import { DurableEngineState } from "@smthrs/engine-store"
 import * as RunStore from "@smthrs/run-store/RunStore"
+import { Cause, Context, Effect, Layer, Option, Schedule, Schema, Stream } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
 import { ChangeId, Resolved, SourcePublication } from "../coding/native-schema.ts"
@@ -56,11 +57,11 @@ export class RepositoryCheckReceipts extends Context.Service<RepositoryCheckRece
   readonly report: (
     requestId: string,
     input: typeof CheckReceiptRequest.Type
-  ) => (typeof CheckReceipt.Type!CodingError)
+  ) => Effect.Effect<typeof CheckReceipt.Type, CodingError>
 }>()("repository/CheckReceipts") {}
 
 /** An absent pinned policy is authoritative "no policy"; an unreadable one is an error. */
-export const pinnedPolicy = (work: unknown): (CiPolicy!CodingError) =>
+export const pinnedPolicy = (work: unknown): Effect.Effect<CiPolicy, CodingError> =>
   record(work).policy === undefined ?
     Effect.succeed({ kind: "none" as const })
     : Schema.decodeUnknownEffect(CiPolicy)(record(work).policy).pipe(
@@ -80,131 +81,137 @@ export interface Options {
 }
 
 const maximumBodyBytes = 256 * 1024
-effect function readJson(response: HttpClientResponse.HttpClientResponse) {
-  const declared = response.headers["content-length"]
-  if (
-    declared !== undefined &&
-    (!/^\d+$/.test(declared) || !Number.isSafeInteger(Number(declared)) || Number(declared) > maximumBodyBytes)
-  ) {
-    throw invalid("The CI receipt response exceeds its bounded size")
-  }
-  const decoder = new TextDecoder("utf-8", { fatal: true })
-  const captured = try Stream.runFoldEffect(response.stream, () => ({ bytes: 0, text: "" }), (state, chunk) =>
-    state.bytes + chunk.length > maximumBodyBytes
-      ? Effect.fail(invalid("The CI receipt response is invalid or exceeds its bounded size"))
-      : Effect.try({
-        try: () => ({ bytes: state.bytes + chunk.length, text: state.text + decoder.decode(chunk, { stream: true }) }),
-        catch: () => invalid("The CI receipt response is invalid or exceeds its bounded size")
+const readJson = (response: HttpClientResponse.HttpClientResponse) =>
+  Effect.gen(function*() {
+    const declared = response.headers["content-length"]
+    if (
+      declared !== undefined &&
+      (!/^\d+$/.test(declared) || !Number.isSafeInteger(Number(declared)) || Number(declared) > maximumBodyBytes)
+    ) {
+      return yield* invalid("The CI receipt response exceeds its bounded size")
+    }
+    const decoder = new TextDecoder("utf-8", { fatal: true })
+    const captured = yield* Stream.runFoldEffect(response.stream, () => ({ bytes: 0, text: "" }), (state, chunk) =>
+      Effect.try({
+        try: () => {
+          if (state.bytes + chunk.length > maximumBodyBytes) {
+            throw new Error("bound")
+          }
+          return { bytes: state.bytes + chunk.length, text: state.text + decoder.decode(chunk, { stream: true }) }
+        },
+        catch: () =>
+          invalid("The CI receipt response is invalid or exceeds its bounded size")
       })).pipe(Effect.mapError((error) =>
-      error instanceof CodingError ? error : unavailable("The CI receipt response could not be read")
-    ))
-  return try Effect.try({
-    try: () =>
-      JSON.parse(captured.text + decoder.decode()) as unknown,
-    catch: () =>
-      invalid("The CI receipt store returned no valid JSON receipt")
+        error instanceof CodingError ? error : unavailable("The CI receipt response could not be read")
+      ))
+    return yield* Effect.try({
+      try: () =>
+        JSON.parse(captured.text + decoder.decode()) as unknown,
+      catch: () =>
+        invalid("The CI receipt store returned no valid JSON receipt")
+    })
   })
-}
 
 /** The gateway credential proves this workspace, never the repository landing token. */
-export effect function make(options: Options) {
-  const client = try HttpClient.HttpClient
-  const url = try Effect.try({
-    try: () => new URL(options.apiBaseUrl),
-    catch: () => unavailable("The CI receipt binding is invalid")
-  })
-  if (
-    !/^https?:$/.test(url.protocol) || url.username || url.password || url.search || url.hash ||
-    !url.pathname.endsWith("/api") || options.apiBaseUrl !== url.href.replace(/\/$/, "") ||
-    !Schema.is(Uuid)(options.gatewayId) || !Schema.is(Uuid)(options.workspaceId) ||
-    !options.credential.trim() || /[\r\n]/.test(options.credential)
-  ) {
-    throw unavailable("The CI receipt requires the exact provisioned gateway, API and credential binding")
-  }
-  const delay = Math.min(Math.max(options.unverifiedRunRetryMs ?? 12_000, 1), 15_000)
-  const report = (requestId: string, input: typeof CheckReceiptRequest.Type) =>
-    (effect {
-      const body = try Schema.encodeEffect(CheckReceiptRequest)(input).pipe(
-        Effect.mapError(() => invalid("The CI receipt does not name an exact checked source"))
-      )
-      if (!Schema.is(Uuid)(requestId)) throw invalid("The CI receipt needs a stable request identity")
-      const response = try HttpClient.withScope(client).execute(
-        HttpClientRequest.put(
-          `${options.apiBaseUrl}/gateways/${options.gatewayId}/repository-jobs/ci/check-receipts/${requestId}`
-        ).pipe(
-          (request) => HttpClientRequest.bodyJsonUnsafe(request, body as object),
-          HttpClientRequest.bearerToken(options.credential),
-          HttpClientRequest.acceptJson
+export const make = (options: Options) =>
+  Effect.gen(function*() {
+    const client = yield* HttpClient.HttpClient
+    const url = yield* Effect.try({
+      try: () => new URL(options.apiBaseUrl),
+      catch: () => unavailable("The CI receipt binding is invalid")
+    })
+    if (
+      !/^https?:$/.test(url.protocol) || url.username || url.password || url.search || url.hash ||
+      !url.pathname.endsWith("/api") || options.apiBaseUrl !== url.href.replace(/\/$/, "") ||
+      !Schema.is(Uuid)(options.gatewayId) || !Schema.is(Uuid)(options.workspaceId) ||
+      !options.credential.trim() || /[\r\n]/.test(options.credential)
+    ) {
+      return yield* unavailable("The CI receipt requires the exact provisioned gateway, API and credential binding")
+    }
+    const delay = Math.min(Math.max(options.unverifiedRunRetryMs ?? 12_000, 1), 15_000)
+    const report = (requestId: string, input: typeof CheckReceiptRequest.Type) =>
+      Effect.gen(function*() {
+        const body = yield* Schema.encodeEffect(CheckReceiptRequest)(input).pipe(
+          Effect.mapError(() => invalid("The CI receipt does not name an exact checked source"))
         )
-      )
-        .pipe(Effect.mapError(() =>
-          unavailable("The CI receipt store could not be reached; retry the same durable request")
-        ))
-      if (response.status !== 200 && response.status !== 201) {
-        // Only the machine-readable refusal code is read back; remote prose never
-        // reaches this host, and the status alone names every other cause.
-        if (response.status === 409) {
-          throw replaced(
-            "The pinned repository CI policy changed before this receipt; replan under the current policy"
+        if (!Schema.is(Uuid)(requestId)) return yield* invalid("The CI receipt needs a stable request identity")
+        const response = yield* HttpClient.withScope(client).execute(
+          HttpClientRequest.put(
+            `${options.apiBaseUrl}/gateways/${options.gatewayId}/repository-jobs/ci/check-receipts/${requestId}`
+          ).pipe(
+            (request) => HttpClientRequest.bodyJsonUnsafe(request, body as object),
+            HttpClientRequest.bearerToken(options.credential),
+            HttpClientRequest.acceptJson
           )
-        }
-        if (response.status === 404) {
-          throw replaced("The pinned repository CI policy no longer exists; replan under the current policy")
-        }
-        if (response.status === 422) {
-          throw uncovered("The checked results do not cover every required repository CI check")
-        }
-        if (response.status === 503) {
-          throw unavailable("The CI receipt store is unavailable; retry the same durable request")
-        }
-        if (response.status === 403) {
-          const refusal = try readJson(response).pipe(Effect.orElseSucceed(() =>
-            null
+        )
+          .pipe(Effect.mapError(() =>
+            unavailable("The CI receipt store could not be reached; retry the same durable request")
           ))
-          if (record(refusal).code === "repository_ci_run_unverified") throw unverifiedRun
+        if (response.status !== 200 && response.status !== 201) {
+          // Only the machine-readable refusal code is read back; remote prose never
+          // reaches this host, and the status alone names every other cause.
+          if (response.status === 409) {
+            return yield* replaced(
+              "The pinned repository CI policy changed before this receipt; replan under the current policy"
+            )
+          }
+          if (response.status === 404) {
+            return yield* replaced("The pinned repository CI policy no longer exists; replan under the current policy")
+          }
+          if (response.status === 422) {
+            return yield* uncovered("The checked results do not cover every required repository CI check")
+          }
+          if (response.status === 503) {
+            return yield* unavailable("The CI receipt store is unavailable; retry the same durable request")
+          }
+          if (response.status === 403) {
+            const refusal = yield* readJson(response).pipe(Effect.orElseSucceed(() =>
+              null
+            ))
+            if (record(refusal).code === "repository_ci_run_unverified") return yield* unverifiedRun
+          }
+          return yield* invalid(`The CI receipt was refused for this workspace binding (HTTP ${response.status})`)
         }
-        throw invalid(`The CI receipt was refused for this workspace binding (HTTP ${response.status})`)
-      }
-      const receipt = try readJson(response).pipe(
-        Effect.flatMap(Schema.decodeUnknownEffect(CheckReceipt)),
-        Effect.mapError((error) =>
-          error instanceof CodingError ? error : invalid("The CI receipt does not match the required protocol")
-        )
-      )
-      if (
-        receipt.request_id !== requestId || receipt.commit_id !== input.commit_id ||
-        receipt.context !== `repository-ci/${input.registration_id}@${input.revision}.${input.digest.slice(0, 12)}`
-      ) {
-        throw invalid("The CI receipt identifies another request, source or policy")
-      }
-      return receipt
-    }).pipe(
-      Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
-      Effect.scoped,
-      Effect.retry({
-        times: 4,
-        schedule: Schedule.spaced(`${delay} millis`),
-        while: (error) => error === unverifiedRun
-      }),
-      Effect.timeoutOrElse({
-        duration: "120 seconds",
-        orElse: () =>
-          Effect.fail(
-            unavailable("The CI receipt store exceeded its request deadline; retry the same durable request")
+        const receipt = yield* readJson(response).pipe(
+          Effect.flatMap(Schema.decodeUnknownEffect(CheckReceipt)),
+          Effect.mapError((error) =>
+            error instanceof CodingError ? error : invalid("The CI receipt does not match the required protocol")
           )
-      }),
-      Effect.catchCause((cause) => {
-        if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
-        const error = Cause.squash(cause)
-        return Effect.fail(
-          error instanceof CodingError
-            ? error
-            : unavailable("The CI receipt request failed before a receipt could be verified")
         )
-      })
-    )
-  return RepositoryCheckReceipts.of({ report })
-}
+        if (
+          receipt.request_id !== requestId || receipt.commit_id !== input.commit_id ||
+          receipt.context !== `repository-ci/${input.registration_id}@${input.revision}.${input.digest.slice(0, 12)}`
+        ) {
+          return yield* invalid("The CI receipt identifies another request, source or policy")
+        }
+        return receipt
+      }).pipe(
+        Effect.provideService(FetchHttpClient.RequestInit, { redirect: "manual" }),
+        Effect.scoped,
+        Effect.retry({
+          times: 4,
+          schedule: Schedule.spaced(`${delay} millis`),
+          while: (error) => error === unverifiedRun
+        }),
+        Effect.timeoutOrElse({
+          duration: "120 seconds",
+          orElse: () =>
+            Effect.fail(
+              unavailable("The CI receipt store exceeded its request deadline; retry the same durable request")
+            )
+        }),
+        Effect.catchCause((cause) => {
+          if (Cause.hasInterruptsOnly(cause)) return Effect.failCause(cause)
+          const error = Cause.squash(cause)
+          return Effect.fail(
+            error instanceof CodingError
+              ? error
+              : unavailable("The CI receipt request failed before a receipt could be verified")
+          )
+        })
+      )
+    return RepositoryCheckReceipts.of({ report })
+  })
 export const layer = (options: Options) => Layer.effect(RepositoryCheckReceipts)(make(options))
 
 export interface VerifiedCheckStep {
@@ -217,17 +224,14 @@ export interface VerifiedCheckStep {
  * exactly one reviewed rule behind it reaches the reserved CI receipt. A local
  * check belongs to the native gate alone — Plue stores no id for it — so it is
  * never listed here and can never stand in for a required reviewed rule. */
-effect function outcomes(
+const outcomes = (
   output: typeof CheckOutput.Type,
   ref: CiPolicyRef,
   reviewed: ReadonlyArray<{ readonly id: string }>
-) {
+) => {
   const checks: Array<typeof CheckOutcome.Type> = [], inherited = new Set<string>()
   for (const result of output.results) {
-    const id = try Effect.try({
-      try: () => rawCheckId(ref, reviewed, result.checkId),
-      catch: (error) => error instanceof CodingError ? error : invalid("The durable check results could not be read")
-    })
+    const id = rawCheckId(ref, reviewed, result.checkId)
     if (id === undefined) continue
     const outcome = result.status === "passed" ?
       "passed" as const
@@ -271,20 +275,20 @@ export const verifiedCheckStep = (
     readonly checks: ReadonlyArray<{ readonly id: string }>
   }
 ) =>
-  (effect {
-    const connected = try Effect.all([
+  Effect.gen(function*() {
+    const connected = yield* Effect.all([
       Effect.serviceOption(RunStore.RunStore),
       Effect.serviceOption(DurableEngineState.DurableEngineState),
       Effect.serviceOption(ControlRuntime)
     ])
     if (Option.isNone(connected[0]) || Option.isNone(connected[1]) || Option.isNone(connected[2])) {
-      throw unavailable("The check receipt stores are not connected to this host")
+      return yield* unavailable("The check receipt stores are not connected to this host")
     }
     // The approved control identity of the delivery that is asking to land, from
     // the host's own composition state rather than anything the receipt claims.
-    const owner = try Effect.serviceOption(ModuleOwner)
+    const owner = yield* Effect.serviceOption(ModuleOwner)
     if (Option.isNone(owner)) {
-      throw unavailable("This host supplies no approved control owner for the delivering job")
+      return yield* unavailable("This host supplies no approved control owner for the delivering job")
     }
     const bridge = `repository-jobs/${input.work.job}`
     // The producer's own construction, never a second derivation of it.
@@ -294,7 +298,7 @@ export const verifiedCheckStep = (
         base: input.baseCommitId
       })
     }
-    const proof = try ownedAncestry({
+    const proof = yield* ownedAncestry({
       executionId: input.executionId,
       flow: CheckStep._tag,
       bridge,
@@ -310,10 +314,10 @@ export const verifiedCheckStep = (
       Effect.provideService(ControlRuntime, connected[2].value)
     )
     if (proof.run.cancellation !== undefined) {
-      throw invalid("The checked execution's control run is being stopped")
+      return yield* invalid("The checked execution's control run is being stopped")
     }
     if (proof.run.runId !== owner.value.rootId || owner.value.flowId !== bridge) {
-      throw invalid("The checked execution was approved under another delivery's control root")
+      return yield* invalid("The checked execution was approved under another delivery's control root")
     }
     const job = Schema.decodeUnknownOption(JobInput)(proof.input)
     if (
@@ -324,16 +328,19 @@ export const verifiedCheckStep = (
       job.value.configuration.replies !== input.work.replies ||
       !job.value.configuration.steps.some((step) => Digest.canonical(step) === Digest.canonical(input.work.step))
     ) {
-      throw invalid("The checked execution belongs to another repository job dispatch")
+      return yield* invalid("The checked execution belongs to another repository job dispatch")
     }
     const output = Schema.decodeUnknownOption(CheckOutput)(proof.output.output)
     if (
       Option.isNone(output) || output.value.gate !== "passed" || output.value.candidate !== input.commitId ||
       output.value.base !== input.baseCommitId
     ) {
-      throw invalid("The durable check result does not pass on this exact delivered source and base")
+      return yield* invalid("The durable check result does not pass on this exact delivered source and base")
     }
-    const checks = try outcomes(output.value, input.ref, input.checks)
+    const checks = yield* Effect.try({
+      try: () => outcomes(output.value, input.ref, input.checks),
+      catch: (error) => error instanceof CodingError ? error : invalid("The durable check results could not be read")
+    })
     return {
       runId: proof.run.runId,
       executionId: input.executionId,

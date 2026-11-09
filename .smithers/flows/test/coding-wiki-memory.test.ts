@@ -12,7 +12,7 @@ import { test } from "node:test"
 import { type PlanningWikiProvider, staleWikiNotes, wikiMemory } from "../coding/planning-memory.vibe"
 import { CodingError } from "../coding/schema.ts"
 import { cloudWikiBody, reviewCounts } from "../coding/wiki-refresh.vibe"
-import { operations } from "../wiki/operations.vibe"
+import { operations } from "../wiki/operations.ts"
 import type { PageSpec } from "../wiki/schema.vibe"
 
 const run = <A, E>(

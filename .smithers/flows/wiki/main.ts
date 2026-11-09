@@ -5,7 +5,7 @@ import { readFile, realpath } from "node:fs/promises"
 import { basename, resolve, sep } from "node:path"
 import { parseArgs } from "node:util"
 import { containedWikiOutput } from "../coding/wiki-output.vibe"
-import { operations } from "./operations.vibe"
+import { operations } from "./operations.ts"
 import { type Input, PageSpec } from "./schema.vibe"
 
 const { values } = parseArgs({

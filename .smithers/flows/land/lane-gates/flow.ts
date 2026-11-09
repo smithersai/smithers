@@ -23,7 +23,7 @@
 import { Action, Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
-import { ModuleFailed, runModule } from "../../automation/run-module.vibe"
+import { ModuleFailed, runModule } from "../../automation/run-module.ts"
 
 /**
  * One mode of `lane-gates.sh`. `base` and `allowDeleted` belong to

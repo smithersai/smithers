@@ -4,7 +4,7 @@ import { test } from "node:test"
 import { initialSetup, setupCandidate } from "../../../packages/rpc/src/RepositorySetup.ts"
 import { assessScore, evaluatedCandidate } from "../repository/evaluation.vibe"
 import { JobInput, type JobResult, SetupInput } from "../repository/schema.vibe"
-import { candidateFiles } from "../repository/setup.vibe"
+import { candidateFiles } from "../repository/setup.ts"
 
 const heldOut = "HELD_OUT_EXPECTATION: cite greeting.mjs and identify hello"
 const sourceRevision = "a".repeat(40)

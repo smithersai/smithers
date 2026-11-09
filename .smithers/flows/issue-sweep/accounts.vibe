@@ -4,7 +4,7 @@
  */
 import { Burndown } from "@smthrs/patterns"
 import { configuredPerAccount, homeDirectory, type Pool, withAccountState } from "./accounts.platform.ts"
-import { HostFailed, output } from "./host.vibe"
+import { HostFailed, output } from "./host.ts"
 
 export { cooledPool, liveAccounts, type Pool } from "./accounts.platform.ts"
 

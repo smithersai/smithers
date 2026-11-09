@@ -8,7 +8,7 @@
  * no token: the proxy injects the operator's.
  */
 import { proxyTool } from "./github.platform.ts"
-import { HostFailed, output } from "./host.vibe"
+import { HostFailed, output } from "./host.ts"
 
 export { proxyTool } from "./github.platform.ts"
 

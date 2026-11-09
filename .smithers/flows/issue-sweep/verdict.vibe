@@ -7,7 +7,7 @@
  * the next run retries.
  */
 import { api } from "./github.vibe"
-import { HostFailed } from "./host.vibe"
+import { HostFailed } from "./host.ts"
 
 /** The label that parks an issue after a recorded no-change verdict. */
 export const noChangeLabel = "sweep:no-change"

@@ -5,7 +5,7 @@ import { Journal as JournalModules } from "@smthrs/flows"
 import { Node } from "@smthrs/plan"
 import * as AttemptStore from "@smthrs/run-store/AttemptStore"
 import * as RunStore from "@smthrs/run-store/RunStore"
-import { digest, digestCanonical, operations } from "./operations.vibe"
+import { digest, digestCanonical, operations } from "./operations.ts"
 import { Evidence, Input, Receipt, Review, ReviewedPage, WikiError } from "./schema.vibe"
 import { Collect, ReviewPage, validateOrRepairReview } from "./workflow.vibe"
 const { EngineEvent, Journal, JournalEvent } = JournalModules

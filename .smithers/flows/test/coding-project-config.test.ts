@@ -9,7 +9,7 @@ import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import { loadProject } from "../coding/project-config.vibe"
 import { reviewEvidence } from "../wiki/evidence.ts"
-import { sections } from "../wiki/operations.vibe"
+import { sections } from "../wiki/operations.ts"
 import { systemFlows } from "./fixtures/system-flows.ts"
 
 const valid = () => ({

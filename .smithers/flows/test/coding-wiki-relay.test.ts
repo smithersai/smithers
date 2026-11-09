@@ -6,7 +6,7 @@ import assert from "node:assert/strict"
 import { createServer } from "node:http"
 import { test } from "node:test"
 import { wikiMemory } from "../coding/planning-memory.vibe"
-import { relayWikiProvider } from "../coding/planning-wiki-provider.vibe"
+import { relayWikiProvider } from "../coding/planning-wiki-provider.ts"
 
 const digest = "0590d40eefc0d1d5a9a5c8d407e4acfcb1cae6de15729033c56dc64ddb9abe47"
 test("planning captures the authorized relay response, including an edit after selection", async () => {

@@ -6,7 +6,7 @@ import { CodingError } from "../coding/schema.ts"
 import { assessScore } from "../repository/evaluation.vibe"
 import { retainedStepError } from "../repository/jobs.vibe"
 import type { JobResult } from "../repository/schema.vibe"
-import { SuggestedCaseInput } from "../repository/setup.vibe"
+import { SuggestedCaseInput } from "../repository/setup.ts"
 
 const observedCheck = (policy: "report" | "required", status: "passed" | "failed" | "error"): JobResult => {
   const blocked = policy === "required" && status !== "passed"

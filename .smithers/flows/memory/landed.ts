@@ -20,10 +20,10 @@
  */
 import * as Memory from "@smthrs/agent/Memory"
 import { Fault } from "@smthrs/flow"
+import { Effect, FileSystem, Path, Schema, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Labels from "./labels.ts"
-import { collect } from "./landed.platform.ts"
 
 /** A landed-fix evaluation that could not read the repository. */
 export class LandedFailed extends Schema.TaggedError<LandedFailed>()("flows/memory/LandedFailed", {
@@ -32,18 +32,28 @@ export class LandedFailed extends Schema.TaggedError<LandedFailed>()("flows/memo
 // jj or git could not answer about landed history.
 Fault.register("flows/memory/LandedFailed", "infra")
 
+const decoder = () => new TextDecoder()
+
+const collect = <E>(stream: Stream.Stream<Uint8Array, E>) => {
+  const text = decoder()
+  return Stream.runFold(stream, () => "", (all, chunk: Uint8Array) => all + text.decode(chunk, { stream: true }))
+}
+
 /** Runs `command` in `cwd` with the inherited environment; a non-zero exit is {@link LandedFailed}. */
-effect function run(command: string, args: ReadonlyArray<string>, cwd: string) {
+const run = (command: string, args: ReadonlyArray<string>, cwd: string) => {
   const shown = `${command} ${args.join(" ")}`
-  const [stdout, stderr, code] = scoped(effect {
-    const spawner = try ChildProcessSpawner
-    const handle = try spawner.spawn(ChildProcess.make(command, args, { cwd }))
-    return try all([collect(handle.stdout), collect(handle.stderr), handle.exitCode], { concurrency: 3 })
-  }) catch effect (cause) => {
-    throw new LandedFailed({ message: `${shown}: ${cause.message}` })
-  }
-  if (code !== 0) throw new LandedFailed({ message: `${shown}: exit ${code}: ${stderr.trim()}` })
-  return stdout
+  return Effect.scoped(Effect.gen(function*() {
+    const spawner = yield* ChildProcessSpawner
+    const handle = yield* spawner.spawn(ChildProcess.make(command, args, { cwd }))
+    return yield* Effect.all([collect(handle.stdout), collect(handle.stderr), handle.exitCode], { concurrency: 3 })
+  })).pipe(
+    Effect.mapError((cause) => new LandedFailed({ message: `${shown}: ${cause.message}` })),
+    Effect.flatMap(([stdout, stderr, code]) =>
+      code === 0
+        ? Effect.succeed(stdout)
+        : Effect.fail(new LandedFailed({ message: `${shown}: exit ${code}: ${stderr.trim()}` }))
+    )
+  )
 }
 
 /** One landed commit. */
@@ -81,43 +91,42 @@ const template = [
 const fromParent = new Set(["modified", "removed", "renamed", "copied"])
 
 /** The last `n` non-empty commits on `main`, newest first. */
-export effect function landedCommits(root: string, n: number) {
-  const log = try run(
-    "jj",
-    ["log", "-r", `latest(ancestors(main) & ~empty(), ${n})`, "--no-graph", "--ignore-working-copy", "-T", template],
-    root
-  )
-  const gitDir = try Effect.result(run("jj", ["git", "root", "--ignore-working-copy"], root))
-  const commits: Array<Landed> = []
-  for (const line of log.split("\n").filter((row) => row !== "")) {
-    const [commit = "", parents = "", described = "\"\"", files = "[]"] = line.split("\t")
-    const parent = parents.split(",")[0] ?? ""
-    const note = gitDir._tag === "Success"
-      ? try Effect.result(
-        run("git", [
-          "--git-dir",
-          gitDir.success.trim(),
-          "notes",
-          "--ref=refs/notes/mythical",
-          "show",
-          commit
-        ], root)
-      )
-      : undefined
-    // jj wrote both as JSON; anything else is a defect, as it was before.
-    const changes = try orDie(Effect.try(() => JSON.parse(files) as ReadonlyArray<Change>))
-    const description = try orDie(Effect.try(() => JSON.parse(described) as string))
-    commits.push({
-      commit,
-      parent,
-      description,
-      issue: note?._tag === "Success" ? noteIssue(note.success) : undefined,
-      touched: [...new Set(changes.flatMap(([, source, target]) => [source, target]))],
-      existing: [...new Set(changes.filter(([status]) => fromParent.has(status)).map(([, source]) => source))]
-    })
-  }
-  return commits
-}
+export const landedCommits = (root: string, n: number) =>
+  Effect.gen(function*() {
+    const log = yield* run(
+      "jj",
+      ["log", "-r", `latest(ancestors(main) & ~empty(), ${n})`, "--no-graph", "--ignore-working-copy", "-T", template],
+      root
+    )
+    const gitDir = yield* Effect.result(run("jj", ["git", "root", "--ignore-working-copy"], root))
+    const commits: Array<Landed> = []
+    for (const line of log.split("\n").filter((row) => row !== "")) {
+      const [commit = "", parents = "", described = "\"\"", files = "[]"] = line.split("\t")
+      const parent = parents.split(",")[0] ?? ""
+      const note = gitDir._tag === "Success"
+        ? yield* Effect.result(
+          run("git", [
+            "--git-dir",
+            gitDir.success.trim(),
+            "notes",
+            "--ref=refs/notes/mythical",
+            "show",
+            commit
+          ], root)
+        )
+        : undefined
+      const changes = JSON.parse(files) as ReadonlyArray<Change>
+      commits.push({
+        commit,
+        parent,
+        description: JSON.parse(described) as string,
+        issue: note?._tag === "Success" ? noteIssue(note.success) : undefined,
+        touched: [...new Set(changes.flatMap(([, source, target]) => [source, target]))],
+        existing: [...new Set(changes.filter(([status]) => fromParent.has(status)).map(([, source]) => source))]
+      })
+    }
+    return commits
+  })
 
 const utf8 = new TextEncoder()
 
@@ -146,57 +155,59 @@ export const taskOf = (landed: Landed): string =>
  * A temporary jj workspace of `root`, outside it, forgotten and deleted when
  * the scope closes. {@link evaluateAll} moves it to each commit's parent.
  */
-export effect function parentWorkspace(root: string) {
-  const fs = try FileSystem.FileSystem
-  const path = try Path.Path
-  const temp = fs.makeTempDirectoryScoped({ prefix: "memory-calibrate-" }) catch effect (cause) => {
-    throw new LandedFailed({ message: `temporary workspace: ${cause.message}` })
-  }
-  const name = path.basename(temp)
-  const dir = path.join(temp, "tree")
-  // jj refuses `--ignore-working-copy` here: adding a workspace snapshots
-  // the root workspace's working copy.
-  try acquireRelease(
-    run("jj", ["workspace", "add", "--name", name, "-r", "root()", dir], root),
-    () => Effect.ignore(run("jj", ["workspace", "forget", name, "--ignore-working-copy"], root))
-  )
-  return dir
-}
+export const parentWorkspace = (root: string) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const temp = yield* fs.makeTempDirectoryScoped({ prefix: "memory-calibrate-" }).pipe(
+      Effect.mapError((cause) => new LandedFailed({ message: `temporary workspace: ${cause.message}` }))
+    )
+    const name = path.basename(temp)
+    const dir = path.join(temp, "tree")
+    // jj refuses `--ignore-working-copy` here: adding a workspace snapshots
+    // the root workspace's working copy.
+    yield* Effect.acquireRelease(
+      run("jj", ["workspace", "add", "--name", name, "-r", "root()", dir], root),
+      () => Effect.ignore(run("jj", ["workspace", "forget", name, "--ignore-working-copy"], root))
+    )
+    return dir
+  })
 
 /**
  * Evaluates one landed commit against `dir`, a workspace of the repository
  * checked out at `landed.parent`.
  */
-export effect function evaluate(dir: string, landed: Landed, options: Omit<Memory.Options, "root"> = {}) {
-  const selection = try Memory.select({ task: taskOf(landed), maxBytes: budget }, { ...options, root: dir })
-  const kept = selection.output.kept.filter((item) => item.kind === "file")
-  const keptIds = new Set(kept.map((item) => item.id))
-  const touched = new Set(landed.touched)
-  const found = landed.existing.filter((path) => keptIds.has(path))
-  const seen = new Set<string>()
-  const labels = selection.asked.flatMap((asked) => Labels.judgedOf(asked)).flatMap((judged) => {
-    if (judged.decision !== "file" && judged.decision !== "descend") return []
-    const key = Labels.keyOf(judged.decision, judged.id)
-    if (seen.has(key)) return []
-    seen.add(key)
-    const needed = judged.decision === "file"
-      ? touched.has(judged.id)
-      : landed.touched.some((path) => path.startsWith(`${judged.id}/`))
-    return [{ ...judged, needed, source: "landed" as const }]
+export const evaluate = (dir: string, landed: Landed, options: Omit<Memory.Options, "root"> = {}) =>
+  Effect.gen(function*() {
+    const selection = yield* Memory.select({ task: taskOf(landed), maxBytes: budget }, { ...options, root: dir })
+    const kept = selection.output.kept.filter((item) => item.kind === "file")
+    const keptIds = new Set(kept.map((item) => item.id))
+    const touched = new Set(landed.touched)
+    const found = landed.existing.filter((path) => keptIds.has(path))
+    const seen = new Set<string>()
+    const labels = selection.asked.flatMap((asked) => Labels.judgedOf(asked)).flatMap((judged) => {
+      if (judged.decision !== "file" && judged.decision !== "descend") return []
+      const key = Labels.keyOf(judged.decision, judged.id)
+      if (seen.has(key)) return []
+      seen.add(key)
+      const needed = judged.decision === "file"
+        ? touched.has(judged.id)
+        : landed.touched.some((path) => path.startsWith(`${judged.id}/`))
+      return [{ ...judged, needed, source: "landed" as const }]
+    })
+    return {
+      commit: landed.commit,
+      issue: landed.issue,
+      needed: landed.existing,
+      found,
+      seeded: kept.filter((item) => item.decided === "seed" && touched.has(item.id)).length,
+      recall: landed.existing.length === 0 ? null : found.length / landed.existing.length,
+      bytes: selection.kept.reduce((total, item) => total + utf8.encode(item.text).byteLength, 0),
+      jevMs: selection.output.cost.jevMs,
+      unjudged: selection.unjudged?.reason,
+      labels
+    } satisfies Evaluated
   })
-  return {
-    commit: landed.commit,
-    issue: landed.issue,
-    needed: landed.existing,
-    found,
-    seeded: kept.filter((item) => item.decided === "seed" && touched.has(item.id)).length,
-    recall: landed.existing.length === 0 ? null : found.length / landed.existing.length,
-    bytes: selection.kept.reduce((total, item) => total + utf8.encode(item.text).byteLength, 0),
-    jevMs: selection.output.cost.jevMs,
-    unjudged: selection.unjudged?.reason,
-    labels
-  } satisfies Evaluated
-}
 
 /**
  * Evaluates each landed commit at its parent, in one temporary workspace of
@@ -209,16 +220,16 @@ export const evaluateAll = (
 ) =>
   commits.length === 0
     ? Effect.succeed<ReadonlyArray<Evaluated>>([])
-    : scoped(effect {
-      const dir = try parentWorkspace(root)
+    : Effect.scoped(Effect.gen(function*() {
+      const dir = yield* parentWorkspace(root)
       // Typed as the empty branch is, so the two branches share one success
       // type: TypeScript 7 cannot pipe a union of differently typed Effects.
-      const evaluated: ReadonlyArray<Evaluated> = try forEach(
+      const evaluated: ReadonlyArray<Evaluated> = yield* Effect.forEach(
         commits,
         (landed) => Effect.andThen(run("jj", ["new", landed.parent], dir), evaluate(dir, landed, options))
       )
       return evaluated
-    })
+    }))
 
 /**
  * Pooled recall@budget: found needed files over needed files, across every

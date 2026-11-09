@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url"
 import * as Calibrate from "../memory/calibrate.vibe"
 import * as CalibrateFlow from "../memory/calibrate/flow.ts"
 import * as Labels from "../memory/labels.ts"
-import * as Landed from "../memory/landed.vibe"
+import * as Landed from "../memory/landed.ts"
 import * as Thresholds from "../memory/thresholds.vibe"
 
 // A PATH guard refuses git and jj to agent sessions; the temp repositories
@@ -198,6 +198,7 @@ test("mentions matches whole paths, absolute paths under the root and files unde
   assert.ok(Labels.mentions("cat ./src/a.ts", "src/a.ts"))
   assert.ok(Labels.mentions("src/a.ts.", "src/a.ts"))
   assert.ok(Labels.mentions("see `src/a.ts:12`", "src/a.ts"))
+  assert.ok(Labels.mentions("apps/tui/src/host.ts", "apps/tui"))
   assert.ok(Labels.mentions("apps/tui/src/host.vibe", "apps/tui"))
   assert.ok(!Labels.mentions("src/a.tsx", "src/a.ts"))
   assert.ok(!Labels.mentions("xsrc/a.ts", "src/a.ts"))

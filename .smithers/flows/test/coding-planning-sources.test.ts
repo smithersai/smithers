@@ -29,7 +29,7 @@ import {
 } from "../coding/planning-sources.vibe"
 import { PlanningContext, planningMemory, planningPrompt, ReviewRequest } from "../coding/planning.vibe"
 import { CodingError } from "../coding/schema.ts"
-import { operations as wikiOperations } from "../wiki/operations.vibe"
+import { operations as wikiOperations } from "../wiki/operations.ts"
 import type { PageSpec } from "../wiki/schema.vibe"
 
 const run = <A>(effect: Effect.Effect<A, never, import("effect/FileSystem").FileSystem | import("effect/Path").Path>) =>

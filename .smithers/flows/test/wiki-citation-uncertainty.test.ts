@@ -12,7 +12,7 @@ import { join } from "node:path"
 import { test, type TestContext } from "node:test"
 import Wiki from "../wiki/flow.ts"
 import { checkCitations } from "../wiki/jev-citations.vibe"
-import { operations } from "../wiki/operations.vibe"
+import { operations } from "../wiki/operations.ts"
 import type { Pool } from "../wiki/reuse.vibe"
 import { actionLayers } from "../wiki/runtime.vibe"
 import type { PageSpec, Review } from "../wiki/schema.vibe"
@@ -289,7 +289,7 @@ test("SQLite incremental reuse re-reviews a prior uncertain citation", { timeout
   const reused = JSON.parse(await readFile(join(output, "current.json"), "utf8"))
   assert.equal(reused.pages[0].verification.provenance.reusedFrom.runId, "wiki-uncertain-incremental")
   const { canonical } = await import("@smthrs/core/Digest")
-  const { digest } = await import("../wiki/operations.vibe")
+  const { digest } = await import("../wiki/operations.ts")
   const sectionsDigest = await Effect.runPromise(
     digest(canonical(f.evidence.sections)).pipe(
       Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))

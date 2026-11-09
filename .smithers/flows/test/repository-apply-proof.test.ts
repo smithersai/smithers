@@ -20,7 +20,7 @@ import { CodingError } from "../coding/schema.ts"
 import { RepositoryJob } from "../repository/jobs.vibe"
 import { RepositoryRemote } from "../repository/remote.vibe"
 import { Draft, JobInput, JobResult, OperationResult, SetupInput } from "../repository/schema.vibe"
-import { setupLayers } from "../repository/setup.vibe"
+import { setupLayers } from "../repository/setup.ts"
 
 /*
  * Walk run 3, defect C3-N3: the paused `feature` registration held revision 6,

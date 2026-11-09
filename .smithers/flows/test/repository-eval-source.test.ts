@@ -19,7 +19,7 @@ import { Evaluate, evaluationLayers, ScoreCase } from "../repository/evaluation.
 import { CaptureRepository, captureRepository } from "../repository/inspection.vibe"
 import { FinishJob, Investigate, RunSteps } from "../repository/jobs.vibe"
 import { type Draft, EvalCase, type JobResult, type RepositoryEvidence, SetupInput } from "../repository/schema.vibe"
-import { suggestedSetupDraft } from "../repository/setup.vibe"
+import { suggestedSetupDraft } from "../repository/setup.ts"
 
 const exporter = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
 const gate = {

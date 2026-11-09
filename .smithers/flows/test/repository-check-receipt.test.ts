@@ -16,7 +16,7 @@ import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner
 import { type BackendLanding, Landing } from "../coding/landing.vibe"
 import { NativeCoding } from "../coding/native.vibe"
 import { CodingError } from "../coding/schema.ts"
-import { make, pinnedPolicy, RepositoryCheckReceipts, verifiedCheckStep } from "../repository/check-receipt.vibe"
+import { make, pinnedPolicy, RepositoryCheckReceipts, verifiedCheckStep } from "../repository/check-receipt.ts"
 import { CheckStep } from "../repository/checks.vibe"
 import {
   type CiPolicy,

@@ -5,7 +5,7 @@ import { AppendObservation, AppendPreparation, LandingIdentity, QueuedAppend } f
 import { backendLanding } from "../coding/landing.vibe"
 import { NativeCoding, SourceCreation } from "../coding/native.vibe"
 import { CodingError, Revision } from "../coding/schema.ts"
-import { CheckReceipt, pinnedPolicy, RepositoryCheckReceipts, verifiedCheckStep } from "./check-receipt.vibe"
+import { CheckReceipt, pinnedPolicy, RepositoryCheckReceipts, verifiedCheckStep } from "./check-receipt.ts"
 import { currentExecutionId } from "./inspection.vibe"
 import { retainedStepError, Work } from "./jobs.vibe"
 import { StepResult } from "./schema.vibe"

@@ -7,7 +7,7 @@
  */
 import { Action } from "@smthrs/flow"
 import { publishedPages } from "../memory/deps.vibe"
-import { operations } from "../wiki/operations.vibe"
+import { operations } from "../wiki/operations.ts"
 import { Pool, reuseOperations } from "../wiki/reuse.vibe"
 import { type PageSpec, Receipt, WikiError } from "../wiki/schema.vibe"
 import { Refreshed } from "./planning-wiki.vibe"

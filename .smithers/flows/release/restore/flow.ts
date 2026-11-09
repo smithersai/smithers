@@ -18,7 +18,7 @@
 import { Action, Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
-import { ModuleFailed, runModule } from "../../automation/run-module.vibe"
+import { ModuleFailed, runModule } from "../../automation/run-module.ts"
 
 /**
  * Validate the archived selection, or restore into `directory` (`dist/release-packs` when omitted).

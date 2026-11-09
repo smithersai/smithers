@@ -32,7 +32,7 @@ import { missingCodingExecutables, provisionHostBuiltins, repositoryJobsServed }
 import { Landing } from "../coding/landing.vibe"
 import { loadProject } from "../coding/project-config.vibe"
 import { bindRepositoryRegistry, provisionBuiltins, repositoryCatalog } from "../repository/registry.vibe"
-import { RunJob, RunSetup } from "../repository/setup.vibe"
+import { RunJob, RunSetup } from "../repository/setup.ts"
 import { RunTrigger } from "../repository/triggers.vibe"
 import { host as reviewHost } from "../review/tests/host.ts"
 import { scriptedSeats } from "../review/tests/workflow/scriptedSeats.ts"

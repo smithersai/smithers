@@ -19,7 +19,7 @@ import { checkDelegate } from "../coding/checks.vibe"
 import { configuredCodingRoutes, missingCodingExecutables, provisionHostBuiltins } from "../coding/host.ts"
 import { loadProject } from "../coding/project-config.vibe"
 import { bindRepositoryRegistry, repositoryCatalog } from "../repository/registry.vibe"
-import { RunJob, RunSetup } from "../repository/setup.vibe"
+import { RunJob, RunSetup } from "../repository/setup.ts"
 import { RunTrigger } from "../repository/triggers.vibe"
 import { systemFlows } from "./fixtures/system-flows.ts"
 

@@ -21,7 +21,7 @@ import {
   MAX_STATE_BYTES,
   UNSUPPORTED_CONFIDENCE
 } from "../wiki/jev-citations.vibe"
-import { operations } from "../wiki/operations.vibe"
+import { operations } from "../wiki/operations.ts"
 import { actionLayers } from "../wiki/runtime.vibe"
 import type { Evidence, PageSpec, Review } from "../wiki/schema.vibe"
 import { ReviewPage } from "../wiki/workflow.vibe"

@@ -39,7 +39,7 @@ import {
 } from "../repository/registry.vibe"
 import type { RepositoryRemote } from "../repository/remote.vibe"
 import { replyLayers } from "../repository/replies.vibe"
-import { RunJob, RunSetup, setupLayers, SuggestSetup } from "../repository/setup.vibe"
+import { RunJob, RunSetup, setupLayers, SuggestSetup } from "../repository/setup.ts"
 import { RunTrigger, triggerLayers } from "../repository/triggers.vibe"
 import { ReviewPage } from "../wiki/workflow.vibe"
 import * as CodingTerminal from "./agentTerminal.ts"

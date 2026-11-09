@@ -5,6 +5,7 @@ import * as RunCatalogRead from "@smthrs/engine-store/RunCatalogRead"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import * as Executable from "@smthrs/registry/Executable"
+import { Effect, Layer, Option, Path, Schema } from "effect"
 import { setupConfiguration, SetupOperationResponseSchema } from "../../../packages/rpc/src/RepositorySetup.ts"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
 import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
@@ -38,8 +39,6 @@ import {
   Step
 } from "./schema.vibe"
 import { admitSourcePath } from "./source.vibe"
-import { candidateFiles } from "./setup-files.ts"
-import { canonicalDigest as canonicalSha256 } from "./trusted.ts"
 
 const Error = Schema.Union([CodingError, AgentAction.AgentFailure])
 // Models author typed cases. The editable file stores JSON text only after
@@ -125,14 +124,7 @@ const repinnedCase = (
 ): typeof EvalCase.Type => {
   const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(CaseInput))(test.input)
   if (Option.isNone(decoded)) return test
-  // The decode above parsed this text, so the raw read cannot fail; the whole
-  // object is kept because a case may carry fields the contract does not name.
-  let stored: { readonly event: Record<string, unknown> } & Record<string, unknown>
-  try {
-    stored = JSON.parse(test.input) as { readonly event: Record<string, unknown> } & Record<string, unknown>
-  } catch {
-    return test
-  }
+  const stored = JSON.parse(test.input) as { readonly event: Record<string, unknown> } & Record<string, unknown>
   const normalized = executableSuggestedEvent(job, steps, decoded.value.event)
   const executable = repinnedEvent(normalized, decoded.value.sourceRevision, sourceRevision)
   return {
@@ -309,7 +301,7 @@ export const RunJob = Flow.make("repository/RunJob", {
 })
 const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
 
-effect function verifyEvaluation(input: SetupInput, receipt: typeof Receipt.Type) {
+const verifyEvaluation = (input: SetupInput, receipt: typeof Receipt.Type) => {
   const required = input.draft.cases.filter((test) => test.required)
   if (
     !required.length || required.some((test) => {
@@ -318,71 +310,102 @@ effect function verifyEvaluation(input: SetupInput, receipt: typeof Receipt.Type
     })
   ) throw invalid("Required evaluation cases have not passed with evidence")
 }
-export { candidateFiles, publicCase } from "./setup-files.ts"
-effect function writeCandidate(options: InspectionOptions, input: SetupInput) {
-  const fs = options.fs, path = try Path.Path
-  const root = try admitSourcePath(
-    options,
-    options.repositoryPath,
-    `.smithers/repository-jobs/${input.job}/${input.digest}`
-  )
-  try fs.makeDirectory(root, { recursive: true })
-  const canonical = try fs.realPath(root), workspace = try fs.realPath(options.repositoryPath)
-  if (!canonical.startsWith(workspace + path.sep)) {
-    throw invalid("Repository configuration path leaves the workspace")
+/** The repository keeps the executable test definition; the expected answer and the
+ * deterministic assertions that decide it stay with the setup authority. An input the
+ * case contract cannot read carries no assertions and is kept as the maintainer wrote it. */
+export const publicCase = (test: typeof EvalCase.Type) => ({
+  id: test.id,
+  name: test.name,
+  input: Option.match(Schema.decodeUnknownOption(Schema.fromJsonString(CaseInput))(test.input), {
+    onNone: () => test.input,
+    onSome: ({ event, sourceRevision }) => JSON.stringify({ event, sourceRevision })
+  }),
+  required: test.required
+})
+export const candidateFiles = (input: SetupInput): Record<string, string> => {
+  const cases = input.draft.cases.map(publicCase)
+  // The retained candidate is the configuration this digest names. The trial's
+  // own test request belongs to one trial press, so refilling it cannot edit it.
+  const draft = { ...setupConfiguration(input.draft), cases }
+  const files: Record<string, string> = {
+    "candidate.json": JSON.stringify(
+      { repo: input.repo, job: input.job, revision: input.revision, digest: input.digest, draft },
+      null,
+      2
+    ) + "\n",
+    "evals.json": JSON.stringify(cases, null, 2) + "\n"
   }
-  const files = try Effect.try({
-    try: () => candidateFiles(input),
-    catch: (error) => error instanceof CodingError ? error : invalid("The candidate could not be materialised")
-  })
-  for (const [name, contents] of Object.entries(files)) {
-    const target = try admitSourcePath(options, root, name),
-      existing = try fs.readFileString(target).pipe(
-        Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined))
-      )
-    if (existing !== undefined && existing !== contents) {
-      throw invalid("A retained candidate was edited; create a new revision")
-    }
-    if (existing === undefined) try fs.writeFileString(target, contents, { flag: "wx" })
+  for (const step of input.draft.steps) {
+    if (!/^[A-Za-z0-9_-]+$/.test(step.id)) throw invalid("Step IDs must be safe repository filenames")
+    files[`prompt-${step.id}.md`] = step.prompt + "\n"
   }
-  const flowRoot = try admitSourcePath(
-    options,
-    options.repositoryPath,
-    `.smithers/flows/repository-jobs/${input.job}/${input.digest}`
-  )
-  try fs.makeDirectory(flowRoot, { recursive: true })
-  if (!(try fs.realPath(flowRoot)).startsWith(workspace + path.sep)) {
-    throw invalid("The flow path leaves the workspace")
-  }
-  const body = [
-    "---",
-    `description: Reviewed ${input.job} configuration ${input.digest}.`,
-    "flows: [repository/RunJob]",
-    "capabilities: ['*']",
-    "budget:",
-    "  tokens: 200000",
-    `  milliseconds: ${input.draft.budgetMinutes * 60000}`,
-    "---",
-    "",
-    `Candidate: .smithers/repository-jobs/${input.job}/${input.digest}/candidate.json`,
-    `Evals: .smithers/repository-jobs/${input.job}/${input.digest}/evals.json`,
-    "",
-    ...input.draft.steps.map((step) =>
-      `Prompt ${step.id}: .smithers/repository-jobs/${input.job}/${input.digest}/prompt-${step.id}.md`
-    ),
-    ""
-  ].join("\n")
-  const declaration = try admitSourcePath(options, flowRoot, "flow.mdx")
-  const old = try fs.readFileString(declaration).pipe(
-    Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined))
-  )
-  if (old !== undefined && old !== body) {
-    throw invalid("The reviewed flow declaration was edited; create a new candidate")
-  }
-  if (old === undefined) try fs.writeFileString(declaration, body, { flag: "wx" })
-  try (try Jj.Jj).snapshot("repository automation candidate")
-  return `.smithers/repository-jobs/${input.job}/${input.digest}/candidate.json`
+  return files
 }
+const writeCandidate = (options: InspectionOptions, input: SetupInput) =>
+  Effect.gen(function*() {
+    const fs = options.fs, path = yield* Path.Path
+    const root = yield* admitSourcePath(
+      options,
+      options.repositoryPath,
+      `.smithers/repository-jobs/${input.job}/${input.digest}`
+    )
+    yield* fs.makeDirectory(root, { recursive: true })
+    const canonical = yield* fs.realPath(root), workspace = yield* fs.realPath(options.repositoryPath)
+    if (!canonical.startsWith(workspace + path.sep)) {
+      return yield* invalid("Repository configuration path leaves the workspace")
+    }
+    const files = yield* Effect.try({
+      try: () => candidateFiles(input),
+      catch: (error) => error instanceof CodingError ? error : invalid("The candidate could not be materialised")
+    })
+    for (const [name, contents] of Object.entries(files)) {
+      const target = yield* admitSourcePath(options, root, name),
+        existing = yield* fs.readFileString(target).pipe(
+          Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined))
+        )
+      if (existing !== undefined && existing !== contents) {
+        return yield* invalid("A retained candidate was edited; create a new revision")
+      }
+      if (existing === undefined) yield* fs.writeFileString(target, contents, { flag: "wx" })
+    }
+    const flowRoot = yield* admitSourcePath(
+      options,
+      options.repositoryPath,
+      `.smithers/flows/repository-jobs/${input.job}/${input.digest}`
+    )
+    yield* fs.makeDirectory(flowRoot, { recursive: true })
+    if (!(yield* fs.realPath(flowRoot)).startsWith(workspace + path.sep)) {
+      return yield* invalid("The flow path leaves the workspace")
+    }
+    const body = [
+      "---",
+      `description: Reviewed ${input.job} configuration ${input.digest}.`,
+      "flows: [repository/RunJob]",
+      "capabilities: ['*']",
+      "budget:",
+      "  tokens: 200000",
+      `  milliseconds: ${input.draft.budgetMinutes * 60000}`,
+      "---",
+      "",
+      `Candidate: .smithers/repository-jobs/${input.job}/${input.digest}/candidate.json`,
+      `Evals: .smithers/repository-jobs/${input.job}/${input.digest}/evals.json`,
+      "",
+      ...input.draft.steps.map((step) =>
+        `Prompt ${step.id}: .smithers/repository-jobs/${input.job}/${input.digest}/prompt-${step.id}.md`
+      ),
+      ""
+    ].join("\n")
+    const declaration = yield* admitSourcePath(options, flowRoot, "flow.mdx")
+    const old = yield* fs.readFileString(declaration).pipe(
+      Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined))
+    )
+    if (old !== undefined && old !== body) {
+      return yield* invalid("The reviewed flow declaration was edited; create a new candidate")
+    }
+    if (old === undefined) yield* fs.writeFileString(declaration, body, { flag: "wx" })
+    yield* (yield* Jj.Jj).snapshot("repository automation candidate")
+    return `.smithers/repository-jobs/${input.job}/${input.digest}/candidate.json`
+  })
 
 export const setupLayers = (options: InspectionOptions) =>
   Layer.mergeAll(
@@ -397,14 +420,15 @@ export const setupLayers = (options: InspectionOptions) =>
       Effect.fail(invalid("Job input does not match its registered responsibility or candidate"))
     ),
     ExecuteSetup.toLayer(({ input, deadlineAt }) =>
-      (effect {
-        const owning = try Effect.serviceOption(ModuleOwner)
+      Effect.gen(function*() {
+        const owning = yield* Effect.serviceOption(ModuleOwner)
         if (Option.isNone(owning) || owning.value.flowId !== "repository/setup") {
-          throw invalid("Repository setup needs its approved Control entry")
+          return yield* invalid("Repository setup needs its approved Control entry")
         }
         const owner = owning.value
-        const runtime = try FlowRuntime.FlowRuntime, instance = try FlowRuntime.FlowInstance
-        const key = (part: string) => canonicalSha256(["repository/setup/v1", instance.executionId, input.digest, part])
+        const runtime = yield* FlowRuntime.FlowRuntime, instance = yield* FlowRuntime.FlowInstance
+        const key = (part: string) =>
+          Digest.digest(Digest.canonical(["repository/setup/v1", instance.executionId, input.digest, part]))
         const receipt = (extra: Partial<typeof Receipt.Type>): typeof Receipt.Type => ({
           requestId: input.requestId,
           runId: owner.rootId,
@@ -424,17 +448,17 @@ export const setupLayers = (options: InspectionOptions) =>
           })
         const identity = { requestId: input.requestId, revision: input.revision, digest: input.digest }
         if (input.operation === "inspect" || input.operation === "evaluate") {
-          const evidence = try runtime.execute(Capture, {
+          const evidence = yield* runtime.execute(Capture, {
             executionId: key("capture"),
             payload: { repo: input.repo, prompt: input.draft.steps.map((step) => step.prompt).join("\n") }
           })
           if (input.operation === "inspect") {
-            const suggested = try runtime.execute(Suggest, {
+            const suggested = yield* runtime.execute(Suggest, {
               executionId: key("suggest"),
               payload: { input, evidence, deadlineAt }
             })
             const suggestedDraft = suggestedSetupDraft(input.draft, suggested, evidence.source.commitId, input.job)
-            return try respond({
+            return yield* respond({
               ...identity,
               inspection: { sources: evidence.sources, suggestedDraft, inspectedAt: Date.now() },
               receipt: receipt({
@@ -443,12 +467,12 @@ export const setupLayers = (options: InspectionOptions) =>
               })
             })
           }
-          const results = try runtime.execute(RunEvaluation, {
+          const results = yield* runtime.execute(RunEvaluation, {
             executionId: key("evaluation"),
             payload: { setup: input, evidence, deadlineAt }
           })
-          const candidate = try writeCandidate(options, input)
-          return try respond({
+          const candidate = yield* writeCandidate(options, input)
+          return yield* respond({
             ...identity,
             receipt: receipt({
               results,
@@ -457,24 +481,24 @@ export const setupLayers = (options: InspectionOptions) =>
             })
           })
         }
-        const available = try Effect.serviceOption(RepositoryRemote)
+        const available = yield* Effect.serviceOption(RepositoryRemote)
         if (Option.isNone(available)) {
-          throw invalid("Connect the repository host before testing or activating automation")
+          return yield* invalid("Connect the repository host before testing or activating automation")
         }
         const remote = available.value
         if (
           remote.repo !== input.repo || (input.workspaceId !== undefined && remote.workspaceId !== input.workspaceId)
-        ) throw invalid("Setup belongs to a different repository or workspace")
+        ) return yield* invalid("Setup belongs to a different repository or workspace")
         if (input.operation === "pause") {
           // Read the row before writing it: a pause the registry cannot confirm
           // must leave the active policy running, not disable it and report failure.
-          const active = activeRegistration(try remote.registrations, input)
-          if (!active) throw invalid("This job has no enabled registration to pause")
-          const paused = pausedRegistration(try remote.pause(input.job), input)
+          const active = activeRegistration(yield* remote.registrations, input)
+          if (!active) return yield* invalid("This job has no enabled registration to pause")
+          const paused = pausedRegistration(yield* remote.pause(input.job), input)
           if (!paused || paused.id !== active.id) {
-            throw invalid("The active registration could not be verified as paused")
+            return yield* invalid("The active registration could not be verified as paused")
           }
-          return try respond({
+          return yield* respond({
             ...identity,
             receipt: receipt({ registrationId: paused.id, evidence: [`registration:${paused.id}`] })
           })
@@ -482,15 +506,15 @@ export const setupLayers = (options: InspectionOptions) =>
         if (input.operation === "run") {
           // The server resolves the subject and checks the active registration.
           // A browser cannot supply job events or its own completion evidence.
-          const dispatch = try runtime.execute(DispatchManual, {
+          const dispatch = yield* runtime.execute(DispatchManual, {
             executionId: key("manual-dispatch"),
             payload: { input, deadlineAt }
           })
-          const work = try runtime.execute(WaitManual, {
+          const work = yield* runtime.execute(WaitManual, {
             executionId: key("manual-wait"),
             payload: { input, dispatch, deadlineAt }
           })
-          return try respond({
+          return yield* respond({
             ...identity,
             receipt: receipt({
               phase: work.status === "completed" ? "completed" : "failed",
@@ -507,7 +531,7 @@ export const setupLayers = (options: InspectionOptions) =>
         // receipts stand in when this candidate has none of its own; re-enabling it
         // after evaluating and trialling it again is still an apply at this digest.
         const restart = input.operation === "apply"
-          ? restartedRegistration(try remote.registrations, input)
+          ? restartedRegistration(yield* remote.registrations, input)
           : undefined
         const reviewed: SetupInput = restart ? { ...input, revision: restart.revision, digest: restart.digest } : input
         const proven = (operation: "evaluate" | "trial") =>
@@ -516,19 +540,22 @@ export const setupLayers = (options: InspectionOptions) =>
             : priorSetupReceipt(input, operation).pipe(
               Effect.catch((own) => priorSetupReceipt(reviewed, operation).pipe(Effect.catch(() => Effect.fail(own))))
             )
-        const evaluation = try proven("evaluate")
-        try verifyEvaluation(input, evaluation)
-        const candidate = try writeCandidate(options, input)
+        const evaluation = yield* proven("evaluate")
+        yield* Effect.try({
+          try: () => verifyEvaluation(input, evaluation),
+          catch: (error) => error instanceof CodingError ? error : invalid("Evaluation proof is invalid")
+        })
+        const candidate = yield* writeCandidate(options, input)
         if (input.operation === "trial") {
-          const activation = try runtime.execute(RegisterCandidate, {
+          const activation = yield* runtime.execute(RegisterCandidate, {
             executionId: key("trial-register"),
             payload: { input, mode: "trial", deadlineAt }
           })
-          const trial = try runtime.execute(WaitTrial, {
+          const trial = yield* runtime.execute(WaitTrial, {
             executionId: key("trial-wait"),
             payload: { input, activation, deadlineAt }
           })
-          return try respond({
+          return yield* respond({
             ...identity,
             receipt: receipt({
               phase: trial.status === "completed" ? "completed" : "failed",
@@ -540,22 +567,22 @@ export const setupLayers = (options: InspectionOptions) =>
             })
           })
         }
-        const trial = try proven("trial")
+        const trial = yield* proven("trial")
         if (!trial.sourceRevision || !trial.evidence.some((ref) => ref.startsWith("execution:")) || !trial.trialIssue) {
-          throw invalid("The live trial has no verified real source result")
+          return yield* invalid("The live trial has no verified real source result")
         }
         if (restart && trial.revision === restart.revision && restart.source_revision !== trial.sourceRevision) {
-          throw invalid("The paused registration was activated from another source; test this draft again")
+          return yield* invalid("The paused registration was activated from another source; test this draft again")
         }
-        const current = (try (try NativeCoding).read()).head
+        const current = (yield* (yield* NativeCoding).read()).head
         if (current.kind !== "resolved" || current.commitId !== trial.sourceRevision) {
-          throw invalid("Repository source changed after the live trial; test the candidate again")
+          return yield* invalid("Repository source changed after the live trial; test the candidate again")
         }
-        const activation = try runtime.execute(RegisterCandidate, {
+        const activation = yield* runtime.execute(RegisterCandidate, {
           executionId: key("enable"),
           payload: { input, mode: "enabled", deadlineAt }
         })
-        return try respond({
+        return yield* respond({
           ...identity,
           receipt: receipt({
             sourceRevision: activation.source.commitId,

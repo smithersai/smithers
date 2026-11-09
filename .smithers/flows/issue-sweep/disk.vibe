@@ -1,6 +1,6 @@
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { issueSweepGoCache, statfsFree } from "./disk.platform.ts"
-import { HostFailed, run } from "./host.vibe"
+import { HostFailed, run } from "./host.ts"
 
 export { statfsFree } from "./disk.platform.ts"
 

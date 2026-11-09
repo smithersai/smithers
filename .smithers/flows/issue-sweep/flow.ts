@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url"
 import { capacity, perAccount, type Pools, readPools } from "./accounts.vibe"
 import { configureDiskReaper, DiskAdmission, diskLayer, makeSettledWorkspaceReaper, workspaceBytes } from "./disk.vibe"
 import { api, issue as readIssue, openIssues } from "./github.vibe"
-import { HostFailed, repository, run, tail, workspaces } from "./host.vibe"
+import { HostFailed, repository, run, tail, workspaces } from "./host.ts"
 import { terminalIdentityConflict } from "./identity.vibe"
 import { landChange, LandFailed } from "./land.vibe"
 import {

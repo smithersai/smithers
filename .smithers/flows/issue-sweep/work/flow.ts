@@ -39,7 +39,7 @@ import {
   tail,
   workspaceName,
   workspaceOf
-} from "../host.vibe"
+} from "../host.ts"
 import { goCache, install } from "../land.vibe"
 import { vmFields, vmOptions } from "../vm-options.vibe"
 import * as LocalVm from "../vm.vibe"

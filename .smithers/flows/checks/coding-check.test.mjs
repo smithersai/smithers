@@ -109,13 +109,13 @@ case "$1" in packages/*) printf '%s\\n' "$@" > "$FIXTURE/argv.log" ;; esac
       cwd: root, encoding: "utf8", timeout: 15_000,
       env: { ...process.env, PATH: `${root}:${process.env.PATH}`, FIXTURE: root,
         SMITHERS_CHECK_CACHE_DIR: join(root, "check-cache"),
-        SMITHERS_CHECK_FILES: ".smithers/flows/coding/todo.vibe\ndocs/a file.md\n[id].tsx\n*.tsx" }
+        SMITHERS_CHECK_FILES: ".smithers/flows/coding/todo.ts\ndocs/a file.md\n[id].tsx\n*.tsx" }
     })
     assert.equal(result.status, 0, result.stderr)
     assert.deepEqual(readFileSync(join(root, "argv.log"), "utf8").trim().split("\n"), [
       "packages/smithers/build/build-cli/src/main.js", "affected", "lint", "//...",
       "--known-red", ".github/ci-known-red.json",
-      "--files", ".smithers/flows/coding/todo.vibe", "--files", "docs/a file.md", "--files", "[id].tsx", "--files", "*.tsx"
+      "--files", ".smithers/flows/coding/todo.ts", "--files", "docs/a file.md", "--files", "[id].tsx", "--files", "*.tsx"
     ])
   } finally {
     rmSync(root, { recursive: true, force: true })

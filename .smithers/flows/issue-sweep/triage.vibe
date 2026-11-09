@@ -21,7 +21,7 @@ import * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Burndown } from "@smthrs/patterns"
 import { clip } from "../repository/clip.ts"
-import { workspaces } from "./host.vibe"
+import { workspaces } from "./host.ts"
 import { readCache, sha256, writeCache } from "./triage.platform.ts"
 import { bookkeeping, marker, type Need as VerdictNeed } from "./verdict.vibe"
 

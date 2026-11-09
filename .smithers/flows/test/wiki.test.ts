@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url"
 import { separateWikiOutput } from "../coding/wiki-output.vibe"
 import { reviewEvidence } from "../wiki/evidence.ts"
 import { CITATION_CONTEXT_LINES, MAX_CLAIM_BYTES, MAX_STATE_BYTES } from "../wiki/jev-citations.vibe"
-import { operations } from "../wiki/operations.vibe"
+import { operations } from "../wiki/operations.ts"
 import { PageSpec, type Review, type ReviewedPage } from "../wiki/schema.vibe"
 import { makeHostJudge } from "./fixtures/scripted-judge.ts"
 

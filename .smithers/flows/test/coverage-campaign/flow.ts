@@ -2,7 +2,7 @@
 import { Action, Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
-import { ModuleFailed, runModule } from "../../automation/run-module.vibe"
+import { ModuleFailed, runModule } from "../../automation/run-module.ts"
 
 /** @since 1.0.0 */
 export const Request = Schema.Struct({ mode: Schema.Literals(["snapshot", "status", "gate"]) })
