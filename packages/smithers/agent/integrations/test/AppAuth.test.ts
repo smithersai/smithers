@@ -14,7 +14,7 @@ import { createPrivateKey } from "node:crypto"
 import { inspect } from "node:util"
 import { afterEach, beforeAll, describe, expect, it } from "vitest"
 import type { IntegrationError } from "../src/core/IntegrationError.ts"
-import * as AppAuth from "../src/github/AppAuth.ts"
+import * as AppAuth from "../src/github/AppAuth.vibe"
 import { type Fixture, json, startFixture } from "./Fixture.ts"
 import { faultingTransport, fetchLayer } from "./Http.ts"
 

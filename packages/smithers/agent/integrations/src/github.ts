@@ -20,7 +20,7 @@ export * as Actions from "./github/Actions.ts"
  * @category services
  * @since 1.0.0
  */
-export * as AppAuth from "./github/AppAuth.ts"
+export * as AppAuth from "./github/AppAuth.vibe"
 
 /**
  * @category getters

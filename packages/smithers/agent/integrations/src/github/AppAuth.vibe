@@ -41,6 +41,7 @@ import { Clock, Context, type Duration, Effect, Layer, Option, Redacted, Schema 
 import * as HttpClient from "effect/http/HttpClient"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { redactedError } from "../core/RedactedError.ts"
+import { importSigningKey, signRs256 } from "./AppAuth.platform.ts"
 import * as GitHubClient from "./GitHubClient.vibe"
 import { isRepo, requireRepositoryPath } from "./Repository.vibe"
 
@@ -197,14 +198,7 @@ export const importPrivateKey = (pem: Redacted.Redacted<string>): Effect.Effect<
     }).pipe(
       Effect.flatMap((der) =>
         Effect.tryPromise({
-          try: () =>
-            crypto.subtle.importKey(
-              "pkcs8",
-              format === "pkcs1" ? wrapPkcs1(der) : der,
-              { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-              false,
-              ["sign"]
-            ),
+          try: () => importSigningKey(format === "pkcs1" ? wrapPkcs1(der) : der),
           catch: (cause) =>
             failure("invalid-config", "The GitHub App private key did not import as an RSA signing key.", {
               format,
@@ -233,7 +227,7 @@ const signJwt = (key: CryptoKey, appId: string): Effect.Effect<Redacted.Redacted
     }`
     // The key imported for signing, so a refusal here is a broken host, not a
     // failure a caller can act on.
-    return Effect.promise(() => crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, encoder.encode(input))).pipe(
+    return Effect.promise(() => signRs256(key, encoder.encode(input))).pipe(
       Effect.map((signature) => Redacted.make(`${input}.${base64Url(new Uint8Array(signature))}`))
     )
   })
@@ -271,17 +265,17 @@ const isPositiveInteger = (value: unknown): value is number => Number.isSafeInte
  * @since 1.0.0
  */
 export const make = (credentials: AppCredentials): Effect.Effect<AppAuth, IntegrationError, HttpClient.HttpClient> =>
-  Effect.gen(function*() {
+  effect {
     const appId = typeof credentials.appId === "string" ? credentials.appId.trim() : ""
     if (!/^[A-Za-z0-9._-]{1,100}$/.test(appId)) {
-      return yield* Effect.fail(invalidConfig("The GitHub App ID must be the App's numeric ID or its client ID."))
+      throw invalidConfig("The GitHub App ID must be the App's numeric ID or its client ID.")
     }
-    const key = yield* importPrivateKey(credentials.privateKey)
-    const http = yield* HttpClient.HttpClient
+    const key = try importPrivateKey(credentials.privateKey)
+    const http = try HttpClient.HttpClient
     const config = { apiBaseUrl: credentials.apiBaseUrl, requestTimeout: credentials.requestTimeout }
     // Builds a tokenless client once so a malformed base URL or deadline fails
     // here rather than on the first call.
-    yield* GitHubClient.make(config, {}).pipe(Effect.provideService(HttpClient.HttpClient, http))
+    try GitHubClient.make(config, {}).pipe(Effect.provideService(HttpClient.HttpClient, http))
 
     const jwt = signJwt(key, appId).pipe(Effect.withSpan("GitHub.AppAuth.jwt"))
 
@@ -295,10 +289,10 @@ export const make = (credentials: AppCredentials): Effect.Effect<AppAuth, Integr
     )
 
     const installation: AppAuth["installation"] = (owner, repo) =>
-      Effect.gen(function*() {
-        const repository = yield* requireRepositoryPath(owner, repo)
-        const client = yield* asApp
-        return yield* client.request("GET", `/repos/${repository}/installation`, undefined, {
+      (effect {
+        const repository = try requireRepositoryPath(owner, repo)
+        const client = try asApp
+        return try client.request("GET", `/repos/${repository}/installation`, undefined, {
           schema: Installation
         }).pipe(
           Effect.mapError((error) =>
@@ -316,28 +310,24 @@ export const make = (credentials: AppCredentials): Effect.Effect<AppAuth, Integr
       )
 
     const installationToken: AppAuth["installationToken"] = (options) =>
-      Effect.gen(function*() {
+      (effect {
         const { installationId, permissions, repositories, repositoryIds } = options
         if (!isPositiveInteger(installationId)) {
-          return yield* Effect.fail(invalidConfig("A GitHub App installation ID must be a positive integer."))
+          throw invalidConfig("A GitHub App installation ID must be a positive integer.")
         }
         const badName = repositories?.find((name) => !isRepo(name))
         if (badName !== undefined) {
-          return yield* Effect.fail(
-            invalidConfig("A repository an installation token names is not a repository name.", {
-              repository: String(badName).slice(0, 100)
-            })
-          )
+          throw invalidConfig("A repository an installation token names is not a repository name.", {
+            repository: String(badName).slice(0, 100)
+          })
         }
         if (repositoryIds?.some((id) => !isPositiveInteger(id)) === true) {
-          return yield* Effect.fail(
-            invalidConfig("A repository ID an installation token names is not a positive integer.")
-          )
+          throw invalidConfig("A repository ID an installation token names is not a positive integer.")
         }
-        const client = yield* asApp
+        const client = try asApp
         // Minting is safe to repeat: a second POST only issues another
         // short-lived token, so a lost answer is retryable, not unknown.
-        const answer = yield* client.request("POST", `/app/installations/${installationId}/access_tokens`, {
+        const answer = try client.request("POST", `/app/installations/${installationId}/access_tokens`, {
           ...(repositories === undefined ? {} : { repositories: [...repositories] }),
           ...(repositoryIds === undefined ? {} : { repository_ids: [...repositoryIds] }),
           ...(permissions === undefined ? {} : { permissions: { ...permissions } })
@@ -346,12 +336,10 @@ export const make = (credentials: AppCredentials): Effect.Effect<AppAuth, Integr
         const expiresAt = Option.isSome(decoded) ? Date.parse(decoded.value.expires_at) : Number.NaN
         if (Option.isNone(decoded) || !Number.isFinite(expiresAt)) {
           // The answer is not quoted: it may hold the token.
-          return yield* Effect.fail(
-            new IntegrationError(
-              "decode-failed",
-              `GitHub's installation access token response for installation ${installationId} did not have the expected shape.`,
-              { installationId, retryable: false }
-            )
+          throw new IntegrationError(
+            "decode-failed",
+            `GitHub's installation access token response for installation ${installationId} did not have the expected shape.`,
+            { installationId, retryable: false }
           )
         }
         return { token: Redacted.make(decoded.value.token), expiresAt }
@@ -366,7 +354,7 @@ export const make = (credentials: AppCredentials): Effect.Effect<AppAuth, Integr
       )
 
     return AppAuth.of({ jwt, installation, installationToken })
-  })
+  }
 
 /**
  * Layer for {@link AppAuth}, over the `HttpClient` in context.
