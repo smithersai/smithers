@@ -105,7 +105,7 @@
       "default": "./.vibelang/js/src/Prompt/jsx-runtime.js"
     },
     "./ExecutionSnapshot": {
-      "types": "./.vibe/declarations/ExecutionSnapshot.d.vibe.ts",
+      "types": "./.vibe/declarations/src/ExecutionSnapshot.d.vibe.ts",
       "vibelang-source": "./src/ExecutionSnapshot.vibe",
       "default": "./.vibelang/js/src/ExecutionSnapshot.js"
     }
