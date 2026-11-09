@@ -10,6 +10,7 @@ import { wellFormed } from "./Digest.js";
  *
  * @category queries
  * @since 1.0.0
+ * @throws {never}
  */
 export const ftsTerms = (query) => {
     const trimmed = wellFormed(query).replaceAll("\0", " ").trim();

@@ -4,7 +4,7 @@
  * namespace, and a foreign bank is refused before the store runs.
  */
 import * as Flows from "../src/Flows.vibe"
-import * as MemoryStore from "../src/MemoryStore.ts"
+import * as MemoryStore from "../src/MemoryStore.vibe"
 import * as RecallKeyword from "../src/RecallKeyword.vibe"
 import * as TestMemory from "../src/test/TestMemory.ts"
 import * as WithMemory from "../src/WithMemory.vibe"

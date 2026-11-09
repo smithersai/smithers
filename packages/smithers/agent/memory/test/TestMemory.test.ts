@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import * as EffectDigest from "effect/crypto/Digest"
 import { describe, expect, it } from "vitest"
-import * as MemoryStore from "../src/MemoryStore.ts"
+import * as MemoryStore from "../src/MemoryStore.vibe"
 import * as TestMemory from "../src/test/TestMemory.ts"
 
 const namespace = { kind: "flow", id: "project-1" } as const

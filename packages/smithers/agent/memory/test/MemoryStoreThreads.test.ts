@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
-import * as MemoryStore from "../src/MemoryStore.ts"
+import * as MemoryStore from "../src/MemoryStore.vibe"
 import * as TestMemory from "../src/test/TestMemory.ts"
 import { namespace, other, run } from "./fixtures/MemoryStoreHarness.ts"
 

@@ -1,7 +1,7 @@
 import { Effect, Metric, Tracer } from "effect"
 import { describe, expect, it } from "vitest"
 import { operations } from "../src/internal/Instrument.vibe"
-import * as MemoryStore from "../src/MemoryStore.ts"
+import * as MemoryStore from "../src/MemoryStore.vibe"
 import * as TestMemory from "../src/test/TestMemory.ts"
 
 const namespace = { kind: "flow", id: "observed" } as const

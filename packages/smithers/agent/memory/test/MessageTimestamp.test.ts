@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { TestClock } from "effect/testing"
 import { expect, it } from "vitest"
-import * as MemoryStore from "../src/MemoryStore.ts"
+import * as MemoryStore from "../src/MemoryStore.vibe"
 import { run } from "./fixtures/MemoryStoreHarness.ts"
 
 it("atomically defaults message time across later and overlapping appends while preserving conflicts", async () => {

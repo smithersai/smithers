@@ -10,7 +10,7 @@ import * as Clock from "effect/Clock"
 import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import type { DatabaseService } from "../Database.vibe"
-import type { Service } from "../MemoryStore.ts"
+import type { Service } from "../MemoryStore.vibe"
 import { canonicalJson } from "./Canonical.ts"
 import { resolveNamespace } from "./ResolveNamespace.vibe"
 import {
@@ -27,6 +27,10 @@ import {
   validateNonEmpty,
   validateTime
 } from "./Store.vibe"
+
+// canonicalJson only meets values the JSON boundary already admitted, so a
+// failure here is a defect.
+const canonical = (value: unknown) => Effect.orDie(Effect.try(() => canonicalJson(value)))
 
 const THREAD_COLUMNS = "thread_id, namespace_kind, namespace_id, title, metadata_json, created_at_ms, updated_at_ms"
 const MESSAGE_COLUMNS = "thread_id, id, role, text, at_ms"
@@ -59,53 +63,54 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
   const messageColumns = sql.literal(MESSAGE_COLUMNS)
 
   const getThread: Service["getThread"] = (input) =>
-    Effect.gen(function*() {
-      yield* validateNonEmpty(input.threadId, "threadId", ["threadId"])
-      const rows = yield* sql<ThreadRow>`SELECT ${threadColumns}
+    effect {
+      try validateNonEmpty(input.threadId, "threadId", ["threadId"])
+      const rows = try sql<ThreadRow>`SELECT ${threadColumns}
         FROM memory_threads WHERE thread_id = ${input.threadId} LIMIT 1`.pipe(
         Effect.mapError(storeError("could not read memory thread"))
       )
-      return rows[0] === undefined ? undefined : yield* decodeThread(rows[0])
-    })
+      return rows[0] === undefined ? undefined : try decodeThread(rows[0])
+    }
 
   const createThread: Service["createThread"] = (input) =>
-    Effect.gen(function*() {
-      const { namespace } = yield* resolveNamespace(input.namespace)
-      const id = input.id ?? (yield* random.uuidV4().pipe(
+    effect {
+      const { namespace } = try resolveNamespace(input.namespace)
+      const id = input.id ?? (try random.uuidV4().pipe(
         Effect.catchCause((cause) =>
           Effect.fail(error("store", "could not generate memory thread id", Cause.squash(cause)))
         )
       ))
-      yield* validateNonEmpty(id, "threadId", ["id"])
+      try validateNonEmpty(id, "threadId", ["id"])
       const metadataJson = input.metadata === undefined
         ? null
-        : canonicalJson(
-          yield* decodeJson(
-            yield* encodeJson(input.metadata, "thread metadata", ["metadata"]),
+        : try canonical(
+          try decodeJson(
+            try encodeJson(input.metadata, "thread metadata", ["metadata"]),
             "thread metadata"
           )
         )
-      const now = yield* Clock.currentTimeMillis
-      return yield* database.write(
-        Effect.gen(function*() {
-          const inserted = yield* sql`INSERT INTO memory_threads (${threadColumns}) VALUES (
+      const now = try Clock.currentTimeMillis
+      return try database.write(
+        effect {
+          const inserted = try sql`INSERT INTO memory_threads (${threadColumns}) VALUES (
               ${id}, ${namespace.kind}, ${namespace.id}, ${input.title ?? null}, ${metadataJson}, ${now}, ${now}
             ) ON CONFLICT (thread_id) DO NOTHING`.raw
-          const rows = yield* sql<ThreadRow>`SELECT ${threadColumns}
+          const rows = try sql<ThreadRow>`SELECT ${threadColumns}
             FROM memory_threads WHERE thread_id = ${id} LIMIT 1`
           const existing = rows[0]
           if (existing === undefined) {
-            return yield* Effect.fail(error("store", "created memory thread could not be read back"))
+            throw error("store", "created memory thread could not be read back")
           }
           if (changed(inserted) === 0) {
-            const existingMetadata = existing.metadata_json === null
-              ? null
-              : canonicalJson(yield* decodeJson(existing.metadata_json, "thread metadata"))
+            let existingMetadata: string | null = null
+            if (existing.metadata_json !== null) {
+              existingMetadata = try canonical(try decodeJson(existing.metadata_json, "thread metadata"))
+            }
             if (
               existing.namespace_kind !== namespace.kind || existing.namespace_id !== namespace.id ||
               existing.title !== (input.title ?? null) || existingMetadata !== metadataJson
             ) {
-              return yield* Effect.fail(
+              return try Effect.fail(
                 error(
                   "idempotency_conflict",
                   `thread id "${id}" already exists with different creation data`,
@@ -115,70 +120,70 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
               )
             }
           }
-          return yield* decodeThread(existing)
-        })
+          return try decodeThread(existing)
+        }
       ).pipe(Effect.mapError(storeError("could not create memory thread")))
-    })
+    }
 
   const listThreads: Service["listThreads"] = (input = {}) =>
-    Effect.gen(function*() {
+    effect {
       const namespace = input.namespace === undefined
         ? undefined
-        : (yield* resolveNamespace(input.namespace)).namespace
+        : (try resolveNamespace(input.namespace)).namespace
       const where = namespace === undefined
         ? sql.literal("")
         : sql`WHERE namespace_kind = ${namespace.kind} AND namespace_id = ${namespace.id}`
-      const rows = yield* sql<ThreadRow>`SELECT ${threadColumns}
+      const rows = try sql<ThreadRow>`SELECT ${threadColumns}
         FROM memory_threads
         ${where}
         ORDER BY created_at_ms, thread_id`.pipe(
         Effect.mapError(storeError("could not list memory threads"))
       )
-      return yield* Effect.forEach(rows, decodeThread)
-    })
+      return try Effect.forEach(rows, decodeThread)
+    }
 
   const deleteThread: Service["deleteThread"] = (input) =>
-    Effect.gen(function*() {
-      yield* validateNonEmpty(input.threadId, "threadId", ["threadId"])
-      return yield* database.write(
-        Effect.gen(function*() {
-          yield* sql`DELETE FROM memory_messages WHERE thread_id = ${input.threadId}`
-          const result = yield* sql`DELETE FROM memory_threads WHERE thread_id = ${input.threadId}`.raw
+    effect {
+      try validateNonEmpty(input.threadId, "threadId", ["threadId"])
+      return try database.write(
+        effect {
+          try sql`DELETE FROM memory_messages WHERE thread_id = ${input.threadId}`
+          const result = try sql`DELETE FROM memory_threads WHERE thread_id = ${input.threadId}`.raw
           return changed(result) > 0
-        })
+        }
       ).pipe(Effect.mapError(storeError("could not delete memory thread")))
-    })
+    }
 
   const appendMessageOnce: Service["appendMessageOnce"] = (input) =>
-    Effect.gen(function*() {
-      yield* validateNonEmpty(input.threadId, "threadId", ["threadId"])
-      yield* validateNonEmpty(input.id, "message id", ["id"])
-      yield* validateNonEmpty(input.role, "message role", ["role"])
-      if (input.at !== undefined) yield* validateTime(input.at, "message at", ["at"])
-      return yield* database.write(
-        Effect.gen(function*() {
-          const at = input.at ?? (yield* Clock.currentTimeMillis)
-          yield* sql`INSERT INTO memory_threads (
+    effect {
+      try validateNonEmpty(input.threadId, "threadId", ["threadId"])
+      try validateNonEmpty(input.id, "message id", ["id"])
+      try validateNonEmpty(input.role, "message role", ["role"])
+      if (input.at !== undefined) try validateTime(input.at, "message at", ["at"])
+      return try database.write(
+        effect {
+          const at = input.at ?? (try Clock.currentTimeMillis)
+          try sql`INSERT INTO memory_threads (
             thread_id, namespace_kind, namespace_id, created_at_ms, updated_at_ms
           )
             VALUES (${input.threadId}, 'global', 'history', ${at}, ${at})
             ON CONFLICT (thread_id) DO NOTHING`
-          const inserted = yield* sql`INSERT INTO memory_messages (id, thread_id, role, text, at_ms)
+          const inserted = try sql`INSERT INTO memory_messages (id, thread_id, role, text, at_ms)
             VALUES (${input.id}, ${input.threadId}, ${input.role}, ${input.text}, ${at})
             ON CONFLICT (thread_id, id) DO NOTHING`.raw
           if (changed(inserted) > 0) {
-            yield* sql`UPDATE memory_threads
+            try sql`UPDATE memory_threads
               SET updated_at_ms = ${Dialect.greatest(sql)}(updated_at_ms, ${at})
               WHERE thread_id = ${input.threadId}`
             return { threadId: input.threadId, id: input.id, role: input.role, text: input.text, at }
           }
-          const existing = yield* sql<MessageRow>`SELECT ${messageColumns}
+          const existing = try sql<MessageRow>`SELECT ${messageColumns}
             FROM memory_messages
             WHERE thread_id = ${input.threadId} AND id = ${input.id}
             LIMIT 1`
           const message = existing[0]
           if (message === undefined) {
-            return yield* Effect.fail(error("store", "existing memory message could not be read back"))
+            throw error("store", "existing memory message could not be read back")
           }
           const conflict = message.role !== input.role
             ? "role"
@@ -188,7 +193,7 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
             ? "at"
             : undefined
           if (conflict !== undefined) {
-            return yield* Effect.fail(
+            return try Effect.fail(
               error(
                 "idempotency_conflict",
                 `message id "${input.id}" already exists in thread "${input.threadId}" with different ${conflict}`,
@@ -204,29 +209,29 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
             text: message.text,
             at: Number(message.at_ms)
           }
-        })
+        }
       ).pipe(Effect.mapError(storeError("could not append memory message")))
-    })
+    }
 
   // Keep the explicit-timestamp API and its strict validation unchanged.
   const appendMessage: Service["appendMessage"] = (input) =>
     validateTime(input.at, "message at", ["at"]).pipe(Effect.andThen(appendMessageOnce(input)), Effect.asVoid)
 
   const listMessages: Service["listMessages"] = (input) =>
-    Effect.gen(function*() {
-      yield* validateNonEmpty(input.threadId, "threadId", ["threadId"])
-      const limit = yield* validateLimit(input.limit, "listMessages")
+    effect {
+      try validateNonEmpty(input.threadId, "threadId", ["threadId"])
+      const limit = try validateLimit(input.limit, "listMessages")
       if (limit === 0) return []
       const conditions: Array<Fragment> = [sql`thread_id = ${input.threadId}`]
       if (input.cursor !== undefined) {
-        yield* validateTime(input.cursor.at, "message cursor at", ["cursor", "at"])
-        yield* validateNonEmpty(input.cursor.id, "message cursor id", ["cursor", "id"])
+        try validateTime(input.cursor.at, "message cursor at", ["cursor", "at"])
+        try validateNonEmpty(input.cursor.id, "message cursor id", ["cursor", "id"])
         conditions.push(
           sql`(at_ms > ${input.cursor.at} OR (at_ms = ${input.cursor.at} AND id > ${input.cursor.id}))`
         )
       }
       const bound = limit === undefined ? sql.literal("") : sql`LIMIT ${limit}`
-      const rows = yield* sql<MessageRow>`SELECT ${messageColumns}
+      const rows = try sql<MessageRow>`SELECT ${messageColumns}
         FROM memory_messages
         WHERE ${sql.and(conditions)}
         ORDER BY at_ms, id
@@ -238,22 +243,22 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
         text: row.text,
         at: Number(row.at_ms)
       }))
-    })
+    }
 
   const countMessages: Service["countMessages"] = (input) =>
-    Effect.gen(function*() {
-      yield* validateNonEmpty(input.threadId, "threadId", ["threadId"])
-      const rows = yield* sql<{ readonly count: number }>`
+    effect {
+      try validateNonEmpty(input.threadId, "threadId", ["threadId"])
+      const rows = try sql<{ readonly count: number }>`
         SELECT count(*) AS count FROM memory_messages WHERE thread_id = ${input.threadId}
       `.pipe(Effect.mapError(storeError("could not count memory messages")))
       // An aggregate without GROUP BY always returns exactly one row.
       return Number(rows[0]!.count)
-    })
+    }
 
   const messageStats: Service["messageStats"] = (input) =>
-    Effect.gen(function*() {
-      yield* validateNonEmpty(input.threadId, "threadId", ["threadId"])
-      const rows = yield* sql<{ readonly count: number; readonly code_points: number; readonly bytes: number }>`
+    effect {
+      try validateNonEmpty(input.threadId, "threadId", ["threadId"])
+      const rows = try sql<{ readonly count: number; readonly code_points: number; readonly bytes: number }>`
         SELECT count(*) AS count,
           COALESCE(SUM(length(text)), 0) AS code_points,
           COALESCE(SUM(${
@@ -264,19 +269,19 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
       // An aggregate without GROUP BY always returns exactly one row; COALESCE fills empty sums.
       const row = rows[0]!
       return { messages: Number(row.count), codePoints: Number(row.code_points), bytes: Number(row.bytes) }
-    })
+    }
 
   const deleteMessageRows = (threadId: string, ids: ReadonlyArray<string>) =>
-    Effect.gen(function*() {
+    effect {
       let deleted = 0
       for (let offset = 0; offset < ids.length; offset += DELETE_MESSAGES_CHUNK_SIZE) {
         const chunk = ids.slice(offset, offset + DELETE_MESSAGES_CHUNK_SIZE)
-        const result = yield* sql`DELETE FROM memory_messages
+        const result = try sql`DELETE FROM memory_messages
           WHERE thread_id = ${threadId} AND ${sql.in("id", chunk)}`.raw
         deleted += changed(result)
       }
       return deleted
-    })
+    }
 
   const listThreadIds: Service["listThreadIds"] = sql<{ readonly thread_id: string }>`
     SELECT thread_id FROM memory_threads ORDER BY created_at_ms, thread_id
@@ -286,29 +291,29 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
   )
 
   const deleteMessages: Service["deleteMessages"] = (input) =>
-    Effect.gen(function*() {
-      yield* validateNonEmpty(input.threadId, "threadId", ["threadId"])
+    effect {
+      try validateNonEmpty(input.threadId, "threadId", ["threadId"])
       const ids = Array.from(new Set(input.ids))
       if (ids.length === 0) {
         return 0
       }
-      return yield* database.write(deleteMessageRows(input.threadId, ids)).pipe(
+      return try database.write(deleteMessageRows(input.threadId, ids)).pipe(
         Effect.mapError(storeError("could not delete memory messages"))
       )
-    })
+    }
 
   const compactMessages: Service["compactMessages"] = (input) => {
     // Capture scalar payloads now so caller mutation cannot change a suspended write.
     const threadId = input.threadId
     const summary = { ...input.summary }
     const sources = input.sourceMessages.map((message) => ({ ...message }))
-    return Effect.gen(function*() {
-      yield* validateNonEmpty(threadId, "threadId", ["threadId"])
-      yield* validateNonEmpty(summary.id, "summary id", ["summary", "id"])
-      yield* validateNonEmpty(summary.role, "summary role", ["summary", "role"])
-      yield* validateTime(summary.at, "summary at", ["summary", "at"])
+    return effect {
+      try validateNonEmpty(threadId, "threadId", ["threadId"])
+      try validateNonEmpty(summary.id, "summary id", ["summary", "id"])
+      try validateNonEmpty(summary.role, "summary role", ["summary", "role"])
+      try validateTime(summary.at, "summary at", ["summary", "at"])
       if (summary.threadId !== threadId) {
-        return yield* Effect.fail(
+        return try Effect.fail(
           error(
             "invalid_argument",
             "summary threadId must match the compacted thread",
@@ -318,7 +323,7 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
         )
       }
       if (sources.some((message) => message.threadId !== threadId)) {
-        return yield* Effect.fail(
+        return try Effect.fail(
           error("invalid_argument", "source threadId must match the compacted thread", undefined, ["sourceMessages"])
         )
       }
@@ -326,13 +331,13 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
       if (ids.length === 0) {
         return 0
       }
-      return yield* database.write(
-        Effect.gen(function*() {
+      return try database.write(
+        effect {
           // Preserve the existing-summary error even on a retry whose sources are gone.
-          const existing = yield* sql<MessageRow>`SELECT ${messageColumns}
+          const existing = try sql<MessageRow>`SELECT ${messageColumns}
             FROM memory_messages WHERE thread_id = ${threadId} AND id = ${summary.id}`
           if (existing.length > 0) {
-            return yield* Effect.fail(
+            return try Effect.fail(
               error(
                 "idempotency_conflict",
                 `summary id "${summary.id}" already exists`,
@@ -343,7 +348,7 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
           }
           for (let offset = 0; offset < sources.length; offset += DELETE_MESSAGES_CHUNK_SIZE) {
             const chunk = sources.slice(offset, offset + DELETE_MESSAGES_CHUNK_SIZE)
-            const rows = yield* sql<MessageRow>`SELECT ${messageColumns}
+            const rows = try sql<MessageRow>`SELECT ${messageColumns}
               FROM memory_messages WHERE thread_id = ${threadId} AND ${
               sql.in("id", chunk.map((message) => message.id))
             }`
@@ -354,7 +359,7 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
                 row === undefined || row.role !== source.role || row.text !== source.text ||
                 Number(row.at_ms) !== source.at
               ) {
-                return yield* Effect.fail(
+                return try Effect.fail(
                   error(
                     "compaction_conflict",
                     `source message "${source.id}" changed or disappeared before compaction`,
@@ -365,12 +370,12 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
               }
             }
           }
-          yield* sql`INSERT INTO memory_messages (id, thread_id, role, text, at_ms)
+          try sql`INSERT INTO memory_messages (id, thread_id, role, text, at_ms)
             VALUES (${summary.id}, ${summary.threadId}, ${summary.role}, ${summary.text}, ${summary.at})`
-          return yield* deleteMessageRows(threadId, ids)
-        })
+          return try deleteMessageRows(threadId, ids)
+        }
       ).pipe(Effect.mapError(storeError("could not compact memory history")))
-    })
+    }
   }
 
   return {

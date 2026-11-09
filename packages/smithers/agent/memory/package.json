@@ -62,8 +62,8 @@
       "default": "./.vibelang/js/src/Flows.js"
     },
     "./Maintenance": {
-      "types": "./src/Maintenance.ts",
-      "vibelang-source": "./src/Maintenance.ts",
+      "types": "./.vibe/declarations/Maintenance.d.vibe.ts",
+      "vibelang-source": "./src/Maintenance.vibe",
       "default": "./.vibelang/js/src/Maintenance.js"
     },
     "./MemoryError": {
@@ -72,8 +72,8 @@
       "default": "./.vibelang/js/src/MemoryError.js"
     },
     "./MemoryStore": {
-      "types": "./src/MemoryStore.ts",
-      "vibelang-source": "./src/MemoryStore.ts",
+      "types": "./.vibe/declarations/MemoryStore.d.vibe.ts",
+      "vibelang-source": "./src/MemoryStore.vibe",
       "default": "./.vibelang/js/src/MemoryStore.js"
     },
     "./MemoryTrellis": {
@@ -92,8 +92,8 @@
       "default": "./.vibelang/js/src/Namespace.js"
     },
     "./Opening": {
-      "types": "./src/Opening.ts",
-      "vibelang-source": "./src/Opening.ts",
+      "types": "./.vibe/declarations/Opening.d.vibe.ts",
+      "vibelang-source": "./src/Opening.vibe",
       "default": "./.vibelang/js/src/Opening.js"
     },
     "./Recall": {
@@ -102,8 +102,8 @@
       "default": "./.vibelang/js/src/Recall.js"
     },
     "./RecallFts": {
-      "types": "./src/RecallFts.ts",
-      "vibelang-source": "./src/RecallFts.ts",
+      "types": "./.vibe/declarations/RecallFts.d.vibe.ts",
+      "vibelang-source": "./src/RecallFts.vibe",
       "default": "./.vibelang/js/src/RecallFts.js"
     },
     "./RecallKeyword": {

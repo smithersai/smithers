@@ -105,11 +105,11 @@ const securityReview = Smithers.SecurityReview({
         "A supersession edge or FTS or vector row written across namespaces."
       ],
       paths: [
-        "src/internal/Notes.ts",
-        "src/internal/Facts.ts",
-        "src/internal/Threads.ts",
+        "src/internal/Notes.vibe",
+        "src/internal/Facts.vibe",
+        "src/internal/Threads.vibe",
         "src/internal/Store.vibe",
-        "src/MemoryStore.ts"
+        "src/MemoryStore.vibe"
       ]
     },
     {
@@ -121,7 +121,7 @@ const securityReview = Smithers.SecurityReview({
         "sql.literal or sql(...) identifier interpolation built from anything other than a Kind literal or constant column list.",
         "An FTS5 MATCH operand not produced by literalFtsQuery, or a Postgres tsquery built with to_tsquery on raw text."
       ],
-      paths: ["src/internal/**", "src/RecallFts.ts", "src/RecallKeyword.vibe", "src/RecallSemantic.vibe"]
+      paths: ["src/internal/**", "src/RecallFts.vibe", "src/RecallKeyword.vibe", "src/RecallSemantic.vibe"]
     },
     {
       id: "recalled-memory-fence",
@@ -147,7 +147,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Recall.vibe",
         "src/Flows.vibe",
         "src/RecallSemantic.vibe",
-        "src/internal/Search.ts"
+        "src/internal/Search.vibe"
       ]
     },
     {
@@ -171,7 +171,7 @@ const securityReview = Smithers.SecurityReview({
         "runRemember recording empty provenance, so a model-written fact is indistinguishable from an operator-written one.",
         "putFact replacing an existing fact key written by a different source without superseding or recording the prior author."
       ],
-      paths: ["src/Flows.vibe", "src/Namespace.vibe", "src/Recall.vibe", "src/internal/Facts.ts", "src/internal/Store.vibe"]
+      paths: ["src/Flows.vibe", "src/Namespace.vibe", "src/Recall.vibe", "src/internal/Facts.vibe", "src/internal/Store.vibe"]
     },
     {
       id: "ttl-and-retention",
@@ -184,8 +184,8 @@ const securityReview = Smithers.SecurityReview({
         "Expired fact deletion that leaves its FTS or vector projection behind."
       ],
       paths: [
-        "src/internal/Facts.ts",
-        "src/Maintenance.ts",
+        "src/internal/Facts.vibe",
+        "src/Maintenance.vibe",
         "src/Flows.vibe",
         "src/RecallSemantic.vibe",
         "src/internal/Fts.vibe"

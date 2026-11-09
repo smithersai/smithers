@@ -9,7 +9,7 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import type { DatabaseService } from "../Database.vibe"
 import type { MemoryError } from "../MemoryError.vibe"
-import type { Fact, FtsRow, ListFactsInput, ListNotesInput, Note, SearchRow, Service } from "../MemoryStore.ts"
+import type { Fact, FtsRow, ListFactsInput, ListNotesInput, Note, SearchRow, Service } from "../MemoryStore.vibe"
 import * as Namespace from "../Namespace.vibe"
 import { compareText } from "./Canonical.ts"
 import { retainedTags, searchableText } from "./FactProjection.ts"
@@ -85,11 +85,11 @@ export const make = (
   // when each side really returns `limit` matches, which is why the fact side
   // pages the same way `readNotes` does instead of overscanning a window.
   const searchRows: Service["searchRows"] = (input) =>
-    Effect.gen(function*() {
-      const limit = yield* validateLimit(input.limit, "searchRows")
+    effect {
+      const limit = try validateLimit(input.limit, "searchRows")
       if (limit === 0) return []
-      const { bank, namespace } = yield* resolveNamespace(input.namespace)
-      yield* validateRecords(input.records, "searchRows")
+      const { bank, namespace } = try resolveNamespace(input.namespace)
+      try validateRecords(input.records, "searchRows")
       const tagFiltered = input.tagGroups !== undefined
       const matchesTags = tagMatcher(input)
       const toFactRow = (fact: Fact): SearchRow => factSearchRow(bank, fact)
@@ -100,9 +100,9 @@ export const make = (
         }),
         ...(input.prefix === undefined ? {} : { prefix: input.prefix })
       }
-      const readFactRows = Effect.gen(function*() {
+      const readFactRows = effect {
         if (limit === undefined || !tagFiltered) {
-          const facts = yield* readFacts(
+          const facts = try readFacts(
             { ...factQuery, ...(limit === undefined ? {} : { limit }) },
             true
           )
@@ -110,15 +110,15 @@ export const make = (
           return tagFiltered ? rows.filter((row) => matchesTags(row.tags)) : rows
         }
         const pageSize = Math.min(NOTE_PAGE_SIZE, Math.max(limit, MIN_NOTE_PAGE_SIZE))
-        const facts = yield* collectUntil(
+        const facts = try collectUntil(
           limit,
           pageSize,
           (size, after: Fact | undefined) => readFacts({ ...factQuery, limit: size }, true, after),
           (facts) => Effect.succeed(facts.filter((fact) => matchesTags(toFactRow(fact).tags)))
         )
         return facts.map(toFactRow)
-      })
-      const [factRows, notes] = yield* Effect.all([
+      }
+      const [factRows, notes] = try Effect.all([
         readFactRows,
         readNotes({
           ...input,
@@ -132,29 +132,29 @@ export const make = (
       const rows = [...factRows, ...notes.map((note) => noteSearchRow(bank, note))]
         .sort((left, right) => right.updatedAtMs - left.updatedAtMs || compareText(left.key, right.key))
       return limit === undefined ? rows : rows.slice(0, limit)
-    })
+    }
 
   const enableFts: Service["enableFts"] = (kind) =>
-    Effect.gen(function*() {
-      const decodedKind = yield* Schema.decodeUnknownEffect(Namespace.Kind)(kind).pipe(
+    effect {
+      const decodedKind = try Schema.decodeUnknownEffect(Namespace.Kind)(kind).pipe(
         Effect.mapError(() => error("invalid_namespace", "FTS namespace kind is invalid"))
       )
-      const now = yield* Clock.currentTimeMillis
-      yield* database.write(Fts.enableFts(database, decodedKind, now)).pipe(
+      const now = try Clock.currentTimeMillis
+      try database.write(Fts.enableFts(database, decodedKind, now)).pipe(
         Effect.mapError(storeError(`could not enable FTS for "${decodedKind}"`))
       )
-    })
+    }
 
   const searchFts: Service["searchFts"] = (input) =>
-    Effect.gen(function*() {
-      const limit = (yield* validateLimit(input.limit, "searchFts")) ?? 20
-      const { bank, namespace } = yield* resolveNamespace(input.namespace)
-      yield* validateRecords(input.records, "searchFts")
-      const enabled = yield* Fts.isFtsEnabled(database, namespace.kind).pipe(
+    effect {
+      const limit = (try validateLimit(input.limit, "searchFts")) ?? 20
+      const { bank, namespace } = try resolveNamespace(input.namespace)
+      try validateRecords(input.records, "searchFts")
+      const enabled = try Fts.isFtsEnabled(database, namespace.kind).pipe(
         Effect.mapError(storeError("could not inspect FTS enablement"))
       )
       if (!enabled) {
-        return yield* Effect.fail(
+        return try Effect.fail(
           error(
             "fts_not_enabled",
             `FTS is not enabled for namespace kind "${namespace.kind}"; call enableFts first`
@@ -183,7 +183,7 @@ export const make = (
       let offset = 0
       // BM25 ranks depend on the corpus. Keep OFFSET rank pages in one
       // transaction so concurrent writes cannot move matches between pages.
-      return yield* sql.withTransaction(collectUntil(
+      return try sql.withTransaction(collectUntil(
         limit,
         pageSize,
         (size) =>
@@ -196,13 +196,13 @@ export const make = (
             Effect.mapError(storeError("memory FTS query failed"))
           ),
         (matches) =>
-          Effect.gen(function*() {
+          effect {
             const eligible = identities === undefined ?
               matches :
               matches.filter((match) => identities.has(`${match.record_kind}\0${match.record_id}`))
             const factKeys = eligible.filter((match) => match.record_kind === "fact").map((match) => match.record_id)
             const noteIds = eligible.filter((match) => match.record_kind === "note").map((match) => match.record_id)
-            const [facts, notes] = yield* Effect.all([
+            const [facts, notes] = try Effect.all([
               factKeys.length === 0
                 ? Effect.succeed<ReadonlyArray<Fact>>([])
                 : readFacts({
@@ -236,9 +236,9 @@ export const make = (
               }
             }
             return ordered
-          })
+          }
       )).pipe(Effect.mapError(storeError("memory FTS query failed")))
-    })
+    }
 
   return { searchRows, enableFts, searchFts }
 }

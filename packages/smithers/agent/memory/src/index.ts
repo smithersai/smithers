@@ -35,7 +35,7 @@ export * as Flows from "./Flows.vibe"
 /**
  * @category maintenance @since 0.1.0
  */
-export * as Maintenance from "./Maintenance.ts"
+export * as Maintenance from "./Maintenance.vibe"
 
 /**
  * @category errors @since 0.1.0
@@ -45,7 +45,7 @@ export * as MemoryError from "./MemoryError.vibe"
 /**
  * @category services @since 0.1.0
  */
-export * as MemoryStore from "./MemoryStore.ts"
+export * as MemoryStore from "./MemoryStore.vibe"
 
 /**
  * @category patterns
@@ -72,7 +72,7 @@ export * as Recall from "./Recall.vibe"
 /**
  * @category recall @since 0.1.0
  */
-export * as RecallFts from "./RecallFts.ts"
+export * as RecallFts from "./RecallFts.vibe"
 
 /**
  * @category recall @since 0.1.0
@@ -104,4 +104,4 @@ export * as WithMemory from "./WithMemory.vibe"
  * @category services
  * @since 1.0.0
  */
-export * as Opening from "./Opening.ts"
+export * as Opening from "./Opening.vibe"

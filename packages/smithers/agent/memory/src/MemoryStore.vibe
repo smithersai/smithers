@@ -14,12 +14,12 @@ import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
 import type { DatabaseService } from "./Database.vibe"
-import * as Facts from "./internal/Facts.ts"
+import * as Facts from "./internal/Facts.vibe"
 import { instrument } from "./internal/Instrument.vibe"
-import * as Notes from "./internal/Notes.ts"
-import * as Search from "./internal/Search.ts"
+import * as Notes from "./internal/Notes.vibe"
+import * as Search from "./internal/Search.vibe"
 import { error, storeError } from "./internal/Store.vibe"
-import * as Threads from "./internal/Threads.ts"
+import * as Threads from "./internal/Threads.vibe"
 import type { MemoryError } from "./MemoryError.vibe"
 import * as Migrations from "./Migrations.vibe"
 import type * as Namespace from "./Namespace.vibe"
@@ -488,22 +488,21 @@ export const make: Effect.Effect<
   Service,
   MemoryError,
   SecureRandom.SecureRandom | DurableWriter | SqlClient.SqlClient
-> = Effect
-  .gen(function*() {
-    const sql = yield* Effect.service(SqlClient.SqlClient)
-    const writer = yield* DurableWriter
-    const crypto = yield* SecureRandom.SecureRandom
-    const database: DatabaseService = { sql, write: writer.write }
-    yield* Migrations.run.pipe(Effect.mapError(storeError("memory migration failed")))
-    const facts = Facts.make(database)
-    const notes = Notes.make(database)
-    return MemoryStore.of(instrument({
-      ...facts.service,
-      ...Threads.make(database, crypto),
-      ...notes.service,
-      ...Search.make(database, { readFacts: facts.readFacts, readNotes: notes.readNotes })
-    }))
-  })
+> = effect {
+  const sql = try Effect.service(SqlClient.SqlClient)
+  const writer = try DurableWriter
+  const crypto = try SecureRandom.SecureRandom
+  const database: DatabaseService = { sql, write: writer.write }
+  try Migrations.run.pipe(Effect.mapError(storeError("memory migration failed")))
+  const facts = Facts.make(database)
+  const notes = Notes.make(database)
+  return MemoryStore.of(instrument({
+    ...facts.service,
+    ...Threads.make(database, crypto),
+    ...notes.service,
+    ...Search.make(database, { readFacts: facts.readFacts, readNotes: notes.readNotes })
+  }))
+}
 
 /**
  * Constructs an unavailable store stub, optionally overriding operations.

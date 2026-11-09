@@ -113,9 +113,9 @@ export const select = <E, R>(options: {
   readonly maxCandidates?: number
   readonly tokens?: (rendered: string) => number
 }): Effect.Effect<Selection, E, R> =>
-  Effect.gen(function*() {
+  effect {
     const items = shortlist(options.query, options.candidates, options.maxCandidates)
-    const verdicts = items.length === 0 ? [] : yield* options.judge(items)
+    const verdicts = items.length === 0 ? [] : try options.judge(items)
     const seen = new Set<number>()
     const ranked = verdicts.filter(({ index, unnecessary, withheld }) => {
       if (
@@ -148,7 +148,7 @@ export const select = <E, R>(options: {
       skillsInserted,
       bytes: rows.length === 0 ? 0 : encoder.encode(render(rows)).byteLength
     }
-  })
+  }
 
 /**
  * Host-owned sources. A future wiki adapter joins here; no filesystem is assumed.
@@ -167,15 +167,15 @@ export class Sources extends Context.Service<Sources, {
 export const layerSources = (banks: ReadonlyArray<string>, skills: ReadonlyArray<Candidate> = []) =>
   Layer.effect(
     Sources,
-    Effect.gen(function*() {
-      const recall = yield* Recall.Recall
+    effect {
+      const recall = try Recall.Recall
       return {
         recall: (query: string) =>
           recall.recall({ banks, query, maxTokens: 16_384 }).pipe(
             Effect.map((rows) => [...rows.map((row): Candidate => ({ ...row, kind: "memory" })), ...skills])
           )
       }
-    })
+    }
   )
 
 /**

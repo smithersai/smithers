@@ -4,9 +4,9 @@ import { Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
-import * as Maintenance from "../src/Maintenance.ts"
+import * as Maintenance from "../src/Maintenance.vibe"
 import { MemoryError } from "../src/MemoryError.vibe"
-import * as MemoryStore from "../src/MemoryStore.ts"
+import * as MemoryStore from "../src/MemoryStore.vibe"
 import * as TestMemory from "../src/test/TestMemory.ts"
 
 const namespace = { kind: "flow", id: "maintenance" } as const

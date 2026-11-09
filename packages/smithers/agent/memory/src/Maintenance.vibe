@@ -9,7 +9,7 @@ import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { MemoryError } from "./MemoryError.vibe"
-import { MemoryStore, type Message, type Service } from "./MemoryStore.ts"
+import { MemoryStore, type Message, type Service } from "./MemoryStore.vibe"
 
 /**
  * Result of one TTL garbage-collection pass.
@@ -110,19 +110,19 @@ const forEachPage = <E, R>(
   threadId: string,
   visit: (page: ReadonlyArray<Message>) => Effect.Effect<boolean, E, R>
 ): Effect.Effect<void, MemoryError | E, R> =>
-  Effect.gen(function*() {
+  effect {
     let cursor: { readonly at: number; readonly id: string } | undefined
     while (true) {
-      const page = yield* store.listMessages({
+      const page = try store.listMessages({
         threadId,
         limit: MESSAGE_PAGE_SIZE,
         ...(cursor === undefined ? {} : { cursor })
       })
       const last = page.at(-1)
-      if (last === undefined || !(yield* visit(page)) || page.length < MESSAGE_PAGE_SIZE) return
+      if (last === undefined || !(try visit(page)) || page.length < MESSAGE_PAGE_SIZE) return
       cursor = { at: last.at, id: last.id }
     }
-  })
+  }
 
 /**
  * Deletes the oldest messages in every thread until the configured
@@ -134,41 +134,37 @@ const forEachPage = <E, R>(
 export const limitHistory = (
   options: TokenLimiterOptions
 ): Effect.Effect<TokenLimiterResult, MemoryError, MemoryStore> =>
-  Effect.gen(function*() {
+  effect {
     if (!Number.isFinite(options.maxTokens) || options.maxTokens < 0) {
-      return yield* Effect.fail(
-        new MemoryError({
-          code: "invalid_argument",
-          message: "maxTokens must be a non-negative finite number",
-          path: ["maxTokens"]
-        })
-      )
+      throw new MemoryError({
+        code: "invalid_argument",
+        message: "maxTokens must be a non-negative finite number",
+        path: ["maxTokens"]
+      })
     }
     const charsPerToken = options.charsPerToken ?? 4
     if (!Number.isFinite(charsPerToken) || charsPerToken <= 0) {
-      return yield* Effect.fail(
-        new MemoryError({
-          code: "invalid_argument",
-          message: "charsPerToken must be a positive finite number",
-          path: ["charsPerToken"]
-        })
-      )
+      throw new MemoryError({
+        code: "invalid_argument",
+        message: "charsPerToken must be a positive finite number",
+        path: ["charsPerToken"]
+      })
     }
-    const store = yield* MemoryStore
-    const threadIds = yield* store.listThreadIds
-    const deleted = yield* Effect.forEach(
+    const store = try MemoryStore
+    const threadIds = try store.listThreadIds
+    const deleted = try Effect.forEach(
       threadIds,
       (threadId) =>
-        Effect.gen(function*() {
+        effect {
           const budget = options.maxTokens * charsPerToken
           // JavaScript length lies between SQLite's code points and bytes, so
           // the SQL aggregate settles every thread that fits by bytes, and
           // every all-ASCII thread exactly, without reading message bodies.
-          const stats = yield* store.messageStats({ threadId })
+          const stats = try store.messageStats({ threadId })
           if (stats.bytes <= budget) return 0
           let chars = stats.codePoints === stats.bytes ? stats.bytes : 0
           if (stats.codePoints !== stats.bytes) {
-            yield* forEachPage(store, threadId, (page) =>
+            try forEachPage(store, threadId, (page) =>
               Effect.sync(() => {
                 chars += page.reduce((total, message) => total + message.text.length, 0)
                 return true
@@ -176,23 +172,23 @@ export const limitHistory = (
           }
           let deleted = 0
           if (chars <= budget) return deleted
-          yield* forEachPage(store, threadId, (page) =>
-            Effect.gen(function*() {
+          try forEachPage(store, threadId, (page) =>
+            effect {
               const ids: Array<string> = []
               for (const message of page) {
                 if (chars <= budget) break
                 ids.push(message.id)
                 chars -= message.text.length
               }
-              deleted += yield* store.deleteMessages({ threadId, ids })
+              deleted += try store.deleteMessages({ threadId, ids })
               return chars > budget
-            }))
+            })
           return deleted
-        }),
+        },
       { concurrency: 1 }
     )
     return { deletedMessages: deleted.reduce((total, count) => total + count, 0) }
-  })
+  }
 
 /**
  * Input supplied to an injected summarizer.
@@ -267,29 +263,25 @@ const DEFAULT_MAX_MESSAGES_PER_SUMMARY = 1024
 export const compact = <E, R>(
   options: CompactionOptions<E, R>
 ): Effect.Effect<CompactionResult, E | MemoryError, R | MemoryStore> =>
-  Effect.gen(function*() {
+  effect {
     const keepRecent = options.keepRecent ?? 2
     if (!Number.isSafeInteger(keepRecent) || keepRecent < 0) {
-      return yield* Effect.fail(
-        new MemoryError({
-          code: "invalid_argument",
-          message: "keepRecent must be a non-negative safe integer",
-          path: ["keepRecent"]
-        })
-      )
+      throw new MemoryError({
+        code: "invalid_argument",
+        message: "keepRecent must be a non-negative safe integer",
+        path: ["keepRecent"]
+      })
     }
     const maxMessagesPerSummary = options.maxMessagesPerSummary ?? DEFAULT_MAX_MESSAGES_PER_SUMMARY
     if (!Number.isSafeInteger(maxMessagesPerSummary) || maxMessagesPerSummary < 2) {
-      return yield* Effect.fail(
-        new MemoryError({
-          code: "invalid_argument",
-          message: "maxMessagesPerSummary must be a safe integer of at least 2",
-          path: ["maxMessagesPerSummary"]
-        })
-      )
+      throw new MemoryError({
+        code: "invalid_argument",
+        message: "maxMessagesPerSummary must be a safe integer of at least 2",
+        path: ["maxMessagesPerSummary"]
+      })
     }
-    const store = yield* MemoryStore
-    const threadIds = options.threadId === undefined ? yield* store.listThreadIds : [options.threadId]
+    const store = try MemoryStore
+    const threadIds = options.threadId === undefined ? try store.listThreadIds : [options.threadId]
     let compactedThreads = 0
     let deletedMessages = 0
     for (const threadId of threadIds) {
@@ -297,11 +289,11 @@ export const compact = <E, R>(
       // carries the previous window's summary. The summary is carried
       // explicitly: it keeps the oldest source timestamp, but under a tied
       // timestamp its id may sort after messages it did not summarize.
-      let unsummarized = (yield* store.countMessages({ threadId })) - keepRecent
+      let unsummarized = (try store.countMessages({ threadId })) - keepRecent
       let carried: Message | undefined
       while (unsummarized > 0) {
         const take = Math.min(maxMessagesPerSummary - (carried === undefined ? 0 : 1), unsummarized)
-        const page = yield* store.listMessages({
+        const page = try store.listMessages({
           threadId,
           limit: take + (carried === undefined ? 0 : 1)
         })
@@ -312,21 +304,23 @@ export const compact = <E, R>(
         const oldMessages = Object.freeze(
           (carried === undefined ? sources : [carried, ...sources]).map((message) => Object.freeze({ ...message }))
         )
-        const summaryText = yield* options.summarizer.summarize({
+        const summaryText = try options.summarizer.summarize({
           threadId,
           messages: oldMessages,
           rendered: render(oldMessages)
         })
         const summaryId = options.makeSummaryId?.(threadId, oldMessages) ??
           `summary-${
-            Digest.digest(Digest.canonical({ threadId, messageIds: oldMessages.map((message) => message.id) }))
+            try Effect.orDie(Effect.try(() =>
+              Digest.digest(Digest.canonical({ threadId, messageIds: oldMessages.map((message) => message.id) }))
+            ))
           }`
         const summary: Message = { threadId, id: summaryId, role: "system", text: summaryText, at: oldMessages[0]!.at }
-        deletedMessages += yield* store.compactMessages({ threadId, summary, sourceMessages: oldMessages })
+        deletedMessages += try store.compactMessages({ threadId, summary, sourceMessages: oldMessages })
         if (carried === undefined) compactedThreads += 1
         unsummarized -= sources.length
         carried = summary
       }
     }
     return { compactedThreads, deletedMessages }
-  })
+  }

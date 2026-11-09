@@ -52,7 +52,7 @@ import { canonicalJson } from "./internal/Canonical.ts"
 import { digest } from "./internal/Digest.ts"
 import { resolveBanks } from "./internal/ResolveNamespace.vibe"
 import type { MemoryError } from "./MemoryError.vibe"
-import * as MemoryStore from "./MemoryStore.ts"
+import * as MemoryStore from "./MemoryStore.vibe"
 import * as Recall from "./Recall.vibe"
 import * as SnapshotRecorder from "./SnapshotRecorder.vibe"
 
@@ -166,6 +166,7 @@ const bounded = (
  *
  * @category conversions
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const render = (rows: ReadonlyArray<SnapshotRecorder.Row>): string =>
   rows.length === 0

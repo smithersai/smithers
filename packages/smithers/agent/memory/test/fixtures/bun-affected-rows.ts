@@ -5,7 +5,7 @@ import * as DurableWriter from "@smthrs/database/DurableWriter"
 import { Effect, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { createHash, randomBytes } from "node:crypto"
-import * as MemoryStore from "../../src/MemoryStore.ts"
+import * as MemoryStore from "../../src/MemoryStore.vibe"
 
 const crypto = Layer.succeed(SecureRandom.SecureRandom)(SecureRandom.make((size) => new Uint8Array(randomBytes(size))))
 

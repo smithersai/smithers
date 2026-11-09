@@ -7,7 +7,7 @@
 import * as Effect from "effect/Effect"
 import type * as SqlClient from "effect/sql/SqlClient"
 import { MemoryError } from "../MemoryError.vibe"
-import type { Fact, ListNotesInput, Note, NoteStatus, Provenance, SearchRowsInput, Thread } from "../MemoryStore.ts"
+import type { Fact, ListNotesInput, Note, NoteStatus, Provenance, SearchRowsInput, Thread } from "../MemoryStore.vibe"
 import * as Namespace from "../Namespace.vibe"
 
 /**

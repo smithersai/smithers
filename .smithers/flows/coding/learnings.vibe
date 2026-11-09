@@ -2,7 +2,7 @@
  * notes a person accepts (`memory notes status <id> accepted`) reach planning.
  */
 import * as MemoryMine from "@smthrs/agent/MemoryMine"
-import * as MemoryStore from "../../../packages/smithers/agent/memory/src/MemoryStore.ts"
+import * as MemoryStore from "../../../packages/smithers/agent/memory/src/MemoryStore.vibe"
 import { digest } from "./learnings.trusted.ts"
 import type { Plan, Result } from "./schema.ts"
 

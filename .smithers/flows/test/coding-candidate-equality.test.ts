@@ -11,7 +11,7 @@ import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import * as MemoryStore from "../../../packages/smithers/agent/memory/src/MemoryStore.ts"
+import * as MemoryStore from "../../../packages/smithers/agent/memory/src/MemoryStore.vibe"
 import { checkDelegate, checkLayers } from "../coding/checks.vibe"
 import { correctionLayers, CorrectPlan } from "../coding/correction.vibe"
 import { NativeCoding } from "../coding/native.vibe"

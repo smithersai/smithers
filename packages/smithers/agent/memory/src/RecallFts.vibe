@@ -14,7 +14,7 @@ import type * as Layer from "effect/Layer"
 import * as FtsQuery from "./internal/FtsQuery.ts"
 import { resolveBanks } from "./internal/ResolveNamespace.vibe"
 import type * as MemoryError from "./MemoryError.vibe"
-import * as MemoryStore from "./MemoryStore.ts"
+import * as MemoryStore from "./MemoryStore.vibe"
 import * as Namespace from "./Namespace.vibe"
 import * as Recall from "./Recall.vibe"
 
@@ -31,13 +31,13 @@ import * as Recall from "./Recall.vibe"
 export const literalFtsQuery: (query: string) => string = FtsQuery.literalFtsQuery
 
 const run = (input: Recall.Input): Effect.Effect<Recall.Output, MemoryError.MemoryError, MemoryStore.MemoryStore> =>
-  Effect.gen(function*() {
-    const store = yield* MemoryStore.MemoryStore
+  effect {
+    const store = try MemoryStore.MemoryStore
     const query = literalFtsQuery(input.query)
-    const banks = yield* resolveBanks(input.banks)
+    const banks = try resolveBanks(input.banks)
     if (query.length === 0 || banks.length === 0) return []
     const requested = Recall.requestedRows(input.maxTokens)
-    const rows = yield* Effect.all(
+    const rows = try Effect.all(
       banks.map(({ namespace }) =>
         store.searchFts({
           namespace,
@@ -67,7 +67,7 @@ const run = (input: Recall.Input): Effect.Effect<Recall.Output, MemoryError.Memo
     }
     results.sort(Recall.compareResults)
     return Recall.capRecallResults(results.slice(0, requested), input.maxTokens)
-  })
+  }
 
 /**
  * Runs FTS recall against the supplied MemoryStore.

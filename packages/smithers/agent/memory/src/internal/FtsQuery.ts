@@ -11,6 +11,7 @@ import { wellFormed } from "./Digest.ts"
  *
  * @category queries
  * @since 1.0.0
+ * @throws {never}
  */
 export const ftsTerms = (query: string): ReadonlyArray<string> => {
   const trimmed = wellFormed(query).replaceAll("\0", " ").trim()

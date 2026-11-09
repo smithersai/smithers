@@ -110,6 +110,7 @@ const bounded = (rows, maxBytes) => {
  *
  * @category conversions
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const render = (rows) => rows.length === 0
     ? ""
