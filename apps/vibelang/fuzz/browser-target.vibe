@@ -4,8 +4,30 @@ import { run, Int, Text } from "./run.vibe"
 const Step = Schema.Struct({ op: Int, text: Text })
 const Input = Schema.Struct({ steps: Schema.Array(Step).check(Schema.isMinLength(1), Schema.isMaxLength(10)), phone: Schema.Boolean, reducedMotion: Schema.Boolean })
 
+const RETURNING = "localStorage.setItem('vibelang:toured', 'yes')"
+const AUTO_TOUR_HOLD_MS = 2_000
+
+/**
+ * A first visit to `/` starts the tour 1200 ms after boot, and the running tour consumes Ctrl+K (decision 0014).
+ * Targets that drive the palette and the account menu are returning visitors, so host load cannot move them into the tour.
+ */
+effect function returningVisitor(page: Page) {
+  try tryPromise(() => page.addInitScript(RETURNING))
+}
+
+/** The palette opens for a returning visitor whenever the key arrives, including after the first-visit tour's timer. */
+export effect function heldStartupTarget(page: Page) {
+  try returningVisitor(page)
+  try tryPromise(() => page.goto("/?agent=mock"))
+  try tryPromise(() => expect(page.getByRole("heading", { name: "VibeLang", exact: true })).toBeVisible())
+  try tryPromise(() => page.waitForTimeout(AUTO_TOUR_HOLD_MS))
+  try tryPromise(() => page.keyboard.press("ControlOrMeta+k"))
+  try tryPromise(() => expect(page.getByRole("dialog", { name: "Ask the agent" })).toBeVisible())
+}
+
 /** The actual built app, its real mock Factory, and native browser input. No request or DOM interception. */
 export effect function browserTarget(page: Page) {
+  try returningVisitor(page)
   return try run("browser/random-interactions", Input, ({ steps, phone, reducedMotion }) => effect {
     const errors: Array<string> = []
     const failed = (error: Error) => errors.push(error.name)
@@ -21,8 +43,13 @@ export effect function browserTarget(page: Page) {
       switch (step.op % 6) {
         case 0:
           try tryPromise(() => page.keyboard.press("ControlOrMeta+k"))
-          try tryPromise(() => expect(dialog).toBeVisible({ timeout: 20_000 }))
+          try tryPromise(() => expect(dialog).toBeVisible())
           try tryPromise(() => prompt.fill(step.text))
+          // A leading slash opens the command menu; the first Escape dismisses only that menu (decision 0023).
+          if (step.text.startsWith("/")) {
+            try tryPromise(() => page.keyboard.press("Escape"))
+            try tryPromise(() => expect(dialog).toBeVisible())
+          }
           try tryPromise(() => page.keyboard.press("Escape"))
           try tryPromise(() => expect(dialog).toBeHidden())
           break
@@ -136,6 +163,7 @@ const RoleInput = Schema.Struct({ role: Schema.Literals(["viewer", "new", "commu
 
 /** Native mock identity and grants UI: real accounts, flows, focus, role changes and accessible controls. */
 export effect function roleBrowserTarget(page: Page) {
+  try returningVisitor(page)
   return try run("browser/accounts-and-authority", RoleInput, ({ role, grant, cancel, maximize }) => effect {
     try tryPromise(() => page.goto("/?agent=mock"))
     const picker = try Effect.try(() => page.getByRole("combobox", { name: "Visit as" }))

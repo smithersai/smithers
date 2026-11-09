@@ -1,3 +1,4 @@
+import { Base64 } from "effect/encoding"
 import { HttpClient, HttpServerResponse } from "effect/http"
 import type { Repository } from "../worker/Issues.vibe"
 
@@ -36,7 +37,7 @@ export interface FakePull {
   created_at: string
   updated_at: string
   closed_at: string | null
-  files: Array<{ filename: string; status: "added" }>
+  files: Array<{ filename: string; status: "added" | "modified" }>
 }
 
 export interface Fake {
@@ -62,6 +63,11 @@ export interface Fake {
   endlessComments: boolean
   dropAssignees: boolean
   noMain: boolean
+  /** Repository text by path; a pull that changes one of these reports it as modified. */
+  files: Record<string, string>
+  /** Commit-pinned reads see this text: main advanced after the first read. */
+  pinnedText: string | undefined
+  contentStatus: number
 }
 
 function seedIssue(fake: Fake, number: number, state: "open" | "closed", labels: Array<string>, body: string, assignees: Array<{ id: number; login: string }>): void {
@@ -80,7 +86,7 @@ export function seed(): Fake {
     pulls: [], forks: {}, branches: { "o/r": { main: "a".repeat(40) } }, commits: {}, pullAdditions: {},
     writes: 0, nextId: 1000, nextIssue: 100, nextPull: 600, nextSha: 1,
     forbiddenNext: false, endlessIssues: false, endlessTimeline: false, endlessReviews: false, malformedIssues: false,
-    endlessComments: false, dropAssignees: false, noMain: false,
+    endlessComments: false, dropAssignees: false, noMain: false, files: {}, pinnedText: undefined, contentStatus: 200,
   }
   seedIssue(fake, 1, "open", [], "A plain issue", [])
   fake.comments[1] = [{ id: 900, node_id: "comment-900", body: "First note", user: { id: 8, login: "reviewer" }, created_at: "2026-01-02T00:00:00Z", updated_at: "2026-01-02T00:00:00Z", issue_url: `${API}/repos/o/r/issues/1` }]
@@ -252,7 +258,7 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
           state: "open", user: { id: 7, login: "fuzz" }, head: { ref: branch, sha },
           base: { ref: String(body?.base ?? "main"), sha: "a".repeat(40), repo: { default_branch: "main" } },
           changed_files: additions.length, created_at: "2026-01-03T00:00:00Z", updated_at: "2026-01-03T00:00:00Z", closed_at: null,
-          files: additions.map((filename) => ({ filename, status: "added" as const })),
+          files: additions.map((filename) => ({ filename, status: fake.files[filename] === undefined ? "added" as const : "modified" as const })),
         })
       })
     }
@@ -283,6 +289,15 @@ export function fakeClient(fake: Fake): HttpClient.HttpClient {
     if (commitOne && request.method === "GET") {
       const message = fake.commits[commitOne[3]!]
       return try (message === undefined ? jsonResponse(request, 404, { message: "Not Found" }) : jsonResponse(request, 200, { sha: commitOne[3], message, tree: { sha: "c".repeat(40) }, parents: [] }))
+    }
+    const contents = /^\/repos\/([^/]+)\/([^/]+)\/contents\/(.+)$/.exec(path)
+    if (contents && request.method === "GET") {
+      if (fake.contentStatus !== 200) return try jsonResponse(request, fake.contentStatus, { message: "Refused" })
+      const file = fake.files[contents[3]!]
+      if (file === undefined) return try jsonResponse(request, 404, { message: "Not Found" })
+      const pinned = /^[0-9a-f]{40}$/.test(url.searchParams.get("ref") ?? "") && fake.pinnedText !== undefined
+      const text = pinned ? fake.pinnedText! : file
+      return try jsonResponse(request, 200, { type: "file", encoding: "base64", content: Base64.encode(text), sha: `sha-${text.length}` })
     }
     if (path === "/graphql" && request.method === "POST") {
       const input = (body?.variables as { input: { branch: { repositoryNameWithOwner: string; branchName: string }; expectedHeadOid: string; message: { headline: string; body?: string }; fileChanges: { additions: Array<{ path: string; contents: string }> } } }).input
