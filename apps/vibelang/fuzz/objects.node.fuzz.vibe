@@ -1,0 +1,85 @@
+// A conversation's Durable Object body on the real Node SQLite adapter: posts, tours, tour controls, wiki pages and
+// alarms in any order, with a budget that admits or refuses. A fresh incarnation over the same storage agrees.
+import { it } from "@effect/vitest"
+import { TestNodeRuntime } from "@smthrs/platform-node"
+import { Unavailable } from "../src/core/Factory.vibe"
+import { touring } from "../src/core/flows.vibe"
+import { wikiPath } from "../src/core/wiki.vibe"
+import type { HistoryReader } from "../src/history/tools.vibe"
+import * as Objects from "../worker/Objects.vibe"
+import { run, same, Finding, Int, TextOrBoundary } from "./run.vibe"
+
+const unavailable = () => fail(new Unavailable({ reason: "injected history failure" }))
+const history: HistoryReader = { outline: unavailable, epic: unavailable, commit: unavailable, search: unavailable, plan: unavailable, start: unavailable, note: unavailable }
+const model = { model: undefined, unusable: "unset" }
+const POSTS = [null, "invalid", "empty", "too-long", "duplicate", "busy", "full"]
+const TOURS = [null, "busy", "not-replying", "full"]
+
+effect function storage() {
+  const raw = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+  return raw as unknown as Objects.Storage
+}
+
+const Step = Schema.Struct({
+  op: Schema.Literals(["post", "repost", "tour", "endTour", "pause", "resume", "seek", "wiki", "alarm", "dispatch"]),
+  pick: Int, text: TextOrBoundary, admit: Schema.Boolean,
+  page: Schema.Literals(["index", "rulings", "roadmap", "decisions/0015-fuzzing", "nope", ""]),
+})
+
+it.live("objects/conversation-host", () => run("objects/conversation-host", Schema.Array(Step).check(Schema.isMaxLength(14)), (steps) => effect {
+  const object = try storage()
+  const sequencer = try Objects.conversation(object)
+  const clients: Array<string> = []
+  for (const step of steps) {
+    const before = try sequencer.snapshot()
+    switch (step.op) {
+      case "post":
+      case "repost": {
+        const clientId = step.op === "repost" && clients.length > 0 ? clients[step.pick % clients.length]! : `c${step.pick}-${clients.length}`
+        const answer = try Objects.post("conv", object, sequencer, clientId, "Guest", step.text)
+        if (!POSTS.includes(answer)) throw new Finding({ report: "objects:40 !POSTS.includes(answer)" })
+        const posted = (try sequencer.snapshot()).entries.filter((entry) => entry.clientId === clientId)
+        if (answer === null && posted.length !== 1) throw new Finding({ report: "objects:42 answer === null && posted.length !== 1" })
+        if (posted.length > 1) throw new Finding({ report: "objects:43 posted.length > 1" })
+        if (answer === null) clients.push(clientId)
+        break
+      }
+      case "tour": {
+        const answer = try Objects.tour("conv", object, sequencer)
+        if (!TOURS.includes(answer)) throw new Finding({ report: "objects:49 !TOURS.includes(answer)" })
+        if (answer === null && touring(try sequencer.snapshot()) === "") throw new Finding({ report: "objects:50 answer === null && touring(try sequencer.snapshot()) === ''" })
+        break
+      }
+      case "endTour": {
+        const answer = try Objects.endTour("conv", object, sequencer)
+        if (!TOURS.includes(answer)) throw new Finding({ report: "objects:55 !TOURS.includes(answer)" })
+        if (answer === null && touring(try sequencer.snapshot()) !== "") throw new Finding({ report: "objects:56 answer === null && touring(try sequencer.snapshot()) !== ''" })
+        if ((answer === null) !== (touring(before) !== "")) throw new Finding({ report: "objects:57 (answer === null) !== (touring(before) !== '')" })
+        break
+      }
+      case "pause":
+      case "resume":
+      case "seek": {
+        try Objects.controlTour("conv", object, sequencer, step.op, 1 + step.pick % 10)
+        if (touring(before) === "" && (try sequencer.snapshot()).seq !== before.seq) throw new Finding({ report: "objects:64 touring(before) === '' && (try sequencer.snapshot()).seq !== before.seq" })
+        break
+      }
+      case "wiki": {
+        const answer = try Objects.openWiki("conv", object, sequencer, step.page)
+        if (answer !== null && answer !== "empty") throw new Finding({ report: "objects:69 answer !== null && answer !== 'empty'" })
+        if (answer === null && wikiPath(step.page) === undefined) throw new Finding({ report: "objects:70 answer === null && wikiPath(step.page) === undefined" })
+        break
+      }
+      case "alarm": {
+        const spend = { admit: () => succeed(step.admit), spend: () => Effect.void }
+        try Objects.alarm("conv", object, sequencer, spend, model, history)
+        break
+      }
+      default: try sequencer.ensureDispatched()
+    }
+    // A fresh incarnation over the same storage replays the same conversation.
+    const reloaded = try Objects.conversation(object)
+    if (!same(try reloaded.snapshot(), try sequencer.snapshot())) throw new Finding({ report: "objects:82 !same(try reloaded.snapshot(), try sequencer.snapshot())" })
+  }
+  return true
+}))

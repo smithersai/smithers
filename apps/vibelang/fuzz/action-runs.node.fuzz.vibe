@@ -1,0 +1,90 @@
+// A post's run and its agent-started reply, answered by a scripted model on a real local socket, under a ledger that
+// admits, refuses, or is unavailable, and a person whose role may change before the reply runs.
+import { it } from "@effect/vitest"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { ActionDevice } from "../src/actions/execution.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import * as Runs from "../worker/ActionRuns.vibe"
+import { world, request, history } from "../test/support/actionObjects.vibe"
+import { cell, scriptedModel, type Scripted } from "./model-server.vibe"
+import { run, Finding, Text } from "./run.vibe"
+
+const Config = Schema.Struct({
+  flow: Schema.Literals(["vibelang/Post", "vibelang/Tour"]),
+  reply: Schema.Literals(["answer", "refused", "credit", "garbage", "prose"]),
+  text: Text,
+  ledger: Schema.Literals(["admit", "refuse", "die"]),
+  demote: Schema.Literals(["none", "new", "community", "contributor"]),
+  alarms: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 4 })),
+  cancel: Schema.Literals(["none", "run", "child"]),
+})
+/** Several independent runs per execution, each in its own object, so one execution meets many combinations. */
+const Input = Schema.Array(Config).check(Schema.isMinLength(1), Schema.isMaxLength(6))
+
+const scriptOf = (input: typeof Config.Type): Scripted => {
+  switch (input.reply) {
+    case "answer": return { kind: "stream", pieces: [cell(JSON.stringify(`Answer: ${input.text}`))], prompt: 3, completion: 4 }
+    case "prose": return { kind: "stream", pieces: ["no cell here"], prompt: 3, completion: 4 }
+    case "refused": return { kind: "status", status: 400, code: "content_policy" }
+    case "credit": return { kind: "status", status: 402, code: "out_of_credit" }
+    case "garbage": return { kind: "garbage" }
+  }
+}
+
+/** A run's rows always agree with the conversation they describe, and a settled row never changes. */
+it.live("actions/run-answers", () => run("actions/run-answers", Input, (configs) => scoped(effect {
+  const w = try world()
+  provide MockFactory, history {
+    const device = try Factory
+    try device.accounts!.choose("maintainer")
+    const product = try Mythical
+    provide ActionDevice = device {
+      for (const [index, input] of configs.entries()) {
+        const scripted = try scriptedModel([scriptOf(input)])
+        const id = `answered${index}`
+        const object = try w.object(id)
+        const model = { model: scripted.model, unusable: "" }
+        const spend = input.ledger === "admit" ? w.spend
+          : input.ledger === "refuse" ? { admit: () => succeed(false), spend: () => Effect.void }
+          : { admit: () => Effect.die(new Error("ledger unavailable")), spend: () => Effect.void }
+        // Each run starts with its owner a maintainer; a demotion lands between its first and second alarm.
+        try w.accounts.choose("maintainer")
+        const restored = w.accounts.grant(w.person.id, "maintainer") catch () => "refused"
+        if (restored === "refused") throw new Finding({ report: "a maintainer could not restore a maintainer" })
+        const started = try object.host.start(request(id, input.flow, { text: `Question ${input.text}` }, w.person.id), "maintainer")
+        if (started !== null) throw new Finding({ report: `a permitted ${input.flow} start answered ${started}` })
+        const settled = new Map<string, string>()
+        for (let turn = 0; turn < input.alarms; turn++) {
+          const outcome = try exit(object.host.alarm(spend, model, product))
+          if (outcome._tag === "Failure" && input.ledger !== "die") throw new Finding({ report: "an alarm failed with a working ledger" })
+          if (turn === 0 && input.cancel !== "none") {
+            const answer = try object.host.cancel(input.cancel === "child" ? `${id}-reply` : id, "maintainer", w.person.id)
+            if (![null, "not-found", "forbidden", "cancel-failed"].includes(answer)) throw new Finding({ report: `cancel answered ${answer}` })
+          }
+          if (turn === 0 && input.demote !== "none") {
+            try w.accounts.choose("maintainer")
+            const granted = w.accounts.grant(w.person.id, input.demote) catch () => "refused"
+            if (granted !== undefined && granted !== "refused") throw new Finding({ report: "a grant answered a value" })
+          }
+          const rows = try Runs.read(object.sequencer)
+          if (new Set(rows.map((row) => row.id)).size !== rows.length) throw new Finding({ report: "a run was recorded twice" })
+          for (const row of rows) {
+            const was = settled.get(row.id)
+            if (was !== undefined && was !== row.state) throw new Finding({ report: `settled ${row.id} changed from ${was} to ${row.state}` })
+            if (["passed", "failed", "cancelled"].includes(row.state)) settled.set(row.id, row.state)
+          }
+          // The reply's row says what the reply says: an answered reply passed, a failed one did not.
+          const reply = (try object.sequencer.read(0)).entries.find((entry) => entry.author === "agent")
+          const child = rows.find((row) => row.id === `${id}-reply`)
+          if (input.flow === "vibelang/Post" && reply !== undefined && reply.done && child !== undefined) {
+            if (reply.error === "" && child.state === "failed") throw new Finding({ report: "an answered reply's run failed" })
+            if (reply.error !== "" && child.state === "passed") throw new Finding({ report: "a failed reply's run passed" })
+          }
+        }
+      }
+    }
+  }
+  return true
+})))
+

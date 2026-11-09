@@ -1,0 +1,204 @@
+// One run's host on real SQLite, driven directly: starts, retries, conflicts, alarms, cancellations, demotions and
+// a history host that refuses or cannot cancel (a faulty Effect service, never request interception).
+import { it } from "@effect/vitest"
+import { FlowRuntime } from "@smthrs/flow"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { ActionDevice } from "../src/actions/execution.vibe"
+import { ActionFailure } from "../src/actions/Actions.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { Factory, Unavailable } from "../src/core/Factory.vibe"
+import type { HistoryReader } from "../src/history/tools.vibe"
+import * as HistoryActions from "../worker/HistoryActions.vibe"
+import * as Runs from "../worker/ActionRuns.vibe"
+import * as Objects from "../worker/Objects.vibe"
+import { world, request, history } from "../test/support/actionObjects.vibe"
+import { run, Finding, Int } from "./run.vibe"
+
+const FLOWS = ["vibelang/Post", "vibelang/Tour", "vibelang/EndTour", "vibelang/history/show", "vibelang/history/Plan", "vibelang/history/Start", "vibelang/history/Note", "vibelang/sandbox/start", "vibelang/sandbox/stop", "vibelang/sandbox/command", "vibelang/no-such-flow"] as const
+const ROLES = ["viewer", "new", "community", "contributor", "maintainer"] as const
+const STARTS = [null, "forbidden", "input", "conflict", "busy", "failed", "full", "too-long", "duplicate", "not-replying"]
+const CANCELS = [null, "not-found", "forbidden", "cancel-failed"]
+const TERMINAL = ["passed", "failed", "cancelled"]
+
+const unavailable = () => fail(new Unavailable({ reason: "injected history failure" }))
+/** A history that cannot be read (a faulty Effect service): a history run settles failed. */
+const unreadable: HistoryReader = { outline: unavailable, epic: unavailable, commit: unavailable, search: unavailable, plan: unavailable, start: unavailable, note: unavailable }
+
+const inputOf = (flow: string, well: boolean, variant: number): Schema.Json => {
+  if (!well) return variant % 2 === 0 ? { nonsense: variant } : [variant]
+  switch (flow) {
+    case "vibelang/Post": return { text: `Question ${variant}` }
+    case "vibelang/history/show": return variant % 2 === 0 ? {} : { what: "outline" }
+    case "vibelang/history/Plan": return { how: "append", epic: "", newEpic: `Epic ${variant}`, target: "", title: `Plan ${variant}`, task: "Task" }
+    case "vibelang/history/Start": return { id: `m${variant}`, lane: "lane" }
+    case "vibelang/history/Note": return { id: `m${variant}`, section: "tried", text: `note ${variant}` }
+    case "vibelang/sandbox/start": return { conversation: `box-${variant}` }
+    case "vibelang/sandbox/stop": return { conversation: `box-${variant}`, generation: variant }
+    case "vibelang/sandbox/command": return { conversation: `box-${variant}`, command: "echo hi", generation: variant }
+    default: return {}
+  }
+}
+
+/** Posts and tours own most of the host's branches, so they are drawn most often. */
+const flowOf = (pick: number) => pick < 10 ? "vibelang/Post" : pick < 18 ? "vibelang/Tour" : FLOWS[pick % FLOWS.length]!
+const Step = Schema.Struct({
+  op: Schema.Literals(["start", "again", "conflict", "alarm", "cancel", "cancelChild", "demote", "crashed", "midReply", "refusingHost", "failingHost", "stuckHost", "signedOut"]),
+  run: Int, flow: Int, well: Schema.Boolean, variant: Int,
+  role: Schema.Literals(ROLES),
+})
+const Steps = Schema.Array(Step).check(Schema.isMaxLength(12))
+
+it.live("actions/run-hosts", () => run("actions/run-hosts", Steps, (steps) => effect {
+  const w = try world()
+  provide MockFactory, history {
+    const device = try Factory
+    try device.accounts!.choose("maintainer")
+    const product = try Mythical
+    provide ActionDevice = device {
+      const sent = new Map<string, ReturnType<typeof request>>()
+      const settled = new Map<string, string>()
+      // Every execution first starts and alarms one run, sometimes demoting its person in between, so the random
+      // tail always meets a run the host has already admitted.
+      const first = steps[0]
+      const other = first === undefined ? 0 : first.run + 1
+      const prefix = first === undefined ? [] : [
+        { ...first, op: "start" as const },
+        ...(first.variant % 3 === 0 ? [{ ...first, op: "demote" as const }] : []),
+        { ...first, op: "alarm" as const },
+        { ...first, op: first.variant % 2 === 0 ? "cancelChild" as const : "cancel" as const },
+        { ...first, run: other, op: "crashed" as const },
+        { ...first, run: other, op: "midReply" as const },
+        { ...first, run: other, op: first.variant % 2 === 0 ? "cancelChild" as const : "demote" as const },
+        { ...first, run: other, op: "again" as const },
+        { ...first, run: other, op: "alarm" as const },
+        // A third run walks one history or sandbox flow through its alarms, receipt and cancellation.
+        { ...first, run: first.run + 2, flow: 18 + first.variant, well: first.variant % 5 !== 4, op: "start" as const },
+        { ...first, run: first.run + 2, flow: 18 + first.variant, op: "alarm" as const, variant: 0 },
+        { ...first, run: first.run + 2, flow: 18 + first.variant, op: "alarm" as const, variant: 0 },
+        { ...first, run: first.run + 2, flow: 18 + first.variant, op: first.variant % 2 === 0 ? "cancel" as const : "stuckHost" as const },
+      ]
+      for (const step of [...prefix, ...steps]) {
+        const id = `run${step.run % 3}`
+        const flow = flowOf(step.flow)
+        const object = try w.object(id)
+        // Some requests carry no owner, as a request from before sign-in did.
+        const owned = request(id, flow, inputOf(flow, step.well, step.variant), w.person.id)
+        const body = step.variant % 7 === 6 ? { id: owned.id, flow: owned.flow, input: owned.input, door: owned.door, actor: owned.actor } : owned
+        const real = HistoryActions.make(id, object.storage)
+        const before = try Runs.read(object.sequencer)
+        const stored = try promise(() => object.storage.get("action/request"))
+        // Whatever request the object stored first, a different one under the same id is a conflict once permitted.
+        const conflicts = effect (chosen: typeof body, answer: string | null) => {
+          if (stored === undefined || answer === "forbidden" || answer === "input") return
+          if (JSON.stringify(stored) !== JSON.stringify(chosen) && answer !== "conflict") throw new Finding({ report: "a different request under a stored one was not a conflict" })
+        }
+        switch (step.op) {
+          case "start":
+          case "again":
+          case "conflict": {
+            const previous = sent.get(id)
+            const chosen = step.op === "again" && previous !== undefined ? previous
+              : step.op === "conflict" && previous !== undefined ? { ...previous, input: { changed: step.variant } } : body
+            const answer = try object.host.start(chosen, step.role)
+            if (!STARTS.includes(answer)) throw new Finding({ report: "start answered outside its refusals" })
+            try conflicts(chosen, answer)
+            if (answer !== "forbidden" && answer !== "input" && previous === undefined) sent.set(id, chosen)
+            if (answer === "forbidden" && (try Runs.read(object.sequencer)).length !== before.length) throw new Finding({ report: "a forbidden start recorded a run" })
+            // A post is recorded once, however often its run is retried.
+            const posts = (try object.sequencer.read(0)).entries.filter((entry) => entry.clientId === id)
+            if (posts.length > 1) throw new Finding({ report: "a retried post was recorded twice" })
+            break
+          }
+          case "alarm": {
+            // The ledger admits, refuses, or is unavailable (a faulty Effect service): the alarm settles or fails typed.
+            const spend = step.variant % 3 === 0 ? w.spend
+              : step.variant % 3 === 1 ? { admit: () => succeed(false), spend: () => Effect.void }
+              : { admit: () => Effect.die(new Error("ledger unavailable")), spend: () => Effect.void }
+            const reader = step.variant % 4 === 3 ? unreadable : product
+            const outcome = try exit(object.host.alarm(spend, w.model, reader))
+            if (outcome._tag === "Failure" && step.variant % 3 !== 2) throw new Finding({ report: "an alarm failed with a working ledger" })
+            break
+          }
+          case "cancel":
+          case "cancelChild": {
+            const target = step.op === "cancelChild" ? `${id}-reply` : step.variant % 5 === 0 ? "missing" : id
+            const answer = try object.host.cancel(target, step.role, w.person.id)
+            if (!CANCELS.includes(answer)) throw new Finding({ report: "action-runs:80 !CANCELS.includes(answer)" })
+            if ((answer === "not-found") !== !before.some((row) => row.id === target)) throw new Finding({ report: "action-runs:81 (answer === 'not-found') !== !before.some((row) => row.id === target)" })
+            break
+          }
+          // The run hosts read the role from the world's accounts, the one place a person's role lives.
+          case "demote": {
+            // A maintainer changes the owner's role; a grant the ledger refuses leaves it as it was.
+            try w.accounts.choose("maintainer")
+            // A signed-in person is at least new; a viewer is someone who is not signed in.
+            const granted = w.accounts.grant(w.person.id, step.role === "viewer" ? "new" : step.role) catch () => "refused"
+            if (granted !== undefined && granted !== "refused") throw new Finding({ report: "a grant answered a value" })
+            break
+          }
+          case "crashed": {
+            // A host that stopped after recording the request, and perhaps after its post or tour began, before it settled.
+            if ((try promise(() => object.storage.get("action/request"))) !== undefined) break
+            try promise(() => object.storage.put("action/request", body))
+            try object.sequencer.action({ type: "RequestAction", id, flow, door: body.door, actor: body.actor, at: step.variant })
+            if (step.well && flow === "vibelang/Post") try Objects.post(id, object.storage, object.sequencer, id, "will", `Question ${step.variant}`, w.person.id)
+            if (step.well && flow === "vibelang/Tour") try Objects.tour(id, object.storage, object.sequencer)
+            sent.set(id, body)
+            break
+          }
+          case "midReply": {
+            // A host that stopped while its post's reply streamed: the reply is open and its run is recorded running.
+            const conversation = try object.sequencer.read(0)
+            const post = conversation.entries.find((entry) => entry.author === "person" && !conversation.entries.some((reply) => reply.inReplyTo === entry.id))
+            if (post === undefined || (try object.sequencer.start(post.id)) !== "done") break
+            try object.sequencer.action({ type: "RequestAction", id: `${id}-reply`, flow: "vibelang/Reply", door: "agent", actor: "agent", at: step.variant })
+            try object.sequencer.action({ type: "TraceAction", id: `${id}-reply`, key: "start", name: "start", attempt: 1, state: "running", at: step.variant })
+            break
+          }
+          case "refusingHost": {
+            // The durable host is busy: the run is refused and recorded as failed, never left open.
+            const answer = try Runs.start(id, object.storage, object.sequencer, body, step.role, { ...real, start: () => succeed("busy" as const) }, w.authority)
+            try conflicts(body, answer)
+            if (!STARTS.includes(answer)) throw new Finding({ report: "action-runs:88 !STARTS.includes(answer)" })
+            break
+          }
+          case "failingHost": {
+            // The durable host refuses the request outright: the run answers input and is recorded as failed.
+            const failing = { ...real, start: () => Effect.fail(new ActionFailure({ code: "input" })) }
+            const answer = try Runs.start(id, object.storage, object.sequencer, body, step.role, failing, w.authority)
+            try conflicts(body, answer)
+            if (!STARTS.includes(answer)) throw new Finding({ report: "a failing host's start answered outside its refusals" })
+            break
+          }
+          case "stuckHost": {
+            const stuck = { ...real, cancel: () => Effect.fail(new FlowRuntime.CancelRequestFailed({ code: "cancel_request_failed", executionId: id, reason: "journal unavailable" })) }
+            const answer = try Runs.cancel(id, object.storage, object.sequencer, id, step.role, stuck, w.authority, w.person.id)
+            if (!CANCELS.includes(answer)) throw new Finding({ report: "action-runs:94 !CANCELS.includes(answer)" })
+            const row = (try Runs.read(object.sequencer)).find((value) => value.id === id)
+            if (answer === "cancel-failed" && row?.state === "cancelled") throw new Finding({ report: "action-runs:96 answer === 'cancel-failed' && row?.state === 'cancelled'" })
+            break
+          }
+          default: {
+            // A signed-out person reaches only what a viewer may.
+            const answer = try Runs.start(id, object.storage, object.sequencer, body, step.role)
+            try conflicts(body, answer)
+            if (!STARTS.includes(answer)) throw new Finding({ report: "action-runs:102 !STARTS.includes(answer)" })
+            if (answer === "forbidden" && (try Runs.read(object.sequencer)).length !== before.length) throw new Finding({ report: "action-runs:103 answer === 'forbidden' && (try Runs.read(object.sequencer)).length !== before.length" })
+          }
+        }
+        for (const known of new Set([...sent.keys(), id])) {
+          const rows = try Runs.read((try w.object(known)).sequencer)
+          if (new Set(rows.map((row) => row.id)).size !== rows.length) throw new Finding({ report: "action-runs:108 new Set(rows.map((row) => row.id)).size !== rows.length" })
+          for (const row of rows) {
+            const key = `${known}/${row.id}`
+            const was = settled.get(key)
+            // A settled run keeps its outcome.
+            if (was !== undefined && was !== row.state) throw new Finding({ report: "action-runs:113 was !== undefined && was !== row.state" })
+            if (TERMINAL.includes(row.state)) settled.set(key, row.state)
+          }
+        }
+      }
+      return true
+    }
+  }
+}))
