@@ -137,7 +137,7 @@ Alchemy runs these only when it binds a Worker inside Cloudflare's runtime; `Clo
 | --- | --- | --- | --- |
 | `worker/SandboxMachine.vibe` | 11-13 | `SandboxMachine.make` | `machineObject` |
 | `worker/SandboxAccounts.vibe` | 12-15 | `SandboxAccount.make` | `accountObject` |
-| `worker/SandboxAccounts.vibe` | 22-24 | `gatewayWithIdentity` with a container image | `gatewayOf` |
+| `worker/SandboxAccounts.vibe` | 22-25 | `gatewayWithIdentity` with a container image | `gatewayOf` |
 
 Lines 20 and 21 of `worker/SandboxAccounts.vibe` are the no-image branch; `sandbox/gateway-without-image` runs them. These lines stay in the denominator: the record replaces an exclusion, so the 100% gate fails on them until a target can reach them or Will rules on excluding them.
 
@@ -227,3 +227,35 @@ Campaign: seed 20261113, 240 s per target, 14 targets, 28.2 minutes wall on two 
 (`objects/conversation-host` hung and wrote none). Two targets failed and were fixed or recorded: `actions/run-answers` (oracle: a lone surrogate post is `invalid` by
 design; value kept) and `objects/conversation-host` (the deadlock above). Rerun at the same seed and budget: the
 deadlock is gone and the target found the open foreign-key failure; `actions/run-answers` passed (326 executions).
+
+## Status, 2026-11-09 (seventh session)
+
+Fuzz-only at `6386c557` plus the targets below: 6052/7232 lines (83.68%), 6167/8018 branches (76.91%), 49 of 144 files at 100%, 5 seconds per target at host load 42 to 50; goal not met. Both denominators grew with other lanes' code since the sixth session. At that load a 5-second target ran as few as 22 executions (`web/guided-commands`), so branches a target reaches alone can drop out of a full run: `fuzz:coverage` is bounded by time, not executions.
+
+`fuzz/web-tab.vibe` now holds the tab driver the web targets share. `fuzz/main-screens.fuzz.vibe` builds each screen the way a person reaches it, then drives the branches that only that screen reaches:
+
+| Target | Exercises |
+| --- | --- |
+| `web/walkthrough-stops` | the agent drives stops 1 to 10 in any order; each shows its screen; ending by event, button, Escape, or a failed end that returns to the current stop |
+| `web/escape-layers` | Escape closes only the innermost open layer, in the order `update` documents; a wiki save in flight stays open; wiki reads and writes from a mock with one injected fault |
+| `web/role-events` | grants to the person, a listed member, a stranger or nobody, in every mode, with gaps, people shown or not, the role dialog open or not |
+| `web/command-bodies` | every Command with gaps, from Schema-derived args, against mock, live, bare and failing backends: its declared Message, the failure Message for a missing or failing service, JSON input refused before a start, the epoch echoed |
+| `web/conversation-events` | an answer linking an issue refreshes the projection and no other does; a wiki pane follows the page and shrinks maximized sandboxes; an action request is read; a gap resumes |
+| `reply/actions-bound` | a real agent cell lists product actions and starts one; the start is announced once with the id the cell got |
+| `reply/interrupted` | an interrupted model call reaches the flow as an interruption: no finish, no failure |
+
+`wiki/writer` and `specification/reviewers` bound their failing models to a refused port and waited out provider backoff (36 and 10 executions per 32 seconds). They now use the scripted server's non-retryable 400, which fails at once: 264 and 249 executions per 3 seconds. The retry policy is not what they test.
+
+| Finding | Class | Resolution |
+| --- | --- | --- |
+| An unpaired surrogate typed into the wiki editor reached the save request, which `DurableText` refuses, and left the Model invalid | product | `UpdatedWikiEdit` stores the text well-formed; value in the corpus (`3240715e`) |
+| `web/guided-commands` drove tour stops with an empty target, which the fold ignores, so the walkthrough never ran | target | the stop's own target |
+| `web/guided-commands` typed `/vibelang/Post` for a slash command; completions match `/post`, so no slash command launched | target | the command word |
+| A cell call whose input holds an unpaired surrogate cannot be keyed; the reply fails with "The agent failed. Try again." | oracle | required; value in the corpus |
+| `reply/interrupted` sent a text delta without an `id` | target | the delta carries one |
+| `web/conversation-events` posted an empty question, which the fold ignores | oracle | a fixed question; value in the corpus |
+| `objects/conversation-host`: tour, alarm (budget refused), end tour, tour, dispatch, pause dies decoding the stored log | product, open | the same family as vl-fuzz2's open tour-and-seek record above; counterexample at `~/vl/vl-fuzzpkg.finding-objects/` on nyc-01, not in `fuzz/__fuzz__/` |
+
+`worker/Reply.vibe` line 356: `canSettleReply(run)` is always true there. `flowDecision.vibe`'s contracts take a run from `beginReply` through a `done` start, `beginReplyComposition` and `finishReplyComposition` to phase `ready` with one start, one composition and no settlement, which is exactly `canSettleReply`; an earlier refusal returns at line 340 and a compose failure is caught or re-raised as an interruption first. No input reaches the false branch. It stays in the denominator, recorded here.
+
+The Alchemy rows above were tried under the repository's workerd host. A module importing `worker/SandboxMachine.vibe`, bundled with `test/support/workerd.vibe`'s esbuild settings, fails with 113 unresolved Node built-ins from 27 deploy-time packages that `@alchemy.run/cloudflare` imports, among them esbuild, vite, workerd, tsx, yargs, jiti and five proxy agents. Bundled or not, `.make` only hands its constructor to Alchemy's `Worker` service (`Worker.export`); lines 11 to 13 and 12 to 15 run when Alchemy's generated Worker instantiates the object, and 22 to 25 when `gatewayWithIdentity` builds with an image. Miniflare 5 can host a Container (`containerEngine`); the missing piece is Alchemy's runtime, not workerd.
