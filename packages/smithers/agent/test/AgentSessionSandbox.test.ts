@@ -27,10 +27,10 @@ import { Cause, Deferred, Duration, Effect, Exit, Layer, Option, Schedule, Scope
 import { describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.vibe"
 import * as AgentSession from "../src/AgentSession.ts"
-import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
+import type * as FlowEngineLike from "../src/FlowEngineLike.vibe"
 import * as Seat from "../src/Seat.vibe"
 import * as SeatResolver from "../src/SeatResolver.vibe"
-import * as WorkspaceObservation from "../src/WorkspaceObservation.ts"
+import * as WorkspaceObservation from "../src/WorkspaceObservation.vibe"
 import * as Safety from "./Safety.ts"
 
 const flowId = "agents/notes"

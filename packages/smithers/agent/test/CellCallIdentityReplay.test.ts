@@ -17,7 +17,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { expect, it } from "vitest"
-import * as FlowEngineLike from "../src/FlowEngineLike.ts"
+import * as FlowEngineLike from "../src/FlowEngineLike.vibe"
 import materialV1 from "./fixtures/cell-call-material-effect-rc115.json" with { type: "json" }
 import materialCurrent from "./fixtures/cell-call-material-model-error-cause.json" with { type: "json" }
 import * as V1 from "./fixtures/CellCallV1.ts"

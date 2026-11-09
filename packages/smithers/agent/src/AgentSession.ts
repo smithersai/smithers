@@ -122,7 +122,7 @@ import * as Seat from "./Seat.vibe"
 import { contextWindowResolver, type Routed, SeatResolver } from "./SeatResolver.vibe"
 import * as SeatRouter from "./SeatRouter.ts"
 import * as StandardFlows from "./StandardFlows.ts"
-import * as WorkspaceObservation from "./WorkspaceObservation.ts"
+import * as WorkspaceObservation from "./WorkspaceObservation.vibe"
 
 /**
  * Why a run whose flow selects a sandbox cannot execute on this host.

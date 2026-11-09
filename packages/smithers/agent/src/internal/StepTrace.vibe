@@ -15,7 +15,7 @@ import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import type * as Schema from "effect/Schema"
 import { maxTracedBytes, traceIdentity, tracer } from "../AgentSession.ts"
-import type * as EventSink from "../EventSink.ts"
+import type * as EventSink from "../EventSink.vibe"
 
 interface Cursor {
   frame: number

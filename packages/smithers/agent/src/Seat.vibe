@@ -30,7 +30,7 @@ import * as Evaluator from "@smthrs/model/Evaluator"
 import type * as Model from "@smthrs/model/Model"
 import type * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import type * as FlowEngineLike from "./FlowEngineLike.ts"
+import type * as FlowEngineLike from "./FlowEngineLike.vibe"
 
 /**
  * One resolved seat: the declared id, the resolved provider model id, the model

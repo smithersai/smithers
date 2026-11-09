@@ -7,7 +7,7 @@
  * existed as a separate piece — the controller in `@smthrs/harness/CellTurn`,
  * registry-backed call resolution in `@smthrs/harness/CellCalls`, the sandbox in
  * `@smthrs/harness/QuickJSSandbox`, the durable engine port in
- * `./FlowEngineLike.ts` — and what did not exist was one place that wires them
+ * `./FlowEngineLike.vibe` — and what did not exist was one place that wires them
  * together. This is that place.
  *
  * One agent, one implementation, two ways to run it. {@link module:AgentSession}

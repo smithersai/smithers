@@ -15,7 +15,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os"
 import { join, normalize } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as WorkspaceObservation from "../src/WorkspaceObservation.ts"
+import * as WorkspaceObservation from "../src/WorkspaceObservation.vibe"
 
 const workspace = (): string => mkdtempSync(join(tmpdir(), "flows-observation-"))
 

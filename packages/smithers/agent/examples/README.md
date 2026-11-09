@@ -35,7 +35,7 @@ pnpm exec vitest run test/examples/use-cases/triage.test.ts
 
 ## Sandbox filesystem tools
 
-`25-agent-tools-in-sandbox.ts` exposes only `read` and `write`, with
+`25-agent-tools-in-sandbox.vibe` exposes only `read` and `write`, with
 capabilities restricted to the scratch root. Tool paths are relative to that
 root. The host filesystem service rejects absolute paths, `..` components,
 symlinks (including dangling links), and hard-linked files. Nested file creation

@@ -78,7 +78,7 @@ import { callId } from "./internal/CallIdentity.ts"
 import * as ModelStep from "./internal/ModelStep.vibe"
 import * as QuotaPolicy from "./QuotaPolicy.vibe"
 import * as RunawayGuard from "./RunawayGuard.vibe"
-import * as WorkspaceObservation from "./WorkspaceObservation.ts"
+import * as WorkspaceObservation from "./WorkspaceObservation.vibe"
 import type * as WorkspaceSandbox from "./WorkspaceSandbox.ts"
 
 // #3369 retries keyed actions by default. A model step and a cell call are keyed,
@@ -112,7 +112,6 @@ export interface RouteResolver {
  *
  * @category constructors
  * @since 0.1.0
- * @throws {never}
  */
 export const routeResolver = <Body, Frame, Event, State>(
   route: Route.Route<Body, Frame, Event, State>
@@ -346,21 +345,21 @@ export const sandboxed = (
   runner: WorkspaceCallRunner,
   options: { readonly layers?: ReadonlyArray<string> | undefined } = {}
 ): Effect.Effect<CallRunner, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
-  Effect.gen(function*() {
-    const crypto = yield* EffectDigest.Digest
-    const random = yield* SecureRandom.SecureRandom
+  effect {
+    const crypto = try EffectDigest.Digest
+    const random = try SecureRandom.SecureRandom
     return {
       ...(runner.authorize === undefined ? {} : { authorize: runner.authorize }),
       run: (call) =>
-        Effect.gen(function*() {
-          const environment = yield* Action.CurrentCacheEnvironment
-          const instance = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
+        effect {
+          const environment = try Action.CurrentCacheEnvironment
+          const instance = try Effect.serviceOption(FlowRuntime.FlowInstance)
           const cacheEnvironment = environment ?? (Option.isSome(instance)
             ? { run: `${instance.value.flow._tag}/${instance.value.executionId}` }
             : undefined)
           const material = callMaterial(call, [...(options.layers ?? []), ...(environment?.layers ?? [])])
           const cacheKey = call.effects.tier === "sealed" && cacheEnvironment !== undefined
-            ? yield* StepKey.fromKeyMaterial({
+            ? try StepKey.fromKeyMaterial({
               ...material,
               body: {
                 call: material.body,
@@ -375,7 +374,7 @@ export const sandboxed = (
               Effect.mapError((cause) => engineFailed(`Cell call ${call.flowName} could not be keyed`, cause))
             )
             : undefined
-          const outcome = yield* sandbox.execute({
+          const outcome = try sandbox.execute({
             descriptor: callBoundary(call),
             ...(cacheKey === undefined ? {} : { cacheKey }),
             workflow: runner.run(call)
@@ -392,14 +391,14 @@ export const sandboxed = (
             const violated = outcome.violations
               .map((violation) => `${violation.kind} ${violation.resource.id}`)
               .join(", ")
-            return Cell.CallResult.new({
+            return try Effect.sync(() => Cell.CallResult.new({
               outcome: "failure",
               value: null,
               message:
                 `Flow ${call.flowName} touched what it did not declare (${violated}); its changes were discarded.`
-            })
+            }))
           }
-          yield* sandbox.materialize(outcome).pipe(
+          try sandbox.materialize(outcome).pipe(
             Effect.provideService(EffectDigest.Digest, crypto),
             Effect.provideService(SecureRandom.SecureRandom, random),
             Effect.mapError((cause) =>
@@ -407,9 +406,9 @@ export const sandboxed = (
             )
           )
           return outcome.result.output
-        })
+        }
     }
-  })
+  }
 
 /**
  * The collaborators a durable harness engine needs.
@@ -715,17 +714,17 @@ export const make = (
   | Budget.Budget
   | QuotaPolicy.QuotaClassifier
 > =>
-  Effect.gen(function*() {
+  effect {
     const modelRetryPolicy = options.modelRetryPolicy ?? ModelStep.defaultModelRetryPolicy
     if (modelRetryPolicy.maxAttempts === undefined) {
-      return yield* Effect.die(
+      return try Effect.die(
         new RangeError("FlowEngineLike.make: modelRetryPolicy must bound maxAttempts, so its last attempt can seal")
       )
     }
-    const instance = yield* FlowRuntime.FlowInstance
+    const instance = try FlowRuntime.FlowInstance
     const services: Context.Context<
       (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
-    > = yield* Effect
+    > = try Effect
       .context<
         (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
       >()
@@ -734,7 +733,7 @@ export const make = (
     const scope: Scope = {
       layers: [
         ...(options.layers ?? []),
-        `flows/agent/composition/v1:${Digest.digest(CanonicalJson.stringify(options.layers ?? []))}`
+        `flows/agent/composition/v1:${try Effect.orDie(Effect.try(() => Digest.digest(CanonicalJson.stringify(options.layers ?? []))))}`
       ],
       run: `${instance.flow._tag}/${instance.executionId}`
     }
@@ -783,15 +782,15 @@ export const make = (
      * `warn` journals inside the budget itself and falls through here.
      */
     const applyVerdict = (verdict: Budget.Verdict): Effect.Effect<void, HarnessError.HarnessError> =>
-      Effect.gen(function*() {
+      effect {
         if (verdict._tag !== "refuse") return
         if (verdict.failure instanceof Budget.BudgetExceeded && verdict.failure.onExceeded === "park") {
           // `park` suspends the run for an operator's raise when the host
           // can take approvals; without one it is a refusal like `fail`.
-          const parking = yield* Effect.serviceOption(Budget.Parking)
-          if (Option.isSome(parking)) return yield* parkOn(yield* parking.value.park(verdict.failure))
+          const parking = try Effect.serviceOption(Budget.Parking)
+          if (Option.isSome(parking)) return try parkOn(try parking.value.park(verdict.failure))
         }
-        return yield* Effect.fail(
+        return try Effect.fail(
           new HarnessError.HarnessError({
             code: "model_failed",
             message: verdict.failure.message,
@@ -801,28 +800,28 @@ export const make = (
             cause: verdict.failure
           })
         )
-      })
+      }
     const sealStep = (
       step: EngineLike.SealedModelStep,
       onLive?: (event: ModelEvent.ModelEvent) => Effect.Effect<void>
     ): Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure | HarnessError.HarnessError> =>
       Stream.unwrap(
-        Effect.gen(function*() {
-          yield* accountedResume
-          const prepared = yield* options.route.prepare(step.request)
-          const sealed = yield* ModelStep.key(step.keyMaterial, prepared)
+        effect {
+          try accountedResume
+          const prepared = try options.route.prepare(step.request)
+          const sealed = try ModelStep.key(step.keyMaterial, prepared)
           // A guarded host parks an exhausted call timeout instead of failing
           // the run. The timed-out attempt's failure is durable under its key,
           // so each Continue the operator chose re-issues the call under a key
           // of its own, as a capacity cycle does, and Stop replays the failure
           // into the stopped incident without asking a provider again.
-          const guard = yield* guarding
+          const guard = try guarding
           let key = sealed
           if (guard !== undefined) {
-            const admitted = yield* guard.admit(sealed)
-            if (admitted._tag === "park") return yield* parkOn(admitted.parked)
+            const admitted = try guard.admit(sealed)
+            if (admitted._tag === "park") return try parkOn(admitted.parked)
             if (admitted.continued > 0) {
-              key = yield* ModelStep.key({
+              key = try ModelStep.key({
                 ...step.keyMaterial,
                 layers: [...step.keyMaterial.layers, `timeout-continue:${admitted.continued}`]
               }, prepared)
@@ -839,13 +838,13 @@ export const make = (
           // plus an estimate for a call the ledger already holds, and a run
           // killed after its last model call resumes straight into
           // `BudgetExceeded` for a call that costs zero.
-          yield* applyVerdict(yield* budget.reserve(key).pipe(Effect.mapError(accountingFailed)))
+          try applyVerdict(try budget.reserve(key).pipe(Effect.mapError(accountingFailed)))
           // Read OUTSIDE the activity, from the caller's context: the ladder
           // rung is the caller's fact about this call, and it has to be on the
           // record the activity writes rather than discovered by whatever
           // re-executes it.
-          const correction = yield* Correction
-          const { recorded: normalized } = yield* ModelStep.dispatch({
+          const correction = try Correction
+          const { recorded: normalized } = try ModelStep.dispatch({
             name: sealStepActivityName,
             key,
             request: step.request,
@@ -899,7 +898,8 @@ export const make = (
           // step key, so a step whose body really did re-run counts once, and
           // a resumed run folds back what it recorded before the restart from
           // the budget's own durable usage records.
-          yield* budget.record(key, ModelEvent.ModelEvent.settledMessage(normalized.events).usage, step.request.modelId)
+          const settledUsage = try Effect.sync(() => ModelEvent.ModelEvent.settledMessage(normalized.events).usage)
+          try budget.record(key, settledUsage, step.request.modelId)
             .pipe(
               Effect.mapError(accountingFailed)
             )
@@ -907,7 +907,7 @@ export const make = (
           return normalized.error === undefined
             ? replay
             : Stream.concat(replay, Stream.fail(normalized.error))
-        }).pipe(Effect.scoped, Effect.provide(context))
+        }.pipe(Effect.scoped, Effect.provide(context))
       )
 
     const sealStepWithEvents: EngineLike.EngineLike["sealStepWithEvents"] = (step) =>
@@ -924,11 +924,11 @@ export const make = (
             return Queue.offer(queue, event).pipe(Effect.asVoid)
           })).pipe(Effect.flatMap((recorded) =>
             live
-              ? Effect.gen(function*() {
+              ? effect {
                 const usage = [...recorded].filter((event) => event.type === "usage").at(-1)
-                if (usage !== undefined) yield* Queue.offer(queue, usage)
-                yield* Queue.offer(queue, settlement!)
-              })
+                if (usage !== undefined) try Queue.offer(queue, usage)
+                try Queue.offer(queue, settlement!)
+              }
               : Effect.forEach(recorded, (event) => Queue.offer(queue, event), { discard: true })
           )),
           (exit) => Effect.asVoid(exit._tag === "Success" ? Queue.end(queue) : Queue.failCause(queue, exit.cause))
@@ -967,7 +967,7 @@ export const make = (
         Effect.catchIf(
           (error) => error.cause instanceof Permission.PermissionDenied,
           (error) =>
-            Effect.succeed(
+            Effect.sync(() =>
               Cell.CallResult.new({
                 outcome: "failure",
                 value: null,
@@ -981,9 +981,9 @@ export const make = (
     const call = (
       request: Cell.Call
     ): Effect.Effect<Cell.CallResult, HarnessError.HarnessError> =>
-      Effect.gen(function*() {
-        yield* accountedResume
-        const decoded = yield* Effect.fromResult(Schema.decodeUnknownResult(Cell.Call)(request)).pipe(
+      effect {
+        try accountedResume
+        const decoded = try Effect.fromResult(Schema.decodeUnknownResult(Cell.Call)(request)).pipe(
           Effect.mapError((cause) =>
             engineFailed(
               `Cell call ${request.flowName} #${request.identity.ordinal} is not serializable`,
@@ -993,15 +993,16 @@ export const make = (
         )
         const calls = options.calls
         if (calls === undefined) {
-          return yield* Effect.fail(engineFailed("No cell-call runner is configured", decoded.flowName))
+          return try Effect.fail(engineFailed("No cell-call runner is configured", decoded.flowName))
         }
         // A call `admit` already authorized is not asked twice: a grant a
         // person gave once would otherwise be requested again here.
-        if (calls.authorize !== undefined && !admitted.delete(admission(decoded))) yield* calls.authorize(decoded)
+        if (calls.authorize !== undefined && !admitted.delete(admission(decoded))) try calls.authorize(decoded)
         // A call the operator continued past its timeout runs again: its
         // timed-out attempt may have settled durably under the earlier key.
-        const key = yield* callKey(decoded, scope, continuedCalls.get(EngineLike.callSubject(decoded.identity)) ?? 0)
-        return yield* Action.make({
+        const subject = try Effect.sync(() => EngineLike.callSubject(decoded.identity))
+        const key = try callKey(decoded, scope, continuedCalls.get(subject) ?? 0)
+        return try Action.make({
           name: cellCallActivityName(decoded.flowName),
           // The cell receives typed failures and decides its next action.
           retryPolicy: singleAttempt,
@@ -1019,11 +1020,11 @@ export const make = (
           // instances a host mutated after construction, with a typed cause.
           execute: Effect.suspend(() => {
             const paid: Array<Evaluator.Usage> = []
-            return Effect.gen(function*() {
+            return effect {
               // What this execution's evaluator readings paid is charged under
               // a receipt of its own, as an unsealed model invocation is: an
               // execution that re-runs after a crash paid again (#3010).
-              const receipt = yield* random.uuidV4().pipe(
+              const receipt = try random.uuidV4().pipe(
                 Effect.catchCause((cause) =>
                   Effect.fail(engineFailed("Could not allocate a call reading receipt", Cause.squash(cause)))
                 )
@@ -1045,7 +1046,7 @@ export const make = (
                 ),
                 paid: (usage) => Effect.sync(() => void paid.push(usage))
               })
-              return yield* calls.run(decoded).pipe(
+              return try calls.run(decoded).pipe(
                 Effect.provideService(CallReadings, readings),
                 Effect.tap(Cell.decodeCallResult),
                 Effect.onExit(() =>
@@ -1061,17 +1062,17 @@ export const make = (
                   )
                 )
               )
-            })
+            }
           })
         })
-      }).pipe(Effect.provide(context))
+      }.pipe(Effect.provide(context))
 
     const record = <A>(
       boundary: EngineLike.RecordBoundary<A>
     ): Effect.Effect<A, HarnessError.HarnessError> =>
-      Effect.gen(function*() {
-        yield* accountedResume
-        const key = yield* boundaryKey(boundary.name, boundary.identity, scope)
+      effect {
+        try accountedResume
+        const key = try boundaryKey(boundary.name, boundary.identity, scope)
         const charged = `${boundaryUsagePrefix}${key}`
         // A boundary that pays for evaluator readings is admitted under the
         // same policy as a primary call, but only refused once the run's
@@ -1080,13 +1081,13 @@ export const make = (
         // a refusal is never journaled as the boundary's outcome, and a
         // replayed reading the ledger already charged proceeds.
         if (boundary.usage !== undefined && boundary.advisory !== true) {
-          yield* applyVerdict(yield* budget.admitReading(charged).pipe(Effect.mapError(accountingFailed)))
+          try applyVerdict(try budget.admitReading(charged).pipe(Effect.mapError(accountingFailed)))
         }
         // `irreversible` is the honest tier: the read is not
         // content-addressable and cannot be undone, only recorded — so the
         // boundary is journaled under its run-scoped key and a replayed frame
         // is served the recorded value instead of reading the world again.
-        const value = yield* Action.make({
+        const value = try Action.make({
           name: boundaryActivityName(boundary.name),
           success: boundary.success,
           error: HarnessError.HarnessError,
@@ -1122,8 +1123,9 @@ export const make = (
         // it exactly once and the next paid call is admitted against it. Each
         // model's share is priced under its own id (#3010); a second model's
         // share takes a key of its own.
-        yield* Effect.forEach(
-          boundary.usage?.(value) ?? [],
+        const usages = try Effect.sync(() => boundary.usage?.(value) ?? [])
+        try Effect.forEach(
+          usages,
           (paid, index) =>
             budget.record(index === 0 ? charged : `${charged}#${index}`, paid.usage, paid.modelId).pipe(
               Effect.mapError(accountingFailed)
@@ -1131,15 +1133,15 @@ export const make = (
           { discard: true }
         )
         return value
-      }).pipe(Effect.provide(context))
+      }.pipe(Effect.provide(context))
 
     // Resolved once, at construction, and asked nothing further. A composition
     // either equips its runs with a way to measure their workspace or it does
     // not, and the controller reads the absence as "unobserved" and says so in
     // the journal rather than presenting declared writes as measurements.
-    const observer = yield* Effect.serviceOption(WorkspaceObservation.Observer)
-    const quota = yield* QuotaPolicy.current
-    const budget = yield* Budget.current
+    const observer = try Effect.serviceOption(WorkspaceObservation.Observer)
+    const quota = try QuotaPolicy.current
+    const budget = try Budget.current
     // A port is built when the run is driven, so a suspension the run recorded
     // ends here rather than at its next model call. A replayed model step
     // never reaches admission, so a resume that was not recorded would leave
@@ -1148,9 +1150,9 @@ export const make = (
     // the instant the run actually resumed, the port does no work.
     const logSuspension = (message: string) => (cause: Cause.Cause<Budget.AccountingUnavailable>) =>
       Effect.logWarning(message, cause)
-    const resumedAt = yield* Clock.currentTimeMillis
+    const resumedAt = try Clock.currentTimeMillis
     let resumed = Exit.isSuccess(
-      yield* budget.resume(resumedAt).pipe(
+      try budget.resume(resumedAt).pipe(
         Effect.tapCause(logSuspension("A budget resume could not be recorded")),
         Effect.exit
       )
@@ -1165,7 +1167,7 @@ export const make = (
         Effect.mapError(accountingFailed)
       )
     )
-    const random = yield* SecureRandom.SecureRandom
+    const random = try SecureRandom.SecureRandom
     const observe = Option.match(observer, {
       onNone: (): Effect.Effect<Option.Option<EngineLike.Observation>, HarnessError.HarnessError> =>
         Effect.succeed(Option.none()),
@@ -1187,7 +1189,7 @@ export const make = (
     // equips its runs with somewhere to pin a tree or it does not, and the
     // controller reads the absence as a catchable refusal the cell can route
     // around rather than as a failed run.
-    const store = yield* Effect.serviceOption(Checkpoints.Checkpoints)
+    const store = try Effect.serviceOption(Checkpoints.Checkpoints)
     const capture = Option.match(store, {
       onNone: () =>
       (
@@ -1233,22 +1235,22 @@ export const make = (
 
     const guard: EngineLike.Guard = {
       admit: (subject) =>
-        Effect.gen(function*() {
-          const parking = yield* guarding
+        effect {
+          const parking = try guarding
           if (parking === undefined) return
-          const admitted = yield* parking.admit(subject)
-          if (admitted._tag === "park") return yield* parkOn(admitted.parked)
+          const admitted = try parking.admit(subject)
+          if (admitted._tag === "park") return try parkOn(admitted.parked)
           if (admitted.continued > 0) continuedCalls.set(subject, admitted.continued)
-        }),
+        },
       trip: (timeout) =>
-        Effect.gen(function*() {
-          const parking = yield* guarding
+        effect {
+          const parking = try guarding
           if (parking === undefined) return
-          return yield* parkOn(yield* parking.trip(new RunawayGuard.Timeout(timeout)))
-        })
+          return try parkOn(try parking.trip(new RunawayGuard.Timeout(timeout)))
+        }
     }
 
-    return EngineLike.make({
+    return try Effect.sync(() => EngineLike.make({
       sealStep,
       sealStepWithEvents,
       splice,
@@ -1281,8 +1283,8 @@ export const make = (
             return Flow.suspend(instance)
           }))
         )
-    })
-  })
+    }))
+  }
 
 /**
  * Provides the durable harness engine port.

@@ -224,10 +224,10 @@ export const fileSystemHost = (fs: FileSystem.FileSystem): Host => ({
     Effect.flatMap(fs.readDirectory(directory), (names) =>
       Effect.forEach(names.filter(keep), (name) => {
         const path = child(directory, name)
-        return Effect.gen(function*() {
-          const link = yield* fs.readLink(path).pipe(Effect.asSome, Effect.orElseSucceed(() => Option.none()))
+        return effect {
+          const link = try fs.readLink(path).pipe(Effect.asSome, Effect.orElseSucceed(() => Option.none()))
           if (Option.isSome(link)) return { _tag: "Skipped" } as const
-          const info = yield* Effect.result(fs.stat(path))
+          const info = try Effect.result(fs.stat(path))
           if (Result.isFailure(info)) return { _tag: "Failed", method: "stat", cause: info.failure } as const
           if (info.success.type === "Directory") return { _tag: "Directory" } as const
           if (info.success.type !== "File") return { _tag: "Skipped" } as const
@@ -236,7 +236,7 @@ export const fileSystemHost = (fs: FileSystem.FileSystem): Host => ({
             size: Number(info.success.size),
             modified: Option.match(info.success.mtime, { onNone: () => 0, onSome: (at) => at.getTime() })
           } as const
-        }).pipe(Effect.map((measured): { readonly name: string; readonly measured: Measured } => ({ name, measured })))
+        }.pipe(Effect.map((measured): { readonly name: string; readonly measured: Measured } => ({ name, measured })))
       }))
 })
 
@@ -260,7 +260,7 @@ export const observeHost = (
   root: string,
   options: Options = {}
 ): Effect.Effect<EngineLike.Observation> =>
-  Effect.gen(function*() {
+  effect {
     const prune = new Set(options.prune ?? defaultPrune)
     const suffixes = options.ignoreSuffixes ?? defaultIgnoreSuffixes
     const excluded = new Set(options.excludePaths)
@@ -274,16 +274,16 @@ export const observeHost = (
     let bounded = false
     let unreadable = false
     const failed = (method: string, path: string, cause: PlatformError.PlatformError): Effect.Effect<void> =>
-      Effect.gen(function*() {
+      effect {
         // Disappearance is movement; every other failure leaves coverage unknown.
         if (cause.reason._tag === "NotFound") return
         unreadable = true
-        yield* Effect.logWarning(`Workspace observation could not ${method} ${path}`, cause)
-      })
+        try Effect.logWarning(`Workspace observation could not ${method} ${path}`, cause)
+      }
     const walk = (directory: string, relative = ""): Effect.Effect<void> =>
-      Effect.gen(function*() {
+      effect {
         const within = (name: string): string => relative === "" ? name : `${relative}/${name}`
-        const entries = yield* host.entries(directory, (name) => keep(name) && !excluded.has(within(name))).pipe(
+        const entries = try host.entries(directory, (name) => keep(name) && !excluded.has(within(name))).pipe(
           Effect.catch((cause) => failed("readDirectory", directory, cause).pipe(Effect.as([])))
         )
         // Names in one directory are unique, so the order is total. `<` is the
@@ -294,19 +294,19 @@ export const observeHost = (
             return
           }
           const path = child(directory, name)
-          if (measured._tag === "Failed") yield* failed(measured.method, path, measured.cause)
-          else if (measured._tag === "Directory") yield* walk(path, within(name))
+          if (measured._tag === "Failed") try failed(measured.method, path, measured.cause)
+          else if (measured._tag === "Directory") try walk(path, within(name))
           else if (measured._tag === "File") lines.push(`${measured.size} ${measured.modified} ${JSON.stringify(path)}`)
         }
-      })
+      }
     // Trailing separators go, except the one that names the filesystem root.
-    yield* walk(root.replaceAll(/\/+$/g, "") || (root.startsWith("/") ? "/" : root))
+    try walk(root.replaceAll(/\/+$/g, "") || (root.startsWith("/") ? "/" : root))
     return new EngineLike.Observation({
-      digest: Digest.digest(lines.join("\n")),
+      digest: try Effect.orDie(Effect.try(() => Digest.digest(lines.join("\n")))),
       paths: lines.length,
       complete: !bounded && !unreadable
     })
-  })
+  }
 
 /**
  * What a host knows about changes under a workspace root: a count that moves
@@ -348,8 +348,8 @@ export const cached = (
   changes: Changes
 ): Effect.Effect<EngineLike.Observation> => {
   let kept: { readonly generation: number; readonly observation: EngineLike.Observation } | undefined
-  return Effect.gen(function*() {
-    const generation = yield* changes.delivered
+  return effect {
+    const generation = try changes.delivered
     const walk = Effect.tap(measure, (observation) =>
       Effect.sync(() => {
         kept = Option.isSome(generation) && observation.complete
@@ -357,7 +357,7 @@ export const cached = (
           : undefined
       }))
     const previous = kept
-    if (previous === undefined || Option.isNone(generation)) return yield* walk
+    if (previous === undefined || Option.isNone(generation)) return try walk
     const unmoved = Effect.flatMap(
       changes.settled,
       (settled) =>
@@ -365,8 +365,8 @@ export const cached = (
           ? Effect.succeed(previous.observation)
           : Effect.never
     )
-    return yield* Effect.race(unmoved, walk)
-  })
+    return try Effect.race(unmoved, walk)
+  }
 }
 
 /**

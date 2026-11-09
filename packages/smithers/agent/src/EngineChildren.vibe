@@ -215,10 +215,10 @@ export const make = (
   never,
   Control.Control | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | RunStore.RunStore
 > =>
-  Effect.gen(function*() {
-    const runtime = yield* FlowRuntime.FlowRuntime
-    const store = yield* RunStore.RunStore
-    const control = yield* Control.Control
+  effect {
+    const runtime = try FlowRuntime.FlowRuntime
+    const store = try RunStore.RunStore
+    const control = try Control.Control
     /**
      * Captured at construction, not required per call.
      *
@@ -228,8 +228,8 @@ export const make = (
      * derivation takes its digest from injected cryptography rather than a
      * global, so the port has to hold the service to be able to run it.
      */
-    const crypto = yield* EffectDigest.Digest
-    const random = yield* SecureRandom.SecureRandom
+    const crypto = try EffectDigest.Digest
+    const random = try SecureRandom.SecureRandom
     const pollInterval = Duration.fromInputUnsafe(options.pollInterval ?? "250 millis")
     const startTimeout = Duration.fromInputUnsafe(options.startTimeout ?? "30 seconds")
     const awaitTimeout = Duration.fromInputUnsafe(options.awaitTimeout ?? "10 minutes")
@@ -339,20 +339,20 @@ export const make = (
       flowName: string,
       fiber: Fiber.Fiber<unknown, unknown>
     ): Effect.Effect<void, ChildError> =>
-      Effect.gen(function*() {
-        const ended = yield* Effect.sync(() => fiber.pollUnsafe())
-        const row = yield* rowOf(child)
+      effect {
+        const ended = try Effect.sync(() => fiber.pollUnsafe())
+        const row = try rowOf(child)
         if (Option.isSome(row)) return
         if (ended !== undefined) {
           if (Exit.isFailure(ended)) {
-            return yield* Effect.fail(
+            return try Effect.fail(
               failed(
                 `agent/spawn could not start ${flowName}, so the child run ${child} was never created.\n` +
                   boundedCause(ended.cause)
               )
             )
           }
-          return yield* Effect.fail(
+          return try Effect.fail(
             failed(
               `agent/spawn could not start ${flowName}: this host's runtime answered without creating ` +
                 `the child run ${child}. The flow is declared here, so this is the runtime's refusal ` +
@@ -360,14 +360,14 @@ export const make = (
             )
           )
         }
-        yield* Effect.sleep(pollInterval)
-        return yield* awaitStarted(child, flowName, fiber)
-      })
+        try Effect.sleep(pollInterval)
+        return try awaitStarted(child, flowName, fiber)
+      }
 
     const spawn: ChildFlows.Children["spawn"] = (input) =>
-      Effect.gen(function*() {
-        const parent = yield* parentInstance("agent/spawn")
-        const flow = yield* declarationOf(input.flow, "agent/spawn")
+      effect {
+        const parent = try parentInstance("agent/spawn")
+        const flow = try declarationOf(input.flow, "agent/spawn")
         const label = input.label ?? input.flow
         const child = childExecutionId(parent.executionId, label)
         // Detached on purpose, and detached in the durable sense: `discard`
@@ -383,7 +383,7 @@ export const make = (
         // Acquire the fiber with an atomic cleanup registration. It belongs
         // to this start attempt until admission succeeds; every failed exit,
         // including defects and interruption, interrupts and joins it.
-        yield* Effect.acquireUseRelease(
+        try Effect.acquireUseRelease(
           Effect.forkDetach(
             // `Flow.Any` erases the payload and result schemas the typed
             // signature reads its requirements from, so the declaration is
@@ -414,25 +414,25 @@ export const make = (
           (fiber, exit) => Exit.isFailure(exit) ? Fiber.interrupt(fiber) : Effect.void
         )
         return { child }
-      })
+      }
 
     /** The settled outcome of a child, or nothing while it is still going. */
     const outcomeOf = (
       child: string
     ): Effect.Effect<Option.Option<typeof ChildFlows.AwaitOutput.Type>, ChildError> =>
-      Effect.gen(function*() {
-        const row = yield* rowOf(child)
+      effect {
+        const row = try rowOf(child)
         if (Option.isNone(row)) {
-          return yield* Effect.fail(notFound(`agent/await knows no child run ${child}.`))
+          return try Effect.fail(notFound(`agent/await knows no child run ${child}.`))
         }
         if (row.value.status === "cancelled") {
-          return yield* Effect.fail(failed(`The child run ${child} was cancelled.`))
+          return try Effect.fail(failed(`The child run ${child} was cancelled.`))
         }
-        const state = yield* decodeChildState(row.value.stateJson).pipe(
+        const state = try decodeChildState(row.value.stateJson).pipe(
           Effect.mapError(() => failed(`The child run ${child} has unreadable state.`))
         )
-        const flow = yield* declarationOf(state.flowName, "agent/await")
-        const result = yield* (runtime.poll(flow as never, child) as Effect.Effect<
+        const flow = try declarationOf(state.flowName, "agent/await")
+        const result = try (runtime.poll(flow as never, child) as Effect.Effect<
           Option.Option<Flow.Result<unknown, unknown>>,
           unknown
         >).pipe(
@@ -452,21 +452,21 @@ export const make = (
           // The round continued its lineage under a NEW execution id. This id
           // will never hold a value, and an await that kept polling it would
           // wait forever, so say so instead.
-          return yield* Effect.fail(
+          return try Effect.fail(
             failed(`The child run ${child} handed its lineage to ${settled.flow} and holds no value.`)
           )
         }
         if (settled.exit._tag === "Failure") {
-          return yield* Effect.fail(
+          return try Effect.fail(
             failed(`The child run ${child} failed.\n${boundedCause(settled.exit.cause)}`)
           )
         }
         return Option.some({ child, output: asText(settled.exit.value) })
-      })
+      }
 
     const awaitChild: ChildFlows.Children["await"] = (input) =>
-      Effect.gen(function*() {
-        yield* ownedByCaller("agent/await", input.child)
+      effect {
+        try ownedByCaller("agent/await", input.child)
         const timeout = input.timeoutSeconds === undefined ? awaitTimeout : Duration.seconds(input.timeoutSeconds)
         const expired = () =>
           Effect.fail(
@@ -478,7 +478,7 @@ export const make = (
               limitMillis: Duration.toMillis(timeout)
             })
           )
-        const parent = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
+        const parent = try Effect.serviceOption(FlowRuntime.FlowInstance)
         if (Option.isNone(parent)) {
           const attempt: Effect.Effect<typeof ChildFlows.AwaitOutput.Type, ChildError> = Effect.flatMap(
             outcomeOf(input.child),
@@ -487,10 +487,10 @@ export const make = (
               onSome: Effect.succeed
             })
           )
-          return yield* Effect.timeoutOrElse(attempt, { duration: timeout, orElse: expired })
+          return try Effect.timeoutOrElse(attempt, { duration: timeout, orElse: expired })
         }
-        const dispatch = yield* Action.CurrentInvocationKey
-        const key = yield* Action.idempotencyKey(
+        const dispatch = try Action.CurrentInvocationKey
+        const key = try Action.idempotencyKey(
           "agent/await",
           dispatch === undefined ? undefined : { parentScope: dispatch }
         ).pipe(
@@ -499,7 +499,7 @@ export const make = (
           Effect.provideService(FlowRuntime.FlowInstance, parent.value)
         )
         // This is an invocation deadline, not a fresh timeout on every drive.
-        const deadline = yield* Action.make({
+        const deadline = try Action.make({
           name: "agent/await/deadline",
           tier: "sealed",
           idempotencyKey: key,
@@ -515,14 +515,14 @@ export const make = (
         )
         let attempt = 0
         while (true) {
-          const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
+          const now = try Effect.clockWith((clock) => clock.currentTimeMillis)
           const remaining = deadline - now
-          if (remaining <= 0) return yield* expired()
-          const outcome = yield* outcomeOf(input.child).pipe(
+          if (remaining <= 0) return try expired()
+          const outcome = try outcomeOf(input.child).pipe(
             Effect.timeoutOrElse({ duration: remaining, orElse: expired })
           )
           if (Option.isSome(outcome)) return outcome.value
-          yield* DurableClock.sleep({
+          try DurableClock.sleep({
             name: `${key}/${attempt++}`,
             duration: Math.min(Duration.toMillis(pollInterval), remaining),
             inMemoryThreshold: 0
@@ -533,17 +533,17 @@ export const make = (
             Effect.provideService(FlowRuntime.FlowInstance, parent.value)
           )
         }
-      })
+      }
 
     const send: ChildFlows.Children["send"] = (input) =>
-      Effect.gen(function*() {
-        const parent = yield* parentInstance("agent/send")
+      effect {
+        const parent = try parentInstance("agent/send")
         if (!ownsChild(parent.executionId, input.child)) {
-          return yield* Effect.fail(unowned("agent/send", parent.executionId, input.child))
+          return try Effect.fail(unowned("agent/send", parent.executionId, input.child))
         }
-        const row = yield* rowOf(input.child)
+        const row = try rowOf(input.child)
         if (Option.isNone(row)) {
-          return yield* Effect.fail(notFound(`agent/send knows no child run ${input.child}.`))
+          return try Effect.fail(notFound(`agent/send knows no child run ${input.child}.`))
         }
         // The canonical step key of this call site, not a counter and not a
         // digest of what was said. `Action.idempotencyKey` folds the parent's
@@ -573,8 +573,8 @@ export const make = (
         // body re-runs from the top on every drive, so its sends re-derive
         // their own ordinals in order. Only a step the engine replays instead
         // of running can skip one, and such a step always has a key.
-        const dispatch = yield* Action.CurrentInvocationKey
-        const messageId = yield* Action.idempotencyKey(
+        const dispatch = try Action.CurrentInvocationKey
+        const messageId = try Action.idempotencyKey(
           "agent/send",
           dispatch === undefined ? undefined : { parentScope: dispatch }
         ).pipe(
@@ -594,7 +594,7 @@ export const make = (
         // the control plane is the authority on whether this message was
         // already applied, and a sealed steer would replay a recorded
         // `delivered` without ever asking it.
-        const stampedAt = yield* Action.make({
+        const stampedAt = try Action.make({
           name: "agent/send",
           tier: "sealed",
           idempotencyKey: messageId,
@@ -606,7 +606,7 @@ export const make = (
           Effect.provideService(EffectDigest.Digest, crypto),
           Effect.provideService(SecureRandom.SecureRandom, random)
         )
-        const receipt = yield* control.steer({
+        const receipt = try control.steer({
           runId: input.child,
           message: {
             messageId,
@@ -636,25 +636,25 @@ export const make = (
           case "AlreadyApplied":
             return { delivered: true }
           case "Conflict":
-            return yield* Effect.fail(
+            return try Effect.fail(
               failed(
                 `agent/send could not steer ${input.child}: the message key ${messageId} already carries a ` +
                   `different message (${receipt.message}).`
               )
             )
           case "Terminal":
-            return yield* Effect.fail(
+            return try Effect.fail(
               failed(`agent/send could not steer ${input.child}: the child run is ${receipt.status}.`)
             )
           default:
-            return yield* Effect.fail(
+            return try Effect.fail(
               failed(`agent/send could not steer ${input.child}: the control plane answered ${receipt._tag}.`)
             )
         }
-      })
+      }
 
     return ChildFlows.Children.of({ spawn, send, await: awaitChild })
-  })
+  }
 
 /**
  * Provides {@link ChildFlows.Children} over this host's durable engine.

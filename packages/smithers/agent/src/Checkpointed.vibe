@@ -46,7 +46,7 @@ import type { HarnessError } from "@smthrs/harness/HarnessError"
 import * as Checkpoints from "@smthrs/std/Checkpoints"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
-import type * as FlowEngineLike from "./FlowEngineLike.ts"
+import type * as FlowEngineLike from "./FlowEngineLike.vibe"
 
 /** A refusal the cell observes as an ordinary catchable failure. */
 const refused = (code: Cell.CallFailureCode, message: string): Cell.CallResult =>

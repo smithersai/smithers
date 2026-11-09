@@ -12,8 +12,8 @@ import * as Checkpoints from "@smthrs/std/Checkpoints"
 import * as StdError from "@smthrs/std/StdError"
 import { Effect, Layer, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Checkpointed from "../src/Checkpointed.ts"
-import * as FlowEngineLike from "../src/FlowEngineLike.ts"
+import * as Checkpointed from "../src/Checkpointed.vibe"
+import * as FlowEngineLike from "../src/FlowEngineLike.vibe"
 
 const call = (
   flowName: string,

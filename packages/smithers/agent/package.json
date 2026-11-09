@@ -67,8 +67,8 @@
       "default": "./.vibelang/js/src/CellPlugin.js"
     },
     "./Checkpointed": {
-      "types": "./src/Checkpointed.ts",
-      "vibelang-source": "./src/Checkpointed.ts",
+      "types": "./.vibe/declarations/Checkpointed.d.vibe.ts",
+      "vibelang-source": "./src/Checkpointed.vibe",
       "default": "./.vibelang/js/src/Checkpointed.js"
     },
     "./ChildFlows": {
@@ -77,18 +77,18 @@
       "default": "./.vibelang/js/src/ChildFlows.js"
     },
     "./EngineChildren": {
-      "types": "./src/EngineChildren.ts",
-      "vibelang-source": "./src/EngineChildren.ts",
+      "types": "./.vibe/declarations/EngineChildren.d.vibe.ts",
+      "vibelang-source": "./src/EngineChildren.vibe",
       "default": "./.vibelang/js/src/EngineChildren.js"
     },
     "./EventSink": {
-      "types": "./src/EventSink.ts",
-      "vibelang-source": "./src/EventSink.ts",
+      "types": "./.vibe/declarations/EventSink.d.vibe.ts",
+      "vibelang-source": "./src/EventSink.vibe",
       "default": "./.vibelang/js/src/EventSink.js"
     },
     "./FlowEngineLike": {
-      "types": "./src/FlowEngineLike.ts",
-      "vibelang-source": "./src/FlowEngineLike.ts",
+      "types": "./.vibe/declarations/FlowEngineLike.d.vibe.ts",
+      "vibelang-source": "./src/FlowEngineLike.vibe",
       "default": "./.vibelang/js/src/FlowEngineLike.js"
     },
     "./FlowStore": {
@@ -162,8 +162,8 @@
       "default": "./.vibelang/js/src/StandardFlows.js"
     },
     "./WorkspaceObservation": {
-      "types": "./src/WorkspaceObservation.ts",
-      "vibelang-source": "./src/WorkspaceObservation.ts",
+      "types": "./.vibe/declarations/WorkspaceObservation.d.vibe.ts",
+      "vibelang-source": "./src/WorkspaceObservation.vibe",
       "default": "./.vibelang/js/src/WorkspaceObservation.js"
     },
     "./WorkspaceSandbox": {
@@ -197,8 +197,8 @@
       "default": "./.vibelang/js/src/ExternalAgent.js"
     },
     "./Transcript": {
-      "types": "./src/Transcript.ts",
-      "vibelang-source": "./src/Transcript.ts",
+      "types": "./.vibe/declarations/Transcript.d.vibe.ts",
+      "vibelang-source": "./src/Transcript.vibe",
       "default": "./.vibelang/js/src/Transcript.js"
     }
   },

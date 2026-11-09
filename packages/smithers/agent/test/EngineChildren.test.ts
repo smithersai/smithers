@@ -49,7 +49,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as ChildFlows from "../src/ChildFlows.ts"
-import * as EngineChildren from "../src/EngineChildren.ts"
+import * as EngineChildren from "../src/EngineChildren.vibe"
 
 const jj = Jj.make({
   snapshot: () =>

@@ -33,7 +33,7 @@ import { Cause, Deferred, Effect, Exit, Layer, Option, Schema, Scope, Stream } f
 import type * as EffectDigest from "effect/crypto/Digest"
 import { describe, expect, it } from "vitest"
 import type * as Budget from "../src/Budget.ts"
-import * as FlowEngineLike from "../src/FlowEngineLike.ts"
+import * as FlowEngineLike from "../src/FlowEngineLike.vibe"
 import type * as QuotaPolicy from "../src/QuotaPolicy.vibe"
 import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.vibe"
 import * as Safety from "./Safety.ts"

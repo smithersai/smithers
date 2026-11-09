@@ -84,7 +84,7 @@ const importRules = ImportRules({
     },
     {
       kind: "rootImportsOnly",
-      files: ["src/EngineChildren.ts", "src/FlowEngineLike.ts", "src/FlowStore.vibe"],
+      files: ["src/EngineChildren.vibe", "src/FlowEngineLike.vibe", "src/FlowStore.vibe"],
       packages: ["@smthrs/*"],
       because: "sdk.root-imports-only: these runtime boundaries use the public package roots."
     }
@@ -246,7 +246,7 @@ const securityReview = Smithers.SecurityReview({
         "A detached child resumed after restart without the parent's attenuated CapabilitySet or budget.",
         "agent/spawn starting a flow not in options.flows."
       ],
-      paths: ["src/EngineChildren.ts", "src/ChildFlows.ts"]
+      paths: ["src/EngineChildren.vibe", "src/ChildFlows.ts"]
     },
     {
       id: "sealed-key-integrity",
@@ -258,7 +258,7 @@ const securityReview = Smithers.SecurityReview({
         "A sealed key made cross-run reusable when Options.capabilities is undeclared.",
         "The wire-body marker splice producing the same key for two different request bodies."
       ],
-      paths: ["src/FlowEngineLike.ts", "src/ModelStep.ts", "src/internal/ModelStep.vibe", "src/internal/CallIdentity.ts"]
+      paths: ["src/FlowEngineLike.vibe", "src/ModelStep.ts", "src/internal/ModelStep.vibe", "src/internal/CallIdentity.ts"]
     },
     {
       id: "checkpoint-relocation",
@@ -270,7 +270,7 @@ const securityReview = Smithers.SecurityReview({
         "A flow that names what it touches (not a shell call) run at a checkpoint without the relocation refusal.",
         "The scratch checkout not released when the call fails or is interrupted, leaving pinned trees on disk."
       ],
-      paths: ["src/Checkpointed.ts"]
+      paths: ["src/Checkpointed.vibe"]
     },
     {
       id: "sandbox-declared-effects",
@@ -283,10 +283,10 @@ const securityReview = Smithers.SecurityReview({
         "WorkspaceObservation following a symlink or reading file contents, or its prune list hiding real source edits."
       ],
       paths: [
-        "src/FlowEngineLike.ts",
+        "src/FlowEngineLike.vibe",
         "src/WorkspaceSandbox.ts",
         "src/InMemoryWorkspaceSandbox.ts",
-        "src/WorkspaceObservation.ts"
+        "src/WorkspaceObservation.vibe"
       ]
     },
     {
@@ -303,7 +303,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Budget.ts",
         "src/RunawayGuard.vibe",
         "src/QuotaPolicy.vibe",
-        "src/FlowEngineLike.ts",
+        "src/FlowEngineLike.vibe",
         "src/ModelStep.ts",
         "src/internal/ModelStep.vibe",
         "src/AgentAction.ts"
@@ -319,7 +319,7 @@ const securityReview = Smithers.SecurityReview({
         "supervisorMemory or MemorySnapshotRecorder writing a sentence without redaction.",
         "Fields renamed (spent, generation params) to dodge redaction that could still carry secret values."
       ],
-      paths: ["src/AgentSession.ts", "src/Agent.vibe", "src/EventSink.ts", "src/MemorySnapshotRecorder.vibe"]
+      paths: ["src/AgentSession.ts", "src/Agent.vibe", "src/EventSink.vibe", "src/MemorySnapshotRecorder.vibe"]
     },
     {
       id: "seat-routing-injection",

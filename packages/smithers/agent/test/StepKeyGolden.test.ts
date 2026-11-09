@@ -34,7 +34,7 @@ import { Deferred, Effect, Layer, Option, Schema, Scope, Stream } from "effect"
 import type * as EffectDigest from "effect/crypto/Digest"
 import { describe, expect, it } from "vitest"
 import * as Budget from "../src/Budget.ts"
-import * as FlowEngineLike from "../src/FlowEngineLike.ts"
+import * as FlowEngineLike from "../src/FlowEngineLike.vibe"
 import * as QuotaPolicy from "../src/QuotaPolicy.vibe"
 
 /** The one prepared wire request both vectors are sealed against. */

@@ -7,7 +7,7 @@
  *
  * @since 1.0.0
  */
-import type * as FlowEngineLike from "../../../../packages/smithers/agent/src/FlowEngineLike.ts"
+import type * as FlowEngineLike from "../../../../packages/smithers/agent/src/FlowEngineLike.vibe"
 import * as Seat from "../../../../packages/smithers/agent/src/Seat.vibe"
 import * as SeatResolver from "../../../../packages/smithers/agent/src/SeatResolver.vibe"
 import * as Model from "../../../../packages/smithers/agent/model/src/Model.vibe"

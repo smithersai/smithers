@@ -16,7 +16,7 @@
  * @category services
  * @since 0.1.0
  */
-export * as FlowEngineLike from "./FlowEngineLike.ts"
+export * as FlowEngineLike from "./FlowEngineLike.vibe"
 
 /**
  * @category execution
@@ -100,7 +100,7 @@ export * as FlowStore from "./FlowStore.vibe"
  * @category constructors
  * @since 0.1.0
  */
-export * as EngineChildren from "./EngineChildren.ts"
+export * as EngineChildren from "./EngineChildren.vibe"
 
 /**
  * @category services
@@ -112,13 +112,13 @@ export * as WorkspaceSandbox from "./WorkspaceSandbox.ts"
  * @category services
  * @since 0.1.0
  */
-export * as WorkspaceObservation from "./WorkspaceObservation.ts"
+export * as WorkspaceObservation from "./WorkspaceObservation.vibe"
 
 /**
  * @category constructors
  * @since 0.1.0
  */
-export * as Checkpointed from "./Checkpointed.ts"
+export * as Checkpointed from "./Checkpointed.vibe"
 
 /**
  * @category constructors
@@ -136,7 +136,7 @@ export * as AgentAction from "./AgentAction.ts"
  * @category services
  * @since 0.1.0
  */
-export * as EventSink from "./EventSink.ts"
+export * as EventSink from "./EventSink.vibe"
 
 /**
  * @category services
@@ -202,4 +202,4 @@ export * as Acp from "./Acp.vibe"
  * @category models
  * @since 1.0.0
  */
-export * as Transcript from "./Transcript.ts"
+export * as Transcript from "./Transcript.vibe"

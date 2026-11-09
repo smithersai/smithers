@@ -6,7 +6,7 @@
  * existed as a separate piece — the controller in `@smthrs/harness/CellTurn`,
  * registry-backed call resolution in `@smthrs/harness/CellCalls`, the sandbox in
  * `@smthrs/harness/QuickJSSandbox`, the durable engine port in
- * `./FlowEngineLike.ts` — and what did not exist was one place that wires them
+ * `./FlowEngineLike.vibe` — and what did not exist was one place that wires them
  * together. This is that place.
  *
  * One agent, one implementation, two ways to run it. {@link module:AgentSession}
@@ -87,8 +87,8 @@ import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import * as Budget from "./Budget.ts"
 import * as CellPlugin from "./CellPlugin.ts"
-import * as Checkpointed from "./Checkpointed.ts"
-import * as FlowEngineLike from "./FlowEngineLike.ts"
+import * as Checkpointed from "./Checkpointed.vibe"
+import * as FlowEngineLike from "./FlowEngineLike.vibe"
 import * as CallIdentity from "./internal/CallIdentity.ts"
 import * as MemoryMine from "./MemoryMine.ts"
 import * as QuotaPolicy from "./QuotaPolicy.vibe"

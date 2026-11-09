@@ -17,7 +17,7 @@ import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Effect, Option } from "effect"
 import type * as EffectDigest from "effect/crypto/Digest"
 import { describe, expect, it } from "vitest"
-import * as FlowEngineLike from "../src/FlowEngineLike.ts"
+import * as FlowEngineLike from "../src/FlowEngineLike.vibe"
 import * as InMemoryWorkspaceSandbox from "../src/InMemoryWorkspaceSandbox.ts"
 import type * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
 
