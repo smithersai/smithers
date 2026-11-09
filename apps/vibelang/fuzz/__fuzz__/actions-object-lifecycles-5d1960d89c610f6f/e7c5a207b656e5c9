@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 16
+bias 3
+null-prototype false
+key 2859480822
+tape pLIFQl5qrwzr5j-tVggxRgh6EF0YhIdvlxjMFp4AQYfZ2J1L2Ksbb1bK-IQJpGSN44mnLxsWeRy_LKhRPN3YqNXHP75-WzQcJlrmDh3fLQ4hQn2Ay1bc0jZOLL_cL0GbhYi-okoPREVDPTYuXlVH_tMBZTBtRN9TCcKNut9bgvmPCc25Q304mQRQaEYq-Jzfu5OM5XxdKEWGxq42a1pdeqM_wIyyD8s8Vi-HkehGh4TioBkzCa3RRAMbUux8Erh0XTO59L_7-37fWIq7t7HZ8Uh56KcBkk5oQTDeHANfiYojoXs8_A4Mdz7W15UPxUSljbCnBJdKFBsiltx6wClok54WnbI
+schedule-key 1919390032
+schedule 
+signature "ReturnedFalse"
+path 3.4.3
+codec "json"
+value "[{\"op\":\"cancel\",\"id\":1,\"flow\":0,\"well\":false,\"role\":\"viewer\"}]"
+# ReturnedFalse
+# [{"op":"cancel","id":1,"flow":0,"well":false,"role":"viewer"}]

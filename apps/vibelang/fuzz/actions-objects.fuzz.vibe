@@ -65,7 +65,9 @@ it.live("actions/object-lifecycles", () => run("actions/object-lifecycles", Inpu
         if (op.op === "cancel") {
           const answer = try w.directory.cancel(id, op.role, w.person.id)
           if (answer !== null && !refusals.includes(answer)) return false
-          if (!used.has(id) && answer !== "not-found") return false
+          // A start refused after recording its request leaves a terminal failed row, so the rows decide, not the start's answer.
+          const recorded = (try Runs.read((try w.object(id)).sequencer)).some((row) => row.id === id)
+          if (recorded === (answer === "not-found")) return false
         }
         if (op.op === "alarm" && used.has(id)) {
           const object = try w.object(id)
