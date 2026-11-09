@@ -117,21 +117,28 @@ const error = (code: StdError.Code, message: string, path?: string): StdError.St
  * @category handlers
  * @since 1.0.0
  */
-export const run = Effect.fn("WebFetch.run")(function*(
-  input: typeof Input.Type
-): Effect.fn.Return<typeof Output.Type, StdError.StdError, HttpClient.HttpClient | GrantStore> {
+export const run: (input: {
+  readonly url: string
+  readonly format?: "html" | "markdown" | "text" | undefined
+  readonly timeout?: number | undefined
+}) => Effect.Effect<{
+  readonly url: string
+  readonly status: number
+  readonly contentType: string
+  readonly content: string
+  readonly truncated: boolean
+  readonly notice?: string | undefined
+}, StdError.StdError, GrantStore | HttpClient.HttpClient> = effect (input) => try withSpan(withDeadline(effect {
   let url = parseHttpUrl(input.url)
   if (url === undefined) {
-    return yield* Effect.fail(
-      error("invalid_input", "URL must use http or https without user information", input.url)
-    )
+    throw error("invalid_input", "URL must use http or https without user information", input.url)
   }
-  const client = guarded(yield* HttpClient.HttpClient, false)
+  const client = guarded(try HttpClient.HttpClient, false)
   let headers: Readonly<Record<string, string>> = {
     accept: input.format === "html" ? "text/html, text/plain;q=0.8" : "text/markdown, text/plain, text/html;q=0.8"
   }
   for (let redirect = 0; redirect <= maxRedirects; redirect++) {
-    const response = yield* client.execute(
+    const response = try client.execute(
       HttpClientRequest.setHeaders(HttpClientRequest.get(url.toString()), headers)
     ).pipe(
       Effect.mapError((cause) => refusal(cause) ?? error("request_failed", `Web fetch request failed: ${url}`))
@@ -140,9 +147,7 @@ export const run = Effect.fn("WebFetch.run")(function*(
     if (response.status >= 300 && response.status < 400 && location !== undefined) {
       const next = parseHttpUrl(location, url)
       if (next === undefined) {
-        return yield* Effect.fail(
-          error("invalid_input", "Redirect target must use http or https without user information", location)
-        )
+        throw error("invalid_input", "Redirect target must use http or https without user information", location)
       }
       if (next.origin !== url.origin) {
         headers = Object.fromEntries(
@@ -161,22 +166,20 @@ export const run = Effect.fn("WebFetch.run")(function*(
       && !normalizedContentType.includes("json")
       && !normalizedContentType.includes("xml")
     ) {
-      return yield* Effect.fail(
-        error("unsupported_content_type", `Unsupported content type: ${contentType || "unknown"}`)
-      )
+      throw error("unsupported_content_type", `Unsupported content type: ${contentType || "unknown"}`)
     }
     const length = Number(header(response.headers, "content-length"))
     if (Number.isFinite(length) && length > MAX_RESPONSE_BYTES) {
-      return yield* Effect.fail(error("response_too_large", "Response exceeds the 5 MiB limit"))
+      throw error("response_too_large", "Response exceeds the 5 MiB limit")
     }
-    const body = yield* readBounded(response.stream, url.toString()).pipe(
+    const body = try readBounded(response.stream, url.toString()).pipe(
       Effect.mapError((cause) =>
         cause instanceof StdError.StdError
           ? cause
           : error("request_failed", "Web fetch response could not be read")
       )
     )
-    const raw = new TextDecoder().decode(body)
+    const raw = try Effect.orDie(Effect.try(() => new TextDecoder().decode(body)))
     const format = input.format ?? "markdown"
     const { text: content, ...disclosure } = capOutput(
       format === "html" || !normalizedContentType.includes("html")
@@ -187,8 +190,6 @@ export const run = Effect.fn("WebFetch.run")(function*(
     )
     return { url: url.toString(), status: response.status, contentType, content, ...disclosure }
   }
-  return yield* Effect.fail(error("request_failed", "Web fetch exceeded the redirect limit"))
-}, (effect, input) =>
-  // Keep the shared deadline outside the redirect loop and error mapping.
-  withDeadline(effect, input.url, input.timeout, (seconds) =>
-    error("timeout", `Web fetch timed out after ${seconds} seconds`)))
+  throw error("request_failed", "Web fetch exceeded the redirect limit")
+// Keep the shared deadline outside the redirect loop and error mapping.
+}, input.url, input.timeout, (seconds) => error("timeout", `Web fetch timed out after ${seconds} seconds`)), "WebFetch.run")

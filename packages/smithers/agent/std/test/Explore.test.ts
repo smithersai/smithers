@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest"
 import * as Explore from "../src/Explore.vibe"
 import * as Glob from "../src/Glob.vibe"
 import * as Grep from "../src/Grep.vibe"
-import * as Ls from "../src/Ls.ts"
-import * as Read from "../src/Read.ts"
+import * as Ls from "../src/Ls.vibe"
+import * as Read from "../src/Read.vibe"
 
 const forbiddenActions = ["fs:write", "net:post", "proc:spawn"] as const
 

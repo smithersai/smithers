@@ -5,8 +5,8 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync,
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as Ls from "../src/Ls.ts"
-import * as Read from "../src/Read.ts"
+import * as Ls from "../src/Ls.vibe"
+import * as Read from "../src/Read.vibe"
 import * as Write from "../src/Write.vibe"
 
 describe("file tools preserve source data across host failures", () => {

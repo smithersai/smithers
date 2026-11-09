@@ -8,8 +8,8 @@ import * as Schema from "effect/Schema"
 import * as Glob from "./Glob.vibe"
 import * as Grep from "./Grep.vibe"
 import { envelope } from "./internal/Declaration.ts"
-import * as Ls from "./Ls.ts"
-import * as Read from "./Read.ts"
+import * as Ls from "./Ls.vibe"
+import * as Read from "./Read.vibe"
 
 /**
  * Registry name for the explore flow.

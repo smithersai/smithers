@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import * as EgressHttpClient from "../../../flows/platform-node/src/EgressHttpClient.ts"
 import * as Fetch from "../src/Fetch.vibe"
 import * as HttpPost from "../src/HttpPost.vibe"
-import * as WebFetch from "../src/WebFetch.ts"
+import * as WebFetch from "../src/WebFetch.vibe"
 
 const servers: Array<Server> = []
 

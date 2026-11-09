@@ -2,7 +2,7 @@ import { Cause, Effect, Exit, FileSystem, PlatformError } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Grep from "../src/Grep.vibe"
 import { MAX_LINE_CHARS } from "../src/internal/Text.ts"
-import * as Read from "../src/Read.ts"
+import * as Read from "../src/Read.vibe"
 import { fileInfo, layer } from "./TestLayers.ts"
 
 const execute = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect)

@@ -8,7 +8,7 @@ import * as ApplyPatch from "../src/ApplyPatch.vibe"
 import * as Edit from "../src/Edit.vibe"
 import * as FileMutation from "../src/internal/FileMutation.vibe"
 import * as LanguageServer from "../src/LanguageServer.vibe"
-import * as Read from "../src/Read.ts"
+import * as Read from "../src/Read.vibe"
 import { StdError } from "../src/StdError.ts"
 import * as Write from "../src/Write.vibe"
 

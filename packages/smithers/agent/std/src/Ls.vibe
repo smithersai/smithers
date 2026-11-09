@@ -153,24 +153,32 @@ const byText = (left: string, right: string): number => (left < right ? -1 : Num
  * @category handlers
  * @since 1.0.0
  */
-export const run = Effect.fn("Ls.run")(function*(
-  input: typeof Input.Type
-): Effect.fn.Return<typeof Output.Type, StdError.StdError, FileSystem.FileSystem | Path.Path> {
-  const fileSystem = yield* FileSystem.FileSystem
-  const path = yield* Path.Path
-  const info = yield* fileSystem.stat(input.path).pipe(
+export const run: (input: {
+    readonly path: string;
+    readonly offset?: number | undefined;
+    readonly limit?: number | undefined;
+}) => Effect.Effect<{
+    readonly entries: readonly {
+        readonly name: string;
+        readonly kind: "directory" | "file";
+    }[];
+    readonly total: number;
+    readonly truncated: boolean;
+    readonly notice?: string | undefined;
+}, StdError.StdError, FileSystem.FileSystem | import("effect/Path").Path> = effect (input) => try withSpan(effect {
+  const fileSystem = try FileSystem.FileSystem
+  const path = try Path.Path
+  const info = try fileSystem.stat(input.path).pipe(
     Effect.mapError(FsFailure.reading(input.path, `Directory not found: ${input.path}`))
   )
   if (info.type !== "Directory") {
-    return yield* Effect.fail(
-      new StdError.StdError({
-        code: "not_a_directory",
-        message: `Cannot list a file: ${input.path}`,
-        path: input.path
-      })
-    )
+    throw new StdError.StdError({
+      code: "not_a_directory",
+      message: `Cannot list a file: ${input.path}`,
+      path: input.path
+    })
   }
-  const names = yield* fileSystem.readDirectory(input.path).pipe(
+  const names = try fileSystem.readDirectory(input.path).pipe(
     Effect.mapError(FsFailure.reading(input.path, `Directory not found: ${input.path}`))
   )
   const sortedNames = [...names].sort(byText)
@@ -179,13 +187,11 @@ export const run = Effect.fn("Ls.run")(function*(
   // the first page and there is nothing on it. This matches `read`, which
   // answers an empty page for an empty file and refuses only a real overshoot.
   if (offset > Math.max(sortedNames.length, 1)) {
-    return yield* Effect.fail(
-      new StdError.StdError({
-        code: "offset_out_of_range",
-        message: `Entry offset ${offset} is outside ${input.path}, which has ${sortedNames.length} entries`,
-        path: input.path
-      })
-    )
+    throw new StdError.StdError({
+      code: "offset_out_of_range",
+      message: `Entry offset ${offset} is outside ${input.path}, which has ${sortedNames.length} entries`,
+      path: input.path
+    })
   }
   const limit = Math.min(input.limit ?? DEFAULT_READ_LIMIT, MAX_ENTRIES)
   // Every entry is described before the page is cut, because the order the
@@ -202,7 +208,7 @@ export const run = Effect.fn("Ls.run")(function*(
   // listing reports it as a plain entry instead of dying: one broken link in
   // a repository root used to fail the whole `ls` and cost the agent a frame
   // per attempt.
-  const described = yield* Effect.forEach(
+  const described = try Effect.forEach(
     sortedNames,
     (entry) =>
       fileSystem.stat(path.join(input.path, entry)).pipe(
@@ -225,4 +231,4 @@ export const run = Effect.fn("Ls.run")(function*(
     truncated,
     ...(truncated ? { notice: notice("entries", selected.length, ordered.length) } : {})
   }
-})
+}, "Ls.run")

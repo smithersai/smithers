@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as Ls from "../src/Ls.ts"
+import * as Ls from "../src/Ls.vibe"
 import { fileInfo, layer } from "./TestLayers.ts"
 
 const execute = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect)

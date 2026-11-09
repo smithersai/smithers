@@ -63,8 +63,8 @@
       "default": "./.vibelang/js/src/Edit.js"
     },
     "./ExaWebSearch": {
-      "types": "./src/ExaWebSearch.ts",
-      "vibelang-source": "./src/ExaWebSearch.ts",
+      "types": "./.vibe/declarations/ExaWebSearch.d.vibe.ts",
+      "vibelang-source": "./src/ExaWebSearch.vibe",
       "default": "./.vibelang/js/src/ExaWebSearch.js"
     },
     "./Explore": {
@@ -98,8 +98,8 @@
       "default": "./.vibelang/js/src/LanguageServer.js"
     },
     "./Ls": {
-      "types": "./src/Ls.ts",
-      "vibelang-source": "./src/Ls.ts",
+      "types": "./.vibe/declarations/Ls.d.vibe.ts",
+      "vibelang-source": "./src/Ls.vibe",
       "default": "./.vibelang/js/src/Ls.js"
     },
     "./Lsp": {
@@ -128,8 +128,8 @@
       "default": "./.vibelang/js/src/Probe.js"
     },
     "./Read": {
-      "types": "./src/Read.ts",
-      "vibelang-source": "./src/Read.ts",
+      "types": "./.vibe/declarations/Read.d.vibe.ts",
+      "vibelang-source": "./src/Read.vibe",
       "default": "./.vibelang/js/src/Read.js"
     },
     "./Relocate": {
@@ -188,8 +188,8 @@
       "default": "./.vibelang/js/src/UpdatePlan.js"
     },
     "./WebFetch": {
-      "types": "./src/WebFetch.ts",
-      "vibelang-source": "./src/WebFetch.ts",
+      "types": "./.vibe/declarations/WebFetch.d.vibe.ts",
+      "vibelang-source": "./src/WebFetch.vibe",
       "default": "./.vibelang/js/src/WebFetch.js"
     },
     "./WebSearch": {

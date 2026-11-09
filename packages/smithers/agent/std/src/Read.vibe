@@ -217,12 +217,12 @@ const nearest = (
   fileSystem: FileSystem.FileSystem,
   path: string
 ): Effect.Effect<string> =>
-  Effect.gen(function*() {
+  effect {
     const segments = path.split("/").filter((segment) => segment !== "" && segment !== ".")
     if (path.startsWith("/") || segments.includes("..")) return ""
     for (let depth = segments.length - 1; depth >= 0; depth--) {
       const directory = segments.slice(0, depth).join("/")
-      const entries = yield* fileSystem.readDirectory(directory === "" ? "." : directory).pipe(Effect.option)
+      const entries = try fileSystem.readDirectory(directory === "" ? "." : directory).pipe(Effect.option)
       if (Option.isNone(entries)) continue
       const missing = segments[depth]!.toLowerCase()
       const ranked = entries.value
@@ -236,7 +236,7 @@ const nearest = (
       return `. ${directory === "" ? "The working directory" : directory} holds: ${shown}${more}.`
     }
     return ""
-  })
+  }
 
 const missingFile = (fileSystem: FileSystem.FileSystem, path: string) =>
   Effect.flatMap(nearest(fileSystem, path), (hint) =>
@@ -257,11 +257,20 @@ const missingFile = (fileSystem: FileSystem.FileSystem, path: string) =>
  * @category handlers
  * @since 1.0.0
  */
-export const run = Effect.fn("Read.run")(function*(
-  input: typeof Input.Type
-): Effect.fn.Return<typeof Output.Type, StdError.StdError, FileSystem.FileSystem> {
-  const fileSystem = yield* FileSystem.FileSystem
-  const info = yield* fileSystem.stat(input.path).pipe(
+export const run: (input: {
+    readonly path: string;
+    readonly offset?: number | undefined;
+    readonly limit?: number | undefined;
+}) => Effect.Effect<{
+    readonly content: string;
+    readonly startLine: number;
+    readonly endLine: number;
+    readonly totalLines: number;
+    readonly truncated: boolean;
+    readonly notice?: string | undefined;
+}, StdError.StdError, FileSystem.FileSystem> = effect (input) => try withSpan(effect {
+  const fileSystem = try FileSystem.FileSystem
+  const info = try fileSystem.stat(input.path).pipe(
     Effect.catchTag(
       "PlatformError",
       (error) =>
@@ -271,45 +280,37 @@ export const run = Effect.fn("Read.run")(function*(
     )
   )
   if (info.type === "Directory") {
-    return yield* Effect.fail(
-      new StdError.StdError({
-        code: "is_directory",
-        message: `Cannot read a directory: ${input.path}`,
-        path: input.path
-      })
-    )
+    throw new StdError.StdError({
+      code: "is_directory",
+      message: `Cannot read a directory: ${input.path}`,
+      path: input.path
+    })
   }
   if (info.type !== "File") {
-    return yield* Effect.fail(
-      new StdError.StdError({
-        code: "not_found",
-        message: `File not found: ${input.path}`,
-        path: input.path
-      })
-    )
+    throw new StdError.StdError({
+      code: "not_found",
+      message: `File not found: ${input.path}`,
+      path: input.path
+    })
   }
   const size = Number(info.size)
   if (size > MAX_READ_FILE_BYTES) {
-    return yield* Effect.fail(
-      new StdError.StdError({
-        code: "response_too_large",
-        message:
-          `${input.path} is ${size} bytes, over the ${MAX_READ_FILE_BYTES}-byte read limit; search it with grep or print a line range with bash`,
-        path: input.path
-      })
-    )
+    throw new StdError.StdError({
+      code: "response_too_large",
+      message:
+        `${input.path} is ${size} bytes, over the ${MAX_READ_FILE_BYTES}-byte read limit; search it with grep or print a line range with bash`,
+      path: input.path
+    })
   }
-  const bytes = yield* fileSystem.readFile(input.path).pipe(Effect.mapError(fileError(input.path)))
+  const bytes = try fileSystem.readFile(input.path).pipe(Effect.mapError(fileError(input.path)))
   if (bytes.includes(0)) {
-    return yield* Effect.fail(
-      new StdError.StdError({
-        code: "binary_file",
-        message: `Cannot read binary file: ${input.path}`,
-        path: input.path
-      })
-    )
+    throw new StdError.StdError({
+      code: "binary_file",
+      message: `Cannot read binary file: ${input.path}`,
+      path: input.path
+    })
   }
-  const text = yield* Effect.try({
+  const text = try Effect.try({
     try: () => new TextDecoder("utf-8", { fatal: true }).decode(bytes),
     catch: () =>
       new StdError.StdError({
@@ -324,13 +325,11 @@ export const run = Effect.fn("Read.run")(function*(
   // the caller asked for the first page and there is nothing on it. Only an
   // offset past the first line of a file that has none is out of range.
   if (offset > Math.max(page.totalLines, 1)) {
-    return yield* Effect.fail(
-      new StdError.StdError({
-        code: "offset_out_of_range",
-        message: `Line offset ${offset} is outside ${input.path}`,
-        path: input.path
-      })
-    )
+    throw new StdError.StdError({
+      code: "offset_out_of_range",
+      message: `Line offset ${offset} is outside ${input.path}`,
+      path: input.path
+    })
   }
   const lines = page.lines.map(clipLine)
   const longLinesTruncated = lines.some((line, index) => line !== page.lines[index])
@@ -347,7 +346,7 @@ export const run = Effect.fn("Read.run")(function*(
   const clipped = longLinesTruncated
     ? ` Lines longer than ${MAX_LINE_CHARS} Unicode scalar values are clipped, so such a line is not an edit anchor.`
     : ""
-  yield* FileMutation.recordRead(fileSystem, input.path, bytes)
+  try FileMutation.recordRead(fileSystem, input.path, bytes)
   return {
     content: whole,
     startLine: page.startLine,
@@ -356,4 +355,4 @@ export const run = Effect.fn("Read.run")(function*(
     truncated,
     ...(truncated ? { notice: `${notice("lines", shown, page.totalLines)}${clipped}` } : {})
   }
-})
+}, "Read.run")

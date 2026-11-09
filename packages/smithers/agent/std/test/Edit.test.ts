@@ -1,7 +1,7 @@
 import { Cause, Effect, Exit, FileSystem, Layer, Option } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Edit from "../src/Edit.vibe"
-import * as Read from "../src/Read.ts"
+import * as Read from "../src/Read.vibe"
 import { fileInfo, layer } from "./TestLayers.ts"
 
 const execute = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect)

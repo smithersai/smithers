@@ -6,7 +6,7 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { TestClock } from "effect/testing"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import * as ExaWebSearch from "../src/ExaWebSearch.ts"
+import * as ExaWebSearch from "../src/ExaWebSearch.vibe"
 import * as WebSearch from "../src/WebSearch.vibe"
 
 const reference = { id: "exa", name: "Exa" }

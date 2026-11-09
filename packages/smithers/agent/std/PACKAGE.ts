@@ -167,7 +167,7 @@ const securityReview = Smithers.SecurityReview({
         "parseHttpUrl admitting a loopback, link-local, or metadata address, or a URL whose host differs after WHATWG normalization.",
         "Caller-supplied Authorization or Cookie headers forwarded to a cross-origin redirect target."
       ],
-      paths: ["src/Fetch.vibe", "src/HttpPost.vibe", "src/WebFetch.ts", "src/internal/Http.vibe", "src/internal/Url.ts"]
+      paths: ["src/Fetch.vibe", "src/HttpPost.vibe", "src/WebFetch.vibe", "src/internal/Http.vibe", "src/internal/Url.ts"]
     },
     {
       id: "exa-credential-handling",
@@ -178,7 +178,7 @@ const securityReview = Smithers.SecurityReview({
         "Error messages or logs that include the request, headers, or credential reference.",
         "An unbounded response.json read that a hostile or compromised endpoint can use to exhaust memory."
       ],
-      paths: ["src/ExaWebSearch.ts", "src/WebSearch.vibe"]
+      paths: ["src/ExaWebSearch.vibe", "src/WebSearch.vibe"]
     },
     {
       id: "untrusted-output-bounds",

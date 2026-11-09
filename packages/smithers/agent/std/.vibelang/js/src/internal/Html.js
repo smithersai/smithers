@@ -49,6 +49,7 @@ const source = (html) => dropSkipped(html.replace(comments, ""));
  *
  * @category rendering
  * @since 1.0.0
+ * @throws {never}
  */
 export const toText = (html) => decode(source(html).replace(/<(br|\/p|\/div|\/li|\/h[1-6]|\/tr)\b[^>]*>/gi, "\n").replace(/<[^>]*>/g, " "))
     .replace(/[ \t]+\n/g, "\n").replace(/\n[ \t]+/g, "\n").replace(/\n{3,}/g, "\n\n").replace(/[ \t]{2,}/g, " ").trim();
@@ -57,6 +58,7 @@ export const toText = (html) => decode(source(html).replace(/<(br|\/p|\/div|\/li
  *
  * @category rendering
  * @since 1.0.0
+ * @throws {never}
  */
 export const toMarkdown = (html) => {
     const markdown = source(html)

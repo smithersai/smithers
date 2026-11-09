@@ -48,25 +48,25 @@ export const layer = (
 ): Layer.Layer<WebSearch.WebSearch, never, Credential.Credential | HttpClient.HttpClient> =>
   Layer.effect(
     WebSearch.WebSearch,
-    Effect.gen(function*() {
-      const credentials = yield* Credential.Credential
-      const http = yield* HttpClient.HttpClient
+    effect {
+      const credentials = try Credential.Credential
+      const http = try HttpClient.HttpClient
       return WebSearch.make({
         search: (input): Effect.Effect<typeof WebSearch.Output.Type, StdError.StdError> =>
-          Effect.gen(function*() {
-            const reference = yield* credentials.get(credentialId).pipe(Effect.mapError(() =>
+          effect {
+            const reference = try credentials.get(credentialId).pipe(Effect.mapError(() =>
               new StdError.StdError({
                 code: "provider_unavailable",
                 message: "Configured Exa credential is unavailable"
               })
             ))
-            const secret = yield* credentials.resolve(reference).pipe(Effect.mapError(() =>
+            const secret = try credentials.resolve(reference).pipe(Effect.mapError(() =>
               new StdError.StdError({
                 code: "provider_unavailable",
                 message: "Configured Exa credential cannot be resolved"
               })
             ))
-            const now = yield* Clock.currentTimeMillis
+            const now = try Clock.currentTimeMillis
             const request = HttpClientRequest.setHeaders(
               HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post("https://api.exa.ai/search"), {
                 query: input.query,
@@ -77,7 +77,7 @@ export const layer = (
               }),
               { "authorization": `Bearer ${Redacted.value(secret)}`, "content-type": "application/json" }
             )
-            const response = yield* http.execute(request).pipe(
+            const response = try http.execute(request).pipe(
               Effect.timeout(requestTimeoutMs),
               Effect.mapError((error) =>
                 error._tag === "TimeoutError"
@@ -93,28 +93,26 @@ export const layer = (
                 ? NaN
                 : /^\d+$/.test(retryAfter.trim())
                 ? Number(retryAfter)
-                : Math.max(0, Math.ceil((Date.parse(retryAfter) - (yield* Clock.currentTimeMillis)) / 1_000))
-              return yield* Effect.fail(
-                failure(
-                  "rate_limited",
-                  Number.isFinite(delay)
-                    ? `Exa search was throttled; retry after ${delay} seconds`
-                    : "Exa search was throttled"
-                )
+                : Math.max(0, Math.ceil((Date.parse(retryAfter) - (try Clock.currentTimeMillis)) / 1_000))
+              throw failure(
+                "rate_limited",
+                Number.isFinite(delay)
+                  ? `Exa search was throttled; retry after ${delay} seconds`
+                  : "Exa search was throttled"
               )
             }
             if (response.status === 401 || response.status === 403) {
-              return yield* Effect.fail(failure("provider_unavailable", "Exa search authentication was rejected"))
+              throw failure("provider_unavailable", "Exa search authentication was rejected")
             }
             if (response.status >= 500) {
-              return yield* Effect.fail(failure("provider_unavailable", `Exa search returned ${response.status}`))
+              throw failure("provider_unavailable", `Exa search returned ${response.status}`)
             }
             if (response.status < 200 || response.status >= 300) {
-              return yield* Effect.fail(failure("request_failed", `Exa search returned ${response.status}`))
+              throw failure("request_failed", `Exa search returned ${response.status}`)
             }
             // Bound the body before decoding: an endpoint must not choose how
             // much of it the host buffers.
-            const bytes = yield* readBounded(response.stream, "https://api.exa.ai/search").pipe(
+            const bytes = try readBounded(response.stream, "https://api.exa.ai/search").pipe(
               Effect.timeout(requestTimeoutMs),
               Effect.mapError((error) =>
                 error._tag === "TimeoutError"
@@ -124,8 +122,8 @@ export const layer = (
                   : failure("request_failed", "Exa search response was invalid")
               )
             )
-            const body = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ExaResponse))(
-              new TextDecoder().decode(bytes)
+            const body = try Schema.decodeUnknownEffect(Schema.fromJsonString(ExaResponse))(
+              try Effect.orDie(Effect.try(() => new TextDecoder().decode(bytes)))
             ).pipe(
               Effect.mapError(() =>
                 new StdError.StdError({ code: "request_failed", message: "Exa search response was invalid" })
@@ -139,7 +137,7 @@ export const layer = (
                 ...(result.publishedDate === undefined ? {} : { publishedAt: result.publishedDate })
               }))
             }
-          })
+          }
       })
-    })
+    }
   )

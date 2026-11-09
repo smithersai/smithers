@@ -9,7 +9,7 @@
  * @category flows
  * @since 1.0.0
  */
-export * as Read from "./Read.ts"
+export * as Read from "./Read.vibe"
 
 /**
  * @category flows
@@ -27,7 +27,7 @@ export * as Edit from "./Edit.vibe"
  * @category flows
  * @since 1.0.0
  */
-export * as Ls from "./Ls.ts"
+export * as Ls from "./Ls.vibe"
 
 /**
  * @category flows
@@ -132,11 +132,11 @@ export * as HttpPost from "./HttpPost.vibe"
 export * as Explore from "./Explore.vibe"
 
 /** @category flows @since 1.0.0 */
-export * as WebFetch from "./WebFetch.ts"
+export * as WebFetch from "./WebFetch.vibe"
 /** @category flows @since 1.0.0 */
 export * as WebSearch from "./WebSearch.vibe"
 /** @category services @since 1.0.0 */
-export * as ExaWebSearch from "./ExaWebSearch.ts"
+export * as ExaWebSearch from "./ExaWebSearch.vibe"
 /** @category services @since 1.0.0 */
 export * as LanguageServer from "./LanguageServer.vibe"
 /** @category flows @since 1.0.0 */

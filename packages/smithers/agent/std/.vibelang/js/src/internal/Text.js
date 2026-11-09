@@ -60,6 +60,7 @@ const fatalDecoder = new TextDecoder("utf-8", { fatal: true });
  *
  * @category rendering
  * @since 1.0.0
+ * @throws {never}
  */
 export const truncateBytes = (text, maxBytes, options) => {
     const bytes = encoder.encode(text);
@@ -119,6 +120,7 @@ export const sourceLines = (text) => {
  *
  * @category paging
  * @since 1.0.0
+ * @throws {never}
  */
 export const slice = (text, options) => {
     const lines = sourceLines(text);

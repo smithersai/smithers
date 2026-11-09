@@ -93,6 +93,7 @@ const fatalDecoder = new TextDecoder("utf-8", { fatal: true })
  *
  * @category rendering
  * @since 1.0.0
+ * @throws {never}
  */
 export const truncateBytes = (
   text: string,
@@ -158,6 +159,7 @@ export const sourceLines = (text: string): ReadonlyArray<string> => {
  *
  * @category paging
  * @since 1.0.0
+ * @throws {never}
  */
 export const slice = (
   text: string,

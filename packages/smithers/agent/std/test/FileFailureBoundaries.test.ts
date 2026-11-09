@@ -2,7 +2,7 @@ import { Effect, FileSystem, PlatformError } from "effect"
 import { expect, it } from "vitest"
 import * as ApplyPatch from "../src/ApplyPatch.vibe"
 import * as Edit from "../src/Edit.vibe"
-import * as Read from "../src/Read.ts"
+import * as Read from "../src/Read.vibe"
 import * as Write from "../src/Write.vibe"
 import { fileInfo, layer } from "./TestLayers.ts"
 
