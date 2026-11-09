@@ -79,3 +79,40 @@ export function prefersMock(flag: boolean, environment: string | undefined): boo
 export function accountRoute(path: string): boolean {
   return path === "/api/wiki" || path === "/api/issues" || path.startsWith("/api/auth/") || path.startsWith("/api/roles")
 }
+
+/** A history write's declared length: empty (a chunked body declares none) up to `maximum` bytes. */
+//@ verify
+//@ ensures \result == (length >= 0 && length <= maximum)
+export function validWriteLength(length: number, maximum: number): boolean {
+  return length >= 0 && length <= maximum
+}
+
+/** A tour control's step: 0 (pause and resume carry no step) to the tour's last, `last`. */
+//@ verify
+//@ ensures \result == (step >= 0 && step <= last)
+export function validTourStep(step: number, last: number): boolean {
+  return step >= 0 && step <= last
+}
+
+/** A write's HTTP status: 409 for a refusal, else 200. */
+//@ verify
+//@ ensures refused ==> \result == 409
+//@ ensures !refused ==> \result == 200
+export function writeStatus(refused: boolean): number {
+  return refused ? 409 : 200
+}
+
+/** Whether a request goes to the Factory's own origin, so it may carry the person's session: never another host. */
+//@ verify
+//@ ensures \result == url.startsWith(origin + "/")
+//@ ensures \result ==> url.length > origin.length && url.charCodeAt(origin.length) == 47
+export function sameOriginRequest(url: string, origin: string): boolean {
+  return url.startsWith(origin + "/")
+}
+
+/** The cookie a stored session gives the Factory's origin: its own, when it was stored for that origin and is valid. */
+//@ verify
+//@ ensures \result == (storedOrigin == origin && valid ? cookie : "")
+export function sessionCookie(storedOrigin: string, origin: string, valid: boolean, cookie: string): string {
+  return storedOrigin === origin && valid ? cookie : ""
+}

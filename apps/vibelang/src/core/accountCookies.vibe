@@ -1,4 +1,4 @@
-import { cookieName } from "./accountCookieDecision.vibe"
+import { cookieAccepted, cookieName, localOrigin } from "./accountCookieDecision.vibe"
 export const SESSION = "__Host-vibelang-session"
 export const sessionCookieName = (origin: string) => cookieName(origin.startsWith("https:"))
 
@@ -6,9 +6,8 @@ export const sessionCookieName = (origin: string) => cookieName(origin.startsWit
 export function validSessionCookie(origin: string, cookie: string): boolean {
   try {
     const url = new URL(origin)
-    const local = url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
-    if (url.origin !== origin || (url.protocol !== "https:" && !local)) return false
-    if (/^__Host-vibelang-session=[A-Za-z0-9_.:-]{1,4096}$/.test(cookie)) return true
-    return local && /^vibelang-session=[A-Za-z0-9_.:-]{1,4096}$/.test(cookie)
+    const local = localOrigin(url.protocol === "http:", url.hostname)
+    return cookieAccepted(url.origin === origin, url.protocol === "https:", local,
+      /^__Host-vibelang-session=[A-Za-z0-9_.:-]{1,4096}$/.test(cookie), /^vibelang-session=[A-Za-z0-9_.:-]{1,4096}$/.test(cookie))
   } catch { return false }
 }

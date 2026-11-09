@@ -1,7 +1,7 @@
 import { WikiDrafting } from "../src/core/WikiWriter.vibe"
 import { beginReply, recordReplyStart, canComposeReply, beginReplyComposition, finishReplyComposition, canSettleReply, recordReplySettlement } from "../src/core/flowDecision.vibe"
 import { initialProgress, advanceProgress, completion, type ProgressState } from "./replyProgressDecision.vibe"
-import { promptWindow } from "../src/core/sequenceDecision.vibe"
+import { promptForm, promptWindow, speaker } from "../src/core/sequenceDecision.vibe"
 // The agent's reply to one post, a durable `@smthrs/flow` flow (rulings VL-11; wiki/decisions/0010-live-agent.md,
 // 0012-smithers-agent.md). Every side effect is a journaled step, so a reset Durable Object resumes the reply where it
 // stopped. The answer is smithers.sh's agent: `@smthrs/agent`'s `AgentAction`, the codemode loop apps/mvp's chat runs
@@ -105,13 +105,14 @@ export function dayOf(millis: number): string {
 /** The agent's task: the conversation so far, then the post it answers, as smithers.sh's chat asks it. */
 export function promptOf(payload: { readonly turns: ReadonlyArray<Turn> }): string {
   const turns = promptWindow(payload.turns, MAX_TURNS)
+  const form = promptForm(turns.length)
   const asked = turns.at(-1)
   const history = turns.slice(0, -1)
-  if (asked === undefined) return ""
-  if (history.length === 0) return asked.text
+  if (form === "none" || asked === undefined) return ""
+  if (form === "asked") return asked.text
   return [
     "The conversation so far:",
-    ...history.map((turn) => `${turn.author === "person" ? "Person" : "VibeLang agent"}: ${turn.text}`),
+    ...history.map((turn) => `${speaker(turn.author)}: ${turn.text}`),
     "",
     `The person now asks: ${asked.text}`,
   ].join("\n")

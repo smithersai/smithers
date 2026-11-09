@@ -42,6 +42,9 @@ const shellBoundaries = {
   'src/history/roles.vibe': 'may, leastRole, peopleOnly and standing are proved in flowMachine.vibe; this module re-exports them and builds the role tables from them (0020).',
 };
 const boundaries = {
+  "src/actions/catalogDecision.vibe": "Proved exact least role (tours public; approve and fold maintainer; else contributor) and input kind for each flow tag (0018 third-lane batch 3).",
+  "src/core/tourDecision.vibe": "Proved exact docs-path admission (no scheme, host, query, dot segment or //), running tour and reply id; sameReply is a specification theorem that distinct posts with one first character never share a reply (0018 third-lane batch 2).",
+  "src/history/pageDecision.vibe": "Proved page start, exact page count (none past the end, at most a page) and the pair-safe search clip (0018 third-lane batch 2).",
   "src/core/sequencerDecision.vibe": "Proved exact restart count by recursive prefix measure, model attempt, restarts needed, first-match entry index, finish plan whose restart/append reproduces exactly the model text, idempotent settle step, tour speech separator and tour settlement (0018 third-lane batch 1).",
   "src/core/followDecision.vibe": "Proved replay cut (the later of cursor and last replayed number) and strict freshness, used by both sequencers so a live event at or below the replay is never sent twice (0018 third-lane batch 1).",
   "src/history/stackDecision.vibe": "Proved exact plan step precedence (amend, empty, too-long, insert, open-epic, append), UTF-16 surrogate predicates, the pair-safe cut, the fold title (unchanged when it fits, else cut between characters with \"\u2026\" within the limit) and the first epic by title (0018 third-lane batch 1).",
@@ -68,6 +71,15 @@ const boundaries = {
   'src/core/flowDecision.vibe': 'Post/StartTour/EndTour record-before-follow-up-once, Reply start/composition/settlement and Tour active/ready/one-speaker/terminal ordering models, exact closed invariants and at-most-one stage bounds; dispatch admission, append order, tour terminal events, reading time, first undispatched source index, exact private visit/hold identities and scalar walk control choices; proved.',
 };
 const functionBoundaries = {
+  "src/history/seed.vibe:pushOnce": "Calls the proved note-line admission (stackDecision admitsLine).",
+  "src/actions/catalog.vibe:registration": "Calls the proved least role and input kind (catalogDecision); titles and command names are labels.",
+  "src/core/accountCookies.vibe:validSessionCookie": "Calls the proved local-origin and cookie acceptance rule; the URL parse and cookie regexps stay boundaries (uri-codec.ts, regexp.ts).",
+  "src/core/mockReplies.vibe:chunks": "Calls the proved exact chunk boundaries (mockDecision chunksOf): joined in order the chunks are the reply.",
+  "worker/Reply.vibe:promptOf": "Calls the proved prompt window, form and speaker label; string joining is formatting.",
+  "src/core/flows.vibe:touring": "Calls the proved runningTour.",
+  "src/core/flows.vibe:docsPage": "Calls the proved exact docs-path admission (tourDecision docsPath), equal to the earlier regexp on 4,010 compared paths.",
+  "src/history/pages.vibe:matchesOf": "Calls the proved pair-safe search clip and match count; case folding and the stack sort are native (unicode-case.ts, sort-membership.ts) and stay boundaries.",
+  "src/history/pages.vibe:epicPageOf": "Calls the proved page start and count; Math.floor and the rank sort are native (finite-round.ts, sort-membership.ts) and stay boundaries.",
   "src/history/seed.vibe:clip": "Calls the proved pair-safe cut (stackDecision pairCut), so a clipped title or note never ends in half a character; the native trimEnd is outside the proof.",
   "worker/Sequencer.vibe:entryOf": "Calls the proved first-match entryIndex; undefined exactly when no entry has the id.",
   "src/core/wikiDecision.vibe:wikiSubmissionAllowed": "Proved exact person-only submission guard; reads and drafts remain agent-invocable. Principal authentication and actual external writes are host boundaries.",

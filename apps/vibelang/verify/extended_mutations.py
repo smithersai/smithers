@@ -5413,3 +5413,66 @@ cases.extend([
  ('src/web/modelDecision.vibe', 'merge-run-accept', 'mergeRunAt', 'if (acceptSnapshot(current[index]!.state, current[index]!.at, next.at)) return [...current.slice(0, index), next, ...current.slice(index + 1)]', 'if (acceptSnapshot(current[index]!.state, current[index]!.at, next.at)) return current', 'an accepted snapshot replaces'),
  ('src/web/modelDecision.vibe', 'merge-run-refuse', 'mergeRunAt', '  return current\n}\n\n/** The runs list', '  return [...current.slice(0, index), next, ...current.slice(index + 1)]\n}\n\n/** The runs list', 'a refused snapshot cannot roll back'),
  ('src/web/modelDecision.vibe', 'newest-first-order', 'newestFirst', 'b.started - a.started', 'a.started - b.started', 'newest start first')])
+# Lane vl-proveall3, batch 2 (0018 "Third-lane batch 2").
+cases.extend([('src/history/pageDecision.vibe', *case) for case in [
+('page-start-zero', 'pageStart', 'from > 0 ? from : 0', 'from', 'a page never starts before the first commit'),
+('page-start-keep', 'pageStart', 'from > 0 ? from : 0', '0', 'a page starts where asked'),
+('page-count-end', 'pageCount', 'if (start >= total) return 0', 'if (start >= total) return size', 'no commits past the end'),
+('page-count-rest', 'pageCount', 'total - start < size ? total - start : size', 'size', 'the last page holds only what is left'),
+('page-count-size', 'pageCount', 'total - start < size ? total - start : size', 'total - start', 'a page holds at most its size'),
+('page-query-fits', 'clipQuery', 'if (query.length <= max) return query', 'if (query.length < max) return query', 'a search that fits is unchanged'),
+('page-query-pair', 'clipQuery', 'query.slice(0, pairCut(query, max))', 'query.slice(0, max)', 'a long search is cut between characters'),
+]])
+cases.extend([('src/core/tourDecision.vibe', *case) for case in [
+('tour-unit-letter', 'docsUnit', '(97 <= unit && unit <= 122)', '(65 <= unit && unit <= 122)', 'no uppercase or punctuation in a docs path'),
+('tour-unit-dash', 'docsUnit', 'unit === 45 || unit === 47', 'unit === 46 || unit === 47', 'a dot never enters a docs path'),
+('tour-path-slash', 'docsPath', 'if (path.length === 0 || path.charCodeAt(0) !== 47) return false', 'if (path.length === 0) return false', 'a docs path starts with a slash'),
+('tour-path-units', 'docsPath', 'if (!docsUnit(path.charCodeAt(i))) return false', 'if (false) return false', 'every unit of a docs path is admitted'),
+('tour-path-double', 'docsPath', 'if (i > 0 && path.charCodeAt(i - 1) === 47 && path.charCodeAt(i) === 47) return false', 'if (false) return false', 'no protocol-relative double slash'),
+('tour-path-skip', 'docsPath', 'i++', 'i += 2', 'every unit is checked'),
+('tour-running-working', 'runningTour', 'conversation.agent === "working" && isTour', 'isTour', 'an idle agent runs no tour'),
+('tour-running-id', 'runningTour', '? conversation.replying : ""', '? conversation.replying : conversation.replying', 'no tour runs unless the streaming entry is one'),
+('tour-reply-prefix', 'replyIdOf', 'return "r" + post.slice(1)', 'return "r" + post', 'a reply id drops the post\'s first character'),
+('tour-reply-empty', 'replyIdOf', 'if (post.length === 0) return "r"', 'if (post.length === 0) return ""', 'an empty post id still gets a reply id'),
+]])
+cases.extend([('src/core/sequenceDecision.vibe', *case) for case in [
+('prompt-speaker', 'speaker', 'author === "person" ? "Person" : "VibeLang agent"', '"Person"', 'the agent\'s turns are labelled as the agent'),
+('prompt-form-none', 'promptForm', 'if (count === 0) return "none"', 'if (count === 0) return "asked"', 'no turns is no prompt'),
+('prompt-form-asked', 'promptForm', 'count === 1 ? "asked" : "conversation"', '"conversation"', 'one turn is the question alone'),
+]])
+cases.extend([('src/core/protocolDecision.vibe', *case) for case in [
+('proto-write-empty', 'validWriteLength', 'length >= 0 && length <= maximum', 'length > 0 && length <= maximum', 'a chunked write declares no length'),
+('proto-write-max', 'validWriteLength', 'length >= 0 && length <= maximum', 'length >= 0', 'a write over the limit is refused'),
+('proto-step-low', 'validTourStep', 'step >= 0 && step <= last', 'step <= last', 'no negative step'),
+('proto-step-high', 'validTourStep', 'step >= 0 && step <= last', 'step >= 0', 'no step past the tour'),
+('proto-write-status', 'writeStatus', 'refused ? 409 : 200', 'refused ? 403 : 200', 'a refusal is a conflict'),
+('proto-origin-slash', 'sameOriginRequest', 'url.startsWith(origin + "/")', 'url.startsWith(origin)', 'a lookalike host never gets the session'),
+('proto-cookie-origin', 'sessionCookie', 'storedOrigin === origin && valid', 'valid', 'a session stored for another origin is never sent'),
+('proto-cookie-valid', 'sessionCookie', 'storedOrigin === origin && valid', 'storedOrigin === origin', 'an invalid cookie is never sent'),
+]])
+cases.extend([('src/history/stackDecision.vibe', *case) for case in [
+('stack-line-empty', 'admitsLine', 'line !== "" && !lines.includes(line)', '!lines.includes(line)', 'an empty note line is dropped'),
+('stack-line-once', 'admitsLine', 'line !== "" && !lines.includes(line)', 'line !== ""', 'a note line is kept once'),
+('stack-line-max', 'admitsLine', 'lines.length < max', 'lines.length <= max', 'a commit keeps at most its notes'),
+]])
+# Lane vl-proveall3, batch 3 (0018 "Third-lane batch 3").
+cases.extend([('src/core/mockDecision.vibe', *case) for case in [
+('mock-chunk-end', 'chunkEnd', 'start + size <= text.length ? start + size : text.length', 'start + size', 'the last chunk ends with the text'),
+('mock-chunk-step', 'chunksOf', 'start = start + size', 'start = start + size + 1', 'no unit falls between chunks'),
+('mock-chunk-piece', 'chunksOf', 'text.slice(start, chunkEnd(text, start, size))', 'text.slice(start, text.length)', 'a chunk holds at most its size'),
+]])
+cases.extend([('src/core/accountCookieDecision.vibe', *case) for case in [
+('cookie-local-ipv6', 'localOrigin', ' || hostname === "[::1]"', '', 'IPv6 loopback is local'),
+('cookie-local-http', 'localOrigin', 'return http && (', 'return (', 'a local host over HTTPS is not plain HTTP'),
+('cookie-canonical', 'cookieAccepted', 'if (!canonical || (!https && !local)) return false', 'if (!https && !local) return false', 'a non-canonical origin accepts no cookie'),
+('cookie-https', 'cookieAccepted', 'if (!canonical || (!https && !local)) return false', 'if (!canonical) return false', 'plain HTTP off this machine accepts no cookie'),
+('cookie-plain-local', 'cookieAccepted', 'return local && plainCookie', 'return plainCookie', 'only a local origin accepts the plain cookie'),
+('cookie-host', 'cookieAccepted', 'if (hostCookie) return true', 'if (hostCookie) return local', 'the host-prefixed cookie is accepted over HTTPS'),
+]])
+cases.extend([('src/actions/catalogDecision.vibe', *case) for case in [
+('catalog-end-tour', 'leastRoleOf', 'name === tags.tour || name === tags.endTour', 'name === tags.tour', 'anyone ends a tour'),
+('catalog-fold', 'leastRoleOf', 'name === tags.approve || name === tags.fold ? "maintainer"', 'name === tags.approve ? "maintainer"', 'only a maintainer folds'),
+('catalog-default', 'leastRoleOf', '"maintainer" : "contributor"', '"maintainer" : "viewer"', 'other flows need a contributor'),
+('catalog-input-tour', 'inputOf', 'name === tags.tour ? "none"', 'name === tags.endTour ? "none"', 'a tour takes no input'),
+('catalog-input-post', 'inputOf', 'name === tags.post ? "text"', 'name === tags.tour ? "text"', 'a post takes text'),
+]])

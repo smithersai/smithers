@@ -1,6 +1,6 @@
 import { validSessionCookie } from "../core/accountCookies.vibe"
 import { Factory } from "../core/Factory.vibe"
-import { liveHealth, prefersMock } from "../core/protocolDecision.vibe"
+import { liveHealth, prefersMock, sameOriginRequest, sessionCookie } from "../core/protocolDecision.vibe"
 
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { health, LiveFactory } from "../core/LiveFactory.vibe"
@@ -44,7 +44,7 @@ export effect function personClient(origin: string, session?: Redacted.Redacted<
   const decoded = Schema.decodeUnknownOption(Schema.Struct({ origin: Schema.String, cookie: Schema.String }))(parsed)
   if (Option.isNone(decoded) || decoded.value.origin !== origin || !validSessionCookie(origin, decoded.value.cookie)) throw new LiveBackendNotDeployed({ message: "Invalid VIBELANG_SESSION." })
   const credential = decoded.value
-  return client.pipe(HttpClient.mapRequest((request) => request.url.startsWith(origin + "/")
+  return client.pipe(HttpClient.mapRequest((request) => sameOriginRequest(request.url, origin)
     ? request.pipe(HttpClientRequest.setHeader("cookie", credential.cookie), HttpClientRequest.setHeader("origin", origin)) : request))
 }
 
@@ -58,9 +58,9 @@ return Layer.unwrap(effect {
   const captured = try context<FileSystem.FileSystem | Path.Path>()
   // Resolve settings per request: a long-lived MCP host sees CLI login/logout and its own tool calls immediately.
   const client = Option.isSome(explicit) ? native : HttpClient.mapRequestEffect(native, effect request => {
-    if (!request.url.startsWith(origin + "/")) return request
+    if (!sameOriginRequest(request.url, origin)) return request
     const stored = Effect.provide(readSession(), captured) catch () => undefined
-    const cookie = stored?.origin === origin && validSessionCookie(origin, stored.cookie) ? stored.cookie : ""
+    const cookie = stored === undefined ? "" : sessionCookie(stored.origin, origin, validSessionCookie(origin, stored.cookie), stored.cookie)
     return request.pipe(HttpClientRequest.setHeader("origin", origin), HttpClientRequest.setHeader("cookie", cookie))
   })
   if (probe) {

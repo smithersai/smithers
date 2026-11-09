@@ -9,10 +9,14 @@ import { EndTour, Post, Reply, StartTour, Tour, SandboxStart, SandboxStop, Sandb
 import { Approve, Bootstrap, Fold, Note, Plan, Start } from "../history/flows.vibe"
 import { mayRun } from "../core/conversation.vibe"
 import type { Registered, Role } from "./Actions.vibe"
+import { inputOf, leastRoleOf, type Tags } from "./catalogDecision.vibe"
 
 const declarations: ReadonlyArray<unknown> = [...Object.values(CoreFlows), ...Object.values(HistoryFlows), ...Object.values(HistoryTools), ...issueFlows]
 export const flows = declarations.filter(Flow.isFlow)
 export const bundled = Bundled.make(flows)
+
+/** The tags whose flows have their own least role or input (catalogDecision, proved). */
+const TAGS: Tags = { post: Post._tag, tour: Tour._tag, endTour: EndTour._tag, approve: Approve._tag, fold: Fold._tag }
 
 /** Presentation and policy attach to a declaration's tag; adding a lane's flows extends this table. */
 export function registration(name: string): Registered {
@@ -22,8 +26,8 @@ export function registration(name: string): Registered {
   return {
     name, title, command, runnable,
     detail: name === Tour._tag ? "Explore VibeLang" : name === Post._tag ? "Ask the agent" : name === EndTour._tag ? "End the tour" : title,
-    least: name === Tour._tag || name === EndTour._tag ? "viewer" : name === Approve._tag || name === Fold._tag ? "maintainer" : "contributor",
-    input: name === Post._tag ? "text" : name === Tour._tag ? "none" : "json",
+    least: leastRoleOf(name, TAGS),
+    input: inputOf(name, TAGS),
   }
 }
 

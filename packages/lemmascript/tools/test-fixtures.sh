@@ -414,6 +414,17 @@ if (caught !== "arraySum proof -, arraySum source-fix code") fail("catches were 
 if (report.open.length + report.dropped.length !== 0) fail("expected no open or dropped failures");
 '
 
+# A contract copied from another file names a helper of that file the importer never calls;
+# the helper must be declared too, or Dafny cannot resolve the copied contract.
+cp -R tools/fixtures/contract-helper-project "$fixture_dir/contract-helper-project"
+npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/contract-helper-project/importer.ts"
+if ! grep -Fq 'function {:axiom} positive' "$fixture_dir/contract-helper-project/importer.dfy.gen"; then
+  echo "ERROR: a helper named by an imported contract was not declared"
+  exit 1
+fi
+# An import named only by a contract, never called in a body, is declared too.
+npx tsx tools/src/lsc.ts check --backend=dafny --time-limit=10 "$fixture_dir/contract-helper-project/contract-only.ts"
+
 # "run-log": false in lemmascript.json keeps logging off; LSC_RUN_LOG=true leaves
 # the decision to the config rather than overriding it.
 run_log_off_dir="$fixture_dir/run-log-off-project"

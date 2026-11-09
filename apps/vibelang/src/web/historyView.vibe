@@ -6,7 +6,8 @@ import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import { historyBadge, historyRefusal } from "../history/flowMachine.vibe"
 import { modeSwitch } from "./modeSwitch.vibe"
 import type { Commit } from "../history/mythical.vibe"
-import type { CommitPage, EpicCount, Head } from "../history/pages.vibe"
+import { type CommitPage, type EpicCount, type Head, MAX_QUERY } from "../history/pages.vibe"
+import { clipQuery } from "../history/pageDecision.vibe"
 import { BOOTSTRAP } from "../history/seed.vibe"
 import {
   allowed, HistoryMessage, type HistoryMessage as Message, type HistoryModel, NEW_EPIC, pageOf, PLAN_ID, REPOSITORY_URL, shownCommit,
@@ -125,8 +126,8 @@ function list(model: HistoryModel, h: H): ReadonlyArray<Html> {
     ...failure(model, h),
     filtering
       ? h.ul(
-        [h.Class("mh-commits"), h.AriaLabel("Matching commits"), h.AriaBusy(model.matches.query !== model.filter)],
-        model.matches.query === model.filter ? model.matches.commits.map((commit) => row(model, commit, h, true)) : [],
+        [h.Class("mh-commits"), h.AriaLabel("Matching commits"), h.AriaBusy(model.matches.query !== clipQuery(model.filter, MAX_QUERY))],
+        model.matches.query === clipQuery(model.filter, MAX_QUERY) ? model.matches.commits.map((commit) => row(model, commit, h, true)) : [],
       )
       : h.div([h.Class("mh-epics")], [
         ...(work.length === 0 ? [] : [

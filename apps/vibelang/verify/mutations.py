@@ -156,6 +156,19 @@ unknown=selected-{name for module,name,*_ in cases}
 if unknown: raise SystemExit('Unknown mutations: '+', '.join(sorted(unknown)))
 contracts=lambda text:[line for line in text.splitlines() if line.lstrip().startswith('//@')]
 out.mkdir(parents=True,exist_ok=True)
+def stage_dependencies(dependencies,out):
+    """Copy every `.vibe` file the mutant imports, and theirs in turn, flattened beside it as `name.vibe.ts`."""
+    pending,seen=list(dependencies.items()),{}
+    while pending:
+        spec,path=pending.pop()
+        if spec in seen:
+            if seen[spec]!=path: raise SystemExit(f'two imports share the file name {spec}')
+            continue
+        seen[spec]=path
+        text,more=flatten_imports(path.read_text(),path.parent)
+        (out/f'{spec}.ts').write_text(text)
+        pending.extend(more.items())
+
 manifest={}
 for module,name,fn,old,new,claim in cases:
     if module=='src/core/conversation.vibe' and fn in {'decide','accepted','refused'}: module='src/core/decide.vibe'
@@ -174,8 +187,7 @@ for module,name,fn,old,new,claim in cases:
     if contracts(broken)!=contracts(source): raise SystemExit(f'{name}: mutation changed a contract')
     broken,dependencies=flatten_imports(broken,(root.parent/module).parent)
     (out/f'{name}.ts').write_text(broken)
-    for spec,path in dependencies.items():
-        (out/f'{spec}.ts').write_text(path.read_text())
+    stage_dependencies(dependencies,out)
     manifest[name]={'source':module,'function':fn,'claim':claim,'before':old,'after':new}
 if modules and not manifest: raise SystemExit('No mutations in: '+', '.join(sorted(modules)))
 (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')

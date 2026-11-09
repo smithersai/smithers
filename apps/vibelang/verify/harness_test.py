@@ -5,6 +5,14 @@ HERE = pathlib.Path(__file__).resolve().parent
 ROOT = pathlib.Path(__file__).resolve().parent
 
 class StrictSourceChecks(unittest.TestCase):
+    def test_a_lone_mutant_gets_its_imports_imports(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            out = pathlib.Path(folder)
+            result = subprocess.run([sys.executable, str(ROOT / 'mutations.py'), str(out), 'page-count-end'], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertTrue((out / 'stackDecision.vibe.ts').exists())
+            self.assertTrue((out / 'mythical.vibe.ts').exists())
+
     def test_a_lemmascript_source_newer_than_its_build_is_stale(self):
         import os, time
         from lsc_fresh import stale

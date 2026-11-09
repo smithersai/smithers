@@ -7,7 +7,7 @@
 //
 // `intentsOf` turns a seed into the history machine's intents (mythical.vibe), which the Bootstrap flow records.
 import { apply, decideWithinCapacity, empty, type History, type Intent, MAX_NOTE, MAX_TITLE, type Section } from "./mythical.vibe"
-import { pairCut } from "./stackDecision.vibe"
+import { admitsLine, pairCut } from "./stackDecision.vibe"
 
 /** A commit reachable from main, as the generator reads it; `parents` first parent first. */
 export interface RawCommit {
@@ -310,7 +310,7 @@ interface Group {
 }
 
 function pushOnce(lines: Array<string>, line: string) {
-  if (line !== "" && !lines.includes(line) && lines.length < MAX_SEED_NOTES) lines.push(line)
+  if (admitsLine(lines, line, MAX_SEED_NOTES)) lines.push(line)
 }
 
 /**

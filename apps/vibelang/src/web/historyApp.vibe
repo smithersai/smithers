@@ -8,7 +8,8 @@ import { defineMessageUnion } from "foldkit/message"
 import { Mythical } from "../history/MythicalHistory.vibe"
 import type { Refused, Unavailable } from "../history/MythicalHistory.vibe"
 import { resolvedRole, toggleEpic, planFields, initialEpic, validPlanField } from "../history/flowMachine.vibe"
-import { PAGE } from "../history/pages.vibe"
+import { MAX_QUERY, PAGE } from "../history/pages.vibe"
+import { clipQuery } from "../history/pageDecision.vibe"
 import { epicIndex, commitShown, failureReason, wroteCleanly, closesDialog, mergedPages, readOffsets, outlineArrival, commitApplies, matchesApply, eventArrival, hashRead, epicOpenReads, filterSearches,
   outlineFrame, failedLoadFrame, failedReadFrame, retryFrame, navigatedFrame, planFrame, escapedFrame, laneFrame, noteFrame, writingFrame,
   wroteFrame, failedWriteFrame, latestFrame, type HistoryFrame } from "./historyDecision.vibe"
@@ -223,7 +224,7 @@ export function update(model: HistoryModel, message: HistoryMessage): Return {
       if (!commitApplies(id, model.hash, model.commitId, page.seq, model.commit.seq)) return { model }
       return { model: { ...model, commit: page, commitId: id } }
     },
-    GotMatches: ({ matches }) => matchesApply(matches.query, model.filter) ? { model: { ...model, matches } } : { model },
+    GotMatches: ({ matches }) => matchesApply(matches.query, clipQuery(model.filter, MAX_QUERY)) ? { model: { ...model, matches } } : { model },
     FailedLoad: () => ({ model: { ...model, ...failedLoadFrame(frameOf(model)) } }),
     // The next event reads again.
     FailedRead: ({ reason }) => ({ model: { ...model, ...failedReadFrame(frameOf(model), reason, model.outline.seq) } }),

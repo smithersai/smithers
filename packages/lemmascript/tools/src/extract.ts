@@ -64,9 +64,11 @@ let _validateDependency: (source: SourceFile) => void = () => {};
 let _destrCounter = 0;
 
 /** Register the call's callee as a cross-file extern if applicable, then
- *  walk the source declaration's body for nested cross-file calls (so the
- *  lifted `requires`/`ensures` see all the symbols they reference). Idempotent
- *  via the `_externs` dedup. */
+ *  walk the source declaration's body for nested calls outside the module being
+ *  extracted (so the lifted `requires`/`ensures` see all the symbols they
+ *  reference). A helper beside the callee, in the callee's own file, is such a
+ *  call: nested calls are judged against `sourceFile`, the extracted module,
+ *  never against the callee's file. Idempotent via the `_externs` dedup. */
 function registerExternIfCrossFile(
   callee: import("ts-morph").PropertyAccessExpression | import("ts-morph").Identifier,
   sourceFile: SourceFile,
@@ -88,13 +90,12 @@ function registerExternIfCrossFile(
     d => d.getSourceFile().getFilePath() !== sourceFile.getFilePath(),
   );
   if (!sourceDecl) return;
-  const sourceSF = sourceDecl.getSourceFile();
   const body = (sourceDecl as any).getBody?.();
   if (!body) return;
   for (const inner of body.getDescendantsOfKind(SyntaxKind.CallExpression)) {
     const innerCallee = inner.getExpression();
     if (Node.isPropertyAccessExpression(innerCallee) || Node.isIdentifier(innerCallee)) {
-      registerExternIfCrossFile(innerCallee, sourceSF);
+      registerExternIfCrossFile(innerCallee, sourceFile);
     }
   }
 }
@@ -2247,6 +2248,24 @@ export function extractModule(sourceFile: SourceFile, options: LscOptions = DEFA
   // here), deduped by qualified name.
   _externs.clear();
   _externSigTypes.length = 0;
+
+  // A contract may call an imported function that no body calls (a mutant, or a
+  // clause stated in terms of the import). Body extraction would never declare
+  // it, so register every named import a module contract line calls.
+  const contractText = sourceFile.getFullText().split("\n")
+    .filter(line => /^[ \t]*\/\/@[ \t]+(?:requires|ensures|invariant|assert|decreases)\b/.test(line))
+    .join("\n");
+  if (contractText !== "") {
+    for (const imp of sourceFile.getImportDeclarations()) {
+      if (imp.isTypeOnly()) continue;
+      for (const named of imp.getNamedImports()) {
+        if (named.isTypeOnly()) continue;
+        const local = named.getAliasNode() ?? named.getNameNode();
+        if (!Node.isIdentifier(local)) continue;
+        if (new RegExp(String.raw`\b${local.getText()}\s*\(`).test(contractText)) registerExternIfCrossFile(local, sourceFile);
+      }
+    }
+  }
 
   // Match a `//@ <kw>` directive only as the first non-whitespace on a line,
   // so prose mentioning an annotation does not activate it.

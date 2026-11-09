@@ -14,7 +14,8 @@ import * as Continuation from "./flowDecision.vibe"
 // nothing here decides anything.
 import { Action, DurableDeferred, DurableClock, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node, Planned } from "@smthrs/plan"
-import { holdRemaining, unansweredSelection, type Conversation, type Event, isTour } from "./conversation.vibe"
+import { holdRemaining, unansweredSelection, type Conversation, type Event } from "./conversation.vibe"
+import { docsPath, runningTour } from "./tourDecision.vibe"
 import { type Refusal } from "./decide.vibe"
 import { endsTourEvent, readingHold } from "./flowDecision.vibe"
 import { WALKTHROUGH } from "./walkthroughSteps.vibe"
@@ -66,10 +67,8 @@ export const Reply = Flow.make("vibelang/Reply", {
   body: Node.capture({}, (payload) => ReplyStep.call(payload)),
 })
 
-/** The reply that answers a post, unchanged across retries. Slice lowering is tracked in decision 0018. */
-export function replyIdOf(post: string): string {
-  return `r${post.slice(1)}`
-}
+/** The reply that answers a post, unchanged across retries (tourDecision, proved). */
+export { replyIdOf } from "./tourDecision.vibe"
 
 /** The person posts no reply targets, oldest first, when the agent isn't replying: the ones to answer next. */
 export function unanswered(conversation: Conversation): ReadonlyArray<string> {
@@ -120,7 +119,7 @@ export const DOCS_ORIGIN = "https://vibelang.sh"
 
 /** The docs page at `path`, such as `/setup`, or `undefined` when `path` is not a page of the docs site. */
 export function docsPage(path: string): string | undefined {
-  return /^\/[a-z0-9\-\/]*$/.test(path) && !path.includes("//") ? DOCS_ORIGIN + path : undefined
+  return docsPath(path) ? DOCS_ORIGIN + path : undefined
 }
 
 /** The conversation's sequencer, as the tour's steps reach it. */
@@ -156,7 +155,7 @@ export function endsTour(event: Event, tour: string): boolean {
 
 /** The running tour of `conversation`: its id, `""` when none runs. */
 export function touring(conversation: Conversation): string {
-  return conversation.agent === "working" && isTour(conversation.entries, conversation.replying) ? conversation.replying : ""
+  return runningTour(conversation)
 }
 
 /** Records a new tour: `null` once recorded, else the refusal. */
