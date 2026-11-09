@@ -84,7 +84,7 @@ export * as Relocate from "./Relocate.vibe"
  * @category flows
  * @since 1.0.0
  */
-export * as TestRun from "./TestRun.ts"
+export * as TestRun from "./TestRun.vibe"
 
 /** @category services @since 1.0.0 */
 export * as TestRunner from "./TestRunner.vibe"

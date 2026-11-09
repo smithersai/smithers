@@ -168,8 +168,8 @@
       "default": "./.vibelang/js/src/StdError.js"
     },
     "./TestRun": {
-      "types": "./src/TestRun.ts",
-      "vibelang-source": "./src/TestRun.ts",
+      "types": "./.vibe/declarations/TestRun.d.vibe.ts",
+      "vibelang-source": "./src/TestRun.vibe",
       "default": "./.vibelang/js/src/TestRun.js"
     },
     "./TestRunner": {

@@ -263,13 +263,13 @@ const execute = (
   StdError.StdError,
   ChildProcessSpawner.ChildProcessSpawner | Evaluator.Evaluator
 > =>
-  Effect.gen(function*() {
+  effect {
     const plan = invocation(runner, options.selection)
     const routed: Container.Plan = runner.container === undefined ?
       { ...plan, env: runner.env } :
       Option.isNone(transport)
-      ? yield* Effect.fail(Container.unavailable(runner.container))
-      : yield* transport.value.exec({
+      ? try Effect.fail(Container.unavailable(runner.container))
+      : try transport.value.exec({
         container: runner.container,
         file: plan.file,
         args: plan.args,
@@ -279,7 +279,7 @@ const execute = (
       })
     // Report the logical invocation, never the transport or its credentials.
     const quoted = [plan.file, ...plan.args].join(" ")
-    const result = yield* Exec.exec(routed.file, {
+    const result = try Exec.exec(routed.file, {
       args: [...routed.args],
       ...(options.cwd === undefined || runner.container !== undefined ? {} : { cwd: options.cwd }),
       ...(routed.env === undefined ? {} : { env: routed.env }),
@@ -304,7 +304,7 @@ const execute = (
     // Judged on the text this call returns rather than the text it captured,
     // so the attribution is made from the output the reader can see. A judge
     // that does not answer fails the call: see `Probe.unjudged`.
-    const probe = yield* Probe.classify({
+    const probe = try Probe.classify({
       command: quoted,
       exitCode: result.exitCode,
       output: tail.text
@@ -324,7 +324,7 @@ const execute = (
       },
       report
     }
-  })
+  }
 
 /**
  * Runs the declared suite, and on request the same suite on the pristine base.
@@ -337,25 +337,57 @@ const execute = (
  * @category handlers
  * @since 1.0.0
  */
-export const run = Effect.fn("TestRun.run")(function*(
-  input: typeof Input.Type
-): Effect.fn.Return<
-  typeof Output.Type,
-  StdError.StdError,
-  ChildProcessSpawner.ChildProcessSpawner | Evaluator.Evaluator | TestRunner.TestRunner
-> {
-  const declaration = yield* TestRunner.TestRunner
-  const runner = yield* declaration.declared
+export const run: (input: {
+    readonly selection?: readonly string[] | undefined;
+    readonly against?: "base" | "workspace" | undefined;
+    readonly timeoutMs?: number | undefined;
+}) => Effect.Effect<{
+    readonly command: string;
+    readonly exitCode: number;
+    readonly passed: number;
+    readonly failed: readonly string[];
+    readonly parsed: boolean;
+    readonly tail: string;
+    readonly tailTruncated: boolean;
+    readonly tailDroppedBytes: number;
+    readonly invalidProbe?: {
+        readonly reason: "unknown-command" | "unknown-environment" | "unknown-module" | "unknown-path" | "unknown-test";
+        readonly evidence: string;
+        readonly message: string;
+    } | undefined;
+    readonly base?: {
+        readonly command: string;
+        readonly exitCode: number;
+        readonly passed: number;
+        readonly failed: readonly string[];
+        readonly parsed: boolean;
+        readonly tail: string;
+        readonly tailTruncated: boolean;
+        readonly tailDroppedBytes: number;
+        readonly invalidProbe?: {
+            readonly reason: "unknown-command" | "unknown-environment" | "unknown-module" | "unknown-path" | "unknown-test";
+            readonly evidence: string;
+            readonly message: string;
+        } | undefined;
+        readonly ref: string;
+        readonly commit: string;
+    } | undefined;
+    readonly introduced?: readonly string[] | undefined;
+    readonly preexisting?: readonly string[] | undefined;
+    readonly fixed?: readonly string[] | undefined;
+}, StdError.StdError, ChildProcessSpawner.ChildProcessSpawner | Evaluator.Evaluator | TestRunner.TestRunner> = effect (input) => try withSpan(effect {
+  const declaration = try TestRunner.TestRunner
+  const runner = try declaration.declared
   if (input.against === "base" && runner.baseline === false) {
-    return yield* Effect.fail(failed(
+    throw failed(
       "Baseline comparison is unavailable on this host. Run against the workspace.",
       "provider_unavailable"
-    ))
+    )
   }
-  const transport = yield* Effect.serviceOption(Container.Container)
+  const transport = try Effect.serviceOption(Container.Container)
   const selection = input.selection ?? []
   const timeoutMs = input.timeoutMs ?? runner.timeoutMs ?? DEFAULT_TIMEOUT_MS
-  const current = yield* execute(runner, transport, {
+  const current = try execute(runner, transport, {
     selection,
     cwd: runner.cwd,
     timeoutMs
@@ -364,14 +396,12 @@ export const run = Effect.fn("TestRun.run")(function*(
 
   const root = runner.root ?? runner.cwd
   if (root === undefined) {
-    return yield* Effect.fail(
-      failed(
-        "The declared runner names no repository directory, so there is no base tree to check out",
-        "invalid_input"
-      )
+    throw failed(
+      "The declared runner names no repository directory, so there is no base tree to check out",
+      "invalid_input"
     )
   }
-  const base = yield* GitWorktree.resolveCommit(
+  const base = try GitWorktree.resolveCommit(
     root,
     runner.baseRef === undefined ? [TestRunner.captureBase, "HEAD"] : [runner.baseRef]
   ).pipe(Effect.mapError((error) =>
@@ -379,8 +409,8 @@ export const run = Effect.fn("TestRun.run")(function*(
       ? failed(`No pristine base to compare against: ${error.message} Run against the workspace instead.`, "not_found")
       : error
   ))
-  const baseline = yield* GitWorktree.withDetachedWorktree(
-    yield* GitWorktree.open(root),
+  const baseline = try GitWorktree.withDetachedWorktree(
+    try GitWorktree.open(root),
     `${scratchDirectory}/run`,
     base.commit,
     (scratch) =>
@@ -398,4 +428,4 @@ export const run = Effect.fn("TestRun.run")(function*(
     base: { ...baseline.outcome, ref: base.ref, commit: base.commit },
     ...(difference === undefined ? {} : difference)
   }
-})
+}, "TestRun.run")

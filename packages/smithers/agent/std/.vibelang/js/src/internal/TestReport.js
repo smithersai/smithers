@@ -133,6 +133,7 @@ const tap = (text) => {
  *
  * @category parsing
  * @since 1.0.0
+ * @throws {never}
  */
 export const parse = (text) => {
     const hasTap = /^(?:TAP version \d+|1\.\.\d+|not ok\b|ok\b)/m.test(text);
@@ -158,6 +159,7 @@ export const parse = (text) => {
  *
  * @category parsing
  * @since 1.0.0
+ * @throws {never}
  */
 export const attribute = (current, base) => {
     if (!current.parsed || !base.parsed)

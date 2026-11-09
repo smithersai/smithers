@@ -8,7 +8,7 @@ it("the attribution example typechecks against TestRun's Effect API", () => {
   const snippet = [...guide.matchAll(/```ts\n([\s\S]*?)```/g)]
     .find(([, code]) => code?.includes("against: \"base\""))![1]!
   const filename = fileURLToPath(new URL("./attribution-doc-example.ts", import.meta.url))
-  const source = `import { Effect } from "effect"\nimport * as TestRun from "../src/TestRun.ts"\n${
+  const source = `import { Effect } from "effect"\nimport * as TestRun from "../src/TestRun.vibe"\n${
     snippet.replace(/^import .*$/gm, "")
   }`
   const config = ts.readConfigFile(fileURLToPath(new URL("../tsconfig.test.json", import.meta.url)), ts.sys.readFile)

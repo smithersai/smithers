@@ -8,7 +8,7 @@ import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as Container from "../src/Container.vibe"
 import { MAX_SHELL_OUTPUT_BYTES } from "../src/internal/Text.ts"
-import * as TestRun from "../src/TestRun.ts"
+import * as TestRun from "../src/TestRun.vibe"
 import * as TestRunner from "../src/TestRunner.vibe"
 
 const execute = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect)

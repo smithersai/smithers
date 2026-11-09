@@ -119,7 +119,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/Container.vibe",
         "src/Bash.ts",
-        "src/TestRun.ts",
+        "src/TestRun.vibe",
         "src/internal/Exec.vibe",
         "src/internal/GitWorktree.vibe",
         "src/Checkpoints.vibe",
@@ -153,7 +153,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/Exec.vibe",
         "src/Container.vibe",
         "src/NativeSearch.vibe",
-        "src/TestRun.ts",
+        "src/TestRun.vibe",
         "src/Bash.ts"
       ]
     },
@@ -220,7 +220,7 @@ const securityReview = Smithers.SecurityReview({
         "Bash.sealed or TestRun admitting a call whose container is undefined, empty, or a different name.",
         "Relocate rewriting a containerised cwd to a host path, or a host path to a container path outside the materialized checkout."
       ],
-      paths: ["src/Bash.ts", "src/TestRun.ts", "src/Relocate.vibe", "src/Container.vibe"]
+      paths: ["src/Bash.ts", "src/TestRun.vibe", "src/Relocate.vibe", "src/Container.vibe"]
     }
   ]
 })

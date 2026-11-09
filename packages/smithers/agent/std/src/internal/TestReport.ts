@@ -149,6 +149,7 @@ const tap = (text: string): Report | undefined => {
  *
  * @category parsing
  * @since 1.0.0
+ * @throws {never}
  */
 export const parse = (text: string): Report => {
   const hasTap = /^(?:TAP version \d+|1\.\.\d+|not ok\b|ok\b)/m.test(text)
@@ -174,6 +175,7 @@ export const parse = (text: string): Report => {
  *
  * @category parsing
  * @since 1.0.0
+ * @throws {never}
  */
 export const attribute = (
   current: Report,

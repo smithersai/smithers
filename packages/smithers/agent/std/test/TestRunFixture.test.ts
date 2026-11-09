@@ -23,7 +23,7 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } fr
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as TestRun from "../src/TestRun.ts"
+import * as TestRun from "../src/TestRun.vibe"
 import * as TestRunner from "../src/TestRunner.vibe"
 
 /**
