@@ -188,6 +188,7 @@ const section = (
  *
  * @category rendering
  * @since 0.1.0
+ * @throws {never}
  */
 export const markdown = (report: RegressionReport): string => {
   const lines = [

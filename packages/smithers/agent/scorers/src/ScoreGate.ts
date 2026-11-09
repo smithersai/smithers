@@ -260,6 +260,7 @@ export const combine = (
  *
  * @category grading
  * @since 0.1.0
+ * @throws {never}
  */
 export const grade = (verdict: Verdict): { readonly exitCode: 0 | 1 | 5; readonly summary: string } => {
   switch (verdict._tag) {

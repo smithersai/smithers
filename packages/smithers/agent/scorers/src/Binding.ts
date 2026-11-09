@@ -49,6 +49,7 @@ export interface Binding {
  *
  * @category constructors
  * @since 0.1.0
+ * @throws {never}
  */
 export const make = (
   options: Omit<Binding, "sampling"> & { readonly sampling?: Sampling | undefined }

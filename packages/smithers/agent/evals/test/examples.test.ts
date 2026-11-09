@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { gateARun } from "../examples/gate-a-run.ts"
+import { gateARun } from "../examples/gate-a-run.vibe"
 
 describe("examples", () => {
   it("gate-a-run passes an unchanged run and fails a run whose score dropped", async () => {

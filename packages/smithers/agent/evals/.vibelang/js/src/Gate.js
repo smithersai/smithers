@@ -83,6 +83,7 @@ export const check = (report, options = {}) => Effect.gen(function* () {
  *
  * @category grading
  * @since 0.1.0
+ * @throws {never}
  */
 export const ciGrade = (verdict) => {
     const graded = grade(verdict);

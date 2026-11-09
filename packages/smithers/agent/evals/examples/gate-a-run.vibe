@@ -20,24 +20,23 @@ const polite = Scorer.make({
 })
 
 const executorSaying = (greeting: string) =>
-  Layer.succeed(CaseExecutor.CaseExecutor)(
-    CaseExecutor.make((suiteCase) =>
+  Layer.succeed(CaseExecutor.CaseExecutor)({
+    run: (suiteCase) =>
       Effect.succeed({
         output: `${greeting}, ${(suiteCase.input as { readonly name: string }).name}`,
         stepKey: suiteCase.name,
         latencyMs: 0,
         target: greet
       })
-    )
-  )
+  })
 
 const runWith = (suite: Suite.Suite, greeting: string, runId: string) =>
   Runner.run(suite, { runId, at: "2026-01-01T00:00:00.000Z" }).pipe(Effect.provide(executorSaying(greeting)))
 
 /** Records a baseline from a "Hello" run, then gates a "Hello" run and a "Hi" run against it. */
 export const gateARun = () =>
-  Effect.runPromise(Effect.gen(function*() {
-    const suite = yield* Suite.make({
+  Effect.runPromise(effect {
+    const suite = try Suite.make({
       name: "greetings",
       cases: [
         { name: "ada", input: { name: "Ada" }, expected: "Hello, Ada" },
@@ -47,15 +46,15 @@ export const gateARun = () =>
       concurrency: 2
     })
 
-    const recorded = yield* runWith(suite, "Hello", "baseline")
-    const committed = yield* Baseline.load(Baseline.write(yield* Baseline.fromRun(recorded)))
+    const recorded = try runWith(suite, "Hello", "baseline")
+    const committed = try Baseline.load(Baseline.write(try Baseline.fromRun(recorded)))
 
     const gate = (greeting: string, runId: string) =>
-      Effect.gen(function*() {
-        const comparison = yield* Regression.compare(committed, yield* runWith(suite, greeting, runId))
-        const verdict = yield* Gate.check(comparison, { mean: 1 })
+      effect {
+        const comparison = try Regression.compare(committed, try runWith(suite, greeting, runId))
+        const verdict = try Gate.check(comparison, { mean: 1 })
         return { markdown: Report.markdown(comparison), ...Gate.ciGrade(verdict) }
-      })
+      }
 
-    return { unchanged: yield* gate("Hello", "next-1"), regressed: yield* gate("Hi", "next-2") }
-  }))
+    return { unchanged: try gate("Hello", "next-1"), regressed: try gate("Hi", "next-2") }
+  })

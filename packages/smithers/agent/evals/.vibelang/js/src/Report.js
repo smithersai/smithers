@@ -137,6 +137,7 @@ const section = (heading, header, alignment, rows) => rows.length === 0 ? [] : [
  *
  * @category rendering
  * @since 0.1.0
+ * @throws {never}
  */
 export const markdown = (report) => {
     const lines = [
