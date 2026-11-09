@@ -1,0 +1,99 @@
+// The wiki draft writer and the specification reviewers on the real durable engine. Faults replace the agent or the
+// budget; a model bound to a refused local port walks the live path as far as the provider call.
+import { it } from "@effect/vitest"
+import { Digest, SecureRandom } from "effect/crypto"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { Flow, FlowRuntime } from "@smthrs/flow"
+import { HostModel } from "@smthrs/model-host"
+import { Node } from "@smthrs/plan"
+import { WikiWriter } from "../src/core/WikiWriter.vibe"
+import { WikiFailure } from "../src/core/wikiSchemas.vibe"
+import { SpecificationReviewers } from "../src/core/specification.vibe"
+import { unansweredSpecificationReview } from "../src/core/conversation.vibe"
+import { DEFAULT_CHAT_MODEL } from "../worker/AgentModel.vibe"
+import { ChatModel, Spend } from "../worker/Reply.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import { WikiDraftAgent, wikiAgentLayer, wikiWriter } from "../worker/WikiDraft.vibe"
+import { liveSpecificationReviewers } from "../worker/SpecificationReviewers.vibe"
+import { run, Text } from "./run.vibe"
+
+const ORIGIN = "http://127.0.0.1:9"
+const CREDENTIAL = { SMITHERS_MODEL_KEY_FUZZ: "fuzz-local-value", SMITHERS_MODEL_KEY_FUZZ_ORIGIN: ORIGIN }
+/** Nothing listens on the discard port, so the provider call fails locally and promptly. */
+const REFUSED = { ...DEFAULT_CHAT_MODEL, baseUrl: ORIGIN, credential: "FUZZ" }
+const Admission = Schema.Literals(["admit", "refuse", "fault"])
+const WikiInput = Schema.Struct({ agent: Schema.Literals(["absent", "fails", "drafts", "refused-model", "no-model"]), admission: Admission, ask: Text, page: Text })
+const ReviewerInput = Schema.Struct({ reviewer: Schema.Literals(["astra", "sol", "fable", "opus"]), admission: Admission, bound: Schema.Literals(["none", "refused", "broken"]), text: Text, revision: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 9 })) })
+
+function ledger(admission: typeof Admission.Type) {
+  const log = { admitted: 0, spent: 0 }
+  const spend: Spend.Shape = {
+    admit: () => effect {
+      log.admitted += 1
+      if (admission === "fault") throw new Unreachable({ what: "budget" })
+      return admission === "admit"
+    },
+    spend: () => sync(() => { log.spent += 1 }),
+  }
+  return { log, spend }
+}
+
+const Outcome = Flow.make("test/model-writers/outcome", { payload: {}, success: Schema.String, body: () => Node.succeed("") })
+
+/** One durable execution of `program`, whose string answer says how it ended. */
+effect function execution<S>(layer: Layer.Layer<S>, program: Effect<string, never, S | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom>) {
+  const registration = Layer.effectDiscard(effect {
+    const engine = try FlowRuntime.FlowRuntime
+    const services = try Effect.context<S | Digest.Digest | SecureRandom.SecureRandom>()
+    try engine.register(Outcome, () => Effect.provide(program, services) as never)
+  })
+  const context = try Layer.build(registration.pipe(Layer.provide(layer), Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer)))
+  return try Context.get(context, FlowRuntime.FlowRuntime).execute(Outcome, { executionId: "test/model-writers/fuzz", payload: {} })
+}
+
+// The engine's generic requirements stay unresolved over S; every service is provided above, and Scope remains.
+const within = <S>(layer: Layer.Layer<S>, program: Effect<string, never, S | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom>) => execution(layer, program) as unknown as Effect<string, unknown, Scope.Scope>
+
+/** No admission means no agent and no charge; a charge follows exactly one admitted attempt. */
+it.live("wiki/writer", () => run("wiki/writer", WikiInput, (input) => scoped(effect {
+  const { log, spend } = ledger(input.admission)
+  let agents = 0
+  const agent = input.agent === "fails" || input.agent === "drafts" || input.agent === "absent" ? Layer.succeed(WikiDraftAgent, {
+    available: input.agent !== "absent",
+    run: effect (request) => {
+      agents += 1
+      if (input.agent === "fails") throw new WikiFailure({ reason: "draft" })
+      return { page: request.page, text: `${request.source}${request.ask}` }
+    },
+  }) : wikiAgentLayer.pipe(Layer.provide(Layer.succeed(ChatModel, input.agent === "no-model" ? { model: undefined, unusable: "unset" } : { model: try HostModel.make(REFUSED).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(CREDENTIAL)))), unusable: "" })))
+  const writer = wikiWriter.pipe(Layer.provide(agent), Layer.provide(Layer.succeed(Spend, spend)))
+  const answer = try within(writer, effect {
+    const result = try Effect.result((try WikiWriter).draft({ page: input.page, source: "# Page", ask: input.ask }))
+    return result._tag === "Success" ? "ok" : result.failure.reason as string
+  })
+  const unavailable = input.agent === "absent" || input.agent === "no-model"
+  if (unavailable) return answer === "no-model" && log.admitted === 0 && log.spent === 0
+  if (input.admission !== "admit") return answer === "budget" && agents === 0 && log.spent === 0
+  if (log.spent !== 1) return false
+  return input.agent === "drafts" ? answer === "ok" : answer === "draft"
+})))
+
+/** A reviewer with no configured model and a refused budget never asks a model; reasons stay within the known set. */
+it.live("specification/reviewers", () => run("specification/reviewers", ReviewerInput, (input) => scoped(effect {
+  const { log, spend } = ledger(input.admission)
+  const name = `SPEC_REVIEW_${input.reviewer.toUpperCase()}`
+  const values = { ...CREDENTIAL, ...(input.bound === "refused" ? { [name]: JSON.stringify(REFUSED) } : input.bound === "broken" ? { [name]: "{not json" } : {}) }
+  const layer = liveSpecificationReviewers.pipe(Layer.provide(Layer.succeed(Spend, spend)), Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(values))))
+  const spec = { revision: input.revision, text: input.text, astra: unansweredSpecificationReview(), sol: unansweredSpecificationReview(), fable: unansweredSpecificationReview(), opus: unansweredSpecificationReview() }
+  const outcome = try Effect.exit(within(layer, effect {
+    const result = try Effect.result((try SpecificationReviewers).review(input.reviewer, spec))
+    return result._tag === "Success" ? "ok" : result.failure.reason as string
+  }))
+  // Malformed reviewer configuration stops the object at startup, a deployment error.
+  if (input.bound === "broken") return true
+  if (outcome._tag === "Failure") return false
+  if (input.bound === "none") return outcome.value === "no-model" && log.admitted === 0
+  if (input.admission !== "admit") return outcome.value === "budget" && log.spent === 0
+  return outcome.value === "review" && log.spent === 1
+})))
