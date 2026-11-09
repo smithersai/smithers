@@ -1,0 +1,89 @@
+// @vitest-environment node
+// src/core/LiveWiki.vibe against the real wiki HTTP boundary (worker/Wiki.vibe serveWiki over loopback, the fixture
+// repository through the injected host), and against faulty Effect transports for answers the boundary never gives.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient, HttpClientError, HttpClientResponse, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { liveWiki } from "../src/core/LiveWiki.vibe"
+import { fixtureWikiHost, makeWikiStore } from "../src/core/WikiFactory.vibe"
+import { WikiHost } from "../src/core/wikiFlows.vibe"
+import type { WikiFailure } from "../src/core/wikiSchemas.vibe"
+import type { Principal } from "../worker/Issues.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { serveWiki, WikiAuthority } from "../worker/Wiki.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+
+const jun: Principal = { id: "fixture-contributor", login: "jun", role: "contributor", token: Redacted.make("fixture-token") }
+const failure = (error: WikiFailure) => ({ reason: error.reason, unwritten: error.unwritten })
+
+/** serveWiki on loopback, every request signed in as `actor` (the browser's cookie, which LiveWiki leaves to fetch). */
+effect function served(actor: Principal | undefined) {
+  const storage = try Effect.try(() => objectStorage()) as unknown as Storage
+  const store = try makeWikiStore()
+  const server = try HttpServer.HttpServer
+  try HttpServer.serveEffect(effect {
+    const host = try fixtureWikiHost(effect () => actor ?? { id: "", login: "Guest", role: "viewer" as const }, store)
+    return try serveWiki("live-wiki", storage).pipe(
+      Effect.provideService(WikiAuthority, { current: () => Effect.succeed(actor) }),
+      Effect.provideService(WikiHost, host),
+      Effect.provide(FetchHttpClient.layer),
+    )
+  })
+  const address = server.address
+  return address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+}
+
+/** A faulty transport: `answer` for every request, or offline when it is undefined. */
+function transport(answer?: { readonly status: number; readonly body: string }) {
+  return Layer.succeed(HttpClient.HttpClient, HttpClient.make((request) => answer === undefined
+    ? fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) }))
+    : succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(answer.body, { status: answer.status }))))))
+}
+
+describe("LiveWiki", () => {
+  it.live("reads a page, drafts an edit, and names the boundary's refusals", () => scoped(effect {
+    provide NodeHttpServer.layerTest, FetchHttpClient.layer {
+      const wiki = try liveWiki(try served(jun))
+      const read = try wiki.read("roadmap")
+      const drafted = try wiki.act({ op: "draft", page: "roadmap", base: "", text: "Add a line", key: "live-draft" })
+      const conflict = try Effect.flip(wiki.act({ op: "propose", page: "roadmap", base: "stale", text: "x", key: "live-propose" }))
+      const missing = try Effect.flip(wiki.read("no-such-page"))
+      const invalid = try Effect.flip(wiki.read("\uD800"))
+      try Effect.try(() => {
+        expect(read.pages.map((page) => page.id)).toContain("roadmap")
+        expect(drafted.draft?.page).toBe("roadmap")
+        expect(failure(conflict)).toEqual({ reason: "conflict", unwritten: true })
+        expect(failure(missing).reason).toBe("missing")
+        expect(failure(invalid)).toEqual({ reason: "invalid", unwritten: true })
+      })
+    }
+  }), 60_000)
+
+  it.live("a signed-out viewer may read but not draft", () => scoped(effect {
+    provide NodeHttpServer.layerTest, FetchHttpClient.layer {
+      const wiki = try liveWiki(try served(undefined))
+      const read = try wiki.read("index")
+      const denied = try Effect.flip(wiki.act({ op: "draft", page: "index", base: "", text: "x", key: "viewer-draft" }))
+      try Effect.try(() => {
+        expect(read.pages.map((page) => page.id)).toContain("index")
+        expect(failure(denied).reason).toBe("forbidden")
+      })
+    }
+  }), 60_000)
+
+  for (const [label, answer, reason] of [
+    ["offline", undefined, "unavailable"],
+    ["a failure without the protocol's reason", { status: 502, body: "<html>" }, "unavailable"],
+    ["a success that isn't JSON", { status: 200, body: "{" }, "protocol"],
+    ["a success that isn't a wiki state", { status: 200, body: "{}" }, "protocol"],
+  ] as const) {
+    it.effect(`reads and writes report ${label} as ${reason}`, () => effect {
+      provide transport(answer) {
+        const wiki = try liveWiki("http://wiki.invalid")
+        const read = try Effect.flip(wiki.read("index"))
+        const act = try Effect.flip(wiki.act({ op: "draft", page: "index", base: "", text: "x", key: "k" }))
+        try Effect.try(() => expect([read.reason, act.reason]).toEqual([reason, reason]))
+      }
+    })
+  }
+})
