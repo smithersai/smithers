@@ -6,12 +6,19 @@ import type { EndRecord } from "../src/firstPaint/shell"
 import { expect, test } from "./fixtures"
 import { requires, target } from "./target"
 import { expectServerError } from "./watch"
+import { WEB_ANALYTICS_ANNOTATION, WEB_ANALYTICS_BROKEN } from "./browser-analytics.ts"
 
 if (target === "deployment") requires("trackingRepository")
 else requires("noGitHubApp")
 
 const repo = target === "local" ? "octocat/Spoon-Knife" : process.env.E2E_TRACKING_REPOSITORY ?? ""
 const painted = "smithers.first_paint.painted"
+
+test.beforeEach(async ({ browserName }, info) => {
+  if (target === "deployment" && browserName === "webkit") {
+    info.annotations.push({ type: WEB_ANALYTICS_ANNOTATION, description: WEB_ANALYTICS_BROKEN })
+  }
+})
 
 // Local development seeds its own real synced issue through the normal issues read.
 test.beforeAll(async ({ request }) => {
@@ -29,8 +36,7 @@ const paintRecords = (page: Page) => page.evaluate(() => performance.getEntriesB
 test.afterEach(async ({ page }, info) => {
   const marks = await paintRecords(page)
   await info.attach("first-paint-outcomes", { body: JSON.stringify(marks, null, 2), contentType: "application/json" })
-  // The deployment owns browser telemetry; a zone-injected beacon must not return.
-  await expect(page.locator("script[src^=\"https://static.cloudflareinsights.com/\"]")).toHaveCount(0)
+
 })
 
 // The About read of a private repository answers 404 for anyone: it reads what GitHub says publicly. WebKit reports a

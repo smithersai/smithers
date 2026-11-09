@@ -1,0 +1,7 @@
+/** TEST-5: keep the edge-owned beacon failure visible until deployments can disable its injection. */
+export const WEB_ANALYTICS_BROKEN = "Cloudflare injects a beacon whose /cdn-cgi/rum endpoint returns 404; the deploy token lacks Web Analytics permission to disable injection"
+export const WEB_ANALYTICS_ANNOTATION = "broken-web-analytics"
+
+/** Classify the complete watcher result; any unrelated failure must remain unexpected. */
+export const onlyBeaconFailures = (problems: ReadonlyArray<string>): boolean =>
+  problems.every(line => /^console 404 \/cdn-cgi\/rum(?:\?[^ ]*)?: Failed to load resource ×[1-9]\d*$/.test(line))

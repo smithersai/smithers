@@ -1,15 +1,16 @@
 // Discover the real Alchemy declaration without invoking provider lifecycle methods.
 import * as Output from "alchemy/Output"
 import { Stack } from "alchemy/Stack"
-import { Effect, Option } from "effect"
+import { ConfigProvider, Effect, Option } from "effect"
 import { expect, test } from "vitest"
 import { BrowserAnalytics } from "./BrowserAnalytics.ts"
 import type { AppHost } from "./Domain.ts"
 
-const discover = async (domain: Option.Option<AppHost>) => {
+const discover = async (domain: Option.Option<AppHost>, env: Record<string, string> = {}) => {
   const stack = Stack.of({ name: "browser-analytics", stage: "test", resources: {}, bindings: {}, actions: {} })
   await Effect.runPromise(BrowserAnalytics(domain).pipe(
     Effect.provideService(Stack, stack),
+    Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))),
     Effect.asVoid,
     Effect.scoped,
   ) as unknown as Effect.Effect<void>)
@@ -17,7 +18,7 @@ const discover = async (domain: Option.Option<AppHost>) => {
 }
 
 test("custom domains disable the edge-injected beacon through an Alchemy Web Analytics site", async () => {
-  const resources = await discover(Option.some({ name: "app.example.com", redirects: [], aliases: [] }))
+  const resources = await discover(Option.some({ name: "app.example.com", redirects: [], aliases: [] }), { MANAGE_WEB_ANALYTICS: "true" })
   expect(Object.keys(resources)).toEqual(["BrowserAnalytics"])
   const setting = resources["BrowserAnalytics"]!
   expect(setting.Type).toBe("Cloudflare.Rum.Site")
@@ -27,4 +28,12 @@ test("custom domains disable the edge-injected beacon through an Alchemy Web Ana
 
 test("development and workers.dev declare no analytics site", async () => {
   expect(await discover(Option.none())).toEqual({})
+})
+
+test.each([{}, { MANAGE_WEB_ANALYTICS: "false" }] as Array<Record<string, string>>)("the default and disabled plans omit Web Analytics: %j", async (env) => {
+  expect(await discover(Option.some({ name: "app.example.com", redirects: [], aliases: [] }), env)).toEqual({})
+})
+
+test("enabled workers.dev still declares no analytics site", async () => {
+  expect(await discover(Option.none(), { MANAGE_WEB_ANALYTICS: "true" })).toEqual({})
 })
