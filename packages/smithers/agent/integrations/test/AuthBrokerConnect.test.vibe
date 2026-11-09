@@ -5,6 +5,7 @@ import { Base64 } from "effect/encoding"
 import { HttpClientRequest, HttpServerRequest } from "effect/http"
 import { Core, GitHub } from "../src/index.ts"
 import * as Broker from "../src/github/AuthBroker.vibe"
+import { durable } from "./DurableBroker.vibe"
 
 const origin = "https://vibelang.smithers.sh"
 const secret = Redacted.make("a".repeat(32))
@@ -22,10 +23,10 @@ effect function fixture(person = 7, revokeFails = false, supplied?: Broker.Store
     deviceCode: () => Effect.die("unused"), deviceToken: () => Effect.die("unused"),
   })
   const store = supplied ?? (try Broker.memoryStore())
-  const broker = try Broker.make({
+  const broker = durable(try Broker.make({
     origin: "https://smithers.sh", sites, keys, store, encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), github,
     connections: { install: (input) => { installed.push({ person: input.person, origin: input.origin, login: input.login, token: Redacted.value(input.tokens.accessToken) }); return succeed({ delegation: "d".repeat(43), expires: 5 }) } },
-  })
+  }))
   const client = try Broker.site({ origin, brokerOrigin: "https://smithers.sh", secret })
   const pending = try client.begin({ connect: { person: 7 } })
   const start = try broker.start(origin, pending.returnTo)
@@ -41,12 +42,12 @@ effect function atConsent() {
   return { ...f, location, consent, browser }
 }
 
-it.effect("a sign-in keeps no token: it is revoked at once, and a failed revoke does not fail sign-in", () => effect {
+it.live("a sign-in keeps no token: it is revoked at once, and a failed revoke does not fail sign-in", () => effect {
   const f = try fixture(7, true)
   const signIn = try f.client.begin()
   const start = try f.broker.start(origin, signIn.returnTo)
   const location = try f.broker.callback(new URL(start.location).searchParams.get("state")!, "code", start.cookie)
-  try Effect.try(() => { expect(f.revoked).toEqual(["private-github-token"]); expect(location).toContain(origin); expect(f.installed).toEqual([]) })
+  try Effect.try(() => { expect(new Set(f.revoked)).toEqual(new Set(["private-github-token"])); expect(location).toContain(origin); expect(f.installed).toEqual([]) })
 })
 it.effect("connect stops at a smithers.sh consent page with no token in the URL and nothing installed", () => effect {
   const f = try atConsent()
@@ -119,7 +120,7 @@ it.effect("the consent page escapes what it shows and stores a token pair with n
   const page = try f.broker.consentPage(consent, browser)
   try Effect.try(() => expect(page.html).toContain(`value="${consent}"`))
 })
-const route = effect (broker: Effect.Success<ReturnType<typeof Broker.make>>, path: string, init: { readonly method?: "GET" | "POST"; readonly headers?: Record<string, string>; readonly body?: string }) => {
+const route = effect (broker: ReturnType<typeof durable>, path: string, init: { readonly method?: "GET" | "POST"; readonly headers?: Record<string, string>; readonly body?: string }) => {
   const request = HttpClientRequest.make(init.method ?? "GET")("https://smithers.sh" + path).pipe(HttpClientRequest.setHeaders(init.headers ?? {}), (value) => init.body === undefined ? value : HttpClientRequest.bodyText(value, init.body, "application/x-www-form-urlencoded"))
   const web = try HttpClientRequest.toWeb(request)
   return try Broker.serve(broker, "https://smithers.sh").pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web)))

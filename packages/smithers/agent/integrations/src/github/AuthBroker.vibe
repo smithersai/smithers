@@ -186,7 +186,6 @@ export effect function make(options: {
     if (Option.isNone(verified)) throw refused()
     return verified.value.value
   }
-  const discard = (token: Redacted.Redacted<string>) => options.github.revoke(token).pipe(Effect.catch(() => record("revoke", "failed")))
   const openConsent = effect (consent: string, cookie: string | undefined, take: boolean) => {
     if (!random.test(consent)) throw refused()
     const browser = try options.keys.verify("broker_consent", cookie)
@@ -217,7 +216,7 @@ export effect function make(options: {
       const parsed = try openConsent(consent, cookie, true)
       const tokens: Auth.Tokens = { accessToken: Redacted.make(parsed.access), refreshToken: parsed.refresh === null ? null : Redacted.make(parsed.refresh), expiresAt: parsed.tokenExpires }
       if (answer === "cancel" || options.connections === undefined) {
-        try discard(tokens.accessToken)
+        try discard(options.github, tokens.accessToken)
         return parsed.claims.origin + "/"
       }
       const installed = try options.connections.install({ person: parsed.person.id, origin: parsed.claims.origin, login: parsed.person.login, tokens })
@@ -248,18 +247,18 @@ export effect function make(options: {
       try fresh(pending.expires, REQUEST_TTL)
       if (!allowedOrigin(pending.claims.origin, options.sites, options.localDevelopment)) throw refused()
       const tokens = try checked(options.github.exchange({ code: Redacted.make(code), codeVerifier: Redacted.make(pending.verifier), redirectUri: options.origin + CALLBACK }))
-      const person = try ensuring(checked(options.github.user(tokens.accessToken)), discard(options.github, tokens.accessToken))
+      // A sign-in keeps no token. A connection keeps this one unless the person lookup fails.
+      const person = try (pending.claims.connect === undefined ? ensuring(checked(options.github.user(tokens.accessToken)), discard(options.github, tokens.accessToken)) : Effect.tapError(checked(options.github.user(tokens.accessToken)), () => discard(options.github, tokens.accessToken)))
       if (!Number.isSafeInteger(person.id) || person.id <= 0 || !/^[a-zA-Z0-9-]{1,39}$/.test(person.login)) throw refused()
       if (pending.claims.connect !== undefined) {
         // GitHub keeps ten tokens per person and App: every token the connection does not keep is revoked.
-        if (person.id !== pending.claims.connect.person) { try discard(tokens.accessToken); throw refused() }
+        if (person.id !== pending.claims.connect.person) { try discard(options.github, tokens.accessToken); throw refused() }
         const consent = try options.keys.token
         const consentKey = "consent/" + (try hash(consent))
         const consentExpires = (try Clock.currentTimeMillis) + REQUEST_TTL
         if (!(try options.store.insert(consentKey, try hash(consent), try seal(consentKey, { claims: pending.claims, expires: consentExpires, person: { id: person.id, login: person.login }, access: Redacted.value(tokens.accessToken), refresh: tokens.refreshToken === null ? null : Redacted.value(tokens.refreshToken), tokenExpires: tokens.expiresAt }), consentExpires))) throw refused()
         return options.origin + CONSENT + "?" + new URLSearchParams({ consent })
       }
-      try discard(tokens.accessToken)
       return try writeHandoff(pending.claims, { id: person.id, login: person.login })
     }),
     exchange: (origin: string, signed: string) => observed("exchange", effect {
@@ -291,8 +290,9 @@ export function consentHtml(host: string, login: string, consent: string): strin
 export const CONSENT_CSP = "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
 
 /** Shared route adapter; the host runs each invocation as a durable step. No redirect from an unverified request. */
-export effect function serve<R>(broker: Omit<Effect.Success<ReturnType<typeof make>>, "callback"> & {
+export effect function serve<R>(broker: Omit<Effect.Success<ReturnType<typeof make>>, "callback" | "consent"> & {
   readonly callback: (state: string, code: string, cookie: string | undefined) => string!BrokerRefused!R
+  readonly consent: (consent: string, answer: "connect" | "cancel", cookie: string | undefined) => string!BrokerRefused!R
 }, origin: string) {
   const request = try HttpServerRequest.HttpServerRequest
   const url = new URL(request.originalUrl, origin)

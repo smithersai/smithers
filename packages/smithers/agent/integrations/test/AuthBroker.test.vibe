@@ -1,7 +1,3 @@
-import { FlowEngine } from "@smthrs/engine"
-import { Flow, FlowRuntime } from "@smthrs/flow"
-import { Node } from "@smthrs/plan"
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { tokenService } from "./TokenService.vibe"
 import { Tracer, References } from "effect"
 import { HttpEffect, HttpServerResponse } from "effect/http"
@@ -10,24 +6,11 @@ import { expect, it } from "@effect/vitest"
 import { TestClock } from "effect/testing"
 import { Core, GitHub } from "../src/index.ts"
 import * as Broker from "../src/github/AuthBroker.vibe"
+import { durable } from "./DurableBroker.vibe"
 const origin = "https://vibelang.smithers.sh"
 const other = "https://other.smithers.sh"
 const secret = Redacted.make("a".repeat(32))
 const sites = [{ origin, secret }, { origin: other, secret: Redacted.make("b".repeat(32)) }, { origin: "https://factory.example", secret: Redacted.make("c".repeat(32)) }]
-
-const TestFlow = Flow.make("test/Broker", {
-  payload: {}, success: Schema.Null, body: () => Node.succeed(null),
-})
-/** Run protocol callbacks in a real engine, just as the durable production host does. */
-function durable(broker: Effect.Success<ReturnType<typeof Broker.make>>) {
-  return { ...broker, callback: (...args: Parameters<typeof broker.callback>) => scoped(effect {
-    const runtime = try FlowRuntime.FlowRuntime
-    const outcome = try Ref.make<Exit.Exit<string, Broker.BrokerRefused>>(Exit.succeed(""))
-    try runtime.register(TestFlow, () => effect { try Ref.set(outcome, try exit(broker.callback(...args))); return null })
-    try runtime.execute(TestFlow, { executionId: try Effect.orDie(Core.Pkce.createCodeVerifier()), payload: {} }).pipe(Effect.orDie)
-    return try (try Ref.get(outcome))
-  }).pipe(Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer))) }
-}
 
 effect function fixture(fault: "exchange" | "user" | "identity" | undefined = undefined, suppliedStore?: Broker.Store, suppliedGithub?: GitHub.Auth.GitHubAuth["Service"]) {
   const keys = try Core.CookieKeys.make({ primary: secret }, "primary")

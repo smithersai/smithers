@@ -1,0 +1,26 @@
+import { FlowEngine } from "@smthrs/engine"
+import { Flow, FlowRuntime } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Core } from "../src/index.ts"
+import type * as Broker from "../src/github/AuthBroker.vibe"
+
+const TestFlow = Flow.make("test/Broker", {
+  payload: {}, success: Schema.Null, body: () => Node.succeed(null),
+})
+const inFlow = <A, R>(initial: A, body: A!Broker.BrokerRefused!R) => scoped(effect {
+  const runtime = try FlowRuntime.FlowRuntime
+  const outcome = try Ref.make<Exit.Exit<A, Broker.BrokerRefused>>(Exit.succeed(initial))
+  try runtime.register(TestFlow, () => effect { try Ref.set(outcome, try exit(body as A!Broker.BrokerRefused)); return null })
+  try runtime.execute(TestFlow, { executionId: try Effect.orDie(Core.Pkce.createCodeVerifier()), payload: {} }).pipe(Effect.orDie)
+  return try (try Ref.get(outcome))
+}).pipe(Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer)))
+
+/** Run the protocol's revoking steps in a real engine, just as the durable production host does. */
+export function durable(broker: Effect.Success<ReturnType<typeof Broker.make>>) {
+  return {
+    ...broker,
+    callback: (...args: Parameters<typeof broker.callback>) => inFlow("", broker.callback(...args)),
+    consent: (...args: Parameters<typeof broker.consent>) => inFlow("", broker.consent(...args)),
+  }
+}
