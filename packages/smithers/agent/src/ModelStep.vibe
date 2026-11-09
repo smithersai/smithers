@@ -199,7 +199,8 @@ export const heartbeatTimeoutMsFor = (effort: ModelRequest.ReasoningEffort | und
  * @category policies
  * @since 1.0.0
  */
-export const callTimeoutMsFor: (effort: ModelRequest.ReasoningEffort | undefined) => number = CellTurn.modelCallMsFor
+export const callTimeoutMsFor: (effort: ModelRequest.ReasoningEffort | undefined) => number = (effort) =>
+  CellTurn.modelCallMsFor(effort)
 
 /**
  * Calls a model as one durable, sealed step of the running flow.
@@ -231,12 +232,12 @@ export const run = (
   Failure,
   (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
 > =>
-  Effect.gen(function*() {
-    const prepared = yield* options.route.prepare(options.request)
-    const key = yield* Internal.key(Internal.material(options.request), prepared)
+  effect {
+    const prepared = try options.route.prepare(options.request)
+    const key = try Internal.key(Internal.material(options.request), prepared)
     const effort = options.request.params.reasoningEffort
     const heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? heartbeatTimeoutMsFor(effort)
-    const { recorded, replayed } = yield* Internal.dispatch({
+    const { recorded, replayed } = try Internal.dispatch({
       name: options.name,
       key,
       request: options.request,
@@ -249,10 +250,10 @@ export const run = (
       onEvent: options.onEvent
     })
     if (replayed && options.onEvent !== undefined) {
-      yield* Effect.forEach(recorded.events, options.onEvent, { discard: true })
+      try Effect.forEach(recorded.events, options.onEvent, { discard: true })
     }
     return { events: recorded.events, ...(recorded.error === undefined ? {} : { error: recorded.error }), replayed }
-  })
+  }
 
 /**
  * The services a model step runs on: the engine, the running execution and

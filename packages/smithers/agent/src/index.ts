@@ -22,7 +22,7 @@ export * as FlowEngineLike from "./FlowEngineLike.vibe"
  * @category execution
  * @since 1.0.0-rc.16
  */
-export * as ModelStep from "./ModelStep.ts"
+export * as ModelStep from "./ModelStep.vibe"
 
 /**
  * @category layers

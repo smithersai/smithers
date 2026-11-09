@@ -258,7 +258,7 @@ const securityReview = Smithers.SecurityReview({
         "A sealed key made cross-run reusable when Options.capabilities is undeclared.",
         "The wire-body marker splice producing the same key for two different request bodies."
       ],
-      paths: ["src/FlowEngineLike.vibe", "src/ModelStep.ts", "src/internal/ModelStep.vibe", "src/internal/CallIdentity.ts"]
+      paths: ["src/FlowEngineLike.vibe", "src/ModelStep.vibe", "src/internal/ModelStep.vibe", "src/internal/CallIdentity.ts"]
     },
     {
       id: "checkpoint-relocation",
@@ -304,7 +304,7 @@ const securityReview = Smithers.SecurityReview({
         "src/RunawayGuard.vibe",
         "src/QuotaPolicy.vibe",
         "src/FlowEngineLike.vibe",
-        "src/ModelStep.ts",
+        "src/ModelStep.vibe",
         "src/internal/ModelStep.vibe",
         "src/AgentAction.ts"
       ]

@@ -43,7 +43,7 @@ import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { afterEach, describe, expect, it } from "vitest"
 import * as InternalModelStep from "../src/internal/ModelStep.vibe"
-import * as ModelStep from "../src/ModelStep.ts"
+import * as ModelStep from "../src/ModelStep.vibe"
 import {
   ask,
   dropSchema,
