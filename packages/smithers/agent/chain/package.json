@@ -83,7 +83,7 @@
     },
     "./Authorize": {
       "types": {
-        "default": "./.vibe/declarations/Authorize.d.vibe.ts"
+        "default": "./.vibe/declarations/src/Authorize.d.vibe.ts"
       },
       "vibelang-source": "./src/Authorize.vibe",
       "default": "./.vibelang/js/src/Authorize.js"
@@ -124,7 +124,7 @@
     },
     "./ScriptRunner": {
       "types": {
-        "default": "./.vibe/declarations/ScriptRunner.d.vibe.ts"
+        "default": "./.vibe/declarations/src/ScriptRunner.d.vibe.ts"
       },
       "vibelang-source": "./src/ScriptRunner.vibe",
       "default": "./.vibelang/js/src/ScriptRunner.js"
@@ -183,7 +183,7 @@
     },
     "./QuickJsRunner": {
       "types": {
-        "default": "./.vibe/declarations/QuickJsRunner.d.vibe.ts"
+        "default": "./.vibe/declarations/src/QuickJsRunner.d.vibe.ts"
       },
       "vibelang-source": "./src/QuickJsRunner.vibe",
       "default": "./.vibelang/js/src/QuickJsRunner.js"

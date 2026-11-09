@@ -52,12 +52,12 @@
       "default": "./.vibelang/js/src/Disclosure.js"
     },
     "./Discovery": {
-      "types": "./.vibe/declarations/Discovery.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Discovery.d.vibe.ts",
       "vibelang-source": "./src/Discovery.vibe",
       "default": "./.vibelang/js/src/Discovery.js"
     },
     "./Executable": {
-      "types": "./.vibe/declarations/Executable.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Executable.d.vibe.ts",
       "vibelang-source": "./src/Executable.vibe",
       "default": "./.vibelang/js/src/Executable.js"
     },
