@@ -61,7 +61,8 @@ export function issueChatCard(h: H, issue: IssueRecord, items: ReadonlyArray<Iss
   return h.div([h.Class("sui-card ix-chat-card")], [
     h.div([h.Class("sui-card-header")], [h.span([h.Class("sui-card-title")], [issue.title]), h.span([h.Class("sui-card-action")], [h.span([h.Class(`sui-badge sui-badge-${children.length === 0 && issue.state === "open" ? "success" : "secondary"}`)], [children.length === 0 ? issue.state === "open" ? "Open" : "Closed" : `#${issue.number} · ${children.length} ${children.length === 1 ? "child" : "children"}`])])]),
     h.div([h.Class("sui-card-content")], children.length === 0 ? [h.div([h.Class("sui-card-description")], [`#${issue.number} · opened ${when(absolute, issue.age)}${issue.labels.length === 0 ? "" : ` · ${issue.labels.join(", ")}`}`])] : children.map(child => h.div([h.Class("ix-mini")], [icon(h, child), h.a([h.Href(`#issue-${child.number}`), h.OnClick(open(child.number), { defaultAction: "Prevent" })], [`#${child.number} ${child.title}`]), h.span([h.Class("ix-tree-meta")], badges(h, child, false))]))),
-    h.div([h.Class("sui-card-footer")], [h.button([h.Type("button"), h.Class("sui-button sui-button-sm"), h.OnClick(open(issue.number))], [label])]),
+    // The label is the agent's link text; a blank one would leave the button without a name.
+    h.div([h.Class("sui-card-footer")], [h.button([h.Type("button"), h.Class("sui-button sui-button-sm"), h.OnClick(open(issue.number))], [label.trim() === "" ? `Open #${issue.number}` : label])]),
   ])
 }
 

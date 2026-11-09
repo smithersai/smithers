@@ -13,7 +13,8 @@ import { actionsPane, actionCards, slashMenu } from "./actionView.vibe"
 import { actionsOf, completions } from "./actionModel.vibe"
 import { render } from "./markdown.vibe"
 import { WALKTHROUGH } from "../core/walkthroughSteps.vibe"
-interface StopMedia { readonly src: string; readonly alt: string; readonly poster?: string; readonly loop?: boolean }
+/** A video is an asset with a poster; every video loops. */
+interface StopMedia { readonly src: string; readonly alt: string; readonly poster?: string }
 import { sandboxPane } from "./sandboxView.vibe"
 
 type H = HtmlBuilder<AppMessage>
@@ -115,7 +116,7 @@ function splash(model: Model, h: H): Html {
       h.pre([h.Class("vl-install")], [h.code([], [INSTALL])]),
     ]),
     ...media(model, h, "vl-media", {
-      src: "/media/contract.mp4", poster: "/media/contract-poster.jpg", loop: true,
+      src: "/media/contract.mp4", poster: "/media/contract-poster.jpg",
       alt: "A!E!R: what a function returns, how it fails, what it needs",
     }, true),
   ])
@@ -193,7 +194,7 @@ function chat(model: Model, h: H): Html {
   return h.main([h.Class("vl-chat"), h.Inert(model.tour || model.docs === "max" || actionsOf(model).maximized)], [
     h.div([h.Class("sui-chat-messages"), h.DataAttribute("following", String(model.following)), h.Role("log"), h.AriaLabel("Conversation"), h.AriaLive("off")], [
       splashPane(h),
-      ...(model.tourClient?.conversation.entries.length ? [h.div([h.Class("sui-chat-message"), h.DataAttribute("role", "assistant"), h.DataAttribute("walkthrough", "true"), h.DataAttribute("done", String(model.tourClient.conversation.entries.at(-1)?.done ?? false))], [h.div([h.Class("sui-chat-bubble")], [model.tourClient.conversation.entries.at(-1)?.text ?? ""])])] : []),
+      ...tourNarration(model, h),
       sandboxPane(model, h),
       ...peoplePane(model, h),
       ...accountNotice(model, h),
@@ -224,13 +225,20 @@ function chat(model: Model, h: H): Html {
   ])
 }
 
+/** The tour's latest narration, while its conversation has any. */
+function tourNarration(model: Model, h: H): ReadonlyArray<Html> {
+  const last = model.tourClient?.conversation.entries.at(-1)
+  return last === undefined ? [] : [h.div([h.Class("sui-chat-message"), h.DataAttribute("role", "assistant"), h.DataAttribute("walkthrough", "true"), h.DataAttribute("done", String(last.done))], [h.div([h.Class("sui-chat-bubble")], [last.text])])]
+}
+
 function entryView(entry: Entry, model: Model, h: H): Html {
   const display = entryDisplay(entry.author, entry.text, entry.done, entry.error)
   const linked = /\[([^\]]+)\]\(#issue-([1-9][0-9]*)\)/.exec(entry.text)
-  const issue = linked === null ? undefined : model.issues?.data.items.find((i) => i.number === Number(linked[2]))
+  const items = model.issues?.data.items ?? []
+  const issue = linked === null ? undefined : items.find((i) => i.number === Number(linked[2]))
   const text = issue === undefined ? entry.text : entry.text.replace(linked![0], "").trim()
   const body = display.markdown ? render(h, text) : [entry.text]
-  const card = entry.author === "agent" && issue !== undefined && linked !== null ? issueChatCard(h, issue, model.issues?.data.items ?? [], linked[1]!, model.issues?.data.absoluteDates === true, number => Message.OpenIssueCard({ number })) : undefined
+  const card = entry.author === "agent" && issue !== undefined && linked !== null ? issueChatCard(h, issue, items, linked[1]!, model.issues?.data.absoluteDates === true, number => Message.OpenIssueCard({ number })) : undefined
   return h.article(
     [h.Class("sui-chat-message"), h.DataAttribute("role", display.role), h.DataAttribute("done", String(entry.done)), h.Key(entry.id), h.DataAttribute("in-reply-to", entry.inReplyTo)],
     [
@@ -336,14 +344,14 @@ function media(model: Model, h: H, className: string, asset: StopMedia, controls
   const source = (src: string) => model.mediaSources?.[src] ?? src
   const choice = mediaDecision(asset.poster !== undefined, model.reducedMotion, controls)
   const failed = Message.FailedMedia({ src: asset.src, kind: choice.kind })
-  const still = choice.poster ? asset.poster! : asset.src
+  // Every poster asset is shown with controls, so reduced motion keeps its paused video; only posterless assets are images.
   return [h.figure([h.Class(className), h.Key(asset.src)], [
     ...(choice.video ? [h.video([
       h.Key(asset.src), h.Src(source(asset.src)), h.Poster(source(asset.poster!)),
-      h.Autoplay(choice.autoplay), h.Muted(true), h.Playsinline(true), h.Loop(asset.loop ?? false), h.Controls(controls),
+      h.Autoplay(choice.autoplay), h.Muted(true), h.Playsinline(true), h.Loop(true), h.Controls(controls),
       h.AriaLabel(asset.alt), h.OnError(failed), h.OnPlay(Message.LoadedMedia({ kind: "video" })),
     ], [])] : [h.img([
-      h.Key(still), h.Src(source(still)), h.Alt(asset.alt), h.OnError(failed), h.OnLoad(Message.LoadedMedia({ kind: "image" })),
+      h.Key(asset.src), h.Src(source(asset.src)), h.Alt(asset.alt), h.OnError(failed), h.OnLoad(Message.LoadedMedia({ kind: "image" })),
     ])]),
   ])]
 }

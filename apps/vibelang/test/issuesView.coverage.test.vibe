@@ -260,6 +260,9 @@ describe("the chat card", () => {
     scene(app, given(answered([issue(), issue({ number: 8, parent: 7, title: "Kid" })], "[Open issue](#issue-7)")), expect(text("#7 · 1 child")).toExist())
     scene(app, given(answered([issue(), issue({ number: 8, parent: 7 }), issue({ number: 9, parent: 7 })], "[Open issue](#issue-7)")), expect(text("#7 · 2 children")).toExist())
   })
+  it("a blank link label still names the card's open button (fuzz web/view-branches)", () => {
+    scene(app, given(answered([issue()], "Filed. [\t](#issue-7)")), expect(role("button", { name: "Open #7" })).toExist())
+  })
   it("a link to an unknown issue stays plain text and shows no card", () => {
     scene(app, given(answered([issue()], "[Open issue](#issue-99)")), expect(role("button", { name: "Open issue" })).toBeAbsent())
   })

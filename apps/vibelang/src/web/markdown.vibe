@@ -69,12 +69,20 @@ function richInline(text: string): MarkdownNode["children"] {
     if (match.index > cursor) result.push(text.slice(cursor, match.index))
     if (match[1] !== undefined) result.push(node("code", [match[1]]))
     else if (match[2] !== undefined) result.push(node("strong", richInline(match[2])))
-    else if (safeLink(match[4]!)) result.push({ tag: "a", href: match[4]!, children: richInline(match[3]!) })
+    else if (safeLink(match[4]!)) {
+      // A label with no visible text would leave the link without a name, so the link shows its target.
+      const label = richInline(match[3]!)
+      result.push({ tag: "a", href: match[4]!, children: visibleText(label).trim() === "" ? [match[4]!] : label })
+    }
     else result.push(match[3]!)
     cursor = match.index + match[0].length
   }
   if (cursor < text.length) result.push(text.slice(cursor))
   return result
+}
+
+function visibleText(children: MarkdownNode["children"]): string {
+  return children.map((child) => typeof child === "string" ? child : visibleText(child.children)).join("")
 }
 
 export function anchor(text: string): string {

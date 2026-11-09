@@ -1,0 +1,132 @@
+import { it } from "@effect/vitest"
+import * as M from "../src/core/conversation.vibe"
+import { touring, unanswered } from "../src/core/flows.vibe"
+import * as Sequencer from "../worker/Sequencer.vibe"
+import { EventSchema } from "../src/core/schemas.vibe"
+import { run, same, Int, TextOrBoundary } from "./run.vibe"
+
+/** A real Ref-backed log and a dispatch that records what it was asked to run. */
+effect function sequencer() {
+  const events = try Ref.make<ReadonlyArray<M.Event>>([])
+  const dispatched = try Ref.make<ReadonlyArray<string>>([])
+  const service = try Sequencer.make({
+    read: () => Ref.get(events),
+    write: (event) => Ref.update(events, (log) => [...log, event]),
+  }, {
+    start: (posts) => Ref.update(dispatched, (log) => [...log, `start:${posts[0] ?? ""}`]),
+    tour: (tour) => Ref.update(dispatched, (log) => [...log, `tour:${tour}`]),
+  })
+  return { events, dispatched, service }
+}
+
+const Op = Schema.Literals(["post", "start", "finish", "fail", "startTour", "endTour", "drive", "pause", "resume", "seek", "say", "open", "finishTour", "grant", "action", "dispatch"])
+const Roles = ["viewer", "new", "community", "contributor", "maintainer"] as const
+const Modes = ["person", "participation", "bootstrap"] as const
+const Actions = ["read", "ask", "tour", "people", "issue", "comment", "vip", "action", "sandbox", "triage", "merge", "settings", "roles", "wiki"] as const
+const TourSteps = Schema.Array(Schema.Struct({
+  op: Op, pick: Int, step: Schema.Int.check(Schema.isBetween({ minimum: -1, maximum: 12 })), text: TextOrBoundary,
+})).check(Schema.isMaxLength(40))
+
+/** The answer a settle step gives always matches the entry it leaves, and asking again answers the same. */
+it.live("sequencer/tour-and-settle", () => run("sequencer/tour-and-settle", TourSteps, (steps) => effect {
+  const { service, events, dispatched } = try sequencer()
+  for (const step of steps) {
+    const log = try Ref.get(events)
+    const before = log.reduce(M.apply, M.empty)
+    const ids = before.entries.map((entry) => entry.id)
+    const picked = step.pick >= 28 || ids.length === 0 ? "missing" : ids[step.pick % ids.length]!
+    const tour = touring(before)
+    const grew = effect () => (try Ref.get(events)).length - log.length
+    const settledAs = effect (id: string, finished: boolean) => {
+      const entry = (try service.snapshot()).entries.find((value) => value.id === id)
+      return entry !== undefined && (finished ? entry.done && entry.error === "" : entry.error !== "")
+    }
+    switch (step.op) {
+      case "post": if (((try service.post(`c${step.pick}-${log.length}`, "Guest", step.text)) === null) !== ((try grew()) === 1)) return false; break
+      case "start": try service.start(picked); break
+      case "finish":
+      case "fail": {
+        const finished = step.op === "finish"
+        const settle = (id: string) => finished ? service.finish(id, step.text) : service.fail(id, step.text)
+        const answer = try settle(picked)
+        if ((answer === "done") !== (try settledAs(picked, finished))) return false
+        if (answer === "done" && (try settle(picked)) !== "done") return false
+        break
+      }
+      case "startTour": if (((try service.startTour()) === null) !== ((try grew()) === 1)) return false; break
+      case "endTour": if (((try service.endTour()) === null) !== ((try grew()) === 1)) return false; break
+      case "drive": {
+        try service.drive(tour, step.step, step.text, step.pick)
+        const accepted = (try grew()) === 1
+        if (accepted && (tour === "" || step.step < 1 || step.step > 10 || step.text === "")) return false
+        break
+      }
+      case "pause":
+      case "resume":
+      case "seek": {
+        const result = try service.controlTour(step.op, step.step)
+        if (result.tour !== tour || result.previous !== (before.walkthrough?.revision ?? 0)) return false
+        if ((result.refusal === null) !== ((try grew()) === 1)) return false
+        if (!same(result.state, (try service.snapshot()).walkthrough ?? null)) return false
+        break
+      }
+      case "say": if ((try service.say(tour === "" ? picked : tour, step.text)) !== ((try grew()) === 1)) return false; break
+      case "open": if ((try service.open(tour === "" ? picked : tour, step.text)) !== ((try grew()) === 1)) return false; break
+      case "finishTour": {
+        const id = tour === "" ? picked : tour
+        try service.finishTour(id, step.pick % 2 === 0 ? "" : step.text)
+        if (try service.running(id)) return false
+        break
+      }
+      case "grant": {
+        const id = `p${step.pick % 4}`
+        const by = `p${Math.abs(step.step) % 4}`
+        const role = Roles[step.pick % Roles.length]!
+        const refusal = try service.grant(id, by, role, Modes[Math.abs(step.step) % Modes.length]!)
+        if ((refusal === null) !== ((try grew()) === 1)) return false
+        if (refusal === null && (try service.role(id)) !== role) return false
+        const action = Actions[step.pick % Actions.length]!
+        if ((try service.allows(by, action)) !== M.may(M.roleOf((try service.snapshot()).roles, by), action)) return false
+        break
+      }
+      case "action": {
+        const ok = try service.action({ type: "RequestAction", id: `a${step.pick % 6}`, flow: step.text, door: "web", actor: `p${step.pick % 4}`, at: step.step })
+        if (ok !== ((try grew()) === 1)) return false
+        if (!same(try service.actions(), (try service.snapshot()).runs ?? [])) return false
+        break
+      }
+      default: {
+        const asked = (try Ref.get(dispatched)).length
+        try service.ensureDispatched()
+        const after = try service.snapshot()
+        const calls = try Ref.get(dispatched)
+        const expected = touring(after) !== "" ? `tour:${touring(after)}` : unanswered(after).length > 0 ? `start:${unanswered(after)[0]}` : undefined
+        if (expected === undefined ? calls.length !== asked : calls.at(-1) !== expected) return false
+      }
+    }
+    const current = try Ref.get(events)
+    if (!current.every((event, index) => event.seq === index + 1)) return false
+    if (!same(try service.snapshot(), current.reduce(M.apply, M.empty))) return false
+  }
+  // Every tour that no longer runs has its end in the log: following it completes.
+  const final = try service.snapshot()
+  for (const entry of final.entries) {
+    if (entry.author !== "agent" || entry.inReplyTo !== "" || (try service.running(entry.id))) continue
+    if (Option.isNone(try Effect.timeoutOption(service.ended(entry.id), "2 seconds"))) return false
+  }
+  const log = try Ref.get(events)
+  const followed = Array.from(try Stream.runCollect(service.follow(0).pipe(Stream.take(log.length))))
+  return same(followed, log)
+}))
+
+const Stored = Schema.Array(Schema.Union([EventSchema, Schema.Struct({ type: Schema.String, seq: Schema.Number, id: Schema.Unknown })])).check(Schema.isMaxLength(12))
+
+/** A stored log that no longer decodes stops the conversation with one defect; a valid one always loads. */
+it.live("sequencer/stored-log", () => run("sequencer/stored-log", Stored, (stored) => effect {
+  // Storage holds JSON: what it returns is typed only once the sequencer decodes it.
+  const read = stored as unknown as ReadonlyArray<M.Event>
+  const service = try Sequencer.make({ read: () => succeed(read), write: () => Effect.void }, { start: () => Effect.void, tour: () => Effect.void })
+  const loaded = try exit(service.snapshot())
+  if (Schema.is(Schema.Array(EventSchema))(stored)) return loaded._tag === "Success"
+  return loaded._tag === "Failure" && loaded.cause.reasons.length === 1 && loaded.cause.reasons.every((reason) => reason._tag === "Die" && reason.defect instanceof Error && reason.defect.message === "Invalid conversation events")
+}))
