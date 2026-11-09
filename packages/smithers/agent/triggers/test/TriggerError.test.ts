@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
-import * as Trigger from "../src/Trigger.ts"
+import * as Trigger from "../src/Trigger.vibe"
 import { fromSchemaError, TriggerError } from "../src/TriggerError.ts"
 
 const Nested = Schema.Struct({

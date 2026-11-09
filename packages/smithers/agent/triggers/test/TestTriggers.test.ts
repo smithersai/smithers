@@ -2,8 +2,8 @@ import * as Effect from "effect/Effect"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as TestTriggers from "../src/test/TestTriggers.ts"
-import type { Trigger } from "../src/Trigger.ts"
-import * as TriggerStore from "../src/TriggerStore.ts"
+import type { Trigger } from "../src/Trigger.vibe"
+import * as TriggerStore from "../src/TriggerStore.vibe"
 import { storeConformance } from "./StoreConformance.ts"
 
 const trigger: Trigger = {

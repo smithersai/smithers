@@ -9,7 +9,7 @@ export * as TriggerError from "./TriggerError.ts"
 /** @category schedules @since 0.1.0 */
 export * as Cron from "./Cron.ts"
 /** @category declarations @since 0.1.0 */
-export * as Trigger from "./Trigger.ts"
+export * as Trigger from "./Trigger.vibe"
 /** @category declarations @since 0.1.0 */
 export * as Schedule from "./Schedule.ts"
 /** @category policies @since 0.1.0 */
@@ -17,7 +17,7 @@ export * as Overlap from "./Overlap.ts"
 /** @category policies @since 0.1.0 */
 export * as CatchUp from "./CatchUp.vibe"
 /** @category services @since 0.1.0 */
-export * as TriggerStore from "./TriggerStore.ts"
+export * as TriggerStore from "./TriggerStore.vibe"
 /** @category services @since 0.1.0 */
 export * as SqlTriggerStore from "./SqlTriggerStore.vibe"
 /** @category scheduling @since 0.1.0 */

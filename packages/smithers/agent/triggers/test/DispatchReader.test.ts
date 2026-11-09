@@ -8,9 +8,9 @@ import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as DispatchReader from "../src/DispatchReader.ts"
 import * as TestTriggers from "../src/test/TestTriggers.ts"
-import type { Trigger } from "../src/Trigger.ts"
+import type { Trigger } from "../src/Trigger.vibe"
 import { TriggerError } from "../src/TriggerError.ts"
-import * as TriggerStore from "../src/TriggerStore.ts"
+import * as TriggerStore from "../src/TriggerStore.vibe"
 
 const hour = 60 * 60 * 1_000
 

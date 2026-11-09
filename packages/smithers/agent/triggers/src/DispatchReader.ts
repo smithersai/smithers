@@ -24,7 +24,7 @@ import * as Option from "effect/Option"
 import * as Result from "effect/Result"
 import * as Cron from "./Cron.ts"
 import type { TriggerError } from "./TriggerError.ts"
-import { type FireRecord, type Held, isReservation, type Registered, TriggerStore } from "./TriggerStore.ts"
+import { type FireRecord, type Held, isReservation, type Registered, TriggerStore } from "./TriggerStore.vibe"
 
 /**
  * How many upcoming occurrences a trigger summary carries.

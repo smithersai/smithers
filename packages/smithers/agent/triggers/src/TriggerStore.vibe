@@ -14,7 +14,7 @@ import type * as Option from "effect/Option"
 // the `effect/Result` a listed row decodes to is imported as `Decode`.
 import * as Decode from "effect/Result"
 import type { Action } from "./Overlap.ts"
-import type { Trigger } from "./Trigger.ts"
+import type { Trigger } from "./Trigger.vibe"
 import { TriggerError } from "./TriggerError.ts"
 
 /**
@@ -111,7 +111,6 @@ export const reservationPrefix = "trigger-reservation:"
  *
  * @category constructors
  * @since 0.1.0
- * @throws {never}
  */
 export const reservationId = (triggerId: string, occurrence: number, attempt?: string): string =>
   `${reservationPrefix}${triggerId}:${attempt === undefined ? "" : `${attempt}:`}${occurrence}`
@@ -121,7 +120,6 @@ export const reservationId = (triggerId: string, occurrence: number, attempt?: s
  *
  * @category predicates
  * @since 0.1.0
- * @throws {never}
  */
 export const isReservation = (runId: string | undefined): boolean =>
   runId !== undefined && runId.startsWith(reservationPrefix)
@@ -131,7 +129,6 @@ export const isReservation = (runId: string | undefined): boolean =>
  *
  * @category getters
  * @since 0.1.0
- * @throws {never}
  */
 export const reservationOccurrence = (runId: string): number | undefined => {
   if (!isReservation(runId)) return undefined
@@ -171,7 +168,6 @@ export type Result =
  *
  * @category predicates
  * @since 1.0.0-rc.0
- * @throws {never}
  */
 export const resultRefusal = (
   result: Result,

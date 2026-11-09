@@ -13,7 +13,7 @@
  */
 
 import * as Overlap from "./Overlap.ts"
-import type { Overlap as Policy } from "./Trigger.ts"
+import type { Overlap as Policy } from "./Trigger.vibe"
 import { TriggerError } from "./TriggerError.ts"
 import {
   type Claim,
@@ -22,7 +22,7 @@ import {
   type Outcome,
   reservationLeaseMs,
   reservationOccurrence
-} from "./TriggerStore.ts"
+} from "./TriggerStore.vibe"
 
 /**
  * A fire row as the decision reads it. `outcome` is `null` for a claimed but

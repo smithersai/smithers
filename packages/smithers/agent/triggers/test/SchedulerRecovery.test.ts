@@ -10,9 +10,9 @@ import { describe, expect, it } from "vitest"
 import * as Scheduler from "../src/Scheduler.vibe"
 import * as SqlTriggerStore from "../src/SqlTriggerStore.vibe"
 import * as TestTriggers from "../src/test/TestTriggers.ts"
-import type { Trigger } from "../src/Trigger.ts"
+import type { Trigger } from "../src/Trigger.vibe"
 import { TriggerError } from "../src/TriggerError.ts"
-import * as TriggerStore from "../src/TriggerStore.ts"
+import * as TriggerStore from "../src/TriggerStore.vibe"
 
 const hour = 60 * 60 * 1_000
 

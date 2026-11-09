@@ -80,7 +80,7 @@ const securityReview = Smithers.SecurityReview({
         "JSON.parse of input_json or a cast of an overlap/catch_up column that is not followed by schema validation.",
         "A decode failure that fails the whole listing or scheduler loop instead of the single row."
       ],
-      paths: ["src/SqlTriggerStore.vibe", "src/TriggerStore.ts", "src/Trigger.ts"]
+      paths: ["src/SqlTriggerStore.vibe", "src/TriggerStore.vibe", "src/Trigger.vibe"]
     },
     {
       id: "schedule-resource-bounds",

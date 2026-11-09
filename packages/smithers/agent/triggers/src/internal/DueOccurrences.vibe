@@ -8,7 +8,7 @@ import * as Effect from "effect/Effect"
 import * as CatchUp from "../CatchUp.vibe"
 import * as Cron from "../Cron.ts"
 import type { TriggerError } from "../TriggerError.ts"
-import type { Registered } from "../TriggerStore.ts"
+import type { Registered } from "../TriggerStore.vibe"
 
 /**
  * The occurrences to claim, oldest first, and the watermark that stands once

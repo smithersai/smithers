@@ -83,8 +83,8 @@
       "default": "./.vibelang/js/src/SqlTriggerStore.js"
     },
     "./Trigger": {
-      "types": "./src/Trigger.ts",
-      "vibelang-source": "./src/Trigger.ts",
+      "types": "./.vibe/declarations/Trigger.d.vibe.ts",
+      "vibelang-source": "./src/Trigger.vibe",
       "default": "./.vibelang/js/src/Trigger.js"
     },
     "./TriggerError": {
@@ -93,8 +93,8 @@
       "default": "./.vibelang/js/src/TriggerError.js"
     },
     "./TriggerStore": {
-      "types": "./src/TriggerStore.ts",
-      "vibelang-source": "./src/TriggerStore.ts",
+      "types": "./.vibe/declarations/TriggerStore.d.vibe.ts",
+      "vibelang-source": "./src/TriggerStore.vibe",
       "default": "./.vibelang/js/src/TriggerStore.js"
     },
     "./Webhook": {

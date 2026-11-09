@@ -3,7 +3,7 @@ import * as Option from "effect/Option"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import * as TriggerStore from "../src/TriggerStore.ts"
+import * as TriggerStore from "../src/TriggerStore.vibe"
 
 const manifest = JSON.parse(
   readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8")
@@ -199,8 +199,8 @@ describe("package boundaries", () => {
     expect(exports["./*"]).toBeUndefined()
     expect(published["./*"]).toBeUndefined()
     expect(exports["./TriggerStore"]).toEqual({
-      types: "./src/TriggerStore.ts",
-      "vibelang-source": "./src/TriggerStore.ts",
+      types: "./.vibe/declarations/TriggerStore.d.vibe.ts",
+      "vibelang-source": "./src/TriggerStore.vibe",
       default: "./.vibelang/js/src/TriggerStore.js"
     })
     expect(exports["./DispatchReader"]).toEqual({

@@ -6,8 +6,8 @@
  */
 
 import * as Schema from "effect/Schema"
-import * as Trigger from "./Trigger.ts"
-import type { Registered } from "./TriggerStore.ts"
+import * as Trigger from "./Trigger.vibe"
+import type { Registered } from "./TriggerStore.vibe"
 
 /**
  * One `flows_triggers` row as SQL returns it.

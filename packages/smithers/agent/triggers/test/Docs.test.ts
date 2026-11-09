@@ -92,7 +92,7 @@ describe("documentation contracts", () => {
   })
 
   it("limits the missing-row failure to the methods that report it (documentation/7)", () => {
-    for (const path of ["docs/api.md", "docs/concepts/claim-protocol.md", "src/TriggerStore.ts"]) {
+    for (const path of ["docs/api.md", "docs/concepts/claim-protocol.md", "src/TriggerStore.vibe"]) {
       const doc = read(path).replace(/ \* /g, " ")
       expect(doc, path).not.toContain("Every method addressing one trigger fails with `unknown_trigger`")
       expect(doc, path).not.toContain("Every method addressing one trigger reports this")
@@ -108,7 +108,7 @@ describe("documentation contracts", () => {
   })
 
   it("documents accepted getters and their two evaluations (documentation/5)", () => {
-    for (const path of ["docs/troubleshooting.md", "docs/api.md", "src/Trigger.ts"]) {
+    for (const path of ["docs/troubleshooting.md", "docs/api.md", "src/Trigger.vibe"]) {
       const doc = read(path).replace(/ \* /g, " ")
       expect(doc, path).toContain("Enumerable getters are accepted")
       expect(doc, path).toContain("evaluated during decoding and again during SQL serialization")

@@ -3,8 +3,8 @@ import * as Layer from "effect/Layer"
 import * as Result from "effect/Result"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
-import { reservationLeaseMs } from "../src/TriggerStore.ts"
-import * as TriggerStore from "../src/TriggerStore.ts"
+import { reservationLeaseMs } from "../src/TriggerStore.vibe"
+import * as TriggerStore from "../src/TriggerStore.vibe"
 
 const declaration = {
   id: "daily",

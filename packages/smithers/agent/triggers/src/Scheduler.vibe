@@ -31,7 +31,7 @@ import {
   type Registered,
   reservationOccurrence,
   TriggerStore
-} from "./TriggerStore.ts"
+} from "./TriggerStore.vibe"
 
 /**
  * Arguments used to launch one scheduled flow.
