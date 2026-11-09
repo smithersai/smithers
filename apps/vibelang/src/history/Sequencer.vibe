@@ -7,6 +7,8 @@ import { History as HistorySchema, HistoryEvent } from "./schemas.vibe"
 import { apply, replayHistory, decideWithinCapacity, type Decision, empty, epicOf, foldTarget, hasSha, type History, type Event, type Intent, MAX_TITLE } from "./mythical.vibe"
 import type { Stack } from "./flows.vibe"
 import { areaOf } from "./seed.vibe"
+import { epicByTitle, foldTitle, planStep } from "./stackDecision.vibe"
+import { followCut, fresh } from "../core/followDecision.vibe"
 
 // Decode failures report only the boundary, never stored titles, tasks or notes.
 const checkedHistory = (value: unknown) => Effect.orDie(Effect.mapError(Schema.decodeUnknownEffect(HistorySchema)(value), () => new Error("Invalid history state")))
@@ -123,11 +125,11 @@ export effect function make(store: Store) {
           const history = try current()
           return { seq: history.seq, events: try checkedEvents(try store.since(after)) }
         })
-        const replay = stored.events.filter((event) => event.seq > after)
-        const replayedTo = Math.max(after, stored.seq)
+        const replay = stored.events.filter((event) => fresh(event.seq, after))
+        const replayedTo = followCut(after, stored.seq)
         return Stream.concat(
           Stream.fromIterable(replay),
-          Stream.fromSubscription(live).pipe(Stream.filter((event) => event.seq > replayedTo)),
+          Stream.fromSubscription(live).pipe(Stream.filter((event) => fresh(event.seq, replayedTo))),
         )
       }),
 
@@ -138,22 +140,19 @@ export effect function make(store: Store) {
     plan: (request: PlanRequest) =>
       locked(effect {
         const title = request.title.trim()
-        if (request.how === "amend") {
+        const step = planStep(request.how, title.length, MAX_TITLE, request.newEpic.trim() !== "")
+        if (step === "amend") {
           return answered(request.target, try record({ type: "Amend", id: request.target, task: request.task }))
         }
-        if (title === "") {
-          const empty: Answer = { id: "", refusal: "empty" }
-          return empty
+        if (step === "empty" || step === "too-long") {
+          const refused: Answer = { id: "", refusal: step }
+          return refused
         }
-        if (title.length > MAX_TITLE) {
-          const long: Answer = { id: "", refusal: "too-long" }
-          return long
-        }
-        if (request.how === "insert") {
+        if (step === "insert") {
           return try planned(epicOf((try current()).commits, request.target), request.target, title, request.task)
         }
         let epic = request.epic
-        if (request.newEpic.trim() !== "") {
+        if (step === "open-epic") {
           const opened = try openEpic(request.newEpic)
           if (opened.refusal !== null) return opened
           epic = opened.id
@@ -174,11 +173,11 @@ export effect function make(store: Store) {
           const already: Answer = { id: "", refusal: "duplicate" }
           return already
         }
-        const title = commit.title.length <= MAX_TITLE ? commit.title : commit.title.slice(0, MAX_TITLE - 1) + "…"
+        const title = foldTitle(commit.title, MAX_TITLE)
         let into = foldTarget(history.commits, trailerOf(commit.message))
         if (into === "") {
           const area = areaOf(title)
-          let epic = history.epics.find((each) => each.title === area)?.id ?? ""
+          let epic = epicByTitle(history.epics, area)
           if (epic === "") {
             const opened = try openEpic(area)
             if (opened.refusal !== null) return opened

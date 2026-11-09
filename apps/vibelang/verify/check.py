@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fresh lsc generation + Dafny verification. Never trusts saved .dfy files."""
 import atexit, concurrent.futures, hashlib, json, os, pathlib, re, shutil, subprocess, sys, tempfile, time
-from sources import production_sources, VERIFY
+from sources import production_sources, VERIFY, dafny_keywords, dafny_name
 from proof_additions import add_proof_steps, insertion_names
 from mutation_targets import POSTCONDITIONS, ASSERTIONS, postcondition_line, case_assertion_line
 ROOT=pathlib.Path(__file__).resolve().parent
@@ -97,7 +97,7 @@ def verify(item):
    elif line.lstrip().startswith('//') or not line.strip(): before+='\n'+line
    else: before=''
   for name in marked:
-   if not re.search(r'\b(?:function|method)\s+'+re.escape(name)+r'\(',text):
+   if not re.search(r'\b(?:function|method)\s+'+re.escape(dafny_name(name,KEYWORDS))+r'\(',text):
     code=2;out+=f'ERROR: marked function {name} was not emitted\n'
   if code: dfy.write_text(text);text='' 
   if not re.search(r'\b(?:ensures|assert)\b',text):
@@ -141,10 +141,11 @@ def verify(item):
    if sym:
     name=re.sub(r'_ensures$', '', sym)
     for n,fn in funcs:
-     if name==fn: mapped.append(f'{origin}:{n}: function {fn} [{sym}; generated line {line}]')
+     if name==fn or sym==dafny_name(fn,KEYWORDS) or name==dafny_name(fn,KEYWORDS): mapped.append(f'{origin}:{n}: function {fn} [{sym}; generated line {line}]')
  log=work/(ts.stem+'.output.log');log.write_text(out)
  return {'sha256':hashlib.sha256(original).hexdigest(),'file':str(origin),'exit':code,'seconds':round(elapsed,3),'locations':loc,'mapped':list(dict.fromkeys(mapped)),'output':out,'log':str(log),'dfy':str(dfy)}
 
+KEYWORDS=dafny_keywords()
 initial_hashes={p:hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
 
 tc_code,tc_output=command(['node',str(ROOT/'typecheck.cjs'),*[str(p) for p in files]],ROOT)

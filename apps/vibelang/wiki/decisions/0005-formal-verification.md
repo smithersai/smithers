@@ -203,3 +203,5 @@ Walkthrough counter extension (0018, batch20): actual private visit/hold identit
 **LemmaScript source and the web update (0018).** LemmaScript is now the workspace package `packages/lemmascript`, a copy of 0.6.6 with listed
 patches; `verify/install.sh` builds it, so npm no longer supplies the tool. `update` in `src/web/main.vibe` moves arm by arm onto plain state
 with commands as data; the arms proved so far, and those still inline, are listed in 0018.
+
+**Sequencers and commands (0018, third lane).** Both sequencers call proved decisions for their follow cut, plan steps, title cuts, reply attempts and finish plans; the CLI and MCP commands call proved argument decisions. A function named by a Dafny keyword is now verified under its escaped name.

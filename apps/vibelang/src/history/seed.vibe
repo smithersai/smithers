@@ -7,6 +7,7 @@
 //
 // `intentsOf` turns a seed into the history machine's intents (mythical.vibe), which the Bootstrap flow records.
 import { apply, decideWithinCapacity, empty, type History, type Intent, MAX_NOTE, MAX_TITLE, type Section } from "./mythical.vibe"
+import { pairCut } from "./stackDecision.vibe"
 
 /** A commit reachable from main, as the generator reads it; `parents` first parent first. */
 export interface RawCommit {
@@ -405,8 +406,9 @@ export function seedOf(repository: string, commits: ReadonlyArray<RawCommit>, en
   return { repository, main: last === undefined ? "" : last.sha.slice(0, SHA_LENGTH), epics, real }
 }
 
+/** `text` in at most `max` units, cut short with "…" and never inside a surrogate pair (stackDecision, proved). */
 function clip(text: string, max: number): string {
-  return text.length <= max ? text : text.slice(0, max - 1).trimEnd() + "…"
+  return text.length <= max ? text : text.slice(0, pairCut(text, max - 1)).trimEnd() + "…"
 }
 
 /** A group's notes: what the queue refused or replaced (tried), how it landed and what its messages state (evidence). */

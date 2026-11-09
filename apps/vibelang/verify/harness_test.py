@@ -5,6 +5,44 @@ HERE = pathlib.Path(__file__).resolve().parent
 ROOT = pathlib.Path(__file__).resolve().parent
 
 class StrictSourceChecks(unittest.TestCase):
+    def test_a_lemmascript_source_newer_than_its_build_is_stale(self):
+        import os, time
+        from lsc_fresh import stale
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            package = pathlib.Path(folder)
+            (package / 'tools/src').mkdir(parents=True)
+            (package / 'tools/dist').mkdir()
+            source = package / 'tools/src/emit.ts'
+            source.write_text('export {}\n')
+            self.assertTrue(stale(package))
+            built = package / 'tools/dist/lsc.js'
+            built.write_text('')
+            past = time.time() - 60
+            os.utime(source, (past, past))
+            self.assertFalse(stale(package))
+            os.utime(source, None)
+            self.assertTrue(stale(package))
+
+    def test_a_function_named_by_a_dafny_keyword_is_verified_under_its_escaped_name(self):
+        from sources import dafny_keywords, dafny_name
+        keywords = dafny_keywords()
+        self.assertTrue({'fresh', 'match', 'seq'} <= keywords)
+        self.assertNotIn('this', keywords)
+        self.assertEqual([dafny_name(n, keywords) for n in ['fresh', '_x', 'plain']], ['fresh_', 'i_x', 'plain'])
+        import os
+        # A positive check: never the mutation manifest broken.py exports to its own children.
+        env = {k: v for k, v in os.environ.items() if k != 'VERIFY_MUTATION_MANIFEST'}
+        with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
+            source = pathlib.Path(folder) / 'keyword.ts'
+            source.write_text('//@ verify\n//@ ensures \\result == (seq > cut)\nexport function fresh(seq: number, cut: number): boolean {\n  return seq > cut\n}\n')
+            result = subprocess.run([sys.executable, str(ROOT / 'check.py'), str(source)], capture_output=True, text=True, env=env)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotIn('was not emitted', result.stdout)
+            source.write_text('//@ verify\n//@ ensures \\result == (seq > cut)\nexport function fresh(seq: number, cut: number): boolean {\n  return seq >= cut\n}\n')
+            result = subprocess.run([sys.executable, str(ROOT / 'check.py'), str(source)], capture_output=True, text=True, env=env)
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertIn('function fresh', result.stdout)
+
     def test_valid_whitespace_cannot_hide_a_module(self):
         with tempfile.TemporaryDirectory(dir=ROOT / '.checks') as folder:
             app = pathlib.Path(folder)

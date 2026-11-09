@@ -1,0 +1,115 @@
+// The conversation sequencer's own decisions (wiki/decisions/0003-one-state-machine.md, 0010-live-agent.md, 0018
+// "Sequencer decisions"): which model attempt a reply is on, how many restarts reach a later one, what finishing a
+// reply records so it ends as exactly the model's text, what a settle step answers, and how a tour's speech joins.
+// worker/Sequencer.vibe calls these under its lock; which events a follower gets is followDecision.vibe.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript.
+
+import type { Entry, Event } from "./conversation.vibe"
+
+/** How many of the first `end` events restart `reply`. A specification measure for `attemptOf`. */
+//@ verify
+//@ requires 0 <= end && end <= log.length
+//@ ensures 0 <= \result && \result <= end
+//@ ensures end == 0 ==> \result == 0
+//@ decreases end
+//@ ensures end > 0 ==> \result == restartsBefore(log, reply, end - 1) + (log[end - 1].type == "ReplyRestarted" && log[end - 1].id == reply ? 1 : 0)
+export function restartsBefore(log: ReadonlyArray<Event>, reply: string, end: number): number {
+  if (end <= 0) return 0
+  return restartsBefore(log, reply, end - 1) + (log[end - 1]!.type === "ReplyRestarted" && log[end - 1]!.id === reply ? 1 : 0)
+}
+
+/** The model attempt `reply` is on: one more than the times it restarted. */
+//@ verify
+//@ ensures \result == 1 + restartsBefore(log, reply, log.length)
+//@ ensures 1 <= \result && \result <= log.length + 1
+export function attemptOf(log: ReadonlyArray<Event>, reply: string): number {
+  let count = 0
+  for (let i = 0; i < log.length; i++) {
+    //@ invariant 0 <= i && i <= log.length
+    //@ invariant count == restartsBefore(log, reply, i)
+    //@ invariant 0 <= count && count <= i
+    //@ decreases log.length - i
+    if (log[i]!.type === "ReplyRestarted" && log[i]!.id === reply) count++
+  }
+  return 1 + count
+}
+
+/** How many restarts take a reply on attempt `current` to `attempt`: none for an earlier or the same attempt. */
+//@ verify
+//@ ensures \result >= 0
+//@ ensures attempt > current ==> \result == attempt - current
+//@ ensures attempt <= current ==> \result == 0
+export function restartCount(current: number, attempt: number): number {
+  return attempt > current ? attempt - current : 0
+}
+
+/** The first entry with id `id`: its index, or -1 when there is none. */
+//@ verify
+//@ ensures -1 <= \result && \result < entries.length
+//@ ensures \result == -1 <==> forall(i, 0 <= i && i < entries.length ==> entries[i].id != id)
+//@ ensures \result >= 0 ==> entries[\result].id == id && forall(i, 0 <= i && i < \result ==> entries[i].id != id)
+export function entryIndex(entries: ReadonlyArray<Entry>, id: string): number {
+  for (let i = 0; i < entries.length; i++) {
+    //@ invariant 0 <= i && i <= entries.length
+    //@ invariant forall(j, 0 <= j && j < i ==> entries[j].id != id)
+    //@ decreases entries.length - i
+    if (entries[i]!.id === id) return i
+  }
+  return -1
+}
+
+/** What finishing a reply records: a restart when what streamed is not the start of the model's text, then the rest. */
+export interface FinishPlan {
+  readonly restart: boolean
+  readonly append: string
+}
+
+/**
+ * Finishing a reply that shows `shown` as exactly `text`: keep what streamed when `text` starts with it, else restart
+ * and stream it all. A restart empties the reply and a delta appends, so the reply then reads exactly `text`.
+ */
+//@ verify
+//@ ensures \result.restart == !text.startsWith(shown)
+//@ ensures \result.restart ==> \result.append == text
+//@ ensures !\result.restart ==> \result.append == text.slice(shown.length)
+//@ ensures (\result.restart ? "" : shown) + \result.append == text
+export function finishPlan(shown: string, text: string): FinishPlan {
+  if (!text.startsWith(shown)) return { restart: true, append: text }
+  return { restart: false, append: text.slice(shown.length) }
+}
+
+/** What a settle step does: whether it records, and what it answers. */
+export interface Settled {
+  readonly records: boolean
+  readonly answer: "done" | "refused"
+}
+
+/**
+ * Settling a reply or tour: record it while it streams; else answer `done` when it is already settled the same way,
+ * so a repeated step is idempotent, and `refused` otherwise.
+ */
+//@ verify
+//@ ensures \result.records == (found && replying)
+//@ ensures \result.records ==> \result.answer == "done"
+//@ ensures !\result.records ==> (\result.answer == "done") == (found && settled)
+export function settleStep(found: boolean, replying: boolean, settled: boolean): Settled {
+  if (found && replying) return { records: true, answer: "done" }
+  return { records: false, answer: found && settled ? "done" : "refused" }
+}
+
+/** What a tour adds when it says `text` after having said `previous`: a new paragraph, or the first. */
+//@ verify
+//@ ensures previous == "" ==> \result == text
+//@ ensures previous != "" ==> \result == "\n\n" + text
+export function spoken(previous: string, text: string): string {
+  return previous !== "" ? "\n\n" + text : text
+}
+
+/** How a tour settles: finished when no reason is given, else failed with it. */
+//@ verify
+//@ ensures \result == (reason == "" ? "finish" : "fail")
+export function tourSettles(reason: string): "finish" | "fail" {
+  return reason === "" ? "finish" : "fail"
+}

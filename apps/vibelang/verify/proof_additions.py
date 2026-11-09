@@ -14,6 +14,10 @@ LEMMA_STEPS = {
     'src/core/conversation.vibe': [
         ('lemma pendingCount_ensures(pending: seq<Pending>, clientId: string, end: int)', PENDING_COUNT_STEPS),
     ],
+    'src/core/sequencerDecision.vibe': [
+        ('lemma restartsBefore_ensures(log: seq<Event>, reply: string, end: int)',
+         '  if end > 0 {\n    restartsBefore_ensures(log, reply, end - 1);\n  }\n'),
+    ],
     'src/core/sandboxDecision.vibe': [
         ('lemma runningCountPrefix_ensures(sandboxes: seq<SandboxEntry>, end: int)',
          '  if end > 0 {\n    runningCountPrefix_ensures(sandboxes, end - 1);\n  }\n'),

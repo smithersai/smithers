@@ -22,6 +22,8 @@ import { decide, type Intent, type Refusal } from "../src/core/decide.vibe"
 import { endsTour, replyIdOf, touring, unanswered } from "../src/core/flows.vibe"
 import { appends, startAnswer } from "../src/core/flowDecision.vibe"
 import { EventSchema, type ReadSnapshot } from "../src/core/schemas.vibe"
+import { followCut, fresh } from "../src/core/followDecision.vibe"
+import { attemptOf, entryIndex, finishPlan, restartCount, settleStep, spoken, tourSettles } from "../src/core/sequencerDecision.vibe"
 
 /** Where the conversation's numbered events persist, in order. `write` returns once the event is durable. */
 export interface Log {
@@ -49,13 +51,10 @@ interface State {
   readonly log: ReadonlyArray<Event>
 }
 
-/** How many times `reply` restarted: its current model attempt is one more. */
-function attemptOf(log: ReadonlyArray<Event>, reply: string): number {
-  return 1 + log.filter((event) => event.type === "ReplyRestarted" && event.id === reply).length
-}
-
+/** The first entry with id `id`, through the proved `entryIndex`. */
 function entryOf(conversation: Conversation, id: string): Entry | undefined {
-  return conversation.entries.find((entry) => entry.id === id)
+  const at = entryIndex(conversation.entries, id)
+  return at < 0 ? undefined : conversation.entries[at]
 }
 
 /** The sequencer over `log`, publishing to its followers and dispatching replies through `dispatch`. */
@@ -111,11 +110,11 @@ export effect function make(log: Log, dispatch?: Dispatch) {
     return Stream.unwrap(effect {
       const live = try PubSub.subscribe(published)
       const current = try locked(state())
-      const replay = current.log.filter((event) => event.seq > after)
-      const replayedTo = replay.length === 0 ? after : replay[replay.length - 1]!.seq
+      const replay = current.log.filter((event) => fresh(event.seq, after))
+      const replayedTo = followCut(after, replay.length === 0 ? after : replay[replay.length - 1]!.seq)
       return Stream.concat(
         Stream.fromIterable(replay),
-        Stream.fromSubscription(live).pipe(Stream.filter((event) => event.seq > replayedTo)),
+        Stream.fromSubscription(live).pipe(Stream.filter((event) => fresh(event.seq, replayedTo))),
       )
     })
   }
@@ -125,11 +124,10 @@ export effect function make(log: Log, dispatch?: Dispatch) {
     const answer = try locked(effect {
       const current = try state()
       const entry = entryOf(current.conversation, reply)
-      const already: Answer = entry !== undefined && settled(entry) ? "done" : "refused"
-      if (entry === undefined || !isReplying(current.conversation, reply)) return already
-      try record(intent)
-      const done: Answer = "done"
-      return done
+      const step = settleStep(entry !== undefined, isReplying(current.conversation, reply), entry !== undefined && settled(entry))
+      if (step.records) try record(intent)
+      const answer: Answer = step.answer
+      return answer
     })
     try ensureDispatched()
     return answer
@@ -209,7 +207,7 @@ export effect function make(log: Log, dispatch?: Dispatch) {
         const current = try state()
         if (!isReplying(current.conversation, reply)) return
         // One restart per attempt, skipped attempts included, so this attempt's pieces apply.
-        for (let next = attemptOf(current.log, reply); next < attempt; next++) {
+        for (let left = restartCount(attemptOf(current.log, reply), attempt); left > 0; left--) {
           try record({ type: "RestartReply", id: reply })
         }
       })
@@ -224,9 +222,9 @@ export effect function make(log: Log, dispatch?: Dispatch) {
         const current = try state()
         const entry = entryOf(current.conversation, reply)
         if (entry === undefined || !isReplying(current.conversation, reply)) return
-        if (!text.startsWith(entry.text)) try record({ type: "RestartReply", id: reply })
-        const shown = text.startsWith(entry.text) ? entry.text : ""
-        if (text.length > shown.length) try record({ type: "AppendReply", id: reply, text: text.slice(shown.length) })
+        const plan = finishPlan(entry.text, text)
+        if (plan.restart) try record({ type: "RestartReply", id: reply })
+        if (plan.append !== "") try record({ type: "AppendReply", id: reply, text: plan.append })
       })
       return try settle(reply, { type: "FinishReply", id: reply }, (entry) => entry.done && entry.error === "")
     },
@@ -274,13 +272,13 @@ export effect function make(log: Log, dispatch?: Dispatch) {
     /** Adds `text` to what `tour` said while it runs. */
     say: (tour: string, text: string) => locked(effect {
       const entry = entryOf((try state()).conversation, tour)
-      const decision = try record({ type: "AppendReply", id: tour, text: entry?.text ? `\n\n${text}` : text })
+      const decision = try record({ type: "AppendReply", id: tour, text: spoken(entry?.text ?? "", text) })
       return decision.ok
     }),
 
     /** Settles `tour` as finished, or failed with `reason`, then dispatches the next post. */
     finishTour: effect (tour: string, reason: string) => {
-      const intent: Intent = reason === "" ? { type: "FinishReply", id: tour } : { type: "FailReply", id: tour, reason }
+      const intent: Intent = tourSettles(reason) === "finish" ? { type: "FinishReply", id: tour } : { type: "FailReply", id: tour, reason }
       try settle(tour, intent, (entry) => entry.done)
     },
 

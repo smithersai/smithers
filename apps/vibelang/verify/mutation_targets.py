@@ -325,7 +325,9 @@ def postcondition_line(generated, function, contains):
     lines=generated.splitlines()
     # A pure function carries its postconditions on the generated `_ensures` lemma, a method on its own header.
     start=next((i for i,line in enumerate(lines) if re.match(r'lemma '+re.escape(function)+r'_ensures\(',line)),None)
-    if start is None: start=next((i for i,line in enumerate(lines) if re.match(r'(?:ghost )?(?:method|function) '+re.escape(function)+r'\(',line)),None)
+    if start is None:
+        from sources import dafny_name
+        start=next((i for i,line in enumerate(lines) if re.match(r'(?:ghost )?(?:method|function) '+re.escape(dafny_name(function))+r'\(',line)),None)
     if start is None: raise ValueError('Missing target function '+function)
     end=next((i for i in range(start+1,len(lines)) if lines[i]=='{'),len(lines))
     matches=[i+1 for i in range(start,end) if lines[i].lstrip().startswith('ensures ') and contains in lines[i]]

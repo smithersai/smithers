@@ -1,0 +1,90 @@
+// The mythical history sequencer's own decisions (wiki/decisions/0020-mythical-history.md, 0018 "History sequencer
+// decisions"): which step a plan takes, where a long title is cut, and which epic a fold appends to; which events a
+// follower is sent is src/core/followDecision.vibe. `Sequencer.vibe` and `seed.vibe` call these; nothing here locks, stores or publishes.
+//
+// VibeLang in LemmaScript's verifiable subset: TypeScript syntax with no Effect code, so `pnpm verify` proves this
+// file's own text (0005). Strings are sequences of UTF-16 code units, as in JavaScript. Every function is total.
+
+import type { Epic } from "./mythical.vibe"
+
+/** How a plan puts its commit onto the stack. */
+export type How = "append" | "insert" | "amend"
+
+/** What a plan does next: record an amend, refuse its title, insert, open a new epic first, or append. */
+export type PlanStep = "amend" | "empty" | "too-long" | "insert" | "open-epic" | "append"
+
+/**
+ * The plan's next step from its trimmed title's length. An amend carries only a task, so its title is never checked;
+ * an empty title is refused before a long one; an append opens its new epic only once its title is admitted.
+ */
+//@ verify
+//@ requires 0 <= titleLength && 1 <= max
+//@ ensures how == "amend" ==> \result == "amend"
+//@ ensures how != "amend" && titleLength == 0 ==> \result == "empty"
+//@ ensures how != "amend" && titleLength > max ==> \result == "too-long"
+//@ ensures how == "insert" && 0 < titleLength && titleLength <= max ==> \result == "insert"
+//@ ensures how == "append" && 0 < titleLength && titleLength <= max && opensEpic ==> \result == "open-epic"
+//@ ensures how == "append" && 0 < titleLength && titleLength <= max && !opensEpic ==> \result == "append"
+export function planStep(how: How, titleLength: number, max: number, opensEpic: boolean): PlanStep {
+  if (how === "amend") return "amend"
+  if (titleLength === 0) return "empty"
+  if (titleLength > max) return "too-long"
+  if (how === "insert") return "insert"
+  return opensEpic ? "open-epic" : "append"
+}
+
+/** Whether a UTF-16 code unit is the first half of a surrogate pair. */
+//@ verify
+//@ ensures \result == (0xD800 <= unit && unit <= 0xDBFF)
+export function isHighSurrogate(unit: number): boolean {
+  return 0xD800 <= unit && unit <= 0xDBFF
+}
+
+/** Whether a UTF-16 code unit is the second half of a surrogate pair. */
+//@ verify
+//@ ensures \result == (0xDC00 <= unit && unit <= 0xDFFF)
+export function isLowSurrogate(unit: number): boolean {
+  return 0xDC00 <= unit && unit <= 0xDFFF
+}
+
+/**
+ * Where to cut `text` to keep at most `end` code units without splitting a surrogate pair: `end`, or one less when
+ * the pair straddles it. So a cut title never ends in half a character.
+ */
+//@ verify
+//@ requires 1 <= end && end < text.length
+//@ ensures \result == end || \result == end - 1
+//@ ensures \result == end - 1 <==> (isHighSurrogate(text.charCodeAt(end - 1)) && isLowSurrogate(text.charCodeAt(end)))
+//@ ensures \result >= 1 ==> !(isHighSurrogate(text.charCodeAt(\result - 1)) && isLowSurrogate(text.charCodeAt(\result)))
+export function pairCut(text: string, end: number): number {
+  if (isHighSurrogate(text.charCodeAt(end - 1)) && isLowSurrogate(text.charCodeAt(end))) return end - 1
+  return end
+}
+
+/**
+ * A folded commit's title: unchanged when it fits in `max` units, else cut to fit and ended with "…", never inside a
+ * surrogate pair.
+ */
+//@ verify
+//@ requires 2 <= max
+//@ ensures title.length <= max ==> \result == title
+//@ ensures title.length > max ==> \result == title.slice(0, pairCut(title, max - 1)) + "…"
+//@ ensures \result.length <= max
+export function foldTitle(title: string, max: number): string {
+  if (title.length <= max) return title
+  return title.slice(0, pairCut(title, max - 1)) + "…"
+}
+
+/** The first epic titled `title`: its id, or `""` when the history has none. */
+//@ verify
+//@ ensures forall(i, 0 <= i && i < epics.length ==> epics[i].title != title) ==> \result == ""
+//@ ensures !forall(i, 0 <= i && i < epics.length ==> epics[i].title != title) ==> exists(i, 0 <= i && i < epics.length && epics[i].title == title && epics[i].id == \result && forall(j, 0 <= j && j < i ==> epics[j].title != title))
+export function epicByTitle(epics: ReadonlyArray<Epic>, title: string): string {
+  for (let i = 0; i < epics.length; i++) {
+    //@ invariant 0 <= i && i <= epics.length
+    //@ invariant forall(j, 0 <= j && j < i ==> epics[j].title != title)
+    //@ decreases epics.length - i
+    if (epics[i]!.title === title) return epics[i]!.id
+  }
+  return ""
+}

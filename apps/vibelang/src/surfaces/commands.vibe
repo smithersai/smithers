@@ -1,4 +1,4 @@
-import { collectAnswer, answerOutcome, commandError, type AskProgress } from "./commandDecision.vibe"
+import { collectAnswer, answerOutcome, failureMessage, historyReads, historyTotal, issueDetail, issueResume, knownEpic, planHow, planTarget, runSettled, runWaitFails, wikiPage, writeFailure, type AskProgress } from "./commandDecision.vibe"
 import { commandConversation } from "../core/protocolDecision.vibe"
 import { IssueRequest, IssuesState, SpecificationReviewer } from "../core/issueSchemas.vibe"
 import { WikiState } from "../core/wikiSchemas.vibe"
@@ -73,8 +73,8 @@ function define<const Name extends string, I extends Schema.ConstraintCodec<unkn
   const run = effect (value: unknown) => {
     return invoke(value) catch effect (error) => {
       if (error._tag === "CommandError") throw error
-      const message = error._tag === "ActionFailure" ? `Action: ${error.code}` : commandError(error._tag, error._tag === "Unavailable" ? error.reason : "",
-        refused, error._tag === "Refused" ? error.refusal : "", error._tag === "Unavailable" || error._tag === "Refused" ? "" : error.message)
+      const message = failureMessage(error._tag, error._tag === "ActionFailure" ? error.code : "", error._tag === "Unavailable" ? error.reason : "",
+        refused, error._tag === "Refused" ? error.refusal : "", error._tag === "Unavailable" || error._tag === "Refused" || error._tag === "ActionFailure" ? "" : error.message)
       throw new CommandError({ message })
     }
   }
@@ -174,23 +174,24 @@ function summaryOf(outline: Outline, commits: ReadonlyArray<Head>, total: number
 effect function showHistory(input: HistoryInput) {
   const mythical = try Mythical
   const outline = try mythical.outline()
-  if (input.epic !== "" && !outline.epics.some((each) => each.id === input.epic)) throw new CommandError({ message: `No epic ${input.epic}.` })
-  const listed = input.epic === "" ? undefined : try mythical.epic(input.epic, input.from)
-  const matched = input.epic !== "" || input.search === "" ? undefined : try mythical.search(input.search)
-  const page = input.commit === "" ? undefined : try mythical.commit(input.commit)
+  if (!knownEpic(outline.epics.map((each) => each.id), input.epic)) throw new CommandError({ message: `No epic ${input.epic}.` })
+  const reads = historyReads(input.epic, input.search, input.commit)
+  const listed = reads.epic ? try mythical.epic(input.epic, input.from) : undefined
+  const matched = reads.search ? try mythical.search(input.search) : undefined
+  const page = reads.commit ? try mythical.commit(input.commit) : undefined
   if (page !== undefined && page.commit === null) throw new CommandError({ message: `No mythical commit ${input.commit}.` })
   const commits = listed?.commits ?? matched?.commits ?? []
-  return summaryOf(outline, commits, listed?.total ?? commits.length, page)
+  return summaryOf(outline, commits, historyTotal(listed !== undefined, listed?.total ?? 0, commits.length), page)
 }
 
 effect function plan(input: PlanInput) {
   const mythical = try Mythical
-  const how = input.amend !== "" ? "amend" : input.before !== "" ? "insert" : "append"
+  const how = planHow(input.amend, input.before)
   const id = try mythical.plan({
     how,
     epic: input.epic,
     newEpic: input.newEpic,
-    target: how === "amend" ? input.amend : input.before,
+    target: planTarget(how, input.amend, input.before),
     title: input.title,
     task: input.task,
   })
@@ -324,9 +325,10 @@ export const Issue = define("issue", "Run an issue flow.", IssueInput, IssueOutp
   if (api === undefined) throw new CommandError({ message: "Issues unavailable." })
   const key = input.key || (try IdGenerator.defaultIdGenerator.generateId()).replace(/[^a-z0-9-]/gi, "-")
   const { recovery, resumeOp, resumeKey, resumeRecovery, ...payload } = input
-  const result = api.act({ ...payload, key, ...(resumeOp === "" || resumeKey === "" ? {} : { resumeOp, resumeKey, ...(resumeRecovery === "" ? {} : { resumeRecovery }) }), ...(recovery === "" ? {} : { recovery }) }) catch effect (error) => { throw new CommandError({ message: error.reason === "forbidden" ? "Not allowed." : "Issue change failed." }) }
+  const carries = issueResume(resumeOp, resumeKey, resumeRecovery, recovery)
+  const result = api.act({ ...payload, key, ...(carries.resume ? { resumeOp, resumeKey, ...(carries.resumeRecovery ? { resumeRecovery } : {}) } : {}), ...(carries.recovery ? { recovery } : {}) }) catch effect (error) => { throw new CommandError({ message: writeFailure(error.reason, "Issue change failed.") }) }
   const selected = result.selected ?? input.number
-  return { seq: result.seq, items: result.items, ...(result.draft === undefined ? {} : { draft: result.draft }), detail: JSON.stringify(input.op.startsWith("spec-") || (input.op === "read" && input.number === 0) ? { specification: result.specification, history: result.specificationHistory } : result.saved ?? result.items.find(i => i.number === selected) ?? null) }
+  return { seq: result.seq, items: result.items, ...(result.draft === undefined ? {} : { draft: result.draft }), detail: JSON.stringify(issueDetail(input.op, input.number) === "specification" ? { specification: result.specification, history: result.specificationHistory } : result.saved ?? result.items.find(i => i.number === selected) ?? null) }
 }, (output) => JSON.stringify(output))
 
 const ActionJson = Schema.String.pipe(Schema.withDecodingDefaultKey(succeed("{}")))
@@ -343,8 +345,8 @@ export const RunWorkflow = define("run", "Request a registered workflow; --input
   const value = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(input.input) catch effect () => { throw new CommandError({ message: "Invalid action input." }) }
   const id = try actions.start(input.flow, value, "agent")
   if (input.wait) {
-    const final = try Stream.runLast(actions.follow(id).pipe(Stream.takeUntil(run => run.state !== "queued" && run.state !== "running")))
-    if (Option.isNone(final) || final.value.state !== "passed") throw new CommandError({ message: "Action failed." })
+    const final = try Stream.runLast(actions.follow(id).pipe(Stream.takeUntil(run => runSettled(run.state))))
+    if (runWaitFails(Option.isSome(final), Option.isSome(final) ? final.value.state : "")) throw new CommandError({ message: "Action failed." })
   }
   return { id }
 }, output => `Requested ${output.id}.`)
@@ -374,7 +376,7 @@ export const Wiki = define("wiki", "Read, draft, save or propose a project wiki 
 }, effect (input) => {
   const api = (try Factory).wiki
   if (api === undefined) throw new CommandError({ message: "Wiki unavailable." })
-  const result = (input.op === "read" ? api.read(input.page || "index") : api.act({ op: input.op, page: input.page, base: input.base, text: input.text, ...(input.recovery === "" ? {} : { recovery: input.recovery }), key: input.key || (try IdGenerator.defaultIdGenerator.generateId()).replace(/[^a-z0-9-]/gi, "-") })) catch effect (error) => { throw new CommandError({ message: error.reason === "forbidden" ? "Not allowed." : "Wiki change failed." }) }
+  const result = (input.op === "read" ? api.read(wikiPage(input.page)) : api.act({ op: input.op, page: input.page, base: input.base, text: input.text, ...(input.recovery === "" ? {} : { recovery: input.recovery }), key: input.key || (try IdGenerator.defaultIdGenerator.generateId()).replace(/[^a-z0-9-]/gi, "-") })) catch effect (error) => { throw new CommandError({ message: writeFailure(error.reason, "Wiki change failed.") }) }
   return result
 }, (output) => JSON.stringify({ seq: output.seq, pages: output.pages.map((page) => page.id), ...(output.review === undefined ? {} : { review: output.review }), ...(output.draft === undefined ? {} : { draft: output.draft.page }) }))
 
