@@ -30,6 +30,7 @@ export const byteLength = (text: string): number => encoder.encode(text).length
  *
  * @category converting
  * @since 0.1.0
+ * @throws {never}
  */
 export const truncate = (text: string, maxBytes: number): string => {
   const buffer = new Uint8Array(maxBytes)

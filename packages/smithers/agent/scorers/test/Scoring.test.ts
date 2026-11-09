@@ -3,7 +3,7 @@ import * as Logger from "effect/Logger"
 import { describe, expect, it } from "vitest"
 import { ScorerError } from "../src/ScorerError.vibe"
 import * as ScoreStore from "../src/ScoreStore.ts"
-import * as Scoring from "../src/Scoring.ts"
+import * as Scoring from "../src/Scoring.vibe"
 
 interface Recorder {
   readonly store: ScoreStore.Service

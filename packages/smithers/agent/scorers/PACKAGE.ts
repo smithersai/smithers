@@ -32,7 +32,7 @@ const securityReview = Smithers.SecurityReview({
         "Scoring.inconclusive or Scoring.runBatch building a reason from an error cause that bypasses the store's redaction path.",
         "The byte bound measured before redaction so a scrub-grown payload is stored past maxMetadataBytes."
       ],
-      paths: ["src/SqlScoreStore.vibe", "src/Scoring.ts", "src/internal/**"]
+      paths: ["src/SqlScoreStore.vibe", "src/Scoring.vibe", "src/internal/**"]
     },
     {
       id: "judge-prompt-injection",

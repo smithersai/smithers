@@ -124,7 +124,6 @@ const failureOf = (cause: unknown): Failure => {
  *
  * @category converting
  * @since 0.1.0
- * @throws {never}
  */
 export const inconclusive = (job: Job, cause: unknown): Observation => {
   const failure = failureOf(cause)
@@ -138,45 +137,44 @@ export const inconclusive = (job: Job, cause: unknown): Observation => {
   }
 }
 
-const execute = (job: Job): Effect.Effect<Outcome, never, ScoreStore.ScoreStore> =>
-  Effect.gen(function*() {
-    const store = yield* ScoreStore.ScoreStore
-    return yield* job.score.pipe(
-      Effect.flatMap(Scorer.validate),
-      Effect.map((result): ScoreStore.ScoreObservation => ({
-        targetStepKey: job.observation.targetStepKey,
-        scorerKey: job.observation.scorerKey,
-        kind: "score",
-        score: result.score,
-        ...(result.reason === undefined
-          ? {}
-          : { reason: Text.truncate(result.reason, ScoreStore.maxReasonBytes) }),
-        ...(result.meta === undefined ? {} : { meta: result.meta }),
-        at: job.at
-      })),
-      Effect.catchCause((cause) =>
-        Cause.hasInterrupts(cause)
-          ? Effect.interrupt
-          : Effect.succeed(inconclusive(job, cause))
-      ),
-      Effect.flatMap((observation) =>
-        store.recordOnce(job.identity, observation).pipe(
-          Effect.map((recorded): Recorded => recorded ? "persisted" : "duplicate"),
-          Effect.catch((error) =>
-            Effect.logWarning("Could not record a scorer observation", error).pipe(
-              Effect.annotateLogs({
-                identity: job.identity,
-                targetStepKey: job.observation.targetStepKey,
-                scorerKey: job.observation.scorerKey
-              }),
-              Effect.as<Recorded>("failed")
-            )
-          ),
-          Effect.map((recorded): Outcome => ({ identity: job.identity, observation, recorded }))
-        )
+const execute = effect (job: Job): Effect.Effect<Outcome, never, ScoreStore.ScoreStore> => {
+  const store = try ScoreStore.ScoreStore
+  return try job.score.pipe(
+    Effect.flatMap(Scorer.validate),
+    Effect.map((result): ScoreStore.ScoreObservation => ({
+      targetStepKey: job.observation.targetStepKey,
+      scorerKey: job.observation.scorerKey,
+      kind: "score",
+      score: result.score,
+      ...(result.reason === undefined
+        ? {}
+        : { reason: Text.truncate(result.reason, ScoreStore.maxReasonBytes) }),
+      ...(result.meta === undefined ? {} : { meta: result.meta }),
+      at: job.at
+    })),
+    Effect.catchCause((cause) =>
+      Cause.hasInterrupts(cause)
+        ? Effect.interrupt
+        : Effect.succeed(inconclusive(job, cause))
+    ),
+    Effect.flatMap((observation) =>
+      store.recordOnce(job.identity, observation).pipe(
+        Effect.map((recorded): Recorded => recorded ? "persisted" : "duplicate"),
+        Effect.catch((error) =>
+          Effect.logWarning("Could not record a scorer observation", error).pipe(
+            Effect.annotateLogs({
+              identity: job.identity,
+              targetStepKey: job.observation.targetStepKey,
+              scorerKey: job.observation.scorerKey
+            }),
+            Effect.as<Recorded>("failed")
+          )
+        ),
+        Effect.map((recorded): Outcome => ({ identity: job.identity, observation, recorded }))
       )
     )
-  })
+  )
+}
 
 const concurrency = (value: number | undefined): number =>
   value !== undefined && Number.isSafeInteger(value) && value > 0 ? value : 1

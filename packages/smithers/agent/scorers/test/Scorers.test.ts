@@ -4,7 +4,7 @@ import { Deferred, Effect, Exit, Fiber, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Scorers from "../src/Scorers.ts"
 import * as ScoreStore from "../src/ScoreStore.ts"
-import * as Scoring from "../src/Scoring.ts"
+import * as Scoring from "../src/Scoring.vibe"
 
 const input = (output: unknown, groundTruth?: unknown) => ({ input: null, output, groundTruth })
 const diff = `diff --git a/a.ts b/a.ts

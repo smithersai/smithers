@@ -23,7 +23,7 @@ export * as ScoreStore from "./ScoreStore.ts"
 export * as SqlScoreStore from "./SqlScoreStore.vibe"
 
 /** @category scoring @since 0.1.0 */
-export * as Scoring from "./Scoring.ts"
+export * as Scoring from "./Scoring.vibe"
 
 /** @category migrations @since 0.1.0 */
 export * as Migrations from "./Migrations.vibe"

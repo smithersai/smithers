@@ -98,8 +98,8 @@
       "default": "./.vibelang/js/src/Scorers.js"
     },
     "./Scoring": {
-      "types": "./src/Scoring.ts",
-      "vibelang-source": "./src/Scoring.ts",
+      "types": "./.vibe/declarations/Scoring.d.vibe.ts",
+      "vibelang-source": "./src/Scoring.vibe",
       "default": "./.vibelang/js/src/Scoring.js"
     },
     "./Runner": null,
@@ -125,7 +125,8 @@
     "src/migrations/0004_require_failure_codes.vibe",
     ".vibelang/js",
     "!.vibelang/js/.loader",
-    "src/SqlScoreStore.vibe"
+    "src/SqlScoreStore.vibe",
+    "src/Scoring.vibe"
   ],
   "publishConfig": {
     "access": "public",

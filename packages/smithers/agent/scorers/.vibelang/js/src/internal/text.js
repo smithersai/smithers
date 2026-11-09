@@ -28,6 +28,7 @@ export const byteLength = (text) => encoder.encode(text).length;
  *
  * @category converting
  * @since 0.1.0
+ * @throws {never}
  */
 export const truncate = (text, maxBytes) => {
     const buffer = new Uint8Array(maxBytes);
