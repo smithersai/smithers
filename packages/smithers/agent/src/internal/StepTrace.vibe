@@ -28,15 +28,17 @@ interface Cursor {
   project: ReturnType<typeof tracer>
 }
 
-const boundCallFields = (payload: Record<string, Schema.Json>): Record<string, Schema.Json> =>
-  Object.fromEntries(
-    Object.entries(payload).map(([key, value]) => {
-      if (key === "callId" || key === "outcome") return [key, value]
-      const json = JSON.stringify(value)
-      const bytes = new TextEncoder().encode(json).byteLength
-      return [key, bytes <= maxTracedBytes ? value : { truncated: true, bytes, digest: Digest.digest(json) }]
-    })
-  )
+const boundCallFields = (payload: Record<string, Schema.Json>): Effect.Effect<Record<string, Schema.Json>> =>
+  Effect.orDie(Effect.try(() =>
+    Object.fromEntries(
+      Object.entries(payload).map(([key, value]) => {
+        if (key === "callId" || key === "outcome") return [key, value]
+        const json = JSON.stringify(value)
+        const bytes = new TextEncoder().encode(json).byteLength
+        return [key, bytes <= maxTracedBytes ? value : { truncated: true, bytes, digest: Digest.digest(json) }]
+      })
+    )
+  ))
 
 /**
  * Every source event owns a small durable checkpoint. Its saved outcome and
@@ -46,16 +48,16 @@ const boundCallFields = (payload: Record<string, Schema.Json>): Record<string, S
  * @since 1.0.0
  */
 export const make = (journal: Journal.Service) =>
-  Effect.gen(function*() {
-    const runtime = yield* FlowRuntime.FlowRuntime
-    const instance = yield* FlowRuntime.FlowInstance
-    const crypto = yield* EffectDigest.Digest
-    const random = yield* SecureRandom.SecureRandom
+  effect {
+    const runtime = try FlowRuntime.FlowRuntime
+    const instance = try FlowRuntime.FlowInstance
+    const crypto = try EffectDigest.Digest
+    const random = try SecureRandom.SecureRandom
     const cursors = new WeakMap<StepFact.Step, Cursor>()
     const emit = (event: AgentEvent.AgentEvent, step?: StepFact.Step): Effect.Effect<void> =>
-      Effect.gen(function*() {
+      effect {
         if (step === undefined || step.executionId !== instance.executionId) {
-          return yield* Effect.die(
+          return try Effect.die(
             new HarnessError({
               code: "engine_failed",
               message: "An agent trace requires its owning dispatch identity"
@@ -64,10 +66,12 @@ export const make = (journal: Journal.Service) =>
         }
         let cursor = cursors.get(step)
         if (cursor === undefined) {
-          cursor = { frame: -1, ordinal: 0, cell: "", occurrences: new Map(), project: tracer() }
+          const project = try Effect.sync(() => tracer())
+          cursor = { frame: -1, ordinal: 0, cell: "", occurrences: new Map(), project }
           cursors.set(step, cursor)
         }
-        const projected = cursor.project(event)
+        const project = cursor.project
+        const projected = try Effect.sync(() => project(event))
         if (projected === undefined) return
         if (event._tag === "turn-opened") {
           cursor.frame++
@@ -76,39 +80,41 @@ export const make = (journal: Journal.Service) =>
           cursor.occurrences.clear()
         }
         if (event._tag === "cell-produced") cursor.cell = event.cell.digest
-        const json = JSON.stringify(projected.payload)
-        const bytes = new TextEncoder().encode(json).byteLength
-        const original = JSON.parse(json) as Record<string, Schema.Json>
+        const json = try Effect.orDie(Effect.try(() => JSON.stringify(projected.payload)))
+        const bytes = try Effect.sync(() => new TextEncoder().encode(json).byteLength)
+        const original = try Effect.orDie(Effect.try(() => JSON.parse(json) as Record<string, Schema.Json>))
         const payload = bytes <= 262_144
           ? original
           : projected.eventType === "control.agent.cell-call-started"
               || projected.eventType === "control.agent.cell-call-settled"
-          ? boundCallFields(original)
-          : { truncated: true, bytes, digest: Digest.digest(json) }
+          ? try boundCallFields(original)
+          : { truncated: true, bytes, digest: try Effect.orDie(Effect.try(() => Digest.digest(json))) }
         // Concurrent calls may replay in a different completion order. Their
         // checkpoint addresses use call identity, not consumer arrival order.
-        const position = JSON.stringify([projected.eventType, original.callId ?? ""])
+        const position = try Effect.orDie(Effect.try(() => JSON.stringify([projected.eventType, original.callId ?? ""])))
         const occurrence = cursor.occurrences.get(position) ?? 0
         cursor.occurrences.set(position, occurrence + 1)
         const { cell, frame, ordinal } = cursor
         cursor.ordinal++
-        const identity = Digest.digest(JSON.stringify([step, frame, cell, position, occurrence]))
-        yield* Action.make({
+        const identity = try Effect.orDie(Effect.try(() =>
+          Digest.digest(JSON.stringify([step, frame, cell, position, occurrence]))
+        ))
+        try Action.make({
           name: "agent/trace/checkpoint",
           success: StepFact.Fact,
           tier: "sealed",
           idempotencyKey: identity,
           annotations: Context.make(StepFact.Annotation, {}),
-          execute: Effect.gen(function*() {
+          execute: effect {
             if (journal.generation === undefined) {
-              return yield* Effect.die(
+              return try Effect.die(
                 new HarnessError({ code: "engine_failed", message: "The trace journal has no generation reader" })
               )
             }
-            const { generation } = yield* journal.generation(JournalEvent.RunId.make(step.executionId)).pipe(
+            const { generation } = try journal.generation(JournalEvent.RunId.make(step.executionId)).pipe(
               Effect.orDie
             )
-            const at = yield* Clock.currentTimeMillis
+            const at = try Clock.currentTimeMillis
             return {
               version: 1 as const,
               step,
@@ -121,10 +127,12 @@ export const make = (journal: Journal.Service) =>
               // Arrival order can change around a retained prefix. The journal
               // identity follows the checkpoint address; ordinal only records
               // where this observation first arrived.
-              sourceSequence: traceIdentity(frame, occurrence, cell, projected.eventType, { checkpoint: identity }),
+              sourceSequence: try Effect.sync(() =>
+                traceIdentity(frame, occurrence, cell, projected.eventType, { checkpoint: identity })
+              ),
               payload
             }
-          })
+          }
         }).pipe(
           Effect.provideService(Action.CurrentAttempt, 1),
           Effect.provideService(FlowRuntime.FlowRuntime, runtime),
@@ -132,6 +140,6 @@ export const make = (journal: Journal.Service) =>
           Effect.provideService(EffectDigest.Digest, crypto),
           Effect.provideService(SecureRandom.SecureRandom, random)
         )
-      })
+      }
     return { emit, atSource: true } satisfies EventSink.Service
-  })
+  }

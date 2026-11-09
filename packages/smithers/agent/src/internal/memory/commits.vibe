@@ -68,11 +68,15 @@ export const commitIds = (text: string): ReadonlyArray<string> => [
   ...new Set([...text.matchAll(/\b[0-9a-f]{12,40}\b/g)].map((match) => match[0]))
 ]
 
-const parse = (stdout: string): Array<{ commitId: string; changeId: string; description: string }> =>
-  stdout.split(record).filter((entry) => entry.trim() !== "").map((entry) => {
+effect function parse(stdout: string) {
+  const rows: Array<{ commitId: string; changeId: string; description: string }> = []
+  for (const entry of stdout.split(record).filter((entry) => entry.trim() !== "")) {
     const [commitId, changeId, description] = entry.trim().split(field) as [string, string, string]
-    return { commitId, changeId, description: (JSON.parse(description) as string).trim() }
-  })
+    const decoded = try Effect.orDie(Effect.try(() => JSON.parse(description) as string))
+    rows.push({ commitId, changeId, description: decoded.trim() })
+  }
+  return rows
+}
 
 /** The notes ref as a map from annotated commit id to note blob id. */
 const noteBlobs = (root: string) =>
@@ -92,8 +96,8 @@ const noteBlobs = (root: string) =>
  * @private
  */
 export const read = (root: string, paths: ReadonlyArray<string>, seeds: ReadonlyArray<string>) =>
-  Effect.gen(function*() {
-    const touched = paths.length === 0 ? "" : yield* run("jj", [
+  effect {
+    const touched = paths.length === 0 ? "" : try run("jj", [
       "--ignore-working-copy",
       "log",
       "--no-graph",
@@ -104,7 +108,7 @@ export const read = (root: string, paths: ReadonlyArray<string>, seeds: Readonly
       "-T",
       template
     ], root)
-    const named = seeds.length === 0 ? "" : yield* run("jj", [
+    const named = seeds.length === 0 ? "" : try run("jj", [
       "--ignore-working-copy",
       "log",
       "--no-graph",
@@ -113,15 +117,14 @@ export const read = (root: string, paths: ReadonlyArray<string>, seeds: Readonly
       "-T",
       template
     ], root)
-    const rows = [...parse(named ?? ""), ...parse(touched ?? "")]
+    const rows = [...(try parse(named ?? "")), ...(try parse(touched ?? ""))]
     const unique = rows.filter((row, index) => rows.findIndex((other) => other.commitId === row.commitId) === index)
     if (unique.length === 0) return []
-    const blobs = yield* noteBlobs(root)
-    return yield* Effect.forEach(unique, (row) =>
-      Effect.gen(function*() {
-        const blob = blobs.get(row.commitId)
-        const note = blob === undefined ? undefined : yield* run("git", ["cat-file", "-p", blob], root)
-        const text = note === undefined ? row.description : `${row.description}\n\nnote:\n${note.trim()}`
-        return { commitId: row.commitId, changeId: row.changeId, text: headOf(text, commitBytes) }
-      }), { concurrency: 8 })
-  })
+    const blobs = try noteBlobs(root)
+    return try Effect.forEach(unique, effect (row) => {
+      const blob = blobs.get(row.commitId)
+      const note = blob === undefined ? undefined : try run("git", ["cat-file", "-p", blob], root)
+      const text = note === undefined ? row.description : `${row.description}\n\nnote:\n${note.trim()}`
+      return { commitId: row.commitId, changeId: row.changeId, text: headOf(text, commitBytes) }
+    }, { concurrency: 8 })
+  }

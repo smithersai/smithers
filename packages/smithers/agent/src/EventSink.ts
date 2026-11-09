@@ -36,7 +36,7 @@ import * as Layer from "effect/Layer"
  * @category constructors
  * @since 1.0.0
  */
-export { make as durable } from "./internal/StepTrace.ts"
+export { make as durable } from "./internal/StepTrace.vibe"
 
 /**
  * The sink: one event in, nothing out.
