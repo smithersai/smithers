@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs"
 import { Deferred, Effect, Exit, Layer, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, expect, test } from "vitest"
@@ -10,6 +9,7 @@ import * as TestDatabase from "../db/TestDatabase.ts"
 import { testFile } from "./test/harness.ts"
 import { runFlow } from "./test/flowHost.ts"
 import { configured, SECRET, setCookies, signInHarness } from "./test/signIn.ts"
+import { sourceText } from "../../../packages/repo-targets/test-utils/source-readers.mjs"
 
 const runtime = testFile("emergency_key_drop")
 const query = <A extends object>(f: (sql: SqlClient.SqlClient) => Effect.Effect<ReadonlyArray<A>, unknown>) =>
@@ -80,7 +80,7 @@ test("the operator's durable emergency command promotes, ceases, fences and ends
   expect(Exit.isSuccess(result.exit)).toBe(true)
   expect(await runtime.runPromise(Prior.read(f.tag))).toBe("ended")
   expect(await query(sql => sql`SELECT state FROM session_signing_keys WHERE key_id = 'legacy'`)).toEqual([{ state: "compromised" }])
-  expect(readFileSync(new URL("../ops/auth/session-keys.ts", import.meta.url), "utf8")).toContain('"emergency-drop"')
+  expect(sourceText(new URL("../ops/auth/session-keys.ts", import.meta.url))).toContain('"emergency-drop"')
 })
 
 test("an insert with an old issuer snapshot paused across the entire emergency sequence never commits a live K row", async () => {

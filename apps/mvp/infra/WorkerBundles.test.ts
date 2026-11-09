@@ -13,6 +13,7 @@ import { describe, expect, test } from "vitest"
 import * as ChatApi from "../worker/ChatApi.ts"
 import * as ElectricGateway from "./ElectricGateway.ts"
 import * as ElectricRuntime from "./ElectricRuntime.ts"
+import { modulePath } from "../../../packages/repo-targets/test-utils/source-readers.mjs"
 
 const MVP = fileURLToPath(new URL("..", import.meta.url))
 const ALCHEMY = realpathSync(join(MVP, "node_modules", "alchemy"))
@@ -131,7 +132,7 @@ test("ChatApi and gateway edits leave Electric's actual bundle and props byte-id
   const originalProps = JSON.stringify({ worker: ElectricRuntime.props, container: ElectricRuntime.containerProps })
   const before = await bundle("ElectricRuntime", ElectricRuntime.props, undefined)
   expect(Exit.isSuccess(before), String(before)).toBe(true)
-  const paths = [join(MVP, "worker/ChatApi.ts"), join(MVP, "infra/ElectricGateway.ts")]
+  const paths = [modulePath(join(MVP, "worker/ChatApi.ts")), modulePath(join(MVP, "infra/ElectricGateway.ts"))]
   const originals = paths.map((path) => readFileSync(path, "utf8"))
   try {
     // A real default Worker's identity changes, rather than a tree-shaken comment or unused export.
@@ -146,7 +147,7 @@ test("ChatApi and gateway edits leave Electric's actual bundle and props byte-id
       originalProps
     )
     // Positive control: an Electric configuration change must invalidate the owner's content hash.
-    const configPath = join(MVP, "infra/ElectricConfig.ts")
+    const configPath = modulePath(join(MVP, "infra/ElectricConfig.ts"))
     const config = readFileSync(configPath, "utf8")
     try {
       writeFileSync(configPath, config.replace("10_000", "11_000"))

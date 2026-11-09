@@ -3,9 +3,9 @@
 import wasmfile from "@jitl/quickjs-wasmfile-release-sync"
 import { QuickJSVariant } from "@smthrs/harness"
 import { Effect } from "effect"
-import { readFileSync } from "node:fs"
 import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
 import { describe, expect, test } from "vitest"
+import { sourceText } from "../../../../packages/repo-targets/test-utils/source-readers.mjs"
 import * as Realm from "./Realm.ts"
 
 const payload: Realm.Payload = {
@@ -159,7 +159,7 @@ export default Flow.make("ci", { body: (run) => Node.all({ ${jobs} }) })`
   })
 
   test("plans the e2e test repository's flow as committed: a typed payload and success, inert in the realm", async () => {
-    const source = readFileSync(new URL("../../e2e/fixtures/ci-repo/.smithers/flows/ci/flow.ts", import.meta.url), "utf8")
+    const source = sourceText(new URL("../../e2e/fixtures/ci-repo/.smithers/flows/ci/flow.ts", import.meta.url))
     expect(await plan(source)).toEqual({
       _tag: "planned",
       tag: "ci",
@@ -172,7 +172,7 @@ export default Flow.make("ci", { body: (run) => Node.all({ ${jobs} }) })`
 })
 
 test("plans this repository's own gate: 16 shards on the gate machine, then the coverage job that needs them all", async () => {
-  const source = readFileSync(new URL("../../../../.smithers/flows/gate/flow.ts", import.meta.url), "utf8")
+  const source = sourceText(new URL("../../../../.smithers/flows/gate/flow.ts", import.meta.url))
   const planned = await plan(source, "gate")
   expect(planned._tag).toBe("planned")
   if (planned._tag !== "planned") return
@@ -284,7 +284,7 @@ export default Flow.make("ci", {
 })
 
 test("the e2e test repository's flow run by hand: its form, and its plan quotes the greeting for the shell", async () => {
-  const source = readFileSync(new URL("../../e2e/fixtures/ci-repo/.smithers/flows/hand/flow.ts", import.meta.url), "utf8")
+  const source = sourceText(new URL("../../e2e/fixtures/ci-repo/.smithers/flows/hand/flow.ts", import.meta.url))
   expect(await describeFlow(source, "hand")).toEqual({
     _tag: "described",
     tag: "hand",

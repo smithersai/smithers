@@ -1,10 +1,11 @@
-import { readdirSync, readFileSync } from "node:fs"
+import { readdirSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { join, relative } from "node:path"
 import ts from "typescript"
 import { Effect, Option, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, expect, test } from "vitest"
+import { isSource, typeScriptOf } from "../../../packages/repo-targets/test-utils/source-readers.mjs"
 import * as Database from "../db/Database.ts"
 import * as Store from "./SessionStore.ts"
 import * as Prior from "./SessionPrior.ts"
@@ -18,7 +19,7 @@ const root = fileURLToPath(new URL("../", import.meta.url))
 const files = (dir: string): Array<string> => readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
   const path = join(dir, entry.name)
   return entry.isDirectory() ? entry.name === "test" ? [] : files(path)
-    : /\.(?:ts|tsx|mts|vibe)$/.test(path) && !/\.(?:test|d)\.(?:ts|tsx|mts|vibe)$/.test(path) ? [path] : []
+    : (isSource(path) || path.endsWith(".mts")) && !/\.test\.[a-z]+$/.test(path) ? [path] : []
 })
 const writers = (path: string, source: string) => {
   const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true)
@@ -73,9 +74,15 @@ const allowed: Readonly<Record<string, string>> = {
 }
 
 test("every session lifetime writer in worker and migrations is explicitly allowed with a reason", () => {
-  const actual = ["worker", "db/migrations"].flatMap(dir => files(join(root, dir))).flatMap(path => writers(relative(root, path), readFileSync(path, "utf8")))
+  const actual = ["worker", "db/migrations"].flatMap(dir => files(join(root, dir))).flatMap(path => writers(relative(root, path), typeScriptOf(path)))
   expect(actual.sort()).toEqual(Object.keys(allowed).sort())
   for (const reason of Object.values(allowed)) expect(reason.length).toBeGreaterThan(20)
+})
+
+test("finds the writers of a module converted to VibeLang as it finds its TypeScript twin's", () => {
+  const twin = (kind: string) => writers(`twin.${kind}`, typeScriptOf(join(root, `tests/fixtures/source-readers/${kind}/Twin.ts`)))
+  expect(twin("vibe")).toEqual(["twin.vibe#sweep:UPDATE:sessions:1"])
+  expect(twin("vibe").map(key => key.replace("twin.vibe", "twin.ts"))).toEqual(twin("ts"))
 })
 
 test("a new writer, migration, raw statement or sweeper cannot evade the inventory", () => {

@@ -1,6 +1,5 @@
 import { ExecutionObject } from "@smthrs/platform-cloudflare"
 import { TestSchemas } from "@smthrs/database"
-import { readFileSync } from "node:fs"
 import { Effect, Exit, Layer, Metric, Redacted } from "effect"
 import { TestClock } from "effect/testing"
 import { SqlClient } from "effect/sql"
@@ -12,16 +11,17 @@ import * as Keys from "../SessionKeys.ts"
 import { testFile } from "../test/harness.ts"
 import { SECRET, signInHarness } from "../test/signIn.ts"
 import * as Cleanup from "./RevokeReplacedGitHubToken.ts"
+import { sourceText } from "../../../../packages/repo-targets/test-utils/source-readers.mjs"
 
 const runtime = testFile("session_maintenance")
 const query = <A extends object>(f: (sql: SqlClient.SqlClient) => Effect.Effect<ReadonlyArray<A>, unknown>) => runtime.runPromise(Effect.flatMap(SqlClient.SqlClient, f))
 beforeEach(() => query(sql => sql`TRUNCATE people, sessions, sign_in_attempts, github_token_cleanups, session_end_receipts CASCADE`))
 
 test("authentication seeds maintenance and existing idle alarms own subsequent rounds", () => {
-  const program = readFileSync(new URL("../ChatApiProgram.ts", import.meta.url), "utf8")
+  const program = sourceText(new URL("../ChatApiProgram.ts", import.meta.url))
   expect(program).toContain("signIn.admit(")
   // Re-admitting the root from its own alarm would overwrite the durable sleep with an immediate wake.
-  const host = readFileSync(new URL("../Executions.ts", import.meta.url), "utf8")
+  const host = sourceText(new URL("../Executions.ts", import.meta.url))
   expect(host).not.toMatch(/ReplacedTokens\.(?:sampler|ensure)|sampleCleanup/)
   expect(ExecutionHost.remoteWithSignIn).toBeDefined()
 })

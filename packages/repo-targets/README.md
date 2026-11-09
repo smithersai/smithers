@@ -233,6 +233,29 @@ Packages that must NOT declare this, and why:
 - `platform-node`: the Node host contract suite asserts Node-host behavior
   and is not expected to pass on Bun.
 
+## Tests that read source
+
+A test that lists `*.ts` files skips a module converted to VibeLang and
+passes without checking it; one that reads `x.ts` by name fails once the
+module is `x.vibe`. Such tests import `test-utils/source-readers.mjs`:
+
+- `sourcesUnder(directory, skip)` lists every `.ts`, `.tsx`, `.vibe` and
+  `.vibex` source, without declaration files or `node_modules`.
+- `modulePath(path)` resolves a module by its `.ts` name to the file that
+  holds it (`vibelang/source`'s `resolveSource`).
+- `sourceText(path)` is the module as written, for a test that looks for
+  text: a string literal or a call it names.
+- `typeScriptOf(path)` is the module in TypeScript, for a test that walks a
+  TypeScript syntax tree: a `.vibe` module reads as VibeLang's TypeScript
+  projection (`vibelang --ts-projection`), where `try e` is
+  `(yield* $run(e))` and `export effect function f` is a function.
+
+Give each such test a case that reads a `.vibe` module and its `.ts` twin
+and finds the same facts; `apps/mvp/tests/fixtures/source-readers` holds a
+pair. A test that needs types inside a `.vibe` body has no VibeLang API yet:
+the projection imports `vibelang-ts-mapper/prelude`, which VibeLang does not
+ship, so a local in a body types as `any`.
+
 ## Hosted CI shards
 
 `ci/shards.ts` assigns every package to one of eight jobs in each lane.

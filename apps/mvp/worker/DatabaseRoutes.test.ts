@@ -1,18 +1,17 @@
 // Which Hyperdrive config each part of ChatApi's Worker reaches Postgres through (worker/DatabaseRoutes.ts, decision
 // 0150). The routes are data; the program must take every consumer's config from them, which this file checks against
 // the program's source, since only a deployed Worker shows which binding a Durable Object opened.
-import { readdirSync, readFileSync } from "node:fs"
 import { describe, expect, test } from "vitest"
+import { sourceText, sourcesUnder } from "../../../packages/repo-targets/test-utils/source-readers.mjs"
 import { route, ROUTES } from "./DatabaseRoutes.ts"
 
-const source = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8")
+/** A Worker module's source as written, .ts or .vibe. */
+const source = (path: string) => sourceText(new URL(path, import.meta.url))
+const opens = (path: string) => source(path).includes("Hyperdrive.Connect(")
 
 /** Every module of the Worker (worker/, not its tests) that opens a Hyperdrive config itself. */
 const connecting = () =>
-  readdirSync(new URL(".", import.meta.url), { recursive: true, encoding: "utf8" })
-    .filter((path) => path.endsWith(".ts") && !path.includes(".test.") && !path.startsWith("test/"))
-    .filter((path) => source(path).includes("Hyperdrive.Connect("))
-    .sort()
+  sourcesUnder(new URL(".", import.meta.url), (path) => path === "test" || path.includes(".test.")).filter(opens)
 
 describe("database routes", () => {
   test("the request path reads through ChatDatabase; the engine and the sandbox objects it calls, EngineDatabase", () => {
@@ -60,5 +59,9 @@ describe("database routes", () => {
     expect(sandboxes.match(/implementation\(connection, checks, checkConnection, \{/g)).toHaveLength(2)
     expect(sandboxes.match(/SocketChecks\.checker\(([A-Za-z]+),/g)).toEqual(["SocketChecks.checker(checkConnection,"])
     expect(connecting()).toEqual(["BranchSandboxes.ts", "ChatApiProgram.ts", "Executions.ts", "SocketChecks.ts"])
+  })
+
+  test("finds a module converted to VibeLang that opens a config, as it finds its TypeScript twin", () => {
+    expect([opens("../tests/fixtures/source-readers/vibe/Twin.ts"), opens("../tests/fixtures/source-readers/ts/Twin.ts")]).toEqual([true, true])
   })
 })

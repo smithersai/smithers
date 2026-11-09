@@ -1,12 +1,12 @@
 // The views feature's pure parts (docs/features/views.md): reading a row by its template, the renderer's reply, and the
 // form rules ChatApi and the step share. No database, no network.
-import { readFileSync } from "node:fs"
 import { describe, expect, test } from "vitest"
 import { acceptedValues, formRefusal } from "./form"
 import { readWritten, rendererCorrection, rendererTask, TIC_TAC_TOE } from "./renderer"
 import { Schema } from "effect"
 import { formOf, generatedOf, issuesOf, pageOf, repoOf, type ViewRow } from "./rows"
 import { IssuesProps, RepoProps, View } from "./schema"
+import { sourceText } from "../../../../../packages/repo-targets/test-utils/source-readers.mjs"
 
 const row = (overrides: Partial<ViewRow>): ViewRow => ({
   id: "v",
@@ -148,7 +148,7 @@ describe("the form rules", () => {
 describe("what the engine worker loads", () => {
   test("the views modules its flows run on import no UI library: a worker has no DOM, and loading one breaks it", () => {
     for (const file of ["flows.ts", "steps.ts", "form.ts", "renderer.ts", "schema.ts", "api.ts", "contract.ts"]) {
-      const source = readFileSync(new URL(`./${file}`, import.meta.url), "utf8")
+      const source = sourceText(new URL(`./${file}`, import.meta.url))
       const imports = [...source.matchAll(/^import [^"]*"([^"]+)"/gm)].map((match) => match[1])
       expect([file, imports.filter((name) => /^(@smthrs\/ui|react|react-dom)(\/|$)/.test(name!))]).toEqual([file, []])
     }

@@ -1,5 +1,4 @@
 import { FlowRegistry } from "./flows/registry"
-import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { ShapeSource, SyncPolicy } from "@smthrs/effect-electric"
 import { Persistence } from "@smthrs/effect-tanstack-db"
@@ -12,6 +11,7 @@ import { Otlp } from "@smthrs/observability"
 import { TabChannel } from "@smthrs/platform-browser"
 import { Effect, Exit, Fiber, Layer, ManagedRuntime, Metric, Scope, Stream } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
+import { sourceText, sourcesUnder } from "../../../packages/repo-targets/test-utils/source-readers.mjs"
 import { build } from "../worker/test/flowHost"
 import { stop, testFile, usage } from "../worker/test/harness.ts"
 import { Auth, bindSessionConnectivity } from "./features/auth/auth"
@@ -337,9 +337,7 @@ describe("the contract", () => {
     ]
     const text = sources
       .flatMap((dir) =>
-        (readdirSync(dir, { recursive: true, encoding: "utf8" }) as Array<string>)
-          .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts") && !file.startsWith("test/"))
-          .map((file) => readFileSync(join(dir, file), "utf8"))
+        sourcesUnder(dir, (path) => path === "test" || /\.test\.[a-z]+$/.test(path)).map((file) => sourceText(join(dir, file)))
       )
       .join("\n")
       // The contracts themselves don't count as emitting.
@@ -392,5 +390,10 @@ describe("the contract", () => {
         : !text.includes(formed[name]!)
     )
     expect(missing).toEqual([])
+  })
+
+  test("reads a record's name in a module converted to VibeLang as in its TypeScript twin", () => {
+    const twins = join(import.meta.dirname, "../tests/fixtures/source-readers")
+    for (const twin of ["ts/Twin.ts", "vibe/Twin.ts"]) expect(sourceText(join(twins, twin)), twin).toContain('"twin.sweep"')
   })
 })

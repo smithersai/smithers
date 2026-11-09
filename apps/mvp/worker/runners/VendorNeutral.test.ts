@@ -5,6 +5,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs"
 import { join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test } from "vitest"
+import { isSource, modulePath } from "../../../../packages/repo-targets/test-utils/source-readers.mjs"
 
 const root = fileURLToPath(new URL("../../../../", import.meta.url))
 
@@ -36,9 +37,11 @@ const VENDORS = /claude|codex|anthropic|openai/i
 
 const files = (path: string): Array<string> =>
   statSync(path).isDirectory() ? readdirSync(path).flatMap((name) => files(join(path, name))) : [path]
+/** A seam entry on disk: a module named by its .ts path may be its .vibe twin. */
+const entry = (path: string) => isSource(path) ? modulePath(join(root, path)) : join(root, path)
 
 test("no file of the external agent seam names an agent vendor", () => {
-  const found = SEAM.flatMap((entry) => files(join(root, entry)))
+  const found = SEAM.flatMap((path) => files(entry(path)))
     .filter((path) => path !== SELF)
     .flatMap((path) =>
       readFileSync(path, "utf8").split("\n").flatMap((line, index) =>

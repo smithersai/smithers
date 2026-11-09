@@ -1,0 +1,20 @@
+// A module the source-reading tests read beside its TypeScript twin, ../ts/Twin.ts: each reader must find the same
+// facts in both. Never imported or run.
+import { ElectricCollection } from "@smthrs/effect-electric"
+import { Collection } from "@smthrs/effect-tanstack-db"
+import { Hyperdrive, sql, type Draft, type Note } from "./Twin.deps.ts"
+
+export const route = "/api/twins/:id"
+
+export effect function sweep() {
+  try sql`UPDATE sessions SET expires_at = now()`
+  return try withSpan(Effect.void, "twin.sweep")
+}
+
+export effect function connect(config: string) {
+  const connection = try Hyperdrive.Connect(config)
+  return connection
+}
+
+export const notes = (repo: string) => ElectricCollection.make<Note>({ id: `twin-notes:${repo}` })
+export const drafts = Collection.local<Draft>({ id: "twin-drafts" })

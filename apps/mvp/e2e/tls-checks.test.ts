@@ -46,7 +46,7 @@ const sources = (directory: string): Array<string> =>
     const path = join(directory, entry.name)
     if (entry.isSymbolicLink()) throw new Error(`${path} is a link this scan wouldn't follow`)
     if (entry.isDirectory()) return entry.name === "node_modules" ? [] : sources(path)
-    return /\.(?:[cm]?[jt]sx?|vibe)$/.test(entry.name) ? [path] : []
+    return /\.(?:[cm]?[jt]sx?|vibex?)$/.test(entry.name) ? [path] : []
   })
 
 const scanned = ROOTS.flatMap((root) => sources(join(APP, root))).map((path) => relative(APP, path))

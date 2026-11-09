@@ -1,10 +1,10 @@
 import * as Output from "alchemy/Output"
 import { Cause, Effect, Exit, Redacted } from "effect"
-import { readFileSync } from "node:fs"
 import { inspect } from "node:util"
 import { expect, test } from "vitest"
 import { directUrl, migrationUrl } from "../../infra/Postgres.ts"
 import { migrate, sslFor } from "./Connection.ts"
+import { sourceText } from "../../../../packages/repo-targets/test-utils/source-readers.mjs"
 
 test("Alchemy's real Neon migration URI adapter uses verify-full; Electric retains its existing adapter", () => {
   const uri = "postgresql://private-user:private-pass@database.invalid/private-db?sslmode=require&channel_binding=require&connect_timeout=3"
@@ -22,8 +22,8 @@ test("Alchemy's real Neon migration URI adapter uses verify-full; Electric retai
 })
 
 test("deploy wiring passes the Neon migration adapter to the same verified migration boundary as the CLI", () => {
-  const deploy = readFileSync(new URL("../../infra/ChatDatabase.ts", import.meta.url), "utf8")
-  const cli = readFileSync(new URL("../../db/migrate.ts", import.meta.url), "utf8")
+  const deploy = sourceText(new URL("../../infra/ChatDatabase.ts", import.meta.url))
+  const cli = sourceText(new URL("../../db/migrate.ts", import.meta.url))
   expect(deploy).toContain("database: migrationUrl(postgres)")
   expect(deploy).toContain("Connection.migrate(input.database)")
   expect(cli).toContain("Connection.migrate(connection)")

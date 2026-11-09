@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { Collection } from "@smthrs/effect-tanstack-db"
 import { Deferred, Effect, Schema } from "effect"
@@ -7,6 +6,7 @@ import { RepoRole, Session as SessionRow, type Session } from "../auth/schema"
 import { ROLES } from "../auth/contract"
 import { makeVisibility } from "./gate"
 import { repoVisibility } from "./visibility"
+import { sourceText } from "../../../../../packages/repo-targets/test-utils/source-readers.mjs"
 
 // Decision 0110, 2026-11-03: what of a repository shows is decided by one rule, which the data gate's visibility rows
 // follow (gate.ts), so a store nobody wired or a late write can't display anything. These tests hold the rule.
@@ -111,9 +111,9 @@ test("the gate shows nothing until the device's refusals are known, then only wh
 const SRC = resolve(import.meta.dirname, "../..")
 
 test("every route of a repository is built with the gate", () => {
-  const router = readFileSync(join(SRC, "router.tsx"), "utf8")
+  const router = sourceText(join(SRC, "router.tsx"))
   const routes = [...router.matchAll(/createRoute\(\{([\s\S]*?)\n\}\)|createRoute\(\{([\s\S]*?)\n  \}\)/g)].map((match) => match[1] ?? match[2] ?? "")
-  const paths = readFileSync(join(SRC, "routePaths.ts"), "utf8")
+  const paths = sourceText(join(SRC, "routePaths.ts"))
   const repoKeys = new Set([...paths.matchAll(/^\s*(\w+): "\/\$owner\/\$repo[^"]*"/gm)].map((match) => match[1]!))
   let checked = 0
   for (const route of routes) {
