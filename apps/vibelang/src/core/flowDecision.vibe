@@ -59,7 +59,7 @@ export function firstUndispatched(posts: ReadonlyArray<string>, dispatched: Set<
 }
 
 // The actual two-step Post/StartTour continuation: journal a record, then dispatch at most once when accepted.
-export type Kind = "post" | "tour"
+export type Kind = "post" | "tour" | "end"
 export type Phase = "begun" | "recorded" | "refused" | "dispatched"
 export interface Run {
   readonly kind: Kind
@@ -202,4 +202,71 @@ export function replyLawful(run: ReplyRun): boolean {
   if (run.phase === "started") return run.starts === 1 && run.compositions === 0 && run.settlements === 0 && run.answer === "done"
   if (run.phase === "composing" || run.phase === "ready") return run.starts === 1 && run.compositions === 1 && run.settlements === 0 && run.answer === "done"
   return run.starts === 1 && run.compositions === 1 && run.settlements === 1 && run.answer === "done"
+}
+
+/** One speaker invocation after a current active observation. Inactive and terminal runs admit no further speaker. */
+export type TourPhase = "begun" | "ready" | "inactive" | "speaking" | "finished" | "ended"
+export interface TourRun {
+  readonly phase: TourPhase
+  readonly speakers: number
+  readonly outcome: string
+}
+
+//@ verify
+//@ ensures tourLawful(\result)
+//@ ensures \result.phase == "begun" && \result.speakers == 0 && \result.outcome == ""
+export function beginTourBody(): TourRun {
+  const phase: TourPhase = "begun"
+  return { phase, speakers: 0, outcome: "" }
+}
+
+//@ verify
+//@ ensures tourLawful(run) ==> tourLawful(\result)
+//@ ensures run.phase != "begun" ==> \result == run
+//@ ensures run.phase == "begun" ==> \result.speakers == 0 && \result.outcome == ""
+//@ ensures run.phase == "begun" && active ==> \result.phase == "ready"
+//@ ensures run.phase == "begun" && !active ==> \result.phase == "inactive"
+export function observeTourActivity(run: TourRun, active: boolean): TourRun {
+  if (run.phase !== "begun") return run
+  const phase: TourPhase = active ? "ready" : "inactive"
+  return { phase, speakers: 0, outcome: "" }
+}
+
+//@ verify
+//@ ensures \result == (run.phase == "ready" && run.speakers == 0 && run.outcome == "")
+export function canSpeakTour(run: TourRun): boolean {
+  return run.phase === "ready" && run.speakers === 0 && run.outcome === ""
+}
+
+//@ verify
+//@ ensures tourLawful(run) ==> tourLawful(\result)
+//@ ensures !canSpeakTour(run) ==> \result == run
+//@ ensures canSpeakTour(run) ==> \result.phase == "speaking" && \result.speakers == 1
+//@ ensures \result.outcome == run.outcome
+export function startTourSpeech(run: TourRun): TourRun {
+  if (!canSpeakTour(run)) return run
+  const phase: TourPhase = "speaking"
+  return { ...run, phase, speakers: 1 }
+}
+
+//@ verify
+//@ ensures tourLawful(run) ==> tourLawful(\result)
+//@ ensures run.phase != "speaking" ==> \result == run
+//@ ensures run.phase == "speaking" && ended ==> \result.phase == "ended" && \result.outcome == "ended"
+//@ ensures run.phase == "speaking" && !ended ==> \result.phase == "finished" && \result.outcome == "finished"
+//@ ensures \result.speakers == run.speakers
+export function finishTourSpeech(run: TourRun, ended: boolean): TourRun {
+  if (run.phase !== "speaking") return run
+  const phase: TourPhase = ended ? "ended" : "finished"
+  return { phase, speakers: run.speakers, outcome: ended ? "ended" : "finished" }
+}
+
+//@ verify
+//@ ensures \result ==> 0 <= run.speakers && run.speakers <= 1
+//@ ensures \result == (((run.phase == "begun" || run.phase == "ready" || run.phase == "inactive") && run.speakers == 0 && run.outcome == "") || (run.phase == "speaking" && run.speakers == 1 && run.outcome == "") || (run.phase == "finished" && run.speakers == 1 && run.outcome == "finished") || (run.phase == "ended" && run.speakers == 1 && run.outcome == "ended"))
+export function tourLawful(run: TourRun): boolean {
+  if (run.phase === "begun" || run.phase === "ready" || run.phase === "inactive") return run.speakers === 0 && run.outcome === ""
+  if (run.phase === "speaking") return run.speakers === 1 && run.outcome === ""
+  if (run.phase === "finished") return run.speakers === 1 && run.outcome === "finished"
+  return run.speakers === 1 && run.outcome === "ended"
 }

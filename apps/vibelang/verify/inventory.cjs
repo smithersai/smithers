@@ -32,7 +32,7 @@ const shellBoundaries = {
   'worker/Http.vibe': 'Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries.',
   'worker/Budget.vibe': 'Calls proved admission/charge decisions; semaphore, ledger I/O and finite-round normalization are runtime boundaries (finite-round.ts).',
   'worker/Reply.vibe': 'Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved.',
-  'src/core/flows.vibe': 'Post/StartTour thread the proved record/dispatched continuation model; terminal-event and reading-time policies call flowDecision; unanswered source order and conversation guards call conversation. Flow execution, word tokenization, docs regexp and reply-id slice remain unproved.',
+  'src/core/flows.vibe': 'Post/StartTour/EndTour thread the proved record/follow-up model, and Tour threads active/ready/one-speaker/terminal state; terminal-event and reading-time policies call flowDecision; unanswered source order and conversation guards call conversation. Flow execution, word tokenization, docs regexp and reply-id slice remain unproved.',
   'worker/Sequencer.vibe': 'Calls proved conversation/append/start decisions, retained-log replay and ordered model-context selection. Stored events are decoded before replay. Locking, writer/log composition, follow ordering and restart iteration remain unproved.',
   'src/history/flows.vibe': 'Who may act and the order of authorize and record steps run the proved flowMachine.vibe (authorize, canRecord, record); the sequencer decides through mythical.vibe. Engine execution, journaling, metrics and logs remain runtime boundaries (0020).',
   'src/history/roles.vibe': 'may, leastRole, peopleOnly and standing are proved in flowMachine.vibe; this module re-exports them and builds the role tables from them (0020).',
@@ -54,7 +54,7 @@ const boundaries = {
   'src/core/conversation.vibe': 'Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain.',
   'worker/replyReasons.vibe': 'Failure precedence and model reason codes; proved.',
   'worker/budgetDecision.vibe': 'Strict admission, nonnegative integer charge and exact total; proved under safe-sum precondition.',
-  'src/core/flowDecision.vibe': 'Post/StartTour record-once/accepted-dispatch-once and Reply start-receipt/composition/settlement ordering models, exact closed invariants and at-most-one stage bounds; dispatch admission, append order, tour terminal events, reading time and first undispatched source index; proved.',
+  'src/core/flowDecision.vibe': 'Post/StartTour/EndTour record-before-follow-up-once, Reply start/composition/settlement and Tour active/ready/one-speaker/terminal ordering models, exact closed invariants and at-most-one stage bounds; dispatch admission, append order, tour terminal events, reading time and first undispatched source index; proved.',
 };
 const functionBoundaries = {
   "src/history/roles.vibe:atLeast": "Calls the shared proved role threshold; validated roles use the existing authoritative standing order.",

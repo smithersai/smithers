@@ -321,3 +321,8 @@ unit/workerd, full units, independent BigInt event fuzzing and affected benchmar
 refusal and replay cases; both fail before the order log is added, then pass with exactly one completed-stage record.
 Serialized annotations contain neither post text nor person name. All102current flow-kernel mutants are rerun,
 including59new constructor, stage-admission, field-frame and reachable-invariant cases.
+
+**Tour and accepted-end order (0018).** All129current flow-kernel mutants rerun, including27new end-kind, speaker
+admission, exact phase/outcome and invariant cases. Existing real sequencer/engine tests assert end-before-next-reply,
+speaker interruption, no late text, and unchanged content-free step observations. The three browser suites run on
+4504 and retain pause/back/seek/exit, live app surface driving and both control themes/phone.

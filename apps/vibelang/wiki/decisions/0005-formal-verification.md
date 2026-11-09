@@ -192,3 +192,8 @@ The Reply body (0018) threads the proved start-receipt/composition/settlement ru
 admits composition, settlement requires completed composition, terminal/refused states are immutable, and all counters
 are bounded by one. SDK retries/replay stay outside this per-invocation order theorem. Nullable-member inequality
 emission has a retained exact reproduction; no existing production contract is weakened.
+
+Tour/EndTour ordering (0018) now shares proved admission and phase/counter invariants: accepted end before wake,
+current active observation before one speaker, and absorbing inactive/finished/ended states. The actual body still
+uses the same SDK race/cancellation; the conversation machine separately proves no writes after end. Nullable
+record guard/union fixtures retain the backend failures for the prospective complete walk cursor.

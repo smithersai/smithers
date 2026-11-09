@@ -64,3 +64,10 @@ Eighteenth batch: realReplybodythreadsverifiedstartreceipt/composition/settlemen
 21units,102/102current mutants(59new),17sources935current mutationsmatchactualreceipts. Typecheck0,835unit/52workerd
 passes. Realengine/loggerorder testsfailfirstthenpasswithcounts-onlyannotationsandnopost/nameleak. Retryattempts
 andSDKreplayareexplicitboundaries. Nullablememberinequalityminimalreprokeepsitscontract. No new dependency.
+
+Nineteenth batch: Tour active/ready/onespeaker/terminalmodelandEndTouracceptedrecordbeforewakearethreaded
+throughrealbodies. Sixnewfunctions,27flowmoduleunits,129/129currentmodulemutants(27new),17sources962currentinputs
+matchactualproofs/rejections. Typecheck0,835unit/52workerd/15targeted/33browser passeson4504. ExistingSDKrace
+andCoreterminalguardsstayunchanged. Nullable-recordguard/unionprobesretainminimalexactcontractsanderrors.
+
+Batch19 final rebase on1b5decf5 preserves incoming coverage refactors: typecheck0,838unit cases/127files,52workerd and33browser cases pass;17/962receipt identities unchanged. Inventory2,508.

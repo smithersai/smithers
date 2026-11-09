@@ -193,10 +193,15 @@ export effect function startTour() {
 
 /** EndTour's body: end the running tour. */
 export effect function endTour() {
+  let run = Continuation.begin("end")
   const tours = try Tours
   const answer = try Action.make({ name: "vibelang/tour/end", success: PostAnswer, execute: tours.end() })
-  if (answer === null) try Action.make({ name: "vibelang/tour/wake", execute: withSpan(effect { try tours.wake(); try counted("wake", "requested") }, "vibelang.tour.wake") })
-  try counted("end", answer ?? "accepted")
+  run = Continuation.record(run, answer)
+  if (Continuation.canDispatch(run)) {
+    try Action.make({ name: "vibelang/tour/wake", execute: withSpan(effect { try tours.wake(); try counted("wake", "requested") }, "vibelang.tour.wake") })
+    run = Continuation.dispatch(run)
+  }
+  try counted("end", run.answer ?? "accepted")
   return answer
 }
 
@@ -300,10 +305,14 @@ effect function narrateLine(tour: string, text: string, visit: number) {
  * Ending it interrupts the agent where it is; what it said stays.
  */
 export effect function toured<E, R>(tour: string, speak: void!E!R) {
+  let run = Continuation.beginTourBody()
   const tours = try Tours
-  if (!(try tours.running(tour))) return null
+  run = Continuation.observeTourActivity(run, try tours.running(tour))
+  if (!Continuation.canSpeakTour(run)) return null
+  run = Continuation.startTourSpeech(run)
   const outcome = try.race [Effect.as(speak, "finished"), Effect.as(tours.ended(tour), "ended")]
-  try counted("run", outcome)
+  run = Continuation.finishTourSpeech(run, outcome === "ended")
+  try counted("run", run.outcome)
   return null
 }
 
