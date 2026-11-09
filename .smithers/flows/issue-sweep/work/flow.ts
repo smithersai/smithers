@@ -40,7 +40,7 @@ import {
   workspaceName,
   workspaceOf
 } from "../host.ts"
-import { goCache, install } from "../land.vibe"
+import { goCache, install } from "../land.ts"
 import { vmFields, vmOptions } from "../vm-options.vibe"
 import * as LocalVm from "../vm.vibe"
 import { assertNoClaudeLogin, readClaudeLogin, reserveRemoteAccount } from "./claude.vibe"

@@ -11,12 +11,12 @@ import { layerSeatCatalog, supervisorStance } from "@smthrs/cli/NodeControl"
 import { Action, Interpreter } from "@smthrs/flow"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import * as Registry from "@smthrs/registry/Registry"
+import { Effect, Layer } from "effect"
 import type * as HttpClient from "effect/http/HttpClient"
 import { evaluatorLayer } from "../repository/jev-checks.vibe"
 import Wiki from "./flow.ts"
 import { checkCitations, unsupportedCitations } from "./jev-citations.vibe"
 import { operations } from "./operations.ts"
-import { processEnvironment } from "./runtime.platform.ts"
 import { WikiError } from "./schema.vibe"
 import { Assess, CheckCitations, Collect, ReviewPage, ValidateReview, Write } from "./workflow.vibe"
 
@@ -29,29 +29,31 @@ export const hostEvaluator = (
 export const agentLayers = (
   seats: Layer.Layer<SeatResolver.SeatResolver>,
   maxReviewMillis: number,
-  evaluator: Layer.Layer<Evaluator.Evaluator> = hostEvaluator(processEnvironment()),
+  evaluator: Layer.Layer<Evaluator.Evaluator> = hostEvaluator(process.env),
   options: {
     readonly environment?: Readonly<Record<string, string | undefined>>
     readonly catalog?: Layer.Layer<SeatRouter.Catalog>
   } = {}
 ) => {
-  const environment = options.environment ?? processEnvironment()
+  const environment = options.environment ?? process.env
   const catalog = options.catalog ?? layerSeatCatalog(environment)
+  const stance = supervisorStance(environment)
   const host = Layer.effect(
     AgentAction.Host,
-    Effect.map(
-      Effect.all([Registry.Registry, Effect.context<Evaluator.Evaluator>()]),
-      ([registry, judge]) => ({
+    Effect.gen(function*() {
+      const registry = yield* Registry.Registry
+      const judge = yield* Effect.context<Evaluator.Evaluator>()
+      return {
         registry,
         flows: [StandardFlows.jev(judge)],
-        supervisor: { stance: supervisorStance(environment) },
+        supervisor: { stance },
         limits: { memoryBytes: 128 * 1024 * 1024, steps: 25_000_000, calls: 8 },
         capabilityEnvelope: AgentSession.patterns(["model:call:typesafe-ai/jev"]),
         maxFrames: 8,
         defaultCorrections: 2,
         judged: true
-      })
-    )
+      }
+    })
   ).pipe(Layer.provide(Registry.layerFromDescriptors([])))
   return ReviewPage.layer.pipe(
     Layer.provideMerge(Layer.mergeAll(host, seats, catalog, Agent.layer)),
@@ -86,25 +88,23 @@ export const actionLayers = (
     Collect.toLayer(({ spec }) => ops.collect(spec)),
     Assess.toLayer(ops.assess),
     ValidateReview.toLayer(({ evidence, review }) =>
-      effect {
-        if (review === null) {
-          throw new WikiError({ code: "review-failed", message: "Semantic validation requires a review" })
-        }
-        const page = try ops.assess({ evidence, review, reviewer: null })
-        return page.review!
-      }
+      review === null
+        ? Effect.fail(new WikiError({ code: "review-failed", message: "Semantic validation requires a review" }))
+        : ops.assess({ evidence, review, reviewer: null }).pipe(Effect.map((page) => page.review!))
     ),
     options.verify === false ?
       CheckCitations.toLayer(() =>
         Effect.fail(new WikiError({ code: "review-failed", message: "A preview host cannot verify citations" }))
       ) :
       CheckCitations.toLayer(({ evidence, review }) =>
-        effect {
-          const citations = try checkCitations(evidence, review)
-          if (citations.verdict === "unsupported") throw unsupportedCitations(evidence, citations)
-          return { review, citations }
-        }
-      ).pipe(Layer.provide(options.evaluator ?? hostEvaluator(processEnvironment()))),
+        checkCitations(evidence, review).pipe(
+          Effect.flatMap((citations) =>
+            citations.verdict === "unsupported"
+              ? Effect.fail(unsupportedCitations(evidence, citations)) :
+              Effect.succeed({ review, citations })
+          )
+        )
+      ).pipe(Layer.provide(options.evaluator ?? hostEvaluator(process.env))),
     Write.toLayer(({ pages, mode }) =>
       ops.write(
         Object.keys(pages).sort((a, b) => Number(a.slice(5)) - Number(b.slice(5))).map((key) => pages[key]!),

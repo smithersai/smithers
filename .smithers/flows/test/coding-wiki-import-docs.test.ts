@@ -21,11 +21,11 @@ import { test } from "node:test"
 import { Journal } from "../../../packages/smithers/flows/journal/src/Journal.ts"
 import { Refreshed } from "../coding/planning-wiki.vibe"
 import { CreateStackBase, PrepareStackBase } from "../coding/stack.vibe"
-import { withDependencyPages } from "../coding/wiki-refresh.vibe"
+import { withDependencyPages } from "../coding/wiki-refresh.ts"
 import { wikiRefreshRegistration } from "../coding/wiki-route.vibe"
 import CodingWiki from "../coding/wiki/flow.ts"
 import { directory, maxDocBytes } from "../memory/deps.vibe"
-import { Pool } from "../wiki/reuse.vibe"
+import { Pool } from "../wiki/reuse.ts"
 import { WikiError } from "../wiki/schema.vibe"
 
 const tip = "a".repeat(40)

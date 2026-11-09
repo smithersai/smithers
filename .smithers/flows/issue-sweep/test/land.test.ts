@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { blocking, isDocsSource, packageOf, packagesOf, readChecks, testTargets } from "../land.vibe"
+import { blocking, isDocsSource, packageOf, packagesOf, readChecks, testTargets } from "../land.ts"
 
 const index = [
   { label: "//:backendGo", kinds: ["test"] },

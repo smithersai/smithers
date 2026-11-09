@@ -6,7 +6,7 @@ import { PageSpec } from "../wiki/schema.vibe"
 import { type CheckCommand, FILE_BYTES, type SourceFile } from "./check-detection.ts"
 import { checkCommands } from "./project-config.trusted.ts"
 import { LocalLander } from "./landing-schema.vibe"
-import type { MemoryOptions } from "./planning-memory.vibe"
+import type { MemoryOptions } from "./planning-memory.ts"
 import { Check } from "./schema.ts"
 import { separateWikiOutput } from "./wiki-output.vibe"
 

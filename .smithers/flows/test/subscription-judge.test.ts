@@ -10,7 +10,7 @@ import type { AddressInfo } from "node:net"
 import { test } from "node:test"
 import { hostEvaluator as releaseEvaluator } from "../release-support/runtime.ts"
 import { evaluatorLayer } from "../repository/jev-checks.vibe"
-import { hostEvaluator as wikiEvaluator } from "../wiki/runtime.vibe"
+import { hostEvaluator as wikiEvaluator } from "../wiki/runtime.ts"
 
 const unavailableJev = Layer.succeed(HttpClient.HttpClient)(
   HttpClient.make((request) =>

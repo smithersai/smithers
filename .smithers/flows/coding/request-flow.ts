@@ -11,7 +11,7 @@ import { AdmitSource } from "./source-admission.vibe"
 import { admitStackBase } from "./stack.vibe"
 import { FeedbackReceipt, ReceiveFeedback } from "./steering.vibe"
 import { RouteRequest, StampRoute } from "./todo-route.vibe"
-import { InstallDependencyPages } from "./wiki-refresh.vibe"
+import { InstallDependencyPages } from "./wiki-refresh.ts"
 
 export const maximumPlanningPasses = 8
 const RequestError = Schema.Union([PrepareRequest.errorSchema, CorrectPlan.errorSchema])

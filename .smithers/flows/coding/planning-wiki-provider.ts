@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import type { PlanningWikiProvider } from "./planning-memory.vibe"
+import type { PlanningWikiProvider } from "./planning-memory.ts"
 import { CodingError } from "./schema.ts"
 
 /** Host-owned relay adapter. The shared selector and activation authorizer are

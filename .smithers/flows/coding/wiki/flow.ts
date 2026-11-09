@@ -4,7 +4,7 @@ import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
 import { RefreshWiki } from "../planning-wiki.vibe"
 import { admitStackBase, PrepareStackBase } from "../stack.vibe"
-import { ImportDocs, ReadPublishedWiki, WikiRefreshInput, WikiRefreshResult } from "../wiki-refresh.vibe"
+import { ImportDocs, ReadPublishedWiki, WikiRefreshInput, WikiRefreshResult } from "../wiki-refresh.ts"
 
 /**
  * The stack service runs this on the repository's wiki workspace after every

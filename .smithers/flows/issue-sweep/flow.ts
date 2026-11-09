@@ -25,7 +25,7 @@ import { configureDiskReaper, DiskAdmission, diskLayer, makeSettledWorkspaceReap
 import { api, issue as readIssue, openIssues } from "./github.vibe"
 import { HostFailed, repository, run, tail, workspaces } from "./host.ts"
 import { terminalIdentityConflict } from "./identity.vibe"
-import { landChange, LandFailed } from "./land.vibe"
+import { landChange, LandFailed } from "./land.ts"
 import {
   cachePath,
   classify,

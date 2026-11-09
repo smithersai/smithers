@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
-import { changedFiles } from "../land.vibe"
+import { changedFiles } from "../land.ts"
 
 test("changedFiles names repository-relative paths whatever the process's directory", async () => {
   const root = mkdtempSync(join(tmpdir(), "issue-sweep-land-"))

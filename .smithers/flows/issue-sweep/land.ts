@@ -11,21 +11,14 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
  * can write only its own workspace and has no network.
  */
 import { Fault, type FlowRuntime } from "@smthrs/flow"
+import { Cause, Deferred, Duration, Effect, Option, Result, Schema, Semaphore } from "effect"
 import type * as EffectDigest from "effect/crypto/Digest"
+import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs"
+import { homedir, tmpdir } from "node:os"
+import { matchesGlob } from "node:path"
 import { acquireLock, type LandLease } from "../land/lock.mjs"
 import { awaitHostDisk, workspaceBytes } from "./disk.vibe"
 import { type Exited, type HostFailed, output, repository, ridingOutages, run, tail, workspaces } from "./host.ts"
-import {
-  fileExists,
-  goCache,
-  landingLockPath,
-  lockFile,
-  matchesPath,
-  readBaselines,
-  saveBaselines
-} from "./land.platform.ts"
-
-export { goCache } from "./land.platform.ts"
 
 export class LandFailed extends Schema.TaggedError<LandFailed>()("issue-sweep/LandFailed", {
   message: Schema.String
@@ -82,8 +75,8 @@ const isE2ePath = (path: string): boolean => path.split("/").includes("e2e")
 const touchesE2eInput = (target: IndexedTarget, file: string): boolean =>
   (target.inputs ?? []).some((input) => {
     if (input.pattern !== undefined) {
-      return isE2ePath(input.pattern) && matchesPath(file, input.pattern) &&
-        !(input.exclude ?? []).some((exclude) => matchesPath(file, exclude))
+      return isE2ePath(input.pattern) && matchesGlob(file, input.pattern) &&
+        !(input.exclude ?? []).some((exclude) => matchesGlob(file, exclude))
     }
     return input.path !== undefined && isE2ePath(input.path) && file === input.path
   })
@@ -193,9 +186,13 @@ export const invalidates = (
 // The repository (host)
 // ---------------------------------------------------------------------------
 
+// The machine-wide lock ~/Smithers-Ops/dispatch/vcs_lock.py takes for this
+// checkout. lockf(1) takes the same flock(2) lock.
+const lockFile = `${homedir()}/Smithers-Ops/dispatch/locks/smithers.lock`
+
 const fail = (message: string) => new LandFailed({ message })
-const asLand = <A, R>(program: A!(HostFailed | LandFailed)!R) =>
-  Effect.mapError(program, (error) => error._tag === "issue-sweep/LandFailed" ? error : fail(error.message))
+const asLand = <A, R>(effect: Effect.Effect<A, HostFailed | LandFailed, R>) =>
+  Effect.mapError(effect, (error) => error._tag === "issue-sweep/LandFailed" ? error : fail(error.message))
 
 /** A jj command in `workspace`, reading only. */
 // jj prints paths relative to the process's directory, so every command runs
@@ -215,7 +212,7 @@ export const changedFiles = (workspace: string, change: string) =>
 // Fetches and pushes ride out network outages; every other write fails at once.
 const jjWriteUnder = (lock: string | undefined) => (workspace: string, args: ReadonlyArray<string>) => {
   const write = asLand(
-    lock !== undefined && fileExists(lock)
+    lock !== undefined && existsSync(lock)
       ? output("lockf", ["-k", "-t", "900", lock, "jj", "-R", workspace, ...args], { cwd: workspace })
       : output("jj", ["-R", workspace, ...args], { cwd: workspace })
   )
@@ -235,6 +232,9 @@ const jjWrite = jjWriteUnder(lockFile)
 
 const one = (workspace: string, revision: string, template: string) =>
   Effect.map(jj(workspace, ["log", "--no-graph", "-r", revision, "-T", template]), (text) => text.trim())
+
+/** Shared Go build cache every sandbox may write, so Go tests stay warm across issues. */
+export const goCache = `${tmpdir()}/issue-sweep-go-build`
 
 /**
  * Runs `command` in `workspace` inside Codex's workspace sandbox: writes only
@@ -264,14 +264,14 @@ export const sandboxed = (workspace: string, command: ReadonlyArray<string>) =>
  * scripts are off; the repository's pnpmfile runs, so a change that edits it
  * never reaches an install (see {@link landChange}).
  */
-export effect function install(workspace: string) {
-  const exited = try run("pnpm", ["install", "--prefer-offline", "--frozen-lockfile", "--ignore-scripts"], {
-    cwd: workspace
-  })
-  if (exited.code !== 0) {
-    throw fail(`pnpm install: exit ${exited.code}: ${tail(`${exited.stdout}\n${exited.stderr}`)}`)
-  }
-}
+export const install = (workspace: string) =>
+  Effect.flatMap(
+    run("pnpm", ["install", "--prefer-offline", "--frozen-lockfile", "--ignore-scripts"], { cwd: workspace }),
+    (exited) =>
+      exited.code === 0
+        ? Effect.void
+        : Effect.fail(fail(`pnpm install: exit ${exited.code}: ${tail(`${exited.stdout}\n${exited.stderr}`)}`))
+  )
 
 /** Files whose code the host runs during an install; a change to one needs a person. */
 export const installHooks = [".pnpmfile.cjs", ".npmrc", "pnpm-workspace.yaml"]
@@ -331,16 +331,16 @@ const baselineTurn = Semaphore.makeUnsafe(1)
 const measureOnMain = (revision: string, labels: ReadonlyArray<string>) =>
   Semaphore.withPermit(
     baselineTurn,
-    asLand(effect {
-      if (!fileExists(baseline)) {
-        try asLand(awaitHostDisk(workspaceBytes))
-        try jjWrite(repository, ["workspace", "add", baseline, "--name", "sweep-baseline", "-r", revision])
+    asLand(Effect.gen(function*() {
+      if (!existsSync(baseline)) {
+        yield* asLand(awaitHostDisk(workspaceBytes))
+        yield* jjWrite(repository, ["workspace", "add", baseline, "--name", "sweep-baseline", "-r", revision])
       } else {
-        try jjWrite(baseline, ["new", revision])
+        yield* jjWrite(baseline, ["new", revision])
       }
-      try install(baseline)
-      return try test(baseline, labels)
-    })
+      yield* install(baseline)
+      return yield* test(baseline, labels)
+    }))
   )
 
 // How many main commits the baseline file remembers.
@@ -358,9 +358,30 @@ const rememberedCommits = 64
  */
 export const makeBaselines = <R>(options: {
   readonly file?: string | undefined
-  readonly measure: (commit: string, labels: ReadonlyArray<string>) => Checked!LandFailed!R
+  readonly measure: (commit: string, labels: ReadonlyArray<string>) => Effect.Effect<Checked, LandFailed, R>
 }) => {
-  const saved = readBaselines(options.file)
+  const read = (): Record<string, Record<string, boolean>> => {
+    if (options.file === undefined) return {}
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(options.file, "utf8"))
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {}
+      return Object.fromEntries(
+        Object.entries(parsed).flatMap(([commit, labels]) =>
+          typeof labels === "object" && labels !== null
+            ? [[
+              commit,
+              Object.fromEntries(
+                Object.entries(labels).filter((entry): entry is [string, boolean] => typeof entry[1] === "boolean")
+              )
+            ]]
+            : []
+        )
+      )
+    } catch {
+      return {}
+    }
+  }
+  const saved = read()
   const known = new Map<string, Map<string, Deferred.Deferred<boolean, LandFailed>>>()
   for (const [commit, labels] of Object.entries(saved)) {
     known.set(
@@ -380,9 +401,14 @@ export const makeBaselines = <R>(options: {
     delete saved[commit]
     saved[commit] = next
     for (const old of Object.keys(saved).slice(0, -rememberedCommits)) delete saved[old]
-    saveBaselines(options.file, saved)
+    try {
+      writeFileSync(`${options.file}.tmp`, JSON.stringify(saved))
+      renameSync(`${options.file}.tmp`, options.file)
+    } catch {
+      // The file only saves work after a restart; memory still holds the answer.
+    }
   }
-  return (commit: string, labels: ReadonlyArray<string>): ReadonlyArray<string>!LandFailed!R =>
+  return (commit: string, labels: ReadonlyArray<string>): Effect.Effect<ReadonlyArray<string>, LandFailed, R> =>
     Effect.suspend(() => {
       const answers = known.get(commit) ?? new Map<string, Deferred.Deferred<boolean, LandFailed>>()
       known.set(commit, answers)
@@ -394,7 +420,7 @@ export const makeBaselines = <R>(options: {
         ? Effect.void
         : options.measure(commit, missing).pipe(
           Effect.onExit((exit) =>
-            sync(() => {
+            Effect.sync(() => {
               if (exit._tag === "Failure") {
                 // A baseline that failed decides nothing: its askers fail, a later ask runs it again.
                 const failed = Cause.findErrorOption(exit.cause)
@@ -451,18 +477,23 @@ export const isDocsSource = (file: string) => /(^|\/)docs\//.test(file) && !file
  * what changed into the change, and requires `pnpm docs:check` to pass, so
  * a landing never leaves the generated docs behind their sources.
  */
-effect function syncDocs(workspace: string, change: string, files: ReadonlyArray<string>) {
-  if (!files.some(isDocsSource)) return
-  const synced = try asLand(sandboxed(workspace, ["pnpm", "docs:sync"]))
-  if (synced.code !== 0) throw fail(`pnpm docs:sync for ${change}: exit ${synced.code}: ${tail(synced.stderr)}`)
-  if ((try jj(workspace, ["diff", "--name-only", "-r", "@"])).trim() !== "") {
-    try jjWrite(workspace, ["squash", "--from", "@", "--into", change, "-u"])
-  }
-  const checked = try asLand(sandboxed(workspace, ["pnpm", "docs:check"]))
-  if (checked.code !== 0) {
-    throw fail(`pnpm docs:check for ${change}: exit ${checked.code}: ${tail(`${checked.stdout}\n${checked.stderr}`)}`)
-  }
-}
+const syncDocs = (workspace: string, change: string, files: ReadonlyArray<string>) =>
+  Effect.gen(function*() {
+    if (!files.some(isDocsSource)) return
+    const synced = yield* asLand(sandboxed(workspace, ["pnpm", "docs:sync"]))
+    if (synced.code !== 0) {
+      return yield* fail(`pnpm docs:sync for ${change}: exit ${synced.code}: ${tail(synced.stderr)}`)
+    }
+    if ((yield* jj(workspace, ["diff", "--name-only", "-r", "@"])).trim() !== "") {
+      yield* jjWrite(workspace, ["squash", "--from", "@", "--into", change, "-u"])
+    }
+    const checked = yield* asLand(sandboxed(workspace, ["pnpm", "docs:check"]))
+    if (checked.code !== 0) {
+      return yield* fail(
+        `pnpm docs:check for ${change}: exit ${checked.code}: ${tail(`${checked.stdout}\n${checked.stderr}`)}`
+      )
+    }
+  })
 
 /**
  * What a landing runs besides jj: the seam tests replace. `prepare` installs
@@ -480,13 +511,13 @@ export interface Checks<R = never> {
     workspace: string,
     change: string,
     files: ReadonlyArray<string>
-  ) => void!LandFailed!R
-  readonly index: (workspace: string) => ReadonlyArray<IndexedTarget>!LandFailed!R
-  readonly test: (workspace: string, labels: ReadonlyArray<string>) => Checked!LandFailed!R
+  ) => Effect.Effect<void, LandFailed, R>
+  readonly index: (workspace: string) => Effect.Effect<ReadonlyArray<IndexedTarget>, LandFailed, R>
+  readonly test: (workspace: string, labels: ReadonlyArray<string>) => Effect.Effect<Checked, LandFailed, R>
   readonly redOnMain: (
     labels: ReadonlyArray<string>,
     revision: string
-  ) => ReadonlyArray<string>!LandFailed!R
+  ) => Effect.Effect<ReadonlyArray<string>, LandFailed, R>
 }
 
 /** The checks a live landing runs, sandboxed, in the change's workspace. */
@@ -520,18 +551,19 @@ export const makeLander = <R>(options: {
   readonly checks: Checks<R>
   readonly lock?: string | undefined
   readonly landingLock?: string | undefined
-  readonly beforePush?: ((change: string) => void!!) | undefined
+  readonly beforePush?: ((change: string) => Effect.Effect<void>) | undefined
 }) => {
   const { checks } = options
   const write = jjWriteUnder(options.lock)
   const turn = Semaphore.makeUnsafe(1)
   const landedAs = (workspace: string, change: string) => one(workspace, `${change} & ::main@origin`, "commit_id")
-  effect function rebase(workspace: string, change: string, main: string) {
-    try write(workspace, ["rebase", "-s", change, "-d", main])
-    if ((try one(workspace, change, `if(conflict, "conflict", "")`)) !== "") {
-      throw fail(`change ${change} conflicts with main ${main.slice(0, 12)}`)
-    }
-  }
+  const rebase = (workspace: string, change: string, main: string) =>
+    Effect.gen(function*() {
+      yield* write(workspace, ["rebase", "-s", change, "-d", main])
+      if ((yield* one(workspace, change, `if(conflict, "conflict", "")`)) !== "") {
+        return yield* fail(`change ${change} conflicts with main ${main.slice(0, 12)}`)
+      }
+    })
 
   /**
    * The serial step: moves `main` to `change`, checked on `tested`. When
@@ -547,28 +579,28 @@ export const makeLander = <R>(options: {
   ) =>
     Semaphore.withPermit(
       turn,
-      effect {
+      Effect.gen(function*() {
         let base = tested
         for (let attempt = 1; attempt <= pushAttempts; attempt++) {
-          try write(workspace, ["git", "fetch"])
-          const landed = try landedAs(workspace, change)
+          yield* write(workspace, ["git", "fetch"])
+          const landed = yield* landedAs(workspace, change)
           if (landed !== "") return landed
-          const main = try one(workspace, "main@origin", "commit_id")
+          const main = yield* one(workspace, "main@origin", "commit_id")
           if (main !== base) {
-            const moved = try jj(workspace, ["diff", "--name-only", "--from", base, "--to", main])
+            const moved = yield* jj(workspace, ["diff", "--name-only", "--from", base, "--to", main])
             const files = moved.split("\n").filter((file) => file !== "")
             if (invalidates(files, check.packages, check.all, check.docs)) return undefined
-            try rebase(workspace, change, main)
+            yield* rebase(workspace, change, main)
             base = main
           }
-          try Effect.try({ try: () => lease.check(), catch: (error) => fail(String(error)) })
-          if (options.beforePush !== undefined) try options.beforePush(change)
+          yield* Effect.try({ try: () => lease.check(), catch: (error) => fail(String(error)) })
+          if (options.beforePush !== undefined) yield* options.beforePush(change)
           // Only a fast-forward may move main; a refusal means main moved again.
-          const moved = try Effect.result(write(workspace, ["bookmark", "set", "main", "-r", change]))
+          const moved = yield* Effect.result(write(workspace, ["bookmark", "set", "main", "-r", change]))
           if (Result.isFailure(moved)) continue
-          const pushed = try Effect.result(tryPromise({
+          const pushed = yield* Effect.result(Effect.tryPromise({
             try: () =>
-              options.lock !== undefined && fileExists(options.lock)
+              options.lock !== undefined && existsSync(options.lock)
                 ? lease.push("lockf", [
                   "-k",
                   "-t",
@@ -587,10 +619,10 @@ export const makeLander = <R>(options: {
           }))
           // A publication decision is single-use. A failed push needs a fresh
           // FIFO ticket and fresh validation, outside this lease's scope.
-          return Result.isSuccess(pushed) ? try one(workspace, change, "commit_id") : undefined
+          return Result.isSuccess(pushed) ? yield* one(workspace, change, "commit_id") : undefined
         }
         return undefined
-      }
+      })
     )
 
   /**
@@ -608,49 +640,56 @@ export const makeLander = <R>(options: {
    * inspection.
    */
   return (workspace: string, change: string) =>
-    effect {
+    Effect.gen(function*() {
       for (let attempt = 1; attempt <= checkAttempts; attempt++) {
-        const pushed = try Effect.acquireUseRelease(
-          Effect.interruptible(tryPromise({
-            try: (signal) => acquireLock(landingLockPath(options.landingLock), { signal }),
+        const pushed = yield* Effect.acquireUseRelease(
+          Effect.interruptible(Effect.tryPromise({
+            try: (signal) =>
+              acquireLock(
+                options.landingLock ?? process.env.SMITHERS_LAND_LOCK ??
+                  `${homedir()}/smithers-builders/main-push.lock`,
+                { signal }
+              ),
             catch: (error) => fail(String(error))
           })),
           (lease) =>
-            effect {
-              try write(workspace, ["git", "fetch"])
-              const landed = try landedAs(workspace, change)
+            Effect.gen(function*() {
+              yield* write(workspace, ["git", "fetch"])
+              const landed = yield* landedAs(workspace, change)
               if (landed !== "") return landed
-              const main = try one(workspace, "main@origin", "commit_id")
-              try rebase(workspace, change, main)
-              const files = try changedFiles(workspace, change)
-              if (files.length === 0) throw fail(`change ${change} is empty on main ${main.slice(0, 12)}`)
+              const main = yield* one(workspace, "main@origin", "commit_id")
+              yield* rebase(workspace, change, main)
+              const files = yield* changedFiles(workspace, change)
+              if (files.length === 0) return yield* fail(`change ${change} is empty on main ${main.slice(0, 12)}`)
               const hooks = files.filter((file) => installHooks.includes(file))
               if (hooks.length > 0) {
-                throw fail(`change ${change} edits install hooks (${hooks.join(" ")}); land it by hand`)
+                return yield* fail(`change ${change} edits install hooks (${hooks.join(" ")}); land it by hand`)
               }
-              try checks.prepare(workspace, change, files)
-              const index = try checks.index(workspace)
+              yield* checks.prepare(workspace, change, files)
+              const index = yield* checks.index(workspace)
               const labels = testTargets(files, index)
               if (labels.length > 0) {
-                const checked = try checks.test(workspace, labels)
-                if (checked._tag === "Broken") throw fail(`checks did not run for ${change}: ${checked.message}`)
+                const checked = yield* checks.test(workspace, labels)
+                if (checked._tag === "Broken") {
+                  return yield* fail(`checks did not run for ${change}: ${checked.message}`)
+                }
                 if (checked._tag === "Red") {
-                  const blockers = blocking(checked.labels, try checks.redOnMain(checked.labels, main))
-                  if (blockers.length > 0) throw fail(`checks red for ${change}: ${blockers.join(" ")}`)
+                  const blockers = blocking(checked.labels, yield* checks.redOnMain(checked.labels, main))
+                  if (blockers.length > 0) return yield* fail(`checks red for ${change}: ${blockers.join(" ")}`)
                 }
               }
-              return try push(lease, workspace, change, main, {
+              return yield* push(lease, workspace, change, main, {
                 packages: [...new Set(labels.map(packageOf))],
                 all: [...new Set(index.map((target) => packageOf(target.label)))],
                 docs: files.some(isDocsSource)
               })
-            },
-          (lease) => promise(() => lease())
+            }),
+          (lease) => Effect.promise(() => lease())
         )
         if (pushed !== undefined) return pushed
       }
-      throw fail(`main kept moving; ${change} not landed after ${checkAttempts} checks`)
-    }
+      return yield* fail(`main kept moving; ${change} not landed after ${checkAttempts} checks`)
+    })
 }
 
 /** Lands one change with the live checks under the machine-wide VCS lock; see {@link makeLander}. */

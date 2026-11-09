@@ -8,7 +8,7 @@ import { createServer, type IncomingMessage } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { wikiMemory } from "../coding/planning-memory.vibe"
+import { wikiMemory } from "../coding/planning-memory.ts"
 import { boundRelayWikiProvider } from "../coding/planning-wiki-provider.ts"
 import { loadProject } from "../coding/project-config.vibe"
 

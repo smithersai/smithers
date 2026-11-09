@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
-import { type Checked, type Checks, LandFailed, makeBaselines, makeLander } from "../land.vibe"
+import { type Checked, type Checks, LandFailed, makeBaselines, makeLander } from "../land.ts"
 
 import { type RetryServices, withRetryRuntime } from "./retry-runtime.ts"
 

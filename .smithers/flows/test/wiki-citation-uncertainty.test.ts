@@ -13,8 +13,8 @@ import { test, type TestContext } from "node:test"
 import Wiki from "../wiki/flow.ts"
 import { checkCitations } from "../wiki/jev-citations.vibe"
 import { operations } from "../wiki/operations.ts"
-import type { Pool } from "../wiki/reuse.vibe"
-import { actionLayers } from "../wiki/runtime.vibe"
+import type { Pool } from "../wiki/reuse.ts"
+import { actionLayers } from "../wiki/runtime.ts"
 import type { PageSpec, Review } from "../wiki/schema.vibe"
 import { ReviewPage } from "../wiki/workflow.vibe"
 
@@ -216,7 +216,7 @@ test("SQLite incremental reuse re-reviews a prior uncertain citation", { timeout
   const { fileURLToPath } = await import("node:url")
   const { Capability } = await import("@smthrs/flows")
   const NodeRuntime = (await import("@smthrs/platform-node")).NodeRuntime
-  const { IncrementalWiki, policySources, reuseLayers } = await import("../wiki/reuse.vibe")
+  const { IncrementalWiki, policySources, reuseLayers } = await import("../wiki/reuse.ts")
   const f = await fixture(t)
   execFileSync("jj", ["git", "init", f.root], { stdio: "pipe" })
   await writeFile(join(f.root, ".gitignore"), ".flows/\n")

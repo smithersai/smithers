@@ -8,18 +8,18 @@ import { Node } from "@smthrs/plan"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Executable from "@smthrs/registry/Executable"
 import * as RunStore from "@smthrs/run-store/RunStore"
+import { Effect, Exit, Layer, Option, Schema } from "effect"
 import { operations } from "../wiki/operations.ts"
-import { Bind, Pool, reuseOperations, Select } from "../wiki/reuse.vibe"
+import { Bind, Pool, reuseOperations, Select } from "../wiki/reuse.ts"
 import { Evidence, ReviewedPage, WikiError } from "../wiki/schema.vibe"
 import { ReviewPage, validateOrRepairReview } from "../wiki/workflow.vibe"
 import { type ImmutableSourceOptions, withImmutableSource } from "./immutable-source.vibe"
 import { findPlanningWikiReview, planningWikiConfiguration, type PlanningWikiOptions } from "./planning-wiki.vibe"
 import { Check, checkInputDigest, CodingError, Implementation, Receipt } from "./schema.ts"
-import { digest } from "./wiki-check.trusted.ts"
 
 export interface WikiCheckOptions extends ImmutableSourceOptions, PlanningWikiOptions {}
 export const wikiCheckPolicy = (options: Pick<PlanningWikiOptions, "pages" | "reviewer" | "hostPolicy">) =>
-  digest(
+  Digest.digest(
     Digest.canonical({
       version: 1,
       pages: options.pages,
@@ -102,45 +102,47 @@ export const wikiCheckDelegate = Flow.make("coding/WikiCheck", {
 })
 
 const invalid = (message: string) => new CodingError({ code: "invalid_receipt", message })
-const guarded = <A, E, R>(program: A!E!R) =>
-  Effect.mapError(program, (error) =>
-    error instanceof CodingError || error instanceof WikiError
-      ? error
-      : new CodingError({ code: "execution", message: String(error).slice(0, 8192) }))
+const guarded = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(
+    Effect.mapError((error) =>
+      error instanceof CodingError || error instanceof WikiError
+        ? error
+        : new CodingError({ code: "execution", message: String(error).slice(0, 8192) })
+    )
+  )
 
 /** Same indexed recent window as planning. A bounded miss safely reviews again. */
-effect function previousCheck(flow: string, policy: string) {
-  const catalog = try RunCatalogRead.RunCatalogRead, store = try RunStore.RunStore
-  let bytes = 0
-  for (const id of (try catalog.listRunIds({ limit: 256 })).toReversed()) {
-    const row = store.get(id) catch effect (error) => {
-      if (error.code === "not_found_row") return null
-      throw error
-    }
-    if (row === null) continue
-    const size = new TextEncoder().encode(row.stateJson).length
-    bytes += size
-    if (bytes > 1024 * 1024) break
-    if (size > 256 * 1024 || row.status !== "completed") continue
-    const state = Schema.decodeUnknownOption(Schema.fromJsonString(RunState))(row.stateJson)
-    if (Option.isNone(state) || state.value.flowName !== flow) continue
-    const result = Schema.decodeUnknownOption(
-      Schema.toCodecJson(Flow.Result({ success: Receipt, error: Schema.Unknown }))
-    )(state.value.result)
-    if (Option.isNone(result) || result.value._tag !== "Complete" || Exit.isFailure(result.value.exit)) continue
-    const evidence = Schema.decodeUnknownOption(Schema.fromJsonString(CheckEvidence))(
-      result.value.exit.value.evidence
-    )
-    if (Option.isSome(evidence) && evidence.value.policy === policy) {
-      const child = store.get(evidence.value.reviewRunId) catch effect (error) => {
-        if (error.code === "not_found_row") return null
-        throw error
+const previousCheck = (flow: string, policy: string) =>
+  Effect.gen(function*() {
+    const catalog = yield* RunCatalogRead.RunCatalogRead, store = yield* RunStore.RunStore
+    let bytes = 0
+    for (const id of (yield* catalog.listRunIds({ limit: 256 })).toReversed()) {
+      const row = yield* store.get(id).pipe(
+        Effect.catch((error) => error.code === "not_found_row" ? Effect.succeed(null) : Effect.fail(error))
+      )
+      if (row === null) continue
+      const size = new TextEncoder().encode(row.stateJson).length
+      bytes += size
+      if (bytes > 1024 * 1024) break
+      if (size > 256 * 1024 || row.status !== "completed") continue
+      const state = Schema.decodeUnknownOption(Schema.fromJsonString(RunState))(row.stateJson)
+      if (Option.isNone(state) || state.value.flowName !== flow) continue
+      const result = Schema.decodeUnknownOption(
+        Schema.toCodecJson(Flow.Result({ success: Receipt, error: Schema.Unknown }))
+      )(state.value.result)
+      if (Option.isNone(result) || result.value._tag !== "Complete" || Exit.isFailure(result.value.exit)) continue
+      const evidence = Schema.decodeUnknownOption(Schema.fromJsonString(CheckEvidence))(
+        result.value.exit.value.evidence
+      )
+      if (Option.isSome(evidence) && evidence.value.policy === policy) {
+        const child = yield* store.get(evidence.value.reviewRunId).pipe(
+          Effect.catch((error) => error.code === "not_found_row" ? Effect.succeed(null) : Effect.fail(error))
+        )
+        if (child?.status === "completed") return evidence.value.reviewRunId
       }
-      if (child?.status === "completed") return evidence.value.reviewRunId
     }
-  }
-  return null
-}
+    return null
+  })
 
 /** The caller supplies its existing reviewer with evidence-only authority and
  * the shared Select/Bind handlers from planningWikiLayers (reuseLayers). */
@@ -149,25 +151,26 @@ export const wikiCheckLayers = (options: WikiCheckOptions) => {
     Interpreter.layer(wikiCheckDelegate),
     Interpreter.layer(ReviewCaptured),
     Capture.toLayer((invocation) =>
-      guarded(effect {
-        const input = try Schema.decodeUnknownEffect(Input)(invocation.input)
-        const catalog = try Executable.Catalog
+      guarded(Effect.gen(function*() {
+        const input = yield* Schema.decodeUnknownEffect(Input)(invocation.input)
+        const catalog = yield* Executable.Catalog
         const entry = catalog.executables.find((value) => value.descriptor.name === invocation.flow)
         if (
           invocation.flow !== input.check.flow || input.check.tier !== "slow" ||
           entry?.delegate !== wikiCheckDelegate._tag ||
           Descriptor.executionDigest(entry.descriptor) !== input.check.flowDigest
-        ) throw invalid("Wiki check requires the current registered slow-check identity")
+        ) return yield* invalid("Wiki check requires the current registered slow-check identity")
         const policy = wikiCheckPolicy(options)
         if (entry.descriptor.frontmatter["smithersCodingWikiPolicy"] !== policy) {
-          throw invalid("Wiki check descriptor is not bound to the host's actual catalog and reviewer policy")
+          return yield* invalid("Wiki check descriptor is not bound to the host's actual catalog and reviewer policy")
         }
-        const previous = try previousCheck(invocation.flow, policy)
-        const prior = previous === null
-          ? try findPlanningWikiReview(try planningWikiConfiguration(options, options.fs))
-          : previous
-        return try withImmutableSource(options, input.implementation.head, (_tree, root) =>
-          effect {
+        const prior = yield* previousCheck(invocation.flow, policy).pipe(Effect.flatMap((id) =>
+          id === null
+            ? planningWikiConfiguration(options, options.fs).pipe(Effect.flatMap(findPlanningWikiReview)) :
+            Effect.succeed(id)
+        ))
+        return yield* withImmutableSource(options, input.implementation.head, (_tree, root) =>
+          Effect.gen(function*() {
             const immutable = operations({ root, output: options.wikiOutput, fs: options.fs })
             const reused = reuseOperations({
               root,
@@ -175,16 +178,17 @@ export const wikiCheckLayers = (options: WikiCheckOptions) => {
               fs: options.fs,
               hostPolicy: options.hostPolicy
             })
-            const pages = try forEach(options.pages, immutable.collect)
+            const pages = yield* Effect.forEach(options.pages, immutable.collect)
             const pool = prior === null ?
-              { ...(try reused.policy(options.reviewer)), candidates: {} }
-              : try reused.load({ priorRunId: prior, reviewer: options.reviewer })
+              { ...yield* reused.policy(options.reviewer), candidates: {} }
+              : yield* reused.load({ priorRunId: prior, reviewer: options.reviewer })
             return { ...input, reviewer: options.reviewer, policy, pages, pool }
-          })
-      })
+          }))
+      }))
     ),
-    Finish.toLayer(effect ({ captured, pages }) => {
-        const instance = try FlowRuntime.FlowInstance
+    Finish.toLayer(({ captured, pages }) =>
+      Effect.gen(function*() {
+        const instance = yield* FlowRuntime.FlowInstance
         const reviewed = Object.keys(pages).sort((a, b) => Number(a.slice(5)) - Number(b.slice(5))).map((key) =>
           pages[key]!
         )
@@ -195,7 +199,7 @@ export const wikiCheckLayers = (options: WikiCheckOptions) => {
             page.review === null
           )
         ) {
-          throw invalid("Wiki check must retain one assessed review for each captured page")
+          return yield* invalid("Wiki check must retain one assessed review for each captured page")
         }
         const findings = reviewed.flatMap((page) =>
           page.review!.sections.filter((section) => section.verdict !== "supported").map((section) => ({
@@ -229,7 +233,7 @@ export const wikiCheckLayers = (options: WikiCheckOptions) => {
           findings,
           evidence: JSON.stringify(evidence)
         } satisfies Receipt
-      }
+      })
     )
   ).pipe(Layer.provideMerge(RunCatalogRead.layer))
 }

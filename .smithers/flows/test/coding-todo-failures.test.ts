@@ -31,7 +31,7 @@ import { CreateStackBase, PrepareStackBase, stackBaseLayer } from "../coding/sta
 import { ReceiveFeedback } from "../coding/steering.vibe"
 import { TodoBoundary, TodoPauseRequested, todoResumeLayer } from "../coding/todo-pause.vibe"
 import { TodoDelivery, todoLayers } from "../coding/todo.vibe"
-import { InstallDependencyPages } from "../coding/wiki-refresh.vibe"
+import { InstallDependencyPages } from "../coding/wiki-refresh.ts"
 import { Implement, policyLayers, RunCheck } from "../coding/workflow.vibe"
 import Todo from "../todo/flow.ts"
 

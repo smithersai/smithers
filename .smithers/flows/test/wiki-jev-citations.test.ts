@@ -22,7 +22,7 @@ import {
   UNSUPPORTED_CONFIDENCE
 } from "../wiki/jev-citations.vibe"
 import { operations } from "../wiki/operations.ts"
-import { actionLayers } from "../wiki/runtime.vibe"
+import { actionLayers } from "../wiki/runtime.ts"
 import type { Evidence, PageSpec, Review } from "../wiki/schema.vibe"
 import { ReviewPage } from "../wiki/workflow.vibe"
 

@@ -5,24 +5,26 @@
  * layer with their own workflow.
  */
 import * as Memory from "@smthrs/agent/Memory"
+import * as Digest from "@smthrs/core/Digest"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Executable from "@smthrs/registry/Executable"
+import { Effect, type FileSystem, Layer, Schema } from "effect"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
 import { operations as wikiOperations } from "../wiki/operations.ts"
 import type { PageSpec } from "../wiki/schema.vibe"
 import { acceptedLearnings, type Learning } from "./learnings.vibe"
 import { NativeCoding } from "./native.vibe"
+import { collectSources, extractPaths, reader as sourceReader, staleSources } from "./planning-sources.vibe"
 import {
-  canonical,
   changedPaths,
-  digest,
   driftOf,
-  extractPaths,
+  GatherContext,
   memoryRevision,
-  staleRevisionMessage
-} from "./planning-memory.trusted.ts"
-import { collectSources, reader as sourceReader, staleSources } from "./planning-sources.vibe"
-import { GatherContext, PlanningContext, type PlanningInput, VerifyContext } from "./planning.vibe"
+  PlanningContext,
+  type PlanningInput,
+  staleRevisionMessage,
+  VerifyContext
+} from "./planning.vibe"
 import { type Check, CodingError } from "./schema.ts"
 
 export interface MemoryOptions {
@@ -41,7 +43,7 @@ export interface MemoryOptions {
  * The closed set of planning-context refusal sites.
  *
  * A refused gather or freshness check names exactly one of these, first in its
- * message, as a source refusal names its own site (`source-refusal.vibe`). The
+ * message, as a source refusal names its own site (`source-refusal.ts`). The
  * site is the diagnosis: `stale_revision` alone cannot say whether the source
  * really moved or the host could not read it, and a run card that says only
  * "Every plan failed" after three spent attempts is how both the 2026-10-05
@@ -86,7 +88,7 @@ const failure = (site: PlanningSite, message: string) => refuse(site, "stale_rev
 const hostFault = (site: PlanningSite, message: string) => refuse(site, "execution", message)
 /**
  * A native snapshot refusal, mapped by what the adapter answered, as request
- * admission already maps the same call (`source-admission.vibe`): only a source
+ * admission already maps the same call (`source-admission.ts`): only a source
  * conflict is a replan, a denied capability is the person's refusal, and
  * anything else is the host's.
  */
@@ -127,7 +129,7 @@ const freshWikiPages = (
   pages: ReadonlyArray<WikiPage>,
   hostFilesystem?: FileSystem.FileSystem
 ) =>
-  effect {
+  Effect.gen(function*() {
     const ops = wikiOperations({
       root: options.repositoryPath,
       output: options.wikiOutput ?? options.repositoryPath,
@@ -137,11 +139,11 @@ const freshWikiPages = (
     for (const page of pages) {
       const spec = options.pages?.find((spec) => spec.id === page.id)
       if (spec === undefined) continue
-      const current = try Effect.result(ops.collect(spec))
+      const current = yield* Effect.result(ops.collect(spec))
       if (current._tag === "Success" && current.success.inputDigest === page.inputDigest) fresh.push(page)
     }
     return fresh
-  }
+  })
 
 /** Trusted host adapter: the shared preflight selector and authorized relay
  * reads. No adapter is installed by default; repository code cannot authorize
@@ -173,23 +175,23 @@ export const wikiMemory = (
   input: typeof PlanningInput.Type,
   hostFilesystem?: FileSystem.FileSystem
 ) =>
-  effect {
+  Effect.gen(function*() {
     const provider = options.wikiProvider
     if (!provider) {
-      throw new CodingError({
+      return yield* new CodingError({
         code: "unavailable",
         message: "Authorized planning wiki provider is unavailable"
       })
     }
-    try provider.authorize()
+    yield* provider.authorize()
     // An empty pinned declaration is valid for an authored-only vault.
     if (options.pages === undefined) {
-      throw new CodingError({
+      return yield* new CodingError({
         code: "unavailable",
         message: "Pinned generated-page declaration is unavailable"
       })
     }
-    const selected = try provider.select({ prompt: input.prompt, kinds: ["wiki"] })
+    const selected = yield* provider.select({ prompt: input.prompt, kinds: ["wiki"] })
     const pages: Array<
       WikiPage & {
         readonly sourceRevision: string
@@ -199,11 +201,11 @@ export const wikiMemory = (
     > = []
     for (const { slug } of selected) {
       if (pages.some((page) => page.citation.slug === slug)) continue
-      const page = try provider.read(slug)
+      const page = yield* provider.read(slug)
       if (
         !page.markdown || pages.length >= 30 || page.slug !== slug || !page.pageID ||
         !Number.isSafeInteger(page.revision) || page.revision < 1 ||
-        !/^[0-9a-f]{64}$/.test(page.digest) || digest(page.markdown) !== page.digest
+        !/^[0-9a-f]{64}$/.test(page.digest) || Digest.digest(page.markdown) !== page.digest
       ) continue
       const generated = page.generated
       const captured = {
@@ -218,11 +220,11 @@ export const wikiMemory = (
         generated: generated !== undefined,
         citation: { slug, pageID: page.pageID, revision: page.revision, digest: page.digest }
       }
-      if (generated && !(try freshWikiPages(options, [captured], hostFilesystem)).length) continue
+      if (generated && !(yield* freshWikiPages(options, [captured], hostFilesystem)).length) continue
       pages.push(captured)
     }
-    return { pages, digest: digest(canonical(pages.map((page) => page.citation))) }
-  }
+    return { pages, digest: Digest.digest(Digest.canonical(pages.map((page) => page.citation))) }
+  })
 
 /** The notes whose page inputs no longer hash to this source. */
 export const staleWikiNotes = (
@@ -230,7 +232,7 @@ export const staleWikiNotes = (
   notes: typeof PlanningContext.Type["memory"],
   hostFilesystem?: FileSystem.FileSystem
 ) =>
-  effect {
+  Effect.gen(function*() {
     notes = notes.filter((note) => note.generated !== false)
     if (notes.length === 0) return []
     const pages = notes.map((note) => ({
@@ -240,9 +242,9 @@ export const staleWikiNotes = (
       body: note.markdown,
       inputDigest: note.inputDigest
     }))
-    const fresh = new Set((try freshWikiPages(options, pages, hostFilesystem)).map((page) => page.id))
+    const fresh = new Set((yield* freshWikiPages(options, pages, hostFilesystem)).map((page) => page.id))
     return notes.filter((note) => !fresh.has(note.id)).map((note) => note.id)
-  }
+  })
 
 /** Shared preflight selects wiki revisions; `memory` selects files, so
  * the gather is nondeterministic: `GatherContext` is a nondeterministic action
@@ -254,32 +256,32 @@ export const gather = (
   input: typeof PlanningInput.Type,
   hostFilesystem?: FileSystem.FileSystem
 ) =>
-  (effect {
+  Effect.gen(function*() {
     const limit = options.historyLimit ?? 100, maximum = options.maxMemoryBytes ?? 48 * 1024
     if (
       !Number.isSafeInteger(limit) || limit < 1 || limit > 100 || !Number.isSafeInteger(maximum) || maximum < 1024 ||
       maximum > 90 * 1024
     ) {
-      throw failure(
+      return yield* failure(
         "memory_budget_invalid",
         "Planning memory requires historyLimit 1..100 and maxMemoryBytes 1024..92160"
       )
     }
     const wiki = options.wikiCitations === true
-      ? try wikiMemory(options, input, hostFilesystem)
+      ? yield* wikiMemory(options, input, hostFilesystem)
       : { pages: [], digest: null }
-    const native = try NativeCoding, jj = try Jj.Jj
+    const native = yield* NativeCoding, jj = yield* Jj.Jj
     // The configured Jj captures current bytes in the SAME native atom. It never
     // opens a new change merely because memory needs an immutable code identity.
-    try jj.snapshot("coding planning memory").pipe(
+    yield* jj.snapshot("coding planning memory").pipe(
       Effect.catch((error) => Effect.fail(snapshotRefusal(error)))
     )
-    const before = try native.read([], limit)
+    const before = yield* native.read([], limit)
     if (
       !before.history?.length || before.history.some((row) => row.kind !== "resolved") ||
       before.head.kind !== "resolved"
     ) {
-      throw failure(
+      return yield* failure(
         "native_history_unresolved",
         "Planning requires bounded resolved native history; inspect conflicts or update the installed adapter"
       )
@@ -289,7 +291,7 @@ export const gather = (
     const carried = (input.answers ?? []).flatMap((answer) => [answer.question, answer.answer])
     // File selection retains the existing README-guided Jev walk. Wiki
     // selection is already captured by the shared preflight provider.
-    const selection = try Memory.select(
+    const selection = yield* Memory.select(
       { task: [input.prompt, input.feedback, ...carried].join("\n"), sources: ["repo"], maxBytes: Memory.maxMaxBytes },
       {
         root: options.repositoryPath,
@@ -302,7 +304,7 @@ export const gather = (
     // wiki page and walked file. Planning on that would be a silent exclusion
     // neither the planner nor the reviewer can see.
     if (selection.unjudged !== undefined) {
-      throw new CodingError({
+      return yield* new CodingError({
         code: "unavailable",
         message: `Jev could not select planning memory (${selection.unjudged.reason}: ${selection.unjudged.detail})`
       })
@@ -325,7 +327,7 @@ export const gather = (
       }
     }
     // Accepted learnings share the memory budget; the newest are kept when it runs out.
-    const accepted = try acceptedLearnings.pipe(Effect.mapError((error) =>
+    const accepted = yield* acceptedLearnings.pipe(Effect.mapError((error) =>
       new CodingError({ code: "unavailable", message: `Accepted coding learnings are unreadable: ${error.message}` })
     ))
     const learnings: Array<Learning> = []
@@ -334,19 +336,19 @@ export const gather = (
         learnings.unshift(learning)
       }
     }
-    const catalog = try Executable.Catalog
-    effect function identity(name: string) {
+    const catalog = yield* Executable.Catalog
+    const identity = (name: string) => {
       const entry = catalog.executables.find((entry) =>
         entry.descriptor.name === name
       )
-      const found = entry && Descriptor.executionDigest(entry.descriptor)
-      if (!found) {
+      const digest = entry && Descriptor.executionDigest(entry.descriptor)
+      if (!digest) {
         throw new CodingError({
           code: "unavailable",
           message: `Planning executable is unavailable or unverified: ${name}`
         })
       }
-      return found
+      return digest
     }
     const checks = options.checks.filter((check) => {
       const descriptor = catalog.executables.find((entry) =>
@@ -356,48 +358,44 @@ export const gather = (
       return options.wiki === true || !generatedWiki
     })
     if (options.checks.some((check) => check.required && !checks.includes(check))) {
-      throw failure(
+      return yield* failure(
         "wiki_check_without_wiki",
         "A required generated-Wiki check is configured while Wiki is disabled; explicitly update the operator policy or enable Wiki"
       )
     }
-    const implementationDigest = try identity(options.implementation)
-    const checkDefinitions: Array<Omit<Check, "flowDigest"> & { readonly flowDigest: string }> = []
-    for (const check of checks) checkDefinitions.push({ ...check, flowDigest: try identity(check.flow) })
-    const definitions = { implementation: options.implementation, implementationDigest, checks: checkDefinitions }
-    const after = try native.read([], limit)
+    const definitions = yield* Effect.try({
+      try: () => ({
+        implementation: options.implementation,
+        implementationDigest: identity(options.implementation),
+        checks: checks.map((check) => ({ ...check, flowDigest: identity(check.flow) }))
+      }),
+      catch: (error) => error instanceof CodingError ? error : failure("planning_executable_unverified", String(error))
+    })
+    const after = yield* native.read([], limit)
     if (before.operationId !== after.operationId || JSON.stringify(before.history) !== JSON.stringify(after.history)) {
-      throw failure(
+      return yield* failure(
         "native_history_moved",
         "Native history changed while gathering memory; gather a new coherent view"
       )
     }
-    const history: Array<{
-      readonly changeId: string
-      readonly commitId: string
-      readonly treeId: string
-      readonly operationId: string
-      readonly parentCommitIds: ReadonlyArray<string>
-      readonly description: string
-    }> = []
-    for (const row of before.history) {
+    const history = before.history.map((row) => {
       if (row.kind !== "resolved") {
         throw failure("native_history_conflicted", "Conflicted native history cannot be used to plan")
       }
-      history.push({
+      return {
         changeId: row.changeId,
         commitId: row.commitId,
         treeId: row.treeId,
         operationId: row.operationId,
         parentCommitIds: row.parentCommitIds,
         description: row.description ?? ""
-      })
-    }
+      }
+    })
     // The planner asked humans to paste files it could have read. Attach the
     // request's own paths, then the files `memory` chose, in that priority
     // order, under the per-file and total caps.
-    const reader = try sourceReader(options.repositoryPath, hostFilesystem)
-    const collected = try collectSources(reader, [
+    const reader = yield* sourceReader(options.repositoryPath, hostFilesystem)
+    const collected = yield* collectSources(reader, [
       ...extractPaths(input.prompt, input.feedback, ...carried),
       ...selection.needed.filter((item) => item.kind === "file").map((item) => item.id)
     ])
@@ -423,14 +421,14 @@ export const gather = (
     // Attached file text carries its own per-file and total caps, so the budget
     // here still bounds the native history, the wiki notes and the definitions.
     if (bytes({ ...context, sources: [] }) > 128 * 1024) {
-      throw failure(
+      return yield* failure(
         "context_over_budget",
         "Planning context exceeds 128 KiB; narrow the native history or wiki budget"
       )
     }
     // A context this host gathered that its own contract refuses is a host
     // fault, not a source that moved: name the field that broke the contract.
-    return try Schema.decodeUnknownEffect(PlanningContext)(context).pipe(
+    return yield* Schema.decodeUnknownEffect(PlanningContext)(context).pipe(
       Effect.mapError((error) => contractFailure(error.message))
     )
   }).pipe(Effect.mapError((error) =>
@@ -447,12 +445,12 @@ export const memoryLayer = (options: MemoryOptions, hostFilesystem?: FileSystem.
   Layer.mergeAll(
     GatherContext.toLayer((input) => gather(options, input, hostFilesystem)),
     VerifyContext.toLayer(({ context }) =>
-      (effect {
-        const jj = try Jj.Jj, native = try NativeCoding
-        try jj.snapshot("coding planning freshness").pipe(
+      Effect.gen(function*() {
+        const jj = yield* Jj.Jj, native = yield* NativeCoding
+        yield* jj.snapshot("coding planning freshness").pipe(
           Effect.catch((error) => Effect.fail(snapshotRefusal(error)))
         )
-        const current = try native.read(context.history.map((row) => row.changeId))
+        const current = yield* native.read(context.history.map((row) => row.changeId))
         const headDrift = driftOf(context.head, current.head)
         const drift = [
           ...(headDrift === undefined ? [] : [`head ${headDrift}`]),
@@ -468,28 +466,28 @@ export const memoryLayer = (options: MemoryOptions, hostFilesystem?: FileSystem.
           // only that native code had changed. `diff` is best effort: a plan must
           // still be refused when the adapter cannot explain why.
           const paths = current.head.kind === "resolved" && context.head.commitId !== current.head.commitId
-            ? try jj.diff(context.head.commitId, current.head.commitId).pipe(
-              Effect.map((diff) => changedPaths(diff)),
+            ? yield* jj.diff(context.head.commitId, current.head.commitId).pipe(
+              Effect.map(changedPaths),
               Effect.catch(() => Effect.succeed([] as ReadonlyArray<string>))
             )
             : []
-          throw failure("head_moved", staleRevisionMessage(drift, paths))
+          return yield* failure("head_moved", staleRevisionMessage(drift, paths))
         }
         // A plan may not be finalized against file text the planner no longer sees.
-        const stale = try staleSources(try sourceReader(options.repositoryPath, hostFilesystem), {
+        const stale = yield* staleSources(yield* sourceReader(options.repositoryPath, hostFilesystem), {
           sources: context.sources ?? [],
           missing: context.missing ?? []
         })
         if (stale.length > 0) {
-          throw failure(
+          return yield* failure(
             "attached_sources_moved",
             `Attached source files changed during planning or clarification; gather and plan again: ${stale.join(", ")}`
           )
         }
         // Every wiki note still explains exactly the source the plan is made against.
-        const stalePages = try staleWikiNotes(options, context.memory, hostFilesystem)
+        const stalePages = yield* staleWikiNotes(options, context.memory, hostFilesystem)
         if (stalePages.length > 0) {
-          throw failure(
+          return yield* failure(
             "wiki_pages_moved",
             `Wiki pages changed source during planning or clarification; gather and plan again: ${
               stalePages.join(", ")

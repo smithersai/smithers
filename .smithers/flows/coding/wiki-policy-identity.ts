@@ -5,7 +5,7 @@
  * (build.mjs) runs it at bundle time.
  */
 import * as Digest from "@smthrs/core/Digest"
-import { policySources } from "../wiki/reuse.vibe"
+import { policySources } from "../wiki/reuse.ts"
 
 /** The most bytes one policy source may hold. */
 export const maximumBytes = 2 * 1024 * 1024

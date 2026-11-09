@@ -6,9 +6,10 @@
  * snapshot back through its owning checker.
  */
 import { Action } from "@smthrs/flow"
+import { Effect, FileSystem, Path, Schema } from "effect"
 import { publishedPages } from "../memory/deps.vibe"
 import { operations } from "../wiki/operations.ts"
-import { Pool, reuseOperations } from "../wiki/reuse.vibe"
+import { Pool, reuseOperations } from "../wiki/reuse.ts"
 import { type PageSpec, Receipt, WikiError } from "../wiki/schema.vibe"
 import { Refreshed } from "./planning-wiki.vibe"
 import { CodingError, StackBase } from "./schema.ts"
@@ -73,21 +74,22 @@ export const InstallDependencyPages = Action.make("coding/install-dependency-pag
  * stack's supply to a lane reaches them within its budget. Refuses an id
  * collision and more than the 30 pages the stack publishes.
  */
-export effect function withDependencyPages(
+export const withDependencyPages = (
   pages: ReadonlyArray<PublishedWikiPage>,
   deps: ReadonlyArray<Pick<PublishedWikiPage, "id" | "title" | "body" | "inputDigest" | "contentDigest">>
-) {
-  if (pages.some((page) => deps.some((dep) => dep.id === page.id))) {
-    throw fail("A wiki page id collides with a dependency page's", "invalid-input")
-  }
-  if (deps.length + pages.length > 30) {
-    throw fail(
-      `The wiki's ${pages.length} pages and ${deps.length} dependency pages exceed 30; declare fewer dependency files`,
-      "invalid-input"
-    )
-  }
-  return [...deps.map((dep) => ({ ...dep, kind: "current" as const, reviewDigest: null, sources: [] })), ...pages]
-}
+) =>
+  Effect.gen(function*() {
+    if (pages.some((page) => deps.some((dep) => dep.id === page.id))) {
+      return yield* fail("A wiki page id collides with a dependency page's", "invalid-input")
+    }
+    if (deps.length + pages.length > 30) {
+      return yield* fail(
+        `The wiki's ${pages.length} pages and ${deps.length} dependency pages exceed 30; declare fewer dependency files`,
+        "invalid-input"
+      )
+    }
+    return [...deps.map((dep) => ({ ...dep, kind: "current" as const, reviewDigest: null, sources: [] })), ...pages]
+  })
 
 /** Reads the verified snapshot the refresh just installed, through its owning checker. */
 export const ReadPublishedWiki = Action.make("coding/read-published-wiki", {
@@ -148,67 +150,69 @@ export const readPublishedWiki = (
   base: StackBase,
   refreshed: typeof Refreshed.Type
 ) =>
-  Effect.mapError(
-    effect {
-      const fs = options.fs ?? (try FileSystem.FileSystem), path = try Path.Path
-      if (refreshed.receipt.verification !== "verified") throw fail("The wiki refresh did not verify every page")
-      // The owning checker proves the pointer, archive and every page are intact
-      // and still fresh against this working copy before anything is answered.
-      try operations({ root: options.repositoryPath, output: options.wikiOutput, fs: options.fs }).check(
-        options.pages,
-        true
+  Effect.gen(function*() {
+    const fs = options.fs ?? (yield* FileSystem.FileSystem), path = yield* Path.Path
+    if (refreshed.receipt.verification !== "verified") return yield* fail("The wiki refresh did not verify every page")
+    // The owning checker proves the pointer, archive and every page are intact
+    // and still fresh against this working copy before anything is answered.
+    yield* operations({ root: options.repositoryPath, output: options.wikiOutput, fs: options.fs }).check(
+      options.pages,
+      true
+    )
+    const text = yield* fs.readFileString(path.join(yield* fs.realPath(options.wikiOutput), "current.json"))
+    const snapshot = yield* Effect.try({
+      try: () => JSON.parse(text) as unknown,
+      catch: () => fail("Invalid wiki pointer", "output-conflict")
+    }).pipe(
+      Effect.flatMap(Schema.decodeUnknownEffect(Snapshot)),
+      Effect.mapError((error) =>
+        error instanceof WikiError ? error : fail("The wiki pointer is not a verified snapshot", "output-conflict")
       )
-      const text = try fs.readFileString(path.join(try fs.realPath(options.wikiOutput), "current.json"))
-      const pointer = Effect.try({
-        try: () => JSON.parse(text) as unknown,
-        catch: () => fail("Invalid wiki pointer", "output-conflict")
-      })
-      const snapshot = Effect.flatMap(pointer, Schema.decodeUnknownEffect(Snapshot)) catch effect (error) => {
-        throw error instanceof WikiError ? error : fail("The wiki pointer is not a verified snapshot", "output-conflict")
-      }
-      const deps = publishedPages(options.repositoryPath).pipe(
-        options.fs === undefined ? (program) => program : Effect.provideService(FileSystem.FileSystem, options.fs)
-      ) catch effect (error) => {
-        throw error instanceof WikiError
+    )
+    const deps = yield* publishedPages(options.repositoryPath).pipe(
+      options.fs === undefined ? (effect) => effect : Effect.provideService(FileSystem.FileSystem, options.fs),
+      Effect.mapError((error) =>
+        error instanceof WikiError
           ? error
           : fail(`Dependency docs cannot be published: ${error.message}`, "invalid-input")
-      }
-      const titles = new Map(snapshot.pages.map((page) => [page.id, page.title]))
-      // The same extraction the next run in this engine would use, carried out.
-      const pool = try reuseOperations({
-        root: options.repositoryPath,
-        output: options.wikiOutput,
-        fs: options.fs,
-        hostPolicy: options.hostPolicy
-      })
-        .load({ priorRunId: refreshed.wikiRunId, reviewer: options.reviewer })
-      const result: WikiRefreshResult = {
-        commitId: base.commitId,
-        wikiRunId: refreshed.wikiRunId,
-        artifactDigest: snapshot.artifactDigest,
-        receipt: refreshed.receipt,
-        reviews: reviewCounts(snapshot.pages),
-        pool,
-        pages: try withDependencyPages(
-          snapshot.pages.map((page) => ({
-            id: page.id,
-            title: page.title,
-            kind: page.kind,
-            body: cloudWikiBody(page.body, titles),
-            inputDigest: page.inputDigest,
-            contentDigest: page.contentDigest,
-            reviewDigest: page.verification.reviewDigest,
-            sources: page.sources.map(({ path, digest }) => ({ path, digest }))
-          })),
-          deps
-        )
-      }
-      if (new TextEncoder().encode(JSON.stringify(result)).length > maximumResultBytes) {
-        throw fail("The published wiki and its reviews exceed 4 MiB; narrow the page catalog", "invalid-input")
-      }
-      return Schema.decodeUnknownEffect(WikiRefreshResult)(result) catch effect () => {
-        throw fail("The published wiki violates its contract", "output-conflict")
-      }
-    },
-    (error) => error instanceof WikiError ? error : fail(error instanceof Error ? error.message : String(error), "io")
-  )
+      )
+    )
+    const titles = new Map(snapshot.pages.map((page) => [page.id, page.title]))
+    // The same extraction the next run in this engine would use, carried out.
+    const pool = yield* reuseOperations({
+      root: options.repositoryPath,
+      output: options.wikiOutput,
+      fs: options.fs,
+      hostPolicy: options.hostPolicy
+    })
+      .load({ priorRunId: refreshed.wikiRunId, reviewer: options.reviewer })
+    const result: WikiRefreshResult = {
+      commitId: base.commitId,
+      wikiRunId: refreshed.wikiRunId,
+      artifactDigest: snapshot.artifactDigest,
+      receipt: refreshed.receipt,
+      reviews: reviewCounts(snapshot.pages),
+      pool,
+      pages: yield* withDependencyPages(
+        snapshot.pages.map((page) => ({
+          id: page.id,
+          title: page.title,
+          kind: page.kind,
+          body: cloudWikiBody(page.body, titles),
+          inputDigest: page.inputDigest,
+          contentDigest: page.contentDigest,
+          reviewDigest: page.verification.reviewDigest,
+          sources: page.sources.map(({ path, digest }) => ({ path, digest }))
+        })),
+        deps
+      )
+    }
+    if (new TextEncoder().encode(JSON.stringify(result)).length > maximumResultBytes) {
+      return yield* fail("The published wiki and its reviews exceed 4 MiB; narrow the page catalog", "invalid-input")
+    }
+    return yield* Schema.decodeUnknownEffect(WikiRefreshResult)(result).pipe(
+      Effect.mapError(() => fail("The published wiki violates its contract", "output-conflict"))
+    )
+  }).pipe(Effect.mapError((error) =>
+    error instanceof WikiError ? error : fail(error instanceof Error ? error.message : String(error), "io")
+  ))

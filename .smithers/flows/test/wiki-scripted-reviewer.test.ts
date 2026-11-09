@@ -65,7 +65,7 @@ const refresh = async (root: string, pages: ReadonlyArray<PageSpec>) => {
   const Seat = await import("@smthrs/agent/Seat")
   const SeatResolver = await import("@smthrs/agent/SeatResolver")
   const { default: Wiki } = await import("../wiki/flow.ts")
-  const { actionLayers, agentLayers } = await import("../wiki/runtime.vibe")
+  const { actionLayers, agentLayers } = await import("../wiki/runtime.ts")
   const steps: Array<string> = []
   const script = BuiltinScript.make()
   const model = Model.make({

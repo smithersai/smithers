@@ -11,7 +11,9 @@
 import type * as Memory from "@smthrs/agent/Memory"
 import * as MemoryCalibration from "@smthrs/agent/MemoryCalibration"
 import { Fault } from "@smthrs/flow"
-import { journalName, journalPath, listJournalEntries, readJournal } from "./calibrate.platform.ts"
+import { Effect, Schema } from "effect"
+import { readdir, readFile } from "node:fs/promises"
+import { basename, join } from "node:path"
 import * as Labels from "./labels.ts"
 import * as Landed from "./landed.ts"
 import * as Thresholds from "./thresholds.vibe"
@@ -153,26 +155,27 @@ const invalid = (path: string) => (cause: unknown) =>
  * agent) is skipped and counted; any other journal with no harness event is
  * {@link JournalInvalid}: it would add a run with no labels.
  */
-export effect function journalLabels(dir: string, prefix = "") {
-  const names = try tryPromise({ try: () => listJournalEntries(dir), catch: invalid(dir) })
-  const read = try forEach(
-    names.filter((name) => name.endsWith(".jsonl") && journalName(name).startsWith(prefix)).sort(),
-    (name) => {
-      const path = journalPath(dir, name)
-      return tryPromise({
-        try: async () => {
-          const journal = Labels.journalOf(Labels.parseJsonl(await readJournal(path)))
-          if (journal.events.length > 0) return Labels.fromEvents(journal.events, journal.cwd)
-          if (journal.cwd !== undefined) return undefined
-          throw new Error("no harness events")
-        },
-        catch: invalid(path)
-      })
-    }
-  )
-  const runs = read.filter((one) => one !== undefined)
-  return { runs, skipped: read.length - runs.length }
-}
+export const journalLabels = (dir: string, prefix = "") =>
+  Effect.gen(function*() {
+    const names = yield* Effect.tryPromise({ try: () => readdir(dir, { recursive: true }), catch: invalid(dir) })
+    const read = yield* Effect.forEach(
+      names.filter((name) => name.endsWith(".jsonl") && basename(name).startsWith(prefix)).sort(),
+      (name) => {
+        const path = join(dir, name)
+        return Effect.tryPromise({
+          try: async () => {
+            const journal = Labels.journalOf(Labels.parseJsonl(await readFile(path, "utf8")))
+            if (journal.events.length > 0) return Labels.fromEvents(journal.events, journal.cwd)
+            if (journal.cwd !== undefined) return undefined
+            throw new Error("no harness events")
+          },
+          catch: invalid(path)
+        })
+      }
+    )
+    const runs = read.filter((one) => one !== undefined)
+    return { runs, skipped: read.length - runs.length }
+  })
 
 /** The most landed commits one calibration evaluates. */
 export const maxLanded = 500
@@ -181,46 +184,46 @@ export const maxLanded = 500
  * Gathers labels, calibrates, and writes the fit when `options.write`.
  * `landed` outside 0 to {@link maxLanded} fails with `LandedFailed`.
  */
-export effect function run(options: RunOptions) {
-  if (!Number.isSafeInteger(options.landed) || options.landed < 0 || options.landed > maxLanded) {
-    throw new Landed.LandedFailed({
-      message: `landed must be an integer from 0 to ${maxLanded}, got ${options.landed}`
-    })
-  }
-  const current = try Thresholds.load(options.root)
-  const { runs, skipped } = options.journals === undefined
-    ? { runs: [], skipped: 0 }
-    : try journalLabels(options.journals, options.journalPrefix)
-  const commits = options.landed > 0 ? try Landed.landedCommits(options.root, options.landed) : []
-  const evaluated = try Landed.evaluateAll(options.root, commits, { ...options.memory, thresholds: current })
-  const labels = [...runs.flatMap((one) => one.labels), ...evaluated.flatMap((one) => one.labels)]
-  const restores = runs.reduce((total, one) => total + one.restores, 0)
-  const withheld = runs.reduce((total, one) => total + one.withheldFlows, 0)
-  const recall = Landed.recallAtBudget(evaluated)
-  const byDecision = try orDie(Effect.try(() => Labels.byDecision(labels)))
-  const { receipt, thresholds } = calibrate({
-    labels: byDecision,
-    current,
-    recallAtBudget: recall.recall,
-    items: recall.items,
-    unjudged: recall.unjudged,
-    restoreRate: withheld === 0 ? null : Number((restores / withheld).toFixed(4)),
-    instructionMisses: runs.reduce((total, one) => total + one.instructionMisses, 0)
-  })
-  if (options.write) try Thresholds.write(options.root, thresholds, receipt)
-  const evidence: Evidence = {
-    journals: runs.length,
-    skippedJournals: skipped,
-    restores,
-    withheldFlows: withheld,
-    labelSources: Object.fromEntries(
-      Labels.sources.map((source) => [source, labels.filter((label) => label.source === source).length])
-    ) as Record<Labels.Source, number>,
-    landed: {
-      ...recall,
-      budgetBytes: Landed.budget,
-      commits: evaluated.map(({ labels: _labels, ...rest }) => rest)
+export const run = (options: RunOptions) =>
+  Effect.gen(function*() {
+    if (!Number.isSafeInteger(options.landed) || options.landed < 0 || options.landed > maxLanded) {
+      return yield* new Landed.LandedFailed({
+        message: `landed must be an integer from 0 to ${maxLanded}, got ${options.landed}`
+      })
     }
-  }
-  return { receipt, thresholds, evidence, written: options.write }
-}
+    const current = yield* Thresholds.load(options.root)
+    const { runs, skipped } = options.journals === undefined
+      ? { runs: [], skipped: 0 }
+      : yield* journalLabels(options.journals, options.journalPrefix)
+    const commits = options.landed > 0 ? yield* Landed.landedCommits(options.root, options.landed) : []
+    const evaluated = yield* Landed.evaluateAll(options.root, commits, { ...options.memory, thresholds: current })
+    const labels = [...runs.flatMap((one) => one.labels), ...evaluated.flatMap((one) => one.labels)]
+    const restores = runs.reduce((total, one) => total + one.restores, 0)
+    const withheld = runs.reduce((total, one) => total + one.withheldFlows, 0)
+    const recall = Landed.recallAtBudget(evaluated)
+    const { receipt, thresholds } = calibrate({
+      labels: Labels.byDecision(labels),
+      current,
+      recallAtBudget: recall.recall,
+      items: recall.items,
+      unjudged: recall.unjudged,
+      restoreRate: withheld === 0 ? null : Number((restores / withheld).toFixed(4)),
+      instructionMisses: runs.reduce((total, one) => total + one.instructionMisses, 0)
+    })
+    if (options.write) yield* Thresholds.write(options.root, thresholds, receipt)
+    const evidence: Evidence = {
+      journals: runs.length,
+      skippedJournals: skipped,
+      restores,
+      withheldFlows: withheld,
+      labelSources: Object.fromEntries(
+        Labels.sources.map((source) => [source, labels.filter((label) => label.source === source).length])
+      ) as Record<Labels.Source, number>,
+      landed: {
+        ...recall,
+        budgetBytes: Landed.budget,
+        commits: evaluated.map(({ labels: _labels, ...rest }) => rest)
+      }
+    }
+    return { receipt, thresholds, evidence, written: options.write }
+  })

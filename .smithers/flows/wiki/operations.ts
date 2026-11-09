@@ -4,7 +4,7 @@ import { canonical } from "@smthrs/core/Digest"
 import { Effect, FileSystem, Path } from "effect"
 import * as EffectDigest from "effect/crypto/Digest"
 import { reviewEvidence, visibleLine } from "./evidence.ts"
-import type { Provenance } from "./reuse.vibe"
+import type { Provenance } from "./reuse.ts"
 import { type PageSpec, type Receipt, type ReviewedPage, WikiError } from "./schema.vibe"
 
 const maxFileBytes = 512_000

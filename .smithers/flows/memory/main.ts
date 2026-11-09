@@ -24,7 +24,7 @@ import { parseArgs } from "node:util"
 import * as GrantStore from "../../../packages/smithers/flows/kernel/src/GrantStore.ts"
 import * as KernelHttpClient from "../../../packages/smithers/flows/kernel/src/HttpClient.ts"
 import { evaluatorLayer } from "../repository/jev-checks.vibe"
-import * as Calibrate from "./calibrate.vibe"
+import * as Calibrate from "./calibrate.ts"
 
 const { positionals, values } = parseArgs({
   allowPositionals: true,

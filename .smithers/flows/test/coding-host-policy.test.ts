@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url"
 import { bundle } from "../coding/build.mjs"
 import { separateWikiOutput } from "../coding/wiki-output.vibe"
 import { runningWikiPolicy } from "../coding/wiki-policy.vibe"
-import { policySources } from "../wiki/reuse.vibe"
+import { policySources } from "../wiki/reuse.ts"
 
 const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
 

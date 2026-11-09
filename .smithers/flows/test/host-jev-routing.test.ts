@@ -22,7 +22,7 @@ import { join } from "node:path"
 import { test } from "node:test"
 import * as Suggest from "../../../packages/smithers/src/suggest/SuggestFlow.ts"
 import { agentLayers as releaseLayers } from "../release-support/runtime.ts"
-import { agentLayers as wikiLayers } from "../wiki/runtime.vibe"
+import { agentLayers as wikiLayers } from "../wiki/runtime.ts"
 
 const environment = { SMITHERS_SUPERVISOR_STANCE: "paranoid" }
 const script = () =>

@@ -16,7 +16,7 @@ import * as TestMemory from "../../../packages/smithers/agent/memory/src/test/Te
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
 import { namespace as learningNamespace } from "../coding/learnings.vibe"
 import { NativeCoding } from "../coding/native.vibe"
-import { gather } from "../coding/planning-memory.vibe"
+import { gather } from "../coding/planning-memory.ts"
 import {
   collectSources,
   extractPaths,

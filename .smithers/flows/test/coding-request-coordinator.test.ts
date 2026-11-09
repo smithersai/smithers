@@ -15,7 +15,7 @@ import { AdmitSource } from "../coding/source-admission.vibe"
 import { CreateStackBase, PrepareStackBase } from "../coding/stack.vibe"
 import { type FeedbackReceipt, ReceiveFeedback } from "../coding/steering.vibe"
 import { todoLayers } from "../coding/todo.vibe"
-import { InstallDependencyPages } from "../coding/wiki-refresh.vibe"
+import { InstallDependencyPages } from "../coding/wiki-refresh.ts"
 
 // Exercise the Request body as the TODO does, without restoring its retired
 // standalone registration in the production layer.

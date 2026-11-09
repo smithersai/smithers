@@ -69,9 +69,9 @@ if (values.help) {
         import("@smthrs/flow"),
         import("@smthrs/flows"),
         import("./flow.ts"),
-        import("./runtime.vibe")
+        import("./runtime.ts")
       ])
-    const incremental = values["reuse-run"] ? await import("./reuse.vibe") : undefined
+    const incremental = values["reuse-run"] ? await import("./reuse.ts") : undefined
     if (incremental && !values.verified) {
       throw new Error("--reuse-run requires --verified and the existing database containing that terminal run")
     }

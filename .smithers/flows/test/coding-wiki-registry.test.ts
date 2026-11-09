@@ -15,7 +15,7 @@ import { jevCheckDelegate } from "../coding/jev-check.vibe"
 import { loadProject } from "../coding/project-config.vibe"
 import { reviewCheckDelegate } from "../coding/review-check.vibe"
 import { securityReviewCheckDelegate } from "../coding/security-review-check.vibe"
-import { wikiCheckDelegate } from "../coding/wiki-check.vibe"
+import { wikiCheckDelegate } from "../coding/wiki-check.ts"
 import { bindWikiRegistry } from "../coding/wiki-registry.vibe"
 
 const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
