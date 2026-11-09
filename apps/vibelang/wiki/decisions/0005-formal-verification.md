@@ -173,3 +173,8 @@ Issue-link admission (0018) proves a bounded first-match parent path reaches the
 The recursive measure has its own exact step clauses; runtime traversal remains iterative. Global graph preservation
 and acceptance completeness remain outside this theorem. The optional-union-default reproduction records a separate
 LemmaScript union/optional contract lowering gap; no weakened request projection is substituted.
+
+Reply progress (0018) proves the zero base and exact bounded addition recurrence, admission flags, full field
+frames, latched malformed usage and completion precedence. The host establishes safe integers before arithmetic;
+`safe-usage-integer.ts` records that native predicate emission gap. Event routing, provider decoding and SDK replay
+remain explicit boundaries. No contract is weakened to admit a non-integer or overflowing settlement.

@@ -303,3 +303,8 @@ field, with all older flow contracts retained.
 **Issue ancestry (0018).** Existing independent generated-tree and malformed-tree tests run the unchanged iterative
 link check. New mutations target positive/existing identities, ancestor exclusion, missing parents, bounded traversal,
 root completion and each independent measure step. An equivalent redundant self-guard deletion is not counted.
+
+**Reply usage integrity (0018).** Negative, fractional, NaN, infinite and unsafe settlements fail before the fix;
+known valid spend is preserved afterward, including the exact safe boundary. Forty-seven contract-preserving mutants
+cover initialization, safe-domain admission, all unrelated fields, the invalidity latch and completion outcomes. The
+reply fuzz oracle now computes expected sums with independent BigInt arithmetic in Effect, retaining its corpus.

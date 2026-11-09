@@ -38,3 +38,10 @@ reaches the root without the child. Full conversation proof:19,896isolated batch
 mutations match actual Dafny failures; an equivalent early-self-check deletion is excluded and replaced. Global graph
 preservation and acceptance completeness remain explicit gaps. Rebased on6db1ba51HTTPtests; required gates rerun.
 New optional-union-default tool reproduction retains the exact contract; no request projection workaround.
+
+Fifteenth batch: Reply accounting now preserves prior valid spend after negative, fractional, NaN, infinite and unsafe
+settlements, latches invalidity and refuses successful completion with invalid accounting. Seven numeric regressions
+fail first; the full eight-case integrity suite passes afterward. Nine production proof functions/ten units,47new
+mutants, all17current module hashes and817current mutants match actual receipts. Finaltypecheck0,835unit passes,
+52workerd passes,9reply fuzz targets139674executions/1retained regression replay and2affected benchmarks pass.
+Native safe-integer emission is retained as a minimal exact-contract tool gap; event routing and SDK replay are not claimed proved.

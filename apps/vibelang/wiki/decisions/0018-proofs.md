@@ -22,6 +22,7 @@ strictly typecheck, and must fail a Dafny obligation in their named function. To
 | `src/core/conversation.vibe` | Conversation sequence, entry identity and correlation, at most one answer per post, terminal replies/tours ignore later text, exact entry/state/role frames, admissible intent completeness, stable pending removal, unanswered order, replay bounds, reply/tour guards and pane ownership | Integer sequences below MAX_SAFE_INTEGER; dense readonly arrays; UTF-16 strings |
 | `src/core/conversation.vibe` issue helpers (0022) | Exact numbered observations, operation-to-role policy, commitment/review field preservation and remaining actions after partial review; bounded first-match ancestor path reaches the root without the child; VIP author and non-removed document admission | Global graph preservation and acceptance completeness remain unproved; host cursor capacity and review-call preconditions remain to audit; GitHub execution is an Effect boundary |
 | `worker/liveDispatchDecision.vibe` | Exact scan/attempt/done transitions, first-unmarked cursor, terminal idempotency and one engine start attempt per invocation | Storage-mark truth, engine idempotency and host serialization |
+| `worker/replyProgressDecision.vibe` | Zero initial usage, exact bounded sum of admitted settlements, validation admission, retry/text/failure frames, latched invalid telemetry and answer/empty/failure precedence | Native safe-integer observations establish the arithmetic domain; provider/DoneText decoding, event-tag/payload projection and durable replay remain outside these contracts |
 | `worker/replyReasons.vibe` | Content policy → refused; credit and quota → credit; other model failures → unavailable. Agent precedence: unresolved seat, structured-output failure, model failure, generic failure | The observed tag and code are inputs; constant wording lookup and provider parsing are outside this decision |
 | `worker/budgetDecision.vibe` | Strict admission, repeated charges add zero, exact nonnegative charge/total relation, admission to the safe integer sum domain, and exact charge-key construction namespaced by conversation object | Runtime guards establish the integer domain; key uniqueness is concat-cancellation, beyond the backend's string reasoning (`string-concat-unique.ts`) and demonstrated by the two-conversation workerd regression; storage consistency, serialization and host rounding remain boundaries |
 | `src/surfaces/commandDecision.vibe` | Own-post/reply correlation, exact event-number prefix/order, delta/restart/failure/finish accumulation, stream termination, outcome and error mapping | Effect stream execution, UUID generation, schema decoding and display formatting |
@@ -358,6 +359,33 @@ excluded. All sixteen current marked modules and 770 current mutants match succe
 App/Worker typechecks and 827 unit/integration cases in 123 files pass after rebasing onto the incoming
 HTTP-client-test commit 6db1ba51 (one opt-in skip; Vitest 226.09 seconds). The inventory contains 2,476 executable items.
 
+## Fifteenth module batch: Reply accounting and completion
+
+The actual Reply event fold calls a proved initial/reset/append/charge/invalid/failure kernel. Zero initial usage
+and each exact nonnegative addition establish the sum recurrence for admitted settled calls, with every intermediate
+sum at most MAX_SAFE_INTEGER. The admission decision requires all three native safe-integer observations and the
+exact sum domain; no invalid settlement subtracts or poisons previously valid accounting. Invalidity latches through
+all retries, text, failures and later valid settlements. Completion can publish an answer only when the agent succeeds,
+accounting remains valid and text is nonempty; failed/empty precedence is explicit.
+
+The prior fold accepts negative, fractional, NaN, infinite and unsafe usage. Seven failing-first numeric cases show
+lost or poisoned earlier spend (for example, 120 followed by -140 becomes -20); an eighth checks the valid exact
+boundary and the new integrity flag. The fix retains known valid spend, rejects malformed settlements and returns
+the existing generic failure rather than a successful reply with invalid accounting. The outcome-only log records
+`invalid-usage`, never provider messages or input values. Step names and durable operation order stay unchanged.
+
+The new module has nine functions and ten proof units; 47 executable mutants reject. Current source/manifest hashes
+match seventeen positive modules and 817 actual rejected mutations. Twenty-two targeted reply tests, all nine reply
+fuzz targets (139,674 executions, one retained regression replay) and both affected agent benchmarks pass. The fuzz
+oracle uses independent unbounded BigInt arithmetic inside Effect. Final app/Worker typechecks, 835 unit/integration
+cases (one opt-in skip; 124 files, 233.95 seconds) and 52 local workerd cases (three opt-in skips; 93.72 seconds) pass.
+No new dependency is added. The inventory contains 2,485 executable items.
+
+The wrapper still owns event-tag/payload projection, DoneText parsing and native safe-integer observations. These
+contracts do not claim full event-routing or SDK replay correctness. Reply invokes the AgentAction implementation
+rather than a cached outer Action, while sealed internal model-step replay re-emits recorded events; this is an SDK
+assumption inspected in its implementation and EventSink contract, not a new theorem.
+
 ## Product defects
 
 **Saved theatre audio shape.** An injected Window service returning JSON `null` breaks speech control; wrong-type
@@ -491,6 +519,11 @@ optional input emits incompatible bare-string/Option branches and a match on `se
 resolution/type errors, not a contract failure. The production `requestOf` remains unchanged and unproved; the
 exact reproduction contract is retained.
 
+`safe-usage-integer.ts` / `~/vl/vibelang-bugs/lemmascript-safe-usage-integer/` strictly typechecks, but native
+`Number.isSafeInteger` fails Dafny emission as an unsupported method call. The exact range contract is retained.
+The Reply integer kernel proves its admission policy over the supplied native observations; malformed-number
+regressions exercise the actual observation calls. This is a tool failure and never a rejected mutation.
+
 ## Inventory
 
 The compiler's original-source ESTree identifies executable functions, methods, effect blocks and nested callbacks
@@ -502,7 +535,7 @@ passes 101 obligations across eight modules; all three new mutations fail their 
 tokenization, rendering and durable execution retain the boundaries stated above.
 
 <!-- inventory:start -->
-2476 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
+2485 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
 
 | File and line | Function | Class | Proof or reason |
 | --- | --- | --- | --- |
@@ -2736,28 +2769,37 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `worker/ObjectStorage.vibe:44` | `ledgerOver/read/callback@44` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/ObjectStorage.vibe:47` | `ledgerOver/write` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `worker/ObjectStorage.vibe:48` | `ledgerOver/write/callback@48` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `worker/Reply.vibe:67` | `reasonOf` | wiring | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:72` | `failureReason` | wiring | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:98` | `dayOf` | pure logic | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:103` | `promptOf` | pure logic | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:111` | `promptOf/callback@111` | pure logic | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:133` | `tagOf` | pure logic | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:157` | `fold` | pure logic | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:181` | `agentOf` | wiring | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:206` | `agentOf/resolve` | effectful shell | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:226` | `respond` | effectful shell | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:230` | `respond/emit` | effectful shell | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:231` | `respond/callback@231` | effectful shell | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:256` | `run` | effectful shell | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:259` | `run/callback@259` | wiring | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:269` | `compose` | effectful shell | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
-| `worker/Reply.vibe:278` | `compose/callback@278` | effectful shell | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:68` | `reasonOf` | wiring | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:73` | `failureReason` | wiring | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:99` | `dayOf` | pure logic | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:104` | `promptOf` | pure logic | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:112` | `promptOf/callback@112` | pure logic | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:134` | `tagOf` | pure logic | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:150` | `fold` | pure logic | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:178` | `agentOf` | wiring | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:203` | `agentOf/resolve` | effectful shell | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:223` | `respond` | effectful shell | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:227` | `respond/emit` | effectful shell | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:228` | `respond/callback@228` | effectful shell | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:253` | `run` | effectful shell | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:256` | `run/callback@256` | wiring | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:266` | `compose` | effectful shell | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
+| `worker/Reply.vibe:275` | `compose/callback@275` | effectful shell | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
 | `worker/Reply.vibe:310` | `answer` | effectful shell | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
 | `worker/Reply.vibe:318` | `answer/callback@318` | effectful shell | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
 | `worker/Reply.vibe:329` | `answer/callback@329` | effectful shell | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
 | `worker/Reply.vibe:336` | `answer/callback@336` | pure logic | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
 | `worker/Reply.vibe:345` | `callback@345` | effectful shell | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
 | `worker/Reply.vibe:347` | `callback@345/callback@347` | effectful shell | Reason classification and the latest-turn window call proved replyReasons/sequenceDecision. Agent/event decoding, token progress, streaming, interruption and step execution remain unproved. |
+| `worker/replyProgressDecision.vibe:13` | `initialProgress` | pure logic | Zero initial usage, exact bounded nonnegative sum recurrence, native-validation admission flags, text/retry/failure frames, latched malformed telemetry and success/empty/failure precedence; proved over the established integer domain. Native Number.isSafeInteger observations and provider/DoneText decoding are host boundaries (safe-usage-integer.ts). |
+| `worker/replyProgressDecision.vibe:20` | `usageFits` | pure logic | Zero initial usage, exact bounded nonnegative sum recurrence, native-validation admission flags, text/retry/failure frames, latched malformed telemetry and success/empty/failure precedence; proved over the established integer domain. Native Number.isSafeInteger observations and provider/DoneText decoding are host boundaries (safe-usage-integer.ts). |
+| `worker/replyProgressDecision.vibe:27` | `validUsage` | pure logic | Zero initial usage, exact bounded nonnegative sum recurrence, native-validation admission flags, text/retry/failure frames, latched malformed telemetry and success/empty/failure precedence; proved over the established integer domain. Native Number.isSafeInteger observations and provider/DoneText decoding are host boundaries (safe-usage-integer.ts). |
+| `worker/replyProgressDecision.vibe:34` | `resetProgress` | pure logic | Zero initial usage, exact bounded nonnegative sum recurrence, native-validation admission flags, text/retry/failure frames, latched malformed telemetry and success/empty/failure precedence; proved over the established integer domain. Native Number.isSafeInteger observations and provider/DoneText decoding are host boundaries (safe-usage-integer.ts). |
+| `worker/replyProgressDecision.vibe:43` | `appendProgress` | pure logic | Zero initial usage, exact bounded nonnegative sum recurrence, native-validation admission flags, text/retry/failure frames, latched malformed telemetry and success/empty/failure precedence; proved over the established integer domain. Native Number.isSafeInteger observations and provider/DoneText decoding are host boundaries (safe-usage-integer.ts). |
+| `worker/replyProgressDecision.vibe:52` | `chargeProgress` | pure logic | Zero initial usage, exact bounded nonnegative sum recurrence, native-validation admission flags, text/retry/failure frames, latched malformed telemetry and success/empty/failure precedence; proved over the established integer domain. Native Number.isSafeInteger observations and provider/DoneText decoding are host boundaries (safe-usage-integer.ts). |
+| `worker/replyProgressDecision.vibe:59` | `invalidProgress` | pure logic | Zero initial usage, exact bounded nonnegative sum recurrence, native-validation admission flags, text/retry/failure frames, latched malformed telemetry and success/empty/failure precedence; proved over the established integer domain. Native Number.isSafeInteger observations and provider/DoneText decoding are host boundaries (safe-usage-integer.ts). |
+| `worker/replyProgressDecision.vibe:65` | `failProgress` | pure logic | Zero initial usage, exact bounded nonnegative sum recurrence, native-validation admission flags, text/retry/failure frames, latched malformed telemetry and success/empty/failure precedence; proved over the established integer domain. Native Number.isSafeInteger observations and provider/DoneText decoding are host boundaries (safe-usage-integer.ts). |
+| `worker/replyProgressDecision.vibe:74` | `completion` | pure logic | Zero initial usage, exact bounded nonnegative sum recurrence, native-validation admission flags, text/retry/failure frames, latched malformed telemetry and success/empty/failure precedence; proved over the established integer domain. Native Number.isSafeInteger observations and provider/DoneText decoding are host boundaries (safe-usage-integer.ts). |
 | `worker/replyReasons.vibe:9` | `reasonCode` | pure logic | Failure precedence and model reason codes; proved. |
 | `worker/replyReasons.vibe:22` | `failureCode` | pure logic | Failure precedence and model reason codes; proved. |
 | `worker/SandboxAccounts.vibe:20` | `request` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |

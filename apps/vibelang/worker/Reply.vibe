@@ -1,3 +1,4 @@
+import { initialProgress, resetProgress, appendProgress, validUsage, chargeProgress, invalidProgress, failProgress, completion, type ProgressState } from "./replyProgressDecision.vibe"
 import { promptWindow } from "../src/core/sequenceDecision.vibe"
 // The agent's reply to one post, a durable `@smthrs/flow` flow (rulings VL-11; wiki/decisions/0010-live-agent.md,
 // 0012-smithers-agent.md). Every side effect is a journaled step, so a reset Durable Object resumes the reply where it
@@ -141,34 +142,30 @@ export function tagOf(error: unknown): string {
 }
 
 /** What the agent showed and spent while it answered, folded from its events. */
-export interface Progress {
-  /** The current model call's text so far. */
-  readonly reply: string
-  /** The answer as far as it has arrived: the literal the reply passes to its last `ctx.done(` (`DoneText`). */
-  readonly text: string
-  readonly tokens: number
-  /** The code of the last model call that failed, if one did. */
-  readonly failed: string | undefined
-}
+export type Progress = ProgressState
 
-export const started: Progress = { reply: "", text: "", tokens: 0, failed: undefined }
+export const started: Progress = initialProgress()
 
 /** Folds one agent event into the reply's progress. A new model call or a retry starts the reply's text over. */
 export function fold(progress: Progress, event: AgentEvent.AgentEvent): Progress {
   switch (event._tag) {
     case "model-requested":
     case "model-retried":
-      return { ...progress, reply: "" }
+      return resetProgress(progress)
     case "model-delta": {
       if (event.delta.type !== "text-delta") return progress
       const reply = progress.reply + event.delta.text
       const text = Option.getOrUndefined(DoneText.project(reply))
-      return { ...progress, reply, text: text ?? progress.text }
+      return appendProgress(progress, event.delta.text, text)
     }
-    case "model-settled":
-      return { ...progress, tokens: progress.tokens + (event.usage.inputTokens ?? 0) + (event.usage.outputTokens ?? 0) }
+    case "model-settled": {
+      const input = event.usage.inputTokens ?? 0
+      const output = event.usage.outputTokens ?? 0
+      if (!validUsage(Number.isSafeInteger(progress.tokens), Number.isSafeInteger(input), Number.isSafeInteger(output), progress.tokens, input, output)) return invalidProgress(progress)
+      return chargeProgress(progress, input, output)
+    }
     case "model-failed":
-      return { ...progress, failed: event.code }
+      return failProgress(progress, event.code)
     default:
       return progress
   }
@@ -300,10 +297,13 @@ effect function compose(post: string, reply: string) {
   })
   if (Exit.isFailure(answered) && Cause.hasInterrupts(answered.cause)) return try Effect.failCause(answered.cause)
   const tag = Exit.isFailure(answered) ? tagOf(Cause.squash(answered.cause)) : "answered"
-  try Effect.logInfo("vibelang.reply.agent").pipe(Effect.annotateLogs({ outcome: progress.failed ?? tag, tokens: progress.tokens }))
-  if (Exit.isFailure(answered)) return Outcome.Failed({ reason: failureReason(tag, progress) })
-  const text = answered.value
-  return typeof text === "string" && text.trim() !== "" ? Outcome.Answered({ text }) : Outcome.Failed({ reason: REASONS.empty })
+  try Effect.logInfo("vibelang.reply.agent").pipe(Effect.annotateLogs({ outcome: progress.usageValid ? progress.failed ?? tag : "invalid-usage", tokens: progress.tokens }))
+  const rawText = Exit.isSuccess(answered) ? answered.value : undefined
+  const text = typeof rawText === "string" ? rawText : ""
+  const disposition = completion(Exit.isFailure(answered), progress.usageValid, text.trim() !== "")
+  if (disposition === "answered") return Outcome.Answered({ text })
+  if (disposition === "empty") return Outcome.Failed({ reason: REASONS.empty })
+  return Outcome.Failed({ reason: Exit.isFailure(answered) ? failureReason(tag, progress) : REASONS.failed })
 }
 
 /** The reply flow's body: start the reply, compose it, then settle it as finished or failed. */

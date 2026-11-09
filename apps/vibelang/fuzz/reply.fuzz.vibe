@@ -49,17 +49,27 @@ it.live("tour/pages-and-identity", () => run("tour/pages-and-identity", Schema.S
 
 import { AgentEvent } from "@smthrs/harness"
 
-it.live("reply/event-progress", () => run("reply/event-progress", Schema.Array(AgentEvent.AgentEvent).check(Schema.isMaxLength(30)), (events) => {
+it.live("reply/event-progress", () => run("reply/event-progress", Schema.Array(AgentEvent.AgentEvent).check(Schema.isMaxLength(30)), (events) => effect {
   let progress = Reply.started
   let tokens = 0
   let lastFailure: string | undefined
+  let usageValid = true
   for (const event of events) {
     const previous = progress
     progress = Reply.fold(progress, event)
-    if (event._tag === "model-settled") tokens += (event.usage.inputTokens ?? 0) + (event.usage.outputTokens ?? 0)
+    if (event._tag === "model-settled") {
+      const input = event.usage.inputTokens ?? 0
+      const output = event.usage.outputTokens ?? 0
+      if (Number.isSafeInteger(input) && input >= 0 && Number.isSafeInteger(output) && output >= 0) {
+        // Independent unbounded arithmetic checks the native safe-sum boundary.
+        const sum = try Effect.try(() => BigInt(tokens) + BigInt(input) + BigInt(output))
+        if (sum <= 9007199254740991n) tokens = Number(sum)
+        else usageValid = false
+      } else usageValid = false
+    }
     if (event._tag === "model-failed") lastFailure = event.code
     if ((event._tag === "model-requested" || event._tag === "model-retried") && (progress.reply !== "" || progress.text !== previous.text)) return false
-    if (progress.tokens !== tokens || progress.failed !== lastFailure) return false
+    if (progress.tokens !== tokens || progress.failed !== lastFailure || progress.usageValid !== usageValid) return false
   }
   return typeof progress.text === "string" && typeof progress.reply === "string"
 }))

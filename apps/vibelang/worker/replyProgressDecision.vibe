@@ -1,0 +1,77 @@
+// Integer telemetry transitions. The host establishes safe integer inputs; DoneText parsing and provider decoding stay at the edge.
+export interface ProgressState {
+  readonly reply: string
+  readonly text: string
+  readonly tokens: number
+  readonly failed: string | undefined
+  readonly usageValid: boolean
+}
+
+/** Every reply begins with no visible text, no usage and a valid accounting prefix. */
+//@ verify
+//@ ensures \result.reply == "" && \result.text == "" && \result.tokens == 0 && \result.failed == undefined && \result.usageValid
+export function initialProgress(): ProgressState {
+  return { reply: "", text: "", tokens: 0, failed: undefined, usageValid: true }
+}
+
+/** The exact safe addition domain; malformed usage never subtracts or poisons a previously valid total. */
+//@ verify
+//@ ensures \result == (0 <= total && total <= 9007199254740991 && 0 <= input && 0 <= output && input + output <= 9007199254740991 - total)
+export function usageFits(total: number, input: number, output: number): boolean {
+  return total >= 0 && total <= 9007199254740991 && input >= 0 && output >= 0 && input <= 9007199254740991 - total && output <= 9007199254740991 - total - input
+}
+
+/** Native safe-integer observations admit only an exact bounded nonnegative integer addition. */
+//@ verify
+//@ ensures \result == (safeTotal && safeInput && safeOutput && 0 <= total && total <= 9007199254740991 && 0 <= input && 0 <= output && input + output <= 9007199254740991 - total)
+export function validUsage(safeTotal: boolean, safeInput: boolean, safeOutput: boolean, total: number, input: number, output: number): boolean {
+  return safeTotal && safeInput && safeOutput && usageFits(total, input, output)
+}
+
+/** A retry starts the current model text over and retains the visible answer and all accumulated usage. */
+//@ verify
+//@ ensures \result.reply == "" && \result.text == state.text && \result.tokens == state.tokens && \result.failed == state.failed && \result.usageValid == state.usageValid
+export function resetProgress(state: ProgressState): ProgressState {
+  return { ...state, reply: "" }
+}
+
+/** A missing partial DoneText projection keeps the last visible answer. */
+//@ verify
+//@ ensures \result.reply == state.reply + piece
+//@ ensures \result.text == (projected == undefined ? state.text : projected)
+//@ ensures \result.tokens == state.tokens && \result.failed == state.failed && \result.usageValid == state.usageValid
+export function appendProgress(state: ProgressState, piece: string, projected: string | undefined): ProgressState {
+  return { ...state, reply: state.reply + piece, text: projected ?? state.text }
+}
+
+/** Each accepted settled call adds its full input and output exactly; with the zero initial state this is the sum recurrence. */
+//@ verify
+//@ requires 0 <= state.tokens && 0 <= input && 0 <= output && state.tokens + input + output <= 9007199254740991
+//@ ensures \result.tokens == state.tokens + input + output && state.tokens <= \result.tokens && \result.tokens <= 9007199254740991
+//@ ensures \result.reply == state.reply && \result.text == state.text && \result.failed == state.failed && \result.usageValid == state.usageValid
+export function chargeProgress(state: ProgressState, input: number, output: number): ProgressState {
+  return { ...state, tokens: state.tokens + input + output }
+}
+
+/** One malformed settlement latches invalidity for this reply; later retries/settlements never hide it. */
+//@ verify
+//@ ensures !\result.usageValid && \result.reply == state.reply && \result.text == state.text && \result.tokens == state.tokens && \result.failed == state.failed
+export function invalidProgress(state: ProgressState): ProgressState {
+  return { ...state, usageValid: false }
+}
+
+//@ verify
+//@ ensures \result.failed == code && \result.reply == state.reply && \result.text == state.text && \result.tokens == state.tokens && \result.usageValid == state.usageValid
+export function failProgress(state: ProgressState, code: string): ProgressState {
+  return { ...state, failed: code }
+}
+
+/** A completed answer cannot conceal malformed usage; a model failure retains failure precedence. */
+//@ verify
+//@ ensures (\result == "failed") == (failed || !usageValid)
+//@ ensures (\result == "empty") == (!failed && usageValid && !hasText)
+//@ ensures (\result == "answered") == (!failed && usageValid && hasText)
+export function completion(failed: boolean, usageValid: boolean, hasText: boolean): "failed" | "empty" | "answered" {
+  if (failed || !usageValid) return "failed"
+  return hasText ? "answered" : "empty"
+}

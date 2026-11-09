@@ -1,0 +1,36 @@
+import { describe, expect, it } from "@effect/vitest"
+import type { AgentEvent } from "@smthrs/harness"
+import { fold, started } from "../worker/Reply.vibe"
+
+function settled(input: number | undefined, output: number | undefined): AgentEvent.AgentEvent {
+  return { _tag: "model-settled", usage: { inputTokens: input, outputTokens: output } } as unknown as AgentEvent.AgentEvent
+}
+
+describe("reply usage integrity", () => {
+  for (const [label, input, output] of [
+    ["negative input", -140, 0], ["negative output", 0, -1], ["not a number", Number.NaN, 2],
+    ["infinite", 1, Number.POSITIVE_INFINITY], ["fractional", 0.5, 0], ["unsafe integer", Number.MAX_SAFE_INTEGER + 1, 0],
+  ] as const) {
+    it(`keeps all previously accounted calls when telemetry is ${label}`, () => {
+      const before = fold(started, settled(100, 20))
+      const after = fold(before, settled(input, output))
+      expect(after.tokens).toBe(120)
+      expect(after).toMatchObject({ usageValid: false })
+      const later = fold(after, settled(3, 4))
+      expect(later.tokens).toBe(127)
+      expect(later).toMatchObject({ usageValid: false })
+    })
+  }
+  it("refuses an unsafe aggregate even when each call has safe nonnegative usage", () => {
+    const before = fold(started, settled(Number.MAX_SAFE_INTEGER - 1, 0))
+    const after = fold(before, settled(2, 0))
+    expect(after.tokens).toBe(Number.MAX_SAFE_INTEGER - 1)
+    expect(after).toMatchObject({ usageValid: false })
+  })
+  it("counts exact safe boundary usage and missing fields as zero", () => {
+    const before = fold(started, settled(Number.MAX_SAFE_INTEGER - 1, undefined))
+    const after = fold(before, settled(undefined, 1))
+    expect(after.tokens).toBe(Number.MAX_SAFE_INTEGER)
+    expect(after).toMatchObject({ usageValid: true })
+  })
+})
