@@ -53,6 +53,13 @@ Native hosts pass `commonJsPlatform: "node"` to retain `import.meta.url`,
 CommonJS compiler uses that same shim. Other libraries keep the neutral build
 and can bundle their CommonJS output for browsers without Node imports.
 
+The private Effect adapter builder keeps Effect external and emits one shared ESM
+adapter closure with CommonJS forwarding modules. WebSocket declarations preserve
+the pinned `ws` import entry through an ESM declaration bridge when CommonJS
+cannot star-re-export its `export =` entry. The bridge is recorded in the adapter
+output hashes, and the contract checks real sockets and consumers in both
+`Node20` and `NodeNext` resolution modes.
+
 ## Circular imports
 
 `CircularImports({ cwd, sources })` declares the `test`-kind `NodeTest` target that `BuildAndCheckTypeScriptPackage` emits as `circular`; a package that declares its targets by hand calls it directly. Every package runs the one guard, `scripts/circular.mjs` in this package, and its `circular` package script runs the same file, for example `node ../repo-targets/scripts/circular.mjs` from `packages/errors`.
