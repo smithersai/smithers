@@ -95,9 +95,9 @@ export interface Auth {
  * @slop
  */
 export const withRedaction = (auth: Auth) => <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
-  Effect.gen(function*() {
-    const names = yield* Headers.CurrentRedactedNames
-    return yield* effect.pipe(
+  effect {
+    const names = try Headers.CurrentRedactedNames
+    return try effect.pipe(
       Effect.provideService(Headers.CurrentRedactedNames, [
         ...names,
         credentialNamePattern,
@@ -106,7 +106,7 @@ export const withRedaction = (auth: Auth) => <A, E, R>(effect: Effect.Effect<A, 
         ...(auth.credentialHeaders ?? []).map((name) => name.toLowerCase())
       ])
     )
-  })
+  }
 
 const secret = (key: Redacted<string>): Effect.Effect<string, ModelError> =>
   Effect.suspend(() => {

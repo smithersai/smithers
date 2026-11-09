@@ -13,13 +13,13 @@
  * @since 0.1.0
  * @slop
  */
-export * as AnthropicMessages from "./AnthropicMessages.ts"
+export * as AnthropicMessages from "./AnthropicMessages.vibe"
 
 /**
  * @since 0.1.0
  * @slop
  */
-export * as Auth from "./Auth.ts"
+export * as Auth from "./Auth.vibe"
 
 /**
  * @since 0.1.0
@@ -42,17 +42,17 @@ export * as DeferredTools from "./DeferredTools.ts"
  * @since 0.1.0
  * @slop
  */
-export * as Endpoint from "./Endpoint.ts"
+export * as Endpoint from "./Endpoint.vibe"
 
 /**
  * @since 1.0.0-rc.0
  */
-export * as Evaluator from "./Evaluator.ts"
+export * as Evaluator from "./Evaluator.vibe"
 
 /**
  * @since 1.0.0-rc.1
  */
-export * as EvaluatorBackup from "./EvaluatorBackup.ts"
+export * as EvaluatorBackup from "./EvaluatorBackup.vibe"
 
 /**
  * @since 0.1.0
@@ -89,19 +89,19 @@ export * as ModelEvent from "./ModelEvent.ts"
 /**
  * @since 1.0.0
  */
-export * as ModelProxy from "./ModelProxy.ts"
+export * as ModelProxy from "./ModelProxy.vibe"
 
 /**
  * @since 0.1.0
  * @slop
  */
-export * as ModelRequest from "./ModelRequest.ts"
+export * as ModelRequest from "./ModelRequest.vibe"
 
 /**
  * @since 0.1.0
  * @slop
  */
-export * as OpenAIChatCompletions from "./OpenAIChatCompletions.ts"
+export * as OpenAIChatCompletions from "./OpenAIChatCompletions.vibe"
 
 /**
  * @since 0.1.0
@@ -118,7 +118,7 @@ export * as OpenAIChatGPT from "./OpenAIChatGPT.vibe"
  * @since 0.1.0
  * @slop
  */
-export * as OpenAIResponses from "./OpenAIResponses.ts"
+export * as OpenAIResponses from "./OpenAIResponses.vibe"
 
 /**
  * @since 1.0.0-rc.1
@@ -135,13 +135,13 @@ export * as Protocol from "./Protocol.vibe"
  * @since 0.1.0
  * @slop
  */
-export * as RequestExecutor from "./RequestExecutor.ts"
+export * as RequestExecutor from "./RequestExecutor.vibe"
 
 /**
  * @since 0.1.0
  * @slop
  */
-export * as Route from "./Route.ts"
+export * as Route from "./Route.vibe"
 
 /**
  * @since 0.1.0

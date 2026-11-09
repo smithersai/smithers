@@ -1,6 +1,6 @@
 import * as Result from "effect/Result"
 import { describe, expect, it } from "vitest"
-import * as Endpoint from "../src/Endpoint.ts"
+import * as Endpoint from "../src/Endpoint.vibe"
 
 const make = (options: Endpoint.MakeOptions): Endpoint.Endpoint => Result.getOrThrow(Endpoint.make(options))
 

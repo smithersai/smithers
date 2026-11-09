@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest"
 import * as Model from "../src/Model.vibe"
 import { ModelError } from "../src/ModelError.vibe"
 import type { ModelEvent } from "../src/ModelEvent.ts"
-import * as RequestExecutor from "../src/RequestExecutor.ts"
-import * as Route from "../src/Route.ts"
+import * as RequestExecutor from "../src/RequestExecutor.vibe"
+import * as Route from "../src/Route.vibe"
 
 describe("ModelError", () => {
   it("round-trips all stable codes and classifies retryability", () => {

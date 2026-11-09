@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import * as Evaluator from "../src/Evaluator.ts"
+import * as Evaluator from "../src/Evaluator.vibe"
 import * as FailureCopy from "../src/FailureCopy.vibe"
 import { ModelError } from "../src/ModelError.vibe"
 

@@ -24,7 +24,7 @@ const invalid = () => new ModelError.ModelError({ code: "invalid_provider_output
  * @since 1.0.0
  */
 export const runContextPreflight = (raw, model, options) => Effect_1.gen(function* () {
-    const decoded = yield* Effect.orDie(Effect.try(() => ContextPreflight.ContextPreflightInputSchema.safeParse(raw)));
+    const decoded = yield* Effect_1.sync(() => ContextPreflight.ContextPreflightInputSchema.safeParse(raw));
     if (!decoded.success)
         return yield* Effect_1.fail(invalid());
     const input = decoded.data;
@@ -50,7 +50,7 @@ export const runContextPreflight = (raw, model, options) => Effect_1.gen(functio
     const snapshot = Recall.layer({ recall: () => Effect.succeed(recalledRows) });
     let reasons = new Map();
     const selected = yield* Source.selectRecall({ banks: [bank], query: input.prompt, maxTokens: Recall.MAX_RECALL_TOKENS }, (recalled) => Effect_1.gen(function* () {
-        const request = yield* Effect.orDie(Effect.try(() => ModelRequest.ModelRequest.make({
+        const request = yield* Effect_1.sync(() => ModelRequest.ModelRequest.make({
             modelId: options.modelId,
             system: [
                 ModelRequest.SystemPart.make({
@@ -71,7 +71,7 @@ export const runContextPreflight = (raw, model, options) => Effect_1.gen(functio
                 }))],
             tools: [],
             params: options.outputTokenLimitSupported === false ? {} : { maxTokens: 2048 }
-        })));
+        }));
         let output = "";
         const cutter = new StreamingCredentialCutter(options.credential, options.additionalCredentials);
         let settled = false;
@@ -126,12 +126,12 @@ export const runContextPreflight = (raw, model, options) => Effect_1.gen(functio
         text: candidates[Number(row.key)].text
     }));
     return {
-        result: yield* Effect.orDie(Effect.try(() => ContextPreflight.ContextPreflightResultSchema.parse({
+        result: yield* Effect_1.sync(() => ContextPreflight.ContextPreflightResultSchema.parse({
             context: selectedContext.map((candidate) => candidate.item),
             candidates: candidates.map((candidate) => candidate.item),
             model: options.modelId,
             durationMs: nowMs() - started
-        }))),
+        })),
         selectedContext,
         messages: [...input.recent.slice(-3).map((entry) => ({ role: "assistant", content: entry.text })), {
                 role: "user",

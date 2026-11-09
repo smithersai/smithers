@@ -26,7 +26,7 @@ export {
   withRoute
 } from "./ConfiguredModelRoute.vibe"
 export { type ContextPreflightAnswer, runContextPreflight } from "./ContextPreflight.vibe"
-export { type DurableChatGrant, DurableChatProducer, runDurableChatTurn } from "./DurableChatProducer.ts"
+export { type DurableChatGrant, DurableChatProducer, runDurableChatTurn } from "./DurableChatProducer.vibe"
 export { environmentModelResolver, type EnvironmentModelResolverOptions } from "./EnvironmentResolver.vibe"
 export {
   createHostDiagnostics,

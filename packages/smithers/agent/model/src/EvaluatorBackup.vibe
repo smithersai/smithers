@@ -5,9 +5,9 @@
  */
 
 import { Effect, Stream } from "effect"
-import * as Evaluator from "./Evaluator.ts"
+import * as Evaluator from "./Evaluator.vibe"
 import type * as Model from "./Model.vibe"
-import { ModelRequest } from "./ModelRequest.ts"
+import { ModelRequest } from "./ModelRequest.vibe"
 
 /**
  * Judge through any Model using the same answer validation as a resolved seat.

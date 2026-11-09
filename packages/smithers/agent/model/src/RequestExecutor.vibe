@@ -38,9 +38,10 @@ import type * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 import * as Stream from "effect/Stream"
 import * as Tracer from "effect/Tracer"
-import * as Auth from "./Auth.ts"
+import * as Auth from "./Auth.vibe"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
 import { ModelError } from "./ModelError.vibe"
+import { decodeBody, decodeText } from "./RequestExecutor.platform.ts"
 
 const BODY_LIMIT = 16_384
 const RAW_BODY_LIMIT = 65_536
@@ -405,12 +406,12 @@ const secretValues = (
   }
 
   if (request.body._tag === "Uint8Array") {
-    addTextBodySecrets(values, new TextDecoder().decode(request.body.body))
+    addTextBodySecrets(values, decodeBody(request.body.body))
   } else if (request.body._tag === "Raw") {
     if (typeof request.body.body === "string") {
       addTextBodySecrets(values, request.body.body)
     } else if (request.body.body instanceof globalThis.Uint8Array) {
-      addTextBodySecrets(values, new TextDecoder().decode(request.body.body))
+      addTextBodySecrets(values, decodeBody(request.body.body))
     } else {
       addStructuredSecrets(values, request.body.body)
     }
@@ -526,14 +527,14 @@ const cappedBody = (
           const room = RAW_BODY_LIMIT - bytes
           const taken = chunk.byteLength > room ? chunk.subarray(0, room) : chunk
           bytes += taken.byteLength
-          text += decoder.decode(taken, { stream: true })
+          text += decodeText(decoder, taken, { stream: true })
           return bytes < RAW_BODY_LIMIT
         })
     ).pipe(
       Effect.as(false),
       Effect.catch(() => Effect.succeed(true)),
       Effect.map((failed) => {
-        if (bytes < RAW_BODY_LIMIT) text += decoder.decode()
+        if (bytes < RAW_BODY_LIMIT) text += decodeText(decoder)
         return failed && text === "" ? undefined : text
       })
     )
@@ -615,11 +616,11 @@ const sanitizeModelError = (error: ModelError, redact: (value: string) => string
 export const errorSanitizer = (
   request: HttpClientRequest.HttpClientRequest
 ): Effect.Effect<(error: ModelError) => ModelError> =>
-  Effect.gen(function*() {
-    const redactedNames = yield* Headers.CurrentRedactedNames
+  effect {
+    const redactedNames = try Headers.CurrentRedactedNames
     const secrets = Array.from(secretValues(request, redactedNames)).sort((left, right) => right.length - left.length)
     return (error: ModelError) => sanitizeModelError(error, (value) => redactSecrets(value, secrets))
-  })
+  }
 
 const statusError = (
   request: HttpClientRequest.HttpClientRequest,
@@ -629,12 +630,12 @@ const statusError = (
 (
   response: HttpClientResponse.HttpClientResponse
 ): Effect.Effect<HttpClientResponse.HttpClientResponse, ModelError> =>
-  Effect.gen(function*() {
+  effect {
     if (response.status < 400) return response
 
-    const body = yield* cappedBody(response)
+    const body = try cappedBody(response)
     const headers = normalizedHeaders(response.headers)
-    const now = yield* Clock.currentTimeMillis
+    const now = try Clock.currentTimeMillis
     const retry = retryAfter(headers, now)
     const parsed = parsedBody(body)
 
@@ -678,13 +679,13 @@ const statusError = (
       body: { value: details.body, enumerable: false },
       bodyTruncated: { value: details.bodyTruncated, enumerable: false }
     })
-    return yield* Effect.fail(error)
-  })
+    throw error
+  }
 
-const transportError = (
+effect function transportError(
   error: HttpClientError.HttpClientError,
   redactedNames: ReadonlyArray<string | RegExp>
-): ModelError => {
+): ModelError!! {
   const safeHeaders = redactHeaders(error.request.headers, redactedNames)
   const hasHeaders = Object.keys(safeHeaders).length > 0
   const reason = error.reason
@@ -695,8 +696,10 @@ const transportError = (
     : typeof cause === "string" || typeof cause === "number" || typeof cause === "boolean"
     ? String(cause)
     : undefined
-  const causeCode = isRecord(cause) && (typeof cause.code === "string" || typeof cause.code === "number")
-    ? String(cause.code)
+  const causeRecord = try sync(() => isRecord(cause) ? cause : undefined)
+  const causeCode = causeRecord !== undefined &&
+      (typeof causeRecord.code === "string" || typeof causeRecord.code === "number")
+    ? String(causeRecord.code)
     : undefined
   const causeDetail = causeMessage === undefined || causeMessage.trim() === ""
     ? undefined
@@ -769,15 +772,15 @@ const withRedactedUrl = (request: HttpClientRequest.HttpClientRequest) => (trace
     }
   })
 
-const mapHttpError = (
+effect function mapHttpError(
   error: HttpClientError.HttpClientError,
   redactedNames: ReadonlyArray<string | RegExp>
-): RequestError => {
+): RequestError!! {
   // The kernel projects permission failures into the error channel Effect's
   // `HttpClient` tag fixes, keeping the structured failure on the cause; this
   // recovers it so suspension metadata survives the model boundary.
   const permission = Option.flatMap(KernelHttpClient.fromHttpClientError(error), decodePermissionError)
-  return Option.isSome(permission) ? permission.value : transportError(error, redactedNames)
+  return Option.isSome(permission) ? permission.value : try transportError(error, redactedNames)
 }
 
 /** A usable retry count: a finite count floored at 0, else `fallback`. */
@@ -941,7 +944,6 @@ export interface Transport {
  *
  * @category constructors
  * @since 0.1.0
- * @throws {never}
  */
 export const fixed = (client: KernelHttpClient.HttpClient): Transport => ({
   client,
@@ -1057,7 +1059,7 @@ export const RequestExecutor: Context.Service<RequestExecutor, RequestExecutor> 
  * @since 0.1.0
  */
 export const makeWith = (transport: Transport, options: MakeOptions = {}): Effect.Effect<RequestExecutor> =>
-  Effect.gen(function*() {
+  effect {
     const maxRetries = retriesOr(options.maxRetries, MAX_RETRIES)
     const responseStartMs = options.responseStartMs !== undefined && Number.isFinite(options.responseStartMs)
       ? Math.max(0, Math.floor(options.responseStartMs))
@@ -1079,7 +1081,7 @@ export const makeWith = (transport: Transport, options: MakeOptions = {}): Effec
      * The holder rebuilds, and a waiter finding the count already cleared
      * takes the holder's client instead of building another.
      */
-    const gate = yield* Semaphore.make(1)
+    const gate = try Semaphore.make(1)
     const replace = gate.withPermit(
       Effect.suspend(() =>
         failures < rebuildAfter
@@ -1098,12 +1100,12 @@ export const makeWith = (transport: Transport, options: MakeOptions = {}): Effec
       request: HttpClientRequest.HttpClientRequest,
       options: ExecuteOptions
     ): Effect.Effect<HttpClientResponse.HttpClientResponse, RequestError, Scope.Scope> =>
-      Effect.gen(function*() {
-        if (failures >= rebuildAfter) yield* replace
+      effect {
+        if (failures >= rebuildAfter) try replace
         const client = http
         const on = generation
-        const redactedNames = [...yield* Headers.CurrentRedactedNames, SENSITIVE_NAME]
-        const sentAt = yield* Clock.currentTimeMillis
+        const redactedNames = [...try Headers.CurrentRedactedNames, SENSITIVE_NAME]
+        const sentAt = try Clock.currentTimeMillis
         options.onTry?.({ type: "sent", at: sentAt })
         const started = client.execute(request).pipe(
           // `model:call` on this model, not a plain `net:*` effect: the same host
@@ -1115,7 +1117,9 @@ export const makeWith = (transport: Transport, options: MakeOptions = {}): Effec
             (name) => (sent) => name(redactedRequest(sent, redactedNames))
           ),
           Effect.updateService(Tracer.Tracer, withRedactedUrl(request)),
-          Effect.mapError((error) => mapHttpError(error, redactedNames))
+          Effect.catch(effect (error) => {
+            throw try mapHttpError(error, redactedNames)
+          })
         )
         const answered = (responseStartMs === 0 ? started : started.pipe(
           Effect.timeoutOrElse({
@@ -1145,7 +1149,7 @@ export const makeWith = (transport: Transport, options: MakeOptions = {}): Effec
             })
           )
         )
-        return yield* Effect.flatMap(answered, statusError(request, redactedNames, options.classifyError)).pipe(
+        return try Effect.flatMap(answered, statusError(request, redactedNames, options.classifyError)).pipe(
           Effect.tapError((error) =>
             Effect.map(Clock.currentTimeMillis, (at) =>
               options.onTry?.({
@@ -1157,7 +1161,7 @@ export const makeWith = (transport: Transport, options: MakeOptions = {}): Effec
               }))
           )
         )
-      })
+      }
 
     return RequestExecutor.of({
       execute: SpanFailure.fn(
@@ -1170,7 +1174,7 @@ export const makeWith = (transport: Transport, options: MakeOptions = {}): Effec
         })
       )
     })
-  })
+  }
 
 /**
  * Builds a request executor around the permission-aware kernel HTTP client.
@@ -1184,10 +1188,10 @@ export const makeWith = (transport: Transport, options: MakeOptions = {}): Effec
  * @since 0.1.0
  * @slop
  */
-export const make: Effect.Effect<RequestExecutor, never, KernelHttpClient.HttpClient> = Effect.gen(function*() {
-  const http = yield* KernelHttpClient.HttpClient
-  return yield* makeWith(fixed(http))
-})
+export const make: Effect.Effect<RequestExecutor, never, KernelHttpClient.HttpClient> = effect {
+  const http = try KernelHttpClient.HttpClient
+  return try makeWith(fixed(http))
+}
 
 /**
  * Provides the request executor, requiring the kernel HTTP client.

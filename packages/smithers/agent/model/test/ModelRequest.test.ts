@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Request from "../src/ModelRequest.ts"
+import * as Request from "../src/ModelRequest.vibe"
 
 describe("ModelRequest", () => {
   it("round-trips every request part without changing order", () => {

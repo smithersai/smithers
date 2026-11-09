@@ -55,6 +55,7 @@ export const knownContextWindowTokens = (modelId) => {
  *
  * @category resolvers
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const contextWindowTokensFor = (modelId) => knownContextWindowTokens(modelId) ?? unknownModelTokens;
 // Claude models whose documented output ceiling is 128K tokens.

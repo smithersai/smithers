@@ -54,7 +54,7 @@ const { importRules, jevRules } = SdkRules({
   role: "app-library",
   knownDeepImports: {
     packages: ["@smthrs/cli"],
-    because: "src/HostTools.ts reads the command catalog from @smthrs/cli/Catalog and @smthrs/cli/CatalogRequest. " +
+    because: "src/HostTools.vibe reads the command catalog from @smthrs/cli/Catalog and @smthrs/cli/CatalogRequest. " +
       "The @smthrs/cli root carries the whole CLI, which this platform-neutral host cannot load, so the catalog " +
       "has to leave the CLI before the import can use a root."
   }
@@ -85,7 +85,7 @@ const securityReview = Smithers.SecurityReview({
         "A grant whose request.runId, cursor.runId or cursor.legId is not checked against the grant's runId and legId.",
         "An expired or unparseable expiresAt that still yields a grant."
       ],
-      paths: ["src/HostServer.ts", "src/DurableChatProducer.ts"]
+      paths: ["src/HostServer.ts", "src/DurableChatProducer.vibe"]
     },
     {
       id: "stream-path-owner-trust",
@@ -150,7 +150,7 @@ const securityReview = Smithers.SecurityReview({
         "DurableChatProducer.write advancing this.cursor when the reply batch, from, previousHash or hash does not match the locally computed digest.",
         "A retry that re-sends a frame under a stale cursor after a CommitRefused fence loss."
       ],
-      paths: ["src/DurableChatProducer.ts"]
+      paths: ["src/DurableChatProducer.vibe"]
     },
     {
       id: "untrusted-turn-shape",
@@ -162,7 +162,7 @@ const securityReview = Smithers.SecurityReview({
         "appendWireMessage mapping an unknown role or item type to a system or tool message.",
         "Frame buffering nothing bounds in bytes or in time. The stream path's accumulator is bounded by MAX_STREAM_BYTES. `runModelTurn`'s drain buffer is deliberately unbounded in capacity — a finite one suspends the provider and re-creates the journal stall (#3812) — so what bounds its growth is the journal callback deadline in DurableChatProducer: a consumer that cannot finish ends the turn in seconds. Either bound removed is the finding."
       ],
-      paths: ["src/HostServer.ts", "src/ModelTurnHost.vibe", "src/DurableChatProducer.ts"]
+      paths: ["src/HostServer.ts", "src/ModelTurnHost.vibe", "src/DurableChatProducer.vibe"]
     }
   ]
 })

@@ -34,7 +34,8 @@
     "src/DurableModelCall.vibe",
     "src/EnvironmentResolver.vibe",
     "src/HostServer.ts",
-    "src/HostTools.vibe"
+    "src/HostTools.vibe",
+    "src/DurableChatProducer.vibe"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",

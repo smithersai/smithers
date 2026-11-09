@@ -61,8 +61,6 @@ const SourceDirectorySchema = z.object({
     truncated: z.boolean()
 }).strict();
 const utf8 = new TextEncoder();
-/** Runs synchronous contract code in an Effect; a throw from it is a defect in this host, never a turn failure. */
-const orDefect = (f) => Effect.orDie(Effect.try(f));
 /** A callback refusal's code, or the status it answered without one. */
 const refusalCode = (response, body) => typeof body === "object" && body !== null && "code" in body && typeof body.code === "string"
     ? body.code
@@ -232,7 +230,7 @@ const filesRead = (grant, { read }) => {
     if (repository === undefined)
         return undefined;
     return (args, ordinal) => Effect_1.gen(function* () {
-        const input = yield* orDefect(() => FileRead.parseFileReadArgs(args));
+        const input = yield* Effect_1.sync(() => FileRead.parseFileReadArgs(args));
         if ("error" in input)
             return { refusal: input.error };
         const { repo, ref, line, column } = input.payload;
@@ -248,7 +246,7 @@ const filesRead = (grant, { read }) => {
         if (!("file" in answer))
             return { refusal: refusalText(path, answer.code) };
         const { file } = answer;
-        const { card, value } = yield* orDefect(() => FileRead.fileReadCard({
+        const { card, value } = yield* Effect_1.sync(() => FileRead.fileReadCard({
             repo: file.repository,
             path: file.path,
             content: file.content,
@@ -277,7 +275,7 @@ const filesList = (grant, { list }) => {
     if (repository === undefined)
         return undefined;
     return (args, ordinal) => Effect_1.gen(function* () {
-        const input = yield* orDefect(() => FileList.parseFileListArgs(args));
+        const input = yield* Effect_1.sync(() => FileList.parseFileListArgs(args));
         if ("error" in input)
             return { refusal: input.error };
         const { repo } = input.payload;
@@ -289,7 +287,7 @@ const filesList = (grant, { list }) => {
         if (!("directory" in answer))
             return { refusal: listRefusalText(path, answer.code) };
         const { directory } = answer;
-        const { card, value } = yield* orDefect(() => FileList.fileListCard({
+        const { card, value } = yield* Effect_1.sync(() => FileList.fileListCard({
             repo: directory.repository,
             path: directory.path,
             entries: directory.entries,
@@ -505,26 +503,26 @@ const flowCommand = (row) => (grant, { api }) => {
         const answer = yield* api("/api/flows", { method: "GET" });
         if ("code" in answer)
             return { refusal: answer.code };
-        const parsed = yield* orDefect(() => z.array(FlowCard.FlowCardSchema).safeParse(answer.body));
+        const parsed = yield* Effect_1.sync(() => z.array(FlowCard.FlowCardSchema).safeParse(answer.body));
         if (answer.status !== 200 || !parsed.success)
             return { refusal: "Flows unavailable" };
         let model = parsed.data.find((flow) => flow.name === name);
         if (model === undefined) {
             const named = yield* api(`/api/flows/${encodeURIComponent(name)}`, { method: "GET" });
             if (!("code" in named) && named.status === 200) {
-                const selected = yield* orDefect(() => FlowCard.FlowCardSchema.safeParse(named.body));
+                const selected = yield* Effect_1.sync(() => FlowCard.FlowCardSchema.safeParse(named.body));
                 if (selected.success && selected.data.name === name)
                     model = selected.data;
             }
         }
         if (model === undefined)
             return { refusal: `No flow ${name}` };
-        const title = yield* orDefect(() => FlowEdit.flowTitle(name));
+        const title = yield* Effect_1.sync(() => FlowEdit.flowTitle(name));
         if (row.name === "flow.edit" && model.system)
             return { refusal: `${title} is built in` };
         const now = Date.now();
         if (row.name === "flow.edit") {
-            const request = yield* orDefect(() => catalogRequest(catalogDescriptors.find((entry) => entry.name === "todo.new"), FlowEdit.flowEditTodoInput(name, input.request, input.diff)));
+            const request = yield* Effect_1.sync(() => catalogRequest(catalogDescriptors.find((entry) => entry.name === "todo.new"), FlowEdit.flowEditTodoInput(name, input.request, input.diff)));
             return confirmed(yield* api(request.path, { ...request, idempotencyKey: `chat:${grant.turnId}:${ordinal}` }));
         }
         const card = {
@@ -584,7 +582,7 @@ const catalogCommand = (row) => (grant, { api }) => {
         }
         const now = Date.now();
         if (row.name === "stack") {
-            const parsed = yield* orDefect(() => HomeCard.HomeCardSchema.safeParse(answer.body));
+            const parsed = yield* Effect_1.sync(() => HomeCard.HomeCardSchema.safeParse(answer.body));
             if (!parsed.success)
                 return { refusal: "Invalid stack response" };
             const cards = [];
@@ -592,28 +590,28 @@ const catalogCommand = (row) => (grant, { api }) => {
             for (const item of parsed.data.items) {
                 if (item.state === "merged" || item.state === "dropped")
                     continue;
-                const request = yield* orDefect(() => catalogRequest(todo, { n: item.n }));
+                const request = yield* Effect_1.sync(() => catalogRequest(todo, { n: item.n }));
                 const detail = yield* api(request.path, request);
                 if ("code" in detail)
                     return { refusal: detail.code };
-                const model = yield* orDefect(() => TodoCard.TodoCardSchema.safeParse(detail.body));
+                const model = yield* Effect_1.sync(() => TodoCard.TodoCardSchema.safeParse(detail.body));
                 if (detail.status !== 200 || !model.success || model.data.n !== item.n) {
                     return { refusal: "Invalid TODO response" };
                 }
-                cards.push(yield* orDefect(() => TodoCommands.todoCard(item.n, model.data, ordinal, now)));
+                cards.push(yield* Effect_1.sync(() => TodoCommands.todoCard(item.n, model.data, ordinal, now)));
             }
             return { cards, value: JSON.stringify(parsed.data) };
         }
         if (row.name === "todo") {
-            const parsed = yield* orDefect(() => TodoCard.TodoCardSchema.safeParse(answer.body));
+            const parsed = yield* Effect_1.sync(() => TodoCard.TodoCardSchema.safeParse(answer.body));
             if (!parsed.success)
                 return { refusal: "Invalid TODO response" };
             return {
-                cards: [yield* orDefect(() => TodoCommands.todoCard(parsed.data.n, parsed.data, ordinal, now))],
-                value: yield* orDefect(() => JSON.stringify(parsed.data))
+                cards: [yield* Effect_1.sync(() => TodoCommands.todoCard(parsed.data.n, parsed.data, ordinal, now))],
+                value: yield* Effect_1.sync(() => JSON.stringify(parsed.data))
             };
         }
-        return { cards: [], value: yield* orDefect(() => JSON.stringify({ status: answer.status, body: answer.body })) };
+        return { cards: [], value: yield* Effect_1.sync(() => JSON.stringify({ status: answer.status, body: answer.body })) };
     });
 };
 /** The commands this turn's grant runs, in the order the list and the instructions name them. */
@@ -784,7 +782,7 @@ const runCommand = (grant, offered, args, link, ordinal, write) => Effect_1.gen(
         verdict: "run",
         ...(outcome.ui ? { ui: outcome.ui } : {})
     });
-    return (yield* orDefect(() => AgentToolResult.boundToolResult(outcome.value))).modelOutput;
+    return (yield* Effect_1.sync(() => AgentToolResult.boundToolResult(outcome.value))).modelOutput;
 });
 /**
  * Runs one held tool call on the host and returns what the model reads: the
@@ -794,9 +792,9 @@ function runHostTool(grant, offered, call, link, ordinal, write) {
     return Effect_1.gen(function* runHostTool() {
         // A turn offered no tool runs none, whatever the model calls.
         if (call.name !== AgentCommands.commandsToolSpec.name || offered.length === 0) {
-            return yield* Effect.orDie(Effect.try(() => AgentCommands.unknownToolResult(call.name)));
+            return yield* Effect_1.sync(() => AgentCommands.unknownToolResult(call.name));
         }
-        const decoded = yield* Effect.orDie(Effect.try(() => AgentCommands.decodeCommandsCall(call.arguments)));
+        const decoded = yield* Effect_1.sync(() => AgentCommands.decodeCommandsCall(call.arguments));
         if ("failure" in decoded)
             return decoded.failure;
         if (decoded.action === "list") {
@@ -808,11 +806,11 @@ function runHostTool(grant, offered, call, link, ordinal, write) {
                         args: command.args
                     }]
                 : []);
-            return yield* Effect.orDie(Effect.try(() => JSON.stringify({ commands: listed })));
+            return yield* Effect_1.sync(() => JSON.stringify({ commands: listed }));
         }
         const target = offered.find(({ command }) => command.name === decoded.name);
         if (target === undefined)
-            return yield* Effect.orDie(Effect.try(() => AgentCommands.unknownCommandResult(decoded.name)));
+            return yield* Effect_1.sync(() => AgentCommands.unknownCommandResult(decoded.name));
         return yield* runCommand(grant, target, decoded.args, link, ordinal, write);
     });
 }

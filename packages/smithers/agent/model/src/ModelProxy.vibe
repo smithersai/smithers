@@ -46,14 +46,15 @@ import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
 import * as Tracer from "effect/Tracer"
-import * as Endpoint from "./Endpoint.ts"
+import * as Endpoint from "./Endpoint.vibe"
 import * as FailureCopy from "./FailureCopy.vibe"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
 import * as Model from "./Model.vibe"
 import { faults, ModelError, ModelErrorCode } from "./ModelError.vibe"
+import { makeRequestId } from "./ModelProxy.platform.ts"
 import { ModelEvent, type Usage } from "./ModelEvent.ts"
-import { ModelRequest } from "./ModelRequest.ts"
-import type { PreparedRequest } from "./Route.ts"
+import { ModelRequest } from "./ModelRequest.vibe"
+import type { PreparedRequest } from "./Route.vibe"
 
 /**
  * The header both halves read and write to correlate one request: the client
@@ -437,15 +438,15 @@ export const serve = <R = never>(
   never,
   HttpServerRequest.HttpServerRequest | R
 > =>
-  Effect.gen(function*() {
-    const request = yield* HttpServerRequest.HttpServerRequest
-    const startedAt = yield* Clock.currentTimeMillis
+  effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const startedAt = try Clock.currentTimeMillis
     const requestId = acceptedRequestId(request.headers[requestIdHeader]) ?? makeRequestId()
     // The caller chooses `requestId` and may repeat it; this id is the server's alone, one per call.
     const invocationId = makeRequestId()
-    const parent = yield* Effect.serviceOption(Tracer.ParentSpan)
+    const parent = try Effect.serviceOption(Tracer.ParentSpan)
     // A host with no HTTP server span still joins the caller's trace.
-    const span = yield* Effect.makeSpan("model.proxy.serve", {
+    const span = try Effect.makeSpan("model.proxy.serve", {
       kind: Option.isSome(parent) ? "internal" : "server",
       parent: Option.isSome(parent) ? undefined : Option.getOrUndefined(HttpTraceContext.fromHeaders(request.headers)),
       attributes: { [attributes.requestId]: requestId, [attributes.invocationId]: invocationId }
@@ -453,7 +454,7 @@ export const serve = <R = never>(
     const call = new Call("server", requestId, startedAt, span, options.attributes ?? {})
     call.invocationId = invocationId
 
-    const admitted = yield* Effect.result(admit(request, options, call, invocationId)).pipe(
+    const admitted = try Effect.result(admit(request, options, call, invocationId)).pipe(
       Effect.onInterrupt(() => call.finish(Exit.interrupt()))
     )
     if (admitted._tag === "Failure") {
@@ -461,7 +462,7 @@ export const serve = <R = never>(
       call.status = rejection.status
       call.outcome = rejection.outcome
       call.errorCode = rejection.code
-      yield* call.finish(Exit.void)
+      try call.finish(Exit.void)
       return HttpServerResponse.jsonUnsafe(
         { code: rejection.code, message: rejection.message, requestId } satisfies ErrorBody,
         {
@@ -484,7 +485,7 @@ export const serve = <R = never>(
     // The response body runs after this handler returns, so it carries the
     // handler's services (tracer, loggers, metric registry, and what `onEnd`
     // reads) with it, but not the handler's scope, which has closed by then.
-    const context = Context.omit(Scope.Scope)(yield* Effect.context<R>()) as Context.Context<R>
+    const context = Context.omit(Scope.Scope)(try Effect.context<R>()) as Context.Context<R>
     const onEnd = options.onEnd
     let ended = false
     /**
@@ -518,7 +519,7 @@ export const serve = <R = never>(
     // The model's liveness becomes a blank line on the wire, unless a line went out within the last second: a
     // keep-alive stands in for an event, never beside one. The sliding queue drops a beat the body has not
     // written yet, so a keep-alive never holds the model back.
-    const beats = yield* Queue.sliding<void>(1)
+    const beats = try Queue.sliding<void>(1)
     let wroteAt = Number.NEGATIVE_INFINITY
     const wrote = Effect.map(Clock.currentTimeMillis, (now) => {
       wroteAt = now
@@ -563,7 +564,7 @@ export const serve = <R = never>(
       contentType,
       headers: { "cache-control": "no-store", "x-content-type-options": "nosniff", [requestIdHeader]: requestId }
     })
-  })
+  }
 
 /**
  * Where {@link makeClient} sends requests.
@@ -598,10 +599,10 @@ export interface ClientOptions {
  * @since 1.0.0
  */
 export const makeClient = (options: ClientOptions): Effect.Effect<Model.Model, never, HttpClient.HttpClient> =>
-  Effect.gen(function*() {
-    const client = yield* HttpClient.HttpClient
+  effect {
+    const client = try HttpClient.HttpClient
     return Model.make({ stream: (request) => remoteStream(client, options, request) })
-  })
+  }
 
 /**
  * Provides {@link makeClient} as the `Model` service.
@@ -632,15 +633,15 @@ const requestJson = Schema.toCodecJson(ModelRequest)
  */
 export const prepare =
   (options: ClientOptions) => (request: ModelRequest): Effect.Effect<PreparedRequest, ModelError> =>
-    Effect.gen(function*() {
+    effect {
       const url = String(options.url)
       // Resolve relative browser URLs only for validation; keep their original route identity.
-      const endpoint = yield* Effect.try({
+      const endpoint = try Effect.try({
         try: () => new URL(url, "https://model-proxy.invalid").href,
         catch: () => new ModelError({ code: "invalid_request", message: "Endpoint URL could not be parsed." })
       })
-      yield* Effect.fromResult(Endpoint.make({ url: endpoint }))
-      const encoded = yield* Schema.encodeEffect(requestJson)(request).pipe(
+      try Effect.fromResult(Endpoint.make({ url: endpoint }))
+      const encoded = try Schema.encodeEffect(requestJson)(request).pipe(
         Effect.mapError(() => new ModelError({ code: "invalid_request", message: "The request could not be encoded." }))
       )
       const bodyText = JSON.stringify(encoded)
@@ -653,7 +654,7 @@ export const prepare =
         body: new TextEncoder().encode(bodyText),
         bodyText
       }
-    })
+    }
 
 /** Span attribute names. */
 const attributes = {
@@ -688,9 +689,6 @@ const requestIdPattern = /^[\w.:-]{1,128}$/
 const acceptedRequestId = (value: string | undefined): string | undefined =>
   value !== undefined && requestIdPattern.test(value) ? value : undefined
 
-const makeRequestId = (): string =>
-  Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, "0"))
-    .join("")
 
 /** The fixed, provider-free text a client sees for a code. */
 const safeMessage = (code: ModelErrorCode): string =>
@@ -722,23 +720,23 @@ const admit = <R>(
   call: Call,
   invocationId: string
 ): Effect.Effect<Prepared, Rejection, R> =>
-  Effect.gen(function*() {
+  effect {
     if (request.method !== "POST") {
-      return yield* Effect.fail(rejection(405, "invalid", "Send a POST request.", "invalid_request"))
+      throw rejection(405, "invalid", "Send a POST request.", "invalid_request")
     }
-    const bytes = yield* readBody(request, options.maxBodyBytes ?? defaultMaxBodyBytes)
+    const bytes = try readBody(request, options.maxBodyBytes ?? defaultMaxBodyBytes)
     call.requestBytes = bytes.length
-    const text = yield* Effect.try({
+    const text = try Effect.try({
       try: () => new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(bytes),
       catch: () => notModelRequest
     })
-    const decoded = yield* Effect.mapError(decodeRequest(text), () => notModelRequest)
+    const decoded = try Effect.mapError(decodeRequest(text), () => notModelRequest)
     const admission: Admission = { requestId: call.requestId, invocationId, requestBytes: bytes.length }
-    return yield* Effect.mapError(
+    return try Effect.mapError(
       options.prepare(decoded, admission),
       (refusal) => rejection(refusal.status, "refused", refusal.message, refusal.modelErrorCode)
     )
-  }).pipe(
+  }.pipe(
     Effect.catchDefect(() => {
       call.errorTag = "defect"
       return Effect.fail(rejection(500, "failed", "The model host failed.", "unknown"))
@@ -797,10 +795,10 @@ const remoteStream = (
   options: ClientOptions,
   request: ModelRequest
 ): Stream.Stream<ModelEvent, ModelError> =>
-  Stream.unwrap(Effect.gen(function*() {
-    const startedAt = yield* Clock.currentTimeMillis
+  Stream.unwrap(effect {
+    const startedAt = try Clock.currentTimeMillis
     const requestId = makeRequestId()
-    const span = yield* Effect.makeSpan("model.proxy.stream", {
+    const span = try Effect.makeSpan("model.proxy.stream", {
       kind: "internal",
       attributes: { [attributes.requestId]: requestId, "gen_ai.request.model": request.modelId }
     })
@@ -811,7 +809,7 @@ const remoteStream = (
       Stream.onExit((exit) => call.finish(exit)),
       Stream.provideService(Tracer.ParentSpan, span)
     )
-  }))
+  })
 
 /** Posts the request; a 2xx answer becomes its decoded events, any other a typed failure. */
 const open = (
@@ -820,40 +818,38 @@ const open = (
   request: ModelRequest,
   call: Call
 ): Effect.Effect<Stream.Stream<ModelEvent, ModelError>, ModelError> =>
-  Effect.gen(function*() {
+  effect {
     const { requestId } = call
-    const post = yield* HttpClientRequest.post(options.url).pipe(
+    const post = try HttpClientRequest.post(options.url).pipe(
       HttpClientRequest.setHeaders({ ...options.headers, accept: contentType, [requestIdHeader]: requestId }),
       HttpClientRequest.schemaBodyJson(ModelRequest)(request),
       Effect.mapError(() => clientError(requestId, "invalid_request", "The request could not be encoded."))
     )
-    const response = yield* client.execute(post).pipe(
+    const response = try client.execute(post).pipe(
       Effect.mapError(() => clientError(requestId, "transport", "The model host could not be reached."))
     )
     call.status = response.status
     // fetch never surfaces a 1xx, so below 300 is a 2xx.
     if (response.status < 300) {
       // Every chunk is the host showing it is alive, a keep-alive line that decodes to no event included.
-      const alive = yield* Model.Liveness
+      const alive = try Model.Liveness
       return decodeLines(Stream.tap(response.stream, () => alive), call)
     }
     call.outcome = response.status < 500 ? "refused" : "failed"
-    const body = yield* Effect.option(
+    const body = try Effect.option(
       readCapped(response.stream, maxErrorBodyBytes).pipe(Effect.flatMap(decodeErrorBody))
     )
-    return yield* Effect.fail(
-      Option.match(body, {
-        onNone: () =>
-          clientError(
-            requestId,
-            classifyHttpStatus(response.status, undefined, "", "opaque"),
-            `The model host answered HTTP ${response.status}.`,
-            { httpStatus: response.status }
-          ),
-        onSome: ({ code, message }) => clientError(requestId, code, message, { httpStatus: response.status })
-      })
-    )
-  })
+    throw Option.match(body, {
+      onNone: () =>
+        clientError(
+          requestId,
+          classifyHttpStatus(response.status, undefined, "", "opaque"),
+          `The model host answered HTTP ${response.status}.`,
+          { httpStatus: response.status }
+        ),
+      onSome: ({ code, message }) => clientError(requestId, code, message, { httpStatus: response.status })
+    })
+  }
 
 /** The body as text, or `NoSuchElementError` once it passes `maxBytes`. */
 const readCapped = <E>(

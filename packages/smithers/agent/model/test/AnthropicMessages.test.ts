@@ -1,7 +1,7 @@
 import { Effect, Redacted, Result, Schema } from "effect"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import * as AnthropicMessages from "../src/AnthropicMessages.ts"
+import * as AnthropicMessages from "../src/AnthropicMessages.vibe"
 import * as CanonicalJson from "../src/CanonicalJson.ts"
 import { ModelError } from "../src/ModelError.vibe"
 import { ModelEvent } from "../src/ModelEvent.ts"
@@ -14,8 +14,8 @@ import {
   ToolCallPart,
   ToolDefinition,
   ToolResultPart
-} from "../src/ModelRequest.ts"
-import * as Route from "../src/Route.ts"
+} from "../src/ModelRequest.vibe"
+import * as Route from "../src/Route.vibe"
 
 const fixture = (name: string): string =>
   readFileSync(new URL(`fixtures/anthropic/${name}.sse`, import.meta.url), "utf8")

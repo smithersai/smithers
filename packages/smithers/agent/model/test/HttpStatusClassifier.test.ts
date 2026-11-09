@@ -4,9 +4,9 @@ import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { describe, expect, it } from "vitest"
 import { classifyHttpStatus } from "../src/HttpStatusClassifier.ts"
-import * as ModelRequest from "../src/ModelRequest.ts"
-import * as RequestExecutor from "../src/RequestExecutor.ts"
-import * as Route from "../src/Route.ts"
+import * as ModelRequest from "../src/ModelRequest.vibe"
+import * as RequestExecutor from "../src/RequestExecutor.vibe"
+import * as Route from "../src/Route.vibe"
 
 const request = ModelRequest.ModelRequest.make({
   modelId: "test-model",

@@ -44,11 +44,11 @@ effect (
   grant,
   selection
 ) => {
-  const credentials = try Effect.orDie(Effect.try(() => ConfiguredModel.hostModelCredentials(options.env)))
+  const credentials = try sync(() => ConfiguredModel.hostModelCredentials(options.env))
   const planBinding = (binding: unknown) =>
-    Effect.orDie(Effect.try(() => ConfiguredModel.planModelBinding(binding, credentials, { kind: "generation" })))
+    sync(() => ConfiguredModel.planModelBinding(binding, credentials, { kind: "generation" }))
   const secretNamed = (name: string) =>
-    Effect.orDie(Effect.try(() => options.env[ConfiguredModel.modelCredentialEnvName(name)]?.trim()))
+    sync(() => options.env[ConfiguredModel.modelCredentialEnvName(name)]?.trim())
   const configured = try planBinding(options.binding)
   // The wire may carry null for an absent model, as the Go resolver reads it.
   const requested: unknown = grant.request.model ?? undefined

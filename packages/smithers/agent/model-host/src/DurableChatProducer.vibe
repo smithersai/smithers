@@ -17,6 +17,7 @@ import type {
   ObservedCallbackTransport
 } from "./CallbackTransport.ts"
 import { runContextPreflight } from "./ContextPreflight.vibe"
+import { defaultFetch, nowMs, randomClockId, sha256Hex } from "./DurableChatProducer.platform.ts"
 import { createHostDiagnostics } from "./HostDiagnostics.vibe"
 import type { HostDiagnosticFields, HostDiagnostics } from "./HostDiagnostics.vibe"
 import { apiCaller, runHostTurn, sourceLister, sourceReader } from "./HostTools.vibe"
@@ -26,7 +27,7 @@ import type { ModelTurnOptions } from "./ModelTurnHost.vibe"
 
 // performance.now() belongs to this host process. A distinct identity prevents
 // comparing receipts from a producer restart as though they shared a clock.
-const preflightClock = `host monotonic:${crypto.randomUUID()}`
+const preflightClock = `host monotonic:${randomClockId()}`
 
 /**
  * One short-lived capability for an already accepted chat turn.
@@ -140,10 +141,6 @@ const bounded = <A, E, R>(
     })
   })
 
-const sha256Hex = async (value: string): Promise<string> => {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
-}
 
 const invalidReceipt = () => new ReceiptMismatch({ message: "chat producer commit returned an invalid receipt" })
 
@@ -154,11 +151,12 @@ const commitReply = (
   response.ok
     ? Effect.tryPromise({ try: () => response.text(), catch: unreachable("commit", phase) }).pipe(
       Effect.flatMap((text) => Effect.try({ try: () => JSON.parse(text) as unknown, catch: invalidReceipt })),
-      Effect.flatMap((body) => {
-        const parsed = AgentTurnJournal.AgentTurnJournalReplySchema.safeParse(body)
-        return parsed.success && (parsed.data.status === "committed" || parsed.data.status === "duplicate")
-          ? Effect.succeed(parsed.data)
-          : Effect.fail(invalidReceipt())
+      Effect.flatMap(effect (body) => {
+        const parsed = try sync(() => AgentTurnJournal.AgentTurnJournalReplySchema.safeParse(body))
+        if (parsed.success && (parsed.data.status === "committed" || parsed.data.status === "duplicate")) {
+          return parsed.data
+        }
+        throw invalidReceipt()
       })
     )
     : Effect.fail(
@@ -183,7 +181,7 @@ export class DurableChatProducer {
   constructor(
     callbackBaseUrl: string,
     grant: DurableChatGrant,
-    fetchImpl: NativeAgent.FetchLike = fetch.bind(globalThis),
+    fetchImpl: NativeAgent.FetchLike = defaultFetch(),
     diagnostics: HostDiagnostics = createHostDiagnostics({ turnId: grant.turnId }),
     deadlineMillis: number = CHAT_CALLBACK_DEADLINE_MS,
     transport: CallbackTransport = inertCallbackTransport
@@ -201,16 +199,16 @@ export class DurableChatProducer {
     const url = new URL("/internal/chat/provider-started", this.callbackBaseUrl)
     url.searchParams.set("turnId", this.grant.turnId)
     url.searchParams.set("generation", String(this.grant.generation))
-    return Effect.gen({ self: this }, function*() {
+    return effect {
       // A callback this guest attempted is not the same fact as a connection a
       // worker observed: one says the host reached its own request, the other
       // only that something opened a tunnel.
-      const settle = yield* this.diagnostics.begin("chat_callback", { step: "provider_started" })
-      const probe = this.transport.begin()
+      const settle = try this.diagnostics.begin("chat_callback", { step: "provider_started" })
+      const probe = try sync(() => this.transport.begin())
       const phase = phaseOnce(probe)
       let status = 0
       let timedOut = false
-      return yield* bounded(
+      return try bounded(
         (deadlineSignal) =>
           Effect.tryPromise({
             try: (signal) =>
@@ -262,15 +260,15 @@ export class DurableChatProducer {
           )
         )
       )
-    })
+    }
   }
 
   writePreflight(
     phase: "started" | "completed",
     result: ContextPreflight.ContextPreflightResult
   ): Effect.Effect<void, ProducerError | ModelError.ModelError> {
-    return Effect.gen({ self: this }, function*() {
-      const at = performance.now()
+    return effect {
+      const at = nowMs()
       const pages: Array<ContextPreflight.ContextPreflightResult> = []
       let current: ContextPreflight.ContextPreflightResult = { ...result, candidates: [], context: [] }
       const frame: ContextPreflight.ContextPreflightFrame = {
@@ -297,24 +295,20 @@ export class DurableChatProducer {
         frames: [frame]
       })
       if (overhead > 96 * 1024) {
-        return yield* Effect.fail(
-          new ModelError.ModelError({
-            code: "invalid_provider_output",
-            message: "preflight metadata exceeds journal limit"
-          })
-        )
+        throw new ModelError.ModelError({
+          code: "invalid_provider_output",
+          message: "preflight metadata exceeds journal limit"
+        })
       }
       let size = overhead
       for (const field of ["candidates", "context"] as const) {
         for (const item of result[field]) {
           const cost = bytes(item) + 1
           if (overhead + cost > 96 * 1024) {
-            return yield* Effect.fail(
-              new ModelError.ModelError({
-                code: "invalid_provider_output",
-                message: "preflight item exceeds journal limit"
-              })
-            )
+            throw new ModelError.ModelError({
+              code: "invalid_provider_output",
+              message: "preflight item exceeds journal limit"
+            })
           }
           if (size + cost > 96 * 1024) {
             pages.push(current)
@@ -329,7 +323,7 @@ export class DurableChatProducer {
       // Finish preparing every page before the first write. A refused page
       // cannot authorize provider start or the following answer request.
       for (const [index, value] of pages.entries()) {
-        yield* this.write({
+        try this.write({
           runId: this.grant.runId,
           type: "context.preflight",
           phase,
@@ -339,7 +333,7 @@ export class DurableChatProducer {
           result: value
         })
       }
-    })
+    }
   }
 
   write(frame: NativeAgent.AgentTurnFrame): Effect.Effect<void, ProducerError> {
@@ -354,9 +348,9 @@ export class DurableChatProducer {
       expected,
       frames: [frame]
     })
-    const invoke = Effect.gen({ self: this }, function*() {
-      const settle = yield* this.diagnostics.begin("chat_callback", { step: "commit", batch: expected.batch + 1 })
-      const probe = this.transport.begin()
+    const invoke = effect {
+      const settle = try this.diagnostics.begin("chat_callback", { step: "commit", batch: expected.batch + 1 })
+      const probe = try sync(() => this.transport.begin())
       const phase = phaseOnce(probe)
       let status = 0
       let timedOut = false
@@ -364,7 +358,7 @@ export class DurableChatProducer {
       // that sends headers and then stops wedges a turn exactly as a journal
       // that never answers does, and the bound's signal closes that socket
       // rather than ending the turn around a half-read response.
-      return yield* bounded(
+      return try bounded(
         (deadlineSignal) =>
           Effect.tryPromise({
             try: (signal) =>
@@ -403,7 +397,7 @@ export class DurableChatProducer {
           )
         )
       )
-    })
+    }
     return invoke.pipe(
       // Retry only a lost transport receipt, on the identical cursor and body.
       // Refusals and malformed receipts stop immediately; the durable owner
@@ -471,7 +465,7 @@ export const runDurableChatTurn = (
   grant: DurableChatGrant,
   options: ModelTurnOptions,
   callbackBaseUrl: string = grant.producerBaseUrl,
-  fetchImpl: NativeAgent.FetchLike = fetch.bind(globalThis),
+  fetchImpl: NativeAgent.FetchLike = defaultFetch(),
   preflight?: {
     readonly input: ContextPreflight.ContextPreflightInput
     readonly model: Model.Model
@@ -509,7 +503,7 @@ const runTurn = (
   docs: ReadonlyArray<DocsPages.DocsPage> | undefined,
   diagnostics: HostDiagnostics
 ): Effect.Effect<void, Model.ModelFailure | ProducerError, ModelStep.Requirements> =>
-  Effect.gen(function*() {
+  effect {
     const producer = new DurableChatProducer(
       callbackBaseUrl,
       grant,
@@ -532,27 +526,23 @@ const runTurn = (
     // Shared prompt admission must never degrade to a transcript-only answer
     // while the authorized host context provider is unavailable.
     if (grant.request.sharedConversation === true && preflight === undefined) {
-      return yield* Effect.fail(
-        new ModelError.ModelError({
-          code: "invalid_provider_output",
-          message: "shared conversation preflight is unavailable"
-        })
-      )
+      throw new ModelError.ModelError({
+        code: "invalid_provider_output",
+        message: "shared conversation preflight is unavailable"
+      })
     }
     // Selected content is only supplied by the trusted provider; a renderer
     // cannot pass its own selection or private transcript through this path.
     const { selectedContext: _untrustedSelection, ...request } = grant.request
     let prepared: DurableChatGrant = { ...grant, request }
     if (preflight !== undefined) {
-      const decoded = ContextPreflight.ContextPreflightInputSchema.safeParse(preflight.input)
+      const decoded = try sync(() => ContextPreflight.ContextPreflightInputSchema.safeParse(preflight.input))
       if (!decoded.success) {
-        return yield* Effect.fail(
-          new ModelError.ModelError({ code: "invalid_provider_output", message: "context preflight input is invalid" })
-        )
+        throw new ModelError.ModelError({ code: "invalid_provider_output", message: "context preflight input is invalid" })
       }
       // Prove durable step writes before spending on either model. A failed
       // start receipt never permits the selector or answer request.
-      yield* producer.writePreflight("started", {
+      try producer.writePreflight("started", {
         context: [],
         candidates: decoded.data.candidates.filter((candidate) =>
           !decoded.data.wikiOnly || candidate.item.kind === "page"
@@ -560,15 +550,15 @@ const runTurn = (
         model: preflight.options.modelId,
         durationMs: 0
       })
-      yield* producer.providerStarted()
-      const answer = yield* runContextPreflight(decoded.data, preflight.model, preflight.options)
-      yield* producer.writePreflight("completed", answer.result)
+      try producer.providerStarted()
+      const answer = try runContextPreflight(decoded.data, preflight.model, preflight.options)
+      try producer.writePreflight("completed", answer.result)
       prepared = {
         ...grant,
         request: { ...request, messages: answer.messages, selectedContext: answer.selectedContext }
       }
     }
-    if (preflight === undefined) yield* producer.providerStarted()
+    if (preflight === undefined) try producer.providerStarted()
     {
       const transport = {
         read: sourceReader(callbackBaseUrl, grant, fetchImpl),
@@ -576,7 +566,7 @@ const runTurn = (
         api: apiCaller(callbackBaseUrl, grant, fetchImpl),
         docs
       }
-      yield* runHostTurn(model, prepared, options, write, transport, diagnostics)
+      try runHostTurn(model, prepared, options, write, transport, diagnostics)
       return
     }
-  })
+  }

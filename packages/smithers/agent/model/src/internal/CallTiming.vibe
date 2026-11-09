@@ -17,7 +17,7 @@
 
 import type * as Clock from "effect/Clock"
 import type { FailedTry, ModelEvent, Timing } from "../ModelEvent.ts"
-import type * as RequestExecutor from "../RequestExecutor.ts"
+import type * as RequestExecutor from "../RequestExecutor.vibe"
 
 /**
  * One call's stopwatch: a mark per stage, and the reading so far.

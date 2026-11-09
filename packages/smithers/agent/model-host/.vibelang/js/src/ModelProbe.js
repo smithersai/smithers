@@ -54,7 +54,7 @@ export const modelAnswersOf = (questions, answers) => Object.fromEntries(Object.
 }));
 const generation = (planned, input, transport, bounded = true) => Effect_1.gen(function* () {
     const source = yield* toModel(planned.plan, planned.apiKey, { ...transport, execution: { maxRetries: 0 } });
-    const request = yield* Effect.orDie(Effect.try(() => ModelRequest.ModelRequest.make({
+    const request = yield* Effect_1.sync(() => ModelRequest.ModelRequest.make({
         modelId: planned.plan.modelId,
         system: input.system.trim() === "" ? [] : [ModelRequest.SystemPart.make({ text: input.system })],
         messages: [{ role: "user", content: [{ type: "text", text: input.prompt }] }],
@@ -63,13 +63,13 @@ const generation = (planned, input, transport, bounded = true) => Effect_1.gen(f
             ...(bounded ? { maxTokens: input.maxTokens } : {}),
             ...(input.temperature === undefined ? {} : { temperature: input.temperature })
         }
-    })));
+    }));
     const events = Array.from(yield* Stream.runCollect(durableModelStream("model-host/probe/generation", { ...source, modelId: planned.plan.modelId, credential: Redacted.value(planned.apiKey) }, request)));
     // The durable boundary requires settlement, even for an answer with no text.
     const text = events.flatMap((event) => event.type === "text-delta" ? [event.text] : []).join("");
     const output = {
         kind: "generation",
-        text: (yield* Effect.orDie(Effect.try(() => ConfiguredModel.cutModelCredential(text, Redacted.value(planned.apiKey))))).slice(0, ConfiguredModel.MODEL_CALL_TEXT_MAX)
+        text: (yield* Effect_1.sync(() => ConfiguredModel.cutModelCredential(text, Redacted.value(planned.apiKey)))).slice(0, ConfiguredModel.MODEL_CALL_TEXT_MAX)
     };
     return { output };
 });
@@ -77,7 +77,7 @@ const decision = (planned, deadlineMs, input) => Effect_1.gen(function* () {
     // The questions become the classes every host builds, so their construction limits hold here too.
     const questions = Object.fromEntries(yield* Effect.forEach(Object.entries(input.questions), ([id, question]) => Effect.map(decodeQuestion(question), (typed) => [id, typed])));
     const evaluator = yield* Evaluator.Evaluator;
-    const state = yield* Effect.orDie(Effect.try(() => ConfiguredModel.modelStateOf(input.state)));
+    const state = yield* Effect_1.sync(() => ConfiguredModel.modelStateOf(input.state));
     const answer = yield* evaluator.evaluate({ state, questions });
     const decoded = yield* Effect.result(Classifier.decodeAnswers(questions, answer.answers));
     if (decoded._tag !== "Success") {
@@ -112,7 +112,7 @@ export const createModelProbe = (options) => {
         const planned = read.value;
         if (!planned.ok)
             return failed(planned.failure);
-        const request = input ?? (yield* Effect.orDie(Effect.try(() => ConfiguredModel.modelCallDefault(planned.plan.kind))));
+        const request = input ?? (yield* Effect_1.sync(() => ConfiguredModel.modelCallDefault(planned.plan.kind)));
         // A prompt for a decision model, or questions for a generation model, fit no wire the record speaks.
         if (request.kind !== planned.plan.kind)
             return failed({ code: "invalid", field: "protocol" });
@@ -143,7 +143,7 @@ export const createModelProbe = (options) => {
             if ("failure" in exit.value)
                 return failed(exit.value.failure);
             const { output } = exit.value;
-            const sample = yield* Effect.orDie(Effect.try(() => ConfiguredModel.modelCallSample(output, Redacted.value(planned.apiKey))));
+            const sample = yield* Effect_1.sync(() => ConfiguredModel.modelCallSample(output, Redacted.value(planned.apiKey)));
             return {
                 ok: true,
                 latencyMs: Math.max(0, Math.round(nowMs() - started)),
@@ -158,7 +158,7 @@ export const createModelProbe = (options) => {
             tier: "sealed",
             idempotencyKey: identity.success,
             success: Schema.String,
-            execute: probe.pipe(Effect.flatMap((result) => Effect.orDie(Effect.try(() => JSON.stringify(result)))))
+            execute: probe.pipe(Effect.flatMap((result) => Effect_1.sync(() => JSON.stringify(result))))
         });
         return yield* Effect.orDie(Effect.try(() => ConfiguredModel.ModelTestResultSchema.parse(JSON.parse(encoded))));
     });

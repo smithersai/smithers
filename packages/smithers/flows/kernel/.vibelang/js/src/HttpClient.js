@@ -124,6 +124,7 @@ export const ModelCall = Context.Reference("@smthrs/kernel/HttpClient/ModelCall"
  *
  * @category references
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const withModelCall = (modelId) => (effect) => Effect.provideService(effect, ModelCall, modelId);
 /**
@@ -158,6 +159,7 @@ export const toHttpClientError = (options) => new HttpClientError.HttpClientErro
  *
  * @category refinements
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const fromHttpClientError = (error) => error.reason._tag === "TransportError" && isPermissionError(error.reason.cause)
     ? Option.some(error.reason.cause)

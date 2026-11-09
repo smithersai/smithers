@@ -42,7 +42,7 @@ import {
 } from "@smthrs/rpc"
 import { Effect } from "effect"
 import { z } from "zod"
-import type { DurableChatGrant } from "./DurableChatProducer.ts"
+import type { DurableChatGrant } from "./DurableChatProducer.vibe"
 import type { HostDiagnostics } from "./HostDiagnostics.vibe"
 import { runModelTurn } from "./ModelTurnHost.vibe"
 import type { FrameWriter, HeldToolCall, ModelTurnOptions } from "./ModelTurnHost.vibe"
@@ -175,8 +175,6 @@ export interface HostTransport {
 
 const utf8 = new TextEncoder()
 
-/** Runs synchronous contract code in an Effect; a throw from it is a defect in this host, never a turn failure. */
-const orDefect = <A>(f: () => A) => Effect.orDie(Effect.try(f))
 
 /** A callback refusal's code, or the status it answered without one. */
 const refusalCode = (response: Response, body: unknown): string =>
@@ -384,7 +382,7 @@ const filesRead: Bind = (grant, { read }) => {
   if (repository === undefined) return undefined
   return (args, ordinal) =>
     effect {
-      const input = try orDefect(() => FileRead.parseFileReadArgs(args))
+      const input = try sync(() => FileRead.parseFileReadArgs(args))
       if ("error" in input) return { refusal: input.error }
       const { repo, ref, line, column } = input.payload
       if (repo !== undefined && !namesRepository(repository, repo)) {
@@ -396,7 +394,7 @@ const filesRead: Bind = (grant, { read }) => {
       const answer = try read(path)
       if (!("file" in answer)) return { refusal: refusalText(path, answer.code) }
       const { file } = answer
-      const { card, value } = try orDefect(() =>
+      const { card, value } = try sync(() =>
         FileRead.fileReadCard(
           {
             repo: file.repository,
@@ -435,7 +433,7 @@ const filesList: Bind = (grant, { list }) => {
   if (repository === undefined) return undefined
   return (args, ordinal) =>
     effect {
-      const input = try orDefect(() => FileList.parseFileListArgs(args))
+      const input = try sync(() => FileList.parseFileListArgs(args))
       if ("error" in input) return { refusal: input.error }
       const { repo } = input.payload
       if (repo !== undefined && !namesRepository(repository, repo)) {
@@ -445,7 +443,7 @@ const filesList: Bind = (grant, { list }) => {
       const answer = try list(path)
       if (!("directory" in answer)) return { refusal: listRefusalText(path, answer.code) }
       const { directory } = answer
-      const { card, value } = try orDefect(() =>
+      const { card, value } = try sync(() =>
         FileList.fileListCard(
           {
             repo: directory.repository,
@@ -671,22 +669,22 @@ const flowCommand = (row: CatalogDescriptor): Bind => (grant, { api }) => {
       const name = input.name!
       const answer = try api("/api/flows", { method: "GET" })
       if ("code" in answer) return { refusal: answer.code }
-      const parsed = try orDefect(() => z.array(FlowCard.FlowCardSchema).safeParse(answer.body))
+      const parsed = try sync(() => z.array(FlowCard.FlowCardSchema).safeParse(answer.body))
       if (answer.status !== 200 || !parsed.success) return { refusal: "Flows unavailable" }
       let model = parsed.data.find((flow) => flow.name === name)
       if (model === undefined) {
         const named = try api(`/api/flows/${encodeURIComponent(name)}`, { method: "GET" })
         if (!("code" in named) && named.status === 200) {
-          const selected = try orDefect(() => FlowCard.FlowCardSchema.safeParse(named.body))
+          const selected = try sync(() => FlowCard.FlowCardSchema.safeParse(named.body))
           if (selected.success && selected.data.name === name) model = selected.data
         }
       }
       if (model === undefined) return { refusal: `No flow ${name}` }
-      const title = try orDefect(() => FlowEdit.flowTitle(name))
+      const title = try sync(() => FlowEdit.flowTitle(name))
       if (row.name === "flow.edit" && model.system) return { refusal: `${title} is built in` }
       const now = Date.now()
       if (row.name === "flow.edit") {
-        const request = try orDefect(() =>
+        const request = try sync(() =>
           catalogRequest(
             catalogDescriptors.find((entry) => entry.name === "todo.new")!,
             FlowEdit.flowEditTodoInput(name, input.request!, input.diff)
@@ -749,32 +747,32 @@ const catalogCommand = (row: CatalogDescriptor): Bind => (grant, { api }) => {
       }
       const now = Date.now()
       if (row.name === "stack") {
-        const parsed = try orDefect(() => HomeCard.HomeCardSchema.safeParse(answer.body))
+        const parsed = try sync(() => HomeCard.HomeCardSchema.safeParse(answer.body))
         if (!parsed.success) return { refusal: "Invalid stack response" }
         const cards: Array<Cards.Card> = []
         const todo = catalogDescriptors.find((entry) => entry.name === "todo")!
         for (const item of parsed.data.items) {
           if (item.state === "merged" || item.state === "dropped") continue
-          const request = try orDefect(() => catalogRequest(todo, { n: item.n }))
+          const request = try sync(() => catalogRequest(todo, { n: item.n }))
           const detail = try api(request.path, request)
           if ("code" in detail) return { refusal: detail.code }
-          const model = try orDefect(() => TodoCard.TodoCardSchema.safeParse(detail.body))
+          const model = try sync(() => TodoCard.TodoCardSchema.safeParse(detail.body))
           if (detail.status !== 200 || !model.success || model.data.n !== item.n) {
             return { refusal: "Invalid TODO response" }
           }
-          cards.push(try orDefect(() => TodoCommands.todoCard(item.n, model.data, ordinal, now)))
+          cards.push(try sync(() => TodoCommands.todoCard(item.n, model.data, ordinal, now)))
         }
         return { cards, value: JSON.stringify(parsed.data) }
       }
       if (row.name === "todo") {
-        const parsed = try orDefect(() => TodoCard.TodoCardSchema.safeParse(answer.body))
+        const parsed = try sync(() => TodoCard.TodoCardSchema.safeParse(answer.body))
         if (!parsed.success) return { refusal: "Invalid TODO response" }
         return {
-          cards: [try orDefect(() => TodoCommands.todoCard(parsed.data.n, parsed.data, ordinal, now))],
-          value: try orDefect(() => JSON.stringify(parsed.data))
+          cards: [try sync(() => TodoCommands.todoCard(parsed.data.n, parsed.data, ordinal, now))],
+          value: try sync(() => JSON.stringify(parsed.data))
         }
       }
-      return { cards: [], value: try orDefect(() => JSON.stringify({ status: answer.status, body: answer.body })) }
+      return { cards: [], value: try sync(() => JSON.stringify({ status: answer.status, body: answer.body })) }
     }
 }
 
@@ -985,7 +983,7 @@ const runCommand = <E>(
       verdict: "run",
       ...(outcome.ui ? { ui: outcome.ui } : {})
     })
-    return (try orDefect(() => AgentToolResult.boundToolResult(outcome.value))).modelOutput
+    return (try sync(() => AgentToolResult.boundToolResult(outcome.value))).modelOutput
   }
 
 /**
@@ -1002,9 +1000,9 @@ effect function runHostTool<E>(
 ): Effect.Effect<string, E> {
   // A turn offered no tool runs none, whatever the model calls.
   if (call.name !== AgentCommands.commandsToolSpec.name || offered.length === 0) {
-    return try Effect.orDie(Effect.try(() => AgentCommands.unknownToolResult(call.name)))
+    return try sync(() => AgentCommands.unknownToolResult(call.name))
   }
-  const decoded = try Effect.orDie(Effect.try(() => AgentCommands.decodeCommandsCall(call.arguments)))
+  const decoded = try sync(() => AgentCommands.decodeCommandsCall(call.arguments))
   if ("failure" in decoded) return decoded.failure
   if (decoded.action === "list") {
     const listed = offered.flatMap(({ command }) =>
@@ -1017,10 +1015,10 @@ effect function runHostTool<E>(
         }]
         : []
     )
-    return try Effect.orDie(Effect.try(() => JSON.stringify({ commands: listed })))
+    return try sync(() => JSON.stringify({ commands: listed }))
   }
   const target = offered.find(({ command }) => command.name === decoded.name)
-  if (target === undefined) return try Effect.orDie(Effect.try(() => AgentCommands.unknownCommandResult(decoded.name)))
+  if (target === undefined) return try sync(() => AgentCommands.unknownCommandResult(decoded.name))
   return try runCommand(grant, target, decoded.args, link, ordinal, write)
 }
 

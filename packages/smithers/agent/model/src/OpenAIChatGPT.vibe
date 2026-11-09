@@ -14,11 +14,11 @@
  */
 
 import * as Result from "effect/Result"
-import type * as Auth from "./Auth.ts"
-import * as Endpoint from "./Endpoint.ts"
+import type * as Auth from "./Auth.vibe"
+import * as Endpoint from "./Endpoint.vibe"
 import * as Framing from "./Framing.vibe"
-import * as OpenAIResponses from "./OpenAIResponses.ts"
-import * as Route from "./Route.ts"
+import * as OpenAIResponses from "./OpenAIResponses.vibe"
+import * as Route from "./Route.vibe"
 
 /**
  * The ChatGPT backend origin plus base path. The Responses call is served at

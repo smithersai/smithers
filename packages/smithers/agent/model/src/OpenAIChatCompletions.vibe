@@ -23,7 +23,7 @@ import {
   ReasoningEffort,
   type StopReason,
   type ToolDefinition
-} from "./ModelRequest.ts"
+} from "./ModelRequest.vibe"
 import * as Protocol from "./Protocol.vibe"
 import * as ToolStream from "./ToolStream.vibe"
 

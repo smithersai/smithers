@@ -22,7 +22,7 @@ import * as Tracer from "effect/Tracer"
 import { inspect } from "node:util"
 import { describe, expect, it } from "vitest"
 import { ModelError } from "../src/ModelError.vibe"
-import * as RequestExecutor from "../src/RequestExecutor.js"
+import * as RequestExecutor from "../src/RequestExecutor.vibe"
 
 interface ResponseSpec {
   readonly status: number

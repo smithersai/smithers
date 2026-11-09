@@ -1,10 +1,10 @@
 import { Effect, Stream } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Evaluator from "../src/Evaluator.ts"
+import * as Evaluator from "../src/Evaluator.vibe"
 import * as Model from "../src/Model.vibe"
 import { ModelError } from "../src/ModelError.vibe"
 import type { ModelEvent } from "../src/ModelEvent.ts"
-import type { ModelRequest } from "../src/ModelRequest.ts"
+import type { ModelRequest } from "../src/ModelRequest.vibe"
 
 const request: Evaluator.Request = {
   state: { evidence: "tests passed" },

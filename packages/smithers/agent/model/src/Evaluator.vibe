@@ -28,12 +28,13 @@ import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import * as CanonicalJson from "./CanonicalJson.ts"
-import * as Endpoint from "./Endpoint.ts"
+import * as Endpoint from "./Endpoint.vibe"
+import { decodeText } from "./Evaluator.platform.ts"
 import * as CallTiming from "./internal/CallTiming.vibe"
 import type * as Model from "./Model.vibe"
 import { ModelError } from "./ModelError.vibe"
 import * as ModelEvent from "./ModelEvent.ts"
-import { ModelRequest } from "./ModelRequest.ts"
+import { ModelRequest } from "./ModelRequest.vibe"
 
 /**
  * The failure vocabulary shared by the transport and the classifier above it.
@@ -142,7 +143,6 @@ const usageLimitMessage = (reset: number | undefined): string =>
  *
  * @category conversions
  * @since 1.0.0-rc.0
- * @throws {never}
  */
 export const publicMessage = (error: {
   readonly code: EvaluatorErrorCode
@@ -590,28 +590,25 @@ const decodeRawAnswers = Schema.decodeUnknownEffect(RawAnswers)
  * passes {@link maxResponseBytes}.
  */
 const cappedText = (response: HttpClientResponse.HttpClientResponse): Effect.Effect<string, EvaluatorError> =>
-  Effect.suspend(() => {
+  effect {
     const decoder = new TextDecoder()
     let text = ""
     let bytes = 0
-    return Stream.runForEach(response.stream, (chunk: Uint8Array) => {
+    return try Stream.runForEach(response.stream, effect (chunk: Uint8Array) => {
       bytes += chunk.byteLength
       if (bytes > maxResponseBytes) {
-        return Effect.fail(
-          new EvaluatorError({ code: "empty", status: 200, message: `The body exceeds ${maxResponseBytes} bytes` })
-        )
+        throw new EvaluatorError({ code: "empty", status: 200, message: `The body exceeds ${maxResponseBytes} bytes` })
       }
-      text += decoder.decode(chunk, { stream: true })
-      return Effect.void
+      text += decodeText(decoder, chunk, { stream: true })
     }).pipe(
       Effect.mapError((error) =>
         error instanceof EvaluatorError
           ? error
           : new EvaluatorError({ code: "empty", status: 200, message: `Unreadable body: ${error.reason._tag}` })
       ),
-      Effect.map(() => text + decoder.decode())
+      Effect.map(() => text + decodeText(decoder))
     )
-  })
+  }
 
 /**
  * The per-question confidence the provider reported, at the path the gateway
@@ -710,13 +707,13 @@ export function layerVercelGateway(
 ): Layer.Layer<Evaluator, any, KernelHttpClient.HttpClient> {
   return Layer.effect(
     Evaluator,
-    Effect.gen(function*() {
+    effect {
       // Every request's lifetime is tied to the scope the call opens below, so
       // its abort fires the moment the call settles. Without it an answer the
       // transport refused, or one whose body this module never reads, leaves
       // the response body held open until the runtime collects it.
-      const http = HttpClient.withScope(yield* KernelHttpClient.HttpClient)
-      const apiKey = Redacted.isRedacted(options.apiKey) ? options.apiKey : yield* options.apiKey
+      const http = HttpClient.withScope(try KernelHttpClient.HttpClient)
+      const apiKey = Redacted.isRedacted(options.apiKey) ? options.apiKey : try options.apiKey
       const model = options.model ?? defaultModel
       const timeoutMs = options.timeoutMs ?? defaultTimeoutMs
       const zeroDataRetention = options.zeroDataRetention ?? true
@@ -726,24 +723,22 @@ export function layerVercelGateway(
       const endpoint = Endpoint.makeSecure({ url: options.baseUrl ?? defaultBaseUrl })
 
       const evaluate = (request: Request): Effect.Effect<Response, EvaluatorError> =>
-        Effect.gen(function*() {
-          const clock = yield* Clock.clockWith(Effect.succeed)
+        effect {
+          const clock = try Clock.clockWith(Effect.succeed)
           const started = clock.currentTimeMillisUnsafe()
           const timing = CallTiming.start(clock)
           if (Result.isFailure(endpoint)) {
-            return yield* Effect.fail(
-              new EvaluatorError({ code: "unreachable", message: `Invalid baseUrl: ${endpoint.failure.message}` })
-            )
+            throw new EvaluatorError({ code: "unreachable", message: `Invalid baseUrl: ${endpoint.failure.message}` })
           }
           const baseUrl = Endpoint.render(endpoint.success)
           // The questions are encoded through their schema rather than handed
           // to `JSON.stringify` as they stand: a question is a class instance
           // on the typed path and an object literal on the ad-hoc one, and the
           // body has to read the same either way.
-          const encodedQuestions = yield* encodeWireQuestions(request.questions).pipe(
+          const encodedQuestions = try encodeWireQuestions(request.questions).pipe(
             Effect.mapError((error) => new EvaluatorError({ code: "invalid_question", message: error.message }))
           )
-          const serializedBody = yield* Effect.try({
+          const serializedBody = try Effect.try({
             try: () => {
               // Reject values JSON would omit or coerce, as well as cycles
               // and bigint. Keep the existing wire order after validation.
@@ -786,12 +781,12 @@ export function layerVercelGateway(
           })
           timing.signed()
           // Record the request's send, response headers and any refusal.
-          const send = Effect.suspend(() => {
+          const send = effect {
             const sentAt = clock.currentTimeMillisUnsafe()
             timing.onTry({ type: "sent", at: sentAt })
             const failed = (code: string, httpStatus?: number): void =>
               timing.onTry({ type: "failed", sentAt, at: clock.currentTimeMillisUnsafe(), code, httpStatus })
-            return http.execute(wire).pipe(
+            return try http.execute(wire).pipe(
               KernelHttpClient.withModelCall(model),
               Effect.mapError((error) => new EvaluatorError({ code: "unreachable", message: error.message })),
               Effect.tapError((error) => Effect.sync(() => failed(error.code))),
@@ -806,20 +801,18 @@ export function layerVercelGateway(
                 )
               )
             )
-          })
-          const response = yield* send
-          if (response.status !== 200) {
-            return yield* Effect.fail(
-              new EvaluatorError({
-                code: invalidQuestionStatuses.has(response.status) ? "invalid_question" : "refused",
-                status: response.status,
-                message: `The gateway answered ${response.status}`
-              })
-            )
           }
-          const text = yield* cappedText(response)
+          const response = try send
+          if (response.status !== 200) {
+            throw new EvaluatorError({
+              code: invalidQuestionStatuses.has(response.status) ? "invalid_question" : "refused",
+              status: response.status,
+              message: `The gateway answered ${response.status}`
+            })
+          }
+          const text = try cappedText(response)
           timing.closed()
-          const body = yield* Effect.try({
+          const body = try Effect.try({
             try: (): unknown => JSON.parse(text),
             catch: () => new EvaluatorError({ code: "empty", status: 200, message: "Unreadable body: Decode" })
           })
@@ -828,11 +821,9 @@ export function layerVercelGateway(
           const usage = isRecord(body) ? usageOf(body, model) : undefined
           const paid = usage === undefined ? {} : { usage }
           if (!isRecord(body) || !isRecord(body["answers"])) {
-            return yield* Effect.fail(
-              new EvaluatorError({ code: "empty", status: 200, message: "The body carried no answers", ...paid })
-            )
+            throw new EvaluatorError({ code: "empty", status: 200, message: "The body carried no answers", ...paid })
           }
-          const answers = yield* decodeRawAnswers(body["answers"]).pipe(
+          const answers = try decodeRawAnswers(body["answers"]).pipe(
             Effect.mapError((error) =>
               new EvaluatorError({ code: "invalid_answer", status: 200, message: error.message, ...paid })
             )
@@ -846,7 +837,7 @@ export function layerVercelGateway(
             latencyMs,
             timing: timing.read()
           }
-        }).pipe(
+        }.pipe(
           Effect.scoped,
           Effect.timeoutOrElse({
             duration: timeoutMs,
@@ -858,7 +849,7 @@ export function layerVercelGateway(
         )
 
       return Evaluator.of({ evaluate: SpanFailure.fn(Effect.fn("Evaluator.evaluate")(evaluate)) })
-    })
+    }
   )
 }
 
@@ -906,17 +897,17 @@ export const layerScripted = (script: Script): Layer.Layer<Evaluator> =>
     Evaluator.of({
       evaluate: SpanFailure.fn(
         Effect.fn("Evaluator.evaluate")((request: Request) =>
-          Effect.gen(function*() {
+          effect {
             const scripted = script(request)
-            const answers = Effect.isEffect(scripted) ? yield* scripted : scripted
+            const answers = Effect.isEffect(scripted) ? try scripted : scripted
             const raw = Object.fromEntries(
               Object.entries(answers).map(([id, answer]) => [id, typed(request.questions[id], answer)])
             )
-            const decoded = yield* decodeRawAnswers(raw).pipe(
+            const decoded = try decodeRawAnswers(raw).pipe(
               Effect.mapError((error) => new EvaluatorError({ code: "invalid_answer", message: error.message }))
             )
             return { answers: decoded, latencyMs: 0 }
-          })
+          }
         )
       )
     })
@@ -943,9 +934,9 @@ export const layerFromSeat = (
           const usage = streamedUsage(metered, seat.modelId)
           return usage === undefined ? {} : { usage }
         }
-        return Effect.gen(function*() {
-          const started = yield* Clock.currentTimeMillis
-          const prompt = yield* Effect.try({
+        return effect {
+          const started = try Clock.currentTimeMillis
+          const prompt = try Effect.try({
             try: () => CanonicalJson.stringify({ state: request.state, questions: encodeQuestions(request.questions) }),
             catch: () =>
               new EvaluatorError({
@@ -953,7 +944,7 @@ export const layerFromSeat = (
                 message: "The judgment needs JSON evidence and valid questions."
               })
           })
-          const events = yield* seat.model.stream(
+          const events = try seat.model.stream(
             new ModelRequest({
               modelId: seat.modelId,
               system: [{
@@ -971,17 +962,16 @@ export const layerFromSeat = (
               })
             ),
             Stream.runCollect,
-            Effect.catch((error) =>
-              Effect.gen(function*() {
+            Effect.catch(effect (error) => {
                 if (error instanceof ModelError && (error.code === "rate_limited" || error.code === "quota_exceeded")) {
                   const reset = error.resetAtEpochMillis ??
                     (error.retryAfterMillis === undefined
                       ? undefined
-                      : (yield* Clock.currentTimeMillis) + error.retryAfterMillis)
+                      : (try Clock.currentTimeMillis) + error.retryAfterMillis)
                   const resetAtEpochMillis = reset !== undefined && Number.isFinite(new Date(reset).getTime())
                     ? reset
                     : undefined
-                  return yield* new EvaluatorError({
+                  throw new EvaluatorError({
                     code: "refused",
                     status: 429,
                     ...(resetAtEpochMillis === undefined ? {} : { resetAtEpochMillis }),
@@ -989,54 +979,53 @@ export const layerFromSeat = (
                     ...paid()
                   })
                 }
-                return yield* new EvaluatorError({ code: "unreachable", message: unreachableMessage, ...paid() })
-              })
-            )
+                throw new EvaluatorError({ code: "unreachable", message: unreachableMessage, ...paid() })
+            })
           )
-          const { message } = ModelEvent.settledMessage(events)
+          const { message } = try sync(() => ModelEvent.settledMessage(events))
           // The seat's call says what it took on its own settle event.
           const settle = events.find((event) => event.type === "settle")
           const invalid = () =>
             new EvaluatorError({ code: "invalid_answer", message: "The seat returned an invalid judgment.", ...paid() })
           if (message.stopReason !== "stop" || message.content.some((part) => part.type === "tool-call")) {
-            return yield* Effect.fail(invalid())
+            throw invalid()
           }
           const text = message.content.filter((part) => part.type === "text").map((part) => part.text).join("")
-          const parsed = yield* Effect.try({
+          const parsed = try Effect.try({
             try: () => JSON.parse(unfenced(text)) as { answers?: unknown },
             catch: invalid
           })
-          const answers = yield* decodeRawAnswers(parsed?.answers).pipe(Effect.mapError(invalid))
+          const answers = try decodeRawAnswers(parsed?.answers).pipe(Effect.mapError(invalid))
           const unit = (n: number) => Number.isFinite(n) && n >= 0 && n <= 1
           if (Object.keys(answers).length !== Object.keys(request.questions).length) {
-            return yield* Effect.fail(invalid())
+            throw invalid()
           }
           for (const [id, question] of Object.entries(request.questions)) {
             const answer = answers[id]
-            if (answer === undefined || answer.type !== question.type) return yield* Effect.fail(invalid())
-            if (answer.type === "boolean" && !unit(answer.probability)) return yield* Effect.fail(invalid())
+            if (answer === undefined || answer.type !== question.type) throw invalid()
+            if (answer.type === "boolean" && !unit(answer.probability)) throw invalid()
             if (
               answer.type === "choice" && question.type === "choice" && !Object.hasOwn(question.criteria, answer.choice)
-            ) return yield* Effect.fail(invalid())
+            ) throw invalid()
             if (
               answer.type === "score" && question.type === "score" &&
               (!Number.isFinite(answer.score) || answer.score < 0 || answer.score > question.criteria.length - 1)
-            ) return yield* Effect.fail(invalid())
+            ) throw invalid()
             if (
               answer.type !== "boolean" && answer.probabilities !== undefined &&
               !Object.values(answer.probabilities).every(unit)
-            ) return yield* Effect.fail(invalid())
+            ) throw invalid()
           }
           return {
             answers,
-            latencyMs: (yield* Clock.currentTimeMillis) - started,
+            latencyMs: (try Clock.currentTimeMillis) - started,
             decidedBy: "seat" as const,
             ...paid(),
             ...(settle?.timing === undefined ? {} : { timing: settle.timing }),
             ...(settle?.responseId === undefined ? {} : { responseId: settle.responseId }),
             ...(settle?.servedTier === undefined ? {} : { servedTier: settle.servedTier })
           }
-        }).pipe(Effect.timeoutOrElse({
+        }.pipe(Effect.timeoutOrElse({
           duration: options.timeoutMs ?? 120_000,
           orElse: () =>
             Effect.fail(

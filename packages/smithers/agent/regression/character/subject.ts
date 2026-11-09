@@ -36,7 +36,7 @@ import * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
 import type { AgentEvent } from "../../harness/src/index.ts"
 import { Model, ModelEvent, ModelRequest, type Route } from "../../model/src/index.ts"
-import * as RequestExecutor from "../../model/src/RequestExecutor.ts"
+import * as RequestExecutor from "../../model/src/RequestExecutor.vibe"
 import { Registry } from "../../registry/src/index.ts"
 import {
   Agent,

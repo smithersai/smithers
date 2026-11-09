@@ -1,7 +1,7 @@
 import { Effect, Redacted } from "effect"
 import * as Headers from "effect/http/Headers"
 import { describe, expect, it } from "vitest"
-import * as Auth from "../src/Auth.ts"
+import * as Auth from "../src/Auth.vibe"
 
 describe("Auth", () => {
   it("signs Anthropic API-key headers", async () => {

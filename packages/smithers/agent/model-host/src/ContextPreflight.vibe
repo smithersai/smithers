@@ -45,7 +45,7 @@ export const runContextPreflight = (
   options: ModelTurnOptions
 ): Effect.Effect<ContextPreflightAnswer, Model.ModelFailure | ModelError.ModelError, ModelStep.Requirements> =>
   effect {
-    const decoded = try Effect.orDie(Effect.try(() => ContextPreflight.ContextPreflightInputSchema.safeParse(raw)))
+    const decoded = try sync(() => ContextPreflight.ContextPreflightInputSchema.safeParse(raw))
     if (!decoded.success) throw invalid()
     const input = decoded.data
     const started = nowMs()
@@ -73,7 +73,7 @@ export const runContextPreflight = (
       { banks: [bank], query: input.prompt, maxTokens: Recall.MAX_RECALL_TOKENS },
       (recalled) =>
         effect {
-          const request = try Effect.orDie(Effect.try(() => ModelRequest.ModelRequest.make({
+          const request = try sync(() => ModelRequest.ModelRequest.make({
             modelId: options.modelId,
             system: [
               ModelRequest.SystemPart.make({
@@ -95,7 +95,7 @@ export const runContextPreflight = (
             }))],
             tools: [],
             params: options.outputTokenLimitSupported === false ? {} : { maxTokens: 2048 }
-          })))
+          }))
           let output = ""
           const cutter = new StreamingCredentialCutter(options.credential, options.additionalCredentials)
           let settled = false
@@ -154,12 +154,12 @@ export const runContextPreflight = (
       text: candidates[Number(row.key)]!.text
     }))
     return {
-      result: try Effect.orDie(Effect.try(() => ContextPreflight.ContextPreflightResultSchema.parse({
+      result: try sync(() => ContextPreflight.ContextPreflightResultSchema.parse({
         context: selectedContext.map((candidate) => candidate.item),
         candidates: candidates.map((candidate) => candidate.item),
         model: options.modelId,
         durationMs: nowMs() - started
-      }))),
+      })),
       selectedContext,
       messages: [...input.recent.slice(-3).map((entry) => ({ role: "assistant" as const, content: entry.text })), {
         role: "user" as const,

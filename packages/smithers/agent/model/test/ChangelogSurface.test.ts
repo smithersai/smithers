@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs"
 import { expect, it } from "vitest"
 import * as Index from "../src/index.ts"
-import * as Route from "../src/Route.ts"
+import * as Route from "../src/Route.vibe"
 
 const changelog = readFileSync(new URL("../CHANGELOG.md", import.meta.url), "utf8")
 

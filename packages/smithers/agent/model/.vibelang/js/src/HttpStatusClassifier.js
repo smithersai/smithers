@@ -15,6 +15,7 @@ import { isContextOverflow, isQuotaExhausted } from "./ModelError.js";
  *
  * @category utilities
  * @since 0.1.0
+ * @throws {never}
  */
 export const classifyHttpStatus = (status, code, message, source) => {
     const normalized = `${code ?? ""} ${message}`.toLowerCase();

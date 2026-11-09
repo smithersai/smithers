@@ -5,7 +5,7 @@
  */
 
 import { Fault as Faults } from "@smthrs/flow"
-import * as Evaluator from "./Evaluator.ts"
+import * as Evaluator from "./Evaluator.vibe"
 // A value import, so the model rows register wherever this copy is read.
 import { isTerminalRefusal, ModelErrorCode } from "./ModelError.vibe"
 

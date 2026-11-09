@@ -1,9 +1,9 @@
 /** Native structured output preserves tools on compatible providers. */
 import { Effect, Redacted, Result, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as ModelRequest from "../src/ModelRequest.ts"
-import * as OpenAIChatCompletions from "../src/OpenAIChatCompletions.ts"
-import * as Route from "../src/Route.ts"
+import * as ModelRequest from "../src/ModelRequest.vibe"
+import * as OpenAIChatCompletions from "../src/OpenAIChatCompletions.vibe"
+import * as Route from "../src/Route.vibe"
 
 const capital = {
   name: "capital",

@@ -34,6 +34,7 @@ export type MessageSource = "provider" | "opaque"
  *
  * @category utilities
  * @since 0.1.0
+ * @throws {never}
  */
 export const classifyHttpStatus = (
   status: number | undefined,

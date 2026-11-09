@@ -15,7 +15,7 @@ import * as CallTiming from "./internal/CallTiming.vibe"
 import type { ModelError } from "./ModelError.vibe"
 import { ModelError as ModelErrorClass } from "./ModelError.vibe"
 import type { ModelEvent, Usage } from "./ModelEvent.ts"
-import type { ModelRequest } from "./ModelRequest.ts"
+import type { ModelRequest } from "./ModelRequest.vibe"
 import * as Pricing from "./Pricing.vibe"
 
 /**

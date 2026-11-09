@@ -13,7 +13,7 @@ import * as SeatResolver from "../../../../packages/smithers/agent/src/SeatResol
 import * as Model from "../../../../packages/smithers/agent/model/src/Model.vibe"
 import * as ModelError from "../../../../packages/smithers/agent/model/src/ModelError.vibe"
 import * as ModelEvent from "../../../../packages/smithers/agent/model/src/ModelEvent.ts"
-import type * as Route from "../../../../packages/smithers/agent/model/src/Route.ts"
+import type * as Route from "../../../../packages/smithers/agent/model/src/Route.vibe"
 import { Layer } from "effect"
 
 const SCRIPTED_MODEL_ID = "scripted-reviewer"

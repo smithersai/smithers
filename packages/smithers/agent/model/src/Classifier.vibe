@@ -22,7 +22,7 @@ import * as Option from "effect/Option"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as CanonicalJson from "./CanonicalJson.ts"
-import * as Evaluator from "./Evaluator.ts"
+import * as Evaluator from "./Evaluator.vibe"
 
 /**
  * The classifier's failure vocabulary: the transport's codes, plus

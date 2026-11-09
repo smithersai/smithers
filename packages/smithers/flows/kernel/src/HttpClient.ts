@@ -149,6 +149,7 @@ export const ModelCall: Context.Reference<string | undefined> = Context.Referenc
  *
  * @category references
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const withModelCall = (modelId: string) => <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   Effect.provideService(effect, ModelCall, modelId)
@@ -190,6 +191,7 @@ export const toHttpClientError = (options: {
  *
  * @category refinements
  * @since 1.0.0-rc.0
+ * @throws {never}
  */
 export const fromHttpClientError = (
   error: HttpClientError.HttpClientError

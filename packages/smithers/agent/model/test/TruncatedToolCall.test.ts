@@ -7,12 +7,12 @@
  */
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as AnthropicMessages from "../src/AnthropicMessages.ts"
+import * as AnthropicMessages from "../src/AnthropicMessages.vibe"
 import { settledMessage } from "../src/ModelEvent.ts"
 import type { ModelEvent } from "../src/ModelEvent.ts"
-import { GenerationParams, Message, ModelRequest } from "../src/ModelRequest.ts"
-import * as OpenAIChatCompletions from "../src/OpenAIChatCompletions.ts"
-import * as OpenAIResponses from "../src/OpenAIResponses.ts"
+import { GenerationParams, Message, ModelRequest } from "../src/ModelRequest.vibe"
+import * as OpenAIChatCompletions from "../src/OpenAIChatCompletions.vibe"
+import * as OpenAIResponses from "../src/OpenAIResponses.vibe"
 import type * as Protocol from "../src/Protocol.vibe"
 
 const partial = "{\"cmd\":\"rm -"

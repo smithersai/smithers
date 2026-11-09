@@ -42,35 +42,43 @@
     "./internal/*": null,
     "./*/index": null,
     "./AnthropicMessages": {
-      "types": "./src/AnthropicMessages.ts",
-      "vibelang-source": "./src/AnthropicMessages.ts",
+      "types": "./.vibe/declarations/src/AnthropicMessages.d.vibe.ts",
+      "vibelang-source": "./src/AnthropicMessages.vibe",
       "default": "./.vibelang/js/src/AnthropicMessages.js"
     },
     "./Auth": {
-      "types": "./src/Auth.ts",
-      "vibelang-source": "./src/Auth.ts",
+      "types": "./.vibe/declarations/src/Auth.d.vibe.ts",
+      "vibelang-source": "./src/Auth.vibe",
       "default": "./.vibelang/js/src/Auth.js"
     },
-    "./CanonicalJson": "./src/CanonicalJson.ts",
+    "./CanonicalJson": {
+      "types": "./src/CanonicalJson.ts",
+      "vibelang-source": "./src/CanonicalJson.ts",
+      "default": "./.vibelang/js/src/CanonicalJson.js"
+    },
     "./Classifier": {
       "types": "./.vibe/declarations/src/Classifier.d.vibe.ts",
       "vibelang-source": "./src/Classifier.vibe",
       "default": "./.vibelang/js/src/Classifier.js"
     },
-    "./DeferredTools": "./src/DeferredTools.ts",
+    "./DeferredTools": {
+      "types": "./src/DeferredTools.ts",
+      "vibelang-source": "./src/DeferredTools.ts",
+      "default": "./.vibelang/js/src/DeferredTools.js"
+    },
     "./Endpoint": {
-      "types": "./src/Endpoint.ts",
-      "vibelang-source": "./src/Endpoint.ts",
+      "types": "./.vibe/declarations/src/Endpoint.d.vibe.ts",
+      "vibelang-source": "./src/Endpoint.vibe",
       "default": "./.vibelang/js/src/Endpoint.js"
     },
     "./Evaluator": {
-      "types": "./src/Evaluator.ts",
-      "vibelang-source": "./src/Evaluator.ts",
+      "types": "./.vibe/declarations/src/Evaluator.d.vibe.ts",
+      "vibelang-source": "./src/Evaluator.vibe",
       "default": "./.vibelang/js/src/Evaluator.js"
     },
     "./EvaluatorBackup": {
-      "types": "./src/EvaluatorBackup.ts",
-      "vibelang-source": "./src/EvaluatorBackup.ts",
+      "types": "./.vibe/declarations/src/EvaluatorBackup.d.vibe.ts",
+      "vibelang-source": "./src/EvaluatorBackup.vibe",
       "default": "./.vibelang/js/src/EvaluatorBackup.js"
     },
     "./Framing": {
@@ -88,17 +96,29 @@
       "vibelang-source": "./src/Model.vibe",
       "default": "./.vibelang/js/src/Model.js"
     },
-    "./ModelCatalog": "./src/ModelCatalog.ts",
+    "./ModelCatalog": {
+      "types": "./src/ModelCatalog.ts",
+      "vibelang-source": "./src/ModelCatalog.ts",
+      "default": "./.vibelang/js/src/ModelCatalog.js"
+    },
     "./ModelError": {
       "types": "./.vibe/declarations/src/ModelError.d.vibe.ts",
       "vibelang-source": "./src/ModelError.vibe",
       "default": "./.vibelang/js/src/ModelError.js"
     },
-    "./ModelEvent": "./src/ModelEvent.ts",
-    "./ModelRequest": "./src/ModelRequest.ts",
+    "./ModelEvent": {
+      "types": "./src/ModelEvent.ts",
+      "vibelang-source": "./src/ModelEvent.ts",
+      "default": "./.vibelang/js/src/ModelEvent.js"
+    },
+    "./ModelRequest": {
+      "types": "./.vibe/declarations/src/ModelRequest.d.vibe.ts",
+      "vibelang-source": "./src/ModelRequest.vibe",
+      "default": "./.vibelang/js/src/ModelRequest.js"
+    },
     "./OpenAIChatCompletions": {
-      "types": "./src/OpenAIChatCompletions.ts",
-      "vibelang-source": "./src/OpenAIChatCompletions.ts",
+      "types": "./.vibe/declarations/src/OpenAIChatCompletions.d.vibe.ts",
+      "vibelang-source": "./src/OpenAIChatCompletions.vibe",
       "default": "./.vibelang/js/src/OpenAIChatCompletions.js"
     },
     "./OpenAIChatGPT": {
@@ -107,8 +127,8 @@
       "default": "./.vibelang/js/src/OpenAIChatGPT.js"
     },
     "./OpenAIResponses": {
-      "types": "./src/OpenAIResponses.ts",
-      "vibelang-source": "./src/OpenAIResponses.ts",
+      "types": "./.vibe/declarations/src/OpenAIResponses.d.vibe.ts",
+      "vibelang-source": "./src/OpenAIResponses.vibe",
       "default": "./.vibelang/js/src/OpenAIResponses.js"
     },
     "./Pricing": {
@@ -122,13 +142,13 @@
       "default": "./.vibelang/js/src/Protocol.js"
     },
     "./RequestExecutor": {
-      "types": "./src/RequestExecutor.ts",
-      "vibelang-source": "./src/RequestExecutor.ts",
+      "types": "./.vibe/declarations/src/RequestExecutor.d.vibe.ts",
+      "vibelang-source": "./src/RequestExecutor.vibe",
       "default": "./.vibelang/js/src/RequestExecutor.js"
     },
     "./Route": {
-      "types": "./src/Route.ts",
-      "vibelang-source": "./src/Route.ts",
+      "types": "./.vibe/declarations/src/Route.d.vibe.ts",
+      "vibelang-source": "./src/Route.vibe",
       "default": "./.vibelang/js/src/Route.js"
     },
     "./ToolStream": {

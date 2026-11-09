@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 
-import type { ModelRequest, ToolDefinition } from "./ModelRequest.ts"
+import type { ModelRequest, ToolDefinition } from "./ModelRequest.vibe"
 
 /**
  * Provider protocol ids with a native deferred-tool representation.

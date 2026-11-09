@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import type { ModelError } from "../src/ModelError.vibe"
 import * as Events from "../src/ModelEvent.ts"
-import * as Request from "../src/ModelRequest.ts"
-import * as OpenAIChatCompletions from "../src/OpenAIChatCompletions.ts"
+import * as Request from "../src/ModelRequest.vibe"
+import * as OpenAIChatCompletions from "../src/OpenAIChatCompletions.vibe"
 
 const streamRequest = Request.ModelRequest.make({
   modelId: "qwen2.5:3b",

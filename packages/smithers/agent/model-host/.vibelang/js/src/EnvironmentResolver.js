@@ -23,9 +23,9 @@ import { refusingRedirects } from "./ProviderTransport.js";
  */
 export const environmentModelResolver = (options) => (grant, selection) => {
     return Effect_1.gen(function* () {
-        const credentials = yield* Effect.orDie(Effect.try(() => ConfiguredModel.hostModelCredentials(options.env)));
-        const planBinding = (binding) => Effect.orDie(Effect.try(() => ConfiguredModel.planModelBinding(binding, credentials, { kind: "generation" })));
-        const secretNamed = (name) => Effect.orDie(Effect.try(() => options.env[ConfiguredModel.modelCredentialEnvName(name)]?.trim()));
+        const credentials = yield* Effect_1.sync(() => ConfiguredModel.hostModelCredentials(options.env));
+        const planBinding = (binding) => Effect_1.sync(() => ConfiguredModel.planModelBinding(binding, credentials, { kind: "generation" }));
+        const secretNamed = (name) => Effect_1.sync(() => options.env[ConfiguredModel.modelCredentialEnvName(name)]?.trim());
         const configured = yield* planBinding(options.binding);
         // The wire may carry null for an absent model, as the Go resolver reads it.
         const requested = grant.request.model ?? undefined;

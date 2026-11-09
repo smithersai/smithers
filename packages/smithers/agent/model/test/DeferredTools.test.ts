@@ -10,8 +10,8 @@ import {
   ToolCallPart,
   ToolDefinition,
   ToolResultPart
-} from "../src/ModelRequest.ts"
-import * as OpenAIResponses from "../src/OpenAIResponses.ts"
+} from "../src/ModelRequest.vibe"
+import * as OpenAIResponses from "../src/OpenAIResponses.vibe"
 
 const tool = (
   name: string,

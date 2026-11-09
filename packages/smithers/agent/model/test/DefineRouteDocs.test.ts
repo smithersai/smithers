@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs"
 import { runInNewContext } from "node:vm"
 import { expect, it } from "vitest"
 import { Auth, Endpoint, Framing } from "../src/index.ts"
-import * as Route from "../src/Route.ts"
+import * as Route from "../src/Route.vibe"
 
 it("the documented Cerebras structured-output route targets chat completions", () => {
   const guide = readFileSync(new URL("../docs/guides/define-a-route.md", import.meta.url), "utf8")

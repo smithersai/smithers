@@ -18,7 +18,7 @@ import {
   type ReasoningEffort,
   type StopReason,
   type ToolDefinition
-} from "./ModelRequest.ts"
+} from "./ModelRequest.vibe"
 import { jsonEvent, make as makeProtocol, type Protocol } from "./Protocol.vibe"
 import * as ToolStream from "./ToolStream.vibe"
 

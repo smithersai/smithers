@@ -5,7 +5,7 @@
  */
 
 import { ModelError } from "./ModelError.vibe"
-import { JsonObject, type StopReason } from "./ModelRequest.ts"
+import { JsonObject, type StopReason } from "./ModelRequest.vibe"
 
 /**
  * An unfinished streamed tool call.

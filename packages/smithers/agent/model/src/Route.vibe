@@ -11,21 +11,22 @@ import { SpanFailure } from "@smthrs/flow"
 import { Clock, Effect, Exit, Layer, Option, Redacted, Result, Schema, Stream } from "effect"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import type * as SchemaIssue from "effect/SchemaIssue"
-import * as AnthropicMessages from "./AnthropicMessages.ts"
-import * as Auth from "./Auth.ts"
+import * as AnthropicMessages from "./AnthropicMessages.vibe"
+import * as Auth from "./Auth.vibe"
 import * as CanonicalJson from "./CanonicalJson.ts"
-import * as Endpoint from "./Endpoint.ts"
+import * as Endpoint from "./Endpoint.vibe"
 import * as Framing from "./Framing.vibe"
 import * as CallTiming from "./internal/CallTiming.vibe"
 import * as WireTrace from "./internal/WireTrace.vibe"
 import * as Model from "./Model.vibe"
 import { ModelError } from "./ModelError.vibe"
 import { type ModelEvent, type Settle, settledMessage, type Timing, type Usage } from "./ModelEvent.ts"
-import { type JsonObject, type ModelRequest, ModelRequest as ModelRequestSchema } from "./ModelRequest.ts"
-import * as OpenAIChatCompletions from "./OpenAIChatCompletions.ts"
-import * as OpenAIResponses from "./OpenAIResponses.ts"
+import { type JsonObject, type ModelRequest, ModelRequest as ModelRequestSchema } from "./ModelRequest.vibe"
+import * as OpenAIChatCompletions from "./OpenAIChatCompletions.vibe"
+import * as OpenAIResponses from "./OpenAIResponses.vibe"
 import type * as Protocol from "./Protocol.vibe"
-import * as RequestExecutor from "./RequestExecutor.ts"
+import * as RequestExecutor from "./RequestExecutor.vibe"
+import { decodeUtf8 } from "./Route.platform.ts"
 import * as TraceSink from "./WireTrace.vibe"
 
 /**
@@ -228,7 +229,7 @@ const compile = <Body, Frame, Event, State>(
           url: Endpoint.render(route.endpoint),
           publicHeaders: headers,
           body: bytes,
-          bodyText: new TextDecoder().decode(bytes)
+          bodyText: decodeUtf8(bytes)
         },
         request: validatedRequest
       }
@@ -320,15 +321,15 @@ const stream = <Body, Frame, Event, State>(
           const affinityHeader = route.protocol.affinityHeader
           let traced = false
           let rejectedHeaders: Record<string, string> | undefined
-          const attempt = Effect.gen(function*() {
-            const signed = yield* route.auth.sign({ ...prepared.publicHeaders })
+          const attempt = effect {
+            const signed = try route.auth.sign({ ...prepared.publicHeaders })
             rejectedHeaders = { ...signed }
             timing.signed()
             const slot = affinityHeader === undefined ? undefined : affinitySlot(prepared, snapshot, signed)
             const token = slot === undefined ? undefined : affinity.get(slot)
             if (!traced) {
               traced = true
-              call.traced = yield* WireTrace.record({ ...prepared, affinity: token !== undefined }, sink)
+              call.traced = try WireTrace.record({ ...prepared, affinity: token !== undefined }, sink)
             }
             const signedHeaders = {
               ...signed,
@@ -337,8 +338,8 @@ const stream = <Body, Frame, Event, State>(
             const httpRequest = HttpClientRequest.post(prepared.url, { headers: signedHeaders }).pipe(
               HttpClientRequest.bodyUint8Array(prepared.body, "application/json")
             )
-            const sanitize = yield* RequestExecutor.errorSanitizer(httpRequest)
-            const response = yield* executor.execute(httpRequest, {
+            const sanitize = try RequestExecutor.errorSanitizer(httpRequest)
+            const response = try executor.execute(httpRequest, {
               modelId: snapshot.modelId,
               classifyError: route.protocol.classifyError,
               onTry: timing.onTry
@@ -349,7 +350,7 @@ const stream = <Body, Frame, Event, State>(
             const returned = slot === undefined ? undefined : response.headers[affinityHeader!.toLowerCase()]
             if (returned !== undefined && returned !== "") rememberAffinity(slot!, returned)
             return { response, sanitize }
-          }).pipe(Auth.withRedaction(route.auth))
+          }.pipe(Auth.withRedaction(route.auth))
           // An `authentication` failure is terminal on both retry ladders — a bad
           // key never repairs itself by waiting. A refresh-capable Auth is the
           // one case where recovery is possible: run its refresh and re-sign
@@ -526,14 +527,14 @@ export const make = <Body, Frame, Event, State>(
 export const toModel = <Body, Frame, Event, State>(
   config: Config<Body, Frame, Event, State>
 ): Effect.Effect<Model.Model, never, RequestExecutor.RequestExecutor> =>
-  Effect.gen(function*() {
-    const executor = yield* RequestExecutor.RequestExecutor
-    const sink = Option.getOrUndefined(yield* Effect.serviceOption(TraceSink.WireTrace))
+  effect {
+    const executor = try RequestExecutor.RequestExecutor
+    const sink = Option.getOrUndefined(try Effect.serviceOption(TraceSink.WireTrace))
     return Model.make({
       providerName: config.providerName,
       stream: (request) => measured(config, executor, request, sink)
     })
-  })
+  }
 
 /**
  * Provides a configured route as the `Model` service.
@@ -588,7 +589,6 @@ export const anthropic = (
  * @since 0.1.0
  * @category constructors
  * @slop
- * @throws {never}
  */
 export const openai = (
   input: {
@@ -680,7 +680,6 @@ export const openaiResponsesCompatible = (
  *
  * @since 0.1.0
  * @category constructors
- * @throws {never}
  */
 export const openaiChatCompatible = (
   input: {

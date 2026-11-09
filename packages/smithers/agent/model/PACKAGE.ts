@@ -67,11 +67,11 @@ const securityReview = Smithers.SecurityReview({
         "Auth.sign output or the affinity header spread over signed headers so a protocol-controlled name overwrites Authorization."
       ],
       paths: [
-        "src/Auth.ts",
-        "src/Endpoint.ts",
-        "src/Route.ts",
+        "src/Auth.vibe",
+        "src/Endpoint.vibe",
+        "src/Route.vibe",
         "src/OpenAIChatGPT.vibe",
-        "src/ModelRequest.ts",
+        "src/ModelRequest.vibe",
         "src/internal/WireTrace.vibe"
       ]
     },
@@ -87,8 +87,8 @@ const securityReview = Smithers.SecurityReview({
         "Stream-time failures (HTTP 200 protocol errors, framing errors) mapped outside the sanitize captured for the signed attempt."
       ],
       paths: [
-        "src/RequestExecutor.ts",
-        "src/Route.ts",
+        "src/RequestExecutor.vibe",
+        "src/Route.vibe",
         "src/ModelError.vibe",
         "src/FailureCopy.vibe",
         "src/Classifier.vibe",
@@ -108,10 +108,10 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/Framing.vibe",
-        "src/RequestExecutor.ts",
-        "src/Evaluator.ts",
+        "src/RequestExecutor.vibe",
+        "src/Evaluator.vibe",
         "src/ToolStream.vibe",
-        "src/AnthropicMessages.ts",
+        "src/AnthropicMessages.vibe",
         "src/OpenAI*.{ts,vibe}"
       ]
     },
@@ -125,7 +125,7 @@ const securityReview = Smithers.SecurityReview({
         "A baseUrl accepted over plain http, or not validated through Endpoint.make, before a bearer or api key is signed onto it (Evaluator.layerVercelGateway included).",
         "Endpoint.joinPath letting an encoded traversal climb out of the configured base path."
       ],
-      paths: ["src/Endpoint.ts", "src/Route.ts", "src/OpenAIChatGPT.vibe", "src/Evaluator.ts"]
+      paths: ["src/Endpoint.vibe", "src/Route.vibe", "src/OpenAIChatGPT.vibe", "src/Evaluator.vibe"]
     },
     {
       id: "auth-refresh-and-affinity",
@@ -137,7 +137,7 @@ const securityReview = Smithers.SecurityReview({
         "The process-global affinity map keyed without routeId and cacheKey, or cacheKey values that two tenants in one process can share.",
         "A returned affinity header value stored without size bounds or forwarded to a different route."
       ],
-      paths: ["src/Route.ts", "src/Auth.ts"]
+      paths: ["src/Route.vibe", "src/Auth.vibe"]
     },
     {
       id: "tool-call-integrity",
@@ -154,7 +154,7 @@ const securityReview = Smithers.SecurityReview({
         "src/ToolStream.vibe",
         "src/ModelEvent.ts",
         "src/DeferredTools.ts",
-        "src/AnthropicMessages.ts",
+        "src/AnthropicMessages.vibe",
         "src/OpenAI*.{ts,vibe}"
       ]
     },
@@ -168,7 +168,7 @@ const securityReview = Smithers.SecurityReview({
         "Gateway answers used before decodeRawAnswers validates them, or confidence treated as authorization.",
         "zeroDataRetention defaulting to false or being dropped from the wire body."
       ],
-      paths: ["src/Evaluator.ts"]
+      paths: ["src/Evaluator.vibe"]
     },
     {
       id: "docs-examples-secrets",
