@@ -115,7 +115,7 @@
       "inputs": [
         "packages/smithers/agent/docs/README.md",
         ".smithers/flows/wiki/workflow.vibe",
-        ".smithers/flows/wiki/runtime.vibe"
+        ".smithers/flows/wiki/runtime.ts"
       ],
       "related": [
         "flows",

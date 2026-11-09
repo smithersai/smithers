@@ -1,5 +1,5 @@
 /** Request preparation is planning. The wiki is context planning reads when it
- * is published and fresh (planning-memory.vibe); planning never generates it.
+ * is published and fresh (planning-memory.ts); planning never generates it.
  * The stack service refreshes it with `coding/wiki` after every fold. */
 import { Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"

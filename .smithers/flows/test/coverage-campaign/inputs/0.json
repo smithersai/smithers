@@ -1896,7 +1896,7 @@
     "sha256": "39d93eac57d1ec6393bb1f1c7bad6de2afe0d04ccb103b9ddce2c30e4fa9bac5"
   },
   {
-    "path": ".smithers/flows/automation/run-module.vibe",
+    "path": ".smithers/flows/automation/run-module.ts",
     "sha256": "3352969bf03f88c0bedd6594bda99176bf4739083551f3523e12f521e553aba4"
   },
   {
@@ -2292,7 +2292,7 @@
     "sha256": "39692f3ebe6ca7ff8a8addb148e84fd0ff67c75c226e458f37018a18b62d2d1b"
   },
   {
-    "path": ".smithers/flows/coding/planning-memory.vibe",
+    "path": ".smithers/flows/coding/planning-memory.ts",
     "sha256": "2628ef96e1749e05a39212d09b95cb93c2870535f738833118700ac74bfcee61"
   },
   {
@@ -2300,7 +2300,7 @@
     "sha256": "5bd3cdbfa8eb226671b444e7bd0866a11c81adbe3cee0a22caabaca7cd2a9f40"
   },
   {
-    "path": ".smithers/flows/coding/planning-wiki-provider.vibe",
+    "path": ".smithers/flows/coding/planning-wiki-provider.ts",
     "sha256": "8fe2a14fd142f779836ef8ea20ff82b273c86a030d42b6fcd8af797c098268c5"
   },
   {
@@ -2520,7 +2520,7 @@
     "sha256": "a15de169cf4f6d650ed4bc5c5a8e13fea83db2921afea96dcc0a1fd395fe06a8"
   },
   {
-    "path": ".smithers/flows/coding/wiki-check.vibe",
+    "path": ".smithers/flows/coding/wiki-check.ts",
     "sha256": "757d61e0120d9d7246b4d28c093087f875b8d75d372ef153a7227a0d54451d69"
   },
   {
@@ -2532,7 +2532,7 @@
     "sha256": "fce1153adceb5019f4d55e46736ce6e04577abe01e2cba6225ada73bdb687724"
   },
   {
-    "path": ".smithers/flows/coding/wiki-refresh.vibe",
+    "path": ".smithers/flows/coding/wiki-refresh.ts",
     "sha256": "9c9321c2f793dbc923d789caf35cab3ed87632362df005c64444cca5904d20ff"
   },
   {
@@ -2716,7 +2716,7 @@
     "sha256": "328802cc30469c873f7b0361ae62bc63db27074bbf70bd006eaf8dbb405a41cf"
   },
   {
-    "path": ".smithers/flows/issue-sweep/host.vibe",
+    "path": ".smithers/flows/issue-sweep/host.ts",
     "sha256": "79644b12ac171548a386645933cfad4362d0d2ec68e2d4f13ba95360728e94b4"
   },
   {
@@ -2724,7 +2724,7 @@
     "sha256": "792558def570c5bb5267e4f9daf93deded9b8af10710b785a2d2c29e1846c807"
   },
   {
-    "path": ".smithers/flows/issue-sweep/land.vibe",
+    "path": ".smithers/flows/issue-sweep/land.ts",
     "sha256": "21a17c3a9bc703bd9139a19fa39ea67a98b34797164268579b8bfb6f78042a8b"
   },
   {
@@ -3148,7 +3148,7 @@
     "sha256": "3e0ece457968e7910f919e8aa3b9c465eb3e0ac36ff4fabe623ba1c71d5f94ca"
   },
   {
-    "path": ".smithers/flows/memory/calibrate.vibe",
+    "path": ".smithers/flows/memory/calibrate.ts",
     "sha256": "8595e78e2677327625f01f2b148df54d4fafaf1150ec0a0b734c8151f9732b23"
   },
   {
@@ -3164,7 +3164,7 @@
     "sha256": "7231a7d550b12742e95897312675d343eb1d525b906c736e757cb38af1da41d2"
   },
   {
-    "path": ".smithers/flows/memory/landed.vibe",
+    "path": ".smithers/flows/memory/landed.ts",
     "sha256": "bc08913a7fcedbb174239760c11b860ee3aa55c714f73d57393dd21078377380"
   },
   {
@@ -3780,7 +3780,7 @@
     "sha256": "1ef836d7bbb8c3ead53af4ba932a436b396c94afb8fb3f6b001aa2cc4268eed7"
   },
   {
-    "path": ".smithers/flows/repository/check-receipt.vibe",
+    "path": ".smithers/flows/repository/check-receipt.ts",
     "sha256": "ee29c4afddcd767d925317747fd21c73b966a3628f00496bbf0649b798d57602"
   },
   {
@@ -3864,7 +3864,7 @@
     "sha256": "ed8a920daca0336b86876f47fdc3fdfb7b6048fd0eec959c715cf635bf854eaf"
   },
   {
-    "path": ".smithers/flows/repository/setup.vibe",
+    "path": ".smithers/flows/repository/setup.ts",
     "sha256": "9d7ea793c60b6ddbd59b71107790ac8c99a12afab758dee2ffb0f03cb0bc5a5c"
   },
   {

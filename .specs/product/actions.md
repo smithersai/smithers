@@ -151,13 +151,13 @@ The TODO flow: route, plan, implement, verify, review, correct, land, and refres
 | `coding/publish-vibe-source` | action | .smithers/flows/coding/vibe-publication.vibe:9 | Publish the verified source | Install | Keep | Published the change |
 | `coding/PublishVibeSource` | flow | .smithers/flows/coding/vibe-publication.vibe:17 | Publish the source to the stack | Install | Keep | Published the change |
 | `coding/Vibe` | flow | .smithers/flows/coding/vibe/flow.ts:13 | Land one approved request | Machine | Replaced by the `todo` flow (T-FLW-11): its steps survive inside the single run; this separate entry point is removed | Landed the change |
-| `coding/capture-wiki-check` | action | .smithers/flows/coding/wiki-check.vibe:51 | Capture wiki state for checking | Machine | Keep | Captured the wiki |
-| `coding/finish-wiki-check` | action | .smithers/flows/coding/wiki-check.vibe:57 | Turn wiki review into a receipt | Machine | Keep | Checked the wiki |
-| `coding/ReviewCapturedWiki` | flow | .smithers/flows/coding/wiki-check.vibe:82 | Review a captured wiki state | Install | Keep | Checked the wiki |
-| `coding/WikiCheck` | flow | .smithers/flows/coding/wiki-check.vibe:93 | Check the wiki against the revision | Machine | Keep | Checked the wiki |
-| `coding/import-dependency-docs` | action | .smithers/flows/coding/wiki-refresh.vibe:55 | Import dependency docs to the wiki | Install | Keep | Imported dependency docs |
-| `coding/install-dependency-pages` | action | .smithers/flows/coding/wiki-refresh.vibe:66 | Install dependency wiki pages | Install | Keep | Added dependency pages |
-| `coding/read-published-wiki` | action | .smithers/flows/coding/wiki-refresh.vibe:95 | Read the published wiki | Install | Keep | Read the wiki |
+| `coding/capture-wiki-check` | action | .smithers/flows/coding/wiki-check.ts:51 | Capture wiki state for checking | Machine | Keep | Captured the wiki |
+| `coding/finish-wiki-check` | action | .smithers/flows/coding/wiki-check.ts:57 | Turn wiki review into a receipt | Machine | Keep | Checked the wiki |
+| `coding/ReviewCapturedWiki` | flow | .smithers/flows/coding/wiki-check.ts:82 | Review a captured wiki state | Install | Keep | Checked the wiki |
+| `coding/WikiCheck` | flow | .smithers/flows/coding/wiki-check.ts:93 | Check the wiki against the revision | Machine | Keep | Checked the wiki |
+| `coding/import-dependency-docs` | action | .smithers/flows/coding/wiki-refresh.ts:55 | Import dependency docs to the wiki | Install | Keep | Imported dependency docs |
+| `coding/install-dependency-pages` | action | .smithers/flows/coding/wiki-refresh.ts:66 | Install dependency wiki pages | Install | Keep | Added dependency pages |
+| `coding/read-published-wiki` | action | .smithers/flows/coding/wiki-refresh.ts:95 | Read the published wiki | Install | Keep | Read the wiki |
 | `coding/Wiki` | flow | .smithers/flows/coding/wiki/flow.ts:17 | Refresh wiki pages after a fold | Machine | Keep | Refreshed the wiki |
 | `coding/validate-plan` | action | .smithers/flows/coding/workflow.vibe:22 | Validate the plan's shape | Machine | Keep | Checked the plan |
 | `coding/implement-change` | action | .smithers/flows/coding/workflow.vibe:27 | Run the change's implement step | Machine | Keep | Implemented the change |
@@ -206,11 +206,11 @@ Generated wiki pages with cited, reviewed content and incremental reuse.
 | id | kind | source | what | runs in | MVP | renders as |
 | --- | --- | --- | --- | --- | --- | --- |
 | `smithers/Wiki` | flow | .smithers/flows/wiki/flow.ts:9 | Build and review wiki pages | Machine | Keep | Refreshed the wiki |
-| `wiki/load-recorded-reviews` | action | .smithers/flows/wiki/reuse.vibe:54 | Load earlier page reviews | Install | Keep | Found earlier reviews |
-| `wiki/select-recorded-review` | action | .smithers/flows/wiki/reuse.vibe:59 | Choose a reusable review | Install | Keep | Reused a review |
-| `wiki/bind-review-provenance` | action | .smithers/flows/wiki/reuse.vibe:64 | Bind a review to its source | Install | Keep | Linked a review to its source |
-| `wiki/publish-recorded-reviews` | action | .smithers/flows/wiki/reuse.vibe:69 | Publish reused reviews | Install | Keep | Saved wiki pages |
-| `smithers/IncrementalWiki` | flow | .smithers/flows/wiki/reuse.vibe:75 | Re-review only changed wiki sections | Install | Keep | Refreshed the wiki |
+| `wiki/load-recorded-reviews` | action | .smithers/flows/wiki/reuse.ts:54 | Load earlier page reviews | Install | Keep | Found earlier reviews |
+| `wiki/select-recorded-review` | action | .smithers/flows/wiki/reuse.ts:59 | Choose a reusable review | Install | Keep | Reused a review |
+| `wiki/bind-review-provenance` | action | .smithers/flows/wiki/reuse.ts:64 | Bind a review to its source | Install | Keep | Linked a review to its source |
+| `wiki/publish-recorded-reviews` | action | .smithers/flows/wiki/reuse.ts:69 | Publish reused reviews | Install | Keep | Saved wiki pages |
+| `smithers/IncrementalWiki` | flow | .smithers/flows/wiki/reuse.ts:75 | Re-review only changed wiki sections | Install | Keep | Refreshed the wiki |
 | `wiki/collect-page` | action | .smithers/flows/wiki/workflow.vibe:10 | Collect a page's sources | Install | Keep | Collected sources for a page |
 | `wiki/review-page` | agent action (wiki/reviewer) | .smithers/flows/wiki/workflow.vibe:16 | Agent writes or reviews a page | Machine | Keep | Reviewed a wiki page |
 | `wiki/validate-review` | action | .smithers/flows/wiki/workflow.vibe:47 | Validate the page review | Install | Keep | Checked a wiki page |
@@ -382,16 +382,16 @@ The old job machinery: issue and PR jobs, replies, setup, evaluation, triggers, 
 | `repository/ConfirmReply` | flow | .smithers/flows/repository/replies.vibe:108 | Confirm a drafted reply | Install | Defer §14 | - |
 | `repository/publish-reply` | action | .smithers/flows/repository/replies.vibe:131 | Post an approved reply | Install | Defer §14 | - |
 | `repository/PublishReply` | flow | .smithers/flows/repository/replies.vibe:137 | Post a reply after approval | Install | Defer §14 | - |
-| `repository/suggest-setup` | agent action (repository/research) | .smithers/flows/repository/setup.vibe:212 | Agent suggests a job setup | Install | Cut | - |
-| `repository/Capture` | flow | .smithers/flows/repository/setup.vibe:243 | Capture setup evidence | Install | Cut | - |
-| `repository/Suggest` | flow | .smithers/flows/repository/setup.vibe:249 | Suggest a setup | Install | Cut | - |
-| `repository/RunEvaluation` | flow | .smithers/flows/repository/setup.vibe:255 | Evaluate a candidate setup | Install | Cut | - |
-| `repository/execute-setup` | action | .smithers/flows/repository/setup.vibe:261 | Run setup | Install | Cut | - |
-| `repository/Setup` | flow | .smithers/flows/repository/setup.vibe:267 | Set up a repository job | Install | Cut | - |
-| `repository/refuse-setup` | action | .smithers/flows/repository/setup.vibe:276 | Refuse a setup | Install | Cut | - |
-| `repository/RunSetup` | flow | .smithers/flows/repository/setup.vibe:281 | Run or refuse setup | Install | Cut | - |
-| `repository/refuse-job` | action | .smithers/flows/repository/setup.vibe:290 | Refuse a job | Install | Cut | - |
-| `repository/RunJob` | flow | .smithers/flows/repository/setup.vibe:291 | Run or refuse a job | Install | Cut | - |
+| `repository/suggest-setup` | agent action (repository/research) | .smithers/flows/repository/setup.ts:212 | Agent suggests a job setup | Install | Cut | - |
+| `repository/Capture` | flow | .smithers/flows/repository/setup.ts:243 | Capture setup evidence | Install | Cut | - |
+| `repository/Suggest` | flow | .smithers/flows/repository/setup.ts:249 | Suggest a setup | Install | Cut | - |
+| `repository/RunEvaluation` | flow | .smithers/flows/repository/setup.ts:255 | Evaluate a candidate setup | Install | Cut | - |
+| `repository/execute-setup` | action | .smithers/flows/repository/setup.ts:261 | Run setup | Install | Cut | - |
+| `repository/Setup` | flow | .smithers/flows/repository/setup.ts:267 | Set up a repository job | Install | Cut | - |
+| `repository/refuse-setup` | action | .smithers/flows/repository/setup.ts:276 | Refuse a setup | Install | Cut | - |
+| `repository/RunSetup` | flow | .smithers/flows/repository/setup.ts:281 | Run or refuse setup | Install | Cut | - |
+| `repository/refuse-job` | action | .smithers/flows/repository/setup.ts:290 | Refuse a job | Install | Cut | - |
+| `repository/RunJob` | flow | .smithers/flows/repository/setup.ts:291 | Run or refuse a job | Install | Cut | - |
 | `repository/recover-trigger` | action | .smithers/flows/repository/triggers.vibe:105 | Recover a stuck trigger | Install | Defer §16 | - |
 | `repository/RecoverTrigger` | flow | .smithers/flows/repository/triggers.vibe:111 | Recover a trigger | Install | Defer §16 | - |
 | `repository/prepare-trigger` | action | .smithers/flows/repository/triggers.vibe:118 | Prepare a trigger | Install | Defer §16 | - |

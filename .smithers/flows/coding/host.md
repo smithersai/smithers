@@ -106,7 +106,7 @@ provider than the effective implementer's. All these model roles
 use the evidence-only authority recipe. When Wiki is enabled, its required `reviewer` policy,
 and selected wiki model participate in review reuse identity. The same identity
 includes the running host's review task: a digest of the wiki review policy
-sources (`policySources` in `.smithers/flows/wiki/reuse.vibe`). Source mode reads them
+sources (`policySources` in `.smithers/flows/wiki/reuse.ts`). Source mode reads them
 beside its own module; the deployment bundler computes the same digest and
 embeds it in the artifact. Nothing else in the host build is covered, so a host
 deploy that leaves the review task alone keeps prior reviews reusable. It does

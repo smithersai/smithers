@@ -33,7 +33,7 @@ const diff =
   `diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1,2 +1,4 @@\n # Canary sandbox\n \n+Open this repository in Smithers.\n+Review changes in the cloud before landing.\n`
 const refused = "The production flow did not complete its evaluated work"
 /** The reviewed configuration `writeCandidate` writes into the repository and
- * snapshots (`.smithers/flows/repository/setup.vibe:151-174`), at the production digest the
+ * snapshots (`.smithers/flows/repository/setup.ts:151-174`), at the production digest the
  * receipt records as its own evidence. Every comparison a review of this
  * repository computes carries whichever of these the snapshots added. */
 const retained =

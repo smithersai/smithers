@@ -64,7 +64,7 @@ it does not weaken #2982.
    (`Burndown.ts:786-805, 873-879`), which is final for the lineage
    (`Burndown.ts:364`). Run-6 lost 118 items to one 75-minute outage.
 4. Outage detection exists in only one flow and gives up after about 20 minutes
-   (`.smithers/flows/issue-sweep/host.vibe:113-135`). Cloud create errors collapse into a
+   (`.smithers/flows/issue-sweep/host.ts:113-135`). Cloud create errors collapse into a
    single message (`src/CloudSandbox.ts:132-140, 153`).
 
 ### F3. A code change under a live run breaks it

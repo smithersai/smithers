@@ -685,7 +685,7 @@ const triagePublish = Smithers.NodeTest({
 // flow under `bench/`; the gates
 // below run the same modules from the checkout root, where their evidence
 // directories resolve, and the suites run each flow's graph over its module.
-const runModuleSource = Smithers.file("//.smithers/flows/automation/run-module.vibe")
+const runModuleSource = Smithers.file("//.smithers/flows/automation/run-module.ts")
 const benchSources = [
   Smithers.glob("//.smithers/flows/bench/**/*"),
   runModuleSource,
@@ -1154,7 +1154,7 @@ const securityReview = Smithers.SecurityReview({
         "coding/host.ts",
         "invoke/**",
         "repository/remote.vibe",
-        "repository/check-receipt.vibe",
+        "repository/check-receipt.ts",
         "coding/check-detection.ts"
       ]
     },
@@ -1169,7 +1169,7 @@ const securityReview = Smithers.SecurityReview({
         "apiBaseUrl accepted over plain http: outside a loopback test host while carrying a bearer token.",
         "A PR link parsed from comment text used to pick the repository whose source is retained or reviewed."
       ],
-      paths: ["repository/remote.vibe", "repository/check-receipt.vibe", "coding/landing.vibe"]
+      paths: ["repository/remote.vibe", "repository/check-receipt.ts", "coding/landing.vibe"]
     },
     {
       id: "source-tree-confinement",

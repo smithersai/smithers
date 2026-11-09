@@ -40,7 +40,7 @@ test("testTargets runs only the test targets of the touched packages", () => {
   assert.deepEqual(testTargets([".smithers/flows/issue-sweep/land.ts", "docs/blog/x.md"], index), [
     "//.smithers/flows:test"
   ])
-  assert.deepEqual(testTargets([".smithers/flows/issue-sweep/land.vibe", "docs/blog/x.md"], index), [
+  assert.deepEqual(testTargets([".smithers/flows/issue-sweep/land.ts", "docs/blog/x.md"], index), [
     "//.smithers/flows:test"
   ])
   assert.deepEqual(testTargets(["WORKSPACE.ts"], index), [])

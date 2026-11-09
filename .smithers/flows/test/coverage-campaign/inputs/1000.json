@@ -1592,7 +1592,7 @@
     "sha256": "5d18fa139018ed84e88a92271928f5b94272263b89d0cb0b066a2837e7be20ee"
   },
   {
-    "path": ".smithers/flows/wiki/operations.vibe",
+    "path": ".smithers/flows/wiki/operations.ts",
     "sha256": "63f83bb63f9ce32eebe08d34258b4f937bc212c27aedc74e20357b43e448c6d7"
   },
   {
@@ -1600,11 +1600,11 @@
     "sha256": "f97c69902acb5af73b15bf461d58763688214d34d3a66e5c1eb88cba8924eab2"
   },
   {
-    "path": ".smithers/flows/wiki/reuse.vibe",
+    "path": ".smithers/flows/wiki/reuse.ts",
     "sha256": "8d40ff582ad78d2c1e82d9194ddc81bab484ce683372e3dbe785979288034f2f"
   },
   {
-    "path": ".smithers/flows/wiki/runtime.vibe",
+    "path": ".smithers/flows/wiki/runtime.ts",
     "sha256": "cb2eb10c4d8e88ad4dd93edd6917801884e812a7d7df00bc00053775bbb460a0"
   },
   {

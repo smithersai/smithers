@@ -3,9 +3,9 @@
 `coding/RefreshWiki` is the private flow that refreshes the verified wiki the
 project declares. The stack service runs it through `coding/wiki`
 (wiki/flow.ts) on the folded tip after every fold, and publishes the pages it
-answers (see [wiki-refresh.vibe](wiki-refresh.vibe)). Planning never runs it:
+answers (see [wiki-refresh.ts](wiki-refresh.ts)). Planning never runs it:
 planning reads the published pages as context when they are fresh
-(planning-memory.vibe). A generated publication is not a plan, implementation,
+(planning-memory.ts). A generated publication is not a plan, implementation,
 vibed state or delivery receipt.
 
 ```ts
@@ -64,7 +64,7 @@ Existing reuse validation checks the terminal native run, committed attempt,
 reviewer and policy identities, every page/source digest, section boundaries,
 and the current exact-citation assessment. Unchanged pages do not call the
 model again. Changed pages are reviewed again. The configured Smithers catalog
-must include the `policySources` files declared in `.smithers/flows/wiki/reuse.vibe` only when no trusted host fingerprint is supplied; that is an explicit
+must include the `policySources` files declared in `.smithers/flows/wiki/reuse.ts` only when no trusted host fingerprint is supplied; that is an explicit
 requirement of the current wiki recipe's reuse protocol, not a new generic
 policy subsystem. Source files stay inside the configured public engineering
 repository. Private Ops content is not an input.
@@ -110,7 +110,7 @@ it does not change the standalone wiki CLI's local artifact policy.
 
 The configured coding host supplies the identity of its review task to reuse
 policy: a digest of the review policy sources (`policySources` in
-`.smithers/flows/wiki/reuse.vibe`), which the bundler injects into the deployed artifact.
+`.smithers/flows/wiki/reuse.ts`), which the bundler injects into the deployed artifact.
 Such target repositories need only their own declared public page inputs; they
 do not vendor Smithers' reviewer implementation. Standalone wiki composition
 reads those policy sources from the repository when no host identity is

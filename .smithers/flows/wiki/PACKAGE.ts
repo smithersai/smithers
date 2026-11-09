@@ -11,10 +11,10 @@ const data = [
     ".smithers/flows/wiki/evidence.ts",
     ".smithers/flows/wiki/flow.ts",
     ".smithers/flows/wiki/workflow.vibe",
-    ".smithers/flows/wiki/operations.vibe",
+    ".smithers/flows/wiki/operations.ts",
     ".smithers/flows/wiki/main.ts",
-    ".smithers/flows/wiki/runtime.vibe",
-    ".smithers/flows/wiki/reuse.vibe",
+    ".smithers/flows/wiki/runtime.ts",
+    ".smithers/flows/wiki/reuse.ts",
     ".smithers/flows/wiki/jev-citations.vibe",
     ".smithers/flows/repository/jev-checks.vibe",
     ".smithers/flows/coding/schema.ts",
@@ -56,7 +56,7 @@ const securityReview = S.SecurityReview({
         "read resolving realPath of root and file but comparing with a prefix check that a sibling directory such as <root>-other can pass.",
         "check() reading pages/ or sources/ files via path.resolve(current.directory, input.path) and following a symlink before the realPath comparison runs."
       ],
-      paths: ["operations.vibe", "main.ts"]
+      paths: ["operations.ts", "main.ts"]
     },
     {
       id: "wiki-output-confinement",
@@ -69,7 +69,7 @@ const securityReview = S.SecurityReview({
         "Capability rules in main.ts granting fs:read on the whole root or resolve(output, \"..\") or fs:write beyond output/**.",
         "flow.ts declaring capabilities fs:read:** and fs:write:** wider than its effects.writes .flows/wiki/**, so a host that trusts the declaration grants every path."
       ],
-      paths: ["main.ts", "operations.vibe", "flow.ts"]
+      paths: ["main.ts", "operations.ts", "flow.ts"]
     },
     {
       id: "reviewer-prompt-injection",
@@ -80,9 +80,9 @@ const securityReview = S.SecurityReview({
         "ReviewPage prompt interpolating evidence, prior review, or correction text outside JSON.stringify so it can close the data frame.",
         "A supported verdict accepted without assess() proving each quote is on the cited line and that a current-behavior section cites a non-self file.",
         "The Jev citation classifier state carrying excerpt lines that the page excerpts hid, or a low-confidence answer counted as supported.",
-        "agentLayers in runtime.vibe giving the reviewer a nonempty capabilityEnvelope or registry tools, so injected page text can act instead of only answer."
+        "agentLayers in runtime.ts giving the reviewer a nonempty capabilityEnvelope or registry tools, so injected page text can act instead of only answer."
       ],
-      paths: ["workflow.vibe", "evidence.ts", "jev-citations.vibe", "operations.vibe", "runtime.vibe"]
+      paths: ["workflow.vibe", "evidence.ts", "jev-citations.vibe", "operations.ts", "runtime.ts"]
     },
     {
       id: "reused-review-trust",
@@ -94,7 +94,7 @@ const securityReview = S.SecurityReview({
         "loadRun() reading attempts from another execution or a non-terminal run, or picking between two successful receipts for one page.",
         "select() reusing a review when inputDigest, contentDigest, sections, or reviewer changed, or when assess() fails."
       ],
-      paths: ["reuse.vibe"]
+      paths: ["reuse.ts"]
     },
     {
       id: "verification-status-integrity",
@@ -107,7 +107,7 @@ const securityReview = S.SecurityReview({
         "check() accepting a verified pointer without a valid seal (HMAC of artifactDigest under the host key beside, never inside, the output), or write() placing that key where the output writer can read it.",
         "The reviewer label in main.ts taken from SMITHERS_OPENAI_AUTH so a different provider route can reuse a prior approval."
       ],
-      paths: ["operations.vibe", "main.ts", "reuse.vibe"]
+      paths: ["operations.ts", "main.ts", "reuse.ts"]
     }
   ]
 })

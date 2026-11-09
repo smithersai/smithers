@@ -101,7 +101,7 @@ if (values.help) {
         Effect.provide(Layer.mergeAll(NodeServices.layer, NativeCrypto.layer))
       )
     )
-    // The verified-snapshot seal key lives beside the output (operations.vibe).
+    // The verified-snapshot seal key lives beside the output (operations.ts).
     const sealKey = resolve(output, "..", `.${basename(output)}.seal-key`)
     const rule = (action: "fs:read" | "fs:write", resource: string) =>
       new Capability.Permission.Rule({
