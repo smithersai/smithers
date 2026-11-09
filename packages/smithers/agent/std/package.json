@@ -58,8 +58,8 @@
       "default": "./.vibelang/js/src/Container.js"
     },
     "./Edit": {
-      "types": "./src/Edit.ts",
-      "vibelang-source": "./src/Edit.ts",
+      "types": "./.vibe/declarations/Edit.d.vibe.ts",
+      "vibelang-source": "./src/Edit.vibe",
       "default": "./.vibelang/js/src/Edit.js"
     },
     "./ExaWebSearch": {

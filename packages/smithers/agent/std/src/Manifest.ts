@@ -6,7 +6,7 @@
 
 import * as ApplyPatch from "./ApplyPatch.vibe"
 import * as Bash from "./Bash.ts"
-import * as Edit from "./Edit.ts"
+import * as Edit from "./Edit.vibe"
 import * as Explore from "./Explore.vibe"
 import * as Fetch from "./Fetch.vibe"
 import * as Glob from "./Glob.vibe"

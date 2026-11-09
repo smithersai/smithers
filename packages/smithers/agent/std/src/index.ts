@@ -21,7 +21,7 @@ export * as Write from "./Write.vibe"
  * @category flows
  * @since 1.0.0
  */
-export * as Edit from "./Edit.ts"
+export * as Edit from "./Edit.vibe"
 
 /**
  * @category flows

@@ -55,6 +55,7 @@ export interface Nearest {
  *
  * @category matching
  * @since 1.0.0
+ * @throws {never}
  */
 export const lineAt = (content: string, offset: number): number => {
   let line = 1
@@ -69,6 +70,7 @@ export const lineAt = (content: string, offset: number): number => {
  *
  * @category matching
  * @since 1.0.0
+ * @throws {never}
  */
 export const locate = (content: string, needle: string): ReadonlyArray<Located> => {
   const found: Array<Located> = []
@@ -131,6 +133,7 @@ const matchByLine = (
  *
  * @category matching
  * @since 1.0.0
+ * @throws {never}
  */
 export const nearest = (content: string, needle: string, pad = 3): Nearest | undefined => {
   const haystack = sourceLines(content)
@@ -161,6 +164,7 @@ export const nearest = (content: string, needle: string, pad = 3): Nearest | und
  *
  * @category matching
  * @since 1.0.0
+ * @throws {never}
  */
 export const hunk = (content: string, start: number, end: number, pad = 2): Nearest => {
   const startLine = lineAt(content, start)

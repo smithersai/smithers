@@ -26,6 +26,7 @@ import { sourceLines } from "./Text.js";
  *
  * @category matching
  * @since 1.0.0
+ * @throws {never}
  */
 export const lineAt = (content, offset) => {
     let line = 1;
@@ -40,6 +41,7 @@ export const lineAt = (content, offset) => {
  *
  * @category matching
  * @since 1.0.0
+ * @throws {never}
  */
 export const locate = (content, needle) => {
     const found = [];
@@ -97,6 +99,7 @@ const matchByLine = (haystack, wanted, normalize) => {
  *
  * @category matching
  * @since 1.0.0
+ * @throws {never}
  */
 export const nearest = (content, needle, pad = 3) => {
     const haystack = sourceLines(content);
@@ -131,6 +134,7 @@ export const nearest = (content, needle, pad = 3) => {
  *
  * @category matching
  * @since 1.0.0
+ * @throws {never}
  */
 export const hunk = (content, start, end, pad = 2) => {
     const startLine = lineAt(content, start);

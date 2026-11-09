@@ -100,7 +100,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/internal/Preserve.vibe",
         "src/Write.vibe",
-        "src/Edit.ts",
+        "src/Edit.vibe",
         "src/ApplyPatch.vibe",
         "src/internal/ApplyPatch.vibe"
       ]

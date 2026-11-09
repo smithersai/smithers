@@ -2,7 +2,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { Cause, Effect, Exit, FileSystem, Option, Path } from "effect"
 import * as ApplyPatch from "../../src/ApplyPatch.vibe"
-import * as Edit from "../../src/Edit.ts"
+import * as Edit from "../../src/Edit.vibe"
 import type { StdError } from "../../src/StdError.ts"
 
 const [path, kind, pause] = process.argv.slice(2)

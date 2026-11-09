@@ -1,6 +1,6 @@
 import { Cause, Effect, Exit, FileSystem, Layer, Option } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Edit from "../src/Edit.ts"
+import * as Edit from "../src/Edit.vibe"
 import * as Read from "../src/Read.ts"
 import { fileInfo, layer } from "./TestLayers.ts"
 
